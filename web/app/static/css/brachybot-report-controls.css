@@ -133,15 +133,21 @@
     display: flex; align-items: center; justify-content: center;
     font-size: 0.6rem;
     cursor: pointer;
-    opacity: 0.5;
+    opacity: 0.82;
     flex-shrink: 0;
-    border: none; background: none; color: var(--text);
+    position: relative;
+    border: none; background: none; color: var(--primary);
     padding: 0;
     border-radius: 3px;
     transition: all var(--t-fast) var(--ease);
 }
 .tree-item .eye-btn:hover { opacity: 1; background: var(--primary-soft); color: var(--primary); }
-.tree-item .eye-btn.hidden { opacity: 0.15; }
+.tree-item .eye-btn.hidden {
+    opacity: 0.62;
+    color: var(--text-dim);
+    filter: grayscale(1);
+    background: rgba(148, 163, 184, 0.10);
+}
 .tree-item .color-swatch {
     width: 9px; height: 9px;
     border-radius: 50%;
@@ -269,15 +275,34 @@
     display: flex; align-items: center; justify-content: center;
     font-size: 0.6rem;
     cursor: pointer;
-    opacity: 0.5;
+    opacity: 0.82;
     flex-shrink: 0;
-    border: none; background: none; color: var(--text);
+    position: relative;
+    border: none; background: none; color: var(--primary);
     padding: 0;
     border-radius: 3px;
     transition: all var(--t-fast) var(--ease);
 }
 .tree-group-header .eye-btn:hover { opacity: 1; background: var(--primary-soft); color: var(--primary); }
-.tree-group-header .eye-btn.hidden { opacity: 0.15; }
+.tree-group-header .eye-btn.hidden {
+    opacity: 0.62;
+    color: var(--text-dim);
+    filter: grayscale(1);
+    background: rgba(148, 163, 184, 0.10);
+}
+.tree-item .eye-btn.hidden::after,
+.tree-group-header .eye-btn.hidden::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 2px;
+    height: 19px;
+    border-radius: 2px;
+    background: currentColor;
+    transform: translate(-50%, -50%) rotate(-45deg);
+    pointer-events: none;
+}
 .tree-item .opacity-slider::-webkit-slider-thumb,
 .tree-group-header .opacity-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
@@ -953,10 +978,10 @@
 
 .loading-overlay {
     position: absolute;
-    top: 2.25rem;
-    left: 50%;
-    right: auto;
-    bottom: auto;
+    top: auto;
+    left: auto;
+    right: 0.75rem;
+    bottom: 0.75rem;
     max-width: calc(100% - 2rem);
     padding: 0.45rem 0.75rem;
     border: 1px solid rgba(112, 142, 255, 0.32);
@@ -974,7 +999,7 @@
        the WebGL canvas while background mesh promises continue to settle. */
     pointer-events: none !important;
     user-select: none;
-    transform: translate(-50%, -6px);
+    transform: translateY(6px);
     transition:
         opacity var(--t-base) var(--ease),
         transform var(--t-base) var(--ease),
@@ -986,7 +1011,7 @@
     opacity: 1;
     visibility: visible;
     pointer-events: none !important;
-    transform: translate(-50%, 0);
+    transform: translateY(0);
     transition-delay: 0s;
 }
 
@@ -1811,15 +1836,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
     .report-capture-status-spinner, .report-capture-status-fill { animation: none; transition: none; }
 }
 
-/*
- * 3D resource progress is represented by the shared bottom-right workspace
- * notice. Keep the legacy in-canvas marker in the DOM for accessibility/state
- * bookkeeping, but never paint it over the viewer. This is intentionally a
- * presentation-only rule: the JS token lifecycle still waits for every mesh
- * promise and the canvas remains interactive while resources arrive.
- */
-#loading3D,
+/* 3D reconstruction progress is a non-blocking lower-right chip. */
+#loading3D {
+    right: 0.75rem;
+    bottom: 0.75rem;
+    max-width: min(320px, calc(100% - 1.5rem));
+    pointer-events: none !important;
+}
 #loading3D.active {
+    pointer-events: none !important;
+}
+#loading3D[hidden] {
     display: none !important;
     visibility: hidden !important;
     pointer-events: none !important;

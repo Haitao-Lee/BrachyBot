@@ -145,6 +145,12 @@ def register_auth_routes(app: Flask, store: WorkspaceStore) -> None:
     @require_api_key
     @rate_limit
     def auth_register():
+        if os.environ.get("BRACHYBOT_ALLOW_SELF_REGISTRATION", "1").lower() not in {"1", "true", "yes", "on"}:
+            return jsonify({
+                "error": "Registration is closed. Contact the administrator for an account.",
+                "message": "当前服务仅接受受邀用户，请联系管理员开通账号。",
+                "code": "registration_closed",
+            }), 403
         # The deployment API key is intentionally required before account
         # creation. It is a server-access boundary, while the session cookie
         # remains the user identity boundary; removing this guard would expose

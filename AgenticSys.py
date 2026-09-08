@@ -261,6 +261,12 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         provider is detected.  Each provider is keyed by its name
         in brain/core/router.py::_create_llm().
         """
+        # OpenCode Go routes and caches requests by conversation. Pass the
+        # authenticated workspace session through the provider config so the
+        # generic/Anthropic adapters can send the required stable header.
+        _session_id = str(
+            getattr(getattr(self, "memory", None), "session_id", "") or ""
+        ).strip()
         # ── Anthropic / Anthropic-compatible proxy ──────────────────
         if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_BASE_URL"):
             _base = os.environ.get("ANTHROPIC_BASE_URL", "")
@@ -296,6 +302,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                         "model": _model,
                         "base_url": _base or None,
                         "api_key": _key,
+                        "session_id": _session_id,
                     }
                 }
             else:
@@ -310,6 +317,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                         "model": _model,
                         "api_key": _key,
                         "base_url": _base,
+                        "session_id": _session_id,
                     }
                 }
 

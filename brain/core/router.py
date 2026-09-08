@@ -120,6 +120,7 @@ class LLMRouter:
                 base_url=cfg.get("base_url", "https://api.openai.com/v1"),
                 timeout=cfg.get("timeout", 120.0),
                 max_retries=cfg.get("max_retries", 3),
+                session_id=cfg.get("session_id"),
             )
 
         if name == "openai":
@@ -136,6 +137,7 @@ class LLMRouter:
                 base_url=cfg.get("base_url", os.environ.get("ANTHROPIC_BASE_URL", None)),
                 timeout=cfg.get("timeout", 120.0),
                 max_retries=cfg.get("max_retries", 3),
+                session_id=cfg.get("session_id"),
             )
         elif name == "local":
             from ..providers.local_llm import LocalLLM

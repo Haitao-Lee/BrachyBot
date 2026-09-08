@@ -25,6 +25,7 @@ from plans.dose_pre.model_loader import (
     DEFAULT_PRESCRIPTION_GY,
     prescription_multiplier_to_gy,
 )
+from tool_factory.report_facts import resolve_report_facts
 from typing import Dict
 
 
@@ -147,6 +148,59 @@ class ReportAutoFillTool(BaseTool):
             return default
         return default if value is None else value
 
+    def _effective_ctv_volume_mm3(self, agent):
+        """Return volume for the current effective Structure Set."""
+        memory = getattr(agent, "memory", None)
+        if memory is None:
+            return None
+
+        def positive(value):
+            try:
+                result = float(value)
+            except (TypeError, ValueError):
+                return None
+            return result if result > 0 else None
+
+        persisted = positive(self._retrieve(agent, "ctv_volume_mm3"))
+        if persisted is None:
+            dose_metrics = self._retrieve(agent, "dose_metrics", {}) or {}
+            if isinstance(dose_metrics, dict):
+                persisted = positive(dose_metrics.get("ctv_volume_mm3"))
+
+        spacing = self._retrieve(agent, "ct_spacing")
+        try:
+            spacing_values = [float(value) for value in list(spacing or [])[:3]]
+            voxel_volume_mm3 = (
+                spacing_values[0] * spacing_values[1] * spacing_values[2]
+                if len(spacing_values) == 3 else 0.0
+            )
+        except (TypeError, ValueError):
+            voxel_volume_mm3 = 0.0
+
+        if voxel_volume_mm3 > 0:
+            try:
+                import numpy as np
+                from web.structure_service import build_effective_structures
+
+                effective = build_effective_structures(memory)
+                ctv_array = effective.ctv_array if effective is not None else None
+                if ctv_array is not None:
+                    voxel_count = int(np.count_nonzero(ctv_array))
+                    if voxel_count > 0:
+                        return float(voxel_count * voxel_volume_mm3)
+            except Exception:
+                pass
+
+        if persisted is not None:
+            return persisted
+        voxel_count = positive(
+            self._retrieve(agent, "ctv_voxels")
+            or self._retrieve(agent, "ctv_voxel_count")
+        )
+        if voxel_count is not None and voxel_volume_mm3 > 0:
+            return float(voxel_count * voxel_volume_mm3)
+        return None
+
     def _coerce_prescription_gy(self, value, dose_scale_gy=None):
         try:
             rx = float(value)
@@ -266,8 +320,13 @@ class ReportAutoFillTool(BaseTool):
         if isinstance(dose, dict) and isinstance(dose.get("metrics"), dict):
             dose = dose.get("metrics") or {}
 
-        total_seeds = self._retrieve(agent, "total_seeds")
-        num_trajectories = self._retrieve(agent, "num_trajectories")
+        facts = resolve_report_facts(
+            getattr(agent, "memory", None),
+            getattr(agent, "config", {}) or {},
+        )
+        dose = facts.get("dose") or dose
+        total_seeds = facts.get("total_seeds")
+        num_trajectories = facts.get("num_trajectories")
 
         if scope in ("all", "metrics", "oar"):
             percent_keys = {
@@ -297,26 +356,58 @@ class ReportAutoFillTool(BaseTool):
             ):
                 self._append_patch(patch, provenance, "planning", patch_key, dose.get(source_key), ndigits)
 
-            rx_gy = self._coerce_prescription_gy(
-                dose.get("prescription_gy", dose.get("prescribed_dose")),
-                dose.get("dose_scale_gy") or self._retrieve(agent, "dose_scale_gy"),
-            )
+            rx_gy = facts.get("prescription_gy")
             self._append_patch(patch, provenance, "planning", "planning.prescriptionGy", rx_gy, 1)
-            if total_seeds:
+            if rx_gy is not None:
+                patch["planning.prescriptionSource"] = facts.get("prescription_source") or ""
+                patch["planning.prescriptionStatus"] = facts.get("prescription_status") or "resolved_default"
+                provenance.setdefault("planning", []).extend([
+                    "planning.prescriptionSource",
+                    "planning.prescriptionStatus",
+                ])
+            if facts.get("technique"):
+                patch["planning.technique"] = str(facts["technique"])
+                provenance.setdefault("planning", []).append("planning.technique")
+            if facts.get("dwell_position_count") is not None:
+                self._append_patch(
+                    patch,
+                    provenance,
+                    "planning",
+                    "planning.dwellPositionCount",
+                    facts["dwell_position_count"],
+                    0,
+                )
+            if facts.get("seed_activity_mbq") is not None:
+                self._append_patch(
+                    patch, provenance, "planning", "planning.seedActivityMBq",
+                    facts["seed_activity_mbq"], 3,
+                )
+            if facts.get("total_activity_mbq") is not None:
+                self._append_patch(
+                    patch, provenance, "planning", "planning.totalActivityMBq",
+                    facts["total_activity_mbq"], 3,
+                )
+            patch["planning.activityStatus"] = facts.get("activity_status") or "not_recorded"
+            patch["planning.activitySource"] = facts.get("activity_source") or ""
+            provenance.setdefault("planning", []).extend([
+                "planning.activityStatus",
+                "planning.activitySource",
+            ])
+            if total_seeds is not None:
                 self._append_patch(patch, provenance, "planning", "planning.totalSeeds", int(total_seeds))
-            if num_trajectories:
+            if num_trajectories is not None:
                 self._append_patch(patch, provenance, "planning", "planning.trajectoryCount", int(num_trajectories))
 
-            ctv_volume_mm3 = self._retrieve(agent, "ctv_volume_mm3")
-            if ctv_volume_mm3 is None:
-                ctv_voxels = self._retrieve(agent, "ctv_voxels")
-                spacing = self._retrieve(agent, "ct_spacing")
-                if ctv_voxels and spacing:
-                    try:
-                        ctv_volume_mm3 = float(ctv_voxels) * float(spacing[0]) * float(spacing[1]) * float(spacing[2])
-                    except Exception:
-                        ctv_volume_mm3 = None
+            ctv_volume_mm3 = self._effective_ctv_volume_mm3(agent)
             self._append_patch(patch, provenance, "planning", "case.ctvVolumeMm3", ctv_volume_mm3, 1)
+            if facts.get("tumor_type"):
+                patch["case.tumorType"] = str(facts["tumor_type"])
+                provenance.setdefault("planning", []).append("case.tumorType")
+            if facts.get("oar_count") is not None:
+                self._append_patch(
+                    patch, provenance, "planning", "case.oarCount",
+                    facts["oar_count"], 0,
+                )
 
         if scope in ("all", "oar"):
             oar = self._retrieve(agent, "oar_metrics", {}) or dose.get("oar_metrics") or {}

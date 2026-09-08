@@ -26,6 +26,8 @@ from agent_runtime.turn_policy import (
     _has_visual_annotation_request,
 )
 from plans.dose_pre.model_loader import resolve_prescription_gy
+from tool_factory.ui_controller import normalize_ui_controller_request
+from utils.user_errors import format_tool_error, sanitize_user_response
 
 logger = logging.getLogger(__name__)
 
@@ -688,7 +690,10 @@ print(json.dumps(result))
         # inspector-driven semantic path.
         active_policy = getattr(self, "_active_turn_policy", None)
         ui_operation = getattr(active_policy, "ui_operation", None)
-        if not isinstance(ui_operation, dict):
+        active_intent = getattr(active_policy, "intent", None)
+        if not isinstance(ui_operation, dict) and (
+            active_policy is None or active_intent in {"ui_operation", "ui_control"}
+        ):
             ui_operation = resolve_ui_operation_request(message, ui_state=ui_state)
         ui_actions = ui_operation.get("actions") if isinstance(ui_operation, dict) else None
         ui_confidence = float((ui_operation or {}).get("confidence") or 0.0) if isinstance(ui_operation, dict) else 0.0
@@ -1155,7 +1160,11 @@ print(json.dumps(result))
                 # Store tool call + result in conversation for context persistence
                 self.memory.add_message("assistant", f"[Called {tc['tool']}]")
                 _reason = result.error or result.message or "execution failed"
-                result_summary = result.message[:500] if result.success else f"Error: {_reason}"
+                result_summary = (
+                    result.message[:500]
+                    if result.success
+                    else format_tool_error(tc["tool"], _reason, result.metadata, _lang)
+                )
                 self.memory.add_message("user", f"[Tool result: {result_summary}]")
                 if not result.success and tc["tool"] in {
                     "ctv_segmentation", "oar_segmentation", "planning_pipeline"
@@ -1169,10 +1178,10 @@ print(json.dumps(result))
                     break
             except Exception as e:
                 tool_step["status"] = "error"
-                tool_step["result"] = str(e)
+                tool_step["result"] = format_tool_error(tc["tool"], str(e), {}, _lang)
                 logger.error(f"Direct tool failed: {tc['tool']}: {e}")
                 self.memory.add_message("assistant", f"[Called {tc['tool']}]")
-                self.memory.add_message("user", f"[Tool result: Error: {str(e)[:200]}]")
+                self.memory.add_message("user", f"[Tool result: {tool_step['result']}]")
                 if tc["tool"] in {
                     "ctv_segmentation", "oar_segmentation", "planning_pipeline"
                 }:
@@ -1203,12 +1212,23 @@ print(json.dumps(result))
             for step in steps
             if step.get("type") == "tool"
         }
+        ui_validation_error = any(
+            step.get("type") == "tool"
+            and str(step.get("tool") or "") == "ui_controller"
+            and str(step.get("status") or "") == "error"
+            for step in steps
+        )
         # dose_recompute already has a complete, localized formatter and a
         # deterministic comparison summary. A second LLM synthesis adds cost
         # and can obscure the authoritative result, so return that contract
         # directly. Other direct operations keep their established synthesis
         # path because they may contain richer multi-tool context.
         if direct_tool_names == {"dose_recompute"}:
+            response = raw_results
+        elif ui_validation_error:
+            # A rejected UI action is already a localized, authoritative
+            # contract. Never let a second LLM round turn it into a success
+            # claim such as "renamed" or "updated".
             response = raw_results
         elif (
             getattr(getattr(self, "_active_turn_policy", None), "intent", None)
@@ -1235,7 +1255,7 @@ print(json.dumps(result))
         # if self.multi_agent_wrapper and self.multi_agent_wrapper.enabled:
         #     ...
 
-        return response
+        return sanitize_user_response(response, lang=_lang)
 
     def _build_direct_response(self, steps: List, lang: str) -> str:
         """Build structured response. Delegates to ToolResultPipeline."""
@@ -1487,6 +1507,54 @@ print(json.dumps(result))
                 guide_summary = L(
                     f"\u5df2\u751f\u6210\u7a7f\u523a\u5bfc\u677f v{version}\u3002",
                     f"Puncture guide v{version} generated.",
+                )
+            # A watertight mesh is necessary but not sufficient to claim that
+            # every planned channel has an independently printable wall.  The
+            # guide generator keeps this spacing audit in the persisted
+            # validation payload; carry it into the user-facing report so a
+            # topology repair cannot hide a dense-channel manufacturing risk.
+            guide_validation = (
+                guide_state.get("validation")
+                if isinstance(guide_state, dict)
+                else None
+            )
+            guide_spacing = (
+                guide_validation.get("needle_spacing")
+                if isinstance(guide_validation, dict)
+                else None
+            )
+            if isinstance(guide_spacing, dict) and (
+                bool(guide_spacing.get("requires_operator_review"))
+                or int(guide_spacing.get("bore_wall_conflict_pair_count") or 0) > 0
+            ):
+                conflict_count = int(
+                    guide_spacing.get("bore_wall_conflict_pair_count") or 0
+                )
+                minimum_distance = guide_spacing.get("minimum_centerline_distance_mm")
+                minimum_wall_distance = guide_spacing.get("minimum_bore_wall_distance_mm")
+                try:
+                    minimum_distance_text = f"{float(minimum_distance):.2f} mm"
+                except (TypeError, ValueError):
+                    minimum_distance_text = "unknown"
+                try:
+                    minimum_wall_distance_text = f"{float(minimum_wall_distance):.2f} mm"
+                except (TypeError, ValueError):
+                    minimum_wall_distance_text = "unknown"
+                guide_summary += " " + L(
+                    (
+                        f"间距审计发现 {conflict_count} 对通道低于当前独立孔壁间距"
+                        f"阈值（最小中心距 {minimum_distance_text}，阈值 {minimum_wall_distance_text}）；"
+                        "网格虽已通过闭合性校验，但不能据此视为每条针道都保有独立孔壁，"
+                        "打印和临床使用前必须复核针道可制造性。"
+                    ),
+                    (
+                        f"Spacing QA found {conflict_count} channel pairs below the configured"
+                        f" independent-wall distance ({minimum_distance_text} minimum centerline"
+                        f" distance vs {minimum_wall_distance_text} threshold). The mesh passed"
+                        " watertight QA, but this does not prove that every channel retains an"
+                        " independent printable wall; verify manufacturability before printing"
+                        " or clinical use."
+                    ),
                 )
         # Section 1: Workflow Summary
         lines.append(f"## {L('1. 流程总结', '1. Workflow Summary')}")
@@ -2631,6 +2699,12 @@ Output (JSON array of strings):"""
                 # Normalize: LLM may pass target/command at top level instead of inside actions
                 if "target" in p and "actions" not in p:
                     p["actions"] = [{"target": p.pop("target"), "command": p.pop("command", "set"), "value": p.pop("value", None)}]
+                # Providers and older clients may use a semantic envelope
+                # (action + transparency/opacity + a structured group target)
+                # instead of the canonical registry target. Normalize it
+                # before validation so the browser receives only executable
+                # capability actions.
+                p = normalize_ui_controller_request(p)
                 if not p.get("actions"):
                     logger.warning(f"Dropping ui_controller call with no actions")
                     continue

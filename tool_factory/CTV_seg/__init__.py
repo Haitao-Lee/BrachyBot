@@ -13,6 +13,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from tool_factory import BaseTool, ToolResult
+from utils.user_errors import normalize_metadata
 
 from .pancreatic_tumor import PancreaticTumorSegmentationTool
 from .liver_tumor import LiverTumorSegmentationTool
@@ -488,7 +489,14 @@ class CTVSegmentationTool(BaseTool):
                 })
             result = tool._execute(**tool_kwargs)
             if result.success:
-                result_meta = result.metadata or {}
+                # Optional adapters must return mapping-shaped metadata.  Keep
+                # the adapter failure controlled even if it bypassed
+                # BaseTool.execute and returned a malformed object directly.
+                result_meta = normalize_metadata(
+                    getattr(result, "metadata", {}),
+                    source=f"CTV adapter:{tumor_type_used}",
+                )
+                result.metadata = result_meta
                 result_meta.setdefault("tumor_type_used", tumor_type_used)
                 from tool_factory.segmentation_alignment import (
                     align_label_array_to_reference,
@@ -540,7 +548,10 @@ class CTVSegmentationTool(BaseTool):
                 # generic wrapper must not replace that evidence with a
                 # vague empty-mask error, otherwise callers cannot explain
                 # why a non-pancreatic model was unavailable.
-                failure_meta = dict(result.metadata or {})
+                failure_meta = normalize_metadata(
+                    getattr(result, "metadata", {}),
+                    source=f"CTV adapter failure:{tumor_type}",
+                )
                 failure_meta.setdefault("tumor_type_used", tumor_type)
                 failure_meta.setdefault("model_catalog", filter_catalog())
                 return ToolResult(
@@ -554,7 +565,10 @@ class CTVSegmentationTool(BaseTool):
         # Keep the model's metadata available for both successful output and
         # empty-mask diagnostics.  Some research adapters intentionally
         # return a structured failure rather than raising an exception.
-        res_meta = (result.metadata or {}) if result is not None else {}
+        res_meta = (
+            normalize_metadata(getattr(result, "metadata", {}), source="CTV result")
+            if result is not None else {}
+        )
         voxel_count = int(np.sum(ctv_array > 0))
         if voxel_count <= 0 and not allow_empty:
             failure_meta = dict(res_meta)

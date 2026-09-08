@@ -84,6 +84,166 @@ except ImportError:  # pragma: no cover - supports `python web/server.py`.
 logger = logging.getLogger(__name__)
 
 
+def _render_report_markdown_html(markdown_text: Any) -> str:
+    """Render report Markdown safely for the server-side HTML artifact.
+
+    The browser report uses the vendored marked parser. The API HTML
+    export cannot assume a third-party Python Markdown package is installed,
+    so it uses this deliberately small, escaping-first renderer for the
+    report constructs emitted by the source-backed narrative generator.
+    """
+    import html as _html
+
+    source = str(markdown_text or "").replace("\r\n", "\n").replace("\r", "\n")
+
+    def inline(value: str) -> str:
+        text = _html.escape(str(value), quote=False)
+        placeholders = []
+
+        def hold(fragment: str) -> str:
+            token = "\x00report-md-%d\x00" % len(placeholders)
+            placeholders.append(fragment)
+            return token
+
+        text = re.sub(
+            r"\x60([^\x60\n]+)\x60",
+            lambda match: hold("<code>" + match.group(1) + "</code>"),
+            text,
+        )
+
+        def render_link(match):
+            raw_url = _html.unescape(match.group(2)).strip()
+            if re.match(r"^(https?://|mailto:|/|\\./|\\.\\./|#)", raw_url, re.I):
+                href = _html.escape(raw_url, quote=True)
+            else:
+                href = "#"
+            return hold(
+                '<a href="' + href
+                + '" target="_blank" rel="noopener noreferrer">'
+                + match.group(1) + "</a>"
+            )
+
+        text = re.sub(
+            r"\[([^\]]+)\]\(([^)\s]+)(?:\s+[\"'][^)]*[\"'])?\)",
+            render_link,
+            text,
+        )
+        text = re.sub(
+            r"\*\*(.+?)\*\*|__(.+?)__",
+            lambda match: "<strong>" + (match.group(1) or match.group(2)) + "</strong>",
+            text,
+        )
+        text = re.sub(r"~~(.+?)~~", r"<del>\1</del>", text)
+        text = re.sub(
+            r"(?<!\w)\*([^*\n]+)\*(?!\w)|(?<!\w)_([^_\n]+)_(?!\w)",
+            lambda match: "<em>" + (match.group(1) or match.group(2)) + "</em>",
+            text,
+        )
+        text = text.replace("  \n", "<br>\n").replace("\n", "<br>\n")
+        for index, fragment in enumerate(placeholders):
+            text = text.replace("\x00report-md-%d\x00" % index, fragment)
+        return text
+
+    output = []
+    paragraph = []
+    list_tag = None
+    fence = None
+    code_lines = []
+
+    def flush_paragraph():
+        if paragraph:
+            output.append("<p>" + inline("\n".join(paragraph)) + "</p>")
+            paragraph.clear()
+
+    def close_list():
+        nonlocal list_tag
+        if list_tag:
+            output.append("</" + list_tag + ">")
+            list_tag = None
+
+    def close_code():
+        nonlocal fence, code_lines
+        if fence:
+            output.append(
+                "<pre><code>" + _html.escape("\n".join(code_lines)) + "</code></pre>"
+            )
+            fence = None
+            code_lines = []
+
+    lines = source.split("\n")
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if fence:
+            if re.match(r"^\s*" + re.escape(fence) + r"\s*$", line):
+                close_code()
+            else:
+                code_lines.append(line)
+            index += 1
+            continue
+
+        fence_match = re.match(r"^\s*(\x60{3,}|~{3,})\s*(?:[\w+-]+)?\s*$", line)
+        if fence_match:
+            flush_paragraph()
+            close_list()
+            fence = fence_match.group(1)
+            index += 1
+            continue
+
+        heading = re.match(r"^\s*(#{1,6})[ \t]+(.+?)\s*$", line)
+        if heading:
+            flush_paragraph()
+            close_list()
+            title = re.sub(r"[ \t]+#+[ \t]*$", "", heading.group(2)).strip()
+            level = len(heading.group(1))
+            output.append(
+                "<h%d>%s</h%d>" % (level, inline(title), level)
+            )
+            index += 1
+            continue
+
+        if re.match(r"^\s*(?:[-*_][ \t]*){3,}$", line):
+            flush_paragraph()
+            close_list()
+            output.append("<hr>")
+            index += 1
+            continue
+
+        unordered = re.match(r"^\s*[-+*][ \t]+(.+?)\s*$", line)
+        ordered = re.match(r"^\s*\d+[.)][ \t]+(.+?)\s*$", line)
+        if unordered or ordered:
+            flush_paragraph()
+            tag = "ol" if ordered else "ul"
+            if list_tag != tag:
+                close_list()
+                list_tag = tag
+                output.append("<" + tag + ">")
+            item = ordered.group(1) if ordered else unordered.group(1)
+            output.append("<li>" + inline(item) + "</li>")
+            index += 1
+            continue
+
+        quote = re.match(r"^\s*>\s?(.*)$", line)
+        if quote:
+            flush_paragraph()
+            close_list()
+            output.append("<blockquote>" + inline(quote.group(1)) + "</blockquote>")
+            index += 1
+            continue
+
+        if not line.strip():
+            flush_paragraph()
+            close_list()
+        else:
+            paragraph.append(line)
+        index += 1
+
+    close_code()
+    flush_paragraph()
+    close_list()
+    return "\n".join(output)
+
+
 def _planning_json_response(payload, status=200):
     """Return a compressed private JSON response for large dose meshes."""
     response = jsonify(payload)
@@ -3062,7 +3222,12 @@ def register_planning_routes(
                     return jsonify({
                         "success": False,
                         "kind": kind,
+                        "code": str(getattr(exc, "code", "uploaded_mask_invalid")),
                         "error": str(exc),
+                        "hint": (
+                            "Select a discrete segmentation mask with a small number "
+                            "of integer labels; do not use the CT image as the CTV mask."
+                        ),
                     }), 422
                 checkpoint_operation(
                     agent,
@@ -4084,6 +4249,12 @@ def register_planning_routes(
 
             dose_context = _dose_display_context(agent)
             dose_metadata = _dose_display_metadata(agent, dose_context)
+            if dose_context.get("array") is None:
+                return jsonify({
+                    "success": True, "available": False,
+                    "status": "not_generated", "contours": [],
+                    "planning_id": active_planning_id(agent.memory),
+                })
             dose_np = _dose_overlay_volume_array(agent, dose_context)
 
             # Get iso-dose values from config
@@ -4807,7 +4978,27 @@ def register_planning_routes(
             or ((_ui_bucket(session_id).get("state") or {}).get("language"))
         )
         advice = _build_plan_advice(agent, session_id)
-        return jsonify({**advice, "localized_advice": _localize_plan_advice(advice, language), "language": language})
+        response = {
+            **advice,
+            "localized_advice": _localize_plan_advice(advice, language),
+            "language": language,
+        }
+        question = str(data.get("question") or "").strip()
+        if question and bool(data.get("natural_language", True)):
+            # The toolbar still uses the compact deterministic advice payload.
+            # A free-text question needs the same grounded local-read path as
+            # the normal chat workflow so the answer addresses the user's
+            # wording instead of echoing a fixed checklist.
+            answerer = getattr(agent, "_answer_local_read_query", None)
+            if callable(answerer):
+                try:
+                    result = answerer(question, "planning_assessment_query", language)
+                    natural_response = result[0] if isinstance(result, tuple) else result
+                    if str(natural_response or "").strip():
+                        response["natural_response"] = str(natural_response).strip()
+                except Exception as exc:
+                    logger.warning("Grounded planning advice response failed: %s", exc)
+        return jsonify(response)
 
     @app.route("/api/readiness", methods=["GET", "POST"])
     @require_api_key
@@ -7174,13 +7365,13 @@ def register_planning_routes(
                 rendered = json.dumps(payload, indent=2, ensure_ascii=False, default=str).encode("utf-8")
             elif output_format == "html":
                 import html
-                body = html.escape(payload["narrative_markdown"]).replace("\n", "<br>\n")
+                body = _render_report_markdown_html(payload["narrative_markdown"])
                 rendered = (
                     "<!doctype html><html><head><meta charset='utf-8'>"
-                    "<title>BrachyPlan Report</title></head><body>"
+                    "<title>BrachyPlan Report</title><style>body{font-family:Arial,'Microsoft YaHei',sans-serif;line-height:1.6;max-width:960px;margin:32px auto;padding:0 24px;color:#111827}.report-markdown h1,.report-markdown h2,.report-markdown h3,.report-markdown h4,.report-markdown h5,.report-markdown h6{color:#0c4a6e;margin:18px 0 8px}.report-markdown ul,.report-markdown ol{padding-left:28px}.report-markdown table{border-collapse:collapse;width:100%}.report-markdown th,.report-markdown td{border:1px solid #cbd5e1;padding:6px;text-align:left}.report-markdown blockquote{border-left:3px solid #94a3b8;padding-left:12px;color:#475569}</style></head><body>"
                     "<h1>BrachyPlan Report</h1>"
                     f"<pre>{html.escape(json.dumps(payload, indent=2, ensure_ascii=False, default=str))}</pre>"
-                    f"<hr><div>{body}</div>"
+                    f"<hr><div class='report-markdown'>{body}</div>"
                     "</body></html>"
                 ).encode("utf-8")
 

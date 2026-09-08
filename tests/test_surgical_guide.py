@@ -348,6 +348,71 @@ def test_guide_is_watertight_and_stl_round_trips():
     assert guide["skin_surface_data_version"] == skin["data_version"]
 
 
+def test_dense_channel_topology_repair_removes_nonmanifold_voxel_bridge(monkeypatch):
+    """A dense-channel repair must regularize topology, not weaken QA.
+
+    The first two mesh extractions emulate the failure seen when several
+    overlapping sleeves leave a one-voxel material bridge at their crossing.
+    The third extraction is the mesh produced after the 26-connected opening
+    fallback.  The test verifies that the fallback is reached only after the
+    conservative closing pass fails and that strict validation remains the
+    acceptance gate.
+    """
+    import web.surgical_guide as guide_module
+
+    nonmanifold_vertices = np.asarray([
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 1.0, 1.0],
+    ], dtype=np.float32)
+    nonmanifold_faces = np.asarray([
+        [0, 1, 2],
+        [0, 1, 3],
+        [0, 1, 4],
+        [0, 2, 3],
+    ], dtype=np.int32)
+    valid_vertices = np.asarray([
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+    ], dtype=np.float32)
+    valid_faces = np.asarray([
+        [0, 2, 1],
+        [0, 1, 3],
+        [0, 3, 2],
+        [1, 2, 3],
+    ], dtype=np.int32)
+    calls = []
+
+    def fake_mesh_from_mask(mask, ct_image, lower_xyz, spacing_xyz):
+        calls.append(int(np.count_nonzero(mask)))
+        if len(calls) < 3:
+            return nonmanifold_vertices.copy(), nonmanifold_faces.copy()
+        return valid_vertices.copy(), valid_faces.copy()
+
+    monkeypatch.setattr(guide_module, "_mesh_from_mask", fake_mesh_from_mask)
+    monkeypatch.setattr(
+        guide_module,
+        "_project_bore_walls",
+        lambda vertices, *args, **kwargs: (vertices, {"synthetic": True}),
+    )
+
+    guide = generate_surgical_guide(_synthetic_agent(), {
+        "geometry_resolution_mm": 1.0,
+        "auxiliary_holes_enabled": False,
+    })
+
+    repair = guide["validation"]["mesh_repair"]
+    assert repair["method"] == "dense_channel_26_connected_opening_and_bore_recut"
+    assert len(calls) == 3
+    assert repair["methods_tried"][0]["accepted"] is False
+    assert repair["methods_tried"][1]["accepted"] is True
+    assert guide["validation"]["watertight"] is True
+
+
 def test_auxiliary_holes_are_real_plate_only_alternate_paths():
     """The reference-style auxiliary pattern is part of the exported guide.
 

@@ -1,0 +1,16 @@
+Host brachybot-edge
+    HostName CHANGE_ME_VPS_HOST
+    User brachybot-tunnel
+    Port 22
+    IdentityFile ~/.config/brachybot/tunnel_ed25519
+    UserKnownHostsFile ~/.config/brachybot/known_hosts
+    IdentitiesOnly yes
+    BatchMode yes
+    StrictHostKeyChecking yes
+    ExitOnForwardFailure yes
+    ServerAliveInterval 15
+    ServerAliveCountMax 3
+    ConnectTimeout 15
+    RequestTTY no
+    ForwardAgent no
+    RemoteForward 127.0.0.1:18082 127.0.0.1:18082

@@ -1,3 +1,12 @@
+// Defensive client-side limit for legacy snapshots or a compromised/stale
+// catalogue response. The authoritative rejection happens on the server;
+// this last layer prevents a malformed response from spawning thousands of
+// mask-volume requests and mesh jobs in the browser.
+window.BRACHYBOT_MAX_UPLOADED_MASK_LABELS = Math.max(
+    1,
+    Math.trunc(Number(window.BRACHYBOT_MAX_UPLOADED_MASK_LABELS) || 64),
+);
+
 function switchPanel(name, el) {
     uiDebugLog('[switchPanel] Switching to:', name);
     document.querySelectorAll('.panel-tab').forEach(t => {
@@ -104,6 +113,72 @@ function _planningVisualEntries() {
     return entries;
 }
 
+// A scene object must have exactly one Data Tree owner.  CTV/OAR meshes are
+// segmentation children, even when they were reconstructed by the generic
+// 3D mesh loader.  Older clients mirrored those meshes into
+// planning.meshes, which made a Planning hide action hide the same mesh a
+// second time through the wrong parent.  Keep this predicate close to the
+// visibility code so every late hydration path uses the same ownership rule.
+function _isSegmentationOwnedNode(node) {
+    if (!node || typeof node !== 'object') return false;
+    const id = String(node.id || node.nodeId || '').trim();
+    const source = String(node.source || '').toLowerCase().trim();
+    const parentId = String(node.parentId || '').trim();
+    return id === 'ctv'
+        || id === 'oar'
+        || id.startsWith('ctv_')
+        || id.startsWith('organ_')
+        || source === 'ctv'
+        || source === 'oar'
+        || parentId === 'ctv'
+        || parentId === 'oar';
+}
+
+function _dataTreeParentNode(node) {
+    if (!node || typeof node !== 'object') return null;
+    const parentId = String(node.parentId || '').trim();
+    if (!parentId || parentId === 'segmentation'
+        || parentId === 'upload_masks' || parentId === 'generic_masks'
+        || parentId === 'masks' || parentId === 'artifacts') return null;
+    if (parentId === 'ctv') return dataTreeState?.ctv || null;
+    if (parentId === 'oar') return dataTreeState?.oar || null;
+    if (parentId === 'planning') return dataTreeState?.planning || null;
+    if (typeof _findDataTreeNode === 'function') {
+        return _findDataTreeNode(parentId);
+    }
+    return null;
+}
+
+function _dataTreeNodeScopeVisible(node, view = null) {
+    if (!node || typeof node !== 'object') return false;
+    const viewKey = view === '2d' ? 'visible2D'
+        : view === '3d' ? 'visible3D' : null;
+    const visited = new Set();
+    let current = node;
+    while (current && typeof current === 'object') {
+        const id = String(current.id || current.nodeId || '');
+        if (id && visited.has(id)) break;
+        if (id) visited.add(id);
+        if (current.visible === false || (viewKey && current[viewKey] === false)) return false;
+        let parent = _dataTreeParentNode(current);
+        // Legacy planning rows may predate parentId metadata.  Keep them
+        // inside the Planning scope until the next reconciliation writes the
+        // canonical parent relationship.
+        if (!parent && current !== dataTreeState?.planning
+            && _isPlanningDescendantNode(current)) {
+            parent = dataTreeState?.planning || null;
+        }
+        current = parent;
+    }
+    return true;
+}
+
+function isDataTreeNodeMasterVisible(node) {
+    return _dataTreeNodeScopeVisible(node, null);
+}
+
+window.isDataTreeNodeMasterVisible = isDataTreeNodeMasterVisible;
+
 // Planning has one persisted all-view master switch plus independent 2D/3D
 // switches.  Keep the parent constraint in the visibility helpers themselves,
 // rather than relying on each loader or renderer to remember it.  A planning
@@ -112,6 +187,7 @@ function _planningVisualEntries() {
 // hidden Planning partially visible again.
 function _isPlanningDescendantNode(node) {
     if (!node || typeof node !== 'object') return false;
+    if (_isSegmentationOwnedNode(node)) return false;
     const id = String(node.id || node.nodeId || '');
     if (!id || id === 'planning') return false;
     if (String(node.parentId || '') === 'planning') return true;
@@ -182,6 +258,63 @@ function _ctVoxelVolumeCm3() {
     const volume = Number(spacing[0]) * Number(spacing[1]) * Number(spacing[2]) / 1000;
     return Number.isFinite(volume) && volume > 0 ? volume : null;
 }
+
+// The report must use the same effective CTV that the Data Tree and dose
+// pipeline use. Do not infer CTV volume from the generic uploaded-mask
+// inventory: that list may contain OAR labels or labels not promoted to CTV.
+function getAuthoritativeCtvVolumeMm3() {
+    const hasCurrentCtvData = Boolean(
+        (ctvLabelData && ctvLabelData.some(value => Number(value) > 0))
+        || (Array.isArray(ctvStructureCatalog)
+            && ctvStructureCatalog.some(item => Number(item?.voxel_count ?? item?.voxelCount ?? 0) > 0))
+        || (typeof dataTreeState !== 'undefined'
+            && Object.values(dataTreeState.ctvLabels || {}).some(item => Number(item?.voxelCount ?? item?.voxel_count ?? 0) > 0))
+    );
+    const metricCandidates = [
+        state?.metrics?.ctv_volume_mm3,
+        state?.ctvVolume,
+        state?.ctv_volume_mm3,
+    ];
+    for (const candidate of metricCandidates) {
+        const value = Number(candidate);
+        if (!hasCurrentCtvData && Number.isFinite(value) && value > 0) return value;
+    }
+
+    const voxelVolumeCm3 = _ctVoxelVolumeCm3();
+    if (!voxelVolumeCm3) return null;
+    const voxelVolumeMm3 = voxelVolumeCm3 * 1000;
+
+    if (ctvLabelData && ctvLabelData.length) {
+        let voxels = 0;
+        for (let index = 0; index < ctvLabelData.length; index += 1) {
+            if (Number(ctvLabelData[index]) > 0) voxels += 1;
+        }
+        if (voxels > 0) return voxels * voxelVolumeMm3;
+    }
+
+    if (Array.isArray(ctvStructureCatalog) && ctvStructureCatalog.length) {
+        const voxels = ctvStructureCatalog.reduce((total, item) => {
+            const count = Number(item?.voxel_count ?? item?.voxelCount ?? 0);
+            return total + (Number.isFinite(count) && count > 0 ? count : 0);
+        }, 0);
+        if (voxels > 0) return voxels * voxelVolumeMm3;
+    }
+
+    try {
+        const labels = (typeof dataTreeState !== 'undefined')
+            ? Object.values(dataTreeState.ctvLabels || {})
+            : [];
+        const voxels = labels.reduce((total, item) => {
+            const count = Number(item?.voxelCount ?? item?.voxel_count ?? 0);
+            return total + (Number.isFinite(count) && count > 0 ? count : 0);
+        }, 0);
+        if (voxels > 0) return voxels * voxelVolumeMm3;
+    } catch (_) {
+        // The helper is also called during early boot, before the tree exists.
+    }
+    return null;
+}
+window.getAuthoritativeCtvVolumeMm3 = getAuthoritativeCtvVolumeMm3;
 
 function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
@@ -1040,8 +1173,44 @@ async function hydrateGenericMasksFromServer(scope, retryAttempt = 0) {
         }
         const payload = request.data || {};
         if (!_viewerDataScopeIsCurrent(scope)) return false;
-        const entries = Array.isArray(payload.masks) ? payload.masks : [];
-        if (Array.isArray(payload.uploads)) dataTreeState.uploadMasks = payload.uploads;
+        const rawEntries = Array.isArray(payload.masks) ? payload.masks : [];
+        let skippedUploadedMaskLabels = 0;
+        let restoredUploadedMaskLabels = 0;
+        const entries = rawEntries.filter(entry => {
+            if (!entry || typeof entry !== 'object') return false;
+            const isUploaded = entry.kind === 'uploaded_mask_label'
+                || entry.source === 'uploaded_mask'
+                || Boolean(entry.upload_mask_id);
+            const classification = [entry.classification, entry.moved_to, entry.movedTo]
+                .map(value => String(value || '').trim().toLowerCase())
+                .find(value => value === 'ctv' || value === 'oar') || '';
+            if (isUploaded && !classification) {
+                if (restoredUploadedMaskLabels >= window.BRACHYBOT_MAX_UPLOADED_MASK_LABELS) {
+                    skippedUploadedMaskLabels += 1;
+                    return false;
+                }
+                restoredUploadedMaskLabels += 1;
+            }
+            return true;
+        });
+        if (skippedUploadedMaskLabels > 0) {
+            window.showBrachyBotNotice?.(
+                `Skipped ${skippedUploadedMaskLabels} abnormal uploaded mask labels to keep the viewer responsive. Please choose a discrete mask rather than a CT volume.`,
+                'warning',
+            );
+        }
+        if (Array.isArray(payload.uploads)) {
+            dataTreeState.uploadMasks = payload.uploads;
+            const quarantinedUpload = payload.uploads.find(upload =>
+                upload && (upload.status === 'rejected' || upload.status === 'partially_quarantined'),
+            );
+            if (quarantinedUpload) {
+                window.showBrachyBotNotice?.(
+                    'An uploaded mask was quarantined because it contains too many values. Please upload a discrete segmentation mask instead of a CT volume.',
+                    'warning',
+                );
+            }
+        }
         const ids = new Set(entries.map(entry => String(entry?.mask_id || '')).filter(Boolean));
         state.maskLabels = state.maskLabels || {};
         Object.keys(state.maskLabels).forEach(id => {
@@ -3055,22 +3224,52 @@ function ensureDataTreeNodeMetadata(node, type, parentId = null) {
 
 function isDataTreeNodeVisible2D(node) {
     return !!node
-        && node.visible !== false
-        && node.visible2D !== false
+        && _dataTreeNodeScopeVisible(node, '2d')
         && (!_isPlanningDescendantNode(node) || _planningViewVisible('2d'));
 }
 
 function isDataTreeNodeVisible3D(node) {
     return !!node
-        && node.visible !== false
-        && node.visible3D !== false
+        && _dataTreeNodeScopeVisible(node, '3d')
         && (!_isPlanningDescendantNode(node) || _planningViewVisible('3d'));
 }
 
 window.isDataTreeNodeVisible2D = isDataTreeNodeVisible2D;
 window.isDataTreeNodeVisible3D = isDataTreeNodeVisible3D;
 
+function _migrateSegmentationMirrorsOutOfPlanning() {
+    const planning = dataTreeState?.planning;
+    if (!planning || !Array.isArray(planning.meshes) || !planning.meshes.length) return;
+    // CTV/OAR entries that came from an older addMeshToScene implementation
+    // are presentation duplicates, not planning artifacts.  Remove them from
+    // the Planning branch before any visibility pass can apply the Planning
+    // parent constraint to their mesh.  Their canonical CTV/OAR nodes remain
+    // the sole owners of the object.
+    planning.meshes = planning.meshes.filter(node => {
+        if (!_isSegmentationOwnedNode(node)) return true;
+        const id = String(node?.id || node?.nodeId || '');
+        const canonical = id === 'ctv'
+            ? dataTreeState.ctv
+            : id.startsWith('ctv_')
+                ? dataTreeState.ctvLabels?.[id]
+                : id === 'oar'
+                    ? dataTreeState.oar
+                    : id.startsWith('organ_')
+                        ? (dataTreeState.organs || []).find(item => item.id === id)
+                        : null;
+        if (canonical) {
+            canonical.objectId = canonical.objectId || node.objectId;
+            canonical.nodeId = canonical.nodeId || node.nodeId || id;
+            canonical.meshLoaded = true;
+            canonical.loaded = canonical.loaded !== false;
+            canonical.status = canonical.status === 'error' ? canonical.status : 'ready';
+        }
+        return false;
+    });
+}
+
 function reconcileDataTreeVisualNodes() {
+    _migrateSegmentationMirrorsOutOfPlanning();
     const roots = [
         ['ct', dataTreeState.ct, 'image', null],
         ['ctv', dataTreeState.ctv, 'segmentation', 'segmentation'],
@@ -3313,25 +3512,17 @@ function getDataTreeAppearanceForMesh(id, mesh) {
         item = dataTreeState.planning.meshes.find(entry => entry.id === id);
     }
     if (!item) return null;
-    // A category is a parent constraint. Child edits remain local in the
-    // Data Tree, but a hidden CTV/OAR/Planning parent must hide every
-    // descendant mesh, including meshes restored after a mode switch.
-    const parentVisible = id === 'skin_surface'
-        ? dataTreeState.skin?.visible !== false
-        : id.startsWith('organ_')
-        ? dataTreeState.oar?.visible !== false
-        : (id === 'ctv' || id.startsWith('ctv_'))
-            ? dataTreeState.ctv?.visible !== false
-            : (id.startsWith('seed_') || id.startsWith('needle_') || id.startsWith('dose_iso_')
-                || dataTreeState.planning?.meshes?.some(entry => entry.id === id))
-                ? _planningViewVisible('3d')
-                : true;
+    // Visibility is resolved from the node's canonical parent chain.  A
+    // structure reconstructed by a generic mesh loader must still resolve to
+    // CTV/OAR, never to Planning just because it once appeared in a legacy
+    // planning.meshes mirror.
+    const parentVisible = isDataTreeNodeVisible3D(item);
     return {
         // This helper is consumed by the 3D scene synchronizer.  Keep the
         // view-specific flag here as well as in _apply3DNodeVisibility;
         // otherwise a later scene-wide appearance sync can resurrect a skin
         // mesh that the user explicitly hid in 3D.
-        visible: parentVisible && item.visible !== false && item.visible3D !== false,
+        visible: parentVisible,
         opacity: Number.isFinite(Number(item.opacity)) ? Number(item.opacity) : 1,
         color: item.color,
     };
@@ -4096,7 +4287,7 @@ function renderDataTree() {
         html += `<div class="tree-group" data-group="ctv">
             <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('ctv', event)">
                 <span class="arrow">&#9660;</span>
-                <button class="eye-btn ${ctvVis ? '' : 'hidden'}" onclick="event.stopPropagation();toggleDataVisibility('ctv')">${ctvVis ? '&#128065;' : '&#128064;'}</button>
+                <button class="eye-btn ${ctvVis ? '' : 'hidden'}" onclick="event.stopPropagation();toggleDataVisibility('ctv')">&#128065;</button>
                 <span>${escHtml(ctvGroupLabel)}</span>
                 <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
                     <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(ctvOp * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('ctv', this.value)" title="Opacity">
@@ -4127,7 +4318,7 @@ function renderDataTree() {
                     ...current,
                     id: `ctv_${labelId}`, labelId,
                     label: customLabel || defaultName, color: tumorColor,
-                    visible: current.visible !== false && dataTreeState.ctv.visible !== false,
+                    visible: current.visible !== false,
                     visible2D: current.visible2D !== false,
                     visible3D: current.visible3D !== false,
                     opacity: dataTreeState.ctv.opacity ?? 0.7,
@@ -4198,7 +4389,7 @@ function renderDataTree() {
         let groupHtml = `<div class="tree-group" data-group="${groupId}">
             <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('${groupId}', event)">
                 <span class="arrow">&#9660;</span>
-                <button class="eye-btn ${visible ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('${groupId}', ${!visible})" title="Toggle ${label}">${visible ? '&#128065;' : '&#128064;'}</button>
+                <button class="eye-btn ${visible ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('${groupId}', ${!visible})" title="Toggle ${label}">&#128065;</button>
                 <span>${label} (${entries.length})</span>
                 <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
                     <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(opacity * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('${groupId}', this.value)" title="Opacity for ${label}">
@@ -4239,14 +4430,15 @@ function renderDataTree() {
     const trav = dataTreeState.organs.filter(o => o.category === 'traversable');
 
     // OAR master group
-    const oarVis = dataTreeState.organs.some(o => o.visible);
+    const oarVis = dataTreeState.oar.visible !== false
+        && dataTreeState.organs.some(o => o.visible !== false);
     const oarOp = dataTreeState.organs.length > 0
         ? dataTreeState.organs.reduce((sum, o) => sum + (o.opacity ?? 0.5), 0) / dataTreeState.organs.length
         : 0.5;
     html += `<div class="tree-group" data-group="oar">
         <div class="tree-group-header" data-node-id="${escHtml(dataTreeState.oar.nodeId || 'oar')}" data-node-type="segmentation" data-status="${escHtml(dataTreeState.oar.status || 'not_generated')}" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('oar', event)">
             <span class="arrow">&#9660;</span>
-            <button class="eye-btn ${oarVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('oar', ${!oarVis})" title="Toggle">${oarVis ? '&#128065;' : '&#128064;'}</button>
+            <button class="eye-btn ${oarVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('oar', ${!oarVis})" title="Toggle">&#128065;</button>
             <span>OAR (${dataTreeState.organs.length})</span>
             <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
                 <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(oarOp * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('oar', this.value)" title="Opacity">
@@ -4267,14 +4459,15 @@ function renderDataTree() {
 
     // Non-traversable sub-group
     if (nonTrav.length > 0) {
-        const gVis = nonTrav.some(o => o.visible);
+        const gVis = dataTreeState.oar.visible !== false
+            && nonTrav.some(o => o.visible !== false);
         const gOp = nonTrav[0]?.opacity ?? 0.5;
         html += `<div class="tree-group" data-group="non_traversable">
             <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('non_traversable', event)">
                 <span class="arrow">&#9660;</span>
                 <span style="color:rgba(249,115,22,0.7);">&#9679; Non-traversable (${nonTrav.length})</span>
                 <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
-                    <button class="eye-btn ${gVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('non_traversable', ${!gVis})" title="Toggle">${gVis ? '&#128065;' : '&#128064;'}</button>
+                    <button class="eye-btn ${gVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('non_traversable', ${!gVis})" title="Toggle">&#128065;</button>
                     <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(gOp * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('non_traversable', this.value)" title="Opacity">
                 </span>
             </div>
@@ -4289,14 +4482,15 @@ function renderDataTree() {
     }
 
     if (trav.length > 0) {
-        const gVis = trav.some(o => o.visible);
+        const gVis = dataTreeState.oar.visible !== false
+            && trav.some(o => o.visible !== false);
         const gOp = trav[0]?.opacity ?? 0.5;
         html += `<div class="tree-group" data-group="traversable">
             <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('traversable', event)">
                 <span class="arrow">&#9660;</span>
                 <span style="color:rgba(34,197,94,0.7);">&#9679; Traversable (${trav.length})</span>
                 <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
-                    <button class="eye-btn ${gVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('traversable', ${!gVis})" title="Toggle">${gVis ? '&#128065;' : '&#128064;'}</button>
+                    <button class="eye-btn ${gVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('traversable', ${!gVis})" title="Toggle">&#128065;</button>
                     <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(gOp * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('traversable', this.value)" title="Opacity">
                 </span>
             </div>
@@ -4325,7 +4519,7 @@ function renderDataTree() {
         html += `<div class="tree-group" data-group="masks">
         <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('masks', event)">
                 <span class="arrow">&#9660;</span>
-                <button class="eye-btn ${maskVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('masks', ${!maskVis})" title="Toggle all masks">${maskVis ? '&#128065;' : '&#128064;'}</button>
+                <button class="eye-btn ${maskVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('masks', ${!maskVis})" title="Toggle all masks">&#128065;</button>
                 <span>Masks (${masks.length})</span>
                 <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
                     <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(maskOp * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('masks', this.value)" title="Opacity for all masks">
@@ -4416,7 +4610,7 @@ function renderDataTree() {
     html += `<div class="tree-group" data-group="planning">
         <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('planning', event)">
             <span class="arrow">&#9660;</span>
-            <button class="eye-btn ${planningVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('planning', ${!planningVis})" title="Toggle all planning objects">${planningVis ? '&#128065;' : '&#128064;'}</button>
+            <button class="eye-btn ${planningVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('planning', ${!planningVis})" title="Toggle all planning objects">&#128065;</button>
             <span>Planning ${planningRuns.length ? `(${planningRuns.length})` : (hasPlanning ? `(${planningEntries.length})` : '')}</span>
             <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
                 <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(planningOp * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('planning', this.value)" title="Opacity for all planning objects">
@@ -4505,7 +4699,7 @@ function renderDataTree() {
                     oncontextmenu="event.preventDefault();event.stopPropagation();activatePlanningRunFromTree(${runArg})"
                     style="padding-left:1rem;cursor:pointer;">
                     <span class="arrow">&#9660;</span>
-                    <button class="eye-btn" onclick="event.stopPropagation();activatePlanningRunFromTree(${runArg})" title="${escHtml(runVisibilityTitle)}" aria-label="${escHtml(runVisibilityTitle)}">${runVisible ? '&#128065;' : '&#128064;'}</button>
+                    <button class="eye-btn ${runVisible ? '' : 'hidden'}" onclick="event.stopPropagation();activatePlanningRunFromTree(${runArg})" title="${escHtml(runVisibilityTitle)}" aria-label="${escHtml(runVisibilityTitle)}">&#128065;</button>
                     <span style="color:#60a5fa;">&#9679;</span>
                     <span class="item-label">${escHtml(runLabel)}</span>
                     <span class="item-info">${escHtml(runInfo || 'saved')}</span>
@@ -4534,7 +4728,7 @@ function renderDataTree() {
         html += `<div class="tree-group planning-active-run" data-group="planning_run_active">
             <div class="tree-group-header" onclick="toggleTreeGroup(this)">
                 <span class="arrow">&#9660;</span>
-                <button class="eye-btn" onclick="event.stopPropagation();setGroupVisibility('planning', ${!planningVis})" title="Toggle active Planning">${planningVis ? '&#128065;' : '&#128064;'}</button>
+                <button class="eye-btn ${planningVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('planning', ${!planningVis})" title="Toggle active Planning">&#128065;</button>
                 <span class="item-label">${escHtml(activeLabel)}</span>
                 <span class="item-info">${escHtml(String(activePlanningRun.status || 'active'))}</span>
             </div>
@@ -4550,7 +4744,7 @@ function renderDataTree() {
         html += `<div class="tree-group" data-group="planning_trajectories">
         <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('planning_trajectories', event)">
                 <span class="arrow">&#9660;</span>
-                <button class="eye-btn ${trajVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('planning_trajectories', ${!trajVis})" title="Toggle">${trajVis ? '&#128065;' : '&#128064;'}</button>
+                <button class="eye-btn ${trajVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('planning_trajectories', ${!trajVis})" title="Toggle">&#128065;</button>
                 <span>Trajectories (${planningTrajectories.length})</span>
                 <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
                     <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(trajOp * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('planning_trajectories', this.value)" title="Opacity">
@@ -4566,7 +4760,7 @@ function renderDataTree() {
             html += `<div class="tree-group" data-group="${trajId}">
             <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('${trajId}', event)" style="padding-left:1.2rem;">
                     <span class="arrow">&#9660;</span>
-                    <button class="eye-btn ${planningMasterVisible && traj.visible !== false ? '' : 'hidden'}" onclick="event.stopPropagation();toggleDataVisibility('${trajId}')">${planningMasterVisible && traj.visible !== false ? '&#128065;' : '&#128064;'}</button>
+                    <button class="eye-btn ${planningMasterVisible && traj.visible !== false ? '' : 'hidden'}" onclick="event.stopPropagation();toggleDataVisibility('${trajId}')">&#128065;</button>
                     <span style="color:#88ccff;">➤</span>
                     <span>${escHtml(trajLabel)}${childHeader}</span>
                 </div>
@@ -4586,7 +4780,7 @@ function renderDataTree() {
         html += `<div class="tree-group" data-group="planning_seeds">
         <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('planning_seeds', event)">
                 <span class="arrow">&#9660;</span>
-                <button class="eye-btn ${seedsVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('planning_seeds', ${!seedsVis})" title="Toggle">${seedsVis ? '&#128065;' : '&#128064;'}</button>
+                <button class="eye-btn ${seedsVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('planning_seeds', ${!seedsVis})" title="Toggle">&#128065;</button>
                 <span>Seeds (${planningSeeds.length})</span>
                 <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
                     <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(seedsOp * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('planning_seeds', this.value)" title="Opacity">
@@ -4607,7 +4801,7 @@ function renderDataTree() {
         html += `<div class="tree-group" data-group="planning_needles">
         <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('planning_needles', event)">
                 <span class="arrow">&#9660;</span>
-                <button class="eye-btn ${needlesVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('planning_needles', ${!needlesVis})" title="Toggle">${needlesVis ? '&#128065;' : '&#128064;'}</button>
+                <button class="eye-btn ${needlesVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('planning_needles', ${!needlesVis})" title="Toggle">&#128065;</button>
                 <span>Needles (${planningNeedles.length})</span>
                 <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
                     <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(needlesOp * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('planning_needles', this.value)" title="Opacity">
@@ -4630,7 +4824,7 @@ function renderDataTree() {
         html += `<div class="tree-group" data-group="dose_isosurfaces">
         <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('dose_isosurfaces', event)">
                 <span class="arrow">&#9660;</span>
-                <button class="eye-btn ${doseVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('dose_isosurfaces', ${!doseVis})" title="Toggle">${doseVis ? '&#128065;' : '&#128064;'}</button>
+                <button class="eye-btn ${doseVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('dose_isosurfaces', ${!doseVis})" title="Toggle">&#128065;</button>
                 <span>Dose Isosurfaces (${doseLevels.length})</span>
                 <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
                     <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(doseOp * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('dose_isosurfaces', this.value)" title="Opacity">
@@ -4682,7 +4876,7 @@ function renderDataTree() {
             ? getDoseOverlayOpacity()
             : Number(state.doseOverlay?.opacity ?? dataTreeState.planning.doseOverlay.opacity ?? 0.4);
         html += `<div class="tree-item" data-item="dose_overlay" data-node-id="${escHtml(dataTreeState.planning.doseOverlay.nodeId || 'dose_overlay')}" data-node-type="dose_contour_2d" data-status="${escHtml(dataTreeState.planning.doseOverlay.status || 'ready')}" onclick="handleTreeItemClick('dose_overlay', event)" oncontextmenu="event.preventDefault();event.stopPropagation();handleTreeItemRightClick('dose_overlay', event)" style="display:flex;align-items:center;gap:6px;padding:2px 8px;font-size:0.7rem;">
-            <button class="eye-btn ${ovVis ? '' : 'hidden'}" onclick="event.stopPropagation();toggleDataVisibility('dose_overlay')" style="font-size:0.65rem;">${ovVis ? '&#128065;' : '&#128064;'}</button>
+            <button class="eye-btn ${ovVis ? '' : 'hidden'}" onclick="event.stopPropagation();toggleDataVisibility('dose_overlay')" style="font-size:0.65rem;">&#128065;</button>
             <span style="color:#22d3ee;">◉</span>
             <span>${escHtml(dataTreeState.planning.doseOverlay.label || 'Dose Overlay (2D)')}</span>
             <span style="margin-left:auto;font-size:0.6rem;color:var(--text-dim);">max: ${state.doseOverlay.doseMax?.toFixed(1) || '--'}</span>${overlayStatusLabel}
@@ -4720,7 +4914,7 @@ function renderDataTree() {
         html += `<div class="tree-group" data-group="planning_meshes">
         <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('planning_meshes', event)">
                 <span class="arrow">&#9660;</span>
-                <button class="eye-btn ${artifactsVisible ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('planning_meshes', ${!artifactsVisible})" title="Toggle planning artifacts">${artifactsVisible ? '&#128065;' : '&#128064;'}</button>
+                <button class="eye-btn ${artifactsVisible ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('planning_meshes', ${!artifactsVisible})" title="Toggle planning artifacts">&#128065;</button>
                 <span data-i18n-zh="规划产物" data-i18n-en="Planning Artifacts">Planning Artifacts</span>
                 <span>(${independentPlanningMeshes.length})</span>
                 <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
@@ -4781,8 +4975,13 @@ function _scheduleDataTreeSave(reason) {
 }
 
 function renderTreeItem(id, itemState, info) {
-    const eyeIcon = itemState.visible ? '&#128065;' : '&#128064;';
-    const eyeClass = itemState.visible ? '' : 'hidden';
+    // Keep the node's local visibility independent from its parent. The eye
+    // shows effective scope visibility while the local value remains intact.
+    const effectiveVisible = typeof isDataTreeNodeMasterVisible === 'function'
+        ? isDataTreeNodeMasterVisible(itemState)
+        : itemState.visible !== false;
+    const eyeIcon = '&#128065;';
+    const eyeClass = effectiveVisible ? '' : 'hidden';
     const loadedClass = itemState.loaded ? '' : 'style="opacity:0.4;"';
     const disabledAttr = itemState.loaded ? '' : 'disabled';
     // Indent for sub-items: organs, CTV labels, planning items, masks
@@ -5341,7 +5540,7 @@ function showGroupContextMenu(x, y, category) {
         items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupVisibility('${category}',true)">
             <span class="ctx-icon">&#128065;</span> Show All</div>`;
         items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupVisibility('${category}',false)">
-            <span class="ctx-icon">&#128064;</span> Hide All</div>`;
+        <span class="ctx-icon">&#128065;</span> Hide All</div>`;
         items += `<div class="ctx-menu-sep"></div>`;
         items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupViewVisibility('${category}','2d',true)">
             <span class="ctx-icon">2D</span> Show in 2D</div>`;
@@ -5436,40 +5635,86 @@ function showGroupContextMenu(x, y, category) {
 
 async function groupReconstruct3D(category) {
     const scope = _captureViewerDataScope();
-    // A manually uploaded mask can arrive before the label-volume request
-    // populates the client tree. Hydrate the authoritative list first rather
-    // than treating an empty list as a successful no-op.
-    if (!Array.isArray(dataTreeState.organs) || dataTreeState.organs.length === 0) {
-        try {
-            const response = await fetch(API + '/viewer/organs', {
-                headers: _viewerDataHeaders(scope.sessionId),
-            });
-            if (response.ok) {
-                const payload = await response.json();
-                if (!_viewerDataScopeIsCurrent(scope, true)) return { success: false, stale: true };
-                if (payload.organs) updateOrganList(payload.organs, payload.oar_source || '');
+    const loadingToken = typeof window.beginViewer3DLoading === 'function'
+        ? window.beginViewer3DLoading(_dtText('正在批量重建 3D 表面…', 'Reconstructing 3D surfaces…'))
+        : null;
+    try {
+        // A manually uploaded mask can arrive before the label-volume request
+        // populates the client tree. Hydrate the authoritative list first rather
+        // than treating an empty list as a successful no-op.
+        if (!Array.isArray(dataTreeState.organs) || dataTreeState.organs.length === 0) {
+            try {
+                const response = await fetch(API + '/viewer/organs', {
+                    headers: _viewerDataHeaders(scope.sessionId),
+                });
+                if (response.ok) {
+                    const payload = await response.json();
+                    if (!_viewerDataScopeIsCurrent(scope, true)) return { success: false, stale: true };
+                    if (payload.organs) updateOrganList(payload.organs, payload.oar_source || '');
+                }
+            } catch (error) {
+                console.warn('[viewer] OAR metadata hydration failed', error);
             }
-        } catch (error) {
-            console.warn('[viewer] OAR metadata hydration failed', error);
+        }
+        const organs = category === 'oar'
+            ? dataTreeState.organs
+            : dataTreeState.organs.filter(o => o.category === category);
+        if (!organs.length) {
+            const message = _dtText(
+                '当前没有可用于 3D 重建的 OAR 标签。',
+                'No OAR labels are available for 3D reconstruction.',
+            );
+            addChat('error', message);
+            return { success: false, reconstructed: 0, failed: 0, total: 0, error: message };
+        }
+        if (!_viewerDataScopeIsCurrent(scope, true)) return { success: false, stale: true };
+
+        const results = await Promise.allSettled(
+            organs.map(organ => reconstructOrgan3D(organ.id, true)),
+        );
+        if (!_viewerDataScopeIsCurrent(scope, true)) return { success: false, stale: true };
+
+        const values = results.map(result => (
+            result.status === 'fulfilled'
+                ? result.value
+                : { success: false, error: result.reason?.message || String(result.reason || 'unknown error') }
+        ));
+        const reconstructed = values.filter(value => value?.success === true).length;
+        const failed = values.length - reconstructed;
+        const firstError = values.find(value => value?.success !== true)?.error || '';
+
+        if (reconstructed === organs.length) {
+            addChat('system', _dtText(
+                '3D 重建完成：已生成 ' + reconstructed + '/' + organs.length + ' 个 OAR 表面。',
+                '3D reconstruction complete: ' + reconstructed + '/' + organs.length + ' OAR surface(s) generated.',
+            ));
+        } else if (reconstructed > 0) {
+            addChat('system', _dtText(
+                '3D 重建部分完成：已生成 ' + reconstructed + '/' + organs.length
+                    + ' 个 OAR 表面，' + failed + ' 个节点失败或仍在等待数据。',
+                '3D reconstruction partially complete: ' + reconstructed + '/' + organs.length
+                    + ' OAR surface(s) generated; ' + failed + ' failed or still waiting for data.',
+            ));
+        } else {
+            addChat('error', _dtText(
+                'OAR 3D 重建未生成任何表面。' + (firstError ? '原因：' + firstError : ''),
+                'OAR 3D reconstruction produced no surfaces.' + (firstError ? ' Reason: ' + firstError : ''),
+            ));
+        }
+        return {
+            success: reconstructed > 0,
+            complete: failed === 0,
+            reconstructed,
+            failed,
+            total: organs.length,
+            error: firstError || undefined,
+        };
+    } finally {
+        if (loadingToken != null && typeof window.endViewer3DLoading === 'function') {
+            window.endViewer3DLoading(loadingToken);
         }
     }
-    const organs = category === 'oar'
-        ? dataTreeState.organs
-        : dataTreeState.organs.filter(o => o.category === category);
-    if (!organs.length) {
-        addChat('error', 'No OAR labels are available for 3D reconstruction');
-        return { success: false, reconstructed: 0, total: 0 };
-    }
-    if (!_viewerDataScopeIsCurrent(scope, true)) return { success: false, stale: true };
-    const results = await Promise.allSettled(organs.map(organ => reconstructOrgan3D(organ.id, true)));
-    if (!_viewerDataScopeIsCurrent(scope, true)) return { success: false, stale: true };
-    return {
-        success: results.some(result => result.status === 'fulfilled'),
-        reconstructed: results.filter(result => result.status === 'fulfilled').length,
-        total: organs.length,
-    };
 }
-
 function getSelectedOrganIds() {
     // Keep the historical function name for callers, but return the complete
     // selected leaf snapshot. The old implementation rebuilt the selectable
@@ -5558,7 +5803,17 @@ function _dataTreeObjectId(id, purpose = 'export') {
         node?.objectId || window._ctvObjectMap?.[1] || 'structure:ctv:1',
     );
     if (id.startsWith('ctv_') || id.startsWith('organ_')) {
-        return String(node?.objectId || id);
+        const mapped = String(node?.objectId || '').trim();
+        if (mapped) return mapped;
+        // A legacy tree snapshot may not have restored the catalog object ID
+        // yet. Keep the transport ID resolvable by the structure API instead
+        // of passing the presentation-only `ctv_2`/`organ_2` alias through a
+        // client-side `structure:` filter and silently turning the action into
+        // a no-op.
+        const label = id.replace(/^(?:ctv|organ)_/, '');
+        return id.startsWith('ctv_')
+            ? `structure:ctv:${label}`
+            : `structure:oar:${label}`;
     }
     if (_isDataTreeMaskId(id)) {
         const rawMaskId = String(id).replace(/^mask:/, '');
@@ -5969,11 +6224,26 @@ async function moveSelectedStructures(classification, objectIds = null) {
     // Snapshot the caller's IDs before the confirmation dialog or hydration
     // can redraw the tree. An explicit empty array must remain empty; it
     // must never fall back to a newer live selection.
-    const selected = (objectIds == null ? getSelectedDataTreeIds()
+    const requestedIds = (objectIds == null ? getSelectedDataTreeIds()
         : Array.from(objectIds))
         .map(id => _dataTreeObjectId(id))
-        .filter(id => id.startsWith('structure:'));
-    if (!selected.length) return false;
+        .filter(Boolean);
+    // CTV/OAR rows backed by uploaded or generic masks keep their durable
+    // `mask:` identity even after they are rendered beneath the CTV/OAR
+    // branch. They must use the generic-mask transaction; filtering them out
+    // as non-`structure:` IDs made the visible Move to OAR menu a silent
+    // no-op for exactly the multi-label upload case.
+    const genericSelected = [...new Set(
+        requestedIds.filter(id => String(id).startsWith('mask:')),
+    )];
+    const selected = [...new Set(
+        requestedIds.filter(id => String(id).startsWith('structure:')),
+    )];
+    if (genericSelected.length) {
+        const genericResult = await moveSelectedMasks(classification, genericSelected);
+        if (genericResult === false) return false;
+    }
+    if (!selected.length) return genericSelected.length > 0;
     const response = await fetch(API + '/data/structures/classification', {
         method: 'PATCH',
         headers: {
@@ -6396,7 +6666,7 @@ function showContextMenu(x, y) {
     items += `<div class="ctx-menu-item" onclick="hideContextMenu();batchToggleVisibility(true)">
         <span class="ctx-icon">&#128065;</span> Show Selected</div>`;
     items += `<div class="ctx-menu-item" onclick="hideContextMenu();batchToggleVisibility(false)">
-        <span class="ctx-icon">&#128064;</span> Hide Selected</div>`;
+        <span class="ctx-icon">&#128065;</span> Hide Selected</div>`;
     items += `<div class="ctx-menu-sep"></div>`;
     items += `<div class="ctx-menu-item" onclick="hideContextMenu();batchSetViewVisibility('2d',true)">
         <span class="ctx-icon">2D</span> Show in 2D</div>`;
@@ -6605,6 +6875,7 @@ function _apply3DNodeVisibility(node) {
  * existing all-view compatibility control, while 2D/3D stay independent.
  */
 function applyDataTreeViewVisibility() {
+    _migrateSegmentationMirrorsOutOfPlanning();
     _allDataTreeVisualNodes().forEach(_apply3DNodeVisibility);
     const ct2D = isDataTreeNodeVisible2D(dataTreeState.ct);
     ['axial', 'sagittal', 'coronal'].forEach(axis => {
@@ -6614,7 +6885,10 @@ function applyDataTreeViewVisibility() {
     const doseNode = dataTreeState.planning?.doseOverlay;
     const planning2D = isDataTreeNodeVisible2D(dataTreeState.planning);
     const dose2D = planning2D && (!doseNode || isDataTreeNodeVisible2D(doseNode));
-    _setPlanningDoseProjectionVisibility(dose2D, { preserveMaster: false });
+    // A hidden parent suppresses the canvas, not the child's own preference.
+    // Otherwise showing Planning later would silently turn a previously
+    // hidden/shown Dose child into a different state.
+    _setPlanningDoseProjectionVisibility(dose2D, { preserveMaster: true });
     if (state.ctLoaded) reloadOverlays();
     redrawSeedNeedleOverlays();
     requestViewerVisualRefresh('data-tree-view-visibility');
@@ -6688,8 +6962,53 @@ function _groupViewNodes(category) {
     return [];
 }
 
+// Visibility operations target the owners of a group, not every descendant.
+// Descendants inherit the effective state through parentId, so a parent hide
+// never destroys independent child choices.  `_groupViewNodes` above remains
+// a read/catalog helper for opacity and legacy bridge code; this narrower
+// scope is the mutation boundary for view visibility.
+function _groupViewScopeNodes(category) {
+    if (category === 'image') return [dataTreeState.ct];
+    if (category === 'segmentation') return [
+        dataTreeState.ctv,
+        dataTreeState.oar,
+        dataTreeState.skin,
+        ...Object.values(state.maskLabels || {}).filter(mask => _isOpenGenericMask(mask)),
+    ].filter(Boolean);
+    if (category === 'ctv') return [dataTreeState.ctv].filter(Boolean);
+    if (category === 'oar') return [dataTreeState.oar].filter(Boolean);
+    if (category === 'non_traversable' || category === 'traversable') {
+        return (dataTreeState.organs || []).filter(item => item.category === category);
+    }
+    if (category === 'planning') return [dataTreeState.planning].filter(Boolean);
+    if (category === 'planning_trajectories') return _planningItems('trajectories');
+    if (category === 'planning_seeds') return _planningItems('seeds');
+    if (category === 'planning_needles') return _planningItems('needles');
+    if (category === 'dose_isosurfaces') return _planningItems('doseLevels');
+    if (category === 'planning_meshes') return _planningItems('meshes');
+    if (category === 'masks' || category === 'generic_masks' || category === 'upload_masks') {
+        return Object.values(state.maskLabels || {}).filter(mask =>
+            category === 'masks'
+                ? !_isGenericSegmentationMask(mask)
+                : _maskBelongsToGroup(category, mask),
+        );
+    }
+    return [];
+}
+
+window._groupViewScopeNodes = _groupViewScopeNodes;
+
+function getGroupVisibility(category, view = null) {
+    const nodes = _groupViewScopeNodes(category);
+    if (!nodes.length) return false;
+    const key = view === '2d' ? 'visible2D' : view === '3d' ? 'visible3D' : 'visible';
+    return nodes.some(node => node?.[key] !== false);
+}
+
+window.getGroupVisibility = getGroupVisibility;
+
 function setGroupViewVisibility(category, view, visible) {
-    _groupViewNodes(category).forEach(node => _setNodeViewVisibility(node, view, visible));
+    _groupViewScopeNodes(category).forEach(node => _setNodeViewVisibility(node, view, visible));
     applyDataTreeViewVisibility();
     renderDataTree();
     _scheduleDataTreeSave(`viewer.group_${view}_visibility:${category}`);
@@ -6910,9 +7229,7 @@ function setGroupVisibility(category, visible) {
         dataTreeState.ct.visible = !!visible;
     } else if (category === 'segmentation') {
         dataTreeState.ctv.visible = !!visible;
-        Object.values(dataTreeState.ctvLabels || {}).forEach(label => { label.visible = !!visible; });
         dataTreeState.oar.visible = !!visible;
-        dataTreeState.organs.forEach(organ => { organ.visible = !!visible; });
         dataTreeState.skin.visible = !!visible;
         Object.values(state.maskLabels || {}).forEach(mask => {
             if (mask && typeof mask === 'object' && _isOpenGenericMask(mask)) {
@@ -6920,65 +7237,25 @@ function setGroupVisibility(category, visible) {
             }
         });
     } else if (category === 'planning') {
+        // Planning is a visual parent. Toggling it changes only the parent
+        // constraint; descendants retain their own visibility choices and
+        // become effective again when the parent is shown. This prevents a
+        // parent action from flattening child state or touching segmentation
+        // siblings that happen to share a scene mesh.
         dataTreeState.planning.visible = !!visible;
         dataTreeState.planning.visibilityConfigured = true;
-        _planningVisualEntries().forEach(item => { item.visible = visible; });
-        _planningItems('seeds').forEach(seed => {
-            const mesh = scene3D.meshes[seed.id];
-            if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(seed), seed.opacity ?? 1.0);
-        });
-        _planningItems('needles').forEach(needle => {
-            const mesh = scene3D.meshes[needle.id];
-            const effectiveVisible = isDataTreeNodeVisible3D(needle);
-            if (mesh) applyMeshVisibility(mesh, effectiveVisible, needle.opacity ?? 0.8);
-            if (typeof _setNeedleHandlesVisibility === 'function') _setNeedleHandlesVisibility(needle.id, effectiveVisible, needle.opacity ?? 0.8);
-        });
-        _planningItems('doseLevels').forEach(level => {
-            const mesh = scene3D.meshes[`dose_iso_${level.threshold}`];
-            if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(level), level.opacity ?? 0.3);
-        });
-        _setPlanningDoseProjectionVisibility(_planningViewVisible('2d'));
-        (dataTreeState.planning.meshes || []).forEach(item => {
-            const mesh = scene3D.meshes[item.id];
-            if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(item), item.opacity ?? 0.7);
-        });
+        _setPlanningDoseProjectionVisibility(_planningViewVisible('2d'), { preserveMaster: true });
     } else if (category === 'planning_trajectories') {
-        _planningItems('trajectories').forEach(trajectory => { trajectory.visible = visible; });
-        // Only descendants of the selected trajectory branch are changed.
-        // A sibling trajectory must remain untouched when the user edits one
-        // parent node in the Data Tree.
-        const trajectories = _planningItems('trajectories');
-        const ownsTrajectory = item => trajectories.some(t => _trajectoryContains(item, t));
-        _planningItems('seeds').filter(ownsTrajectory).forEach(seed => {
-            seed.visible = visible;
-            const mesh = scene3D.meshes[seed.id];
-            if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(seed), seed.opacity ?? 1.0);
-        });
-        _planningItems('needles').filter(ownsTrajectory).forEach(needle => {
-            needle.visible = visible;
-            const mesh = scene3D.meshes[needle.id];
-            const effectiveVisible = isDataTreeNodeVisible3D(needle);
-            if (mesh) applyMeshVisibility(mesh, effectiveVisible, needle.opacity ?? 0.8);
-            if (typeof _setNeedleHandlesVisibility === 'function') _setNeedleHandlesVisibility(needle.id, effectiveVisible, needle.opacity ?? 0.8);
-        });
+        // This is a collection header whose direct children are trajectories.
+        // Their seeds/needles inherit the trajectory constraint through
+        // parentId and keep their own local state.
+        _planningItems('trajectories').forEach(trajectory => { trajectory.visible = !!visible; });
     } else if (category === 'ctv') {
-        dataTreeState.ctv.visible = visible;
-        // Update all CTV child labels
-        if (dataTreeState.ctvLabels) {
-            Object.entries(dataTreeState.ctvLabels).forEach(([id, label]) => {
-                label.visible = visible;
-                // Update 3D mesh
-                const mesh = scene3D.meshes[id];
-                if (mesh) applyMeshVisibility(mesh, visible, label.opacity ?? dataTreeState.ctv.opacity ?? 0.7);
-            });
-        }
+        // CTV is the parent scope. Do not overwrite individual label state.
+        dataTreeState.ctv.visible = !!visible;
     } else if (category === 'oar') {
-        dataTreeState.organs.forEach(o => {
-            o.visible = visible;
-            // Update 3D mesh
-            const mesh = scene3D.meshes[o.id];
-            if (mesh) applyMeshVisibility(mesh, visible, o.opacity ?? 0.5);
-        });
+        // OAR is the parent scope. Do not overwrite individual organ state.
+        dataTreeState.oar.visible = !!visible;
     } else if (category === 'masks' || category === 'generic_masks' || category === 'upload_masks') {
         Object.entries(state.maskLabels || {}).forEach(([id, mask]) => {
             if (!_maskBelongsToGroup(category, mask)) return;
@@ -7371,7 +7648,7 @@ function toggleDataVisibility(id) {
             organ.visible = !organ.visible;
             // Also toggle 3D mesh visibility
             const mesh = scene3D.meshes[id];
-            if (mesh) applyMeshVisibility(mesh, organ.visible, organ.opacity ?? 0.5);
+            if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(organ), organ.opacity ?? 0.5);
             renderDataTree();
             if (state.ctLoaded) reloadOverlays();
             _scheduleDataTreeSave(`viewer.visibility:${id}`);
@@ -7388,7 +7665,7 @@ function toggleDataVisibility(id) {
         dataTreeState.ctvLabels[id].visible = !dataTreeState.ctvLabels[id].visible;
         // Also toggle 3D mesh visibility
             const mesh = scene3D.meshes[id];
-            if (mesh) applyMeshVisibility(mesh, dataTreeState.ctvLabels[id].visible, dataTreeState.ctvLabels[id].opacity ?? dataTreeState.ctv.opacity ?? 0.7);
+            if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(dataTreeState.ctvLabels[id]), dataTreeState.ctvLabels[id].opacity ?? dataTreeState.ctv.opacity ?? 0.7);
         renderDataTree();
         if (state.ctLoaded) reloadOverlays();
         _scheduleDataTreeSave(`viewer.visibility:${id}`);
@@ -7510,41 +7787,11 @@ function toggleDataVisibility(id) {
     dataTreeState[id].visible = !dataTreeState[id].visible;
     // Toggle 3D mesh for CTV
     if (id === 'ctv') {
-        const mesh = scene3D.meshes['ctv'];
-        if (mesh) applyMeshVisibility(mesh, dataTreeState[id].visible, dataTreeState[id].opacity ?? 0.7);
-        // Propagate to all CTV child labels
-        if (dataTreeState.ctvLabels) {
-            Object.values(dataTreeState.ctvLabels).forEach(label => {
-                label.visible = dataTreeState.ctv.visible;
-                const m = scene3D.meshes[label.id || label.labelId];
-                if (m) applyMeshVisibility(m, label.visible, label.opacity ?? dataTreeState.ctv.opacity ?? 0.7);
-            });
-        }
+        // Child labels inherit this parent constraint; keep each label's
+        // local visibility untouched so a parent show restores prior state.
     } else if (id === 'planning') {
         dataTreeState.planning.visibilityConfigured = true;
-        // Propagate to all planning sub-items
-        _planningItems('trajectories').forEach(t => t.visible = dataTreeState.planning.visible);
-        _planningItems('seeds').forEach(s => {
-            s.visible = dataTreeState.planning.visible;
-            const m = scene3D.meshes[s.id];
-            if (m) applyMeshVisibility(m, isDataTreeNodeVisible3D(s), s.opacity ?? 1.0);
-        });
-        _planningItems('needles').forEach(n => {
-            n.visible = dataTreeState.planning.visible;
-            const m = scene3D.meshes[n.id];
-            if (m) applyMeshVisibility(m, isDataTreeNodeVisible3D(n), n.opacity ?? 0.8);
-        });
-        _planningItems('doseLevels').forEach(d => {
-            d.visible = dataTreeState.planning.visible;
-            const m = scene3D.meshes[`dose_iso_${d.threshold}`];
-            if (m) applyMeshVisibility(m, isDataTreeNodeVisible3D(d), d.opacity ?? 0.3);
-        });
-        (dataTreeState.planning.meshes || []).forEach(item => {
-            item.visible = dataTreeState.planning.visible;
-            const m = scene3D.meshes[item.id];
-            if (m) applyMeshVisibility(m, isDataTreeNodeVisible3D(item), item.opacity ?? 0.7);
-        });
-        _setPlanningDoseProjectionVisibility(_planningViewVisible('2d'));
+        _setPlanningDoseProjectionVisibility(_planningViewVisible('2d'), { preserveMaster: true });
     }
 
     // Sync with existing overlay system
@@ -7556,8 +7803,6 @@ function toggleDataVisibility(id) {
         state.viewerSettings.showOAR = dataTreeState.oar.visible;
         const cb = document.getElementById('overlayOAR');
         if (cb) cb.checked = dataTreeState.oar.visible;
-        // Toggle all organs
-        dataTreeState.organs.forEach(o => o.visible = dataTreeState.oar.visible);
     }
 
     renderDataTree();

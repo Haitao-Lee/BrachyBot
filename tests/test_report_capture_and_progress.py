@@ -10,6 +10,24 @@ def _read(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
 
 
+def test_report_markdown_uses_one_safe_renderer_for_preview_pdf_and_html_export():
+    export = _read("web/app/static/js/brachybot-report-export.js")
+    styles = _read("web/app/static/css/brachybot-panels-viewers.css")
+    routes = _read("web/routes/planning_routes.py")
+
+    assert "function _renderReportMarkdownWithMarked" in export
+    assert "renderer.heading = (text, level)" in export
+    assert "headerIds: false" in export
+    assert "return _renderMarkdownLegacy(md);" in export
+    legacy_start = export.index("function _renderMarkdownLegacy")
+    legacy_end = export.index("// ----- 17. Render the multi-page A4 preview")
+    assert "###" not in export[legacy_start:legacy_end]
+    assert "md-report-h1" in export and "md-report-h6" in export
+    assert "md-report-ul" in styles and "md-report-table" in styles
+    assert "def _render_report_markdown_html" in routes
+    assert "body = _render_report_markdown_html(payload[\"narrative_markdown\"])" in routes
+    assert "html.escape(payload[\"narrative_markdown\"]).replace" not in routes
+
 def test_figure_one_detail_view_keeps_the_complete_ctv_in_frame():
     source = _read("web/app/static/js/brachybot-report-editor.js")
 
@@ -21,15 +39,17 @@ def test_figure_one_detail_view_keeps_the_complete_ctv_in_frame():
     # materially closer to the treatment geometry.
     assert "margin: mode === 'detail' ? 1.02 : 1.04" in source
     assert "targetAspect: REPORT_FIGURE_ASPECT" in source
+    assert "function _computeGlobalPlanBox" in source
+    assert "const overviewBox = _computeGlobalPlanBox({ includeNeedles: true });" in source
     assert "id === 'skin_surface'" in source
     assert "guide_skin_surface" in source
-    assert "includeOars: true, includeNeedles: true" in source
     assert "function _captureReportCanvasFocus" in source
     assert "const cropContainsFocus = sx <= boxLeft + 0.5" in source
     assert "Focused crop would exclude projected plan content" in source
-    assert "const overviewBox = _computeFocusedPlanBox" in source
+    assert "return _computeFocusedPlanBox({ includeOars: true, includeNeedles });" in source
     assert "const detailBox = _computeFocusedPlanBox" in source
     assert "padding: 0.16" in source
+    assert "requireFocusCrop: true" in source
     assert "REPORT_FIGURE_LONG_EDGE = 2400" in source
     assert "_captureReportCanvasFit(c, maxOutputEdge)" in source
 
@@ -93,19 +113,29 @@ def test_figure_one_capture_contract_survives_report_artifact_round_trip():
     api = _read("web/app/static/js/brachybot-ui-api.js")
     export_service = _read("web/export_service.py")
 
-    assert "REPORT_FIGURE_ONE_CAPTURE_CONTRACT = 'figure1-global-overview-target-detail-v6-thin-needles'" in editor
-    assert editor.count("captureContract: REPORT_FIGURE_ONE_CAPTURE_CONTRACT") == 2
+    assert "REPORT_FIGURE_ONE_CAPTURE_CONTRACT = 'figure1-global-overview-target-detail-v8-semantic-recapture'" in editor
+    assert "REPORT_FIGURE_ONE_CLOSEUP_CAPTURE_CONTRACT = 'figure1-target-closeup-v8-required-focus-crop'" in editor
+    assert "report_fig1_global: REPORT_FIGURE_ONE_CAPTURE_CONTRACT" in editor
+    assert "report_fig1_closeup: REPORT_FIGURE_ONE_CLOSEUP_CAPTURE_CONTRACT" in editor
     assert "const _isFigureOneOar = (id, mesh)" in editor
     assert "mesh.visible = !_isFigureOneOar(id, mesh)" in editor
     assert "OAR and guide-skin meshes are hidden" in editor
+    assert "function _computeGlobalPlanBox" in editor
+    assert "captureProfile: 'global_overview'" in editor
+    assert "captureProfile: 'target_closeup'" in editor
     legacy = _read("web/app/static/js/brachybot-dvh-planning.js")
     assert "const isOar = key === 'oar'" in legacy
     assert "mesh.visible = !isOar && (isCtv || isSeed || isNeedle);" in legacy
     assert "capture_contract: String(figure.captureContract || '')" in workspace
+    assert "capture_profile: String(figure.captureProfile || '')" in workspace
     assert "capture_contract: String(figure.captureContract || '')" in api
+    assert "capture_profile: String(figure.captureProfile || '')" in api
     assert "viewMetadata: item.metadata?.view_metadata || item.metadata || {}" in viewer
     assert '"capture_contract": figure.get("captureContract")' in export_service
-    assert "captureContract: 'figure1-global-overview-target-detail-v6-thin-needles'" in workspace
+    assert "captureContract: 'figure1-global-overview-target-detail-v8-semantic-recapture'" in workspace
+    assert "captureContract: 'figure1-target-closeup-v8-required-focus-crop'" in workspace
+    assert "captureProfile: 'global_overview'" in workspace
+    assert "captureProfile: 'target_closeup'" in workspace
 
 
 def test_figure_one_b_uses_report_only_thin_needles_and_restores_live_geometry():
@@ -133,6 +163,7 @@ def test_report_preview_groups_figures_by_stable_metadata_not_array_position():
     source = _read("web/app/static/js/brachybot-report-export.js")
 
     assert "function _reportFiguresForGroup" in source
+    assert "function _reportFigureIsInvalidForExport" in source
     assert "figure?.figureGroup" in source
     assert "left?.sortOrder" in source
     assert "right?.sortOrder" in source
@@ -299,3 +330,23 @@ def test_manual_replan_has_stable_id_change_detection_and_deadline_guard():
     # an unconditional second occurrence would reintroduce full-plan reruns
     # after a workspace restore.
     assert source.count("changed.update(set(old_by_trajectory).symmetric_difference(new_by_trajectory))") == 1
+
+def test_figure_two_never_pairs_a_normal_surface_with_a_dose_colorbar():
+    editor = _read("web/app/static/js/brachybot-report-editor.js")
+    layout = _read("web/app/static/js/brachybot-viewer-layout.js")
+    workspace = _read("web/app/static/js/brachybot-workspace.js")
+
+    assert "figure2-dose-surface-v5-runtime-mapped" in editor
+    assert "function _reportDoseSurfaceEvidence()" in editor
+    assert "doseTextureMapped === true" in editor
+    assert "No CTV/OAR mesh with validated dose vertex colors was rendered" in editor
+    assert "displayMode: 'dose_surface'" in editor
+    assert "renderSignature: 'dose_texture_vertex_colors'" in editor
+    assert "if (state.doseTexture.applying)" in layout
+    assert "function _doseTextureRuntimeReady()" in layout
+    assert "_restoreDoseTextureMaterials();" in layout
+    assert "Dose surface mapping became stale before render" in layout
+    assert "state.doseTexture.renderSignature = DOSE_TEXTURE_RUNTIME_SIGNATURE" in layout
+    assert "return { success: true, enabled: !!state.doseTexture.enabled, mappedMeshIds }" in layout
+    assert "return { success: false, enabled: false, error: e?.message || String(e) }" in layout
+    assert "figure2-dose-surface-v5-runtime-mapped" in workspace

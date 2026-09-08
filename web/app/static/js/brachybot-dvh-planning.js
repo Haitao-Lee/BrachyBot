@@ -759,6 +759,41 @@ function drawDVH() {
     });
 }
 
+// A planning result may expose DVH through the top-level ``dvh`` field or
+// through the nested metrics artifact, depending on whether the response was
+// produced by a live calculation or by Session hydration.  Keep the client
+// tolerant of both contracts, but only accept curves that the Plotly renderer
+// can actually draw.  This prevents a transient/legacy empty field from
+// purging an already valid chart.
+function _isRenderableDvhPayload(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    return Object.values(value).some(curve => {
+        const direct = curve && Array.isArray(curve.dose_bins) && Array.isArray(curve.volume_pcts)
+            ? curve
+            : curve?.cumulative;
+        return !!(
+            direct
+            && Array.isArray(direct.dose_bins)
+            && Array.isArray(direct.volume_pcts)
+            && direct.dose_bins.length >= 2
+            && direct.volume_pcts.length >= 2
+        );
+    });
+}
+
+function _extractRenderableDvhPayload(data) {
+    const candidates = [
+        data?.dvh,
+        data?.metrics?.dvh_data,
+        data?.dose_metrics?.dvh_data,
+        data?.planning?.dvh,
+    ];
+    for (const candidate of candidates) {
+        if (_isRenderableDvhPayload(candidate)) return candidate;
+    }
+    return {};
+}
+
 // ----- refreshPlanningUI -----
 // Pull the latest plan summary from the server and re-render every
 // downstream view: metrics cards, DVH chart, OAR dose table, data tree,
@@ -1143,6 +1178,8 @@ async function refreshPlanningUI(options = {}) {
                 const expectedPlanningId = String(
                     data.planning_id || data.active_planning_id || '__unassigned__',
                 );
+                const responseDvh = _extractRenderableDvhPayload(data);
+                const responseHasDvh = _isRenderableDvhPayload(responseDvh);
                 const responseSeedCount = Array.isArray(data.seeds)
                     ? data.seeds.length : Number(data.total_seeds || 0);
                 const responseNeedleCount = Array.isArray(data.needles)
@@ -1160,7 +1197,7 @@ async function refreshPlanningUI(options = {}) {
                     hasCurrentDose: data.has_current_dose === true,
                     doseStale: data.dose_stale === true,
                     doseSource: data.dose_source || null,
-                    hasDvh: !!(data.dvh && Object.keys(data.dvh).length > 0),
+                    hasDvh: responseHasDvh,
                     hasGuide: data.has_guide === true,
                 };
                 if (typeof dataTreeState !== 'undefined' && dataTreeState.planning) {
@@ -1193,7 +1230,7 @@ async function refreshPlanningUI(options = {}) {
                     retryPending: options.retryPending === true,
                     silent: true,
                 });
-                uiDebugLog('[refreshPlanningUI] data received, has_dose:', data.has_dose, 'seeds:', data.seeds?.length, 'has_dvh:', !!data.dvh, 'dvh_keys:', data.dvh ? Object.keys(data.dvh).length : 0, 'metrics_keys:', data.metrics ? Object.keys(data.metrics).length : 0);
+                uiDebugLog('[refreshPlanningUI] data received, has_dose:', data.has_dose, 'seeds:', data.seeds?.length, 'has_dvh:', responseHasDvh, 'dvh_keys:', Object.keys(responseDvh).length, 'metrics_keys:', data.metrics ? Object.keys(data.metrics).length : 0);
 
                 // 1. Metrics cards (V100, D90, etc.) + summary
                 const hasMetrics = !!(data.metrics && Object.keys(data.metrics).length > 0);
@@ -1210,9 +1247,10 @@ async function refreshPlanningUI(options = {}) {
                 if (data.num_trajectories !== undefined) state.metrics.num_trajectories = data.num_trajectories;
 
                 // 2. DVH — store data and re-draw chart
-                uiDebugLog('[refreshPlanningUI] DVH check:', !!data.dvh, 'keys:', data.dvh ? Object.keys(data.dvh).length : 0);
-                if (data.dvh && Object.keys(data.dvh).length > 0) {
-                    state.dvhData = data.dvh;
+                uiDebugLog('[refreshPlanningUI] DVH check:', responseHasDvh, 'keys:', Object.keys(responseDvh).length);
+                if (responseHasDvh) {
+                    state.dvhData = responseDvh;
+                    state.dvhPlanningId = expectedPlanningId;
                     // DVH is a real, session-owned visual product. Register
                     // it before/after Plotly rendering so the Data Tree never
                     // lags behind a successful backend response.
@@ -1233,8 +1271,20 @@ async function refreshPlanningUI(options = {}) {
                     }
                     if (typeof renderDataTree === 'function') renderDataTree();
                 } else {
-                    console.warn('[refreshPlanningUI] NO DVH data received');
-                    state.dvhData = null;
+                    // A guide failure or a short-lived hydration response must
+                    // not erase a valid DVH belonging to the same active plan.
+                    // The backend can deliver dose metrics and the durable DVH
+                    // sidecar on separate restore ticks.
+                    const keepCurrentDvh = data.has_dose === true
+                        && state.dvhPlanningId === expectedPlanningId
+                        && _isRenderableDvhPayload(state.dvhData);
+                    if (keepCurrentDvh) {
+                        console.warn('[refreshPlanningUI] DVH field transiently absent; retaining current plan chart');
+                        try { await drawDVH(); } catch (e) { console.warn('[refreshPlanningUI] retained DVH redraw failed:', e); }
+                    } else {
+                        console.warn('[refreshPlanningUI] NO renderable DVH data received');
+                        state.dvhData = null;
+                        state.dvhPlanningId = null;
                     const dvhElement = document.getElementById('dvhChart');
                     if (dvhElement && typeof Plotly !== 'undefined' && typeof Plotly.purge === 'function') {
                         try { Plotly.purge(dvhElement); } catch (_) {}
@@ -1243,6 +1293,7 @@ async function refreshPlanningUI(options = {}) {
                     }
                     if (typeof reconcileDataTreeVisualNodes === 'function') reconcileDataTreeVisualNodes();
                     if (typeof renderDataTree === 'function') renderDataTree();
+                    }
                 }
 
                 // A geometry-only draft has no valid dose grid. Remove only
@@ -1250,6 +1301,10 @@ async function refreshPlanningUI(options = {}) {
                 // draft data and must remain visible for further editing.
                 if (!data.has_dose) {
                     if (typeof clearDoseOverlayRuntime === 'function') clearDoseOverlayRuntime();
+                    // Clearing canvases/caches alone leaves the old metadata
+                    // visible to slice events, which would restart requests
+                    // for a dose the current plan no longer has.
+                    state.doseOverlay = null;
                     if (typeof clearDosePlanningMeshes === 'function') clearDosePlanningMeshes();
                     if (typeof dataTreeState !== 'undefined' && dataTreeState.planning) {
                         dataTreeState.planning.doseOverlay = null;
@@ -2794,6 +2849,11 @@ const REPORT_STRINGS = {
         hospitalDeptEn: 'Department of Radiation Oncology · AI-Assisted Brachytherapy Planning',
         hospitalAddress: '上海市黄浦区瑞金二路 197 号  ·  200025',
         hospitalContact: 'https://github.com/Haitao-Lee/BrachyBot.git',
+        hospitalSectionTitle: '\u533b\u9662 / \u673a\u6784\u4fe1\u606f',
+        hospitalNameField: '\u533b\u9662 / \u673a\u6784\u540d\u79f0',
+        hospitalNameHint: '\u7528\u4e8e\u62a5\u544a\u9875\u7709\u548c\u673a\u6784\u4fe1\u606f\uff0c\u4e0d\u662f\u60a3\u8005\u59d3\u540d\u3002',
+        patientNameField: '\u60a3\u8005\u59d3\u540d',
+        patientNameHint: '\u8bf7\u5728\u201c\u60a3\u8005\u4fe1\u606f\u201d\u533a\u57df\u586b\u5199\uff1b\u4e0a\u65b9\u5b57\u6bb5\u4ec5\u7528\u4e8e\u62a5\u544a\u9875\u7709\u3002',
         editFormTab: '✏️ 编辑表单',
         previewTab: '📄 预览',
         viewHint: '点击 预览 标签查看 A4 多页文档',
@@ -2906,6 +2966,11 @@ const REPORT_STRINGS = {
         hospitalDeptEn: 'Joint Lab: SJTU × Ruijin Hospital',
         hospitalAddress: '197 Ruijin Er Rd, Shanghai 200025, China',
         hospitalContact: 'https://github.com/Haitao-Lee/BrachyBot.git',
+        hospitalSectionTitle: 'Hospital / Institution',
+        hospitalNameField: 'Hospital / Institution name',
+        hospitalNameHint: 'Used for the report header and institution information, not the patient identity.',
+        patientNameField: 'Patient name',
+        patientNameHint: 'Enter the patient name here; the field above is only for the report header.',
         editFormTab: '✏️ Edit Form',
         previewTab: '📄 Preview',
         viewHint: 'Click Preview tab to see the multi-page A4 document',

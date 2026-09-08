@@ -26,6 +26,92 @@ function _todoI18n() {
     return _TODO_I18N[_activeTodoLang] || _TODO_I18N.en;
 }
 
+// A single browser-side clock is shared by the chat todo dock and the
+// lightweight progress cards rendered for manual actions.  Previously each
+// surface called Date.now() independently: a background guide restore could
+// create a top card and the later chat tool could create a second bottom row,
+// making the two elapsed values look like one operation with contradictory
+// timings.  Keep the clock keyed by case + canonical operation so both
+// surfaces either join the same operation or start their own clean instance.
+const _BRACHY_OPERATION_ALIASES = Object.freeze({
+    surgical_guide_generate: 'surgical_guide',
+});
+const _BRACHY_OPERATION_CLOCKS = window.__brachyOperationClocks
+    || (window.__brachyOperationClocks = Object.create(null));
+
+function _brachyOperationName(operation) {
+    const raw = String(operation || '').trim();
+    return _BRACHY_OPERATION_ALIASES[raw] || raw;
+}
+
+function _brachyOperationSession(sessionId) {
+    if (sessionId != null && String(sessionId).trim()) return String(sessionId);
+    try {
+        if (typeof activeSessionId !== 'undefined' && activeSessionId != null) {
+            return String(activeSessionId);
+        }
+    } catch (_) { /* the page-level binding may not exist during startup */ }
+    return String(window.activeSessionId || '');
+}
+
+function _brachyOperationTimestamp(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) return null;
+    // Backend timestamps are seconds; DOM timestamps are milliseconds.
+    return numeric < 1e12 ? numeric * 1000 : numeric;
+}
+
+function _brachyOperationClock(operation, sessionId) {
+    const name = _brachyOperationName(operation);
+    if (!name) return null;
+    const sid = _brachyOperationSession(sessionId);
+    const key = `${sid}::${name}`;
+    let clock = _BRACHY_OPERATION_CLOCKS[key];
+    if (!clock) {
+        clock = { key, name, sessionId: sid, startedAt: null, endedAt: null };
+        _BRACHY_OPERATION_CLOCKS[key] = clock;
+    }
+    return clock;
+}
+
+window._brachyOperationName = _brachyOperationName;
+window._brachyOperationClock = _brachyOperationClock;
+window._brachyOperationStart = function _brachyOperationStart(
+    operation, sessionId, startedAt, options = {},
+) {
+    const clock = _brachyOperationClock(operation, sessionId);
+    if (!clock) return null;
+    const incoming = _brachyOperationTimestamp(startedAt);
+    const reset = options && options.reset === true;
+    const restore = options && options.restore === true;
+    if (reset || restore || clock.endedAt != null || !_brachyOperationTimestamp(clock.startedAt)) {
+        clock.startedAt = incoming || Date.now();
+        clock.endedAt = null;
+    }
+    // When the first authoritative event arrives from the server, retain its
+    // timestamp only if this operation had not already started in the UI.
+    // Never move an active clock forward because an SSE packet arrived late.
+    if (incoming && !clock.endedAt && !reset && !restore
+        && clock.startedAt == null) {
+        clock.startedAt = incoming;
+    }
+    return clock;
+};
+window._brachyOperationFinish = function _brachyOperationFinish(
+    operation, sessionId, endedAt,
+) {
+    const clock = _brachyOperationClock(operation, sessionId);
+    if (!clock) return null;
+    if (!_brachyOperationTimestamp(clock.startedAt)) clock.startedAt = Date.now();
+    clock.endedAt = _brachyOperationTimestamp(endedAt) || Date.now();
+    return clock;
+};
+
+function _todoStepStartedAt(step) {
+    if (!step || typeof step !== 'object') return null;
+    return _brachyOperationTimestamp(step.started_at ?? step.startedAt);
+}
+
 function _todoLabelForStep(step) {
     // Pick labels from the explicit workstation language preference.
     const i18n = _todoI18n();
@@ -151,7 +237,25 @@ function _todoCreate() {
             // Store toolName directly on item for reliable dedup
             // (labels may be translated to Chinese, so label-based
             // matching fails for English tool names like "trajectory_init").
-            const item = { id, label, toolName: step.tool || null, status: 'pending', startedAt: Date.now(), endedAt: null, node: li, step };
+            const operationName = _brachyOperationName(step.tool || '');
+            const operationClock = operationName && (step.status === 'pending' || step.status === 'active')
+                ? window._brachyOperationStart(
+                    operationName,
+                    api._sessionId,
+                    _todoStepStartedAt(step),
+                )
+                : null;
+            const item = {
+                id,
+                label,
+                toolName: step.tool || null,
+                status: 'pending',
+                startedAt: operationClock?.startedAt || _todoStepStartedAt(step) || Date.now(),
+                endedAt: null,
+                node: li,
+                step,
+                _operationName: operationName || null,
+            };
             api.items.push(item);
             _todoUpdateCount();
             return item;
@@ -184,6 +288,17 @@ function _todoCreate() {
             // of activation, defer the done transition by the
             // remaining time so the user sees the breathing state.
             item._activatedAt = Date.now();
+            const operationName = item._operationName
+                || _brachyOperationName(item.toolName || item.step?.tool || '');
+            if (operationName) {
+                const operationClock = window._brachyOperationStart(
+                    operationName,
+                    api._sessionId,
+                    _todoStepStartedAt(item.step),
+                );
+                item._operationName = operationName;
+                if (operationClock?.startedAt) item.startedAt = operationClock.startedAt;
+            }
             // GUARD against bad startedAt values (2026-06-16 bug: the
             // OAR step showed "781586106.x seconds" because startedAt
             // had been clobbered to 0 somewhere upstream, and the
@@ -244,6 +359,14 @@ function _todoCreate() {
             _todoStopGpuBadge(item);
             item.status = errMsg ? 'error' : 'done';
             item.endedAt = Date.now();
+            if (item._operationName) {
+                const operationClock = window._brachyOperationFinish(
+                    item._operationName,
+                    api._sessionId,
+                    item.endedAt,
+                );
+                if (operationClock?.startedAt) item.startedAt = operationClock.startedAt;
+            }
             // GUARD: if startedAt is still null/bad by the time we
             // mark done (predicted item that was promoted but the
             // upstream never sent a pending event for it), fall
@@ -780,6 +903,69 @@ let _chatHistoryDraft = '';
 let _chatHistoryBrowsing = false;
 const _chatHistoryBySession = Object.create(null);
 
+// The composer is a textarea so that a prompt can contain multiple lines,
+// but its height must follow the actual rendered content. The CSS values are
+// the source of truth in the browser; the fallbacks keep this helper safe in
+// lightweight DOM harnesses that do not implement getComputedStyle.
+const CHAT_INPUT_MIN_HEIGHT_FALLBACK = 36;
+const CHAT_INPUT_MAX_HEIGHT_FALLBACK = 136;
+
+function _chatInputComputedPixels(input, property, fallback) {
+    try {
+        const getter = window && window.getComputedStyle;
+        const style = typeof getter === 'function' ? getter(input) : null;
+        const value = Number.parseFloat(style?.[property] || '');
+        return Number.isFinite(value) && value > 0 ? value : fallback;
+    } catch (_) {
+        return fallback;
+    }
+}
+
+function resizeChatInput(input) {
+    const el = input || document.getElementById('chatInput');
+    if (!el || !el.style) return 0;
+
+    const minHeight = _chatInputComputedPixels(
+        el,
+        'minHeight',
+        CHAT_INPUT_MIN_HEIGHT_FALLBACK,
+    );
+    const maxHeight = Math.max(
+        minHeight,
+        _chatInputComputedPixels(
+            el,
+            'maxHeight',
+            CHAT_INPUT_MAX_HEIGHT_FALLBACK,
+        ),
+    );
+
+    // Reset before measuring so deleting text immediately shrinks the
+    // composer instead of retaining the previous long-prompt height.
+    el.style.height = 'auto';
+    el.style.overflowY = 'hidden';
+    const naturalHeight = Math.max(Number(el.scrollHeight) || 0, minHeight);
+    const targetHeight = Math.min(naturalHeight, maxHeight);
+    el.style.height = targetHeight + 'px';
+    el.style.overflowY = naturalHeight > maxHeight ? 'auto' : 'hidden';
+    return targetHeight;
+}
+
+window.resizeChatInput = resizeChatInput;
+
+function _initializeChatInputLayout() {
+    try {
+        resizeChatInput(document.getElementById('chatInput'));
+    } catch (error) {
+        console.debug('[chat] composer sizing deferred:', error);
+    }
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _initializeChatInputLayout, { once: true });
+} else {
+    _initializeChatInputLayout();
+}
+
 // Chat history is case-scoped.  The transcript is the durable source of
 // truth, while this small cache only makes keyboard navigation responsive.
 // Keeping it outside localStorage prevents a command from another case (or a
@@ -839,8 +1025,8 @@ function handleChatKeypress(ev) {
         // explicit stop button remains the only user cancellation path.
         if (typeof sendChat === 'function') sendChat(undefined, { queueIfBusy: true });
     } else if (ev.key === 'ArrowUp' && input && !ev.altKey && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey) {
-        // This is a single-line command box (Shift+Enter is the multiline
-        // escape hatch), so Up/Down are dedicated history navigation keys.
+        // The composer can contain multiple lines; Up/Down remain dedicated
+        // history navigation keys when no modifier is held.
         // Preserve a partially typed draft and restore it when moving past
         // the newest command, matching terminal-style agent UIs.
         ev.preventDefault();
@@ -854,6 +1040,7 @@ function handleChatKeypress(ev) {
             _chatHistoryIdx--;
             input.value = history[_chatHistoryIdx] || '';
         }
+        resizeChatInput(input);
         input.setSelectionRange(input.value.length, input.value.length);
     } else if (ev.key === 'ArrowDown' && input && !ev.altKey && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey) {
         ev.preventDefault();
@@ -871,14 +1058,15 @@ function handleChatKeypress(ev) {
             input.value = _chatHistoryDraft;
             _chatHistoryBrowsing = false;
         }
+        resizeChatInput(input);
         input.setSelectionRange(input.value.length, input.value.length);
     }
 }
 
-// Stub `handleChatInput` — referenced from oninput=, prevents ReferenceError
+// Handle every user edit (typing, paste, IME composition commit, and newline
+// insertion) through the same sizing path.
 function handleChatInput(el) {
-    // Reserved for future autosize / command-palette hooks.
-    if (el && el.style) { /* autosize hook */ }
+    resizeChatInput(el || document.getElementById('chatInput'));
 }
 
 // `sendChat` is the user → /api/chat entry point. Previous versions of
@@ -983,7 +1171,10 @@ async function _submitWhenSessionReady(text, opts, input) {
     const language = typeof detectConversationLanguage === 'function'
         ? detectConversationLanguage(normalized)
         : '';
-    if (input) input.value = '';
+    if (input) {
+        input.value = '';
+        resizeChatInput(input);
+    }
     _setChatSessionReadinessUi(true, language);
     const record = { text: normalized, promise: null };
     record.promise = (async () => {
@@ -991,7 +1182,10 @@ async function _submitWhenSessionReady(text, opts, input) {
             const sessionId = await window.awaitActiveSessionReady();
             if (!sessionId) throw new Error('No active case is available.');
         } catch (error) {
-            if (input && !input.value) input.value = normalized;
+            if (input && !input.value) {
+                input.value = normalized;
+                resizeChatInput(input);
+            }
             const zh = language === 'zh';
             const message = zh
                 ? `新会话尚未创建成功，消息未发送：${error?.message || '未知错误'}`
@@ -1490,6 +1684,7 @@ function _scheduleCaseSurgicalGuideRefresh(sessionId, delay = 0) {
                 loaded = await window.loadSurgicalGuideMesh({
                     sessionId: key,
                     userInitiated: false,
+                    reconcileProgress: true,
                 });
             }
             // A short publication race can make the mesh request observe the
@@ -1507,6 +1702,26 @@ function _scheduleCaseSurgicalGuideRefresh(sessionId, delay = 0) {
                     preserveReport: true,
                     reason: 'surgical-guide-tool-complete',
                 });
+                // Some restore paths apply the guide mesh inside
+                // refreshPlanningUI rather than returning it from the direct
+                // mesh request.  Reconcile only when the authoritative scene
+                // or Data Tree now contains the guide; never manufacture a
+                // completion row for a failed/missing result.
+                const guidePresent = Boolean(
+                    window.scene3D?.meshes?.patient_specific_puncture_guide
+                    || window.dataTreeState?.planning?.meshes?.some(item =>
+                        String(item?.id || '') === 'patient_specific_puncture_guide'),
+                );
+                if (guidePresent && typeof window.reconcileManualWorkflowProgress === 'function') {
+                    window.reconcileManualWorkflowProgress(
+                        'surgical_guide_generate',
+                        'done',
+                        typeof window._t === 'function'
+                            ? window._t('导板已加载', 'Guide loaded')
+                            : 'Guide loaded',
+                        key,
+                    );
+                }
             }
         } catch (error) {
             console.error('[SSE] surgical guide hydration failed:', error);
@@ -1636,14 +1851,6 @@ function _isMonitorStartRequest(text) {
 function _isMonitorStopRequest(text) {
     return /(?:stop|finish|end|summary|停止|结束|关闭|总结|完成监测|停止监测)/i.test(text || '')
         && /(?:monitor|training|coach|培训|训练|监测|监督|指导)/i.test(text || '');
-}
-
-function _isAdviceRequest(text) {
-    const value = String(text || '').trim();
-    const explicitAdvice = /\b(?:advice|suggest(?:ion)?s?|recommend(?:ation)?s?|improve|optimi[sz]e|assessment)\b|(?:优化|建议|评价|哪里需要|怎么调|如何调整|详细建议|规划评价)/i.test(value);
-    const explicitReview = /\b(?:review|evaluate|assess)\s+(?:(?:my|the|this|current)\s+)?(?:plan|planning|dose|seed|needle|ctv|oar)\b|\b(?:plan|planning|dose)\s+(?:review|assessment)\b/i.test(value);
-    const planningContext = /\b(?:plan|planning|dose|seed|needle|ctv|oar)\b|(?:规划|剂量|粒子|穿刺针|靶区|危及器官)/i.test(value);
-    return (explicitAdvice || explicitReview) && planningContext;
 }
 
 window._pendingHiddenChats = window._pendingHiddenChats || [];
@@ -2073,7 +2280,10 @@ async function sendChat(prefill, options) {
     if (isBusy && opts.queueIfBusy) {
         const queuedText = (prefill != null ? prefill : (input ? input.value : '')).trim();
         if (!queuedText || !activeSessionId) return false;
-        if (input) input.value = '';
+        if (input) {
+            input.value = '';
+            resizeChatInput(input);
+        }
         if (typeof addChat === 'function') addChat('user', queuedText, true, Date.now(), false, activeSessionId);
         window._lastUserMessage = queuedText;
         _queueChatTurn(activeSessionId, queuedText);
@@ -2205,7 +2415,10 @@ async function sendChat(prefill, options) {
         && !opts.hiddenUserMessage && !opts.queuedTurn
         && _isContinuationRequest(text)) {
         const continuationSessionId = String(activeSessionId || '');
-        if (input) input.value = '';
+        if (input) {
+            input.value = '';
+            resizeChatInput(input);
+        }
         if (continuationSessionId && typeof addChat === 'function') {
             addChat('user', text, true, Date.now(), false, continuationSessionId);
         }
@@ -2228,7 +2441,10 @@ async function sendChat(prefill, options) {
         }
         return !!resumed;
     }
-    if (input && !opts.hiddenUserMessage && !isResumingTask) input.value = '';
+    if (input && !opts.hiddenUserMessage && !isResumingTask) {
+        input.value = '';
+        resizeChatInput(input);
+    }
 
     // EPHEMERAL START: lazily create a "New chat" session on the
     // first message send. Until the user actually sends something,
@@ -2313,10 +2529,12 @@ async function sendChat(prefill, options) {
         await stopTrainingMode();
         return;
     }
-    if (!opts.skipIntentShortcuts && _isAdviceRequest(text) && !/截图|screenshot|capture/i.test(text)) {
-        await requestPlanningAdvice();
-        return;
-    }
+    // Natural-language planning questions must continue through the normal
+    // chat workflow. The server-side local-read classifier already routes
+    // them to a grounded planning_assessment_query answer. Do not redirect
+    // them to requestPlanningAdvice(): that endpoint belongs to the explicit
+    // monitor toolbar action and would incorrectly show the monitor progress
+    // animation plus its fixed checklist in an ordinary conversation.
 
     const turnGeneration = Number(window._chatTurnGeneration || 0) + 1;
     window._chatTurnGeneration = turnGeneration;

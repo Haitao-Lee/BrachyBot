@@ -28,9 +28,97 @@ class _MockProgressDialog:
 _mock_progress = _MockProgressDialog()
 
 
+def seed_plan_to_world_coordinates(plan_res, dose_image):
+    """Convert a voxel-space seed plan to the public patient-world contract.
+
+    The optimizer works in array-order planning-grid coordinates ``[z, y, x]``
+    while the Viewer, manual-edit APIs, guide generation, and reports consume
+    physical patient coordinates.  ``optimal_plan`` historically converted
+    only its normal completion path, so an early return (for example when no
+    further trajectory could improve coverage) leaked voxel coordinates.  That
+    leak is especially dangerous because the values are finite and look like
+    plausible 3-D points, but they are not in the same frame as the CT meshes.
+
+    Keep this conversion at the algorithm boundary and apply it to every
+    return path.  Dose arrays and trajectory metadata are intentionally kept
+    unchanged; only each seed's position and direction are transformed.
+    """
+    if plan_res is None:
+        return plan_res
+    if dose_image is None:
+        raise ValueError("dose_image is required to transform seed coordinates")
+
+    def _convert_seed(seed):
+        if isinstance(seed, dict):
+            position = seed.get("position", seed.get("pos"))
+            direction = seed.get("direction", seed.get("dir"))
+            if position is None or direction is None:
+                raise ValueError("seed record is missing position or direction")
+            position = np.asarray(position, dtype=np.float64).reshape(-1)
+            direction = np.asarray(direction, dtype=np.float64).reshape(-1)
+            if position.size < 3 or direction.size < 3:
+                raise ValueError("seed position/direction must contain 3 values")
+            world_position = np.asarray(
+                utilizations.position_transform(dose_image, position[:3])[0],
+                dtype=np.float64,
+            )
+            world_direction = np.asarray(
+                utilizations.direction_transform(dose_image, direction[:3]),
+                dtype=np.float64,
+            ).reshape(-1)[:3]
+            converted = dict(seed)
+            if "position" in converted or "pos" not in converted:
+                converted["position"] = world_position
+            if "pos" in converted:
+                converted["pos"] = world_position
+            if "direction" in converted or "dir" not in converted:
+                converted["direction"] = world_direction
+            if "dir" in converted:
+                converted["dir"] = world_direction
+            return converted
+
+        if not isinstance(seed, (list, tuple)) or len(seed) < 2:
+            raise ValueError("seed record must contain position and direction")
+        position = np.asarray(seed[0], dtype=np.float64).reshape(-1)
+        direction = np.asarray(seed[1], dtype=np.float64).reshape(-1)
+        if position.size < 3 or direction.size < 3:
+            raise ValueError("seed position/direction must contain 3 values")
+        world_position = np.asarray(
+            utilizations.position_transform(dose_image, position[:3])[0],
+            dtype=np.float64,
+        )
+        world_direction = np.asarray(
+            utilizations.direction_transform(dose_image, direction[:3]),
+            dtype=np.float64,
+        ).reshape(-1)[:3]
+        return (world_position, world_direction)
+
+    converted_plan = []
+    for entry in plan_res:
+        if isinstance(entry, dict):
+            converted_entry = dict(entry)
+            converted_entry["seeds"] = [
+                _convert_seed(seed) for seed in (entry.get("seeds") or [])
+            ]
+            converted_plan.append(converted_entry)
+            continue
+        if not isinstance(entry, (list, tuple)) or len(entry) < 2:
+            converted_plan.append(entry)
+            continue
+        converted_entry = list(entry)
+        converted_entry[1] = [
+            _convert_seed(seed) for seed in (entry[1] or [])
+        ]
+        converted_plan.append(
+            tuple(converted_entry) if isinstance(entry, tuple) else converted_entry
+        )
+    return converted_plan
+
+
 def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract_angle,
               target_value, background_value, obstacle_value, maximum_candidate_trajectories, progressDialog=None,
-              min_depth=2, preview_callback=None):
+              min_depth=2, preview_callback=None, entry_body_mask=None,
+              entry_boundary_faces=None):
     """
     Generate an initial set of candidate needle/catheter trajectories within a 3-D radiation volume.
 
@@ -62,6 +150,17 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
         Upper bound on the total number of trajectories to be generated.
     min_depth : float, optional
         Minimum path length (mm) required for a trajectory to be considered valid.
+    entry_body_mask : np.ndarray, optional
+        Boolean body envelope on the same ``[z, y, x]`` grid as
+        ``radiation_volume``.  When supplied (or inferred from ``dose_image``),
+        candidates whose reverse ray reaches an image boundary before leaving
+        the body are rejected during initialization.  This prevents CT
+        truncation faces from becoming needle entry points.
+    entry_boundary_faces : sequence[bool], optional
+        CT face flags in planner array order ``(z_min, z_max, y_min, y_max,
+        x_min, x_max)``.  A body-to-air transition on a flagged face is not a
+        real skin entry.  When omitted, the flags are inferred from
+        ``dose_image``.
 
     Returns
     -------
@@ -72,6 +171,22 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
     """
     if progressDialog is None:
         progressDialog = _mock_progress
+
+    # ``dose_image`` is the resampled CT in the production pipeline.  Infer a
+    # body envelope when callers do not provide one so the standalone
+    # trajectory tool follows the same entry-point contract as full planning.
+    if entry_body_mask is None:
+        entry_body_mask = utilizations.infer_body_mask_from_image(dose_image)
+    if entry_boundary_faces is None:
+        entry_boundary_faces = utilizations.infer_truncated_boundary_faces_from_image(
+            dose_image
+        )
+    if entry_body_mask is not None:
+        entry_body_mask = np.asarray(entry_body_mask, dtype=bool)
+        if entry_body_mask.shape != np.asarray(radiation_volume).shape:
+            raise ValueError(
+                "entry_body_mask must have the same shape as radiation_volume"
+            )
 
     # ---- 1.  Build conical direction grid ----
     candidate_dirs = utilizations.get_cone(
@@ -105,14 +220,50 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
 
     # ---- 3.  Initialise trajectories with depth filter ----
     init_trajectories = []
+    entry_rejected = 0
     last_preview_at = 0.0
     for i, direc in enumerate(candidate_dirs):
         progressDialog.setValue(45)
         progressDialog.setLabelText("Initial Planning...")
-        traj_list = utilizations.init_trajectories_with_depth(
-            close_points, radiation_volume, direc, target_value,
-            background_value, obstacle_value, min_depth, max_length
-        )
+        direction_points = close_points
+        if entry_body_mask is not None:
+            direction_points, rejected = utilizations.filter_trajectory_entry_points(
+                close_points,
+                direc,
+                entry_body_mask,
+                truncated_boundary_faces=entry_boundary_faces,
+            )
+            entry_rejected += int(rejected)
+        if entry_body_mask is None:
+            # Preserve the historical positional call contract for light-
+            # weight integrations that monkeypatch this utility.
+            traj_list = utilizations.init_trajectories_with_depth(
+                direction_points,
+                radiation_volume,
+                direc,
+                target_value,
+                background_value,
+                obstacle_value,
+                min_depth,
+                max_length,
+            )
+        else:
+            # Keep the guard inside the utility as well: other callers can
+            # invoke ``init_trajectories_with_depth`` directly, while this
+            # pre-filter ensures invalid paths never enter the initializer's
+            # candidate list or live preview.
+            traj_list = utilizations.init_trajectories_with_depth(
+                direction_points,
+                radiation_volume,
+                direc,
+                target_value,
+                background_value,
+                obstacle_value,
+                min_depth,
+                max_length,
+                entry_body_mask=entry_body_mask,
+                truncated_boundary_faces=entry_boundary_faces,
+            )
         init_trajectories += traj_list
 
         now = time.monotonic()
@@ -131,7 +282,10 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
         "current": len(candidate_dirs),
         "total": len(candidate_dirs),
         "trajectories": init_trajectories,
-        "detail": f"{len(init_trajectories)} candidate paths",
+        "detail": (
+            f"{len(init_trajectories)} candidate paths"
+            + (f"; {entry_rejected} invalid CT-entry paths rejected" if entry_rejected else "")
+        ),
         "force": True,
     })
 
@@ -214,7 +368,7 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
         )
         if optimal_trajectory is None:
             _logger.info(f"[optimal_plan] select_optimal_trajectory returned None at iteration {stage1_count}, {len(init_planned_res)} trajectories planned")
-            return init_planned_res
+            return seed_plan_to_world_coordinates(init_planned_res, dose_image)
         selected_indices.append(selected_idx)
         optimal_seeds, cur_DVH_rate, cur_single_seed_radiations = utilizations.put_seeds(
             radiation_volume,
@@ -236,7 +390,7 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
 
         if len(optimal_seeds) == 0:
             _logger.info(f"[optimal_plan] put_seeds returned 0 seeds at iteration {stage1_count}, trajectory={optimal_trajectory[0][:3] if optimal_trajectory else 'None'}")
-            return init_planned_res
+            return seed_plan_to_world_coordinates(init_planned_res, dose_image)
 
         init_planned_res.append([optimal_trajectory, optimal_seeds, cur_single_seed_radiations])
         cur_radiation += np.sum(cur_single_seed_radiations, axis=0)
@@ -399,16 +553,7 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
         iter_count,
         force=True,
     )
-    final_res = []
-    for res in opti_res:
-        final_seeds = []
-        for seed in res[1]:
-            pos = seed[0].reshape(-1)
-            world_pos = utilizations.position_transform(dose_image, pos)[0]
-            direction = seed[1].reshape(-1)
-            world_dir = utilizations.direction_transform(dose_image, direction)
-            final_seeds.append((world_pos, world_dir))
-        final_res.append([res[0], final_seeds, res[2]])
+    final_res = seed_plan_to_world_coordinates(opti_res, dose_image)
     _logger.info(
         "[optimal_plan] Exact seed-dose cache: hits=%d misses=%d entries=%d bytes=%d",
         dose_context.seed_dose_cache_hits,
@@ -483,4 +628,7 @@ def optimal_plan_rf(
         planning_kwargs["preview_callback"] = preview_callback
     optimal_res, _ = utilizations.hierarchical_planning_rf(**planning_kwargs)
 
-    return optimal_res
+    # RL and rule-based optimization share the same public result contract.
+    # The hierarchical utility intentionally keeps voxel coordinates while it
+    # searches, so convert its final result before it leaves this module.
+    return seed_plan_to_world_coordinates(optimal_res, dose_image)

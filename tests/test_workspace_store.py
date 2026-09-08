@@ -143,6 +143,17 @@ def test_hydration_eager_loads_tiny_arrays_but_keeps_large_volumes_mapped(
     assert isinstance(decoded["large"], np.memmap)
 
 
+def test_snapshot_preserves_unpaired_surrogates_and_unicode(tmp_path):
+    store = WorkspaceStore(tmp_path / "runtime")
+    user = store.create_user("unicode", "hash")
+    case = store.create_session(user["id"], "Unicode case")
+    text = "中文 emoji \U0001f600 truncated \ud83d tail \udc00"
+    path = tmp_path / "unicode.json"
+    store._write_snapshot(user["id"], path, {"session_id": case.id, "text": text})
+    import json
+    assert json.loads(path.read_text(encoding="utf-8"))["text"] == text
+
+
 def test_workspace_snapshot_round_trip_preserves_arrays_and_ui(tmp_path):
     store = WorkspaceStore(tmp_path / "runtime")
     user = store.create_user("planner", "hash")

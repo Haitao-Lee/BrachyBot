@@ -16,6 +16,7 @@ WEB_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(WEB_DIR, ".."))
 
 from plans.dose_pre.model_loader import DEFAULT_PRESCRIPTION_GY, resolve_prescription_gy
+from tool_factory.report_facts import resolve_report_facts
 from utils.ct_volume import normalize_ct_image
 from utils.operation_tracker import get_active_operations as _tracked_operations
 
@@ -103,6 +104,70 @@ def _sanitize_upload_filename(name: str) -> str:
     basename = os.path.basename(name or "")
     sanitized = "".join(c for c in basename if c.isalnum() or c in "._- ")
     return sanitized.strip() or "uploaded_file"
+
+def _report_ctv_volume_mm3(agent: Any) -> Optional[float]:
+    """Resolve the current effective CTV volume for report auto-fill.
+
+    The report is a consumer of the effective Structure Set, not of the
+    generic uploaded-mask inventory. This matters when an uploaded mask has
+    multiple labels and only some labels were promoted to CTV, or when the
+    promotion happened after a planning result was created.
+    """
+    memory = getattr(agent, "memory", None)
+    if memory is None:
+        return None
+
+    def _positive_number(value: Any) -> Optional[float]:
+        try:
+            result = float(value)
+        except (TypeError, ValueError):
+            return None
+        return result if result > 0 else None
+
+    # A dose result may retain the authoritative volume even when the legacy
+    # top-level memory key was not persisted by an older session.
+    persisted = _positive_number(memory.retrieve("ctv_volume_mm3"))
+    if persisted is None:
+        dose_metrics = memory.retrieve("dose_metrics") or {}
+        if isinstance(dose_metrics, Mapping):
+            persisted = _positive_number(dose_metrics.get("ctv_volume_mm3"))
+
+    spacing = memory.retrieve("ct_spacing")
+    try:
+        spacing_values = [float(value) for value in list(spacing or [])[:3]]
+        voxel_volume_mm3 = (
+            spacing_values[0] * spacing_values[1] * spacing_values[2]
+            if len(spacing_values) == 3 else 0.0
+        )
+    except (TypeError, ValueError):
+        voxel_volume_mm3 = 0.0
+
+    # Prefer a recomputed effective set whenever enough source data is
+    # available. A positive persisted volume is only a fallback; otherwise
+    # an old pre-promotion value could survive a session restore.
+    if voxel_volume_mm3 > 0:
+        try:
+            import numpy as np
+            from web.structure_service import build_effective_structures
+
+            effective = build_effective_structures(memory)
+            ctv_array = effective.ctv_array if effective is not None else None
+            if ctv_array is not None:
+                voxel_count = int(np.count_nonzero(ctv_array))
+                if voxel_count > 0:
+                    return float(voxel_count * voxel_volume_mm3)
+        except Exception as exc:
+            logger.debug("Effective CTV volume derivation unavailable: %s", exc)
+
+    if persisted is not None:
+        return persisted
+
+    voxel_count = _positive_number(
+        memory.retrieve("ctv_voxels") or memory.retrieve("ctv_voxel_count")
+    )
+    if voxel_count is not None and voxel_volume_mm3 > 0:
+        return float(voxel_count * voxel_volume_mm3)
+    return None
 
 
 def _case_has_running_chat_task(task_manager: Any, user_id: str, session_id: str) -> bool:
@@ -1680,11 +1745,17 @@ def create_app(config: Optional[Dict] = None):
 
             # ---- Planning metrics + OAR ----
             if "planning" in sources and scope in ("all", "metrics", "oar"):
-                dose = agent.memory.retrieve("dose_metrics") or {}
-                total_seeds = agent.memory.retrieve("total_seeds")
-                num_trajectories = agent.memory.retrieve("num_trajectories")
+                facts = resolve_report_facts(
+                    getattr(agent, "memory", None),
+                    getattr(agent, "config", {}) or {},
+                )
+                dose = facts.get("dose") or {}
+                total_seeds = facts.get("total_seeds")
+                num_trajectories = facts.get("num_trajectories")
                 ctv_voxels = agent.memory.retrieve("ctv_voxels")
-                ctv_volume_mm3 = agent.memory.retrieve("ctv_volume_mm3")
+                if ctv_voxels is None:
+                    ctv_voxels = dose.get("ctv_voxels")
+                ctv_volume_mm3 = _report_ctv_volume_mm3(agent)
 
                 dose_metric_units = dose.get("volume_metric_units") if isinstance(dose, dict) else None
                 for metric_name in ("v100", "v150", "v200"):
@@ -1714,42 +1785,60 @@ def create_app(config: Optional[Dict] = None):
                 if dose.get("plan_score") is not None:
                     patch["metrics.score"] = round(float(dose["plan_score"]), 1)
                     provenance["planning"].append("metrics.score")
-                prescription_gy = resolve_prescription_gy(
-                    agent.memory.retrieve("plan_config") or getattr(agent, "config", {}) or {},
-                    dose,
-                    dose_scale_gy=(
-                        dose.get("dose_scale_gy")
-                        or agent.memory.retrieve("dose_scale_gy")
-                        or DOSE_MODEL_SCALE_GY
-                    ),
-                )
+                prescription_gy = facts.get("prescription_gy")
                 if prescription_gy is not None:
                     patch["planning.prescriptionGy"] = round(float(prescription_gy), 1)
-                    provenance["planning"].append("planning.prescriptionGy")
-
-                if total_seeds:
+                    patch["planning.prescriptionSource"] = facts.get("prescription_source") or ""
+                    patch["planning.prescriptionStatus"] = facts.get("prescription_status") or "resolved_default"
+                    provenance["planning"] += [
+                        "planning.prescriptionGy",
+                        "planning.prescriptionSource",
+                        "planning.prescriptionStatus",
+                    ]
+                if facts.get("technique"):
+                    patch["planning.technique"] = str(facts["technique"])
+                    provenance["planning"].append("planning.technique")
+                if facts.get("dwell_position_count") is not None:
+                    patch["planning.dwellPositionCount"] = int(facts["dwell_position_count"])
+                    provenance["planning"].append("planning.dwellPositionCount")
+                if facts.get("seed_activity_mbq") is not None:
+                    patch["planning.seedActivityMBq"] = round(float(facts["seed_activity_mbq"]), 3)
+                    provenance["planning"].append("planning.seedActivityMBq")
+                if facts.get("total_activity_mbq") is not None:
+                    patch["planning.totalActivityMBq"] = round(float(facts["total_activity_mbq"]), 3)
+                    provenance["planning"].append("planning.totalActivityMBq")
+                patch["planning.activityStatus"] = facts.get("activity_status") or "not_recorded"
+                patch["planning.activitySource"] = facts.get("activity_source") or ""
+                provenance["planning"] += [
+                    "planning.activityStatus",
+                    "planning.activitySource",
+                ]
+                if total_seeds is not None:
                     patch["planning.totalSeeds"] = int(total_seeds)
                     provenance["planning"].append("planning.totalSeeds")
-                if num_trajectories:
+                if num_trajectories is not None:
                     patch["planning.trajectoryCount"] = int(num_trajectories)
                     provenance["planning"].append("planning.trajectoryCount")
-                plan_config = agent.memory.retrieve("plan_config") or getattr(agent, "config", {}) or {}
-                seed_info = plan_config.get("seed_info", {}) if isinstance(plan_config, dict) else {}
-                if isinstance(seed_info, dict) and total_seeds:
-                    try:
-                        activity_mbq = seed_info.get("activity_mbq") or seed_info.get("activity_mbq_per_seed")
-                        if activity_mbq is None and seed_info.get("activity_mci") is not None:
-                            activity_mbq = float(seed_info["activity_mci"]) * 37.0
-                        if activity_mbq is not None and float(activity_mbq) > 0:
-                            activity_mbq = float(activity_mbq)
-                            patch["planning.seedActivityMBq"] = round(activity_mbq, 3)
-                            patch["planning.totalActivityMBq"] = round(activity_mbq * int(total_seeds), 3)
-                            provenance["planning"] += [
-                                "planning.seedActivityMBq",
-                                "planning.totalActivityMBq",
-                            ]
-                    except (TypeError, ValueError) as exc:
-                        logger.warning("Ignoring invalid seed activity in plan_config: %s", exc)
+                plan_config = facts.get("plan_config") or {}
+                if facts.get("tumor_type"):
+                    patch["case.tumorType"] = str(facts["tumor_type"])
+                    provenance["planning"].append("case.tumorType")
+                if facts.get("oar_count") is not None:
+                    patch["case.oarCount"] = int(facts["oar_count"])
+                    provenance["planning"].append("case.oarCount")
+                ctv_model_name = (
+                    agent.memory.retrieve("ctv_model_name")
+                    or agent.memory.retrieve("segmentation_model_name")
+                    or plan_config.get("ctv_model_name")
+                    or plan_config.get("segmentation_model_name")
+                )
+                if ctv_model_name:
+                    patch["segmentation.ctvModelName"] = str(ctv_model_name)
+                    provenance["planning"].append("segmentation.ctvModelName")
+                oar_model_name = agent.memory.retrieve("oar_model_name") or plan_config.get("oar_model_name")
+                if oar_model_name:
+                    patch["segmentation.oarModelName"] = str(oar_model_name)
+                    provenance["planning"].append("segmentation.oarModelName")
                 if ctv_voxels:
                     patch["segmentation.ctvVoxels"] = int(ctv_voxels)
                     provenance["planning"].append("segmentation.ctvVoxels")

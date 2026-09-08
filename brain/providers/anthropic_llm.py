@@ -9,6 +9,7 @@ import time
 import json
 import logging
 import re
+import uuid
 from typing import Dict, List
 
 from ..core.base import BaseLLM, LLMResponse
@@ -78,6 +79,7 @@ class AnthropicLLM(BaseLLM):
         base_url: str = None,
         timeout: float = 120.0,
         max_retries: int = 3,
+        session_id: str = None,
         **kwargs
     ):
         super().__init__()
@@ -85,20 +87,54 @@ class AnthropicLLM(BaseLLM):
         self.model = model
         self.base_url = base_url
         self.timeout = timeout
+        self.session_id = self._sanitize_session_id(
+            session_id or os.environ.get("OPENCODE_SESSION_ID", "")
+        )
+        self._opencode_session_id = (
+            self.session_id or uuid.uuid4().hex
+            if self._is_opencode_go_endpoint(base_url)
+            else ""
+        )
         self.max_retries = min(max(int(max_retries), 0), 2)
         self.extra_kwargs = kwargs
         self._client = None
         self._client_key = None
 
+    @staticmethod
+    def _sanitize_session_id(value: str) -> str:
+        cleaned = re.sub(r"[^A-Za-z0-9._:-]+", "-", str(value or "").strip())
+        return cleaned[:128]
+
+    @staticmethod
+    def _is_opencode_go_endpoint(base_url: str) -> bool:
+        value = str(base_url or "").lower()
+        return "opencode.ai" in value and "/zen/go" in value
+
+    def _default_headers(self) -> Dict[str, str]:
+        if not self._is_opencode_go_endpoint(self.base_url):
+            return {}
+        return {
+            "user-agent": "BrachyBot/1.0",
+            "x-opencode-session": self._opencode_session_id,
+        }
+
     def _get_client(self, api_key: str):
         """Reuse the Anthropic HTTP client and its connection pool."""
         from anthropic import Anthropic
 
-        key = (api_key, self.base_url, self.timeout)
+        default_headers = self._default_headers()
+        key = (
+            api_key,
+            self.base_url,
+            self.timeout,
+            tuple(sorted(default_headers.items())),
+        )
         if self._client is None or self._client_key != key:
             client_kwargs = {"api_key": api_key, "timeout": self.timeout}
             if self.base_url:
                 client_kwargs["base_url"] = self.base_url
+            if default_headers:
+                client_kwargs["default_headers"] = default_headers
             self._client = Anthropic(**client_kwargs)
             self._client_key = key
         return self._client

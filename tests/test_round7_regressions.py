@@ -398,8 +398,8 @@ def test_dose_contour_redraw_keeps_level_in_scope_and_uses_data_tree_color():
     )[0]
     assert "visibleContours.forEach(contour =>" in draw_block
     assert "const level = contour.level ?? contour.level_rel;" in draw_block
-    assert "Number(d.thresholdGy) - Number(level)" in draw_block
-    assert "const numericLevel = Number(level);" in draw_block
+    assert "Math.abs(thresholdGy - levelGy) < 1" in draw_block
+    assert "const numericLevel = Number.isFinite(levelGy) ? levelGy : Number(level);" in draw_block
 
 
 def test_dose_contours_are_session_scoped_retried_and_redrawn_at_zoom_resolution():
@@ -418,7 +418,7 @@ def test_dose_contours_are_session_scoped_retried_and_redrawn_at_zoom_resolution
     assert "const res = request.response" in contour
     assert "const data = request.data || {};" in contour
     assert "const _doseContourPreloadTimers = new Map();" in contour
-    assert "preloadDoseContourSlices(axis, sliceIndex);" in contour
+    assert "preloadDoseContourSlices(axis, normalizedSlice);" in contour
     assert "_syncLayerToSliceCanvas(axis, canvas, 7, { vector: true })" in contour
     assert "function _viewerVectorPixelRatio" in annotation
     assert "window.devicePixelRatio" in annotation
@@ -429,6 +429,27 @@ def test_dose_contours_are_session_scoped_retried_and_redrawn_at_zoom_resolution
     assert "`contourCanvas${cap}`" in report_export
     assert "range_tolerance" in routes
     assert "for level_index, level_contour, level_gy, level_rel in valid_levels" in routes
+
+
+def test_dose_contours_use_local_volume_and_keep_last_frame_during_pending():
+    """A slow contour request must not blank a viewer or export a stale frame."""
+    contour = (ROOT / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
+    report_export = (ROOT / "web/app/static/js/brachybot-report-export.js").read_text(encoding="utf-8")
+    trigger = contour.split("function triggerDoseContourRender", 1)[1].split(
+        "// Pre-load neighbors", 1
+    )[0]
+
+    assert "function _buildLocalDoseContourSlice" in contour
+    assert "function _getLocalDoseContourSlice" in contour
+    assert "_doseContourSliceDescriptor" in contour
+    assert "const local = _getLocalDoseContourSlice(axis, normalizedSlice);" in trigger
+    assert "canvas.dataset.contourPending = 'true';" in trigger
+    assert "if (canvas.dataset.contourReady !== 'true')" in trigger
+    assert "_scheduleDoseContourRetry(axis, normalizedSlice)" in trigger
+    assert "renderToken === _doseContourRenderTokens[axis]" in trigger
+    assert "layer.dataset?.contourPending === 'true'" in report_export
+    assert "triggerDoseContourRender(axis, sliceIndex);" in contour
+
 
 
 def test_search_fact_check_is_visible_as_a_pending_trace_phase():
@@ -618,8 +639,8 @@ def test_needle_render_scheduler_survives_mixed_static_asset_revisions():
     # Keep this contract aligned with the actual cache-busting revisions in
     # index.html. A stale assertion here falsely reports a deployment bug and
     # hides whether the endpoint interaction bundle is really versioned.
-    assert "brachybot-viewer-layout.js?v=38" in index
-    assert "brachybot-3d-manual.js?v=82" in index
+    assert "brachybot-viewer-layout.js?v=41" in index
+    assert "brachybot-3d-manual.js?v=90" in index
     assert "scene3D.requestRender(1)" in layout
     assert "scene3D.requestRender(2)" in layout
     assert "window.requestRender = requestRender;" in manual
@@ -708,9 +729,9 @@ def test_dose_overlay_opacity_is_invariant_during_slice_scrubbing():
     assert "_composite2DViewerCanvas(cfg.ax, { doseOpacity: 0.75 })" in report_editor
     assert "_composite2DViewerCanvas(cfg.ax, { doseOpacity: 0.75 })" in dvh_planning
     assert "_composite2DViewerCanvas(a.ax, { doseOpacity: 0.7 })" in ui_api
-    assert "brachybot-viewer-volume.js?v=51" in index
-    assert "brachybot-3d-manual.js?v=82" in index
-    assert "brachybot-manual-annotation.js?v=22" in index
+    assert "brachybot-viewer-volume.js?v=56" in index
+    assert "brachybot-3d-manual.js?v=90" in index
+    assert "brachybot-manual-annotation.js?v=26" in index
 
 
 def test_manual_seed_defaults_to_needle_middle_and_is_proximity_selectable():

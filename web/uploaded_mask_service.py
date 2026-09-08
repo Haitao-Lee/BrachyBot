@@ -20,6 +20,10 @@ import SimpleITK as sitk
 class UploadedMaskError(ValueError):
     """Raised when an uploaded mask cannot be staged safely."""
 
+    def __init__(self, message: str, *, code: str = "uploaded_mask_invalid"):
+        super().__init__(message)
+        self.code = str(code or "uploaded_mask_invalid")
+
 
 _COLLECTIONS = "uploaded_mask_collections"
 _LATEST_COLLECTION = "uploaded_mask_latest"
@@ -27,6 +31,15 @@ _MASKS = "generic_segmentation_masks"
 _LATEST_MASK = "generic_segmentation_latest"
 _PRESENTATION_KEYS = ("color", "opacity", "visible", "visible2D", "visible3D", "data_version")
 _STRUCTURE_CLASSIFICATIONS = frozenset({"ctv", "oar"})
+
+# A CTV upload is a small discrete segmentation catalogue, not an arbitrary
+# intensity volume.  Expanding every positive value into a browser/Data Tree
+# child is both clinically meaningless for a CTV and capable of creating
+# thousands of concurrent volume/mesh jobs when a CT is uploaded by mistake.
+# Keep the limit deliberately conservative; callers that need a large
+# anatomical label set should import it through the dedicated OAR/DICOM-RT
+# path instead of the manual CTV-mask staging path.
+MAX_UPLOADED_MASK_LABELS = 64
 
 
 def _batch(memory: Any, updates: Mapping[str, Any]) -> None:
@@ -98,7 +111,172 @@ def _labels(array: np.ndarray) -> tuple[list[int], dict[int, int]]:
         result[label] = int(count)
     if not positive:
         raise UploadedMaskError("Uploaded mask does not contain any positive labels.")
+    if len(positive) > MAX_UPLOADED_MASK_LABELS:
+        raise UploadedMaskError(
+            "The uploaded CTV mask contains "
+            f"{len(positive):,} positive values, exceeding the safe limit of "
+            f"{MAX_UPLOADED_MASK_LABELS}. This usually means a CT/intensity "
+            "volume was uploaded in the mask field. Upload a discrete mask "
+            "with a small number of integer labels instead.",
+            code="too_many_mask_labels",
+        )
     return positive, result
+
+
+def _same_path(left: Any, right: Any) -> bool:
+    """Return whether two upload paths identify the same file."""
+    left_text = str(left or "").strip()
+    right_text = str(right or "").strip()
+    if not left_text or not right_text:
+        return False
+    try:
+        left_path = Path(left_text).expanduser().resolve()
+        right_path = Path(right_text).expanduser().resolve()
+        if left_path == right_path:
+            return True
+        return bool(os.path.samefile(left_path, right_path))
+    except (OSError, RuntimeError, ValueError):
+        return False
+
+
+def _looks_like_intensity_volume(
+    array: np.ndarray,
+    labels: list[int],
+    counts: Mapping[int, int],
+    reference: Optional[np.ndarray] = None,
+) -> bool:
+    """Detect common CT-as-mask mistakes before creating child objects.
+
+    The hard cardinality cap in :func:`_labels` is the primary protection.
+    This secondary check catches compact/quantised CT exports that happen to
+    contain fewer than the cap but still have intensity-like spacing/range,
+    and catches a copied CT when the two paths differ.
+    """
+    try:
+        candidate = np.asarray(array)
+        if reference is not None:
+            ref = np.asarray(reference)
+            if candidate.shape == ref.shape and np.array_equal(candidate, ref):
+                return True
+        if len(labels) < 8:
+            return False
+        spread = int(max(labels) - min(labels))
+        if spread >= 1024:
+            return True
+        if len(labels) < 16 or spread < 256:
+            return False
+        singleton_fraction = sum(
+            1 for value in counts.values() if int(value) <= 2
+        ) / float(len(labels))
+        return singleton_fraction >= 0.25
+    except Exception:
+        # This is a safety heuristic, not a reason to reject a valid upload
+        # when metadata is unusual. The cardinality cap remains authoritative.
+        return False
+
+
+def _quarantine_oversized_uploaded_masks(planning_results: Dict[str, Any]) -> bool:
+    """Remove legacy unclassified explosions before they reach the browser.
+
+    Older snapshots may already contain one child per CT intensity.  New
+    uploads are rejected before staging, but hydration must also be safe for
+    those snapshots. Keep any explicitly promoted clinical children (their
+    effective CTV/OAR object is authoritative), remove only the unclassified
+    upload children, and mark the parent so the UI can explain the rejection.
+    """
+    raw_entries = planning_results.get(_MASKS)
+    if not isinstance(raw_entries, list):
+        return False
+    grouped: Dict[str, list[Mapping[str, Any]]] = {}
+    for raw_entry in raw_entries:
+        if not isinstance(raw_entry, Mapping) or not is_uploaded_mask_label(raw_entry):
+            continue
+        upload_id = str(raw_entry.get("upload_mask_id") or "").strip()
+        if upload_id:
+            grouped.setdefault(upload_id, []).append(raw_entry)
+    oversized = {
+        upload_id: entries
+        for upload_id, entries in grouped.items()
+        if len(entries) > MAX_UPLOADED_MASK_LABELS
+    }
+    if not oversized:
+        return False
+
+    oversized_ids = set(oversized)
+    next_entries: list[Dict[str, Any]] = []
+    kept_by_upload: Dict[str, list[Mapping[str, Any]]] = {}
+    changed = False
+    for raw_entry in raw_entries:
+        if not isinstance(raw_entry, Mapping):
+            continue
+        entry = dict(raw_entry)
+        upload_id = str(entry.get("upload_mask_id") or "").strip()
+        if upload_id not in oversized_ids:
+            next_entries.append(entry)
+            continue
+        classification = _normalised_classification(entry)
+        if classification in _STRUCTURE_CLASSIFICATIONS:
+            next_entries.append(entry)
+            kept_by_upload.setdefault(upload_id, []).append(entry)
+        else:
+            # Do not let a legacy CT upload create thousands of source rows or
+            # volume requests during restart hydration.
+            changed = True
+
+    if changed:
+        planning_results[_MASKS] = next_entries
+
+    raw_collections = planning_results.get(_COLLECTIONS)
+    if isinstance(raw_collections, list):
+        next_collections: list[Dict[str, Any]] = []
+        for raw_collection in raw_collections:
+            if not isinstance(raw_collection, Mapping):
+                continue
+            collection = dict(raw_collection)
+            upload_id = str(collection.get("upload_id") or "").strip()
+            if upload_id not in oversized_ids:
+                next_collections.append(collection)
+                continue
+            kept = kept_by_upload.get(upload_id, [])
+            kept_ids = [str(item.get("mask_id") or "") for item in kept if item.get("mask_id")]
+            collection["child_mask_ids"] = kept_ids
+            collection["source_labels"] = [
+                int(item.get("source_label") or 0) for item in kept
+            ]
+            collection["source_label_counts"] = {
+                str(item.get("source_label")): int(item.get("source_label_count") or 0)
+                for item in kept
+                if item.get("source_label") is not None
+            }
+            collection["rejected_label_count"] = len(oversized[upload_id])
+            collection["error_code"] = "too_many_mask_labels"
+            collection["error"] = (
+                "Upload Mask was quarantined because it contains too many "
+                "positive values; it may be a CT/intensity volume."
+            )
+            collection["status"] = "partially_quarantined" if kept else "rejected"
+            existing_promotions = collection.get("promoted_children")
+            if isinstance(existing_promotions, Mapping):
+                collection["promoted_children"] = {
+                    str(key): value
+                    for key, value in existing_promotions.items()
+                    if str(key) in kept_ids
+                    or str((value or {}).get("object_id") or "") in {
+                        _object_id(item.get("object_id") or item.get("mask_id"))
+                        for item in kept
+                    }
+                }
+            changed = True
+            next_collections.append(collection)
+        planning_results[_COLLECTIONS] = next_collections
+
+    latest = str(planning_results.get(_LATEST_MASK) or "")
+    if latest and not any(str(item.get("mask_id") or "") == latest for item in next_entries):
+        planning_results[_LATEST_MASK] = (
+            str(next_entries[-1].get("mask_id") or "") if next_entries else None
+        )
+        changed = True
+    return changed
 
 
 def _geometry(image: sitk.Image, shape: Iterable[int]) -> Dict[str, Any]:
@@ -182,9 +360,10 @@ def normalize_uploaded_mask_results(planning_results: Mapping[str, Any]) -> bool
     """
     if not isinstance(planning_results, dict):
         return False
+    changed = _quarantine_oversized_uploaded_masks(planning_results)
     raw_entries = planning_results.get(_MASKS)
     if not isinstance(raw_entries, list):
-        return False
+        return changed
 
     catalog_by_id: Dict[str, Mapping[str, Any]] = {}
     raw_catalog = planning_results.get("structure_catalog")
@@ -213,7 +392,6 @@ def normalize_uploaded_mask_results(planning_results: Mapping[str, Any]) -> bool
                     if isinstance(value, Mapping)
                 }
 
-    changed = False
     normalised_entries: list[Dict[str, Any]] = []
     effective_promotions: Dict[str, Dict[str, Dict[str, Any]]] = {}
     for raw_entry in raw_entries:
@@ -346,9 +524,17 @@ def _stage(
     ct_path: str,
     geometry: Mapping[str, Any],
     signature: str,
+    reference_array: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
     array = _validated_source(source)
     labels, counts = _labels(array)
+    if _looks_like_intensity_volume(array, labels, counts, reference_array):
+        raise UploadedMaskError(
+            "The uploaded CTV mask looks like a CT/intensity volume rather "
+            "than a discrete segmentation mask. Please select a label mask "
+            "file in the CTV-mask field.",
+            code="ct_uploaded_as_mask",
+        )
     # Normalize metadata before looking up a reusable collection.  Re-staging
     # the same source after a restart must preserve which children were moved
     # into the effective Structure Set.
@@ -492,12 +678,23 @@ def stage_uploaded_ctv_mask(memory: Any, image_path: str, label_path: str) -> Di
     """Align and stage every positive label; do not mutate the current CTV."""
     if not str(image_path or "").strip() or not str(label_path or "").strip():
         raise UploadedMaskError("Both CT image and uploaded mask paths are required.")
+    if _same_path(image_path, label_path):
+        raise UploadedMaskError(
+            "The CT image was supplied as the CTV mask. Please choose a "
+            "discrete CTV label/mask file instead of the CT volume.",
+            code="ct_uploaded_as_mask",
+        )
     try:
         from tool_factory.segmentation_alignment import align_label_to_reference
-        label_image = align_label_to_reference(label_path, _ct_image(memory, image_path), "LPI")
+        ct_image = _ct_image(memory, image_path)
+        label_image = align_label_to_reference(label_path, ct_image, "LPI")
     except Exception as exc:
         raise UploadedMaskError(f"Unable to align uploaded mask to the CT grid: {exc}") from exc
     source = sitk.GetArrayFromImage(label_image)
+    try:
+        reference_array = sitk.GetArrayFromImage(sitk.DICOMOrient(ct_image, "LPI"))
+    except Exception:
+        reference_array = None
     return _stage(
         memory,
         source,
@@ -505,6 +702,7 @@ def stage_uploaded_ctv_mask(memory: Any, image_path: str, label_path: str) -> Di
         ct_path=str(image_path),
         geometry=_geometry(label_image, source.shape),
         signature=_signature(label_path, image_path),
+        reference_array=reference_array,
     )
 
 
@@ -589,6 +787,7 @@ def remove_uploaded_mask_child(memory: Any, stable_id: str) -> bool:
 
 __all__ = [
     "UploadedMaskError",
+    "MAX_UPLOADED_MASK_LABELS",
     "is_uploaded_mask_label",
     "normalize_uploaded_mask_results",
     "normalize_uploaded_mask_state",

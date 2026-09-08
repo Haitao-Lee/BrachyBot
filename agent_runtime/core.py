@@ -9,6 +9,8 @@ from collections.abc import Mapping
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
+from utils.user_errors import format_tool_error, normalize_metadata
+
 
 logger = logging.getLogger(__name__)
 
@@ -940,7 +942,7 @@ class ToolResultPipeline:
 
         Priority: result.display > auto-generated from metadata > result.message > generic
         """
-        meta = result.metadata or {}
+        meta = normalize_metadata(getattr(result, "metadata", {}), source=tool_name)
 
         # Presentation tools carry an LLM-facing instruction in result.message.
         # That instruction must never become ordinary chat text or a Trace row.
@@ -948,10 +950,13 @@ class ToolResultPipeline:
         if tool_name in {"ui_controller", "ui_screenshot", "ui_content"}:
             return ToolResultPipeline._format_ui(tool_name, result, meta, lang)
 
-        if not result.success and lang == "zh" and tool_name in ToolResultPipeline._DOCUMENT_TOOLS:
-            return f"\u8bfb\u53d6\u6587\u4ef6\u5143\u6570\u636e\u5931\u8d25\uff1a{result.error}"
         if not result.success:
-            return f"Error: {result.error}" if lang == "en" else f"错误: {result.error}"
+            return format_tool_error(
+                tool_name,
+                getattr(result, "error", None) or getattr(result, "message", None),
+                meta,
+                lang,
+            )
 
         # Surgical-guide status is a structured clinical read.  Do not pass
         # the old generic "status retrieved" sentence to the synthesizer:
@@ -967,7 +972,7 @@ class ToolResultPipeline:
         if result.display:
             return result.display
 
-        meta = result.metadata or {}
+        meta = normalize_metadata(getattr(result, "metadata", {}), source=tool_name)
 
         # 2. Auto-generate based on tool category
         if tool_name in ToolResultPipeline._SEGMENTATION_TOOLS:
@@ -1575,6 +1580,44 @@ class ToolResultPipeline:
                 if lang == "zh":
                     return f"界面操作未执行：{target_labels.get(target, target or '当前控件')}需要明确的参数值。"
                 return f"The UI action was not applied: {target_labels_en.get(target, target or 'the control')} requires an explicit value."
+
+            if kind == "missing_context_argument":
+                action_id = str(hint.get("action_id") or "").strip()
+                if lang == "zh":
+                    return (
+                        f"界面操作未执行：上下文操作“{action_id or '当前操作'}”"
+                        "需要提供新的名称；系统没有执行任何重命名。"
+                    )
+                return (
+                    f"The UI action was not applied: context action "
+                    f"“{action_id or 'the requested action'}” requires a new name; "
+                    "no rename was performed."
+                )
+            if kind == "invalid_context_payload":
+                if lang == "zh":
+                    return "界面操作未执行：上下文操作需要结构化参数，系统没有执行该操作。"
+                return "The UI action was not applied: the context action requires a structured payload."
+            if kind == "invalid_context_action":
+                if lang == "zh":
+                    return "界面操作未执行：上下文操作缺少有效的 action_id，系统没有执行该操作。"
+                return "The UI action was not applied: the context action has no valid action_id."
+
+            if kind == "unknown_target":
+                requested_target = str(
+                    (hint.get("requested") or {}).get("target")
+                    if isinstance(hint.get("requested"), dict)
+                    else target
+                ).strip()
+                if lang == "zh":
+                    return (
+                        f"界面操作未执行：目标“{requested_target or '未命名'}”不是当前页面已发布的可执行控件。"
+                        "系统没有猜测或替换其他控件；请使用当前能力目录中的目标和参数重新执行。"
+                    )
+                return (
+                    f"The UI action was not applied: “{requested_target or 'unnamed'}” is not an executable "
+                    "control published by the current page. No neighboring control was guessed or substituted; "
+                    "retry with a target and parameters from the current capability contract."
+                )
             if lang == "zh":
                 return "界面操作未执行：当前请求与可用控件能力不匹配。请说明是展开查看器、适配相机，还是调整图像缩放。"
             return "The UI action was not applied: the request did not match an available control capability. Specify whether to maximize the viewer, fit the camera, or change image magnification."
@@ -2134,7 +2177,9 @@ class ToolResultPipeline:
             status = s.get("status", "")
             result = s.get("result", "")
             if status == "error":
-                errors.append(f"❌ {tool}: {result}")
+                errors.append(
+                    f"❌ {tool}: {format_tool_error(tool, result, s.get('metadata'), lang)}"
+                )
                 continue
             if result:
                 if tool == "ui_screenshot":

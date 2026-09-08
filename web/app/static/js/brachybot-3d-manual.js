@@ -1071,9 +1071,6 @@ function _setManualDoseProgress(stateName, text) {
         row = document.createElement('div');
         row.id = 'manualDoseProgress';
         row.className = 'chat-event-row manual-dose-progress';
-        const icon = document.createElement('span');
-        icon.className = 'chat-event-icon';
-        icon.textContent = 'AI';
         const body = document.createElement('div');
         body.className = 'chat-event-content';
         const title = document.createElement('span');
@@ -1092,7 +1089,6 @@ function _setManualDoseProgress(stateName, text) {
         const track = document.createElement('span');
         track.className = 'manual-dose-progress-track';
         track.innerHTML = '<span class="manual-dose-progress-fill"></span>';
-        row.appendChild(icon);
         row.appendChild(body);
         row.appendChild(track);
         container.appendChild(row);
@@ -1953,6 +1949,7 @@ if (!window.__brachybotMonitorPageLifecycleHook) {
 async function startTrainingMode(goal = 'Monitor planning workflow') {
     const startSessionId = _activeApiSessionId();
     if (['starting', 'active', 'stopping'].includes(trainingMonitorState.phase)) return null;
+    if (typeof _inputButtonProgress === 'function') _inputButtonProgress('training_monitor_start', 'running', '\u6b63\u5728\u542f\u52a8\u76d1\u6d4b', 'Starting monitor mode');
     const runId = (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function')
         ? globalThis.crypto.randomUUID()
         : `monitor-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -2040,6 +2037,7 @@ async function startTrainingMode(goal = 'Monitor planning workflow') {
             },
         );
         await syncUIBridgeState('training_start');
+        if (typeof _inputButtonProgress === 'function') _inputButtonProgress('training_monitor_start', 'done', '\u76d1\u6d4b\u6a21\u5f0f', 'Monitor mode', _manualText('\u5df2\u542f动', 'Started'));
         return data;
     } catch (e) {
         if (trainingMonitorState.sessionId === startSessionId
@@ -2058,6 +2056,7 @@ async function startTrainingMode(goal = 'Monitor planning workflow') {
             trainingMonitorState.runId = null;
             trainingMonitorState.screenshotGalleryContext = null;
         }
+        if (typeof _inputButtonProgress === 'function') _inputButtonProgress('training_monitor_start', 'error', '\u76d1\u6d4b\u6a21\u5f0f', 'Monitor mode', e.message || _manualText('\u542f动失败', 'Failed to start'));
         const failed = language === 'zh'
             ? `监测模式启动失败：${e.message}`
             : `Monitor mode failed to start: ${e.message}`;
@@ -2071,6 +2070,7 @@ async function stopTrainingMode() {
     const stopSessionId = trainingMonitorState.sessionId || _activeApiSessionId();
     const stopRunId = trainingMonitorState.runId;
     if (stopSessionId !== _activeApiSessionId()) return null;
+    if (typeof _inputButtonProgress === 'function') _inputButtonProgress('training_monitor_stop', 'running', '\u6b63\u5728\u7ed3束\u76d1\u6d4b', 'Stopping monitor mode');
     const language = trainingMonitorState.language
         || (typeof window.monitorConversationLanguage === 'function'
             ? window.monitorConversationLanguage(stopSessionId)
@@ -2114,7 +2114,10 @@ async function stopTrainingMode() {
             && trainingMonitorState.sessionId === stopSessionId;
         const screenshotContext = trainingMonitorState.screenshotGalleryContext;
         if (ownsRun) clearTrainingMonitorLocal(stopSessionId, stopRunId);
-        if (alreadyClosed) return data;
+        if (alreadyClosed) {
+            if (typeof _inputButtonProgress === 'function') _inputButtonProgress('training_monitor_stop', 'done', '\u7ed3束\u76d1测', 'Stop monitor mode', _manualText('\u5df2\u5b8c\u6210', 'Completed'));
+            return data;
+        }
         const localizedAdvice = data.localized_advice || data.advice;
         const fallbackPrefix = language === 'zh' ? '规划监测总结' : 'Planning monitoring summary';
         addChat(
@@ -2141,8 +2144,10 @@ async function stopTrainingMode() {
             if (typeof _clearMonitorFeedbackTimer === 'function') _clearMonitorFeedbackTimer();
             trainingMonitorState.pendingFeedback = [];
         }
+        if (typeof _inputButtonProgress === 'function') _inputButtonProgress('training_monitor_stop', 'done', '\u7ed3束\u76d1测', 'Stop monitor mode', _manualText('\u5df2\u5b8c\u6210', 'Completed'));
         return data;
     } catch (e) {
+        if (typeof _inputButtonProgress === 'function') _inputButtonProgress('training_monitor_stop', 'error', '\u7ed3\u675f\u76d1\u6d4b', 'Stop monitor mode', e.message || _manualText('\u7ed3束失败', 'Failed to stop'));
         // The stop request was not acknowledged. Close the local run so a
         // transport failure cannot leave a permanent monitor spinner.
         const ownsRun = trainingMonitorState.runId === stopRunId
@@ -2209,26 +2214,53 @@ function _formatAdviceReport(advice, prefix = '', language = null) {
     return lines.join('\n');
 }
 
-async function requestPlanningAdvice() {
-    const language = typeof window.monitorConversationLanguage === 'function'
+async function requestPlanningAdvice(options = {}) {
+    const requestOptions = typeof options === 'string' ? { question: options } : (options || {});
+    const question = String(requestOptions.question || '').trim();
+    const detectedLanguage = question && typeof detectConversationLanguage === 'function'
+        ? detectConversationLanguage(question)
+        : '';
+    const language = detectedLanguage || (typeof window.monitorConversationLanguage === 'function'
         ? window.monitorConversationLanguage(_activeApiSessionId())
-        : (window._i18nLang || 'en');
+        : (window._i18nLang || 'en'));
+    if (typeof _inputButtonProgress === 'function') _inputButtonProgress('planning_advice', 'running', '\u6b63在\u751f\u6210\u89c4\u5212建议', 'Generating planning advice');
     try {
+        const payload = {
+            session_id: _activeApiSessionId(),
+            language,
+            ui_state: collectUIState(),
+        };
+        if (question) {
+            payload.question = question;
+            payload.natural_language = true;
+        }
         const res = await fetch(API + '/training/advice', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_id: _activeApiSessionId(), language, ui_state: collectUIState() }),
+            body: JSON.stringify(payload),
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data || !data.success) throw new Error((data && data.error) || `HTTP ${res.status}`);
-        const advice = data.localized_advice || data.advice;
-        const prefix = typeof window._t === 'function'
-            ? window._t('基于当前指标和界面状态的详细规划建议：', 'Detailed plan advice based on current metrics and UI state:')
-            : 'Detailed plan advice based on current metrics and UI state:';
-        addChat('bot-response', _formatAdviceReport(advice, prefix));
-        reportUIEvent('training.advice', 'Detailed advice requested', {});
+        const naturalResponse = String(data.natural_response || '').trim();
+        if (naturalResponse) {
+            // Conversational questions already contain their own explanation;
+            // do not prepend a fixed label or re-wrap them as a mechanical
+            // strengths/issues checklist.
+            addChat('bot-response', naturalResponse);
+        } else {
+            const advice = data.localized_advice || data.advice;
+            const prefix = language === 'zh'
+                ? '基于当前指标和界面状态的详细规划建议：'
+                : 'Detailed plan advice based on current metrics and UI state:';
+            addChat('bot-response', _formatAdviceReport(advice, prefix, language));
+        }
+        reportUIEvent('training.advice', question ? 'Conversational planning assessment requested' : 'Detailed advice requested', {
+            conversational: !!question,
+        });
+        if (typeof _inputButtonProgress === 'function') _inputButtonProgress('planning_advice', 'done', '\u89c4\u5212建议', 'Planning advice', _manualText('\u5df2\u5b8c\u6210', 'Completed'));
         return data;
     } catch (e) {
+        if (typeof _inputButtonProgress === 'function') _inputButtonProgress('planning_advice', 'error', '\u89c4\u5212建议', 'Planning advice', e.message || _manualText('\u751f\u6210失败', 'Failed'));
         const failed = typeof window._t === 'function'
             ? window._t(`详细建议获取失败：${e.message}`, `Detailed advice failed: ${e.message}`)
             : `Detailed advice failed: ${e.message}`;
@@ -2277,6 +2309,7 @@ function _formatReadinessReport(data) {
 }
 
 async function checkSystemReadiness() {
+    if (typeof _inputButtonProgress === 'function') _inputButtonProgress('system_readiness', 'running', '\u6b63在\u68c0\u67e5\u7cfb\u7edf\u5c31绪\u72b6态', 'Checking system readiness');
     try {
         const res = await fetch(API + '/readiness', {
             method: 'POST',
@@ -2287,8 +2320,10 @@ async function checkSystemReadiness() {
         if (!res.ok || !data || !data.success) throw new Error((data && data.error) || `HTTP ${res.status}`);
         addChat('bot-response', _formatReadinessReport(data));
         reportUIEvent('system.readiness', 'System readiness checklist requested', { ready: !!data.ready });
+        if (typeof _inputButtonProgress === 'function') _inputButtonProgress('system_readiness', 'done', '\u7cfb\u7edf\u5c31\u7eea\u68c0\u67e5', 'System readiness check', _manualText('\u5df2\u5b8c\u6210', 'Completed'));
         return data;
     } catch (e) {
+        if (typeof _inputButtonProgress === 'function') _inputButtonProgress('system_readiness', 'error', '\u7cfb\u7edf\u5c31绪\u68c0查', 'System readiness check', e.message || _manualText('\u68c0查失败', 'Failed'));
         const failed = typeof window._t === 'function'
             ? window._t(`系统就绪检查失败：${e.message}`, `System readiness check failed: ${e.message}`)
             : `System readiness check failed: ${e.message}`;
@@ -3481,7 +3516,7 @@ function init3DScene() {
             items += `<div class="ctx-menu-item" onclick="hideContextMenu();setNeedleVisibilityFrom3D('${needleId}', true)">
                 <span class="ctx-icon">&#128065;</span> Show needle and seeds</div>`;
             items += `<div class="ctx-menu-item" onclick="hideContextMenu();setNeedleVisibilityFrom3D('${needleId}', false)">
-                <span class="ctx-icon">&#128064;</span> Hide needle and seeds</div>`;
+                <span class="ctx-icon">&#128065;</span> Hide needle and seeds</div>`;
             items += `<div class="ctx-menu-sep"></div>`;
             items += `<div class="ctx-menu-item" style="opacity:0.5;cursor:default;font-size:0.6rem;">
                 <span class="ctx-icon">&#127912;</span> Opacity</div>`;
@@ -3698,6 +3733,11 @@ function addMeshToScene(meshData) {
             : String(id).startsWith('mask_') || String(id).startsWith('mask:'));
     const isSkinSurfaceMesh = String(meshData.source || '') === 'skin_surface'
         || String(id) === 'skin_surface';
+    const isSegmentationMesh = ['ctv', 'oar'].includes(String(source).toLowerCase())
+        || id === 'ctv'
+        || id === 'oar'
+        || id.startsWith('ctv_')
+        || id.startsWith('organ_');
     if (isSkinSurfaceMesh) {
         const skin = dataTreeState?.skin;
         if (skin) {
@@ -3715,6 +3755,39 @@ function addMeshToScene(meshData) {
         }
         renderDataTree?.();
         window.applyDataTreeViewVisibility?.();
+    } else if (isSegmentationMesh) {
+        // CTV/OAR meshes belong to the Segmentation branch.  Older versions
+        // fell through to the generic planning mirror below, so one mesh had
+        // two owners and hiding Planning also hid CTV/OAR.  Keep the canonical
+        // structure node as the only visibility/appearance owner and purge
+        // any legacy duplicate before the next render pass.
+        if (dataTreeState?.planning?.meshes) {
+            dataTreeState.planning.meshes = dataTreeState.planning.meshes
+                .filter(item => item.id !== id);
+        }
+        const canonical = id === 'ctv'
+            ? dataTreeState?.ctv
+            : id.startsWith('ctv_')
+                ? dataTreeState?.ctvLabels?.[id]
+                : id === 'oar'
+                    ? dataTreeState?.oar
+                    : id.startsWith('organ_')
+                        ? (dataTreeState?.organs || []).find(item => item.id === id)
+                        : null;
+        if (canonical) {
+            canonical.objectId = meshData.object_id || canonical.objectId || id;
+            canonical.nodeId = meshData.data_tree_node_id || canonical.nodeId || id;
+            canonical.meshLoaded = true;
+            canonical.loading = false;
+            canonical.loaded = true;
+            canonical.status = meshData.status || 'ready';
+            canonical.error = null;
+            canonical.dataVersion = Number(meshData.data_version || canonical.dataVersion || 0);
+        }
+        if (typeof renderDataTree === 'function') renderDataTree();
+        if (typeof window.applyDataTreeViewVisibility === 'function') {
+            window.applyDataTreeViewVisibility();
+        }
     } else if (isMaskMesh) {
         const mask = typeof window.getDataTreeMaskState === 'function'
             ? window.getDataTreeMaskState(id)
@@ -5904,27 +5977,85 @@ async function reconstructDoseIsosurface3D(idOrThreshold) {
     const threshold = Number(String(idOrThreshold ?? '').replace(/^dose_iso_/, ''));
     if (!Number.isFinite(threshold)) throw new Error('Invalid dose iso-surface threshold');
     const level = (dataTreeState?.planning?.doseLevels || []).find(item => Math.abs(Number(item.threshold) - threshold) < 1e-6);
-    if (!level) throw new Error(`Dose iso-surface ${threshold} Gy is not available`);
+    if (!level) throw new Error('Dose iso-surface ' + threshold + ' Gy is not available');
     const colorText = String(level.color || '#22c55e').replace('#', '');
     const color = Number.parseInt(colorText, 16) || 0x22c55e;
-    await loadDoseIsosurface(Number(level.threshold), color);
-    const mesh = scene3D.meshes[`dose_iso_${level.threshold}`];
-    if (mesh) applyMeshOpacity(
-        mesh,
-        level.opacity ?? 0.3,
-        isDataTreeNodeVisible3D(level),
-    );
-    renderDataTree();
-    forceRender3DViewer();
-    return { threshold: Number(level.threshold), reconstructed: !!mesh };
+    const loadingToken = typeof window.beginViewer3DLoading === 'function'
+        ? window.beginViewer3DLoading(
+            typeof _dtText === 'function'
+                ? _dtText('正在重建剂量等剂量面…', 'Reconstructing dose isosurface…')
+                : 'Reconstructing dose isosurface...',
+        )
+        : null;
+    level.loading = true;
+    level.status = 'loading';
+    level.error = null;
+    try {
+        renderDataTree();
+        const result = await loadDoseIsosurface(Number(level.threshold), color);
+        if (result?.stale) {
+            level.loading = false;
+            level.status = 'stale';
+            renderDataTree();
+            return { success: false, stale: true };
+        }
+        if (result?.error) throw new Error(result.error);
+        const mesh = scene3D.meshes['dose_iso_' + level.threshold];
+        if (!mesh) throw new Error('No dose isosurface mesh was generated');
+        applyMeshOpacity(
+            mesh,
+            level.opacity ?? 0.3,
+            isDataTreeNodeVisible3D(level),
+        );
+        level.loading = false;
+        level.loaded = true;
+        level.meshLoaded = true;
+        level.status = 'ready';
+        level.error = null;
+        renderDataTree();
+        forceRender3DViewer();
+        if (typeof addChat === 'function') addChat('system', typeof _dtText === 'function'
+            ? _dtText(
+                '剂量等剂量面 ' + Number(level.threshold) + ' Gy 已完成 3D 重建。',
+                'Dose isosurface ' + Number(level.threshold) + ' Gy was reconstructed in 3D.',
+            )
+            : 'Dose isosurface ' + Number(level.threshold) + ' Gy was reconstructed in 3D.');
+        return { success: true, threshold: Number(level.threshold), reconstructed: true };
+    } catch (error) {
+        level.loading = false;
+        level.status = 'error';
+        level.error = error?.message || String(error);
+        renderDataTree();
+        if (typeof addChat === 'function') addChat('error', typeof _dtText === 'function'
+            ? _dtText(
+                '剂量等剂量面 3D 重建失败：' + level.error,
+                'Dose isosurface 3D reconstruction failed: ' + level.error,
+            )
+            : 'Dose isosurface 3D reconstruction failed: ' + level.error);
+        return { success: false, threshold: Number(level.threshold), error: level.error };
+    } finally {
+        if (loadingToken != null && typeof window.endViewer3DLoading === 'function') {
+            window.endViewer3DLoading(loadingToken);
+        }
+    }
 }
-
 async function reconstructDoseIsosurfaces3D() {
     const levels = (dataTreeState?.planning?.doseLevels || []).slice();
-    for (const level of levels) await reconstructDoseIsosurface3D(level.threshold);
-    return { count: levels.length };
+    const results = [];
+    for (const level of levels) {
+        results.push(await reconstructDoseIsosurface3D(level.threshold));
+    }
+    const reconstructed = results.filter(result => result?.success === true).length;
+    const failed = results.length - reconstructed;
+    return {
+        success: reconstructed > 0,
+        complete: failed === 0,
+        reconstructed,
+        failed,
+        total: levels.length,
+        error: results.find(result => result?.success !== true)?.error || undefined,
+    };
 }
-
 // Load the CTV tumor mesh + any non-traversable OAR meshes into the
 // 3D viewer, in parallel. The user explicitly wants these visible
 // after planning so they have a target volume to compare the
@@ -6742,6 +6873,14 @@ function clearDoseOverlayRuntime() {
     // the next Session/Planning state.
     window.__doseOverlayBootstrapState = null;
     Object.keys(_doseContourCache).forEach(key => delete _doseContourCache[key]);
+    _doseContourLocalCache.clear();
+    _doseContourRetryTimers.forEach(timer => clearTimeout(timer));
+    _doseContourRetryTimers.clear();
+    _doseContourRetryCounts.clear();
+    ['axial', 'sagittal', 'coronal'].forEach(axis => {
+        _doseContourDesiredSlice[axis] = null;
+        _doseContourRenderTokens[axis] = (_doseContourRenderTokens[axis] || 0) + 1;
+    });
     _doseContourInflight.clear();
     _doseContourPreloadTimers.forEach(timer => clearTimeout(timer));
     _doseContourPreloadTimers.clear();
@@ -7902,7 +8041,17 @@ async function loadDoseOverlayVolume(ownerOverlay = state.doseOverlay) {
             }
             if (typeof renderDoseForCurrentSlice === 'function') {
                 ['axial', 'coronal', 'sagittal'].forEach(axis => {
-                    renderDoseForCurrentSlice(axis, Number(state.slices?.[axis] || 0));
+                    const sliceIndex = Number(state.slices?.[axis] || 0);
+                    renderDoseForCurrentSlice(axis, sliceIndex);
+                    // The compact volume arrives independently of the
+                    // metadata/slice request. Re-run the contour layer now so
+                    // the current frame switches from network fallback to
+                    // synchronous marching-squares without waiting for the
+                    // next slider event.
+                    if (typeof triggerDoseContourRender === 'function'
+                        && state.doseOverlay?.visible) {
+                        triggerDoseContourRender(axis, sliceIndex);
+                    }
                 });
             }
             return ownerOverlay.volumeData;
@@ -8277,6 +8426,285 @@ function setDoseOverlayOpacity(val) {
 // from another case or an older recalculation can never be reused.
 const _doseContourCache = {};
 const _doseContourInflight = new Map();
+// Contour requests are intentionally allowed to lag one network round trip
+// behind a fast slice drag.  Keep the last committed contour frame visible
+// while the requested frame is pending, and use the compact dose volume for
+// a synchronous local path whenever it has finished downloading.
+const _doseContourDesiredSlice = { axial: null, sagittal: null, coronal: null };
+const _doseContourRenderTokens = { axial: 0, sagittal: 0, coronal: 0 };
+const _doseContourRetryTimers = new Map();
+const _doseContourRetryCounts = new Map();
+const _doseContourLocalCache = new Map();
+const _DOSE_CONTOUR_LOCAL_CACHE_LIMIT = 24;
+
+function _doseContourRetryKey(axis, sliceIndex) {
+    return `${axis}_${Number(sliceIndex)}`;
+}
+
+function _clearDoseContourRetry(axis, sliceIndex) {
+    const key = _doseContourRetryKey(axis, sliceIndex);
+    const timer = _doseContourRetryTimers.get(key);
+    if (timer) clearTimeout(timer);
+    _doseContourRetryTimers.delete(key);
+    _doseContourRetryCounts.delete(key);
+}
+
+function _scheduleDoseContourRetry(axis, sliceIndex) {
+    if (!state.doseOverlay || !state.doseOverlay.visible) return;
+    if (_doseContourDesiredSlice[axis] !== Number(sliceIndex)
+        || Number(state.slices?.[axis]) !== Number(sliceIndex)) return;
+    const key = _doseContourRetryKey(axis, sliceIndex);
+    const count = Number(_doseContourRetryCounts.get(key) || 0);
+    if (count >= 3 || _doseContourRetryTimers.has(key)) return;
+    _doseContourRetryCounts.set(key, count + 1);
+    const delay = [90, 220, 500][count] || 500;
+    const timer = setTimeout(() => {
+        _doseContourRetryTimers.delete(key);
+        if (!state.doseOverlay || !state.doseOverlay.visible) return;
+        if (_doseContourDesiredSlice[axis] !== Number(sliceIndex)
+            || Number(state.slices?.[axis]) !== Number(sliceIndex)) return;
+        triggerDoseContourRender(axis, Number(sliceIndex));
+    }, delay);
+    _doseContourRetryTimers.set(key, timer);
+}
+
+function _doseContourHexColor(value, fallback = [0, 1, 0]) {
+    if (Array.isArray(value) && value.length >= 3) {
+        return value.slice(0, 3).map(channel => {
+            const number = Number(channel);
+            return number > 1 ? number / 255 : number;
+        });
+    }
+    const text = String(value || '');
+    const match = text.match(/^#?([0-9a-f]{6})$/i);
+    if (!match) return fallback.slice();
+    return [
+        parseInt(match[1].slice(0, 2), 16) / 255,
+        parseInt(match[1].slice(2, 4), 16) / 255,
+        parseInt(match[1].slice(4, 6), 16) / 255,
+    ];
+}
+
+function _doseContourLevelSpecs() {
+    const rxGy = Number(
+        (typeof _getCurrentPrescriptionGy === 'function' ? _getCurrentPrescriptionGy() : 0)
+        || DEFAULT_PRESCRIPTION_GY
+        || 120,
+    );
+    const scaleGy = Math.max(1e-9, Number(
+        (typeof _getDoseScaleGy === 'function' ? _getDoseScaleGy() : 0)
+        || DEFAULT_DOSE_SCALE_GY
+        || 190.8,
+    ));
+    const levels = Array.isArray(dataTreeState?.planning?.doseLevels)
+        ? dataTreeState.planning.doseLevels
+        : [];
+    const display3d = window._display3dConfig || {};
+    const fallbackRelative = Array.isArray(display3d.iso_dose_values)
+        ? display3d.iso_dose_values
+        : [1.0, 1.5, 2.0, 4.0];
+    const fallbackColors = Array.isArray(display3d.iso_surface_colors)
+        ? display3d.iso_surface_colors
+        : ['#00ff00', '#88ff00', '#ffff00', '#ff8800'];
+    const fallbackOpacities = Array.isArray(display3d.iso_surface_opacities)
+        ? display3d.iso_surface_opacities
+        : [0.7, 0.6, 0.5, 0.4];
+    const specs = [];
+    const append = (value, index, source) => {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric) || numeric <= 0) return;
+        const relative = source?.thresholdGy != null
+            ? numeric / Math.max(1e-9, rxGy)
+            : (numeric <= 5 ? numeric : numeric / Math.max(1e-9, rxGy));
+        const key = numeric.toFixed(6);
+        if (specs.some(item => item.key === key)) return;
+        specs.push({
+            key,
+            thresholdGy: numeric,
+            thresholdModel: numeric / scaleGy,
+            levelRel: relative,
+            color: _doseContourHexColor(source?.color || fallbackColors[index % fallbackColors.length]),
+            opacity: Number.isFinite(Number(source?.opacity))
+                ? Number(source.opacity)
+                : Number(fallbackOpacities[index % fallbackOpacities.length] ?? 0.6),
+        });
+    };
+    if (levels.length) {
+        levels.forEach((level, index) => {
+            const thresholdGy = level?.thresholdGy != null
+                ? Number(level.thresholdGy)
+                : Number(level?.threshold);
+            if (Number.isFinite(thresholdGy) && thresholdGy > 0) {
+                append(level?.thresholdGy != null
+                    ? thresholdGy
+                    : (thresholdGy <= 5 ? thresholdGy * rxGy : thresholdGy), index, level);
+            }
+        });
+    } else {
+        fallbackRelative.forEach((relative, index) => append(Number(relative) * rxGy, index, {
+            color: fallbackColors[index % fallbackColors.length],
+            opacity: fallbackOpacities[index % fallbackOpacities.length],
+        }));
+    }
+    return specs;
+}
+
+function _doseContourLevelSignature() {
+    return _doseContourLevelSpecs().map(spec => [
+        spec.thresholdGy.toFixed(6),
+        spec.levelRel.toFixed(6),
+        spec.color.join(','),
+        spec.opacity,
+    ].join(':')).join('|');
+}
+
+function _doseContourSliceDescriptor(axis, sliceIndex, overlay = state.doseOverlay) {
+    const volume = overlay?.volumeData;
+    const shape = (overlay?.shape || []).map(value => Number(value));
+    if (!(volume instanceof Uint16Array) || shape.length !== 3
+        || shape.some(value => !Number.isInteger(value) || value <= 0)
+        || volume.length !== shape[0] * shape[1] * shape[2]) return null;
+    const [sizeZ, sizeY, sizeX] = shape;
+    const clamp = (value, maximum) => Math.max(0, Math.min(maximum, Math.trunc(Number(value) || 0)));
+    const normalized = String(axis || '').toLowerCase();
+    const descriptor = { rows: 0, cols: 0, indexAt: null };
+    if (normalized === 'axial' || normalized === 'z') {
+        const z = (sizeZ - 1) - clamp(sliceIndex, sizeZ - 1);
+        descriptor.rows = sizeY;
+        descriptor.cols = sizeX;
+        descriptor.indexAt = (row, col) => (z * sizeY + row) * sizeX + col;
+    } else if (normalized === 'coronal' || normalized === 'y') {
+        const y = clamp(sliceIndex, sizeY - 1);
+        descriptor.rows = sizeZ;
+        descriptor.cols = sizeX;
+        descriptor.indexAt = (row, col) => (row * sizeY + y) * sizeX + col;
+    } else {
+        const x = clamp(sliceIndex, sizeX - 1);
+        descriptor.rows = sizeZ;
+        descriptor.cols = sizeY;
+        descriptor.indexAt = (row, col) => (row * sizeY + col) * sizeX + x;
+    }
+    const minimum = Number(overlay.volumeMin);
+    const quantizationScale = Number(overlay.volumeQuantizationScale);
+    if (!Number.isFinite(minimum) || !Number.isFinite(quantizationScale)
+        || quantizationScale < 0) return null;
+    descriptor.valueAt = (row, col) => minimum
+        + Number(volume[descriptor.indexAt(row, col)]) * quantizationScale;
+    return descriptor;
+}
+
+function _localDoseContourLines(grid, rows, cols, level) {
+    const lines = [];
+    const interpolate = (first, second) => {
+        const denominator = second - first;
+        if (Math.abs(denominator) < 1e-12) return 0.5;
+        return Math.max(0, Math.min(1, (level - first) / denominator));
+    };
+    const edgePoint = (edge, row, col, v00, v01, v11, v10) => {
+        if (edge === 0) return [row, col + interpolate(v00, v01)];
+        if (edge === 1) return [row + interpolate(v01, v11), col + 1];
+        if (edge === 2) return [row + 1, col + interpolate(v10, v11)];
+        return [row + interpolate(v00, v10), col];
+    };
+    const addPair = (first, second, row, col, v00, v01, v11, v10) => {
+        lines.push([
+            edgePoint(first, row, col, v00, v01, v11, v10),
+            edgePoint(second, row, col, v00, v01, v11, v10),
+        ]);
+    };
+    for (let row = 0; row < rows - 1; row += 1) {
+        for (let col = 0; col < cols - 1; col += 1) {
+            const top = row * cols + col;
+            const v00 = grid[top];
+            const v01 = grid[top + 1];
+            const v10 = grid[top + cols];
+            const v11 = grid[top + cols + 1];
+            const mask = (v00 >= level ? 1 : 0)
+                | (v01 >= level ? 2 : 0)
+                | (v11 >= level ? 4 : 0)
+                | (v10 >= level ? 8 : 0);
+            switch (mask) {
+                case 1: addPair(3, 0, row, col, v00, v01, v11, v10); break;
+                case 2: addPair(0, 1, row, col, v00, v01, v11, v10); break;
+                case 3: addPair(3, 1, row, col, v00, v01, v11, v10); break;
+                case 4: addPair(1, 2, row, col, v00, v01, v11, v10); break;
+                case 5:
+                    addPair(3, 2, row, col, v00, v01, v11, v10);
+                    addPair(0, 1, row, col, v00, v01, v11, v10);
+                    break;
+                case 6: addPair(0, 2, row, col, v00, v01, v11, v10); break;
+                case 7: addPair(3, 2, row, col, v00, v01, v11, v10); break;
+                case 8: addPair(2, 3, row, col, v00, v01, v11, v10); break;
+                case 9: addPair(0, 2, row, col, v00, v01, v11, v10); break;
+                case 10:
+                    addPair(0, 3, row, col, v00, v01, v11, v10);
+                    addPair(1, 2, row, col, v00, v01, v11, v10);
+                    break;
+                case 11: addPair(1, 2, row, col, v00, v01, v11, v10); break;
+                case 12: addPair(1, 3, row, col, v00, v01, v11, v10); break;
+                case 13: addPair(0, 1, row, col, v00, v01, v11, v10); break;
+                case 14: addPair(3, 0, row, col, v00, v01, v11, v10); break;
+                default: break;
+            }
+        }
+    }
+    return lines;
+}
+
+function _buildLocalDoseContourSlice(axis, sliceIndex, overlay = state.doseOverlay) {
+    const descriptor = _doseContourSliceDescriptor(axis, sliceIndex, overlay);
+    if (!descriptor || descriptor.rows < 2 || descriptor.cols < 2) return null;
+    // The browser only needs screen-resolution contours.  Sampling to a
+    // bounded grid keeps all three viewers responsive on 512/1024-pixel CTs.
+    const rows = Math.min(descriptor.rows, 256);
+    const cols = Math.min(descriptor.cols, 256);
+    const grid = new Float32Array(rows * cols);
+    for (let row = 0; row < rows; row += 1) {
+        const sourceRow = Math.round(row * (descriptor.rows - 1) / Math.max(1, rows - 1));
+        for (let col = 0; col < cols; col += 1) {
+            const sourceCol = Math.round(col * (descriptor.cols - 1) / Math.max(1, cols - 1));
+            grid[row * cols + col] = descriptor.valueAt(sourceRow, sourceCol);
+        }
+    }
+    const levelSignature = _doseContourLevelSignature();
+    const contours = _doseContourLevelSpecs().map(spec => ({
+        level: spec.thresholdGy,
+        level_rel: spec.levelRel,
+        lines: _localDoseContourLines(grid, rows, cols, spec.thresholdModel),
+        color: spec.color,
+        opacity: spec.opacity,
+    })).filter(contour => contour.lines.length > 0);
+    return {
+        success: true,
+        source: 'local_dose_volume',
+        contours,
+        slice_shape: [rows, cols],
+        dose_units: overlay?.doseUnits || 'normalized_model_output',
+        dose_scale_gy: typeof _getDoseScaleGy === 'function'
+            ? _getDoseScaleGy()
+            : DEFAULT_DOSE_SCALE_GY,
+        level_signature: levelSignature,
+    };
+}
+
+function _getLocalDoseContourSlice(axis, sliceIndex) {
+    const cacheKey = _doseContourCacheKey(axis, sliceIndex);
+    const levelSignature = _doseContourLevelSignature();
+    const cached = _doseContourLocalCache.get(cacheKey);
+    if (cached && cached.level_signature === levelSignature) return cached;
+    const data = _buildLocalDoseContourSlice(axis, sliceIndex, state.doseOverlay);
+    if (!data) return null;
+    _doseContourLocalCache.set(cacheKey, data);
+    _doseContourCache[cacheKey] = data;
+    while (_doseContourLocalCache.size > _DOSE_CONTOUR_LOCAL_CACHE_LIMIT) {
+        const firstKey = _doseContourLocalCache.keys().next().value;
+        _doseContourLocalCache.delete(firstKey);
+        if (firstKey && _doseContourCache[firstKey]?.source === 'local_dose_volume') {
+            delete _doseContourCache[firstKey];
+        }
+    }
+    return data;
+}
 
 function _doseContourPlanningId() {
     const planning = typeof dataTreeState !== 'undefined' ? dataTreeState?.planning : null;
@@ -8302,6 +8730,7 @@ function _doseContourCacheKey(
 }
 
 async function fetchDoseContourSlice(axis, sliceIndex) {
+    if (!state.doseOverlay) return null;
     const ownerSessionId = _doseOverlaySessionId();
     const ownerGeneration = _doseOverlayLoadGeneration;
     const ownerOverlay = state.doseOverlay;
@@ -8369,17 +8798,27 @@ function renderDoseContourOnCanvas(canvas, axis, sliceIndex) {
     const cacheKey = _doseContourCacheKey(axis, sliceIndex);
     const data = _doseContourCache[cacheKey];
 
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas?.getContext?.('2d');
+    if (!ctx) return false;
     const w = canvas.width;
     const h = canvas.height;
     const vectorScale = Number(canvas._vectorPixelRatio || 1);
     ctx.clearRect(0, 0, w, h);
-    if (!data) return;
+    if (!data || !Array.isArray(data.contours)) {
+        canvas.dataset.contourReady = 'false';
+        canvas.dataset.contourUnavailable = 'true';
+        return false;
+    }
     // An empty contour response is still a completed render for this slice.
     // This lets report capture distinguish it from an old or pending layer.
     canvas.dataset.renderedAxis = axis;
     canvas.dataset.renderedSlice = String(sliceIndex);
-    if (!data.contours || data.contours.length === 0) return;
+    canvas.dataset.contourPending = 'false';
+    canvas.dataset.contourReady = 'true';
+    canvas.dataset.contourUnavailable = data.contours.length ? 'false' : 'true';
+    canvas._contourRenderWidth = w;
+    canvas._contourRenderHeight = h;
+    if (data.contours.length === 0) return true;
 
     // Coordinate mapping from dose slice to canvas.
     // The server returns slice_shape = [rows, cols] in dose volume
@@ -8411,12 +8850,27 @@ function renderDoseContourOnCanvas(canvas, axis, sliceIndex) {
 
     // Filter contours based on data tree visibility state.
     // Only draw contours whose corresponding dose level is visible in the data tree.
-    const doseLevels = dataTreeState.planning.doseLevels || [];
+    const doseLevels = dataTreeState?.planning?.doseLevels || [];
+    const prescriptionGy = Number(
+        (typeof _getCurrentPrescriptionGy === 'function' ? _getCurrentPrescriptionGy() : 0)
+        || DEFAULT_PRESCRIPTION_GY
+        || 120,
+    );
     const visibleContours = data.contours.filter(contour => {
-        // Match contour level (Gy) with doseLevels threshold
-        const level = contour.level || contour.level_rel;
-        if (!level) return true;  // If no level info, draw it
-        const doseLevel = doseLevels.find(d => Math.abs(d.threshold - level) < 1 || Math.abs(d.thresholdGy - level) < 1);
+        // Match contour level (Gy) with the Data Tree threshold.  The
+        // backend returns both physical Gy and Rx-relative values; local
+        // marching-squares contours use the same pair.
+        const level = contour.level ?? contour.level_rel;
+        if (level == null) return true;
+        const levelGy = Number(contour.level ?? Number(contour.level_rel) * prescriptionGy);
+        const levelRel = Number(contour.level_rel);
+        const doseLevel = doseLevels.find(d => {
+            const thresholdGy = Number(d?.thresholdGy ?? d?.threshold);
+            return (Number.isFinite(levelGy) && Number.isFinite(thresholdGy)
+                && Math.abs(thresholdGy - levelGy) < 1)
+                || (Number.isFinite(levelRel) && Number.isFinite(thresholdGy)
+                && Math.abs(thresholdGy / Math.max(1e-9, prescriptionGy) - levelRel) < 0.01);
+        });
         // If not found in doseLevels, draw it (might be a new level)
         // Otherwise, only draw if visible
         return !doseLevel || doseLevel.visible !== false && doseLevel.visible2D !== false;
@@ -8429,13 +8883,18 @@ function renderDoseContourOnCanvas(canvas, axis, sliceIndex) {
         // callback, so every redraw threw a ReferenceError before applying
         // the Data Tree color or drawing any 2D contour line.
         const level = contour.level ?? contour.level_rel;
-        const doseLevel = doseLevels.find(d =>
-            Math.abs(Number(d.threshold) - Number(level)) < 1 ||
-            Math.abs(Number(d.thresholdGy) - Number(level)) < 1
-        );
-        const color = doseLevel?.color
-            ? _hexToRgbArray(doseLevel.color, [34, 197, 94]).map(v => v / 255)
-            : contour.color;
+        const levelGy = Number(contour.level ?? Number(contour.level_rel) * prescriptionGy);
+        const doseLevel = doseLevels.find(d => {
+            const thresholdGy = Number(d?.thresholdGy ?? d?.threshold);
+            return Number.isFinite(levelGy) && Number.isFinite(thresholdGy)
+                && Math.abs(thresholdGy - levelGy) < 1;
+        });
+        const color = doseLevel?.color && typeof _hexToRgbArray === 'function'
+            ? _hexToRgbArray(doseLevel.color, [34, 197, 94]).map(v => {
+                const channel = Number(v);
+                return channel > 1 ? channel / 255 : channel;
+            })
+            : _doseContourHexColor(contour.color, [0, 1, 0]);
         const opacity = contour.opacity ?? 0.7;
         const r = Math.round(color[0] * 255);
         const g = Math.round(color[1] * 255);
@@ -8445,9 +8904,10 @@ function renderDoseContourOnCanvas(canvas, axis, sliceIndex) {
         ctx.lineWidth = 2.5 * vectorScale;
         ctx.setLineDash([]);
 
+        ctx.beginPath();
+        let drawnLineCount = 0;
         contour.lines.forEach(line => {
-            if (line.length < 2) return;
-            ctx.beginPath();
+            if (!Array.isArray(line) || line.length < 2) return;
             for (let i = 0; i < line.length; i++) {
                 const [row, col] = line[i];
                 const x = col * scaleX;
@@ -8455,15 +8915,18 @@ function renderDoseContourOnCanvas(canvas, axis, sliceIndex) {
                 if (i === 0) ctx.moveTo(x, y);
                 else ctx.lineTo(x, y);
             }
-            ctx.stroke();
+            drawnLineCount += 1;
         });
+        if (drawnLineCount) ctx.stroke();
 
-        // Add label at the midpoint of the longest line
-        let longestLine = contour.lines[0];
+        // Add one label at the midpoint of the longest line.  Local marching
+        // squares emits two-point segments, so use the same rule for those
+        // segments instead of silently dropping all local dose labels.
+        let longestLine = contour.lines.find(line => Array.isArray(line) && line.length >= 2) || [];
         contour.lines.forEach(line => {
-            if (line.length > longestLine.length) longestLine = line;
+            if (Array.isArray(line) && line.length > longestLine.length) longestLine = line;
         });
-        if (longestLine.length > 10) {
+        if (longestLine.length > 1) {
             const midIdx = Math.floor(longestLine.length / 2);
             const [row, col] = longestLine[midIdx];
             const x = col * scaleX;
@@ -8473,18 +8936,24 @@ function renderDoseContourOnCanvas(canvas, axis, sliceIndex) {
             ctx.fillStyle = `rgba(${r},${g},${b},0.9)`;
             ctx.strokeStyle = 'rgba(0,0,0,0.6)';
             ctx.lineWidth = 2 * vectorScale;
-            const numericLevel = Number(level);
+            const numericLevel = Number.isFinite(levelGy) ? levelGy : Number(level);
             const label = Number.isFinite(numericLevel) ? numericLevel.toFixed(1) : '';
-            if (!label) return;
-            ctx.strokeText(label, x + 3 * vectorScale, y - 3 * vectorScale);
-            ctx.fillText(label, x + 3 * vectorScale, y - 3 * vectorScale);
+            if (label) {
+                ctx.strokeText(label, x + 3 * vectorScale, y - 3 * vectorScale);
+                ctx.fillText(label, x + 3 * vectorScale, y - 3 * vectorScale);
+            }
         }
     });
+    return true;
 }
 
 // Trigger contour rendering when dose overlay is visible
 function triggerDoseContourRender(axis, sliceIndex) {
     if (!state.doseOverlay || !state.doseOverlay.visible) return;
+    const normalizedSlice = Math.max(0, Math.trunc(Number(sliceIndex) || 0));
+    _doseContourDesiredSlice[axis] = normalizedSlice;
+    const renderToken = (_doseContourRenderTokens[axis] || 0) + 1;
+    _doseContourRenderTokens[axis] = renderToken;
     const ownerSessionId = _doseOverlaySessionId();
     const ownerGeneration = _doseOverlayLoadGeneration;
     const ownerOverlay = state.doseOverlay;
@@ -8511,43 +8980,80 @@ function triggerDoseContourRender(axis, sliceIndex) {
 
     const sliceCanvas = document.getElementById('sliceCanvas' + capitalize(axis));
     if (sliceCanvas) _syncLayerToSliceCanvas(axis, canvas, 7, { vector: true });
+    // Resizing a canvas clears its backing store. Do not keep a stale
+    // "ready" flag after a layout/DPI change, otherwise the fallback path
+    // could believe that the held frame is still on screen.
+    if (canvas._contourRenderWidth !== canvas.width
+        || canvas._contourRenderHeight !== canvas.height) {
+        canvas.dataset.contourReady = 'false';
+        canvas._contourRenderWidth = canvas.width;
+        canvas._contourRenderHeight = canvas.height;
+    }
     canvas.dataset.axis = axis;
-    canvas.dataset.sliceIndex = String(sliceIndex);
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    canvas.dataset.sliceIndex = String(normalizedSlice);
+    canvas.dataset.requestedSlice = String(normalizedSlice);
+    canvas.dataset.contourPending = 'true';
+    canvas.style.display = 'block';
 
-    // 1) Synchronous draw if cached. This is the path that fixes
-    //    the "drag → blank → wait for fetch → reappear" bug: after
-    //    the user has scrubbed past a slice once, the contour is
-    //    cached locally and the next visit renders with zero
-    //    network latency.
-    const cacheKey = _doseContourCacheKey(axis, sliceIndex);
-    const cached = _doseContourCache[cacheKey];
-    if (cached) {
-        renderDoseContourOnCanvas(canvas, axis, sliceIndex);
-        preloadDoseContourSlices(axis, sliceIndex);
+    // 1) Synchronous local draw from the compact dose volume. This is the
+    // normal path after volume hydration and uses exactly the same [Z,Y,X]
+    // mapping as the heatmap, so all three viewers stay in lockstep without
+    // a request per slider tick.
+    const local = _getLocalDoseContourSlice(axis, normalizedSlice);
+    if (local) {
+        renderDoseContourOnCanvas(canvas, axis, normalizedSlice);
+        _clearDoseContourRetry(axis, normalizedSlice);
+        preloadDoseContourSlices(axis, normalizedSlice);
         return;
     }
 
-    // 2) Async fetch + draw. The canvas was already cleared for the
-    //    requested slice above. Only draw if the user is still on the
-    //    same slice when the response returns; otherwise stale contour
-    //    lines from a previous slice would remain visible.
-    fetchDoseContourSlice(axis, sliceIndex).then(data => {
-        if (!data
-            || ownerGeneration !== _doseOverlayLoadGeneration
-            || ownerSessionId !== _doseOverlaySessionId()
-            || ownerPlanningId !== _doseContourPlanningId()
-            || ownerOverlay !== state.doseOverlay) return;
-        // Make sure we're still on the same slice the user requested
-        // (the slider may have moved while the fetch was in flight).
-        if (state.slices[axis] !== sliceIndex) return;
-        if (canvas.dataset.axis !== axis || canvas.dataset.sliceIndex !== String(sliceIndex)) return;
-        renderDoseContourOnCanvas(canvas, axis, sliceIndex);
+    // 2) Synchronous draw if a server result is cached. This is the fallback
+    // path while the compact volume is still downloading.
+    const cacheKey = _doseContourCacheKey(axis, normalizedSlice);
+    const cached = _doseContourCache[cacheKey];
+    if (cached) {
+        renderDoseContourOnCanvas(canvas, axis, normalizedSlice);
+        _clearDoseContourRetry(axis, normalizedSlice);
+        preloadDoseContourSlices(axis, normalizedSlice);
+        return;
+    }
+
+    // 3) Async fallback. Keep the last committed frame visible while this
+    // request is pending; clearing it here caused the intermittent "one
+    // viewer loses its contours" bug. The held frame is marked pending so
+    // report capture will not export it as if it belonged to the new slice.
+    if (canvas.dataset.contourReady !== 'true') {
+        canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
+        canvas.dataset.renderedSlice = '';
+    }
+    fetchDoseContourSlice(axis, normalizedSlice).then(data => {
+        const isCurrent = !!data
+            && renderToken === _doseContourRenderTokens[axis]
+            && ownerGeneration === _doseOverlayLoadGeneration
+            && ownerSessionId === _doseOverlaySessionId()
+            && ownerPlanningId === _doseContourPlanningId()
+            && ownerOverlay === state.doseOverlay
+            && Number(state.slices?.[axis]) === normalizedSlice
+            && canvas.isConnected
+            && canvas.dataset.axis === axis
+            && canvas.dataset.sliceIndex === String(normalizedSlice);
+        if (isCurrent) {
+            renderDoseContourOnCanvas(canvas, axis, normalizedSlice);
+            _clearDoseContourRetry(axis, normalizedSlice);
+        } else if (!data
+            && renderToken === _doseContourRenderTokens[axis]
+            && Number(state.slices?.[axis]) === normalizedSlice) {
+            _scheduleDoseContourRetry(axis, normalizedSlice);
+        }
+    }).catch(() => {
+        if (renderToken === _doseContourRenderTokens[axis]
+            && Number(state.slices?.[axis]) === normalizedSlice) {
+            _scheduleDoseContourRetry(axis, normalizedSlice);
+        }
     });
-    // 3) Pre-fetch ±N neighbors so scrubbing doesn't keep
-    //    triggering round-trips.
-    preloadDoseContourSlices(axis, sliceIndex);
+    // 4) Pre-fetch ±N neighbors so scrubbing doesn't keep triggering
+    //    round-trips.
+    preloadDoseContourSlices(axis, normalizedSlice);
 }
 
 // Pre-load neighbors of the current contour slice so the slider
@@ -8668,6 +9174,10 @@ function clearPlanningVisualization() {
 
     // Clear dose contour cache and canvases
     Object.keys(_doseContourCache).forEach(key => delete _doseContourCache[key]);
+    _doseContourLocalCache.clear();
+    _doseContourRetryTimers.forEach(timer => clearTimeout(timer));
+    _doseContourRetryTimers.clear();
+    _doseContourRetryCounts.clear();
     _doseContourInflight.clear();
     _doseContourPreloadTimers.forEach(timer => clearTimeout(timer));
     _doseContourPreloadTimers.clear();

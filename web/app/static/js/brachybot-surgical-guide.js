@@ -98,6 +98,16 @@
         }
     }
 
+    function reconcileGuideProgress(sessionId, status = 'done', detail = '') {
+        if (typeof window.reconcileManualWorkflowProgress !== 'function') return false;
+        return window.reconcileManualWorkflowProgress(
+            'surgical_guide_generate',
+            status,
+            detail,
+            String(sessionId || ''),
+        );
+    }
+
     function setValidationStatus(message, kind = 'info') {
         const status = document.getElementById(GUIDE_STL_VALIDATION_STATUS_ID);
         if (!status) return;
@@ -456,6 +466,8 @@
         const {
             retryPending = false,
             maxPendingRetries = 240,
+            requestTimeoutMs = 120000,
+            maxWaitMs = 300000,
             ...fetchOptions
         } = options || {};
         const sharedRequest = window.fetchViewerJsonWithRetry;
@@ -470,8 +482,8 @@
                 ...(sessionId ? { 'X-BrachyBot-Session': sessionId } : {}),
             },
         }, {
-            requestTimeoutMs: 120000,
-            maxWaitMs: 300000,
+            requestTimeoutMs,
+            maxWaitMs,
         });
         if (!request.response) {
             throw request.error || new Error('Guide request timed out');
@@ -566,7 +578,15 @@
                     ? payload.guide
                     : payload.guide ? { ...payload.guide, status: 'stale' } : null,
             );
-            return addGuideMesh(displayGuide);
+            const loaded = addGuideMesh(displayGuide);
+            if (loaded && options.reconcileProgress === true) {
+                reconcileGuideProgress(
+                    sessionId,
+                    'done',
+                    t('导板已加载', 'Guide loaded'),
+                );
+            }
+            return loaded;
         } catch (error) {
             // A new or partially restored case normally has no guide. Do not
             // surface a failure notification while its other assets hydrate.
@@ -578,6 +598,12 @@
     window.generateSurgicalGuide = async function generateSurgicalGuide(options = {}) {
         const sessionId = activeSessionId();
         if (!sessionId) return;
+        const showProgress = options.showProgress !== false;
+        let guidePublished = false;
+        if (showProgress && typeof _inputButtonProgress === 'function') {
+            _inputButtonProgress('surgical_guide_generate', 'running', '正在生成穿刺导板', 'Generating puncture guide');
+        }
+        if (typeof addChat === 'function' && !options.silent) addChat('system', t('正在生成穿刺导板…', 'Generating puncture guide...'));
         setBusy(true, t('正在生成导板...', 'Generating guide...'));
         try {
             const payload = await guideFetch('/api/surgical-guides/generate', {
@@ -588,6 +614,12 @@
                     needle_ids: selectedNeedleIds(),
                     planning_id: document.getElementById(GUIDE_PLANNING_SELECTION_ID)?.value || null,
                 }),
+                // Dense plans can legitimately take longer than the normal
+                // Viewer-resource deadline.  Keep the user operation alive
+                // while the server finishes CSG/topology work; the bounded
+                // deadline still prevents a genuinely lost request from
+                // running forever.
+                maxWaitMs: 900000,
             }, sessionId);
             if (sessionId !== activeSessionId()) return;
             applyGuideMetadata(
@@ -596,9 +628,28 @@
                     ? { ...payload.guide, status: 'stale' }
                     : payload.guide,
             );
-            addGuideMesh(payload.guide);
+            guidePublished = addGuideMesh(payload.guide);
             if (payload?.skin_surface?.available && typeof window.loadGuideSkinSurface === 'function') {
-                await window.loadGuideSkinSurface({ sessionId });
+                // The skin volume is an optional Viewer presentation resource;
+                // it is not the guide-generation result.  A slow/stalled skin
+                // request must never convert an already-published guide into
+                // a failed operation or keep its progress row in timeout.
+                void Promise.resolve(window.loadGuideSkinSurface({ sessionId }))
+                    .then(skinLoaded => {
+                        if (!skinLoaded) {
+                            notify(t(
+                                '导板已生成；体表附加 Viewer 资源暂未加载，不影响导板结果。',
+                                'Guide generated; the optional Viewer skin resource is not ready yet, but the guide result is available.',
+                            ), 'warning');
+                        }
+                    })
+                    .catch(error => {
+                        console.warn('[surgical-guide] optional skin hydration failed:', error);
+                        notify(t(
+                            '导板已生成；体表附加 Viewer 资源加载失败，不影响导板结果。',
+                            'Guide generated; the optional Viewer skin resource failed, but the guide result is available.',
+                        ), 'warning');
+                    });
             }
             window.scheduleWorkspaceSave?.('surgical_guide.generated');
             const completed = t(
@@ -624,6 +675,11 @@
             // scan boundaries, surface that clearly so the operator knows the
             // guide was built only from the available lateral skin and must not
             // be treated as covering a full body surface.
+            if (showProgress && typeof _inputButtonProgress === 'function') {
+                _inputButtonProgress('surgical_guide_generate', 'done', '穿刺导板', 'Puncture guide', t('已完成', 'Completed'));
+            }
+            reconcileGuideProgress(sessionId, 'done', t('已完成', 'Completed'));
+            if (typeof addChat === 'function' && !options.silent) addChat('system', completed + auxiliaryNotice);
             const fov = payload?.guide?.validation?.finite_fov;
             if (fov && (fov.truncated_superior || fov.truncated_inferior)) {
                 const warn = t(
@@ -636,13 +692,32 @@
                 state: 'completed', version: payload.guide.version,
             });
         } catch (error) {
+            // The guide mesh is committed before optional Viewer hydration and
+            // before workspace persistence.  If a secondary resource fails
+            // after that commit, preserve the authoritative success state and
+            // surface the warning separately instead of reporting a false
+            // guide-generation failure.
+            if (guidePublished) {
+                const detail = t(
+                    '导板已生成；Viewer 附加资源加载未完成，但导板结果可用。',
+                    'Guide generated; an optional Viewer resource did not finish loading, but the guide result is available.',
+                );
+                reconcileGuideProgress(sessionId, 'done', detail);
+                notify(detail, 'warning');
+                if (!options.silent && typeof addChat === 'function') addChat('system', detail);
+                return { success: true, guide_published: true, viewer_hydration_warning: error.message || String(error) };
+            }
             // Skin extraction precedes guide CSG and may have succeeded even
             // when the printable mesh fails QA. Keep that real segmentation
             // visible so the operator can inspect fit and repair parameters.
             if (sessionId === activeSessionId() && typeof window.loadGuideSkinSurface === 'function') {
                 await window.loadGuideSkinSurface({ sessionId });
             }
+            if (showProgress && typeof _inputButtonProgress === 'function') {
+                _inputButtonProgress('surgical_guide_generate', 'error', '穿刺导板', 'Puncture guide', error.message || t('生成失败', 'Failed'));
+            }
             if (!options.silent) notify(error.message, 'error');
+            if (!options.silent && typeof addChat === 'function') addChat('error', t('穿刺导板生成失败：', 'Puncture guide generation failed: ') + error.message);
             throw error;
         } finally {
             if (sessionId === activeSessionId()) setBusy(false);
@@ -696,7 +771,11 @@
             if (!signature || autoGeneratedSignatures.get(sessionId) === signature) return false;
             autoGeneratedSignatures.set(sessionId, signature);
             try {
-                await window.generateSurgicalGuide({ silent: true });
+                // Background hydration is not a user-initiated operation.
+                // The chat tool/todo dock is the authoritative progress
+                // surface for a concurrent guide request; showing a second
+                // card here creates a misleading second timer.
+                await window.generateSurgicalGuide({ silent: true, showProgress: false });
                 return true;
             } catch (error) {
                 autoGeneratedSignatures.delete(sessionId);
@@ -714,6 +793,8 @@
 
     window.exportSurgicalGuideSTL = async function exportSurgicalGuideSTL() {
         const sessionId = activeSessionId();
+        if (typeof _inputButtonProgress === 'function') _inputButtonProgress('surgical_guide_export', 'running', '正在导出导板 STL', 'Exporting guide STL');
+        if (typeof addChat === 'function') addChat('system', t('正在导出已校验的导板 STL…', 'Exporting the validated guide STL...'));
         try {
             const response = await fetch('/api/surgical-guides/export', {
                 method: 'POST', credentials: 'same-origin',
@@ -733,9 +814,13 @@
             link.download = `puncture_guide_${sessionId.slice(0, 8)}.stl`;
             link.click();
             URL.revokeObjectURL(link.href);
+            if (typeof _inputButtonProgress === 'function') _inputButtonProgress('surgical_guide_export', 'done', '导出导板 STL', 'Export guide STL', t('已完成', 'Completed'));
             notify(t('已下载通过校验的穿刺导板 STL', 'Validated puncture guide STL downloaded'), 'success');
+            if (typeof addChat === 'function') addChat('system', t('已下载通过校验的穿刺导板 STL。', 'Validated puncture guide STL downloaded.'));
         } catch (error) {
+            if (typeof _inputButtonProgress === 'function') _inputButtonProgress('surgical_guide_export', 'error', '导出导板 STL', 'Export guide STL', error.message || t('导出失败', 'Export failed'));
             notify(error.message, 'error');
+            if (typeof addChat === 'function') addChat('error', t('导板 STL 导出失败：', 'Guide STL export failed: ') + error.message);
         }
     };
 

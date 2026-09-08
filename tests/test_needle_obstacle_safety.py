@@ -245,6 +245,78 @@ class NeedleObstacleSafetyTests(unittest.TestCase):
         self.assertEqual(len(safe), 1, f"expected 1 safe trajectory, got {len(safe)}")
         self.assertIs(safe[0], lateral_traj, "lateral entry must remain")
 
+    def test_entry_filter_rejects_every_ct_face_but_accepts_real_skin(self):
+        from plans.utilizations import trajectory_entry_is_valid
+
+        body = np.zeros((9, 9, 9), dtype=bool)
+        body[0:8, 1:8, 1:8] = True
+        point = np.array([4.0, 4.0, 4.0])
+
+        # The body touches the z-min face, so the reverse ray exits the array
+        # before it can encounter skin.  It must be rejected.
+        self.assertFalse(
+            trajectory_entry_is_valid(point, np.array([1.0, 0.0, 0.0]), body)
+        )
+        # The same target has a real air-to-body transition in the y direction.
+        self.assertTrue(
+            trajectory_entry_is_valid(point, np.array([0.0, 1.0, 0.0]), body)
+        )
+
+    def test_entry_filter_rejects_flagged_fov_face_but_keeps_unflagged_skin(self):
+        from plans.utilizations import trajectory_entry_is_valid
+
+        # The closed body envelope has a one-voxel air margin on every face.
+        # Only z-min is known to be a CT truncation; y-min remains a genuine
+        # air-to-skin transition and must stay usable.
+        body = np.zeros((9, 9, 9), dtype=bool)
+        body[1:8, 1:8, 1:8] = True
+        point = np.array([4.0, 4.0, 4.0])
+        truncated = (True, False, False, False, False, False)
+
+        self.assertFalse(
+            trajectory_entry_is_valid(
+                point,
+                np.array([1.0, 0.0, 0.0]),
+                body,
+                truncated_boundary_faces=truncated,
+            )
+        )
+        self.assertTrue(
+            trajectory_entry_is_valid(
+                point,
+                np.array([0.0, 1.0, 0.0]),
+                body,
+                truncated_boundary_faces=truncated,
+            )
+        )
+
+    def test_world_truncation_handles_deep_endpoint_just_outside_ct(self):
+        from tool_factory.seed_plan.planning_pipeline import (
+            _needle_enters_through_truncated_boundary,
+        )
+
+        z_count, yx, radius = 24, 32, 12
+        ct = np.full((z_count, yx, yx), -1000, dtype=np.int16)
+        for z in range(z_count):
+            for y in range(yx):
+                for x in range(yx):
+                    if (x - yx / 2) ** 2 + (y - yx / 2) ** 2 <= radius ** 2:
+                        ct[z, y, x] = 40
+        image = sitk.GetImageFromArray(ct)
+        image.SetSpacing((1.0, 1.0, 1.0))
+        image.SetOrigin((0.0, 0.0, 0.0))
+
+        # The deep endpoint is just outside z-min, while the other endpoint
+        # is inside.  This is the resampling-induced ordering from the
+        # reported case; the old anchor-inside precondition missed it.
+        nearly_outside = [
+            np.array([16.0, 16.0, -0.06]),
+            np.array([16.0, 16.0, 12.0]),
+        ]
+        self.assertTrue(
+            _needle_enters_through_truncated_boundary(nearly_outside, image),
+        )
+
     def test_final_geometry_uses_candidate_trajectory_not_seed_reconstruction(self):
         image, ctv, oar = _image_and_masks()
         # The optimizer trajectory is clear at y=0.  The seed payload is

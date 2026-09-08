@@ -811,6 +811,7 @@ function loadSessionChat(id) {
         // case render prevents a stale draft or command from another case
         // being mistaken for this case's most recent prompt.
         input.value = '';
+        window.resizeChatInput?.(input);
         input.dataset.historySession = String(id);
     }
     const lastUserMessage = [...(session.messages || [])]
@@ -1624,6 +1625,70 @@ function updateAssistantAttachmentVariant(rawAttachment, sessionId = activeSessi
 }
 window.updateAssistantAttachmentVariant = updateAssistantAttachmentVariant;
 
+// Last-resort browser boundary: server-side tools keep full diagnostics in
+// logs, while chat/trace must never display provider payloads or stack traces.
+// This also protects restored sessions and older server responses during a
+// rolling upgrade. Controlled, localized messages pass through unchanged.
+function sanitizeChatErrorContent(content, sessionId = activeSessionId) {
+    const text = String(content == null ? '' : content).trim();
+    if (!text) return text;
+    const lower = text.toLowerCase();
+    const raw = (
+        lower.includes('missing sessionid')
+        || lower.includes('x-opencode-session')
+        || lower.includes('error from provider')
+        || lower.includes('console go')
+        || lower.includes('object has no attribute')
+        || lower.includes("list' object has no attribute")
+        || lower.includes('traceback (most recent call last)')
+        || lower.includes('error code:')
+        || lower.includes('tool execution failed:')
+        || lower.startsWith('error:')
+        || lower.startsWith('exception:')
+        || lower.startsWith('failed:')
+        || lower.includes('typeerror')
+        || lower.includes('attributeerror')
+        || lower.includes('valueerror')
+        || lower.includes('cannot read')
+        || lower.includes('is not a function')
+        || lower.includes('networkerror')
+        || lower.includes('status code')
+        || lower.includes('no such file')
+        || lower.includes('/home/')
+        || /[a-z]:\\/.test(text)
+    );
+    if (!raw) return text;
+    const lang = typeof conversationLanguageForSession === 'function'
+        ? conversationLanguageForSession(sessionId)
+        : effectiveUiLanguage();
+    const isZh = lang === 'zh';
+    if (
+        lower.includes('missing sessionid')
+        || lower.includes('x-opencode-session')
+        || lower.includes('error from provider')
+        || lower.includes('console go')
+        || lower.includes('provider')
+    ) {
+        return isZh
+            ? 'AI 语言服务当前不可用，本次请求没有可靠完成。请刷新页面或重新进入当前病例后重试；如果仍失败，请检查服务端的模型/会话配置。'
+            : 'The AI language service is currently unavailable, so this request was not completed reliably. Refresh the page or reopen the case and retry; if it persists, check the server model/session configuration.';
+    }
+    if (lower.includes('ctv') || lower.includes('segmentation')) {
+        return isZh
+            ? 'CTV 分割没有完成，后续规划已停止。请确认上传的是 CT 而不是把 CT 放到 CTV mask 入口，然后重新执行 CTV 分割；也可以上传与 CT 对齐的 CTV mask。'
+            : 'CTV segmentation was not completed, so downstream planning was stopped. Confirm that the CT was not uploaded through the CTV-mask input, then rerun CTV segmentation; you can also upload a CTV mask aligned to the CT.';
+    }
+    if (lower.includes('oar')) {
+        return isZh
+            ? 'OAR 分割没有完成，后续规划已暂停。请确认 CT 已加载且影像空间有效，然后重新执行 OAR 分割。'
+            : 'OAR segmentation did not complete, so planning was paused. Confirm that the CT is loaded with valid image geometry, then rerun OAR segmentation.';
+    }
+    return isZh
+        ? '系统未能完成本次请求，病例数据没有因此被删除。请重试；如果问题重复出现，请保留执行追踪并联系管理员。'
+        : 'The system could not complete this request; the case data was not deleted. Please retry. If it happens again, keep the Execution Trace and contact the administrator.';
+}
+window.sanitizeChatErrorContent = sanitizeChatErrorContent;
+
 function addChat(type, content, scroll, timestamp, fromSession, sessionId = activeSessionId, meta = null) {
     try {
         const ownerSessionId = String(sessionId || activeSessionId || '');
@@ -1642,7 +1707,7 @@ function addChat(type, content, scroll, timestamp, fromSession, sessionId = acti
         const container = document.getElementById('chatMessages');
         if (!container) return;
         const t = (type || 'system').toString();
-        const c = (content == null ? '' : content).toString();
+        let c = (content == null ? '' : content).toString();
         // Accept legacy aliases: 'bot-response' → 'bot' for visual treatment,
         // 'thinking' → 'bot' (the thinking chain uses its own renderer).
         // CRITICAL (2026-06-15): if we don't remap 'bot-response' to 'bot',
@@ -1655,6 +1720,9 @@ function addChat(type, content, scroll, timestamp, fromSession, sessionId = acti
             safeType = 'bot';
         }
         if (safeType === 'thinking') safeType = 'bot';
+        if (safeType === 'error' || safeType === 'bot') {
+            c = sanitizeChatErrorContent(c, ownerSessionId);
+        }
 
         if (safeType === 'user' || safeType === 'bot') {
             if (safeType === 'bot' && (safeMeta.requestId || safeMeta.request_id || safeMeta.messageId || safeMeta.message_id)) {
@@ -2776,7 +2844,10 @@ function renderThinkingChain(steps, identity = {}) {
             const icon = STEP_ICONS[step.type] || '&#9679;';
             const toolName = step.tool ? '<div class="step-tool-name">' + escHtml(step.tool) + '</div>' : '';
             const params = step.params ? '<div class="step-params">' + Object.entries(step.params).map(([k, v]) => escHtml(k) + ': ' + escHtml(JSON.stringify(v))).join(', ') + '</div>' : '';
-            const resultHtml = step.result ? '<div class="step-result">&#8594; ' + escHtml(step.result) + '</div>' : '';
+            const stepResult = step.status === 'error'
+                ? sanitizeChatErrorContent(step.result, requestId)
+                : step.result;
+            const resultHtml = stepResult ? '<div class="step-result">&#8594; ' + escHtml(stepResult) + '</div>' : '';
             const contentHtml = step.content ? '<div class="step-content">' + escHtml(step.content) + '</div>' : '';
             block.innerHTML =
                 '<div class="step-header" onclick="toggleStep(\'' + bodyDomId + '\')">' +
@@ -2967,7 +3038,10 @@ function appendStepToChain(stepsDiv, step, idx) {
     const icon = STEP_ICONS[step.type] || '&#9679;';
     const toolName = step.tool ? '<div class="step-tool-name">' + escHtml(step.tool) + '</div>' : '';
     const params = step.params ? '<div class="step-params">' + Object.entries(step.params).map(([k, v]) => escHtml(k) + ': ' + escHtml(JSON.stringify(v))).join(', ') + '</div>' : '';
-    const resultHtml = step.result ? '<div class="step-result">&#8594; ' + escHtml(step.result) + '</div>' : '';
+    const stepResult = step.status === 'error'
+        ? sanitizeChatErrorContent(step.result, stepsDiv.closest('.thinking-chain')?.dataset?.requestId || activeSessionId)
+        : step.result;
+    const resultHtml = stepResult ? '<div class="step-result">&#8594; ' + escHtml(stepResult) + '</div>' : '';
     const contentHtml = step.content ? '<div class="step-content">' + escHtml(step.content) + '</div>' : '';
 
     // Don't add .expanded to new steps if the chain is already

@@ -1510,12 +1510,13 @@
 }
 
 .chat-input-row {
-    display: flex; gap: 0.55rem; align-items: center;
+    display: flex; gap: 0.55rem; align-items: flex-end;
 }
 
 .chat-input-row textarea {
     flex: 1;
     height: var(--control-h);
+    box-sizing: border-box;
     background: var(--bg-2);
     border: 1px solid var(--border-hairline);
     border-radius: var(--radius-md);
@@ -1527,8 +1528,16 @@
     max-height: 8.5rem;
     line-height: 1.45;
     font-family: inherit;
+    overflow-x: hidden;
+    overflow-y: hidden;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
     box-shadow: var(--inset-top), var(--shadow-xs);
-    transition: all var(--t-base) var(--ease);
+    /* Height is managed by resizeChatInput(); do not animate it through
+       transition: all, otherwise rapid typing can leave the layout behind. */
+    transition: border-color var(--t-base) var(--ease),
+                box-shadow var(--t-base) var(--ease),
+                background-color var(--t-base) var(--ease);
 }
 .chat-input-row textarea:focus {
     outline: none;
@@ -1833,4 +1842,28 @@ body.monitor-active .chat-avatar.bot-avatar {
 @keyframes manual-workflow-breathe {
     0%, 100% { box-shadow: 0 0 0 rgba(74, 161, 255, 0); }
     50% { box-shadow: 0 0 16px rgba(74, 161, 255, .16); }
+}
+
+
+/* Input-panel workflow readiness. Native disabled buttons do not emit a
+   click event, so this status line explains blocked prerequisites and the
+   independent CTV/OAR entry points. */
+.manual-workflow-status {
+    display: block;
+    margin: 2px 0 4px;
+    padding: 6px 8px;
+    border: 1px solid rgba(86, 169, 255, .28);
+    border-radius: 7px;
+    background: rgba(22, 36, 58, .58);
+    color: var(--text-dim, #9fb1c5);
+    font-size: .66rem;
+    line-height: 1.35;
+}
+.manual-workflow-status.is-warn {
+    border-color: rgba(255, 190, 70, .45);
+    color: #f5c76c;
+}
+.manual-workflow-status.is-ready {
+    border-color: rgba(61, 211, 126, .30);
+    color: #b8e8c9;
 }

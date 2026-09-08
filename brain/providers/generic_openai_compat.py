@@ -19,6 +19,8 @@ import os
 import time
 import json
 import logging
+import re
+import uuid
 from typing import Dict, List, Optional
 
 from ..core.base import BaseLLM, LLMResponse
@@ -36,6 +38,7 @@ class GenericOpenAICompatLLM(BaseLLM):
         base_url: str = "https://api.openai.com/v1",
         timeout: float = 120.0,
         max_retries: int = 3,
+        session_id: str = None,
         **kwargs
     ):
         super().__init__()
@@ -43,6 +46,18 @@ class GenericOpenAICompatLLM(BaseLLM):
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.session_id = self._sanitize_session_id(
+            session_id or os.environ.get("OPENCODE_SESSION_ID", "")
+        )
+        # OpenCode Go requires a stable conversation identifier.  Keep a
+        # generated value on this provider instance when the caller did not
+        # supply the workspace/session id, so retries and streaming use the
+        # same routing key rather than creating a new conversation each time.
+        self._opencode_session_id = (
+            self.session_id or uuid.uuid4().hex
+            if self._is_opencode_go_endpoint(base_url)
+            else ""
+        )
         # Keep retries bounded so a transient provider outage cannot hold a
         # clinical turn for an unbounded amount of time.
         self.max_retries = min(max(int(max_retries), 0), 2)
@@ -50,16 +65,42 @@ class GenericOpenAICompatLLM(BaseLLM):
         self._client = None
         self._client_key = None
 
+    @staticmethod
+    def _sanitize_session_id(value: str) -> str:
+        """Keep provider headers printable and bounded without exposing data."""
+        cleaned = re.sub(r"[^A-Za-z0-9._:-]+", "-", str(value or "").strip())
+        return cleaned[:128]
+
+    @staticmethod
+    def _is_opencode_go_endpoint(base_url: str) -> bool:
+        value = str(base_url or "").lower()
+        return "opencode.ai" in value and "/zen/go" in value
+
+    def _default_headers(self) -> Dict[str, str]:
+        if not self._is_opencode_go_endpoint(self.base_url):
+            return {}
+        return {
+            "user-agent": "BrachyBot/1.0",
+            "x-opencode-session": self._opencode_session_id,
+        }
+
     def _get_client(self):
         """Reuse one OpenAI client so its HTTP connection pool is reused."""
         import openai
 
-        key = (self.api_key, self.base_url, self.timeout)
+        default_headers = self._default_headers()
+        key = (
+            self.api_key,
+            self.base_url,
+            self.timeout,
+            tuple(sorted(default_headers.items())),
+        )
         if self._client is None or self._client_key != key:
             self._client = openai.OpenAI(
                 api_key=self.api_key,
                 base_url=self.base_url,
                 timeout=self.timeout,
+                default_headers=default_headers or None,
             )
             self._client_key = key
         return self._client

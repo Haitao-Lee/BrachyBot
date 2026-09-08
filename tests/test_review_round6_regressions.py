@@ -621,6 +621,35 @@ def test_planning_report_includes_persisted_surgical_guide_delivery():
     assert "Puncture guide v3 generated for 2 planned needle paths." in report
 
 
+def test_planning_report_surfaces_dense_guide_spacing_review():
+    from agent_runtime.core import AgentMemory
+    from agent_runtime.response_tools import ResponseToolMixin
+
+    agent = object.__new__(ResponseToolMixin)
+    agent.memory = AgentMemory("report-guide-spacing-test")
+    agent.memory.store("surgical_guide", {
+        "status": "ready",
+        "version": 4,
+        "selected_needle_ids": ["needle_1", "needle_2"],
+        "validation": {
+            "needle_spacing": {
+                "requires_operator_review": True,
+                "bore_wall_conflict_pair_count": 3,
+                "minimum_centerline_distance_mm": 0.36,
+                "minimum_bore_wall_distance_mm": 2.95,
+            },
+        },
+    })
+
+    report = agent._build_planning_report("en", [
+        {"type": "tool", "tool": "planning_pipeline", "status": "done"},
+        {"type": "tool", "tool": "surgical_guide", "status": "done"},
+    ])
+
+    assert "Spacing QA found 3 channel pairs" in report
+    assert "verify manufacturability before printing or clinical use" in report
+
+
 def test_planning_report_does_not_claim_a_guide_after_generation_failure():
     from agent_runtime.core import AgentMemory
     from agent_runtime.response_tools import ResponseToolMixin
@@ -656,9 +685,9 @@ def test_report_generator_never_invents_unsourced_clinical_thresholds():
         "prescription_dose_gy": 120.0,
     }
     report = ReportGeneratorTool()._generate_full_report(plan)
-    assert "See cited case criteria" in report
-    assert "Not assessed" in report
-    assert "≥90%" not in report
+    assert "See cited case criteria" not in report
+    assert "No site-specific criterion configured" in report
+    assert "Not assessed " in report
 
     plan["prescription_rationale"] = {
         "prescription_gy": 120.0,
@@ -666,8 +695,10 @@ def test_report_generator_never_invents_unsourced_clinical_thresholds():
         "sources": ["https://example.org/source"],
     }
     sourced_report = ReportGeneratorTool()._generate_full_report(plan)
-    assert "| V100 | 91.0% | >=90% | Pass |" in sourced_report
-    assert "| D90 | 123.0 Gy | >=100% Rx (120.0 Gy) | Pass |" in sourced_report
+    assert "| V100 (CTV) | 91.0 % | >=90% [1](https://example.org/source) | Pass |" in sourced_report
+    assert "| D90 | 123.00 Gy | >=100% Rx (120.0 Gy) [1](https://example.org/source) | Pass |" in sourced_report
+    assert "## References" in sourced_report
+    assert "[https://example.org/source](https://example.org/source)" in sourced_report
 
 
 def test_web_api_isolates_agent_and_ui_state_by_session(monkeypatch, tmp_path):

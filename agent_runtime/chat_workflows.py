@@ -43,6 +43,12 @@ from plans.dose_pre.model_loader import (
     planning_dose_value_to_model,
     resolve_prescription_gy,
 )
+from utils.user_errors import (
+    format_tool_error,
+    is_provider_error,
+    normalize_metadata,
+    sanitize_user_response,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -483,7 +489,10 @@ class ChatWorkflowMixin:
             if self._is_explicit_capability_request(message):
                 return self._capability_response(self._response_language())
             return self._unmatched_turn_response(message)
-        return response
+        return sanitize_user_response(
+            response,
+            lang=self._response_language(),
+        )
 
     @staticmethod
     def _is_llm_provider_error(response: Any) -> bool:
@@ -493,19 +502,34 @@ class ChatWorkflowMixin:
         intentionally limited to strings returned by the LLM orchestration layer.
         Detailed provider diagnostics remain in server logs.
         """
-        text = str(response or "").strip().lower()
-        if not text:
-            return False
-        return text.startswith(("error:", "llm error:")) or any(
-            marker in text
-            for marker in (
-                "all providers failed",
-                "no llm provider available",
-                "invalid api key",
-                "authentication failed",
-                "unauthorized",
+        return is_provider_error(response)
+
+    @staticmethod
+    def _small_talk_fallback_response(message: str, lang: str = "en") -> str:
+        """Keep basic greetings helpful when the optional LLM is unreachable."""
+        text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+        is_zh = str(lang or "").lower().startswith("zh")
+        if is_zh:
+            if re.search(r"(?:你好|您好|嗨|哈喽|hello|hi)", text, re.IGNORECASE):
+                return (
+                    "你好！我是 BrachyBot，可以协助你查看病例、规划结果、剂量/DVH、"
+                    "针道、粒子和治疗计划报告。你可以直接告诉我想检查或执行什么。"
+                )
+            if re.search(r"(?:谢谢|感谢|多谢)", text):
+                return "不客气。如果你需要继续检查当前病例或规划结果，直接告诉我即可。"
+            if re.search(r"(?:再见|拜拜)", text):
+                return "好的，需要时再叫我。"
+            return "我在这里，可以协助你处理当前病例和放射性粒子植入规划。"
+        if re.search(r"\b(?:hello|hi|hey)\b", text, re.IGNORECASE):
+            return (
+                "Hello! I’m BrachyBot. I can help inspect the current case, planning result, "
+                "dose/DVH, needles, seeds, and treatment-plan report. What would you like to check?"
             )
-        )
+        if re.search(r"\b(?:thanks|thank you)\b", text, re.IGNORECASE):
+            return "You’re welcome. Tell me what you would like to inspect in the current case or plan."
+        if re.search(r"\b(?:bye|goodbye)\b", text, re.IGNORECASE):
+            return "All right. I’ll be here when you need me."
+        return "I’m here to help with the current case and radioactive-seed brachytherapy planning."
 
     def _run_lightweight_conversation_stream(self, message, steps, step_id_ref, yield_event):
         """Single-shot conversational answer for low-risk chat intents.
@@ -527,17 +551,25 @@ class ChatWorkflowMixin:
         in chat_with_stream does not need a second code path.
         """
         import asyncio
+        trace_zh = getattr(self, "_active_trace_language", "en") == "zh"
         router = getattr(self, "brain_router", None)
         if router is None:
             yield {
                 "type": "_result",
-                "response": self._current_llm_unavailable_message(),
-                "llm_meta": {"usage": {}, "latency_ms": 0, "llm_calls": 0},
+                "response": (
+                    self._small_talk_fallback_response(message, "zh" if trace_zh else "en")
+                    or self._current_llm_unavailable_message()
+                ),
+                "llm_meta": {
+                    "usage": {},
+                    "latency_ms": 0,
+                    "llm_calls": 0,
+                    "route": "local_small_talk_fallback",
+                },
             }
             return
 
         step_id_ref[0] += 1
-        trace_zh = getattr(self, "_active_trace_language", "en") == "zh"
         thinking_step = {
             "id": step_id_ref[0],
             "type": "thinking",
@@ -620,19 +652,34 @@ class ChatWorkflowMixin:
                 usage = dict(response.usage)
             else:
                 usage = {}
-            thinking_step["status"] = "done"
-            thinking_step["content"] = "已生成回复" if trace_zh else "Response generated"
-            yield yield_event("step", thinking_step)
             # Providers may return a graceful error instead of raising. Keep
             # technical details in logs; raw credentials/endpoints/errors do
             # not belong in the user-facing chat stream.
             if finish_reason == "error" or content.startswith("Error:"):
                 logger.warning("Lightweight LLM provider failure: %s", content[:500])
-                thinking_step["status"] = "error"
-                thinking_step["content"] = (
-                    "AI 语言服务不可用" if trace_zh else "AI language service unavailable"
+                local_fallback = self._small_talk_fallback_response(
+                    message, "zh" if trace_zh else "en"
                 )
-                content = self._current_llm_unavailable_message()
+                if local_fallback:
+                    thinking_step["title"] = "本地回复" if trace_zh else "Local reply"
+                    thinking_step["status"] = "done"
+                    thinking_step["content"] = (
+                        "已使用本地问候回复" if trace_zh else "Used local conversational fallback"
+                    )
+                    content = local_fallback
+                    route = "local_small_talk_fallback"
+                else:
+                    thinking_step["status"] = "error"
+                    thinking_step["content"] = (
+                        "AI 语言服务不可用" if trace_zh else "AI language service unavailable"
+                    )
+                    content = self._current_llm_unavailable_message()
+                    route = "lightweight_conversation_unavailable"
+            else:
+                thinking_step["status"] = "done"
+                thinking_step["content"] = "已生成回复" if trace_zh else "Response generated"
+                route = "lightweight_conversation"
+            yield yield_event("step", thinking_step)
             yield {
                 "type": "_result",
                 "response": content,
@@ -640,7 +687,7 @@ class ChatWorkflowMixin:
                     "usage": usage,
                     "latency_ms": latency_ms,
                     "llm_calls": 1,
-                    "route": "lightweight_conversation",
+                    "route": route,
                 },
             }
         except Exception as e:
@@ -648,15 +695,34 @@ class ChatWorkflowMixin:
             # on failure do not re-enter the heavy path. The full technical
             # reason remains in server logs for operators.
             logger.warning("Lightweight conversation failed: %s", e)
-            thinking_step["status"] = "error"
-            thinking_step["content"] = (
-                "AI 语言服务不可用" if trace_zh else "AI language service unavailable"
+            local_fallback = self._small_talk_fallback_response(
+                message, "zh" if trace_zh else "en"
             )
+            if local_fallback:
+                thinking_step["title"] = "本地回复" if trace_zh else "Local reply"
+                thinking_step["status"] = "done"
+                thinking_step["content"] = (
+                    "已使用本地问候回复" if trace_zh else "Used local conversational fallback"
+                )
+                response = local_fallback
+                route = "local_small_talk_fallback"
+            else:
+                thinking_step["status"] = "error"
+                thinking_step["content"] = (
+                    "AI 语言服务不可用" if trace_zh else "AI language service unavailable"
+                )
+                response = self._current_llm_unavailable_message()
+                route = "lightweight_conversation_unavailable"
             yield yield_event("step", thinking_step)
             yield {
                 "type": "_result",
-                "response": self._current_llm_unavailable_message(),
-                "llm_meta": {"usage": {}, "latency_ms": 0, "llm_calls": 0},
+                "response": response,
+                "llm_meta": {
+                    "usage": {},
+                    "latency_ms": 0,
+                    "llm_calls": 0,
+                    "route": route,
+                },
             }
 
     def _pending_tumor_site_clarification(self) -> bool:
@@ -3066,7 +3132,9 @@ class ChatWorkflowMixin:
                 result = UISessionContentTool().execute(**params)
                 steps[-1]["status"] = "done" if result.success else "error"
                 steps[-1]["metadata"] = ToolResultPipeline.trace_metadata(
-                    "ui_content", dict(getattr(result, "metadata", {}) or {}),
+                    "ui_content", normalize_metadata(
+                        getattr(result, "metadata", {}), source="ui_content result"
+                    ),
                 ) if result.success else {}
                 steps[-1]["result"] = ToolResultPipeline.format(
                     "ui_content", result, self.memory.user_lang,
@@ -3557,7 +3625,47 @@ class ChatWorkflowMixin:
                 ).as_dict(),
             )
             normalized_payload["llm_meta"] = normalized_meta
-            answer = str(normalized_payload.get("response") or "").strip()
+            raw_answer = str(normalized_payload.get("response") or "").strip()
+            error_steps = [
+                step for step in (normalized_payload.get("steps") or steps or [])
+                if isinstance(step, dict) and step.get("status") == "error"
+            ]
+            error_tool = str(error_steps[0].get("tool") or "") if error_steps else ""
+            answer = sanitize_user_response(
+                raw_answer,
+                lang=self.memory.user_lang,
+                tool_name=error_tool,
+            )
+            # If a clinical prerequisite failed and the follow-up LLM call
+            # also returned a provider diagnostic, preserve the actionable
+            # clinical cause instead of showing only the provider outage.
+            if is_provider_error(raw_answer) and error_steps and error_tool:
+                clinical_message = format_tool_error(
+                    error_tool,
+                    error_steps[0].get("result"),
+                    error_steps[0].get("metadata"),
+                    self.memory.user_lang,
+                )
+                provider_message = sanitize_user_response(
+                    raw_answer, lang=self.memory.user_lang
+                )
+                if clinical_message and clinical_message != provider_message:
+                    answer = f"{clinical_message}\n\n{provider_message}"
+            if answer != raw_answer:
+                logger.warning(
+                    "Suppressed raw final response from chat output tool=%s",
+                    error_tool or "request",
+                )
+            normalized_payload["response"] = answer
+            # A failed step is still visible in the trace, but its result must
+            # follow the same user-error contract as the final chat bubble.
+            for failed_step in error_steps:
+                failed_step["result"] = format_tool_error(
+                    failed_step.get("tool") or "request",
+                    failed_step.get("result"),
+                    failed_step.get("metadata"),
+                    self.memory.user_lang,
+                )
             turn_is_internal_followup = bool(
                 (getattr(self, "_active_turn_context", {}) or {}).get("internal_followup")
             )
@@ -3939,7 +4047,9 @@ class ChatWorkflowMixin:
                     )
                     response = state_step["result"]
                 else:
-                    raw_metadata = dict(getattr(result, "metadata", {}) or {})
+                    raw_metadata = normalize_metadata(
+                        getattr(result, "metadata", {}), source="ui_content result"
+                    )
                     state_step["status"] = "done" if result.success else "error"
                     state_step["content"] = ""
                     # Keep only the compact browser command and localized
@@ -4223,7 +4333,16 @@ class ChatWorkflowMixin:
                         result_summary = (
                             _fmt[:500]
                             if tc["tool"] in {"ui_screenshot", "ui_content"}
-                            else (result.message[:500] if result.success else f"Error: {result.error}")
+                            else (
+                                result.message[:500]
+                                if result.success
+                                else format_tool_error(
+                                    tc["tool"],
+                                    result.error or _fmt,
+                                    result.metadata,
+                                    _lang,
+                                )
+                            )
                         )
                         self.memory.add_message("user", f"[Tool result: {result_summary}]")
                         if not result.success and tc["tool"] in {
@@ -4236,11 +4355,11 @@ class ChatWorkflowMixin:
                             break
                 except Exception as e:
                     step["status"] = "error"
-                    step["result"] = str(e)
+                    step["result"] = format_tool_error(tc["tool"], str(e), {}, _lang)
                     yield yield_event("step", step)
                     logger.error(f"Direct tool failed: {tc['tool']}: {e}")
                     self.memory.add_message("assistant", f"[Called {tc['tool']}]")
-                    self.memory.add_message("user", f"[Tool result: Error: {str(e)[:200]}]")
+                    self.memory.add_message("user", f"[Tool result: {step['result']}]")
                     if tc["tool"] in {
                         "ctv_segmentation", "oar_segmentation", "planning_pipeline"
                     }:
@@ -4792,10 +4911,16 @@ class ChatWorkflowMixin:
                     logger.error(f"[Review] Review phase failed: {e}", exc_info=True)
                     if _review_step:
                         _review_step["status"] = "error"
-                        _review_step["content"] = f"Error: {str(e)[:50]}"
+                        _review_step["content"] = (
+                            "复核阶段暂时不可用" if self.memory.user_lang == "zh"
+                            else "The review phase is temporarily unavailable"
+                        )
                     if _cc_step:
                         _cc_step["status"] = "error"
-                        _cc_step["content"] = f"Error: {str(e)[:50]}"
+                        _cc_step["content"] = (
+                            "完整性检查阶段暂时不可用" if self.memory.user_lang == "zh"
+                            else "The completeness check is temporarily unavailable"
+                        )
 
             except Exception as e:
                 logger.debug(f"Review phase skipped: {e}")
@@ -4920,18 +5045,26 @@ class ChatWorkflowMixin:
                                         ctv_result.error or ctv_result.message
                                         if ctv_result is not None else "CTV segmentation failed"
                                     )
-                                    if ctv_result is not None and ctv_result.metadata:
-                                        question = ctv_result.metadata.get("clarification_question")
+                                    ctv_meta = normalize_metadata(
+                                        getattr(ctv_result, "metadata", {}),
+                                        source="CTV workflow result",
+                                    ) if ctv_result is not None else {}
+                                    if ctv_meta:
+                                        question = ctv_meta.get("clarification_question")
                                         if question:
                                             err = f"{err} {question}"
                                     logger.warning(f"[WORKFLOW-ENFORCER-STREAM] CTV auto-execution did not run: {err}")
                                     ctv_step["status"] = "error"
-                                    ctv_step["result"] = str(err)[:200]
+                                    ctv_step["result"] = format_tool_error(
+                                        "ctv_segmentation", err, ctv_meta, _lang
+                                    )
                                     yield yield_event("step", ctv_step)
                             except Exception as e:
                                 logger.error(f"[WORKFLOW-ENFORCER-STREAM] CTV auto-execution failed: {e}")
                                 ctv_step["status"] = "error"
-                                ctv_step["result"] = str(e)[:200]
+                                ctv_step["result"] = format_tool_error(
+                                    "ctv_segmentation", str(e), {}, _lang
+                                )
                                 yield yield_event("step", ctv_step)
 
                     # Re-check after CTV
@@ -4993,7 +5126,9 @@ class ChatWorkflowMixin:
                         except Exception as e:
                             logger.error(f"[WORKFLOW-ENFORCER-STREAM] OAR auto-execution failed: {e}")
                             oar_step["status"] = "error"
-                            oar_step["result"] = str(e)[:200]
+                            oar_step["result"] = format_tool_error(
+                                "oar_segmentation", str(e), {}, _lang
+                            )
                             yield yield_event("step", oar_step)
 
                     # Re-check after OAR
@@ -5063,17 +5198,24 @@ class ChatWorkflowMixin:
                                                     if guide_result is not None else "Guide generation failed"
                                                 )
                                                 guide_step["status"] = "error"
-                                                guide_step["result"] = str(err)[:200]
+                                                guide_step["result"] = format_tool_error(
+                                                    "surgical_guide", err,
+                                                    getattr(guide_result, "metadata", {}), _lang
+                                                )
                                             yield yield_event("step", guide_step)
                                         except Exception as _guide_e:
                                             logger.error(f"[WORKFLOW-ENFORCER-STREAM] Guide auto-generation failed: {_guide_e}")
                                             guide_step["status"] = "error"
-                                            guide_step["result"] = str(_guide_e)[:200]
+                                            guide_step["result"] = format_tool_error(
+                                                "surgical_guide", str(_guide_e), {}, _lang
+                                            )
                                             yield yield_event("step", guide_step)
                         except Exception as e:
                             logger.error(f"[WORKFLOW-ENFORCER-STREAM] Planning auto-execution failed: {e}")
                             planning_step["status"] = "error"
-                            planning_step["result"] = str(e)[:200]
+                            planning_step["result"] = format_tool_error(
+                                "planning_pipeline", str(e), {}, _lang
+                            )
                             yield yield_event("step", planning_step)
 
         if _workflow_enforced and self.multi_agent_wrapper and self.multi_agent_wrapper.enabled:

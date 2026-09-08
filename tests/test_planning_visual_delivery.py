@@ -213,7 +213,7 @@ def test_guide_skin_uses_the_same_data_tree_control_paths_as_other_visual_nodes(
 
     # A scene-wide appearance sync must respect the 3D-specific flag.  This
     # catches the regression where a later sync made a hidden skin reappear.
-    assert "item.visible !== false && item.visible3D !== false" in viewer
+    assert "_dataTreeNodeScopeVisible(node, '3d')" in viewer
 
     # Programmatic visibility and opacity paths must explicitly resolve the
     # stable skin node instead of falling through to a missing top-level key.
@@ -262,7 +262,8 @@ def test_planning_visual_loads_are_retryable_and_case_scoped():
     assert "_isoSurfaceLoadInFlight" in manual
     assert "const rebuiltLevels = [];" in manual
     assert "Keep the currently displayed surfaces until each replacement" in manual
-    assert "if (_viewer3DRequestScopeIsCurrent(requestScope) && !silent)" in layout
+    assert "if (_viewer3DRequestScopeIsCurrent(requestScope))" in layout
+    assert "if (!silent && typeof addChat === 'function')" in layout
     assert "silent && [202, 404, 409, 429].includes(res.status)" in layout
     assert "window.fetchViewerJsonWithRetry(API + '/viewer/overlay'" in viewer
     assert "request.response?.ok" in viewer
@@ -346,6 +347,24 @@ def test_iso_surface_exceptions_are_visible_in_the_completion_ledger():
     assert "levelEntry.status = preserved ? 'stale' : 'error'" in manual
 
 
+def test_data_tree_reconstruction_reports_real_mesh_completion_and_progress():
+    layout = read("web/app/static/js/brachybot-viewer-layout.js")
+    volume = read("web/app/static/js/brachybot-viewer-volume.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    manual_3d = read("web/app/static/js/brachybot-3d-manual.js")
+
+    assert "loading.hidden = !active" in layout
+    assert "function _normalizeViewer3DResult" in layout
+    assert "return { success: false, error: message }" in layout
+    assert "const reconstructed = values.filter(value => value?.success === true).length" in volume
+    assert "complete: failed === 0" in volume
+    assert "const completed = values.filter(value => value?.success === true).length" in ui_api
+    assert "loading3D.hidden = true" in ui_api
+    assert "async function reconstructDoseIsosurface3D" in manual_3d
+    assert "loadingToken = typeof window.beginViewer3DLoading" in manual_3d
+    assert "const reconstructed = results.filter(result => result?.success === true).length" in manual_3d
+
+
 def test_viewer_requests_share_a_bounded_retry_and_abort_contract():
     """All expensive browser resource paths must settle instead of spinning forever."""
     manual = read("web/app/static/js/brachybot-3d-manual.js")
@@ -375,9 +394,11 @@ def test_3d_progress_overlay_never_blocks_interaction_or_cancels_hydration():
     assert 'data-interaction-mode="passthrough"' in html
 
     hidden_rule = css.split("#loading3D", 1)[1]
+    assert "#loading3D[hidden]" in hidden_rule
     assert "display: none !important" in hidden_rule
     assert "visibility: hidden !important" in hidden_rule
     assert "pointer-events: none !important" in hidden_rule
+    assert "#loading3D.active" in css
     assert 'id="workspaceHydrationNotice"' in read("web/app/index.html")
 
     base_rule = css.split(".loading-overlay {", 1)[1].split("}", 1)[0]
@@ -387,8 +408,10 @@ def test_3d_progress_overlay_never_blocks_interaction_or_cancels_hydration():
     assert "pointer-events: all" not in active_rule
     assert "pointer-events: auto" not in active_rule
     # The progress UI is a compact heads-up chip, not a full-card scrim.
-    assert "top: 2.25rem" in base_rule
-    assert "left: 50%" in base_rule
+    assert "right: 0.75rem" in base_rule
+    assert "bottom: 0.75rem" in base_rule
+    assert "top: 2.25rem" not in base_rule
+    assert "left: 50%" not in base_rule
     assert "inset: 0" not in base_rule
 
     render_loading = layout.split("function _renderViewer3DLoading()", 1)[1].split(
@@ -397,6 +420,7 @@ def test_3d_progress_overlay_never_blocks_interaction_or_cancels_hydration():
     assert "loading.style.pointerEvents = 'none'" in render_loading
     assert "loading.dataset.interactionMode = 'passthrough'" in render_loading
     assert "canvas.setAttribute('aria-busy', active ? 'true' : 'false')" in render_loading
+    assert "loading.hidden = !active" in render_loading
     assert "tokens.size > 0" in render_loading
 
     camera_interaction = manual.split("const markCameraInteraction", 1)[1].split(

@@ -1583,21 +1583,28 @@ def _world_segment_hits_obstacle(
     return context.segment_hits_obstacle(points)
 
 
-def _needle_enters_through_truncated_boundary(points, ct_image, body_mask=None, margin_mm=8.0):
-    """Return True when a needle's external entry crosses a truncated CT z-boundary.
+def _needle_enters_through_truncated_boundary(
+    points,
+    ct_image,
+    body_mask=None,
+    margin_mm=8.0,
+    truncated_boundary_faces=None,
+):
+    """Return True when a needle segment crosses a truncated CT face.
 
-    A finite-FOV CT stops at its first/last slice; the body mask ends flat
-    there instead of closing over real skin. If the needle's external endpoint
-    lies beyond a truncated boundary slice (z=0 or z=Z-1) while the anchor is
-    inside, the needle would enter through that flat truncation plane — an
-    anatomically impossible puncture. Such candidates are rejected so planning
-    never produces a needle that enters via the scan edge.
+    ``_candidate_world_needle_points`` returns ``[deep, external]``.  The
+    deep endpoint can be a fraction of a voxel outside the CT after planning
+    resampling, so checking only ``points[0]`` as an in-volume anchor is not
+    safe.  Instead, test every intersection of the complete segment with the
+    six CT faces and reject only crossings whose face is known to contain a
+    substantial amount of patient tissue in the raw CT.  This catches both
+    endpoint orderings and keeps valid lateral skin entries.
     """
     if ct_image is None or points is None or len(points) != 2:
         return False
     try:
         size_xyz = np.asarray(ct_image.GetSize(), dtype=np.int64)
-        if size_xyz.size != 3 or size_xyz[2] < 3:
+        if size_xyz.size != 3 or np.any(size_xyz < 3):
             return False
         # Convert world points to continuous CT indices (xyz order).
         indices = []
@@ -1609,41 +1616,68 @@ def _needle_enters_through_truncated_boundary(points, ct_image, body_mask=None, 
                 dtype=np.float64,
             )
             indices.append(idx)
-        anchor_idx = indices[0]
-        external_idx = indices[1]
-        if np.any(np.isnan(anchor_idx)) or np.any(np.isnan(external_idx)):
+        start_idx = indices[0]
+        end_idx = indices[1]
+        if np.any(~np.isfinite(start_idx)) or np.any(~np.isfinite(end_idx)):
             return False
-        # Anchor must be inside the scan; external must be at/outside a boundary.
-        inside_anchor = all(0.0 <= anchor_idx[i] <= float(size_xyz[i] - 1) for i in range(3))
-        if not inside_anchor:
+        if truncated_boundary_faces is None:
+            try:
+                from plans.utilizations import infer_truncated_boundary_faces_from_image
+                truncated_boundary_faces = infer_truncated_boundary_faces_from_image(ct_image)
+            except Exception:
+                truncated_boundary_faces = None
+        try:
+            raw_faces = () if truncated_boundary_faces is None else truncated_boundary_faces
+            faces_zyx = tuple(bool(value) for value in raw_faces)
+        except TypeError:
+            faces_zyx = ()
+        if len(faces_zyx) != 6:
+            faces_zyx = (False, False, False, False, False, False)
+
+        # World/CT continuous indices are XYZ, while the raw image helper and
+        # planning body mask use ZYX.  Map each XYZ face to its corresponding
+        # ZYX flag explicitly instead of relying on a fragile axis convention.
+        xyz_face_flags = (
+            (faces_zyx[4], faces_zyx[5]),  # x_min, x_max
+            (faces_zyx[2], faces_zyx[3]),  # y_min, y_max
+            (faces_zyx[0], faces_zyx[1]),  # z_min, z_max
+        )
+        if not any(flag for pair in xyz_face_flags for flag in pair):
             return False
-        # Flag when the external endpoint reaches or passes the CT z extent:
-        # the needle would exit through the flat truncation cap. Use a tight
-        # 1-slice tolerance so a lateral needle (external inside the z range)
-        # is never misclassified.
-        margin = max(1.0, 1.0)
-        exit_low = external_idx[2] <= margin
-        exit_high = external_idx[2] >= float(size_xyz[2] - 1) - margin
-        if not (exit_low or exit_high):
-            return False
-        # Only reject when the direction points out of the scan on that side and
-        # the body actually reaches the boundary. binary_closing erodes the very
-        # edge slice, so probe the boundary ZONE (several slices in) instead of
-        # only the exact boundary slice.
-        if body_mask is not None:
-            z_shape = body_mask.shape[0]
-            if z_shape < 3:
-                return True
-            probe = max(3, min(z_shape // 3, 6))
-            if exit_low:
-                low_zone = body_mask[:probe].any(axis=(1, 2))
-                if not bool(low_zone.any()):
-                    return False  # no body near the boundary: not a body truncation
-            if exit_high:
-                high_zone = body_mask[-probe:].any(axis=(1, 2))
-                if not bool(high_zone.any()):
-                    return False
-        return True
+
+        delta = end_idx - start_idx
+        max_idx = size_xyz.astype(np.float64) - 1.0
+
+        def _inside(value):
+            return bool(np.all(value >= 0.0) and np.all(value <= max_idx))
+
+        # Check all line/box-face intersections.  The small parameter probe is
+        # intentionally outside the segment at t=0/1 so an endpoint that is a
+        # few hundredths of a voxel beyond the CT (the observed failure mode)
+        # is still classified as a crossing.
+        for axis in range(3):
+            component = float(delta[axis])
+            if abs(component) <= 1e-12:
+                continue
+            for side, boundary in enumerate((0.0, max_idx[axis])):
+                if not xyz_face_flags[axis][side]:
+                    continue
+                t = (boundary - float(start_idx[axis])) / component
+                if t < -1e-8 or t > 1.0 + 1e-8:
+                    continue
+                crossing = start_idx + t * delta
+                other_axes = [index for index in range(3) if index != axis]
+                if any(
+                    crossing[index] < -1e-6 or crossing[index] > max_idx[index] + 1e-6
+                    for index in other_axes
+                ):
+                    continue
+                probe_t = min(1e-4, max(1e-8, 1e-3 / max(1.0, float(np.max(np.abs(delta))))))
+                before = start_idx + (t - probe_t) * delta
+                after = start_idx + (t + probe_t) * delta
+                if _inside(before) != _inside(after):
+                    return True
+        return False
     except Exception:
         logger.exception("[needle_safety] Truncated-boundary check failed")
         return False
@@ -1720,6 +1754,7 @@ def _filter_world_safe_trajectories(
     oar_mask,
     obstacle_labels,
     body_mask=None,
+    truncated_boundary_faces=None,
 ):
     """Reject candidates whose full 150 mm physical needle intersects hard masks."""
     safe = []
@@ -1743,7 +1778,12 @@ def _filter_world_safe_trajectories(
     safety_context = build_needle_safety_context(ct_image, ctv_mask, oar_mask, obstacle_labels)
     for trajectory in trajectories or []:
         points = _candidate_world_needle_points(trajectory, planning_image, extension)
-        if _needle_enters_through_truncated_boundary(points, ct_image, body_mask=body_mask):
+        if _needle_enters_through_truncated_boundary(
+            points,
+            ct_image,
+            body_mask=body_mask,
+            truncated_boundary_faces=truncated_boundary_faces,
+        ):
             truncation_rejected += 1
             continue
         if safety_context is None:
@@ -2759,6 +2799,33 @@ class PlanningPipelineTool(BaseTool):
             logger.error(f"Resampling failed: {e}")
             return ToolResult(success=False, error=f"[trajectory_init] Resampling failed: {e}")
 
+        # Build the entry-point envelope on the SAME grid used by init_plan.
+        # The original-resolution body mask is retained below for the full
+        # world-coordinate safety pass, but it cannot validate a resampled
+        # candidate point without introducing a second transform.
+        entry_body_mask = None
+        entry_boundary_faces = None
+        try:
+            entry_body_mask = _body_mask_from_ct(resampled_ct)
+            from plans.utilizations import infer_truncated_boundary_faces_from_image
+            entry_boundary_faces = infer_truncated_boundary_faces_from_image(resampled_ct)
+            if entry_body_mask is not None:
+                logger.info(
+                    "[trajectory_init] Planning-grid body envelope prepared: shape=%s, voxels=%d",
+                    np.asarray(entry_body_mask).shape,
+                    int(np.count_nonzero(entry_body_mask)),
+                )
+            logger.info(
+                "[trajectory_init] Planning-grid truncated CT faces (z-, z+, y-, y+, x-, x+): %s",
+                entry_boundary_faces,
+            )
+        except Exception:
+            logger.warning(
+                "[trajectory_init] Planning-grid body envelope unavailable; "
+                "world-coordinate safety validation remains enabled",
+                exc_info=True,
+            )
+
         # Resolve the current Data tree category state before planning.
         obstacle_labels, obstacle_source = _resolve_data_tree_obstacle_labels(agent)
 
@@ -2825,6 +2892,8 @@ class PlanningPipelineTool(BaseTool):
                 args.radiation_array_params['maximum_candidate_trajectories'],
                 min_depth=args.radiation_array_params.get('min_depth', 1),
                 preview_callback=_trajectory_preview_observer,
+                entry_body_mask=entry_body_mask,
+                entry_boundary_faces=entry_boundary_faces,
             )
             logger.info(f"init_plan returned {len(trajectories)} trajectories")
         except Exception as e:
@@ -2878,6 +2947,7 @@ class PlanningPipelineTool(BaseTool):
             agent.memory.store("obstacle_label_ids", sorted(obstacle_labels))
             agent.memory.store("obstacle_label_source", obstacle_source)
             agent.memory.store("ref_direc_voxel", voxel_direc)
+            agent.memory.store("entry_boundary_faces", entry_boundary_faces)
             logger.info(f"[trajectory_init] Stored resampled_ct: size={resampled_ct.GetSize()}, spacing={resampled_ct.GetSpacing()}")
 
         max_depth = max([t[4] for t in trajectories], default=0) if trajectories else 0
@@ -3583,6 +3653,13 @@ class PlanningPipelineTool(BaseTool):
                     else {}
                 ),
                 "dose_value_unit": "gy",
+                # All persisted automatic seed positions and directions are
+                # patient-world LPS coordinates.  The optimizer may search
+                # in planning-grid [z, y, x] voxels internally, but that
+                # representation must never cross the Viewer/API boundary.
+                "coordinate_contract_version": 2,
+                "seed_coordinate_space": "patient_world_lps",
+                "needle_coordinate_space": "patient_world_lps",
                 "in_lowest_energy": float(in_lowest_gy),
                 "out_highest_energy": float(out_highest_gy),
                 "in_lowest_dose_gy": float(in_lowest_gy),

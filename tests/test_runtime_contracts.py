@@ -514,8 +514,8 @@ def test_viewer_script_dependency_contract_is_cache_busted_and_syntax_safe():
     # versions whenever this cross-bundle contract changes, otherwise an old
     # 3D bundle can coexist with a new UI action bundle and hide its parse
     # failure as a missing global helper.
-    assert 'brachybot-ui-api.js?v=64' in index
-    assert 'brachybot-3d-manual.js?v=82' in index
+    assert 'brachybot-ui-api.js?v=69' in index
+    assert 'brachybot-3d-manual.js?v=90' in index
     assert "window._normalizeTrajectoryId = function _normalizeTrajectoryId" in ui_api
 
     # This exact malformed expression previously prevented the entire 3D
@@ -837,6 +837,57 @@ def test_ui_controller_separates_panel_maximize_camera_fit_and_zoom_delta():
     assert fit.success is True
 
 
+
+def test_ui_controller_normalizes_semantic_transparency_envelope():
+    from agent_runtime.core import ToolResultPipeline
+    from agent_runtime.turn_policy import classify_local_turn
+    from agent_runtime.ui_operations import resolve_ui_operation_request
+    from tool_factory.ui_controller import (
+        UIControllerTool,
+        normalize_ui_controller_request,
+    )
+
+    message = "帮我将所有OAR在调到半透明"
+    policy = classify_local_turn(message, ui_state={})
+    assert policy.intent == "ui_operation"
+    assert policy.direct_execution is True
+    assert policy.ui_operation["actions"] == [{
+        "target": "tree.group.opacity",
+        "command": "set",
+        "value": "oar,50",
+    }]
+    assert resolve_ui_operation_request(message, ui_state={})["actions"] == policy.ui_operation["actions"]
+
+    raw = {
+        "action": "view.segmentation.set_transparency",
+        "transparency": "0.5",
+        "actions": [{"target": "all_oars", "command": "set", "value": None}],
+    }
+    assert normalize_ui_controller_request(raw)["actions"] == [{
+        "target": "tree.group.opacity",
+        "command": "set",
+        "value": "oar,50",
+    }]
+    result = UIControllerTool().execute(**raw)
+    assert result.success is True
+    assert result.metadata["actions"] == normalize_ui_controller_request(raw)["actions"]
+    assert "全部 OAR" in ToolResultPipeline.format("ui_controller", result, "zh")
+
+
+def test_ui_controller_unknown_target_error_is_capability_specific():
+    from agent_runtime.core import ToolResultPipeline
+    from tool_factory.ui_controller import UIControllerTool
+
+    result = UIControllerTool().execute(actions=[{
+        "target": "made.up.control",
+        "command": "set",
+        "value": 1,
+    }])
+    rendered = ToolResultPipeline.format("ui_controller", result, "zh")
+    assert result.success is False
+    assert "made.up.control" in rendered
+    assert "相机" not in rendered
+    assert "缩放" not in rendered
 def test_ui_inspector_reports_real_viewer_capabilities_from_dom_contracts():
     from tool_factory.ui_inspector import UIInspectorTool
 
@@ -964,3 +1015,36 @@ def test_local_model_checkpoints_load_with_weights_only_false():
             f"{path.name} must load its trusted local checkpoint with "
             "weights_only=False (PyTorch 2.6 default True rejects numpy scalars)"
         )
+
+def test_planning_request_precedes_generic_data_tree_context_actions():
+    from agent_runtime.turn_policy import classify_local_turn
+    from agent_runtime.ui_operations import resolve_ui_operation_request
+
+    message = "我上传了一名胰腺肿瘤患者CT，请执行放射性粒子植入规划"
+    catalog = [{
+        "ref": "data-tree:ctv_1:context:rename-any",
+        "label": "CTV mask Rename",
+        "node_id": "ctv_1",
+        "scope": "leaf",
+        "action": {
+            "target": "ui.context_action",
+            "command": "run",
+            "value": json.dumps({"action_id": "node_rename", "object_id": "ctv_1"}),
+        },
+    }]
+
+    policy = classify_local_turn(message, ui_state={"ui_operation_catalog": catalog})
+    assert policy.intent == "clinical_planning"
+    assert "planning_pipeline" in policy.execution_grants
+
+
+def test_ui_context_rename_without_name_is_rejected_and_not_reported_successfully():
+    from agent_runtime.core import ToolResultPipeline
+    from tool_factory.ui_controller import UIControllerTool
+
+    result = UIControllerTool().execute(actions=[{
+        "target": "ui.context_action",
+        "command": "run",
+        "value": json.dumps({"action_id": "node_rename", "object_id": "ctv_1"}),
+    }])
+    rendered = ToolResultPipeline.format("ui_controller", result, "zh")

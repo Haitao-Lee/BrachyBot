@@ -359,6 +359,29 @@
                 if (visualReady?.ready === false) {
                     throw new Error(visualReady.reason || 'visual_restore_incomplete');
                 }
+                // The report is a derived view of the restored case. Re-run
+                // the authoritative auto-fill after CT/mesh/planning hydration
+                // so a cold restart cannot leave a stale blank prescription,
+                // seed count, activity field, or quality assessment. This is
+                // deliberately non-fatal: a temporary report endpoint failure
+                // must not discard an otherwise valid clinical restore.
+                if (generation === backgroundRestoreGeneration
+                    && sessionId === activeSessionId
+                    && window.Report?.autoFill?.fromAll) {
+                    try {
+                        const reportRestore = await window.Report.autoFill.fromAll({
+                            sessionId: String(sessionId),
+                            captureFigures: false,
+                            allowBlankRepair: true,
+                            backgroundRestore: true,
+                        });
+                        if (reportRestore?.success === false) {
+                            console.debug('[workspace] report refresh deferred:', reportRestore.error || reportRestore.warning || 'unknown');
+                        }
+                    } catch (reportError) {
+                        console.debug('[workspace] report refresh failed after restore:', reportError);
+                    }
+                }
                 // Resource hydration deliberately skips chat state so it
                 // cannot erase a live replay. Reconcile once more after the
                 // heavy phase because a task may have become active or
@@ -758,6 +781,10 @@
                     sort_order: Number(figure.sortOrder) || null,
                     capture_role: String(figure.captureRole || ''),
                     capture_contract: String(figure.captureContract || ''),
+                    capture_profile: String(figure.captureProfile || ''),
+                    display_mode: String(figure.displayMode || ''),
+                    render_signature: String(figure.renderSignature || ''),
+                    mapped_mesh_count: Number(figure.mappedMeshCount) || null,
                     slice_index: Number.isFinite(Number(figure.sliceIdx)) ? Number(figure.sliceIdx) : null,
                     peak_voxel: figure.peakVoxel || null,
                 },
@@ -814,14 +841,16 @@
         report_fig1_global: {
             figureGroup: 'figure1', figureNumber: 1, subfigure: 'a', sortOrder: 1,
             captureRole: 'planning_overview',
-            captureContract: 'figure1-global-overview-target-detail-v6-thin-needles',
+            captureContract: 'figure1-global-overview-target-detail-v8-semantic-recapture',
+            captureProfile: 'global_overview',
             title: 'Reference-direction plan overview',
             caption: 'Global view along the needle reference direction, showing the CTV, selected OARs, needle paths, and seeds.',
         },
         report_fig1_closeup: {
             figureGroup: 'figure1', figureNumber: 1, subfigure: 'b', sortOrder: 2,
             captureRole: 'planning_closeup',
-            captureContract: 'figure1-global-overview-target-detail-v6-thin-needles',
+            captureContract: 'figure1-target-closeup-v8-required-focus-crop',
+            captureProfile: 'target_closeup',
             title: 'CTV seed-distribution close-up',
             caption: 'Target close-up with the CTV made translucent to show seed distribution and needle paths.',
         },
@@ -849,7 +878,7 @@
         report_fig2_dose_surface: {
             figureGroup: 'figure2', figureNumber: 2, subfigure: 'd', sortOrder: 4,
             captureRole: 'dose_surface_3d',
-            captureContract: 'figure2-dose-surface-v3',
+            captureContract: 'figure2-dose-surface-v5-runtime-mapped',
             title: 'CTV and dose-isosurface overview',
             caption: 'Three-dimensional view of the CTV and relevant dose isosurfaces.',
         },
@@ -937,6 +966,17 @@
             figure.subfigure = definition.subfigure;
             figure.sortOrder = definition.sortOrder;
             figure.captureRole = definition.captureRole;
+            const expectedContract = reportFigureExpectedCaptureContract(axis);
+            const expectedProfile = reportFigureExpectedCaptureProfile(axis);
+            figure._invalidCapture = (
+                (!!expectedContract && String(figure.captureContract || '') !== expectedContract)
+                || (!!expectedProfile && String(figure.captureProfile || '') !== expectedProfile)
+            );
+            if (axis === 'report_fig2_dose_surface'
+                && (String(figure.displayMode || '') !== 'dose_surface'
+                    || String(figure.renderSignature || '') !== 'dose_texture_vertex_colors')) {
+                figure._invalidCapture = true;
+            }
             // Catalog-only recovery is evidence recovery rather than user-authored
             // report content. Give it the canonical title and caption so a legacy
             // random screenshot name or historical encoding cannot create a
@@ -976,6 +1016,16 @@
         );
     }
 
+    function reportFigureExpectedCaptureProfile(axis) {
+        const key = String(axis || '');
+        return String(
+            (typeof window.reportFigureCaptureProfileForAxis === 'function'
+                ? window.reportFigureCaptureProfileForAxis(key) : '')
+            || REPORT_FIGURE_DEFINITIONS[key]?.captureProfile
+            || '',
+        );
+    }
+
     // A complete seven-row array is not sufficient evidence that a report is
     // healthy: a legacy capture can have the right filename while containing
     // the wrong scene, and a row can belong to a different Planning run. Use
@@ -997,7 +1047,13 @@
             if (!figure || !(figure.dataUrl || figure._serverUrl || figure._cacheKey)) return true;
             const figurePlanning = figure.planningId || figure.planning_id || '';
             if (expectedPlanning && String(figurePlanning || '__unassigned__') !== expectedPlanning) return true;
-            return String(figure.captureContract || '') !== reportFigureExpectedCaptureContract(axis);
+            if (String(figure.captureContract || '') !== reportFigureExpectedCaptureContract(axis)) return true;
+            if (String(figure.captureProfile || '') !== reportFigureExpectedCaptureProfile(axis)) return true;
+            if (axis === 'report_fig2_dose_surface') {
+                return String(figure.displayMode || '') !== 'dose_surface'
+                    || String(figure.renderSignature || '') !== 'dose_texture_vertex_colors';
+            }
+            return false;
         });
     }
     window.reportFiguresNeedCapture = reportFiguresNeedCapture;
@@ -1919,7 +1975,26 @@
             const captureContract = String(
                 viewMetadata?.capture_contract || viewMetadata?.captureContract || '',
             ).trim();
-            return captureContract ? { ...base, captureContract } : base;
+            const displayMode = String(
+                viewMetadata?.display_mode || viewMetadata?.displayMode || '',
+            ).trim();
+            const renderSignature = String(
+                viewMetadata?.render_signature || viewMetadata?.renderSignature || '',
+            ).trim();
+            const captureProfile = String(
+                viewMetadata?.capture_profile || viewMetadata?.captureProfile || '',
+            ).trim();
+            const mappedMeshCount = Number(
+                viewMetadata?.mapped_mesh_count ?? viewMetadata?.mappedMeshCount,
+            );
+            return {
+                ...(captureContract ? { captureContract } : {}),
+                ...(captureProfile ? { captureProfile } : {}),
+                ...(displayMode ? { displayMode } : {}),
+                ...(renderSignature ? { renderSignature } : {}),
+                ...(Number.isFinite(mappedMeshCount) ? { mappedMeshCount } : {}),
+                ...base,
+            };
         };
         const recoveredFigures = screenshots.map((item, index) => {
             const objectId = String(item.objectId || '');
@@ -2094,13 +2169,38 @@
                 if (uiState.viewer.masks && typeof state !== 'undefined') {
                     const labels = uiState.viewer.masks.labels || {};
                     state.maskLabels = {};
+                    const maxUploadedMaskLabels = Math.max(
+                        1,
+                        Math.trunc(Number(window.BRACHYBOT_MAX_UPLOADED_MASK_LABELS) || 64),
+                    );
+                    let restoredUploadedMaskLabels = 0;
+                    let skippedUploadedMaskLabels = 0;
                     Object.entries(labels).forEach(([id, m]) => {
                         if (!m || typeof m !== 'object') return;
+                        const isUploaded = m.kind === 'uploaded_mask_label'
+                            || m.source === 'uploaded_mask'
+                            || Boolean(m.upload_mask_id);
+                        const classification = [m.classification, m.movedTo, m.moved_to]
+                            .map(value => String(value || '').trim().toLowerCase())
+                            .find(value => value === 'ctv' || value === 'oar') || '';
+                        if (isUploaded && !classification) {
+                            if (restoredUploadedMaskLabels >= maxUploadedMaskLabels) {
+                                skippedUploadedMaskLabels += 1;
+                                return;
+                            }
+                            restoredUploadedMaskLabels += 1;
+                        }
                         state.maskLabels[id] = {
                             ...m,
                             voxels: new Set(Array.isArray(m.voxels) ? m.voxels : []),
                         };
                     });
+                    if (skippedUploadedMaskLabels > 0) {
+                        window.showBrachyBotNotice?.(
+                            `已跳过 ${skippedUploadedMaskLabels} 个异常上传掩膜标签，避免浏览器卡顿。请确认上传的是离散 mask 而不是 CT。`,
+                            'warning',
+                        );
+                    }
                     state.maskLabelCounter = Number(uiState.viewer.masks.counter) || 0;
                     state.activeMaskId = uiState.viewer.masks.activeMaskId || null;
                 }
