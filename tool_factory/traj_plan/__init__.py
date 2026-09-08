@@ -71,6 +71,10 @@ class TrajectoryPlanningTool(BaseTool):
                 "target_value": {"type": "number", "default": 1},
                 "background_value": {"type": "number", "default": 0},
                 "obstacle_value": {"type": "number", "default": 3},
+                "entry_body_mask": {
+                    "type": "object",
+                    "description": "Optional planning-grid body envelope used to reject CT-boundary entries",
+                },
             },
             "required": ["dose_image", "radiation_volume"],
         }
@@ -101,6 +105,7 @@ class TrajectoryPlanningTool(BaseTool):
             "target_value": target_value,
             "background_value": background_value,
             "obstacle_value": obstacle_value,
+            "entry_body_mask": kwargs.get("entry_body_mask"),
         }
         for key in (
             "direc_resolution",

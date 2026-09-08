@@ -125,6 +125,95 @@ def test_candidate_generation_observer_reports_real_incremental_geometry(monkeyp
     assert observations[-1]["trajectories"] == result
 
 
+def test_init_plan_rejects_ct_boundary_entries_before_depth_generation(monkeypatch):
+    import numpy as np
+    from plans import core
+
+    directions = [
+        np.array([1.0, 0.0, 0.0]),   # reverse ray reaches the z-min CT face
+        np.array([0.0, 1.0, 0.0]),   # reverse ray exits through real lateral air
+    ]
+    monkeypatch.setattr(core.utilizations, "get_cone", lambda *_args: directions)
+    monkeypatch.setattr(
+        core.utilizations,
+        "get_close_points",
+        lambda *_args: (np.array([[4.0, 4.0, 4.0]]), 12.0),
+    )
+
+    body = np.zeros((9, 9, 9), dtype=bool)
+    body[0:8, 1:8, 1:8] = True
+    calls = []
+
+    def fake_depth(points, _volume, direction, *_args, **_kwargs):
+        calls.append((np.asarray(direction).copy(), len(points)))
+        if len(points) == 0:
+            return []
+        return [(np.asarray(points[0]), np.asarray(direction), [4.0], [], 4.0)]
+
+    monkeypatch.setattr(core.utilizations, "init_trajectories_with_depth", fake_depth)
+    result = core.init_plan(
+        dose_image=object(),
+        radiation_volume=np.zeros((9, 9, 9), dtype=np.uint8),
+        ref_direc=np.array([0.0, 0.0, 1.0]),
+        direc_resolution=[0.5, 0.1, 1],
+        extract_angle=0.5,
+        target_value=1,
+        background_value=0,
+        obstacle_value=3,
+        maximum_candidate_trajectories=20,
+        min_depth=1,
+        entry_body_mask=body,
+    )
+
+    assert len(result) == 1
+    assert [count for _direction, count in calls] == [0, 1]
+
+
+def test_init_plan_applies_explicit_truncated_face_flags_before_preview(monkeypatch):
+    import numpy as np
+    from plans import core
+
+    directions = [
+        np.array([1.0, 0.0, 0.0]),  # flagged z-min truncation
+        np.array([0.0, 1.0, 0.0]),  # unflagged real lateral skin
+    ]
+    monkeypatch.setattr(core.utilizations, "get_cone", lambda *_args: directions)
+    monkeypatch.setattr(
+        core.utilizations,
+        "get_close_points",
+        lambda *_args: (np.array([[4.0, 4.0, 4.0]]), 12.0),
+    )
+
+    body = np.zeros((9, 9, 9), dtype=bool)
+    body[1:8, 1:8, 1:8] = True
+    calls = []
+
+    def fake_depth(points, _volume, direction, *_args, **_kwargs):
+        calls.append((np.asarray(direction).copy(), len(points)))
+        if len(points) == 0:
+            return []
+        return [(np.asarray(points[0]), np.asarray(direction), [4.0], [], 4.0)]
+
+    monkeypatch.setattr(core.utilizations, "init_trajectories_with_depth", fake_depth)
+    result = core.init_plan(
+        dose_image=object(),
+        radiation_volume=np.zeros((9, 9, 9), dtype=np.uint8),
+        ref_direc=np.array([0.0, 0.0, 1.0]),
+        direc_resolution=[0.5, 0.1, 1],
+        extract_angle=0.5,
+        target_value=1,
+        background_value=0,
+        obstacle_value=3,
+        maximum_candidate_trajectories=20,
+        min_depth=1,
+        entry_body_mask=body,
+        entry_boundary_faces=(True, False, False, False, False, False),
+    )
+
+    assert len(result) == 1
+    assert [count for _direction, count in calls] == [0, 1]
+
+
 def test_preview_transport_is_live_latest_frame_bounded_and_not_serialized():
     runtime = _read("agent_runtime/llm_runtime.py")
     agent = _read("AgenticSys.py")

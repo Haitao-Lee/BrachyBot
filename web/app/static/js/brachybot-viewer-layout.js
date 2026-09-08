@@ -920,6 +920,10 @@ function _renderViewer3DLoading() {
     const loading = document.getElementById('loading3D');
     if (!loading) return;
     const active = _viewer3DLoadingState.tokens.size > 0;
+    // The HTML starts with the hidden attribute for a zero-flash initial render.
+    // Toggle the attribute as well as the class; CSS/UA hidden rules otherwise
+    // keep the progress indicator invisible forever.
+    loading.hidden = !active;
     // Loading is progressive and must never become an input boundary.  Keep
     // this runtime guard as well as the stylesheet contract so a mixed-cache
     // tab cannot put an older blocking overlay in front of OrbitControls.
@@ -1139,7 +1143,8 @@ async function reconstructOrgan3D(id, silent = false) {
     const promise = _reconstructOrgan3D(id, silent, requestScope);
     _organ3DReconstructionInFlight.set(key, { scope: requestScope, promise });
     try {
-        return await promise;
+        const result = await promise;
+        return _normalizeViewer3DResult(result);
     } finally {
         if (_organ3DReconstructionInFlight.get(key)?.promise === promise) {
             _organ3DReconstructionInFlight.delete(key);
@@ -1147,8 +1152,62 @@ async function reconstructOrgan3D(id, silent = false) {
     }
 }
 
+function _viewer3DText(zh, en) {
+    if (typeof window._t === 'function') return window._t(zh, en);
+    if (typeof _dtText === 'function') return _dtText(zh, en);
+    try {
+        return document.documentElement.lang?.toLowerCase().startsWith('zh') ? zh : en;
+    } catch (_) {
+        return en;
+    }
+}
+
+function _viewer3DNodeForId(id) {
+    try {
+        if (typeof _findDataTreeNode === 'function') {
+            const node = _findDataTreeNode(id);
+            if (node) return node;
+        }
+    } catch (_) {}
+    if (typeof dataTreeState === 'undefined') return null;
+    if (id === 'ctv') return dataTreeState.ctv || null;
+    if (id === 'skin_surface') return dataTreeState.skin || null;
+    if (String(id).startsWith('ctv_')) return dataTreeState.ctvLabels?.[id] || null;
+    if (String(id).startsWith('organ_')) {
+        return (dataTreeState.organs || []).find(item => item.id === id) || null;
+    }
+    if (typeof state !== 'undefined' && state.maskLabels?.[id]) return state.maskLabels[id];
+    return null;
+}
+
+function _setViewer3DNodeState(id, patch = {}) {
+    const node = _viewer3DNodeForId(id);
+    if (!node) return null;
+    Object.assign(node, patch);
+    try {
+        if (typeof renderDataTree === 'function') renderDataTree();
+    } catch (_) {}
+    return node;
+}
+
+function _normalizeViewer3DResult(result) {
+    if (result && typeof result === 'object') {
+        if (result.stale === true) return { ...result, success: false };
+        if (result.success === false || result.success === true) return result;
+        if (result.pending === true || result.error) return { ...result, success: false };
+        return { ...result, success: true };
+    }
+    return {
+        success: false,
+        error: result === false
+            ? '3D reconstruction did not produce a mesh.'
+            : '3D reconstruction returned no result.',
+    };
+}
+
 async function _reconstructOrgan3D(id, silent = false, scope = null) {
     const requestScope = scope || _captureViewer3DRequestScope();
+    const nodeId = String(id);
     if (!state.ctPath || !state.ctLoaded) {
         try {
             const resp = await fetch(API + '/status', {
@@ -1156,7 +1215,7 @@ async function _reconstructOrgan3D(id, silent = false, scope = null) {
             });
             if (resp.ok) {
                 const sd = await resp.json();
-                if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
+                if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { success: false, stale: true };
                 if (sd.ct_path) {
                     state.ctPath = sd.ct_path;
                     state.ctLoaded = true;
@@ -1164,28 +1223,36 @@ async function _reconstructOrgan3D(id, silent = false, scope = null) {
                 if (!volumeData && sd.ct_loaded) {
                     await loadVolumeData();
                 }
-                if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
+                if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { success: false, stale: true };
             }
-        } catch (e) {}
+        } catch (_) {}
     }
-    if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
+    if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { success: false, stale: true };
     if (!state.ctPath) {
-        if (!silent) addChat('error', 'No CT image loaded');
-        return;
+        const error = _viewer3DText('尚未加载 CT 图像，无法执行 3D 重建。', 'No CT image is loaded for 3D reconstruction.');
+        _setViewer3DNodeState(nodeId, { loading: false, status: 'error', error });
+        if (!silent && typeof addChat === 'function') addChat('error', error);
+        return { success: false, error };
     }
 
+    _setViewer3DNodeState(nodeId, { loading: true, status: 'loading', error: null });
     const loadingToken = beginViewer3DLoading(
-        id === 'ctv' ? 'Rendering CTV surfaces...' : 'Rendering 3D surface...',
+        nodeId === 'ctv'
+            ? _viewer3DText('正在重建 CTV 表面…', 'Reconstructing CTV surfaces...')
+            : _viewer3DText('正在重建 3D 表面…', 'Reconstructing 3D surface...'),
     );
 
     try {
-        if (id === 'skin_surface') {
-            return _reconstructGuideSkinSurface3D(silent);
+        if (nodeId === 'skin_surface') {
+            return await _reconstructGuideSkinSurface3D(silent);
         }
-        // CTV: reconstruct all labels (multi-label)
-        if (id === 'ctv') {
+
+        // CTV is a multi-label object. Every persisted target label is
+        // reconstructed independently and reported as one truthful operation.
+        if (nodeId === 'ctv') {
             const labelIds = getCtvMeshLabelIds();
             let successCount = 0;
+            let failedCount = 0;
             for (let i = 0; i < labelIds.length; i++) {
                 const labelId = labelIds[i];
                 try {
@@ -1202,74 +1269,129 @@ async function _reconstructOrgan3D(id, silent = false, scope = null) {
                     const res = request.response;
                     const errData = request.data || {};
                     if (!res.ok) {
-                        const errMsg = errData.error || errData.message || `HTTP ${res.status}`;
-                        // Don't show a missing label as a reconstruction error.
+                        const errMsg = errData.error || errData.message || ('HTTP ' + res.status);
                         if (res.status === 400 && errMsg.includes('not found')) continue;
-                        if (silent && [202, 404, 409, 429].includes(res.status)) continue;
+                        if (silent && [202, 404, 409, 429].includes(res.status)) {
+                            failedCount++;
+                            continue;
+                        }
                         throw new Error(errMsg);
                     }
-                    if (res.ok) {
-                        const data = request.data || {};
-                        if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
-                        if (data.success && data.vertex_count > 0) {
-                            // CTV has a dedicated namespace because OAR masks
-                            // commonly reuse label 1. The primary target must
-                            // therefore remain the same vivid red in 2D/3D.
-                            const c = ctvLabelColorLUT[labelId];
-                            data.color = c ? (c[0] << 16 | c[1] << 8 | c[2]) : 0xff304c;
-                            data.organ_id = `ctv_${labelIds[i]}`;  // Use same ID as data tree
-                            _safeRender3DMesh(data);
-                            successCount++;
-                        }
+                    const data = request.data || {};
+                    if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { success: false, stale: true };
+                    if (data.success && data.vertex_count > 0) {
+                        const c = ctvLabelColorLUT[labelId];
+                        data.color = c ? (c[0] << 16 | c[1] << 8 | c[2]) : 0xff304c;
+                        data.organ_id = 'ctv_' + labelIds[i];
+                        _safeRender3DMesh(data);
+                        successCount++;
+                    } else {
+                        failedCount++;
                     }
-                    // Skip 400 errors (label not found in mask)
-                } catch (e) {
-                    // A user-triggered CTV reconstruction must report a real
-                    // terminal transport/backend failure. The previous
-                    // catch swallowed it even when `silent` was false, so a
-                    // 429/500 was misreported later as "No CTV labels".
-                    if (!silent) throw e;
-                    // Background hydration is best-effort; the next
-                    // session-scoped refresh will retry the label.
+                } catch (error) {
+                    failedCount++;
+                    if (!silent) throw error;
                 }
             }
-            if (successCount === 0 && !silent) {
-                addChat('error', 'No CTV labels found for 3D reconstruction');
+            if (successCount === 0) {
+                const error = _viewer3DText(
+                    '没有找到可用于 3D 重建的 CTV 标签。',
+                    'No CTV labels were available for 3D reconstruction.',
+                );
+                _setViewer3DNodeState(nodeId, { loading: false, status: 'error', error });
+                if (!silent && typeof addChat === 'function') addChat('error', error);
+                return { success: false, reconstructed: 0, failed: failedCount, total: labelIds.length, error };
             }
-            if (!silent) switchPanel('viewers', document.querySelectorAll('.panel-tab')[2]);
-            return;
+            _setViewer3DNodeState(nodeId, {
+                loading: false,
+                loaded: true,
+                meshLoaded: true,
+                status: 'ready',
+                error: null,
+            });
+            if (!silent) {
+                switchPanel('viewers', document.querySelectorAll('.panel-tab')[2]);
+                if (typeof addChat === 'function') {
+                    addChat('system', _viewer3DText(
+                        '3D 重建完成：已生成 ' + successCount + '/' + labelIds.length + ' 个 CTV 表面。',
+                        '3D reconstruction complete: ' + successCount + '/' + labelIds.length + ' CTV surface(s) generated.',
+                    ));
+                }
+            }
+            return {
+                success: true,
+                reconstructed: successCount,
+                failed: failedCount,
+                total: labelIds.length,
+            };
         }
 
-        let label_id, source, color;
-        if (id.startsWith('ctv_')) {
-            // Individual CTV label. Label 1 = tumor (source='ctv'),
-            // labels 2+ = vessels/organs categorized as OAR (source='oar').
-            label_id = parseInt(id.replace('ctv_', ''));
-            // Use 'ctv' for API fetch (mesh data is in CTV mask),
-            // but 'oar' for display source when label > 1 so
-            // addMeshToScene uses OAR opacity config.
+        // Seeds and needles are planning geometry rather than mask surfaces,
+        // but their Data Tree reconstruction controls must still perform a
+        // real operation instead of entering an unsupported no-op branch.
+        if (nodeId.startsWith('seed_') || nodeId.startsWith('needle_')) {
+            if (typeof loadSeeds3D !== 'function') {
+                throw new Error(_viewer3DText(
+                    '种子/针道 3D 重建模块尚未加载，请刷新页面后重试。',
+                    'The seed/needle 3D module is not loaded; refresh and retry.',
+                ));
+            }
+            const planningResult = await loadSeeds3D();
+            if (!planningResult || planningResult.error) {
+                throw new Error(planningResult?.error || _viewer3DText(
+                    '种子和针道没有生成可显示的 3D 几何。',
+                    'No displayable seed/needle geometry was generated.',
+                ));
+            }
+            _setViewer3DNodeState(nodeId, {
+                loading: false,
+                loaded: true,
+                meshLoaded: true,
+                status: 'ready',
+                error: null,
+            });
+            if (!silent) {
+                switchPanel('viewers', document.querySelectorAll('.panel-tab')[2]);
+                if (typeof addChat === 'function') addChat('system', _viewer3DText(
+                    '种子和针道的 3D 几何已刷新。',
+                    'The seed and needle 3D geometry has been refreshed.',
+                ));
+            }
+            return { success: true, ...planningResult };
+        }
+
+        let label_id;
+        let source;
+        let color;
+        if (nodeId.startsWith('ctv_')) {
+            label_id = parseInt(nodeId.replace('ctv_', ''), 10);
             source = 'ctv';
             const c = ctvLabelColorLUT[label_id];
             color = c ? (c[0] << 16 | c[1] << 8 | c[2]) : 0xff304c;
-        } else if (id.startsWith('organ_')) {
-            label_id = parseInt(id.replace('organ_', ''));
+        } else if (nodeId.startsWith('organ_')) {
+            label_id = parseInt(nodeId.replace('organ_', ''), 10);
             source = 'oar';
-            const organ = dataTreeState.organs.find(o => o.id === id);
+            const organ = (dataTreeState.organs || []).find(o => o.id === nodeId);
             if (organ) {
                 const c = organ.color;
-                if (c.startsWith('#')) { color = parseInt(c.slice(1), 16); }
-                else { const m = c.match(/(\d+)/g); color = m ? (parseInt(m[0]) << 16 | parseInt(m[1]) << 8 | parseInt(m[2])) : 0x0ea5e9; }
-            } else { color = 0x0ea5e9; }
+                if (c.startsWith('#')) color = parseInt(c.slice(1), 16);
+                else {
+                    const m = c.match(/(\d+)/g);
+                    color = m ? (parseInt(m[0]) << 16 | parseInt(m[1]) << 8 | parseInt(m[2])) : 0x0ea5e9;
+                }
+            } else {
+                color = 0x0ea5e9;
+            }
         } else if (
             (typeof window.isDataTreeMaskId === 'function'
-                ? window.isDataTreeMaskId(id)
-                : id.startsWith('mask_') || id.startsWith('mask:'))
+                ? window.isDataTreeMaskId(nodeId)
+                : nodeId.startsWith('mask_') || nodeId.startsWith('mask:'))
         ) {
             const mask = typeof window.getDataTreeMaskState === 'function'
-                ? window.getDataTreeMaskState(id)
-                : state.maskLabels?.[id];
+                ? window.getDataTreeMaskState(nodeId)
+                : state.maskLabels?.[nodeId];
             if (mask?.kind === 'threshold' && Number.isFinite(Number(mask.threshold))) {
-                return _reconstructThresholdMask3D(id, silent);
+                return await _reconstructThresholdMask3D(nodeId, silent);
             }
             const isGenericMask = !!mask && (
                 mask.kind === 'generic_segmentation'
@@ -1278,9 +1400,6 @@ async function _reconstructOrgan3D(id, silent = false, scope = null) {
                 || mask.upload_mask_id
             );
             if (isGenericMask) {
-                // Generic BiomedParse masks are persisted server-side. Use
-                // the stable mask ID instead of the display name and keep the
-                // exact binary boundary so 3D matches the 2D overlay.
                 const genericColor = mask.color || '#f08a5d';
                 color = genericColor.startsWith('#')
                     ? parseInt(genericColor.slice(1), 16)
@@ -1291,7 +1410,7 @@ async function _reconstructOrgan3D(id, silent = false, scope = null) {
                     headers: _viewer3DRequestHeaders(requestScope, { 'Content-Type': 'application/json' }),
                     body: JSON.stringify({
                         source,
-                        mask_id: mask.serverMaskId || mask.mask_id || id,
+                        mask_id: mask.serverMaskId || mask.mask_id || nodeId,
                         smoothing: 1,
                         allow_missing: silent,
                     }),
@@ -1301,29 +1420,60 @@ async function _reconstructOrgan3D(id, silent = false, scope = null) {
                 if (!res.ok) {
                     const deferred = silent && [202, 404, 409, 429].includes(res.status);
                     if (deferred) {
-                        return {
+                        const result = {
+                            success: false,
                             pending: res.status === 202,
-                            code: errData.code || `viewer_mask_http_${res.status}`,
+                            code: errData.code || ('viewer_mask_http_' + res.status),
+                            error: errData.error || ('HTTP ' + res.status),
                         };
+                        _setViewer3DNodeState(nodeId, {
+                            loading: false,
+                            status: 'persisted_not_loaded',
+                            error: result.error,
+                        });
+                        return result;
                     }
-                    throw new Error(errData.error || `HTTP ${res.status}`);
+                    throw new Error(errData.error || ('HTTP ' + res.status));
                 }
                 const data = request.data || {};
-                if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
-                if (data.success) {
-                    data.color = color;
-                    data.organ_id = id;
-                    state.mesh3D = data;
-                    _safeRender3DMesh(data);
-                    switchPanel('viewers', document.querySelectorAll('.panel-tab')[2]);
-                }
+                if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { success: false, stale: true };
+                if (!data.success) throw new Error(data.error || '3D mask reconstruction failed');
+                data.color = color;
+                data.organ_id = nodeId;
+                state.mesh3D = data;
+                _safeRender3DMesh(data);
+                _setViewer3DNodeState(nodeId, {
+                    loading: false,
+                    loaded: true,
+                    meshLoaded: true,
+                    status: 'ready',
+                    error: null,
+                });
+                if (!silent) switchPanel('viewers', document.querySelectorAll('.panel-tab')[2]);
                 return data;
             }
-            // Hand-drawn masks remain local voxel sets and use the existing
-            // client reconstruction path.
-            return _reconstructMask3D(id, silent);
+
+            const localResult = _reconstructMask3D(nodeId, silent);
+            if (localResult && Number(localResult.vertices) > 0) {
+                _setViewer3DNodeState(nodeId, {
+                    loading: false,
+                    loaded: true,
+                    meshLoaded: true,
+                    status: 'ready',
+                    error: null,
+                });
+                if (!silent) switchPanel('viewers', document.querySelectorAll('.panel-tab')[2]);
+                return { success: true, ...localResult };
+            }
+            throw new Error(_viewer3DText(
+                '掩膜没有生成可显示的体素表面。',
+                'The mask did not produce a displayable voxel surface.',
+            ));
         } else {
-            return;
+            throw new Error(_viewer3DText(
+                '当前节点不支持 3D 重建。',
+                'This node does not support 3D reconstruction.',
+            ));
         }
 
         const request = await _viewer3DJsonRequest(API + '/viewer/3d_mask', {
@@ -1337,44 +1487,88 @@ async function _reconstructOrgan3D(id, silent = false, scope = null) {
             }),
         });
         const res = request.response;
-
         if (!res.ok) {
             const errData = request.data || {};
-            const errMsg = errData.error || `HTTP ${res.status}`;
-            // Don't show error for "label not found" - just skip silently
+            const errMsg = errData.error || ('HTTP ' + res.status);
             if (res.status === 400 && errMsg.includes('not found')) {
-                return;
+                const result = { success: false, error: errMsg };
+                _setViewer3DNodeState(nodeId, {
+                    loading: false,
+                    status: 'unavailable',
+                    error: errMsg,
+                });
+                if (!silent && typeof addChat === 'function') addChat('error', errMsg);
+                return result;
             }
-            // Background reconstruction is expected to race CT/mask
-            // hydration.  A missing or mismatched mask is not a user-facing
-            // reconstruction failure until the data is actually ready.
             if (silent && [202, 404, 409, 429].includes(res.status)) {
-                return {
+                const result = {
+                    success: false,
                     pending: res.status === 202,
-                    code: errData.code || `viewer_mask_http_${res.status}`,
+                    code: errData.code || ('viewer_mask_http_' + res.status),
+                    error: errMsg,
                 };
+                _setViewer3DNodeState(nodeId, {
+                    loading: false,
+                    status: 'persisted_not_loaded',
+                    error: errMsg,
+                });
+                return result;
             }
             throw new Error(errMsg);
         }
 
         const data = request.data || {};
-        if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
-        if (data.success) {
-            data.color = color;
-            data.organ_id = id;
-            state.mesh3D = data;
-            _safeRender3DMesh(data);
+        if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { success: false, stale: true };
+        if (!data.success) throw new Error(data.error || '3D mask reconstruction failed');
+        data.color = color;
+        data.organ_id = nodeId;
+        state.mesh3D = data;
+        _safeRender3DMesh(data);
+        _setViewer3DNodeState(nodeId, {
+            loading: false,
+            loaded: true,
+            meshLoaded: true,
+            status: 'ready',
+            error: null,
+        });
+        if (!silent) {
             switchPanel('viewers', document.querySelectorAll('.panel-tab')[2]);
+            if (typeof addChat === 'function') addChat('system', _viewer3DText(
+                '3D 重建完成。',
+                '3D reconstruction complete.',
+            ));
         }
-    } catch (e) {
-        if (_viewer3DRequestScopeIsCurrent(requestScope) && !silent) {
-            addChat('error', '3D reconstruction failed: ' + e.message);
+        return data;
+    } catch (error) {
+        const message = error?.message || String(error);
+        if (_viewer3DRequestScopeIsCurrent(requestScope)) {
+            _setViewer3DNodeState(nodeId, {
+                loading: false,
+                status: 'error',
+                error: message,
+            });
+            if (!silent && typeof addChat === 'function') {
+                addChat('error', _viewer3DText(
+                    '3D 重建失败：' + message,
+                    '3D reconstruction failed: ' + message,
+                ));
+            }
         }
+        return { success: false, error: message };
     } finally {
         endViewer3DLoading(loadingToken);
+        if (_viewer3DRequestScopeIsCurrent(requestScope)) {
+            const node = _viewer3DNodeForId(nodeId);
+            if (node?.loading) {
+                node.loading = false;
+                if (node.status === 'loading') node.status = node.meshLoaded ? 'ready' : 'error';
+                try {
+                    if (typeof renderDataTree === 'function') renderDataTree();
+                } catch (_) {}
+            }
+        }
     }
 }
-
 // Reconstruct a manual/threshold mask (a local voxel Set) as a merged cube
 // mesh on the client. Masks live in patient-world coordinates derived from the
 // CT origin/spacing, matching how the 2D overlay renders them. A hard cap keeps
@@ -1519,6 +1713,62 @@ function _isDoseTexturableMesh(id, mesh) {
     return t === 'ctv' || t === 'oar' || t === 'organ';
 }
 
+// `state.doseTexture.enabled` is persisted, but Three.js materials, vertex
+// colors, and geometry userData are runtime-only.  A restored `enabled=true`
+// therefore does not prove that the current meshes are actually dose-mapped.
+// Keep an explicit runtime marker so report capture can distinguish a real
+// dose surface from a normal segmentation surface that happens to use vertex
+// colors for anatomy labels.
+const DOSE_TEXTURE_RUNTIME_SIGNATURE = 'dose_texture_vertex_colors';
+
+function _markDoseTextureRuntime(mesh, mapped) {
+    const surface = getMeshSurface(mesh);
+    [mesh, surface].forEach(target => {
+        if (!target) return;
+        target.userData = { ...(target.userData || {}) };
+        if (mapped) {
+            target.userData.doseTextureMapped = true;
+            target.userData.doseTextureRenderSignature = DOSE_TEXTURE_RUNTIME_SIGNATURE;
+        } else {
+            delete target.userData.doseTextureMapped;
+            delete target.userData.doseTextureRenderSignature;
+        }
+    });
+}
+
+function _doseTextureRuntimeReady() {
+    if (!state?.doseTexture?.enabled || state.doseTexture.applying) return false;
+    const entries = Object.entries(scene3D.meshes || {})
+        .filter(([id, mesh]) => _isDoseTexturableMesh(id, mesh));
+    if (!entries.length) return false;
+    const recorded = new Set(
+        Array.isArray(state.doseTexture.mappedMeshIds)
+            ? state.doseTexture.mappedMeshIds.map(value => String(value))
+            : [],
+    );
+    return entries.every(([id, mesh]) => {
+        const surface = getMeshSurface(mesh);
+        const positions = surface?.geometry?.attributes?.position;
+        const colors = surface?.geometry?.attributes?.color;
+        const materials = Array.isArray(surface?.material) ? surface.material : [surface?.material];
+        const materialMapped = materials.some(material => (
+            material?.vertexColors === true || material?.vertexColors === 2
+        ));
+        const marker = (
+            surface?.userData?.doseTextureMapped === true
+            && surface?.userData?.doseTextureRenderSignature === DOSE_TEXTURE_RUNTIME_SIGNATURE
+        ) || (
+            mesh?.userData?.doseTextureMapped === true
+            && mesh?.userData?.doseTextureRenderSignature === DOSE_TEXTURE_RUNTIME_SIGNATURE
+        );
+        return (!recorded.size || recorded.has(String(id)))
+            && marker
+            && materialMapped
+            && positions?.count > 0
+            && colors?.count === positions.count;
+    });
+}
+
 function _rememberDoseTextureMaterial(id, mesh) {
     const surface = getMeshSurface(mesh);
     if (!surface || !surface.material) return;
@@ -1575,6 +1825,9 @@ function _restoreDoseTextureMaterials() {
     });
     state.doseTexture.originalMaterials = {};
     state.doseTexture.originalSceneStyle = {};
+    state.doseTexture.mappedMeshIds = [];
+    state.doseTexture.renderSignature = '';
+    Object.values(scene3D.meshes || {}).forEach(mesh => _markDoseTextureRuntime(mesh, false));
     if (state.doseTexture.originalSkinStyle && scene3D.skinMesh) {
         scene3D.skinMesh.visible = state.doseTexture.originalSkinStyle.visible;
         _forEachMaterial(scene3D.skinMesh, mat => {
@@ -1762,6 +2015,7 @@ async function _applyDoseTextureToMesh(id, mesh, requestScope = _captureViewer3D
         shininess: 35,
         depthWrite: opacity >= 0.999,
     });
+    _markDoseTextureRuntime(mesh, true);
     mesh.visible = visible && opacity > 0.001;
     surface.visible = mesh.visible;
 }
@@ -1931,8 +2185,38 @@ async function _reconstructThresholdMask3D(id, silent = false) {
 
 async function setDoseTextureMode(enabled, opts = {}) {
     const requestScope = _captureViewer3DRequestScope();
-    if (state.doseTexture.applying) return;
+    // Report capture and an operator-triggered toggle can overlap during
+    // workspace hydration.  The old early return let the report continue
+    // with the normal materials while it still appended a dose colorbar.
+    // Wait for the in-flight transaction so callers receive a truthful
+    // result instead of silently capturing the wrong display mode.
+    if (state.doseTexture.applying) {
+        const waitUntil = Date.now() + 60000;
+        while (state.doseTexture.applying && Date.now() < waitUntil) {
+            await new Promise(resolve => setTimeout(resolve, 25));
+        }
+        if (state.doseTexture.applying) {
+            return {
+                success: false,
+                enabled: !!state.doseTexture.enabled,
+                error: 'Dose surface mapping is still in progress',
+            };
+        }
+        if (enabled === !!state.doseTexture.enabled
+            && (!enabled || _doseTextureRuntimeReady())) {
+            return { success: true, enabled: !!state.doseTexture.enabled, waited: true };
+        }
+    }
+    // A workspace restore can leave the persisted flag enabled while the
+    // current WebGL scene still contains normal materials.  Clear that stale
+    // flag and rebuild the runtime mapping instead of treating the mode as
+    // already complete.  This is the key boundary for truthful Fig 2(d).
+    if (enabled && state.doseTexture.enabled && !_doseTextureRuntimeReady()) {
+        _restoreDoseTextureMaterials();
+        state.doseTexture.enabled = false;
+    }
     state.doseTexture.applying = true;
+    let mappedMeshIds = [];
     const btn = document.getElementById('doseTextureToggle');
     if (btn) {
         btn.disabled = true;
@@ -1965,10 +2249,16 @@ async function setDoseTextureMode(enabled, opts = {}) {
             _prepareDoseTextureSceneVisibility();
             const entries = Object.entries(scene3D.meshes || {}).filter(([id, mesh]) => _isDoseTexturableMesh(id, mesh));
             if (entries.length === 0) throw new Error('No CTV/OAR 3D meshes are available for dose surface mapping');
-            await Promise.all(entries.map(([id, mesh]) => _applyDoseTextureToMesh(id, mesh, requestScope)));
+            mappedMeshIds = entries.map(([id]) => id);
+            const mappingResults = await Promise.all(entries.map(([id, mesh]) => _applyDoseTextureToMesh(id, mesh, requestScope)));
+            if (mappingResults.some(result => result?.stale)) {
+                throw new Error('Dose surface mapping became stale before render');
+            }
             if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
             _prepareDoseTextureSceneVisibility();
             state.doseTexture.enabled = true;
+            state.doseTexture.mappedMeshIds = mappedMeshIds.slice();
+            state.doseTexture.renderSignature = DOSE_TEXTURE_RUNTIME_SIGNATURE;
             if (typeof window.syncSceneAppearanceFromDataTree === 'function') {
                 window.syncSceneAppearanceFromDataTree({ preserveDoseTexture: true });
             }
@@ -1977,6 +2267,8 @@ async function setDoseTextureMode(enabled, opts = {}) {
         } else {
             _restoreDoseTextureMaterials();
             state.doseTexture.enabled = false;
+            state.doseTexture.mappedMeshIds = [];
+            state.doseTexture.renderSignature = '';
             if (typeof window.syncSceneAppearanceFromDataTree === 'function') {
                 window.syncSceneAppearanceFromDataTree({ preserveDoseTexture: false });
             }
@@ -1988,6 +2280,7 @@ async function setDoseTextureMode(enabled, opts = {}) {
         // frame and paint only an inner rectangle of the viewer.
         if (typeof scene3D.renderNow === 'function') scene3D.renderNow();
         else if (scene3D.requestRender) scene3D.requestRender(2);
+        return { success: true, enabled: !!state.doseTexture.enabled, mappedMeshIds };
     } catch (e) {
         if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
         console.warn('[DoseTexture] failed:', e);
@@ -1998,10 +2291,13 @@ async function setDoseTextureMode(enabled, opts = {}) {
         }
         _restoreDoseTextureMaterials();
         state.doseTexture.enabled = false;
+        state.doseTexture.mappedMeshIds = [];
+        state.doseTexture.renderSignature = '';
         if (typeof window.syncSceneAppearanceFromDataTree === 'function') {
             window.syncSceneAppearanceFromDataTree({ preserveDoseTexture: false });
         }
         update3DColorbar(false);
+        return { success: false, enabled: false, error: e?.message || String(e) };
     } finally {
         clearTimeout(safetyTimer);
         if (_viewer3DRequestScopeIsCurrent(requestScope)) {

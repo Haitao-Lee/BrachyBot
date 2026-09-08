@@ -2518,7 +2518,252 @@ def get_depthInfo_from_point(point, array, direc, target_value, background_value
     return geometry.get_trajectory_info(point, array, direc, target_value, background_value, obstacle_value)
 
 
-def init_trajectories_with_depth(close_points, radiation_array, ref_direc, target_value, background_value, obstacle_value, min_depth, max_length):
+def infer_body_mask_from_image(image, threshold=-300.0):
+    """Infer a conservative solid body envelope from a CT image.
+
+    ``trajectory_init`` works on a resampled CT grid.  A candidate's entry
+    point is valid only when the reverse ray exits this body envelope before
+    it reaches an image-volume boundary.  The old initializer had no body
+    context and therefore accepted rays whose external endpoint was simply on
+    the superior/inferior (or another) CT truncation plane.
+
+    The largest connected component and hole filling deliberately produce an
+    envelope rather than a detailed organ segmentation.  This prevents air
+    cavities from being mistaken for an external skin entry while retaining
+    the existing OAR mask as the separate hard-obstacle constraint.
+    """
+    if image is None:
+        return None
+    try:
+        import SimpleITK as sitk
+        from scipy import ndimage
+
+        ct_array = np.asarray(sitk.GetArrayFromImage(image))
+        if ct_array.ndim != 3 or ct_array.size == 0:
+            return None
+        candidate = np.asarray(ct_array, dtype=np.float32) > float(threshold)
+        labels, count = ndimage.label(
+            candidate,
+            structure=np.ones((3, 3, 3), dtype=np.uint8),
+        )
+        if count <= 0:
+            return None
+        component_sizes = np.bincount(labels.ravel())
+        component_sizes[0] = 0
+        body = labels == int(np.argmax(component_sizes))
+        body = ndimage.binary_closing(
+            body,
+            structure=np.ones((3, 3, 3), dtype=np.uint8),
+            iterations=1,
+        )
+        body = ndimage.binary_fill_holes(body)
+        return np.asarray(body, dtype=bool)
+    except Exception:
+        logger.warning("[trajectory_entry] Unable to infer body envelope from CT", exc_info=True)
+        return None
+
+
+def infer_truncated_boundary_faces_from_image(
+    image,
+    threshold=-300.0,
+    min_fraction=0.05,
+):
+    """Return CT faces that are likely truncated by the finite scan FOV.
+
+    The body-envelope test alone cannot distinguish real skin from a scan that
+    ends while the patient is still present.  A body-to-air transition on a
+    face that contains a substantial amount of CT tissue is therefore not a
+    valid needle entry.  The returned tuple follows the planner array order
+    ``(z_min, z_max, y_min, y_max, x_min, x_max)`` and is deliberately based on
+    the *raw* intensity image rather than the morphologically closed body
+    envelope.
+
+    ``min_fraction`` is a conservative occupancy threshold.  Tiny edge
+    resampling artifacts do not mark a face, while a patient cut by the CT FOV
+    (as in a superior/inferior truncation) does.
+    """
+    empty = (False, False, False, False, False, False)
+    if image is None:
+        return empty
+    try:
+        try:
+            import SimpleITK as sitk
+            array = np.asarray(sitk.GetArrayFromImage(image))
+        except Exception:
+            array = np.asarray(image)
+        if array.ndim != 3 or array.size == 0:
+            return empty
+        candidate = np.asarray(array, dtype=np.float32) > float(threshold)
+        occupancy = (
+            float(np.mean(candidate[0])),
+            float(np.mean(candidate[-1])),
+            float(np.mean(candidate[:, 0, :])),
+            float(np.mean(candidate[:, -1, :])),
+            float(np.mean(candidate[:, :, 0])),
+            float(np.mean(candidate[:, :, -1])),
+        )
+        try:
+            fraction = float(min_fraction)
+        except (TypeError, ValueError):
+            fraction = 0.05
+        if not np.isfinite(fraction):
+            fraction = 0.05
+        fraction = min(1.0, max(0.0, fraction))
+        return tuple(value >= fraction for value in occupancy)
+    except Exception:
+        logger.warning("[trajectory_entry] Unable to infer truncated CT faces", exc_info=True)
+        return empty
+
+
+def _normalize_truncated_boundary_faces(truncated_boundary_faces):
+    """Normalize optional face flags without making legacy callers fail."""
+    if truncated_boundary_faces is None:
+        return None
+    try:
+        values = tuple(bool(value) for value in truncated_boundary_faces)
+    except TypeError:
+        return None
+    if len(values) != 6:
+        return None
+    return values
+
+
+def trajectory_entry_is_valid(
+    point,
+    direction,
+    body_mask,
+    *,
+    step_size=0.5,
+    truncated_boundary_faces=None,
+):
+    """Return whether a candidate can reach a real body entry point.
+
+    Trajectory coordinates use the planner's array order ``[z, y, x]`` and
+    the direction points from the external insertion side toward the target.
+    The initializer stores a target-side point, so the physical insertion
+    path is followed in ``-direction``.  A valid candidate must:
+
+    * start inside the body envelope; and
+    * encounter non-body voxels while still inside the CT volume; and
+    * when boundary metadata is supplied, do not treat a flagged CT face as
+      real skin.
+
+    If the reverse ray remains inside the body until it leaves the array, the
+    putative entry is a CT truncation face rather than skin.  Rejecting it at
+    this stage covers all six image faces, not only one hard-coded axis.
+    """
+    try:
+        mask = np.asarray(body_mask, dtype=bool)
+        if mask.ndim != 3 or not np.any(mask):
+            return False
+        point_array = np.asarray(point, dtype=np.float64).reshape(-1)
+        direction_array = np.asarray(direction, dtype=np.float64).reshape(-1)
+        if point_array.size < 3 or direction_array.size < 3:
+            return False
+        point_array = point_array[:3]
+        direction_array = direction_array[:3]
+        if not np.all(np.isfinite(point_array)) or not np.all(np.isfinite(direction_array)):
+            return False
+        major = float(np.max(np.abs(direction_array)))
+        if major <= 1e-12:
+            return False
+        direction_array = direction_array / major
+
+        shape = np.asarray(mask.shape, dtype=np.float64)
+        boundary_faces = _normalize_truncated_boundary_faces(
+            truncated_boundary_faces
+        )
+
+        def _inside(sample):
+            return bool(np.all(sample >= 0.0) and np.all(sample < shape))
+
+        if not _inside(point_array):
+            return False
+        point_index = np.floor(point_array).astype(np.int64)
+        if not bool(mask[tuple(point_index)]):
+            # A CTV voxel outside the body envelope is not a safe basis for an
+            # automatic insertion path.  Fail closed instead of allowing a
+            # candidate with an undefined entry side.
+            return False
+
+        try:
+            step = float(step_size)
+        except (TypeError, ValueError):
+            step = 0.5
+        if not np.isfinite(step) or step <= 0.0:
+            step = 0.5
+
+        # A dominant direction component is normalized to one voxel per unit
+        # distance.  This bound is finite for every valid image and leaves
+        # enough room for diagonal rays to reach a real exterior surface.
+        max_steps = int(np.ceil(float(np.sum(shape)) / step)) + 8
+        for step_index in range(1, max_steps + 1):
+            sample = point_array - direction_array * (step_index * step)
+            if not _inside(sample):
+                # The reverse ray reached the CT border while still inside
+                # the body: this is exactly the invalid truncated-FOV case.
+                return False
+            sample_index = np.floor(sample).astype(np.int64)
+            if not bool(mask[tuple(sample_index)]):
+                # The body-to-air transition is inside the image volume, so a
+                # real skin entry exists for this candidate unless the
+                # transition is on a face known to be truncated by the CT FOV.
+                if boundary_faces is not None:
+                    at_flagged_face = (
+                        (sample_index[0] <= 0 and boundary_faces[0])
+                        or (sample_index[0] >= mask.shape[0] - 1 and boundary_faces[1])
+                        or (sample_index[1] <= 0 and boundary_faces[2])
+                        or (sample_index[1] >= mask.shape[1] - 1 and boundary_faces[3])
+                        or (sample_index[2] <= 0 and boundary_faces[4])
+                        or (sample_index[2] >= mask.shape[2] - 1 and boundary_faces[5])
+                    )
+                    if at_flagged_face:
+                        return False
+                return True
+        return False
+    except Exception:
+        logger.warning("[trajectory_entry] Entry-point validation failed", exc_info=True)
+        return False
+
+
+def filter_trajectory_entry_points(
+    points,
+    direction,
+    body_mask,
+    truncated_boundary_faces=None,
+):
+    """Filter target points whose reverse ray has a valid external entry."""
+    valid = []
+    rejected = 0
+    for point in np.asarray(points) if points is not None else []:
+        if trajectory_entry_is_valid(
+            point,
+            direction,
+            body_mask,
+            truncated_boundary_faces=truncated_boundary_faces,
+        ):
+            valid.append(point)
+        else:
+            rejected += 1
+    if valid:
+        valid_points = np.asarray(valid, dtype=np.float64)
+    else:
+        valid_points = np.empty((0, 3), dtype=np.float64)
+    return valid_points, rejected
+
+
+def init_trajectories_with_depth(
+    close_points,
+    radiation_array,
+    ref_direc,
+    target_value,
+    background_value,
+    obstacle_value,
+    min_depth,
+    max_length,
+    entry_body_mask=None,
+    truncated_boundary_faces=None,
+):
     """
     Compute the depth of potential trajectories from specified points in a 3D radiation array along a given direction.
 
@@ -2560,6 +2805,13 @@ def init_trajectories_with_depth(close_points, radiation_array, ref_direc, targe
     """
     res = []
     for c_p in close_points:
+        if entry_body_mask is not None and not trajectory_entry_is_valid(
+            c_p,
+            ref_direc,
+            entry_body_mask,
+            truncated_boundary_faces=truncated_boundary_faces,
+        ):
+            continue
         obs_sign, target_depths, background_depths = get_depthInfo_from_point(
             c_p, radiation_array, ref_direc, target_value, background_value, obstacle_value
         )

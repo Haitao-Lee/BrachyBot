@@ -1,0 +1,16 @@
+[Unit]
+Description=BrachyBot outbound SSH tunnel to public edge
+After=network.target brachybot-public.service
+Requires=brachybot-public.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ssh -F %h/.config/brachybot/ssh_config -NT brachybot-edge
+Restart=always
+RestartSec=10
+TimeoutStopSec=15
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

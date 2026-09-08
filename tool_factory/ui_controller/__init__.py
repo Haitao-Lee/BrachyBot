@@ -12,6 +12,7 @@ Architecture:
 
 import json
 import logging
+import re
 from typing import Dict, Any, Optional, List, Tuple
 from tool_factory import BaseTool, ToolResult
 
@@ -655,6 +656,222 @@ CONTROL_REGISTRY = {
     },
 }
 
+# ---------------------------------------------------------------------------
+# Semantic request normalization
+# ---------------------------------------------------------------------------
+# The browser executes one canonical capability contract. Providers and older
+# clients have historically emitted equivalent semantic envelopes such as:
+#   action=view.segmentation.set_transparency
+#   actions=[{target: all_oars, command: set, value: null}]
+#   transparency=0.5
+#
+# This is a schema-compatibility layer, not a natural-language whitelist. It
+# derives the target property, group identity, and value from structured fields
+# and converts them to the same registry action that a live capability
+# resolver emits. The same normalizer is used before provider results are
+# exposed to the browser and by direct tool calls.
+_SEMANTIC_GROUP_PATTERNS = (
+    ("non_traversable", re.compile(r"(?:^|[_\s.\-])non[_\s.\-]*traversable(?:[_\s.\-]|$)|不可穿刺|不可通过", re.I)),
+    ("traversable", re.compile(r"(?:^|[_\s.\-])traversable(?:[_\s.\-]|$)|可穿刺|可通过", re.I)),
+    ("oar", re.compile(r"(?:^|[_\s.\-])oars?(?:[_\s.\-]|$)|organs?[_\s.\-]*at[_\s.\-]*risk|危及器官|器官", re.I)),
+    ("ctv", re.compile(r"(?:^|[_\s.\-])ctvs?(?:[_\s.\-]|$)|clinical[_\s.\-]*target|靶区|临床靶区|肿瘤|病灶|肿块", re.I)),
+    ("upload_masks", re.compile(r"upload(?:ed)?[_\s.\-]*masks?|上传掩膜|上传的掩膜", re.I)),
+    ("generic_masks", re.compile(r"additional[_\s.\-]*masks?|其他分割掩膜", re.I)),
+    ("masks", re.compile(r"(?:^|[_\s.\-])masks?(?:[_\s.\-]|$)|掩膜|蒙版", re.I)),
+    ("planning_trajectories", re.compile(r"trajector(?:y|ies)|轨迹|针道路径", re.I)),
+    ("planning_seeds", re.compile(r"seeds?|粒子|种子", re.I)),
+    ("planning_needles", re.compile(r"needles?|穿刺针|针道", re.I)),
+    ("dose_isosurfaces", re.compile(r"isodose|iso[_\s.\-]*surfaces?|等剂量面|剂量面", re.I)),
+    ("planning_meshes", re.compile(r"meshes?|guides?|网格|导板|规划网格", re.I)),
+    ("planning", re.compile(r"planning|计划|规划", re.I)),
+    ("segmentation", re.compile(r"segmentation|structures?|分割|结构", re.I)),
+    ("image", re.compile(r"(?:^|[_\s.\-])images?(?:[_\s.\-]|$)|影像|图像|(?:^|[_\s.\-])ct(?:[_\s.\-]|$)", re.I)),
+    ("artifacts", re.compile(r"artifacts?|annotations?|工件|产物|标注|注释", re.I)),
+)
+_SEMANTIC_OPACITY_RE = re.compile(
+    r"opacity|transparen(?:cy|t)|alpha|不透明度|透明度|透明|半透明|不透明",
+    re.I,
+)
+_SEMANTIC_VISIBILITY_RE = re.compile(
+    r"visibility|visible|show|hide|display|可见|不可见|显示|隐藏",
+    re.I,
+)
+
+
+def _semantic_group(value: Any) -> Optional[str]:
+    """Resolve a structured group identifier to a registry group key."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    for group, pattern in _SEMANTIC_GROUP_PATTERNS:
+        if pattern.search(text):
+            return group
+    return None
+
+
+def _semantic_property(*values: Any) -> Optional[str]:
+
+    text = " ".join(str(value or "") for value in values if value not in (None, ""))
+    if _SEMANTIC_OPACITY_RE.search(text):
+        return "opacity"
+    if _SEMANTIC_VISIBILITY_RE.search(text):
+        return "visibility"
+    return None
+
+
+def _semantic_percent(value: Any) -> Optional[int]:
+    """Convert opacity/transparency values to the controller's 0–100 scale.
+
+    A bare 0.5 is the common alpha/transparency representation and therefore
+    means 50%; an explicit 0.5% remains 0.5% and is rounded for the integer
+    registry contract.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value)
+        explicit_percent = False
+    else:
+        text = str(value).strip()
+        if not text:
+            return None
+        lowered = text.lower()
+        if re.search(r"半透明|semi[-\s]*transparent|translucent", lowered, re.I):
+            return 50
+        explicit_percent = "%" in text
+        match = re.search(r"-?\d+(?:\.\d+)?", text)
+        if not match:
+            return None
+        number = float(match.group(0))
+    if not explicit_percent and 0 <= number <= 1:
+        number *= 100
+    if not 0 <= number <= 100:
+        return None
+    return int(round(number))
+
+
+def normalize_ui_controller_actions(
+    actions: Any,
+    request: Optional[Dict[str, Any]] = None,
+) -> List[Any]:
+    """Normalize provider/client semantic envelopes to canonical actions.
+
+    The function deliberately reasons over structured action/property/group
+    fields. It does not match complete user sentences and does not select a
+    neighboring control when an identity is absent.
+    """
+    envelope = request if isinstance(request, dict) else {}
+    raw_actions = actions if isinstance(actions, list) else []
+    semantic_action = envelope.get("action")
+    fallback_value = next(
+        (
+            envelope.get(key)
+            for key in ("transparency", "opacity", "percent", "value")
+            if envelope.get(key) is not None
+        ),
+        None,
+    )
+    normalized: List[Any] = []
+    for raw in raw_actions:
+        if not isinstance(raw, dict):
+            normalized.append(raw)
+            continue
+        action = dict(raw)
+        raw_target = str(action.get("target") or "").strip()
+        target = raw_target.replace(r"\.", ".")
+        command = str(action.get("command") or "").strip().lower()
+        action_value = action.get("value")
+        property_name = _semantic_property(
+            semantic_action,
+            envelope.get("property"),
+            action.get("property"),
+            target,
+            command,
+        )
+        group = _semantic_group(
+            action.get("group")
+            or action.get("category")
+            or envelope.get("group")
+            or envelope.get("category")
+            or target,
+        )
+
+        # Canonical group opacity also accepts a structured group plus a
+        # ratio/percentage value from an older envelope.
+        if target == "tree.group.opacity":
+            if action_value is None:
+                action_value = fallback_value
+            if isinstance(action_value, str) and "," in action_value:
+                existing_group, existing_value = action_value.split(",", 1)
+                group = _semantic_group(existing_group) or existing_group.strip()
+                percent = _semantic_percent(existing_value)
+            else:
+                percent = _semantic_percent(action_value)
+            if group and percent is not None:
+                action["target"] = target
+                action["command"] = "set"
+                action["value"] = f"{group},{percent}"
+                normalized.append(action)
+                continue
+
+        # Convert any opacity target's alpha/ratio value to the percentage
+        # contract before registry range validation. This prevents 0.5 from
+        # becoming 0.5% in the browser.
+        if property_name == "opacity" and target in CONTROL_REGISTRY:
+            if action_value is None:
+                action_value = fallback_value
+            if target == "tree.opacity" and isinstance(action_value, str) and "," in action_value:
+                node_id, raw_percent = action_value.split(",", 1)
+                percent = _semantic_percent(raw_percent)
+                if percent is not None:
+                    action["target"] = target
+                    action["command"] = "set" if command in {"", "set", "set_transparency", "set_opacity"} else command
+                    action["value"] = f"{node_id},{percent}"
+                    normalized.append(action)
+                    continue
+            percent = _semantic_percent(action_value)
+            if percent is not None:
+                action["target"] = target
+                action["command"] = "set" if command in {"", "set", "set_transparency", "set_opacity"} else command
+                action["value"] = percent
+                normalized.append(action)
+                continue
+
+        # Generic semantic group actions (for example all_oars plus
+        # set_transparency) converge on the canonical group executor. The
+        # group identity is the structured target, not a phrase-specific rule.
+        if property_name == "opacity" and group:
+            percent = _semantic_percent(action_value if action_value is not None else fallback_value)
+            if percent is not None:
+                normalized.append({
+                    "target": "tree.group.opacity",
+                    "command": "set",
+                    "value": f"{group},{percent}",
+                })
+                continue
+
+        action["target"] = target or raw_target
+        normalized.append(action)
+    return normalized
+
+
+def normalize_ui_controller_request(payload: Any) -> Dict[str, Any]:
+    """Normalize a complete ui_controller payload without mutating it."""
+    request = dict(payload) if isinstance(payload, dict) else {}
+    actions = request.get("actions")
+    if not isinstance(actions, list):
+        top_target = request.get("target")
+        if top_target:
+            actions = [{
+                "target": top_target,
+                "command": request.get("command", "set"),
+                "value": request.get("value"),
+            }]
+        else:
+            actions = []
+    request["actions"] = normalize_ui_controller_actions(actions, request)
+    return request
+
 
 def get_control_registry_summary() -> str:
     """Generate a compact summary of all controls for the system prompt."""
@@ -709,6 +926,16 @@ class UIControllerTool(BaseTool):
         return {
             "type": "object",
             "properties": {
+                "action": {
+                    "type": "string",
+                    "description": "Optional semantic action envelope from a compatible client; it is normalized to a registered capability before execution.",
+                },
+                "transparency": {
+                    "description": "Optional alpha/transparency value used when an action item omits its value; 0.5 means 50% opacity.",
+                },
+                "opacity": {
+                    "description": "Optional opacity value used when an action item omits its value.",
+                },
                 "actions": {
                     "type": "array",
                     "description": "List of UI actions to execute in order",
@@ -735,7 +962,8 @@ class UIControllerTool(BaseTool):
         }
 
     def _execute(self, **kwargs) -> ToolResult:
-        actions = kwargs.get("actions", [])
+        normalized_request = normalize_ui_controller_request(kwargs)
+        actions = normalized_request.get("actions", [])
         if not actions:
             return ToolResult(success=False, error="No actions provided")
         if not isinstance(actions, list) or len(actions) > 32:
@@ -805,6 +1033,65 @@ class UIControllerTool(BaseTool):
                 })
                 continue
 
+            if target == "ui.context_action":
+                context_payload = value
+                if isinstance(context_payload, str):
+                    try:
+                        context_payload = json.loads(context_payload)
+                    except (TypeError, ValueError):
+                        context_payload = None
+                if not isinstance(context_payload, dict):
+                    errors.append(
+                        f"Action {i}: context action requires a JSON object payload"
+                    )
+                    repair_hints.append({
+                        "action_index": i,
+                        "requested": {"target": target, "command": command, "value": value},
+                        "kind": "invalid_context_payload",
+                        "target": target,
+                        "command": command,
+                        "value_type": "json_object",
+                    })
+                    continue
+                action_id = str(
+                    context_payload.get("action_id")
+                    or context_payload.get("operation")
+                    or ""
+                ).strip()
+                if not action_id:
+                    errors.append(
+                        f"Action {i}: context action requires an action_id"
+                    )
+                    repair_hints.append({
+                        "action_index": i,
+                        "requested": {"target": target, "command": command, "value": value},
+                        "kind": "invalid_context_action",
+                        "target": target,
+                        "command": command,
+                        "argument": "action_id",
+                    })
+                    continue
+                if action_id in {"node_rename", "group_rename"}:
+                    new_name = str(
+                        context_payload.get("name")
+                        or context_payload.get("new_name")
+                        or context_payload.get("text")
+                        or ""
+                    ).strip()
+                    if not new_name:
+                        errors.append(
+                            f"Action {i}: context action '{action_id}' requires a new name"
+                        )
+                        repair_hints.append({
+                            "action_index": i,
+                            "requested": {"target": target, "command": command, "value": value},
+                            "kind": "missing_context_argument",
+                            "target": target,
+                            "command": command,
+                            "action_id": action_id,
+                            "argument": "name",
+                        })
+                        continue
             if "values" in reg and value is not None:
                 # A few capabilities document scalar aliases while accepting
                 # a structured JSON payload at runtime (for example

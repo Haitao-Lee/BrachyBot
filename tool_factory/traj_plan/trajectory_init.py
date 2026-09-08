@@ -90,6 +90,24 @@ class TrajectoryInitTool(BaseTool):
                     "description": "Minimum trajectory depth in mm (default: 2)",
                     "default": 2,
                 },
+                "entry_body_mask": {
+                    "type": "object",
+                    "description": (
+                        "Optional boolean body envelope on the planning grid. "
+                        "Candidates whose reverse ray reaches a CT boundary "
+                        "before exiting this envelope are rejected during initialization."
+                    ),
+                },
+                "entry_boundary_faces": {
+                    "type": "array",
+                    "items": {"type": "boolean"},
+                    "minItems": 6,
+                    "maxItems": 6,
+                    "description": (
+                        "Optional truncated CT face flags in [z_min, z_max, "
+                        "y_min, y_max, x_min, x_max] order."
+                    ),
+                },
             },
             "required": ["dose_image", "radiation_volume"],
         }
@@ -132,6 +150,8 @@ class TrajectoryInitTool(BaseTool):
         obstacle_value = kwargs.get("obstacle_value", 3)
         maximum_candidate_trajectories = kwargs.get("maximum_candidate_trajectories", 500)
         min_depth = kwargs.get("min_depth", 2)
+        entry_body_mask = kwargs.get("entry_body_mask")
+        entry_boundary_faces = kwargs.get("entry_boundary_faces")
 
         if ref_direc is None:
             try:
@@ -157,6 +177,8 @@ class TrajectoryInitTool(BaseTool):
             obstacle_value=obstacle_value,
             maximum_candidate_trajectories=maximum_candidate_trajectories,
             min_depth=min_depth,
+            entry_body_mask=entry_body_mask,
+            entry_boundary_faces=entry_boundary_faces,
         )
 
         max_depth = 0
@@ -185,5 +207,8 @@ class TrajectoryInitTool(BaseTool):
                 "num_trajectories": len(trajectories),
                 "reference_direction": ref_direc.tolist(),
                 "max_depth_mm": float(max_depth),
+                "entry_boundary_filter": (
+                    entry_body_mask is not None or entry_boundary_faces is not None
+                ),
             },
         )

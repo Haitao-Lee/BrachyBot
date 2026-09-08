@@ -48,158 +48,256 @@ Capabilities:
     }
 
     def _generate_full_report(self, plan: Dict, patient: Dict = None) -> str:
-        """Generate a full clinical report."""
-        now = datetime.now().strftime("%Y-%m-%d %H:%M")
-        metrics = plan.get("metrics", {})
-        organ = plan.get("organ", "Unknown")
-        cancer_type = plan.get("cancer_type", "Unknown")
+        """Generate a full report from one canonical, source-aware fact set.
 
-        def fmt_float(value, digits=2, default="N/A"):
+        This tool is also used outside the browser. Keep its semantics aligned
+        with the Report panel: known planning values are resolved through
+        explicit aliases, quality rows cite actual references, and unavailable
+        clinical thresholds are explained rather than hidden behind placeholders.
+        """
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        metrics = plan.get("metrics") if isinstance(plan.get("metrics"), dict) else {}
+        rationale = plan.get("prescription_rationale") or {}
+        if not isinstance(rationale, dict):
+            rationale = {}
+        organ = plan.get("organ") or plan.get("tumor_type") or "Unknown"
+        cancer_type = plan.get("cancer_type") or plan.get("tumor_type") or "Unknown"
+
+        def number(value):
             try:
-                return f"{float(value):.{digits}f}"
+                value = float(value)
+                return value if value == value and abs(value) != float("inf") else None
             except (TypeError, ValueError):
-                return default
+                return None
+
+        def fmt_float(value, digits=2, default="Not recorded"):
+            value = number(value)
+            return f"{value:.{digits}f}" if value is not None else default
+
+        def first(*values):
+            for value in values:
+                if value not in (None, ""):
+                    return value
+            return None
+
+        rx_raw = first(
+            rationale.get("prescription_gy"),
+            plan.get("prescription_dose_gy"),
+            plan.get("prescription_gy"),
+            metrics.get("prescription_gy"),
+            metrics.get("prescribed_dose_gy"),
+            metrics.get("prescribed_dose"),
+        )
+        rx = number(rx_raw)
+        if rx is not None and rx <= 5:
+            rx *= 120.0
+        rx = rx if rx is not None and rx > 0 else None
+
+        total_seeds = first(plan.get("seed_count"), plan.get("total_seeds"), metrics.get("total_seeds"))
+        needle_count = first(plan.get("needle_count"), plan.get("num_trajectories"), metrics.get("num_trajectories"))
+        total_activity = first(
+            plan.get("total_activity_mbq"), plan.get("totalActivityMBq"),
+            metrics.get("total_activity_mbq"), metrics.get("totalActivityMBq"),
+        )
+        activity_text = f"{fmt_float(total_activity, 3)} MBq" if number(total_activity) is not None else "Not recorded in plan configuration"
+        prescription_text = f"{fmt_float(rx, 1)} Gy" if rx is not None else "Not recorded"
+
+        raw_sources = rationale.get("source_records") or rationale.get("sources") or []
+        references = []
+        seen_urls = set()
+        for source in raw_sources:
+            if isinstance(source, dict):
+                url = str(source.get("url") or "").strip()
+                title = str(source.get("title") or "").strip()
+                publisher = str(source.get("publisher") or "").strip()
+                year = source.get("year") or ""
+            else:
+                url = str(source or "").strip()
+                title = ""
+                publisher = ""
+                year = ""
+            if not url.startswith(("http://", "https://")) or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            references.append({
+                "title": title or url,
+                "publisher": publisher,
+                "year": year,
+                "url": url,
+            })
+
+        def citation_text():
+            if not references:
+                return ""
+            return " " + ", ".join(f"[{i + 1}]({ref['url']})" for i, ref in enumerate(references))
+
+        source_suffix = citation_text()
+        criteria = rationale.get("target_criteria") if isinstance(rationale.get("target_criteria"), dict) else {}
+        has_sources = bool(references)
+
+        def quality_rule(key, value, operator, unit="fraction"):
+            value_number = number(value)
+            raw = criteria.get(key)
+            threshold = number(raw)
+            if value_number is None:
+                return "Not observed", "No observed value"
+            if threshold is None:
+                if has_sources:
+                    return f"No configured criterion{source_suffix}", "Informational — no criterion configured"
+                return "No site-specific criterion configured", "Not assessed — no site-specific source"
+            if unit == "rx":
+                if rx is None:
+                    return f"{threshold:.0%} Rx{source_suffix}", "Not assessed — prescription unavailable"
+                absolute = threshold * rx
+                passed = value_number >= absolute if operator == ">=" else value_number <= absolute
+                return (
+                    f"{operator}{threshold:.0%} Rx ({absolute:.1f} Gy){source_suffix}",
+                    "Pass" if passed else "Review required",
+                )
+            passed = value_number >= threshold if operator == ">=" else value_number <= threshold
+            return (
+                f"{operator}{threshold:.0%}{source_suffix}",
+                "Pass" if passed else "Review required",
+            )
+
+        def observed_metric(key, value, unit, digits=2):
+            value_number = number(value)
+            return f"{value_number:.{digits}f} {unit}" if value_number is not None else "Not observed"
+
+        v100 = metrics.get("v100")
+        v150 = metrics.get("v150")
+        v200 = metrics.get("v200")
+        d90 = metrics.get("d90")
+        d95 = metrics.get("d95")
+        # Generic plans historically stored Vx as fractions. Preserve that
+        # contract in this Markdown tool while accepting percent inputs.
+        def fraction(value):
+            value = number(value)
+            if value is None:
+                return None
+            return value / 100.0 if value > 1.5 else value
 
         lines = [
-            f"# Brachytherapy Treatment Plan Report",
+            "# Brachytherapy Treatment Plan Report",
             f"**Generated:** {now}",
-            f"**System:** BrachyBot AI Planning System",
+            "**System:** BrachyBot AI Planning System",
             "",
             "---",
             "",
             "## Patient Information",
             f"- **Diagnosis:** {cancer_type} ({organ})",
-            f"- **Prescription Dose:** {plan.get('prescription_dose_gy', 'N/A')} Gy",
+            f"- **Prescription dose:** {prescription_text}",
         ]
-
         if patient:
-            for k, v in patient.items():
-                lines.append(f"- **{k.replace('_', ' ').title()}:** {v}")
+            for key, value in patient.items():
+                lines.append(f"- **{key.replace('_', ' ').title()}:** {value}")
 
         lines += [
             "",
             "## CT Image",
-            f"- **Dimensions:** {plan.get('ct_dimensions', 'N/A')}",
-            f"- **Spacing:** {plan.get('ct_spacing', 'N/A')}",
-            f"- **Voxel Size:** {plan.get('voxel_size', 'N/A')}",
+            f"- **Dimensions:** {plan.get('ct_dimensions') or 'Not recorded'}",
+            f"- **Spacing:** {plan.get('ct_spacing') or 'Not recorded'}",
+            f"- **Voxel size:** {plan.get('voxel_size') or 'Not recorded'}",
             "",
             "## Segmentation",
-            f"- **CTV Volume:** {fmt_float(plan.get('ctv_volume_cc'))} cc",
-            f"- **OAR Organs Segmented:** {plan.get('oar_count', 'N/A')}",
+            f"- **CTV volume:** {fmt_float(first(plan.get('ctv_volume_cc'), plan.get('ctv_volume_cm3')), 2, 'Not recorded')} cc",
+            f"- **OAR organs segmented:** {first(plan.get('oar_count'), metrics.get('oar_count')) or 'Not recorded'}",
         ]
-
-        tumor_assessment = plan.get("tumor_imaging_assessment") or plan.get("tumor_assessment")
-        if isinstance(tumor_assessment, dict) and tumor_assessment.get("available"):
-            dims = tumor_assessment.get("bbox_dimensions_cm_xyz", [0, 0, 0])
-            center = tumor_assessment.get("centroid_world_cm_xyz", [0, 0, 0])
-            lines += [
-                "",
-                "## Tumor Imaging Assessment",
-                f"- **Volume:** {fmt_float(tumor_assessment.get('volume_cm3'))} cm³",
-                f"- **Maximum Diameter:** {fmt_float(tumor_assessment.get('max_diameter_cm'))} cm",
-                f"- **Bounding Dimensions (X/Y/Z):** {fmt_float(dims[0])} / {fmt_float(dims[1])} / {fmt_float(dims[2])} cm",
-                f"- **Centroid World Coordinates:** ({fmt_float(center[0])}, {fmt_float(center[1])}, {fmt_float(center[2])}) cm",
-                f"- **Shape Regularity:** {tumor_assessment.get('edge_regularity', 'N/A')}",
-                f"- **Boundary:** {tumor_assessment.get('interpretation_boundary', 'Geometry-only planning descriptor')}",
-            ]
 
         lines += [
             "",
             "## Seed Plan",
-            f"- **Total Seeds:** {plan.get('seed_count', 'N/A')}",
-            f"- **Needle Count:** {plan.get('needle_count', 'N/A')}",
-            f"- **Technique:** {plan.get('technique', 'Standard')}",
-            "",
-            "## Dose Metrics",
-            f"| Metric | Value | Target | Status |",
-            f"|--------|-------|--------|--------|",
+            f"- **Total seeds:** {total_seeds if total_seeds not in (None, '') else 'Not recorded'}",
+            f"- **Needle/trajectory count:** {needle_count if needle_count not in (None, '') else 'Not recorded'}",
+            f"- **Total source activity:** {activity_text}",
+            f"- **Technique:** {plan.get('technique') or 'Radioactive seed implantation (¹²⁵I)'}",
         ]
 
-        v100 = metrics.get("v100", 0)
-        v150 = metrics.get("v150", 0)
-        v200 = metrics.get("v200", 0)
-        d90 = metrics.get("d90", 0)
-        prescription_rationale = plan.get("prescription_rationale")
-        rx_gy = plan.get("prescription_dose_gy")
-        if isinstance(prescription_rationale, dict) and not isinstance(rx_gy, (int, float)):
-            rx_gy = prescription_rationale.get("prescription_gy")
-        if not isinstance(rx_gy, (int, float)) or rx_gy <= 0:
-            rx_gy = None
+        lines += [
+            "",
+            "## Target & Prescription",
+            f"- **Prescribed dose:** {prescription_text}",
+            f"- **Prescription source:** {rationale.get('prescription_source') or 'Planning record; clinician verification required'}",
+            f"- **Treatment site:** {rationale.get('site') or organ or 'Unknown'}",
+            f"- **Rationale:** {rationale.get('rationale') or 'No case-specific rationale was recorded.'}",
+            "",
+            "## Plan Quality Assessment",
+            "| Metric | Observed value | Reference | Status |",
+            "|---|---:|---|---|",
+        ]
 
-        sources = prescription_rationale.get("sources", []) if isinstance(prescription_rationale, dict) else []
-        criteria = prescription_rationale.get("target_criteria", {}) if sources else {}
+        quality_rows = [
+            ("V100 (CTV)", fraction(v100), "%", "v100_min", ">=", "fraction"),
+            ("D90", d90, "Gy", "d90_min_pct", ">=", "rx"),
+            ("D95", d95, "Gy", None, ">=", "none"),
+            ("V150", fraction(v150), "%", "v150_max", "<=", "fraction"),
+            ("V200", fraction(v200), "%", "v200_max", "<=", "fraction"),
+        ]
+        for label, value, unit, key, operator, rule_unit in quality_rows:
+            if key is None:
+                ref = f"No configured criterion{source_suffix}" if has_sources else "No site-specific criterion configured"
+                status = "Informational — no criterion configured" if has_sources else "Not assessed — no site-specific source"
+            else:
+                ref, status = quality_rule(key, value, operator, rule_unit)
+            displayed = "Not observed" if value is None else (
+                f"{value * 100:.1f} %" if unit == "%" else f"{number(value):.2f} {unit}"
+            )
+            lines.append(f"| {label} | {displayed} | {ref} | {status} |")
 
-        def sourced_rule(key, value, op, unit="fraction"):
-            raw = criteria.get(key) if isinstance(criteria, dict) else None
-            if not isinstance(raw, (int, float)):
-                return "See cited case criteria", "Not assessed"
-            threshold = float(raw)
-            if unit == "rx":
-                if rx_gy is None:
-                    return f"{threshold:.0%} Rx", "Not assessed"
-                absolute = threshold * rx_gy
-                passed = value >= absolute
-                return f">={threshold:.0%} Rx ({absolute:.1f} Gy)", "Pass" if passed else "Review"
-            passed = value >= threshold if op == ">=" else value <= threshold
-            symbol = ">=" if op == ">=" else "<="
-            return f"{symbol}{threshold:.0%}", "Pass" if passed else "Review"
+        for label, key in (("CI", "ci"), ("HI", "hi"), ("GI", "gi")):
+            value = number(metrics.get(key))
+            ref = f"No configured criterion{source_suffix}" if has_sources else "No site-specific criterion configured"
+            status = "Informational — no criterion configured" if has_sources else "Not assessed — no site-specific source"
+            lines.append(f"| {label} | {fmt_float(value)} | {ref} | {status} |")
+        score = number(metrics.get("plan_score"))
+        lines.append(
+            f"| Plan score | {fmt_float(score, 1, 'Not recorded')}/100 | "
+            "Internal QA ranking (not a clinical criterion) | Advisory only — not clinical approval |"
+        )
 
-        v100_ref, v100_status = sourced_rule("v100_min", v100, ">=")
-        v150_ref, v150_status = sourced_rule("v150_max", v150, "<=")
-        v200_ref, v200_status = sourced_rule("v200_max", v200, "<=")
-        d90_ref, d90_status = sourced_rule("d90_min_pct", d90, ">=", "rx")
-        lines.append(f"| V100 | {v100:.1%} | {v100_ref} | {v100_status} |")
-        lines.append(f"| V150 | {v150:.1%} | {v150_ref} | {v150_status} |")
-        lines.append(f"| V200 | {v200:.1%} | {v200_ref} | {v200_status} |")
-        lines.append(f"| D90 | {d90:.1f} Gy | {d90_ref} | {d90_status} |")
-        lines.append(f"| Plan Score | {metrics.get('plan_score', 0):.1f}/100 | Internal advisory metric | Not clinical approval |")
-
-        if isinstance(prescription_rationale, dict):
-            sources = prescription_rationale.get("sources", []) or []
-            source_records = prescription_rationale.get("source_records", []) or []
+        if rationale:
             lines += [
                 "",
                 "## Prescription Dose Rationale",
-                f"- **Current Prescription:** {fmt_float(prescription_rationale.get('prescription_gy', rx_gy), 1)} Gy",
-                f"- **Rationale:** {prescription_rationale.get('rationale', 'No case-specific rationale provided')}",
-                f"- **Clinical guidance site:** {prescription_rationale.get('site', 'unknown')}",
+                f"- **Current prescription:** {prescription_text}",
+                f"- **Clinical guidance site:** {rationale.get('site') or 'unknown'}",
+                f"- **Target criteria:** {rationale.get('target_criteria') or 'No site-specific target threshold configured'}",
+                f"- **Clinical boundary:** {rationale.get('clinical_boundary') or 'A clinician must confirm the prescription and applicability of all criteria.'}",
             ]
-            if prescription_rationale.get("target_criteria"):
-                lines.append(f"- **Target Criteria:** {prescription_rationale.get('target_criteria')}")
-            if source_records:
-                for item in source_records[:5]:
-                    if isinstance(item, dict) and item.get("url"):
-                        title = item.get("title") or item["url"]
-                        lines.append(f"- **Source:** [{title}]({item['url']})")
-            else:
-                for url in sources[:5]:
-                    if isinstance(url, dict) and url.get("url"):
-                        lines.append(f"- **Source:** [{url.get('title') or url['url']}]({url['url']})")
-                    else:
-                        lines.append(f"- **Source:** {url}")
-            lines.append(f"- **Boundary:** {prescription_rationale.get('clinical_boundary', 'Clinician must confirm prescription appropriateness')}")
 
         oar_violations = metrics.get("oar_violations", [])
         if oar_violations:
-            lines += [
-                "",
-                "## ⚠️ OAR Violations",
-            ]
-            for ov in oar_violations:
-                lines.append(f"- **{ov.get('organ', 'Unknown')}:** {ov.get('dose', 0):.1f} Gy (limit: {ov.get('limit', 0):.1f} Gy)")
+            lines += ["", "## OAR Violations"]
+            for item in oar_violations:
+                lines.append(
+                    f"- **{item.get('organ', 'Unknown')}:** {item.get('dose', 'Not recorded')} Gy "
+                    f"(limit: {item.get('limit', 'Not recorded')} Gy)"
+                )
 
         lines += [
             "",
             "## DVH Summary",
-            f"- **CTV D90:** {d90:.1f} Gy",
-            f"- **CTV D100:** {metrics.get('d100', 0):.1f} Gy",
-            f"- **OAR Max Dose:** {metrics.get('oar_max_dose', 'N/A')}",
+            f"- **CTV D90:** {observed_metric('d90', d90, 'Gy')}",
+            f"- **CTV D100:** {observed_metric('d100', metrics.get('d100'), 'Gy')}",
+            f"- **OAR maximum dose:** {metrics.get('oar_max_dose') or 'Not recorded'}",
+        ]
+        if references:
+            lines += ["", "## References"]
+            for index, reference in enumerate(references, 1):
+                meta = ""
+                if reference["publisher"]:
+                    meta += f" *{reference['publisher']}*"
+                if reference["year"]:
+                    meta += f", {reference['year']}"
+                lines.append(f"{index}. [{reference['title']}]({reference['url']}){meta}.")
+        else:
+            lines += ["", "## References", "No verified clinical references were attached to this case."]
+        lines += [
             "",
             "---",
             "",
             f"*Report generated by BrachyBot AI Planning System at {now}*",
         ]
-
         return "\n".join(lines)
 
     def _generate_summary(self, plan: Dict) -> str:

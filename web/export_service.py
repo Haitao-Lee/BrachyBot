@@ -612,6 +612,7 @@ class ExportService:
                         "sort_order": figure.get("sortOrder"),
                         "capture_role": figure.get("captureRole"),
                         "capture_contract": figure.get("captureContract"),
+                        "capture_profile": figure.get("captureProfile"),
                     },
                 },
             ))

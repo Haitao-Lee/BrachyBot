@@ -3716,7 +3716,10 @@ class WorkspaceStore:
             self._write_snapshot_locked(user_id, path, snapshot)
 
     def _write_snapshot_locked(self, user_id: str, path: Path, snapshot: Mapping[str, Any]) -> None:
-        payload = json.dumps(snapshot, ensure_ascii=False, indent=2, allow_nan=False).encode("utf-8")
+        # JS text can contain an unpaired UTF-16 surrogate (e.g. an emoji
+        # truncated between its code units). Preserve it as a JSON escape;
+        # replacing/dropping text would corrupt the saved conversation.
+        payload = json.dumps(snapshot, ensure_ascii=False, indent=2, allow_nan=False).encode("utf-8", errors="backslashreplace")
         self._ensure_replacement_capacity(user_id, path, len(payload))
         _atomic_bytes(path, payload)
         self._invalidate_storage_usage(user_id)

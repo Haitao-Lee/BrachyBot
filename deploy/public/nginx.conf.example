@@ -1,0 +1,68 @@
+# VPS: include in nginx's http context. Replace brachy.example.com everywhere.
+# TLS certificate must exist before enabling this file (see README).
+limit_req_zone $binary_remote_addr zone=brachy_login:10m rate=10r/m;
+limit_conn_zone $binary_remote_addr zone=brachy_connections:10m;
+# Deliberately omit query strings, cookies, authorization and bodies from access logs.
+log_format brachy_private '$remote_addr $request_method $uri $status $request_time';
+
+server {
+    listen 80;
+    server_name brachy.example.com;
+    location / { return 308 https://brachy.example.com$request_uri; }
+}
+
+server {
+    listen 443 ssl;
+    server_name brachy.example.com;
+    ssl_certificate /etc/letsencrypt/live/brachy.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/brachy.example.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    if ($host != brachy.example.com) { return 444; }
+    server_tokens off;
+    access_log /var/log/nginx/brachybot-access.log brachy_private;
+    # Error logs can contain request URIs: protect and rotate them separately.
+    error_log /var/log/nginx/brachybot-error.log warn;
+    add_header Strict-Transport-Security 'max-age=31536000' always;
+    add_header Referrer-Policy no-referrer always;
+    client_max_body_size 500m;
+    client_body_timeout 300s;
+    limit_conn brachy_connections 64;
+    limit_req_status 429;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Host brachy.example.com;
+    # Replace incoming forwarding headers; the application trusts exactly this hop.
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header Forwarded "";
+    proxy_set_header X-Real-IP "";
+    # Root-readable file: proxy_set_header X-API-Key "<same key as public.env>";
+    include /etc/nginx/brachybot-api-key.conf;
+    proxy_buffering off;
+    proxy_request_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+    proxy_connect_timeout 10s;
+    proxy_next_upstream off;
+    gzip off;
+
+    location = /api/auth/register {
+        default_type application/json;
+        return 403 '{"code":"registration_closed","error":"Contact the administrator for an account."}';
+    }
+    location = /api/auth/login {
+        limit_req zone=brachy_login burst=5 nodelay;
+        proxy_pass http://127.0.0.1:18082;
+    }
+    location /api/ {
+        proxy_hide_header Cache-Control;
+        add_header Cache-Control 'no-store, private' always;
+        add_header Strict-Transport-Security 'max-age=31536000' always;
+        add_header Referrer-Policy no-referrer always;
+        proxy_pass http://127.0.0.1:18082;
+    }
+    # Only publish the known UI, never arbitrary files from the repository.
+    location ~ (?:\.bak|\.py$|\.env|\.sqlite|/\.) { return 404; }
+    location / { proxy_pass http://127.0.0.1:18082; }
+}

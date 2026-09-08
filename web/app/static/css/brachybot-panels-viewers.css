@@ -863,6 +863,29 @@
     border-radius: 2px;
 }
 
+/* Flowable report sections are repaginated against the actual rendered
+   height in brachybot-report-export.js.  Keep the body unconstrained so the
+   paginator can measure a candidate fragment before it commits it to a page;
+   the page itself remains the clipping boundary and therefore cannot paint
+   into the next sheet. */
+.report-flow-page-body {
+    display: block;
+    min-height: 0;
+    overflow: visible;
+}
+.report-flow-section {
+    display: block;
+    margin: 0 0 3mm;
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+.report-flow-section + .report-flow-section {
+    margin-top: 2mm;
+}
+.report-flow-page-body .hp-section-body {
+    overflow-wrap: anywhere;
+}
+
 /* Hospital letterhead */
 /* BUG FIX 2026-06-17 (report header redesign): the previous
    header stacked 3 logos + 3 lines of text (Ruijin Hospital, SJTU
@@ -1013,7 +1036,44 @@
 .hp-section-body { font-size: 12pt; line-height: 1.5; color: #000; text-align: justify; font-family: 'Times New Roman', 'SimSun', '宋体', serif; }
 .hp-section-body p { margin: 1.5mm 0; text-indent: 2em; }
 .hp-section-body p.no-indent { text-indent: 0; }
+.hp-section-body .md-report-heading {
+    color: #0c4a6e; font-weight: 700; text-align: left; text-indent: 0;
+    page-break-after: avoid; break-after: avoid;
+}
+.hp-section-body .md-report-h1 { font-size: 13pt; margin: 4mm 0 2mm; }
+.hp-section-body .md-report-h2 { font-size: 11.5pt; margin: 3.5mm 0 2mm; }
+.hp-section-body .md-report-h3 { font-size: 10.5pt; margin: 3mm 0 1.5mm; }
+.hp-section-body .md-report-h4,
+.hp-section-body .md-report-h5,
+.hp-section-body .md-report-h6 { font-size: 10pt; margin: 2.5mm 0 1mm; }
+.hp-section-body .md-report-p { margin: 1.5mm 0; text-indent: 2em; }
+.hp-section-body .md-report-ul,
+.hp-section-body .md-report-ol {
+    margin: 2mm 0 2mm 7mm; padding-left: 6mm; text-align: left;
+}
+.hp-section-body .md-report-list-item { margin: 1mm 0; }
+.hp-section-body .md-report-list-item p { margin: 0; text-indent: 0; }
+.hp-section-body .md-report-table {
+    width: 100%; border-collapse: collapse; margin: 2mm 0 3mm;
+    font-size: 9.5pt; page-break-inside: avoid;
+}
+.hp-section-body .md-report-table th,
+.hp-section-body .md-report-table td {
+    border: 1px solid #cbd5e1; padding: 1.2mm 2mm;
+    text-align: left; vertical-align: top;
+}
+.hp-section-body .md-report-table th { background: #e0f2fe; color: #0c4a6e; }
+.hp-section-body .md-report-blockquote {
+    margin: 2mm 0; padding: 1.5mm 3mm; border-left: 3px solid #94a3b8;
+    color: #475569; text-align: left;
+}
+.hp-section-body .md-report-code {
+    margin: 2mm 0; padding: 2mm 3mm; background: #f1f5f9;
 
+    border: 1px solid #cbd5e1; white-space: pre-wrap;
+    font-family: 'JetBrains Mono', 'Consolas', monospace; font-size: 8.5pt;
+}
+.hp-section-body .md-report-hr { border: 0; border-top: 1px solid #94a3b8; margin: 3mm 0; }
 /* Standard three-line table for data */
 .hp-table {
     width: 100%;

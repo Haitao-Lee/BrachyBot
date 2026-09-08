@@ -7,70 +7,82 @@ function setupViewerInteractions() {
     });
 }
 
-// Export DICOM-RT
+// Export helpers used by the Input panel. These actions are not part of
+// the chat SSE trace, so they publish their own chat row and progress row.
+function _inputButtonProgress(key, status, zhLabel, enLabel, detail = '', options = {}) {
+    if (typeof _manualWorkflowProgress === 'function') {
+        _manualWorkflowProgress(key, status, zhLabel, enLabel, detail, options);
+    }
+}
+
 async function exportDicomRT() {
-    addChat('system', 'Exporting DICOM-RT...');
+    const key = 'export_dicom_rt';
+    _inputButtonProgress(key, 'running', '\u6b63\u5728\u5bfc\u51fa DICOM-RT', 'Exporting DICOM-RT');
+    addChat('system', _manualWorkflowLabel('\u6b63\u5728\u5bfc\u51fa DICOM-RT\u2026', 'Exporting DICOM-RT...'));
     try {
-        const ctPath = document.getElementById('ctPath').value.trim();
+        const ctPath = (document.getElementById('ctPath')?.value || '').trim();
+        if (!ctPath) throw new Error(_manualWorkflowLabel('\u8bf7\u5148\u52a0\u8f7d CT \u56fe\u50cf\u3002', 'Load a CT image first.'));
         const res = await fetch(API + '/export/dicom_rt', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ct_path: ctPath }),
         });
-        if (res.ok) {
-            const data = await res.json();
-            if (data.success) {
-                addChat('system', `✅ DICOM-RT exported to: ${data.output_dir}`);
-            } else {
-                addChat('error', `Export failed: ${data.error}`);
-            }
-        }
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data || !data.success) throw new Error((data && (data.error || data.message)) || ('HTTP ' + res.status));
+        _inputButtonProgress(key, 'done', '\u5bfc\u51fa DICOM-RT', 'Export DICOM-RT', _manualWorkflowLabel('\u5df2\u5b8c\u6210', 'Completed'));
+        addChat('system', '\u2705 ' + _manualWorkflowLabel('\u5df2\u5bfc\u51fa DICOM-RT\uff1a', 'DICOM-RT exported to: ') + data.output_dir);
+        return data;
     } catch (e) {
-        addChat('error', `Export failed: ${e.message}`);
+        const message = _manualWorkflowLabel('\u5bfc\u51fa\u5931\u8d25\uff1a', 'Export failed: ') + e.message;
+        _inputButtonProgress(key, 'error', '\u5bfc\u51fa DICOM-RT', 'Export DICOM-RT', message);
+        addChat('error', message);
+        return { success: false, error: e.message };
     }
 }
 
-// Export STL
 async function exportSTL() {
-    addChat('system', 'Exporting STL files...');
+    const key = 'export_stl';
+    _inputButtonProgress(key, 'running', '\u6b63\u5728\u5bfc\u51fa STL', 'Exporting STL');
+    addChat('system', _manualWorkflowLabel('\u6b63\u5728\u5bfc\u51fa STL\u2026', 'Exporting STL files...'));
     try {
         const res = await fetch(API + '/export/stl', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({}),
         });
-        if (res.ok) {
-            const data = await res.json();
-            if (data.success) {
-                addChat('system', `✅ STL exported: ${data.count} files to ${data.output_dir}`);
-            } else {
-                addChat('error', `Export failed: ${data.error}`);
-            }
-        }
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data || !data.success) throw new Error((data && (data.error || data.message)) || ('HTTP ' + res.status));
+        _inputButtonProgress(key, 'done', '\u5bfc\u51fa STL', 'Export STL', _manualWorkflowLabel('\u5df2\u5b8c\u6210', 'Completed'));
+        addChat('system', '\u2705 ' + _manualWorkflowLabel('\u5df2\u5bfc\u51fa STL\uff1a', 'STL exported: ') + data.count);
+        return data;
     } catch (e) {
-        addChat('error', `Export failed: ${e.message}`);
+        const message = _manualWorkflowLabel('\u5bfc\u51fa\u5931\u8d25\uff1a', 'Export failed: ') + e.message;
+        _inputButtonProgress(key, 'error', '\u5bfc\u51fa STL', 'Export STL', message);
+        addChat('error', message);
+        return { success: false, error: e.message };
     }
 }
 
-// Export Report
 async function exportReport() {
-    addChat('system', 'Generating treatment plan report...');
+    const key = 'export_report';
+    _inputButtonProgress(key, 'running', '\u6b63\u5728\u751f\u6210\u62a5\u544a', 'Generating treatment plan report');
+    addChat('system', _manualWorkflowLabel('\u6b63\u5728\u751f\u6210\u62a5\u544a\u2026', 'Generating treatment plan report...'));
     try {
         const res = await fetch(API + '/export/report', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({}),
         });
-        if (res.ok) {
-            const data = await res.json();
-            if (data.success) {
-                addChat('system', `✅ Report generated: ${data.report_path}`);
-            } else {
-                addChat('error', `Report generation failed: ${data.error}`);
-            }
-        }
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data || !data.success) throw new Error((data && (data.error || data.message)) || ('HTTP ' + res.status));
+        _inputButtonProgress(key, 'done', '\u751f\u6210\u62a5\u544a', 'Generate report', _manualWorkflowLabel('\u5df2\u5b8c\u6210', 'Completed'));
+        addChat('system', '\u2705 ' + _manualWorkflowLabel('\u62a5\u544a\u5df2\u751f\u6210\uff1a', 'Report generated: ') + data.report_path);
+        return data;
     } catch (e) {
-        addChat('error', `Report failed: ${e.message}`);
+        const message = _manualWorkflowLabel('\u62a5\u544a\u751f\u6210\u5931\u8d25\uff1a', 'Report generation failed: ') + e.message;
+        _inputButtonProgress(key, 'error', '\u751f\u6210\u62a5\u544a', 'Generate report', message);
+        addChat('error', message);
+        return { success: false, error: e.message };
     }
 }
 
@@ -133,10 +145,11 @@ function _manualWorkflowLabel(zh, en) {
     return typeof window._t === 'function' ? window._t(zh, en) : en;
 }
 
-function _manualWorkflowProgress(key, status, zhLabel, enLabel, detail = '') {
+function _manualWorkflowProgress(key, status, zhLabel, enLabel, detail = '', options = {}) {
     const container = document.getElementById('chatMessages');
     if (!container) return;
-    const sessionId = String(typeof activeSessionId !== 'undefined' ? activeSessionId : '');
+    const sessionId = String(options?.sessionId
+        || (typeof activeSessionId !== 'undefined' ? activeSessionId : ''));
     const rowId = `manualWorkflowProgress-${String(key).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
     let row = document.getElementById(rowId);
     if (!row) {
@@ -145,7 +158,6 @@ function _manualWorkflowProgress(key, status, zhLabel, enLabel, detail = '') {
         row.className = 'chat-event-row manual-workflow-progress';
         row.dataset.sessionId = sessionId;
         row.innerHTML = `
-            <span class="chat-event-icon">AI</span>
             <div class="chat-event-content">
                 <div class="manual-workflow-progress-heading"></div>
                 <div class="chat-event-text"></div>
@@ -155,11 +167,46 @@ function _manualWorkflowProgress(key, status, zhLabel, enLabel, detail = '') {
             <span class="manual-workflow-progress-track"><span></span></span>`;
         container.appendChild(row);
     }
+    // A chat tool can publish the authoritative completion after a browser
+    // initiated request has already timed out.  Do not let that older
+    // request turn a successfully reconciled row back into a red timeout.
+    // Starting a new operation explicitly clears the guard below.
+    if (status === 'error'
+        && row.dataset.authoritativeDone === 'true'
+        && String(row.dataset.sessionId || '') === sessionId
+        && options?.allowAfterAuthoritative !== true) {
+        return;
+    }
     const now = Date.now();
-    if (!row.dataset.startedAt || status === 'running' && row.classList.contains('is-done')) {
+    const operationName = typeof window._brachyOperationName === 'function'
+        ? window._brachyOperationName(key)
+        : String(key || '');
+    row.dataset.operationName = operationName;
+    const currentStartedAt = Number(row.dataset.startedAt) || null;
+    const restarting = status === 'running' && row.classList.contains('is-done');
+    const clock = typeof window._brachyOperationStart === 'function'
+        && (status === 'running' || status === 'queued')
+        ? window._brachyOperationStart(operationName, sessionId, restarting ? null : currentStartedAt)
+        : null;
+    if (clock?.startedAt) row.dataset.startedAt = String(clock.startedAt);
+    if (!row.dataset.startedAt || restarting) {
         row.dataset.startedAt = String(now);
     }
+    if (status === 'done' || status === 'error') {
+        row.dataset.endedAt = String(now);
+        if (typeof window._brachyOperationFinish === 'function') {
+            const finished = window._brachyOperationFinish(operationName, sessionId, now);
+            if (finished?.startedAt) row.dataset.startedAt = String(finished.startedAt);
+        }
+    }
     row.dataset.sessionId = sessionId;
+    if (status === 'running' || status === 'queued') {
+        row.dataset.authoritativeDone = 'false';
+    } else if (status === 'done' && options?.authoritative === true) {
+        row.dataset.authoritativeDone = 'true';
+    } else if (status === 'error') {
+        row.dataset.authoritativeDone = 'false';
+    }
     const heading = row.querySelector('.manual-workflow-progress-heading');
     const message = row.querySelector('.chat-event-text');
     const timestamp = row.querySelector('.chat-event-timestamp');
@@ -169,10 +216,13 @@ function _manualWorkflowProgress(key, status, zhLabel, enLabel, detail = '') {
     if (timestamp) timestamp.textContent = new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const updateElapsed = () => {
         const started = Number(row.dataset.startedAt) || Date.now();
-        if (elapsed) elapsed.textContent = `${Math.max(0, (Date.now() - started) / 1000).toFixed(1)}s`;
+        const end = (status === 'done' || status === 'error')
+            ? (Number(row.dataset.endedAt) || Date.now())
+            : Date.now();
+        if (elapsed) elapsed.textContent = `${Math.max(0, (end - started) / 1000).toFixed(1)}s`;
         const fill = row.querySelector('.manual-workflow-progress-track > span');
         if (fill && (status === 'running' || status === 'queued')) {
-            fill.style.transform = `translateX(${((Date.now() - started) / 1000 * 16 % 120) - 20}%)`;
+            fill.style.transform = `translateX(${((end - started) / 1000 * 16 % 120) - 20}%)`;
         }
     };
     if (row._manualTimer) clearInterval(row._manualTimer);
@@ -194,6 +244,41 @@ function _manualWorkflowProgress(key, status, zhLabel, enLabel, detail = '') {
     container.scrollTop = container.scrollHeight;
 }
 
+// Reconcile progress created by a manual/button path with a later terminal
+// chat-tool event.  It is deliberately a no-op when the row belongs to a
+// different case or does not exist: restoring one case must never mutate the
+// visible progress of another case, and a background hydration must not create
+// a misleading "completed" row by itself.
+window.reconcileManualWorkflowProgress = function reconcileManualWorkflowProgress(
+    key,
+    status = 'done',
+    detail = '',
+    sessionId = '',
+) {
+    const rowId = `manualWorkflowProgress-${String(key).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+    const row = document.getElementById(rowId);
+    const owner = String(sessionId || '');
+    if (!row || (owner && String(row.dataset.sessionId || '') !== owner)) return false;
+    const heading = row.querySelector('.manual-workflow-progress-heading')?.textContent || String(key);
+    const currentSession = owner || String(row.dataset.sessionId || '');
+    const authoritative = status === 'done' || status === 'error';
+    _manualWorkflowProgress(
+        key,
+        status,
+        heading,
+        heading,
+        detail || (status === 'done'
+            ? _manualWorkflowLabel('已完成', 'Completed')
+            : _manualWorkflowLabel('执行失败', 'Failed')),
+        {
+            sessionId: currentSession,
+            authoritative,
+            allowAfterAuthoritative: status === 'done',
+        },
+    );
+    return true;
+};
+
 window.clearManualWorkflowProgressPresentation = function clearManualWorkflowProgressPresentation() {
     _manualWorkflowProgressRows.forEach(row => {
         if (row?._manualTimer) clearInterval(row._manualTimer);
@@ -208,7 +293,17 @@ window.restoreManualWorkflowProgress = function restoreManualWorkflowProgress() 
     if (!active || !state.active_step_started_at) return;
     _manualWorkflowProgress(active, 'running', active, active, _manualWorkflowLabel('正在恢复执行', 'Restoring in-progress step'));
     const row = _manualWorkflowProgressRows.get(String(active));
-    if (row) row.dataset.startedAt = String(state.active_step_started_at);
+    if (row) {
+        row.dataset.startedAt = String(state.active_step_started_at);
+        if (typeof window._brachyOperationStart === 'function') {
+            window._brachyOperationStart(
+                active,
+                row.dataset.sessionId,
+                state.active_step_started_at,
+                { restore: true },
+            );
+        }
+    }
 };
 
 function toggleStepButtons() {
@@ -235,6 +330,7 @@ function _num(id, fallback = null) {
 }
 
 async function applyHyperparams() {
+    _inputButtonProgress('apply_hyperparams', 'running', '\u6b63\u5728\u5e94\u7528\u53c2\u6570', 'Applying hyperparameters');
     const refAuto = !!document.getElementById('refDirecAuto')?.checked;
     const config = {
         mode: document.getElementById('useRLToggle')?.checked ? 'rl' : 'rule_based',
@@ -305,9 +401,11 @@ async function applyHyperparams() {
         const data = await res.json().catch(() => null);
         if (!res.ok || !data || data.error) throw new Error((data && data.error) || `HTTP ${res.status}`);
         addChat('system', 'Hyperparameters applied to the server configuration.');
+        _inputButtonProgress('apply_hyperparams', 'done', '\u5e94\u7528\u53c2\u6570', 'Apply hyperparameters', _manualWorkflowLabel('\u5df2\u5b8c\u6210', 'Completed'));
         reportUIEvent('planning.config', 'Hyperparameters applied', { mode: config.mode });
         return data;
     } catch (e) {
+        _inputButtonProgress('apply_hyperparams', 'error', '\u5e94\u7528\u53c2\u6570', 'Apply hyperparameters', e.message || _manualWorkflowLabel('\u6267\u884c\u5931\u8d25', 'Failed'));
         addChat('error', `Apply hyperparameters failed: ${e.message}`);
         return null;
     }
@@ -315,12 +413,23 @@ async function applyHyperparams() {
 
 async function runPlanning() {
     const ctPath = ((document.getElementById('ctPath') || {}).value || '').trim();
+    const ctReady = typeof state === 'undefined' || state.ctLoaded === true;
     if (!ctPath) {
         addChat('error', 'Load CT before running the full planning pipeline.');
         return { success: false, error: 'Load CT before running the full planning pipeline.' };
     }
-    await applyHyperparams();
+    if (!ctReady) {
+        const waiting = _manualWorkflowLabel('\u5f53前 CT 仍在加载，请等待加载完成后再开始规划。', 'The CT is still loading. Wait until it is ready before starting planning.');
+        addChat('system', waiting);
+        return { success: false, error: 'CT is still loading.' };
+    }
+    _inputButtonProgress('full_pipeline', 'running', '\u6b63\u5728\u6267\u884c\u5b8c\u6574\u89c4\u5212', 'Running full planning pipeline');
     addChat('system', 'Full planning pipeline started...');
+    const applied = await applyHyperparams();
+    if (!applied) {
+        _inputButtonProgress('full_pipeline', 'error', '\u5b8c\u6574\u89c4\u5212', 'Full planning pipeline', _manualWorkflowLabel('\u53c2\u6570应\u7528\u5931\u8d25', 'Hyperparameter application failed'));
+        return { success: false, error: 'Hyperparameter application failed.' };
+    }
     reportUIEvent('planning.step', 'Full pipeline started', { step: 'full' });
     try {
         const res = await fetch(API + '/planning/run_step', {
@@ -341,12 +450,14 @@ async function runPlanning() {
             last_step: 'full',
         });
         addChat('system', 'Full planning pipeline completed.');
+        _inputButtonProgress('full_pipeline', 'done', '\u5b8c\u6574\u89c4\u5212', 'Full planning pipeline', _manualWorkflowLabel('\u5df2\u5b8c\u6210', 'Completed'));
         reportUIEvent('planning.step', 'Full pipeline completed', { step: 'full' });
         if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
         if (typeof refreshPlanningUI === 'function') await refreshPlanningUI();
         if (trainingMonitorState.active) await requestPlanningAdvice();
         return { success: true, step: 'full' };
     } catch (e) {
+        _inputButtonProgress('full_pipeline', 'error', '\u5b8c\u6574\u89c4\u5212', 'Full planning pipeline', e.message || _manualWorkflowLabel('\u6267\u884c\u5931\u8d25', 'Failed'));
         addChat('error', `Full planning pipeline failed: ${e.message}`);
         reportUIEvent('planning.error', 'Full pipeline failed', { error: e.message });
         return { success: false, error: e.message };
@@ -355,11 +466,18 @@ async function runPlanning() {
 
 async function runIntra() {
     const ctPath = ((document.getElementById('ctPath') || {}).value || '').trim();
+    const ctReady = typeof state === 'undefined' || state.ctLoaded === true;
     if (!ctPath) {
         addChat('error', 'Load intra-operative CT before running intraoperative replanning.');
         return;
     }
+    if (!ctReady) {
+        const waiting = _manualWorkflowLabel('\u5f53前 CT 仍在加载，请等待加载完成后再执行术中重新规划。', 'The CT is still loading. Wait until it is ready before intraoperative replanning.');
+        addChat('system', waiting);
+        return { success: false, error: 'CT is still loading.' };
+    }
     const threshold = _num('devThreshold', 2.0);
+    _inputButtonProgress('intraop_replanning', 'running', '\u6b63\u5728\u6267\u884c\u672f\u4e2d\u91cd\u65b0\u89c4\u5212', 'Running intraoperative replanning');
     addChat('system', `Intraoperative replanning started (deviation threshold ${threshold} mm)...`);
     reportUIEvent('planning.step', 'Intraoperative replanning started', { threshold });
     try {
@@ -371,14 +489,17 @@ async function runIntra() {
         const data = await res.json().catch(() => null);
         if (!res.ok || !data || data.error || data.success === false) throw new Error((data && data.error) || `HTTP ${res.status}`);
         addChat('system', 'Intraoperative replanning completed.');
+        _inputButtonProgress('intraop_replanning', 'done', '\u672f\u4e2d\u91cd\u65b0\u89c4\u5212', 'Intraoperative replanning', _manualWorkflowLabel('\u5df2\u5b8c\u6210', 'Completed'));
         reportUIEvent('planning.step', 'Intraoperative replanning completed', {});
         if (typeof refreshPlanningUI === 'function') await refreshPlanningUI();
     } catch (e) {
+        _inputButtonProgress('intraop_replanning', 'error', '\u672f\u4e2d\u91cd\u65b0\u89c4\u5212', 'Intraoperative replanning', e.message || _manualWorkflowLabel('\u6267\u884c\u5931\u8d25', 'Failed'));
         addChat('error', `Intraoperative replanning failed: ${e.message}`);
     }
 }
 
 async function resetSession() {
+    _inputButtonProgress('planning_reset', 'running', '\u6b63\u5728\u91cd\u7f6e\u89c4\u5212\u72b6\u6001', 'Resetting planning state');
     try {
         const response = await fetch(API + '/planning/clear', { method: 'POST' });
         if (!response.ok) {
@@ -386,6 +507,7 @@ async function resetSession() {
             throw new Error(data?.error || `HTTP ${response.status}`);
         }
     } catch (error) {
+        _inputButtonProgress('planning_reset', 'error', '\u91cd\u7f6e\u89c4\u5212', 'Reset planning state', error.message || _manualWorkflowLabel('\u6267\u884c\u5931\u8d25', 'Failed'));
         const message = `Planning reset failed: ${error.message}`;
         addChat('error', message);
         return { success: false, error: message };
@@ -428,6 +550,7 @@ async function resetSession() {
     if (state.ctLoaded) await loadAllSlices();
     reportUIEvent('planning.reset', 'Planning state reset', {});
     addChat('system', 'Planning state reset. CT remains loaded.');
+    _inputButtonProgress('planning_reset', 'done', '\u91cd\u7f6e\u89c4\u5212', 'Reset planning state', _manualWorkflowLabel('\u5df2\u5b8c\u6210', 'Completed'));
     return { success: true };
 }
 
@@ -449,6 +572,7 @@ async function runPlanningStep(step) {
     }
     const ctPathEl = document.getElementById('ctPath');
     const ctPath = ctPathEl ? ctPathEl.value.trim() : '';
+    const ctReady = typeof state === 'undefined' || state.ctLoaded === true;
     // Keep the asynchronous step attached to the case that started it. A
     // later session switch may let the server finish, but it must not paint
     // the newly selected case during the completion phase.
@@ -465,6 +589,12 @@ async function runPlanningStep(step) {
             addChat('error', '请先在 Image Data 区域加载 CT 图像,然后再运行规划步骤。');
         }
         return { success: false, error: 'Load CT before running a planning step.' };
+    }
+    if (!ctReady) {
+        const waiting = _manualWorkflowLabel('当前 CT 仍在加载，请等待加载完成后再运行规划。', 'The CT is still loading. Wait until it is ready before running planning.');
+        if (typeof addChat === 'function') addChat('system', waiting);
+        _manualWorkflowProgress(step, 'error', localizedInfoLabel, info.label, waiting);
+        return { success: false, error: 'CT is still loading.' };
     }
     // Validate prerequisite steps are met.
     const st = _manualState();
@@ -512,8 +642,16 @@ async function runPlanningStep(step) {
             // once more.  Without this merge the backend had valid masks while
             // the Data Tree stayed empty until the user manually reconstructed
             // a structure.
-            const refreshSessionId = typeof _activeApiSessionId === 'function'
-                ? _activeApiSessionId() : '';
+            if (!isCurrentOwner()) return { success: true, step, detached: true };
+            const downstream = {};
+            const order = Object.keys(stepLabels);
+            order.slice(order.indexOf(step) + 1).forEach(name => { downstream[name] = false; });
+            _saveManualState(downstream);
+            if (['trajectory_init', 'trajectory_refine', 'seed_planning'].includes(step)
+                && typeof _invalidateDoseForPlanningRun === 'function') {
+                _invalidateDoseForPlanningRun({ sessionId: ownerSessionId });
+            }
+            const refreshSessionId = ownerSessionId;
             const refreshJobs = [];
             if (typeof refreshPlanningUI === 'function') {
                 refreshJobs.push(refreshPlanningUI({
@@ -563,6 +701,7 @@ async function runPlanningStep(step) {
 // also switches the right panel to the Analysis tab so the user
 // sees DVH / metrics.
 async function showStepResults(step) {
+    _inputButtonProgress('show_results_' + step, 'running', '\u6b63\u5728\u8bfb\u53d6\u89c4\u5212\u7ed3\u679c', 'Reading planning results');
     if (typeof addChat === 'function') {
         addChat('system', `Fetching results for: ${step}...`);
     }
@@ -614,7 +753,9 @@ async function showStepResults(step) {
         if (typeof refreshPlanningUI === 'function') {
             try { await refreshPlanningUI(); } catch (_) {}
         }
+        _inputButtonProgress('show_results_' + step, 'done', '\u8bfb\u53d6\u89c4\u5212\u7ed3\u679c', 'Read planning results', _manualWorkflowLabel('\u5df2\u5b8c\u6210', 'Completed'));
     } catch (e) {
+        _inputButtonProgress('show_results_' + step, 'error', '\u8bfb\u53d6\u89c4\u5212\u7ed3\u679c', 'Read planning results', e.message || _manualWorkflowLabel('\u6267\u884c\u5931\u8d25', 'Failed'));
         if (typeof addChat === 'function') {
             addChat('error', `Show results failed: ${e.message}`);
         }
@@ -644,11 +785,18 @@ async function runSegmentationStep(kind) {
             : (typeof activeSessionId !== 'undefined' ? activeSessionId || '' : ''),
     );
     const ctPath = (document.getElementById('ctPath') || {}).value || '';
+    const ctReady = typeof state === 'undefined' || state.ctLoaded === true;
     if (!ctPath.trim()) {
         if (typeof addChat === 'function') {
             addChat('error', '请先在 Image Data 区域加载 CT 图像,然后再运行分割。');
         }
         return { success: false, error: 'Load CT before running segmentation.' };
+    }
+    if (!ctReady) {
+        const waiting = _manualWorkflowLabel('当前 CT 仍在加载，请等待加载完成后再分割。', 'The CT is still loading. Wait until it is ready before segmentation.');
+        if (typeof addChat === 'function') addChat('system', waiting);
+        _manualWorkflowProgress(kind, 'error', label, label, waiting);
+        return { success: false, error: 'CT is still loading.' };
     }
     const btn = document.getElementById('stepBtn_' + kind);
     if (btn) {
@@ -837,7 +985,11 @@ async function runSegmentationStep(kind) {
 function _refreshManualStepUI() {
     const s = _manualState();
     const ctPath = ((document.getElementById('ctPath') || {}).value || '').trim();
-    const ctLoaded = !!ctPath;
+    const hasCtPath = !!ctPath;
+    // A path is only an intent. Wait for decoded volume publication so a
+    // restart/upload hydration cannot make a button look like a no-op.
+    const ctReady = hasCtPath && (typeof state === 'undefined' || state.ctLoaded === true);
+    const ctLoading = hasCtPath && !ctReady;
     const ctvDone = !!s.ctv_segmentation;
     const oarDone = !!s.oar_segmentation;
     const trajInit = !!s.trajectory_init;
@@ -845,27 +997,93 @@ function _refreshManualStepUI() {
     const seeds = !!s.seed_planning;
     const dose = !!s.dose_calc;
     const evalDone = !!s.dose_eval;
-
-    function setBtn(id, enabled, num, done) {
+    const statusEl = document.getElementById('manualWorkflowStatus');
+    const setStatus = (zh, en, tone = 'ready') => {
+        if (!statusEl) return;
+        statusEl.textContent = _manualWorkflowLabel(zh, en);
+        statusEl.classList.toggle('is-warn', tone === 'warn');
+        statusEl.classList.toggle('is-ready', tone === 'ready');
+        statusEl.dataset.workflowState = tone;
+    };
+    const setReason = (id, zh, en, tone) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const message = _manualWorkflowLabel(zh, en);
+        el.title = message;
+        el.setAttribute('aria-label', message);
+        el.dataset.workflowReason = message;
+        el.dataset.workflowState = tone;
+    };
+    const setButton = (id, enabled, number, done, readyZh, readyEn, blockedZh, blockedEn) => {
         const el = document.getElementById(id);
         if (!el) return;
         el.disabled = !enabled;
-        const numEl = el.querySelector('.step-num');
-        if (numEl) {
-            numEl.textContent = done ? '✓' : String(num);
-            numEl.style.color = done ? 'var(--success)' : '';
+        el.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+        const num = el.querySelector('.step-num');
+        if (num) {
+            num.textContent = done ? '\u2713' : String(number);
+            num.style.color = done ? 'var(--success)' : '';
         }
-        // Subtle visual cue for "done"
-        if (done) el.style.borderColor = 'var(--success)';
-        else el.style.borderColor = '';
-    }
-    setBtn('stepBtn_ctv_segmentation', ctLoaded, 0, ctvDone);
-    setBtn('stepBtn_oar_segmentation', ctvDone, 0, oarDone);
-    setBtn('stepBtn_trajectory_init', ctvDone, 1, trajInit);
-    setBtn('stepBtn_trajectory_refine', trajInit, 2, trajRefine);
-    setBtn('stepBtn_seed_planning', trajRefine, 3, seeds);
-    setBtn('stepBtn_dose_calc', seeds, 4, dose);
-    setBtn('stepBtn_dose_eval', dose, 5, evalDone);
+        el.style.borderColor = done ? 'var(--success)' : '';
+        setReason(id, done ? '\u5df2\u5b8c\u6210' : (enabled ? readyZh : blockedZh),
+            done ? 'Completed' : (enabled ? readyEn : blockedEn),
+            enabled || done ? 'ready' : 'blocked');
+    };
+    const noCtZh = !hasCtPath
+        ? '\u8bf7\u5148\u52a0\u8f7d CT \u56fe\u50cf'
+        : '\u5f53\u524d CT \u6b63\u5728\u52a0\u8f7d\uff0c\u8bf7\u7b49\u5f85\u5b8c\u6210';
+    const noCtEn = !hasCtPath ? 'Load a CT image first.' : 'The CT is still loading; wait until it is ready.';
+    setButton('stepBtn_ctv_segmentation', ctReady, 0, ctvDone,
+        '\u53ef\u5f00\u59cb CTV \u5206\u5272', 'CTV segmentation is ready.', noCtZh, noCtEn);
+    setButton('stepBtn_oar_segmentation', ctReady, 0, oarDone,
+        '\u53ef\u72ec\u7acb\u5f00\u59cb OAR \u5206\u5272', 'OAR segmentation is ready independently of CTV.', noCtZh, noCtEn);
+    setButton('stepBtn_trajectory_init', ctReady && ctvDone, 1, trajInit,
+        '\u53ef\u5f00\u59cb\u8f68\u8ff9\u521d\u59cb\u5316', 'Trajectory initialization is ready.',
+        !ctReady ? noCtZh : '\u8bf7\u5148\u5b8c\u6210 CTV \u5206\u5272',
+        !ctReady ? noCtEn : 'Complete CTV segmentation first.');
+    setButton('stepBtn_trajectory_refine', trajInit, 2, trajRefine,
+        '\u53ef\u5f00\u59cb\u8f68\u8ff9\u4f18\u5316', 'Trajectory refinement is ready.',
+        '\u8bf7\u5148\u5b8c\u6210\u8f68\u8ff9\u521d\u59cb\u5316', 'Complete trajectory initialization first.');
+    setButton('stepBtn_seed_planning', trajRefine, 3, seeds,
+        '\u53ef\u5f00\u59cb\u7c92\u5b50\u5e03\u6e90', 'Seed planning is ready.',
+        '\u8bf7\u5148\u5b8c\u6210\u8f68\u8ff9\u4f18\u5316', 'Complete trajectory refinement first.');
+    setButton('stepBtn_dose_calc', seeds, 4, dose,
+        '\u53ef\u5f00\u59cb\u5242\u91cf\u8ba1\u7b97', 'Dose calculation is ready.',
+        '\u8bf7\u5148\u5b8c\u6210\u7c92\u5b50\u5e03\u6e90', 'Complete seed planning first.');
+    setButton('stepBtn_dose_eval', dose, 5, evalDone,
+        '\u53ef\u5f00\u59cb\u5242\u91cf\u8bc4\u4f30', 'Dose evaluation is ready.',
+        '\u8bf7\u5148\u5b8c\u6210\u5242\u91cf\u8ba1\u7b97', 'Complete dose calculation first.');
+    [['runPlanning()', '\u8bf7\u5148\u52a0\u8f7d\u5e76\u7b49\u5f85 CT \u5c31\u7eea', 'Load and wait for the CT to be ready.'],
+     ['runIntra()', '\u8bf7\u5148\u52a0\u8f7d\u5e76\u7b49\u5f85 CT \u5c31\u7eea', 'Load and wait for the CT to be ready.']]
+        .forEach(([onclick, zh, en]) => {
+            const el = document.querySelector('button[onclick="' + onclick + '"]');
+            if (!el) return;
+            el.disabled = !ctReady;
+            el.setAttribute('aria-disabled', ctReady ? 'false' : 'true');
+            setReason(onclick, ctReady ? '\u53ef\u5f00\u59cb\u6267\u884c' : zh,
+                ctReady ? 'Ready to run.' : en, ctReady ? 'ready' : 'blocked');
+        });
+    const active = s.active_step;
+    const activeLabels = {
+        ctv_segmentation: ['\u6b63\u5728\u6267\u884c CTV \u5206\u5272', 'Running CTV segmentation'],
+        oar_segmentation: ['\u6b63\u5728\u6267\u884c OAR \u5206\u5272', 'Running OAR segmentation'],
+        trajectory_init: ['\u6b63\u5728\u521d\u59cb\u5316\u8f68\u8ff9', 'Running trajectory initialization'],
+        trajectory_refine: ['\u6b63\u5728\u4f18\u5316\u8f68\u8ff9', 'Running trajectory refinement'],
+        seed_planning: ['\u6b63\u5728\u5e03\u6e90', 'Running seed planning'],
+        dose_calc: ['\u6b63\u5728\u8ba1\u7b97\u5242\u91cf', 'Running dose calculation'],
+        dose_eval: ['\u6b63\u5728\u8bc4\u4f30\u5242\u91cf', 'Running dose evaluation'],
+    };
+    if (active && activeLabels[active]) setStatus(activeLabels[active][0], activeLabels[active][1], 'running');
+    else if (!hasCtPath) setStatus('\u8bf7\u5148\u52a0\u8f7d CT \u56fe\u50cf\u3002', 'Load a CT image to enable the manual workflow.', 'warn');
+    else if (ctLoading) setStatus('CT \u6b63\u5728\u52a0\u8f7d\uff0c\u6309\u94ae\u5c06\u5728\u5c31\u7eea\u540e\u542f\u7528\u3002', 'CT is loading; workflow buttons will enable when it is ready.', 'warn');
+    else if (!ctvDone) setStatus('CT \u5df2\u5c31\u7eea\uff0cCTV \u548c OAR \u5206\u5272\u53ef\u5206\u522b\u6267\u884c\u3002', 'CT is ready; CTV and OAR segmentation can run independently.');
+    else if (!oarDone) setStatus('CTV \u5df2\u5b8c\u6210\uff0cOAR \u53ef\u72ec\u7acb\u5206\u5272\uff1b\u53ef\u7ee7\u7eed\u8f68\u8ff9\u89c4\u5212\u3002', 'CTV is complete; OAR can run independently, and trajectory planning is available.');
+    else if (!trajInit) setStatus('CTV/OAR \u5df2\u5c31\u7eea\uff0c\u53ef\u5f00\u59cb\u8f68\u8ff9\u521d\u59cb\u5316\u3002', 'CTV/OAR are ready; trajectory initialization is available.');
+    else if (!trajRefine) setStatus('\u8f68\u8ff9\u521d\u59cb\u5316\u5df2\u5b8c\u6210\uff0c\u53ef\u5f00\u59cb\u4f18\u5316\u3002', 'Trajectory initialization is complete; refinement is available.');
+    else if (!seeds) setStatus('\u8f68\u8ff9\u4f18\u5316\u5df2\u5b8c\u6210\uff0c\u53ef\u5f00\u59cb\u7c92\u5b50\u5e03\u6e90\u3002', 'Trajectory refinement is complete; seed planning is available.');
+    else if (!dose) setStatus('\u7c92\u5b50\u5e03\u6e90\u5df2\u5b8c\u6210\uff0c\u53ef\u5f00\u59cb\u5242\u91cf\u8ba1\u7b97\u3002', 'Seed planning is complete; dose calculation is available.');
+    else if (!evalDone) setStatus('\u5242\u91cf\u8ba1\u7b97\u5df2\u5b8c\u6210\uff0c\u53ef\u5f00\u59cb\u5242\u91cf\u8bc4\u4f30\u3002', 'Dose calculation is complete; dose evaluation is available.');
+    else setStatus('\u6240\u6709\u624b\u52a8\u6d41\u7a0b\u6b65\u9aa4\u5df2\u5b8c\u6210\u3002', 'All manual workflow steps are complete.');
 }
 
 // Wire the Step-by-Step section: re-evaluate button state when the

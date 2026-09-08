@@ -777,6 +777,12 @@ def test_frontend_exposes_three_export_levels_and_real_mutations():
 
     assert "moveSelectedStructures('ctv')" in viewer
     assert "moveSelectedStructures('oar')" in viewer
+    assert "const genericSelected = [...new Set(" in viewer
+    assert "moveSelectedMasks(classification, genericSelected)" in viewer
+    assert "const mapped = String(node?.objectId || '').trim();" in viewer
+    assert "const canonicalNodeId = typeof _dataTreeObjectId === 'function'" in (
+        root / "web" / "app" / "static" / "js" / "brachybot-ui-api.js"
+    ).read_text(encoding="utf-8")
     assert "/data/objects/batch-delete" in viewer
     assert "exportSelectedDataTreeItems" in viewer
     assert "exportDataTreeGroup" in viewer

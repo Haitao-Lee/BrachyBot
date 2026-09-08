@@ -890,7 +890,23 @@ def is_current_planning_assessment_query(message: str) -> bool:
     answered with the unrelated "which Planning was used" template.
     """
     text = re.sub(r"\s+", " ", str(message or "").strip().lower())
-    if not text or not _is_interrogative(text):
+    if not text:
+        return False
+    # Polite requests such as "评价一下当前规划结果" are read-only
+    # assessment turns even without a question mark. Keep them on the same
+    # grounded local-read path as explicit questions instead of treating them
+    # as a planning command.
+    non_interrogative_assessment = bool(re.search(
+        r"(?:\u8bc4\u4ef7|\u8bc4\u4f30|\u5206\u6790|\u5ba1\u67e5|\u590d\u6838|\u70b9\u8bc4|\u5efa\u8bae).{0,24}"
+        r"(?:\u89c4\u5212|\u8ba1\u5212|\u65b9\u6848|\u7ed3\u679c|\u5242\u91cf|\u9776\u533a|\u7c92\u5b50|\u9488\u9053)|"
+        r"(?:\u89c4\u5212|\u8ba1\u5212|\u65b9\u6848|\u7ed3\u679c|\u5242\u91cf|\u9776\u533a|\u7c92\u5b50|\u9488\u9053).{0,24}"
+        r"(?:\u8bc4\u4ef7|\u8bc4\u4f30|\u5206\u6790|\u5ba1\u67e5|\u590d\u6838|\u70b9\u8bc4|\u5efa\u8bae)|"
+        r"(?:evaluate|assess|review|analy[sz]e).{0,24}(?:plan|planning|dose|result)|"
+        r"(?:advice|recommendations?).{0,24}(?:plan|planning|dose|result)",
+        text,
+        flags=re.IGNORECASE,
+    ))
+    if not _is_interrogative(text) and not non_interrogative_assessment:
         return False
     if is_planning_reexecution_request(text) or _has_explicit_planning_action(text):
         return False
@@ -901,7 +917,7 @@ def is_current_planning_assessment_query(message: str) -> bool:
     ))
     has_assessment_marker = bool(re.search(
         r"(?:problem|problems|issue|issues|concern|concerns|wrong|abnormal|"
-        r"risk|quality|status|assessment|assess|review|check|acceptable|"
+        r"risk|quality|status|assessment|assess|evaluate|review|analy[sz]e|advice|recommendation|check|acceptable|"
         r"any\s+(?:issue|problem)|what.{0,12}(?:wrong|problem)|"
         r"\u95ee\u9898|\u6bdb\u75c5|\u5f02\u5e38|\u98ce\u9669|\u9690\u60a3|\u7f3a\u9679|\u4e0d\u8db3|\u8d28\u91cf|\u72b6\u6001|\u8bc4\u4f30|\u8bc4\u4ef7|\u68c0\u67e5|"
         r"\u590d\u6838|\u5173\u6ce8|\u9700\u8981\u6ce8\u610f|\u662f\u5426\u5408\u7406|\u662f\u5426\u6b63\u5e38|\u600e\u4e48\u6837)",
@@ -1843,6 +1859,42 @@ def classify_local_turn(
             execution_grants=frozenset({"surgical_guide"}),
         )
 
+    # A full clinical-planning request owns the turn before the generic UI
+    # capability resolver. The live Data Tree catalogue deliberately exposes
+    # context actions (including Rename) for many nodes; letting that
+    # catalogue run first can mistake incidental words such as "CT" and
+    # "execute" for a node action and prevent the planning workflow from ever
+    # receiving its execution grants.
+    planning = _contains_any(lower, (
+        "\u6267\u884c\u89c4\u5212", "\u5f00\u59cb\u89c4\u5212", "\u91cd\u65b0\u89c4\u5212", "\u7c92\u5b50\u690d\u5165\u89c4\u5212", "\u6cbb\u7597\u8ba1\u5212",
+        "\u6267\u884c\u653e\u5c04\u6027\u7c92\u5b50\u690d\u5165\u89c4\u5212",
+        "\u653e\u5c04\u6027\u7c92\u5b50\u690d\u5165\u89c4\u5212",
+        "planning_pipeline", "brachytherapy plan", "treatment plan", "replan",
+    ))
+    if planning:
+        if not _is_canonical_execution_command(text, operation="planning"):
+            return _semantic_action_policy(complexity="high", review=True)
+        return LocalTurnPolicy(
+            "clinical_planning",
+            "high",
+            True,
+            False,
+            True,
+            CLINICAL_TOOLS,
+            direct_execution=True,
+            execution_grants=frozenset({
+                "ctv_segmentation", "oar_segmentation", "planning_pipeline", "surgical_guide",
+            }),
+            workflow_grants=frozenset({"clinical_planning"}),
+            action_plan=ActionPlan.from_tools(
+                ("ctv_segmentation", "oar_segmentation", "planning_pipeline", "surgical_guide"),
+                source="clinical_workflow_fast_path",
+                dependencies={
+                    "planning_pipeline": ("ctv_segmentation", "oar_segmentation"),
+                    "surgical_guide": ("planning_pipeline",),
+                },
+            ),
+        )
     # Imperative UI mutations are resolved against the live capability
     # catalogue after domain-specific clinical/report actions have had the
     # first opportunity to claim their own workflow.  This ordering is
@@ -1944,12 +1996,6 @@ def classify_local_turn(
         "\u80f0\u817a", "\u809d", "\u80be", "\u80ba", "\u7ed3\u80a0", "\u524d\u5217\u817a",
     )):
         segmentation = True
-    planning = _contains_any(lower, (
-        "执行规划", "开始规划", "重新规划", "粒子植入规划", "治疗计划",
-        "\u6267\u884c\u653e\u5c04\u6027\u7c92\u5b50\u690d\u5165\u89c4\u5212",
-        "\u653e\u5c04\u6027\u7c92\u5b50\u690d\u5165\u89c4\u5212",
-        "planning_pipeline", "brachytherapy plan", "treatment plan", "replan",
-    ))
     clinical_advice = _contains_any(lower, (
         "临床", "指南", "处方剂量", "oar", "d90", "v100", "v150", "v200",
         "剂量限值", "治疗适应证", "clinical", "guideline", "prescription dose",
@@ -1969,35 +2015,6 @@ def classify_local_turn(
         "monitor", "training mode", "start monitoring", "stop monitoring",
         "停止监测", "开始监测", "结束监测", "停止监控", "监测",
     ))
-    if planning:
-        if not _is_canonical_execution_command(text, operation="planning"):
-            return _semantic_action_policy(complexity="high", review=True)
-        # A full planning request has an unambiguous local execution path
-        # (CTV/OAR -> planning pipeline).  Sending it through the remote
-        # multi-agent router first adds a second LLM round-trip of tens of
-        # seconds without improving the safety gates: review and completeness
-        # checks still run after the actual plan is produced.
-        return LocalTurnPolicy(
-            "clinical_planning",
-            "high",
-            True,
-            False,
-            True,
-            CLINICAL_TOOLS,
-            direct_execution=True,
-            execution_grants=frozenset({
-                "ctv_segmentation", "oar_segmentation", "planning_pipeline", "surgical_guide",
-            }),
-            workflow_grants=frozenset({"clinical_planning"}),
-            action_plan=ActionPlan.from_tools(
-                ("ctv_segmentation", "oar_segmentation", "planning_pipeline", "surgical_guide"),
-                source="clinical_workflow_fast_path",
-                dependencies={
-                    "planning_pipeline": ("ctv_segmentation", "oar_segmentation"),
-                    "surgical_guide": ("planning_pipeline",),
-                },
-            ),
-        )
     if segmentation:
         resumes_clarified_action = bool(
             pending_tumor_site and not _requires_semantic_resolution(text)

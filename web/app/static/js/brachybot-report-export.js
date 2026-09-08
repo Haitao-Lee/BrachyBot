@@ -54,6 +54,12 @@ function _composite2DViewerCanvas(axis, options = {}) {
             ? Math.max(0, Math.min(1, captureDoseOpacity))
             : liveOpacity;
         if (style?.display === 'none' || style?.visibility === 'hidden' || opacity <= 0) return;
+        // During a network fallback the live viewer deliberately holds the
+        // last committed contour frame to avoid a visible blink while the
+        // requested slice is loading. Do not export that held frame as if it
+        // belonged to the requested slice; the next capture after the
+        // current contour commits will include it normally.
+        if (id.startsWith('contourCanvas') && layer.dataset?.contourPending === 'true') return;
         try {
             ctx.save();
             ctx.globalAlpha = Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 1;
@@ -223,8 +229,11 @@ async function reportAutoFill(options = {}) {
         if (m.ctv_voxels !== undefined) f.segmentation.ctvVoxels = m.ctv_voxels;
         // Dose-grid voxel counts are not guaranteed to use the original CT
         // spacing. Use the source volume persisted by the segmentation chain.
-        if (Number.isFinite(Number(m.ctv_volume_mm3))) {
-            f.case.ctvVolumeMm3 = Number(m.ctv_volume_mm3);
+        const authoritativeCtvVolume = typeof window.getAuthoritativeCtvVolumeMm3 === 'function'
+            ? window.getAuthoritativeCtvVolumeMm3()
+            : m.ctv_volume_mm3;
+        if (Number.isFinite(Number(authoritativeCtvVolume)) && Number(authoritativeCtvVolume) > 0) {
+            f.case.ctvVolumeMm3 = Number(authoritativeCtvVolume);
         }
         if (m.v100 !== undefined) f.metrics.v100 = m.v100 * 100;
         if (m.d90 !== undefined) f.metrics.d90 = m.d90;
@@ -471,7 +480,7 @@ function _localizedEmptyReportForm(language) {
         metrics: { v100: null, d90: null, d95: null, v150: null, v200: null, ci: null, hi: null, gi: null, score: null },
         // Persist the rendered quality columns with the report. Rebuilding
         // these cells from in-memory rationale loses them after restore.
-        qualityAssessment: { version: 2, language: language, generatedAt: 0, inputFingerprint: '', metrics: {} },
+        qualityAssessment: { version: 3, language: language, generatedAt: 0, inputFingerprint: '', metrics: {} },
         oarDose: [],
         interpretation: '',
         safety: '',
@@ -552,11 +561,111 @@ function reportLoadJSON() {
 }
 
 // ----- 16. Markdown → safe HTML -----
+function _renderReportMarkdownWithMarked(md) {
+    if (!md || typeof marked === 'undefined' || !marked || typeof marked.parse !== 'function') {
+        return '';
+    }
+    const renderer = new marked.Renderer();
+    const addClass = (html, tag, className) => {
+        const re = new RegExp('^<' + tag + '(?=\\s|>)');
+        return String(html).replace(re, '<' + tag + ' class="' + className + '"');
+    };
+    renderer.heading = (text, level) => {
+        const depth = Math.max(1, Math.min(6, Number(level) || 3));
+        return '<h' + depth + ' class="md-report-heading md-report-h' + depth + '">'
+            + text + '</h' + depth + '>';
+    };
+    renderer.paragraph = text => '<p class="md-report-p">' + text + '</p>';
+    const renderList = renderer.list.bind(renderer);
+    renderer.list = (body, ordered, start) => {
+        const tag = ordered ? 'ol' : 'ul';
+        return addClass(renderList(body, ordered, start), tag, 'md-report-' + tag);
+    };
+    const renderListItem = renderer.listitem.bind(renderer);
+    renderer.listitem = (text, task, checked) =>
+        addClass(renderListItem(text, task, checked), 'li', 'md-report-list-item');
+    const renderTable = renderer.table.bind(renderer);
+    renderer.table = (header, body) =>
+        addClass(renderTable(header, body), 'table', 'md-report-table');
+    const renderBlockquote = renderer.blockquote.bind(renderer);
+    renderer.blockquote = quote =>
+        addClass(renderBlockquote(quote), 'blockquote', 'md-report-blockquote');
+    const renderCode = renderer.code.bind(renderer);
+    renderer.code = (code, language, escaped) =>
+        addClass(renderCode(code, language, escaped), 'pre', 'md-report-code');
+    renderer.hr = () => '<hr class="md-report-hr">';
+    renderer.del = text => '<s>' + text + '</s>';
+    try {
+        const rendered = marked.parse(String(md).replace(/\r\n?/g, '\n'), {
+            renderer,
+            gfm: true,
+            breaks: false,
+            headerIds: false,
+            mangle: false,
+        });
+        // Reuse the application sanitizer so report fields cannot introduce
+        // raw HTML, event handlers, or unsafe URLs.
+        if (typeof _sanitizeHtml === 'function') return _sanitizeHtml(rendered);
+        return rendered;
+    } catch (error) {
+        console.warn('report Markdown rendering failed:', error);
+        return '';
+    }
+}
+
 function _renderMarkdown(md) {
     if (!md) return '';
+    const parsed = _renderReportMarkdownWithMarked(md);
+    if (parsed) return parsed;
+    return _renderMarkdownLegacy(md);
+}
+
+function _reportHeadingKey(value) {
+    return String(value || '')
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&(?:lt|gt);/gi, ' ')
+        .replace(/^\s*(?:section\s*)?\d+\s*[.)：:-]?\s*/i, '')
+        .toLowerCase()
+        .replace(/&/g, 'and')
+        .replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+// The report template already prints the clinical-interpretation section
+// title. Auto-generated Markdown can start with the same title either as a
+// heading or as a bold-only paragraph, so remove only that leading,
+// semantically identical block and preserve all real subsection headings.
+function _renderReportInterpretation(md, sectionTitle) {
+    const rendered = _renderMarkdown(md);
+    if (!rendered) return '';
+    const expected = _reportHeadingKey(sectionTitle);
+    if (!expected) return rendered;
+    const withoutHeading = rendered.replace(
+        /^\s*<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>\s*/i,
+        (full, level, inner) => {
+            const candidate = _reportHeadingKey(inner);
+            return candidate === expected
+                ? ''
+                : full;
+        },
+    );
+    return withoutHeading.replace(
+        /^\s*<p\b[^>]*>\s*<(strong|b)\b[^>]*>([\s\S]*?)<\/\1>\s*<\/p>\s*/i,
+        (full, tag, inner) => _reportHeadingKey(inner) === expected ? '' : full,
+    );
+}
+
+function _renderMarkdownLegacy(md) {
+    if (!md) return '';
     let html = escHtml(md);
-    html = html.replace(/^## (.+)$/gm, '<h3 style="font-size:10.5pt;margin:4px 0 2px 0;color:#0c4a6e;">$1</h3>');
-    html = html.replace(/^# (.+)$/gm, '<h2 style="font-size:11pt;margin:6px 0 3px 0;color:#0c4a6e;">$1</h2>');
+    html = html.replace(/^(#{1,6})[ \t]+(.+)$/gm, (match, hashes, title) => {
+        const level = Math.min(6, hashes.length);
+        const tag = level === 1 ? 'h2' : level === 2 ? 'h3' : 'h4';
+        const cleanTitle = title.replace(/[ \t]+#+[ \t]*$/, '');
+        return '<' + tag + ' style="font-size:10.5pt;margin:4px 0 2px 0;color:#0c4a6e;">'
+            + cleanTitle + '</' + tag + '>';
+    });
     html = html.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
     html = html.replace(/\*(.+?)\*/g, '<i>$1</i>');
     html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, t, u) => {
@@ -575,19 +684,125 @@ function _renderMarkdown(md) {
 }
 
 // ----- 17. Render the multi-page A4 preview -----
+function _isLegacyMetricPlaceholder(row) {
+    if (!row || typeof row !== 'object') return false;
+    const reference = String(row.reference || '').trim().toLowerCase();
+    const status = String(row.statusText || '').trim().toLowerCase();
+    return reference === 'see cited case criteria'
+        || reference === 'not defined by current source'
+        || status === 'not assessed';
+}
+
 function _storedMetricAssessment(form, metricKey) {
+    // Version 1/2 rows and old v3 hydration placeholders are not facts.
+    // Rebuild them from the current rationale after restart.
+    if (Number(form?.qualityAssessment?.version || 0) < 3) return null;
     const stored = form?.qualityAssessment?.metrics?.[metricKey];
     if (!stored || typeof stored !== 'object') return null;
+    if (_isLegacyMetricPlaceholder(stored)) return null;
     if (!Object.prototype.hasOwnProperty.call(stored, 'reference')
         && !Object.prototype.hasOwnProperty.call(stored, 'statusText')) return null;
     return {
-        reference: stored.reference == null ? '—' : String(stored.reference),
+        reference: stored.reference == null ? '' : String(stored.reference),
+        referenceIds: Array.isArray(stored.referenceIds) ? stored.referenceIds.map(Number).filter(Number.isFinite) : [],
         statusClass: stored.statusClass || null,
-        statusText: stored.statusText == null ? 'Not assessed' : String(stored.statusText),
+        statusText: stored.statusText == null ? '' : String(stored.statusText),
     };
 }
 
 const _REPORT_QUALITY_METRICS = ['v100', 'd90', 'd95', 'v150', 'v200', 'ci', 'hi', 'gi', 'score'];
+
+function _reportRationaleSourceItems(form) {
+    const rationale = form?.planning?.prescriptionRationale;
+    if (!rationale || typeof rationale !== 'object') return [];
+    const records = Array.isArray(rationale.source_records) && rationale.source_records.length
+        ? rationale.source_records
+        : (Array.isArray(rationale.sources) ? rationale.sources : []);
+    return records.map(item => {
+        if (typeof item === 'string') return { url: item };
+        return item && typeof item === 'object' ? item : {};
+    }).filter(item => /^https?:\/\/.*/i.test(String(item.url || '').trim()));
+}
+
+function _syncReportReferencesFromRationale(form) {
+    if (!form || typeof form !== 'object') return [];
+    const items = _reportRationaleSourceItems(form);
+    if (!items.length) return Array.isArray(form.references) ? form.references : [];
+    if (!Array.isArray(form.references)) form.references = [];
+    const isGeneratedPlaceholder = ref => ref && (
+        !String(ref.title || '').trim()
+        || /^Clinical criterion source(?:\s|\()/i.test(String(ref.title || ''))
+        || ref.publisher === 'Verified clinical source'
+    );
+    items.forEach(item => {
+        const url = String(item.url || '').trim();
+        let catalog = null;
+        try {
+            if (typeof REPORT_REFERENCES_CATALOG !== 'undefined') {
+                catalog = Object.values(REPORT_REFERENCES_CATALOG).find(candidate =>
+                    candidate && String(candidate.url || '').replace(/\/$/, '') === url.replace(/\/$/, ''),
+                ) || null;
+            }
+        } catch (_) {}
+        const title = String(item.title || catalog?.title || url).trim();
+        const publisher = String(item.publisher || catalog?.publisher || '').trim();
+        const year = item.year || catalog?.year || '';
+        let existing = form.references.find(ref =>
+            ref && String(ref.url || '').replace(/\/$/, '') === url.replace(/\/$/, ''),
+        );
+        if (!existing) {
+            existing = {
+                citeKey: 'clinical-kb-' + (form.planning?.prescriptionRationale?.site || 'case') + '-' + (form.references.length + 1),
+                title,
+                publisher,
+                year,
+                url,
+                custom: false,
+            };
+            form.references.push(existing);
+        } else {
+            if (isGeneratedPlaceholder(existing) || !String(existing.title || '').trim()) existing.title = title;
+            if (!String(existing.publisher || '').trim() && publisher) existing.publisher = publisher;
+            if (!existing.year && year) existing.year = year;
+            if (!existing.citeKey) existing.citeKey = 'clinical-kb-' + (form.references.indexOf(existing) + 1);
+        }
+    });
+    return form.references;
+}
+
+function _reportCitationNumbers(form) {
+    const items = _reportRationaleSourceItems(form);
+    if (!items.length || !Array.isArray(form?.references)) return [];
+    const urls = new Set(items.map(item => String(item.url || '').replace(/\/$/, '')));
+    return form.references
+        .map((ref, index) => ({ ref, number: index + 1 }))
+        .filter(item => urls.has(String(item.ref?.url || '').replace(/\/$/, '')))
+        .map(item => item.number);
+}
+
+function _renderMetricReferenceCell(form, assessment, fallback = '—') {
+    const text = String(assessment?.reference || fallback);
+    const ids = Array.isArray(assessment?.referenceIds) && assessment.referenceIds.length
+        ? assessment.referenceIds
+        : _reportCitationNumbers(form);
+    const citationHtml = ids.map(number =>
+        '<a class="report-citation" href="#report-ref-' + Number(number) + '" title="Open reference ' + Number(number) + '">[' + Number(number) + ']</a>',
+    ).join(' ');
+    return escHtml(text) + (citationHtml ? ' ' + citationHtml : '');
+}
+
+function _metricReferenceMarkdown(form, assessment, fallback = 'No reference configured') {
+    const text = String(assessment?.reference || fallback);
+    const ids = Array.isArray(assessment?.referenceIds) && assessment.referenceIds.length
+        ? assessment.referenceIds
+        : _reportCitationNumbers(form);
+    const links = ids.map(number => {
+        const ref = form?.references?.[Number(number) - 1];
+        return ref?.url ? '[' + Number(number) + '](' + ref.url + ')' : '[' + Number(number) + ']';
+    });
+    return text + (links.length ? ' ' + links.join(' ') : '');
+}
+
 
 function _stableReportQualityValue(value) {
     if (value === null || value === undefined) return null;
@@ -623,6 +838,7 @@ function _reportQualityInputFingerprint(form) {
 
 function _hasStoredMetricAssessment(row) {
     if (!row || typeof row !== 'object') return false;
+    if (_isLegacyMetricPlaceholder(row)) return false;
     const reference = row.reference == null ? '' : String(row.reference).trim();
     const statusText = row.statusText == null ? '' : String(row.statusText).trim();
     return reference.length > 0 || statusText.length > 0;
@@ -671,7 +887,7 @@ function reportNeedsSourceBackedQualityRefresh(form) {
     return ['v100', 'd90', 'v150', 'v200'].some(key => {
         const row = assessment?.metrics?.[key] || {};
         const reference = String(row.reference || '').trim().toLowerCase();
-        return reference === 'see cited case criteria';
+        return !reference || reference === 'see cited case criteria' || reference === 'not defined by current source';
     });
 }
 window.reportNeedsSourceBackedQualityRefresh = reportNeedsSourceBackedQualityRefresh;
@@ -682,45 +898,63 @@ function _sourceBackedMetricAssessment(form, metricKey, value, options = {}) {
         const rawStored = form?.qualityAssessment?.metrics?.[metricKey];
         if (stored && _hasStoredMetricAssessment(rawStored)) return stored;
     }
+    _syncReportReferencesFromRationale(form);
     const rationale = form?.planning?.prescriptionRationale || {};
-    const criteria = rationale.target_criteria || {};
-    const sources = Array.isArray(rationale.sources) ? rationale.sources : [];
-    const notAssessed = form?.language === 'zh' ? '未评估' : 'Not assessed';
-    if (!sources.length || !criteria || typeof criteria !== 'object') {
-        return { reference: form?.language === 'zh' ? '见病例引用标准' : 'See cited case criteria', statusClass: null, statusText: notAssessed };
+    const criteria = rationale.target_criteria && typeof rationale.target_criteria === 'object'
+        ? rationale.target_criteria : {};
+    const referenceIds = _reportCitationNumbers(form);
+    const zh = form?.language === 'zh';
+    const numericValue = Number(value);
+    const noSource = zh ? '未配置部位特异性来源' : 'No site-specific source configured';
+    const noCriterion = zh ? '未配置具体阈值' : 'No configured criterion';
+    const informational = zh ? '仅供参考—未配置阈值' : 'Informational — no criterion configured';
+    const notAssessed = zh ? '未评估—未配置部位特异性来源' : 'Not assessed — no site-specific source';
+    if (!Number.isFinite(numericValue)) {
+        return {
+            reference: noCriterion,
+            referenceIds,
+            statusClass: null,
+            statusText: zh ? '无观测值' : 'No observed value',
+        };
     }
     let threshold = null;
     let reference = '';
     let passed = null;
-    const numericValue = Number(value);
-    if (!Number.isFinite(numericValue)) return { reference: '—', statusClass: null, statusText: notAssessed };
     if (metricKey === 'v100' && Number.isFinite(Number(criteria.v100_min))) {
         threshold = Number(criteria.v100_min) * 100;
-        reference = `≥ ${threshold.toFixed(1)} %`;
+        reference = '≥ ' + threshold.toFixed(1) + ' %';
         passed = numericValue >= threshold;
     } else if (metricKey === 'v150' && Number.isFinite(Number(criteria.v150_max))) {
         threshold = Number(criteria.v150_max) * 100;
-        reference = `≤ ${threshold.toFixed(1)} %`;
+        reference = '≤ ' + threshold.toFixed(1) + ' %';
         passed = numericValue <= threshold;
     } else if (metricKey === 'v200' && Number.isFinite(Number(criteria.v200_max))) {
         threshold = Number(criteria.v200_max) * 100;
-        reference = `≤ ${threshold.toFixed(1)} %`;
+        reference = '≤ ' + threshold.toFixed(1) + ' %';
         passed = numericValue <= threshold;
     } else if (metricKey === 'd90' && Number.isFinite(Number(criteria.d90_min_pct))) {
         const rxGy = Number(form?.planning?.prescriptionGy);
         if (Number.isFinite(rxGy) && rxGy > 0) {
             threshold = Number(criteria.d90_min_pct) * rxGy;
-            reference = `≥ ${(Number(criteria.d90_min_pct) * 100).toFixed(0)}% Rx (${threshold.toFixed(1)} Gy)`;
+            reference = '≥ ' + (Number(criteria.d90_min_pct) * 100).toFixed(0) + '% Rx (' + threshold.toFixed(1) + ' Gy)';
             passed = numericValue >= threshold;
         }
     }
     if (passed === null) {
-        return { reference: form?.language === 'zh' ? '当前来源未定义' : 'Not defined by current source', statusClass: null, statusText: notAssessed };
+        return {
+            reference: referenceIds.length ? noCriterion : noSource,
+            referenceIds,
+            statusClass: null,
+            statusText: referenceIds.length ? informational : notAssessed,
+        };
     }
     return {
         reference,
+        referenceIds,
         statusClass: passed ? 'pass' : 'warn',
-        statusText: passed ? (form?.language === 'zh' ? '符合' : 'Meets criterion') : (form?.language === 'zh' ? '需复核' : 'Needs review'),
+        statusText: passed
+            ? (zh ? '符合标准' : 'Meets criterion')
+            : (zh ? '低于标准，需复核' : 'Below criterion — review required'),
     };
 }
 
@@ -760,7 +994,7 @@ function _sourceBackedOarAssessment(form, row) {
 }
 
 function _defaultMetricAssessment(form, metricKey, value) {
-    if (['v100', 'd90', 'v150', 'v200'].includes(metricKey)) {
+    if (metricKey !== 'score') {
         return _sourceBackedMetricAssessment(form, metricKey, value, { ignoreStored: true });
     }
     if (metricKey === 'score') {
@@ -779,6 +1013,7 @@ function _defaultMetricAssessment(form, metricKey, value) {
 
 function syncReportQualityAssessment(form, options = {}) {
     if (!form || typeof form !== 'object') return null;
+    _syncReportReferencesFromRationale(form);
     const language = form.language || 'en';
     const metricKeys = _REPORT_QUALITY_METRICS;
     const values = form.metrics || {};
@@ -788,8 +1023,11 @@ function syncReportQualityAssessment(form, options = {}) {
     const hasStoredRows = _hasStoredQualityAssessment(previous);
     const hasSourceContext = _reportHasSourceContext(form);
     const fingerprintMatches = previous?.inputFingerprint === inputFingerprint;
+    const hasLegacyPlaceholders = previous?.metrics
+        && _REPORT_QUALITY_METRICS.some(key => _isLegacyMetricPlaceholder(previous.metrics[key]));
     const unchanged = previous
-        && (previous.version === 1 || previous.version === 2)
+        && previous.version === 3
+        && !hasLegacyPlaceholders
         && previous.language === language
         && previous.inputFingerprint === inputFingerprint
         && metricsMatch
@@ -804,6 +1042,7 @@ function syncReportQualityAssessment(form, options = {}) {
     if (options.preserveStored !== false
         && options.refreshCriteria !== true
         && hasStoredRows
+        && previous.version === 3
         && metricsMatch
         && previous.language === language) return previous;
 
@@ -814,6 +1053,7 @@ function syncReportQualityAssessment(form, options = {}) {
         const previousRow = previous?.metrics?.[key];
         const preservePreviousRow = options.preserveStored !== false
             && options.refreshCriteria !== true
+            && previous?.version === 3
             && previous?.language === language
             && _hasStoredMetricAssessment(previousRow)
             && _normalizedReportMetricValue(previousRow.value) === value;
@@ -822,7 +1062,7 @@ function syncReportQualityAssessment(form, options = {}) {
             : { value, ..._defaultMetricAssessment(form, key, value) };
     });
     form.qualityAssessment = {
-        version: 2,
+        version: 3,
         language,
         generatedAt: Date.now(),
         inputFingerprint,
@@ -885,9 +1125,25 @@ function _reportFigurePageOrientation() {
     return REPORT_PAGE_ORIENTATION;
 }
 
+function _reportFigureIsInvalidForExport(figure) {
+    if (!figure || figure._invalidCapture) return true;
+    const axis = String(figure.axis || '');
+    const expectedContract = typeof window.reportFigureCaptureContractForAxis === 'function'
+        ? String(window.reportFigureCaptureContractForAxis(axis) || '') : '';
+    if (expectedContract && String(figure.captureContract || '') !== expectedContract) return true;
+    const expectedProfile = typeof window.reportFigureCaptureProfileForAxis === 'function'
+        ? String(window.reportFigureCaptureProfileForAxis(axis) || '') : '';
+    if (expectedProfile && String(figure.captureProfile || '') !== expectedProfile) return true;
+    if (axis === 'report_fig2_dose_surface') {
+        return String(figure.displayMode || '') !== 'dose_surface'
+            || String(figure.renderSignature || '') !== 'dose_texture_vertex_colors';
+    }
+    return false;
+}
+
 function _reportFiguresForGroup(form, group) {
     const rows = (Array.isArray(form?.figures) ? form.figures : [])
-        .filter(figure => figure && _reportFigureGroup(figure) === group);
+        .filter(figure => !_reportFigureIsInvalidForExport(figure) && _reportFigureGroup(figure) === group);
     // A legacy composite is useful for old Sessions only. As soon as native
     // subfigures exist, never display the downsampled composite beside them.
     const nativePrefix = group === 'figure1' ? 'report_fig1_' : 'report_fig2_';
@@ -914,6 +1170,257 @@ function _reportFiguresForGroup(form, group) {
         return true;
     });
 }
+
+/*
+ * A report page is a physical A4 sheet, not an unbounded HTML container.
+ * The old renderer put the complete OAR/interpretation/safety sections into
+ * one fixed-height page and relied on `overflow: hidden`.  That made a long
+ * interpretation run underneath the footer and disappear from the PDF.  It
+ * also forced the next section onto a fresh sheet even when the current sheet
+ * still had useful space.
+ *
+ * Keep the physical-page contract, but paginate the flowable text sections
+ * after the DOM has its real font metrics.  The paginator is deliberately
+ * independent of the report language and of the source data: it works with
+ * section blocks, measured available space, and cloned table/list fragments.
+ * That means longer patient names, translated text, more OARs, or an expanded
+ * interpretation all use the same safe path.
+ */
+function _reportFlowAvailableHeight(page, body) {
+    const pageRect = page?.getBoundingClientRect?.();
+    const bodyRect = body?.getBoundingClientRect?.();
+    if (!pageRect || !bodyRect || pageRect.height <= 0) return null;
+    const footer = page.querySelector('.hp-page-footer');
+    const footerRect = footer?.getBoundingClientRect?.();
+    const bottom = footerRect?.top ?? (pageRect.bottom - 6);
+    return Math.max(0, bottom - bodyRect.top - 2);
+}
+
+function _reportFlowFits(record) {
+    const available = _reportFlowAvailableHeight(record.page, record.body);
+    // A hidden report tab has no measurable geometry yet.  Leave its DOM
+    // intact and let the next animation-frame pass paginate after it opens.
+    if (available === null) return null;
+    return record.body.scrollHeight <= available + 0.5;
+}
+
+function _reportFlowSplitNode(node, documentRef) {
+    const tag = String(node?.tagName || '').toLowerCase();
+    const children = tag === 'table'
+        ? Array.from(node?.tBodies?.[0]?.rows || [])
+        : Array.from(node?.children || []);
+    if (!children.length || !['table', 'ul', 'ol'].includes(tag)) {
+        return [node.cloneNode(true)];
+    }
+
+    // A very long list/table is still one semantic block, but it can be
+    // continued safely with its header/list semantics preserved.  This also
+    // prevents a single OAR table or reference list from being taller than a
+    // physical page when the case contains many rows.
+    const chunkSize = tag === 'table' ? 12 : 8;
+    const chunks = [];
+    for (let offset = 0; offset < children.length; offset += chunkSize) {
+        const clone = node.cloneNode(false);
+        if (tag === 'table') {
+            if (node.tHead) clone.appendChild(node.tHead.cloneNode(true));
+            const tbody = documentRef.createElement('tbody');
+            children.slice(offset, offset + chunkSize).forEach(row => {
+                tbody.appendChild(row.cloneNode(true));
+            });
+            clone.appendChild(tbody);
+        } else {
+            children.slice(offset, offset + chunkSize).forEach(item => {
+                clone.appendChild(item.cloneNode(true));
+            });
+        }
+        chunks.push(clone);
+    }
+    return chunks.length ? chunks : [node.cloneNode(true)];
+}
+
+function _reportFlowSectionInfo(section, documentRef) {
+    const heading = section.querySelector(':scope > .hp-section-title');
+    const body = section.querySelector(':scope > .hp-section-body');
+    const bodyChildren = body
+        ? Array.from(body.children)
+        : Array.from(section.children).filter(node => node !== heading);
+    const units = bodyChildren.flatMap(node => _reportFlowSplitNode(node, documentRef));
+    if (!units.length && body && body.innerHTML.trim()) {
+        units.push(...Array.from(body.children).map(node => node.cloneNode(true)));
+    }
+    return {
+        template: section,
+        heading: heading ? heading.cloneNode(true) : null,
+        units,
+    };
+}
+
+function _reportFlowFragment(info, units, includeHeading, documentRef) {
+    const section = info.template.cloneNode(false);
+    if (includeHeading && info.heading) section.appendChild(info.heading.cloneNode(true));
+    const body = documentRef.createElement('div');
+    body.className = 'hp-section-body';
+    units.forEach(unit => body.appendChild(unit.cloneNode(true)));
+    section.appendChild(body);
+    return section;
+}
+
+function _reportFlowPage(template, documentRef) {
+    const page = template.cloneNode(false);
+    page.innerHTML = '';
+    const header = template.querySelector('.hp-running-header');
+    if (header) page.appendChild(header.cloneNode(true));
+    const body = documentRef.createElement('div');
+    body.className = 'report-flow-page-body';
+    page.appendChild(body);
+    const footer = template.querySelector('.hp-page-footer');
+    if (footer) page.appendChild(footer.cloneNode(true));
+    return { page, body, activeSection: null, sectionTitles: [] };
+}
+
+function _reportFlowUpdateHeader(record, info) {
+    const title = String(info.heading?.textContent || '').trim();
+    if (!title || record.sectionTitles.includes(title)) return;
+    record.sectionTitles.push(title);
+    const right = record.page.querySelector('.hp-running-header .right');
+    if (right) right.textContent = record.sectionTitles.join(' · ');
+}
+
+function _paginateReportFlow(pagesEl, labels = {}) {
+    if (!pagesEl) return false;
+    const sourcePages = Array.from(pagesEl.querySelectorAll('.report-flow-page'));
+    if (!sourcePages.length) return false;
+    const documentRef = pagesEl.ownerDocument || document;
+    const template = sourcePages[0];
+    const sectionNodes = sourcePages.flatMap(page => {
+        const body = page.querySelector('.report-flow-page-body');
+        return body
+            ? Array.from(body.children).filter(node => node.classList.contains('report-flow-section'))
+            : [];
+    });
+    const sections = [];
+    sectionNodes.forEach((section, index) => {
+        const info = _reportFlowSectionInfo(section, documentRef);
+        const key = String(section.dataset.reportFlowKey || `section-${index}`);
+        const previous = sections[sections.length - 1];
+        if (previous && previous.key === key) {
+            previous.units.push(...info.units);
+            if (!previous.heading && info.heading) previous.heading = info.heading;
+            return;
+        }
+        sections.push({ ...info, key });
+    });
+    if (!sections.length) return false;
+
+    const after = sourcePages[sourcePages.length - 1].nextSibling;
+    const replacement = [];
+    let current = null;
+    const makePage = () => {
+        current = _reportFlowPage(template, documentRef);
+        // Candidate pages must be live while they are measured.  A detached
+        // element has no A4 geometry and would make every fit check return
+        // "not measurable", leaving the original overflowing pages in place.
+        pagesEl.insertBefore(current.page, after);
+        replacement.push(current.page);
+        return current;
+    };
+    makePage();
+
+    for (const info of sections) {
+        let unitIndex = 0;
+        let firstFragment = true;
+        while (unitIndex < info.units.length || (firstFragment && !info.units.length)) {
+            // A logical section gets one prominent heading. Continuation pages
+            // retain the small running header, which already identifies it.
+            const includeHeading = firstFragment;
+            let fitCount = 0;
+            const remaining = info.units.length - unitIndex;
+            for (let count = 1; count <= Math.max(1, remaining); count += 1) {
+                const trialUnits = info.units.slice(unitIndex, unitIndex + count);
+                const trial = _reportFlowFragment(info, trialUnits, includeHeading, documentRef);
+                current.body.appendChild(trial);
+                const fits = _reportFlowFits(current);
+                trial.remove();
+                if (fits === null) {
+                    // The first pass may run while the Report tab is hidden.
+                    // Remove the live candidate before retrying later, or an
+                    // empty extra sheet would briefly remain in the preview.
+                    replacement.forEach(page => page.remove());
+                    return false;
+                }
+                if (!fits) break;
+                fitCount = count;
+            }
+
+            if (fitCount > 0) {
+                const fragment = _reportFlowFragment(
+                    info,
+                    info.units.slice(unitIndex, unitIndex + fitCount),
+                    includeHeading,
+                    documentRef,
+                );
+                current.body.appendChild(fragment);
+                _reportFlowUpdateHeader(current, info);
+                unitIndex += fitCount;
+                firstFragment = false;
+                current.activeSection = info;
+                continue;
+            }
+
+            // The next unit cannot fit in the remaining space.  Start a fresh
+            // physical sheet.  An oversized single paragraph is kept intact
+            // here; the overflow-safe CSS fallback prevents it from becoming
+            // invisible, while tables/lists have already been subdivided.
+            if (current.body.children.length) {
+                makePage();
+                continue;
+            }
+            if (info.units.length) {
+                current.body.appendChild(_reportFlowFragment(
+                    info,
+                    [info.units[unitIndex]],
+                    includeHeading,
+                    documentRef,
+                ));
+                _reportFlowUpdateHeader(current, info);
+                unitIndex += 1;
+                firstFragment = false;
+                current.activeSection = info;
+            } else {
+                current.body.appendChild(_reportFlowFragment(info, [], includeHeading, documentRef));
+                _reportFlowUpdateHeader(current, info);
+                firstFragment = false;
+            }
+        }
+    }
+
+    sourcePages.forEach(page => page.remove());
+    replacement.forEach(page => pagesEl.insertBefore(page, after));
+
+    const pageLabel = String(labels.page || 'Page');
+    const pageOf = String(labels.pageOf || 'of');
+    const allPages = Array.from(pagesEl.querySelectorAll('.report-page'));
+    allPages.forEach((page, index) => {
+        const pageNo = page.querySelector('.hp-page-footer .pageno');
+        if (pageNo) pageNo.textContent = `— ${pageLabel} ${index + 1} ${pageOf} ${allPages.length} —`;
+    });
+    return true;
+}
+
+// The Report tab can be opened after the first preview render.  In that case
+// the panel may have been display:none while the initial measurement ran, so
+// expose a small, read-only relayout hook for the shell's resize/tab-refresh
+// path.  It never rebuilds report content or touches persisted form values.
+window._reflowReportPages = function _reflowReportPages() {
+    const form = window.reportForm || {};
+    const strings = (typeof REPORT_STRINGS !== 'undefined')
+        ? REPORT_STRINGS[form.language]
+        : null;
+    return _paginateReportFlow(
+        document.getElementById('reportPages'),
+        { page: strings?.page || 'Page', pageOf: strings?.pageOf || 'of' },
+    );
+};
 
 function _updateReportPreview() {
     const pagesEl = document.getElementById('reportPages');
@@ -1085,7 +1592,8 @@ function _updateReportPreview() {
     const t = (key) => escHtml(s[key]);
     const unitGy = (v) => v !== null ? `${v} ${U.Gy}` : ND;
     const unitMm3 = (v) => v !== null ? `${v.toFixed(1)} ${U.mm3}` : ND;
-    const unitMBq = (v) => v !== null ? `${v} ${U.MBq}` : ND;
+    const activityNotRecorded = f.language === 'zh' ? '未记录（计划配置中未提供源活度）' : 'Not recorded in plan configuration';
+    const unitMBq = (v) => v !== null && v !== undefined && Number.isFinite(Number(v)) ? Number(v).toFixed(3) + ' ' + U.MBq : activityNotRecorded;
     const seedsUnit = s.seedsUnitWord ? ' ' + s.seedsUnitWord : '';
     const trajUnit = s.trajUnitWord ? ' ' + s.trajUnitWord : '';
     const aV100 = _sourceBackedMetricAssessment(f, 'v100', f.metrics.v100);
@@ -1107,7 +1615,7 @@ function _updateReportPreview() {
         <h2 class="hp-section-title">${escHtml(targetSection)}${secondaryTitle('Target & Prescription')}</h2>
         <div class="hp-section-body">
             <p class="no-indent"><span class="hp-key">${t('technique')}：</span>${_renderInlineMd(f.planning.technique) || ND}</p>
-            <p class="no-indent"><span class="hp-key">${t('prescriptionDose')}：</span>${f.planning.prescriptionGy !== null ? f.planning.prescriptionGy + ' ' + U.Gy : ND}；
+            <p class="no-indent"><span class="hp-key">${t('prescriptionDose')}：</span>${Number.isFinite(Number(f.planning.prescriptionGy)) ? Number(f.planning.prescriptionGy).toFixed(1) + ' ' + U.Gy : (f.planning.prescriptionStatus === 'resolved_default' ? (f.language === 'zh' ? '已解析，需临床确认' : 'Resolved; clinician verification required') : (f.language === 'zh' ? '未记录' : 'Not recorded'))}；
                 <span class="hp-key">${t('totalSeeds')}：</span>${f.planning.totalSeeds !== null ? f.planning.totalSeeds + seedsUnit : ND}；
                 <span class="hp-key">${t('totalActivity')}：</span>${unitMBq(f.planning.totalActivityMBq)}；
                 <span class="hp-key">${t('trajectories')}：</span>${f.planning.trajectoryCount !== null ? f.planning.trajectoryCount + trajUnit : ND}</p>
@@ -1185,17 +1693,21 @@ function _updateReportPreview() {
                     </tbody>
                 </table>`
                 : `<p class="no-indent">${escHtml(noOarDose)}</p>`;
-            html += `<div class="report-page report-text-page">
+            html += `<div class="report-page report-text-page report-flow-page" data-report-flow-page="true">
                 <div class="hp-running-header"><span>${escHtml(s.confidentiality)}</span><span class="right">${escHtml(oarSection)}${escHtml(headingSuffix)}</span></div>
-                <h2 class="hp-section-title">${escHtml(oarSection)}${escHtml(headingSuffix)}${secondaryTitle('OAR Dose')}</h2>
-                <div class="hp-section-body">
-                    ${pageIndex === 0 && reportOarRows.length > 0
-                        ? `<p class="no-indent">${escHtml(f.language === 'zh'
-                            ? '以下 OAR 数值为观测结果；请依据当前部位适用指南或已确认的病例方案进行临床判读，软件不依据默认值自动给出通过或超限结论。'
-                            : 'The OAR values below are observed metrics. Interpret them against applicable site-specific guidance or a confirmed case protocol; the software does not infer pass/fail from defaults.')}</p>`
-                        : ''}
-                    ${pageIndex > 0 ? `<p class="no-indent hp-continuation-note">${escHtml(continuationText)}</p>` : ''}
-                    ${table}
+                <div class="report-flow-page-body">
+                    <section class="report-flow-section" data-report-flow-key="oar">
+                        <h2 class="hp-section-title">${escHtml(oarSection)}${escHtml(headingSuffix)}${secondaryTitle('OAR Dose')}</h2>
+                        <div class="hp-section-body">
+                            ${pageIndex === 0 && reportOarRows.length > 0
+                                ? `<p class="no-indent">${escHtml(f.language === 'zh'
+                                    ? '以下 OAR 数值为观测结果；请依据当前部位适用指南或已确认的病例方案进行临床判读，软件不依据默认值自动给出通过或超限结论。'
+                                    : 'The OAR values below are observed metrics. Interpret them against applicable site-specific guidance or a confirmed case protocol; the software does not infer pass/fail from defaults.')}</p>`
+                                : ''}
+                            ${pageIndex > 0 ? `<p class="no-indent hp-continuation-note">${escHtml(continuationText)}</p>` : ''}
+                            ${table}
+                        </div>
+                    </section>
                 </div>
                 ${pageFooter(startPageNo + pageIndex)}
             </div>`;
@@ -1206,50 +1718,57 @@ function _updateReportPreview() {
     nextPageNo += oarPageCount;
 
     // ============== PAGE 4: Clinical Interpretation ==============
-    let p4 = `<div class="report-page">
-        <div class="hp-running-header"><span>${escHtml(s.confidentiality)}</span><span class="right">${escHtml(interpretationSection)}</span></div>`;
+    let p4 = `<div class="report-page report-flow-page" data-report-flow-page="true">
+        <div class="hp-running-header"><span>${escHtml(s.confidentiality)}</span><span class="right">${escHtml(interpretationSection)}</span></div>
+        <div class="report-flow-page-body">
+        <section class="report-flow-section" data-report-flow-key="clinical">`;
     if (f.interpretation) {
         p4 += `<h2 class="hp-section-title">${escHtml(interpretationSection)}${secondaryTitle('Clinical Interpretation')}</h2>
-        <div class="hp-section-body">${_renderMarkdown(f.interpretation)}</div>`;
+        <div class="hp-section-body">${_renderReportInterpretation(f.interpretation, interpretationSection)}</div>`;
     } else {
         p4 += `<h2 class="hp-section-title">${escHtml(interpretationSection)}${secondaryTitle('Clinical Interpretation')}</h2>
         <div class="hp-section-body"><p class="no-indent">${escHtml(ND)}</p></div>`;
     }
-    p4 += `${pageFooter(nextPageNo)}</div>`;
+    p4 += `</section>
+        </div>
+        ${pageFooter(nextPageNo)}</div>`;
     nextPageNo += 1;
 
     // ============== PAGE 5: Safety + QA + Methodology + References + Disclaimer + Signatures ==============
-    let p5 = `<div class="report-page">
-        <div class="hp-running-header"><span>${escHtml(s.confidentiality)}</span><span class="right">${escHtml(s.section6)} · ${s.section7}</span></div>`;
+    let p5 = `<div class="report-page report-flow-page" data-report-flow-page="true">
+        <div class="hp-running-header"><span>${escHtml(s.confidentiality)}</span><span class="right">${escHtml(s.section6)} · ${s.section7}</span></div>
+        <div class="report-flow-page-body">`;
     if (f.safety) {
-        p5 += `<h2 class="hp-section-title">${escHtml(s.section6)}${secondaryTitle('Safety & QC')}</h2>
+        p5 += `<section class="report-flow-section" data-report-flow-key="safety"><h2 class="hp-section-title">${escHtml(s.section6)}${secondaryTitle('Safety & QC')}</h2>
         <div class="hp-section-body">${_renderMarkdown(f.safety)}</div>`;
+        p5 += `</section>`;
     }
     if (f.qaNotes) {
-        p5 += `<h2 class="hp-section-title">${escHtml(s.qaNotes)}${secondaryTitle('QA Notes')}</h2>
+        p5 += `<section class="report-flow-section" data-report-flow-key="qa"><h2 class="hp-section-title">${escHtml(s.qaNotes)}${secondaryTitle('QA Notes')}</h2>
         <div class="hp-section-body">${_renderMarkdown(f.qaNotes)}</div>`;
+        p5 += `</section>`;
     }
     // Method (small reference block)
-    p5 += `<h2 class="hp-section-title">${escHtml(s.method)}${secondaryTitle('Methodology')}</h2>
-        <div class="hp-section-body"><ol style="margin:2px 0 2px 18px;padding:0;font-size:9pt;">${s.methodSteps.map(st => `<li style="margin:1.5px 0;">${st}</li>`).join('')}</ol></div>`;
+    p5 += `<section class="report-flow-section" data-report-flow-key="method"><h2 class="hp-section-title">${escHtml(s.method)}${secondaryTitle('Methodology')}</h2>
+        <div class="hp-section-body"><ol style="margin:2px 0 2px 18px;padding:0;font-size:9pt;">${s.methodSteps.map(st => `<li style="margin:1.5px 0;">${st}</li>`).join('')}</ol></div></section>`;
     // References
     if (f.references && f.references.length > 0) {
-        p5 += `<h2 class="hp-section-title">${escHtml(s.section7)}${secondaryTitle('References')}</h2>
+        p5 += `<section class="report-flow-section" data-report-flow-key="references"><h2 class="hp-section-title">${escHtml(s.section7)}${secondaryTitle('References')}</h2>
         <div class="hp-section-body"><ol class="hp-references">${f.references.map((r, i) => {
             const key = r.citeKey || `ref${i+1}`;
             const safeUrl = _safeReportUrl(r.url);
-            return `<li><span class="ref-num">[${i+1}]</span> ${escHtml(r.title || '')}${r.publisher ? ' <i>(' + escHtml(r.publisher) + ')</i>' : ''}${r.year ? ', ' + r.year : ''}.${safeUrl ? ' <a href="' + escHtml(safeUrl) + '" target="_blank" rel="noopener noreferrer">↗</a>' : ''}</li>`;
-        }).join('')}</ol></div>`;
+            return `<li id="report-ref-${i+1}"><span class="ref-num">[${i+1}]</span> ${safeUrl ? '<a href="' + escHtml(safeUrl) + '" target="_blank" rel="noopener noreferrer">' + escHtml(r.title || '') + '</a>' : escHtml(r.title || '')}${r.publisher ? ' <i>(' + escHtml(r.publisher) + ')</i>' : ''}${r.year ? ', ' + r.year : ''}.</li>`;
+        }).join('')}</ol></div></section>`;
     }
     // Disclaimer
-    p5 += `<div class="hp-disclaimer"><b>⚠️ ${escHtml(s.disclaimer)}:</b><br/>${escHtml(s.disclaimerText)}</div>`;
+    p5 += `<section class="report-flow-section" data-report-flow-key="disclaimer"><div class="hp-disclaimer"><b>⚠️ ${escHtml(s.disclaimer)}:</b><br/>${escHtml(s.disclaimerText)}</div></section>`;
     // BrachyBot generates the document but never signs as a clinician. The
     // planning and review fields stay independent and require human identity.
     const safeSignatureUrl = _safeReportImageUrl(f.signature.drawnDataUrl);
     const reviewerSignature = safeSignatureUrl
         ? `<img class="hp-signature-image" src="${escHtml(safeSignatureUrl)}" alt="Reviewer signature"/>`
         : '';
-    p5 += `<h2 class="hp-section-title">${escHtml(s.section9)}${secondaryTitle('Physician Signatures')}</h2>
+    p5 += `<section class="report-flow-section" data-report-flow-key="signatures"><h2 class="hp-section-title">${escHtml(s.section9)}${secondaryTitle('Physician Signatures')}</h2>
         <div class="hp-section-body">
             <div class="hp-signature">
                 <div class="hp-signature-block">
@@ -1267,10 +1786,11 @@ function _updateReportPreview() {
                 </div>
             </div>
             ${f.signature.notes ? `<p style="margin-top:6px;font-size:9pt;color:#64748b;">${escHtml(f.signature.notes)}</p>` : ''}
-        </div>`;
-    p5 += `${pageFooter(nextPageNo)}</div>`;
+        </div></section>`;
+    p5 += `</div>${pageFooter(nextPageNo)}</div>`;
 
     pagesEl.innerHTML = p1 + figure1Pages + p2 + figure2Pages + supplementalPages + p3Pages + p4 + p5;
+    _paginateReportFlow(pagesEl, { page: s.page, pageOf: s.pageOf });
     pagesEl.querySelectorAll('img[data-report-screenshot="true"]').forEach(image => {
         const candidate = String(image.getAttribute('src') || '').trim();
         const markUnavailable = () => {
@@ -1294,40 +1814,56 @@ function _updateReportPreview() {
             ).catch(markUnavailable);
         }, { once: true });
     });
-    // Every page is portrait A4. Recalculate fit after the DOM commit so the
-    // fixed paper boxes and image intrinsic sizes have been measured together.
-    window.requestAnimationFrame(() => window.Report?.preview?.refresh?.());
+    // Recalculate pagination after the DOM commit so the fixed paper boxes,
+    // image intrinsic sizes, and current font metrics have been measured
+    // together.  The second pass matters for web fonts: a late font swap can
+    // add a line to a paragraph after the first pagination pass.
+    const paginationToken = (window._reportPaginationToken || 0) + 1;
+    window._reportPaginationToken = paginationToken;
+    const repaginate = () => {
+        if (window._reportPaginationToken !== paginationToken) return;
+        _paginateReportFlow(pagesEl, { page: s.page, pageOf: s.pageOf });
+        window.Report?.preview?.refresh?.();
+    };
+    window.requestAnimationFrame(repaginate);
+    if (document.fonts?.ready) {
+        document.fonts.ready.then(repaginate).catch(() => undefined);
+    }
 }
 
 function _hpMetricRow(name, value, unit, refText, statusClass, sOverride, statusTextOverride) {
     const s = sOverride || ((typeof REPORT_STRINGS !== 'undefined') ? REPORT_STRINGS[window.reportForm.language] : null);
+    const form = window.reportForm || {};
     const ND = s.noData || '—';
     let metricKey = {
         'V100 (CTV)': 'v100', D90: 'd90', D95: 'd95', V150: 'v150', V200: 'v200',
         CI: 'ci', HI: 'hi', GI: 'gi', 'Plan score': 'score',
     }[name];
     if (!metricKey && (/score|评分/i.test(String(name)) || unit === '/100')) metricKey = 'score';
-    const stored = metricKey ? _storedMetricAssessment(window.reportForm, metricKey) : null;
+    const stored = metricKey ? _storedMetricAssessment(form, metricKey) : null;
+    const assessment = stored || {
+        reference: refText,
+        referenceIds: [],
+        statusClass,
+        statusText: statusTextOverride,
+    };
     if (stored) {
-        refText = stored.reference;
         statusClass = stored.statusClass;
         statusTextOverride = stored.statusText;
     }
-    // Never emit empty cells when a legacy snapshot contains a blank field.
-    // The durable assessment or the source-backed fallback supplies the
-    // visible value instead.
-    if (refText === null || refText === undefined || String(refText).trim() === '') refText = ND;
+    const referenceHtml = _renderMetricReferenceCell(form, assessment, ND);
+    const fallbackStatus = form.language === 'zh' ? '未评估—缺少可解释评估结果' : 'Not assessed — no interpretable assessment';
     if (statusTextOverride === null || statusTextOverride === undefined
-        || String(statusTextOverride).trim() === '') statusTextOverride = 'Not assessed';
-    if (value === null || value === undefined) {
-        return `<tr><td>${name}</td><td colspan="3" style="color:#94a3b8;text-align:center;">${ND}</td></tr>`;
+        || String(statusTextOverride).trim() === '') statusTextOverride = fallbackStatus;
+    if (value === null || value === undefined || !Number.isFinite(Number(value))) {
+        return '<tr><td>' + escHtml(name) + '</td><td>' + ND + '</td><td>' + referenceHtml + '</td><td><span style="color:#64748b;">' + escHtml(statusTextOverride) + '</span></td></tr>';
     }
     const labels = { pass: s.statusPass || s.pass, warn: s.statusWarn || '', fail: s.statusFail || s.fail };
-    const statusText = statusTextOverride || labels[statusClass] || statusClass || ND;
+    const statusText = statusTextOverride || labels[statusClass] || statusClass || fallbackStatus;
     const status = statusClass
-        ? `<span class="hp-badge ${statusClass}">${escHtml(statusText)}</span>`
-        : `<span style="color:#64748b;">${escHtml(statusText)}</span>`;
-    return `<tr><td>${name}</td><td>${value.toFixed(2)} ${unit}</td><td>${refText}</td><td>${status}</td></tr>`;
+        ? '<span class="hp-badge ' + statusClass + '">' + escHtml(statusText) + '</span>'
+        : '<span style="color:#64748b;">' + escHtml(statusText) + '</span>';
+    return '<tr><td>' + escHtml(name) + '</td><td>' + Number(value).toFixed(2) + ' ' + escHtml(unit || '') + '</td><td>' + referenceHtml + '</td><td>' + status + '</td></tr>';
 }
 
 function _renderInlineMd(text) {
@@ -1468,55 +2004,75 @@ function exportReportHTML() {
 function exportReportMarkdown() {
     const f = window.reportForm;
     syncReportQualityAssessment(f, { preserveStored: true });
+    _syncReportReferencesFromRationale(f);
     const s = (typeof REPORT_STRINGS !== 'undefined') ? REPORT_STRINGS[f.language] : null;
     const lines = [];
-    lines.push(`# ${s.reportTitle}`);
+    const valueOr = (value, fallback) => value !== null && value !== undefined && value !== '' ? value : fallback;
+    lines.push('# ' + s.reportTitle);
     lines.push('');
-    lines.push(`**${s.hospitalName} · ${s.hospitalDept}**`);
+    lines.push('**' + s.hospitalName + ' · ' + s.hospitalDept + '**');
     lines.push('');
-    lines.push(`## ${s.patientInfo}`);
-    lines.push(`- **${s.name}**: ${f.patient.name || '—'}  |  **${s.gender}**: ${f.patient.gender || '—'}  |  **${s.age}**: ${f.patient.age || '—'}`);
-    lines.push(`- **${s.id}**: ${f.patient.id || f.case.patientId || '—'}`);
-    lines.push(`- **${s.diagnosis}**: ${f.study.diagnosis || '—'}`);
+    lines.push('## ' + s.patientInfo);
+    lines.push('- **' + s.name + '**: ' + valueOr(f.patient.name, 'Not recorded') + '  |  **' + s.gender + '**: ' + valueOr(f.patient.gender, 'Not recorded') + '  |  **' + s.age + '**: ' + valueOr(f.patient.age, 'Not recorded'));
+    lines.push('- **' + s.id + '**: ' + valueOr(f.patient.id || f.case.patientId, 'Not recorded'));
+    lines.push('- **' + s.diagnosis + '**: ' + valueOr(f.study.diagnosis, 'Not recorded'));
     lines.push('');
     const targetSection = s.sectionTargetPrescription || s.section4;
     const qualitySection = s.sectionPlanQuality || s.section2;
-    lines.push(`## ${targetSection}`);
-    lines.push(`- **${s.technique}**: ${f.planning.technique || '—'}`);
-    lines.push(`- **${s.prescriptionDose}**: ${f.planning.prescriptionGy !== null ? `${f.planning.prescriptionGy} Gy` : '—'}`);
-    lines.push(`- **${s.totalSeeds}**: ${f.planning.totalSeeds !== null ? f.planning.totalSeeds : '—'}`);
-    lines.push(`- **${s.trajectories}**: ${f.planning.trajectoryCount !== null ? f.planning.trajectoryCount : '—'}`);
+    lines.push('## ' + targetSection);
+    lines.push('- **' + s.technique + '**: ' + valueOr(f.planning.technique, 'Not recorded'));
+    lines.push('- **' + s.prescriptionDose + '**: ' + (Number.isFinite(Number(f.planning.prescriptionGy)) ? Number(f.planning.prescriptionGy).toFixed(1) + ' Gy' : (f.planning.prescriptionStatus === 'resolved_default' ? 'Resolved; clinician verification required' : 'Not recorded')));
+    lines.push('- **' + s.totalSeeds + '**: ' + valueOr(f.planning.totalSeeds, 'Not recorded'));
+    lines.push('- **' + s.totalActivity + '**: ' + (Number.isFinite(Number(f.planning.totalActivityMBq)) ? Number(f.planning.totalActivityMBq).toFixed(3) + ' MBq' : 'Not recorded in plan configuration'));
+    lines.push('- **' + s.trajectories + '**: ' + valueOr(f.planning.trajectoryCount, 'Not recorded'));
     lines.push('');
-    lines.push(`## ${qualitySection}`);
-    if (f.metrics.v100 !== null) {
-        const assessment = _sourceBackedMetricAssessment(f, 'v100', f.metrics.v100);
-        lines.push(`| V100 | ${f.metrics.v100.toFixed(1)} % | ${assessment.reference} | ${assessment.statusText} |`);
-    }
-    if (f.metrics.d90 !== null) {
-        const assessment = _sourceBackedMetricAssessment(f, 'd90', f.metrics.d90);
-        lines.push(`| D90 | ${f.metrics.d90.toFixed(2)} Gy | ${assessment.reference} | ${assessment.statusText} |`);
-    }
-    if (f.metrics.score !== null) {
-        const assessment = _storedMetricAssessment(f, 'score') || _defaultMetricAssessment(f, 'score', f.metrics.score);
-        lines.push(`| Plan score | ${f.metrics.score.toFixed(0)}/100 | ${assessment.reference} | ${assessment.statusText} |`);
-    }
-    if (f.interpretation) { lines.push(''); lines.push(`## ${s.section5}`); lines.push(f.interpretation); }
+    lines.push('## ' + qualitySection);
+    lines.push('| Metric | Observed value | Reference | Status |');
+    lines.push('|---|---:|---|---|');
+    const rows = [
+        ['V100 (CTV)', f.metrics.v100, '%'],
+        ['D90', f.metrics.d90, 'Gy'],
+        ['D95', f.metrics.d95, 'Gy'],
+        ['V150', f.metrics.v150, '%'],
+        ['V200', f.metrics.v200, '%'],
+        ['CI', f.metrics.ci, ''],
+        ['HI', f.metrics.hi, ''],
+        ['GI', f.metrics.gi, ''],
+        ['Plan score', f.metrics.score, '/100'],
+    ];
+    const keys = ['v100', 'd90', 'd95', 'v150', 'v200', 'ci', 'hi', 'gi', 'score'];
+    rows.forEach((row, index) => {
+        const key = keys[index];
+        const assessment = _storedMetricAssessment(f, key) || _defaultMetricAssessment(f, key, row[1]);
+        const observed = Number.isFinite(Number(row[1]))
+            ? Number(row[1]).toFixed(key === 'v100' || key === 'v150' || key === 'v200' ? 1 : 2) + ' ' + row[2]
+            : 'Not observed';
+        lines.push('| ' + row[0] + ' | ' + observed + ' | ' + _metricReferenceMarkdown(f, assessment) + ' | ' + (assessment.statusText || 'Not assessed') + ' |');
+    });
+    if (f.interpretation) { lines.push(''); lines.push('## ' + s.section5); lines.push(f.interpretation); }
+    lines.push('');
+    lines.push('## ' + s.section7);
     if (f.references && f.references.length > 0) {
-        lines.push(''); lines.push(`## ${s.section7}`);
-        f.references.forEach((r, i) => { lines.push(`${i+1}. ${r.title}${r.publisher ? '. *' + r.publisher + '*' : ''}${r.year ? ', ' + r.year : ''}.${r.url ? ' <' + r.url + '>' : ''}`); });
+        f.references.forEach((r, i) => {
+            lines.push((i + 1) + '. [' + (r.title || r.url || 'Source') + '](' + (r.url || '#') + ')' + (r.publisher ? '. *' + r.publisher + '*' : '') + (r.year ? ', ' + r.year : '') + '.');
+        });
+    } else {
+        lines.push('No verified clinical references were attached to this case.');
     }
     if (f.figures && f.figures.length > 0) {
-        lines.push(''); lines.push(`## Figures`);
-        f.figures.forEach(fig => { lines.push(`![${fig.title}](${fig.dataUrl})`); if (fig.caption) lines.push(`*${fig.caption}*`); });
+        lines.push('');
+        lines.push('## Figures');
+        f.figures.forEach(fig => { lines.push('![' + (fig.title || 'Report figure') + '](' + (fig.dataUrl || '') + ')'); if (fig.caption) lines.push('*' + fig.caption + '*'); });
     }
-    lines.push(''); lines.push('---');
-    lines.push(`**${s.physicianPlanner}**: ${f.case.plannerName || '—'} | ${f.case.planDate || '—'}`);
-    lines.push(`**${s.physicianReviewer}**: ${f.signature.name || '—'} | ${f.signature.title || '—'} | ${f.signature.date || '—'}`);
+    lines.push('');
+    lines.push('---');
+    lines.push('**' + s.physicianPlanner + '**: ' + valueOr(f.case.plannerName, 'Not recorded') + ' | ' + valueOr(f.case.planDate, 'Not recorded'));
+    lines.push('**' + s.physicianReviewer + '**: ' + valueOr(f.signature.name, 'Not recorded') + ' | ' + valueOr(f.signature.title, 'Not recorded') + ' | ' + valueOr(f.signature.date, 'Not recorded'));
     const md = lines.join('\n');
     const blob = new Blob([md], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    const filename = `brachybot-report-${(f.case.patientId || 'form')}-${new Date().toISOString().slice(0, 10)}.md`;
+    const filename = 'brachybot-report-' + (f.case.patientId || 'form') + '-' + new Date().toISOString().slice(0, 10) + '.md';
     a.href = url; a.download = filename;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
@@ -1588,6 +2144,43 @@ function _printableCss() {
         .hp-section-body { font-size: 10pt; line-height: 1.7; }
         .hp-section-body p { margin: 1.5mm 0; text-indent: 2em; }
         .hp-section-body p.no-indent { text-indent: 0; }
+        .hp-section-body .md-report-heading {
+            color: #0c4a6e; font-weight: 700; text-align: left; text-indent: 0;
+            page-break-after: avoid; break-after: avoid;
+        }
+        .hp-section-body .md-report-h1 { font-size: 13pt; margin: 4mm 0 2mm; }
+        .hp-section-body .md-report-h2 { font-size: 11.5pt; margin: 3.5mm 0 2mm; }
+        .hp-section-body .md-report-h3 { font-size: 10.5pt; margin: 3mm 0 1.5mm; }
+        .hp-section-body .md-report-h4,
+        .hp-section-body .md-report-h5,
+        .hp-section-body .md-report-h6 { font-size: 10pt; margin: 2.5mm 0 1mm; }
+        .hp-section-body .md-report-p { margin: 1.5mm 0; text-indent: 2em; }
+        .hp-section-body .md-report-ul,
+        .hp-section-body .md-report-ol {
+            margin: 2mm 0 2mm 7mm; padding-left: 6mm; text-align: left;
+        }
+        .hp-section-body .md-report-list-item { margin: 1mm 0; }
+        .hp-section-body .md-report-list-item p { margin: 0; text-indent: 0; }
+        .hp-section-body .md-report-table {
+            width: 100%; border-collapse: collapse; margin: 2mm 0 3mm;
+            font-size: 9.5pt; page-break-inside: avoid;
+        }
+        .hp-section-body .md-report-table th,
+        .hp-section-body .md-report-table td {
+            border: 1px solid #cbd5e1; padding: 1.2mm 2mm;
+            text-align: left; vertical-align: top;
+        }
+        .hp-section-body .md-report-table th { background: #e0f2fe; color: #0c4a6e; }
+        .hp-section-body .md-report-blockquote {
+            margin: 2mm 0; padding: 1.5mm 3mm; border-left: 3px solid #94a3b8;
+            color: #475569; text-align: left;
+        }
+        .hp-section-body .md-report-code {
+            margin: 2mm 0; padding: 2mm 3mm; background: #f1f5f9;
+            border: 1px solid #cbd5e1; white-space: pre-wrap;
+            font-family: 'JetBrains Mono', 'Consolas', monospace; font-size: 8.5pt;
+        }
+        .hp-section-body .md-report-hr { border: 0; border-top: 1px solid #94a3b8; margin: 3mm 0; }
         .hp-id-table, .hp-table, .hp-grid-table { width: 100%; border-collapse: collapse; margin: 2mm 0 3mm 0; font-size: 9.5pt; }
         .hp-id-table th, .hp-id-table td { border: 1px solid #94a3b8; padding: 2mm 3mm; text-align: left; }
         .hp-id-table th { background: #f1f5f9; font-weight: 600; width: 22%; }
@@ -1652,6 +2245,10 @@ function _printableCss() {
         .hp-running-header { display: flex; justify-content: space-between; align-items: center; font-size: 7.5pt; color: #94a3b8; border-bottom: 1px solid #e2e8f0; padding-bottom: 1.5mm; margin-bottom: 4mm; }
         .hp-page-footer { position: absolute; bottom: 8mm; left: 16mm; right: 16mm; display: flex; justify-content: space-between; align-items: center; font-size: 7.5pt; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 2mm; }
         .hp-page-footer .pageno { font-weight: 600; color: #475569; }
+        .report-flow-page-body { display: block; min-height: 0; overflow: visible; }
+        .report-flow-section { display: block; margin: 0 0 3mm; break-inside: avoid; page-break-inside: avoid; }
+        .report-flow-section + .report-flow-section { margin-top: 2mm; }
+        .report-flow-page-body .hp-section-body { overflow-wrap: anywhere; }
     `;
 }
 

@@ -18,6 +18,8 @@ from web.structure_service import (
     reclassify_generic_segmentation_masks,
 )
 from web.uploaded_mask_service import (
+    MAX_UPLOADED_MASK_LABELS,
+    UploadedMaskError,
     normalize_uploaded_mask_results,
     stage_uploaded_ctv_mask,
 )
@@ -80,6 +82,75 @@ def test_multilabel_upload_creates_parent_and_binary_children_without_ctv(tmp_pa
     )
     assert memory.retrieve("ctv_array") is None
     assert memory.retrieve("ctv_mask") is None
+
+
+def test_ct_intensity_volume_is_rejected_before_child_expansion(tmp_path):
+    shape = (4, 5, 7)
+    ct = sitk.GetImageFromArray(np.zeros(shape, dtype=np.int16))
+    intensity = np.arange(np.prod(shape), dtype=np.int16).reshape(shape)
+    label = sitk.GetImageFromArray(intensity)
+    label.CopyInformation(ct)
+    ct_path = tmp_path / "ct.nii.gz"
+    label_path = tmp_path / "mistaken_ct_as_mask.nii.gz"
+    sitk.WriteImage(ct, str(ct_path))
+    sitk.WriteImage(label, str(label_path))
+    memory = _Memory()
+
+    with pytest.raises(UploadedMaskError, match="exceeding the safe limit") as error:
+        stage_uploaded_ctv_mask(memory, str(ct_path), str(label_path))
+
+    assert error.value.code == "too_many_mask_labels"
+    assert len(np.unique(intensity[intensity > 0])) > MAX_UPLOADED_MASK_LABELS
+    assert memory.retrieve("generic_segmentation_masks") is None
+    assert memory.retrieve("uploaded_mask_collections") is None
+
+
+def test_same_ct_file_is_rejected_as_a_mask(tmp_path):
+    shape = (3, 4, 5)
+    ct = sitk.GetImageFromArray(np.arange(np.prod(shape), dtype=np.int16).reshape(shape))
+    ct_path = tmp_path / "ct.nii.gz"
+    sitk.WriteImage(ct, str(ct_path))
+
+    with pytest.raises(UploadedMaskError, match="supplied as the CTV mask") as error:
+        stage_uploaded_ctv_mask(_Memory(), str(ct_path), str(ct_path))
+
+    assert error.value.code == "ct_uploaded_as_mask"
+
+
+def test_legacy_oversized_upload_is_quarantined_during_hydration():
+    upload_id = "legacy_ct_upload"
+    entries = [
+        {
+            "mask_id": f"{upload_id}_label_{label}",
+            "object_id": f"mask:{upload_id}_label_{label}",
+            "kind": "uploaded_mask_label",
+            "source": "uploaded_mask",
+            "upload_mask_id": upload_id,
+            "source_label": label,
+            "source_label_count": 1,
+            "classification": "unclassified",
+            "mask_array": np.ones((1, 1, 1), dtype=np.uint8),
+        }
+        for label in range(1, MAX_UPLOADED_MASK_LABELS + 2)
+    ]
+    results = {
+        "generic_segmentation_masks": entries,
+        "generic_segmentation_latest": entries[-1]["mask_id"],
+        "uploaded_mask_collections": [{
+            "upload_id": upload_id,
+            "child_mask_ids": [item["mask_id"] for item in entries],
+            "source_labels": list(range(1, len(entries) + 1)),
+            "source_label_counts": {str(label): 1 for label in range(1, len(entries) + 1)},
+        }],
+    }
+
+    assert normalize_uploaded_mask_results(results) is True
+    assert results["generic_segmentation_masks"] == []
+    collection = results["uploaded_mask_collections"][0]
+    assert collection["status"] == "rejected"
+    assert collection["error_code"] == "too_many_mask_labels"
+    assert collection["child_mask_ids"] == []
+    assert collection["source_label_counts"] == {}
 
 
 def test_only_explicit_ctv_move_promotes_selected_uploaded_child():
@@ -374,6 +445,7 @@ def test_uploaded_mask_frontend_keeps_hydration_and_staging_contract():
     manual = (root / "web/app/static/js/brachybot-manual-annotation.js").read_text(encoding="utf-8")
     viewer = (root / "web/app/static/js/brachybot-viewer-volume.js").read_text(encoding="utf-8")
     routes = (root / "web/routes/planning_routes.py").read_text(encoding="utf-8")
+    upload_service = (root / "web/uploaded_mask_service.py").read_text(encoding="utf-8")
 
     assert "maxPendingAttempts = 240" in ui_api
     assert "payload.retry_after_ms" in ui_api
@@ -383,6 +455,10 @@ def test_uploaded_mask_frontend_keeps_hydration_and_staging_contract():
     assert "upload_masks" in viewer
     assert "metadata.kind || existing.kind" in viewer
     assert "stage_uploaded_ctv_mask" in routes
+    assert "BRACHYBOT_MAX_UPLOADED_MASK_LABELS" in viewer
+    assert "too_many_mask_labels" in upload_service
+    assert "ct_uploaded_as_mask" in upload_service
+    assert '"hint"' in routes
 
 
 def test_rate_limit_retry_contract_waits_for_the_oldest_request_to_expire():
@@ -489,6 +565,6 @@ def test_uploaded_mask_label_ids_use_registry_for_all_tree_controls():
     assert "window.isDataTreeMaskId = _isDataTreeMaskId;" in viewer
     assert "mask.kind === 'uploaded_mask_label'" in layout
     assert "window.isDataTreeMaskId" in manual_3d
-    assert "brachybot-viewer-volume.js?v=51" in index
-    assert "brachybot-viewer-layout.js?v=38" in index
-    assert "brachybot-3d-manual.js?v=82" in index
+    assert "brachybot-viewer-volume.js?v=56" in index
+    assert "brachybot-viewer-layout.js?v=41" in index
+    assert "brachybot-3d-manual.js?v=90" in index

@@ -1,0 +1,22 @@
+[Unit]
+Description=BrachyBot private production origin (single process)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=<workspace>/BrachyBot
+EnvironmentFile=%h/.config/brachybot/public.env
+ExecStartPre=<conda-env>/bin/python -m web.public_server --check
+ExecStart=<conda-env>/bin/python -m web.public_server
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=120
+KillMode=control-group
+UMask=0077
+LimitNOFILE=65536
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

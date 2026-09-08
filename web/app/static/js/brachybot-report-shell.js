@@ -301,8 +301,43 @@ window.Report = (function () {
             if (_updateFrame) window.cancelAnimationFrame(_updateFrame);
             _updateFrame = window.requestAnimationFrame(() => {
                 _updateFrame = 0;
+                // A hidden Report tab has no measurable A4 geometry during
+                // boot. Reflow flowable text now that the tab/viewport is
+                // visible, before recalculating the preview scale.
+                try { window._reflowReportPages?.(); } catch (error) {
+                    console.warn('[report] deferred pagination failed:', error);
+                }
                 _update();
             });
+        }
+        // Re-render the report body first, then re-apply the preview transform.
+        // refresh() alone only updates zoom/layout and therefore cannot
+        // reflect edits made in the left-hand form.
+        function refreshContent(options = {}) {
+            const fn = _legacy('_updateReportPreview');
+            if (fn) fn();
+            const shouldPersist = options === true || options.persist === true;
+            if (shouldPersist) {
+                try {
+                    const flush = window.flushActiveReportState;
+                    if (typeof flush === 'function') {
+                        Promise.resolve(flush({ reason: 'report.preview.refresh' })).catch((error) => {
+                            console.warn('[report] preview refresh persistence failed:', error);
+                        });
+                    } else if (typeof window._reportAutoSave === 'function') {
+                        window._reportAutoSave({ schedule: false });
+                        if (typeof window.persistWorkspace === 'function') {
+                            Promise.resolve(window.persistWorkspace('report.preview.refresh')).catch((error) => {
+                                console.warn('[report] preview refresh persistence failed:', error);
+                            });
+                        }
+                    }
+                } catch (error) {
+                    console.warn('[report] preview refresh persistence failed:', error);
+                }
+            }
+            refresh();
+            return true;
         }
         function _persist() {
             try { localStorage.setItem('brachyplan_report_zoom', String(_zoom)); } catch (e) {}
@@ -360,7 +395,7 @@ window.Report = (function () {
         } else {
             _installWheelHandler();
         }
-        return { setZoom, zoomIn, zoomOut, zoomReset, getZoom, refresh };
+        return { setZoom, zoomIn, zoomOut, zoomReset, getZoom, refresh, refreshContent };
     })();
 
     // Ctrl+0 reset shortcut
@@ -433,6 +468,14 @@ window.Report = (function () {
         return payload;
     }
 
+    function _reportValueIsBlank(value) {
+        if (value === null || value === undefined) return true;
+        if (typeof value === 'string') return value.trim() === '';
+        if (Array.isArray(value)) return value.length === 0;
+        if (typeof value === 'object') return Object.keys(value).length === 0;
+        return false;
+    }
+
     function _applyReportPatch(patch, source = 'bot', options = {}) {
         const f = window.reportForm;
         if (!f) return { applied: 0, skipped: 0 };
@@ -440,7 +483,9 @@ window.Report = (function () {
         let applied = 0, skipped = 0;
         for (const [key, value] of Object.entries(patch || {})) {
             if (onlyKey && key !== onlyKey) continue;
-            if (f.editedFields && f.editedFields.has(key)) {
+            if (f.editedFields && f.editedFields.has(key)
+                && options.allowBlankRepair !== true
+                && !_reportValueIsBlank(_getByPath(f, key))) {
                 skipped++;
                 continue;
             }
@@ -534,7 +579,9 @@ window.Report = (function () {
             // 3. Planning
             this.fromPlanning(onlyKey);
             // 4. Interpretation (if not user-edited)
-            if ((!onlyKey || onlyKey === 'interpretation') && (!f.editedFields || !f.editedFields.has('interpretation'))) {
+            if ((!onlyKey || onlyKey === 'interpretation')
+                && (!f.editedFields || !f.editedFields.has('interpretation')
+                    || _reportValueIsBlank(_getByPath(f, 'interpretation')))) {
                 this.interpret();
             }
             // The server contributes source-backed prescription rationale,
@@ -552,6 +599,7 @@ window.Report = (function () {
                     // criteria. Recompute generic hydration placeholders now,
                     // while preserving all explicitly user-edited fields.
                     refreshCriteria: true,
+                    allowBlankRepair: opts.allowBlankRepair === true,
                 }).applied;
             } catch (e) {
                 console.warn('Server report auto-fill unavailable; using local data:', e);
@@ -638,7 +686,7 @@ window.Report = (function () {
             if (tags.series_description)  map.push(['study.series', tags.series_description]);
             for (const [k, v] of map) {
                 if (onlyKey && k !== onlyKey) continue;
-                if (f.editedFields && f.editedFields.has(k)) continue;
+                if (f.editedFields && f.editedFields.has(k) && !_reportValueIsBlank(_getByPath(f, k))) continue;
                 _setByPath(f, k, v);
                 sources.set(k, 'auto');
             }
@@ -650,7 +698,8 @@ window.Report = (function () {
                 if (!f) return;
                 if (ws.ctPath) {
                     if (!onlyKey || onlyKey === 'case.patientId') {
-                        if (!f.editedFields || !f.editedFields.has('case.patientId')) {
+                        if (!f.editedFields || !f.editedFields.has('case.patientId')
+                            || _reportValueIsBlank(_getByPath(f, 'case.patientId'))) {
                             f.case.patientId = ws.ctPath.split(/[\/\\]/).pop().replace(/\.nii(\.gz)?$/i, '');
                             sources.set('case.patientId', 'auto');
                         }
@@ -665,7 +714,7 @@ window.Report = (function () {
                     ];
                     for (const [k, v] of writes) {
                         if (onlyKey && k !== onlyKey) continue;
-                        if (f.editedFields && f.editedFields.has(k)) continue;
+                        if (f.editedFields && f.editedFields.has(k) && !_reportValueIsBlank(_getByPath(f, k))) continue;
                         if (v !== null) { _setByPath(f, k, v); sources.set(k, 'auto'); }
                     }
                 }
@@ -679,13 +728,80 @@ window.Report = (function () {
                 const m = ws.metrics || {};
                 const dataTree = (typeof dataTreeState !== 'undefined') ? dataTreeState : (window.dataTreeState || null);
                 const writes = [];
+                const planConfig = ws.planConfig || ws.plan_config
+                    || m.planConfig || m.plan_config || {};
+                const seedInfo = planConfig.seed_info || planConfig.seedInfo || {};
+                const firstFinite = (...values) => {
+                    for (const value of values) {
+                        const n = Number(value);
+                        if (Number.isFinite(n)) return n;
+                    }
+                    return null;
+                };
+                const rawPrescription = firstFinite(
+                    m.prescription_gy, m.prescriptionGy,
+                    m.prescription_dose_gy, m.prescriptionDoseGy,
+                    m.prescribed_dose_gy, m.prescribedDoseGy,
+                    m.prescribed_dose, m.prescribedDose,
+                    planConfig.prescription_gy, planConfig.prescriptionGy,
+                    planConfig.prescription_dose_gy, planConfig.prescriptionDoseGy,
+                    planConfig.in_lowest_dose_gy, planConfig.inLowestDoseGy,
+                    planConfig.prescribed_dose_gy, planConfig.prescribedDoseGy,
+                );
+                if (rawPrescription !== null && rawPrescription > 0) {
+                    const prescriptionGy = rawPrescription <= 5
+                        ? rawPrescription * 120
+                        : rawPrescription;
+                    writes.push(['planning.prescriptionGy', prescriptionGy]);
+                    writes.push(['planning.prescriptionStatus', 'explicit']);
+                }
+                const totalSeeds = firstFinite(m.total_seeds, m.totalSeeds);
+                const totalActivityMbq = firstFinite(
+                    m.total_activity_mbq, m.totalActivityMBq,
+                    planConfig.total_activity_mbq, planConfig.totalActivityMBq,
+                    planConfig.total_source_activity_mbq,
+                    seedInfo.total_activity_mbq, seedInfo.totalActivityMBq,
+                );
+                const perSeedMbq = firstFinite(
+                    m.activity_mbq, m.activityMBq, m.seed_activity_mbq, m.seedActivityMBq,
+                    planConfig.activity_mbq, planConfig.activityMBq,
+                    planConfig.activity_mbq_per_seed, planConfig.activityMBqPerSeed,
+                    seedInfo.activity_mbq, seedInfo.activityMBq,
+                    seedInfo.activity_mbq_per_seed, seedInfo.activityMBqPerSeed,
+                );
+                const perSeedMci = firstFinite(
+                    m.activity_mci, m.activityMci, m.seed_activity_mci, m.seedActivityMci,
+                    planConfig.activity_mci, planConfig.activityMci,
+                    planConfig.activity_mci_per_seed, planConfig.activityMciPerSeed,
+                    seedInfo.activity_mci, seedInfo.activityMci,
+                    seedInfo.activity_mci_per_seed, seedInfo.activityMciPerSeed,
+                );
+                const explicitSeedActivity = perSeedMbq !== null
+                    ? perSeedMbq
+                    : (perSeedMci !== null ? perSeedMci * 37 : null);
+                const resolvedTotalActivity = totalActivityMbq !== null
+                    ? totalActivityMbq
+                    : (explicitSeedActivity !== null && totalSeeds !== null
+                        ? explicitSeedActivity * totalSeeds : null);
+                if (explicitSeedActivity !== null) writes.push(['planning.seedActivityMBq', explicitSeedActivity]);
+                if (resolvedTotalActivity !== null) writes.push(['planning.totalActivityMBq', resolvedTotalActivity]);
+                writes.push([
+                    'planning.activityStatus',
+                    resolvedTotalActivity !== null ? 'explicit' : 'not_recorded',
+                ]);
+                if (resolvedTotalActivity !== null) {
+                    writes.push(['planning.activitySource', 'explicit plan seed/source activity']);
+                }
                 if (m.total_seeds !== undefined) writes.push(['planning.totalSeeds', m.total_seeds]);
                 if (m.num_trajectories !== undefined) writes.push(['planning.trajectoryCount', m.num_trajectories]);
                 // Activity is intentionally not inferred from seed count.
                 // Source strength varies by radionuclide and vendor; only an
                 // explicit backend/plan_config value may populate it.
-                if (Number.isFinite(Number(m.ctv_volume_mm3))) {
-                    writes.push(['case.ctvVolumeMm3', Number(m.ctv_volume_mm3)]);
+                const authoritativeCtvVolume = typeof window.getAuthoritativeCtvVolumeMm3 === 'function'
+                    ? window.getAuthoritativeCtvVolumeMm3()
+                    : m.ctv_volume_mm3;
+                if (Number.isFinite(Number(authoritativeCtvVolume)) && Number(authoritativeCtvVolume) > 0) {
+                    writes.push(['case.ctvVolumeMm3', Number(authoritativeCtvVolume)]);
                 }
                 if (m.ctv_voxels !== undefined) {
                     writes.push(['segmentation.ctvVoxels', m.ctv_voxels]);
@@ -701,12 +817,13 @@ window.Report = (function () {
                 if (m.plan_score !== undefined) writes.push(['metrics.score', m.plan_score]);
                 for (const [k, v] of writes) {
                     if (onlyKey && k !== onlyKey) continue;
-                    if (f.editedFields && f.editedFields.has(k)) continue;
+                    if (f.editedFields && f.editedFields.has(k) && !_reportValueIsBlank(_getByPath(f, k))) continue;
                     _setByPath(f, k, v);
                     sources.set(k, 'auto');
                 }
                 if ((!onlyKey || onlyKey === 'oarDose') && m.oar_metrics) {
-                    if (!f.editedFields || !f.editedFields.has('oarDose')) {
+                    if (!f.editedFields || !f.editedFields.has('oarDose')
+                        || _reportValueIsBlank(_getByPath(f, 'oarDose'))) {
                         // BUG FIX 2026-06-17: previously capped at 12
                         // OARs, hiding many clinically relevant organs
                         // (stomach, kidney, liver, lung, vessels). Now
@@ -734,7 +851,8 @@ window.Report = (function () {
                     }
                 }
                 if ((!onlyKey || onlyKey === 'case.oarCount') && dataTree && dataTree.organs) {
-                    if (!f.editedFields || !f.editedFields.has('case.oarCount')) {
+                    if (!f.editedFields || !f.editedFields.has('case.oarCount')
+                        || _reportValueIsBlank(_getByPath(f, 'case.oarCount'))) {
                         f.case.oarCount = dataTree.organs.length || null;
                         sources.set('case.oarCount', 'auto');
                     }

@@ -398,7 +398,48 @@ def _generic_mask_entries(agent):
     entries = []
     if not isinstance(raw, list):
         return entries
+    # A legacy snapshot may predate the upload guard and contain one source
+    # row per CT intensity.  Do not serialize that catalogue to the browser
+    # even if hydration has not yet completed its cleanup pass.
+    try:
+        from web.uploaded_mask_service import (
+            MAX_UPLOADED_MASK_LABELS,
+            is_uploaded_mask_label,
+        )
+    except Exception:
+        MAX_UPLOADED_MASK_LABELS = 64
+        is_uploaded_mask_label = lambda value: False
+    upload_counts = {}
     for item in raw:
+        if not isinstance(item, dict) or not is_uploaded_mask_label(item):
+            continue
+        upload_id = str(item.get("upload_mask_id") or "").strip()
+        if upload_id:
+            upload_counts[upload_id] = upload_counts.get(upload_id, 0) + 1
+    oversized_uploads = {
+        upload_id for upload_id, count in upload_counts.items()
+        if count > MAX_UPLOADED_MASK_LABELS
+    }
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        upload_id = str(item.get("upload_mask_id") or "").strip()
+        classification = next(
+            (
+                str(value or "").strip().lower()
+                for value in (
+                    item.get("classification"),
+                    item.get("moved_to"),
+                    item.get("movedTo"),
+                )
+                if str(value or "").strip().lower() in {"ctv", "oar"}
+            ),
+            "",
+        )
+        if upload_id in oversized_uploads and not classification:
+            # Promoted clinical children remain visible through the effective
+            # CTV/OAR endpoints; only the unclassified explosion is hidden.
+            continue
         if not item.get("mask_id"):
             continue
         entry = dict(item)
@@ -416,7 +457,39 @@ def _generic_mask_entry(agent, mask_id):
     raw = agent.memory.retrieve("generic_segmentation_masks") or []
     if not isinstance(raw, list):
         return None
+    try:
+        from web.uploaded_mask_service import MAX_UPLOADED_MASK_LABELS, is_uploaded_mask_label
+    except Exception:
+        MAX_UPLOADED_MASK_LABELS = 64
+        is_uploaded_mask_label = lambda value: False
+    upload_counts = {}
     for item in raw:
+        if isinstance(item, dict) and is_uploaded_mask_label(item):
+            upload_id = str(item.get("upload_mask_id") or "").strip()
+            if upload_id:
+                upload_counts[upload_id] = upload_counts.get(upload_id, 0) + 1
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        upload_id = str(item.get("upload_mask_id") or "").strip()
+        classification = next(
+            (
+                str(value or "").strip().lower()
+                for value in (
+                    item.get("classification"),
+                    item.get("moved_to"),
+                    item.get("movedTo"),
+                )
+                if str(value or "").strip().lower() in {"ctv", "oar"}
+            ),
+            "",
+        )
+        if (
+            upload_id
+            and upload_counts.get(upload_id, 0) > MAX_UPLOADED_MASK_LABELS
+            and not classification
+        ):
+            continue
         if _is_open_generic_mask_entry(item) and str(item.get("mask_id") or "") == wanted:
             return item
     return None
@@ -2811,6 +2884,216 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
 
             seeds = []
             needles = []
+
+            # Automatic plans created before the coordinate-contract fix may
+            # have persisted voxel-space seed positions even though their
+            # validated needle endpoints are already in patient-world LPS.
+            # Do not trust a finite-looking vector without its provenance:
+            # compare both interpretations with the authoritative needle
+            # line and migrate the legacy plan in memory before serializing it
+            # to the Viewer.
+            if not has_manual_geometry:
+                try:
+                    coordinate_space = str(
+                        plan_config.get("seed_coordinate_space") or ""
+                    ).strip().lower()
+                    planning_image = agent.memory.retrieve("resampled_ct")
+
+                    def _planning_grid_image():
+                        nonlocal planning_image
+                        if planning_image is not None or ct_image is None:
+                            return planning_image
+                        import SimpleITK as sitk
+
+                        parameters = (
+                            plan_config.get("planning_parameters")
+                            if isinstance(plan_config, dict)
+                            else {}
+                        )
+                        radiation_params = (
+                            parameters.get("radiation_array_params")
+                            if isinstance(parameters, dict)
+                            else {}
+                        )
+                        requested_size = (
+                            radiation_params.get("dose_img_dimention")
+                            if isinstance(radiation_params, dict)
+                            else None
+                        )
+                        if not isinstance(requested_size, (list, tuple)) or len(requested_size) != 3:
+                            requested_size = [128, 128, 64]
+                        try:
+                            size_xyz = [max(1, int(value)) for value in requested_size]
+                        except (TypeError, ValueError):
+                            size_xyz = [128, 128, 64]
+                        ct_size = tuple(int(value) for value in ct_image.GetSize())
+                        ct_spacing = tuple(float(value) for value in ct_image.GetSpacing())
+                        planning_image = sitk.Image(size_xyz, sitk.sitkFloat32)
+                        planning_image.SetSpacing(tuple(
+                            ct_size[index] * ct_spacing[index] / size_xyz[index]
+                            for index in range(3)
+                        ))
+                        planning_image.SetOrigin(tuple(float(value) for value in ct_image.GetOrigin()))
+                        planning_image.SetDirection(tuple(float(value) for value in ct_image.GetDirection()))
+                        return planning_image
+
+                    def _line_distance(point, points):
+                        if not isinstance(points, (list, tuple)) or len(points) < 2:
+                            return None
+                        try:
+                            first = np.asarray(points[0], dtype=np.float64).reshape(-1)[:3]
+                            second = np.asarray(points[1], dtype=np.float64).reshape(-1)[:3]
+                            point = np.asarray(point, dtype=np.float64).reshape(-1)[:3]
+                            vector = second - first
+                            length_sq = float(np.dot(vector, vector))
+                            if length_sq <= 1e-12 or not np.all(np.isfinite(point)):
+                                return None
+                            fraction = float(np.dot(point - first, vector) / length_sq)
+                            fraction = max(0.0, min(1.0, fraction))
+                            nearest = first + fraction * vector
+                            return float(np.linalg.norm(point - nearest))
+                        except (TypeError, ValueError):
+                            return None
+
+                    def _plan_line_score(plan):
+                        distances = []
+                        for index, entry in enumerate(plan or []):
+                            if isinstance(entry, dict):
+                                seed_list = entry.get("seeds") or []
+                            elif isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                                seed_list = entry[1] or []
+                            else:
+                                continue
+                            points = (
+                                verified_needle_geometry.get(str(index))
+                                if isinstance(verified_needle_geometry, dict)
+                                else None
+                            )
+                            if points is None and isinstance(verified_needle_geometry, dict):
+                                points = verified_needle_geometry.get(index)
+                            for seed in seed_list:
+                                if isinstance(seed, dict):
+                                    position = seed.get("position", seed.get("pos"))
+                                elif isinstance(seed, (list, tuple)) and len(seed) >= 1:
+                                    position = seed[0]
+                                else:
+                                    continue
+                                distance = _line_distance(position, points)
+                                if distance is not None:
+                                    distances.append(distance)
+                        return float(np.mean(distances)) if distances else None
+
+                    def _world_bounds():
+                        if ct_image is None:
+                            return None
+                        size = tuple(int(value) for value in ct_image.GetSize())
+                        corners = []
+                        for x in (0, max(0, size[0] - 1)):
+                            for y in (0, max(0, size[1] - 1)):
+                                for z in (0, max(0, size[2] - 1)):
+                                    corners.append(ct_image.TransformIndexToPhysicalPoint((x, y, z)))
+                        values = np.asarray(corners, dtype=np.float64)
+                        return values.min(axis=0), values.max(axis=0)
+
+                    def _inside_fraction(plan):
+                        bounds = _world_bounds()
+                        if bounds is None:
+                            return 0.0
+                        lower, upper = bounds
+                        positions = []
+                        for entry in plan or []:
+                            if isinstance(entry, dict):
+                                seed_list = entry.get("seeds") or []
+                            elif isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                                seed_list = entry[1] or []
+                            else:
+                                continue
+                            for seed in seed_list:
+                                if isinstance(seed, dict):
+                                    position = seed.get("position", seed.get("pos"))
+                                elif isinstance(seed, (list, tuple)) and len(seed) >= 1:
+                                    position = seed[0]
+                                else:
+                                    continue
+                                try:
+                                    positions.append(np.asarray(position, dtype=np.float64).reshape(-1)[:3])
+                                except (TypeError, ValueError):
+                                    continue
+                        if not positions:
+                            return 0.0
+                        values = np.asarray(positions, dtype=np.float64)
+                        inside = np.all((values >= lower - 2.0) & (values <= upper + 2.0), axis=1)
+                        return float(np.mean(inside))
+
+                    voxel_space = coordinate_space in {
+                        "planning_voxel_zyx", "voxel_zyx", "voxel",
+                    }
+                    world_space = coordinate_space in {
+                        "patient_world_lps", "world", "physical", "lps",
+                    }
+                    source_plan = seed_plan if seed_plan is not None else seed_plan_serialized
+                    if not voxel_space and not world_space and source_plan:
+                        planning_image = _planning_grid_image()
+                        transformed_plan = None
+                        transformed_score = None
+                        direct_score = _plan_line_score(source_plan)
+                        if planning_image is not None:
+                            from plans.core import seed_plan_to_world_coordinates
+
+                            transformed_plan = seed_plan_to_world_coordinates(
+                                source_plan, planning_image
+                            )
+                            transformed_score = _plan_line_score(transformed_plan)
+                        direct_inside = _inside_fraction(source_plan)
+                        transformed_inside = _inside_fraction(transformed_plan) if transformed_plan is not None else 0.0
+                        voxel_space = bool(
+                            transformed_plan is not None
+                            and (
+                                (
+                                    transformed_score is not None
+                                    and direct_score is not None
+                                    and transformed_score + 2.0 < direct_score
+                                )
+                                or transformed_inside > direct_inside + 0.25
+                            )
+                        )
+                    if voxel_space:
+                        planning_image = _planning_grid_image()
+                        if planning_image is None:
+                            raise ValueError(
+                                "Legacy seed plan has planning-grid coordinates, "
+                                "but its planning image geometry is unavailable"
+                            )
+                        from plans.core import seed_plan_to_world_coordinates
+
+                        if seed_plan is not None:
+                            seed_plan = seed_plan_to_world_coordinates(seed_plan, planning_image)
+                        if seed_plan_serialized:
+                            seed_plan_serialized = seed_plan_to_world_coordinates(
+                                seed_plan_serialized, planning_image
+                            )
+                        snapshot = agent.memory.retrieve("algorithm_plan_snapshot")
+                        if isinstance(snapshot, dict) and isinstance(snapshot.get("seeds"), list):
+                            converted_snapshot = seed_plan_to_world_coordinates(
+                                [{"seeds": snapshot["seeds"]}], planning_image
+                            )[0]
+                            snapshot = dict(snapshot)
+                            snapshot["seeds"] = converted_snapshot.get("seeds", [])
+                            agent.memory.store("algorithm_plan_snapshot", snapshot)
+                        plan_config = dict(plan_config) if isinstance(plan_config, dict) else {}
+                        plan_config.update({
+                            "coordinate_contract_version": 2,
+                            "seed_coordinate_space": "patient_world_lps",
+                            "needle_coordinate_space": "patient_world_lps",
+                        })
+                        agent.memory.store("seed_plan", seed_plan)
+                        agent.memory.store("seed_plan_serialized", seed_plan_serialized)
+                        agent.memory.store("plan_config", plan_config)
+                        logger.warning(
+                            "[seeds_3d] Migrated a legacy planning-grid seed plan to patient-world LPS coordinates"
+                        )
+                except Exception:
+                    logger.exception("[seeds_3d] Legacy seed coordinate migration failed")
 
             # A manual edit intentionally leaves the automatic ``seed_plan``
             # immutable so the dose route can subtract its original per-seed

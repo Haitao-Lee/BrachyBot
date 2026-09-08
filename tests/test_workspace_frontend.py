@@ -43,6 +43,26 @@ def test_chat_ui_state_capture_and_workspace_conflicts_are_non_blocking():
     assert '"stale_workspace" if is_stale_revision else "workspace_locked"' in routes
 
 
+def test_chat_composer_autosizes_and_resets_after_programmatic_changes():
+    """Multiline prompts must remain readable without growing forever."""
+    index = read("web/app/index.html")
+    css = read("web/app/static/css/brachybot-chat-status.css")
+    chat = read("web/app/static/js/brachybot-chat-todo.js")
+    core = read("web/app/static/js/brachybot-chat-core.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+
+    assert 'id="chatInput" rows="1"' in index
+    assert "function resizeChatInput(input)" in chat
+    assert "el.style.height = 'auto'" in chat
+    assert "el.style.overflowY = naturalHeight > maxHeight ? 'auto' : 'hidden'" in chat
+    assert "window.resizeChatInput = resizeChatInput" in chat
+    assert "resizeChatInput(el || document.getElementById('chatInput'))" in chat
+    assert "align-items: flex-end" in css
+    assert "overflow-y: hidden" in css
+    assert "window.resizeChatInput?.(input)" in core
+    assert "window.resizeChatInput?.(i)" in ui_api
+
+
 def test_ct_data_tree_window_level_controls_share_the_viewer_state():
     """The CT row uses one live dual-handle range backed by Viewer W/L state."""
     volume = read("web/app/static/js/brachybot-viewer-volume.js")
@@ -382,11 +402,38 @@ def test_chat_guide_completion_hydrates_the_persisted_mesh_without_starting_a_pl
     assert "_scheduleCaseSurgicalGuideRefresh(turnSessionId, 0)" in chat
     assert "reason: 'surgical-guide-tool-complete'" in chat
     assert "window.loadSurgicalGuideMesh" in chat
+    assert "reconcileProgress: true" in chat
     assert "source: 'surgical_guide'" in guide
     # Guide generation is a persisted artifact update, not a new Planning
     # run. It must not be folded into the dose-invalidating planning set.
     planning_set = chat.split("const PLANNING_EVENT_TOOLS = new Set", 1)[1].split("]);", 1)[0]
     assert "surgical_guide" not in planning_set
+
+
+def test_guide_progress_uses_one_clock_and_hides_background_auto_generation():
+    """The top card and bottom todo must not show two clocks for one guide."""
+    chat = read("web/app/static/js/brachybot-chat-todo.js")
+    manual = read("web/app/static/js/brachybot-manual-annotation.js")
+    manual_3d = read("web/app/static/js/brachybot-3d-manual.js")
+    guide = read("web/app/static/js/brachybot-surgical-guide.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    index = read("web/app/index.html")
+
+    assert "surgical_guide_generate: 'surgical_guide'" in chat
+    assert "window._brachyOperationStart" in chat
+    assert "item.startedAt = operationClock.startedAt" in chat
+    assert "<span class=\"chat-event-icon\">AI</span>" not in manual
+    assert "icon.textContent = 'AI'" not in manual_3d
+    assert "const showProgress = options.showProgress !== false;" in guide
+    assert "showProgress: false" in guide
+    assert "reconcileManualWorkflowProgress" in manual
+    assert "authoritativeDone" in manual
+    assert "maxWaitMs: 900000" in guide
+    assert "const invokeSimpleAsyncHandler = async () =>" in ui_api
+    assert "async function executeGenericUIControl" in ui_api
+    assert "invokeSimpleAsyncHandler" in ui_api
+    assert "brachybot-chat-todo.js?v=32" in index
+    assert "brachybot-surgical-guide.js?v=19" in index
 
 
 def test_execution_trace_folds_only_after_the_final_reply_is_painted():
@@ -503,10 +550,10 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     assert "restore.fully_interactive" in ui_api
     # Versioned URLs are intentional cache invalidation points. Keep this
     # assertion aligned with the workspace/report artifact restore contract.
-    assert "brachybot-workspace.js?v=41" in index
-    assert "brachybot-ui-api.js?v=64" in index
-    assert "brachybot-viewer-volume.js?v=51" in index
-    assert "brachybot-manual-annotation.js?v=22" in index
+    assert "brachybot-workspace.js?v=44" in index
+    assert "brachybot-ui-api.js?v=69" in index
+    assert "brachybot-viewer-volume.js?v=56" in index
+    assert "brachybot-manual-annotation.js?v=26" in index
 
 
 def test_case_owned_api_requests_never_use_presentation_placeholders():
@@ -746,7 +793,7 @@ def test_chat_connection_placeholder_does_not_claim_a_router_execution():
     assert "title: zh ? '\\u8bf7\\u6c42\\u5206\\u6790' : 'Request analysis'" in chat_todo
     assert "Determining execution path..." in chat_todo
     assert "title: zh ? '\\u591a\\u667a\\u80fd\\u4f53\\u8def\\u7531' : 'Multi-Agent Router'" not in chat_todo
-    assert 'static/js/brachybot-chat-todo.js?v=27' in index
+    assert 'static/js/brachybot-chat-todo.js?v=32' in index
 
 
 def test_task_replay_is_deduplicated_and_bound_to_the_original_case():
@@ -1700,7 +1747,55 @@ def test_planning_parent_visibility_clears_independent_dose_projection_layers():
     assert "function _setPlanningDoseProjectionVisibility(visible, options = {})" in viewer
     assert "dataTreeState.planning.visible = !!visible" in viewer
     assert "doseOverlayCanvas" in viewer
-    assert "_setPlanningDoseProjectionVisibility(_planningViewVisible('2d'))" in viewer
+    assert "_setPlanningDoseProjectionVisibility(_planningViewVisible('2d'), { preserveMaster: true })" in viewer
+
+
+def test_data_tree_visibility_has_single_owner_and_parent_scoped_mutations():
+    """A Planning hide must not hide CTV/OAR sibling structures."""
+    viewer = read("web/app/static/js/brachybot-viewer-volume.js")
+    manual = read("web/app/static/js/brachybot-3d-manual.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+
+    for required in (
+        "function _isSegmentationOwnedNode(node)",
+        "function _dataTreeParentNode(node)",
+        "function _dataTreeNodeScopeVisible(node, view = null)",
+        "function isDataTreeNodeMasterVisible(node)",
+        "function _migrateSegmentationMirrorsOutOfPlanning()",
+        "window._groupViewScopeNodes = _groupViewScopeNodes",
+        "function getGroupVisibility(category, view = null)",
+        "_dataTreeNodeScopeVisible(node, '2d')",
+        "_dataTreeNodeScopeVisible(node, '3d')",
+        "dataTreeState.planning.visible = !!visible;",
+        "dataTreeState.ctv.visible = !!visible;",
+        "dataTreeState.oar.visible = !!visible;",
+        "_groupViewScopeNodes(category).forEach",
+    ):
+        assert required in viewer
+
+    # Structure meshes are explicitly routed to the segmentation owner and
+    # never fall through to the Planning mirror.
+    assert "const isSegmentationMesh = ['ctv', 'oar'].includes" in manual
+    assert "dataTreeState.planning.meshes = dataTreeState.planning.meshes" in manual
+
+    # Automated group toggles use the same owner scope as the visible UI.
+    assert "getGroupVisibility(group)" in ui_api
+    assert "_groupViewScopeNodes(group)" in ui_api
+
+
+def test_data_tree_visibility_uses_one_eye_glyph_and_struck_hidden_state():
+    """Visible and hidden controls share one eye glyph; CSS carries the state."""
+    viewer = read("web/app/static/js/brachybot-viewer-volume.js")
+    manual = read("web/app/static/js/brachybot-3d-manual.js")
+    css = read("web/app/static/css/brachybot-report-controls.css")
+
+    assert "&#128064;" not in viewer
+    assert "&#128064;" not in manual
+    assert viewer.count("&#128065;") >= 18
+    assert "const eyeIcon = '&#128065;';" in viewer
+    assert "filter: grayscale(1)" in css
+    assert ".eye-btn.hidden::after" in css
+    assert "rotate(-45deg)" in css
 
 
 def test_compact_restart_planning_shell_cannot_hide_restored_dose_layers():
@@ -1838,6 +1933,25 @@ def test_report_restore_preserves_quality_cells_and_keeps_section_order():
     assert "syncReportQualityAssessment(targetReport, { preserveStored: true })" in workspace
     assert "syncReportQualityAssessment(window.reportForm, { preserveStored: true })" in workspace
 
+def test_report_form_edits_refresh_preview_and_expose_explicit_refresh():
+    index = read("web/app/index.html")
+    editor = read("web/app/static/js/brachybot-report-editor.js")
+    shell = read("web/app/static/js/brachybot-report-shell.js")
+    export = read("web/app/static/js/brachybot-report-export.js")
+    viewer = read("web/app/static/js/brachybot-viewer-volume.js")
+
+    assert "Report.preview.refreshContent({persist: true})" in index
+    assert "function refreshContent(options = {})" in shell
+    assert "_scheduleReportPreviewRefresh();" in editor
+    assert "hospitalNameField" in editor
+    assert "patientNameField" in editor
+    assert "patientNameHint" in editor
+    assert "flushActiveReportState" in shell
+    assert "const hospitalName = f.hospital.name || s.hospitalName;" in export
+    assert "escHtml(f.patient.name) || ND" in export
+    assert "function getAuthoritativeCtvVolumeMm3()" in viewer
+    assert "getAuthoritativeCtvVolumeMm3" in shell
+
 
 def test_surgical_guide_restore_waits_for_hydration_and_publishes_tool_results():
     routes = read("web/routes/surgical_guide_routes.py")
@@ -1914,3 +2028,24 @@ def test_prescription_isosurface_exposes_display_grid_v100_audit_in_data_tree():
     assert "V100 ${coveragePct.toFixed(1)}%" in viewer
     assert "level.coverageAudit?.coverage_percent" in data_tree
     assert "level.coverageAudit?.reported_metric === 'v100'" in data_tree
+
+
+def test_manual_input_workflow_exposes_independent_ctv_oar_and_action_progress():
+    index = read("web/app/index.html")
+    manual = read("web/app/static/js/brachybot-manual-annotation.js")
+    manual_3d = read("web/app/static/js/brachybot-3d-manual.js")
+    guide = read("web/app/static/js/brachybot-surgical-guide.js")
+    css = read("web/app/static/css/brachybot-chat-status.css")
+
+    # OAR segmentation is a CT-bound entry point, not a CTV-bound entry point.
+    assert "setButton('stepBtn_oar_segmentation', ctReady" in manual
+    assert "const ctReady = typeof state === 'undefined' || state.ctLoaded === true;" in manual
+    assert 'id="manualWorkflowStatus"' in index
+    assert ".manual-workflow-status" in css
+
+    # Manual actions must expose the same running/done/error feedback contract
+    # as the chat-driven workflow.
+    assert "_manualWorkflowProgress(kind, 'running'" in manual
+    assert "_inputButtonProgress('full_pipeline'" in manual
+    assert "_inputButtonProgress('planning_advice'" in manual_3d
+    assert "_inputButtonProgress('surgical_guide_generate'" in guide

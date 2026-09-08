@@ -122,8 +122,8 @@ function renderReportEditor() {
 
     let html = '';
     // Hospital info
-    html += _formSection('🏥 ' + s.name, 'hospital', `
-        ${_formField({key:'hospital.name', label:s.name, value:f.hospital.name, section:'hospital'})}
+    html += _formSection('🏥 ' + (s.hospitalSectionTitle || s.name), 'hospital', `
+        ${_formField({key:'hospital.name', label:s.hospitalNameField || s.hospitalName || s.name, value:f.hospital.name, hint:s.hospitalNameHint, section:'hospital'})}
         ${_formField({key:'hospital.dept', label:s.department, value:f.hospital.dept, section:'hospital'})}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
             ${_formField({key:'hospital.address', label:s.hospitalAddress || 'Address', value:f.hospital.address, section:'hospital'})}
@@ -133,7 +133,7 @@ function renderReportEditor() {
     // Patient info
     html += _formSection('👤 ' + s.patientInfo, 'patient', `
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
-            ${_formField({key:'patient.name', label:s.name, value:f.patient.name, section:'patient'})}
+            ${_formField({key:'patient.name', label:s.patientNameField || s.name, value:f.patient.name, hint:s.patientNameHint, section:'patient'})}
             ${_formField({key:'patient.gender', label:s.gender, value:f.patient.gender, section:'patient'})}
             ${_formField({key:'patient.age', label:s.age, value:f.patient.age, type:'number', section:'patient'})}
         </div>
@@ -359,6 +359,27 @@ function renderReportEditor() {
 }
 
 // ----- 8. Field-edit handler (two-way binding) -----
+let _reportPreviewRefreshFrame = 0;
+function _scheduleReportPreviewRefresh() {
+    if (_reportPreviewRefreshFrame) return;
+    const refresh = () => {
+        _reportPreviewRefreshFrame = 0;
+        try {
+            if (window.Report?.preview?.refreshContent) {
+                window.Report.preview.refreshContent();
+            } else if (typeof _updateReportPreview === 'function') {
+                _updateReportPreview();
+            }
+        } catch (error) {
+            console.warn('[report] preview refresh failed:', error);
+        }
+    };
+    if (typeof window.requestAnimationFrame === 'function') {
+        _reportPreviewRefreshFrame = window.requestAnimationFrame(refresh);
+    } else {
+        _reportPreviewRefreshFrame = window.setTimeout(refresh, 0);
+    }
+}
 function onReportFieldEdit(key) {
     const f = window.reportForm;
     const el = document.getElementById('rf-' + key.replace(/[^a-zA-Z0-9_]/g, '_'));
@@ -373,6 +394,7 @@ function onReportFieldEdit(key) {
     obj[parts[parts.length - 1]] = val;
     f.editedFields.add(key);
     _scheduleReportAutoSave();
+    _scheduleReportPreviewRefresh();
     _updateReportStatusbar();
 }
 
@@ -918,22 +940,38 @@ window.captureReportDvhFigure = captureReportDvhFigure;
 // operator's current camera. Persisting the contract lets a later hydration
 // path identify a legacy capture and regenerate the intended global/detail
 // pair instead of silently preserving a semantically swapped image.
-const REPORT_FIGURE_ONE_CAPTURE_CONTRACT = 'figure1-global-overview-target-detail-v6-thin-needles';
+// Keep the two roles on different contracts. A single contract for both
+// subfigures allowed an old pair containing two copies of the overview to
+// survive restore because the metadata looked valid even though the pixels
+// were semantically wrong.
+const REPORT_FIGURE_ONE_CAPTURE_CONTRACT = 'figure1-global-overview-target-detail-v8-semantic-recapture';
+const REPORT_FIGURE_ONE_CLOSEUP_CAPTURE_CONTRACT = 'figure1-target-closeup-v8-required-focus-crop';
 window.REPORT_FIGURE_ONE_CAPTURE_CONTRACT = REPORT_FIGURE_ONE_CAPTURE_CONTRACT;
+window.REPORT_FIGURE_ONE_CLOSEUP_CAPTURE_CONTRACT = REPORT_FIGURE_ONE_CLOSEUP_CAPTURE_CONTRACT;
 
 // Every report slot has a semantic capture contract.  The contract is part
 // of the durable figure row, so a restart can distinguish a valid image from
 // an older/partial capture even when both files have a stable-looking name.
 const REPORT_FIGURE_CAPTURE_CONTRACTS = Object.freeze({
     report_fig1_global: REPORT_FIGURE_ONE_CAPTURE_CONTRACT,
-    report_fig1_closeup: REPORT_FIGURE_ONE_CAPTURE_CONTRACT,
+    report_fig1_closeup: REPORT_FIGURE_ONE_CLOSEUP_CAPTURE_CONTRACT,
     report_fig2_axial: 'figure2-peak-dose-axial-v2',
     report_fig2_sagittal: 'figure2-peak-dose-sagittal-v2',
     report_fig2_coronal: 'figure2-peak-dose-coronal-v2',
-    report_fig2_dose_surface: 'figure2-dose-surface-v3',
+    report_fig2_dose_surface: 'figure2-dose-surface-v5-runtime-mapped',
     report_fig2_dvh: REPORT_DVH_CAPTURE_CONTRACT,
 });
 window.REPORT_FIGURE_CAPTURE_CONTRACTS = REPORT_FIGURE_CAPTURE_CONTRACTS;
+
+const REPORT_FIGURE_CAPTURE_PROFILES = Object.freeze({
+    report_fig1_global: 'global_overview',
+    report_fig1_closeup: 'target_closeup',
+});
+
+function reportFigureCaptureProfileForAxis(axis) {
+    return String(REPORT_FIGURE_CAPTURE_PROFILES[String(axis || '')] || '');
+}
+window.reportFigureCaptureProfileForAxis = reportFigureCaptureProfileForAxis;
 
 function reportFigureCaptureContractForAxis(axis) {
     return String(REPORT_FIGURE_CAPTURE_CONTRACTS[String(axis || '')] || '');
@@ -1486,10 +1524,11 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
     function _captureReportCanvasFocus(canvas, focusBox, maxOutputEdge = 1200, {
         padding = 0.12,
         minAspect = 1.25,
+        requireFocusCrop = false,
     } = {}) {
         if (!canvas || canvas.width < 1 || canvas.height < 1
             || !(focusBox && !focusBox.isEmpty()) || !scene3D.camera) {
-            return _captureReportCanvasFit(canvas, maxOutputEdge);
+            return requireFocusCrop ? null : _captureReportCanvasFit(canvas, maxOutputEdge);
         }
 
         try {
@@ -1507,7 +1546,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             const finite = corners.filter(point =>
                 Number.isFinite(point.x) && Number.isFinite(point.y) && Number.isFinite(point.z));
             if (finite.length !== corners.length || finite.length < 1) {
-                return _captureReportCanvasFit(canvas, maxOutputEdge);
+                return requireFocusCrop ? null : _captureReportCanvasFit(canvas, maxOutputEdge);
             }
 
             const width = canvas.width;
@@ -1566,7 +1605,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 && sy + sh >= boxBottom - 0.5;
             if (!cropContainsFocus) {
                 console.warn('[Report] Focused crop would exclude projected plan content; preserving full capture');
-                return _captureReportCanvasFit(canvas, maxOutputEdge);
+                return requireFocusCrop ? null : _captureReportCanvasFit(canvas, maxOutputEdge);
             }
             const sourceLongEdge = Math.max(sw, sh);
             const requestedLongEdge = Number(maxOutputEdge);
@@ -1583,7 +1622,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             return output.toDataURL('image/png');
         } catch (error) {
             console.warn('[Report] Focused 3D crop failed; preserving full capture:', error);
-            return _captureReportCanvasFit(canvas, maxOutputEdge);
+            return requireFocusCrop ? null : _captureReportCanvasFit(canvas, maxOutputEdge);
         }
     }
 
@@ -1683,6 +1722,52 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             ctx.fillText(`${tick.value.toFixed(0)} Gy`, labelX, y);
         });
         ctx.restore();
+    }
+
+    // A colorbar is only meaningful when the CTV/OAR materials really carry
+    // dose vertex colors.  Checking the scene contract here prevents a
+    // normal-surface canvas from being mislabeled as a dose-surface image
+    // after a failed/late material mapping or a cold workspace restore.
+    function _reportDoseSurfaceEvidence() {
+        const mappedMeshIds = [];
+        Object.entries(scene3D.meshes || {}).forEach(([id, mesh]) => {
+            if (!mesh || typeof _isDoseTexturableMesh !== 'function'
+                || !_isDoseTexturableMesh(id, mesh)) return;
+            const surface = typeof getMeshSurface === 'function'
+                ? getMeshSurface(mesh) : mesh;
+            const positions = surface?.geometry?.attributes?.position;
+            const colors = surface?.geometry?.attributes?.color;
+            const materials = Array.isArray(surface?.material)
+                ? surface.material : [surface?.material];
+            const usesVertexColors = materials.some(material =>
+                material?.vertexColors === true || material?.vertexColors === 2);
+            const runtimeMapped = (
+                surface?.userData?.doseTextureMapped === true
+                && surface?.userData?.doseTextureRenderSignature === 'dose_texture_vertex_colors'
+            ) || (
+                mesh?.userData?.doseTextureMapped === true
+                && mesh?.userData?.doseTextureRenderSignature === 'dose_texture_vertex_colors'
+            );
+            if (positions?.count > 0 && colors?.count === positions.count
+                && usesVertexColors && runtimeMapped) {
+                mappedMeshIds.push(id);
+            }
+        });
+        const recorded = new Set(
+            Array.isArray(state.doseTexture?.mappedMeshIds)
+                ? state.doseTexture.mappedMeshIds.map(value => String(value))
+                : [],
+        );
+        const recordedMeshesMatch = !recorded.size
+            || mappedMeshIds.every(id => recorded.has(String(id)));
+        return {
+            ready: !!state.doseTexture?.enabled
+                && !state.doseTexture?.applying
+                && state.doseTexture?.renderSignature === 'dose_texture_vertex_colors'
+                && mappedMeshIds.length > 0
+                && recordedMeshesMatch,
+            mappedMeshIds,
+        };
     }
 
     const reportReferenceDirection = _reportReferenceViewDirection();
@@ -1962,6 +2047,33 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 return box;
             }
 
+            function _computeGlobalPlanBox({ includeNeedles = true } = {}) {
+                // Figure 1(a) is deliberately global: every visible planning
+                // structure and planned path participates in its framing.
+                // The CT-wide skin envelope, dose surfaces, and interaction
+                // handles are excluded because they are presentation/runtime
+                // objects rather than implant-plan evidence.
+                const box = new THREE.Box3();
+                for (const [id, mesh] of Object.entries(scene3D.meshes)) {
+                    if (!mesh || !mesh.visible) continue;
+                    const key = String(id || '').toLowerCase();
+                    const type = String(mesh?.userData?.type || '').toLowerCase();
+                    const isNeedleHandle = type === 'needle_handle';
+                    const isDose = key.startsWith('dose_iso_') || type === 'dose_isosurface';
+                    const isSkin = key === 'skin' || key === 'skin_surface'
+                        || mesh === scene3D.skinMesh
+                        || ['skin', 'skin_surface', 'guide_skin_surface'].includes(type);
+                    const isNeedle = !isNeedleHandle
+                        && (key.startsWith('needle_') || type === 'needle');
+                    if (isNeedleHandle || isDose || isSkin || (!includeNeedles && isNeedle)) continue;
+                    try { box.expandByObject(mesh); } catch (_) {}
+                }
+                if (!(box.min.x < box.max.x)) {
+                    return _computeFocusedPlanBox({ includeOars: true, includeNeedles });
+                }
+                return box;
+            }
+
             function _frameCameraToBox(box, mode) {
                 const direction = mode === 'detail'
                     ? new THREE.Vector3(0.55, -0.25, 0.8).normalize()
@@ -2206,7 +2318,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
 
             // Figure 1(a) is the global plan. Include the full planned needle
             // geometry, but omit the CT-wide skin envelope from the framing.
-            const overviewBox = _computeFocusedPlanBox({ includeOars: true, includeNeedles: true });
+            const overviewBox = _computeGlobalPlanBox({ includeNeedles: true });
             _frameCameraToBox(overviewBox, 'overview');
             await _waitFrames(2);
             if (!isCurrentCapture()) return { stale: true };
@@ -2290,6 +2402,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             let imgB = await _capture3D('View B (translucent tumor)', REPORT_FIGURE_LONG_EDGE, detailBox, {
                 padding: 0.16,
                 minAspect: 1.25,
+                requireFocusCrop: true,
             });
             if (!imgB) {
                 forceRender3DViewer();
@@ -2298,7 +2411,30 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 imgB = await _capture3D('View B (translucent tumor retry)', REPORT_FIGURE_LONG_EDGE, detailBox, {
                     padding: 0.16,
                     minAspect: 1.25,
+                    requireFocusCrop: true,
                 });
+            }
+
+            // A duplicate byte-for-byte capture is never a valid global/detail
+            // pair. Try one tighter report-only crop once; if the renderer
+            // still returns the same pixels, do not publish a misleading
+            // Figure 1(b). The next hydration/capture pass will retry it.
+            if (imgA && imgB && imgA === imgB) {
+                console.warn('[Report] Figure 1(a)/(b) produced identical pixels; retrying the target crop');
+                const renderer = scene3D.renderer;
+                const canvas = renderer?.domElement;
+                if (canvas) {
+                    imgB = _captureReportCanvasFocus(
+                        canvas,
+                        detailBox,
+                        REPORT_FIGURE_LONG_EDGE,
+                        { padding: 0.06, minAspect: 1.05, requireFocusCrop: true },
+                    );
+                }
+            }
+            if (imgA && imgB && imgA === imgB) {
+                console.warn('[Report] Figure 1(b) remains identical to Figure 1(a); withholding duplicate close-up');
+                imgB = null;
             }
 
             // Figure 1 is a semantic group, not a pre-composed bitmap. The
@@ -2307,11 +2443,13 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 figureGroup: 'figure1', figureNumber: 1, subfigure: 'a', sortOrder: 1,
                 captureRole: 'planning_overview',
                 captureContract: REPORT_FIGURE_ONE_CAPTURE_CONTRACT,
+                captureProfile: 'global_overview',
             });
             if (imgB) _push(labels.lblInside, labels.capInside, imgB, 'report_fig1_closeup', {
                 figureGroup: 'figure1', figureNumber: 1, subfigure: 'b', sortOrder: 2,
                 captureRole: 'planning_closeup',
-                captureContract: REPORT_FIGURE_ONE_CAPTURE_CONTRACT,
+                captureContract: REPORT_FIGURE_ONE_CLOSEUP_CAPTURE_CONTRACT,
+                captureProfile: 'target_closeup',
             });
 
             // Restore immediately on the normal path; the finally block
@@ -2411,6 +2549,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             reportCaptureStep(6, '三维剂量面（Fig 2d）', '3D dose surface (Fig 2d)');
             let doseSurfaceDataUrl = null;
             let restoreDoseSurfaceState = null;
+            let doseTextureEvidence = null;
             try {
                 const savedTextureMode = !!state.doseTexture.enabled;
                 const savedCamera = scene3D.camera && scene3D.controls ? {
@@ -2445,8 +2584,12 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                             applyMeshOpacity(mesh, savedOp[id].opacity, saved.visible);
                         }
                     }
-                    if (isCurrentCapture() && !savedTextureMode && state.doseTexture.enabled) {
-                        await setDoseTextureMode(false, { silent: true });
+                    if (isCurrentCapture() && savedTextureMode !== !!state.doseTexture.enabled) {
+                        // Restore the exact pre-capture display mode in both
+                        // directions. The old code only restored normal mode;
+                        // a failed recapture could therefore leave an already
+                        // dose-mapped Viewer in the wrong state.
+                        await setDoseTextureMode(savedTextureMode, { silent: true });
                     }
                     if (isCurrentCapture() && savedCamera
                         && scene3D.camera === savedCamera.camera
@@ -2479,7 +2622,27 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     }
                     if (isCurrentCapture()) forceRender3DViewer();
                 };
-                await setDoseTextureMode(true, { silent: true });
+                const doseModeResult = await setDoseTextureMode(true, {
+                    silent: true,
+                    reason: 'report-figure-2d',
+                });
+                if (!isCurrentCapture()) return { stale: true };
+                if (!doseModeResult?.success || doseModeResult.enabled !== true) {
+                    throw new Error(
+                        doseModeResult?.error
+                        || 'Dose surface mapping did not complete',
+                    );
+                }
+                // The material transaction has completed, but one committed
+                // frame is still required before readback. Validate both
+                // the state flag and the actual geometry/material contract.
+                await _waitFrames(2);
+                doseTextureEvidence = _reportDoseSurfaceEvidence();
+                if (!doseTextureEvidence.ready) {
+                    throw new Error(
+                        'No CTV/OAR mesh with validated dose vertex colors was rendered',
+                    );
+                }
                 if (!isCurrentCapture()) return { stale: true };
                 for (const [id, mesh] of Object.entries(scene3D.meshes || {})) {
                     if (!mesh) continue;
@@ -2559,6 +2722,14 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     // pixels so Figure 2 never embeds an apparent black panel.
                     async function captureDoseSurface3D(label) {
                         if (!isCurrentCapture()) return null;
+                        const evidence = _reportDoseSurfaceEvidence();
+                        if (!evidence.ready) {
+                            console.warn(
+                                '[Report] Refusing Fig 2(d): the canvas is not in validated dose-surface mode',
+                                evidence,
+                            );
+                            return null;
+                        }
                         const renderer = scene3D.renderer;
                         const canvas = renderer?.domElement;
                         if (!renderer || !canvas) return null;
@@ -2622,6 +2793,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 await _waitFrames(2);
             } catch (e) {
                 console.warn('[Report] dose surface close-up capture failed:', e);
+                reportCaptureStep(6, '三维剂量面验证失败，未保存 Fig 2d', 'Dose-surface validation failed; Fig 2(d) was not saved', 'warning');
             } finally {
                 try { await restoreDoseSurfaceState?.(); } catch (restoreError) {
                     console.warn('[Report] dose surface state restore failed:', restoreError);
@@ -2674,7 +2846,11 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 labels.lblDoseSurface, labels.capDoseSurface, doseSurfaceDataUrl,
                 'report_fig2_dose_surface', {
                     figureGroup: 'figure2', figureNumber: 2, subfigure: 'd', sortOrder: 4,
-                    captureRole: 'dose_surface_3d', peakVoxel: { ...pv },
+                    captureRole: 'dose_surface_3d',
+                    displayMode: 'dose_surface',
+                    renderSignature: 'dose_texture_vertex_colors',
+                    mappedMeshCount: doseTextureEvidence?.mappedMeshIds?.length || 0,
+                    peakVoxel: { ...pv },
                 },
             );
             if (dvhDataUrl) _push(labels.lblDvh, labels.capDvh, dvhDataUrl, 'report_fig2_dvh', {

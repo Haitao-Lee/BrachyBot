@@ -708,8 +708,17 @@ def _algorithm_planning_snapshot(agent: Any) -> Dict[str, List[Dict[str, Any]]]:
         trajectory_id = f"traj_{trajectory_index + 1}"
         for seed_index, seed in enumerate(entry.get("seeds") or []):
             if isinstance(seed, Mapping):
-                position = seed.get("position") or seed.get("pos")
-                direction = seed.get("direction") or seed.get("dir")
+                # Do not use ``or`` for NumPy coordinates.  A restored or
+                # migrated planning snapshot legitimately stores these fields
+                # as ndarray values, whose truth value is ambiguous.  The
+                # legacy ``pos``/``dir`` aliases are only fallbacks when the
+                # canonical field is absent.
+                position = seed.get("position")
+                if position is None:
+                    position = seed.get("pos")
+                direction = seed.get("direction")
+                if direction is None:
+                    direction = seed.get("dir")
             elif isinstance(seed, (list, tuple)) and len(seed) >= 2:
                 position, direction = seed[0], seed[1]
             else:
@@ -785,7 +794,26 @@ def planning_signature(snapshot: Mapping[str, Any]) -> str:
         "seeds": snapshot.get("seeds") or [],
         "needles": snapshot.get("needles") or [],
     }
-    encoded = json.dumps(compact, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+    def json_default(value: Any) -> Any:
+        # Coordinate migration and workspace hydration may leave NumPy arrays
+        # in the live planning snapshot even though the persisted JSON form
+        # uses lists.  Normalize both arrays and NumPy scalar values before
+        # hashing so guide regeneration has the same signature in either
+        # representation.
+        if isinstance(value, np.ndarray):
+            return value.tolist()
+        if isinstance(value, np.generic):
+            return value.item()
+        raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+    encoded = json.dumps(
+        compact,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        default=json_default,
+    )
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
@@ -1491,6 +1519,84 @@ def _truncated_boundary_faces(body: np.ndarray) -> Dict[str, bool]:
     return result
 
 
+def _segment_crosses_truncated_boundary(
+    ct_image: Any,
+    target: np.ndarray,
+    external: np.ndarray,
+    boundary_faces: Mapping[str, bool],
+) -> bool:
+    """Return whether a planned needle crosses a flagged CT acquisition face.
+
+    The skin-entry sampler intentionally finds a valid *first* body sample.
+    That is not sufficient for a stale plan whose deep endpoint continues out
+    through a truncated cap after traversing the body.  The trajectory-init
+    safety filter normally removes such a path, but the guide generator is an
+    independent entry point and must fail closed when handed an older snapshot.
+    Work in continuous XYZ CT indices and test the complete target/external
+    segment against all six faces; this also handles a target endpoint that is
+    only a fraction of a voxel outside the image after resampling.
+    """
+    if ct_image is None or not isinstance(boundary_faces, Mapping):
+        return False
+    if not any(bool(value) for value in boundary_faces.values()):
+        return False
+    try:
+        size_xyz = np.asarray(ct_image.GetSize(), dtype=np.float64)
+        if size_xyz.size != 3 or np.any(size_xyz < 3):
+            return False
+        points = []
+        for point in (target, external):
+            points.append(np.asarray(
+                ct_image.TransformPhysicalPointToContinuousIndex(
+                    tuple(float(value) for value in np.asarray(point).reshape(-1)[:3])
+                ),
+                dtype=np.float64,
+            ))
+        start, end = points
+        if any(value.size != 3 or not np.all(np.isfinite(value)) for value in points):
+            return False
+        delta = end - start
+        max_index = size_xyz - 1.0
+        face_flags = (
+            (bool(boundary_faces.get("x_min")), bool(boundary_faces.get("x_max"))),
+            (bool(boundary_faces.get("y_min")), bool(boundary_faces.get("y_max"))),
+            (bool(boundary_faces.get("z_min")), bool(boundary_faces.get("z_max"))),
+        )
+
+        def inside(value):
+            return bool(np.all(value >= 0.0) and np.all(value <= max_index))
+
+        for axis in range(3):
+            component = float(delta[axis])
+            if abs(component) <= 1e-12:
+                continue
+            for side, boundary in enumerate((0.0, max_index[axis])):
+                if not face_flags[axis][side]:
+                    continue
+                t = (boundary - float(start[axis])) / component
+                if t < -1e-8 or t > 1.0 + 1e-8:
+                    continue
+                crossing = start + t * delta
+                if any(
+                    crossing[index] < -1e-6 or crossing[index] > max_index[index] + 1e-6
+                    for index in range(3) if index != axis
+                ):
+                    continue
+                probe_t = min(
+                    1e-4,
+                    max(1e-8, 1e-3 / max(1.0, float(np.max(np.abs(delta))))),
+                )
+                before = start + (t - probe_t) * delta
+                after = start + (t + probe_t) * delta
+                if inside(before) != inside(after):
+                    return True
+        return False
+    except Exception:
+        logger.warning("[surgical_guide] truncated-boundary segment check failed", exc_info=True)
+        # Do not turn an unavailable safety check into an unsafe guide.
+        return True
+
+
 def _smooth_body_mask(
     body: np.ndarray,
     source_spacing_zyx: Sequence[float],
@@ -1612,6 +1718,7 @@ def _path_records(
     agent: Any,
     body: np.ndarray,
     selected_needle_ids: Optional[Iterable[Any]] = None,
+    truncated_boundary_faces: Optional[Mapping[str, bool]] = None,
 ) -> List[NeedleGuidePath]:
     memory = agent.memory
     ct_image = memory.retrieve("ct_image")
@@ -1626,12 +1733,21 @@ def _path_records(
             continue
         try:
             seed_by_trajectory.setdefault(str(seed.get("trajectory_id") or ""), []).append(
-                _as_point(seed.get("position") or seed.get("pos"), "seed position")
+                _as_point(
+                    seed.get("position")
+                    if seed.get("position") is not None
+                    else seed.get("pos"),
+                    "seed position",
+                )
             )
         except SurgicalGuideError:
             continue
     paths: List[NeedleGuidePath] = []
-    boundary_faces = _truncated_boundary_faces(body)
+    boundary_faces = dict(
+        truncated_boundary_faces
+        if isinstance(truncated_boundary_faces, Mapping)
+        else _truncated_boundary_faces(body)
+    )
     trunc_z_min = bool(boundary_faces["z_min"])
     trunc_z_max = bool(boundary_faces["z_max"])
     for index, needle in enumerate(snapshot["needles"]):
@@ -1645,6 +1761,14 @@ def _path_records(
             continue
         target = _as_point(points[0], "needle target")
         external = _as_point(points[-1], "needle external endpoint")
+        if _segment_crosses_truncated_boundary(
+            ct_image, target, external, boundary_faces
+        ):
+            logger.warning(
+                "[surgical_guide] skipping needle %s: segment crosses a truncated CT face",
+                needle_id,
+            )
+            continue
         entry, inward = _sample_skin_entry(
             ct_image, body, target, external,
             truncated_z_min=trunc_z_min,
@@ -1677,7 +1801,10 @@ def _path_records(
             seed_count=len(linked_seeds),
         ))
     if not paths:
-        raise SurgicalGuideError("No planned needle geometry is available for a puncture guide")
+        raise SurgicalGuideError(
+            "No planned needle geometry is available for a puncture guide; "
+            "all available paths may have been excluded at a truncated CT scan boundary"
+        )
     return paths
 
 
@@ -3123,7 +3250,18 @@ def generate_surgical_guide(
     # record the truncation state so the caller can warn the operator.
     trunc_z_min = bool(boundary_faces["z_min"])
     trunc_z_max = bool(boundary_faces["z_max"])
-    paths = _path_records(agent, body, selected_needle_ids)
+    paths = _path_records(
+        agent,
+        body,
+        selected_needle_ids,
+        truncated_boundary_faces=boundary_faces,
+    )
+    if not paths:
+        raise SurgicalGuideError(
+            "No planned needle path reaches a valid skin surface after excluding "
+            "CT scan-boundary entries; regenerate trajectories with a full-FOV CT "
+            "or choose a lateral entry direction."
+        )
     auxiliary_specs = _auxiliary_hole_specs(paths, params)
     truncated_fov = bool(any(boundary_faces.values()))
 
@@ -3445,6 +3583,12 @@ def generate_surgical_guide(
         "attempted": False,
         "method": None,
         "initial_open_or_nonmanifold_edges": 0,
+        "methods_tried": [],
+        "safety_policy": (
+            "A topology repair is accepted only when every primary channel "
+            "retains printable wall support and the final mesh passes strict "
+            "two-face edge closure."
+        ),
     }
     vertices, faces = _mesh_from_mask(solid, ct_image, lower_xyz, spacing_xyz)
     # Marching Cubes and the global Taubin pass are retained for the plate and
@@ -3467,52 +3611,85 @@ def generate_surgical_guide(
     )
     if not validation.get("watertight"):
         mesh_repair["attempted"] = True
-        mesh_repair["method"] = "restricted_voxel_closing_and_bore_recut"
         mesh_repair["initial_open_or_nonmanifold_edges"] = int(
             validation.get("open_or_nonmanifold_edges") or 0
         )
 
-        # Close only one-voxel topology cracks. The result is constrained back
-        # to the real lateral skin shell, then every known bore is cut again.
-        # Re-cutting is essential: a closing operation must never fill a main
-        # needle channel or an auxiliary alternate puncture hole.
-        repaired_solid = ndimage.binary_closing(
-            solid,
-            structure=ndimage.generate_binary_structure(3, 1),
-            iterations=1,
-        )
-        repaired_solid &= (~body_crop) & (outside_distance >= protected_clearance)
-        repaired_solid &= boundary_safe_mask
+        def try_mesh_repair_candidate(
+            candidate: np.ndarray,
+            method: str,
+        ) -> bool:
+            """Rebuild and QA one topology-repair candidate.
 
-        for spec in realized_auxiliary_specs:
-            hole_sdf, box = _cylinder_sdf_in_region(
+            Dense needle plans can create one-voxel material bridges at a
+            multi-channel intersection.  A candidate must be re-constrained
+            to the CT-derived skin shell and re-drilled with the exact final
+            cutters before it is even considered for meshing.  This prevents
+            a morphology pass from silently closing a needle channel or
+            changing the patient's skin-facing geometry.
+            """
+            nonlocal vertices, faces, bore_quality, validation, primary_sleeve_support
+            candidate = np.asarray(candidate, dtype=bool)
+            candidate &= (~body_crop) & (outside_distance >= protected_clearance)
+            candidate &= boundary_safe_mask
+
+            for spec in realized_auxiliary_specs:
+                hole_sdf, box = _cylinder_sdf_in_region(
+                    ct_image,
+                    lower_xyz,
+                    body_crop.shape,
+                    spacing_xyz,
+                    np.asarray(spec["start"], dtype=np.float64),
+                    np.asarray(spec["end"], dtype=np.float64),
+                    float(spec["radius_mm"]),
+                )
+                candidate[box] &= ~(hole_sdf <= 0.0)
+            # Re-cut every primary channel after morphology.  In particular,
+            # this keeps an opening/closing repair from restoring material at
+            # a crossing sleeve or at a shared dense-channel intersection.
+            _subtract_cylinder_specs_from_mask(
+                candidate,
                 ct_image,
                 lower_xyz,
-                body_crop.shape,
                 spacing_xyz,
-                np.asarray(spec["start"], dtype=np.float64),
-                np.asarray(spec["end"], dtype=np.float64),
-                float(spec["radius_mm"]),
+                primary_bore_specs,
             )
-            repaired_solid[box] &= ~(hole_sdf <= 0.0)
-        # A binary closing repair may restore material at channel/sleeve
-        # intersections. Reuse the exact final cutters rather than a shorter
-        # sleeve-only bore so repair cannot reintroduce the blocked-hole bug.
-        _subtract_cylinder_specs_from_mask(
-            repaired_solid,
-            ct_image,
-            lower_xyz,
-            spacing_xyz,
-            primary_bore_specs,
-        )
-        repaired_solid, repaired_component_cleanup = _retain_largest_printable_component(
-            repaired_solid,
-            int(params["minimum_component_voxels"]),
-        )
+            candidate, component_cleanup = _retain_largest_printable_component(
+                candidate,
+                int(params["minimum_component_voxels"]),
+            )
+            attempt: Dict[str, Any] = {
+                "method": str(method),
+                "voxel_count": int(np.count_nonzero(candidate)),
+                "component_count": int(_face_component_count(candidate)),
+                "accepted": False,
+            }
+            if not bool(np.any(candidate)):
+                attempt["reason"] = "empty_after_reconstraint"
+                mesh_repair["methods_tried"].append(attempt)
+                return False
 
-        if bool(np.any(repaired_solid)):
+            repaired_support = _primary_sleeve_support_quality(
+                candidate,
+                ct_image,
+                lower_xyz,
+                spacing_xyz,
+                paths,
+                params,
+            )
+            attempt["primary_sleeve_support"] = {
+                "valid": bool(repaired_support.get("valid")),
+                "unsupported_needle_ids": list(
+                    repaired_support.get("unsupported_needle_ids") or []
+                ),
+            }
+            if not repaired_support.get("valid"):
+                attempt["reason"] = "primary_sleeve_support_lost"
+                mesh_repair["methods_tried"].append(attempt)
+                return False
+
             repaired_vertices, repaired_faces = _mesh_from_mask(
-                repaired_solid,
+                candidate,
                 ct_image,
                 lower_xyz,
                 spacing_xyz,
@@ -3525,26 +3702,65 @@ def generate_surgical_guide(
                 primary_bore_specs=primary_bore_specs,
             )
             repaired_validation = mesh_validation(repaired_vertices, repaired_faces)
-            repaired_support = _primary_sleeve_support_quality(
-                repaired_solid,
-                ct_image,
-                lower_xyz,
-                spacing_xyz,
-                paths,
-                params,
+            attempt["validation"] = {
+                "watertight": bool(repaired_validation.get("watertight")),
+                "open_edges": int(repaired_validation.get("open_edges") or 0),
+                "nonmanifold_edges": int(
+                    repaired_validation.get("nonmanifold_edges") or 0
+                ),
+            }
+            if not repaired_validation.get("watertight"):
+                attempt["reason"] = "mesh_not_watertight"
+                mesh_repair["methods_tried"].append(attempt)
+                return False
+
+            vertices = repaired_vertices
+            faces = repaired_faces
+            bore_quality = repaired_bore_quality
+            validation = repaired_validation
+            primary_sleeve_support = repaired_support
+            plate_connectivity["component_cleanup_after_mesh_repair"] = (
+                component_cleanup
             )
-            if repaired_validation.get("watertight") and repaired_support.get("valid"):
-                vertices = repaired_vertices
-                faces = repaired_faces
-                bore_quality = repaired_bore_quality
-                validation = repaired_validation
-                primary_sleeve_support = repaired_support
-                plate_connectivity["component_cleanup_after_mesh_repair"] = (
-                    repaired_component_cleanup
-                )
-                mesh_repair["repaired_open_or_nonmanifold_edges"] = int(
-                    validation.get("open_or_nonmanifold_edges") or 0
-                )
+            attempt["accepted"] = True
+            mesh_repair["methods_tried"].append(attempt)
+            mesh_repair["method"] = str(method)
+            mesh_repair["repaired_open_or_nonmanifold_edges"] = int(
+                validation.get("open_or_nonmanifold_edges") or 0
+            )
+            return True
+
+        # First close one-voxel cracks using the historical 6-connected pass.
+        # This is conservative for ordinary plate cracks and keeps the exact
+        # previous behavior for sparse plans.
+        repaired = try_mesh_repair_candidate(
+            ndimage.binary_closing(
+                solid,
+                structure=ndimage.generate_binary_structure(3, 1),
+                iterations=1,
+            ),
+            "restricted_voxel_closing_and_bore_recut",
+        )
+
+        # A dense cluster can instead leave a one-voxel diagonal material
+        # bridge where several already-overlapping bores meet.  Closing does
+        # not remove that singular bridge, and the resulting Marching Cubes
+        # surface has a small number of non-manifold edges even though there
+        # are no open edges.  A single 26-connected opening removes only these
+        # voxel-scale bridges; it is then constrained, re-drilled, reduced to
+        # one component, and accepted only if every planned primary channel
+        # still has measurable printable wall support.  It turns a valid
+        # shared-channel union into a valid manifold without dropping a
+        # trajectory or weakening the strict final QA.
+        if not repaired and int(validation.get("nonmanifold_edges") or 0) > 0:
+            try_mesh_repair_candidate(
+                ndimage.binary_opening(
+                    solid,
+                    structure=np.ones((3, 3, 3), dtype=bool),
+                    iterations=1,
+                ),
+                "dense_channel_26_connected_opening_and_bore_recut",
+            )
 
         if not validation.get("watertight"):
             open_edges = int(validation.get("open_edges") or 0)

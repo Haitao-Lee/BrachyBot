@@ -13,6 +13,7 @@ import logging
 import time
 
 from utils.operation_tracker import track_operation
+from utils.user_errors import format_tool_error, normalize_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,11 @@ class ToolResult:
         self.data = data
         self.message = message
         self.display = display
-        self.metadata = metadata or {}
+        # Every adapter promises mapping-shaped metadata.  Normalize at this
+        # boundary because optional/research adapters have historically
+        # returned lists, which made downstream ``metadata.get`` calls crash
+        # with a second, less useful exception.
+        self.metadata = normalize_metadata(metadata, source="ToolResult")
         self.error = error
         self.execution_time = execution_time
 
@@ -146,7 +151,7 @@ class BaseTool(ABC):
             return ToolResult(
                 success=False,
                 error=str(e),
-                message=f"Tool execution failed: {str(e)}",
+                message=format_tool_error(self.name, str(e), {}, "en"),
                 execution_time=execution_time,
             )
     

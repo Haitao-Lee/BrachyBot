@@ -329,7 +329,7 @@
 
 				const offset = new THREE.Vector3();
 				const orbitUp = new THREE.Vector3();
-				const worldUp = new THREE.Vector3( 0, 1, 0 );
+				const yawAxis = new THREE.Vector3();
 				const right = new THREE.Vector3();
 				const yawQuaternion = new THREE.Quaternion();
 				const pitchQuaternion = new THREE.Quaternion();
@@ -368,10 +368,22 @@
 
 					if ( Math.abs( yaw ) > 0 ) {
 
-						yawQuaternion.setFromAxisAngle( worldUp, yaw );
-						offset.applyQuaternion( yawQuaternion );
-						orbitUp.applyQuaternion( yawQuaternion );
-						scope.object.quaternion.premultiply( yawQuaternion ).normalize();
+						// Horizontal dragging must be measured in the current
+						// screen coordinate system. Rotating around the fixed
+						// world +Y axis makes the same mouse movement change its
+						// apparent direction after the camera has been tilted or
+						// crossed a pole. That was the source of the intermittent
+						// "drag right, object turns left" feeling. The current
+						// camera-up vector is the stable horizontal trackball axis.
+						yawAxis.copy( orbitUp ).normalize();
+						if ( yawAxis.lengthSq() > 1e-12 ) {
+
+							yawQuaternion.setFromAxisAngle( yawAxis, yaw );
+							offset.applyQuaternion( yawQuaternion );
+							orbitUp.applyQuaternion( yawQuaternion );
+							scope.object.quaternion.premultiply( yawQuaternion ).normalize();
+
+						}
 
 					}
 
@@ -506,12 +518,15 @@
 
 				scope.domElement.removeEventListener( 'contextmenu', onContextMenu );
 				scope.domElement.removeEventListener( 'pointerdown', onPointerDown );
+				scope.domElement.removeEventListener( 'pointercancel', onPointerCancel );
 				scope.domElement.removeEventListener( 'wheel', onMouseWheel );
 				scope.domElement.removeEventListener( 'touchstart', onTouchStart );
 				scope.domElement.removeEventListener( 'touchend', onTouchEnd );
 				scope.domElement.removeEventListener( 'touchmove', onTouchMove );
 				scope.domElement.ownerDocument.removeEventListener( 'pointermove', onPointerMove );
 				scope.domElement.ownerDocument.removeEventListener( 'pointerup', onPointerUp );
+				scope.domElement.ownerDocument.removeEventListener( 'pointercancel', onPointerCancel );
+				window.removeEventListener( 'blur', onWindowBlur );
 
 				if ( scope._domElementKeyEvents !== null ) {
 
@@ -536,6 +551,7 @@
 				TOUCH_DOLLY_ROTATE: 6
 			};
 			let state = STATE.NONE;
+			let activePointerId = null;
 			const EPS = 0.000001; // current position in spherical coordinates
 
 			const spherical = new THREE.Spherical();
@@ -731,9 +747,13 @@
 				rotateEnd.set( event.clientX, event.clientY );
 				rotateDelta.subVectors( rotateEnd, rotateStart ).multiplyScalar( scope.rotateSpeed );
 				const size = getElementSize();
-				rotateLeft( 2 * Math.PI * rotateDelta.x / size.height );
+				// Keep horizontal and vertical drags at the same angular
+				// scale. A height-only denominator makes a wide viewer feel
+				// disconnected from the cursor.
+				const referenceSize = Math.max( 1, Math.min( size.width, size.height ) );
+				rotateLeft( 2 * Math.PI * rotateDelta.x / referenceSize );
 
-				rotateUp( 2 * Math.PI * rotateDelta.y / size.height );
+				rotateUp( 2 * Math.PI * rotateDelta.y / referenceSize );
 				rotateStart.copy( rotateEnd );
 				scope.update();
 
@@ -897,9 +917,10 @@
 
 				rotateDelta.subVectors( rotateEnd, rotateStart ).multiplyScalar( scope.rotateSpeed );
 				const size = getElementSize();
-				rotateLeft( 2 * Math.PI * rotateDelta.x / size.height );
+				const referenceSize = Math.max( 1, Math.min( size.width, size.height ) );
+				rotateLeft( 2 * Math.PI * rotateDelta.x / referenceSize );
 
-				rotateUp( 2 * Math.PI * rotateDelta.y / size.height );
+				rotateUp( 2 * Math.PI * rotateDelta.y / referenceSize );
 				rotateStart.copy( rotateEnd );
 
 			}
@@ -1002,6 +1023,18 @@
 
 			}
 
+			function onPointerCancel( event ) {
+
+				if ( state !== STATE.NONE ) onMouseUp( event );
+
+			}
+
+			function onWindowBlur() {
+
+				if ( state !== STATE.NONE ) onMouseUp( { pointerId: activePointerId } );
+
+			}
+
 			function onMouseDown( event ) {
 
 				// Prevent the browser from scrolling.
@@ -1079,8 +1112,15 @@
 
 				if ( state !== STATE.NONE ) {
 
+					activePointerId = Number.isFinite( event.pointerId ) ? event.pointerId : null;
+					if ( activePointerId !== null && typeof scope.domElement.setPointerCapture === 'function' ) {
+
+						try { scope.domElement.setPointerCapture( activePointerId ); } catch ( _ ) {}
+
+					}
 					scope.domElement.ownerDocument.addEventListener( 'pointermove', onPointerMove );
 					scope.domElement.ownerDocument.addEventListener( 'pointerup', onPointerUp );
+					scope.domElement.ownerDocument.addEventListener( 'pointercancel', onPointerCancel );
 					scope.dispatchEvent( _startEvent );
 
 				}
@@ -1117,7 +1157,21 @@
 
 				scope.domElement.ownerDocument.removeEventListener( 'pointermove', onPointerMove );
 				scope.domElement.ownerDocument.removeEventListener( 'pointerup', onPointerUp );
-				if ( scope.enabled === false ) return;
+				scope.domElement.ownerDocument.removeEventListener( 'pointercancel', onPointerCancel );
+				if ( activePointerId !== null && typeof scope.domElement.releasePointerCapture === 'function' ) {
+
+					try {
+						if ( !scope.domElement.hasPointerCapture || scope.domElement.hasPointerCapture( activePointerId ) ) {
+							scope.domElement.releasePointerCapture( activePointerId );
+						}
+					} catch ( _ ) {}
+
+				}
+				activePointerId = null;
+				if ( scope.enabled === false ) {
+					state = STATE.NONE;
+					return;
+				}
 				handleMouseUp( event );
 				scope.dispatchEvent( _endEvent );
 				state = STATE.NONE;
@@ -1262,6 +1316,7 @@
 
 			scope.domElement.addEventListener( 'contextmenu', onContextMenu );
 			scope.domElement.addEventListener( 'pointerdown', onPointerDown );
+			scope.domElement.addEventListener( 'pointercancel', onPointerCancel );
 			scope.domElement.addEventListener( 'wheel', onMouseWheel, {
 				passive: false
 			} );
@@ -1272,6 +1327,7 @@
 			scope.domElement.addEventListener( 'touchmove', onTouchMove, {
 				passive: false
 			} ); // force an update at start
+			window.addEventListener( 'blur', onWindowBlur );
 
 			this.update();
 

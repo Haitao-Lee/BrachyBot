@@ -59,12 +59,12 @@
     <script src="static/js/prism-bash.min.js?v=2" onerror="console.error('Failed to load prism-bash.min.js')"></script>
     <script src="static/js/prism-json.min.js?v=2" onerror="console.error('Failed to load prism-json.min.js')"></script>
     <script src="static/js/three.min.js?v=2" onerror="console.error('Failed to load three.min.js')"></script>
-    <script src="static/js/OrbitControls.js?v=7" onerror="console.error('Failed to load OrbitControls.js')"></script>
+    <script src="static/js/OrbitControls.js?v=8" onerror="console.error('Failed to load OrbitControls.js')"></script>
     <script src="static/js/html2canvas.min.js?v=2" onerror="console.error('Failed to load html2canvas.min.js')"></script>
     <link rel="stylesheet" href="static/css/brachybot-theme-layout.css?v=12">
-    <link rel="stylesheet" href="static/css/brachybot-chat-status.css?v=15">
-    <link rel="stylesheet" href="static/css/brachybot-panels-viewers.css?v=14">
-    <link rel="stylesheet" href="static/css/brachybot-report-controls.css?v=25">
+    <link rel="stylesheet" href="static/css/brachybot-chat-status.css?v=18">
+    <link rel="stylesheet" href="static/css/brachybot-panels-viewers.css?v=15">
+    <link rel="stylesheet" href="static/css/brachybot-report-controls.css?v=27">
     <link rel="stylesheet" href="static/css/brachybot-responsive.css?v=4">
     <link rel="stylesheet" href="static/css/brachybot-auth.css?v=7">
     <link rel="stylesheet" href="static/css/brachybot-data-export.css?v=2">
@@ -824,11 +824,13 @@
                      plus View Results (jump to a specific step's
                      output) and Export (DICOM-RT / STL / Report).
                      Each step button is disabled until its
-                     prerequisite is met (e.g. OAR seg needs CTV seg;
-                     trajectory_init needs CT loaded). Status badges
+                     prerequisite is met (e.g. CTV and OAR segmentation both need CT ready;
+                     OAR does not wait for CTV, while later planning stages remain sequential). Status badges
                      show which steps have completed. -->
                 <div id="stepButtonsSection" style="display:flex;flex-direction:column;gap:0.4rem;">
                     <div style="font-size:0.6rem;color:var(--text-dim);">Click each step in order. Steps that need an earlier result will be auto-disabled until the prerequisite completes.</div>
+                    <div id="manualWorkflowStatus" class="manual-workflow-status is-warn" role="status" aria-live="polite"
+                         data-i18n-en="Load a CT image to enable the manual workflow.">Load a CT image to enable the manual workflow.</div>
 
                     <!-- Row 1: CTV / OAR segmentation -->
                     <div style="display:flex;gap:4px;">
@@ -1059,6 +1061,11 @@
                     <button class="btn btn-primary" onclick="Report.autoFill.fromAll()"
                             data-i18n-title-zh="从 NIfTI + 规划结果自动填充所有字段"
                             data-i18n-title-en="Auto-fill all fields from NIfTI + planning result">✨ Auto-fill</button>
+                    <button class="btn btn-outline" onclick="Report.preview.refreshContent({persist: true})"
+                            data-i18n-title-zh="根据当前左侧表单内容重新渲染右侧报告预览"
+                            data-i18n-title-en="Refresh the report preview from the current form values">
+                        <span data-i18n-zh="↻ 刷新预览" data-i18n-en="↻ Refresh preview">↻ Refresh preview</span>
+                    </button>
                     <select class="form-select" id="reportTemplateSelect" onchange="applyReportTemplate(this.value)" style="width:auto;"
                             data-i18n-title-zh="应用肿瘤部位模板"
                             data-i18n-title-en="Apply a tumor-site report template">
@@ -1569,22 +1576,22 @@
   strict mode to isolated files; migrate the bundle to ES modules as one
   versioned change so implicit legacy bindings cannot break selectively.
 -->
-<script src="static/js/brachybot-chat-core.js?v=18"></script>
-<script src="static/js/brachybot-chat-todo.js?v=27"></script>
-<script src="static/js/brachybot-ui-api.js?v=64"></script>
+<script src="static/js/brachybot-chat-core.js?v=22"></script>
+<script src="static/js/brachybot-chat-todo.js?v=32"></script>
+<script src="static/js/brachybot-ui-api.js?v=69"></script>
 <script src="static/js/brachybot-auth.js?v=10"></script>
-<script src="static/js/brachybot-viewer-volume.js?v=51"></script>
-<script src="static/js/brachybot-viewer-layout.js?v=38"></script>
-<script src="static/js/brachybot-3d-manual.js?v=82"></script>
-<script src="static/js/brachybot-manual-annotation.js?v=22"></script>
-<script src="static/js/brachybot-surgical-guide.js?v=15"></script>
+<script src="static/js/brachybot-viewer-volume.js?v=56"></script>
+<script src="static/js/brachybot-viewer-layout.js?v=41"></script>
+<script src="static/js/brachybot-3d-manual.js?v=90"></script>
+<script src="static/js/brachybot-manual-annotation.js?v=26"></script>
+<script src="static/js/brachybot-surgical-guide.js?v=19"></script>
 <script src="static/js/brachybot-visual-annotation.js?v=7"></script>
-<script src="static/js/brachybot-dvh-planning.js?v=32"></script>
-<script src="static/js/brachybot-report-shell.js?v=22"></script>
-<script src="static/js/brachybot-report-editor.js?v=32"></script>
-<script src="static/js/brachybot-workspace.js?v=41"></script>
+<script src="static/js/brachybot-dvh-planning.js?v=34"></script>
+<script src="static/js/brachybot-report-shell.js?v=25"></script>
+<script src="static/js/brachybot-report-editor.js?v=36"></script>
+<script src="static/js/brachybot-workspace.js?v=44"></script>
 <script src="static/js/brachybot-session-cache.js?v=2"></script>
-<script src="static/js/brachybot-report-export.js?v=28"></script>
+<script src="static/js/brachybot-report-export.js?v=38"></script>
 <script src="static/js/brachybot-data-export.js?v=4"></script>
 <script src="static/js/brachybot-theme.js?v=1"></script>
 </body>

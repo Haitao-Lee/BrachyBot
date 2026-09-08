@@ -1614,6 +1614,7 @@ const state = {
     metrics: {},
     seeds: [],
     dvhData: null,
+    dvhPlanningId: null,
     plan3D: null,
     mesh3D: null,
     ctPath: null,
@@ -1629,6 +1630,8 @@ const state = {
     doseTexture: {
         enabled: false,
         applying: false,
+        mappedMeshIds: [],
+        renderSignature: '',
         rawAxialSlices: {},
         rawAxialSlicePromises: {},
         originalMaterials: {},
@@ -2280,7 +2283,7 @@ function _resolveUIControlElement(payload) {
     return null;
 }
 
-function executeGenericUIControl(command, value) {
+async function executeGenericUIControl(command, value) {
     const payload = _parseUIControlPayload(value);
     // Gesture coordinates/options may be supplied either at the top level or
     // as the semantic value produced by the resolver (for example
@@ -2341,6 +2344,21 @@ function executeGenericUIControl(command, value) {
         if (typeof window.PointerEvent === 'function') el.dispatchEvent(new window.PointerEvent(type, eventInit));
         else el.dispatchEvent(new MouseEvent(type.replace(/^pointer/, 'mouse'), eventInit));
     };
+    // HTMLElement.click() does not return the Promise created by an inline
+    // async handler.  That made a UI-controller click report success and let
+    // the chat turn finish while (for example) guide generation continued for
+    // minutes in the background.  For the simple, declarative handler form
+    // used by the mounted application controls, invoke the same global
+    // function directly and await its result.  Complex handlers still use the
+    // native click path, so custom event/default-action semantics are kept.
+    const invokeSimpleAsyncHandler = async () => {
+        const source = String(el.getAttribute('onclick') || '').trim();
+        const match = source.match(/^(?:return\s+)?([A-Za-z_$][\w$]*)\s*\(\s*\)\s*;?$/);
+        if (!match) return { handled: false, result: undefined };
+        const handler = window[match[1]];
+        if (typeof handler !== 'function') return { handled: false, result: undefined };
+        return { handled: true, result: await Promise.resolve(handler()) };
+    };
     const numericControl = ['range', 'number'].includes(String(el.type || '').toLowerCase());
     const currentNumeric = Number(el.value);
     const requestedNumeric = Number(payload.value ?? value);
@@ -2359,7 +2377,8 @@ function executeGenericUIControl(command, value) {
             if (typeof el.requestSubmit === 'function') el.requestSubmit();
             else el.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
         } else {
-            el.click();
+            const invoked = await invokeSimpleAsyncHandler();
+            if (!invoked.handled) el.click();
         }
         applied = 'run';
     } else if (cmd === 'reset') {
@@ -2441,7 +2460,8 @@ function executeGenericUIControl(command, value) {
             || payload.x !== undefined || payload.clientX !== undefined) {
             dispatchMouse('click', { detail: 1 });
         } else {
-            el.click();
+            const invoked = await invokeSimpleAsyncHandler();
+            if (!invoked.handled) el.click();
         }
     } else if (cmd === 'toggle') {
         if ('checked' in el) {
@@ -3706,6 +3726,7 @@ function clearClientWorkspace(options = {}) {
     const loading3D = document.getElementById('loading3D');
     if (loading3D) {
         loading3D.classList.remove('active');
+        loading3D.hidden = true;
         loading3D.setAttribute('aria-hidden', 'true');
     }
     // Clear the ownership tokens as well as the DOM class.  Otherwise a late
@@ -3731,7 +3752,8 @@ function clearClientWorkspace(options = {}) {
     state.ctSourceKind = null;
     state.ctSourceMeta = {};
     state.doseOverlay = null;
-    state.dvhData = null;
+state.dvhData = null;
+state.dvhPlanningId = null;
     state.metrics = {};
     state.seeds = [];
     state.trajectories = [];
@@ -4089,7 +4111,8 @@ async function loadCTToViewers(ctPath, options = {}) {
     // populated metrics and report via applyWorkspaceSnapshot.
     if (isCurrentOwner() && !options.skipReset) {
         state.metrics = {};
-        state.dvhData = null;
+state.dvhData = null;
+state.dvhPlanningId = null;
         state.seeds = [];
         if (typeof updateMetrics === 'function') updateMetrics({});
         const dvhPlaceholder = document.getElementById('dvhPlaceholder');
@@ -5064,7 +5087,14 @@ window.restoreActiveSessionWorkspace = restoreActiveSessionWorkspace;
 // deliberately have no fallback: a missing module must surface as an error
 // instead of displaying a false-success message.
 const _staticUiHelpers = {
-    insertSlashCommand(cmd) { const i = document.getElementById('chatInput'); if (i) { i.value = cmd; i.focus(); } },
+    insertSlashCommand(cmd) {
+        const i = document.getElementById('chatInput');
+        if (i) {
+            i.value = cmd;
+            window.resizeChatInput?.(i);
+            i.focus();
+        }
+    },
     toggleContextPanel() { const el = document.querySelector('.context-panel'); if (el) el.style.display = (el.style.display === 'none' ? '' : 'none'); },
     toggleHyperparams()  {
         const el = document.getElementById('hyperparamsSection');
@@ -5148,7 +5178,8 @@ async function init() {
         window._stateCleared = true;
         if (!startupClinicalRestoreScheduled) {
             state.seeds = [];
-            state.dvhData = null;
+state.dvhData = null;
+state.dvhPlanningId = null;
             state.metrics = {};
             state.plan3D = null;
             state.mesh3D = null;
@@ -6352,8 +6383,15 @@ async function executeUIContextAction(value, options = {}) {
         }
         if (actionId === 'node_move_ctv' || actionId === 'node_move_oar') {
             const destination = actionId.endsWith('_ctv') ? 'ctv' : 'oar';
-            const result = typeof _isDataTreeMaskId === 'function' && _isDataTreeMaskId(nodeId)
-                ? (typeof moveSelectedMasks === 'function' ? await moveSelectedMasks(destination, [nodeId]) : false)
+            const canonicalNodeId = typeof _dataTreeObjectId === 'function'
+                ? _dataTreeObjectId(nodeId)
+                : nodeId;
+            const isGenericMaskNode = (typeof _isDataTreeMaskId === 'function'
+                && _isDataTreeMaskId(nodeId))
+                || String(canonicalNodeId || '').startsWith('mask:');
+            const result = isGenericMaskNode
+                ? (typeof moveSelectedMasks === 'function'
+                    ? await moveSelectedMasks(destination, [canonicalNodeId]) : false)
                 : (typeof moveSelectedStructures === 'function' ? await moveSelectedStructures(destination, [nodeId]) : false);
             return result === false
                 ? _uiContextFailure('节点移动未执行或已取消。', 'The node move was cancelled or could not be applied.')
@@ -6916,7 +6954,10 @@ async function _executeUIActionRaw(a, options = {}) {
                 return { success: false, error: 'tree.group.visibility requires <group>,show|hide|toggle.' };
             }
             const current = String(vis).toLowerCase() === 'toggle'
-                ? !(typeof _groupViewNodes === 'function' && _groupViewNodes(group).some(item => item.visible !== false))
+                ? !(typeof getGroupVisibility === 'function'
+                    ? getGroupVisibility(group)
+                    : (typeof _groupViewNodes === 'function'
+                        && _groupViewNodes(group).some(item => item.visible !== false)))
                 : String(vis).toLowerCase() === 'show';
             if (typeof setGroupVisibility !== 'function') return { success: false, error: 'Group visibility is unavailable.' };
             setGroupVisibility(group, !!current);
@@ -6931,7 +6972,9 @@ async function _executeUIActionRaw(a, options = {}) {
                 return { success: false, error: 'tree.group.view_visibility requires <group>,2d|3d,show|hide|toggle.' };
             }
             if (typeof setGroupViewVisibility !== 'function') return { success: false, error: 'Group view visibility is unavailable.' };
-            const nodes = typeof _groupViewNodes === 'function' ? _groupViewNodes(group) : [];
+            const nodes = typeof _groupViewScopeNodes === 'function'
+                ? _groupViewScopeNodes(group)
+                : (typeof _groupViewNodes === 'function' ? _groupViewNodes(group) : []);
             const key = normalizedView === '2d' ? 'visible2D' : 'visible3D';
             const visible = normalizedVisibility === 'toggle'
                 ? nodes.some(item => item?.[key] !== false) === false
@@ -6994,8 +7037,19 @@ async function _executeUIActionRaw(a, options = {}) {
                 const results = await Promise.allSettled(
                     organs.map(o => reconstructOrgan3D(o.id, true))
                 );
-                const completed = results.filter(r => r.status === 'fulfilled').length;
-                return { success: completed > 0, reconstructed: completed, total: organs.length };
+                const values = results.map(r => r.status === 'fulfilled'
+                    ? r.value
+                    : { success: false, error: r.reason?.message || String(r.reason || 'unknown error') });
+                const completed = values.filter(value => value?.success === true).length;
+                const failed = values.length - completed;
+                return {
+                    success: completed > 0,
+                    complete: failed === 0,
+                    reconstructed: completed,
+                    failed,
+                    total: organs.length,
+                    error: values.find(value => value?.success !== true)?.error || undefined,
+                };
             }
         }
         if (target === 'tree.dose.visibility') {
@@ -9002,6 +9056,10 @@ async function _appendPersistedReportFigures(plan, galleryContext, ownerSessionI
                 sort_order: Number(figure.sortOrder) || null,
                 capture_role: String(figure.captureRole || ''),
                 capture_contract: String(figure.captureContract || ''),
+                capture_profile: String(figure.captureProfile || ''),
+                display_mode: String(figure.displayMode || ''),
+                render_signature: String(figure.renderSignature || ''),
+                mapped_mesh_count: Number(figure.mappedMeshCount) || null,
                 ..._sessionContentSelectionMetadata(selection, analyze),
             },
         });
@@ -9801,7 +9859,13 @@ function _sessionContentVisualCapability(target, presentation) {
 }
 
 function _sessionContentDvhCurves(planning) {
-    const dvh = planning?.dvh;
+    // Live results use planning.dvh; restored/legacy snapshots can expose the
+    // same durable artifact only under metrics.dvh_data.  Presentation must
+    // read both forms so "open DVH/report" does not claim that a generated
+    // curve is missing after restart or after a guide failure.
+    const dvh = planning?.dvh
+        || planning?.metrics?.dvh_data
+        || planning?.dose_metrics?.dvh_data;
     if (!dvh || typeof dvh !== 'object') return [];
     return Object.entries(dvh).map(([name, curve]) => {
         const direct = curve && Array.isArray(curve.dose_bins) && Array.isArray(curve.volume_pcts)

@@ -417,7 +417,7 @@ def _command_from_text(text: str, property_name: Optional[str]) -> Optional[str]
             if property_name == "theme" and not re.search(r"dark|light|深色|浅色|暗色|亮色", text, re.IGNORECASE):
                 return "toggle"
             return "set"
-        if re.search(r"set|make|change|adjust|turn|become|设置|设为|设成|调成|调整|改变|修改|改为|变成|让|使", text, re.IGNORECASE):
+        if re.search(r"set|make|change|adjust|turn|become|设置|设为|设成|调成|调到|调为|调整|调整到|调整为|改变|修改|改为|变成|将|把|让|使", text, re.IGNORECASE):
             return "set"
     if property_name == "session" and re.search(r"switch|切换|打开|进入", text, re.IGNORECASE):
         return "run"
@@ -1062,7 +1062,15 @@ def _context_action_matches_command(
 
 
 def _typed_fallback(text: str, property_name: Optional[str], command: Optional[str], value: Any, group: Optional[str]) -> Optional[Dict[str, Any]]:
-    if not property_name or not command:
+    if not property_name:
+        return None
+    # A value-bearing opacity/color/etc. request is a setting operation even
+    # when the user used an informal adjustment verb that is not present in
+    # the command vocabulary. This remains property-driven and does not
+    # whitelist a particular sentence.
+    if command is None and property_name in {"opacity", "color", "zoom", "window", "threshold"} and value is not None:
+        command = "set"
+    if not command:
         return None
     if property_name == "language" and command == "set" and value in {"zh", "en"}:
         return {
@@ -1149,6 +1157,13 @@ def resolve_ui_operation_request(
         "expansion", "language", "theme", "session", "file", "report",
     } or (property_name == "action" and has_explicit_event)
 
+    # A live catalogue entry is not, by itself, evidence that the user asked
+    # for a UI mutation. Every Data Tree leaf may publish generic context
+    # actions such as Rename, so incidental domain words must not select one
+    # of those actions. A semantic UI property, UI surface, or explicit
+    # interaction event is required before catalogue matching is allowed.
+    if not has_ui_context and not has_explicit_event:
+        return None
     for entry in catalog:
         action = entry.get("action") if isinstance(entry.get("action"), Mapping) else {}
         if not action:
