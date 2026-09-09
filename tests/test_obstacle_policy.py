@@ -67,3 +67,56 @@ def test_trajectory_obstacle_gate_checks_forward_and_reverse_segments():
 
     volume[0, 0, 1] = 0
     assert not _trajectory_path_hits_obstacle(trajectory, volume, 2)
+
+class _OverrideMemory(_Memory):
+    def __init__(self, ui_state, values):
+        super().__init__(ui_state)
+        self.values = dict(values)
+
+    def retrieve(self, key):
+        return self.values.get(key)
+
+
+def test_persisted_traversability_override_changes_planning_obstacle_volume_both_ways():
+    ui_state = {
+        "data_tree": {
+            "organs": [
+                {"id": "organ_52", "label_id": 52, "category": "traversable", "source": "oar"},
+            ]
+        }
+    }
+    values = {
+        "structure_catalog": [
+            {"object_id": "structure:oar:52", "classification": "oar", "target_label": 52,
+             "traversability": "traversable"},
+        ],
+        "structure_overrides": {
+            "structure:oar:52": {"classification": "oar", "target_label": 52,
+                                  "traversability": "traversable"},
+        },
+    }
+    agent = _Agent(ui_state)
+    agent.memory = _OverrideMemory(ui_state, values)
+    labels, source = _resolve_data_tree_obstacle_labels(agent)
+    assert 52 not in labels
+    assert source == "data_tree_override"
+    traversable = _build_radiation_volume(
+        np.array([[[0]]], dtype=np.int16),
+        np.array([[[52]]], dtype=np.int16),
+        obstacle_labels=labels,
+        obstacle_source=source,
+    )
+    assert traversable[0, 0, 0] == 0
+    values["structure_catalog"][0]["traversability"] = "non_traversable"
+    values["structure_overrides"]["structure:oar:52"]["traversability"] = "non_traversable"
+    ui_state["data_tree"]["organs"][0]["category"] = "non_traversable"
+    labels, source = _resolve_data_tree_obstacle_labels(agent)
+    assert 52 in labels
+    assert source == "data_tree_override"
+    blocked = _build_radiation_volume(
+        np.array([[[0]]], dtype=np.int16),
+        np.array([[[52]]], dtype=np.int16),
+        obstacle_labels=labels,
+        obstacle_source=source,
+    )
+    assert blocked[0, 0, 0] == 2

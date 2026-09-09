@@ -1518,6 +1518,7 @@ function _collectUIState() {
             // parent categories, but never serialize mesh geometry here.
             organs: (dataTreeState.organs || []).map((organ) => ({
                 id: organ.id || null,
+                object_id: organ.objectId || organ.object_id || null,
                 label_id: Number.isFinite(Number(organ.labelId)) ? Number(organ.labelId) : null,
                 label: organ.label || organ.name || null,
                 category: organ.category === 'non_traversable' ? 'non_traversable' : 'traversable',
@@ -6400,10 +6401,9 @@ async function executeUIContextAction(value, options = {}) {
         if (actionId === 'node_move_non_traversable' || actionId === 'node_move_traversable') {
             const destination = actionId.endsWith('_non_traversable') ? 'non_traversable' : 'traversable';
             if (typeof batchMoveToCategory !== 'function') return _uiContextFailure('OAR 穿刺分类执行器不可用。', 'The OAR traversability executor is unavailable.');
-            const result = await _uiContextWithSelection([nodeId], () => {
-                batchMoveToCategory(destination);
-                return true;
-            });
+            const result = await _uiContextWithSelection([nodeId], () =>
+                batchMoveToCategory(destination)
+            );
             return result === false
                 ? _uiContextFailure('节点分类移动未执行或已取消。', 'The node classification move was cancelled or could not be applied.')
                 : _uiContextSuccess(actionId, { node_id: nodeId, destination });

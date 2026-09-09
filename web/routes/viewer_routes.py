@@ -1635,6 +1635,11 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     "name": str(item["name"]),
                     "voxel_count": int(item["voxel_count"]),
                     "object_id": object_id,
+                    # Explicit OAR traversability is a clinical planning
+                    # property, not merely a Data Tree color/group.  Omit it
+                    # for untouched rows so the browser can apply its normal
+                    # default ontology without inventing an override.
+                    "traversability": item.get("traversability"),
                 }
             return jsonify({
                 "success": True,
