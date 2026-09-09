@@ -3281,8 +3281,8 @@ function _syncTumorTypeSelectorAppearance() {
             // This prevents stale controls from a previous tumor type from
             // submitting a guaranteed-invalid request.
             const allowedModalities = {
-                biomedparse_liver_tumor: ['CT', 'CTA'],
-                biomedparse_kidney_lesion: ['CT', 'CTA'],
+                nnunet_liver_tumor: ['CT', 'CTA'],
+                nnunet_kidney_tumor: ['CT', 'CTA'],
                 biomedparse_lung_lesion: ['CT'],
                 biomedparse_colon_primary: ['CT'],
                 biomedparse_head_neck_cancer: ['CT'],
@@ -3322,7 +3322,7 @@ function _syncTumorTypeSelectorAppearance() {
         // The validated pancreatic route gets an immediate green bootstrap
         // state; the async probe can still downgrade it if this runtime is
         // missing the model resource.
-        || (capability === 'loading' && selected?.value === 'nnunet_pancreatic');
+        || (capability === 'loading' && ['nnunet_pancreatic', 'nnunet_liver_tumor', 'nnunet_kidney_tumor'].includes(selected?.value));
     ['available', 'unavailable', 'verified', 'experimental', 'disabled'].forEach(name => {
         select.classList.remove(`tumor-type-${name}`);
     });
@@ -3331,7 +3331,7 @@ function _syncTumorTypeSelectorAppearance() {
         const stateName = option.dataset.capabilityState || 'disabled';
         const optionCallable = option.dataset.callable === 'true'
             || stateName === 'verified'
-            || (stateName === 'loading' && option.value === 'nnunet_pancreatic');
+            || (stateName === 'loading' && ['nnunet_pancreatic', 'nnunet_liver_tumor', 'nnunet_kidney_tumor'].includes(option.value));
         option.style.color = optionCallable ? '#4ade80' : '#fb7185';
         option.style.fontWeight = optionCallable ? '600' : '500';
         option.title = option.dataset.capabilityReason || '';
@@ -3422,13 +3422,13 @@ function updateTumorTypeSelector(value) {
     if (!raw) return false;
     const aliases = {
         pancreas: 'nnunet_pancreatic', pancreatic: 'nnunet_pancreatic',
-        liver: 'biomedparse_liver_tumor', kidney: 'biomedparse_kidney_lesion',
+        liver: 'nnunet_liver_tumor', kidney: 'nnunet_kidney_tumor',
         lung: 'biomedparse_lung_lesion', colon: 'biomedparse_colon_primary',
         prostate: 'biomedparse_prostate_lesion',
         'head and neck': 'biomedparse_head_neck_cancer', head_neck: 'biomedparse_head_neck_cancer',
         '胰腺': 'nnunet_pancreatic', '胰脏': 'nnunet_pancreatic',
-        '肝': 'biomedparse_liver_tumor', '肝脏': 'biomedparse_liver_tumor',
-        '肾': 'biomedparse_kidney_lesion', '肾脏': 'biomedparse_kidney_lesion',
+        '肝': 'nnunet_liver_tumor', '肝脏': 'nnunet_liver_tumor',
+        '肾': 'nnunet_kidney_tumor', '肾脏': 'nnunet_kidney_tumor',
         '肺': 'biomedparse_lung_lesion', '肺部': 'biomedparse_lung_lesion',
         '结肠': 'biomedparse_colon_primary', '结肠癌': 'biomedparse_colon_primary',
         '前列腺': 'biomedparse_prostate_lesion', '头颈': 'biomedparse_head_neck_cancer',

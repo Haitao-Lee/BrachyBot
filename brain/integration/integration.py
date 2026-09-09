@@ -81,8 +81,8 @@ def create_ctv_segmentation_tool(anatomy: str):
 
     key_map = {
         "pancreatic": "pancreatic_tumor",
-        "liver": "biomedparse_liver_tumor",
-        "kidney": "biomedparse_kidney_lesion",
+        "liver": "nnunet_liver_tumor",
+        "kidney": "nnunet_kidney_tumor",
         "prostate": "biomedparse_prostate_lesion",
         "lung": "biomedparse_lung_lesion",
         "colon": "biomedparse_colon_primary",

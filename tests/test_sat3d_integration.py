@@ -12,14 +12,18 @@ import SimpleITK as sitk
 def test_automatic_routes_use_biomedparse_and_pancreas_stays_nnunet():
     from tool_factory.CTV_seg import get_tool, normalize_tumor_type
     from tool_factory.CTV_seg.biomedparse_v2 import BiomedParseV2CTVTool
+    from tool_factory.CTV_seg.nnunet_cascade_tumor import (
+        NNUNetKidneyTumorTool,
+        NNUNetLiverTumorTool,
+    )
     from tool_factory.CTV_seg.pancreatic_tumor_nnunet import NNUNetPancreaticTumorTool
     from tool_factory.CTV_seg.sat3d import SAT3DCTVTool
 
     expected = {
-        "liver": "biomedparse_liver_tumor",
-        "sat3d_liver_tumor": "biomedparse_liver_tumor",
-        "kidney": "biomedparse_kidney_lesion",
-        "sat3d_kidney_tumor": "biomedparse_kidney_lesion",
+        "liver": "nnunet_liver_tumor",
+        "sat3d_liver_tumor": "nnunet_liver_tumor",
+        "kidney": "nnunet_kidney_tumor",
+        "sat3d_kidney_tumor": "nnunet_kidney_tumor",
         "lung": "biomedparse_lung_lesion",
         "colon": "biomedparse_colon_primary",
         "head and neck": "biomedparse_head_neck_cancer",
@@ -27,7 +31,13 @@ def test_automatic_routes_use_biomedparse_and_pancreas_stays_nnunet():
     }
     for alias, canonical in expected.items():
         assert normalize_tumor_type(alias) == canonical
-        assert isinstance(get_tool(alias), BiomedParseV2CTVTool)
+        tool = get_tool(alias)
+        if canonical == "nnunet_liver_tumor":
+            assert isinstance(tool, NNUNetLiverTumorTool)
+        elif canonical == "nnunet_kidney_tumor":
+            assert isinstance(tool, NNUNetKidneyTumorTool)
+        else:
+            assert isinstance(tool, BiomedParseV2CTVTool)
     assert normalize_tumor_type("sat3d_interactive_liver_tumor") == "sat3d_interactive_liver_tumor"
     assert isinstance(get_tool("sat3d_interactive_liver_tumor"), SAT3DCTVTool)
     assert normalize_tumor_type("pancreas") == "nnunet_pancreatic"
@@ -40,7 +50,7 @@ def test_brain_factory_preserves_automatic_and_interactive_default_routes():
     automatic = create_ctv_segmentation_tool("liver")
     interactive = create_ctv_segmentation_tool("sat3d_interactive_liver_tumor")
 
-    assert automatic.default_tumor_type == "biomedparse_liver_tumor"
+    assert automatic.default_tumor_type == "nnunet_liver_tumor"
     assert automatic.input_schema["required"] == []
     assert interactive.default_tumor_type == "sat3d_liver_tumor"
     assert interactive.input_schema["required"] == ["positive_points"]
@@ -216,8 +226,8 @@ def test_frontend_exposes_biomedparse_automatic_routes_and_hides_sat3d_prompt_to
     html = (root / "web" / "app" / "index.html").read_text(encoding="utf-8")
     manual = (root / "web" / "app" / "static" / "js" / "brachybot-manual-annotation.js").read_text(encoding="utf-8")
     for tumor_type in (
-        "biomedparse_liver_tumor",
-        "biomedparse_kidney_lesion",
+        "nnunet_liver_tumor",
+        "nnunet_kidney_tumor",
         "biomedparse_lung_lesion",
         "biomedparse_colon_primary",
         "biomedparse_prostate_lesion",

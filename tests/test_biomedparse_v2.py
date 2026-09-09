@@ -22,8 +22,8 @@ def test_biomedparse_automatic_routes_are_advertised_and_pancreas_stays_separate
     # valid restored ``voco_liver`` or a user-facing ``liver`` before that
     # normalization can route it to the current CTV executor.
     assert "enum" not in tumor_schema
-    assert "biomedparse_liver_tumor" in tumor_schema["description"]
-    assert "biomedparse_kidney_lesion" in tumor_schema["description"]
+    assert "nnunet_liver_tumor" in tumor_schema["description"]
+    assert "nnunet_kidney_tumor" in tumor_schema["description"]
     assert "sat3d_interactive" in tumor_schema["description"]
 
 
@@ -34,11 +34,11 @@ def test_deprecated_voco_aliases_are_hidden_from_the_agent():
     compatibility aliases and must never be presented as a second automatic model.
     """
     from tool_factory.CTV_seg import CTVSegmentationTool, get_tool
-    from tool_factory.CTV_seg.biomedparse_v2 import BiomedParseV2CTVTool
+    from tool_factory.CTV_seg.nnunet_cascade_tumor import NNUNetLiverTumorTool
     from tool_factory.CTV_seg.model_catalog import filter_catalog
 
     description = CTVSegmentationTool().input_schema["properties"]["tumor_type"]["description"]
-    assert "biomedparse_liver_tumor" in description
+    assert "nnunet_liver_tumor" in description
     assert "sat3d_liver_tumor" not in description
     # No deprecated VoCo alias may be advertised to the agent. The aliases
     # remain accepted only by the server-side compatibility normalizer.
@@ -46,20 +46,25 @@ def test_deprecated_voco_aliases_are_hidden_from_the_agent():
     assert not any(str(m.get("tumor_type", "")).startswith("voco_") for m in filter_catalog())
     # The alias must still resolve so existing callers keep working, but it
     # must resolve to the automatic text-guided route rather than SAT3D.
-    assert isinstance(get_tool("voco_liver"), BiomedParseV2CTVTool)
+    assert isinstance(get_tool("voco_liver"), NNUNetLiverTumorTool)
 
 
 def test_legacy_voco_aliases_route_to_current_ctv_executors():
-    """All non-pancreatic automatic legacy aliases now use BiomedParse v2."""
-    from tool_factory.CTV_seg import TOOL_REGISTRY, get_tool
+    """Legacy liver/kidney aliases use the dedicated local cascades."""
+    from tool_factory.CTV_seg import get_tool
     from tool_factory.CTV_seg.biomedparse_v2 import BiomedParseV2CTVTool
+    from tool_factory.CTV_seg.nnunet_cascade_tumor import (
+        NNUNetKidneyTumorTool,
+        NNUNetLiverTumorTool,
+    )
     from tool_factory.CTV_seg.pancreatic_tumor_nnunet import NNUNetPancreaticTumorTool
 
-    for alias in ("kidney_tumor", "lung_tumor", "colon_tumor",
-                  "voco_kidney", "voco_lung", "voco_colon"):
+    for alias in ("lung_tumor", "colon_tumor", "voco_lung", "voco_colon"):
         assert isinstance(get_tool(alias), BiomedParseV2CTVTool), alias
+    for alias in ("kidney_tumor", "voco_kidney"):
+        assert isinstance(get_tool(alias), NNUNetKidneyTumorTool), alias
     for alias in ("liver_tumor", "voco_liver"):
-        assert isinstance(get_tool(alias), BiomedParseV2CTVTool), alias
+        assert isinstance(get_tool(alias), NNUNetLiverTumorTool), alias
     # Pancreatic stays on nnU-Net for all aliases.
     assert isinstance(get_tool("nnunet_pancreatic"), NNUNetPancreaticTumorTool)
     assert isinstance(get_tool("voco_pancreatic"), NNUNetPancreaticTumorTool)
@@ -70,13 +75,13 @@ def test_tumor_type_normalizer_unifies_catalog_display_and_legacy_aliases():
     from tool_factory.CTV_seg import normalize_tumor_type
 
     aliases = {
-        "liver": "biomedparse_liver_tumor",
-        "liver tumor": "biomedparse_liver_tumor",
-        "biomedparse_v2_liver_tumor": "biomedparse_liver_tumor",
-        "voco_liver": "biomedparse_liver_tumor",
-        "sat3d_liver_tumor": "biomedparse_liver_tumor",
-        "\u809d\u810f\u80bf\u7624": "biomedparse_liver_tumor",
-        "kidney": "biomedparse_kidney_lesion",
+        "liver": "nnunet_liver_tumor",
+        "liver tumor": "nnunet_liver_tumor",
+        "biomedparse_v2_liver_tumor": "nnunet_liver_tumor",
+        "voco_liver": "nnunet_liver_tumor",
+        "sat3d_liver_tumor": "nnunet_liver_tumor",
+        "\u809d\u810f\u80bf\u7624": "nnunet_liver_tumor",
+        "kidney": "nnunet_kidney_tumor",
         "lung": "biomedparse_lung_lesion",
         "colon": "biomedparse_colon_primary",
         "head and neck": "biomedparse_head_neck_cancer",
@@ -476,12 +481,13 @@ def test_model_catalog_exposes_four_state_capability(monkeypatch, tmp_path):
         for item in catalog_with_local_status(str(tmp_path))
         if item.get("tumor_type")
     }
-    liver = items["biomedparse_liver_tumor"]
-    assert liver["capability_state"] == "experimental"
-    assert liver["target_semantics"] == "automatic_text_guided_review_required_candidate"
+    liver = items["nnunet_liver_tumor"]
+    assert liver["capability_state"] == "verified"
+    assert liver["target_semantics"] == "liver_tumor_ctv_only"
     assert liver["clinical_case_validation"] is False
     assert liver["callable"] is True
     assert liver["technical_call_chain_passed"] is True
+    assert liver["folds_available"] == 5
     interactive = items["sat3d_interactive_liver_tumor"]
     assert interactive["prompt_support"]["zero_prompt"] is False
     assert interactive["ui_visible"] is False

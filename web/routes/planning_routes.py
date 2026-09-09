@@ -3535,7 +3535,11 @@ def register_planning_routes(
         payload = request.get_json(silent=True) or {}
         tumor_type = str(payload.get("tumor_type") or "").strip()
         current_type = str(agent.memory.retrieve("tumor_type_used", "") or "").strip()
-        if not tumor_type.startswith(("biomedparse_", "sat3d_")) or tumor_type != current_type:
+        supported_validation_types = (
+            tumor_type.startswith(("biomedparse_", "sat3d_"))
+            or tumor_type in {"nnunet_liver_tumor", "nnunet_kidney_tumor"}
+        )
+        if not supported_validation_types or tumor_type != current_type:
             return jsonify({"success": False, "error": "Tumor type does not match the active case"}), 409
         if not bool(agent.memory.retrieve("ctv_segmented", False)):
             return jsonify({"success": False, "error": "No active CTV result"}), 409
@@ -3545,9 +3549,14 @@ def register_planning_routes(
                 tumor_type,
                 data_tree_viewer_passed=bool(payload.get("data_tree_viewer_passed")),
             )
-        else:
+        elif tumor_type.startswith("sat3d_"):
             agent.memory.store(
                 "sat3d_data_tree_viewer_passed",
+                bool(payload.get("data_tree_viewer_passed")),
+            )
+        else:
+            agent.memory.store(
+                f"{tumor_type}_data_tree_viewer_passed",
                 bool(payload.get("data_tree_viewer_passed")),
             )
         return jsonify({"success": True, "tumor_type": tumor_type})

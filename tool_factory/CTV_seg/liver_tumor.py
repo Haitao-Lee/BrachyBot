@@ -1,16 +1,15 @@
 """Backward-compatible liver tumor CTV entrypoint.
 
-The actual implementation lives in ``totalsegmentator_liver_tumor``.  This
-module keeps the historical import and tool name working for restored code,
-while ensuring that old callers no longer fail closed or fall back to
-BiomedParse.
+The production implementation is the supplied two-stage nnUNet v2 cascade.
+This module keeps the historical import and tool name working for restored
+code while routing every liver tumor request to the dedicated local model.
 """
 
-from .totalsegmentator_liver_tumor import TotalSegmentatorLiverTumorTool
+from .nnunet_cascade_tumor import NNUNetLiverTumorTool
 
 
-class LiverTumorSegmentationTool(TotalSegmentatorLiverTumorTool):
-    """Historical class name delegating to TotalSegmentator."""
+class LiverTumorSegmentationTool(NNUNetLiverTumorTool):
+    """Historical class name delegating to the dedicated liver cascade."""
 
     @property
     def name(self) -> str:
@@ -19,6 +18,6 @@ class LiverTumorSegmentationTool(TotalSegmentatorLiverTumorTool):
     @property
     def description(self) -> str:
         return (
-            "Compatibility wrapper for TotalSegmentator liver tumor CTV. "
-            "Only the liver_tumor output from the liver_vessels task is returned."
+            "Compatibility wrapper for the dedicated five-fold nnUNet v2 "
+            "liver tumor cascade."
         )
