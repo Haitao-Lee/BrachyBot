@@ -90,7 +90,12 @@ function switchPanel(name, el) {
     // the figures array is already populated).
     if (name === 'report' && window.state && window.state.ctLoaded) {
         try {
-            if (typeof autoCaptureReportFigures === 'function') {
+            const captureGate = typeof window.reportCaptureAllowed === 'function'
+                ? window.reportCaptureAllowed({ requireCompleted: true })
+                : { allowed: true };
+            if (!captureGate.allowed) {
+                uiDebugLog('[Report] panel capture deferred:', captureGate.reason, captureGate.status);
+            } else if (typeof autoCaptureReportFigures === 'function') {
                 // Wait for 3D meshes and DVH to be ready before capturing.
                 // Retry up to 5 times with increasing delays.
                 let _attempts = 0;

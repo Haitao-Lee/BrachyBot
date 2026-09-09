@@ -1639,24 +1639,86 @@ function _scheduleCasePlanningRefresh(sessionId, delay = 250) {
     const key = String(sessionId || '');
     if (!key || typeof refreshPlanningUI !== 'function') return false;
     if (window._sessionPlanningRefreshTimers[key]) return false;
+    window._sessionPlanningRefreshAttempts = window._sessionPlanningRefreshAttempts || {};
     window._sessionPlanningRefreshTimers[key] = setTimeout(async () => {
         delete window._sessionPlanningRefreshTimers[key];
         if (String(activeSessionId || '') !== key) return;
+        let outcome = null;
         try {
-            // Planning results can become visible a few moments after the
-            // terminal tool event (especially after a cold restore). Keep the
-            // refresh on the case-owned endpoint and let it wait through a
-            // short 202/pending window instead of silently treating the plan
-            // as empty. This same pass hydrates the Data Tree, viewers,
-            // clinical evaluation, report and surgical guide.
-            await refreshPlanningUI({
+            // This is the single terminal planning refresh. Intermediate
+            // dose events use a separate viewer-only refresh and are never
+            // allowed to enter report capture.
+            outcome = await refreshPlanningUI({
                 sessionId: key,
                 autoGenerateGuide: true,
                 retryPending: true,
+                requireCompletedPlanning: true,
+                captureReportFigures: true,
             });
         } catch (error) {
             console.error('[SSE] refreshPlanningUI failed:', error);
+            outcome = {
+                success: false,
+                stage: 'refresh_exception',
+                planningStatus: '',
+                reportCaptureReady: false,
+            };
         }
+        if (String(activeSessionId || '') !== key) return;
+        const planningStatus = String(outcome?.planningStatus || '').trim().toLowerCase();
+        const attempt = Number(window._sessionPlanningRefreshAttempts[key] || 0);
+        const terminalReady = planningStatus === 'completed'
+            && outcome?.reportCaptureReady === true;
+        const retryable = (
+            !planningStatus
+            || planningStatus === 'running'
+            || planningStatus === 'pending'
+            || planningStatus === 'queued'
+            || planningStatus === 'draft'
+            || planningStatus === 'in_progress'
+            || outcome?.stage === 'planning_in_progress'
+            || outcome?.stage === 'planning_results_http'
+            || outcome?.stage === 'refresh_exception'
+            || (planningStatus === 'completed' && !terminalReady)
+        );
+        if (terminalReady) {
+            delete window._sessionPlanningRefreshAttempts[key];
+            try {
+                if (window.state) window.state.lastPlanTimestamp = new Date().toISOString();
+            } catch (_) {}
+            window.dispatchEvent(new CustomEvent('brachybot:planning-run-finished', {
+                detail: {
+                    sessionId: key,
+                    planningId: outcome?.planningId || null,
+                    requestId: window.__brachybotReportPlanningLifecycle?.requestId || '',
+                    planningStatus,
+                    reportCaptureReady: true,
+                },
+            }));
+            return;
+        }
+        if (retryable && attempt < 120) {
+            window._sessionPlanningRefreshAttempts[key] = attempt + 1;
+            _scheduleCasePlanningRefresh(
+                key,
+                Math.min(1500, 250 + (attempt + 1) * 25),
+            );
+            return;
+        }
+        // A failed/cancelled run must release the lifecycle lock too, but it
+        // must never be treated as a valid report-capture boundary.
+        delete window._sessionPlanningRefreshAttempts[key];
+        window.dispatchEvent(new CustomEvent('brachybot:planning-run-finished', {
+            detail: {
+                sessionId: key,
+                planningId: outcome?.planningId || null,
+                requestId: window.__brachybotReportPlanningLifecycle?.requestId || '',
+                planningStatus: planningStatus || null,
+                reportCaptureReady: false,
+                incomplete: true,
+                stage: outcome?.stage || 'planning_refresh_incomplete',
+            },
+        }));
     }, Math.max(0, Number(delay) || 0));
     return true;
 }
@@ -3789,6 +3851,16 @@ async function sendChat(prefill, options) {
                         }
                     } else if (currentEvent === 'error' && data && data.message) {
                         turnFailed = true;
+                        if (turnPlanningRunStarted) {
+                            window.dispatchEvent(new CustomEvent('brachybot:planning-run-finished', {
+                                detail: {
+                                    sessionId: turnSessionId,
+                                    requestId: turnRequestId,
+                                    incomplete: true,
+                                    stage: 'stream_error',
+                                },
+                            }));
+                        }
                         try { window.clearPlanningPreview?.('stream-error'); } catch (_) {}
                         _setCaseTaskState(turnSessionId, 'failed', null);
                         console.warn('[chat] SSE request failed', {
@@ -3819,6 +3891,16 @@ async function sendChat(prefill, options) {
                         delete window._detachedChatTasks[turnSessionId];
                         try { window.clearPlanningPreview?.('stream-complete'); } catch (_) {}
                         if (turnCancelled) {
+                            if (turnPlanningRunStarted) {
+                                window.dispatchEvent(new CustomEvent('brachybot:planning-run-finished', {
+                                    detail: {
+                                        sessionId: turnSessionId,
+                                        requestId: turnRequestId,
+                                        incomplete: true,
+                                        stage: 'cancelled',
+                                    },
+                                }));
+                            }
                             // A replaying browser can receive the terminal
                             // cancellation event without having initiated the
                             // Stop click itself. Do not manufacture a blank
@@ -3826,15 +3908,6 @@ async function sendChat(prefill, options) {
                             cancelTurnUi('Stopped');
                             break readLoop;
                         }
-                        // BUG FIX 2026-06-17: stamp a plan-completion
-                        // timestamp so autoCaptureReportFigures can
-                        // detect and discard stale auto-captured
-                        // figures when the user re-runs planning.
-                        try {
-                            if (window.state && window.state.metrics && window.state.metrics.plan_score != null) {
-                                window.state.lastPlanTimestamp = new Date().toISOString();
-                            }
-                        } catch (_) {}
                         // FALLBACK: if planning tools ran but
                         // refreshPlanningUI was never triggered (e.g.
                         // the FINAL_PLANNING_TOOLS check didn't fire
