@@ -133,10 +133,10 @@ def test_liver_vessels_command_does_not_pass_unsupported_fast_flag(monkeypatch):
     assert "--fast" not in command
 
 
-def test_historical_liver_ctv_ids_resolve_to_biomedparse_v2():
+def test_historical_liver_ctv_ids_resolve_to_dedicated_nnunet_cascade():
     from tool_factory.CTV_seg import get_tool, normalize_tumor_type
-    from tool_factory.CTV_seg.biomedparse_v2 import BiomedParseV2CTVTool
+    from tool_factory.CTV_seg.nnunet_cascade_tumor import NNUNetLiverTumorTool
 
     for alias in ("liver", "liver_tumor", "biomedparse_liver_tumor", "voco_liver"):
-        assert normalize_tumor_type(alias) == "biomedparse_liver_tumor"
-        assert isinstance(get_tool(alias), BiomedParseV2CTVTool)
+        assert normalize_tumor_type(alias) == "nnunet_liver_tumor"
+        assert isinstance(get_tool(alias), NNUNetLiverTumorTool)

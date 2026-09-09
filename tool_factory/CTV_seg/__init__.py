@@ -34,6 +34,10 @@ from .covid_voco import VoCoCOVIDSegTool
 from .aorta_voco import VoCoAortaSegTool
 from .brats21_voco import VoCoBRATS21SegTool
 from .pancreatic_tumor_nnunet import NNUNetPancreaticTumorTool
+from .nnunet_cascade_tumor import (
+    NNUNetKidneyTumorTool,
+    NNUNetLiverTumorTool,
+)
 from .totalsegmentator_liver_tumor import TotalSegmentatorLiverTumorTool
 from .biomedparse_v2 import (
     BiomedParseV2CTVTool,
@@ -58,6 +62,9 @@ TOOL_REGISTRY = {
     "pancreatic_tumor": NNUNetPancreaticTumorTool,
     "nnunet_pancreatic": NNUNetPancreaticTumorTool,
     "voco_pancreatic": NNUNetPancreaticTumorTool,
+    # Liver and kidney use the supplied local two-stage nnUNet v2 cascades.
+    "nnunet_liver_tumor": NNUNetLiverTumorTool,
+    "nnunet_kidney_tumor": NNUNetKidneyTumorTool,
     # Supported non-pancreatic automatic tasks use BiomedParse v2 semantic
     # text prompts. These routes need no image-specific point clicks.
     **{key: BiomedParseV2CTVTool for key in BIOMEDPARSE_SITE_SPECS},
@@ -90,24 +97,38 @@ def normalize_tumor_type(value) -> str:
         "\u80f0\u817a": "nnunet_pancreatic",
         "\u80f0\u817a\u80bf\u7624": "nnunet_pancreatic",
         "\u80f0\u817a\u764c": "nnunet_pancreatic",
-        "liver": "biomedparse_liver_tumor", "liver_tumor": "biomedparse_liver_tumor",
-        "liver_cancer": "biomedparse_liver_tumor", "hepatocellular": "biomedparse_liver_tumor",
-        "hcc": "biomedparse_liver_tumor", "voco_liver": "biomedparse_liver_tumor",
-        "totalsegmentator_liver_tumor": "biomedparse_liver_tumor",
-        "total_segmentator_liver_tumor": "biomedparse_liver_tumor",
-        "biomedparse_liver_tumor": "biomedparse_liver_tumor",
-        "biomedparse_v2_liver_tumor": "biomedparse_liver_tumor",
-        "sat3d_liver_tumor": "biomedparse_liver_tumor",
-        "\u809d": "biomedparse_liver_tumor", "\u809d\u810f": "biomedparse_liver_tumor",
-        "\u809d\u810f\u80bf\u7624": "biomedparse_liver_tumor", "\u809d\u764c": "biomedparse_liver_tumor",
-        "kidney": "biomedparse_kidney_lesion", "kidney_tumor": "biomedparse_kidney_lesion",
-        "kidney_lesion": "biomedparse_kidney_lesion", "renal_tumor": "biomedparse_kidney_lesion",
-        "voco_kidney": "biomedparse_kidney_lesion",
-        "biomedparse_kidney_lesion": "biomedparse_kidney_lesion",
-        "biomedparse_v2_kidney_lesion": "biomedparse_kidney_lesion",
-        "sat3d_kidney_tumor": "biomedparse_kidney_lesion",
-        "\u80be": "biomedparse_kidney_lesion", "\u80be\u810f": "biomedparse_kidney_lesion",
-        "\u80be\u810f\u80bf\u7624": "biomedparse_kidney_lesion",
+        "liver": "nnunet_liver_tumor",
+        "liver_tumor": "nnunet_liver_tumor",
+        "liver_cancer": "nnunet_liver_tumor",
+        "hepatocellular": "nnunet_liver_tumor",
+        "hcc": "nnunet_liver_tumor",
+        "voco_liver": "nnunet_liver_tumor",
+        "totalsegmentator_liver_tumor": "nnunet_liver_tumor",
+        "total_segmentator_liver_tumor": "nnunet_liver_tumor",
+        "biomedparse_liver_tumor": "nnunet_liver_tumor",
+        "biomedparse_v2_liver_tumor": "nnunet_liver_tumor",
+        "nnunet_liver_tumor": "nnunet_liver_tumor",
+        "sat3d_liver_tumor": "nnunet_liver_tumor",
+        "liver_tumor_segmentation": "nnunet_liver_tumor",
+        "肝": "nnunet_liver_tumor",
+        "肝脏": "nnunet_liver_tumor",
+        "肝脏肿瘤": "nnunet_liver_tumor",
+        "肝癌": "nnunet_liver_tumor",
+        "kidney": "nnunet_kidney_tumor",
+        "kidney_tumor": "nnunet_kidney_tumor",
+        "kidney_lesion": "nnunet_kidney_tumor",
+        "renal_tumor": "nnunet_kidney_tumor",
+        "renal": "nnunet_kidney_tumor",
+        "voco_kidney": "nnunet_kidney_tumor",
+        "biomedparse_kidney_lesion": "nnunet_kidney_tumor",
+        "biomedparse_v2_kidney_lesion": "nnunet_kidney_tumor",
+        "nnunet_kidney_tumor": "nnunet_kidney_tumor",
+        "sat3d_kidney_tumor": "nnunet_kidney_tumor",
+        "kidney_tumor_segmentation": "nnunet_kidney_tumor",
+        "肾": "nnunet_kidney_tumor",
+        "肾脏": "nnunet_kidney_tumor",
+        "肾脏肿瘤": "nnunet_kidney_tumor",
+        "肾癌": "nnunet_kidney_tumor",
         "lung": "biomedparse_lung_lesion", "lung_tumor": "biomedparse_lung_lesion",
         "lung_lesion": "biomedparse_lung_lesion", "voco_lung": "biomedparse_lung_lesion",
         "biomedparse_lung_lesion": "biomedparse_lung_lesion",
@@ -196,11 +217,16 @@ def list_tools():
     return list(TOOL_REGISTRY.keys())
 
 
-# The LLM-facing automatic options. Pancreatic production routing stays on
-# nnU-Net; supported non-pancreatic tumor tasks use BiomedParse v2 text prompts.
+# The LLM-facing automatic options. Pancreatic, liver, and kidney production
+# routing use the installed nnU-Net paths; other supported non-pancreatic tumor
+# tasks use BiomedParse v2 text prompts.
 _PREFERRED_TUMOR_TYPES = (
-    ["pancreatic_tumor", "nnunet_pancreatic"]
-    + list(BIOMEDPARSE_SITE_SPECS)
+    ["pancreatic_tumor", "nnunet_pancreatic",
+     "nnunet_liver_tumor", "nnunet_kidney_tumor"]
+    + [
+        key for key, spec in BIOMEDPARSE_SITE_SPECS.items()
+        if str(spec.get("site")) not in {"liver", "kidney"}
+    ]
 )
 
 
@@ -279,9 +305,9 @@ class CTVSegmentationTool(BaseTool):
     def description(self) -> str:
         return (
             "Segment Clinical Target Volume (CTV/tumor) from CT images. "
-            "Supports verified local pancreatic nnU-Net and automatic BiomedParse v2 "
-            "text-guided candidates for supported non-pancreatic tumors. BiomedParse "
-            "also remains available as a separate open-vocabulary tool; SAT3D is an "
+            "Supports verified local pancreatic nnU-Net, dedicated five-fold liver "
+            "and kidney nnUNet v2 cascades, and BiomedParse v2 text-guided candidates "
+            "for other supported non-pancreatic tumors. SAT3D is an "
             "explicit point-prompted research option. Input: 3D image (SimpleITK) or path, required tumor_type for automatic "
             "segmentation, or label_path for an existing/manual CTV mask. "
             "Output: CTV binary mask and volume metrics."
@@ -305,8 +331,8 @@ class CTVSegmentationTool(BaseTool):
                         "Tumor type for specialized model. Canonical options: "
                         f"{self._tumor_types}. Friendly anatomy names, legacy "
                         "VoCo, TotalSegmentator, and historical SAT3D automatic ids "
-                        "are migrated to BiomedParse v2 by the server. Pancreas remains "
-                        "on nnU-Net. Explicit sat3d_interactive_* routes require a "
+                        "are migrated to the canonical site route by the server. Pancreas, liver, and kidney "
+                        "use local nnU-Net paths. Explicit sat3d_interactive_* routes require a "
                         "positive point prompt and are not automatic options. Required "
                         "unless label_path is provided."
                     ),
@@ -335,7 +361,7 @@ class CTVSegmentationTool(BaseTool):
                     "description": "Compatibility alias for the target organ.",
                 },
                 "target_value": {"type": "number", "default": 1, "description": "Label value for tumor voxels"},
-                "fast_mode": {"type": "boolean", "default": False, "description": "Disable TTA, reduce threads"},
+                "fast_mode": {"type": "boolean", "default": False, "description": "Explicit preview mode: single fold and larger tile step; production defaults to the validated five-fold ensemble"},
                 "image_modality": {"type": "string", "default": "CT", "description": "Input modality, e.g. CT, CTA, MRI, T2w"},
                 "positive_points": {"type": "array", "description": "Required for explicit sat3d_interactive_* routes"},
                 "negative_points": {"type": "array", "description": "Optional SAT3D negative point prompts"},

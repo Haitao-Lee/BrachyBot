@@ -14,6 +14,7 @@ from typing import Dict, Iterable, List, Optional
 from tool_factory import BaseTool, ToolResult
 
 from .biomedparse_v2 import SITE_SPECS as BIOMEDPARSE_SITE_SPECS
+from .nnunet_cascade_tumor import CASCADE_SITE_SPECS, cascade_availability
 from .sat3d import SITE_SPECS as SAT3D_SITE_SPECS
 
 
@@ -36,6 +37,56 @@ CTV_MODEL_CATALOG: List[Dict[str, object]] = [
             "https://medicaldecathlon.com/",
             "https://catalog.ngc.nvidia.com/orgs/nvidia/teams/monaitoolkit/models/monai_pancreas_ct_dints_segmentation",
         ],
+    },
+    {
+        "id": "nnunet_v2_liver_tumor_cascade",
+        "site": "liver",
+        "modality": "CT",
+        "target": "liver tumor CTV only",
+        "status": "integrated_verified_local",
+        "tool": "ctv_segmentation",
+        "tumor_type": "nnunet_liver_tumor",
+        "ui_visible": True,
+        "runtime_kind": "nnunet_v2_two_stage_cascade",
+        "script_path": "<workspace>/prostate_lesion_seg/cascade_infer_v2.py",
+        "model_root": "<workspace>/prostate_lesion_seg/trained_models/liver_cancer_seg",
+        "folds": 5,
+        "notes": (
+            "Dedicated local cascade: CT -> liver organ -> organ bbox + 30 mm -> "
+            "tumor -> paste-back. Five-fold ensemble, uint8 tumor-only output, "
+            "same CT geometry."
+        ),
+        "model_validation": {
+            "dataset_dice": 0.755,
+            "case_mean_dice": 0.611,
+            "precision": 0.83,
+            "recall": 0.69,
+        },
+    },
+    {
+        "id": "nnunet_v2_kidney_tumor_cascade",
+        "site": "kidney",
+        "modality": "CT",
+        "target": "kidney tumor CTV only",
+        "status": "integrated_verified_local",
+        "tool": "ctv_segmentation",
+        "tumor_type": "nnunet_kidney_tumor",
+        "ui_visible": True,
+        "runtime_kind": "nnunet_v2_two_stage_cascade",
+        "script_path": "<workspace>/kidney_tumor_seg/cascade_infer_kidney.py",
+        "model_root": "<workspace>/kidney_tumor_seg/trained_models/kidney_cancer_seg",
+        "folds": 5,
+        "notes": (
+            "Dedicated local cascade: CT -> kidney organ -> organ bbox + 30 mm -> "
+            "tumor -> paste-back. Five-fold ensemble, uint8 tumor-only output, "
+            "same CT geometry; kidney case_00223 was excluded during training."
+        ),
+        "model_validation": {
+            "dataset_dice": 0.857,
+            "case_mean_dice": 0.822,
+            "precision": 0.81,
+            "recall": 0.90,
+        },
     },
     *[
         {
@@ -95,7 +146,7 @@ CTV_MODEL_CATALOG: List[Dict[str, object]] = [
         "tumor_type": "totalsegmentator_liver_tumor",
         "ui_visible": False,
         "deprecated": True,
-        "deprecated_reason": "Automatic liver tumor CTV now uses BiomedParse v2.",
+        "deprecated_reason": "Automatic liver tumor CTV now uses the dedicated nnUNet v2 cascade.",
         "runtime_executable": "TotalSegmentator",
         "total_segmentator_task": "liver_vessels",
         "total_segmentator_label": "liver_tumor",
@@ -431,6 +482,27 @@ def catalog_with_local_status(repo_root: Optional[str] = None) -> List[Dict[str,
         }
         biomedparse_available = False
         biomedparse_records = {}
+    try:
+        cascade_probe = cascade_availability()
+    except Exception as exc:
+        cascade_probe = {
+            site: {
+                "site": site,
+                "tumor_type": str(spec.get("tumor_type")),
+                "available": False,
+                "missing": [f"nnUNet cascade probe failed: {exc}"],
+            }
+            for site, spec in CASCADE_SITE_SPECS.items()
+        }
+    cascade_by_type = {
+        str(probe.get("tumor_type")): probe
+        for probe in cascade_probe.values()
+        if isinstance(probe, dict)
+    }
+    cascade_by_site = {
+        str(spec.get("site", site)): str(spec.get("tumor_type"))
+        for site, spec in CASCADE_SITE_SPECS.items()
+    }
     for item in CTV_MODEL_CATALOG:
         entry = dict(item)
         rel = entry.get("local_expected_path")
@@ -446,7 +518,27 @@ def catalog_with_local_status(repo_root: Optional[str] = None) -> List[Dict[str,
         entry["data_tree_viewer_passed"] = False
         entry["clinical_case_validation"] = False
 
-        if tumor_type.startswith("sat3d_interactive_"):
+        if tumor_type in {"biomedparse_liver_tumor", "biomedparse_kidney_lesion"}:
+            replacement = (
+                "nnunet_liver_tumor"
+                if tumor_type == "biomedparse_liver_tumor"
+                else "nnunet_kidney_tumor"
+            )
+            entry.update({
+                "deprecated": True,
+                "ui_visible": False,
+                "deprecated_reason": (
+                    "Superseded by the dedicated local two-stage nnUNet v2 "
+                    "cascade for this site."
+                ),
+                "capability_state": "disabled",
+                "capability_color": "gray",
+                "capability_reason": f"Use {replacement}.",
+                "callable": False,
+                "replacement_tumor_type": replacement,
+                "target_semantics": "historical_biomedparse_route_disabled",
+            })
+        elif tumor_type.startswith("sat3d_interactive_"):
             missing = ", ".join(str(value) for value in sat3d_probe.get("missing", []))
             evidence = str(entry.get("evidence") or "research")
             entry.update({
@@ -467,6 +559,33 @@ def catalog_with_local_status(repo_root: Optional[str] = None) -> List[Dict[str,
                 "result_save_path_passed": False,
                 "data_tree_viewer_passed": False,
                 "clinical_case_validation": False,
+            })
+        elif tumor_type in cascade_by_type:
+            probe = cascade_by_type[tumor_type]
+            available = bool(probe.get("available"))
+            missing = ", ".join(str(value) for value in probe.get("missing", []))
+            entry.update({
+                "capability_state": "verified" if available else "unavailable",
+                "capability_color": "green" if available else "red",
+                "capability_reason": (
+                    "Dedicated five-fold nnUNet v2 cascade is installed and "
+                    "callable locally; CUDA is required and contour review remains "
+                    "mandatory."
+                    if available
+                    else f"Dedicated nnUNet cascade is unavailable: {missing}."
+                ),
+                "callable": available,
+                "runtime_available": available,
+                "runtime_probe": probe,
+                "technical_call_chain_passed": available,
+                "space_alignment_passed": available,
+                "result_save_path_passed": available,
+                "data_tree_viewer_passed": False,
+                "clinical_case_validation": False,
+                "target_semantics": f"{str(probe.get('site'))}_tumor_ctv_only",
+                "model_validation": probe.get("model_validation", entry.get("model_validation", {})),
+                "folds_available": probe.get("folds", entry.get("folds", 5)),
+                "requires_gpu": True,
             })
         elif tumor_type in BIOMEDPARSE_SITE_SPECS:
             missing = ", ".join(
@@ -519,7 +638,8 @@ def catalog_with_local_status(repo_root: Optional[str] = None) -> List[Dict[str,
             replacement = (
                 "nnunet_pancreatic"
                 if tumor_type == "voco_pancreatic"
-                else next(
+                else cascade_by_site.get(str(entry.get("site")))
+                or next(
                     (
                         canonical
                         for canonical, spec in BIOMEDPARSE_SITE_SPECS.items()
@@ -580,7 +700,7 @@ def filter_catalog(
     ``for_ui=True`` and must not expose the unvalidated pancreatic VoCo
     alternative as a second production choice. Deprecated legacy VoCo entries
     are hidden by default so an LLM or operator is never steered toward a
-    checkpoint that has been superseded by BiomedParse v2.
+    checkpoint that has been superseded by the dedicated local cascade or another canonical production route.
     """
     site_norm = (site or "").strip().lower()
     items = catalog_with_local_status()
