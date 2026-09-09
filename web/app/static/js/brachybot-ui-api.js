@@ -8821,6 +8821,7 @@ function _reportFiguresFromArtifactCatalog(ownerSessionId, activePlanningId, art
             planningId: ownerPlanningId || activePlanningId || '__unassigned__',
             _artifactFallback: true,
             _serverUrl: serverUrl,
+            ...(contentVersion ? { sha256: contentVersion } : {}),
         }, metadata);
     }).filter(Boolean);
 }

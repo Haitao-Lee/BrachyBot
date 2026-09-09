@@ -7320,6 +7320,7 @@ async function _refreshDoseAfterPlanningEvent(detail = {}) {
                     switchToViewers: false,
                     autoGenerateGuide: false,
                     preserveReport: true,
+                    captureReportFigures: false,
                     reason: 'dose-result-updated',
                 });
             } else if (typeof loadDoseOverlay === 'function') {

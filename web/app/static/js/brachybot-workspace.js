@@ -792,11 +792,15 @@
         }));
         figure._serverUploadPromise = uploadRequest.then(response => response.ok ? response.json() : null).then(payload => {
             const url = payload?.screenshot_url || payload?.url || '';
+            const contentSha256 = String(
+                payload?.sha256 || payload?.attachment?.sha256 || '',
+            ).trim();
             // Do not overwrite a newer figure captured while the upload was
             // in flight. The URL is an authenticated, case-owned artifact.
             if (url && figure.dataUrl === source) {
                 figure.dataUrl = url;
                 figure._serverUrl = url;
+                if (contentSha256) figure.sha256 = contentSha256;
                 delete figure._cacheKey;
                 if (ownerSessionId === String(activeSessionId || '')
                     && ownerPlanningId === String(activeReportPlanningId() || '')
@@ -996,8 +1000,42 @@
         // generated in the report language. Existing localized captions are
         // preserved; only old catalog entries missing all text use this
         // medical-English fallback.
+        // A standard report role may never be backed by the same pixels as
+        // another standard role. This is the durable counterpart of the
+        // capture-time guard: it catches stale snapshots and catalog rows
+        // created before the lifecycle gate existed, then deliberately removes
+        // every colliding role so the next terminal capture repairs both.
+        const sourceKey = figure => {
+            const sha = String(
+                figure?.sha256
+                || figure?.contentSha256
+                || figure?.content_sha256
+                || '',
+            ).trim().toLowerCase();
+            if (sha) return 'sha:' + sha;
+            const fingerprint = String(figure?.captureFingerprint || '').trim();
+            if (fingerprint) return 'fp:' + fingerprint;
+            const url = String(figure?._serverUrl || figure?.dataUrl || '').trim();
+            return url ? 'url:' + url.split('?')[0] : '';
+        };
+        const sourceCounts = new Map();
+        normalized.forEach(figure => {
+            if (!/^report_fig[12]_/.test(String(figure?.axis || ''))) return;
+            const key = sourceKey(figure);
+            if (key) sourceCounts.set(key, Number(sourceCounts.get(key) || 0) + 1);
+        });
+        const duplicatedSources = new Set(
+            [...sourceCounts.entries()]
+                .filter(([, count]) => count > 1)
+                .map(([key]) => key),
+        );
+        const deDuplicated = normalized.filter(figure => {
+            if (!/^report_fig[12]_/.test(String(figure?.axis || ''))) return true;
+            const key = sourceKey(figure);
+            return !key || !duplicatedSources.has(key);
+        });
         void language;
-        return normalized;
+        return deDuplicated;
     }
 
     window.normalizeReportFigures = normalizeReportFigures;
@@ -1045,6 +1083,7 @@
         return requiredAxes.some(axis => {
             const figure = figures.find(candidate => reportFigureAxis(candidate) === axis);
             if (!figure || !(figure.dataUrl || figure._serverUrl || figure._cacheKey)) return true;
+            if (figure._invalidCapture === true) return true;
             const figurePlanning = figure.planningId || figure.planning_id || '';
             if (expectedPlanning && String(figurePlanning || '__unassigned__') !== expectedPlanning) return true;
             if (String(figure.captureContract || '') !== reportFigureExpectedCaptureContract(axis)) return true;
@@ -2045,6 +2084,7 @@
                 _artifactFallback: true,
                 dataUrl: serverUrl,
                 _serverUrl: serverUrl,
+                ...(contentVersion ? { sha256: contentVersion } : {}),
                 ...figureMetadata,
             };
         });

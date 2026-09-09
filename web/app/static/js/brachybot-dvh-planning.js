@@ -1180,7 +1180,7 @@ async function refreshPlanningUI(options = {}) {
         || ((typeof activeSessionId !== 'undefined' && activeSessionId) ? activeSessionId : state.sessionId)
         || '',
     );
-    let refreshOutcome = { success: false, stage: 'not_started' };
+    let refreshOutcome = { success: false, stage: 'not_started', planningStatus: '', reportCaptureReady: false };
     // The registry is deliberately cheap and must be available even when a
     // draft Planning has no dose yet.  Do this independently of the clinical
     // result request so the Data Tree can expose Planning_1/Planning_2 during
@@ -1268,6 +1268,8 @@ async function refreshPlanningUI(options = {}) {
                 const expectedPlanningId = String(
                     data.planning_id || data.active_planning_id || '__unassigned__',
                 );
+                const planningStatus = String(data.planning_status || '').trim().toLowerCase();
+                const planningIsComplete = planningStatus === 'completed';
                 const responseDvh = _extractRenderableDvhPayload(data);
                 const responseHasDvh = _isRenderableDvhPayload(responseDvh);
                 const responseSeedCount = Array.isArray(data.seeds)
@@ -1289,6 +1291,8 @@ async function refreshPlanningUI(options = {}) {
                     doseSource: data.dose_source || null,
                     hasDvh: responseHasDvh,
                     hasGuide: data.has_guide === true,
+                    planningStatus,
+                    reportCaptureReady: false,
                 };
                 if (typeof dataTreeState !== 'undefined' && dataTreeState.planning) {
                     dataTreeState.planning.id = data.planning_id || null;
@@ -1311,6 +1315,30 @@ async function refreshPlanningUI(options = {}) {
                     manualPlanningState.artifactStatus = { ...(data.artifact_status || {}) };
                     if (typeof _syncManualSafetyState === 'function') _syncManualSafetyState(data);
                 }
+                // A result request can legitimately observe the new Planning
+                // run while seed optimization or dose evaluation is still
+                // running. It may update the status/Data Tree, but it must not
+                // hydrate meshes, move the camera, autofill the report, or
+                // capture evidence from the previous run.
+                if (options.requireCompletedPlanning === true && !planningIsComplete) {
+                    refreshOutcome = {
+                        ...refreshOutcome,
+                        stage: 'planning_in_progress',
+                        planningStatus,
+                        reportCaptureReady: false,
+                    };
+                    try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
+                    return resolve(refreshOutcome);
+                }
+                const reportCaptureReady = (
+                    (options.captureReportFigures === true || options.backgroundRestore === true)
+                    && planningIsComplete
+                    && data.has_dose === true
+                    && data.has_current_dose === true
+                    && data.dose_stale !== true
+                    && responseHasDvh
+                );
+                refreshOutcome.reportCaptureReady = reportCaptureReady;
                 // The registry is compact and independent from the clinical
                 // result payload.  Refresh it in parallel so the Data Tree
                 // exposes Planning_1/Planning_2 without delaying dose, DVH or
@@ -1820,13 +1848,14 @@ async function refreshPlanningUI(options = {}) {
                 const needsReportFigureRepair = typeof window.reportFiguresNeedCapture === 'function'
                     ? window.reportFiguresNeedCapture(window.reportForm, expectedPlanningId)
                     : !hasCompleteReportFigureSet;
-                if (data.dose_stale !== true
+                if (reportCaptureReady
                     && needsReportFigureRepair
                     && typeof autoCaptureReportFigures === 'function') {
                     try {
                         await autoCaptureReportFigures({
                             sessionId: expectedSessionId,
                             planningId: expectedPlanningId,
+                            allowTerminalPlanning: true,
                         });
                     } catch (error) {
                         console.warn('[3D auto-load] background report capture:', error);
@@ -1893,7 +1922,7 @@ async function refreshPlanningUI(options = {}) {
             console.warn('[3D auto-load] camera fit guard:', error);
         }
         try {
-            if (data.dose_stale !== true
+            if (reportCaptureReady
                 && typeof reportAutoFill === 'function') {
                 await reportAutoFill({ sessionId: expectedSessionId });
             }
@@ -1909,18 +1938,10 @@ async function refreshPlanningUI(options = {}) {
         // the Figure 1(a)/(b) slots with semantically reversed images.
         try {
             if (!isCurrentCase()) return resolve();
-            const needsReportFigureRepair = typeof window.reportFiguresNeedCapture === 'function'
-                ? window.reportFiguresNeedCapture(window.reportForm, expectedPlanningId)
-                : true;
-            if (data.dose_stale !== true
-                && needsReportFigureRepair
-                && typeof autoCaptureReportFigures === 'function') {
-                await autoCaptureReportFigures({
-                    sessionId: expectedSessionId,
-                    planningId: expectedPlanningId,
-                });
-            }
-            if (!isCurrentCase()) return resolve();
+            // The canonical report capture runs once below, after the final
+            // dose/DVH/mesh readiness checks. Keeping this earlier stage
+            // capture-free prevents a partially completed replan from taking
+            // ownership of the report slots.
             // Raw canvas recovery is deliberately opt-in for one-off
             // diagnostics. It must never run during normal planning or report
             // generation because it cannot guarantee the Figure 1 contract.
@@ -2270,12 +2291,13 @@ async function refreshPlanningUI(options = {}) {
             const needsReportFigureRepair = typeof window.reportFiguresNeedCapture === 'function'
                 ? window.reportFiguresNeedCapture(window.reportForm, expectedPlanningId)
                 : true;
-            if (data.dose_stale !== true
+            if (reportCaptureReady
                 && needsReportFigureRepair
                 && typeof autoCaptureReportFigures === 'function') {
                 await autoCaptureReportFigures({
                     sessionId: expectedSessionId,
                     planningId: expectedPlanningId,
+                    allowTerminalPlanning: true,
                 });
             }
         } catch (_) {}

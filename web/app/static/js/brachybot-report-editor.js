@@ -1000,12 +1000,97 @@ function invalidateReportCapture() {
 }
 window.invalidateReportCapture = invalidateReportCapture;
 
+const _reportPlanningLifecycle = (
+    window.__brachybotReportPlanningLifecycle
+    && typeof window.__brachybotReportPlanningLifecycle === 'object'
+) ? window.__brachybotReportPlanningLifecycle : {
+    active: false,
+    sessionId: '',
+    requestId: '',
+    planningId: '',
+    startedAt: 0,
+};
+window.__brachybotReportPlanningLifecycle = _reportPlanningLifecycle;
+
+function setReportPlanningLifecycle(active, detail = {}) {
+    const sessionId = String(detail.sessionId || _currentReportCaptureSessionId() || '');
+    const planningId = String(detail.planningId || '');
+    const requestId = String(detail.requestId || '');
+    if (active) {
+        _reportPlanningLifecycle.active = true;
+        _reportPlanningLifecycle.sessionId = sessionId;
+        _reportPlanningLifecycle.requestId = requestId;
+        _reportPlanningLifecycle.planningId = planningId;
+        _reportPlanningLifecycle.startedAt = Date.now();
+        window.__brachybotPlanningRunActive = true;
+        // A running plan owns the live viewer. Any capture already in flight
+        // must stop publishing and restore its state before the new run paints.
+        invalidateReportCapture();
+        return { ..._reportPlanningLifecycle };
+    }
+    const sameSession = !sessionId || !_reportPlanningLifecycle.sessionId
+        || sessionId === _reportPlanningLifecycle.sessionId;
+    const sameRequest = !requestId || !_reportPlanningLifecycle.requestId
+        || requestId === _reportPlanningLifecycle.requestId;
+    if (!sameSession || !sameRequest) return { ..._reportPlanningLifecycle };
+    _reportPlanningLifecycle.active = false;
+    window.__brachybotPlanningRunActive = false;
+    invalidateReportCapture();
+    return { ..._reportPlanningLifecycle };
+}
+
+function reportCaptureAllowed(options = {}) {
+    const planning = typeof dataTreeState !== 'undefined' ? dataTreeState?.planning : null;
+    const status = String(planning?.status || '').trim().toLowerCase();
+    const requestedPlanningId = String(options.planningId || '');
+    const activePlanningId = String(planning?.activePlanningId || '');
+    const lifecycleActive = _reportPlanningLifecycle.active
+        || window.__brachybotPlanningRunActive === true;
+    const terminalOverride = options.allowTerminalPlanning === true
+        && status === 'completed'
+        && (!requestedPlanningId || !activePlanningId || requestedPlanningId === activePlanningId);
+    if (lifecycleActive && !terminalOverride) {
+        return { allowed: false, reason: 'planning_in_progress', status };
+    }
+    if (requestedPlanningId && activePlanningId && requestedPlanningId !== activePlanningId) {
+        return { allowed: false, reason: 'planning_changed', status };
+    }
+    if (options.requireCompleted !== false
+        && status
+        && status !== 'completed'
+        && !terminalOverride) {
+        return { allowed: false, reason: 'planning_not_completed', status };
+    }
+    return { allowed: true, reason: '', status };
+}
+window.setReportPlanningLifecycle = setReportPlanningLifecycle;
+window.reportCaptureAllowed = reportCaptureAllowed;
+
+if (!window.__brachybotReportPlanningLifecycleBound) {
+    window.__brachybotReportPlanningLifecycleBound = true;
+    window.addEventListener('brachybot:planning-run-started', event => {
+        setReportPlanningLifecycle(true, event.detail || {});
+    });
+    window.addEventListener('brachybot:planning-run-finished', event => {
+        setReportPlanningLifecycle(false, event.detail || {});
+    });
+}
+
 // Serialize report captures. A planning refresh can be triggered by several
 // SSE events; overlapping captures otherwise race over mesh visibility and
 // leave the 3D renderer in the partially hidden state used by Figure 1.
 async function autoCaptureReportFigures(options = {}) {
     const requestedSessionId = String(options.sessionId || _currentReportCaptureSessionId());
     const requestedPlanningId = String(options.planningId || _currentReportCapturePlanningId());
+    const captureGate = reportCaptureAllowed({
+        planningId: requestedPlanningId,
+        allowTerminalPlanning: options.allowTerminalPlanning === true,
+        requireCompleted: options.requireCompleted !== false,
+    });
+    if (!captureGate.allowed) {
+        uiDebugLog('[Report] capture blocked:', captureGate.reason, captureGate.status);
+        return { stale: false, blocked: true, reason: captureGate.reason };
+    }
     if (_reportCapturePromise) {
         await _reportCapturePromise;
         if (requestedSessionId !== _currentReportCaptureSessionId()
@@ -1017,6 +1102,7 @@ async function autoCaptureReportFigures(options = {}) {
         sessionId: requestedSessionId,
         planningId: requestedPlanningId,
         reportForm: window.reportForm,
+        allowTerminalPlanning: options.allowTerminalPlanning === true,
     };
     const promise = _autoCaptureReportFiguresImpl(context);
     _reportCapturePromise = promise;
@@ -1047,6 +1133,15 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
     const capturePlanningId = String(captureContext.planningId || _currentReportCapturePlanningId());
     const captureGeneration = Number(captureContext.generation ?? _reportCaptureGeneration);
     const captureForm = captureContext.reportForm || window.reportForm;
+    const captureGate = reportCaptureAllowed({
+        planningId: capturePlanningId,
+        allowTerminalPlanning: captureContext.allowTerminalPlanning === true,
+        requireCompleted: true,
+    });
+    if (!captureGate.allowed) {
+        uiDebugLog('[Report] capture implementation blocked:', captureGate.reason, captureGate.status);
+        return { stale: false, blocked: true, reason: captureGate.reason };
+    }
     const isCurrentCapture = () => captureGeneration === _reportCaptureGeneration
         && captureSessionId === _currentReportCaptureSessionId()
         && capturePlanningId === _currentReportCapturePlanningId()
@@ -1162,6 +1257,23 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
         }
     }
 
+    const _captureFingerprint = dataUrl => {
+        const source = String(dataUrl || '');
+        if (!source) return '';
+        let hash = 2166136261;
+        const sample = Math.min(source.length, 8192);
+        for (let index = 0; index < sample; index += 1) {
+            hash ^= source.charCodeAt(index);
+            hash = Math.imul(hash, 16777619);
+        }
+        const tailStart = Math.max(sample, source.length - 2048);
+        for (let index = tailStart; index < source.length; index += 1) {
+            hash ^= source.charCodeAt(index);
+            hash = Math.imul(hash, 16777619);
+        }
+        return source.length + ':' + (hash >>> 0).toString(16);
+    };
+
     const _push = (title, caption, dataUrl, axis, extra) => {
         if (!isCurrentCapture()) return;
         if (!dataUrl || dataUrl.length < 1000) {
@@ -1170,9 +1282,11 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
         }
         const stableAxis = axis || '3d';
         const imageSize = _pngDataUrlSize(dataUrl);
+        const captureFingerprint = _captureFingerprint(dataUrl);
         const figure = {
             type: 'screenshot', title, dataUrl, axis: stableAxis,
             sliceIdx: null, caption, capturedAt: _ts(), ...extra,
+            captureFingerprint,
             planningId: capturePlanningId,
             captureContract: String(
                 extra?.captureContract || reportFigureCaptureContractForAxis(stableAxis) || '',
@@ -1185,6 +1299,25 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
         };
         const figures = Array.isArray(window.reportForm.figures)
             ? window.reportForm.figures : (window.reportForm.figures = []);
+        const isStandardFigure = /^report_fig[12]_/.test(stableAxis);
+        const duplicateFigure = isStandardFigure && captureFingerprint
+            ? figures.find(existing => {
+                const existingAxis = String(existing?.axis || '');
+                if (!/^report_fig[12]_/.test(existingAxis) || existingAxis === stableAxis) return false;
+                const existingFingerprint = String(
+                    existing?.captureFingerprint || '',
+                );
+                return existingFingerprint && existingFingerprint === captureFingerprint;
+            })
+            : null;
+        if (duplicateFigure) {
+            console.warn(
+                '[Report] Refusing duplicate pixels for distinct report roles:',
+                stableAxis,
+                duplicateFigure.axis,
+            );
+            return;
+        }
         const existingIndex = figures.findIndex(existing => (
             existing?.type === 'screenshot' && String(existing.axis || '') === stableAxis
         ));
@@ -2419,7 +2552,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             // pair. Try one tighter report-only crop once; if the renderer
             // still returns the same pixels, do not publish a misleading
             // Figure 1(b). The next hydration/capture pass will retry it.
-            if (imgA && imgB && imgA === imgB) {
+            if (imgA && imgB && _captureFingerprint(imgA) === _captureFingerprint(imgB)) {
                 console.warn('[Report] Figure 1(a)/(b) produced identical pixels; retrying the target crop');
                 const renderer = scene3D.renderer;
                 const canvas = renderer?.domElement;
@@ -2432,7 +2565,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     );
                 }
             }
-            if (imgA && imgB && imgA === imgB) {
+            if (imgA && imgB && _captureFingerprint(imgA) === _captureFingerprint(imgB)) {
                 console.warn('[Report] Figure 1(b) remains identical to Figure 1(a); withholding duplicate close-up');
                 imgB = null;
             }
