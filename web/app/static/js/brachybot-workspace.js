@@ -1016,7 +1016,38 @@
             const fingerprint = String(figure?.captureFingerprint || '').trim();
             if (fingerprint) return 'fp:' + fingerprint;
             const url = String(figure?._serverUrl || figure?.dataUrl || '').trim();
-            return url ? 'url:' + url.split('?')[0] : '';
+            if (url) {
+                const filename = url.split('?')[0].split('/').pop() || '';
+                const figurePlanning = String(
+                    figure?.planningId || figure?.planning_id || '',
+                ).trim();
+                const artifactRows = typeof dataTreeState !== 'undefined'
+                    && Array.isArray(dataTreeState?.exportArtifacts)
+                    ? dataTreeState.exportArtifacts : [];
+                const artifact = artifactRows.find(item => {
+                    const objectId = String(item?.objectId || item?.object_id || '');
+                    const rowFilename = (
+                        objectId.includes(':')
+                            ? objectId.split(':').slice(1).join(':')
+                            : objectId
+                    ).split(/[\\/]/).pop() || '';
+                    const rowPlanning = String(
+                        item?.planningId || item?.planning_id || '',
+                    ).trim();
+                    return rowFilename === filename
+                        && (!figurePlanning || !rowPlanning || rowPlanning === figurePlanning);
+                });
+                const artifactSha = String(
+                    artifact?.sha256
+                    || artifact?.metadata?.sha256
+                    || artifact?.viewMetadata?.sha256
+                    || artifact?.view_metadata?.sha256
+                    || '',
+                ).trim().toLowerCase();
+                if (artifactSha) return 'sha:' + artifactSha;
+                return 'url:' + url.split('?')[0];
+            }
+            return '';
         };
         const sourceCounts = new Map();
         normalized.forEach(figure => {
