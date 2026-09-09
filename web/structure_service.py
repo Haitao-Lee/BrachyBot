@@ -35,6 +35,26 @@ _BASE_KEYS = (
 )
 
 _DOWNSTREAM_KEYS = (
+    # Traversability is part of the needle-planning input contract.  A
+    # reclassification must not leave a previous candidate set, seed plan, or
+    # safety provenance looking current after the OAR policy changes.
+    "trajectories",
+    "refined_trajectories",
+    "seed_plan",
+    "seed_plan_serialized",
+    "verified_needle_geometry",
+    "needle_safety_context",
+    "obstacle_label_ids",
+    "obstacle_label_source",
+    "ref_direc_voxel",
+    "entry_boundary_faces",
+    "rl_status",
+    "total_seeds",
+    "num_trajectories",
+    "plan_config",
+    "planning_fingerprint",
+    "dose_units",
+    "dose_scale_gy",
     "dose_distribution",
     "dose_distribution_gy",
     "dose_distribution_physical_gy",
@@ -128,6 +148,24 @@ def _explicit_structure_classification(value: Mapping[str, Any]) -> str:
         classification = str(raw_value or "").strip().lower()
         if classification in {"ctv", "oar"}:
             return classification
+    return ""
+
+
+def _explicit_traversability(value: Mapping[str, Any]) -> str:
+    """Return an explicit OAR traversability override, if one exists.
+
+    "category" is the browser-facing name; "traversability" is the
+    durable planning-facing name.  Accept both during the migration so a
+    snapshot written by an intermediate build cannot silently lose an
+    operator's choice.
+    """
+    for raw_value in (
+        value.get("traversability"),
+        value.get("category"),
+    ):
+        category = str(raw_value or "").strip().lower()
+        if category in {"traversable", "non_traversable"}:
+            return category
     return ""
 
 
@@ -418,13 +456,22 @@ def build_effective_structures(memory: Any) -> EffectiveStructures:
             oar_out[item["mask"]] = target_label
             oar_names[target_label] = str(item["name"])
             oar_counts[target_label] = int(np.count_nonzero(item["mask"]))
-        public_items.append({
+        public_item = {
             **item,
             "classification": classification,
             "target_label": target_label,
             "voxel_count": int(np.count_nonzero(item["mask"])),
-        })
-
+        }
+        # Traversability is intentionally separate from CTV/OAR membership.
+        # It is meaningful only for OAR rows and is present only when the
+        # operator has explicitly overridden the default policy.  The planner
+        # can therefore retain its default hard-obstacle baseline for legacy
+        # or untouched cases while honoring an explicit Move-to action.
+        if classification == "oar":
+            traversability = _explicit_traversability(override or {})
+            if traversability:
+                public_item["traversability"] = traversability
+        public_items.append(public_item)
     return EffectiveStructures(
         ctv_out if np.any(ctv_out) else None,
         oar_out if np.any(oar_out) else None,
@@ -918,6 +965,69 @@ def reclassify_structures(
     )
     return effective
 
+
+def reclassify_structure_traversability(
+    memory: Any,
+    object_ids: Iterable[str],
+    traversability: str,
+) -> EffectiveStructures:
+    """Persist the needle-traversability policy for OAR structure objects.
+    This is deliberately not folded into the CTV/OAR "classification" field:
+    the two axes have different meanings.  An OAR can remain an OAR while
+    changing from a traversable soft organ to a non-traversable vessel/bone
+    (or back again).  The stable structure object id is the transaction key,
+    so a later label reallocation cannot attach the override to an unrelated
+    row.
+    """
+    category = str(traversability or "").strip().lower()
+    if category not in {"traversable", "non_traversable"}:
+        raise StructureError(
+            "Structure traversability must be traversable or non_traversable"
+        )
+    initialize_structure_registry(memory)
+    current = {item["object_id"]: item for item in _source_structures(memory)}
+    requested = {
+        str(value or "").strip()
+        for value in object_ids
+        if str(value or "").strip()
+    }
+    if not requested:
+        raise StructureError("No structures were selected")
+    missing = sorted(requested - set(current))
+    if missing:
+        raise StructureError(f"Structure was not found: {missing[0]}")
+    non_oar = sorted(
+        object_id for object_id in requested
+        if str(current[object_id].get("source_classification") or "").lower() != "oar"
+    )
+    if non_oar:
+        raise StructureError(
+            f"Only OAR structures can change traversability: {non_oar[0]}"
+        )
+    overrides = dict(memory.retrieve("structure_overrides") or {})
+    now = _utc_now()
+    for object_id in requested:
+        existing = dict(overrides.get(object_id) or {})
+        preferred = int(
+            existing.get("target_label")
+            or current[object_id].get("source_label")
+            or 1
+        )
+        overrides[object_id] = {
+            **existing,
+            "classification": "oar",
+            "target_label": preferred,
+            "traversability": category,
+            "updated_at": now,
+        }
+    _batch_memory_update(memory, {"structure_overrides": overrides})
+    effective = build_effective_structures(memory)
+    _commit_effective(
+        memory,
+        effective,
+        f"{len(requested)} OAR structure(s) moved to {category}",
+    )
+    return effective
 
 def delete_structure(memory: Any, object_id: str) -> EffectiveStructures:
     return delete_structures(memory, [object_id])

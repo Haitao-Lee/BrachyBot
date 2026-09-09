@@ -3425,6 +3425,7 @@ function getDataTreeNodeSnapshot() {
             opacity: Number.isFinite(Number(node.opacity)) ? Number(node.opacity) : 1,
             label: node.label || node.name || node.id,
             contextActions: Array.isArray(node.contextActions) ? [...node.contextActions] : [],
+            category: node.category ?? node.traversability ?? null,
             // Persist the clinical identity/classification of uploaded mask
             // children as explicit metadata.  The server remains the source
             // of truth; these fields are only a lossless legacy-migration
@@ -3929,7 +3930,13 @@ function updateOrganList(organData, source = '') {
             ? String(existing.label).trim()
             : '';
         const name = renamed || (uploadedUnknownSource ? `OAR ${i + 1}` : (info.name || `OAR ${i + 1}`));
-        const cat = existing?.category || pending?.category || (uploadedUnknownSource ? 'traversable' : classifyOrgan(name));
+        const serverCategory = [info.traversability, info.category]
+            .map(value => String(value || '').trim().toLowerCase())
+            .find(value => value === 'traversable' || value === 'non_traversable') || '';
+        // A server-confirmed traversability override is authoritative.  It
+        // must win over a stale local category after a replan or a restore.
+        const cat = serverCategory || existing?.category || pending?.category
+            || (uploadedUnknownSource ? 'traversable' : classifyOrgan(name));
         const finalColor = existing?.color || pending?.color || info.color || _structurePaletteColor(labelId);
         dataTreeState.organs.push({
             id: id,
@@ -3986,6 +3993,7 @@ window.hydrateOarDataTreeFromPayload = function hydrateOarDataTreeFromPayload(pa
                 name: info.name || `OAR ${Object.keys(organData).length + 1}`,
                 voxel_count: Number(info.voxel_count ?? info.voxels ?? info.count) || 0,
                 color: info.color,
+                traversability: info.traversability || info.category || null,
                 object_id: info.object_id || data.object_map?.[key],
             };
         });
@@ -6650,13 +6658,13 @@ function showContextMenu(x, y) {
         items += `<div class="ctx-menu-sep"></div>`;
     }
 
-    // OAR traversability remains a presentation classification. CTV/OAR is a
-    // clinical structure classification and therefore uses the backend
-    // transaction below instead of the legacy local category assignment.
+    // OAR traversability is a persisted planning property. CTV/OAR is a
+    // separate clinical structure classification, so both actions use their
+    // backend transactions instead of a browser-only category assignment.
     if (hasOrgans) {
         for (const [catKey, catInfo] of Object.entries(ORGAN_CATEGORIES)) {
             if (catKey === 'ctv') continue;
-            items += `<div class="ctx-menu-item" onclick="hideContextMenu();batchMoveToCategory('${catKey}')">
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();_runDataTreeAction(batchMoveToCategory('${catKey}'))">
                 <span class="ctx-icon">${catInfo.icon}</span> Move to ${catInfo.label}</div>`;
         }
         items += `<div class="ctx-menu-item" onclick="hideContextMenu();_runDataTreeAction(moveSelectedStructures('ctv'))">
@@ -7041,21 +7049,82 @@ window.batchSetViewVisibility = batchSetViewVisibility;
 window.setGroupViewVisibility = setGroupViewVisibility;
 window.applyDataTreeViewVisibility = applyDataTreeViewVisibility;
 
-function batchMoveToCategory(category) {
-    const selected = getSelectedDataTreeIds();
-    selected.forEach(id => {
-        if (id.startsWith('organ_')) {
-            const o = dataTreeState.organs.find(o => o.id === id);
-            if (o) o.category = category;
-        }
+async function moveSelectedOrganTraversability(category, objectIds = null) {
+    const destination = String(category || '').trim().toLowerCase();
+    if (!['traversable', 'non_traversable'].includes(destination)) return false;
+    const expectedSessionId = _viewerDataSessionId();
+    const appearance = _structureAppearanceMap();
+    const requestedIds = (objectIds == null ? getSelectedDataTreeIds() : Array.from(objectIds))
+        .map(id => _dataTreeObjectId(id))
+        .filter(Boolean);
+    const selected = [...new Set(requestedIds.filter(id => String(id).startsWith('structure:')))];
+    if (!selected.length) return false;
+    const response = await fetch(API + '/data/structures/traversability', {
+        method: 'PATCH',
+        headers: {
+            ..._viewerDataHeaders(expectedSessionId),
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            session_id: expectedSessionId,
+            object_ids: selected,
+            traversability: destination,
+        }),
     });
-    renderDataTree();
-    if (state.ctLoaded) loadAllSlices();
-    redrawSeedNeedleOverlays();
-    requestViewerVisualRefresh('batch-category');
-    _scheduleDataTreeSave(`viewer.batch-category:${category}`);
-    if (typeof syncUIBridgeState === 'function') syncUIBridgeState('data_tree.category').catch(() => {});
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.success === false) {
+        throw new Error(payload.error || _dtText(
+            'OAR 穿刺属性更新失败',
+            'OAR traversability update failed',
+        ));
+    }
+    const destinationLabel = destination === 'non_traversable'
+        ? _dtText('不可穿刺', 'non-traversable')
+        : _dtText('可穿刺', 'traversable');
+    const shouldReplan = await _confirmAction(
+        _dtText(
+            `已将 ${selected.length} 个 OAR 移到${destinationLabel}。是否立即基于新的障碍物策略重新规划？`,
+            `${selected.length} OAR structure(s) moved to ${destinationLabel}. Replan now with the updated obstacle policy?`,
+        ),
+        null,
+        {
+            yesZh: '重新规划',
+            yesEn: 'Replan',
+            noZh: '仅移动',
+            noEn: 'Move only',
+            titleZh: 'OAR 穿刺属性已更改',
+            titleEn: 'OAR traversability changed',
+        },
+    );
+    await _refreshAfterDataMutation(payload, appearance, expectedSessionId, {
+        objectIds: selected,
+        preserveDoseDvh: shouldReplan !== true,
+    });
+    selectedItems.clear();
+    if (shouldReplan) {
+        try {
+            await replanAfterStructureChange(expectedSessionId);
+        } catch (error) {
+            console.warn('[data-tree] replan after traversability change failed:', error);
+            addChat('error', _dtText(
+                `重新规划失败：${error.message}；OAR 穿刺属性已更新，可稍后重试。`,
+                `Replan failed: ${error.message}; the OAR traversability policy was updated and can be retried later.`,
+            ));
+        }
+    }
+    addChat('system', _dtText(
+        `已将 ${selected.length} 个 OAR 移到${destinationLabel}；规划障碍物策略已更新。`,
+        `${selected.length} OAR structure(s) moved to ${destinationLabel}; the planning obstacle policy was updated.`,
+    ));
+    return true;
 }
+function batchMoveToCategory(category) {
+    // The old implementation changed only the browser object and scheduled a
+    // UI snapshot.  Route every human and agent action through the durable
+    // server transaction so replanning cannot read the old obstacle policy.
+    return moveSelectedOrganTraversability(category);
+}
+window.batchMoveToCategory = batchMoveToCategory;
 
 function batchSolo() {
     const selSet = new Set(getSelectedDataTreeIds());

@@ -255,22 +255,74 @@ def _ui_reference_direction_input(agent):
     return None
 
 
-def _resolve_data_tree_obstacle_labels(agent):
-    """Resolve the current Data tree non-traversable OAR whitelist.
+def _explicit_traversability_overrides(memory):
+    """Return persisted OAR traversability overrides keyed by transport label."""
+    result = {}
+    catalog = _memory_value(memory, "structure_catalog", [])
+    if isinstance(catalog, list):
+        for item in catalog:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("classification") or "").strip().lower() != "oar":
+                continue
+            category = str(
+                item.get("traversability") or item.get("category") or ""
+            ).strip().lower()
+            if category not in {"traversable", "non_traversable"}:
+                continue
+            try:
+                label_id = int(item.get("target_label"))
+            except (TypeError, ValueError):
+                continue
+            if label_id > 0:
+                result[label_id] = category
+    # The catalog is normally refreshed by the structure transaction.  The
+    # override map is also read directly so a lightweight/restoring agent can
+    # honor a just-committed move before the catalog projection is hydrated.
+    overrides = _memory_value(memory, "structure_overrides", {})
+    if isinstance(overrides, dict):
+        for object_id, override in overrides.items():
+            if not isinstance(override, dict):
+                continue
+            # Embedded model OARs and promoted generic masks use their own
+            # stable prefixes; the classification field is the authority.
+            if str(override.get("classification") or "").strip().lower() != "oar":
+                continue
+            category = str(
+                override.get("traversability") or override.get("category") or ""
+            ).strip().lower()
+            if category not in {"traversable", "non_traversable"}:
+                continue
+            try:
+                label_id = int(override.get("target_label"))
+            except (TypeError, ValueError):
+                continue
+            if label_id > 0:
+                # The override map is the transaction log and therefore wins
+                # over a stale catalog projection during restore or a racing
+                # lightweight hydration pass.
+                result[label_id] = category
+    return result
 
-    The Data tree can add case-specific hard obstacles, while the default
-    bone/cartilage/vessel baseline remains mandatory. A client-side category
-    change must never silently downgrade those hard obstacles to traversable.
-    CTV sub-labels are excluded because CTV labels 2 and 3 are always hard
-    obstacles from the CTV mask itself.
+def _resolve_data_tree_obstacle_labels(agent):
+    """Resolve the current Data Tree non-traversable OAR whitelist.
+    Untouched cases retain the conservative default hard-obstacle baseline.
+    Data Tree selections may add case-specific obstacles.  An explicit
+    backend-persisted Move-to Traversable/Non-traversable action is stronger
+    than the default: it can both add an obstacle and remove a default
+    obstacle.  This distinction is what makes the two visible Data Tree
+    groups affect the actual planning volume rather than only the UI.
+    CTV sub-labels are handled separately because model CTV labels 2 and 3
+    are always hard obstacles from the CTV mask itself.
     """
     defaults = set(OBSTACLE_ORGAN_LABELS or _default_obstacle_label_ids())
     if agent is None or not getattr(agent, "memory", None):
         return defaults, "default"
-    stored_extra = _memory_value(agent.memory, "embedded_obstacle_label_ids")
+    memory = agent.memory
+    stored_extra = _memory_value(memory, "embedded_obstacle_label_ids")
     if isinstance(stored_extra, (list, tuple, set)):
         defaults.update(int(value) for value in stored_extra if str(value).lstrip("-").isdigit())
-    organ_names = _memory_value(agent.memory, "organ_names") or {}
+    organ_names = _memory_value(memory, "organ_names") or {}
     if isinstance(organ_names, dict):
         for raw_id, name in organ_names.items():
             if _is_default_non_traversable_name(name):
@@ -281,7 +333,7 @@ def _resolve_data_tree_obstacle_labels(agent):
     # Some CTV models emit additional anatomical labels (for example bone or
     # cartilage) in the CTV label namespace. Treat named hard structures as
     # obstacles even when the OAR segmenter did not reproduce them.
-    ctv_label_map = _memory_value(agent.memory, "ctv_label_map") or {}
+    ctv_label_map = _memory_value(memory, "ctv_label_map") or {}
     if isinstance(ctv_label_map, dict):
         for raw_id, name in ctv_label_map.items():
             if _is_default_non_traversable_name(name):
@@ -289,23 +341,36 @@ def _resolve_data_tree_obstacle_labels(agent):
                     defaults.add(int(raw_id))
                 except (TypeError, ValueError):
                     continue
+    persisted_overrides = _explicit_traversability_overrides(memory)
+    for label_id, category in persisted_overrides.items():
+        if category == "non_traversable":
+            defaults.add(label_id)
+        else:
+            defaults.discard(label_id)
     try:
-        ui_state = agent.memory.get_ui_state() or {}
+        ui_state = memory.get_ui_state() or {}
     except Exception as exc:
-        logger.debug("[OAR filter] UI state unavailable; using defaults: %s", exc)
-        return defaults, "default"
-
+        logger.debug("[OAR filter] UI state unavailable; using persisted/default policy: %s", exc)
+        return (
+            defaults,
+            "data_tree_override" if persisted_overrides else "default",
+        )
     data_tree = ui_state.get("data_tree") if isinstance(ui_state, dict) else None
     organs = data_tree.get("organs") if isinstance(data_tree, dict) else None
-    ctv_labels = data_tree.get("ctv_labels", data_tree.get("ctvLabels", [])) if isinstance(data_tree, dict) else []
+    ctv_labels = (
+        data_tree.get("ctv_labels", data_tree.get("ctvLabels", []))
+        if isinstance(data_tree, dict) else []
+    )
     entries = []
     if isinstance(organs, list):
         entries.extend(organs)
     if isinstance(ctv_labels, list):
         entries.extend(ctv_labels)
     if not entries:
-        return defaults, "default"
-
+        return (
+            defaults,
+            "data_tree_override" if persisted_overrides else "default",
+        )
     selected = set()
     usable_oar_entries = 0
     for item in entries:
@@ -321,24 +386,42 @@ def _resolve_data_tree_obstacle_labels(agent):
         # Label 1 is the target and must remain traversable as the planning
         # target. Other CTV sub-labels can be hard anatomy and must obey the
         # same Data Tree category policy as OAR nodes.
-        if is_ctv_label and label_id == 1:
+        if is_ctv_label:
+            if label_id != 1 and str(item.get("category") or "").strip().lower() == "non_traversable":
+                selected.add(label_id)
             continue
         usable_oar_entries += 1
         category = str(item.get("category") or "traversable").strip().lower()
         if category == "non_traversable":
             selected.add(label_id)
-
     if not usable_oar_entries:
         logger.debug("[OAR filter] Data tree has no usable OAR labels; using defaults")
-        return defaults, "default"
+        # Preserve the historical source label for CTV-only hard labels.
+        resolved = defaults | selected
+        return (
+            resolved,
+            "data_tree_plus_default" if selected or persisted_overrides else "default",
+        )
+    # Existing Data Tree categories remain additive for compatibility with
+    # snapshots written before the backend traversability transaction existed.
+    # Persisted overrides below are the authoritative way to remove a default
+    # obstacle as well as to add one.
     resolved = defaults | selected
+    for label_id, category in persisted_overrides.items():
+        if category == "non_traversable":
+            resolved.add(label_id)
+        else:
+            resolved.discard(label_id)
+    source = "data_tree_override" if persisted_overrides else "data_tree_plus_default"
     logger.info(
-        "[OAR filter] using mandatory baseline plus Data tree additions: %d hard labels "
-        "(%d manually selected from %d OAR entries)",
-        len(resolved), len(selected), usable_oar_entries,
+        "[OAR filter] resolved hard labels: %d "
+        "(%d Data Tree additions, %d persisted traversability overrides, %d OAR entries)",
+        len(resolved),
+        len(selected),
+        len(persisted_overrides),
+        usable_oar_entries,
     )
-    return resolved, "data_tree_plus_default"
-
+    return resolved, source
 
 def _merge_embedded_hard_obstacles(oar_mask, agent):
     """Merge model-emitted hard structures into the planning OAR grid.

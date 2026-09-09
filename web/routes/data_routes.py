@@ -25,6 +25,7 @@ from web.structure_service import (
     reclassify_generic_segmentation_masks,
     reclassify_structure,
     reclassify_structures,
+    reclassify_structure_traversability,
     resolve_structure_object_id,
     structure_catalog,
 )
@@ -306,6 +307,62 @@ def register_data_routes(
             })
         except Exception as exc:
             logger.warning("Structure classification failed: %s", exc)
+            return error_response(exc)
+
+    @app.route("/api/data/structures/traversability", methods=["PATCH"])
+    @require_api_key
+    @rate_limit
+    def api_structures_traversability():
+        """Persist the OAR traversable/non-traversable planning policy."""
+        try:
+            user, session_id, agent = context()
+            payload = request.get_json(silent=True) or {}
+            raw_ids = payload.get("object_ids")
+            if not isinstance(raw_ids, list):
+                raise StructureError("object_ids must be a list")
+            category = str(
+                payload.get("traversability")
+                or payload.get("category")
+                or ""
+            ).strip().lower()
+            stable_ids = [
+                resolve_structure_object_id(agent.memory, str(object_id))
+                for object_id in raw_ids
+            ]
+            effective = reclassify_structure_traversability(
+                agent.memory, stable_ids, category,
+            )
+            mark_report_stale(
+                str(user["id"]), session_id,
+                "OAR traversability policy changed",
+            )
+            store._audit(user["id"], session_id, "structures.traversability_changed", {
+                "object_ids": stable_ids,
+                "traversability": category,
+            })
+            # The classification changes the actual obstacle policy consumed by
+            # trajectory initialization and seed optimization.  Persist it
+            # synchronously and invalidate all downstream clinical artifacts so
+            # a restart or a fast replan cannot reuse the old policy.
+            store.flush_agent_checkpoint(
+                str(user["id"]), session_id, agent,
+                reason="structures.traversability_changed.durable",
+            )
+            return jsonify({
+                "success": True,
+                "session_id": session_id,
+                "object_ids": stable_ids,
+                "preserved_object_ids": stable_ids,
+                "removed_object_ids": [],
+                "structures": effective.public_catalog(),
+                "invalidated": [
+                    "planning", "dose", "dvh", "evaluation", "report",
+                    "surgical_guide",
+                ],
+                "artifact_status": agent.memory.retrieve("structure_artifact_status") or {},
+            })
+        except Exception as exc:
+            logger.warning("Structure traversability update failed: %s", exc)
             return error_response(exc)
 
     @app.route("/api/data/generic-masks/classification", methods=["PATCH"])
