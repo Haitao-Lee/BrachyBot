@@ -52,6 +52,11 @@ from .sat3d import SAT3DCTVTool, SITE_SPECS as SAT3D_SITE_SPECS
 from .model_catalog import CTVModelCatalogTool, catalog_with_local_status, filter_catalog
 
 
+def _mapping_or_empty(value):
+    """Return optional nested metadata only when it is mapping-shaped."""
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
 def _normalize_label_stats(value):
     """Normalize optional CTV statistics to a mapping-of-mappings contract."""
     if isinstance(value, Mapping):
@@ -546,7 +551,7 @@ class CTVSegmentationTool(BaseTool):
                 })
             try:
                 result = tool._execute(**tool_kwargs)
-            except (AttributeError, TypeError, KeyError, ValueError):
+            except (AttributeError, TypeError, KeyError, ValueError) as exc:
                 # The child adapter is intentionally called through its private
                 # method for image injection. Convert malformed adapter output
                 # into a controlled CTV failure instead of leaking a traceback
@@ -560,6 +565,8 @@ class CTVSegmentationTool(BaseTool):
                     error="CTV segmentation adapter returned an invalid result contract.",
                     metadata={
                         "ctv_contract_error": True,
+                        "error_code": "CTV_ADAPTER_CONTRACT",
+                        "exception_type": type(exc).__name__,
                         "tumor_type_used": tumor_type_used,
                         "model_catalog": filter_catalog(),
                     },
@@ -578,6 +585,12 @@ class CTVSegmentationTool(BaseTool):
                 # they reach the agent memory and chat formatter.
                 result_meta["label_stats"] = _normalize_label_stats(
                     result_meta.get("label_stats", {})
+                )
+                result_meta["label_counts"] = _mapping_or_empty(
+                    result_meta.get("label_counts", {})
+                )
+                result_meta["label_map"] = _mapping_or_empty(
+                    result_meta.get("label_map", {})
                 )
                 from tool_factory.segmentation_alignment import (
                     align_label_array_to_reference,
@@ -671,7 +684,9 @@ class CTVSegmentationTool(BaseTool):
                     "misaligned with the CT grid, or out of the image range."
                 )
             else:
-                label_counts = res_meta.get("label_counts") or {}
+                label_counts = _mapping_or_empty(
+                    res_meta.get("label_counts", {})
+                )
                 found = {
                     name: int(count)
                     for name, count in label_counts.items()
@@ -729,7 +744,7 @@ class CTVSegmentationTool(BaseTool):
                 logger.warning("Manual CTV upload requires label selection: %s", plausibility_warning)
 
         # Keep CTV display names source-aware.
-        source_label_map = dict(res_meta.get("label_map", {}))
+        source_label_map = _mapping_or_empty(res_meta.get("label_map", {}))
         label_map = dict(source_label_map)
         if from_label_path:
             # Source label ids are provenance only.  The active manual CTV is
@@ -777,7 +792,7 @@ class CTVSegmentationTool(BaseTool):
             ),
             "label_grid_orientation": "LPI",
             "manual_label_orientation": "LPI" if from_label_path else None,
-            "label_counts": res_meta.get("label_counts", {}),
+            "label_counts": _mapping_or_empty(res_meta.get("label_counts", {})),
             "label_map": label_map,
             "label_stats": _normalize_label_stats(
                 res_meta.get("label_stats", {})

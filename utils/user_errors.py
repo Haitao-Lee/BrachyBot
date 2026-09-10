@@ -190,7 +190,7 @@ def format_tool_error(
         or ("list" in lower and "attribute" in lower and "items" in lower)
     )
     if tool in {"ctv_segmentation", "biomedparse_segmentation"}:
-        if invalid_metadata or "metadata" in lower or "ctv" in lower:
+        if invalid_metadata:
             return (
                 "CTV 分割没有完成：CT 影像已进入分割流程，但模型结果在服务器内部校验/整理时发现了格式不一致，"
                 "因此系统安全停止了后续规划。本次提示不表示 CT 被误传到 CTV mask 入口；请直接重新执行 CTV 分割。"
@@ -201,6 +201,41 @@ def format_tool_error(
                 "This message does not mean that the CT was uploaded through the CTV-mask input; rerun CTV segmentation. "
                 "If it happens again, keep the Execution Trace and contact the administrator. Only manual CTV-mask "
                 "uploads additionally need to be checked for alignment with the CT."
+            )
+        if bool(meta.get("ctv_inference_error")) or any(
+            marker in lower
+            for marker in (
+                "nnunet inference failed",
+                "inference failed",
+                "cuda out of memory",
+                "out of memory",
+                "memoryerror",
+            )
+        ):
+            return (
+                "CTV 分割没有完成：胰腺肿瘤模型在推理阶段没有成功输出结果，后续规划已安全暂停。"
+                "这不是 CT 被误传到 CTV mask 入口。请确认服务端 GPU/模型运行状态后重新执行 CTV 分割；"
+                "若再次失败，请保留执行追踪中的失败原因交给管理员。"
+                if language == "zh" else
+                "CTV segmentation did not complete because the pancreatic-tumor model failed during inference, so downstream planning was stopped safely. "
+                "This does not mean the CT was uploaded through the CTV-mask input. Check the server GPU/model runtime and retry CTV segmentation; "
+                "if it fails again, keep the failure details from the Execution Trace for the administrator."
+            )
+        if any(
+            marker in lower
+            for marker in (
+                "model directory not found",
+                "checkpoint",
+                "model is not installed",
+                "nnunet_results",
+            )
+        ):
+            return (
+                "CTV 分割没有完成：服务器当前没有找到可用的肿瘤分割模型或模型权重。"
+                "请检查模型安装/权重配置后再重试；本次没有继续执行规划。"
+                if language == "zh" else
+                "CTV segmentation did not complete because the server could not find a usable tumor model or checkpoint. "
+                "Check the model installation/configuration and retry; planning was not continued."
             )
         return (
             "CTV 分割未完成，因此后续规划没有启动。请确认 CT 已完整加载并明确肿瘤部位/模型，"

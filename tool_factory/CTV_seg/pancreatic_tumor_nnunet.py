@@ -83,38 +83,75 @@ class NNUNetPancreaticTumorTool(BaseTool):
 
     @staticmethod
     def _coerce_prediction_array(value) -> np.ndarray:
-        """Accept the nnUNet result containers used across supported versions."""
-        candidate = value
-        if isinstance(candidate, Mapping):
+        """Convert supported nnUNet result wrappers into one 3-D label array.
+
+        nnUNet releases and local wrappers have returned an ndarray, a mapping
+        containing the ndarray, or a tuple/list carrying the segmentation next
+        to auxiliary logits/probabilities. Only the discrete 3-D segmentation
+        is accepted; auxiliary arrays are never sent to the clinical pipeline.
+        """
+
+        def _validate(candidate):
+            array = np.asarray(candidate)
+            if array.ndim == 4 and array.shape[0] == 1:
+                array = array[0]
+            elif array.ndim == 4 and array.shape[-1] == 1:
+                array = array[..., 0]
+            if array.ndim != 3:
+                raise ValueError(
+                    f"expected a 3-D label array, got ndim={array.ndim}"
+                )
+            if not (
+                np.issubdtype(array.dtype, np.number)
+                or np.issubdtype(array.dtype, np.bool_)
+            ):
+                raise TypeError(f"expected numeric labels, got dtype={array.dtype}")
+            if not np.all(np.isfinite(array)):
+                raise ValueError("label array contains non-finite values")
+            if np.any(array < 0) or np.any(array != np.floor(array)):
+                raise ValueError("label array contains non-discrete values")
+            max_label = int(array.max()) if array.size else 0
+            dtype = np.uint16 if max_label > np.iinfo(np.uint8).max else np.uint8
+            return np.ascontiguousarray(array.astype(dtype, copy=False))
+
+        if isinstance(value, Mapping):
+            # Prefer named segmentation fields, but skip empty/invalid fields
+            # so a wrapper with segmentation=None and prediction=array remains usable.
+            errors = []
             for key in ("segmentation", "prediction", "label_array", "result", "data"):
-                if key in candidate:
-                    candidate = candidate[key]
-                    break
-
-        # Some wrappers return a one-item list/tuple around the actual array.
-        while isinstance(candidate, (list, tuple)) and len(candidate) == 1:
-            candidate = candidate[0]
-
-        array = np.asarray(candidate)
-        if array.ndim == 4 and array.shape[0] == 1:
-            array = array[0]
-        if array.ndim != 3:
+                if key not in value or value[key] is None:
+                    continue
+                try:
+                    return NNUNetPancreaticTumorTool._coerce_prediction_array(value[key])
+                except (TypeError, ValueError) as exc:
+                    errors.append(f"{key}: {exc}")
             raise ValueError(
-                f"expected a 3-D label array, got ndim={array.ndim}"
+                "mapping did not contain a valid 3-D segmentation"
+                + (f" ({'; '.join(errors)[:240]})" if errors else "")
             )
-        if not (
-            np.issubdtype(array.dtype, np.number)
-            or np.issubdtype(array.dtype, np.bool_)
-        ):
-            raise TypeError(f"expected numeric labels, got dtype={array.dtype}")
-        if not np.all(np.isfinite(array)):
-            raise ValueError("label array contains non-finite values")
-        if np.any(array < 0) or np.any(array != np.floor(array)):
-            raise ValueError("label array contains non-discrete values")
 
-        max_label = int(array.max()) if array.size else 0
-        dtype = np.uint16 if max_label > np.iinfo(np.uint8).max else np.uint8
-        return np.ascontiguousarray(array.astype(dtype, copy=False))
+        if isinstance(value, (list, tuple)):
+            if not value:
+                raise ValueError("empty list/tuple cannot be a segmentation")
+            # A regular nested Python list may itself be a valid 3-D array.
+            try:
+                return _validate(value)
+            except (TypeError, ValueError):
+                pass
+            # A tuple such as (segmentation, logits) or a list of candidate
+            # containers is handled by selecting the first valid discrete mask.
+            errors = []
+            for index, item in enumerate(value):
+                try:
+                    return NNUNetPancreaticTumorTool._coerce_prediction_array(item)
+                except (TypeError, ValueError) as exc:
+                    errors.append(f"{index}: {exc}")
+            raise ValueError(
+                "list/tuple did not contain a valid 3-D segmentation"
+                + (f" ({'; '.join(errors)[:240]})" if errors else "")
+            )
+
+        return _validate(value)
 
     def _execute(self, **kwargs) -> ToolResult:
         image = kwargs.get("image")
@@ -154,13 +191,15 @@ class NNUNetPancreaticTumorTool(BaseTool):
         try:
             result_array = self._run_nnunet_inference(image, config_dir, fast_mode)
             result_array = self._coerce_prediction_array(result_array)
-        except (AttributeError, TypeError, KeyError, ValueError):
+        except (AttributeError, TypeError, KeyError, ValueError) as exc:
             logger.exception("nnUNet returned an invalid pancreatic label result")
             return ToolResult(
                 success=False,
                 error="nnUNet returned an invalid pancreatic label result.",
                 metadata={
                     "ctv_contract_error": True,
+                    "error_code": "CTV_PREDICTION_CONTRACT",
+                    "exception_type": type(exc).__name__,
                     "nnunet_output_type": type(locals().get("result_array")).__name__,
                 },
             )
@@ -169,7 +208,10 @@ class NNUNetPancreaticTumorTool(BaseTool):
             return ToolResult(
                 success=False,
                 error="nnUNet inference failed while producing the pancreatic CTV.",
-                metadata={"ctv_inference_error": True},
+                metadata={
+                    "ctv_inference_error": True,
+                    "error_code": "CTV_INFERENCE_ERROR",
+                },
             )
 
         # Build label counts
