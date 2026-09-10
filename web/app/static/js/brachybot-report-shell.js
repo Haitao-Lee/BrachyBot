@@ -550,6 +550,36 @@ window.Report = (function () {
         return { applied, skipped };
     }
 
+    // The report form and the workspace-level planning alias are both legacy
+    // compatibility state.  After a restart or a Planning switch either one
+    // can still point at the previous run even though the Data Tree already
+    // knows which run is active.  Report regeneration must attach every text
+    // and figure operation to the same authoritative Planning row.
+    function _reportPlanningIdCandidate(value) {
+        const normalized = String(value ?? '').trim();
+        return normalized && normalized !== '__unassigned__' ? normalized : '';
+    }
+
+    function _resolveReportAutoFillPlanningId(form, explicitPlanningId = '') {
+        const planning = typeof dataTreeState !== 'undefined'
+            ? dataTreeState?.planning : null;
+        const candidates = [
+            planning?.activePlanningId,
+            planning?.id,
+            typeof activeReportPlanningId === 'function'
+                ? activeReportPlanningId() : '',
+            explicitPlanningId,
+            window.__reportWorkspaceActivePlanningId,
+            form?.planningId,
+            form?.planning_id,
+        ];
+        for (const candidate of candidates) {
+            const resolved = _reportPlanningIdCandidate(candidate);
+            if (resolved) return resolved;
+        }
+        return '__unassigned__';
+    }
+
     const autoFill = {
         async fromAll(opts = {}) {
             const onlyKey = opts.onlyKey || null;
@@ -559,13 +589,15 @@ window.Report = (function () {
                 return { success: false, error: 'The report form is unavailable.', applied: 0 };
             }
             const expectedSessionId = _activeReportSessionId(opts.sessionId);
-            const expectedPlanningId = String(
-                window.__reportWorkspaceActivePlanningId
-                || f.planningId
-                || f.planning_id
-                || (typeof dataTreeState !== 'undefined' && dataTreeState?.planning?.activePlanningId)
-                || '__unassigned__',
-            );
+            const expectedPlanningId = _resolveReportAutoFillPlanningId(f, opts.planningId);
+            if (expectedPlanningId !== '__unassigned__') {
+                // Keep the in-memory report owner synchronized before any
+                // asynchronous server patch or capture begins.  This is
+                // deliberately not written to the legacy workspace alias:
+                // that alias is the value which was stale in the failing
+                // regeneration path.
+                f.planningId = expectedPlanningId;
+            }
             const isCurrent = () => _reportSessionIsCurrent(expectedSessionId, f);
             // 1. DICOM
             try {
@@ -631,7 +663,43 @@ window.Report = (function () {
                         allowTerminalPlanning: opts.allowTerminalPlanning === true,
                     });
                     if (captureResult?.blocked || captureResult?.stale || captureResult?.success === false) {
-                        throw new Error('Report images are not ready for the current plan. Wait for planning and viewer loading to complete, then retry.');
+                        const reason = String(captureResult?.reason || '').trim();
+                        const missing = Array.isArray(captureResult?.missing)
+                            ? captureResult.missing.map(value => String(value || '')).filter(Boolean)
+                            : [];
+                        const language = (typeof window._i18nLang === 'string')
+                            ? window._i18nLang : (f.language || 'en');
+                        const detail = reason === 'planning_changed'
+                            ? {
+                                zh: '当前规划在生成过程中发生了切换',
+                                en: 'the active Planning changed during regeneration',
+                            }
+                            : reason === 'planning_in_progress'
+                                ? {
+                                    zh: '当前规划仍在计算中',
+                                    en: 'the active Planning is still running',
+                                }
+                                : reason === 'planning_not_completed'
+                                    ? {
+                                        zh: '当前规划尚未完成',
+                                        en: 'the active Planning is not complete',
+                                    }
+                                    : {
+                                        zh: 'Viewer 的报告截图尚未全部准备完成',
+                                        en: missing.length
+                                            ? 'the Viewer evidence is incomplete'
+                                            : 'the Viewer evidence is incomplete',
+                                    };
+                        const error = new Error(
+                            language === 'zh'
+                                ? `报告截图未完成：${detail.zh}。请等待 Viewer 加载完成后重试。`
+                                : `Report figure capture was not completed because ${detail.en}. Please wait for the Viewer to finish loading and retry.`,
+                        );
+                        error.code = 'report_figures_not_ready';
+                        error.reason = reason;
+                        error.missing = missing;
+                        error.captureResult = captureResult;
+                        throw error;
                     }
                 }
             } catch (e) {

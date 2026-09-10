@@ -1331,7 +1331,8 @@ async function refreshPlanningUI(options = {}) {
                     return resolve(refreshOutcome);
                 }
                 const reportCaptureReady = (
-                    (options.captureReportFigures === true || options.backgroundRestore === true)
+                    options.suppressReportFigureCapture !== true
+                    && (options.captureReportFigures === true || options.backgroundRestore === true)
                     && planningIsComplete
                     && data.has_dose === true
                     && data.has_current_dose === true
@@ -1625,6 +1626,23 @@ async function refreshPlanningUI(options = {}) {
             return failures;
         }
 
+        function _waitForViewerPaint(frameCount = 3) {
+            const frames = Math.max(1, Number(frameCount) || 1);
+            return new Promise(resolve => {
+                if (typeof requestAnimationFrame !== 'function') {
+                    setTimeout(resolve, 50);
+                    return;
+                }
+                let remaining = frames;
+                const tick = () => {
+                    remaining -= 1;
+                    if (remaining <= 0) resolve();
+                    else requestAnimationFrame(tick);
+                };
+                requestAnimationFrame(tick);
+            });
+        }
+
         const _meshPromises = [];
         // Isodose surfaces
         if (data.has_dose) {
@@ -1807,6 +1825,14 @@ async function refreshPlanningUI(options = {}) {
                 } catch (error) {
                     console.warn('[3D auto-load] camera fit guard:', error);
                 }
+                // forceRender3DViewer() schedules resize/render work on the
+                // next animation frames; its function intentionally returns
+                // immediately.  A report capture started at the mesh promise
+                // boundary could therefore read the previous/blank canvas.
+                // Make the visual completion promise include the actual paint
+                // boundary so the explicit report action cannot race it.
+                try { if (typeof forceRender3DViewer === 'function') forceRender3DViewer(); } catch (_) {}
+                await _waitForViewerPaint(3);
                 if (completion.failures.length) {
                     console.warn(
                         '[3D auto-load] viewer completed with failed resources:',
@@ -1848,7 +1874,8 @@ async function refreshPlanningUI(options = {}) {
                 const needsReportFigureRepair = typeof window.reportFiguresNeedCapture === 'function'
                     ? window.reportFiguresNeedCapture(window.reportForm, expectedPlanningId)
                     : !hasCompleteReportFigureSet;
-                if (reportCaptureReady
+                if (options.suppressReportFigureCapture !== true
+                    && reportCaptureReady
                     && needsReportFigureRepair
                     && typeof autoCaptureReportFigures === 'function') {
                     try {

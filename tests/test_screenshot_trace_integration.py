@@ -1372,6 +1372,35 @@ def test_report_generation_executes_and_persists_the_full_report_transaction():
     assert "The report form is unavailable." in shell
 
 
+def test_report_regeneration_uses_current_plan_and_durable_dvh_without_a_race():
+    shell = _source("web/app/static/js/brachybot-report-shell.js")
+    editor = _source("web/app/static/js/brachybot-report-editor.js")
+    ui_api = _source("web/app/static/js/brachybot-ui-api.js")
+    dvh = _source("web/app/static/js/brachybot-dvh-planning.js")
+
+    # A restored report must be owned by the Data Tree's active Planning row,
+    # not by the stale workspace/report alias from the previous run.
+    resolver = shell.split("function _resolveReportAutoFillPlanningId", 1)[1].split(
+        "const autoFill", 1
+    )[0]
+    assert resolver.index("planning?.activePlanningId") < resolver.index(
+        "window.__reportWorkspaceActivePlanningId"
+    )
+    assert "planningId: reportPlanningId" in ui_api
+
+    # The explicit report action owns one capture transaction; background
+    # hydration must not start a competing capture over the same Viewer.
+    assert "suppressReportFigureCapture: true" in ui_api
+    assert "options.suppressReportFigureCapture !== true" in dvh
+
+    # DVH capture must work from durable state when the Analysis panel is
+    # hidden and drawDVH() has intentionally deferred the live Plotly node.
+    assert "function _reportDvhFallbackSource" in editor
+    assert "function _reportCurrentDvhData" in editor
+    assert "dvhData: _reportCurrentDvhData()" in editor
+    assert "missing figure roles" not in shell
+
+
 def test_report_chat_target_reads_session_owned_figure_artifacts_not_the_report_dom():
     tool = _source("tool_factory/ui_screenshot/__init__.py")
     ui_api = _source("web/app/static/js/brachybot-ui-api.js")

@@ -7336,6 +7336,7 @@ async function _executeUIActionRaw(a, options = {}) {
         // ── Report ──
         if (target === 'report.autofill') {
             const reportSessionId = ownerSessionId || _activeApiSessionId();
+            let reportPlanningId = '';
             // A report regeneration is a read of the complete saved case. A
             // cold-restored planning result can have its transcript, report
             // form, and DVH snapshot available before the 3D/dose canvases
@@ -7369,6 +7370,10 @@ async function _executeUIActionRaw(a, options = {}) {
                     switchToViewers: false,
                     requireCompletedPlanning: true,
                     captureReportFigures: false,
+                    // The explicit report command owns the one canonical
+                    // capture pass below.  Do not let the background restore
+                    // callback start a second pass against the same meshes.
+                    suppressReportFigureCapture: true,
                 });
                 const refreshStatus = String(refreshResult?.planningStatus || '').toLowerCase();
                 if (!refreshResult || refreshResult.success !== true
@@ -7380,6 +7385,7 @@ async function _executeUIActionRaw(a, options = {}) {
                         stage: refreshResult?.stage || 'planning_restore_incomplete',
                     };
                 }
+                reportPlanningId = String(refreshResult?.planningId || '');
                 // backgroundRestore deliberately resolves at the essential
                 // data boundary, while its actual Viewer meshes continue via
                 // backgroundCompletion. Report figures are sampled from those
@@ -7410,8 +7416,12 @@ async function _executeUIActionRaw(a, options = {}) {
                 }
             }
             if (typeof Report !== 'undefined' && Report.autoFill) {
+                reportPlanningId = reportPlanningId
+                    || (typeof activeReportPlanningId === 'function'
+                        ? String(activeReportPlanningId() || '') : '');
                 const result = await Report.autoFill.fromAll({
                     sessionId: reportSessionId,
+                    planningId: reportPlanningId,
                     captureFigures: true,
                     allowTerminalPlanning: true,
                 });
