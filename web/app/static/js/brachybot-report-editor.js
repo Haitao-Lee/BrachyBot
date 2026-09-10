@@ -1035,7 +1035,8 @@ function setReportPlanningLifecycle(active, detail = {}) {
     if (!sameSession || !sameRequest) return { ..._reportPlanningLifecycle };
     _reportPlanningLifecycle.active = false;
     window.__brachybotPlanningRunActive = false;
-    invalidateReportCapture();
+    // Terminal captures may already be waiting for mesh hydration. Finishing
+    // this same run must not cancel them. A new run/session still invalidates.
     return { ..._reportPlanningLifecycle };
 }
 
@@ -1117,7 +1118,7 @@ async function autoCaptureReportFigures(options = {}) {
     } finally {
         if (_reportCapturePromise === promise) {
             _reportCaptureUiFinish(context.reportCaptureUiRunId, {
-                failed: !!captureError,
+                failed: !!captureError || captureResult?.success === false,
                 stale: captureResult?.stale === true,
                 captured: context.reportCaptureUiCaptured,
             });
@@ -1128,7 +1129,7 @@ async function autoCaptureReportFigures(options = {}) {
 
 async function _autoCaptureReportFiguresImpl(captureContext = {}) {
     uiDebugLog('[Report] autoCaptureReportFigures called');
-    if (!window.reportForm) { console.warn('[Report] No reportForm, skipping'); return; }
+    if (!window.reportForm) throw new Error('The report is not initialized. Open the report panel and retry.');
     const captureSessionId = String(captureContext.sessionId || _currentReportCaptureSessionId());
     const capturePlanningId = String(captureContext.planningId || _currentReportCapturePlanningId());
     const captureGeneration = Number(captureContext.generation ?? _reportCaptureGeneration);
@@ -1152,31 +1153,9 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
         window.reportForm.planningId = capturePlanningId;
     }
 
-    // Drop stale auto-captured figures (user-uploads are kept).
-    // Also drop incomplete auto-captures (missing DVH or dose).
-    try {
-        const _lastPlan = window.state && window.state.lastPlanTimestamp;
-        if (_lastPlan && window.reportForm.figures) {
-            const _ts = new Date(_lastPlan).getTime();
-            window.reportForm.figures = window.reportForm.figures.filter(f => {
-                if (!f) return false;
-                if (f.type === 'upload') return true;
-                const fts = f.capturedAt ? new Date(f.capturedAt).getTime() : 0;
-                // Keep if captured after last plan AND not a stale auto-capture
-                if (fts >= _ts) return true;
-                return false;
-            });
-        }
-    } catch (_) {}
-
-    // Always clear auto-captured figures to allow fresh capture with complete data
-    window.reportForm.figures = (window.reportForm.figures || []).filter(f => f && f.type === 'upload');
-
-    if (window.reportForm.figures.length > 0) {
-        // User-provided evidence supplements the standard report; it must not
-        // suppress the seven required Planning/Dose subfigures.
-        uiDebugLog('[Report] Keeping user figures while capturing standard figures:', window.reportForm.figures.length);
-    }
+    // Stage screenshots off-form. Cancellation/failure must never clear the
+    // last saved evidence; only publish images owned by this completed plan.
+    const stagedFigures = [];
     uiDebugLog('[Report] Starting capture, 3D meshes:', Object.keys(scene3D.meshes).length,
         'doseOverlay:', !!state.doseOverlay, 'dvhData:', !!state.dvhData);
 
@@ -1297,8 +1276,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 aspectRatio: imageSize.width / imageSize.height,
             } : {}),
         };
-        const figures = Array.isArray(window.reportForm.figures)
-            ? window.reportForm.figures : (window.reportForm.figures = []);
+        const figures = stagedFigures;
         const isStandardFigure = /^report_fig[12]_/.test(stableAxis);
         const duplicateFigure = isStandardFigure && captureFingerprint
             ? figures.find(existing => {
@@ -3003,10 +2981,26 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
 
     // Re-render editor + preview
     if (!isCurrentCapture()) return { stale: true };
-    if (window.reportForm.figures.length > 0) {
+    if (stagedFigures.length > 0) {
+        const replacedAxes = new Set(stagedFigures.map(figure => figure.axis));
+        window.reportForm.figures = (window.reportForm.figures || []).filter(figure => (
+            figure && (figure.type === 'upload' || (
+                String(figure.planningId || '') === capturePlanningId
+                && !replacedAxes.has(figure.axis)
+            ))
+        )).concat(stagedFigures);
         uiDebugLog('[Report] Total figures captured:', window.reportForm.figures.length);
         renderReportEditor(); _updateReportPreview(); _scheduleReportAutoSave();
+        if (typeof window.persistWorkspace === 'function') {
+            const persisted = await window.persistWorkspace('report.figures.captured');
+            if (persisted === false) throw new Error('Report images could not be saved to this Session.');
+        }
+        const requiredAxes = Object.keys(REPORT_FIGURE_CAPTURE_CONTRACTS);
+        const missing = requiredAxes.filter(axis => !window.reportForm.figures.some(figure => (
+            figure.axis === axis && String(figure.planningId || '') === capturePlanningId
+        )));
+        return { success: missing.length === 0, captured: stagedFigures.length, missing };
     } else {
-        console.warn('[Report] No figures were captured');
+        throw new Error('Report images were not captured. Wait for the planning viewer to finish loading, then regenerate the report.');
     }
 }

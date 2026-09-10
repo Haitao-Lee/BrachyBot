@@ -703,7 +703,7 @@
                     <div style="font-size:0.58rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Trajectory</div>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;">
                         <div class="form-group"><label class="form-label">Backlit Angle</label><input type="number" class="form-input" id="backlitAngle" value="0.5" step="0.1" min="0" max="3.14"></div>
-                        <div class="form-group"><label class="form-label">Max Candidates</label><input type="number" class="form-input" id="maxCandiTraj" value="500" step="10" min="10"></div>
+                        <div class="form-group"><label class="form-label" title="Uniform spatial and directional sampling of valid candidate paths">Max Candidates (spatial sampling)</label><input type="number" class="form-input" id="maxCandiTraj" value="500" step="1" min="1" max="2000" title="Maximum valid initial trajectories; default 500, sampled across positions and directions"></div>
                     </div>
                     <div class="form-group"><label class="form-label">Ref Direction (RAS)</label>
                         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;">

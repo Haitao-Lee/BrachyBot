@@ -100,7 +100,12 @@ def test_late_viewer_hydration_delegates_to_canonical_report_capture():
     start = source.index("4f-2. Re-capture report figures only through the canonical report")
     block = source[start:source.index("// 5. Data tree badges", start)]
 
-    assert "sessionId: expectedSessionId,\n                    planningId: expectedPlanningId," in block
+    # Capture is deliberately deferred until the final dose/DVH readiness
+    # boundary, after the legacy fallback block.
+    capture_start = source.index('// 11. Auto-capture report figures')
+    capture = source[capture_start:source.index('// 12. Auto-fill report form', capture_start)]
+    assert "sessionId: expectedSessionId,\n                    planningId: expectedPlanningId," in capture
+    assert 'if (reportCaptureReady' in capture
     assert "options.allowLegacyReportFigureRecovery === true" in block
     assert block.index("options.allowLegacyReportFigureRecovery === true") < block.index("const _replaceOrCreate =")
     assert "Object.assign(window.reportForm.figures[idx], entry)" not in block

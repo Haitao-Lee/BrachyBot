@@ -19,7 +19,7 @@
         "obstacle_value": 2,
         "background_value": 0,
         "backlit_angle": 1.5707963267948966,
-        "maximum_candidate_trajectories": 200,
+        "maximum_candidate_trajectories": 500,
         "min_depth": 2,
         "min_depth_rate": 5,
         "smooth_sigma": 1,
