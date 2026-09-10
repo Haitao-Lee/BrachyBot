@@ -704,7 +704,19 @@ window.Report = (function () {
                 }
             } catch (e) {
                 console.warn('Report figure capture failed during auto-fill:', e);
-                figureCaptureWarning = e?.message || String(e);
+                // Never surface a low-level capture/Plotly/Canvas exception
+                // as the assistant's final message. The user needs the
+                // recoverable state and next action, while the raw exception
+                // remains available in the browser console for diagnosis.
+                if (e?.code === 'report_figures_not_ready' && e?.message) {
+                    figureCaptureWarning = e.message;
+                } else {
+                    const language = (typeof window._i18nLang === 'string')
+                        ? window._i18nLang : (f.language || 'en');
+                    figureCaptureWarning = language === 'zh'
+                        ? '报告截图暂未生成：Viewer 证据还没有完成准备。请等待 Viewer 加载完成后重试。'
+                        : 'Report screenshots were not generated because Viewer evidence is not ready yet. Please wait for the Viewer to finish loading and retry.';
+                }
             }
             if (!isCurrent()) return { stale: true, applied: 0 };
             panels.editor(); panels.preview();
