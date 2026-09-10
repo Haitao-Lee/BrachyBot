@@ -18,6 +18,9 @@ def test_server_restart_recovery_keeps_a_visible_resource_loading_boundary():
     assert "startWorkspaceServerHealthMonitor" in workspace
     assert "checkWorkspaceServerHealth" in workspace
     assert "workspaceServerAvailable === false" in workspace
+    assert "workspaceServerInstanceId" in workspace
+    assert "server_instance_id" in workspace
+    assert "const restarted = Boolean(" in workspace
     assert "void recoverWorkspaceAfterServerRestart()" in workspace
     assert "await window.loadSessions()" in workspace
 
@@ -29,4 +32,4 @@ def test_server_restart_recovery_keeps_a_visible_resource_loading_boundary():
 
     # Force the browser to fetch the updated workspace bridge after a server
     # restart instead of retaining the prior cached script.
-    assert 'static/js/brachybot-workspace.js?v=47' in index
+    assert 'static/js/brachybot-workspace.js?v=48' in index

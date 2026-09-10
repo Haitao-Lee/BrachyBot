@@ -31,6 +31,7 @@
     let workspaceServerRecoveryInFlight = null;
     let workspaceServerRecoveryPending = false;
     let workspaceServerAvailable = null;
+    let workspaceServerInstanceId = '';
     const WORKSPACE_SERVER_HEALTH_INTERVAL_MS = 5000;
     const WORKSPACE_SERVER_HEALTH_TIMEOUT_MS = 5000;
     // Dose controls are persisted in physical Gy. Legacy snapshots that
@@ -175,13 +176,32 @@
                 if (!response.ok && response.status !== 401 && response.status !== 403) {
                     throw new Error(`HTTP ${response.status}`);
                 }
+                let serverInstanceId = '';
+                if (response.ok) {
+                    try {
+                        const payload = await response.json();
+                        serverInstanceId = String(payload?.server_instance_id || '').trim();
+                    } catch (_) {
+                        // The health probe has already established that the
+                        // server is reachable. A malformed optional identity
+                        // must not turn a healthy control-plane response into
+                        // a false offline state.
+                    }
+                }
+                const restarted = Boolean(
+                    serverInstanceId
+                    && workspaceServerInstanceId
+                    && serverInstanceId !== workspaceServerInstanceId
+                );
+                if (serverInstanceId) workspaceServerInstanceId = serverInstanceId;
                 const recovered = workspaceServerAvailable === false;
                 workspaceServerAvailable = true;
                 setWorkspaceServerConnectionStatus(true);
-                if (recovered || workspaceServerRecoveryPending) {
+                if (restarted) workspaceServerRecoveryPending = true;
+                if (restarted || recovered || workspaceServerRecoveryPending) {
                     void recoverWorkspaceAfterServerRestart();
                 }
-                return { available: true, recovered };
+                return { available: true, recovered, restarted };
             } catch (error) {
                 if (workspaceServerAvailable === true) workspaceServerRecoveryPending = true;
                 workspaceServerAvailable = false;
