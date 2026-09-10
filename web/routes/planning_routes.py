@@ -6113,6 +6113,9 @@ def register_planning_routes(
                 operation = snapshot.get("operation") or {}
                 return jsonify({
                     "session_id": session_id,
+                    "server_instance_id": str(
+                        current_app.config.get("BRACHYBOT_SERVER_INSTANCE_ID") or ""
+                    ),
                     "ct_path": first_path("ct_path", "ctPath", "ct_image_path", "ctImagePath"),
                     "ctv_path": first_path("ctv_path", "ctvPath", "ctv_mask_path", "ctvMaskPath"),
                     "oar_path": first_path("oar_path", "oarPath", "oar_mask_path", "oarMaskPath"),

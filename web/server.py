@@ -11,9 +11,16 @@ import threading
 import time
 from datetime import datetime
 from typing import Any, Dict, Mapping, Optional
+from uuid import uuid4
 
 WEB_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(WEB_DIR, ".."))
+
+# Changes on this value identify a new server process to an already-open
+# browser tab. It is intentionally process-local and is never persisted as
+# case data; the workspace bridge uses it only to detect a fast restart that
+# a periodic connectivity probe could otherwise miss.
+_SERVER_INSTANCE_ID = uuid4().hex
 
 from plans.dose_pre.model_loader import DEFAULT_PRESCRIPTION_GY, resolve_prescription_gy
 from tool_factory.report_facts import resolve_report_facts
@@ -285,6 +292,7 @@ def create_app(config: Optional[Dict] = None):
         config = {}
 
     app = Flask(__name__, static_folder=APP_DIR, static_url_path="")
+    app.config["BRACHYBOT_SERVER_INSTANCE_ID"] = _SERVER_INSTANCE_ID
     # CORS: restrict to localhost by default. Trusted LAN mode permits
     # loopback/private-network browser origins, not arbitrary websites.
     _origin_env = os.environ.get("ALLOWED_ORIGINS")
