@@ -29,6 +29,7 @@ import math
 import re
 import time
 import threading
+from collections.abc import Mapping
 from typing import Any, Dict, List, Optional, Callable, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
@@ -39,6 +40,26 @@ import SimpleITK as sitk
 from tool_factory import ToolResult
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_ui_controls(raw_controls: Any) -> Dict[str, Any]:
+    """Normalize durable and DOM-style UI control snapshots by control id."""
+    if isinstance(raw_controls, Mapping):
+        return dict(raw_controls)
+    if not isinstance(raw_controls, (list, tuple)):
+        return {}
+    normalized = {}
+    for control in raw_controls:
+        if not isinstance(control, Mapping):
+            continue
+        control_id = (
+            control.get("id")
+            or control.get("control_id")
+            or control.get("name")
+        )
+        if control_id is not None and str(control_id).strip():
+            normalized[str(control_id)] = dict(control)
+    return normalized
 
 from agent_runtime.core import AgentMemory, PlanningPhase, ToolRegistry, ToolResultPipeline
 from agent_runtime.contracts import ContextPackBuilder, RunLedger, ToolCallGateway
@@ -1471,11 +1492,19 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             # still win, and there is no model fallback on mismatch.
             get_ui_state = getattr(self.memory, "get_ui_state", None)
             ctv_ui_state = get_ui_state() if callable(get_ui_state) else {}
-            ctv_controls = (
+            raw_ctv_controls = (
                 ctv_ui_state.get("controls", {})
-                if isinstance(ctv_ui_state, dict)
+                if isinstance(ctv_ui_state, Mapping)
                 else {}
             )
+            # Browser/UI snapshots have two valid shapes: the durable agent
+            # state stores controls as {id: {value: ...}}, while the browser
+            # bridge publishes a DOM-style list [{id, value, ...}].  The chat
+            # path injects the bridge state before every turn, so treating the
+            # list as a mapping used to raise ``list has no attribute get``
+            # before CTV inference even started.  Normalize both shapes at the
+            # trusted server boundary and ignore anonymous DOM controls.
+            ctv_controls = _normalize_ui_controls(raw_ctv_controls)
 
             def _ctv_control_value(control_id, default=None):
                 value = ctv_controls.get(control_id)

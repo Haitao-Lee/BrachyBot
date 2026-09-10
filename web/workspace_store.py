@@ -87,12 +87,27 @@ def _ui_control_value(ui_state: Any, control_id: str, default: Any = None) -> An
     if not isinstance(ui_state, Mapping):
         return default
     controls = ui_state.get("controls")
-    if not isinstance(controls, Mapping):
+    if isinstance(controls, Mapping):
+        control = controls.get(control_id)
+    elif isinstance(controls, (list, tuple)):
+        control = next(
+            (
+                item for item in controls
+                if isinstance(item, Mapping)
+                and str(
+                    item.get("id")
+                    or item.get("control_id")
+                    or item.get("name")
+                    or ""
+                ) == str(control_id)
+            ),
+            None,
+        )
+    else:
         return default
-    control = controls.get(control_id)
-    if not isinstance(control, Mapping):
-        return default
-    return control.get("value", default)
+    if isinstance(control, Mapping):
+        return control.get("value", default)
+    return control if control is not None else default
 
 
 def _repair_restored_manual_ctv(
