@@ -6095,6 +6095,12 @@ async function _refreshAfterDataMutation(
     const allCaseData = invalidated.includes('all_case_data');
     const structureMutation = Boolean(payload?.structures)
         || objectIds.some(id => id.startsWith('structure:'));
+    // A traversability update returns the effective structure catalogue so the
+    // Data Tree can repaint categories, but it does not change any voxel or
+    // mesh geometry. Callers may explicitly opt out of the geometry reload
+    // contract for metadata-only structure mutations.
+    const reloadStructureGeometry = structureMutation
+        && options.reloadStructureGeometry !== false;
     const genericMaskMutation = invalidated.includes('generic_mask')
         || objectIds.some(id => _isDataTreeMaskId(id));
     const planningMutation = invalidated.includes('planning')
@@ -6114,7 +6120,7 @@ async function _refreshAfterDataMutation(
     // tree, and remove the confirmed rows locally while the fresh payload is
     // loading.  This applies to every structural Data Tree delete/move, not
     // just the original CTV upload case.
-    if (structureMutation || genericMaskMutation) {
+    if (reloadStructureGeometry || genericMaskMutation) {
         if (removedObjectIds.length > 0) {
             // Keep the local purge tied to the server's explicit removal
             // contract. The inner binding also keeps the legacy helper call
@@ -6134,19 +6140,50 @@ async function _refreshAfterDataMutation(
         return true;
     }
 
-    // When a structure is reclassified but the user chose NOT to replan
-    // (preserveDoseDvh), keep the existing dose/DVH/surgical-guide visible and
-    // only mark them stale. Clearing them made a simple "move to CTV/OAR"
-    // wipe the dose heatmap, DVH curve, and guide from the viewer and data
-    // tree even though the needle geometry was unchanged.
-    if (options.preserveDoseDvh === true) {
+    // A move-only action keeps the existing clinical presentation visible
+    // as stale evidence. This includes the Planning children themselves:
+    // clearing the planning flag used to remove needles/seeds just because an
+    // operator changed a structure policy and declined an immediate replan.
+    const preservePlanningPresentation = options.preservePlanningPresentation === true
+        || options.preserveDoseDvh === true;
+    if (preservePlanningPresentation) {
         _clearInvalidatedPlanningPresentation(
-            invalidated.filter(item => !['dose', 'dvh', 'evaluation', 'surgical_guide', 'guide'].includes(item)),
+            invalidated.filter(item => ![
+                'planning', 'dose', 'dvh', 'evaluation', 'surgical_guide', 'guide',
+            ].includes(item)),
         );
     } else {
         _clearInvalidatedPlanningPresentation(invalidated);
     }
-    if (structureMutation) {
+    // A traversability-only response still needs to update the local OAR
+    // category immediately. Convert the small public catalogue into the
+    // existing metadata shape; do not fetch/rebuild the binary volume or mesh.
+    if (structureMutation && !reloadStructureGeometry
+        && Array.isArray(payload?.structures)) {
+        const organData = {};
+        payload.structures.forEach(item => {
+            if (String(item?.classification || '').toLowerCase() !== 'oar') return;
+            const labelId = Number(
+                item?.target_label ?? item?.source_label ?? item?.label_id,
+            );
+            if (!Number.isInteger(labelId) || labelId <= 0) return;
+            organData[String(labelId)] = {
+                name: item?.name || 'OAR ' + labelId,
+                voxel_count: Number(item?.voxel_count || 0),
+                object_id: item?.object_id || null,
+                traversability: item?.traversability || null,
+                category: item?.traversability || null,
+            };
+        });
+        if (Object.keys(organData).length > 0) {
+            updateOrganList(
+                organData,
+                dataTreeState.oarSource || 'classified',
+            );
+        }
+    }
+
+    if (reloadStructureGeometry) {
         Object.keys(scene3D?.meshes || {})
             .filter(id => id === 'ctv' || id.startsWith('ctv_') || id.startsWith('organ_'))
             .forEach(_disposeSceneMesh);
@@ -6178,7 +6215,7 @@ async function _refreshAfterDataMutation(
     // require a CTV/OAR label-volume reload.  Still reconcile its catalogue
     // after a backend mutation; the prior implementation left open masks in
     // the client until a later unrelated viewer refresh.
-    if (genericMaskMutation && !structureMutation) {
+    if (genericMaskMutation && !reloadStructureGeometry) {
         await hydrateGenericMasksFromServer(_captureViewerDataScope(expectedSessionId));
         if (String(expectedSessionId) !== _viewerDataSessionId()) return false;
     }
@@ -6334,13 +6371,15 @@ async function moveSelectedStructures(classification, objectIds = null) {
     return true;
 }
 
-async function replanAfterStructureChange(expectedSessionId) {
+async function replanAfterStructureChange(expectedSessionId, options = {}) {
     const ctPath = typeof state !== 'undefined' ? state.ctPath : '';
     if (!ctPath) throw new Error('No CT image available for replanning');
     if (typeof refreshPlanningUI !== 'function') throw new Error('Planning refresh unavailable');
     await refreshPlanningUI({
         sessionId: expectedSessionId,
-        skipLabelLoad: false,
+        // Traversability-only changes do not require label-volume hydration.
+        // CTV/OAR classification changes keep the historical full refresh.
+        skipLabelLoad: options.skipLabelLoad === true,
         preserveViewerState: true,
         switchToViewers: false,
         backgroundRestore: false,
@@ -7049,6 +7088,46 @@ window.batchSetViewVisibility = batchSetViewVisibility;
 window.setGroupViewVisibility = setGroupViewVisibility;
 window.applyDataTreeViewVisibility = applyDataTreeViewVisibility;
 
+function _planningMutationState() {
+    const planning = (
+        typeof dataTreeState !== 'undefined' && dataTreeState?.planning
+    ) ? dataTreeState.planning : {};
+    const runtimeState = typeof state !== 'undefined' && state ? state : {};
+    const status = String(planning.status || '').trim().toLowerCase();
+    const activeStatuses = new Set([
+        'queued', 'pending', 'running', 'in_progress', 'processing',
+        'optimizing', 'generating', 'loading', 'restoring', 'waiting',
+    ]);
+    const inProgress = activeStatuses.has(status);
+    const planningId = String(
+        planning.activePlanningId || planning.id || '',
+    ).trim();
+    const hasClinicalRows = [
+        planning.trajectories,
+        planning.seeds,
+        planning.needles,
+        planning.doseLevels,
+    ].some(value => Array.isArray(value) && value.length > 0);
+    const hasRuntimeOutputs = Boolean(
+        runtimeState.doseOverlay
+        || (
+            runtimeState.dvhData
+            && typeof runtimeState.dvhData === 'object'
+            && Object.keys(runtimeState.dvhData).length > 0
+        )
+        || planning.doseOverlay
+        || planning.dvh
+    );
+    const hasPlanningIdentity = Boolean(
+        planningId
+        && !['planning', '__unassigned__'].includes(planningId),
+    );
+    return {
+        hasPlan: inProgress || hasPlanningIdentity || hasClinicalRows || hasRuntimeOutputs,
+        inProgress,
+    };
+}
+
 async function moveSelectedOrganTraversability(category, objectIds = null) {
     const destination = String(category || '').trim().toLowerCase();
     if (!['traversable', 'non_traversable'].includes(destination)) return false;
@@ -7059,6 +7138,10 @@ async function moveSelectedOrganTraversability(category, objectIds = null) {
         .filter(Boolean);
     const selected = [...new Set(requestedIds.filter(id => String(id).startsWith('structure:')))];
     if (!selected.length) return false;
+    // Capture the pre-mutation state. The server response marks planning
+    // artifacts stale, so deciding after the PATCH would make a no-plan case
+    // look as if it had something to replan.
+    const planningBeforeMutation = _planningMutationState();
     const response = await fetch(API + '/data/structures/traversability', {
         method: 'PATCH',
         headers: {
@@ -7081,29 +7164,36 @@ async function moveSelectedOrganTraversability(category, objectIds = null) {
     const destinationLabel = destination === 'non_traversable'
         ? _dtText('不可穿刺', 'non-traversable')
         : _dtText('可穿刺', 'traversable');
-    const shouldReplan = await _confirmAction(
-        _dtText(
-            `已将 ${selected.length} 个 OAR 移到${destinationLabel}。是否立即基于新的障碍物策略重新规划？`,
-            `${selected.length} OAR structure(s) moved to ${destinationLabel}. Replan now with the updated obstacle policy?`,
-        ),
-        null,
-        {
-            yesZh: '重新规划',
-            yesEn: 'Replan',
-            noZh: '仅移动',
-            noEn: 'Move only',
-            titleZh: 'OAR 穿刺属性已更改',
-            titleEn: 'OAR traversability changed',
-        },
-    );
+    let shouldReplan = false;
+    if (!planningBeforeMutation.inProgress && planningBeforeMutation.hasPlan) {
+        shouldReplan = await _confirmAction(
+            _dtText(
+                `已将 ${selected.length} 个 OAR 移到${destinationLabel}。是否立即基于新的障碍物策略重新规划？`,
+                `${selected.length} OAR structure(s) moved to ${destinationLabel}. Replan now with the updated obstacle policy?`,
+            ),
+            null,
+            {
+                yesZh: '重新规划',
+                yesEn: 'Replan',
+                noZh: '仅移动',
+                noEn: 'Move only',
+                titleZh: 'OAR 穿刺属性已更改',
+                titleEn: 'OAR traversability changed',
+            },
+        );
+    }
     await _refreshAfterDataMutation(payload, appearance, expectedSessionId, {
         objectIds: selected,
+        // Traversability is a policy/metadata change. Never dispose or
+        // reconstruct CTV/OAR meshes for this operation.
+        reloadStructureGeometry: false,
         preserveDoseDvh: shouldReplan !== true,
+        preservePlanningPresentation: shouldReplan !== true,
     });
     selectedItems.clear();
     if (shouldReplan) {
         try {
-            await replanAfterStructureChange(expectedSessionId);
+            await replanAfterStructureChange(expectedSessionId, { skipLabelLoad: true });
         } catch (error) {
             console.warn('[data-tree] replan after traversability change failed:', error);
             addChat('error', _dtText(
@@ -7113,8 +7203,24 @@ async function moveSelectedOrganTraversability(category, objectIds = null) {
         }
     }
     addChat('system', _dtText(
-        `已将 ${selected.length} 个 OAR 移到${destinationLabel}；规划障碍物策略已更新。`,
-        `${selected.length} OAR structure(s) moved to ${destinationLabel}; the planning obstacle policy was updated.`,
+        planningBeforeMutation.inProgress
+            ? `已将 ${selected.length} 个 OAR 移到${destinationLabel}。当前规划正在进行，未自动重启规划；请在本次规划结束后再执行规划。`
+            : planningBeforeMutation.hasPlan
+                ? (
+                    shouldReplan
+                        ? `已将 ${selected.length} 个 OAR 移到${destinationLabel}，正在使用新的障碍物策略重新规划。`
+                        : `已将 ${selected.length} 个 OAR 移到${destinationLabel}；现有规划结果保留显示，并已标记为待更新。`
+                )
+                : `已将 ${selected.length} 个 OAR 移到${destinationLabel}。当前 case 尚未完成规划，无需重新规划；3D 结构显示保持不变。`,
+        planningBeforeMutation.inProgress
+            ? `${selected.length} OAR structure(s) moved to ${destinationLabel}. The current plan is still running; it was not restarted. Run planning again after it finishes.`
+            : planningBeforeMutation.hasPlan
+                ? (
+                    shouldReplan
+                        ? `${selected.length} OAR structure(s) moved to ${destinationLabel}; replanning with the updated obstacle policy.`
+                        : `${selected.length} OAR structure(s) moved to ${destinationLabel}; existing planning results remain visible and are marked stale.`
+                )
+                : `${selected.length} OAR structure(s) moved to ${destinationLabel}. This case has no completed plan, so no replan is needed; 3D structure display is unchanged.`,
     ));
     return true;
 }
