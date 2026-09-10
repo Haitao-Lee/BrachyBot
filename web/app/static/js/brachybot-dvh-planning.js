@@ -2308,7 +2308,7 @@ async function refreshPlanningUI(options = {}) {
         try {
             if (options.preserveReport !== true
                 && typeof Report !== 'undefined' && Report.autoFill && Report.autoFill.fromAll) {
-                await Report.autoFill.fromAll();
+                await Report.autoFill.fromAll({ sessionId: expectedSessionId, captureFigures: false });
             }
         } catch (_) {}
 

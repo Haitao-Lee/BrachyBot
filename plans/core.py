@@ -115,6 +115,34 @@ def seed_plan_to_world_coordinates(plan_res, dose_image):
     return converted_plan
 
 
+def sample_spatial_trajectories(trajectories, limit, spacing=(1, 1, 1)):
+    """Deterministic farthest-point sampling across physical positions AND directions.
+
+    Planner coordinates are z,y,x. Normalize position by the overall diameter
+    (not independently per axis) so anisotropic anatomy retains its geometry.
+    Direction contributes on the same scale, preventing direction-major input
+    ordering from concentrating all retained candidates in one cone sector.
+    """
+    limit = max(1, int(limit))
+    if len(trajectories) <= limit:
+        return list(trajectories)
+    positions = np.asarray([t[0] for t in trajectories], dtype=float) * np.asarray(spacing)
+    directions = np.asarray([t[1] for t in trajectories], dtype=float) * np.asarray(spacing)
+    directions /= np.maximum(np.linalg.norm(directions, axis=1, keepdims=True), 1e-12)
+    scale = max(float(np.linalg.norm(np.ptp(positions, axis=0))), 1e-12)
+    features = np.column_stack(((positions - positions.mean(axis=0)) / scale, directions * 0.5))
+    nearest = np.full(len(features), np.inf)
+    index = int(np.argmax(np.sum((features - features.mean(axis=0)) ** 2, axis=1)))
+    selected = []
+    for _ in range(limit):
+        selected.append(index)
+        delta = features - features[index]
+        nearest = np.minimum(nearest, np.einsum('ij,ij->i', delta, delta))
+        nearest[selected] = -1
+        index = int(np.argmax(nearest))
+    return [trajectories[i] for i in selected]
+
+
 def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract_angle,
               target_value, background_value, obstacle_value, maximum_candidate_trajectories, progressDialog=None,
               min_depth=2, preview_callback=None, entry_body_mask=None,
@@ -197,7 +225,8 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
     progressDialog.setLabelText("Initial Planning...")
 
     # ---- 2.  Extract candidate voxels inside cone ----
-    max_points_num = max(1, maximum_candidate_trajectories // len(candidate_dirs))
+    candidate_limit = max(1, int(maximum_candidate_trajectories))
+    sampling_spacing = tuple(reversed(dose_image.GetSpacing())) if hasattr(dose_image, 'GetSpacing') else (1, 1, 1)
 
     close_points, max_length = utilizations.get_close_points(
         dose_image, radiation_volume, ref_direc, target_value, extract_angle
@@ -206,17 +235,8 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
     progressDialog.setValue(40)
     progressDialog.setLabelText("Initial Planning...")
 
-    # Narrow cone angle if too many points (smaller angle = fewer points)
-    _max_iter = 50
-    _iter = 0
-    while close_points.shape[0] > max_points_num and _iter < _max_iter:
-        extract_angle *= 0.9  # shrink cone to reduce points
-        close_points, max_length = utilizations.get_close_points(
-            dose_image, radiation_volume, ref_direc, target_value, extract_angle
-        )
-        _iter += 1
-        progressDialog.setValue(40)
-        progressDialog.setLabelText("Initial Planning...")
+    # Keep the full spatial cone. Apply the budget after entry/depth/obstacle
+    # validation, so invalid paths cannot consume slots or bias the sampling.
 
     # ---- 3.  Initialise trajectories with depth filter ----
     init_trajectories = []
@@ -264,19 +284,23 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
                 entry_body_mask=entry_body_mask,
                 truncated_boundary_faces=entry_boundary_faces,
             )
-        init_trajectories += traj_list
+        init_trajectories += sample_spatial_trajectories(
+            traj_list, candidate_limit, sampling_spacing
+        )
 
         now = time.monotonic()
         if preview_callback is not None and now - last_preview_at >= 0.20:
             last_preview_at = now
+            preview = sample_spatial_trajectories(init_trajectories, candidate_limit, sampling_spacing)
             safe_preview(preview_callback, {
                 "phase": "candidate_generation",
                 "current": i + 1,
                 "total": len(candidate_dirs),
-                "trajectories": init_trajectories,
-                "detail": f"{len(init_trajectories)} candidate paths",
+                "trajectories": preview,
+                "detail": f"{len(preview)} spatially sampled candidate paths (limit {candidate_limit})",
             })
 
+    init_trajectories = sample_spatial_trajectories(init_trajectories, candidate_limit, sampling_spacing)
     safe_preview(preview_callback, {
         "phase": "candidate_generation",
         "current": len(candidate_dirs),

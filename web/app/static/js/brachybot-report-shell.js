@@ -625,10 +625,13 @@ window.Report = (function () {
                     // the text and tables. Awaiting capture also prevents the
                     // chat reply from claiming completion while only old image
                     // attachments have been persisted.
-                    await autoCaptureReportFigures({
+                    const captureResult = await autoCaptureReportFigures({
                         sessionId: expectedSessionId,
                         planningId: expectedPlanningId,
                     });
+                    if (captureResult?.blocked || captureResult?.stale || captureResult?.success === false) {
+                        throw new Error('Report images are not ready for the current plan. Wait for planning and viewer loading to complete, then retry.');
+                    }
                 }
             } catch (e) {
                 console.warn('Report figure capture failed during auto-fill:', e);
@@ -658,7 +661,7 @@ window.Report = (function () {
                 };
             }
             return {
-                success: true,
+                success: !figureCaptureWarning,
                 stale: false,
                 applied: serverApplied,
                 warning: figureCaptureWarning,
