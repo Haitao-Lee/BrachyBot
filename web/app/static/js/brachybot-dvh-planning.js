@@ -1008,6 +1008,15 @@ async function refreshPlanningRunCatalog(options = {}) {
                         : (requestedActive || existingActive || null);
                     planning.activePlanningId = normalizedActive || null;
                     if (normalizedActive) planning.id = normalizedActive;
+                    const activeRun = (planning.runs || []).find(run =>
+                        String(run?.planning_id || '') === String(normalizedActive || ''));
+                    // Do not regress a newer local edit with an older catalog.
+                    if (activeRun?.status && !hydrationPending
+                        && (existingActive !== normalizedActive
+                            || Number(activeRun.data_version || 0) >= Number(planning.dataVersion || 0))) {
+                        planning.status = activeRun.status;
+                        planning.dataVersion = Number(activeRun.data_version || 0);
+                    }
                     latestRuns = Array.isArray(planning.runs) ? planning.runs : [];
                 }
                 const guideRuns = incomingRuns || latestRuns || [];

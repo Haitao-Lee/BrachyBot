@@ -3227,7 +3227,12 @@ function ensureDataTreeNodeMetadata(node, type, parentId = null) {
     // 'ready' is authoritative and must not be downgraded to 'not_generated'
     // merely because the node lacks a `loaded` flag (planning meshes such as
     // the surgical guide carry status 'ready' without a `loaded` field).
-    node.status = node.error ? 'error'
+    // Planning has a persisted workflow status. Rendering the tree must not
+    // replace completed/running/draft with a visual resource readiness flag.
+    const planningLifecycle = type === 'planning' && [
+        'completed', 'running', 'draft', 'interrupted', 'failed', 'cancelled',
+    ].includes(explicitStatus);
+    node.status = planningLifecycle ? explicitStatus : node.error ? 'error'
         : node.loading ? 'loading'
         : [
             'expired', 'stale', 'restoring', 'persisted_not_loaded',
