@@ -48,6 +48,17 @@ class Round9RegressionTests(unittest.TestCase):
         self.assertIn("animation-iteration-count: infinite !important", responsive)
         self.assertIn("todo-active-breathe-soft", responsive)
 
+    def test_seeded_ready_todo_reopens_when_current_tool_is_in_flight(self):
+        source = self.read("web/app/static/js/brachybot-chat-todo.js")
+        # Data Tree readiness can optimistically cross out a reusable CTV/OAR
+        # row before this turn starts. A real in-flight event must reopen that
+        # row so the bottom Progress dock cannot disagree with the trace.
+        self.assertIn("reopenSeeded(item)", source)
+        self.assertIn("item._seededReady = true", source)
+        self.assertIn("if (stepStatus === 'pending' && existing._seededReady)", source)
+        self.assertIn("'waiting'", source)
+        self.assertIn("function _isInFlightToolStatus(status)", source)
+
     def test_planning_dose_model_uses_centralized_device_selection(self):
         source = self.read("tool_factory/seed_plan/planning_pipeline.py")
         self.assertIn('get_device(caller="planning_pipeline_dose")', source)

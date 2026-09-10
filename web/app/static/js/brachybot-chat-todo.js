@@ -238,7 +238,7 @@ function _todoCreate() {
             // (labels may be translated to Chinese, so label-based
             // matching fails for English tool names like "trajectory_init").
             const operationName = _brachyOperationName(step.tool || '');
-            const operationClock = operationName && (step.status === 'pending' || step.status === 'active')
+            const operationClock = operationName && _isInFlightToolStatus(step.status)
                 ? window._brachyOperationStart(
                     operationName,
                     api._sessionId,
@@ -255,6 +255,7 @@ function _todoCreate() {
                 node: li,
                 step,
                 _operationName: operationName || null,
+                _seededReady: false,
             };
             api.items.push(item);
             _todoUpdateCount();
@@ -334,6 +335,33 @@ function _todoCreate() {
                 item.node.style.animationPlayState = 'running';
             }, 500);
         },
+        // A predicted row may be marked done during seeding when the
+        // current Data Tree already contains a reusable CTV/OAR result.
+        // That is only an optimistic readiness hint, not evidence that
+        // this turn cannot execute the same tool again. If the server later
+        // emits the real in-flight event, reopen that row before marking it
+        // active so the bottom Progress surface agrees with the trace.
+        reopenSeeded(item) {
+            if (!item || item._seededReady !== true) return false;
+            if (item._timer) { clearInterval(item._timer); item._timer = null; }
+            if (item._animationGuard) {
+                clearInterval(item._animationGuard);
+                item._animationGuard = null;
+            }
+            _todoStopGpuBadge(item);
+            item._seededReady = false;
+            item._activatedAt = null;
+            item.startedAt = null;
+            item.endedAt = null;
+            item._realElapsedMs = null;
+            item.status = 'pending';
+            item.node.classList.remove('done', 'error', 'predicted', 'active');
+            item.node.classList.add('pending');
+            const dot = item.node.querySelector('.chat-todo-dot');
+            if (dot) dot.textContent = '';
+            this.markActive(item);
+            return true;
+        },
         markDone(item, errMsg) {
             // Always ensure at least one browser paint frame shows the
             // "active" breathing state before transitioning to done.
@@ -341,6 +369,9 @@ function _todoCreate() {
             // auto-fire), sinceActive ≈ 0 and the old code skipped the
             // defer — the user saw "CTV executing + OAR completed"
             // instead of "CTV done → OAR executing → OAR done".
+            // A later terminal event supersedes an optimistic readiness
+            // hint; stale pending packets must not reopen this row again.
+            if (item._seededReady) item._seededReady = false;
             const sinceActive = item._activatedAt ? (Date.now() - item._activatedAt) : 9999;
             if (item.status === 'active') {
                 // Minimum 120ms visible active state (~2 frames at 60fps).
@@ -420,6 +451,7 @@ function _todoCreate() {
                 it.node.style.animationPlayState = '';
                 _todoStopGpuBadge(it);
                 it.status = 'error';
+                it._seededReady = false;
                 it.endedAt = Date.now();
                 if (it.startedAt == null || it.startedAt <= 0 || it.startedAt > Date.now() + 60000) {
                     it.startedAt = it.endedAt;
@@ -461,6 +493,7 @@ function _todoCreate() {
                     it.node.style.animationPlayState = '';
                     _todoStopGpuBadge(it);
                     it.status = 'done';
+                    it._seededReady = false;
                     it.endedAt = Date.now();
                     if (it.startedAt == null || it.startedAt <= 0 || it.startedAt > Date.now() + 60000) {
                         it.startedAt = it.endedAt;
@@ -681,8 +714,14 @@ function _todoUpdateFromStep(todo, step) {
     if (!todo || !step) return;
     // Normalize provider terminal labels before updating the visual todo.
     // The stream may say completed while the local todo model uses done.
-    const stepStatus = _isTerminalToolStatus(step.status)
-        ? 'done' : _isFailedToolStatus(step.status) ? 'error' : step.status;
+    const rawStepStatus = String(step.status || '').trim().toLowerCase();
+    const stepStatus = _isTerminalToolStatus(rawStepStatus)
+        ? 'done'
+        : _isFailedToolStatus(rawStepStatus)
+            ? 'error'
+            : _isInFlightToolStatus(rawStepStatus)
+                ? 'pending'
+                : rawStepStatus;
     // UNFOLD: if the todo was folded (e.g. by a previous response)
     // and a new tool step arrives (e.g. quality review retry),
     // unfold it so the user can see the retry progress.
@@ -741,6 +780,17 @@ function _todoUpdateFromStep(todo, step) {
             return false;
         });
         if (existing) {
+            // Keep the latest server step attached to the row. This is
+            // important for a seeded-ready placeholder: its pre-completed
+            // state came from the old viewer snapshot, while this event is
+            // the authoritative state for the current turn.
+            existing.step = step;
+            existing.toolName = existing.toolName || step.tool;
+            existing._operationName = existing._operationName || _brachyOperationName(step.tool);
+            if (stepStatus === 'pending' && existing._seededReady) {
+                todo.reopenSeeded(existing);
+                return existing;
+            }
             if (stepStatus === 'done') {
                 todo.markDone(existing);
             } else if (stepStatus === 'pending') {
@@ -758,6 +808,15 @@ function _todoUpdateFromStep(todo, step) {
     // 4. Create a new item if no match
     if (!item) {
         item = todo.addPending(step);
+    }
+    if (item && step.tool) {
+        item.step = step;
+        item.toolName = item.toolName || step.tool;
+        item._operationName = item._operationName || _brachyOperationName(step.tool);
+    }
+    if (item && stepStatus === 'pending' && item._seededReady) {
+        todo.reopenSeeded(item);
+        return item;
     }
     // Extract real execution time from backend content.
     // The backend includes "elapsed_ms=1234" in done event content so
@@ -876,6 +935,9 @@ function _todoSeed(todo, userMessage) {
             if ((t.tool === 'ctv_segmentation' && ctvReady) ||
                 (t.tool === 'oar_segmentation' && oarReady)) {
                 todo.markDone(item);
+                // This is a reusable-result hint only. A real pending event
+                // for the current turn is allowed to reopen the row.
+                item._seededReady = true;
             }
         }
         // Update count display
@@ -1932,6 +1994,20 @@ function _isTerminalToolStatus(status) {
 function _isFailedToolStatus(status) {
     return new Set(['error', 'failed', 'failure', 'cancelled', 'canceled', 'stopped'])
         .has(String(status || '').trim().toLowerCase());
+}
+
+// Different providers and server paths use slightly different labels for
+// an operation that has not reached a terminal state yet. The execution
+// trace may display these as "pending"/"waiting"; the todo dock must treat
+// all of them as active work rather than silently leaving a pre-completed
+// row crossed out.
+const _IN_FLIGHT_TOOL_STATUSES = new Set([
+    'pending', 'active', 'queued', 'running', 'waiting',
+    'processing', 'in_progress', 'optimizing', 'generating',
+    'loading', 'restoring',
+]);
+function _isInFlightToolStatus(status) {
+    return _IN_FLIGHT_TOOL_STATUSES.has(String(status || '').trim().toLowerCase());
 }
 
 window._pendingHiddenChats = window._pendingHiddenChats || [];
@@ -3194,7 +3270,7 @@ async function sendChat(prefill, options) {
             // 15 min whenever any step or todo item is still in-flight.
             const hasActiveWork = (todo && todo.items && todo.items.some(
                 i => i.status === 'active' || i.status === 'pending',
-            )) || steps.some(s => s.status === 'active' || s.status === 'pending');
+            )) || steps.some(s => _isInFlightToolStatus(s.status));
             const onReadTimeout = () => {
                 try { turnAbortController.abort(); } catch (_) {}
             };
@@ -3418,7 +3494,7 @@ async function sendChat(prefill, options) {
                         // Show tool progress (pending / terminal)
                         const toolCompleted = _isTerminalToolStatus(data.status);
                         const toolFailed = _isFailedToolStatus(data.status);
-                        if (data.type === 'tool' && data.status === 'pending') {
+                        if (data.type === 'tool' && _isInFlightToolStatus(data.status)) {
                             // If this is the SAME tool already showing progress,
                             // just update its content — don't create a new row.
                             if (progressEl && progressEl.parentNode && lastToolName === (data.tool || 'unknown')) {
