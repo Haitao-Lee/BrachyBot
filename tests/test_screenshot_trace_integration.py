@@ -1356,7 +1356,12 @@ def test_report_generation_executes_and_persists_the_full_report_transaction():
     assert "result.success === false || result.stale === true" in ui_api
     assert "result?.success === false" in chat
     assert "result?.stale === true" in chat
-    assert "Report.autoFill.fromAll({ sessionId: ownerSessionId })" in ui_api
+    assert "await window.awaitWorkspaceVisualReady(reportSessionId" in ui_api
+    assert "requireCompletedPlanning: true" in ui_api
+    assert "captureFigures: true" in ui_api
+    assert "allowTerminalPlanning: true" in ui_api
+    assert "refreshResult.backgroundCompletion" in ui_api
+    assert "viewer_restore_timeout" in ui_api
 
     # Text, tables, canonical figures, and the durable workspace snapshot are
     # one awaited transaction before the final assistant reply is rendered.
