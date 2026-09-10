@@ -7335,8 +7335,94 @@ async function _executeUIActionRaw(a, options = {}) {
         }
         // ── Report ──
         if (target === 'report.autofill') {
+            const reportSessionId = ownerSessionId || _activeApiSessionId();
+            // A report regeneration is a read of the complete saved case. A
+            // cold-restored planning result can have its transcript, report
+            // form, and DVH snapshot available before the 3D/dose canvases
+            // have finished hydrating. Starting capture at that point leaves
+            // report.figures empty and makes the whole UI action appear to
+            // fail even though the numeric report data exists.
+            if (typeof window.awaitWorkspaceVisualReady === 'function') {
+                const visualReady = await window.awaitWorkspaceVisualReady(reportSessionId, {
+                    timeoutMs: 300000,
+                    reason: 'report-regeneration',
+                });
+                if (visualReady?.ready === false) {
+                    return {
+                        success: false,
+                        error: '当前病例的 Viewer 仍在恢复，报告截图尚未达到可生成状态。请等待恢复完成后重试。',
+                        stage: 'workspace_visual_restore_incomplete',
+                    };
+                }
+            }
+            // Rehydrate the persisted plan into the live viewer/data state.
+            // This is display recovery only; it never reruns segmentation or
+            // planning and it keeps the current report form intact.
+            if (typeof refreshPlanningUI === 'function') {
+                const refreshResult = await refreshPlanningUI({
+                    sessionId: reportSessionId,
+                    retryPending: true,
+                    backgroundRestore: true,
+                    preserveReport: true,
+                    preserveViewerState: true,
+                    autoGenerateGuide: false,
+                    switchToViewers: false,
+                    requireCompletedPlanning: true,
+                    captureReportFigures: false,
+                });
+                const refreshStatus = String(refreshResult?.planningStatus || '').toLowerCase();
+                if (!refreshResult || refreshResult.success !== true
+                    || (refreshStatus && refreshStatus !== 'completed')) {
+                    return {
+                        success: false,
+                        error: refreshResult?.error
+                            || '保存的规划结果尚未完全加载，报告无法安全重生成。请等待病例恢复完成后重试。',
+                        stage: refreshResult?.stage || 'planning_restore_incomplete',
+                    };
+                }
+                // backgroundRestore deliberately resolves at the essential
+                // data boundary, while its actual Viewer meshes continue via
+                // backgroundCompletion. Report figures are sampled from those
+                // meshes, so the report action must await that second boundary
+                // instead of racing the asynchronous reconstruction.
+                if (refreshResult?.backgroundCompletion
+                    && typeof refreshResult.backgroundCompletion.then === 'function') {
+                    let timeoutId = null;
+                    const visualCompletion = await Promise.race([
+                        refreshResult.backgroundCompletion,
+                        new Promise(resolve => {
+                            timeoutId = setTimeout(() => resolve({
+                                success: false,
+                                stage: 'viewer_restore_timeout',
+                                error: 'Viewer 恢复超时，报告截图尚未准备完成。请等待 Viewer 加载结束后重试。',
+                            }), 300000);
+                        }),
+                    ]);
+                    if (timeoutId !== null) clearTimeout(timeoutId);
+                    if (visualCompletion?.stale || visualCompletion?.success === false) {
+                        return {
+                            success: false,
+                            error: visualCompletion?.error
+                                || 'Viewer 恢复未完整完成，报告截图未生成。请等待 Viewer 加载结束后重试。',
+                            stage: visualCompletion?.stage || 'viewer_restore_incomplete',
+                        };
+                    }
+                }
+            }
             if (typeof Report !== 'undefined' && Report.autoFill) {
-                return Report.autoFill.fromAll({ sessionId: ownerSessionId });
+                const result = await Report.autoFill.fromAll({
+                    sessionId: reportSessionId,
+                    captureFigures: true,
+                    allowTerminalPlanning: true,
+                });
+                if (result?.success === false) {
+                    return {
+                        ...result,
+                        error: result.error || result.warning
+                            || '报告数据已读取，但标准截图未完整生成。请等待 Viewer 加载完成后重试。',
+                    };
+                }
+                return { ...result, success: true, target, command };
             }
             if (typeof reportAutoFill === 'function') return reportAutoFill();
             return { success: false, error: 'Report auto-fill is unavailable.' };

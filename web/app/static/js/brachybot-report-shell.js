@@ -628,6 +628,7 @@ window.Report = (function () {
                     const captureResult = await autoCaptureReportFigures({
                         sessionId: expectedSessionId,
                         planningId: expectedPlanningId,
+                        allowTerminalPlanning: opts.allowTerminalPlanning === true,
                     });
                     if (captureResult?.blocked || captureResult?.stale || captureResult?.success === false) {
                         throw new Error('Report images are not ready for the current plan. Wait for planning and viewer loading to complete, then retry.');
