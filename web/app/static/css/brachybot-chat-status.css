@@ -791,6 +791,8 @@
     border: 2px solid rgba(148, 163, 184, 0.36);
     border-top-color: #22d3ee;
     border-radius: 50%;
+    display: block;
+    transform-origin: center;
     background: rgba(2, 6, 23, 0.72);
     animation: chat-annotation-spin 0.8s linear infinite;
     pointer-events: none;
@@ -1590,9 +1592,27 @@ body.chat-session-awaiting .chat-input-row {
     border: 2px solid rgba(255, 255, 255, 0.38);
     border-top-color: #fff;
     border-radius: 50%;
+    display: block;
+    transform-origin: center;
     animation: chat-session-spin 0.75s linear infinite;
 }
 @keyframes chat-session-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+    .chat-gallery-item.is-annotating::after {
+        animation-name: chat-annotation-spin !important;
+        animation-duration: 1.2s !important;
+        animation-timing-function: linear !important;
+        animation-iteration-count: infinite !important;
+        animation-fill-mode: none !important;
+    }
+    .chat-send.session-awaiting::after {
+        animation-name: chat-session-spin !important;
+        animation-duration: 1.2s !important;
+        animation-timing-function: linear !important;
+        animation-iteration-count: infinite !important;
+        animation-fill-mode: none !important;
+    }
+}
 @keyframes pulse-stop { 0%, 100% { opacity: 1; } 50% { opacity: 0.75; } }
 
 .chat-hint {
