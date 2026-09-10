@@ -733,9 +733,78 @@ function _reportDvhWaitForPaint() {
  * into Fig 2(e).  The source traces/visibility are preserved, so no clinical
  * curve is silently dropped during the presentation-only re-layout.
  */
+function _reportDvhCurvePairs(curve) {
+    const direct = curve && Array.isArray(curve.dose_bins) && Array.isArray(curve.volume_pcts)
+        ? curve : curve?.cumulative;
+    if (!direct || !Array.isArray(direct.dose_bins) || !Array.isArray(direct.volume_pcts)) return [];
+    const pairs = [];
+    const count = Math.min(direct.dose_bins.length, direct.volume_pcts.length);
+    for (let index = 0; index < count; index += 1) {
+        const dose = Number(direct.dose_bins[index]);
+        const volume = Number(direct.volume_pcts[index]);
+        if (!Number.isFinite(dose) || !Number.isFinite(volume)) continue;
+        pairs.push([dose, Math.max(0, Math.min(100, volume))]);
+    }
+    return pairs;
+}
+
+// A restored case can have authoritative DVH arrays while the live Analysis
+// panel is still hidden. drawDVH() intentionally defers Plotly in that state,
+// so requiring dvhChart.data here made report regeneration fail even though
+// the planning result was complete. Build a detached source from the same
+// durable arrays; this does not open the panel or mutate the live chart.
+function _reportDvhFallbackSource(dvhData) {
+    if (!dvhData || typeof dvhData !== 'object' || Array.isArray(dvhData)) return null;
+    const fallbackColors = [
+        '#0ea5e9', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4',
+        '#f97316', '#ec4899', '#84cc16', '#14b8a6', '#a855f7', '#facc15',
+        '#fb7185', '#34d399', '#60a5fa', '#fbbf24',
+    ];
+    const entries = Object.entries(dvhData)
+        .map(([name, curve]) => ({ name, pairs: _reportDvhCurvePairs(curve) }))
+        .filter(entry => entry.pairs.length >= 2)
+        .sort((a, b) => {
+            const aTarget = /^(CTV|PTV|GTV)$/i.test(a.name) ? 1 : 0;
+            const bTarget = /^(CTV|PTV|GTV)$/i.test(b.name) ? 1 : 0;
+            if (aTarget !== bTarget) return bTarget - aTarget;
+            return (b.pairs[0]?.[1] || 0) - (a.pairs[0]?.[1] || 0);
+        });
+    if (!entries.length) return null;
+    const data = entries.map((entry, index) => {
+        const color = typeof _getOrganColor === 'function'
+            ? (_getOrganColor(entry.name) || fallbackColors[index % fallbackColors.length])
+            : fallbackColors[index % fallbackColors.length];
+        const isTarget = /^(CTV|PTV|GTV)$/i.test(entry.name);
+        return {
+            x: entry.pairs.map(pair => pair[0]),
+            y: entry.pairs.map(pair => pair[1]),
+            type: 'scatter',
+            mode: 'lines',
+            name: entry.name,
+            line: { color, width: isTarget ? 2.6 : 1.4, shape: 'linear' },
+            fill: isTarget ? 'tozeroy' : 'none',
+            fillcolor: isTarget ? 'rgba(14,165,233,0.10)' : undefined,
+            hoverinfo: 'none',
+            legendgroup: entry.name,
+            showlegend: true,
+        };
+    });
+    return { data, layout: {} };
+}
+
+function _reportCurrentDvhData(explicitData = null) {
+    if (explicitData && typeof explicitData === 'object') return explicitData;
+    if (typeof state !== 'undefined' && state) return state.dvhData;
+    return window.state?.dvhData;
+}
+
 async function captureReportDvhFigure(dvhEl = null, options = {}) {
     if (typeof document === 'undefined') return null;
-    const source = dvhEl || document.getElementById('dvhChart');
+    const liveSource = dvhEl || document.getElementById('dvhChart');
+    const liveHasData = Array.isArray(liveSource?.data) && liveSource.data.length > 0;
+    const source = liveHasData
+        ? liveSource
+        : _reportDvhFallbackSource(_reportCurrentDvhData(options.dvhData));
     if (!source || !Array.isArray(source.data) || source.data.length === 0) return null;
     if (typeof Plotly === 'undefined' || typeof Plotly.toImage !== 'function') return null;
 
@@ -2928,17 +2997,22 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             reportCaptureStep(7, 'DVH 曲线（Fig 2e）', 'DVH curve (Fig 2e)');
             let dvhDataUrl = null;
             const dvhEl = document.getElementById('dvhChart');
-            if (dvhEl) {
-                if (typeof window.captureReportDvhFigure === 'function') {
-                    try {
-                        await new Promise(r => setTimeout(r, 500)); // let Plotly finish rendering
-                        if (!isCurrentCapture()) return { stale: true };
-                        dvhDataUrl = await window.captureReportDvhFigure(dvhEl);
-                        uiDebugLog('[Report] DVH captured with report layout:', Math.round((dvhDataUrl || '').length / 1024), 'KB');
-                    } catch (e) {
-                        console.warn('[Report] Readable DVH capture failed:', e);
-                    }
+            if (typeof window.captureReportDvhFigure === 'function') {
+                try {
+                    // If the Analysis panel is hidden, the live Plotly node
+                    // deliberately has no data. The report helper falls back
+                    // to state.dvhData and renders an isolated chart instead.
+                    await new Promise(r => setTimeout(r, 500)); // let Plotly finish rendering
+                    if (!isCurrentCapture()) return { stale: true };
+                    dvhDataUrl = await window.captureReportDvhFigure(dvhEl, {
+                        dvhData: _reportCurrentDvhData(),
+                    });
+                    uiDebugLog('[Report] DVH captured with report layout:', Math.round((dvhDataUrl || '').length / 1024), 'KB');
+                } catch (e) {
+                    console.warn('[Report] Readable DVH capture failed:', e);
                 }
+            }
+            if (dvhEl) {
                 // Fallback: html2canvas
                 if (!dvhDataUrl && typeof html2canvas !== 'undefined') {
                     try {
