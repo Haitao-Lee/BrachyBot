@@ -21,6 +21,9 @@ from tool_factory import BaseTool, ToolResult
 import numpy as np
 import SimpleITK as sitk
 from typing import Dict, Iterable, List, Optional, Tuple
+from tool_factory.CTV_seg.totalsegmentator_runtime import (
+    find_totalsegmentator_executable,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -550,11 +553,15 @@ class TotalSegmentatorOARTool(BaseTool):
         managed_device: str,
     ):
         # --- Preflight: verify TotalSegmentator is available ---
-        ts_exe = shutil.which("TotalSegmentator")
+        # The server is commonly launched with an absolute Conda Python path
+        # without activating that environment in PATH. Resolve the matching
+        # CLI beside sys.executable as well as through PATH so an installed
+        # runtime is not reported as missing.
+        ts_exe = find_totalsegmentator_executable()
         if ts_exe is None:
             raise RuntimeError(
-                "TotalSegmentator not found in PATH. "
-                f"Current Python: {sys.executable}. "
+                "TotalSegmentator is not installed or not reachable by the active "
+                f"Python environment ({sys.executable}). "
                 "Install with: pip install totalsegmentator==2.13.0"
             )
 
@@ -574,6 +581,14 @@ class TotalSegmentatorOARTool(BaseTool):
             # NOT the original index.  Passing "gpu:1" when only 1 GPU
             # is visible causes an out-of-range crash.
             env = self._get_clean_subprocess_env()
+            # Keep the resolved Conda bin directory available to TotalSegmentator
+            # and any helper it starts, even when the parent server was launched
+            # without activating the environment.
+            executable_dir = os.path.dirname(os.path.abspath(ts_exe))
+            if executable_dir:
+                env["PATH"] = os.pathsep.join(
+                    [executable_dir, env.get("PATH", "")]
+                )
             if _dev.startswith("cuda:"):
                 gpu_idx = _dev.split(":")[1]
                 env["CUDA_VISIBLE_DEVICES"] = gpu_idx
