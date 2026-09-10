@@ -183,20 +183,24 @@ def format_tool_error(
     if is_provider_error(raw):
         return _provider_message(language)
 
-    invalid_metadata = bool(meta.get("_metadata_contract_error")) or (
-        "list" in lower and "attribute" in lower and "get" in lower
+    invalid_metadata = (
+        bool(meta.get("_metadata_contract_error"))
+        or bool(meta.get("ctv_contract_error"))
+        or ("list" in lower and "attribute" in lower and "get" in lower)
+        or ("list" in lower and "attribute" in lower and "items" in lower)
     )
     if tool in {"ctv_segmentation", "biomedparse_segmentation"}:
         if invalid_metadata or "metadata" in lower or "ctv" in lower:
             return (
-                "CTV 分割没有完成：分割模块返回了无法识别的数据格式，因此后续规划已停止。"
-                "请确认上传的是 CT（不要把 CT 放到 CTV mask 入口），然后重新执行 CTV 分割；"
-                "也可以上传与 CT 同一空间且包含目标的 CTV mask。"
+                "CTV 分割没有完成：CT 影像已进入分割流程，但模型结果在服务器内部校验/整理时发现了格式不一致，"
+                "因此系统安全停止了后续规划。本次提示不表示 CT 被误传到 CTV mask 入口；请直接重新执行 CTV 分割。"
+                "如果仍然失败，请保留执行追踪并联系管理员；只有在使用手工 CTV mask 时，才需要另外确认 mask 与 CT 同空间对齐。"
                 if language == "zh" else
-                "CTV segmentation was not completed because the segmentation module returned an "
-                "invalid data format, so downstream planning was stopped. Confirm that the CT was "
-                "uploaded as CT rather than through the CTV-mask input, then rerun CTV segmentation; "
-                "alternatively upload a CTV mask aligned to the CT."
+                "CTV segmentation did not complete because the CT reached the segmentation stage but the model "
+                "result failed an internal format/normalization check, so downstream planning was stopped safely. "
+                "This message does not mean that the CT was uploaded through the CTV-mask input; rerun CTV segmentation. "
+                "If it happens again, keep the Execution Trace and contact the administrator. Only manual CTV-mask "
+                "uploads additionally need to be checked for alignment with the CT."
             )
         return (
             "CTV 分割未完成，因此后续规划没有启动。请确认 CT 已完整加载并明确肿瘤部位/模型，"

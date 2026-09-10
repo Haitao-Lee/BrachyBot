@@ -1328,11 +1328,89 @@ class ToolResultPipeline:
         return "\n".join(lines)
 
     @staticmethod
+    def _iter_ctv_label_stats(value: Any):
+        """Yield validated CTV label rows without trusting adapter nesting.
+
+        label_stats is optional presentation metadata. It must never be
+        allowed to turn an otherwise valid segmentation into a failed tool
+        call when an adapter returns a list-shaped row or omits a field.
+        """
+        if isinstance(value, Mapping):
+            items = value.items()
+        elif isinstance(value, (list, tuple)):
+            items = []
+            for index, raw in enumerate(value):
+                if not isinstance(raw, Mapping):
+                    logger.warning(
+                        "Ignoring malformed CTV label_stats row type=%s",
+                        type(raw).__name__,
+                    )
+                    continue
+                name = (
+                    raw.get("name")
+                    or raw.get("label")
+                    or raw.get("organ")
+                    or raw.get("label_name")
+                    or f"label_{raw.get('label_id', index + 1)}"
+                )
+                items.append((name, raw))
+        else:
+            if value:
+                logger.warning(
+                    "Ignoring malformed CTV label_stats container type=%s",
+                    type(value).__name__,
+                )
+            return
+
+        for name, raw in items:
+            if not isinstance(raw, Mapping):
+                logger.warning(
+                    "Ignoring malformed CTV label_stats value name=%s type=%s",
+                    name,
+                    type(raw).__name__,
+                )
+                continue
+
+            try:
+                volume_cm3 = float(raw.get("volume_cm3") or 0.0)
+            except (TypeError, ValueError):
+                try:
+                    volume_cm3 = float(raw.get("volume_mm3") or 0.0) / 1000.0
+                except (TypeError, ValueError):
+                    volume_cm3 = 0.0
+
+            try:
+                voxel_count = int(
+                    float(
+                        raw.get("voxel_count")
+                        or raw.get("voxels")
+                        or raw.get("count")
+                        or 0
+                    )
+                )
+            except (TypeError, ValueError):
+                voxel_count = 0
+
+            raw_center = raw.get("centroid_world", (0.0, 0.0, 0.0))
+            try:
+                center = [float(raw_center[index]) for index in range(3)]
+            except (TypeError, ValueError, IndexError, KeyError):
+                center = [0.0, 0.0, 0.0]
+
+            yield str(name), volume_cm3, voxel_count, center
+
+    @staticmethod
     def _format_segmentation(tool_name: str, result, meta: dict, lang: str) -> str:
         """Format segmentation tool results."""
         if tool_name == "ctv_segmentation":
-            vol = meta.get("ctv_volume_mm3", 0)
-            vox = meta.get("ctv_voxel_count", 0)
+            try:
+                vol = float(meta.get("ctv_volume_mm3", 0) or 0.0)
+            except (TypeError, ValueError):
+                vol = 0.0
+            try:
+                vox = int(float(meta.get("ctv_voxel_count", 0) or 0))
+            except (TypeError, ValueError):
+                vox = 0
             label_stats = meta.get("label_stats", {})
             if lang == "zh":
                 lines = [
@@ -1349,11 +1427,10 @@ class ToolResultPipeline:
                     lines.append("")
                     lines.append("| 标签 | 体积 | 体素 | 中心 (mm) |")
                     lines.append("|-------|--------|--------|-------------|")
-                    for name, stats in label_stats.items():
-                        center = stats.get('centroid_world', [0, 0, 0])
+                    for name, volume_cm3, voxel_count, center in ToolResultPipeline._iter_ctv_label_stats(label_stats):
                         lines.append(
-                            f"| {name} | {stats['volume_cm3']} cm³ | "
-                            f"{stats['voxel_count']:,} | "
+                            f"| {name} | {volume_cm3:.2f} cm³ | "
+                            f"{voxel_count:,} | "
                             f"({center[0]:.0f}, {center[1]:.0f}, {center[2]:.0f}) |"
                         )
                 lines.append("")
@@ -1373,11 +1450,10 @@ class ToolResultPipeline:
                     lines.append("")
                     lines.append("| Label | Volume | Voxels | Center (mm) |")
                     lines.append("|-------|--------|--------|-------------|")
-                    for name, stats in label_stats.items():
-                        center = stats.get('centroid_world', [0,0,0])
+                    for name, volume_cm3, voxel_count, center in ToolResultPipeline._iter_ctv_label_stats(label_stats):
                         lines.append(
-                            f"| {name} | {stats['volume_cm3']} cm³ | "
-                            f"{stats['voxel_count']:,} | "
+                            f"| {name} | {volume_cm3:.2f} cm³ | "
+                            f"{voxel_count:,} | "
                             f"({center[0]:.0f}, {center[1]:.0f}, {center[2]:.0f}) |"
                         )
                 lines.append("")

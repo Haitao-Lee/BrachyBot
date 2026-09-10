@@ -60,3 +60,41 @@ if __name__ == "__main__":
     test_provider_diagnostics_are_not_user_visible()
     test_raw_tool_failure_is_sanitized_in_fallback_trace()
     print("test_user_error_contract: PASS")
+
+
+def test_ctv_formatter_ignores_malformed_optional_label_stats():
+    cases = (
+        {"pancreatic": [1, 2, 3]},
+        [{"name": "pancreatic", "volume_cm3": 1.0, "centroid_world": [1, 2, 3]}],
+        {"pancreatic": {"volume_cm3": 1.0}},
+        3,
+    )
+    for label_stats in cases:
+        result = ToolResult(
+            success=True,
+            metadata={
+                "ctv_volume_mm3": 1000.0,
+                "ctv_voxel_count": 8,
+                "label_stats": label_stats,
+            },
+        )
+        message = ToolResultPipeline.format("ctv_segmentation", result, "zh")
+        assert "CTV 分割" in message
+        assert "attribute" not in message.lower()
+        assert "KeyError" not in message
+        assert "结果已在查看器" in message
+
+
+def test_ctv_contract_error_explains_internal_format_failure():
+    message = ToolResultPipeline.format(
+        "ctv_segmentation",
+        ToolResult(
+            success=False,
+            error="'list' object has no attribute 'get'",
+            metadata={"ctv_contract_error": True},
+        ),
+        "zh",
+    )
+    assert "内部校验" in message
+    assert "误传到 CTV mask 入口" in message
+    assert "attribute" not in message.lower()

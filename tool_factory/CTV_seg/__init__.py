@@ -8,7 +8,11 @@ Includes both nnU-Net based tools and VoCo pre-trained models.
 import sys
 import os
 import re
+import logging
+from collections.abc import Mapping
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -46,6 +50,33 @@ from .biomedparse_v2 import (
 )
 from .sat3d import SAT3DCTVTool, SITE_SPECS as SAT3D_SITE_SPECS
 from .model_catalog import CTVModelCatalogTool, catalog_with_local_status, filter_catalog
+
+
+def _normalize_label_stats(value):
+    """Normalize optional CTV statistics to a mapping-of-mappings contract."""
+    if isinstance(value, Mapping):
+        items = value.items()
+    elif isinstance(value, (list, tuple)):
+        items = []
+        for index, raw in enumerate(value):
+            if not isinstance(raw, Mapping):
+                continue
+            name = (
+                raw.get("name")
+                or raw.get("label")
+                or raw.get("organ")
+                or raw.get("label_name")
+                or f"label_{raw.get('label_id', index + 1)}"
+            )
+            items.append((name, raw))
+    else:
+        return {}
+
+    normalized = {}
+    for name, raw in items:
+        if isinstance(raw, Mapping):
+            normalized[str(name)] = dict(raw)
+    return normalized
 
 # Removed VoCoProstateTool (was using wrong Amos-MR weights)
 # Removed VoCoPancSegTool (was pointing to PANORAMA weights with wrong out_channels)
@@ -513,7 +544,26 @@ class CTVSegmentationTool(BaseTool):
                     "allow_out_of_distribution": bool(kwargs.get("allow_out_of_distribution", False)),
                     "volume_index": kwargs.get("volume_index", 0),
                 })
-            result = tool._execute(**tool_kwargs)
+            try:
+                result = tool._execute(**tool_kwargs)
+            except (AttributeError, TypeError, KeyError, ValueError):
+                # The child adapter is intentionally called through its private
+                # method for image injection. Convert malformed adapter output
+                # into a controlled CTV failure instead of leaking a traceback
+                # or an object-has-no-attribute message to the chat.
+                logger.exception(
+                    "CTV adapter returned an invalid result contract: %s",
+                    tumor_type_used,
+                )
+                return ToolResult(
+                    success=False,
+                    error="CTV segmentation adapter returned an invalid result contract.",
+                    metadata={
+                        "ctv_contract_error": True,
+                        "tumor_type_used": tumor_type_used,
+                        "model_catalog": filter_catalog(),
+                    },
+                )
             if result.success:
                 # Optional adapters must return mapping-shaped metadata.  Keep
                 # the adapter failure controlled even if it bypassed
@@ -524,6 +574,11 @@ class CTVSegmentationTool(BaseTool):
                 )
                 result.metadata = result_meta
                 result_meta.setdefault("tumor_type_used", tumor_type_used)
+                # Statistics are display metadata only. Normalize them before
+                # they reach the agent memory and chat formatter.
+                result_meta["label_stats"] = _normalize_label_stats(
+                    result_meta.get("label_stats", {})
+                )
                 from tool_factory.segmentation_alignment import (
                     align_label_array_to_reference,
                     align_label_image_to_reference,
@@ -700,8 +755,12 @@ class CTVSegmentationTool(BaseTool):
         tumor_type_name = re.sub(r"\s+tumor$", "", tumor_type_name, flags=re.IGNORECASE).strip()
         if tumor_type_name and 1 in label_map and not source_label_map:
             label_map[1] = f"{tumor_type_name} tumor"
-        import logging
-        logging.getLogger(__name__).info(f"CTV label_map updated: {label_map}, tumor_type={tumor_type}, tumor_type_name={tumor_type_name}")
+        logger.info(
+            "CTV label_map updated: %s, tumor_type=%s, tumor_type_name=%s",
+            label_map,
+            tumor_type,
+            tumor_type_name,
+        )
 
         meta = {
             "ctv_mask": ctv_mask,
@@ -720,7 +779,9 @@ class CTVSegmentationTool(BaseTool):
             "manual_label_orientation": "LPI" if from_label_path else None,
             "label_counts": res_meta.get("label_counts", {}),
             "label_map": label_map,
-            "label_stats": res_meta.get("label_stats", {}),
+            "label_stats": _normalize_label_stats(
+                res_meta.get("label_stats", {})
+            ),
             "model_catalog": filter_catalog(),
         }
         if from_label_path:
