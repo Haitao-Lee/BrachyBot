@@ -22,6 +22,17 @@
     const backgroundRestoreRetryCounts = Object.create(null);
     let backgroundRestoreNoticeTimer = null;
     let hydrationHideTimer = null;
+    // The server can be restarted while the browser tab remains open. In
+    // that situation there is no page navigation to start the normal case
+    // hydration path again, so keep a small control-plane health monitor and
+    // re-enter the case-owned restore transaction when the server returns.
+    let workspaceServerHealthTimer = null;
+    let workspaceServerHealthInFlight = null;
+    let workspaceServerRecoveryInFlight = null;
+    let workspaceServerRecoveryPending = false;
+    let workspaceServerAvailable = null;
+    const WORKSPACE_SERVER_HEALTH_INTERVAL_MS = 5000;
+    const WORKSPACE_SERVER_HEALTH_TIMEOUT_MS = 5000;
     // Dose controls are persisted in physical Gy. Legacy snapshots that
     // explicitly used model units are converted with their saved calibration.
     const GY_VALUE_IDS = new Set(['inLowestEnergy', 'outHighestEnergy']);
@@ -94,6 +105,108 @@
             if (timer) clearTimeout(timer);
         }
     }
+
+    function setWorkspaceServerConnectionStatus(available) {
+        const dot = document.getElementById('serverDot');
+        const label = document.getElementById('serverStatus');
+        if (dot) dot.className = `dot ${available ? 'green' : 'red'}`;
+        if (label) {
+            label.textContent = typeof window._t === 'function'
+                ? window._t(available ? '已连接' : '已断开', available ? 'Connected' : 'Offline')
+                : (available ? 'Connected' : 'Offline');
+        }
+    }
+
+    function scheduleWorkspaceServerHealthCheck(delayMs = WORKSPACE_SERVER_HEALTH_INTERVAL_MS) {
+        if (workspaceServerHealthTimer) clearTimeout(workspaceServerHealthTimer);
+        workspaceServerHealthTimer = setTimeout(() => {
+            workspaceServerHealthTimer = null;
+            void checkWorkspaceServerHealth();
+        }, Math.max(250, Number(delayMs) || WORKSPACE_SERVER_HEALTH_INTERVAL_MS));
+    }
+
+    async function recoverWorkspaceAfterServerRestart() {
+        if (workspaceServerRecoveryInFlight || typeof window.loadSessions !== 'function') return;
+        if (document.hidden) return;
+        const recoverySessionId = String(activeSessionId || '');
+        if (recoverySessionId) {
+            // Give the user immediate feedback even while the compact session
+            // list/snapshot request is in flight. loadSessions will replace
+            // this scope with the real restore generation once it schedules
+            // the case-owned CT/mesh hydration.
+            window.showCaseResourceLoading?.({
+                sessionId: recoverySessionId,
+                runId: `server-recovery-${Date.now()}`,
+            });
+        }
+        workspaceServerRecoveryInFlight = (async () => {
+            try {
+                await window.loadSessions();
+                workspaceServerRecoveryPending = false;
+            } catch (error) {
+                workspaceServerRecoveryPending = true;
+                console.warn('[workspace] server recovered but case restore is pending:', error);
+                // There was no case-owned restore generation if the session
+                // list/snapshot request failed. Do not leave a false spinner
+                // indefinitely; the next health probe will retry recovery.
+                window.setWorkspaceHydrationState?.(false, '', { immediate: true });
+            } finally {
+                workspaceServerRecoveryInFlight = null;
+            }
+        })();
+        return workspaceServerRecoveryInFlight;
+    }
+
+    async function checkWorkspaceServerHealth() {
+        if (workspaceServerHealthInFlight) return workspaceServerHealthInFlight;
+        if (document.hidden) {
+            scheduleWorkspaceServerHealthCheck();
+            return null;
+        }
+        workspaceServerHealthInFlight = (async () => {
+            try {
+                const response = await workspaceFetch(
+                    '/api/status?lightweight=1',
+                    { cache: 'no-store', credentials: 'same-origin' },
+                    WORKSPACE_SERVER_HEALTH_TIMEOUT_MS,
+                );
+                // A 401/403 means the HTTP server is reachable. Authentication
+                // recovery belongs to the auth surface, not resource reload.
+                if (!response.ok && response.status !== 401 && response.status !== 403) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const recovered = workspaceServerAvailable === false;
+                workspaceServerAvailable = true;
+                setWorkspaceServerConnectionStatus(true);
+                if (recovered || workspaceServerRecoveryPending) {
+                    void recoverWorkspaceAfterServerRestart();
+                }
+                return { available: true, recovered };
+            } catch (error) {
+                if (workspaceServerAvailable === true) workspaceServerRecoveryPending = true;
+                workspaceServerAvailable = false;
+                setWorkspaceServerConnectionStatus(false);
+                return { available: false, error };
+            } finally {
+                workspaceServerHealthInFlight = null;
+                scheduleWorkspaceServerHealthCheck();
+            }
+        })();
+        return workspaceServerHealthInFlight;
+    }
+
+    function startWorkspaceServerHealthMonitor() {
+        if (!workspaceServerHealthTimer && !workspaceServerHealthInFlight) {
+            scheduleWorkspaceServerHealthCheck(250);
+        }
+    }
+
+    window.startWorkspaceServerHealthMonitor = startWorkspaceServerHealthMonitor;
+    window.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+            void checkWorkspaceServerHealth();
+        }
+    });
 
     function isCurrentTransition(generation) {
         return generation === workspaceTransitionGeneration;
@@ -2942,7 +3055,19 @@
 
     window.loadSessions = async function loadSessions() {
         const listStartedAt = workspaceNow();
-        const data = await loadServerSessions();
+        let data;
+        try {
+            data = await loadServerSessions();
+        } catch (error) {
+            workspaceServerAvailable = false;
+            workspaceServerRecoveryPending = true;
+            setWorkspaceServerConnectionStatus(false);
+            startWorkspaceServerHealthMonitor();
+            throw error;
+        }
+        workspaceServerAvailable = true;
+        workspaceServerRecoveryPending = false;
+        setWorkspaceServerConnectionStatus(true);
         recordWorkspacePerformance('startup.session_list', {
             sessionId: String(data.active_session_id || ''),
             startedAt: listStartedAt,
@@ -2961,10 +3086,28 @@
         if (!activeSessionId) {
             window._activeWorkspaceSnapshot = null;
             window.setWorkspaceHydrationState?.(false);
+            startWorkspaceServerHealthMonitor();
             return data;
         }
+        // Show the same lower-right resource spinner before the snapshot
+        // request starts. A cold server restart can spend several seconds
+        // reconstructing the compact workspace response; waiting until after
+        // that request made the UI look idle during the exact period in which
+        // the case was already being restored.
+        window.showCaseResourceLoading?.({
+            sessionId: activeSessionId,
+            runId: `startup-${Date.now()}`,
+        });
         const snapshotStartedAt = workspaceNow();
-        const workspace = await loadActiveWorkspace();
+        let workspace;
+        try {
+            workspace = await loadActiveWorkspace();
+        } catch (error) {
+            workspaceServerRecoveryPending = true;
+            window.setWorkspaceHydrationState?.(false, '', { immediate: true });
+            startWorkspaceServerHealthMonitor();
+            throw error;
+        }
         recordWorkspacePerformance('startup.snapshot', {
             sessionId: String(activeSessionId || ''),
             startedAt: snapshotStartedAt,
@@ -3002,6 +3145,7 @@
         } else {
             scheduleBackgroundWorkspaceRestore(workspace, activeSessionId);
         }
+        startWorkspaceServerHealthMonitor();
         return data;
     };
 
