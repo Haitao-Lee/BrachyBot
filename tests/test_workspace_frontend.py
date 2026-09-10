@@ -1,6 +1,7 @@
 """Regression checks for the authenticated browser workspace bridge."""
 
 from pathlib import Path
+import re
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -2049,3 +2050,35 @@ def test_manual_input_workflow_exposes_independent_ctv_oar_and_action_progress()
     assert "_inputButtonProgress('full_pipeline'" in manual
     assert "_inputButtonProgress('planning_advice'" in manual_3d
     assert "_inputButtonProgress('surgical_guide_generate'" in guide
+
+def test_loading_spinners_are_transformable_and_stay_live_in_reduced_motion():
+    """Every functional spinner must remain transformable and alive when active."""
+    auth_css = read("web/app/static/css/brachybot-auth.css")
+    chat_css = read("web/app/static/css/brachybot-chat-status.css")
+    report_css = read("web/app/static/css/brachybot-report-controls.css")
+
+    hydration_spinner = auth_css.split(".workspace-hydration-spinner {", 1)[1].split("}", 1)[0]
+    assert "display: inline-block;" in hydration_spinner
+    assert "transform-origin: center;" in hydration_spinner
+    assert "animation: workspaceHydrationSpin .9s linear infinite;" in hydration_spinner
+    assert "animation-name: workspaceHydrationSpin !important;" in auth_css
+
+    annotation = chat_css.split(".chat-gallery-item.is-annotating::after {", 1)[1].split("}", 1)[0]
+    awaiting = chat_css.split(".chat-send.session-awaiting::after {", 1)[1].split("}", 1)[0]
+    assert "display: block;" in annotation
+    assert "transform-origin: center;" in annotation
+    assert "display: block;" in awaiting
+    assert "transform-origin: center;" in awaiting
+    assert "animation-name: chat-session-spin !important;" in chat_css
+
+    for selector in (
+        r"^\.spinner-ring \{",
+        r"^\.spinner-ring--sm \{",
+        r"^\.report-capture-status-spinner \{",
+    ):
+        match = re.search(selector + r"(.*?)^\}", report_css, flags=re.MULTILINE | re.DOTALL)
+        assert match, selector
+        assert "display: inline-block;" in match.group(1)
+        assert "transform-origin: center;" in match.group(1)
+    assert "animation-name: spin !important;" in report_css
+    assert "animation-name: reportCaptureSpin !important;" in report_css
