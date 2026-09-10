@@ -14,6 +14,7 @@ Weight placement:
 """
 
 import os
+import json
 import shutil
 import subprocess
 import tempfile
@@ -41,6 +42,130 @@ LABEL_MAP = {
     6: ("unknown_6", False),
 }
 
+def _env_flag(name: str, default: bool) -> bool:
+    """Read a boolean inference switch without accepting ambiguous values."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return bool(default)
+    token = str(raw).strip().casefold()
+    if token in {"1", "true", "yes", "on"}:
+        return True
+    if token in {"0", "false", "no", "off"}:
+        return False
+    logger.warning("Ignoring invalid boolean %s=%r; using default=%s", name, raw, default)
+    return bool(default)
+
+def _env_float(name: str, default: float, *, minimum: float, maximum: float) -> float:
+    """Read and clamp a numeric inference tuning parameter."""
+    raw = os.environ.get(name)
+    try:
+        value = float(raw) if raw is not None else float(default)
+    except (TypeError, ValueError):
+        logger.warning("Ignoring invalid numeric %s=%r; using default=%s", name, raw, default)
+        value = float(default)
+    return min(float(maximum), max(float(minimum), value))
+
+def _load_model_spacing_xyz(config_dir: str):
+    """Read the nnUNet target spacing and return it in SimpleITK XYZ order."""
+    plans_path = os.path.join(config_dir, "plans.json")
+    try:
+        with open(plans_path, "r", encoding="utf-8") as handle:
+            plans = json.load(handle)
+        spacing_zyx = plans["configurations"]["3d_fullres"]["spacing"]
+        if len(spacing_zyx) != 3 or any(float(value) <= 0 for value in spacing_zyx):
+            return None
+        return tuple(float(value) for value in reversed(spacing_zyx))
+    except (OSError, ValueError, TypeError, KeyError):
+
+        logger.warning("Unable to read nnUNet target spacing from %s", plans_path)
+        return None
+
+
+def _resample_ct_to_model_spacing(image: sitk.Image, target_spacing):
+    """Resample CT with a fast approximation of nnUNet's anisotropic path.
+
+    nnUNet uses high-order in-plane interpolation and nearest-neighbor
+    interpolation through a markedly low-resolution axis. Reproducing that
+    structure with SimpleITK avoids the very slow Python/CPU scipy resampler
+    while keeping the model input semantics close to the validated path.
+    """
+    current_spacing = tuple(float(value) for value in image.GetSpacing())
+    target_spacing = tuple(float(value) for value in target_spacing)
+    if np.allclose(current_spacing, target_spacing, rtol=1e-3, atol=1e-4):
+        return image
+    target_size = tuple(
+        max(1, int(round(size * spacing / target)))
+        for size, spacing, target in zip(
+            image.GetSize(), current_spacing, target_spacing
+        )
+    )
+    if target_size == image.GetSize():
+        return image
+    source_min = float(np.min(sitk.GetArrayViewFromImage(image)))
+    logger.info(
+        "Pre-resampling pancreatic CT from size=%s spacing=%s to size=%s spacing=%s",
+        image.GetSize(), current_spacing, target_size, target_spacing,
+    )
+    anisotropy_ratio = max(current_spacing) / max(min(current_spacing), 1e-6)
+    if anisotropy_ratio >= 3.0:
+        lowres_axis = int(np.argmax(current_spacing))
+        inplane_spacing = list(target_spacing)
+        inplane_spacing[lowres_axis] = current_spacing[lowres_axis]
+        inplane_size = list(target_size)
+        inplane_size[lowres_axis] = image.GetSize()[lowres_axis]
+        inplane_image = sitk.Resample(
+            image,
+            tuple(inplane_size),
+            sitk.Transform(),
+            sitk.sitkBSpline,
+            image.GetOrigin(),
+            tuple(inplane_spacing),
+            image.GetDirection(),
+            source_min,
+            sitk.sitkFloat32,
+        )
+        logger.info(
+            "Using anisotropic pre-resampling: high-order in-plane axis=%s, "
+            "nearest-neighbor low-resolution axis=%s",
+            [axis for axis in range(3) if axis != lowres_axis],
+            lowres_axis,
+        )
+        return sitk.Resample(
+            inplane_image,
+            target_size,
+            sitk.Transform(),
+            sitk.sitkNearestNeighbor,
+            inplane_image.GetOrigin(),
+            target_spacing,
+            inplane_image.GetDirection(),
+            source_min,
+            sitk.sitkFloat32,
+        )
+    return sitk.Resample(
+        image,
+        target_size,
+        sitk.Transform(),
+        sitk.sitkBSpline,
+        image.GetOrigin(),
+        target_spacing,
+        image.GetDirection(),
+        source_min,
+        sitk.sitkFloat32,
+    )
+def _restore_label_array_to_reference(source_array, source_image, reference_image):
+    """Map a model-grid label array back to the original CT physical grid."""
+    source_mask = sitk.GetImageFromArray(np.asarray(source_array).astype(np.uint16))
+    source_mask.CopyInformation(source_image)
+    aligned = sitk.Resample(
+        source_mask,
+        reference_image,
+        sitk.Transform(),
+        sitk.sitkNearestNeighbor,
+        0,
+        sitk.sitkUInt16,
+    )
+    return sitk.GetArrayFromImage(aligned)
+
 
 class NNUNetPancreaticTumorTool(BaseTool):
     """Segment pancreatic tumors using nnUNet v2 (Dataset005_Pancreas)."""
@@ -65,7 +190,15 @@ class NNUNetPancreaticTumorTool(BaseTool):
             "properties": {
                 "image": {"type": "object", "description": "SimpleITK Image of CT scan"},
                 "image_path": {"type": "string", "description": "Path to CT image file"},
-                "fast_mode": {"type": "boolean", "default": False},
+                "fast_mode": {
+                    "type": "boolean",
+                    "default": None,
+                    "description": (
+                        "Optional accelerated inference. When omitted, the "
+                        "service uses its configured fast default; set false "
+                        "for full mirror TTA and denser tile overlap."
+                    ),
+                },
             },
             "required": [],
         }
@@ -156,7 +289,17 @@ class NNUNetPancreaticTumorTool(BaseTool):
     def _execute(self, **kwargs) -> ToolResult:
         image = kwargs.get("image")
         image_path = kwargs.get("image_path")
-        fast_mode = kwargs.get("fast_mode", False)
+        requested_fast_mode = kwargs.get("fast_mode")
+        # The original path enabled mirror TTA and 0.5 tile overlap by
+        # default, which made a 512x512x53 abdominal CT take about three
+        # minutes on the deployment RTX 3090. Use the accelerated single-pass
+        # path by default for interactive planning, while retaining an
+        # explicit environment/argument switch for the conservative path.
+        fast_mode = (
+            bool(requested_fast_mode)
+            if requested_fast_mode is not None
+            else _env_flag("BRACHYBOT_PANCREATIC_CTV_FAST_MODE", True)
+        )
 
         if image is None and image_path is not None:
             image = sitk.ReadImage(image_path)
@@ -188,8 +331,25 @@ class NNUNetPancreaticTumorTool(BaseTool):
             if os.path.exists(dataset_json_src):
                 shutil.copy2(dataset_json_src, dataset_json)
 
+        inference_model_spacing = _load_model_spacing_xyz(config_dir)
+        inference_image = image
+        inference_pre_resampled = False
         try:
-            result_array = self._run_nnunet_inference(image, config_dir, fast_mode)
+            if (
+                _env_flag("BRACHYBOT_PANCREATIC_CTV_PRE_RESAMPLE", True)
+                and inference_model_spacing is not None
+            ):
+                inference_image = _resample_ct_to_model_spacing(
+                    image, inference_model_spacing
+                )
+                inference_pre_resampled = inference_image is not image
+            result_array = self._run_nnunet_inference(
+                inference_image, config_dir, fast_mode
+            )
+            if inference_pre_resampled:
+                result_array = _restore_label_array_to_reference(
+                    result_array, inference_image, image
+                )
             result_array = self._coerce_prediction_array(result_array)
         except (AttributeError, TypeError, KeyError, ValueError) as exc:
             logger.exception("nnUNet returned an invalid pancreatic label result")
@@ -279,21 +439,26 @@ class NNUNetPancreaticTumorTool(BaseTool):
                 "organ_names": {1: "artery", 2: "vein"},
                 # Full multi-label array for data tree (0=bg, 1=tumor, 2=artery, 3=vein, 4=pancreas, 5=unknown_5, 6=unknown_6)
                 "full_label_array": result_array.astype(np.uint8),
+                "inference_mode": "fast" if fast_mode else "full",
+                "inference_use_mirroring": bool(not fast_mode),
+                "inference_pre_resampled": bool(inference_pre_resampled),
+                "inference_model_spacing_xyz": list(inference_model_spacing or []),
             },
         )
 
     def _run_nnunet_inference(self, image: sitk.Image, config_dir: str, fast_mode: bool) -> np.ndarray:
         """Run nnUNet v2 inference using Python API."""
         import gc
-        from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor
 
-        # Set environment variables BEFORE importing torch
+        # Set environment variables before importing nnUNet (which imports
+        # nnunetv2.paths at module import time) or torch.
         os.environ["nnUNet_results"] = self.MODEL_DIR
         os.environ["nnUNet_raw"] = self.MODEL_DIR
         os.environ["nnUNet_preprocessed"] = os.path.join(self.MODEL_DIR, "nnUNet_preprocessed")
         os.environ["nnUNet_n_proc_DA"] = "0"
-        os.environ["OMP_NUM_THREADS"] = "1"
-        os.environ["MKL_NUM_THREADS"] = "1"
+        os.environ["OMP_NUM_THREADS"] = os.environ.get("BRACHYBOT_NNUNET_OMP_THREADS", "1")
+        os.environ["MKL_NUM_THREADS"] = os.environ.get("BRACHYBOT_NNUNET_MKL_THREADS", "1")
+        from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor
 
         # Select a concrete torch device without mutating process-global
         # CUDA_VISIBLE_DEVICES. OAR segmentation binds only its own subprocess;
@@ -327,13 +492,32 @@ class NNUNetPancreaticTumorTool(BaseTool):
         else:
             device = torch.device("cpu")
             logger.info("No GPU available, using CPU")
+        tile_step_size = _env_float(
+            "BRACHYBOT_PANCREATIC_CTV_TILE_STEP_SIZE",
+            0.75 if fast_mode else 0.5,
+            minimum=0.25,
+            maximum=1.0,
+        )
+        use_amp = _env_flag(
+            "BRACHYBOT_PANCREATIC_CTV_AMP",
+            False,
+        )
+        perform_everything_on_device = _env_flag(
+            "BRACHYBOT_NNUNET_PERFORM_EVERYTHING_ON_DEVICE",
+            True,
+        )
 
         predictor = None
         try:
+            if device.type == "cuda":
+                torch.backends.cudnn.benchmark = False
+                torch.backends.cuda.matmul.allow_tf32 = True
+                torch.backends.cudnn.allow_tf32 = True
             predictor = nnUNetPredictor(
-                tile_step_size=0.5,
+                tile_step_size=tile_step_size,
                 use_gaussian=True,
                 use_mirroring=not fast_mode,
+                perform_everything_on_device=perform_everything_on_device,
                 device=device,
                 verbose=False,
                 verbose_preprocessing=False,
@@ -357,8 +541,22 @@ class NNUNetPancreaticTumorTool(BaseTool):
                 "direction": image.GetDirection(),
             }
 
-            logger.info(f"Running nnUNet inference on shape {arr.shape}...")
-            result = predictor.predict_single_npy_array(arr, properties, None, None, False)
+            logger.info(
+                "Running nnUNet inference on shape %s (mode=%s, mirror_tta=%s, "
+                "tile_step=%.2f, amp=%s, device_resident=%s)...",
+                arr.shape, "fast" if fast_mode else "full", not fast_mode,
+                tile_step_size, use_amp and device.type == "cuda",
+                perform_everything_on_device,
+            )
+            if use_amp and device.type == "cuda":
+                with torch.autocast(device_type="cuda", dtype=torch.float16):
+                    result = predictor.predict_single_npy_array(
+                        arr, properties, None, None, False
+                    )
+            else:
+                result = predictor.predict_single_npy_array(
+                    arr, properties, None, None, False
+                )
             result_array = self._coerce_prediction_array(result)
 
             logger.info(

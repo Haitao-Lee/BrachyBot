@@ -397,7 +397,15 @@ class CTVSegmentationTool(BaseTool):
                     "description": "Compatibility alias for the target organ.",
                 },
                 "target_value": {"type": "number", "default": 1, "description": "Label value for tumor voxels"},
-                "fast_mode": {"type": "boolean", "default": False, "description": "Explicit preview mode: single fold and larger tile step; production defaults to the validated five-fold ensemble"},
+                "fast_mode": {
+                    "type": "boolean",
+                    "default": None,
+                    "description": (
+                        "Optional accelerated inference mode. Omit to use the "
+                        "site-specific service default; set false to request "
+                        "the conservative/full test-time-augmentation path."
+                    ),
+                },
                 "image_modality": {"type": "string", "default": "CT", "description": "Input modality, e.g. CT, CTA, MRI, T2w"},
                 "positive_points": {"type": "array", "description": "Required for explicit sat3d_interactive_* routes"},
                 "negative_points": {"type": "array", "description": "Optional SAT3D negative point prompts"},
@@ -433,7 +441,11 @@ class CTVSegmentationTool(BaseTool):
         label_path = kwargs.get("label_path")
         tumor_type = resolve_ctv_tumor_type(kwargs)
         target_value = kwargs.get("target_value", 1)
-        fast_mode = kwargs.get("fast_mode", False)
+        # Preserve the distinction between an omitted option and an explicit
+        # false. The pancreatic executor uses the omitted form to select the
+        # service's accelerated default, while the supplied liver/kidney
+        # cascade keeps its validated five-fold production default.
+        fast_mode = kwargs.get("fast_mode")
         allow_empty = bool(kwargs.get("allow_empty", False))
 
         result = None
@@ -527,7 +539,9 @@ class CTVSegmentationTool(BaseTool):
                     )
                 tool = TOOL_REGISTRY[tumor_type]()
 
-            tool_kwargs = {"image": image, "target_value": target_value, "fast_mode": fast_mode}
+            tool_kwargs = {"image": image, "target_value": target_value}
+            if fast_mode is not None:
+                tool_kwargs["fast_mode"] = bool(fast_mode)
             if isinstance(tool, NNUNetPancreaticTumorTool):
                 tool_kwargs["return_all_labels"] = True
             tumor_type_used = tumor_type
