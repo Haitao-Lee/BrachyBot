@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import tempfile
 import logging
+from collections.abc import Mapping
 from typing import Dict
 
 import numpy as np
@@ -80,6 +81,41 @@ class NNUNetPancreaticTumorTool(BaseTool):
             },
         }
 
+    @staticmethod
+    def _coerce_prediction_array(value) -> np.ndarray:
+        """Accept the nnUNet result containers used across supported versions."""
+        candidate = value
+        if isinstance(candidate, Mapping):
+            for key in ("segmentation", "prediction", "label_array", "result", "data"):
+                if key in candidate:
+                    candidate = candidate[key]
+                    break
+
+        # Some wrappers return a one-item list/tuple around the actual array.
+        while isinstance(candidate, (list, tuple)) and len(candidate) == 1:
+            candidate = candidate[0]
+
+        array = np.asarray(candidate)
+        if array.ndim == 4 and array.shape[0] == 1:
+            array = array[0]
+        if array.ndim != 3:
+            raise ValueError(
+                f"expected a 3-D label array, got ndim={array.ndim}"
+            )
+        if not (
+            np.issubdtype(array.dtype, np.number)
+            or np.issubdtype(array.dtype, np.bool_)
+        ):
+            raise TypeError(f"expected numeric labels, got dtype={array.dtype}")
+        if not np.all(np.isfinite(array)):
+            raise ValueError("label array contains non-finite values")
+        if np.any(array < 0) or np.any(array != np.floor(array)):
+            raise ValueError("label array contains non-discrete values")
+
+        max_label = int(array.max()) if array.size else 0
+        dtype = np.uint16 if max_label > np.iinfo(np.uint8).max else np.uint8
+        return np.ascontiguousarray(array.astype(dtype, copy=False))
+
     def _execute(self, **kwargs) -> ToolResult:
         image = kwargs.get("image")
         image_path = kwargs.get("image_path")
@@ -117,8 +153,24 @@ class NNUNetPancreaticTumorTool(BaseTool):
 
         try:
             result_array = self._run_nnunet_inference(image, config_dir, fast_mode)
-        except Exception as e:
-            return ToolResult(success=False, error=f"nnUNet inference failed: {str(e)}")
+            result_array = self._coerce_prediction_array(result_array)
+        except (AttributeError, TypeError, KeyError, ValueError):
+            logger.exception("nnUNet returned an invalid pancreatic label result")
+            return ToolResult(
+                success=False,
+                error="nnUNet returned an invalid pancreatic label result.",
+                metadata={
+                    "ctv_contract_error": True,
+                    "nnunet_output_type": type(locals().get("result_array")).__name__,
+                },
+            )
+        except Exception:
+            logger.exception("nnUNet inference failed for pancreatic CTV")
+            return ToolResult(
+                success=False,
+                error="nnUNet inference failed while producing the pancreatic CTV.",
+                metadata={"ctv_inference_error": True},
+            )
 
         # Build label counts
         label_counts = {}
@@ -265,9 +317,14 @@ class NNUNetPancreaticTumorTool(BaseTool):
 
             logger.info(f"Running nnUNet inference on shape {arr.shape}...")
             result = predictor.predict_single_npy_array(arr, properties, None, None, False)
+            result_array = self._coerce_prediction_array(result)
 
-            logger.info(f"nnUNet output shape: {result.shape}, unique values: {np.unique(result)}")
-            return result.astype(np.uint8)
+            logger.info(
+                "nnUNet output shape: %s, unique values: %s",
+                result_array.shape,
+                np.unique(result_array),
+            )
+            return result_array
         finally:
             # Free GPU memory and release the standard DeviceManager lease.
             del predictor

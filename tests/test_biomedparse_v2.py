@@ -351,7 +351,7 @@ def test_unavailable_liver_ctv_fails_closed_on_biomedparse_runtime(monkeypatch):
         lambda: {"available": False, "missing": ["checkpoint"]},
     )
     image = sitk.GetImageFromArray(np.zeros((4, 4, 4), dtype=np.int16))
-    result = CTVSegmentationTool().execute(image=image, tumor_type="liver")
+    result = CTVSegmentationTool().execute(image=image, tumor_type="biomedparse_lung_lesion")
     assert result.success is False
     assert "BiomedParse" in (result.error or "")
     assert "SAT3D" not in (result.error or "")
@@ -589,3 +589,22 @@ def test_generic_biomedparse_result_persists_with_stable_session_metadata():
     assert entry["data_tree_node_id"] == "mask_bp_stable"
     assert entry["status"] == "ready"
     assert np.array_equal(entry["mask_array"], mask)
+
+
+def test_pancreatic_adapter_coerces_wrapped_label_array_and_stats_contract():
+    from tool_factory.CTV_seg import _normalize_label_stats
+    from tool_factory.CTV_seg.pancreatic_tumor_nnunet import NNUNetPancreaticTumorTool
+
+    wrapped = {"segmentation": [np.array([[[0, 1], [2, 3]]], dtype=np.int16)]}
+    coerced = NNUNetPancreaticTumorTool._coerce_prediction_array(wrapped)
+    assert coerced.shape == (1, 2, 2)
+    assert coerced.dtype == np.uint8
+    assert coerced.tolist() == [[[0, 1], [2, 3]]]
+
+    normalized = _normalize_label_stats([
+        {"name": "pancreatic tumor", "voxel_count": 4},
+        7,
+    ])
+    assert normalized == {
+        "pancreatic tumor": {"name": "pancreatic tumor", "voxel_count": 4}
+    }
