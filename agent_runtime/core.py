@@ -1761,6 +1761,51 @@ class ToolResultPipeline:
         return result.message or f"{tool_name} completed."
 
     @staticmethod
+    def _trace_safe_value(value, *, depth: int = 0):
+        """Make tool metadata compact and JSON-safe for Trace/SSE boundaries."""
+        if value is None or isinstance(value, (bool, int, float, str)):
+            return value
+        if depth >= 5:
+            return {"$runtime_type": type(value).__name__}
+        if isinstance(value, Mapping):
+            items = list(value.items())[:200]
+            return {
+                str(key): ToolResultPipeline._trace_safe_value(item, depth=depth + 1)
+                for key, item in items
+            }
+        if isinstance(value, (list, tuple, set)):
+            values = list(value)[:200]
+            return [
+                ToolResultPipeline._trace_safe_value(item, depth=depth + 1)
+                for item in values
+            ]
+        shape = getattr(value, "shape", None)
+        if shape is not None:
+            try:
+                shape_value = [int(item) for item in shape]
+            except Exception:
+                shape_value = []
+            return {
+                "$runtime_type": type(value).__name__,
+                "shape": shape_value,
+                "dtype": str(getattr(value, "dtype", "")),
+            }
+        get_size = getattr(value, "GetSize", None)
+        if callable(get_size):
+            try:
+                size = [int(item) for item in get_size()]
+            except Exception:
+                size = []
+            return {"$runtime_type": type(value).__name__, "size": size}
+        scalar = getattr(value, "item", None)
+        if callable(scalar):
+            try:
+                return scalar()
+            except Exception:
+                pass
+        return {"$runtime_type": type(value).__name__}
+
+    @staticmethod
     def trace_metadata(tool_name: str, metadata) -> dict:
         """Return metadata that is safe to emit in a live Execution Trace.
 
@@ -1817,7 +1862,10 @@ class ToolResultPipeline:
                 "internal_only": False,
                 "user_visible": True,
             }
-        return source
+        # Clinical adapters carry NumPy/SimpleITK objects for the next tool.
+        # They are never part of the browser contract; exposing them directly
+        # makes json.dumps/default=str and workspace checkpoints fragile.
+        return ToolResultPipeline._trace_safe_value(source)
 
     @staticmethod
     def trace_params(tool_name: str, params) -> dict:

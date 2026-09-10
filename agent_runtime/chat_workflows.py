@@ -4298,10 +4298,8 @@ class ChatWorkflowMixin:
                                 _fact_step["content"] = f"Source check unavailable: {str(_fact_exc)[:80]}"
                             yield yield_event("step", _fact_step)
                         step["result"] = _fmt
-                        step["metadata"] = (
-                            ToolResultPipeline.trace_metadata(tc["tool"], result.metadata)
-                            if result.success
-                            else {}
+                        step["metadata"] = ToolResultPipeline.trace_metadata(
+                            tc["tool"], result.metadata
                         )
                         yield yield_event("step", step)
                         if result.success:
