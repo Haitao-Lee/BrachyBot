@@ -8,6 +8,7 @@ import numpy as np
 from tool_factory import ToolResult
 from tool_factory.seed_plan.planning_pipeline import (
     PlanningPipelineTool,
+    _coerce_planning_grid_ct,
     _filter_world_safe_trajectories,
 )
 
@@ -82,6 +83,101 @@ def test_world_safety_filter_reuses_a_precomputed_body_mask():
 
     assert observed == []
     build_body_mask.assert_not_called()
+
+
+def test_array_backed_planning_ct_is_rebuilt_with_current_physical_geometry():
+    """Hydrated legacy planning grids must remain usable by SimpleITK filters."""
+    import SimpleITK as sitk
+
+    reference = sitk.GetImageFromArray(np.zeros((14, 512, 512), dtype=np.int16))
+    reference.SetSpacing((0.7, 0.8, 2.5))
+    reference.SetOrigin((12.0, -4.0, 8.0))
+    reference.SetDirection((1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0))
+    legacy_array = np.zeros((64, 128, 128), dtype=np.int16)
+
+    repaired = _coerce_planning_grid_ct(
+        legacy_array,
+        reference,
+        source="test",
+    )
+
+    assert repaired.GetSize() == (128, 128, 64)
+    assert repaired.GetOrigin() == reference.GetOrigin()
+    assert repaired.GetDirection() == reference.GetDirection()
+    assert np.allclose(
+        repaired.GetSpacing(),
+        np.asarray(reference.GetSize()) * np.asarray(reference.GetSpacing())
+        / np.asarray(repaired.GetSize()),
+    )
+    # This is the exact operation that previously raised GetPixelIDValue when
+    # an ndarray crossed the seed-planning boundary.
+    normalized = sitk.IntensityWindowing(
+        repaired,
+        windowMinimum=-1000,
+        windowMaximum=3000,
+        outputMinimum=-1000,
+        outputMaximum=3000,
+    )
+    assert normalized.GetSize() == repaired.GetSize()
+
+
+def test_seed_planning_repairs_array_grid_before_dose_optimizer():
+    """The observed ndarray/SimpleITK mismatch must fail cleanly, not crash."""
+    import SimpleITK as sitk
+
+    class Memory:
+        def __init__(self):
+            self.values = {}
+
+        def retrieve(self, key, default=None):
+            return self.values.get(key, default)
+
+        def store(self, key, value):
+            self.values[key] = value
+
+    reference = sitk.GetImageFromArray(np.zeros((4, 4, 4), dtype=np.int16))
+    reference.SetSpacing((1.0, 1.0, 1.0))
+    target = np.zeros((4, 4, 4), dtype=np.uint8)
+    target[1, 1, 1] = 1
+    radiation = np.zeros_like(target, dtype=np.int32)
+    radiation[target > 0] = 1
+    trajectory = [
+        np.asarray([1.0, 1.0, 1.0]),
+        np.asarray([1.0, 0.0, 0.0]),
+        [1],
+        [],
+        1,
+    ]
+    memory = Memory()
+    memory.values.update({
+        "refined_trajectories": [trajectory],
+        "resampled_ct": np.zeros((4, 4, 4), dtype=np.int16),
+        "resampled_ctv": target,
+        "resampled_oar": None,
+        "radiation_volume": radiation,
+    })
+    agent = type("Agent", (), {"memory": memory, "config": {}})()
+
+    with (
+        patch("tool_factory.seed_plan.planning_pipeline._load_dose_model", return_value=(object(), None)),
+        patch(
+            "tool_factory.seed_plan.planning_pipeline._filter_world_safe_trajectories",
+            return_value=[trajectory],
+        ),
+        patch("plans.core.optimal_plan", return_value=[]),
+    ):
+        result = PlanningPipelineTool()._step_seed_planning(
+            reference,
+            target,
+            None,
+            "rule_based",
+            {},
+            agent,
+        )
+
+    assert result.success is False
+    assert "could not place any valid seeds" in result.error
+    assert hasattr(memory.retrieve("resampled_ct"), "GetPixelIDValue")
 
 
 def test_successful_full_pipeline_publishes_reserved_planning_run_before_return():
