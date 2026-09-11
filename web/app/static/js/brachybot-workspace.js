@@ -190,18 +190,34 @@
                         // a false offline state.
                     }
                 }
+                // A failed health probe only proves that the control-plane
+                // request was unavailable for a moment.  It is not evidence
+                // that the Python process restarted: planning/report capture
+                // can temporarily make a lightweight request miss its
+                // timeout while the already-loaded Viewer remains valid.
+                // The server emits a process-scoped instance id specifically
+                // so only an observed id change may start a destructive case
+                // restore.
+                const previousServerInstanceId = workspaceServerInstanceId;
                 const restarted = Boolean(
                     serverInstanceId
-                    && workspaceServerInstanceId
-                    && serverInstanceId !== workspaceServerInstanceId
+                    && previousServerInstanceId
+                    && serverInstanceId !== previousServerInstanceId
                 );
                 if (serverInstanceId) workspaceServerInstanceId = serverInstanceId;
                 const recovered = workspaceServerAvailable === false;
                 workspaceServerAvailable = true;
                 setWorkspaceServerConnectionStatus(true);
-                if (restarted) workspaceServerRecoveryPending = true;
-                if (restarted || recovered || workspaceServerRecoveryPending) {
+                if (restarted) {
+                    workspaceServerRecoveryPending = true;
                     void recoverWorkspaceAfterServerRestart();
+                } else if (recovered && serverInstanceId
+                    && previousServerInstanceId
+                    && serverInstanceId === previousServerInstanceId) {
+                    // The same process answered after a transient probe
+                    // failure.  Clear the pending bit without reloading any
+                    // CT, labels, meshes, planning results, or report data.
+                    workspaceServerRecoveryPending = false;
                 }
                 return { available: true, recovered, restarted };
             } catch (error) {

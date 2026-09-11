@@ -23,6 +23,13 @@ def test_server_restart_recovery_keeps_a_visible_resource_loading_boundary():
     assert "const restarted = Boolean(" in workspace
     assert "void recoverWorkspaceAfterServerRestart()" in workspace
     assert "await window.loadSessions()" in workspace
+    # A transient health-probe timeout during planning/report capture must not
+    # be treated as a process restart. Full case hydration is allowed only
+    # after the server's process-scoped instance id changes.
+    assert "const previousServerInstanceId = workspaceServerInstanceId;" in workspace
+    assert "if (restarted) {" in workspace
+    assert "if (restarted || recovered || workspaceServerRecoveryPending)" not in workspace
+    assert "workspaceServerRecoveryPending = false;" in workspace
 
     # The indicator must be visible before the slow snapshot request, not
     # only after the server has finished rebuilding the workspace response.
@@ -32,4 +39,4 @@ def test_server_restart_recovery_keeps_a_visible_resource_loading_boundary():
 
     # Force the browser to fetch the updated workspace bridge after a server
     # restart instead of retaining the prior cached script.
-    assert 'static/js/brachybot-workspace.js?v=48' in index
+    assert 'static/js/brachybot-workspace.js?v=52' in index
