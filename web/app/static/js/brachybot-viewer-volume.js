@@ -424,6 +424,14 @@ let organMetaFromServer = {};  // {label_id: {name, color, voxels}}
 // preserves every promoted upload child as an addressable CTV row even when a
 // source is completely overlapped by another CTV source in the label volume.
 let ctvStructureCatalog = [];
+// A generic mask keeps its presentation state in the browser, while the
+// classification transaction itself is persisted by the server.  During a
+// move the next label-volume/catalogue response can therefore arrive after
+// the source row has disappeared from the Data Tree.  Keep a session-scoped
+// bridge keyed by the durable object id so the new CTV/OAR row inherits the
+// exact presentation and 3D reconstruction state of the old row.
+let pendingStructurePresentationByObjectId = Object.create(null);
+let pendingStructurePresentationSessionId = '';
 // Generic BiomedParse masks are kept outside the CTV/OAR byte stream. The
 // catalogue is durable metadata; this map holds only the active session's
 // binary volume needed for 2D compositing.
@@ -432,6 +440,58 @@ let genericMaskCatalogGeneration = 0;
 let genericMaskCatalogSessionId = '';
 let viewerDataLoadGeneration = 0;
 const viewerDataAbortControllers = new Set();
+
+function _pendingStructurePresentationStore() {
+    const sessionId = String(_viewerDataSessionId?.() || '');
+    if (sessionId && pendingStructurePresentationSessionId !== sessionId) {
+        pendingStructurePresentationByObjectId = Object.create(null);
+        pendingStructurePresentationSessionId = sessionId;
+    }
+    return pendingStructurePresentationByObjectId;
+}
+
+function _pendingStructurePresentation(objectId, classification = null) {
+    const value = _pendingStructurePresentationStore()[String(objectId || '')];
+    if (!value) return null;
+    if (classification && value.classification !== classification) return null;
+    return value;
+}
+
+function _rgbForStructureColor(value, fallback = [255, 48, 76]) {
+    if (Array.isArray(value) && value.length >= 3) {
+        return value.slice(0, 3).map(channel => Math.max(0, Math.min(255, Number(channel) || 0)));
+    }
+    const normalized = typeof _normalizeStructureColor === 'function'
+        ? _normalizeStructureColor(value)
+        : String(value || '').trim().toLowerCase();
+    if (/^#[0-9a-f]{6}$/i.test(normalized)) {
+        return [
+            parseInt(normalized.slice(1, 3), 16),
+            parseInt(normalized.slice(3, 5), 16),
+            parseInt(normalized.slice(5, 7), 16),
+        ];
+    }
+    return fallback;
+}
+
+function _ctvLabelPresentation(labelId) {
+    const node = dataTreeState?.ctvLabels?.[`ctv_${labelId}`] || null;
+    const parent = dataTreeState?.ctv || null;
+    const visible = node
+        ? (typeof isDataTreeNodeVisible2D === 'function'
+            ? isDataTreeNodeVisible2D(node)
+            : node.visible !== false && node.visible2D !== false)
+        : parent?.visible !== false;
+    const opacity = Number.isFinite(Number(node?.opacity))
+        ? Number(node.opacity)
+        : Number(parent?.opacity ?? 0.7);
+    const lutColor = ctvLabelColorLUT[labelId] || [255, 48, 76];
+    return {
+        visible,
+        opacity: Math.max(0, Math.min(1, opacity)),
+        color: _rgbForStructureColor(node?.color, lutColor),
+    };
+}
 
 function invalidateViewerDataLoads() {
     viewerDataLoadGeneration += 1;
@@ -716,7 +776,11 @@ async function loadVolumeData(options = {}) {
     });
 }
 
-async function hydrateOarDataTreeFromServer(expectedGeneration, expectedSessionId) {
+async function hydrateOarDataTreeFromServer(
+    expectedGeneration,
+    expectedSessionId,
+    options = {},
+) {
     // The binary label-volume response is deliberately optimized for 2D
     // rendering. Reverse proxies may omit a large optional metadata header,
     // which used to leave the OAR pixels visible while the Data Tree appeared
@@ -759,10 +823,17 @@ async function hydrateOarDataTreeFromServer(expectedGeneration, expectedSessionI
             organs = derived;
         }
         if (!Object.keys(organs).length) return false;
-        updateOrganList(organs, payload.oar_source || payload.oar_mask_provenance || '');
+        updateOrganList(
+            organs,
+            payload.oar_source || payload.oar_mask_provenance || '',
+            { preserveViewerState: options.preserveViewerState === true },
+        );
         if (typeof dataTreeState !== 'undefined' && dataTreeState.oar) {
             dataTreeState.oar.loaded = true;
-            if (!state?.viewerSettings?.userConfigured) dataTreeState.oar.visible = true;
+            if (options.preserveViewerState !== true
+                && !state?.viewerSettings?.userConfigured) {
+                dataTreeState.oar.visible = true;
+            }
         }
         try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
         if (typeof window.scheduleWorkspaceSave === 'function') {
@@ -1069,7 +1140,9 @@ async function loadLabelVolumes(options = {}) {
             };
             ordinal += 1;
         }
-        if (Object.keys(organData).length > 0) updateOrganList(organData, oarSource);
+        if (Object.keys(organData).length > 0) {
+            updateOrganList(organData, oarSource, { preserveViewerState });
+        }
     }
         // Do not block slice rendering on metadata. Always reconcile the
         // lightweight organs endpoint after the binary payload, even when the
@@ -1078,7 +1151,17 @@ async function loadLabelVolumes(options = {}) {
         // map is still being merged with embedded CTV structures); the
         // session-scoped organs endpoint is the authoritative Data Tree view.
         if (hasOAR) {
-            void hydrateOarDataTreeFromServer(scope.dataGeneration, scope.sessionId);
+            if (preserveViewerState) {
+                void hydrateOarDataTreeFromServer(
+                    scope.dataGeneration,
+                    scope.sessionId,
+                    { preserveViewerState: true },
+                );
+            } else {
+                // Keep the ordinary hydration call shape for integrations
+                // that instrument the first-load metadata path.
+                void hydrateOarDataTreeFromServer(scope.dataGeneration, scope.sessionId);
+            }
         }
         // Always flip the data tree flags based on what we got, then
         // re-render. This is what makes "CTV/OAR don't show in the
@@ -1089,7 +1172,7 @@ async function loadLabelVolumes(options = {}) {
         if (typeof dataTreeState !== 'undefined' && dataTreeState.ctv) {
             dataTreeState.ctv.loaded = hasCTV;
             if (hasCTV) {
-                dataTreeState.ctv.visible = true;
+                if (!preserveViewerState) dataTreeState.ctv.visible = true;
             } else {
                 // A removed final CTV label used to leave its old child node
                 // and mesh in the browser even though the server returned an
@@ -1105,7 +1188,9 @@ async function loadLabelVolumes(options = {}) {
         if (typeof dataTreeState !== 'undefined' && dataTreeState.oar) {
             dataTreeState.oar.loaded = hasOAR;
             if (hasOAR) {
-                if (!state?.viewerSettings?.userConfigured) dataTreeState.oar.visible = true;
+                if (!preserveViewerState && !state?.viewerSettings?.userConfigured) {
+                    dataTreeState.oar.visible = true;
+                }
             } else {
                 (dataTreeState.organs || []).forEach(organ => _disposeSceneMesh(organ.id));
                 dataTreeState.organs = [];
@@ -1817,13 +1902,18 @@ function renderOverlayFromVolume(axis, sliceIndex) {
             if (ctvVisible && ctvLabelData && ctvLabelData.length > flatIdx) {
                 const ctvVal = ctvLabelData[flatIdx];
                 if (ctvVal > 0) {
-                    const color = ctvLabelColorLUT[ctvVal] || [255, 48, 76];
-                    const opacity = dataTreeState.ctv.opacity ?? 0.7;
-                    const composed = _sourceOverPackedRgba(r, g, b, a, color[0], color[1], color[2], opacity);
-                    r = composed & 0xff;
-                    g = (composed >>> 8) & 0xff;
-                    b = (composed >>> 16) & 0xff;
-                    a = composed >>> 24;
+                    const presentation = _ctvLabelPresentation(ctvVal);
+                    if (presentation.visible && presentation.opacity > 0.001) {
+                        const color = presentation.color;
+                        const composed = _sourceOverPackedRgba(
+                            r, g, b, a,
+                            color[0], color[1], color[2], presentation.opacity,
+                        );
+                        r = composed & 0xff;
+                        g = (composed >>> 8) & 0xff;
+                        b = (composed >>> 16) & 0xff;
+                        a = composed >>> 24;
+                    }
                 }
             }
 
@@ -2080,15 +2170,13 @@ function renderSliceFromVolume(axis, sliceIndex) {
                 if (isDataTreeNodeVisible2D(dataTreeState.ctv) && state.viewerSettings.showCTV && ctvLabelData && ctvLabelData.length > flatIdx) {
                     const ctvVal = ctvLabelData[flatIdx];
                     if (ctvVal > 0) {
-                        const color = ctvLabelColorLUT[ctvVal] || [255, 48, 76];
-                            const labelState = dataTreeState.ctvLabels?.[`ctv_${ctvVal}`];
-                            const labelVisible = labelState ? isDataTreeNodeVisible2D(labelState) : true;
-                            if (labelVisible) {
-                                const opacity = dataTreeState.ctv.labelOpacities?.[ctvVal]
-                                    ?? labelState?.opacity
-                                    ?? dataTreeState.ctv.opacity
-                                    ?? 0.7;
-                                const composed = _sourceOverPackedRgba(oR, oG, oB, oA, color[0], color[1], color[2], opacity);
+                        const presentation = _ctvLabelPresentation(ctvVal);
+                            if (presentation.visible && presentation.opacity > 0.001) {
+                                const color = presentation.color;
+                                const composed = _sourceOverPackedRgba(
+                                    oR, oG, oB, oA,
+                                    color[0], color[1], color[2], presentation.opacity,
+                                );
                                 oR = composed & 0xff;
                                 oG = (composed >>> 8) & 0xff;
                                 oB = (composed >>> 16) & 0xff;
@@ -3877,7 +3965,7 @@ function migrateLegacyStructurePalette(tree) {
 
 window.migrateLegacyStructurePalette = migrateLegacyStructurePalette;
 
-function updateOrganList(organData, source = '') {
+function updateOrganList(organData, source = '', options = {}) {
     // organData: {label_id: {name, voxel_count, color?}}
     if (!organData) return;
 
@@ -3922,6 +4010,7 @@ function updateOrganList(organData, source = '') {
     const pendingPresentation = window.__pendingOarPresentation || {};
     const pendingById = pendingPresentation.byId || {};
     const pendingByLabel = pendingPresentation.byLabel || {};
+    const pendingByObjectId = pendingPresentation.byObjectId || {};
     if (effectiveSource) dataTreeState.oarSource = effectiveSource;
 
     dataTreeState.organs = [];
@@ -3935,12 +4024,19 @@ function updateOrganList(organData, source = '') {
         const id = `organ_${labelId}`;
         const stableObjectId = String(info.object_id || `structure:oar:${labelId}`);
         const existing = existingByObjectId[stableObjectId] || existingState[id];
-        const pending = pendingById[id] || pendingByLabel[String(labelId)] || null;
+        const pending = _pendingStructurePresentation(stableObjectId, 'oar')
+            || pendingByObjectId[stableObjectId]
+            || pendingById[id]
+            || pendingByLabel[String(labelId)]
+            || null;
         const renamed = !sourceChanged && existing?.label
             && !/^OAR\s+\d+$/i.test(String(existing.label).trim())
             ? String(existing.label).trim()
             : '';
-        const name = renamed || (uploadedUnknownSource ? `OAR ${i + 1}` : (info.name || `OAR ${i + 1}`));
+        const name = renamed
+            || pending?.label
+            || pending?.name
+            || (uploadedUnknownSource ? `OAR ${i + 1}` : (info.name || `OAR ${i + 1}`));
         const serverCategory = [info.traversability, info.category]
             .map(value => String(value || '').trim().toLowerCase())
             .find(value => value === 'traversable' || value === 'non_traversable') || '';
@@ -3973,7 +4069,10 @@ function updateOrganList(organData, source = '') {
     // remember a second render; this was the source of successful OAR
     // imports that remained invisible until manual 3D reconstruction.
     dataTreeState.oar.loaded = true;
-    if (!state?.viewerSettings?.userConfigured) dataTreeState.oar.visible = true;
+    if (options.preserveViewerState !== true
+        && !state?.viewerSettings?.userConfigured) {
+        dataTreeState.oar.visible = true;
+    }
     if (typeof renderDataTree === 'function') renderDataTree();
     if (window.__pendingOarPresentation) delete window.__pendingOarPresentation;
     return true;
@@ -4247,9 +4346,11 @@ function renderDataTree() {
                 || catalogItem?.object_id
                 || `structure:ctv:${labelId}`,
             );
+            const pending = _pendingStructurePresentation(objectId, 'ctv');
             return {
                 objectId,
-                current: previousCtvByObjectId[objectId]
+                current: pending
+                    || previousCtvByObjectId[objectId]
                     || dataTreeState.ctvLabels?.[`ctv_${labelId}`]
                     || {},
             };
@@ -4363,7 +4464,9 @@ function renderDataTree() {
                     visible: current.visible !== false,
                     visible2D: current.visible2D !== false,
                     visible3D: current.visible3D !== false,
-                    opacity: dataTreeState.ctv.opacity ?? 0.7,
+                    opacity: Number.isFinite(Number(current.opacity))
+                        ? Number(current.opacity)
+                        : (dataTreeState.ctv.opacity ?? 0.7),
                     loaded: true,
                     objectId,
                 }, 'ctv_label', 'ctv');
@@ -8329,6 +8432,125 @@ function deleteDataTreeMask(id) {
     return deleteSelectedDataTreeItems([value]);
 }
 
+function _maskPresentationSnapshot(id) {
+    const mask = _maskStateEntry(id);
+    if (!mask) return null;
+    const objectId = String(
+        mask.objectId
+        || mask.object_id
+        || _dataTreeObjectId(id)
+        || `mask:${_maskStateKey(id)}`,
+    );
+    const visualNode = [
+        ...Object.values(dataTreeState?.ctvLabels || {}),
+        ...(dataTreeState?.organs || []),
+    ].find(node => String(node?.objectId || '') === objectId) || mask;
+    const meshId = _maskSceneMeshId(id);
+    const mesh = typeof scene3D !== 'undefined' ? scene3D?.meshes?.[meshId] : null;
+    return {
+        objectId,
+        label: visualNode.label || mask.label || mask.name || '',
+        name: visualNode.name || mask.name || mask.label || '',
+        visible: visualNode.visible !== false,
+        visible2D: visualNode.visible2D !== false,
+        visible3D: visualNode.visible3D !== false,
+        opacity: Number.isFinite(Number(visualNode.opacity))
+            ? Number(visualNode.opacity)
+            : 0.6,
+        color: visualNode.color || mask.color || '#f08a5d',
+        loaded: visualNode.loaded !== false,
+        loading: visualNode.loading === true,
+        meshLoaded: visualNode.meshLoaded === true || !!mesh,
+        status: visualNode.status || (mesh ? 'ready' : 'not_generated'),
+        error: visualNode.error || null,
+        dataVersion: visualNode.dataVersion ?? mask.dataVersion ?? null,
+        standaloneVisible: mask.standaloneVisible,
+    };
+}
+
+function _transferPromotedMaskMesh(maskId, classification, targetLabel, snapshot) {
+    if (!snapshot || !Number.isInteger(Number(targetLabel)) || Number(targetLabel) <= 0) {
+        return;
+    }
+    if (typeof scene3D === 'undefined' || !scene3D?.meshes) return;
+    const sourceMeshId = _maskSceneMeshId(maskId);
+    const targetMeshId = classification === 'ctv'
+        ? `ctv_${Number(targetLabel)}`
+        : `organ_${Number(targetLabel)}`;
+    const mesh = scene3D.meshes[sourceMeshId];
+    if (!mesh || sourceMeshId === targetMeshId) return;
+
+    // Moving a structure is a classification operation, not a reconstruction
+    // request. Re-key the already-built mesh so the same geometry, material,
+    // visibility and opacity continue under the new Data Tree owner.
+    const existingTarget = scene3D.meshes[targetMeshId];
+    if (existingTarget && existingTarget !== mesh) {
+        try { scene3D.scene?.remove(mesh); } catch (_) {}
+        try { mesh.traverse?.(child => {
+            child.geometry?.dispose?.();
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            materials.forEach(material => material?.dispose?.());
+        }); } catch (_) {}
+        delete scene3D.meshes[sourceMeshId];
+        return;
+    }
+    delete scene3D.meshes[sourceMeshId];
+    scene3D.meshes[targetMeshId] = mesh;
+    mesh.userData = {
+        ...(mesh.userData || {}),
+        id: targetMeshId,
+        organId: targetMeshId,
+        nodeId: targetMeshId,
+        objectId: snapshot.objectId,
+        source: classification,
+        labelId: Number(targetLabel),
+        renderRole: classification,
+    };
+}
+
+function _rememberPromotedMaskPresentation(maskId, classification, catalogItem, snapshot) {
+    if (!snapshot) return;
+    const objectId = String(snapshot.objectId || '');
+    if (!objectId) return;
+    const targetLabel = Number(catalogItem?.target_label);
+    const pending = _pendingStructurePresentationStore();
+    pending[objectId] = {
+        ...snapshot,
+        objectId,
+        classification,
+        targetLabel: Number.isInteger(targetLabel) ? targetLabel : null,
+        nodeId: Number.isInteger(targetLabel) && targetLabel > 0
+            ? (classification === 'ctv' ? `ctv_${targetLabel}` : `organ_${targetLabel}`)
+            : null,
+    };
+    _transferPromotedMaskMesh(maskId, classification, targetLabel, snapshot);
+
+    if (classification === 'oar') {
+        const existing = window.__pendingOarPresentation || {};
+        existing.byObjectId = existing.byObjectId || {};
+        existing.byObjectId[objectId] = pending[objectId];
+        window.__pendingOarPresentation = existing;
+    }
+}
+
+function _adoptPromotedMaskMeshes() {
+    Object.entries(state?.maskLabels || {}).forEach(([maskId, mask]) => {
+        const classification = _genericMaskClassification(mask);
+        if (classification !== 'ctv' && classification !== 'oar') return;
+        const pending = _pendingStructurePresentation(
+            mask.objectId || mask.object_id || `mask:${maskId}`,
+            classification,
+        );
+        if (!pending) return;
+        _transferPromotedMaskMesh(
+            maskId,
+            classification,
+            pending.targetLabel,
+            pending,
+        );
+    });
+}
+
 // Move selected masks into the authoritative CTV/OAR Structure Set.  The source
 // row remains durable and addressable; only its standalone rendering is
 // suppressed because the effective structure volume now owns the voxels.
@@ -8359,6 +8581,7 @@ function _scheduleGenericMaskViewerRefresh(expectedSessionId) {
                     resetPresentation: false,
                 });
                 if (String(expectedSessionId || '') !== _viewerDataSessionId()) return false;
+                _adoptPromotedMaskMeshes();
                 renderDataTree();
                 reloadOverlays();
                 requestViewerVisualRefresh('mask-move-background');
@@ -8430,6 +8653,8 @@ async function moveSelectedMasks(classification, objectIds = null) {
         return {
             id,
             mask,
+            stableId: _dataTreeObjectId(id),
+            presentation: _maskPresentationSnapshot(id),
             movePending: mask.movePending,
             movingTo: mask.movingTo,
         };
@@ -8464,9 +8689,6 @@ async function moveSelectedMasks(classification, objectIds = null) {
             throw new Error(payload.error || _dtText('掩膜分类更新失败', 'Mask classification failed'));
         }
 
-        const targetColor = classification === 'ctv'
-            ? (dataTreeState.ctv.color || DEFAULT_CTV_STRUCTURE_COLOR)
-            : (dataTreeState.oar.color || DEFAULT_OAR_STRUCTURE_COLOR);
         ids.forEach(id => {
             const mask = _maskStateEntry(id);
             if (!mask) return;
@@ -8474,18 +8696,22 @@ async function moveSelectedMasks(classification, objectIds = null) {
             mask.classification = classification;
             mask.parent_group = classification;
             mask.renderAsStructure = true;
-            mask.standaloneVisible = false;
-            mask.color = targetColor;
             mask.movePending = false;
             mask.movingTo = null;
-            // Keep source visibility preferences intact.  The classification is
-            // what removes the standalone row/mesh; setting these flags false
-            // made a successful Move look like deletion after hydration.
-            mask.visible = true;
-            mask.visible2D = true;
-            mask.visible3D = true;
-            const mesh = scene3D?.meshes?.[_maskSceneMeshId(id)];
-            if (mesh) applyMeshVisibility(mesh, false, mask.opacity ?? 0.6);
+            // Do not rewrite visible/visible2D/visible3D, opacity, color,
+            // standaloneVisible, or meshLoaded here. Moving changes only the
+            // clinical owner; the presentation snapshot is transferred to the
+            // target Structure Set row below.
+        });
+
+        const catalog = Array.isArray(payload.structures) ? payload.structures : [];
+        previousState.forEach(({ id, stableId, presentation }) => {
+            const catalogItem = catalog.find(item =>
+                _canonicalDataTreeObjectId(item?.object_id || item?.objectId)
+                    === _canonicalDataTreeObjectId(stableId)
+                && String(item?.classification || '').trim().toLowerCase() === classification,
+            );
+            _rememberPromotedMaskPresentation(id, classification, catalogItem, presentation);
         });
 
         // The PATCH response already contains the authoritative catalog. Use
@@ -8496,6 +8722,14 @@ async function moveSelectedMasks(classification, objectIds = null) {
                 String(item?.classification || '').trim().toLowerCase() === 'ctv'
                 && Number(item?.target_label) > 0,
             );
+            window._ctvObjectMap = {};
+            ctvStructureCatalog.forEach(item => {
+                const label = Number(item?.target_label);
+                const objectId = String(item?.object_id || '').trim();
+                if (Number.isInteger(label) && label > 0 && objectId) {
+                    window._ctvObjectMap[label] = objectId;
+                }
+            });
         }
         renderDataTree();
         reloadOverlays();
