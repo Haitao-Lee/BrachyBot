@@ -1514,6 +1514,20 @@ def test_generic_segmentation_masks_keep_a_real_tree_and_structure_contract():
     move_function = volume[move_start:move_end]
     assert "await hydrateGenericMasksFromServer(_captureViewerDataScope(expectedSessionId))" not in move_function
     assert "mask-move-background" in volume
+    # Classification must be presentation-neutral. Preserve the source mask's
+    # visibility/opacity and adopt an already-built mesh under the new stable
+    # CTV/OAR node instead of hiding it or forcing a reconstruction.
+    assert "_maskPresentationSnapshot" in volume
+    assert "_rememberPromotedMaskPresentation" in volume
+    assert "_transferPromotedMaskMesh" in volume
+    assert "_pendingStructurePresentation(objectId, 'ctv')" in volume
+    assert "_pendingStructurePresentation(stableObjectId, 'oar')" in volume
+    assert "Do not rewrite visible/visible2D/visible3D, opacity, color" in move_function
+    assert "mask.visible = true" not in move_function
+    assert "mask.visible2D = true" not in move_function
+    assert "mask.visible3D = true" not in move_function
+    assert "applyMeshVisibility(mesh, false" not in move_function
+    assert "if (!preserveViewerState) dataTreeState.ctv.visible = true" in volume
     # The effective Structure Set, not a browser-only label, is the source for
     # later planning/DVH/export after a user moves the mask to CTV or OAR.
     assert "structure_catalog" in structures
