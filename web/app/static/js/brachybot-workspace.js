@@ -7,7 +7,6 @@
     const sessionRevisions = Object.create(null);
     let saveTimer = null;
     const workspaceSaveInFlight = Object.create(null);
-    const workspaceSaveQueuedReasons = Object.create(null);
     let restoring = false;
     let workspaceTransition = null;
     let pendingSessionCreationId = null;
@@ -131,6 +130,9 @@
         if (document.hidden) return;
         const recoverySessionId = String(activeSessionId || '');
         if (recoverySessionId) {
+            // This is a new server instance, so the previous completed
+            // marker no longer owns the next recovery notice.
+            window.__workspaceRestoreCompletedSessionId = null;
             // Give the user immediate feedback even while the compact session
             // list/snapshot request is in flight. loadSessions will replace
             // this scope with the real restore generation once it schedules
@@ -279,6 +281,11 @@
         const scopedSession = String(scope?.sessionId || '');
         const scopedRun = String(scope?.runId || '');
         const immediate = scope?.immediate === true;
+        if (active && scopedSession
+            && String(window.__workspaceRestoreCompletedSessionId || '') === scopedSession
+            && scope?.allowAfterCompleted !== true) {
+            return false;
+        }
         if (!active && scope && !immediate) {
             if ((scopedSession && notice.dataset.sessionId !== scopedSession)
                 || (scopedRun && notice.dataset.runId !== scopedRun)) return;
@@ -335,6 +342,12 @@
     // user-facing operation: resources for the selected case are arriving in
     // the background. Keep them on the one non-blocking lower-right notice.
     window.showCaseResourceLoading = function showCaseResourceLoading(scope = null) {
+        const sessionId = String(scope?.sessionId || activeSessionId || '');
+        if (sessionId
+            && String(window.__workspaceRestoreCompletedSessionId || '') === sessionId
+            && scope?.allowAfterCompleted !== true) {
+            return false;
+        }
         window.setWorkspaceHydrationState?.(
             true,
             typeof window._t === 'function'
@@ -342,6 +355,7 @@
                 : 'Loading case resources...',
             scope,
         );
+        return true;
     };
 
     function workspaceSnapshotHasClinicalResources(snapshot) {
@@ -392,6 +406,13 @@
             console.debug('[workspace] background restore skipped: empty or stale case', sessionId);
             return;
         }
+        // Repeated startup/reconnect notifications share the existing job.
+        // The completion marker is cleared by its owner, not by a new timer.
+        if (String(window.__workspaceRestoreCompletedSessionId || '') === String(sessionId)
+            && typeof state !== 'undefined' && state.ctLoaded === true) return;
+        if (String(window.__workspaceRestoreScheduledSessionId || '') === String(sessionId)
+            && (backgroundRestoreTimer || window.__workspaceHydrationRunId
+                && window.__workspaceRestoreCompletedSessionId !== String(sessionId))) return;
         const generation = ++backgroundRestoreGeneration;
         const restoreStartedAt = workspaceNow();
         // Startup and session switching share this scheduler. The init path
@@ -487,10 +508,14 @@
                 // scheduler's completion marker until the case-owned visual
                 // producers (meshes, guide, and their reconciliation) settle.
                 const visualReady = typeof window.awaitWorkspaceVisualReady === 'function'
-                    ? await window.awaitWorkspaceVisualReady(String(sessionId), { timeoutMs: 300000 })
+                    ? await window.awaitWorkspaceVisualReady(String(sessionId), {
+                        timeoutMs: 300000, waitForCompletion: true,
+                    })
                     : { ready: true, legacy: true };
                 if (visualReady?.ready === false) {
-                    throw new Error(visualReady.reason || 'visual_restore_incomplete');
+                    const error = new Error(visualReady.reason || 'visual_restore_incomplete');
+                    error.visualRestoreFailure = true;
+                    throw error;
                 }
                 // The report is a derived view of the restored case. Re-run
                 // the authoritative auto-fill after CT/mesh/planning hydration
@@ -540,6 +565,10 @@
                 const retryCount = Number(backgroundRestoreRetryCounts[retryKey] || 0);
                 if (generation === backgroundRestoreGeneration
                     && sessionId === activeSessionId
+                    && error.visualRestoreFailure !== true
+                    // An already restored CT/scene must not be erased to
+                    // retry a failed secondary resource or late metadata.
+                    && (typeof state === 'undefined' || state.ctLoaded !== true)
                     && retryCount < 2) {
                     backgroundRestoreRetryCounts[retryKey] = retryCount + 1;
                     retryScheduled = true;
@@ -548,6 +577,7 @@
                         backgroundRestoreRetryTimer = null;
                         if (generation !== backgroundRestoreGeneration
                             || sessionId !== activeSessionId) return;
+                        window.__workspaceRestoreScheduledSessionId = null;
                         scheduleBackgroundWorkspaceRestore(
                             window._activeWorkspaceSnapshot || workspace,
                             sessionId,
@@ -2735,24 +2765,34 @@
         };
     }
 
-    async function persistWorkspace(reason, options = {}) {
-        const ownerSessionId = String(options.sessionId || activeSessionId || '');
-        if ((restoring && !options.allowDuringRestore) || !window.brachybotAuth?.user || !ownerSessionId) return false;
-        if (workspaceSaveInFlight[ownerSessionId]) {
-            // UI/report/chat writes are snapshots of the same selected case.
-            // Serialize them so two debounce timers cannot race their CAS
-            // revisions and fill the browser console with avoidable 409s.
-            workspaceSaveQueuedReasons[ownerSessionId] = reason || 'ui.changed';
-            return workspaceSaveInFlight[ownerSessionId];
+    async function _waitForWorkspaceSaveReady(ownerSessionId, options = {}) {
+        const timeoutMs = Math.max(0, Number(options.waitTimeoutMs ?? 10000));
+        const deadline = Date.now() + timeoutMs;
+        while (true) {
+            if (String(activeSessionId || '') !== ownerSessionId) return false;
+            const authUser = window.brachybotAuth?.user;
+            const restoreBlocked = restoring && !options.allowDuringRestore;
+            if (authUser && !restoreBlocked) return true;
+            // A server restart can briefly recreate the auth bridge after the
+            // report action has already started.  Reuse its idempotent /me
+            // request instead of making the report save fail merely because
+            // the identity event arrived a few milliseconds later.
+            if (!authUser && typeof window.brachybotAuth?.authenticated === 'function') {
+                try { await window.brachybotAuth.authenticated(); } catch (_) {}
+            }
+            if (Date.now() >= deadline) return false;
+            await new Promise(resolve => setTimeout(resolve, 50));
         }
+    }
 
+    async function _writeWorkspaceSnapshot(ownerSessionId, reason) {
         // Capture the old case's complete payload before any asynchronous
         // retry or Session transition can change the global UI state. A
         // retry must update only its compare-and-swap revision; rebuilding
         // the payload from workspaceSavePayload() after a switch would send
         // the newly selected case's report/chat under the old session_id.
         const initialPayload = workspaceSavePayload(ownerSessionId, reason);
-        const save = (async () => {
+        return (async () => {
             // A server-side checkpoint can advance the revision between a
             // browser render and its debounced save. The route returns that
             // revision, so retry once with the same case-owned payload and
@@ -2788,6 +2828,28 @@
             }
             return false;
         })();
+    }
+
+    async function persistWorkspace(reason, options = {}) {
+        const ownerSessionId = String(options.sessionId || activeSessionId || '');
+        if (!ownerSessionId) return false;
+        if (options.waitUntilReady) {
+            const ready = await _waitForWorkspaceSaveReady(ownerSessionId, options);
+            if (!ready) return false;
+        }
+        if ((restoring && !options.allowDuringRestore) || !window.brachybotAuth?.user) return false;
+
+        // Serialize snapshots per case, but never return the previous save's
+        // Promise.  The former drain implementation recursively called
+        // persistWorkspace while its own in-flight Promise was still
+        // registered, which could self-await or surface the previous save's
+        // false result to a report action.  Each caller now owns a distinct
+        // chained Promise and receives the result of its own payload.
+        const prior = workspaceSaveInFlight[ownerSessionId];
+        const save = prior
+            ? Promise.resolve(prior).catch(() => false)
+                .then(() => _writeWorkspaceSnapshot(ownerSessionId, reason))
+            : _writeWorkspaceSnapshot(ownerSessionId, reason);
         workspaceSaveInFlight[ownerSessionId] = save;
         try {
             return await save;
@@ -2797,11 +2859,6 @@
         } finally {
             if (workspaceSaveInFlight[ownerSessionId] === save) {
                 delete workspaceSaveInFlight[ownerSessionId];
-                const queuedReason = workspaceSaveQueuedReasons[ownerSessionId];
-                delete workspaceSaveQueuedReasons[ownerSessionId];
-                if (queuedReason && ownerSessionId === String(activeSessionId || '')) {
-                    setTimeout(() => { void persistWorkspace(queuedReason); }, 0);
-                }
             }
         }
     }
@@ -3114,6 +3171,7 @@
         // reconstructing the compact workspace response; waiting until after
         // that request made the UI look idle during the exact period in which
         // the case was already being restored.
+        window.__workspaceRestoreCompletedSessionId = null;
         window.showCaseResourceLoading?.({
             sessionId: activeSessionId,
             runId: `startup-${Date.now()}`,

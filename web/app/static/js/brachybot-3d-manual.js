@@ -4797,6 +4797,7 @@ function _3dDataTreeNodeForMesh(id) {
 }
 
 function _repair3DSceneVisibility() {
+    if (window.__reportCaptureActive) return false;
     const entries = Object.entries(scene3D.meshes || {});
     if (!entries.length || typeof dataTreeState === 'undefined') return false;
     const expected = entries.filter(([id]) => {

@@ -1675,8 +1675,8 @@ function _hasReportGenerationAction(steps) {
 
 function _reportGenerationFailureMessage(sessionId) {
     return _chatLanguageForSession(sessionId) === 'zh'
-        ? '报告重新生成未完成。系统没有将该操作标记为成功；请确认当前 Session 已加载规划、剂量和 DVH 数据后重试。'
-        : 'Report regeneration did not complete. The operation was not marked successful; confirm that the current Session has loaded planning, dose, and DVH data, then retry.';
+        ? '报告重新生成未完成。浏览器中的报告内容可能已经更新，但系统没有确认它已保存到当前 Session，因此不能把本次操作报告为成功。当前病例显示内容已保留；请保持该病例不变，确认规划、剂量和 DVH 已加载后重试。'
+        : 'Report regeneration was not confirmed. The report may have been updated in the browser, but it was not confirmed as saved to the current Session, so this operation cannot be reported as successful. The visible case was preserved; keep it selected and retry after planning, dose, and DVH are loaded.';
 }
 
 function _addTaskRecoveryNotice(sessionId, taskId, state) {
@@ -2998,6 +2998,11 @@ async function sendChat(prefill, options) {
     const presentationMessages = [];
     const uiActionTasks = [];
     const uiActionResults = [];
+    // Keep an explicit marker in addition to inspecting the reconstructed
+    // step list. Some replayed SSE streams expose the UI action metadata only
+    // on the tool event; the final response must still be held back until the
+    // browser reports whether report.autofill actually succeeded.
+    let reportUiActionRequested = false;
     // Group screenshots emitted during one assistant turn into one gallery.
     const screenshotGallery = {
         sessionId: turnSessionId,
@@ -3533,6 +3538,9 @@ async function sendChat(prefill, options) {
                                         actions = data.result.actions;
                                     }
                                     if (Array.isArray(actions) && actions.length > 0) {
+                                        if (actions.some(action => String(action?.target || '') === 'report.autofill')) {
+                                            reportUiActionRequested = true;
+                                        }
                                         uiDebugLog('[SSE-UI] Executing', actions.length, 'UI actions');
                                         if (typeof _executeUIActionsWithProgress === 'function') {
                                             const actionTask = _executeUIActionsWithProgress(actions, {
@@ -3884,7 +3892,8 @@ async function sendChat(prefill, options) {
                             continue;
                         }
                         responseText = data.response;
-                        const deferUntilUIActionsFinish = _hasReportGenerationAction(steps);
+                        const deferUntilUIActionsFinish = reportUiActionRequested
+                            || _hasReportGenerationAction(steps);
                         if (!isInternalFollowup && !deferUntilUIActionsFinish
                             && !responseEl && typeof createStreamingResponse === 'function') {
                             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
@@ -4047,7 +4056,7 @@ async function sendChat(prefill, options) {
         if (uiActionTasks.length) {
             await Promise.allSettled(uiActionTasks);
         }
-        if (_hasReportGenerationAction(steps)) {
+        if (reportUiActionRequested || _hasReportGenerationAction(steps)) {
             const reportActionFailed = uiActionResults.length === 0
                 || uiActionResults.some(result => result === false
                     || result?.success === false

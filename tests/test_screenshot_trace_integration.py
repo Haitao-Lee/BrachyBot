@@ -1357,17 +1357,18 @@ def test_report_generation_executes_and_persists_the_full_report_transaction():
     assert "result?.success === false" in chat
     assert "result?.stale === true" in chat
     assert "await window.awaitWorkspaceVisualReady(reportSessionId" in ui_api
-    assert "requireCompletedPlanning: true" in ui_api
+    assert "await prepareReportSceneRead(reportSessionId)" in ui_api
+    assert "String(run.status).toLowerCase() !== 'completed'" in ui_api
     assert "captureFigures: true" in ui_api
     assert "allowTerminalPlanning: true" in ui_api
-    assert "refreshResult.backgroundCompletion" in ui_api
-    assert "viewer_restore_timeout" in ui_api
+    assert "report_planning_changed" in ui_api
+    assert "report_scene_not_ready" in ui_api
 
     # Text, tables, canonical figures, and the durable workspace snapshot are
     # one awaited transaction before the final assistant reply is rendered.
     assert "planningId: expectedPlanningId" in shell
     assert "persist.flush();" in shell
-    assert "await window.persistWorkspace('report.autofill.completed')" in shell
+    assert "await window.persistWorkspace('report.autofill.completed'," in shell
     assert "success: true" in shell
     assert "The report form is unavailable." in shell
 
@@ -1390,7 +1391,11 @@ def test_report_regeneration_uses_current_plan_and_durable_dvh_without_a_race():
 
     # The explicit report action owns one capture transaction; background
     # hydration must not start a competing capture over the same Viewer.
-    assert "suppressReportFigureCapture: true" in ui_api
+    report_action = ui_api.split("if (target === 'report.autofill')", 1)[1].split(
+        "if (target === 'report.export')", 1
+    )[0]
+    assert "refreshPlanningUI(" not in report_action
+    assert "prepareReportSceneRead(reportSessionId)" in report_action
     assert "options.suppressReportFigureCapture !== true" in dvh
 
     # DVH capture must work from durable state when the Analysis panel is
