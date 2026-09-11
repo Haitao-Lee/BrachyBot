@@ -1503,6 +1503,17 @@ def test_generic_segmentation_masks_keep_a_real_tree_and_structure_contract():
     assert "reclassify_generic_segmentation_masks" in routes
     assert "def reclassify_generic_segmentation_masks" in structures
     assert "_batch_memory_update(memory, updates, removals=_DOWNSTREAM_KEYS)" in structures
+    # Moving an uploaded mask must acknowledge the durable transaction without
+    # blocking the Data Tree on a second generic-mask request and a full binary
+    # label-volume download. The latter is intentionally background work.
+    assert "pendingDataTreeMoveIds" in volume
+    assert "_scheduleGenericMaskViewerRefresh" in volume
+    assert "void _scheduleGenericMaskViewerRefresh(expectedSessionId)" in volume
+    move_start = volume.index("async function moveSelectedMasks")
+    move_end = volume.index("// Parse a \"x,y,z\" voxel key.", move_start)
+    move_function = volume[move_start:move_end]
+    assert "await hydrateGenericMasksFromServer(_captureViewerDataScope(expectedSessionId))" not in move_function
+    assert "mask-move-background" in volume
     # The effective Structure Set, not a browser-only label, is the source for
     # later planning/DVH/export after a user moves the mask to CTV or OAR.
     assert "structure_catalog" in structures
