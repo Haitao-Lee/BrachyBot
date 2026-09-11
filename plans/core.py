@@ -370,7 +370,7 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
         _logger.warning(f"[optimal_plan] 0 candidates! radiation_volume target_voxels={int(np.sum(radiation_volume == target_value))}, dose_image type={type(dose_image).__name__}")
     while cur_DVH_rate < DVH_rate:
         stage1_count += 1
-        if stage1_count > 100:
+        if stage1_count > min(100, len(candidate_trajectories)):
             break
         progressDialog.setValue(50)
         progressDialog.setLabelText("Optimal Planning...")
@@ -392,7 +392,7 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
         )
         if optimal_trajectory is None:
             _logger.info(f"[optimal_plan] select_optimal_trajectory returned None at iteration {stage1_count}, {len(init_planned_res)} trajectories planned")
-            return seed_plan_to_world_coordinates(init_planned_res, dose_image)
+            break
         selected_indices.append(selected_idx)
         optimal_seeds, cur_DVH_rate, cur_single_seed_radiations = utilizations.put_seeds(
             radiation_volume,
@@ -414,7 +414,7 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
 
         if len(optimal_seeds) == 0:
             _logger.info(f"[optimal_plan] put_seeds returned 0 seeds at iteration {stage1_count}, trajectory={optimal_trajectory[0][:3] if optimal_trajectory else 'None'}")
-            return seed_plan_to_world_coordinates(init_planned_res, dose_image)
+            continue
 
         init_planned_res.append([optimal_trajectory, optimal_seeds, cur_single_seed_radiations])
         cur_radiation += np.sum(cur_single_seed_radiations, axis=0)
@@ -424,6 +424,9 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
             stage1_count,
             cur_DVH_rate,
         )
+
+    if not init_planned_res:
+        return []
 
     # --- Stage 2: Plan Refinement ---
     minus_res = copy.copy(init_planned_res)
@@ -500,6 +503,12 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
         progressDialog.setValue(55)
         progressDialog.setLabelText("Optimal Planning...")
 
+    # A stalled rebuilding sweep must not replace a better complete seed set.
+    target_mask = radiation_volume == target_value
+    if np.count_nonzero(minus_radiation[target_mask] > in_lowest_dose) < np.count_nonzero(cur_radiation[target_mask] > in_lowest_dose):
+        minus_res = copy.deepcopy(init_planned_res)
+        minus_radiation = cur_radiation.copy()
+
     # --- Stage 3: Fine-tuning for Safety ---
     opti_res = copy.deepcopy(minus_res)
     all_seeds = []
@@ -570,6 +579,13 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
         if consecutive_no_improvement >= max_no_improvement:
             break
 
+    # Retain the better coverage/deficit result if seed removal degraded it.
+    initial_values = minus_radiation[target_mask]
+    final_values = opti_radiation[target_mask]
+    if (np.count_nonzero(final_values > in_lowest_dose) < np.count_nonzero(initial_values > in_lowest_dose)
+            or np.maximum(in_lowest_dose-final_values, 0).sum() > np.maximum(in_lowest_dose-initial_values, 0).sum() + 1e-6):
+        opti_res = minus_res
+        opti_radiation = minus_radiation
     # Transform seeds from voxel to world coordinates
     _emit_plan_preview(
         opti_res,
