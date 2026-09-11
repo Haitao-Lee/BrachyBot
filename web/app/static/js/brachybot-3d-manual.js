@@ -657,9 +657,9 @@ async function _commitManualSeeds(reason, rollbackSeeds, rollbackNeedles = null,
     }
     if (!sameSession) return { ...data, stale: true };
     _applyAuthoritativeManualSeeds(data);
-    // A saved geometry change creates a child Planning and marks the old
-    // guide stale. Keep it in the historic parent run, but never display it
-    // as though it still matches the active Needle/Seed geometry.
+    // A saved seed change creates a child Planning and marks the old guide
+    // stale in the backend. The guide geometry itself is unchanged, so do
+    // not schedule an automatic guide rebuild for a seed-only edit.
     if (typeof window.invalidateSurgicalGuidePresentation === 'function') {
         window.invalidateSurgicalGuidePresentation();
     }
@@ -707,7 +707,7 @@ async function _deleteNeedleAuthoritatively(needleId) {
         _invalidateDoseForPlanningRun({ sessionId: ownerSessionId });
     }
     if (typeof window.invalidateSurgicalGuidePresentation === 'function') {
-        window.invalidateSurgicalGuidePresentation();
+        window.invalidateSurgicalGuidePresentation({ regenerateForManualPlan: true });
     }
     if (typeof scheduleWorkspaceSave === 'function') {
         scheduleWorkspaceSave('manual.needle.delete');
@@ -747,7 +747,7 @@ async function _persistNeedleGeometryOnly(options = {}) {
     _applyAuthoritativeManualSeeds(data);
     _syncSeedsOverlayFromDataTree();
     if (typeof window.invalidateSurgicalGuidePresentation === 'function') {
-        window.invalidateSurgicalGuidePresentation();
+        window.invalidateSurgicalGuidePresentation({ regenerateForManualPlan: true });
     }
     manualPlanningState.lastDoseNeedles = _cloneNeedleGeometry(data.needles);
     if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave('manual.needle.position_only');
@@ -1163,6 +1163,167 @@ function recoverOrphanedManualDoseProgress() {
 
 setTimeout(recoverOrphanedManualDoseProgress, 0);
 
+function _manualPostReplanIsCurrent(sessionId, sequence, planningId, requestSequence = null) {
+    if (String(sessionId || '') !== String(_activeApiSessionId() || '')) return false;
+    if (Number(manualPlanningState.postReplanSequence || 0) !== Number(sequence || 0)) return false;
+    if (planningId && String(manualPlanningState.planningId || '') !== String(planningId)) return false;
+    if (requestSequence !== null
+        && Number(manualPlanningState.doseRecomputeSequence || 0) !== Number(requestSequence)) return false;
+    return !manualPlanningState.doseRecomputeQueued;
+}
+
+function _manualPostReplanSleep(delayMs) {
+    return new Promise(resolve => setTimeout(resolve, Math.max(0, Number(delayMs) || 0)));
+}
+
+async function _refreshManualReplanArtifacts(data, options = {}) {
+    const sessionId = String(data?.session_id || _activeApiSessionId() || '');
+    const planningId = String(data?.planning_id || manualPlanningState.planningId || '');
+    const requestSequence = options.requestSequence ?? null;
+    const sequence = Number(manualPlanningState.postReplanSequence || 0) + 1;
+    manualPlanningState.postReplanSequence = sequence;
+    manualPlanningState.postReplanOwnerSessionId = sessionId;
+
+    // The compact dose refresh owns the new overlay, slices, and 3D seed/
+    // needle meshes.  Report capture must never start against its old frame.
+    const viewerRefresh = manualPlanningState.backgroundDoseViewerRefresh;
+    if (viewerRefresh && typeof viewerRefresh.then === 'function') {
+        await viewerRefresh.catch(error => {
+            if (_manualPostReplanIsCurrent(sessionId, sequence, planningId, requestSequence)) {
+                console.warn('[manual replan] Viewer refresh failed:', error);
+            }
+        });
+    }
+    if (!_manualPostReplanIsCurrent(sessionId, sequence, planningId, requestSequence)) {
+        return { stale: true };
+    }
+
+    const guideRequested = options.guideRequested === true;
+    let guideUpdated = !guideRequested;
+    if (guideRequested && typeof window.ensureSurgicalGuideForCurrentPlan === 'function') {
+        _setManualDoseProgress(
+            'running',
+            _manualText(
+                '剂量和 DVH 已更新，正在按最新针道更新导板与报告…',
+                'Dose and DVH are ready; updating the guide and report from the latest needle geometry...',
+            ),
+        );
+        try {
+            guideUpdated = await window.ensureSurgicalGuideForCurrentPlan({
+                sessionId,
+                planningId,
+                autoGenerate: true,
+                forceRegenerate: true,
+            });
+        } catch (error) {
+            guideUpdated = false;
+            console.warn('[manual replan] Surgical guide refresh failed:', error);
+        }
+        if (guideUpdated && typeof window.clearSurgicalGuideManualReplanRequest === 'function') {
+            window.clearSurgicalGuideManualReplanRequest();
+        }
+    }
+    if (!_manualPostReplanIsCurrent(sessionId, sequence, planningId, requestSequence)) {
+        return { stale: true };
+    }
+
+    // Guide generation repaints the MPR contour, but keep the final Viewer
+    // frame deterministic before the report capture transaction starts.
+    try { if (typeof loadAllSlices === 'function') await loadAllSlices(); } catch (error) {
+        console.warn('[manual replan] final slice refresh failed:', error);
+    }
+    try { if (typeof forceRender3DViewer === 'function') forceRender3DViewer(); } catch (_) {}
+    await _manualPostReplanSleep(0);
+    if (!_manualPostReplanIsCurrent(sessionId, sequence, planningId, requestSequence)) {
+        return { stale: true };
+    }
+
+    let reportUpdated = false;
+    let reportWarning = '';
+    if (typeof Report !== 'undefined' && Report.autoFill?.fromAll) {
+        // A transient canvas/dose-slice race should not leave the new Planning
+        // with the old report figures.  Retry only a small, bounded number of
+        // times; a persistent failure remains visible as a recoverable warning.
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+            if (!_manualPostReplanIsCurrent(sessionId, sequence, planningId, requestSequence)) {
+                return { stale: true };
+            }
+            try {
+                if (typeof window.awaitWorkspaceVisualReady === 'function') {
+                    const ready = await window.awaitWorkspaceVisualReady(sessionId, {
+                        timeoutMs: 300000,
+                        waitForCompletion: true,
+                        reason: 'manual-replan-report',
+                    });
+                    if (ready?.ready === false) throw new Error('Viewer resources are not ready');
+                }
+                const result = await Report.autoFill.fromAll({
+                    sessionId,
+                    planningId,
+                    captureFigures: true,
+                    allowTerminalPlanning: true,
+                });
+                if (result?.success === true) {
+                    reportUpdated = true;
+                    break;
+                }
+                reportWarning = String(result?.error || result?.warning || 'Report figures were not ready');
+            } catch (error) {
+                reportWarning = String(error?.message || error || 'Report regeneration failed');
+            }
+            if (attempt === 0) await _manualPostReplanSleep(1200);
+        }
+    } else {
+        reportWarning = 'Report auto-fill is unavailable';
+    }
+
+    if (!_manualPostReplanIsCurrent(sessionId, sequence, planningId, requestSequence)) {
+        return { stale: true };
+    }
+    const artifactStatus = {
+        ...(manualPlanningState.artifactStatus || {}),
+        dose: 'ready',
+        dvh: 'ready',
+        report: reportUpdated ? 'ready' : 'stale',
+        ...(guideRequested ? { surgical_guide: guideUpdated ? 'ready' : 'stale' } : {}),
+        post_replan_updated_at: new Date().toISOString(),
+    };
+    manualPlanningState.artifactStatus = artifactStatus;
+    if (typeof dataTreeState !== 'undefined' && dataTreeState?.planning) {
+        dataTreeState.planning.artifactStatus = { ...artifactStatus };
+    }
+    if (typeof renderDataTree === 'function') renderDataTree();
+    if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave('manual.replan.artifacts');
+
+    const downstreamComplete = reportUpdated && (!guideRequested || guideUpdated);
+    if (downstreamComplete) {
+        const syncMessage = guideRequested
+            ? _manualText(
+                '重新规划完成：剂量、DVH、导板、报告和 Viewer 已按最新针道同步。',
+                'Replan complete: dose, DVH, guide, report, and Viewer are synchronized to the latest needle geometry.',
+            )
+            : _manualText(
+                '重新规划完成：剂量、DVH、报告和 Viewer 已按最新针道同步；当前没有需要重建的既有导板。',
+                'Replan complete: dose, DVH, report, and Viewer are synchronized; no existing guide needed regeneration.',
+            );
+        _setManualDoseProgress('done', syncMessage);
+        addChat('system', syncMessage);
+    } else {
+        const warning = _manualText(
+            `剂量和 DVH 已更新，但${guideRequested && !guideUpdated ? '导板' : ''}${guideRequested && !guideUpdated && !reportUpdated ? '、' : ''}${!reportUpdated ? '报告截图' : ''}未完成更新：${reportWarning || '请稍后重试。'}`,
+            `Dose and DVH were updated, but ${guideRequested && !guideUpdated ? 'the guide' : ''}${guideRequested && !guideUpdated && !reportUpdated ? ' and ' : ''}${!reportUpdated ? 'the report figures' : ''} could not be refreshed: ${reportWarning || 'retry when the Viewer is ready.'}`,
+        );
+        _setManualDoseProgress('error', warning);
+        addChat('error', warning);
+    }
+    return {
+        success: downstreamComplete,
+        guide_updated: guideRequested ? guideUpdated : null,
+        report_updated: reportUpdated,
+        report_warning: reportWarning,
+    };
+}
+
 async function _runManualDoseJob(job) {
     if (!job || job.cancelled) return null;
     const { payload, wasDoseTextureEnabled } = job;
@@ -1170,6 +1331,9 @@ async function _runManualDoseJob(job) {
     const requestSequence = ++manualPlanningState.doseRecomputeSequence;
     const incrementalSeedEdit = Array.isArray(payload.previous_seeds)
         && payload.reason === 'seed_drag';
+    const requiresPostReplanArtifacts = payload.reason === 'needle_drag'
+        || payload.reason === 'manual_replan';
+    let guideRequested = false;
     _setManualDoseProgress(
         'running',
         payload.reproject_seeds
@@ -1180,6 +1344,12 @@ async function _runManualDoseJob(job) {
         _setManualDoseProgress('error', _manualText('剂量重算已停止：当前没有手动粒子。', 'Dose recomputation stopped: no manual seeds are available.'));
         addChat('error', _manualText('当前没有可用于重算的手动粒子，请先添加至少一颗粒子。', 'No manual seeds available. Add at least one seed before recomputing dose.'));
         return null;
+    }
+    if (requiresPostReplanArtifacts
+        && typeof window.prepareSurgicalGuideForManualReplan === 'function') {
+        // Remove the old guide before the request starts.  It must never be
+        // mistaken for a guide belonging to the new needle geometry.
+        guideRequested = window.prepareSurgicalGuideForManualReplan() === true;
     }
     const doseController = typeof AbortController === 'function' ? new AbortController() : null;
     manualPlanningState._doseAbortController = doseController;
@@ -1225,7 +1395,10 @@ async function _runManualDoseJob(job) {
         // canvases, dose textures, and any missing overlay metadata hydrate.
         // Those viewer updates are session-fenced and continue in the
         // background so the user can keep editing the current plan.
-        await _refreshManualDoseViews(data, wasDoseTextureEnabled, { background: true });
+        await _refreshManualDoseViews(data, wasDoseTextureEnabled, {
+            background: true,
+            requestSequence,
+        });
         _reportCommittedManualEvent(data, 'manual.dose', payload.reason || 'manual_update', {
             dose_recomputed: true,
         });
@@ -1235,10 +1408,6 @@ async function _runManualDoseJob(job) {
         if (payload.reproject_seeds) {
             manualPlanningState.lastDoseNeedles = _cloneNeedleGeometry(payload.needles);
         }
-        _setManualDoseProgress('done', _manualText(
-            `重新规划完成：${data.total_seeds} 颗粒子，V100=${v100}，D90=${d90}。`,
-            `Replanning complete: ${data.total_seeds} seeds, V100=${v100}, D90=${d90}.`,
-        ));
         addChat('system', _manualText(
             `手动剂量已更新：${data.total_seeds} 颗粒子，V100=${v100}，D90=${d90}。`,
             `Manual AI dose updated: ${data.total_seeds} seeds, V100=${v100}, D90=${d90}.`,
@@ -1247,6 +1416,27 @@ async function _runManualDoseJob(job) {
             addChat('system', _manualText(
                 '监测建议：' + data.advice.advice.slice(0, 2).join(' '),
                 'Monitor advice: ' + data.advice.advice.slice(0, 2).join(' '),
+            ));
+        }
+        if (requiresPostReplanArtifacts) {
+            _setManualDoseProgress('running', _manualText(
+                '剂量已更新，正在同步导板、报告和 Viewer…',
+                'Dose is updated; synchronizing the guide, report, and Viewer...',
+            ));
+            const postReplanPromise = _refreshManualReplanArtifacts(data, {
+                guideRequested,
+                requestSequence,
+            });
+            manualPlanningState.postReplanPromise = postReplanPromise;
+            const downstream = await postReplanPromise;
+            if (manualPlanningState.postReplanPromise === postReplanPromise) {
+                manualPlanningState.postReplanPromise = null;
+            }
+            if (downstream?.stale) return data;
+        } else {
+            _setManualDoseProgress('done', _manualText(
+                `剂量更新完成：${data.total_seeds} 颗粒子，V100=${v100}，D90=${d90}。`,
+                `Dose update complete: ${data.total_seeds} seeds, V100=${v100}, D90=${d90}.`,
             ));
         }
         return data;
@@ -1806,8 +1996,13 @@ async function _refreshManualDoseViews(data, wasDoseTextureEnabled, options = {}
     // of the mutation response path, while fencing every repaint to the case
     // that produced this dose result.
     const ownerSessionId = String(_activeApiSessionId() || '');
+    const requestSequence = options.requestSequence ?? null;
+    const isRefreshOwner = () => ownerSessionId === String(_activeApiSessionId() || '')
+        && (requestSequence === null
+            || Number(manualPlanningState.doseRecomputeSequence || 0) === Number(requestSequence))
+        && !manualPlanningState.doseRecomputeQueued;
     const refreshViewer = async () => {
-        if (ownerSessionId !== String(_activeApiSessionId() || '')) return;
+        if (!isRefreshOwner()) return;
         state.doseOverlay = null;
         if (typeof invalidateDoseOverlayRenderCache === 'function') {
             invalidateDoseOverlayRenderCache();
@@ -1817,7 +2012,7 @@ async function _refreshManualDoseViews(data, wasDoseTextureEnabled, options = {}
             refreshAllViewerCanvases('manual-dose-refresh-start');
         }
         if (typeof loadDoseOverlay === 'function') await loadDoseOverlay();
-        if (ownerSessionId !== String(_activeApiSessionId() || '')) return;
+        if (!isRefreshOwner()) return;
         if (typeof loadAllSlices === 'function' && state.ctLoaded) await loadAllSlices();
 
         if (wasDoseTextureEnabled && typeof setDoseTextureMode === 'function') {
@@ -1825,7 +2020,7 @@ async function _refreshManualDoseViews(data, wasDoseTextureEnabled, options = {}
                 console.warn('[manual dose] dose texture refresh failed:', error);
             }
         }
-        if (ownerSessionId === String(_activeApiSessionId() || '')
+        if (isRefreshOwner()
             && typeof forceRender3DViewer === 'function') {
             forceRender3DViewer();
         }
@@ -1835,7 +2030,7 @@ async function _refreshManualDoseViews(data, wasDoseTextureEnabled, options = {}
         const refreshPromise = Promise.resolve()
             .then(refreshViewer)
             .catch(error => {
-                if (ownerSessionId === String(_activeApiSessionId() || '')) {
+                if (isRefreshOwner()) {
                     console.warn('[manual dose] background viewer refresh failed:', error);
                     addChat('error', _manualText(
                         `鍓傞噺宸蹭繚瀛橈紝浣嗘煋鑹插櫒鍒锋柊澶辫触锛?{error.message}`,
