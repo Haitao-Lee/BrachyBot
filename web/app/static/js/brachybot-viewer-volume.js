@@ -3722,6 +3722,10 @@ let lastClickedId = null;  // For shift+click range selection
 // second right-click cannot submit a duplicate request against a row that is
 // already being removed.
 const pendingDataTreeDeleteIds = new Set();
+// A generic-mask classification is a real server transaction.  Keep a small
+// client-side lock so a slow request cannot be submitted twice by a second
+// context-menu click while the first one is being committed.
+const pendingDataTreeMoveIds = new Set();
 
 function getSelectableIds() {
     // Return every real leaf node in tree order. Group headers are routed to
@@ -4453,9 +4457,13 @@ function renderDataTree() {
             const voxelCount = Number.isFinite(Number(mask.voxelCount))
                 ? Number(mask.voxelCount)
                 : (Number(mask.voxel_count) || (mask.voxels ? mask.voxels.size : 0));
-            groupHtml += renderTreeItem(id, state_, mask.loading
-                ? _dtText('生成中...', 'Building...')
-                : `${voxelCount} vox`);
+            const movingTo = String(mask.movingTo || '').trim().toLowerCase();
+            const statusText = mask.movePending && (movingTo === 'ctv' || movingTo === 'oar')
+                ? _dtText(`移动到 ${movingTo.toUpperCase()} 中…`, `Moving to ${movingTo.toUpperCase()}…`)
+                : mask.loading
+                    ? _dtText('生成中...', 'Building...')
+                    : `${voxelCount} vox`;
+            groupHtml += renderTreeItem(id, state_, statusText);
         });
         return groupHtml + `</div></div>`;
     };
@@ -8324,6 +8332,75 @@ function deleteDataTreeMask(id) {
 // Move selected masks into the authoritative CTV/OAR Structure Set.  The source
 // row remains durable and addressable; only its standalone rendering is
 // suppressed because the effective structure volume now owns the voxels.
+let _genericMaskViewerRefreshTask = null;
+let _genericMaskViewerRefreshAgain = false;
+
+function _scheduleGenericMaskViewerRefresh(expectedSessionId) {
+    _genericMaskViewerRefreshAgain = true;
+    if (_genericMaskViewerRefreshTask) return _genericMaskViewerRefreshTask;
+    if (typeof loadLabelVolumes !== 'function') return Promise.resolve(false);
+
+    _genericMaskViewerRefreshTask = (async () => {
+        let loaded = false;
+        try {
+            do {
+                _genericMaskViewerRefreshAgain = false;
+                if (String(expectedSessionId || '') !== _viewerDataSessionId()) return false;
+
+                // A move invalidates any older label request.  The refresh is
+                // deliberately detached from the context-menu action: the
+                // server transaction is already durable, and a full binary
+                // label-volume download must not make the Data Tree wait.
+                invalidateViewerDataLoads();
+                loaded = await loadLabelVolumes({
+                    sessionId: expectedSessionId,
+                    forceFresh: true,
+                    preserveViewerState: true,
+                    resetPresentation: false,
+                });
+                if (String(expectedSessionId || '') !== _viewerDataSessionId()) return false;
+                renderDataTree();
+                reloadOverlays();
+                requestViewerVisualRefresh('mask-move-background');
+                if (typeof applyDataTreeViewVisibility === 'function') {
+                    applyDataTreeViewVisibility();
+                }
+                if (!loaded) {
+                    window.showBrachyBotNotice?.(
+                        _dtText(
+                            '掩膜已移动，但查看器结构刷新未完成；请稍后重新加载病例。',
+                            'The mask was moved, but the viewer structure refresh did not complete. Reload the case later.',
+                        ),
+                        'warning',
+                    );
+                }
+                // If another move completed while this download was running,
+                // consume the newest server state once more instead of letting
+                // the earlier response win the presentation race.
+            } while (_genericMaskViewerRefreshAgain);
+            return loaded;
+        } catch (error) {
+            if (String(expectedSessionId || '') === _viewerDataSessionId()) {
+                console.warn('[data-tree] generic mask viewer refresh failed:', error);
+                window.showBrachyBotNotice?.(
+                    _dtText(
+                        '掩膜已经移动，但查看器刷新失败；请重新加载病例以更新显示。',
+                        'The mask was moved, but the viewer refresh failed. Reload the case to update the display.',
+                    ),
+                    'warning',
+                );
+            }
+            return false;
+        } finally {
+            const rerun = _genericMaskViewerRefreshAgain
+                && String(expectedSessionId || '') === _viewerDataSessionId();
+            _genericMaskViewerRefreshTask = null;
+            if (rerun) void _scheduleGenericMaskViewerRefresh(expectedSessionId);
+        }
+    })();
+    return _genericMaskViewerRefreshTask;
+}
+
 async function moveSelectedMasks(classification, objectIds = null) {
     // Treat an explicitly supplied empty array as an intentional no-op.  A
     // live selection Set is not safe here because the async refresh below can
@@ -8338,67 +8415,113 @@ async function moveSelectedMasks(classification, objectIds = null) {
     if (!ids.length) return false;
     const expectedSessionId = _viewerDataSessionId();
     const stableIds = ids.map(id => _dataTreeObjectId(id)).filter(Boolean);
-    const response = await fetch(API + '/data/generic-masks/classification', {
-        method: 'PATCH',
-        headers: {
-            ..._viewerDataHeaders(expectedSessionId),
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            session_id: expectedSessionId,
-            object_ids: stableIds,
-            classification,
-        }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload.success === false) {
-        throw new Error(payload.error || _dtText('掩膜分类更新失败', 'Mask classification failed'));
+    const mutationKeys = [...new Set(stableIds.map(_canonicalDataTreeObjectId).filter(Boolean))];
+    if (mutationKeys.some(id => pendingDataTreeMoveIds.has(id))) {
+        addChat('system', _dtText(
+            '所选掩膜正在移动中，请等待当前操作完成。',
+            'The selected mask is already being moved. Please wait for the current operation to finish.',
+        ));
+        return false;
     }
-    const targetColor = classification === 'ctv'
-        ? (dataTreeState.ctv.color || DEFAULT_CTV_STRUCTURE_COLOR)
-        : (dataTreeState.oar.color || DEFAULT_OAR_STRUCTURE_COLOR);
-    ids.forEach(id => {
+
+    const previousState = ids.map(id => {
         const mask = _maskStateEntry(id);
-        if (!mask) return;
-        mask.movedTo = classification;
-        mask.classification = classification;
-        mask.parent_group = classification;
-        mask.renderAsStructure = true;
-        mask.standaloneVisible = false;
-        mask.color = targetColor;
-        // Keep source visibility preferences intact.  The classification is
-        // what removes the standalone row/mesh; setting these flags false made
-        // a successful Move look like deletion after hydration and prevented
-        // the effective CTV/OAR row from being displayed.
-        mask.visible = true;
-        mask.visible2D = true;
-        mask.visible3D = true;
-        const mesh = scene3D?.meshes?.[_maskSceneMeshId(id)];
-        if (mesh) applyMeshVisibility(mesh, false, mask.opacity ?? 0.6);
+        if (!mask) return null;
+        return {
+            id,
+            mask,
+            movePending: mask.movePending,
+            movingTo: mask.movingTo,
+        };
+    }).filter(Boolean);
+    mutationKeys.forEach(id => pendingDataTreeMoveIds.add(id));
+
+    // Give immediate feedback while the durable server transaction runs.  The
+    // old implementation changed nothing until PATCH + full label hydration
+    // + duplicate generic-mask hydration had all finished, which looked like
+    // a frozen context-menu action for large CT volumes.
+    previousState.forEach(({ mask }) => {
+        mask.movePending = true;
+        mask.movingTo = classification;
     });
-    // The PATCH rebuilt the server-side effective CTV/OAR arrays. Hydrate
-    // those arrays before drawing, otherwise the browser would only reflect
-    // the metadata move and the next refresh would resurrect the old image.
-    if (typeof loadLabelVolumes === 'function') {
-        await loadLabelVolumes({
-            sessionId: expectedSessionId,
-            forceFresh: true,
-            preserveViewerState: true,
-            resetPresentation: false,
-        });
-    }
-    await hydrateGenericMasksFromServer(_captureViewerDataScope(expectedSessionId));
     renderDataTree();
-    reloadOverlays();
-    requestViewerVisualRefresh('mask-move');
-    if (typeof applyDataTreeViewVisibility === 'function') applyDataTreeViewVisibility();
-    _scheduleDataTreeSave('mask.move');
-    addChat('system', _dtText(
-        `已将 ${ids.length} 个掩膜并入 ${classification.toUpperCase()} 结构集；原始标签仍保留，可在目标结构节点下查看。相关剂量、DVH、评估和报告已标记为需要更新。`,
-        `Moved ${ids.length} mask(s) to ${classification.toUpperCase()} and rebuilt the effective Structure Set. Dose/DVH/report/guide are now stale and require recomputation.`,
-    ));
-    selectedItems.clear();
-    return true;
+
+    try {
+        const response = await fetch(API + '/data/generic-masks/classification', {
+            method: 'PATCH',
+            headers: {
+                ..._viewerDataHeaders(expectedSessionId),
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                session_id: expectedSessionId,
+                object_ids: stableIds,
+                classification,
+            }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.success === false) {
+            throw new Error(payload.error || _dtText('掩膜分类更新失败', 'Mask classification failed'));
+        }
+
+        const targetColor = classification === 'ctv'
+            ? (dataTreeState.ctv.color || DEFAULT_CTV_STRUCTURE_COLOR)
+            : (dataTreeState.oar.color || DEFAULT_OAR_STRUCTURE_COLOR);
+        ids.forEach(id => {
+            const mask = _maskStateEntry(id);
+            if (!mask) return;
+            mask.movedTo = classification;
+            mask.classification = classification;
+            mask.parent_group = classification;
+            mask.renderAsStructure = true;
+            mask.standaloneVisible = false;
+            mask.color = targetColor;
+            mask.movePending = false;
+            mask.movingTo = null;
+            // Keep source visibility preferences intact.  The classification is
+            // what removes the standalone row/mesh; setting these flags false
+            // made a successful Move look like deletion after hydration.
+            mask.visible = true;
+            mask.visible2D = true;
+            mask.visible3D = true;
+            const mesh = scene3D?.meshes?.[_maskSceneMeshId(id)];
+            if (mesh) applyMeshVisibility(mesh, false, mask.opacity ?? 0.6);
+        });
+
+        // The PATCH response already contains the authoritative catalog. Use
+        // it for an immediate Data Tree update; the binary label volume is
+        // refreshed below without blocking this action.
+        if (Array.isArray(payload.structures)) {
+            ctvStructureCatalog = payload.structures.filter(item =>
+                String(item?.classification || '').trim().toLowerCase() === 'ctv'
+                && Number(item?.target_label) > 0,
+            );
+        }
+        renderDataTree();
+        reloadOverlays();
+        requestViewerVisualRefresh('mask-move');
+        if (typeof applyDataTreeViewVisibility === 'function') applyDataTreeViewVisibility();
+        _scheduleDataTreeSave('mask.move');
+        selectedItems.clear();
+        addChat('system', _dtText(
+            `已将 ${ids.length} 个掩膜并入 ${classification.toUpperCase()} 结构集；查看器正在后台同步结构体积。相关剂量、DVH、评估和报告已标记为需要更新。`,
+            `Moved ${ids.length} mask(s) to ${classification.toUpperCase()}; the viewer is synchronizing the structure volume in the background. Dose/DVH/report/guide are now stale and require recomputation.`,
+        ));
+
+        // loadLabelVolumes() starts the generic-mask hydration itself. Do not
+        // call hydrateGenericMasksFromServer a second time here.
+        void _scheduleGenericMaskViewerRefresh(expectedSessionId);
+        return true;
+    } catch (error) {
+        previousState.forEach(({ mask, movePending, movingTo }) => {
+            mask.movePending = movePending;
+            mask.movingTo = movingTo;
+        });
+        renderDataTree();
+        throw error;
+    } finally {
+        mutationKeys.forEach(id => pendingDataTreeMoveIds.delete(id));
+    }
 }
 
 // Parse a "x,y,z" voxel key.
