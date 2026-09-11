@@ -3043,7 +3043,7 @@ def get_candidate_traj_radiation_by_point_count(trajectories, radiation, in_lowe
         for step in effective_range:
             update_point = point + update_direction * step
             int_coords = tuple(update_point.astype(int))  # Convert to integer coordinates
-            effect_score += int(radiation[int_coords] <= in_lowest_dose / rate)
+            effect_score += max(0.0, 1.0 - float(radiation[int_coords]) / max(float(in_lowest_dose / rate), 1e-12))
         
         # Append the calculated effective radiation to the results
         res.append(effect_score)
@@ -3378,12 +3378,16 @@ def select_optimal_trajectory(
     
     adjusted_candidate_traj_margin = candidate_traj_margin
     
-    # Step 5: Combine scores using element-wise multiplication
-    candidate_traj_scores = (
-        np.array(candidate_traj_weights).reshape(-1) *
-        np.array(candidate_traj_radiation).reshape(-1) *
-        np.array(candidate_direction_score).reshape(-1) *
-        np.array(adjusted_candidate_traj_margin).reshape(-1)
+    # Dose deficit dominates; geometric preferences are bounded bonuses.
+    # An edge score of zero must not erase a useful peripheral trajectory.
+    def _unit_bonus(values):
+        values = np.asarray(values, dtype=float).reshape(-1)
+        values = np.where(np.isfinite(values), np.maximum(values, 0), 0)
+        return values / max(float(values.max()) if values.size else 0., 1e-12)
+    candidate_traj_scores = np.asarray(candidate_traj_radiation, dtype=float) * (
+        1.0 + 0.1 * _unit_bonus(candidate_traj_weights)
+        + 0.05 * _unit_bonus(candidate_direction_score)
+        + 0.05 * _unit_bonus(adjusted_candidate_traj_margin)
     )
 
     # Apply the two-stage geometry gate before every score fallback below so a
@@ -3407,6 +3411,9 @@ def select_optimal_trajectory(
 
     candidate_traj_scores = _mask_unsafe_scores(candidate_traj_scores)
 
+    if not np.any(np.isfinite(candidate_traj_scores) & (candidate_traj_scores > 0)):
+        return None, None
+
     # Guard: if any input array was empty, return None instead of crashing on np.max.
     # This can happen when candidate_trajectories was empty (no point continuing).
     if candidate_traj_scores.size == 0:
@@ -3414,29 +3421,6 @@ def select_optimal_trajectory(
         _log.getLogger(__name__).info(f"[select_optimal] scores.size=0, candidates={len(candidate_trajectories)}")
         return None, None
 
-    if np.max(candidate_traj_scores) == 0 or np.isnan(np.max(candidate_traj_scores)):
-        candidate_traj_scores = (
-            np.array(candidate_traj_weights).reshape(-1) * 
-            np.array(candidate_traj_radiation).reshape(-1) * 
-            np.array(candidate_direction_score).reshape(-1)
-        )
-        candidate_traj_scores = _mask_unsafe_scores(candidate_traj_scores)
-        
-        if np.max(candidate_traj_scores) == 0:
-            candidate_traj_scores = (
-                np.array(candidate_traj_weights).reshape(-1) * 
-                np.array(candidate_direction_score).reshape(-1)
-            )
-            candidate_traj_scores = _mask_unsafe_scores(candidate_traj_scores)
-
-            if np.max(candidate_traj_scores) == 0:
-                candidate_traj_scores = (
-                    np.array(candidate_traj_weights).reshape(-1)
-                )
-                candidate_traj_scores = _mask_unsafe_scores(candidate_traj_scores)
-                if np.max(candidate_traj_scores) == 0:
-                    return None, None
-    
     _avail_count = 0
     for i, candidate_trajectory in enumerate(candidate_trajectories):
         throttled_process_events()
@@ -3448,6 +3432,11 @@ def select_optimal_trajectory(
     import logging as _log
     _log.getLogger(__name__).info(f"[select_optimal] {len(candidate_trajectories)} candidates, {_avail_count} with available positions, max_score={np.max(candidate_traj_scores) if candidate_traj_scores.size > 0 else 'empty'}")
 
+    # All candidates may have been masked AFTER the score fallback.
+    candidate_traj_scores = np.asarray(candidate_traj_scores, dtype=float)
+    candidate_traj_scores[~np.isfinite(candidate_traj_scores)] = 0.0
+    if not np.any(candidate_traj_scores > 0):
+        return None, None
     # Step 6: Select and return the trajectory with the highest score
     return candidate_trajectories[np.argmax(candidate_traj_scores)], np.argmax(candidate_traj_scores)
 
@@ -3858,7 +3847,10 @@ def hierarchical_planning_rf(
             "for interactive RL planning",
             len(candidate_trajectories), candidate_limit,
         )
-        candidate_trajectories = list(candidate_trajectories[:candidate_limit])
+        from .core import sample_spatial_trajectories
+        candidate_trajectories = sample_spatial_trajectories(
+            candidate_trajectories, candidate_limit, tuple(reversed(dose_image.GetSpacing()))
+        )
     if rl_status is not None:
         rl_status["candidate_count"] = len(candidate_trajectories)
 

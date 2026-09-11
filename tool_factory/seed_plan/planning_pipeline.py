@@ -3134,8 +3134,16 @@ class PlanningPipelineTool(BaseTool):
         args = _apply_planning_overrides(setting(), agent_config)
         min_depth = args.radiation_array_params.get('min_depth_rate', 5)
 
-        depth_candidates = [t for t in trajectories if t[4] >= min_depth]
-        if not depth_candidates:
+        # Keep short peripheral paths when they contain a physically usable
+        # seed position. The legacy depth is a voxel-step count, not mm.
+        from scipy.ndimage import distance_transform_edt
+        from plans.utilizations import get_available_position
+        seed_distance = distance_transform_edt(radiation_volume == args.radiation_array_params['target_value']) if radiation_volume is not None else None
+        depth_candidates = [t for t in trajectories if (
+            bool(get_available_position(t, [], args.seed_info, resampled_ct, seed_distance))
+            if seed_distance is not None and resampled_ct is not None else t[4] >= min_depth
+        )]
+        if not depth_candidates and seed_distance is None:
             logger.warning(f"No trajectories with depth >= {min_depth}; checking all {len(trajectories)} candidates")
             depth_candidates = list(trajectories)
 
@@ -3467,6 +3475,7 @@ class PlanningPipelineTool(BaseTool):
                 # diagnostic record must remain queryable for provenance.
                 agent.memory.store("rl_status", copy.deepcopy(rl_status))
 
+        optimization_started = time.monotonic()
         try:
             if mode == "rl":
                 # RL uses the same filtered trajectories and radiation volume
@@ -3609,6 +3618,88 @@ class PlanningPipelineTool(BaseTool):
                     rl_fallback_reason = "disabled"
                 elif rl_target_coverage + 1e-6 >= float(args.DVH_rate):
                     rl_fallback_reason = "rl_reached_target"
+            # Shared, bounded coverage repair for both rule and RL plans.
+            # Trials reuse the full world-space needle validator and dose model.
+            from plans.coverage_repair import repair_coverage
+            repair_context = utilizations.DoseImageContext(
+                dose_image, args.image_normalize[0], args.image_normalize[1], dose_model
+            )
+
+            def _repair_validate(trajectory, selected):
+                spacing_safe = utilizations.get_trajectory_spacing_safety_mask(
+                    [trajectory], selected, dose_image,
+                    base_min_distance_mm=args.distance_filtter['lower_bound'],
+                    parallel_min_distance_mm=parallel_min_distance_mm,
+                    parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
+                )
+                if not spacing_safe[0]:
+                    return False
+                return bool(_filter_world_safe_trajectories(
+                    [trajectory], resampled_ct, ct_image, ctv_mask, oar_mask,
+                    obstacle_labels, body_mask=body_mask,
+                ))
+
+            def _repair_infer(point, direction):
+                return utilizations.single_seed_dose_calculation_dl(
+                    point, direction, dose_image, dose_model,
+                    args.radiation_array_params['infer_img_size'], args.seed_info,
+                    args.image_normalize[0], args.image_normalize[1], args.image_normalize[2],
+                    dose_context=repair_context,
+                )
+
+            def _repair_generate(cold, deadline):
+                # Move a cold-region anchor back to its CTV segment boundary,
+                # then reuse the ordinary initializer and all safety checks.
+                target = radiation_volume == args.radiation_array_params['target_value']
+                representatives = core.sample_spatial_trajectories(
+                    [(p, np.array([1., 0., 0.])) for p in cold], 4,
+                    tuple(reversed(dose_image.GetSpacing())),
+                )
+                directions = core.sample_spatial_trajectories(trajectories, 12)
+                extra = []
+                for representative in representatives:
+                    for template in directions:
+                        if time.monotonic() >= deadline:
+                            return extra
+                        direction = np.asarray(template[1])
+                        advance = direction / np.max(np.abs(direction))
+                        anchor = np.asarray(representative[0], dtype=float)
+                        for _ in range(sum(target.shape)):
+                            previous = anchor - advance
+                            index = np.rint(previous).astype(int)
+                            if np.any(index < 0) or np.any(index >= target.shape) or not target[tuple(index)]:
+                                break
+                            anchor = previous
+                        generated = utilizations.init_trajectories_with_depth(
+                            [anchor], radiation_volume, direction,
+                            args.radiation_array_params['target_value'],
+                            args.radiation_array_params['background_value'],
+                            args.radiation_array_params['obstacle_value'], 1, 0,
+                        )
+                        extra.extend(t for t in generated if _repair_validate(t, []))
+                return extra
+
+            repair_organs = np.zeros(radiation_volume.shape, dtype=bool)
+            if resampled_oar is not None:
+                repair_organs = sitk.GetArrayFromImage(resampled_oar) > 0
+            repair_organs &= radiation_volume != args.radiation_array_params['target_value']
+            repair_budget = min(30.0, max(0.0, 0.1 * (time.monotonic() - optimization_started)))
+            try:
+                repaired_plan, repair_status = repair_coverage(
+                    plan_res, trajectories, radiation_volume, dose_image,
+                    args.radiation_array_params['target_value'], repair_organs,
+                    in_lowest_model, out_highest_model, args.DVH_rate, args.seed_info,
+                    _repair_infer, _repair_validate, _repair_generate,
+                    seconds=repair_budget, rounds=4,
+                    candidate_limit=args.radiation_array_params['maximum_candidate_trajectories'],
+                )
+                plan_res = repaired_plan
+            except Exception:
+                logger.exception('[coverage_repair] Retaining original plan after repair failure')
+                repair_status = {'stop_reason': 'internal_error_original_plan_retained'}
+            logger.info('[coverage_repair] %s', repair_status)
+            if agent:
+                agent.memory.store('coverage_repair_status', repair_status)
             # Compute dose distribution
             sum_image = np.zeros_like(radiation_volume, dtype=np.float32)
             for entry in plan_res:
