@@ -6017,6 +6017,7 @@ def register_planning_routes(
     @app.route("/api/manual_planning/restore_needle", methods=["POST"])
     @require_api_key
     @rate_limit
+    @serialize_manual_dose_request
     def api_manual_planning_restore_needle():
         """Restore one needle and its seeds from the latest algorithm plan."""
         data = request.get_json() or {}
@@ -6117,7 +6118,18 @@ def register_planning_routes(
         planning_id = None
         created_new_planning = False
         try:
-            planning_id = fork_planning_run(agent, reason="restore_algorithm_needle")
+            # The outgoing run is already persisted in planning history. A
+            # restore replaces it with the immutable algorithm baseline, so
+            # copying its large dose arrays into a new child just to delete
+            # them again is unnecessary and makes restore look like a dose
+            # recomputation. Keep the parent as the rollback point and fork a
+            # lightweight child; publish_planning_run writes the completed
+            # child snapshot after the baseline has been installed.
+            planning_id = fork_planning_run(
+                agent,
+                reason="restore_algorithm_needle",
+                capture_current=not fast_restore,
+            )
             created_new_planning = str(planning_id) != str(previous_planning_id or "")
             invalidate_planning_dependents(agent.memory, reason="restore_algorithm_needle")
             checkpoint_operation(
@@ -6130,9 +6142,21 @@ def register_planning_routes(
                 # The algorithm plan already passed dose calculation and
                 # safety validation. Restore its immutable arrays/metrics;
                 # never run the expensive dose network for this operation.
-                dose_grid = np.array(baseline_dose, copy=True)
-                dose_grid_gy = np.array(baseline_dose_gy, copy=True)
+                # These arrays are immutable algorithm-owned baselines. Do
+                # not make a second full-sized copy before
+                # publish_planning_run takes the durable child snapshot; the
+                # baseline aliases stay separate from mutable dose keys and
+                # are never modified by manual edits.
+                dose_grid = np.asarray(baseline_dose)
+                dose_grid_gy = np.asarray(baseline_dose_gy)
                 restored_metrics = copy.deepcopy(baseline_metrics)
+                baseline_dvh = agent.memory.retrieve("algorithm_plan_dvh_data")
+                restored_dvh = copy.deepcopy(
+                    baseline_dvh
+                    if isinstance(baseline_dvh, Mapping)
+                    else restored_metrics.get("dvh_data") or {}
+                )
+                restored_metrics["dvh_data"] = restored_dvh
                 agent.memory.store("manual_seeds", new_seeds)
                 agent.memory.store("manual_needles", new_needles)
                 agent.memory.store("manual_geometry_only", False)
@@ -6142,7 +6166,21 @@ def register_planning_routes(
                 agent.memory.store("dose_distribution_gy", dose_grid_gy)
                 agent.memory.store("dose_metrics", restored_metrics)
                 agent.memory.store("metrics", restored_metrics)
-                agent.memory.store("dvh_data", copy.deepcopy(restored_metrics.get("dvh_data") or {}))
+                agent.memory.store("dvh_data", restored_dvh)
+                restored_artifact_status = {
+                    **dict(agent.memory.retrieve("manual_artifact_status") or {}),
+                    "dose": "ready",
+                    "dvh": "ready",
+                    # The dose/DVH belong to the restored baseline. Screenshots,
+                    # QA and a guide must not be reported as current until
+                    # their own refresh has completed for this child.
+                    "report": "stale",
+                    "quality_check": "stale",
+                    "surgical_guide": "stale",
+                    "reason": "algorithm needle restored",
+                    "updated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+                }
+                agent.memory.store("manual_artifact_status", restored_artifact_status)
                 result = {
                     "success": True,
                     "fast_restore": True,
@@ -6152,6 +6190,7 @@ def register_planning_routes(
                     "total_seeds": len(new_seeds),
                     "num_trajectories": len(new_needles),
                     "metrics": restored_metrics,
+                    "artifact_status": restored_artifact_status,
                     "dose_range": [float(dose_grid_gy.min()), float(dose_grid_gy.max())],
                 }
             else:
@@ -6177,7 +6216,12 @@ def register_planning_routes(
             result["needles"] = new_needles
             result["seeds"] = new_seeds
             result["planning_id"] = planning_id
-            publish_planning_run(agent, result, status="completed")
+            publish_planning_run(
+                agent,
+                result,
+                status="completed",
+                clone_snapshot=not fast_restore,
+            )
             result["event"] = _append_ui_event(session_id, {
                 "type": "manual.needle.restore",
                 "label": f"Restored {needle_id} to algorithm baseline",

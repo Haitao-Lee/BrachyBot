@@ -25,6 +25,19 @@ def test_automatic_baseline_and_restore_contract_are_explicitly_separate():
     assert "algorithm_plan_dose_metrics" in source
     assert "fast_restore" in route
     assert '"dose_recomputed": False' in route
+    assert "clone_snapshot=not fast_restore" in route
+
+
+def test_single_needle_restore_uses_authoritative_response_without_duplicate_scene_reload():
+    from pathlib import Path
+
+    source = Path("web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
+    restore = source.split("async function restoreNeedleToAlgorithm", 1)[1].split(
+        "// Restore a manually dragged seed", 1
+    )[0]
+    assert "await loadSeeds3D();" not in restore
+    assert "await _refreshManualDoseViews(data, wasTexture, { background: true });" in restore
+    assert "await loadAllSlices();" not in restore
 
 
 def test_segmentation_only_requests_do_not_seed_a_planning_progress_item():
