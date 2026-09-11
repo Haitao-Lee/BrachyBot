@@ -1865,7 +1865,7 @@ async function refreshPlanningUI(options = {}) {
             // same visual promise, so screenshots still cannot sample a
             // partially reconstructed scene.
             viewerCompletionPromise.then(async completion => {
-                if (completion?.stale || !isCurrentCase()) return;
+                if (completion?.stale || completion?.success === false || !isCurrentCase()) return;
                 await backgroundReportPromise.catch(() => {});
                 if (!isCurrentCase()) return;
                 const requiredReportAxes = new Set([
@@ -1958,7 +1958,8 @@ async function refreshPlanningUI(options = {}) {
             console.warn('[3D auto-load] camera fit guard:', error);
         }
         try {
-            if (reportCaptureReady
+            if (options.suppressReportFigureCapture !== true
+                && reportCaptureReady
                 && typeof reportAutoFill === 'function') {
                 await reportAutoFill({ sessionId: expectedSessionId });
             }

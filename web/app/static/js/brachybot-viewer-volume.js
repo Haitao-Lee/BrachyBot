@@ -3572,7 +3572,9 @@ function syncSceneAppearanceFromDataTree({ preserveDoseTexture = !!state.doseTex
         if (!mesh || mesh?.userData?.type === 'needle_handle') return;
         const appearance = getDataTreeAppearanceForMesh(id, mesh);
         if (!appearance) return;
-        applyMeshOpacity(mesh, appearance.opacity, appearance.visible);
+        if (!window.__reportCaptureActive) {
+            applyMeshOpacity(mesh, appearance.opacity, appearance.visible);
+        }
         // Vertex colors are the dose surface itself.  Retain them while that
         // mode is active, but restore the user-selected normal-surface color
         // the moment normal rendering is selected again.
@@ -6932,6 +6934,7 @@ function _setNodeViewVisibility(node, view, visible) {
 }
 
 function _apply3DNodeVisibility(node) {
+    if (window.__reportCaptureActive) return;
     if (!node?.id) return;
     const meshId = node.id.startsWith('dose_iso_')
         ? node.id

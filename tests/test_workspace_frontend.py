@@ -38,7 +38,9 @@ def test_chat_ui_state_capture_and_workspace_conflicts_are_non_blocking():
     assert "jsonClone(dataTreeState.expansionState)" not in ui_api
     assert "Optional UI state capture failed; sending request without it" in chat
     assert "workspaceSaveInFlight" in workspace
-    assert "workspaceSaveQueuedReasons" in workspace
+    assert "Promise.resolve(prior).catch(() => false)" in workspace
+    assert "_writeWorkspaceSnapshot(ownerSessionId, reason)" in workspace
+    assert "workspaceSaveQueuedReasons" not in workspace
     assert "for (let attempt = 0; attempt < 2; attempt += 1)" in workspace
     assert 'payload["current_revision"] = current_revision' in routes
     assert '"stale_workspace" if is_stale_revision else "workspace_locked"' in routes
@@ -330,7 +332,7 @@ def test_report_quality_columns_are_persisted_and_auto_fill_is_awaited():
     assert "window.Report.autoFill.fromAll({" in planning
     assert "captureFigures: false" in planning
     assert "window.syncReportQualityAssessment(f, { force: true })" not in shell
-    assert "await Report.autoFill.fromAll()" in planning
+    assert "await Report.autoFill.fromAll({" in planning
 
 
 def test_report_source_restore_is_bound_to_the_selected_session():
@@ -433,8 +435,8 @@ def test_guide_progress_uses_one_clock_and_hides_background_auto_generation():
     assert "const invokeSimpleAsyncHandler = async () =>" in ui_api
     assert "async function executeGenericUIControl" in ui_api
     assert "invokeSimpleAsyncHandler" in ui_api
-    assert "brachybot-chat-todo.js?v=32" in index
-    assert "brachybot-surgical-guide.js?v=19" in index
+    assert re.search(r"brachybot-chat-todo\.js\?v=\d+", index)
+    assert re.search(r"brachybot-surgical-guide\.js\?v=\d+", index)
 
 
 def test_execution_trace_folds_only_after_the_final_reply_is_painted():
@@ -551,10 +553,14 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     assert "restore.fully_interactive" in ui_api
     # Versioned URLs are intentional cache invalidation points. Keep this
     # assertion aligned with the workspace/report artifact restore contract.
-    assert "brachybot-workspace.js?v=44" in index
-    assert "brachybot-ui-api.js?v=69" in index
-    assert "brachybot-viewer-volume.js?v=56" in index
-    assert "brachybot-manual-annotation.js?v=26" in index
+    for filename, minimum in [
+        ("brachybot-workspace.js", 49),
+        ("brachybot-ui-api.js", 77),
+        ("brachybot-viewer-volume.js", 62),
+        ("brachybot-manual-annotation.js", 26),
+    ]:
+        version = re.search(re.escape(filename) + r"\?v=(\d+)", index)
+        assert version and int(version.group(1)) >= minimum
 
 
 def test_case_owned_api_requests_never_use_presentation_placeholders():
@@ -610,7 +616,7 @@ def test_clinical_restore_can_only_close_its_own_hydration_notice():
     """A stale restore must not mutate the loading state of a newer case."""
     ui_api = read("web/app/static/js/brachybot-ui-api.js")
     restore = ui_api.split(
-        "async function restoreActiveSessionWorkspace(options = {})", 1
+        "async function _runWorkspaceRestoreTransaction(options = {})", 1
     )[1].split("window.restoreActiveSessionWorkspace =", 1)[0]
     assert "const hydrationScope = { sessionId: sessionAtStart, runId: hydrationRunId }" in restore
     assert "window.setWorkspaceHydrationState?.(false, '', hydrationScope)" in restore
@@ -794,7 +800,7 @@ def test_chat_connection_placeholder_does_not_claim_a_router_execution():
     assert "title: zh ? '\\u8bf7\\u6c42\\u5206\\u6790' : 'Request analysis'" in chat_todo
     assert "Determining execution path..." in chat_todo
     assert "title: zh ? '\\u591a\\u667a\\u80fd\\u4f53\\u8def\\u7531' : 'Multi-Agent Router'" not in chat_todo
-    assert 'static/js/brachybot-chat-todo.js?v=32' in index
+    assert re.search(r"static/js/brachybot-chat-todo\.js\?v=\d+", index)
 
 
 def test_task_replay_is_deduplicated_and_bound_to_the_original_case():
@@ -873,7 +879,7 @@ def test_workspace_hydration_notice_follows_real_background_completion():
         "function clearScheduledWorkspaceSave", 1
     )[0]
     restore = ui_api.split(
-        "async function restoreActiveSessionWorkspace(options = {})", 1
+        "async function _runWorkspaceRestoreTransaction(options = {})", 1
     )[1].split("window.restoreActiveSessionWorkspace =", 1)[0]
 
     assert "clinicalRestoreOwnsNotice = true" in schedule
@@ -1909,7 +1915,8 @@ def test_monitor_and_guide_controls_have_explicit_runtime_fallbacks():
     assert "color-scheme: dark" in theme_css
     assert ".guide-parameter-grid select.is-empty" in theme_css
     assert "No planned needles available" in guide
-    assert "capability === 'loading' && selected?.value === 'nnunet_pancreatic'" in ui_api
+    assert "capability === 'loading'" in ui_api
+    assert "nnunet_kidney_tumor" in ui_api
     assert "_syncTumorTypeSelectorAppearance();" in ui_api
 
 

@@ -4676,7 +4676,11 @@ async function _restoreActiveSessionWorkspace(options = {}) {
                     skipLabelLoad: true,
                     backgroundRestore: options.background === true,
                     retryPending: true,
-                    autoGenerateGuide: true,
+                    // Restoring a saved case must not manufacture a missing
+                    // guide or launch screenshots against a partial scene.
+                    autoGenerateGuide: false,
+                    suppressReportFigureCapture: true,
+                    captureReportFigures: false,
                     // Planning and label hydration start in parallel during a
                     // cold restore.  Pass the label transaction into the
                     // structural mesh loader so it freezes one complete OAR
@@ -4859,6 +4863,54 @@ function _workspaceVisualReadinessSleep(delayMs) {
 // temporary Data Tree happened to be painted first.  Expose the true visual
 // restore barrier to screenshot/report code while keeping the loading notice
 // non-blocking for ordinary interaction.
+// Validate ownership without applying catalog metadata or reloading a scene.
+// A report command must not turn a read into destructive workspace hydration.
+async function prepareReportSceneRead(sessionId) {
+    const planning = typeof dataTreeState !== 'undefined' ? dataTreeState.planning : null;
+    const planningId = String(planning?.activePlanningId || planning?.id || '');
+    const version = Number(planning?.dataVersion || 0);
+    const fail = (stage, error) => ({ success: false, stage, error });
+    if (!sessionId || !planningId || String(_activeApiSessionId()) !== String(sessionId)) {
+        return fail('report_session_not_ready', '当前病例的规划尚未恢复，未改动当前显示。请等待病例加载完成。');
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000);
+    try {
+        const response = await fetch(API + '/planning/runs', {
+            headers: _planningRunHeaders(sessionId), signal: controller.signal,
+        });
+        const catalog = await response.json();
+        if (!response.ok || response.status === 202 || catalog.success !== true
+            || catalog.hydration_pending === true) {
+            return fail('report_catalog_not_ready', '服务器正在恢复规划记录，暂未生成报告；当前显示已保留。请待恢复完成后重试。');
+        }
+        const run = (catalog.runs || []).find(item => String(item.planning_id) === planningId);
+        const current = dataTreeState.planning;
+        if (String(_activeApiSessionId()) !== String(sessionId)
+            || String(current?.activePlanningId || current?.id || '') !== planningId
+            || Number(current?.dataVersion || 0) !== version
+            || String(catalog.active_planning_id || '') !== planningId
+            || !run || Number(run.data_version || 0) !== version) {
+            return fail('report_planning_changed', '当前显示与服务器的规划版本不一致，未改动当前显示或报告。请完成规划版本加载后重试。');
+        }
+        if (String(run.status).toLowerCase() !== 'completed'
+            || window.__brachybotPlanningRunActive === true) {
+            return fail('report_planning_in_progress', '规划尚未结束，本次不进行报告截图；当前显示已保留。');
+        }
+        // Do not require meshes to be visible: hidden objects remain valid
+        // inputs for the explicit report capture profiles.
+        if (typeof scene3D === 'undefined' || !scene3D.renderer
+            || !Object.keys(scene3D.meshes || {}).length || !state.doseOverlay?.shape) {
+            return fail('report_scene_not_ready', '规划已完成，但报告所需的三维网格或剂量尚未加载。当前显示已保留，请等待资源加载完成。');
+        }
+        return { success: true, planningId, dataVersion: version };
+    } catch (_) {
+        return fail('report_validation_failed', '暂时无法核对服务器的规划记录，未清空当前显示或报告。请检查服务器连接后重试。');
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 window.awaitWorkspaceVisualReady = async function awaitWorkspaceVisualReady(
     sessionId,
     options = {},
@@ -4890,6 +4942,11 @@ window.awaitWorkspaceVisualReady = async function awaitWorkspaceVisualReady(
         entry = store[requestedSession] || null;
     }
 
+    if (options.waitForCompletion === true) {
+        // Scheduler ownership lasts until the actual producers settle. A
+        // slow mesh is not a failed load and must not start another restore.
+        return entry.promise;
+    }
     let timer = null;
     const timeout = new Promise(resolve => {
         timer = setTimeout(() => resolve({
@@ -4907,7 +4964,25 @@ window.awaitWorkspaceVisualReady = async function awaitWorkspaceVisualReady(
     }
 };
 
-async function restoreActiveSessionWorkspace(options = {}) {
+let _workspaceRestoreTransaction = null;
+function restoreActiveSessionWorkspace(options = {}) {
+    const sessionId = String(_activeApiSessionId() || '');
+    const active = _workspaceRestoreTransaction;
+    if (active?.sessionId === sessionId) return active.promise;
+    const transaction = { sessionId, promise: null };
+    _workspaceRestoreTransaction = transaction;
+    // Defer execution until ownership and the shared promise are published.
+    transaction.promise = Promise.resolve().then(() => _runWorkspaceRestoreTransaction(options));
+    transaction.promise.then(async () => {
+        const entry = _workspaceVisualReadinessStore()[sessionId || '__no_session__'];
+        if (entry) await entry.promise;
+    }).catch(() => {}).finally(() => {
+        if (_workspaceRestoreTransaction === transaction) _workspaceRestoreTransaction = null;
+    });
+    return transaction.promise;
+}
+
+async function _runWorkspaceRestoreTransaction(options = {}) {
     const sessionAtStart = String(_activeApiSessionId() || '');
     window.__workspaceHydrationRunId = (window.__workspaceHydrationRunId || 0) + 1;
     const hydrationRunId = window.__workspaceHydrationRunId;
@@ -4922,9 +4997,16 @@ async function restoreActiveSessionWorkspace(options = {}) {
         const token = ++backgroundTaskSequence;
         const kind = String(metadata?.kind || 'viewer_3d');
         pendingBackgroundKinds.set(token, kind);
-        const tracked = Promise.resolve(task).catch(error => {
+        const tracked = Promise.resolve(task).then(result => {
+            if (result?.success === false || result?.stale === true || result?.error) {
+                backgroundTaskFailures.add(token);
+            }
+            return result;
+        }).catch(error => {
             backgroundTaskFailures.add(token);
-            throw error;
+            // Drain failures here; readiness reports them after all producers
+            // settle, without an early unhandled rejection or a new rebuild.
+            return { success: false, error: error?.message || String(error) };
         }).finally(() => {
             pendingBackgroundKinds.delete(token);
             if (!backgroundNoticeTransferred || pendingBackgroundKinds.size === 0) return;
@@ -5051,7 +5133,7 @@ async function restoreActiveSessionWorkspace(options = {}) {
             Promise.allSettled(backgroundTasks).finally(() => {
                 const failedCount = backgroundTaskFailures.size;
                 settleVisualReady({
-                    ready: true,
+                    ready: failedCount === 0,
                     partial: failedCount > 0,
                     failed_tasks: failedCount,
                     reason: failedCount ? 'visual_restore_partial' : 'visual_restore_complete',
@@ -7356,65 +7438,12 @@ async function _executeUIActionRaw(a, options = {}) {
                     };
                 }
             }
-            // Rehydrate the persisted plan into the live viewer/data state.
-            // This is display recovery only; it never reruns segmentation or
-            // planning and it keeps the current report form intact.
-            if (typeof refreshPlanningUI === 'function') {
-                const refreshResult = await refreshPlanningUI({
-                    sessionId: reportSessionId,
-                    retryPending: true,
-                    backgroundRestore: true,
-                    preserveReport: true,
-                    preserveViewerState: true,
-                    autoGenerateGuide: false,
-                    switchToViewers: false,
-                    requireCompletedPlanning: true,
-                    captureReportFigures: false,
-                    // The explicit report command owns the one canonical
-                    // capture pass below.  Do not let the background restore
-                    // callback start a second pass against the same meshes.
-                    suppressReportFigureCapture: true,
-                });
-                const refreshStatus = String(refreshResult?.planningStatus || '').toLowerCase();
-                if (!refreshResult || refreshResult.success !== true
-                    || (refreshStatus && refreshStatus !== 'completed')) {
-                    return {
-                        success: false,
-                        error: refreshResult?.error
-                            || '保存的规划结果尚未完全加载，报告无法安全重生成。请等待病例恢复完成后重试。',
-                        stage: refreshResult?.stage || 'planning_restore_incomplete',
-                    };
-                }
-                reportPlanningId = String(refreshResult?.planningId || '');
-                // backgroundRestore deliberately resolves at the essential
-                // data boundary, while its actual Viewer meshes continue via
-                // backgroundCompletion. Report figures are sampled from those
-                // meshes, so the report action must await that second boundary
-                // instead of racing the asynchronous reconstruction.
-                if (refreshResult?.backgroundCompletion
-                    && typeof refreshResult.backgroundCompletion.then === 'function') {
-                    let timeoutId = null;
-                    const visualCompletion = await Promise.race([
-                        refreshResult.backgroundCompletion,
-                        new Promise(resolve => {
-                            timeoutId = setTimeout(() => resolve({
-                                success: false,
-                                stage: 'viewer_restore_timeout',
-                                error: 'Viewer 恢复超时，报告截图尚未准备完成。请等待 Viewer 加载结束后重试。',
-                            }), 300000);
-                        }),
-                    ]);
-                    if (timeoutId !== null) clearTimeout(timeoutId);
-                    if (visualCompletion?.stale || visualCompletion?.success === false) {
-                        return {
-                            success: false,
-                            error: visualCompletion?.error
-                                || 'Viewer 恢复未完整完成，报告截图未生成。请等待 Viewer 加载结束后重试。',
-                            stage: visualCompletion?.stage || 'viewer_restore_incomplete',
-                        };
-                    }
-                }
-            }
+            // Report generation reads the restored scene. Never invoke the
+            // planning refresh here: it reloads labels and replaces meshes,
+            // even with preserveViewerState, and can race the capture.
+            const preparation = await prepareReportSceneRead(reportSessionId);
+            if (!preparation.success) return preparation;
+            reportPlanningId = preparation.planningId;
             if (typeof Report !== 'undefined' && Report.autoFill) {
                 reportPlanningId = reportPlanningId
                     || (typeof activeReportPlanningId === 'function'

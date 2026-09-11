@@ -726,7 +726,17 @@ window.Report = (function () {
             persist.flush();
             let persisted = true;
             if (typeof window.persistWorkspace === 'function') {
-                persisted = await window.persistWorkspace('report.autofill.completed');
+                // A report command may finish while the last cold-restore
+                // presentation callback is still unwinding.  Its report
+                // payload is already complete and case-owned, so wait for
+                // the serialized save queue instead of treating the prior
+                // restore save's result as this report's result.
+                persisted = await window.persistWorkspace('report.autofill.completed', {
+                    sessionId: expectedSessionId,
+                    allowDuringRestore: true,
+                    waitUntilReady: true,
+                    waitTimeoutMs: 15000,
+                });
             }
             if (!isCurrent()) return { stale: true, applied: 0 };
             audit.log('autoFill.fromAll', '*', null, 'filled');
@@ -738,7 +748,9 @@ window.Report = (function () {
                     success: false,
                     stale: false,
                     applied: serverApplied,
-                    error: 'The report was updated in the browser but could not be saved to the Session.',
+                    error: (typeof window._i18nLang === 'string' && window._i18nLang === 'zh')
+                        ? '报告内容已更新到浏览器，但没有成功保存到当前 Session。病例显示内容未被清除；请保持当前病例不变后重试。'
+                        : 'The report was updated in the browser, but the completed report was not saved to the current Session. The visible case was preserved; keep this case selected and retry.',
                 };
             }
             return {

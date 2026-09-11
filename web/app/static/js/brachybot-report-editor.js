@@ -1172,8 +1172,11 @@ async function autoCaptureReportFigures(options = {}) {
         sessionId: requestedSessionId,
         planningId: requestedPlanningId,
         reportForm: window.reportForm,
+        dataVersion: Number(dataTreeState?.planning?.dataVersion || 0),
         allowTerminalPlanning: options.allowTerminalPlanning === true,
     };
+    const restoreViewer = snapshotReportViewerPresentation();
+    window.__reportCaptureActive = true;
     const promise = _autoCaptureReportFiguresImpl(context);
     _reportCapturePromise = promise;
     let captureResult = null;
@@ -1186,14 +1189,69 @@ async function autoCaptureReportFigures(options = {}) {
         throw error;
     } finally {
         if (_reportCapturePromise === promise) {
+            let restoreError = null;
+            try { await restoreViewer(); }
+            catch (error) { restoreError = error; }
+            finally { window.__reportCaptureActive = false; }
             _reportCaptureUiFinish(context.reportCaptureUiRunId, {
                 failed: !!captureError || captureResult?.success === false,
                 stale: captureResult?.stale === true,
                 captured: context.reportCaptureUiCaptured,
             });
             _reportCapturePromise = null;
+            if (restoreError) throw restoreError;
         }
     }
+}
+
+// Restore presentation on every exit, including a dose-slice timeout. Restore
+// only the original objects in the original session, never a newly loaded case.
+function snapshotReportViewerPresentation() {
+    const sessionId = _currentReportCaptureSessionId();
+    const planningId = _currentReportCapturePlanningId();
+    const slices = { ...state.slices };
+    const overlay = state.doseOverlay;
+    const doseVisible = overlay?.visible;
+    const textureEnabled = !!state.doseTexture?.enabled;
+    const objects = [];
+    const materials = new Map();
+    for (const mesh of Object.values(scene3D.meshes || {})) {
+        mesh?.traverse?.(object => {
+            objects.push({ object, visible: object.visible, renderOrder: object.renderOrder });
+            for (const material of (Array.isArray(object.material) ? object.material : [object.material])) {
+                if (!material || materials.has(material)) continue;
+                materials.set(material, {
+                    opacity: material.opacity, transparent: material.transparent,
+                    depthTest: material.depthTest, depthWrite: material.depthWrite,
+                });
+            }
+        });
+    }
+    return async () => {
+        if (sessionId !== _currentReportCaptureSessionId()
+            || planningId !== _currentReportCapturePlanningId()) return;
+        try {
+            if (textureEnabled !== !!state.doseTexture?.enabled) {
+                await setDoseTextureMode(textureEnabled, { silent: true });
+            }
+        } finally {
+            objects.forEach(({ object, visible, renderOrder }) => {
+                object.visible = visible;
+                object.renderOrder = renderOrder;
+            });
+            materials.forEach((saved, material) => {
+                Object.assign(material, saved);
+                material.needsUpdate = true;
+            });
+            if (state.doseOverlay === overlay && overlay) overlay.visible = doseVisible;
+            for (const [axis, slice] of Object.entries(slices)) {
+                const slider = document.getElementById('slider' + axis.charAt(0).toUpperCase() + axis.slice(1));
+                if (slider) slider.value = slice;
+                updateSlice(axis, slice);
+            }
+            scene3D.requestRender?.(2);
+        }
+    };
 }
 
 async function _autoCaptureReportFiguresImpl(captureContext = {}) {
@@ -1215,6 +1273,8 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
     const isCurrentCapture = () => captureGeneration === _reportCaptureGeneration
         && captureSessionId === _currentReportCaptureSessionId()
         && capturePlanningId === _currentReportCapturePlanningId()
+        && Number(captureContext.dataVersion ?? dataTreeState?.planning?.dataVersion ?? 0)
+            === Number(dataTreeState?.planning?.dataVersion || 0)
         && captureForm === window.reportForm;
     if (!isCurrentCapture()) return { stale: true };
     if (!window.reportForm.figures) window.reportForm.figures = [];
@@ -1989,6 +2049,11 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
     // ═══════════════════════════════════════════════════════════
     let _restoreFigure1State = null;
     try {
+        // Figure 1 is normal anatomy, regardless of the operator's live mode.
+        if (state.doseTexture?.enabled) {
+            const normalMode = await setDoseTextureMode(false, { silent: true });
+            if (!normalMode?.success) throw new Error('Normal surface mode was not prepared');
+        }
         const _meshCount = Object.keys(scene3D.meshes).length;
         if (scene3D.camera && scene3D.controls && scene3D.renderer && _meshCount > 0) {
             uiDebugLog('[Report] Figure 1: starting 3D capture, meshes:', _meshCount);
@@ -2338,7 +2403,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             // Show all models for the overall panel. The focused camera below
             // still limits the frame to the target and its local OAR context.
             for (const [id, mesh] of Object.entries(scene3D.meshes)) {
-                if (mesh) mesh.visible = true;
+                if (mesh) applyMeshVisibility(mesh, true, 1);
             }
             _savedHandleObjects.forEach(({ object }) => { if (object) object.visible = false; });
             const _isFigureOneCtv = (id, mesh) => id === 'ctv' || id.startsWith('ctv_')
@@ -2527,6 +2592,9 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     && (_isFigureOneCtv(id, mesh)
                         || _isFigureOneSeed(id, mesh)
                         || _isFigureOneNeedle(id, mesh));
+                // A restored Group can be visible while its surface child is
+                // hidden. Apply the profile to both, as the live viewer does.
+                applyMeshVisibility(mesh, mesh.visible, 1);
             }
             _savedHandleObjects.forEach(({ object }) => { if (object) object.visible = false; });
             // CTV very translucent so seeds inside are visible
@@ -2650,9 +2718,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
         try { _restoreFigure1State?.(); } catch (restoreError) {
             console.warn('[Report] Figure 1 state restore failed:', restoreError);
         }
-        window.__reportCaptureActive = false;
         if (isCurrentCapture()) {
-            try { window.syncSceneAppearanceFromDataTree?.({ preserveDoseTexture: !!state.doseTexture?.enabled }); } catch (_) {}
             try { _setReportStatus?.('3D viewer restored after report capture', 'info'); } catch (_) {}
         }
     }
@@ -2702,7 +2768,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             // Wait for the requested peak-dose slice itself, not a fixed
             // number of animation frames. On a cache miss the canvas can
             // otherwise still contain the previous slice when captured.
-            await Promise.all(axesCfg.map(cfg => _waitForReportDoseSlice(
+            const doseSlicesReady = await Promise.all(axesCfg.map(cfg => _waitForReportDoseSlice(
                 cfg.ax,
                 Math.max(0, Math.min(
                     parseInt(document.getElementById('slider' + cfg.ax.charAt(0).toUpperCase() + cfg.ax.slice(1))?.max || '200'),
@@ -2710,6 +2776,9 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 )),
             )));
             if (!isCurrentCapture()) return { stale: true };
+            if (doseSlicesReady.some(ready => ready !== true)) {
+                throw new Error('Requested dose slices did not finish rendering; previous report retained');
+            }
 
             // Capture all 3 views
             for (const cfg of axesCfg) {
@@ -2836,6 +2905,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     // only needles/seeds, which was later mistaken for a
                     // swapped Fig 1(b) after restore.
                     mesh.visible = isCtv || isSeed || isNeedle || isDoseSurface;
+                    applyMeshVisibility(mesh, mesh.visible, 1);
                     if (isCtv) applyMeshOpacity(mesh, 0.92, true);
                     if (isDoseSurface) {
                         const opacity = Number(mesh.material?.opacity);
@@ -2855,7 +2925,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     const isDoseSurface = id.startsWith('dose_iso_')
                         || mesh?.userData?.type === 'dose_isosurface';
                     if (isDoseSurface) {
-                        mesh.visible = true;
+                        applyMeshVisibility(mesh, true, 1);
                         return;
                     }
                     const isCtv = id === 'ctv' || id.startsWith('ctv_') || mesh?.userData?.type === 'ctv';
@@ -2863,7 +2933,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     // Needles remain visible, but their long external shafts do
                     // not define the close-up framing box.
                     if (isCtv || isSeed) {
-                        mesh.visible = true;
+                        applyMeshVisibility(mesh, true, 1);
                         try {
                             if (isCtv) ctvBox.expandByObject(mesh);
                             box.expandByObject(mesh);
@@ -2886,6 +2956,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                         const appearance = typeof window.getDataTreeAppearanceForMesh === 'function'
                             ? window.getDataTreeAppearanceForMesh(id, mesh) : null;
                         mesh.visible = isDoseSurface || appearance?.visible !== false;
+                        applyMeshVisibility(mesh, mesh.visible, 1);
                         const localCandidate = candidate.clone().intersect(context);
                         if (mesh.visible && !localCandidate.isEmpty()) box.union(localCandidate);
                     });
@@ -3055,6 +3126,14 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
 
     // Re-render editor + preview
     if (!isCurrentCapture()) return { stale: true };
+    // Never mix a failed recapture with older screenshots under new captions.
+    // All required semantic slots must succeed in this single transaction.
+    const missingAxes = Object.keys(REPORT_FIGURE_CAPTURE_CONTRACTS)
+        .filter(axis => !stagedFigures.some(figure => figure.axis === axis));
+    if (missingAxes.length) {
+        return { success: false, captured: 0, missing: missingAxes,
+            error: '标准报告截图未全部完成，原报告图片及当前显示已保留。缺少：' + missingAxes.join(', ') };
+    }
     if (stagedFigures.length > 0) {
         const replacedAxes = new Set(stagedFigures.map(figure => figure.axis));
         window.reportForm.figures = (window.reportForm.figures || []).filter(figure => (
