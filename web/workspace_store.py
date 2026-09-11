@@ -36,8 +36,14 @@ import numpy as np
 
 WORKSPACE_SCHEMA_VERSION = 1
 DEFAULT_USER_QUOTA_BYTES = int(
-    os.environ.get("BRACHYBOT_USER_STORAGE_QUOTA_BYTES", str(20 * 1024 ** 3))
+    os.environ.get("BRACHYBOT_USER_STORAGE_QUOTA_BYTES", str(40 * 1024 ** 3))
 )
+SESSION_ARCHIVE_AFTER_DAYS = max(
+    1,
+    int(os.environ.get("BRACHYBOT_SESSION_ARCHIVE_AFTER_DAYS", "7")),
+)
+SESSION_ARCHIVE_AFTER_SECONDS = SESSION_ARCHIVE_AFTER_DAYS * 24 * 60 * 60
+DEFAULT_ARCHIVE_ROOT = "<data-root>/Brachytherapy"
 TRASH_RETENTION_SECONDS = int(
     os.environ.get("BRACHYBOT_TRASH_RETENTION_DAYS", "7")
 ) * 24 * 60 * 60
@@ -470,6 +476,10 @@ class WorkspaceNotFound(WorkspaceError):
     """Raised when an account cannot access the requested case session."""
 
 
+class WorkspaceArchived(WorkspaceError):
+    """Raised when a case exists but its data is currently in cold storage."""
+
+
 class WorkspaceLeaseConflict(WorkspaceError):
     """Raised when another browser currently owns the editing lease."""
 
@@ -488,10 +498,14 @@ class WorkspaceSession:
     updated_at: float
     revision: int
     recovery_status: str
+    last_accessed_at: float = 0.0
+    storage_status: str = "active"
+    archived_at: Optional[float] = None
     deleted_at: Optional[float] = None
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> "WorkspaceSession":
+        columns = set(row.keys())
         return cls(
             id=row["id"],
             user_id=row["user_id"],
@@ -501,6 +515,21 @@ class WorkspaceSession:
             updated_at=float(row["updated_at"]),
             revision=int(row["revision"]),
             recovery_status=row["recovery_status"],
+            last_accessed_at=float(
+                row["last_accessed_at"]
+                if "last_accessed_at" in columns and row["last_accessed_at"]
+                else row["updated_at"]
+            ),
+            storage_status=(
+                str(row["storage_status"] or "active")
+                if "storage_status" in columns
+                else "active"
+            ),
+            archived_at=(
+                float(row["archived_at"])
+                if "archived_at" in columns and row["archived_at"] is not None
+                else None
+            ),
             deleted_at=(float(row["deleted_at"]) if row["deleted_at"] is not None else None),
         )
 
@@ -513,6 +542,10 @@ class WorkspaceSession:
             "updated_at": self.updated_at,
             "revision": self.revision,
             "recovery_status": self.recovery_status,
+            "last_accessed_at": self.last_accessed_at,
+            "storage_status": self.storage_status,
+            "archived_at": self.archived_at,
+            "archive_after_days": SESSION_ARCHIVE_AFTER_DAYS,
             "deleted_at": self.deleted_at,
         }
 
@@ -1615,6 +1648,10 @@ class WorkspaceStore:
         self.workspaces_dir = self.runtime_dir / "workspaces"
         self.trash_dir = self.runtime_dir / "trash"
         self.staging_dir = self.runtime_dir / ".staging"
+        archive_config = os.environ.get("BRACHYBOT_ARCHIVE_ROOT", DEFAULT_ARCHIVE_ROOT)
+        self.archive_root = Path(archive_config).expanduser().resolve()
+        self.archive_users_dir = self.archive_root / "users"
+        self.archive_available = False
         self._lock = threading.RLock()
         self._checkpoint_timers: Dict[Tuple[str, str], threading.Timer] = {}
         self._checkpoint_generations: Dict[Tuple[str, str], int] = {}
@@ -1807,6 +1844,24 @@ class WorkspaceStore:
                 os.chmod(directory, 0o700)
             except OSError:
                 pass
+        try:
+            self.archive_users_dir.mkdir(parents=True, exist_ok=True)
+            for directory in (self.archive_root, self.archive_users_dir):
+                try:
+                    os.chmod(directory, 0o700)
+                except OSError:
+                    pass
+            self.archive_available = True
+        except OSError:
+            # A NAS mount may be temporarily unavailable. Do not prevent
+            # normal local case use or server startup; archive operations
+            # will return a clear, recoverable error until it is mounted.
+            self.archive_available = False
+            logger.warning(
+                "Session archive storage is unavailable at %s",
+                self.archive_root,
+                exc_info=True,
+            )
 
     def cleanup_staging(self, *, export_ttl_seconds: int = 24 * 3600, part_ttl_seconds: int = 3600) -> Dict[str, int]:
         """Reclaim staging bytes left by crashed or completed exports.
@@ -1904,7 +1959,10 @@ class WorkspaceStore:
                     updated_at REAL NOT NULL,
                     deleted_at REAL,
                     revision INTEGER NOT NULL DEFAULT 0,
-                    recovery_status TEXT NOT NULL DEFAULT 'ready'
+                    recovery_status TEXT NOT NULL DEFAULT 'ready',
+                    last_accessed_at REAL NOT NULL DEFAULT 0,
+                    storage_status TEXT NOT NULL DEFAULT 'active',
+                    archived_at REAL
                 );
                 CREATE INDEX IF NOT EXISTS idx_case_sessions_user_status
                     ON case_sessions(user_id, status, updated_at DESC);
@@ -1943,6 +2001,41 @@ class WorkspaceStore:
             user_columns = {row[1] for row in connection.execute("PRAGMA table_info(users)").fetchall()}
             if "auth_epoch" not in user_columns:
                 connection.execute("ALTER TABLE users ADD COLUMN auth_epoch INTEGER NOT NULL DEFAULT 0")
+            session_columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(case_sessions)").fetchall()
+            }
+            if "last_accessed_at" not in session_columns:
+                connection.execute(
+                    "ALTER TABLE case_sessions ADD COLUMN last_accessed_at REAL NOT NULL DEFAULT 0"
+                )
+            if "storage_status" not in session_columns:
+                connection.execute(
+                    "ALTER TABLE case_sessions ADD COLUMN storage_status TEXT NOT NULL DEFAULT 'active'"
+                )
+            if "archived_at" not in session_columns:
+                connection.execute(
+                    "ALTER TABLE case_sessions ADD COLUMN archived_at REAL"
+                )
+            # Existing installations predate the activity clock.  Their last
+            # durable update is the safest conservative starting point; this
+            # avoids archiving every historical case on the first deployment.
+            connection.execute(
+                "UPDATE case_sessions SET last_accessed_at = updated_at "
+                "WHERE last_accessed_at IS NULL OR last_accessed_at <= 0"
+            )
+            connection.execute(
+                "UPDATE case_sessions SET storage_status = 'active' "
+                "WHERE storage_status IS NULL OR storage_status = ''"
+            )
+            connection.execute(
+                "UPDATE users SET storage_quota_bytes = ? "
+                "WHERE storage_quota_bytes < ?",
+                (DEFAULT_USER_QUOTA_BYTES, DEFAULT_USER_QUOTA_BYTES),
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_case_sessions_activity "
+                "ON case_sessions(user_id, status, storage_status, last_accessed_at DESC)"
+            )
         for path in (self.database_path, self.database_path.with_name(self.database_path.name + "-wal"), self.database_path.with_name(self.database_path.name + "-shm")):
             if path.exists():
                 try:
@@ -2003,8 +2096,10 @@ class WorkspaceStore:
         clean_title = str(title or "New case").strip()[:160] or "New case"
         with self._connection() as connection:
             connection.execute(
-                "INSERT INTO case_sessions(id, user_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-                (session_id, user_id, clean_title, now, now),
+                "INSERT INTO case_sessions("
+                "id, user_id, title, created_at, updated_at, last_accessed_at, storage_status"
+                ") VALUES (?, ?, ?, ?, ?, ?, 'active')",
+                (session_id, user_id, clean_title, now, now, now),
             )
         try:
             root = self.workspace_root(user_id, session_id, create=True)
@@ -2025,10 +2120,19 @@ class WorkspaceStore:
         where = "user_id = ?" if include_trashed else "user_id = ? AND status = 'active'"
         with self._connection() as connection:
             rows = connection.execute(
-                f"SELECT * FROM case_sessions WHERE {where} ORDER BY updated_at DESC, created_at DESC",
+                f"SELECT * FROM case_sessions WHERE {where} "
+                "ORDER BY last_accessed_at DESC, updated_at DESC, created_at DESC",
                 (user_id,),
             ).fetchall()
         return [WorkspaceSession.from_row(row) for row in rows]
+
+    def active_user_ids(self) -> List[str]:
+        """Return active account IDs for the background archive scanner."""
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT id FROM users WHERE is_active = 1 ORDER BY id"
+            ).fetchall()
+        return [str(row["id"]) for row in rows]
 
     def get_session(self, user_id: str, session_id: str, *, include_trashed: bool = False) -> WorkspaceSession:
         condition = "" if include_trashed else "AND status = 'active'"
@@ -2054,6 +2158,29 @@ class WorkspaceStore:
         self._audit(user_id, session_id, "session.renamed", {"title": clean_title})
         return self.get_session(user_id, session_id)
 
+    def touch_session(self, user_id: str, session_id: str) -> WorkspaceSession:
+        """Reset the cold-storage countdown after a case is selected."""
+        record = self.get_session(user_id, session_id)
+        if record.storage_status == "archived":
+            raise WorkspaceArchived("This case is archived; activate it before opening it")
+        now = _now()
+        with self._connection() as connection:
+            connection.execute(
+                "UPDATE case_sessions SET last_accessed_at = ? "
+                "WHERE id = ? AND user_id = ? AND status = 'active'",
+                (now, session_id, user_id),
+            )
+        return self.get_session(user_id, session_id)
+
+    def require_local_session(self, user_id: str, session_id: str) -> WorkspaceSession:
+        """Resolve an owned case whose durable files are available locally."""
+        record = self.get_session(user_id, session_id)
+        if record.storage_status == "archived":
+            raise WorkspaceArchived(
+                "This case is archived. Activate it before using its data."
+            )
+        return record
+
     def workspace_root(self, user_id: str, session_id: str, *, create: bool = False, trashed: bool = False) -> Path:
         base = self.trash_dir if trashed else self.workspaces_dir
         root = (base / user_id / session_id).resolve()
@@ -2068,6 +2195,31 @@ class WorkspaceStore:
                     os.chmod(child_path, 0o700)
                 except OSError:
                     pass
+            try:
+                os.chmod(root, 0o700)
+            except OSError:
+                pass
+        return root
+
+    def archived_workspace_root(
+        self,
+        user_id: str,
+        session_id: str,
+        *,
+        create: bool = False,
+    ) -> Path:
+        """Return the NAS path for one account-owned archived case."""
+        if not self.archive_available:
+            raise WorkspaceError(
+                f"Session archive storage is unavailable at {self.archive_root}"
+            )
+        root = (
+            self.archive_users_dir / str(user_id) / "sessions" / str(session_id)
+        ).resolve()
+        if self.archive_users_dir.resolve() not in root.parents:
+            raise WorkspaceError("Invalid archived workspace path")
+        if create:
+            root.mkdir(parents=True, exist_ok=True)
             try:
                 os.chmod(root, 0o700)
             except OSError:
@@ -2097,6 +2249,10 @@ class WorkspaceStore:
 
     def load_snapshot(self, user_id: str, session_id: str) -> Dict[str, Any]:
         record = self.get_session(user_id, session_id)
+        if record.storage_status == "archived":
+            raise WorkspaceArchived(
+                "This case is archived. Activate it before loading the workspace."
+            )
         path = self._snapshot_path(user_id, session_id)
         if not path.exists():
             snapshot = self._empty_snapshot(session_id)
@@ -3597,15 +3753,219 @@ class WorkspaceStore:
             if not owner_token or row["owner_token"] != owner_token:
                 raise WorkspaceLeaseConflict("This case is being edited in another browser")
 
+    def has_live_lease(
+        self,
+        user_id: str,
+        session_id: str,
+        *,
+        owner_token: str = "",
+    ) -> bool:
+        """Return whether another live browser is using this case."""
+        self.get_session(user_id, session_id)
+        now = _now()
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT owner_token, expires_at FROM workspace_leases "
+                "WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            if not row:
+                return False
+            if float(row["expires_at"]) <= now:
+                connection.execute(
+                    "DELETE FROM workspace_leases WHERE session_id = ?",
+                    (session_id,),
+                )
+                return False
+            return not owner_token or str(row["owner_token"]) != str(owner_token)
+
+    @staticmethod
+    def _directory_bytes(root: Path) -> int:
+        total = 0
+        if not root.exists():
+            return total
+        for path in root.rglob("*"):
+            if path.is_file():
+                try:
+                    total += int(path.stat().st_size)
+                except OSError:
+                    continue
+        return total
+
+    @staticmethod
+    def _copy_tree_transactional(source: Path, destination: Path) -> None:
+        """Copy a case tree through a private temporary sibling."""
+        if not source.is_dir():
+            raise WorkspaceError("Case workspace data is missing")
+        if destination.exists():
+            raise WorkspaceError("The archive destination already exists")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.parent / (
+            f".{destination.name}.transfer-{secrets.token_hex(8)}"
+        )
+        try:
+            shutil.copytree(source, temporary, copy_function=shutil.copy2)
+            os.replace(temporary, destination)
+        finally:
+            if temporary.exists():
+                shutil.rmtree(temporary, ignore_errors=True)
+
+    def archive_session(
+        self,
+        user_id: str,
+        session_id: str,
+        *,
+        owner_token: str = "",
+    ) -> WorkspaceSession:
+        """Move a local case to NAS cold storage without changing its ID."""
+        record = self.get_session(user_id, session_id)
+        if record.storage_status == "archived":
+            return record
+        if record.recovery_status == "running":
+            raise WorkspaceError("This case is still running a workflow")
+        if self.has_live_lease(
+            user_id,
+            session_id,
+            owner_token=owner_token,
+        ):
+            raise WorkspaceLeaseConflict(
+                "This case is being edited in another browser"
+            )
+        if not self.archive_available:
+            raise WorkspaceError(
+                f"Session archive storage is unavailable at {self.archive_root}"
+            )
+        source = self.workspace_root(user_id, session_id)
+        destination = self.archived_workspace_root(user_id, session_id)
+        copied = False
+        with self._case_guard(user_id, session_id):
+            self._copy_tree_transactional(source, destination)
+            copied = True
+            now = _now()
+            try:
+                with self._connection() as connection:
+                    result = connection.execute(
+                        "UPDATE case_sessions SET storage_status = 'archived', "
+                        "archived_at = ?, revision = revision + 1 "
+                        "WHERE id = ? AND user_id = ? AND status = 'active'",
+                        (now, session_id, user_id),
+                    )
+                    if result.rowcount != 1:
+                        raise WorkspaceError("Case status changed during archive")
+                shutil.rmtree(source)
+                self._invalidate_storage_usage(user_id)
+            except BaseException:
+                if copied and destination.exists() and not source.exists():
+                    try:
+                        self._copy_tree_transactional(destination, source)
+                        shutil.rmtree(destination, ignore_errors=True)
+                    except Exception:
+                        logger.critical(
+                            "Could not roll back failed archive transfer user=%s session=%s",
+                            user_id,
+                            session_id,
+                            exc_info=True,
+                        )
+                raise
+        with self._lock:
+            self._snapshot_cache.pop((str(user_id), str(session_id)), None)
+        self._audit(
+            user_id,
+            session_id,
+            "session.archived",
+            {"title": record.title, "after_days": SESSION_ARCHIVE_AFTER_DAYS},
+        )
+        return self.get_session(user_id, session_id)
+
+    def restore_archived_session(
+        self,
+        user_id: str,
+        session_id: str,
+    ) -> WorkspaceSession:
+        """Restore a cold case to local storage and restart its activity clock."""
+        record = self.get_session(user_id, session_id)
+        if record.storage_status != "archived":
+            return self.touch_session(user_id, session_id)
+        if not self.archive_available:
+            raise WorkspaceError(
+                f"Session archive storage is unavailable at {self.archive_root}"
+            )
+        source = self.archived_workspace_root(user_id, session_id)
+        destination = self.workspace_root(user_id, session_id)
+        if not source.is_dir():
+            raise WorkspaceError("Archived case data is missing from NAS storage")
+        if destination.exists():
+            raise WorkspaceError("The local workspace already exists")
+        size = self._directory_bytes(source)
+        with self._quota_commit_lock(user_id):
+            self.ensure_capacity(user_id, size)
+            with self._lock:
+                quota_key = str(user_id)
+                self._quota_reservations[quota_key] = (
+                    self._quota_reservations.get(quota_key, 0) + size
+                )
+        copied = False
+        try:
+            with self._case_guard(user_id, session_id):
+                self._copy_tree_transactional(source, destination)
+                copied = True
+                now = _now()
+                try:
+                    with self._connection() as connection:
+                        result = connection.execute(
+                            "UPDATE case_sessions SET storage_status = 'active', "
+                            "archived_at = NULL, last_accessed_at = ?, "
+                            "updated_at = ?, revision = revision + 1 "
+                            "WHERE id = ? AND user_id = ? AND status = 'active'",
+                            (now, now, session_id, user_id),
+                        )
+                        if result.rowcount != 1:
+                            raise WorkspaceError("Case status changed during restore")
+                    shutil.rmtree(source)
+                    self._invalidate_storage_usage(user_id)
+                except BaseException:
+                    if copied and destination.exists() and not source.exists():
+                        try:
+                            self._copy_tree_transactional(destination, source)
+                            shutil.rmtree(destination, ignore_errors=True)
+                        except Exception:
+                            logger.critical(
+                                "Could not roll back failed archive restore user=%s session=%s",
+                                user_id,
+                                session_id,
+                                exc_info=True,
+                            )
+                    raise
+        finally:
+            with self._quota_commit_lock(user_id):
+                with self._lock:
+                    remaining = max(
+                        0,
+                        self._quota_reservations.get(str(user_id), 0) - size,
+                    )
+                    if remaining:
+                        self._quota_reservations[str(user_id)] = remaining
+                    else:
+                        self._quota_reservations.pop(str(user_id), None)
+        with self._lock:
+            self._snapshot_cache.pop((str(user_id), str(session_id)), None)
+        self._audit(user_id, session_id, "session.archive_restored", {})
+        return self.get_session(user_id, session_id)
+
     def move_to_trash(self, user_id: str, session_id: str) -> WorkspaceSession:
         record = self.get_session(user_id, session_id)
-        active = self.workspace_root(user_id, session_id)
-        trash = self.workspace_root(user_id, session_id, trashed=True)
-        trash.parent.mkdir(parents=True, exist_ok=True)
-        if active.exists():
-            if trash.exists():
-                shutil.rmtree(trash)
-            shutil.move(str(active), str(trash))
+        # An archived case already lives outside the local quota tree. Keep
+        # that cold copy in place while its DB status moves to the recycle
+        # bin; restore/purge can therefore operate without pulling gigabytes
+        # back onto the local disk.
+        if record.storage_status != "archived":
+            active = self.workspace_root(user_id, session_id)
+            trash = self.workspace_root(user_id, session_id, trashed=True)
+            trash.parent.mkdir(parents=True, exist_ok=True)
+            if active.exists():
+                if trash.exists():
+                    shutil.rmtree(trash)
+                shutil.move(str(active), str(trash))
         now = _now()
         with self._connection() as connection:
             connection.execute(
@@ -3622,13 +3982,14 @@ class WorkspaceStore:
         record = self.get_session(user_id, session_id, include_trashed=True)
         if record.status != "trashed":
             raise WorkspaceError("Only trashed sessions can be restored")
-        trashed = self.workspace_root(user_id, session_id, trashed=True)
-        active = self.workspace_root(user_id, session_id)
-        active.parent.mkdir(parents=True, exist_ok=True)
-        if trashed.exists():
-            if active.exists():
-                raise WorkspaceError("Active workspace already exists")
-            shutil.move(str(trashed), str(active))
+        if record.storage_status != "archived":
+            trashed = self.workspace_root(user_id, session_id, trashed=True)
+            active = self.workspace_root(user_id, session_id)
+            active.parent.mkdir(parents=True, exist_ok=True)
+            if trashed.exists():
+                if active.exists():
+                    raise WorkspaceError("Active workspace already exists")
+                shutil.move(str(trashed), str(active))
         with self._connection() as connection:
             connection.execute(
                 "UPDATE case_sessions SET status = 'active', deleted_at = NULL, updated_at = ?, revision = revision + 1 WHERE id = ? AND user_id = ?",
@@ -3641,7 +4002,13 @@ class WorkspaceStore:
 
     def permanently_delete(self, user_id: str, session_id: str) -> None:
         record = self.get_session(user_id, session_id, include_trashed=True)
-        for root in (self.workspace_root(user_id, session_id), self.workspace_root(user_id, session_id, trashed=True)):
+        roots = (
+            self.workspace_root(user_id, session_id),
+            self.workspace_root(user_id, session_id, trashed=True),
+        )
+        if self.archive_available:
+            roots = roots + (self.archived_workspace_root(user_id, session_id),)
+        for root in roots:
             if root.exists():
                 shutil.rmtree(root)
         # rmtree removed bytes without any write_upload/_write_snapshot book

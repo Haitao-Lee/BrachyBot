@@ -439,9 +439,10 @@ def create_app(config: Optional[Dict] = None):
             if _owner is not None:
                 user = dict(_owner)
                 resolved_session_id = _normalize_session_id(session_id)
-                workspace_store.get_session(user["id"], resolved_session_id)
+                workspace_store.require_local_session(user["id"], resolved_session_id)
             else:
                 user, resolved_session_id = _request_session_context(session_id)
+                workspace_store.require_local_session(user["id"], resolved_session_id)
         except (ValueError, WorkspaceError) as exc:
             logger.warning("Rejected case session: %s", exc)
             return None
@@ -847,17 +848,20 @@ def create_app(config: Optional[Dict] = None):
         """Hydrate a case from a detached worker without a browser cookie."""
         return get_agent(session_id, _owner=user, _lightweight=_lightweight)
 
-    def drop_agent(session_id: str, *, flush: bool = True) -> None:
-        """Drop only the current user's cached agent; durable data remains intact."""
+    def _drop_cached_agent_for_owner(
+        owner_id: str,
+        session_id: str,
+        *,
+        flush: bool = True,
+    ) -> None:
+        """Release one account/case cache without relying on Flask cookies."""
         try:
-            user = current_user(workspace_store)
-            if not user:
-                return
             resolved_session_id = _normalize_session_id(session_id)
-            workspace_store.get_session(user["id"], resolved_session_id)
+            workspace_store.get_session(str(owner_id), resolved_session_id)
         except (WorkspaceError, ValueError):
             return
-        key = (user["id"], resolved_session_id)
+        owner_key = str(owner_id)
+        key = (owner_key, resolved_session_id)
         with _sessions_lock:
             _session_generations[key] = _session_generations.get(key, 0) + 1
             agent = _sessions.pop(key, None)
@@ -874,15 +878,25 @@ def create_app(config: Optional[Dict] = None):
                 if ready_event is not None:
                     ready_event.set()
             if agent is not None and not flush:
-                workspace_store.discard_agent_checkpoint(user["id"], resolved_session_id)
+                workspace_store.discard_agent_checkpoint(owner_key, resolved_session_id)
             if agent is not None and flush:
                 # Dropping the in-memory cache is a control-plane operation;
                 # persist the detached agent asynchronously so switching or
                 # deleting another case stays responsive.
                 workspace_store.schedule_agent_checkpoint(
-                    user["id"], resolved_session_id, agent, "agent.cache_dropped",
+                    owner_key, resolved_session_id, agent, "agent.cache_dropped",
                 )
             _server_support._drop_ui_bucket(resolved_session_id)
+
+    def drop_agent(session_id: str, *, flush: bool = True) -> None:
+        """Drop only the current user's cached agent; durable data remains intact."""
+        try:
+            user = current_user(workspace_store)
+            if not user:
+                return
+            _drop_cached_agent_for_owner(user["id"], session_id, flush=flush)
+        except (WorkspaceError, ValueError):
+            return
 
     def drop_agent_fast(session_id: str) -> None:
         """Drop a deleted case from memory without a blocking final checkpoint.
@@ -892,6 +906,71 @@ def create_app(config: Optional[Dict] = None):
         synchronously serialize a large CT/plan before moving it to trash.
         """
         drop_agent(session_id, flush=False)
+
+    def _archive_inactive_sessions_once() -> None:
+        """Move cold, idle cases to NAS without touching active workflows."""
+        cutoff = time.time() - (
+            int(os.environ.get("BRACHYBOT_SESSION_ARCHIVE_AFTER_DAYS", "7"))
+            * 24
+            * 60
+            * 60
+        )
+        for owner_id in workspace_store.active_user_ids():
+            for entry in workspace_store.list_sessions(owner_id):
+                if entry.storage_status != "active":
+                    continue
+                if entry.last_accessed_at > cutoff or entry.recovery_status == "running":
+                    continue
+                if workspace_store.has_live_lease(owner_id, entry.id):
+                    continue
+                cache_key = (owner_id, entry.id)
+                if _agent_has_running_task(cache_key):
+                    continue
+                with _sessions_lock:
+                    if cache_key in _session_initializers:
+                        continue
+                _drop_cached_agent_for_owner(owner_id, entry.id, flush=False)
+                try:
+                    archived = workspace_store.archive_session(owner_id, entry.id)
+                    logger.info(
+                        "Archived inactive case user=%s session=%s last_accessed_at=%.3f",
+                        owner_id,
+                        archived.id,
+                        archived.last_accessed_at,
+                    )
+                except WorkspaceLeaseConflict:
+                    logger.info(
+                        "Skipped archive because a lease appeared user=%s session=%s",
+                        owner_id,
+                        entry.id,
+                    )
+                except WorkspaceError:
+                    logger.warning(
+                        "Could not archive inactive case user=%s session=%s",
+                        owner_id,
+                        entry.id,
+                        exc_info=True,
+                    )
+
+    if config.get("workspace_maintenance", True):
+        archive_interval = max(
+            300,
+            int(os.environ.get("BRACHYBOT_SESSION_ARCHIVE_SCAN_SECONDS", "3600")),
+        )
+
+        def session_archive_maintenance() -> None:
+            try:
+                _archive_inactive_sessions_once()
+            except Exception:
+                logger.warning("Session archive scan failed", exc_info=True)
+            finally:
+                timer = threading.Timer(archive_interval, session_archive_maintenance)
+                timer.daemon = True
+                timer.start()
+
+        archive_timer = threading.Timer(archive_interval, session_archive_maintenance)
+        archive_timer.daemon = True
+        archive_timer.start()
 
     @app.after_request
     def _checkpoint_mutating_workspace(response):
