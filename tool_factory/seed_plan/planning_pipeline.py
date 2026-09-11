@@ -937,6 +937,74 @@ def _resample_for_planning(ct_image, ctv_mask, oar_mask, new_size=[128, 128, 64]
     return resampled_ct, resampled_ctv_array, resampled_oar_array
 
 
+def _coerce_planning_grid_ct(value, reference_ct, *, source="planning"):
+    """Return a SimpleITK CT image for planning-grid operations.
+
+    ``resampled_ct`` is an image at runtime, but older checkpoints and a few
+    hydration paths persisted it as a NumPy array.  That representation is
+    valid for voxel-only operations, yet it is not valid for SimpleITK filters
+    or the physical-coordinate helpers used by seed placement.  Passing it
+    through to the dose preprocessor produces the opaque
+    ``'numpy.ndarray' object has no attribute 'GetPixelIDValue'`` exception.
+
+    Rebuild the image wrapper from the current CT geometry instead of guessing
+    an identity transform.  The array shape is the planning grid in Z/Y/X
+    order, so its spacing is derived from the current CT physical extent.
+    """
+    if value is None:
+        return None
+
+    # Avoid relying on a concrete SimpleITK proxy class: different builds can
+    # expose the image through different extension types.  These methods are
+    # the stable runtime contract consumed by the planner.
+    if all(hasattr(value, attr) for attr in ("GetSize", "GetSpacing", "GetOrigin", "GetDirection")):
+        return value
+
+    import SimpleITK as sitk
+
+    array = np.asarray(value)
+    if array.ndim != 3 or any(int(size) <= 0 for size in array.shape):
+        raise TypeError(
+            f"{source} planning CT must be a SimpleITK image or a non-empty 3-D array; "
+            f"got {type(value).__name__} with shape {getattr(array, 'shape', None)}"
+        )
+
+    image = sitk.GetImageFromArray(array)
+    if reference_ct is not None and all(
+        hasattr(reference_ct, attr)
+        for attr in ("GetSize", "GetSpacing", "GetOrigin", "GetDirection")
+    ):
+        reference_size_xyz = np.asarray(reference_ct.GetSize(), dtype=np.float64)
+        reference_spacing_xyz = np.asarray(reference_ct.GetSpacing(), dtype=np.float64)
+        target_size_xyz = np.asarray(array.shape[::-1], dtype=np.float64)
+        if (
+            reference_size_xyz.size == 3
+            and reference_spacing_xyz.size == 3
+            and np.all(reference_size_xyz > 0)
+            and np.all(reference_spacing_xyz > 0)
+            and np.all(target_size_xyz > 0)
+        ):
+            image.SetSpacing(
+                tuple((reference_size_xyz * reference_spacing_xyz / target_size_xyz).tolist())
+            )
+        image.SetOrigin(tuple(reference_ct.GetOrigin()))
+        image.SetDirection(tuple(reference_ct.GetDirection()))
+    else:
+        logger.warning(
+            "[%s] Rebuilt an array-backed planning CT without reference geometry; "
+            "using unit spacing and identity direction",
+            source,
+        )
+
+    logger.warning(
+        "[%s] Rebuilt array-backed planning CT as SimpleITK image: type=%s shape=%s",
+        source,
+        type(value).__name__,
+        tuple(int(size) for size in array.shape),
+    )
+    return image
+
+
 def _convert_ref_direc_to_voxel(ref_direc_ras, ct_image):
     """Convert the legacy LPS planning direction to voxel space.
 
@@ -3112,6 +3180,25 @@ class PlanningPipelineTool(BaseTool):
         resampled_ct = agent.memory.retrieve("resampled_ct") if agent else None
         resampled_ctv = agent.memory.retrieve("resampled_ctv") if agent else None
         resampled_oar = agent.memory.retrieve("resampled_oar") if agent else None
+        planning_ct_needs_repair = resampled_ct is not None and not all(
+            hasattr(resampled_ct, attr)
+            for attr in ("GetSize", "GetSpacing", "GetOrigin", "GetDirection")
+        )
+        try:
+            resampled_ct = _coerce_planning_grid_ct(
+                resampled_ct,
+                ct_image,
+                source="trajectory_refine",
+            )
+            if planning_ct_needs_repair and resampled_ct is not None and agent:
+                # Repair legacy/hydrated array state at the boundary so the
+                # next planning stage sees the same physical image contract.
+                agent.memory.store("resampled_ct", resampled_ct)
+        except (TypeError, ValueError) as exc:
+            return ToolResult(
+                success=False,
+                error=f"[trajectory_refine] Invalid planning-grid CT: {exc}",
+            )
         obstacle_labels = set(OBSTACLE_ORGAN_LABELS)
         if resampled_ctv is not None:
             from plans.config import setting
@@ -3275,6 +3362,29 @@ class PlanningPipelineTool(BaseTool):
         resampled_ctv = agent.memory.retrieve("resampled_ctv") if agent else None
         resampled_oar = agent.memory.retrieve("resampled_oar") if agent else None
         radiation_volume = agent.memory.retrieve("radiation_volume") if agent else None
+        planning_ct_needs_repair = resampled_ct is not None and not all(
+            hasattr(resampled_ct, attr)
+            for attr in ("GetSize", "GetSpacing", "GetOrigin", "GetDirection")
+        )
+
+        # A legacy checkpoint may restore the planning CT as an ndarray while
+        # the trajectory stages still work on its voxel values.  Normalize the
+        # type before any SimpleITK filter or physical-coordinate transform is
+        # called.  This is the boundary that prevents the observed
+        # GetPixelIDValue failure during seed optimization.
+        try:
+            resampled_ct = _coerce_planning_grid_ct(
+                resampled_ct,
+                ct_image,
+                source="seed_planning",
+            )
+            if planning_ct_needs_repair and resampled_ct is not None and agent:
+                agent.memory.store("resampled_ct", resampled_ct)
+        except (TypeError, ValueError) as exc:
+            return ToolResult(
+                success=False,
+                error=f"[seed_planning] Invalid planning-grid CT: {exc}",
+            )
 
         if resampled_ct is None or resampled_ctv is None:
             logger.info("Resampled data missing, re-running resampling...")
@@ -3296,6 +3406,20 @@ class PlanningPipelineTool(BaseTool):
                 agent.memory.store("resampled_ctv", resampled_ctv)
                 agent.memory.store("resampled_oar", resampled_oar)
                 agent.memory.store("radiation_volume", radiation_volume)
+
+        # Keep the contract explicit in case a custom integration replaces the
+        # resampler or a concurrent hydration publishes an older array value.
+        try:
+            resampled_ct = _coerce_planning_grid_ct(
+                resampled_ct,
+                ct_image,
+                source="seed_planning",
+            )
+        except (TypeError, ValueError) as exc:
+            return ToolResult(
+                success=False,
+                error=f"[seed_planning] Invalid planning-grid CT: {exc}",
+            )
 
         # Always refresh the volume immediately before seed optimization so a
         # Data tree category change is honored without restarting the session.
@@ -3618,6 +3742,48 @@ class PlanningPipelineTool(BaseTool):
                     rl_fallback_reason = "disabled"
                 elif rl_target_coverage + 1e-6 >= float(args.DVH_rate):
                     rl_fallback_reason = "rl_reached_target"
+            # Do not turn an empty optimizer result into a successful empty
+            # plan.  ``optimal_plan`` intentionally returns [] when every
+            # candidate fails seed placement; publishing that result would
+            # make the UI report a completed plan with zero seeds and would
+            # hide the actual planning failure from the operator.
+            raw_seed_count = sum(
+                len(entry[1] or [])
+                for entry in (plan_res or [])
+                if isinstance(entry, (list, tuple)) and len(entry) >= 2
+            )
+            if not plan_res or raw_seed_count <= 0:
+                target_voxels = int(
+                    np.count_nonzero(
+                        np.asarray(radiation_volume)
+                        == args.radiation_array_params['target_value']
+                    )
+                )
+                logger.error(
+                    "[seed_planning] optimizer returned no seed placements: "
+                    "candidates=%d target_voxels=%d",
+                    len(trajectories or []),
+                    target_voxels,
+                )
+                if preview_emitter is not None:
+                    preview_emitter.complete("seed_planning", status="error")
+                return ToolResult(
+                    success=False,
+                    error=(
+                        "[seed_planning] The dose optimizer could not place any valid seeds "
+                        f"on {len(trajectories or [])} safety-filtered trajectories "
+                        f"(target voxels: {target_voxels}). No empty plan was published; "
+                        "check target depth, seed spacing, and the current non-traversable mask policy."
+                    ),
+                    metadata={
+                        "step_executed": "seed_planning",
+                        "total_seeds": 0,
+                        "num_trajectories": len(trajectories or []),
+                        "target_voxels": target_voxels,
+                        "planning_grid_ct_type": type(resampled_ct).__name__,
+                    },
+                )
+
             # Shared, bounded coverage repair for both rule and RL plans.
             # Trials reuse the full world-space needle validator and dose model.
             from plans.coverage_repair import repair_coverage
@@ -3707,7 +3873,16 @@ class PlanningPipelineTool(BaseTool):
                     for seed_dose in entry[2]:
                         sum_image += seed_dose
         except Exception as e:
-            logger.error(f"Planning failed: {e}")
+            logger.error(
+                "Planning failed: %s (planning_grid_ct=%s, ctv_grid=%s, "
+                "oar_grid=%s, radiation_volume=%s, trajectories=%d)",
+                e,
+                type(resampled_ct).__name__,
+                type(resampled_ctv).__name__,
+                type(resampled_oar).__name__ if resampled_oar is not None else "None",
+                getattr(radiation_volume, "shape", None),
+                len(trajectories or []),
+            )
             import traceback
             traceback.print_exc()
             if rl_status is not None:
@@ -3717,7 +3892,14 @@ class PlanningPipelineTool(BaseTool):
                 )
             if preview_emitter is not None:
                 preview_emitter.complete("seed_planning", status="error")
-            return ToolResult(success=False, error=f"[seed_planning] Planning algorithm failed: {e}")
+            return ToolResult(
+                success=False,
+                error=(
+                    "[seed_planning] Planning algorithm failed: "
+                    f"{e}. Planning-grid CT type={type(resampled_ct).__name__}; "
+                    "no seed plan was published."
+                ),
+            )
 
         if rl_status is not None:
             _finalize_rl_status()
@@ -3950,6 +4132,23 @@ class PlanningPipelineTool(BaseTool):
 
         # Get resampled CT for resampling dose back to original space
         resampled_ct = agent.memory.retrieve("resampled_ct") if agent else None
+        planning_ct_needs_repair = resampled_ct is not None and not all(
+            hasattr(resampled_ct, attr)
+            for attr in ("GetSize", "GetSpacing", "GetOrigin", "GetDirection")
+        )
+        try:
+            resampled_ct = _coerce_planning_grid_ct(
+                resampled_ct,
+                ct_image,
+                source="dose_calc",
+            )
+            if planning_ct_needs_repair and resampled_ct is not None and agent:
+                agent.memory.store("resampled_ct", resampled_ct)
+        except (TypeError, ValueError) as exc:
+            return ToolResult(
+                success=False,
+                error=f"[dose_calc] Invalid planning-grid CT: {exc}",
+            )
 
         # Dose is in normalized units (no Gy conversion)
         plan_config = agent.memory.retrieve("plan_config") or {} if agent else {}
