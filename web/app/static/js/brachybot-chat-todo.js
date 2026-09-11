@@ -3061,7 +3061,14 @@ async function sendChat(prefill, options) {
         // has entered the agent pipeline. The two entries below are local UI
         // state only; their stable ids are reconciled with the first genuine
         // server trace events instead of being retained as fake history.
-        if (!isInternalFollowup && !isResumingTask && typeof createLiveThinkingChain === 'function') {
+        //
+        // A resumed task is different: its first journal event may already
+        // have been consumed by the previous browser connection.  Waiting for
+        // a new `step` event then leaves the independent Progress dock visible
+        // with no Execution Trace at all.  Create the trace immediately for
+        // resumed visible tasks and seed it from the durable trace when one is
+        // available; subsequent replayed events still reconcile in place.
+        if (!isInternalFollowup && typeof createLiveThinkingChain === 'function') {
             if (thinkingEl && typeof removeThinkingIndicator === 'function') {
                 removeThinkingIndicator(thinkingEl);
                 thinkingEl = null;
@@ -3069,30 +3076,51 @@ async function sendChat(prefill, options) {
             const r = createLiveThinkingChain(
                 window._caseChainStartedAt[turnSessionId],
                 turnRequestId,
+                turnIdentity.responseLanguage,
             );
             chainEl = r.chainEl; stepsDiv = r.stepsDiv; headerEl = r.headerEl;
-            const zh = isChineseTurn();
-            steps.push(
-                {
-                    id: optimisticTraceStepIds.user,
-                    type: 'user',
-                    title: zh ? '\u7528\u6237\u8bf7\u6c42' : 'User input',
-                    status: 'done',
-                    content: text,
-                },
-                {
-                    id: optimisticTraceStepIds.router,
-                    type: 'thinking',
-                    // This row is a client-side connection placeholder.  It
-                    // must not claim that the multi-agent router ran: local
-                    // policy may execute the request directly, and a delayed
-                    // handshake can otherwise leave a misleading "router
-                    // pending" row in the error trace.
-                    title: zh ? '\u8bf7\u6c42\u5206\u6790' : 'Request analysis',
-                    status: 'pending',
-                    content: zh ? '\u6b63\u5728\u786e\u5b9a\u6267\u884c\u8def\u5f84\u2026' : 'Determining execution path...',
-                },
-            );
+            const restoredTrace = isResumingTask
+                && typeof window.findSessionMessageByIdentity === 'function'
+                ? window.findSessionMessageByIdentity(
+                    turnSessionId,
+                    '',
+                    turnRequestId,
+                    'thinking',
+                )
+                : null;
+            const restoredSteps = Array.isArray(restoredTrace?.steps)
+                ? restoredTrace.steps
+                    .map(step => typeof window._traceStepForDisplay === 'function'
+                        ? window._traceStepForDisplay(step, turnSessionId, turnIdentity.responseLanguage)
+                        : step)
+                    .filter(Boolean)
+                : [];
+            if (restoredSteps.length) {
+                steps.push(...restoredSteps);
+            } else {
+                const zh = isChineseTurn();
+                steps.push(
+                    {
+                        id: optimisticTraceStepIds.user,
+                        type: 'user',
+                        title: zh ? '\u7528\u6237\u8bf7\u6c42' : 'User input',
+                        status: 'done',
+                        content: text,
+                    },
+                    {
+                        id: optimisticTraceStepIds.router,
+                        type: 'thinking',
+                        // This row is a client-side connection placeholder.  It
+                        // must not claim that the multi-agent router ran: local
+                        // policy may execute the request directly, and a delayed
+                        // handshake can otherwise leave a misleading "router
+                        // pending" row in the error trace.
+                        title: zh ? '\u8bf7\u6c42\u5206\u6790' : 'Request analysis',
+                        status: 'pending',
+                        content: zh ? '\u6b63\u5728\u786e\u5b9a\u6267\u884c\u8def\u5f84\u2026' : 'Determining execution path...',
+                    },
+                );
+            }
             steps.forEach((step, index) => appendStepToChain?.(stepsDiv, step, index));
             updateChainHeader?.(headerEl, steps);
             window._brachyLiveTrace = {

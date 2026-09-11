@@ -1589,6 +1589,21 @@ def test_background_snapshot_restore_cannot_clear_live_task_identity():
     assert "skipChat: true" in ui_api
 
 
+def test_chat_restore_cannot_erase_the_live_execution_trace():
+    """A workspace repaint must not leave Progress without its trace."""
+    core = read("web/app/static/js/brachybot-chat-core.js")
+    chat = read("web/app/static/js/brachybot-chat-todo.js")
+
+    assert "const liveTrace = window._brachyLiveTrace;" in core
+    assert "const ownsActiveChatTask = requestedSessionId" in core
+    assert "const ownsVisibleTodo = todo" in core
+    assert "if (liveChain?.isConnected || thinkingRow || ownsVisibleTodo)" in core
+    assert "The stream owns the live DOM for its turn." in core
+    assert "A resumed task is different" in chat
+    assert "window.findSessionMessageByIdentity" in chat
+    assert "turnIdentity.responseLanguage," in chat
+
+
 def test_brain_indicator_uses_unknown_until_a_hydrated_agent_reports():
     ui_api = read("web/app/static/js/brachybot-ui-api.js")
     chat = read("web/app/static/js/brachybot-chat-todo.js")

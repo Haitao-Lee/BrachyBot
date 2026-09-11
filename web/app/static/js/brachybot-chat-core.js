@@ -819,6 +819,46 @@ function loadSessionChat(id) {
         .find(message => message && message.type === 'user' && typeof message.content === 'string');
     window._lastUserMessage = lastUserMessage?.content || '';
     const container = document.getElementById('chatMessages');
+
+    // Workspace hydration and case snapshots can arrive while the selected
+    // case still has an active chat task.  Repainting the transcript in that
+    // window used to call `innerHTML = ''` and remove the live execution
+    // trace, while the independent Progress dock kept running.  The result
+    // was exactly the contradictory UI shown by users: Progress says
+    // "OAR segmentation" is active, but the chat area contains only the
+    // user bubble.
+    //
+    // The stream owns the live DOM for its turn.  Keep it authoritative until
+    // the turn reaches a terminal state; the durable transcript is still
+    // updated above and will be rendered on the next ordinary repaint.  If a
+    // snapshot already removed the trace node, reattach its original row
+    // instead of manufacturing a second trace with a new timer.
+    const liveTrace = window._brachyLiveTrace;
+    const liveTraceSessionId = String(liveTrace?.sessionId || '');
+    const requestedSessionId = String(id || '');
+    const activeTaskSessionId = String(window._activeChatTaskSessionId || '');
+    const ownsActiveChatTask = requestedSessionId
+        && requestedSessionId === String(activeSessionId || '')
+        && (liveTraceSessionId === requestedSessionId || activeTaskSessionId === requestedSessionId)
+        && (window._chatTurnActive || window._chatStreaming || !!window._activeChatRequestId);
+    if (ownsActiveChatTask) {
+        const liveChain = liveTrace?.chainEl;
+        const liveRow = liveChain?.closest?.('.chat-row') || liveChain;
+        const thinkingRow = container.querySelector('#thinkingRow');
+        const todo = window._activeTodoApi;
+        const todoDock = document.getElementById('chatTodoDock');
+        const ownsVisibleTodo = todo
+            && String(todo._sessionId || '') === requestedSessionId
+            && todoDock
+            && todoDock.contains(todo.root);
+        if (liveRow && !liveRow.isConnected) container.appendChild(liveRow);
+        if (liveChain?.isConnected || thinkingRow || ownsVisibleTodo) {
+            const title = document.getElementById('chatSessionTitle');
+            if (title) title.textContent = session.messages.length > 0 ? session.title : 'New conversation';
+            scrollToBottom(true);
+            return;
+        }
+    }
     container.innerHTML = '';
     if (session.messages.length === 0) {
         const welcome = window._t
