@@ -1994,6 +1994,13 @@ var manualPlanningState = {
     _doseRecomputePromise: null,
     _doseRecomputeJob: null,
     _doseAbortController: null,
+    // A needle replan has a second, case-owned transaction after DoseUNet:
+    // wait for the compact Viewer refresh, regenerate a previously existing
+    // guide, and recapture the report.  Newer edits fence older work out.
+    backgroundDoseViewerRefresh: null,
+    postReplanSequence: 0,
+    postReplanOwnerSessionId: '',
+    postReplanPromise: null,
 };
 
 function _activeApiSessionId() {

@@ -336,6 +336,39 @@ def test_manual_needle_replan_rebuilds_authoritative_seed_meshes():
     assert "_syncSeedsOverlayFromDataTree();" in refresh_body
 
 
+def test_manual_needle_replan_refreshes_downstream_artifacts_in_order():
+    manual = _read("web/app/static/js/brachybot-3d-manual.js")
+    guide = _read("web/app/static/js/brachybot-surgical-guide.js")
+
+    # The dose response is not the end of a needle replan.  The browser must
+    # wait for the new Viewer frame, then update the guide, and only then let
+    # the canonical report capture publish figures for the new Planning.
+    assert "async function _refreshManualReplanArtifacts" in manual
+    orchestration = manual.split("async function _refreshManualReplanArtifacts", 1)[1].split(
+        "async function _runManualDoseJob", 1
+    )[0]
+    assert "backgroundDoseViewerRefresh" in orchestration
+    assert "ensureSurgicalGuideForCurrentPlan" in orchestration
+    assert "forceRegenerate: true" in orchestration
+    assert "captureFigures: true" in orchestration
+    assert orchestration.index("backgroundDoseViewerRefresh") < orchestration.index(
+        "ensureSurgicalGuideForCurrentPlan"
+    )
+    assert orchestration.index("ensureSurgicalGuideForCurrentPlan") < orchestration.index(
+        "Report.autoFill.fromAll"
+    )
+    assert "report: reportUpdated ? 'ready' : 'stale'" in orchestration
+    assert "requestSequence" in manual
+
+    # A prior guide is remembered and removed before the new dose request;
+    # cases without a guide are not auto-populated with one.
+    assert "prepareSurgicalGuideForManualReplan" in manual
+    assert "regenerateForManualPlan" in manual
+    assert "manualPlanGuideRefreshRequested" in guide
+    assert "forceRegenerate" in guide
+    assert "planningId: options.planningId || null" in guide
+
+
 def test_manual_replan_has_stable_id_change_detection_and_deadline_guard():
     source = _read("web/server_support.py")
     assert "stable needle id first" in source

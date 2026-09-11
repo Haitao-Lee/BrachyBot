@@ -426,7 +426,9 @@ def test_manual_dose_marks_the_backend_commit_before_slow_viewer_hydration():
     root = __import__("pathlib").Path(__file__).resolve().parents[1]
     source = (root / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
 
-    assert "_refreshManualDoseViews(data, wasDoseTextureEnabled, { background: true })" in source
+    assert "_refreshManualDoseViews(data, wasDoseTextureEnabled, {" in source
+    assert "background: true," in source
+    assert "requestSequence," in source
     assert "manualPlanningState.backgroundDoseViewerRefresh = refreshPromise" in source
 
 
