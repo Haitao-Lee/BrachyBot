@@ -43,7 +43,7 @@ function _syncSeedsOverlayFromDataTree() {
 
 function _deepestSeedForNeedle(needle) {
     if (!needle || !Array.isArray(needle.points) || needle.points.length < 2) return null;
-    const entry = new THREE.Vector3(..._vec3Array(needle.points[1]));
+    const entry = new THREE.Vector3(..._vec3Array(needle.points[needle.points.length - 1]));
     const target = new THREE.Vector3(..._vec3Array(needle.points[0]));
     const direction = new THREE.Vector3().subVectors(target, entry);
     const length2 = direction.lengthSq();
@@ -51,10 +51,16 @@ function _deepestSeedForNeedle(needle) {
     let deepest = null;
     let deepestParam = -Infinity;
     (dataTreeState?.planning?.seeds || []).forEach(seed => {
-        if (_normalizeTrajectoryId(seed.trajectory_id) !== _normalizeTrajectoryId(needle.trajectory_id)) return;
+        if (!_manualOwnersMatch(seed, needle)) return;
         const position = new THREE.Vector3(..._vec3Array(seed.position || seed.pos));
         const param = position.clone().sub(entry).dot(direction) / length2;
-        if (Number.isFinite(param) && param > deepestParam) {
+        if (!Number.isFinite(param) || param < -1e-3 || param > 1.0 + 1e-3) return;
+        const projected = entry.clone().add(direction.clone().multiplyScalar(param));
+        // A stale/restored seed can have a plausible scalar projection while
+        // still being several millimetres away from the line. Do not let such
+        // a seed redefine the editable endpoint or the drag target.
+        if (projected.distanceTo(position) > 1e-3) return;
+        if (param > deepestParam) {
             deepestParam = param;
             deepest = seed;
         }
@@ -77,6 +83,8 @@ function _moveDeepestSeedWithInternalEndpoint(needle, position) {
         stateSeed.position = coordinates;
         stateSeed.pos = coordinates;
     }
+    const direction = _manualSeedDirectionForNeedle(seed, needle);
+    if (direction) seed.direction = direction;
     const mesh = _makeSeedMesh(seed);
     if (mesh) _upsertSceneMesh(seed.id, mesh);
 }
@@ -158,7 +166,16 @@ function _manualPayload(options = {}) {
         payload.previous_needles = _cloneNeedleGeometry(
             options.previousNeedles || _manualDoseBaselineNeedles()
         );
-        if (options.previousSnapshot) payload.previous_snapshot = options.previousSnapshot;
+        if (options.previousSnapshot) {
+            payload.previous_snapshot = options.previousSnapshot;
+            // Endpoint 0 is rendered at the deepest seed and the drag handler
+            // moves that seed optimistically with the handle. Send the
+            // pre-edit seed list as the reprojection source so the backend
+            // never projects a new coordinate through the old line.
+            if (Array.isArray(options.previousSnapshot.seeds)) {
+                payload.previous_seeds = _cloneManualSeeds(options.previousSnapshot.seeds);
+            }
+        }
     }
     // Seed edits need the exact pre-edit list so the server can replace only
     // the moved source contribution in the cached dose field. Do not infer
@@ -230,6 +247,45 @@ function _dedupeManualTrajectories(trajectories) {
     return [...byId.values()];
 }
 
+function _manualOwnerKeys(record) {
+    const values = [record?.id, record?.needle_id, record?.trajectory_id];
+    const keys = new Set();
+    values.forEach(value => {
+        if (value === null || value === undefined || value === '') return;
+        const raw = String(value).trim();
+        if (!raw) return;
+        keys.add(raw);
+        keys.add(_normalizeTrajectoryId(raw));
+    });
+    return keys;
+}
+
+function _manualOwnersMatch(seed, needle) {
+    const seedKeys = _manualOwnerKeys(seed);
+    const needleKeys = _manualOwnerKeys(needle);
+    return [...seedKeys].some(key => needleKeys.has(key));
+}
+
+function _manualNeedleEndpointIndex(needle, displayPointIndex) {
+    if (displayPointIndex === 0) return 0;
+    return Math.max(0, (needle?.points?.length || 2) - 1);
+}
+
+function _manualSeedDirectionForNeedle(seed, needle) {
+    const points = needle?.points || [];
+    if (points.length < 2) return null;
+    const direction = new THREE.Vector3(..._vec3Array(points[0]))
+        .sub(new THREE.Vector3(..._vec3Array(points[points.length - 1])));
+    if (direction.lengthSq() < 1e-8) return null;
+    direction.normalize();
+    const existing = seed?.direction || seed?.dir;
+    if (Array.isArray(existing) && existing.length >= 3) {
+        const previous = new THREE.Vector3(..._vec3Array(existing));
+        if (previous.lengthSq() > 1e-8 && previous.dot(direction) < 0) direction.negate();
+    }
+    return [direction.x, direction.y, direction.z];
+}
+
 /**
  * Find the freest position along a needle for a newly added seed.
  *
@@ -242,7 +298,7 @@ function _dedupeManualTrajectories(trajectories) {
  */
 function _findFreeSeedSlotOnNeedle(needle) {
     const p0 = new THREE.Vector3(..._vec3Array(needle.points[0]));
-    const p1 = new THREE.Vector3(..._vec3Array(needle.points[1]));
+    const p1 = new THREE.Vector3(..._vec3Array(needle.points[needle.points.length - 1]));
     const length = p0.distanceTo(p1);
     if (!(length > 1e-6)) return null;
     const dir = new THREE.Vector3().subVectors(p0, p1).divideScalar(length);
@@ -267,7 +323,7 @@ function _findFreeSeedSlotOnNeedle(needle) {
     );
     const minGapMm = seedLengthMm + 2 * seedRadiusMm + 0.5;
     const existingFracs = (dataTreeState.planning.seeds || [])
-        .filter(seed => seed.trajectory_id === needle.trajectory_id && Array.isArray(seed.position))
+        .filter(seed => _manualOwnersMatch(seed, needle) && Array.isArray(seed.position))
         .map(seed => {
             const pos = new THREE.Vector3(..._vec3Array(seed.position));
             return pos.sub(p1).dot(dir) / length;
@@ -534,7 +590,7 @@ function _applyAuthoritativeManualSeeds(data) {
                 ...old,
                 id: trajectoryId,
                 index: old.index ?? index,
-                entry: needle.points[1],
+                entry: needle.points[needle.points.length - 1],
                 target: needle.points[0],
                 visible: old.visible !== false,
                 visible2D: old.visible2D !== false,
@@ -776,7 +832,7 @@ function _findFreeNeedleSlot(baseCenter, dir) {
     const distanceToNearest = candidate => {
         let nearest = Infinity;
         for (const line of existingLines) {
-            const a = new THREE.Vector3(..._vec3Array(line.points[1]));
+            const a = new THREE.Vector3(..._vec3Array(line.points[line.points.length - 1]));
             const ab = new THREE.Vector3(..._vec3Array(line.points[0])).sub(a);
             const denom = Math.max(1e-9, ab.lengthSq());
             const t = THREE.MathUtils.clamp(candidate.clone().sub(a).dot(ab) / denom, 0, 1);
@@ -819,7 +875,7 @@ async function addManualNeedle() {
     let dir = new THREE.Vector3();
     if (plannedNeedle) {
         const p0 = _vec3Array(plannedNeedle.points[0]);
-        const p1 = _vec3Array(plannedNeedle.points[1]);
+        const p1 = _vec3Array(plannedNeedle.points[plannedNeedle.points.length - 1]);
         dir = new THREE.Vector3(...p1).sub(new THREE.Vector3(...p0)).normalize();
     }
     if (dir.length() < 1e-6) {
@@ -857,7 +913,7 @@ async function addManualNeedle() {
         dataTreeState.planning.trajectories.push({
             id: trajId,
             index: dataTreeState.planning.trajectories.length,
-            entry: needle.points[1],
+            entry: needle.points[needle.points.length - 1],
             target: needle.points[0],
             visible: true,
             opacity: 0.8,
@@ -979,7 +1035,7 @@ async function addManualSeed(targetNeedleId = null, options = {}) {
     }
     manualPlanningState.activeNeedleId = needle.id;
     const p0 = new THREE.Vector3(..._vec3Array(needle.points[0]));
-    const p1 = new THREE.Vector3(..._vec3Array(needle.points[1]));
+    const p1 = new THREE.Vector3(..._vec3Array(needle.points[needle.points.length - 1]));
     const dir = new THREE.Vector3().subVectors(p0, p1).normalize();
     // Pick the freest position along the needle instead of a fixed midpoint
     // spread. A completed plan usually fills its needles, so the previous
@@ -1515,8 +1571,25 @@ async function _runManualDoseJob(job) {
             return null;
         }
         if (!manualPlanningState.doseRecomputeQueued) {
-            _setManualDoseProgress('error', _manualText(`重新规划失败：${e.message}`, `Replanning failed: ${e.message}`));
-            addChat('error', _manualText(`手动 AI 剂量计算失败：${e.message}`, `Manual AI dose failed: ${e.message}`));
+            const spacingDetails = e?.code === 'manual_seed_interference'
+                ? _seedInterferenceDetails(e?.authoritative?.interference || {})
+                : { zh: '', en: '' };
+            const zhDetails = spacingDetails.zh ? ` ${spacingDetails.zh}。` : '';
+            const enDetails = spacingDetails.en ? ` ${spacingDetails.en}.` : '';
+            _setManualDoseProgress(
+                'error',
+                _manualText(
+                    `重新规划失败：${e.message}${zhDetails}`,
+                    `Replanning failed: ${e.message}${enDetails}`,
+                ),
+            );
+            addChat(
+                'error',
+                _manualText(
+                    `手动 AI 剂量计算失败：${e.message}${zhDetails}`,
+                    `Manual AI dose failed: ${e.message}${enDetails}`,
+                ),
+            );
         }
         return null;
     } finally {
@@ -1679,17 +1752,15 @@ async function onManualSeedEdited(seedId, position, rollbackSeeds = null, option
     }
     const seed = dataTreeState.planning.seeds.find(s => s.id === seedId);
     const needle = seed
-        ? dataTreeState.planning.needles.find(n => _normalizeTrajectoryId(n.trajectory_id) === _normalizeTrajectoryId(seed.trajectory_id))
+        ? dataTreeState.planning.needles.find(n => _manualOwnersMatch(seed, n))
         : null;
     const projected = needle ? _projectPointOntoNeedle(position, needle) : _vec3Array(position);
     if (seed) {
         seed.position = projected;
         seed.pos = projected;
         if (needle && needle.points.length >= 2) {
-            const direction = new THREE.Vector3(..._vec3Array(needle.points[0]))
-                .sub(new THREE.Vector3(..._vec3Array(needle.points[1])))
-                .normalize();
-            seed.direction = [direction.x, direction.y, direction.z];
+            const direction = _manualSeedDirectionForNeedle(seed, needle);
+            if (direction) seed.direction = direction;
         }
         _upsertSceneMesh(seed.id, _makeSeedMesh(seed));
     }
@@ -1824,14 +1895,20 @@ async function onManualSeedEdited(seedId, position, rollbackSeeds = null, option
     }
 }
 
-async function onManualNeedleHandleEdited(handle) {
+async function onManualNeedleHandleEdited(handle, preEditSnapshot = null) {
     const needleId = handle?.userData?.needleId;
     const pointIndex = handle?.userData?.pointIndex;
     const needle = dataTreeState.planning.needles.find(n => n.id === needleId);
     if (!needle || pointIndex === undefined) return;
-    const previousNeedles = _manualDoseBaselineNeedles();
-    const previousSnapshot = _cloneManualPlanningSnapshot();
-    needle.points[pointIndex] = [handle.position.x, handle.position.y, handle.position.z];
+    // The endpoint drag moves the deepest seed optimistically during
+    // pointermove. Use the snapshot captured at pointerdown when available;
+    // taking it here would already contain the post-drag seed coordinate.
+    const previousSnapshot = preEditSnapshot || _cloneManualPlanningSnapshot();
+    const previousNeedles = Array.isArray(previousSnapshot?.needles)
+        ? _cloneManualNeedles(previousSnapshot.needles)
+        : _manualDoseBaselineNeedles();
+    const endpointIndex = _manualNeedleEndpointIndex(needle, pointIndex);
+    needle.points[endpointIndex] = [handle.position.x, handle.position.y, handle.position.z];
     // Point 0 is the intrabody endpoint. Keep it physically attached to the
     // deepest seed by moving that seed with the endpoint; otherwise a valid
     // 3D seed/needle plan can become visibly inconsistent after an edit.
@@ -1840,7 +1917,7 @@ async function onManualNeedleHandleEdited(handle) {
     _syncNeedleHandles(needle);
     _syncSeedsOverlayFromDataTree();
     renderDataTree();
-    const hasSeeds = dataTreeState.planning.seeds.some(s => s.trajectory_id === needle.trajectory_id);
+    const hasSeeds = dataTreeState.planning.seeds.some(s => _manualOwnersMatch(s, needle));
     if (!hasSeeds) {
         try {
             const committed = await _persistNeedleGeometryOnly({
@@ -3100,6 +3177,7 @@ function init3DScene() {
     let pendingSeedStart = null;
     let pendingSeedTimer = null;
     let seedDragRollback = null;
+    let needleDragRollback = null;
     let needleDragMoved = false;
     let seedDragMoved = false;
     let hoveredInternalNeedleId = null;
@@ -3129,6 +3207,7 @@ function init3DScene() {
         }
         pendingNeedleHandle = null;
         pendingNeedleStart = null;
+        needleDragRollback = null;
         if (!isDragging) {
             scene3D.controls.enabled = true;
             interactionCanvas.style.cursor = 'grab';
@@ -3209,6 +3288,9 @@ function init3DScene() {
         selectedObject = obj;
         pendingNeedleHandle = obj;
         pendingNeedleStart = { x: event.clientX, y: event.clientY };
+        // Capture the complete pre-drag geometry before pointermove can move
+        // the deepest seed together with the visual endpoint handle.
+        needleDragRollback = _cloneManualPlanningSnapshot();
         needleDragMoved = false;
         if (typeof setNeedleInteractionHighlight === 'function') setNeedleInteractionHighlight(obj.userData.needleId, true);
         scene3D.controls.enabled = false;
@@ -3461,8 +3543,7 @@ function init3DScene() {
             );
             const needle = seed
                 ? dataTreeState.planning.needles.find(
-                    item => _normalizeTrajectoryId(item.trajectory_id)
-                        === _normalizeTrajectoryId(seed.trajectory_id),
+                    item => _manualOwnersMatch(seed, item),
                 )
                 : null;
             if (needle && needle.points?.length >= 2) {
@@ -3493,13 +3574,32 @@ function init3DScene() {
         if (selectedObject.userData.type === 'needle_handle') {
             const needle = dataTreeState.planning.needles.find(n => n.id === selectedObject.userData.needleId);
             if (needle) {
-                needle.points[selectedObject.userData.pointIndex] = [
+                const endpointIndex = _manualNeedleEndpointIndex(
+                    needle,
+                    selectedObject.userData.pointIndex,
+                );
+                // Resolve the deepest seed against the pre-edit line before
+                // changing endpoint 0. Once the line is changed, the old
+                // seed is intentionally off-line until this move is applied,
+                // so the attachment check must not be asked to find it on the
+                // new line.
+                if (selectedObject.userData.pointIndex === 0) {
+                    _moveDeepestSeedWithInternalEndpoint(needle, selectedObject.position);
+                }
+                needle.points[endpointIndex] = [
                     selectedObject.position.x,
                     selectedObject.position.y,
                     selectedObject.position.z,
                 ];
                 if (selectedObject.userData.pointIndex === 0) {
-                    _moveDeepestSeedWithInternalEndpoint(needle, selectedObject.position);
+                    const movedSeed = _deepestSeedForNeedle(needle);
+                    const direction = movedSeed
+                        ? _manualSeedDirectionForNeedle(movedSeed, needle)
+                        : null;
+                    if (movedSeed && direction) {
+                        movedSeed.direction = direction;
+                        _upsertSceneMesh(movedSeed.id, _makeSeedMesh(movedSeed));
+                    }
                 }
                 // Rebuild only the shaft preview. Handles remain untouched so
                 // the selected endpoint stays draggable throughout the move.
@@ -3613,9 +3713,11 @@ function init3DScene() {
                 seedDragRollback = null;
                 seedDragMoved = false;
             } else if (finishedObject && finishedObject.userData.type === 'needle_handle' && needleDragMoved) {
+                const preEditSnapshot = needleDragRollback;
+                needleDragRollback = null;
                 addChat('system', `Needle endpoint updated for ${finishedObject.userData.needleId}.`);
                 if (typeof onManualNeedleHandleEdited === 'function') {
-                    onManualNeedleHandleEdited(finishedObject).catch(e => console.warn('manual needle edit failed:', e));
+                    onManualNeedleHandleEdited(finishedObject, preEditSnapshot).catch(e => console.warn('manual needle edit failed:', e));
                 }
             }
         }
@@ -3685,8 +3787,7 @@ function init3DScene() {
             : null;
         const ownerNeedle = seedRecord
             ? dataTreeState.planning.needles.find(
-                needle => _normalizeTrajectoryId(needle.trajectory_id)
-                    === _normalizeTrajectoryId(seedRecord.trajectory_id),
+                needle => _manualOwnersMatch(seedRecord, needle),
             )
             : null;
 
@@ -9554,7 +9655,7 @@ function showNeedleSeeds(needleId) {
     if (!needle) return;
     // Find all seeds on this trajectory
     const trajId = needle.trajectory_id;
-    const seedsOnNeedle = dataTreeState.planning.seeds.filter(s => s.trajectory_id === trajId);
+    const seedsOnNeedle = dataTreeState.planning.seeds.filter(s => _manualOwnersMatch(s, needle));
     addChat('system', `📍 **Needle ${needleId}**\n- Points: ${needle.points.length}\n- Trajectory: ${trajId}\n- Seeds: ${seedsOnNeedle.length}`);
 
     // Highlight all seeds on this needle
@@ -9571,7 +9672,7 @@ function setNeedleVisibilityFrom3D(needleId, visible) {
         _setNeedleHandlesVisibility(needleId, needle.visible, needle.opacity ?? 0.8);
     }
     dataTreeState.planning.seeds
-        .filter(seed => seed.trajectory_id === needle.trajectory_id)
+        .filter(seed => _manualOwnersMatch(seed, needle))
         .forEach(seed => {
             seed.visible = !!visible;
             const seedMesh = scene3D.meshes[seed.id];
@@ -9593,7 +9694,7 @@ function setNeedleOpacityFrom3D(needleId, opacity) {
         _setNeedleHandlesVisibility(needleId, needle.visible !== false, value);
     }
     dataTreeState.planning.seeds
-        .filter(seed => seed.trajectory_id === needle.trajectory_id)
+        .filter(seed => _manualOwnersMatch(seed, needle))
         .forEach(seed => {
             seed.opacity = Math.max(0.15, value);
             const seedMesh = scene3D.meshes[seed.id];

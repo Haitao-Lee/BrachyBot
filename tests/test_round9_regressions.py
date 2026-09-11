@@ -272,7 +272,7 @@ class Round9RegressionTests(unittest.TestCase):
         self.assertIn("const scheduleManualOverlayRedraw", manual)
         self.assertIn("window.addEventListener('blur', finishManualDrag)", manual)
         self.assertIn("const preview = _makeNeedleMesh(needle)", manual)
-        self.assertIn("onManualNeedleHandleEdited(finishedObject)", manual)
+        self.assertIn("onManualNeedleHandleEdited(finishedObject, preEditSnapshot)", manual)
 
     def test_report_recaptures_restore_the_user_camera(self):
         report = self.read("web/app/static/js/brachybot-report-editor.js")

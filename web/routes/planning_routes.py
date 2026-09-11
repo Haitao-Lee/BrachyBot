@@ -10,6 +10,7 @@ import re
 import threading
 import time
 from datetime import datetime
+from functools import wraps
 from typing import Any, Dict, Mapping, Optional
 from uuid import uuid4
 
@@ -672,6 +673,9 @@ _build_plan_advice = _server_support._build_plan_advice
 _build_system_readiness = _server_support._build_system_readiness
 _compute_manual_ai_dose = _server_support._compute_manual_ai_dose
 _seed_interference_report = _server_support._seed_interference_report
+_effective_manual_seeds_for_interference = _server_support._effective_manual_seeds_for_interference
+_manual_geometry_keys = _server_support._manual_geometry_keys
+_manual_dose_transaction_lock = _server_support._manual_dose_transaction_lock
 _decode_png_data_url = _server_support._decode_png_data_url
 _make_screenshot_url = _server_support._make_screenshot_url
 _resolve_output_path = _server_support._resolve_output_path
@@ -1420,6 +1424,7 @@ def _normalize_manual_seed_records(
     """Project submitted seeds onto their owning needle's valid implant span."""
     settings = _manual_seed_geometry_settings(memory)
     needle_by_trajectory = {}
+    needle_canonical_trajectory = {}
     for needle in needles or []:
         if not isinstance(needle, dict):
             continue
@@ -1437,7 +1442,12 @@ def _normalize_manual_seed_records(
         length = float(np.linalg.norm(axis))
         if length <= settings["length_mm"] + 1e-6:
             continue
-        needle_by_trajectory[trajectory_id] = (start, end, axis, length)
+        geometry = (start, end, axis, length)
+        for key in _manual_geometry_keys(
+            needle.get("id"), needle.get("needle_id"), needle.get("trajectory_id")
+        ):
+            needle_by_trajectory[key] = geometry
+            needle_canonical_trajectory[key] = trajectory_id
 
     normalized = []
     seen_ids = set()
@@ -1450,28 +1460,59 @@ def _normalize_manual_seed_records(
         if seed_id in seen_ids:
             raise ValueError(f"Duplicate seed id: {seed_id}")
         seen_ids.add(seed_id)
-        trajectory_id = str(seed.get("trajectory_id") or "").strip()
-        needle_geometry = needle_by_trajectory.get(trajectory_id)
+        seed_keys = _server_support._manual_geometry_key_order(
+            seed.get("needle_id"), seed.get("trajectory_id")
+        )
+        trajectory_key = next(
+            (key for key in seed_keys if key in needle_by_trajectory),
+            None,
+        )
+        needle_geometry = needle_by_trajectory.get(trajectory_key)
         if needle_geometry is None:
             raise ValueError(f"Seed {seed_id} has no valid owning needle")
+        trajectory_id = needle_canonical_trajectory.get(
+            trajectory_key,
+            str(seed.get("trajectory_id") or seed.get("needle_id") or "").strip(),
+        )
         position = np.asarray(seed.get("position") or seed.get("pos"), dtype=np.float64).reshape(-1)[:3]
         if position.size != 3 or not np.all(np.isfinite(position)):
             raise ValueError(f"Seed {seed_id} has an invalid position")
 
         start, _end, axis, length = needle_geometry
-        unit = axis / length
-        distance_mm = float(np.dot(position - start, unit))
+        position_unit = axis / length
+        direction_unit = position_unit.copy()
+        # Preserve the existing seed's axial orientation when an automatic
+        # plan or a legacy import already carries one.  The endpoints alone
+        # do not tell us which sign the DoseUNet map was trained with, because
+        # historical records use both directions for the same physical line.
+        # New/imported seeds without a usable direction keep the endpoint
+        # convention as their default.
+        seed_direction = None
+        try:
+            raw_direction = np.asarray(
+                seed.get("direction") or seed.get("dir"),
+                dtype=np.float64,
+            ).reshape(-1)[:3]
+            if raw_direction.size == 3 and np.all(np.isfinite(raw_direction)):
+                direction_norm = float(np.linalg.norm(raw_direction))
+                if direction_norm > 1e-8:
+                    seed_direction = raw_direction / direction_norm
+        except (TypeError, ValueError):
+            seed_direction = None
+        if seed_direction is not None and float(np.dot(seed_direction, direction_unit)) < 0.0:
+            direction_unit = -direction_unit
+        distance_mm = float(np.dot(position - start, position_unit))
         half_length = settings["length_mm"] * 0.5
         distance_mm = float(np.clip(distance_mm, half_length, length - half_length))
         implant_step = settings["implant_step_mm"]
         if implant_step > 0.0:
             distance_mm = half_length + round((distance_mm - half_length) / implant_step) * implant_step
             distance_mm = float(np.clip(distance_mm, half_length, length - half_length))
-        projected = start + unit * distance_mm
+        projected = start + position_unit * distance_mm
         normalized.append({
             "id": seed_id,
             "position": projected.tolist(),
-            "direction": unit.tolist(),
+            "direction": direction_unit.tolist(),
             "trajectory_id": trajectory_id,
             "visible": seed.get("visible", True) is not False,
             "opacity": float(seed.get("opacity", 1.0) or 1.0),
@@ -2550,6 +2591,24 @@ def register_planning_routes(
         except WorkspaceError:
             return _ui_session_id("web")
         return _ui_session_id(session_id)
+
+    def serialize_manual_dose_request(view):
+        """Serialize expensive manual dose edits per selected case.
+
+        The frontend queues edits, but a second tab or a retrying proxy can
+        still submit two equal-version requests. A case-scoped lock keeps the
+        version check, Planning fork, invalidation, DoseUNet run, and publish
+        operation atomic relative to another edit for the same case. Other
+        cases keep running concurrently.
+        """
+        @wraps(view)
+        def wrapped(*args, **kwargs):
+            data = request.get_json(silent=True) or {}
+            session_id = request_ui_session_id(data)
+            lock = _manual_dose_transaction_lock(session_id)
+            with lock:
+                return view(*args, **kwargs)
+        return wrapped
 
     def task_workspace_owner() -> Optional[str]:
         """Return the server-derived owner key for transient progress tasks."""
@@ -5022,6 +5081,7 @@ def register_planning_routes(
     @app.route("/api/manual_planning/update", methods=["POST"])
     @require_api_key
     @rate_limit
+    @serialize_manual_dose_request
     def api_manual_planning_update():
         """Update manual world-coordinate seeds/needles and recompute DoseUNet dose."""
         data = request.get_json() or {}
@@ -5035,6 +5095,7 @@ def register_planning_routes(
         reason = data.get("reason") or "manual_update"
         previous_needles = data.get("previous_needles") or []
         previous_seeds = data.get("previous_seeds") if "previous_seeds" in data else None
+        previous_snapshot = data.get("previous_snapshot") if isinstance(data.get("previous_snapshot"), dict) else None
         reproject_seeds = bool(data.get("reproject_seeds")) or reason in {"needle_drag", "manual_replan"}
         safety_override = _manual_safety_override_requested(data)
         preserve_geometry_on_failure = (
@@ -5045,7 +5106,52 @@ def register_planning_routes(
         # Never let such a path launch expensive dose inference for a geometry
         # that the manual-edit contract would have rejected. The check occurs
         # before forking a Planning child or invalidating any current result.
-        interference = _seed_interference_report(agent, seeds, needles)
+        # For a needle drag, validate the same reprojected seed coordinates
+        # that _compute_manual_ai_dose will use.  The raw payload still holds
+        # the old positions until that projection happens, so validating it
+        # here creates false "overlapping" rejections when the moved needle
+        # has clear space in its new location.
+        current_snapshot = _current_planning_snapshot(agent)
+        current_version = int(agent.memory.retrieve("manual_plan_version") or 0)
+        submitted_version = data.get("planning_version")
+        if submitted_version is not None:
+            try:
+                submitted_version = int(submitted_version)
+            except (TypeError, ValueError):
+                return jsonify({
+                    "success": False,
+                    "error": "planning_version must be an integer",
+                    "code": "invalid_manual_plan_version",
+                }), 400
+            # Manual dose requests are expensive and can finish out of order
+            # when the operator drags two endpoints quickly.  Reject an old
+            # payload before it forks a child Planning or invalidates the
+            # current dose.  The browser can then repaint the authoritative
+            # snapshot and never lets a late request overwrite a newer edit.
+            if submitted_version != current_version:
+                return jsonify({
+                    "success": False,
+                    "error": "The planning data changed before this dose update was committed.",
+                    "code": "stale_manual_plan",
+                    "planning_id": active_planning_id(agent.memory),
+                    "planning_version": current_version,
+                    "seeds": list(current_snapshot.get("seeds") or []),
+                    "needles": list(current_snapshot.get("needles") or []),
+                    "artifact_status": agent.memory.retrieve("manual_artifact_status") or {},
+                }), 409
+        safety_seeds, safety_reprojection_count = _effective_manual_seeds_for_interference(
+            agent,
+            seeds,
+            needles,
+            previous_needles=previous_needles,
+            previous_seeds=previous_seeds,
+            previous_snapshot=previous_snapshot,
+            reproject_seeds=reproject_seeds,
+        )
+        interference = _seed_interference_report(agent, safety_seeds, needles)
+        if reproject_seeds and safety_reprojection_count:
+            interference["validated_after_reprojection"] = True
+            interference["reprojected_seed_count"] = safety_reprojection_count
         if interference.get("status") == "attention" and not safety_override:
             current = _current_planning_snapshot(agent)
             return jsonify({
@@ -5082,6 +5188,7 @@ def register_planning_routes(
             previous_dose = agent.memory.retrieve(previous_dose_key)
         planning_id = None
         created_new_planning = False
+        previous_manual_version = current_version
         try:
             # A completed Planning is immutable. The first dose/replan edit
             # creates a child draft; repeated edits while that draft is open
@@ -5089,6 +5196,12 @@ def register_planning_routes(
             # drag/click.
             planning_id = fork_planning_run(agent, reason=str(reason))
             created_new_planning = str(planning_id) != str(previous_planning_id or "")
+            # A needle replan is a new geometry revision. Reserve that
+            # revision before the expensive inference so a second request
+            # waiting on the case lock cannot be accepted with the same
+            # version and publish over this transaction.
+            if reproject_seeds:
+                agent.memory.store("manual_plan_version", current_version + 1)
             invalidate_planning_dependents(agent.memory, reason=str(reason))
             checkpoint_operation(
                 agent,
@@ -5107,6 +5220,7 @@ def register_planning_routes(
                 needles,
                 previous_needles=previous_needles,
                 previous_seeds=previous_seeds,
+                previous_snapshot=previous_snapshot,
                 previous_dose=previous_dose,
                 reproject_seeds=reproject_seeds,
             )
@@ -5200,6 +5314,11 @@ def register_planning_routes(
                     created_new_planning=created_new_planning,
                     error=e,
                 )
+                if reproject_seeds:
+                    # The failed drag was not committed. Restore the version
+                    # that the parent/draft had before this transaction so a
+                    # retry is not falsely rejected as stale.
+                    agent.memory.store("manual_plan_version", previous_manual_version)
             checkpoint_operation(
                 agent,
                 "interrupted",
@@ -5236,6 +5355,7 @@ def register_planning_routes(
     @app.route("/api/manual_planning/update_geometry", methods=["POST"])
     @require_api_key
     @rate_limit
+    @serialize_manual_dose_request
     def api_manual_planning_update_geometry():
         """Persist moved needle geometry without recomputing dose.
 
@@ -5506,6 +5626,7 @@ def register_planning_routes(
     @app.route("/api/manual_planning/delete_needle", methods=["POST"])
     @require_api_key
     @rate_limit
+    @serialize_manual_dose_request
     def api_manual_planning_delete_needle():
         """Delete one Needle and its dependent Seeds as a topology mutation.
 
@@ -5661,6 +5782,7 @@ def register_planning_routes(
     @app.route("/api/manual_planning/update_seeds", methods=["POST"])
     @require_api_key
     @rate_limit
+    @serialize_manual_dose_request
     def api_manual_planning_update_seeds():
         """Commit seed geometry without using dose recomputation as persistence.
 

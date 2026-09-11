@@ -2441,6 +2441,20 @@ function _makeNeedleMesh(needle) {
     return mesh;
 }
 
+function _viewerNeedleOwnersMatch(seed, needle) {
+    const normalize = value => {
+        const raw = String(value ?? '').trim();
+        if (!raw) return '';
+        if (/^\d+$/.test(raw)) return `traj_${Number(raw) + 1}`;
+        return raw;
+    };
+    const seedKeys = [seed?.id, seed?.needle_id, seed?.trajectory_id]
+        .map(normalize).filter(Boolean);
+    const needleKeys = [needle?.id, needle?.needle_id, needle?.trajectory_id]
+        .map(normalize).filter(Boolean);
+    return seedKeys.some(key => needleKeys.includes(key));
+}
+
 // Keep the rendered intrabody endpoint physically attached to the deepest
 // seed on the same trajectory.  The stored algorithm line remains untouched;
 // this helper only defines the display geometry and therefore cannot alter the
@@ -2450,13 +2464,12 @@ function _needleDisplayPoints(needle) {
         .map(p => new THREE.Vector3(..._vec3Array(p)))
         .filter(p => Number.isFinite(p.x + p.y + p.z));
     if (raw.length < 2) return raw;
-    const entry = raw[1].clone();
+    const entry = raw[raw.length - 1].clone();
     const target = raw[0].clone();
     const direction = new THREE.Vector3().subVectors(target, entry);
     const length2 = direction.lengthSq();
-    const trajectoryId = _normalizeTrajectoryId(needle.trajectory_id);
     const seeds = (dataTreeState?.planning?.seeds || [])
-        .filter(seed => _normalizeTrajectoryId(seed.trajectory_id) === trajectoryId)
+        .filter(seed => _viewerNeedleOwnersMatch(seed, needle))
         .map(seed => new THREE.Vector3(..._vec3Array(seed.position || seed.pos)))
         .filter(point => Number.isFinite(point.x + point.y + point.z));
     if (!seeds.length || length2 < 1e-8) return [target, entry];
@@ -2464,7 +2477,13 @@ function _needleDisplayPoints(needle) {
     let deepestParam = -Infinity;
     seeds.forEach(seed => {
         const param = new THREE.Vector3().subVectors(seed, entry).dot(direction) / length2;
-        if (Number.isFinite(param) && param > deepestParam) {
+        if (!Number.isFinite(param) || param < -1e-3 || param > 1.0 + 1e-3) return;
+        const projected = entry.clone().add(direction.clone().multiplyScalar(param));
+        // Do not let a stale seed that merely projects deepest onto the line
+        // redefine the displayed endpoint. The display shaft must remain
+        // attached to an actual seed on the physical needle.
+        if (projected.distanceTo(seed) > 1e-3) return;
+        if (param > deepestParam) {
             deepestParam = param;
             deepest = seed;
         }
