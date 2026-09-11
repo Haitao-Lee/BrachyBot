@@ -1005,6 +1005,36 @@ def _coerce_planning_grid_ct(value, reference_ct, *, source="planning"):
     return image
 
 
+def _planning_grid_array(value, *, source="planning grid"):
+    """Return a planning-grid value as a validated Z/Y/X NumPy array.
+
+    The resampling stage deliberately keeps CT as a SimpleITK image because
+    it carries physical geometry, while CTV/OAR labels are stored as NumPy
+    arrays for fast voxel operations.  A few downstream paths need either
+    representation, so never pass a label array through
+    ``sitk.GetArrayFromImage``.  SimpleITK raises the misleading
+    ``GetPixelIDValue`` AttributeError for that type mismatch.
+    """
+    if value is None:
+        return None
+
+    if isinstance(value, np.ndarray):
+        array = value
+    elif hasattr(value, "GetSize") and hasattr(value, "GetPixelID"):
+        import SimpleITK as sitk
+
+        array = sitk.GetArrayFromImage(value)
+    else:
+        array = np.asarray(value)
+
+    if array.ndim != 3 or any(int(size) <= 0 for size in array.shape):
+        raise TypeError(
+            f"{source} must be a non-empty 3-D array or SimpleITK image; "
+            f"got {type(value).__name__} with shape {getattr(array, 'shape', None)}"
+        )
+    return np.asarray(array)
+
+
 def _convert_ref_direc_to_voxel(ref_direc_ras, ct_image):
     """Convert the legacy LPS planning direction to voxel space.
 
@@ -3847,7 +3877,14 @@ class PlanningPipelineTool(BaseTool):
 
             repair_organs = np.zeros(radiation_volume.shape, dtype=bool)
             if resampled_oar is not None:
-                repair_organs = sitk.GetArrayFromImage(resampled_oar) > 0
+                # ``_resample_for_planning`` returns OAR as a NumPy label grid,
+                # unlike the CT grid which remains a SimpleITK image.  Do not
+                # feed the label array into SimpleITK: that produces the
+                # opaque ``GetPixelIDValue`` failure after optimization.
+                repair_organs = _planning_grid_array(
+                    resampled_oar,
+                    source="seed_planning OAR grid",
+                ) > 0
             repair_organs &= radiation_volume != args.radiation_array_params['target_value']
             repair_budget = min(30.0, max(0.0, 0.1 * (time.monotonic() - optimization_started)))
             try:

@@ -10,6 +10,7 @@ from tool_factory.seed_plan.planning_pipeline import (
     PlanningPipelineTool,
     _coerce_planning_grid_ct,
     _filter_world_safe_trajectories,
+    _planning_grid_array,
 )
 
 
@@ -119,6 +120,18 @@ def test_array_backed_planning_ct_is_rebuilt_with_current_physical_geometry():
         outputMaximum=3000,
     )
     assert normalized.GetSize() == repaired.GetSize()
+
+
+def test_planning_grid_array_accepts_numpy_oar_without_simpleitk_conversion():
+    """OAR labels are arrays; converting them must not call GetPixelIDValue."""
+    import SimpleITK as sitk
+
+    oar = np.zeros((4, 5, 6), dtype=np.int32)
+    oar[1, 2, 3] = 10000
+    assert np.array_equal(_planning_grid_array(oar, source="test OAR"), oar)
+
+    image = sitk.GetImageFromArray(oar)
+    assert np.array_equal(_planning_grid_array(image, source="test OAR image"), oar)
 
 
 def test_seed_planning_repairs_array_grid_before_dose_optimizer():
