@@ -16,7 +16,12 @@ from web.routes.planning_routes import (
     _serialize_manual_plan,
     _submitted_manual_needles,
 )
-from web.server_support import _manual_grid_array, _seed_interference_report
+from web.server_support import (
+    _effective_manual_seeds_for_interference,
+    _manual_grid_array,
+    _reproject_seeds_onto_needles,
+    _seed_interference_report,
+)
 
 
 class Memory:
@@ -104,6 +109,166 @@ def test_seed_interference_uses_finite_cylinder_clearance_and_trajectory_owner()
     assert report["close_pairs"][0]["first_needle_id"] == "traj_1"
     assert report["close_pairs"][0]["axis_distance_mm"] == 0.2
     assert report["close_pairs"][0]["risk"] == "overlap"
+
+
+def test_needle_replan_validates_reprojected_seeds_not_stale_payload_positions():
+    """A moved needle must be checked after its seeds follow the new line."""
+    memory = Memory({
+        "plan_config": {
+            "seed_info": {
+                "length": 4.5,
+                "radius": 0.4,
+                "minimum_clearance_mm": 0.5,
+            },
+        },
+    })
+    agent = SimpleNamespace(memory=memory)
+    previous_needles = [
+        {"id": "needle_a", "trajectory_id": "traj_1", "points": [[0, 0, 0], [0, 0, 20]]},
+        {"id": "needle_b", "trajectory_id": "traj_2", "points": [[0.2, 0, 0], [0.2, 0, 20]]},
+    ]
+    moved_needles = [
+        {"id": "needle_a", "trajectory_id": "traj_1", "points": [[5, 0, 0], [5, 0, 20]]},
+        previous_needles[1],
+    ]
+    raw_seeds = [
+        {"id": "seed_a", "trajectory_id": "traj_1", "position": [0, 0, 10], "direction": [0, 0, 1]},
+        {"id": "seed_b", "trajectory_id": "traj_2", "position": [0.2, 0, 10], "direction": [0, 0, 1]},
+    ]
+
+    raw_report = _seed_interference_report(agent, raw_seeds, moved_needles)
+    effective, reprojection_count = _effective_manual_seeds_for_interference(
+        agent,
+        raw_seeds,
+        moved_needles,
+        previous_needles=previous_needles,
+        reproject_seeds=True,
+    )
+    effective_report = _seed_interference_report(agent, effective, moved_needles)
+
+    assert raw_report["status"] == "attention"
+    assert reprojection_count == 1
+    assert np.allclose(effective[0]["position"], [5.0, 0.0, 10.0])
+    assert effective_report["status"] == "clear"
+
+
+def test_needle_replan_uses_pre_edit_seeds_and_display_endpoint_contract():
+    """A clipped visual endpoint must not reproject from the mutated seed."""
+    previous_needles = [{
+        "id": "needle_1",
+        "trajectory_id": "traj_1",
+        # The stored algorithm line extends 10 mm beyond the deepest seed.
+        "points": [[0.0, 0.0, 30.0], [0.0, 0.0, 0.0]],
+    }]
+    moved_needles = [{
+        "id": "needle_1",
+        "trajectory_id": "traj_1",
+        "points": [[5.0, 0.0, 20.0], [5.0, 0.0, 0.0]],
+    }]
+    previous_seeds = [
+        {"id": "seed_deep", "trajectory_id": "traj_1", "position": [0.0, 0.0, 20.0], "direction": [0.0, 0.0, 1.0]},
+        {"id": "seed_shallow", "trajectory_id": "traj_1", "position": [0.0, 0.0, 10.0], "direction": [0.0, 0.0, 1.0]},
+    ]
+    # The endpoint handler has already moved the deepest seed optimistically.
+    submitted_seeds = [
+        {"id": "seed_deep", "trajectory_id": "traj_1", "position": [5.0, 0.0, 20.0]},
+        {"id": "seed_shallow", "trajectory_id": "traj_1", "position": [0.0, 0.0, 10.0]},
+    ]
+
+    result, count = _reproject_seeds_onto_needles(
+        submitted_seeds,
+        moved_needles,
+        previous_needles,
+        previous_seeds=previous_seeds,
+    )
+
+    assert count == 2
+    assert np.allclose(result[0]["position"], [5.0, 0.0, 20.0])
+    assert np.allclose(result[1]["position"], [5.0, 0.0, 10.0])
+    # The pre-edit direction convention is preserved while the seed is
+    # rotated onto the new needle axis.
+    assert np.allclose(result[0]["direction"], [0.0, 0.0, 1.0])
+
+
+def test_needle_replan_preserves_the_opposite_legacy_direction_convention():
+    previous_needles = [{
+        "id": "needle_1",
+        "trajectory_id": "traj_1",
+        "points": [[0.0, 0.0, 30.0], [0.0, 0.0, 0.0]],
+    }]
+    moved_needles = [{
+        "id": "needle_1",
+        "trajectory_id": "traj_1",
+        "points": [[5.0, 0.0, 20.0], [5.0, 0.0, 0.0]],
+    }]
+    previous_seeds = [{
+        "id": "seed_1",
+        "trajectory_id": "traj_1",
+        "position": [0.0, 0.0, 20.0],
+        "direction": [0.0, 0.0, -1.0],
+    }]
+    result, count = _reproject_seeds_onto_needles(
+        [{
+            "id": "seed_1",
+            "trajectory_id": "traj_1",
+            "position": [0.0, 0.0, 20.0],
+            "direction": [0.0, 0.0, -1.0],
+        }],
+        moved_needles,
+        previous_needles,
+        previous_seeds=previous_seeds,
+    )
+
+    assert count == 1
+    assert np.allclose(result[0]["position"], [5.0, 0.0, 20.0])
+    assert np.allclose(result[0]["direction"], [0.0, 0.0, -1.0])
+
+
+def test_manual_geometry_aliases_keep_needle_id_and_numeric_trajectory_owned():
+    memory = Memory({"plan_config": {"seed_info": {"length": 4.5, "radius": 0.4}}})
+    needles = [{
+        "id": "needle_1",
+        "trajectory_id": "traj_1",
+        "points": [[0.0, 0.0, 0.0], [0.0, 0.0, 20.0]],
+    }]
+    normalized = _normalize_manual_seed_records(memory, [{
+        "id": "seed_1",
+        "needle_id": "needle_1",
+        "position": [0.0, 0.0, 10.0],
+    }], needles)
+
+    assert normalized[0]["trajectory_id"] == "traj_1"
+    assert np.allclose(normalized[0]["direction"], [0.0, 0.0, 1.0])
+
+
+def test_seed_projection_preserves_existing_axial_direction_sign():
+    """Position projection must not silently reverse a legacy seed axis."""
+    memory = Memory({"plan_config": {"seed_info": {"length": 4.5, "radius": 0.4}}})
+    needles = [{
+        "id": "needle_1",
+        "trajectory_id": "traj_1",
+        "points": [[0.0, 0.0, 0.0], [0.0, 0.0, 20.0]],
+    }]
+    normalized = _normalize_manual_seed_records(memory, [{
+        "id": "seed_1",
+        "trajectory_id": "traj_1",
+        "position": [0.0, 0.0, 10.0],
+        "direction": [0.0, 0.0, -1.0],
+    }], needles)
+
+    assert np.allclose(normalized[0]["position"], [0.0, 0.0, 10.0])
+    assert np.allclose(normalized[0]["direction"], [0.0, 0.0, -1.0])
+
+
+def test_frontend_endpoint_selection_rejects_off_line_seed_and_uses_last_raw_point():
+    root = __import__("pathlib").Path(__file__).resolve().parents[1]
+    manual = (root / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
+    viewer = (root / "web/app/static/js/brachybot-viewer-layout.js").read_text(encoding="utf-8")
+
+    assert "projected.distanceTo(position) > 1e-3" in manual
+    assert "projected.distanceTo(seed) > 1e-3" in viewer
+    assert "line.points[line.points.length - 1]" in manual
+    assert "plannedNeedle.points[plannedNeedle.points.length - 1]" in manual
 
 
 def test_seed_safety_override_requires_the_exact_explicit_confirmation_marker():
@@ -288,6 +453,11 @@ def test_manual_needle_mutations_use_authoritative_backend_transactions():
     assert '"artifact_status": artifact_status' in routes
     assert 'memory.store("manual_plan_version", next_version)' in routes
     assert "_mark_manual_dependents_stale(" in routes
+    assert "needleDragRollback = _cloneManualPlanningSnapshot()" in manual
+    assert "payload.previous_seeds = _cloneManualSeeds(options.previousSnapshot.seeds)" in manual
+    assert '"code": "stale_manual_plan"' in routes
+    assert routes.count("@serialize_manual_dose_request") >= 4
+    assert 'agent.memory.store("manual_plan_version", current_version + 1)' in routes
 
 
 def test_needle_delete_removes_owned_seeds_without_validating_survivors():

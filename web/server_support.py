@@ -227,6 +227,26 @@ _MANUAL_DOSE_MODEL_CACHE: Dict[str, Any] = {}
 _MANUAL_DOSE_SEED_CACHE: Dict[tuple, Any] = {}
 _MANUAL_DOSE_SEED_CACHE_ORDER: list = []
 _MANUAL_DOSE_SEED_CACHE_LIMIT = 128
+_MANUAL_DOSE_TRANSACTION_LOCK = threading.Lock()
+_MANUAL_DOSE_SESSION_LOCKS: Dict[str, threading.RLock] = {}
+
+
+def _manual_dose_transaction_lock(session_id: Any) -> threading.RLock:
+    """Return the per-case lock for manual dose/replan transactions.
+
+    The browser already queues endpoint edits, but a second tab, a retrying
+    reverse proxy, or an old browser callback can still reach Flask while a
+    DoseUNet request is running. Serializing only requests for the same case
+    prevents two equal-version mutations from forking/publishing out of order;
+    different cases remain fully concurrent.
+    """
+    key = str(session_id or "").strip() or "__anonymous__"
+    with _MANUAL_DOSE_TRANSACTION_LOCK:
+        lock = _MANUAL_DOSE_SESSION_LOCKS.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            _MANUAL_DOSE_SESSION_LOCKS[key] = lock
+        return lock
 DOSE_MODEL_UNITS = "normalized_model_output"
 
 
@@ -603,6 +623,37 @@ def _segment_segment_distance(
     return math.sqrt(sum(value * value for value in delta))
 
 
+def _manual_geometry_key_order(*values: Any) -> list[str]:
+    """Return association aliases in the caller's authority order."""
+    ordered: list[str] = []
+    for value in values:
+        if value is None or value == "":
+            continue
+        raw = str(value).strip()
+        if not raw:
+            continue
+        aliases = [raw]
+        if raw.isdigit():
+            aliases.append(f"traj_{int(raw) + 1}")
+        for key in aliases:
+            if key not in ordered:
+                ordered.append(key)
+    return ordered
+
+
+def _manual_geometry_keys(*values: Any) -> set[str]:
+    """Return stable aliases used to associate a seed with its needle.
+
+    Restored plans have appeared with a numeric trajectory id, a ``traj_N``
+    id, or only a stable ``needle_N`` id. Treating those as different owners
+    makes the safety checker fall back to a stale seed direction and makes
+    needle re-projection silently skip the affected seeds. Keep the aliasing
+    local to the manual-geometry contract so automatic planning IDs are not
+    rewritten globally.
+    """
+    return set(_manual_geometry_key_order(*values))
+
+
 def _seed_interference_report(agent, seeds, needles) -> Dict[str, Any]:
     """Check finite seed cylinders for overlap or unsafe surface clearance.
 
@@ -657,14 +708,14 @@ def _seed_interference_report(agent, seeds, needles) -> Dict[str, Any]:
         magnitude = math.sqrt(sum(value * value for value in vector))
         if magnitude > 1e-9:
             direction = [value / magnitude for value in vector]
-            needle_directions[needle_id] = direction
             # Automatic Planning Seed records are attached through a stable
-            # trajectory ID, while some manual records also retain the Needle
-            # ID. Accept both instead of silently falling back to world-Z for
-            # an otherwise valid finite-cylinder interference check.
-            trajectory_id = str(needle.get("trajectory_id") or "")
-            if trajectory_id:
-                needle_directions[trajectory_id] = direction
+            # trajectory ID, while some manual/restored records retain only
+            # the Needle ID. Accept all aliases instead of silently falling
+            # back to world-Z for an otherwise valid finite-cylinder check.
+            for key in _manual_geometry_keys(
+                needle.get("id"), needle.get("needle_id"), needle.get("trajectory_id")
+            ):
+                needle_directions[key] = direction
 
     entries = []
     for index, seed in enumerate(seeds or []):
@@ -673,10 +724,31 @@ def _seed_interference_report(agent, seeds, needles) -> Dict[str, Any]:
         position = _point(seed)
         if not position:
             continue
-        direction = _point(seed.get("direction") or seed.get("dir"))
+        seed_keys = _manual_geometry_keys(
+            seed.get("needle_id"), seed.get("trajectory_id")
+        )
         needle_id = str(seed.get("needle_id") or seed.get("trajectory_id") or "")
+        # The owning needle is authoritative.  A browser can legitimately
+        # submit a seed record whose cached ``direction`` still describes the
+        # pre-drag needle, while the new needle endpoints already describe
+        # the geometry that will be used for dose inference.  Using that stale
+        # direction here makes a finite-cylinder safety check disagree with
+        # both the viewer and the dose engine.  Only fall back to the seed's
+        # own direction when no owning needle direction is available (for
+        # legacy/imported records without an attached needle).
+        owner_direction = next(
+            (
+                needle_directions.get(key)
+                for key in _manual_geometry_key_order(
+                    seed.get("needle_id"), seed.get("trajectory_id")
+                )
+                if key in needle_directions
+            ),
+            None,
+        )
+        direction = owner_direction or _point(seed.get("direction") or seed.get("dir"))
         if len(direction) < 3:
-            direction = needle_directions.get(needle_id, [0.0, 0.0, 1.0])
+            direction = [0.0, 0.0, 1.0]
         magnitude = math.sqrt(sum(float(direction[axis]) ** 2 for axis in range(3)))
         if magnitude <= 1e-9:
             direction = [0.0, 0.0, 1.0]
@@ -1813,6 +1885,7 @@ def _reproject_seeds_onto_needles(
     seeds: list,
     needles: list,
     previous_needles: list,
+    previous_seeds: Optional[list] = None,
 ) -> tuple[list, int]:
     """Move seeds with a dragged needle while preserving their relative depth.
 
@@ -1823,11 +1896,41 @@ def _reproject_seeds_onto_needles(
     seed is projected onto the old line and reconstructed on the new line at
     the same t. This is intentionally limited to needle edits and never
     changes an explicit seed drag.
+
+    ``previous_seeds`` is important for endpoint drags. The Viewer renders the
+    intrabody endpoint at the deepest seed, then optimistically moves that
+    seed with the handle. If the already-mutated seed list is used as the
+    source, the deepest seed is projected from its *new* position using the
+    *old* line and can end up behind the visible endpoint. When the baseline
+    seed list is available, use the matching pre-edit record as the source.
+    The endpoint pair is also derived from the deepest seed for each side so
+    the backend and the visible clipped needle share one geometry contract.
     """
     import numpy as np
 
-    def _points_by_trajectory(items):
+    def _seed_position(seed):
+        if not isinstance(seed, dict):
+            return None
+        try:
+            value = seed.get("position") or seed.get("pos")
+            point = np.asarray(_safe_float_list(value, 3), dtype=np.float64)
+        except Exception:
+            return None
+        return point if point.shape == (3,) and np.all(np.isfinite(point)) else None
+
+    def _points_by_trajectory(items, seed_records=None):
         result = {}
+        seeds_by_key = {}
+        for seed in seed_records or []:
+            if not isinstance(seed, dict):
+                continue
+            position = _seed_position(seed)
+            if position is None:
+                continue
+            for key in _manual_geometry_keys(
+                seed.get("needle_id"), seed.get("trajectory_id")
+            ):
+                seeds_by_key.setdefault(key, []).append(position)
         for item in items or []:
             if not isinstance(item, dict):
                 continue
@@ -1839,15 +1942,56 @@ def _reproject_seeds_onto_needles(
                 p1 = np.asarray(_safe_float_list(points[-1], 3), dtype=np.float64)
                 if not np.all(np.isfinite(p0)) or not np.all(np.isfinite(p1)):
                     continue
-                key = str(item.get("trajectory_id") or item.get("id") or "")
-                if key:
-                    result[key] = (p0, p1)
+                keys = _manual_geometry_keys(
+                    item.get("id"), item.get("needle_id"), item.get("trajectory_id")
+                )
+                if not keys:
+                    continue
+                # Match the Viewer display contract: when the line has seeds,
+                # the intrabody endpoint is the deepest seed on that line.
+                # This is especially important when the stored algorithm
+                # endpoint extends beyond the last implant position.
+                candidate_positions = []
+                axis = p0 - p1
+                axis_length_sq = float(np.dot(axis, axis))
+                for key in keys:
+                    candidate_positions.extend(seeds_by_key.get(key, []))
+                if axis_length_sq > 1e-8 and candidate_positions:
+                    deepest = None
+                    deepest_t = -np.inf
+                    for position in candidate_positions:
+                        t = float(np.dot(position - p1, axis) / axis_length_sq)
+                        if not np.isfinite(t) or t < -1e-6 or t > 1.0 + 1e-6:
+                            continue
+                        projected = p1 + t * axis
+                        # A stale seed from a pre-drag payload must not
+                        # redefine the new visible endpoint merely because
+                        # its scalar projection falls somewhere on the new
+                        # line. Only an actually attached seed is part of the
+                        # clipped display geometry.
+                        if float(np.linalg.norm(position - projected)) > 1e-3:
+                            continue
+                        if t > deepest_t:
+                            deepest_t = t
+                            deepest = position
+                    if deepest is not None:
+                        p0 = deepest.copy()
+                for key in keys:
+                    result[key] = (p0.copy(), p1.copy())
             except Exception:
                 continue
         return result
 
-    old_by_traj = _points_by_trajectory(previous_needles)
-    new_by_traj = _points_by_trajectory(needles)
+    # If the pre-edit seed list is unavailable, keep the legacy raw-endpoint
+    # contract on both sides. Deriving a clipped endpoint only on the new
+    # side would make an unchanged needle look changed merely because its
+    # current seed happens to lie on the line.
+    display_baseline = previous_seeds if previous_seeds is not None else None
+    old_by_traj = _points_by_trajectory(previous_needles, display_baseline)
+    new_by_traj = _points_by_trajectory(
+        needles,
+        seeds if display_baseline is not None else None,
+    )
     if not old_by_traj or not new_by_traj:
         return list(seeds or []), 0
 
@@ -1868,24 +2012,64 @@ def _reproject_seeds_onto_needles(
     if not changed_trajectories:
         return [dict(seed) if isinstance(seed, dict) else seed for seed in seeds or []], 0
 
+    previous_by_id = {}
+    previous_by_owner = {}
+    for previous_seed in previous_seeds or []:
+        if not isinstance(previous_seed, dict):
+            continue
+        seed_id = str(previous_seed.get("id") or "").strip()
+        if seed_id:
+            previous_by_id[seed_id] = previous_seed
+        for key in _manual_geometry_keys(
+            previous_seed.get("needle_id"), previous_seed.get("trajectory_id")
+        ):
+            previous_by_owner.setdefault(key, []).append(previous_seed)
+
     updated = []
     changed = 0
     for seed in seeds or []:
         if not isinstance(seed, dict):
             updated.append(seed)
             continue
-        trajectory_id = str(seed.get("trajectory_id") or "")
-        old_line = old_by_traj.get(trajectory_id)
-        new_line = new_by_traj.get(trajectory_id)
+        owner_keys = _manual_geometry_key_order(
+            seed.get("needle_id"), seed.get("trajectory_id")
+        )
+        matching_keys = [key for key in owner_keys if key in old_by_traj and key in new_by_traj]
+        old_line = old_by_traj.get(matching_keys[0]) if matching_keys else None
+        new_line = new_by_traj.get(matching_keys[0]) if matching_keys else None
         if (
-            trajectory_id not in changed_trajectories
+            not any(key in changed_trajectories for key in matching_keys)
             or old_line is None
             or new_line is None
         ):
             updated.append(dict(seed))
             continue
         try:
-            position = np.asarray(_safe_float_list(seed.get("position") or seed.get("pos"), 3), dtype=np.float64)
+            source = None
+            seed_id = str(seed.get("id") or "").strip()
+            if previous_seeds and seed_id:
+                source = previous_by_id.get(seed_id)
+            if source is None and previous_seeds:
+                for key in owner_keys:
+                    candidates = previous_by_owner.get(key) or []
+                    if candidates:
+                        # Owner-only legacy records have no stable id. Match
+                        # the nearest old position to avoid stealing another
+                        # seed on the same trajectory.
+                        current_position = _seed_position(seed)
+                        source = min(
+                            candidates,
+                            key=lambda item: float(np.linalg.norm(
+                                (_seed_position(item) if _seed_position(item) is not None else np.zeros(3))
+                                - (current_position if current_position is not None else np.zeros(3))
+                            )),
+                        )
+                        break
+            source_position = _seed_position(source) if source is not None else _seed_position(seed)
+            if source_position is None:
+                updated.append(dict(seed))
+                continue
+            position = source_position
             old_target, old_entry = old_line
             new_target, new_entry = new_line
             old_axis = old_target - old_entry
@@ -1898,7 +2082,33 @@ def _reproject_seeds_onto_needles(
             t = float(np.dot(position - old_entry, old_axis) / old_length_sq)
             t = float(np.clip(t, 0.0, 1.0))
             replacement = new_entry + t * new_axis
-            replacement_direction = (new_axis / new_length).tolist()
+            # Keep the seed's pre-edit orientation convention while rotating
+            # it onto the new needle.  Different historical producers used
+            # opposite signs for the same [deep target, shallow entry] line;
+            # the old seed direction is the only reliable way to preserve the
+            # convention used by its existing DoseUNet map.  For legacy
+            # records without a direction, retain the planner's target-entry
+            # orientation used by the automatic trajectory path.
+            source_direction = None
+            direction_source = source if isinstance(source, dict) else seed
+            if isinstance(direction_source, dict):
+                try:
+                    raw_direction = np.asarray(
+                        direction_source.get("direction") or direction_source.get("dir"),
+                        dtype=np.float64,
+                    ).reshape(-1)[:3]
+                    if raw_direction.size == 3 and np.all(np.isfinite(raw_direction)):
+                        direction_norm = float(np.linalg.norm(raw_direction))
+                        if direction_norm > 1e-8:
+                            source_direction = raw_direction / direction_norm
+                except Exception:
+                    source_direction = None
+            new_direction = new_axis / new_length
+            if source_direction is not None:
+                old_direction = old_axis / float(np.sqrt(old_length_sq))
+                if float(np.dot(source_direction, old_direction)) < 0.0:
+                    new_direction = -new_direction
+            replacement_direction = new_direction.tolist()
             item = dict(seed)
             item["position"] = replacement.tolist()
             item["direction"] = replacement_direction
@@ -1956,6 +2166,50 @@ def _authoritative_previous_needles(
     return submitted
 
 
+def _effective_manual_seeds_for_interference(
+    agent,
+    seeds: list,
+    needles: list,
+    *,
+    previous_needles: Optional[list] = None,
+    previous_seeds: Optional[list] = None,
+    previous_snapshot: Optional[dict] = None,
+    reproject_seeds: bool = False,
+) -> tuple[list, int]:
+    """Return the seed geometry that the dose update will actually use.
+
+    A needle drag carries the pre-drag seed coordinates in the browser
+    payload.  Those coordinates are intentionally reprojected onto the new
+    needle immediately before DoseUNet inference.  Safety validation must use
+    that same effective geometry; checking the raw payload first can report a
+    collision at the old needle location even though the reprojected seeds
+    are separated on the new needle.  This helper keeps the validation and
+    inference contracts identical without mutating AgentMemory.
+    """
+    candidate = [dict(seed) if isinstance(seed, dict) else seed for seed in seeds or []]
+    if not reproject_seeds:
+        return candidate, 0
+    snapshot = previous_snapshot if isinstance(previous_snapshot, dict) else {}
+    source_seeds = previous_seeds
+    if source_seeds is None and isinstance(snapshot.get("seeds"), list):
+        source_seeds = snapshot.get("seeds")
+    if source_seeds is None:
+        stored_seeds = agent.memory.retrieve("manual_seeds")
+        if isinstance(stored_seeds, list):
+            source_seeds = stored_seeds
+    baseline = _authoritative_previous_needles(
+        agent,
+        previous_needles or snapshot.get("needles") or [],
+        needles or [],
+    )
+    return _reproject_seeds_onto_needles(
+        candidate,
+        needles or [],
+        baseline,
+        previous_seeds=source_seeds,
+    )
+
+
 def _compute_manual_ai_dose(
     agent,
     seeds: list,
@@ -1963,6 +2217,7 @@ def _compute_manual_ai_dose(
     *,
     previous_needles: Optional[list] = None,
     previous_seeds: Optional[list] = None,
+    previous_snapshot: Optional[dict] = None,
     previous_dose: Any = None,
     reproject_seeds: bool = False,
 ) -> Dict[str, Any]:
@@ -1986,12 +2241,27 @@ def _compute_manual_ai_dose(
     # the submitted seeds onto the new needle before converting coordinates for
     # DoseUNet inference. The previous geometry is supplied by the browser so
     # this remains correct even when the stored plan came from automatic mode.
+    effective_previous_needles = list(previous_needles or [])
     if reproject_seeds:
-        baseline = _authoritative_previous_needles(agent, previous_needles or [], needles or [])
+        snapshot = previous_snapshot if isinstance(previous_snapshot, dict) else {}
+        source_seeds = previous_seeds
+        if source_seeds is None and isinstance(snapshot.get("seeds"), list):
+            source_seeds = snapshot.get("seeds")
+        if source_seeds is None:
+            stored_seeds = agent.memory.retrieve("manual_seeds")
+            if isinstance(stored_seeds, list):
+                source_seeds = stored_seeds
+        baseline = _authoritative_previous_needles(
+            agent,
+            previous_needles or snapshot.get("needles") or [],
+            needles or [],
+        )
+        effective_previous_needles = list(baseline or [])
         seeds, reprojection_count = _reproject_seeds_onto_needles(
             seeds,
             needles,
             baseline,
+            previous_seeds=source_seeds,
         )
     else:
         seeds, reprojection_count = list(seeds or []), 0
@@ -2138,6 +2408,20 @@ def _compute_manual_ai_dose(
         raise ValueError("No manual seeds fall inside the current CT volume.")
 
     args = setting()
+    # Safety validation, Viewer geometry, and DoseUNet must use the same seed
+    # physical parameters. ``plans.config`` is a process default and can lag
+    # behind the per-Planning seed_info persisted in AgentMemory (for example
+    # 3.7 mm vs 4.5 mm seed length after a restored case). Merge the case
+    # configuration over the defaults before building a new seed dose map.
+    dose_seed_info = dict(getattr(args, "seed_info", {}) or {})
+    stored_plan_config = agent.memory.retrieve("plan_config") or {}
+    stored_seed_info = (
+        stored_plan_config.get("seed_info")
+        if isinstance(stored_plan_config, dict)
+        else None
+    )
+    if isinstance(stored_seed_info, dict):
+        dose_seed_info.update(stored_seed_info)
     dose_image = utilizations.normalize_dose_image(
         resampled_ct,
         args.image_normalize[0],
@@ -2180,7 +2464,7 @@ def _compute_manual_ai_dose(
                 dose_image,
                 dose_model,
                 args.radiation_array_params["infer_img_size"],
-                args.seed_info,
+                dose_seed_info,
                 args.image_normalize[0],
                 args.image_normalize[1],
                 args.image_normalize[2],
@@ -2281,11 +2565,14 @@ def _compute_manual_ai_dose(
         interactive_deadline = time.monotonic() + timeout_s
 
     dose_base = np.zeros_like(sitk.GetArrayFromImage(dose_image), dtype=np.float32)
-    changed_trajectories = _changed_trajectory_ids(previous_needles, needles) if reproject_seeds else set()
+    changed_trajectories = (
+        _changed_trajectory_ids(effective_previous_needles, needles)
+        if reproject_seeds else set()
+    )
     if reproject_seeds:
         logger.info(
             "[manual_dose] geometry diff: changed_keys=%s previous_needles=%d current_needles=%d",
-            sorted(changed_trajectories), len(previous_needles), len(needles),
+            sorted(changed_trajectories), len(effective_previous_needles), len(needles),
         )
     # ``update_seeds`` commits the new geometry before this endpoint runs.  A
     # caller that is editing one seed must therefore provide the accepted
@@ -2483,11 +2770,17 @@ def _compute_manual_ai_dose(
         if candidate_base.shape == dose_base.shape:
             old_records = [
                 seed for seed in previous_seed_records
-                if isinstance(seed, dict) and str(seed.get("trajectory_id") or "") in changed_trajectories
+                if isinstance(seed, dict)
+                and _manual_geometry_keys(
+                    seed.get("needle_id"), seed.get("trajectory_id")
+                ).intersection(changed_trajectories)
             ]
             new_records = [
                 seed for seed in norm_seeds
-                if isinstance(seed, dict) and str(seed.get("trajectory_id") or "") in changed_trajectories
+                if isinstance(seed, dict)
+                and _manual_geometry_keys(
+                    seed.get("needle_id"), seed.get("trajectory_id")
+                ).intersection(changed_trajectories)
             ]
             old_norm, old_model = _prepare_model_seeds(old_records)
             new_norm, new_model = _prepare_model_seeds(new_records)

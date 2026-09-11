@@ -311,7 +311,11 @@ def test_response_trace_exposes_synthesis_and_final_delivery_phases():
 def test_single_needle_replan_uses_changed_trajectory_incremental_dose_path():
     source = _read("web/server_support.py")
     assert "changed_trajectories = set()" in source
-    assert "trajectory_id not in changed_trajectories" in source
+    # Association aliases are now supported (needle_id, trajectory_id, and
+    # numeric restored IDs), so the incremental path intersects the changed
+    # key set instead of comparing one raw trajectory_id string.
+    assert "_manual_geometry_keys(" in source
+    assert "intersection(changed_trajectories)" in source
     assert "incremental needle replan" in source
     assert 'baseline_dose_key = "dose_distribution" if agent.memory.retrieve("manual_ai_dose") else "algorithm_plan_dose_distribution"' in source
 
