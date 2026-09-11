@@ -648,10 +648,29 @@ body.workspace-transitioning #sessionList {
     white-space: nowrap;
     margin-bottom: 2px;
 }
+.session-item.archived {
+    opacity: 0.72;
+}
+.session-item.archived .session-item-title {
+    color: var(--text-dim);
+}
 .session-item-time {
     font-size: 0.62rem;
     color: var(--text-dim);
     font-family: 'JetBrains Mono', monospace;
+}
+.session-item-status {
+    margin-top: 3px;
+    color: var(--text-dim);
+    color: color-mix(in srgb, var(--text-dim) 82%, var(--primary) 18%);
+    font-size: 0.58rem;
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.session-item.archived .session-item-status {
+    color: var(--text-dim);
 }
 
 .session-item-actions {

@@ -481,10 +481,24 @@
         document.querySelectorAll('.session-export-menu').forEach(node => node.remove());
         const menu = document.createElement('div');
         menu.className = 'session-export-menu';
-        menu.innerHTML = `<button type="button">${text('导出 Session', 'Export Session')}</button>`;
+        const entry = (typeof sessions !== 'undefined' && sessions[sessionId]) || {};
+        const archived = entry.storageStatus === 'archived';
+        const archiveLabel = archived
+            ? text('激活并恢复到本地', 'Activate and restore')
+            : text('归档到低速存储', 'Archive to cold storage');
+        menu.innerHTML = '<button type="button" data-session-archive>' + archiveLabel + '</button>'
+            + '<button type="button" data-session-export>' + text('导出 Session', 'Export Session') + '</button>';
         menu.style.left = `${event.clientX}px`;
         menu.style.top = `${event.clientY}px`;
-        menu.querySelector('button').onclick = () => {
+        menu.querySelector('[data-session-archive]').onclick = () => {
+            menu.remove();
+            if (archived) {
+                window.switchSession?.(sessionId);
+            } else {
+                window.archiveServerSession?.(sessionId);
+            }
+        };
+        menu.querySelector('[data-session-export]').onclick = () => {
             menu.remove();
             openSessionExportDialog({ sessionId }).catch(error => {
                 if (typeof addChat === 'function') addChat('error', error.message);

@@ -9,6 +9,8 @@ from flask import jsonify, request, send_file, session
 from web.auth import current_user
 from web.server_support import require_api_key
 from web.workspace_store import (
+    SESSION_ARCHIVE_AFTER_DAYS,
+    WorkspaceArchived,
     WorkspaceError,
     WorkspaceLeaseConflict,
     WorkspaceNotFound,
@@ -56,7 +58,7 @@ def register_session_routes(
         ).strip()
         if not candidate:
             raise WorkspaceError("No case session is selected")
-        entry = store.get_session(user["id"], candidate)
+        entry = store.require_local_session(user["id"], candidate)
         return entry.id
 
     def assert_target_editable(user: Dict[str, Any], session_id: str) -> None:
@@ -85,6 +87,7 @@ def register_session_routes(
             "success": True,
             "active_session_id": active,
             "sessions": [session_payload(item) for item in all_sessions if item.status == "active"],
+            "archive_after_days": SESSION_ARCHIVE_AFTER_DAYS,
             # Deleted cases stay out of the selectable case list.  The count
             # lets the browser make the recovery path discoverable without
             # loading every deleted snapshot during normal startup.
@@ -173,6 +176,13 @@ def register_session_routes(
             return error
         try:
             entry = store.get_session(user["id"], session_id)
+            if entry.storage_status == "archived":
+                return jsonify({
+                    "error": "This case is archived. Activate it before opening it.",
+                    "code": "session_archived",
+                    "session": session_payload(entry),
+                }), 409
+            entry = store.touch_session(user["id"], entry.id)
             session["bb_session_id"] = entry.id
             # Do not hydrate the Python/GPU agent in the selection request.
             # Selecting a case is a control-plane operation and must remain
@@ -182,6 +192,63 @@ def register_session_routes(
         except WorkspaceError as exc:
             return jsonify({"error": str(exc)}), 404
         return jsonify({"success": True, "active_session_id": entry.id, "workspace": snapshot})
+
+    @app.route("/api/sessions/<session_id>/activate", methods=["POST"])
+    @require_api_key
+    def activate_archived_session(session_id: str):
+        """Restore a cold case, then return the normal selection snapshot."""
+        user, error = user_or_error()
+        if error:
+            return error
+        try:
+            entry = store.restore_archived_session(user["id"], session_id)
+            session["bb_session_id"] = entry.id
+            snapshot = store.load_snapshot(user["id"], entry.id)
+        except WorkspaceLeaseConflict as exc:
+            return jsonify({"error": str(exc), "code": "workspace_locked"}), 409
+        except WorkspaceArchived as exc:
+            return jsonify({"error": str(exc), "code": "session_archived"}), 409
+        except WorkspaceError as exc:
+            return jsonify({"error": str(exc), "code": "session_activation_failed"}), 409
+        return jsonify({
+            "success": True,
+            "active_session_id": entry.id,
+            "session": session_payload(entry),
+            "workspace": snapshot,
+        })
+
+    @app.route("/api/sessions/<session_id>/archive", methods=["POST"])
+    @require_api_key
+    def archive_case_session(session_id: str):
+        user, error = user_or_error()
+        if error:
+            return error
+        if str(session.get("bb_session_id") or "") == str(session_id):
+            return jsonify({
+                "error": "当前病例正在使用，请先切换到其他病例后再归档。",
+                "code": "session_current",
+            }), 409
+        try:
+            assert_target_editable(user, session_id)
+            manager = app.extensions.get("brachybot_chat_tasks")
+            live_probe = getattr(manager, "live", None) or getattr(manager, "active", None)
+            if callable(live_probe) and live_probe(user["id"], session_id) is not None:
+                raise WorkspaceError("This case still has a running workflow")
+            (drop_agent_fast or drop_agent)(session_id)
+            entry = store.archive_session(
+                user["id"],
+                session_id,
+                owner_token=str(request.headers.get("X-BrachyBot-Editor") or ""),
+            )
+        except WorkspaceLeaseConflict as exc:
+            return jsonify({"error": str(exc), "code": "workspace_locked"}), 409
+        except WorkspaceError as exc:
+            return jsonify({"error": str(exc), "code": "session_archive_failed"}), 409
+        return jsonify({
+            "success": True,
+            "session": session_payload(entry),
+            "archive_after_days": SESSION_ARCHIVE_AFTER_DAYS,
+        })
 
     @app.route("/api/sessions/<session_id>", methods=["DELETE"])
     @require_api_key

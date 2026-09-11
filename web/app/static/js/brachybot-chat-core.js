@@ -466,27 +466,53 @@ function startRenameSession(id, event) {
     input.onblur = saveRename;
 }
 
+// Server-backed session metadata is rendered with a quiet secondary line so
+// cold-storage state is visible without competing with the case title.
 function renderSessionList() {
     const list = document.getElementById('sessionList');
-    const sorted = Object.values(sessions).sort((a, b) => b.created - a.created);
+    if (!list) return;
+    const sorted = Object.values(sessions).sort((a, b) =>
+        Number(b.lastAccessed || b.updated || b.created || 0)
+        - Number(a.lastAccessed || a.updated || a.created || 0)
+    );
     const locale = effectiveUiLanguage() === 'zh' ? 'zh-CN' : 'en-US';
+    const now = Date.now();
     list.innerHTML = sorted.map(s => {
-        const time = new Date(s.created).toLocaleDateString(locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        const time = new Date(Number(s.created || now)).toLocaleDateString(
+            locale,
+            { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' },
+        );
         const active = s.id === activeSessionId ? ' active' : '';
-        return `<div class="session-item${active}" onclick="switchSession('${s.id}')"
-            oncontextmenu="openSessionContextMenu(event,'${s.id}')">
-            <div class="session-item-info">
-                <div class="session-item-title" id="session-title-${s.id}">${escHtml(s.title)}</div>
-                <div class="session-item-time">${time}</div>
-            </div>
-            <div class="session-item-actions">
-                <button class="session-item-btn" onclick="startRenameSession('${s.id}', event)" title="Rename">&#9998;</button>
-                <button class="session-item-btn delete" onclick="event.stopPropagation();deleteSession('${s.id}')" title="Delete">&#10005;</button>
-            </div>
-        </div>`;
+        const archived = s.storageStatus === 'archived';
+        const archiveClass = archived ? ' archived' : '';
+        let statusText = '';
+        if (archived) {
+            statusText = effectiveUiLanguage() === 'zh'
+                ? '已归档 · 点击激活'
+                : 'Archived · click to activate';
+        } else {
+            const afterMs = Math.max(1, Number(s.archiveAfterDays || 7)) * 24 * 60 * 60 * 1000;
+            const last = Number(s.lastAccessed || s.updated || s.created || now);
+            const remaining = Math.max(0, afterMs - (now - last));
+            const days = Math.ceil(remaining / (24 * 60 * 60 * 1000));
+            statusText = effectiveUiLanguage() === 'zh'
+                ? '将在 ' + days + ' 天后归档'
+                : 'Archives in ' + days + (days === 1 ? ' day' : ' days');
+        }
+        return '<div class="session-item' + active + archiveClass + '" onclick="switchSession(&#39;' + s.id + '&#39;)"'
+            + ' oncontextmenu="openSessionContextMenu(event,&#39;' + s.id + '&#39;)">'
+            + '<div class="session-item-info">'
+            + '<div class="session-item-title" id="session-title-' + s.id + '">' + escHtml(s.title || '') + '</div>'
+            + '<div class="session-item-time">' + escHtml(time) + '</div>'
+            + '<div class="session-item-status">' + escHtml(statusText) + '</div>'
+            + '</div>'
+            + '<div class="session-item-actions">'
+            + '<button class="session-item-btn" onclick="startRenameSession(&#39;' + s.id + '&#39;, event)" title="Rename">&#9998;</button>'
+            + '<button class="session-item-btn delete" onclick="event.stopPropagation();deleteSession(&#39;' + s.id + '&#39;)" title="Delete">&#10005;</button>'
+            + '</div>'
+            + '</div>';
     }).join('');
 }
-
 function createChatIdentity(prefix = 'msg') {
     let value = '';
     try {

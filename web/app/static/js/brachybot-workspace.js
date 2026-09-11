@@ -2923,6 +2923,12 @@
             title: entry.title,
             created: Math.round(Number(entry.created_at || Date.now() / 1000) * 1000),
             updated: Math.round(Number(entry.updated_at || Date.now() / 1000) * 1000),
+            lastAccessed: Math.round(Number(
+                entry.last_accessed_at || entry.updated_at || entry.created_at || Date.now() / 1000
+            ) * 1000),
+            storageStatus: String(entry.storage_status || 'active'),
+            archivedAt: Number(entry.archived_at || 0) * 1000,
+            archiveAfterDays: Math.max(1, Number(entry.archive_after_days || 7)),
             messages: [],
             recoveryStatus: entry.recovery_status,
         };
@@ -3363,8 +3369,20 @@
 
     window.switchSession = async function switchSession(id) {
         document.getElementById('sessionSidebar')?.classList.remove('mobile-open');
-        if (id === activeSessionId) return { success: true, session_id: id, unchanged: true };
+        if (id === activeSessionId && sessions[id]?.storageStatus !== 'archived') {
+            return { success: true, session_id: id, unchanged: true };
+        }
         if (!sessions[id]) return { success: false, error: 'The requested case does not exist.' };
+        let activateArchived = sessions[id].storageStatus === 'archived';
+        if (activateArchived) {
+            const title = sessions[id].title || id;
+            const confirmed = await confirmWorkspaceAction(
+                '病例“' + title + '”已归档到低速存储。激活后需要将数据恢复到本地，可能需要一些时间，是否继续？',
+                'Case "' + title + '" is archived in cold storage. Activate it and restore its data locally? This may take a little longer.',
+            );
+            if (!confirmed) return { success: false, cancelled: true };
+            if (id === activeSessionId) activeSessionId = null;
+        }
         // A transition is already in flight.  Abort its server request so
         // it bails out quickly instead of waiting for the 15 s timeout, then
         // queue this new target.  The finalised transition will auto-run the
@@ -3419,26 +3437,63 @@
                 console.debug('[workspace] previous case flush deferred:', error);
             });
             if (typeof clearClientWorkspace === 'function') {
-                clearClientWorkspace({ clearReport: true, deferDisposal: true });
+                // A cold-case activation can take long enough that clearing
+                // the currently visible case before the NAS copy finishes
+                // feels like data loss. Keep the old projection until the
+                // activation is confirmed; normal local switches retain the
+                // original fast handoff behavior.
+                if (!activateArchived) {
+                    clearClientWorkspace({ clearReport: true, deferDisposal: true });
+                }
             }
             let response;
             try {
-                response = await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}/select`, { method: 'POST', signal: aborter.signal });
+                const action = activateArchived ? 'activate' : 'select';
+                response = await workspaceFetch(
+                    '/api/sessions/' + encodeURIComponent(id) + '/' + action,
+                    { method: 'POST', signal: aborter.signal },
+                );
             } catch (error) {
                 if (aborter.signal.aborted) return { success: false, replaced: true };
-                paintSessionShell(previousSessionId);
+                paintSessionShell(previousSessionId, { clearWorkspace: !activateArchived });
                 cancelTransitionUi();
                 throw error;
             }
-            const data = await response.json();
+            let data = await response.json();
+            // A stale sidebar can learn about archival between the list
+            // request and this click. Ask exactly once, then use the same
+            // activation endpoint as the normal archived-case path.
+            if (!response.ok && data.code === 'session_archived' && !activateArchived) {
+                const title = sessions[id]?.title || id;
+                const confirmed = await confirmWorkspaceAction(
+                    '病例“' + title + '”已归档到低速存储。是否激活并恢复到本地？',
+                    'Case "' + title + '" is archived. Activate it and restore the data locally?',
+                );
+                if (!confirmed) {
+                    paintSessionShell(previousSessionId, { clearWorkspace: !activateArchived });
+                    cancelTransitionUi();
+                    return { success: false, cancelled: true };
+                }
+                activateArchived = true;
+                response = await workspaceFetch(
+                    '/api/sessions/' + encodeURIComponent(id) + '/activate',
+                    { method: 'POST', signal: aborter.signal },
+                );
+                data = await response.json();
+            }
             if (!response.ok) {
-                paintSessionShell(previousSessionId);
+                paintSessionShell(previousSessionId, { clearWorkspace: !activateArchived });
                 cancelTransitionUi();
                 throw new Error(data.error || 'Unable to open case');
             }
             // Server confirmed the switch. Keep the optimistic shell and
             // replace it with the authoritative snapshot below.
             activeSessionId = data.active_session_id;
+            if (data.session && sessions[id]) {
+                const fresh = sessionStateFromPayload(data.session);
+                fresh.messages = Array.isArray(sessions[id].messages) ? sessions[id].messages : [];
+                sessions[id] = fresh;
+            }
             recordWorkspacePerformance('switch.snapshot_received', {
                 sessionId: id,
                 startedAt: switchStartedAt,
@@ -3536,6 +3591,43 @@
         target.textContent = value > 99 ? '99+' : String(value);
         target.hidden = value === 0;
     }
+
+    window.archiveServerSession = async function archiveServerSession(id, options = {}) {
+        const entry = sessions[id];
+        if (!entry) return { success: false, error: 'The requested case does not exist.' };
+        if (entry.storageStatus === 'archived') {
+            return { success: true, alreadyArchived: true };
+        }
+        if (id === activeSessionId) {
+            const message = '当前病例正在使用，请先切换到其他病例后再归档。';
+            if (typeof addChat === 'function') addChat('error', message);
+            return { success: false, error: message };
+        }
+        if (options.skipConfirm !== true) {
+            const title = entry.title || id;
+            const confirmed = await confirmWorkspaceAction(
+                '确定将病例“' + title + '”归档到低速存储吗？归档不会删除数据，之后仍可恢复。',
+                'Archive case "' + title + '" to cold storage? The case will remain recoverable.',
+            );
+            if (!confirmed) return { success: false, cancelled: true };
+        }
+        try {
+            const response = await workspaceFetch(
+                '/api/sessions/' + encodeURIComponent(id) + '/archive',
+                { method: 'POST' },
+            );
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error || 'Unable to archive case');
+            const fresh = sessionStateFromPayload(data.session || {});
+            fresh.messages = Array.isArray(entry.messages) ? entry.messages : [];
+            sessions[id] = fresh;
+            renderSessionList();
+            return { success: true, session: data.session };
+        } catch (error) {
+            if (typeof addChat === 'function') addChat('error', error?.message || 'Unable to archive case');
+            return { success: false, error: error?.message || 'Unable to archive case' };
+        }
+    };
 
     window.deleteSession = async function deleteSession(id, options = {}) {
         if (!sessions[id]) return { success: false, error: 'The requested case does not exist.' };
