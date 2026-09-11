@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import copy
 import base64
+import errno
 import json
 import hashlib
 import logging
@@ -44,6 +45,8 @@ SESSION_ARCHIVE_AFTER_DAYS = max(
 )
 SESSION_ARCHIVE_AFTER_SECONDS = SESSION_ARCHIVE_AFTER_DAYS * 24 * 60 * 60
 DEFAULT_ARCHIVE_ROOT = "<data-root>/Brachytherapy"
+TRANSFER_MANIFEST_VERSION = 1
+TRANSFER_HASH_CHUNK_BYTES = 4 * 1024 * 1024
 TRASH_RETENTION_SECONDS = int(
     os.environ.get("BRACHYBOT_TRASH_RETENTION_DAYS", "7")
 ) * 24 * 60 * 60
@@ -478,6 +481,10 @@ class WorkspaceNotFound(WorkspaceError):
 
 class WorkspaceArchived(WorkspaceError):
     """Raised when a case exists but its data is currently in cold storage."""
+
+
+class WorkspaceIntegrityError(WorkspaceError):
+    """Raised when a workspace transfer cannot be proven byte-for-byte safe."""
 
 
 class WorkspaceLeaseConflict(WorkspaceError):
@@ -1845,6 +1852,16 @@ class WorkspaceStore:
             except OSError:
                 pass
         try:
+            runtime_root = self.runtime_dir.resolve()
+            archive_root = self.archive_root.resolve()
+            if (
+                runtime_root == archive_root
+                or runtime_root in archive_root.parents
+                or archive_root in runtime_root.parents
+            ):
+                raise OSError(
+                    "Archive root must not overlap the local runtime directory"
+                )
             self.archive_users_dir.mkdir(parents=True, exist_ok=True)
             for directory in (self.archive_root, self.archive_users_dir):
                 try:
@@ -1966,6 +1983,21 @@ class WorkspaceStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_case_sessions_user_status
                     ON case_sessions(user_id, status, updated_at DESC);
+                CREATE TABLE IF NOT EXISTS session_transfers (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    session_id TEXT NOT NULL REFERENCES case_sessions(id) ON DELETE CASCADE,
+                    kind TEXT NOT NULL,
+                    source_root TEXT NOT NULL,
+                    destination_root TEXT NOT NULL,
+                    manifest_json TEXT NOT NULL,
+                    phase TEXT NOT NULL,
+                    last_error TEXT NOT NULL DEFAULT '',
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_session_transfers_case
+                    ON session_transfers(user_id, session_id, updated_at DESC);
                 CREATE TABLE IF NOT EXISTS workspace_leases (
                     session_id TEXT PRIMARY KEY REFERENCES case_sessions(id) ON DELETE CASCADE,
                     owner_token TEXT NOT NULL,
@@ -3793,22 +3825,450 @@ class WorkspaceStore:
         return total
 
     @staticmethod
-    def _copy_tree_transactional(source: Path, destination: Path) -> None:
-        """Copy a case tree through a private temporary sibling."""
+    def _sha256_file(path: Path) -> str:
+        digest = hashlib.sha256()
+        try:
+            with path.open("rb") as handle:
+                while True:
+                    chunk = handle.read(TRANSFER_HASH_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    digest.update(chunk)
+        except OSError as exc:
+            raise WorkspaceIntegrityError(
+                f"Cannot read workspace file for transfer verification: {path}"
+            ) from exc
+        return digest.hexdigest()
+
+    @classmethod
+    def _tree_manifest(cls, root: Path) -> Dict[str, Any]:
+        """Return a deterministic content manifest for a case directory.
+
+        Archive/restore is allowed to be slow because it is a cold-storage
+        operation. Hashing every regular file gives us a proof that the copy
+        is complete before the source is ever removed. Symlinks and unusual
+        filesystem entries are rejected instead of silently following them
+        outside the case root.
+        """
+        if root.is_symlink() or not root.is_dir():
+            raise WorkspaceIntegrityError(
+                f"Workspace transfer source is not a directory: {root}"
+            )
+        root = root.resolve()
+        files: List[Dict[str, Any]] = []
+        total_bytes = 0
+        try:
+            paths = sorted(
+                root.rglob("*"),
+                key=lambda path: path.relative_to(root).as_posix(),
+            )
+            for path in paths:
+                if path.is_symlink():
+                    raise WorkspaceIntegrityError(
+                        f"Symlinks are not allowed in workspace transfers: {path}"
+                    )
+                if path.is_dir():
+                    continue
+                if not path.is_file():
+                    raise WorkspaceIntegrityError(
+                        f"Unsupported filesystem entry in workspace: {path}"
+                    )
+                relative = path.relative_to(root).as_posix()
+                size = int(path.stat().st_size)
+                files.append({
+                    "path": relative,
+                    "size": size,
+                    "sha256": cls._sha256_file(path),
+                })
+                total_bytes += size
+        except WorkspaceIntegrityError:
+            raise
+        except OSError as exc:
+            raise WorkspaceIntegrityError(
+                f"Cannot enumerate workspace for transfer verification: {root}"
+            ) from exc
+        return {
+            "version": TRANSFER_MANIFEST_VERSION,
+            "files": files,
+            "total_bytes": total_bytes,
+        }
+
+    @staticmethod
+    def _manifests_equal(
+        expected: Mapping[str, Any],
+        actual: Mapping[str, Any],
+    ) -> bool:
+        return (
+            int(expected.get("version", 0)) == int(actual.get("version", 0))
+            and int(expected.get("total_bytes", -1)) == int(actual.get("total_bytes", -2))
+            and list(expected.get("files") or []) == list(actual.get("files") or [])
+        )
+
+    @staticmethod
+    def _fsync_directory(path: Path) -> None:
+        """Make a directory entry durable when the filesystem supports it."""
+        flags = os.O_RDONLY
+        if hasattr(os, "O_DIRECTORY"):
+            flags |= os.O_DIRECTORY
+        descriptor = None
+        try:
+            descriptor = os.open(str(path), flags)
+            os.fsync(descriptor)
+        except OSError as exc:
+            # Some network filesystems do not expose fsync for directories.
+            # File contents are still fsynced below; unsupported directory
+            # fsync must not turn a safe copy into an apparent failure.
+            if exc.errno not in {
+                errno.EINVAL,
+                errno.ENOTSUP,
+                errno.EBADF,
+                getattr(errno, "EOPNOTSUPP", errno.ENOTSUP),
+            }:
+                raise WorkspaceIntegrityError(
+                    f"Could not make transfer directory durable: {path}"
+                ) from exc
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+
+    @classmethod
+    def _fsync_tree(cls, root: Path) -> None:
+        for path in root.rglob("*"):
+            if path.is_symlink() or not path.is_file():
+                continue
+            try:
+                with path.open("rb") as handle:
+                    os.fsync(handle.fileno())
+            except OSError as exc:
+                raise WorkspaceIntegrityError(
+                    f"Could not make transferred file durable: {path}"
+                ) from exc
+        cls._fsync_directory(root)
+
+    @staticmethod
+    def _copy_tree_transactional(
+        source: Path,
+        destination: Path,
+        *,
+        expected_manifest: Optional[Mapping[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Copy a case tree, verify its content, then publish atomically.
+
+        The source is hashed before and after the copy, the temporary tree is
+        hashed before publication, and the source is never removed here. A
+        caller may therefore safely retry after any exception.
+        """
         if not source.is_dir():
-            raise WorkspaceError("Case workspace data is missing")
+            raise WorkspaceIntegrityError("Case workspace data is missing")
         if destination.exists():
-            raise WorkspaceError("The archive destination already exists")
+            raise WorkspaceError("The transfer destination already exists")
         destination.parent.mkdir(parents=True, exist_ok=True)
+        manifest = dict(expected_manifest or WorkspaceStore._tree_manifest(source))
+        source_before = WorkspaceStore._tree_manifest(source)
+        if not WorkspaceStore._manifests_equal(manifest, source_before):
+            raise WorkspaceIntegrityError(
+                "Workspace changed before transfer; source was not moved"
+            )
         temporary = destination.parent / (
             f".{destination.name}.transfer-{secrets.token_hex(8)}"
         )
         try:
             shutil.copytree(source, temporary, copy_function=shutil.copy2)
+            source_after = WorkspaceStore._tree_manifest(source)
+            if not WorkspaceStore._manifests_equal(manifest, source_after):
+                raise WorkspaceIntegrityError(
+                    "Workspace changed during transfer; source was not moved"
+                )
+            copied_manifest = WorkspaceStore._tree_manifest(temporary)
+            if not WorkspaceStore._manifests_equal(manifest, copied_manifest):
+                raise WorkspaceIntegrityError(
+                    "Transferred workspace failed checksum verification"
+                )
+            WorkspaceStore._fsync_tree(temporary)
             os.replace(temporary, destination)
+            WorkspaceStore._fsync_directory(destination.parent)
+            return manifest
         finally:
             if temporary.exists():
                 shutil.rmtree(temporary, ignore_errors=True)
+
+    def _begin_session_transfer(
+        self,
+        user_id: str,
+        session_id: str,
+        *,
+        kind: str,
+        source: Path,
+        destination: Path,
+        manifest: Mapping[str, Any],
+    ) -> str:
+        transfer_id = uuid.uuid4().hex
+        now = _now()
+        manifest_json = json.dumps(
+            _safe_json(dict(manifest)),
+            ensure_ascii=False,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        with self._connection() as connection:
+            connection.execute(
+                "INSERT INTO session_transfers("
+                "id, user_id, session_id, kind, source_root, destination_root, "
+                "manifest_json, phase, last_error, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, 'prepared', '', ?, ?)",
+                (
+                    transfer_id,
+                    user_id,
+                    session_id,
+                    kind,
+                    str(source),
+                    str(destination),
+                    manifest_json,
+                    now,
+                    now,
+                ),
+            )
+        return transfer_id
+
+    def _get_session_transfer(
+        self,
+        user_id: str,
+        session_id: str,
+    ) -> Optional[sqlite3.Row]:
+        with self._connection() as connection:
+            return connection.execute(
+                "SELECT * FROM session_transfers "
+                "WHERE user_id = ? AND session_id = ? "
+                "ORDER BY updated_at DESC LIMIT 1",
+                (user_id, session_id),
+            ).fetchone()
+
+    def _update_session_transfer(
+        self,
+        transfer_id: str,
+        phase: str,
+        *,
+        last_error: str = "",
+    ) -> None:
+        with self._connection() as connection:
+            connection.execute(
+                "UPDATE session_transfers SET phase = ?, last_error = ?, "
+                "updated_at = ? WHERE id = ?",
+                (phase, str(last_error or "")[:2000], _now(), transfer_id),
+            )
+
+    def _delete_session_transfer(self, transfer_id: str) -> None:
+        with self._connection() as connection:
+            connection.execute(
+                "DELETE FROM session_transfers WHERE id = ?",
+                (transfer_id,),
+            )
+
+    @staticmethod
+    def _manifest_from_transfer(row: sqlite3.Row) -> Dict[str, Any]:
+        try:
+            manifest = json.loads(str(row["manifest_json"]))
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise WorkspaceIntegrityError(
+                "Stored transfer manifest is unreadable"
+            ) from exc
+        if not isinstance(manifest, dict):
+            raise WorkspaceIntegrityError("Stored transfer manifest is invalid")
+        return manifest
+
+    @classmethod
+    def _matches_transfer_manifest(
+        cls,
+        root: Path,
+        manifest: Mapping[str, Any],
+    ) -> bool:
+        if not root.is_dir():
+            return False
+        try:
+            return cls._manifests_equal(manifest, cls._tree_manifest(root))
+        except WorkspaceError:
+            return False
+
+    @staticmethod
+    def _quarantine_transfer_destination(destination: Path) -> Optional[Path]:
+        """Preserve, but isolate, an incomplete/corrupt published copy."""
+        if not destination.exists():
+            return None
+        quarantine = destination.with_name(
+            f".{destination.name}.corrupt-{int(time.time())}-"
+            f"{secrets.token_hex(6)}"
+        )
+        os.replace(destination, quarantine)
+        return quarantine
+
+    @staticmethod
+    def _remove_transfer_temporaries(destination: Path) -> None:
+        parent = destination.parent
+        if not parent.exists():
+            return
+        for candidate in parent.glob(f".{destination.name}.transfer-*"):
+            if candidate.is_dir():
+                shutil.rmtree(candidate, ignore_errors=True)
+            else:
+                candidate.unlink(missing_ok=True)
+
+    def _commit_archive_metadata(
+        self,
+        user_id: str,
+        session_id: str,
+        transfer_id: str,
+        *,
+        archived: bool,
+    ) -> None:
+        now = _now()
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if archived:
+                result = connection.execute(
+                    "UPDATE case_sessions SET storage_status = 'archived', "
+                    "archived_at = ?, revision = revision + 1 "
+                    "WHERE id = ? AND user_id = ? AND status = 'active'",
+                    (now, session_id, user_id),
+                )
+            else:
+                result = connection.execute(
+                    "UPDATE case_sessions SET storage_status = 'active', "
+                    "archived_at = NULL, last_accessed_at = ?, "
+                    "updated_at = ?, revision = revision + 1 "
+                    "WHERE id = ? AND user_id = ? AND status = 'active'",
+                    (now, now, session_id, user_id),
+                )
+            if result.rowcount != 1:
+                connection.execute("ROLLBACK")
+                raise WorkspaceError("Case status changed during storage transfer")
+            connection.execute(
+                "UPDATE session_transfers SET phase = 'metadata_committed', "
+                "last_error = '', updated_at = ? WHERE id = ?",
+                (now, transfer_id),
+            )
+            connection.execute("COMMIT")
+
+    def _reconcile_session_transfer_locked(
+        self,
+        user_id: str,
+        session_id: str,
+        record: WorkspaceSession,
+    ) -> WorkspaceSession:
+        """Finish or safely abandon a transfer left by a crash.
+
+        This runs while the per-case guard is held. No source is removed until
+        the destination matches the durable manifest and the SQLite metadata
+        says which side is authoritative. Incomplete copies are discarded
+        only when the original source is still intact; published but invalid
+        copies are quarantined, never deleted.
+        """
+        transfer = self._get_session_transfer(user_id, session_id)
+        if not transfer:
+            return record
+        manifest = self._manifest_from_transfer(transfer)
+        source = Path(str(transfer["source_root"]))
+        destination = Path(str(transfer["destination_root"]))
+        kind = str(transfer["kind"])
+
+        source_ok = self._matches_transfer_manifest(source, manifest)
+        destination_ok = self._matches_transfer_manifest(destination, manifest)
+
+        if kind == "archive":
+            if record.storage_status == "archived":
+                if not destination_ok:
+                    raise WorkspaceIntegrityError(
+                        "Archived workspace failed integrity verification; "
+                        "the source copy was retained for recovery"
+                    )
+                if source.exists():
+                    # The database and verified destination make the NAS copy
+                    # authoritative. Any remaining local tree is only a
+                    # cleanup residue, even if a previous rmtree stopped
+                    # halfway through.
+                    shutil.rmtree(source)
+                    self._invalidate_storage_usage(user_id)
+                self._delete_session_transfer(str(transfer["id"]))
+                return self.get_session(
+                    user_id, session_id, include_trashed=True
+                )
+
+            # The database still says local/active. A complete destination
+            # means the process crashed after publishing but before committing
+            # metadata; promote it only when both copies match the manifest.
+            if destination_ok and (source_ok or not source.exists()):
+                self._commit_archive_metadata(
+                    user_id,
+                    session_id,
+                    str(transfer["id"]),
+                    archived=True,
+                )
+                if source.exists():
+                    shutil.rmtree(source)
+                self._invalidate_storage_usage(user_id)
+                self._delete_session_transfer(str(transfer["id"]))
+                return self.get_session(
+                    user_id, session_id, include_trashed=True
+                )
+            if destination.exists() and not destination_ok:
+                self._quarantine_transfer_destination(destination)
+            self._remove_transfer_temporaries(destination)
+            if source_ok:
+                self._delete_session_transfer(str(transfer["id"]))
+                return self.get_session(
+                    user_id, session_id, include_trashed=True
+                )
+            raise WorkspaceIntegrityError(
+                "The local workspace changed during an interrupted archive; "
+                "no data was removed"
+            )
+
+        if kind == "restore":
+            if record.storage_status == "active":
+                if not destination_ok:
+                    raise WorkspaceIntegrityError(
+                        "Restored workspace failed integrity verification; "
+                        "the archive copy was retained for recovery"
+                    )
+                if source.exists():
+                    # The verified local tree is now authoritative; the NAS
+                    # tree is only a cleanup residue after metadata commit.
+                    shutil.rmtree(source)
+                self._delete_session_transfer(str(transfer["id"]))
+                self._invalidate_storage_usage(user_id)
+                return self.get_session(
+                    user_id, session_id, include_trashed=True
+                )
+
+            if destination_ok and (source_ok or not source.exists()):
+                self._commit_archive_metadata(
+                    user_id,
+                    session_id,
+                    str(transfer["id"]),
+                    archived=False,
+                )
+                if source.exists():
+                    shutil.rmtree(source)
+                self._invalidate_storage_usage(user_id)
+                self._delete_session_transfer(str(transfer["id"]))
+                return self.get_session(
+                    user_id, session_id, include_trashed=True
+                )
+            if destination.exists() and not destination_ok:
+                self._quarantine_transfer_destination(destination)
+            self._remove_transfer_temporaries(destination)
+            if source_ok:
+                self._delete_session_transfer(str(transfer["id"]))
+                return self.get_session(
+                    user_id, session_id, include_trashed=True
+                )
+            raise WorkspaceIntegrityError(
+                "The archive workspace changed during an interrupted restore; "
+                "no data was removed"
+            )
+
+        raise WorkspaceIntegrityError(
+            f"Unknown workspace transfer type: {kind}"
+        )
 
     def archive_session(
         self,
@@ -3818,54 +4278,131 @@ class WorkspaceStore:
         owner_token: str = "",
     ) -> WorkspaceSession:
         """Move a local case to NAS cold storage without changing its ID."""
-        record = self.get_session(user_id, session_id)
-        if record.storage_status == "archived":
-            return record
-        if record.recovery_status == "running":
-            raise WorkspaceError("This case is still running a workflow")
-        if self.has_live_lease(
-            user_id,
-            session_id,
-            owner_token=owner_token,
-        ):
-            raise WorkspaceLeaseConflict(
-                "This case is being edited in another browser"
-            )
         if not self.archive_available:
             raise WorkspaceError(
                 f"Session archive storage is unavailable at {self.archive_root}"
             )
-        source = self.workspace_root(user_id, session_id)
-        destination = self.archived_workspace_root(user_id, session_id)
-        copied = False
         with self._case_guard(user_id, session_id):
-            self._copy_tree_transactional(source, destination)
-            copied = True
-            now = _now()
+            record = self.get_session(user_id, session_id)
+            record = self._reconcile_session_transfer_locked(
+                user_id, session_id, record
+            )
+            if record.storage_status == "archived":
+                return record
+            if record.recovery_status == "running":
+                raise WorkspaceError("This case is still running a workflow")
+            if self.has_live_lease(
+                user_id,
+                session_id,
+                owner_token=owner_token,
+            ):
+                raise WorkspaceLeaseConflict(
+                    "This case is being edited in another browser"
+                )
+            source = self.workspace_root(user_id, session_id)
+            destination = self.archived_workspace_root(user_id, session_id)
+            manifest = self._tree_manifest(source)
+            transfer_id = self._begin_session_transfer(
+                user_id,
+                session_id,
+                kind="archive",
+                source=source,
+                destination=destination,
+                manifest=manifest,
+            )
+            metadata_committed = False
             try:
-                with self._connection() as connection:
-                    result = connection.execute(
-                        "UPDATE case_sessions SET storage_status = 'archived', "
-                        "archived_at = ?, revision = revision + 1 "
-                        "WHERE id = ? AND user_id = ? AND status = 'active'",
-                        (now, session_id, user_id),
+                if destination.exists():
+                    if not self._matches_transfer_manifest(destination, manifest):
+                        self._quarantine_transfer_destination(destination)
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                    else:
+                        logger.info(
+                            "Reusing a verified published archive copy user=%s session=%s",
+                            user_id,
+                            session_id,
+                        )
+                if not destination.exists():
+                    self._copy_tree_transactional(
+                        source,
+                        destination,
+                        expected_manifest=manifest,
                     )
-                    if result.rowcount != 1:
-                        raise WorkspaceError("Case status changed during archive")
-                shutil.rmtree(source)
+                self._update_session_transfer(transfer_id, "published")
+                self._commit_archive_metadata(
+                    user_id,
+                    session_id,
+                    transfer_id,
+                    archived=True,
+                )
+                metadata_committed = True
+                try:
+                    shutil.rmtree(source)
+                except BaseException as exc:
+                    # The verified archive is already authoritative. Keep a
+                    # durable journal so the next access or maintenance scan
+                    # retries only this cleanup; never report data loss.
+                    self._update_session_transfer(
+                        transfer_id,
+                        "cleanup_pending",
+                        last_error=str(exc),
+                    )
+                    logger.error(
+                        "Archive committed but local cleanup is pending user=%s session=%s",
+                        user_id,
+                        session_id,
+                        exc_info=True,
+                    )
+                    return self.get_session(user_id, session_id)
                 self._invalidate_storage_usage(user_id)
-            except BaseException:
-                if copied and destination.exists() and not source.exists():
+                self._delete_session_transfer(transfer_id)
+            except BaseException as exc:
+                if not metadata_committed:
                     try:
-                        self._copy_tree_transactional(destination, source)
-                        shutil.rmtree(destination, ignore_errors=True)
+                        metadata_committed = (
+                            self.get_session(
+                                user_id, session_id, include_trashed=True
+                            ).storage_status
+                            == "archived"
+                        )
                     except Exception:
+                        # A commit acknowledgement can be lost after SQLite
+                        # has durably committed. Preserve both copies rather
+                        # than risking deletion while the metadata is unknown.
+                        metadata_committed = True
                         logger.critical(
-                            "Could not roll back failed archive transfer user=%s session=%s",
+                            "Could not determine archive metadata state; preserving both copies user=%s session=%s",
                             user_id,
                             session_id,
                             exc_info=True,
                         )
+                if metadata_committed:
+                    # The destination is authoritative; retain the journal
+                    # and both copies for a later cleanup retry.
+                    try:
+                        self._update_session_transfer(
+                            transfer_id,
+                            "cleanup_pending",
+                            last_error=str(exc),
+                        )
+                    except Exception:
+                        logger.critical(
+                            "Could not persist archive cleanup journal user=%s session=%s",
+                            user_id,
+                            session_id,
+                            exc_info=True,
+                        )
+                else:
+                    # The local source is still authoritative. Remove only a
+                    # fully verified published duplicate; incomplete or
+                    # corrupt data is preserved in quarantine instead.
+                    if destination.exists():
+                        if self._matches_transfer_manifest(destination, manifest):
+                            shutil.rmtree(destination)
+                        else:
+                            self._quarantine_transfer_destination(destination)
+                    self._remove_transfer_temporaries(destination)
+                    self._delete_session_transfer(transfer_id)
                 raise
         with self._lock:
             self._snapshot_cache.pop((str(user_id), str(session_id)), None)
@@ -3883,74 +4420,191 @@ class WorkspaceStore:
         session_id: str,
     ) -> WorkspaceSession:
         """Restore a cold case to local storage and restart its activity clock."""
-        record = self.get_session(user_id, session_id)
-        if record.storage_status != "archived":
-            return self.touch_session(user_id, session_id)
         if not self.archive_available:
             raise WorkspaceError(
                 f"Session archive storage is unavailable at {self.archive_root}"
             )
-        source = self.archived_workspace_root(user_id, session_id)
-        destination = self.workspace_root(user_id, session_id)
-        if not source.is_dir():
-            raise WorkspaceError("Archived case data is missing from NAS storage")
-        if destination.exists():
-            raise WorkspaceError("The local workspace already exists")
-        size = self._directory_bytes(source)
-        with self._quota_commit_lock(user_id):
-            self.ensure_capacity(user_id, size)
-            with self._lock:
-                quota_key = str(user_id)
-                self._quota_reservations[quota_key] = (
-                    self._quota_reservations.get(quota_key, 0) + size
+        size = 0
+        with self._case_guard(user_id, session_id):
+            record = self.get_session(user_id, session_id)
+            record = self._reconcile_session_transfer_locked(
+                user_id, session_id, record
+            )
+            if record.storage_status != "archived":
+                return self.touch_session(user_id, session_id)
+            source = self.archived_workspace_root(user_id, session_id)
+            destination = self.workspace_root(user_id, session_id)
+            if not source.is_dir():
+                raise WorkspaceIntegrityError(
+                    "Archived case data is missing from NAS storage"
                 )
-        copied = False
-        try:
-            with self._case_guard(user_id, session_id):
-                self._copy_tree_transactional(source, destination)
-                copied = True
-                now = _now()
-                try:
-                    with self._connection() as connection:
-                        result = connection.execute(
-                            "UPDATE case_sessions SET storage_status = 'active', "
-                            "archived_at = NULL, last_accessed_at = ?, "
-                            "updated_at = ?, revision = revision + 1 "
-                            "WHERE id = ? AND user_id = ? AND status = 'active'",
-                            (now, now, session_id, user_id),
-                        )
-                        if result.rowcount != 1:
-                            raise WorkspaceError("Case status changed during restore")
-                    shutil.rmtree(source)
-                    self._invalidate_storage_usage(user_id)
-                except BaseException:
-                    if copied and destination.exists() and not source.exists():
-                        try:
-                            self._copy_tree_transactional(destination, source)
-                            shutil.rmtree(destination, ignore_errors=True)
-                        except Exception:
-                            logger.critical(
-                                "Could not roll back failed archive restore user=%s session=%s",
-                                user_id,
-                                session_id,
-                                exc_info=True,
-                            )
-                    raise
-        finally:
+            manifest = self._tree_manifest(source)
+            destination_already_valid = (
+                destination.exists()
+                and self._matches_transfer_manifest(destination, manifest)
+            )
+            if destination.exists() and not destination_already_valid:
+                self._quarantine_transfer_destination(destination)
+                self._invalidate_storage_usage(user_id)
+            size = 0 if destination_already_valid else int(
+                manifest.get("total_bytes", 0)
+            )
             with self._quota_commit_lock(user_id):
+                self.ensure_capacity(user_id, size)
                 with self._lock:
-                    remaining = max(
-                        0,
-                        self._quota_reservations.get(str(user_id), 0) - size,
+                    quota_key = str(user_id)
+                    self._quota_reservations[quota_key] = (
+                        self._quota_reservations.get(quota_key, 0) + size
                     )
-                    if remaining:
-                        self._quota_reservations[str(user_id)] = remaining
-                    else:
-                        self._quota_reservations.pop(str(user_id), None)
+            transfer_id = self._begin_session_transfer(
+                user_id,
+                session_id,
+                kind="restore",
+                source=source,
+                destination=destination,
+                manifest=manifest,
+            )
+            metadata_committed = False
+            try:
+                if not destination.exists():
+                    self._copy_tree_transactional(
+                        source,
+                        destination,
+                        expected_manifest=manifest,
+                    )
+                self._update_session_transfer(transfer_id, "published")
+                self._commit_archive_metadata(
+                    user_id,
+                    session_id,
+                    transfer_id,
+                    archived=False,
+                )
+                metadata_committed = True
+                try:
+                    shutil.rmtree(source)
+                except BaseException as exc:
+                    self._update_session_transfer(
+                        transfer_id,
+                        "cleanup_pending",
+                        last_error=str(exc),
+                    )
+                    logger.error(
+                        "Restore committed but NAS cleanup is pending user=%s session=%s",
+                        user_id,
+                        session_id,
+                        exc_info=True,
+                    )
+                    return self.get_session(user_id, session_id)
+                self._invalidate_storage_usage(user_id)
+                self._delete_session_transfer(transfer_id)
+            except BaseException as exc:
+                if not metadata_committed:
+                    try:
+                        metadata_committed = (
+                            self.get_session(
+                                user_id, session_id, include_trashed=True
+                            ).storage_status
+                            == "active"
+                        )
+                    except Exception:
+                        metadata_committed = True
+                        logger.critical(
+                            "Could not determine restore metadata state; preserving both copies user=%s session=%s",
+                            user_id,
+                            session_id,
+                            exc_info=True,
+                        )
+                if metadata_committed:
+                    try:
+                        self._update_session_transfer(
+                            transfer_id,
+                            "cleanup_pending",
+                            last_error=str(exc),
+                        )
+                    except Exception:
+                        logger.critical(
+                            "Could not persist restore cleanup journal user=%s session=%s",
+                            user_id,
+                            session_id,
+                            exc_info=True,
+                        )
+                else:
+                    if destination.exists():
+                        if self._matches_transfer_manifest(destination, manifest):
+                            shutil.rmtree(destination)
+                        else:
+                            self._quarantine_transfer_destination(destination)
+                    self._remove_transfer_temporaries(destination)
+                    self._delete_session_transfer(transfer_id)
+                raise
+            finally:
+                with self._quota_commit_lock(user_id):
+                    with self._lock:
+                        remaining = max(
+                            0,
+                            self._quota_reservations.get(str(user_id), 0) - size,
+                        )
+                        if remaining:
+                            self._quota_reservations[str(user_id)] = remaining
+                        else:
+                            self._quota_reservations.pop(str(user_id), None)
         with self._lock:
             self._snapshot_cache.pop((str(user_id), str(session_id)), None)
         self._audit(user_id, session_id, "session.archive_restored", {})
         return self.get_session(user_id, session_id)
+
+    def reconcile_pending_transfers(self, *, limit: int = 64) -> Dict[str, int]:
+        """Recover interrupted storage moves without touching live cases.
+
+        The maintenance loop calls this periodically. It only examines rows
+        in the durable transfer journal, and every case is reconciled under
+        the same lock used by manual archive/activation. A transient NAS
+        failure therefore leaves the source intact and is retried later.
+        """
+        try:
+            bounded = max(1, min(int(limit or 64), 256))
+        except (TypeError, ValueError):
+            bounded = 64
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT user_id, session_id FROM session_transfers "
+                "ORDER BY updated_at ASC LIMIT ?",
+                (bounded,),
+            ).fetchall()
+        result = {"checked": 0, "recovered": 0, "deferred": 0}
+        for row in rows:
+            user_id = str(row["user_id"])
+            session_id = str(row["session_id"])
+            result["checked"] += 1
+            try:
+                with self._case_guard(user_id, session_id):
+                    record = self.get_session(
+                        user_id,
+                        session_id,
+                        include_trashed=True,
+                    )
+                    self._reconcile_session_transfer_locked(
+                        user_id,
+                        session_id,
+                        record,
+                    )
+                result["recovered"] += 1
+            except WorkspaceError:
+                result["deferred"] += 1
+                logger.warning(
+                    "Deferred recovery of interrupted workspace transfer user=%s session=%s",
+                    user_id,
+                    session_id,
+                    exc_info=True,
+                )
+            except Exception:
+                result["deferred"] += 1
+                logger.exception(
+                    "Unexpected error recovering workspace transfer user=%s session=%s",
+                    user_id,
+                    session_id,
+                )
+        return result
 
     def move_to_trash(self, user_id: str, session_id: str) -> WorkspaceSession:
         record = self.get_session(user_id, session_id)

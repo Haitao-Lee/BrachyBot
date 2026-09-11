@@ -909,6 +909,21 @@ def create_app(config: Optional[Dict] = None):
 
     def _archive_inactive_sessions_once() -> None:
         """Move cold, idle cases to NAS without touching active workflows."""
+        # Finish any copy whose process was interrupted after the data copy
+        # but before the source cleanup. This is journal-driven and does not
+        # scan ordinary cases, so it keeps the fast local path unaffected.
+        try:
+            transfer_recovery = workspace_store.reconcile_pending_transfers()
+            if transfer_recovery.get("deferred"):
+                logger.warning(
+                    "Some interrupted workspace transfers remain deferred: %s",
+                    transfer_recovery,
+                )
+        except Exception:
+            logger.warning(
+                "Workspace transfer recovery scan failed; sources are retained",
+                exc_info=True,
+            )
         cutoff = time.time() - (
             int(os.environ.get("BRACHYBOT_SESSION_ARCHIVE_AFTER_DAYS", "7"))
             * 24
