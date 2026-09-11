@@ -2025,10 +2025,12 @@ async function _refreshManualDoseViews(data, wasDoseTextureEnabled, options = {}
             const saved = byId.get(String(needle.id));
             if (!saved) continue;
             needle.points = saved.points.map(point => _vec3Array(point));
-            const mesh = scene3D?.meshes?.[needle.id];
-            if (mesh) _upsertSceneMesh(needle.id, _makeNeedleMesh(needle));
+            _upsertSceneMesh(needle.id, _makeNeedleMesh(needle));
             _syncNeedleHandles(needle);
         }
+        manualPlanningState.lastDoseNeedles = _cloneNeedleGeometry(
+            dataTreeState?.planning?.needles || [],
+        );
     }
 
     // The dose endpoint returns the authoritative seed coordinates after a
@@ -9721,7 +9723,6 @@ async function restoreNeedleToAlgorithm(needleId) {
             throw new Error((data && data.error) || `HTTP ${res.status}`);
         }
         if (restoreSessionId !== String(_activeApiSessionId() || '')) return data;
-        await loadSeeds3D();
         // Use the lightweight refresh (metrics/DVH/seeds/needles/dose overlay)
         // instead of refreshPlanningUI(), which reloads CT labels, every OAR
         // mesh, report figures and all 3D objects. A needle restore must feel
@@ -9729,11 +9730,14 @@ async function restoreNeedleToAlgorithm(needleId) {
         // and (when applicable) the recomputed dose metrics.
         if (data && typeof data.metrics === 'object' && typeof _refreshManualDoseViews === 'function') {
             const wasTexture = !!(state && state.doseTexture && state.doseTexture.enabled);
-            await _refreshManualDoseViews(data, wasTexture);
+            // Geometry, dose metrics and DVH are already in the response. Keep
+            // the user-visible restore transaction short and refresh only the
+            // dose overlay/slices in the background; do not issue a second
+            // /planning/seeds_3d request after the authoritative response.
+            await _refreshManualDoseViews(data, wasTexture, { background: true });
         } else {
             if (typeof refreshPlanningUI === 'function') await refreshPlanningUI();
         }
-        if (typeof loadAllSlices === 'function' && state.ctLoaded) await loadAllSlices();
         const message = data.fast_restore
             ? localize(`${needleId} 已恢复到算法规划位置，原始粒子和剂量已恢复。`, `${needleId} restored to the algorithm position; original seeds and dose were restored.`)
             : localize(`${needleId} 已恢复到算法规划位置，相关粒子和剂量已重新计算。`, `${needleId} restored to the algorithm position; associated seeds and dose were recomputed.`);

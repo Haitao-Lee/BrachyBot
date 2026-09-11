@@ -176,6 +176,27 @@ def test_manual_edit_forks_without_mutating_parent_and_saves_draft_geometry():
     assert list_planning_runs(agent.memory)[-1]["status"] == "draft"
 
 
+def test_restore_fork_can_skip_copying_outgoing_large_artifacts():
+    """A restore keeps the persisted parent as rollback instead of cloning dose again."""
+    agent = _agent()
+    first = begin_planning_run(agent, step="full", force_new=True)
+    _publish(agent, first, seed="seed-a")
+
+    child = fork_planning_run(
+        agent,
+        reason="restore_algorithm_needle",
+        capture_current=False,
+    )
+
+    assert child != first
+    assert agent.memory.retrieve(PLANNING_RUN_PREFIX + child) == {
+        "manual_planning_id": child,
+    }
+    assert agent.memory.retrieve(PLANNING_RUN_PREFIX + first)["dose_distribution_gy"] == [
+        [[1.0, 1.0], [1.0, 1.0]],
+    ]
+
+
 def test_failed_new_run_restores_previous_visible_run():
     agent = _agent()
     first = begin_planning_run(agent, step="full", force_new=True)

@@ -176,12 +176,12 @@ def _has_current_plan(memory: Any) -> bool:
     })
 
 
-def _capture_current(memory: Any) -> Dict[str, Any]:
+def _capture_current(memory: Any, *, clone: bool = True) -> Dict[str, Any]:
     result: Dict[str, Any] = {}
     for key in PLANNING_VALUE_KEYS:
         value = memory.retrieve(key)
         if value is not None:
-            cloned = _clone(value)
+            cloned = _clone(value) if clone else value
             if cloned is not None:
                 result[key] = cloned
     return result
@@ -452,7 +452,12 @@ def begin_planning_run(
     return planning_id
 
 
-def fork_planning_run(agent: Any, *, reason: str = "manual_edit") -> str:
+def fork_planning_run(
+    agent: Any,
+    *,
+    reason: str = "manual_edit",
+    capture_current: bool = True,
+) -> str:
     """Create an editable child run without changing the completed parent.
 
     Manual geometry edits are allowed to continue within a single draft. The
@@ -460,6 +465,14 @@ def fork_planning_run(agent: Any, *, reason: str = "manual_edit") -> str:
     snapshot, switches the mutable aliases to the child ID, and marks the
     parent hidden. The copy happens before the edit is applied, so the parent
     remains a true restore point rather than a stale label in the tree.
+
+    ``capture_current=False`` is reserved for restore transactions whose
+    outgoing run is already persisted in planning history.  Such a
+    transaction immediately replaces the child with an immutable baseline;
+    copying large dose arrays only to invalidate them would make restore as
+    slow as a recomputation.  The parent run remains the rollback point, and
+    a successful publish writes the complete child snapshot before it becomes
+    visible.
     """
     memory = agent.memory
     runs = ensure_planning_history(memory)
@@ -469,7 +482,7 @@ def fork_planning_run(agent: Any, *, reason: str = "manual_edit") -> str:
         _memory_put(memory, "manual_planning_id", str(active))
         return str(active)
 
-    parent_snapshot = _capture_current(memory)
+    parent_snapshot = _capture_current(memory) if capture_current else {}
     sequence = max((int(item.get("sequence") or 0) for item in runs), default=-1) + 1
     planning_id = f"planning-{uuid4().hex}"
     now = _now()
@@ -542,14 +555,24 @@ def _update_run(memory: Any, planning_id: str, **changes: Any) -> Optional[Dict[
     return found
 
 
-def publish_planning_run(agent: Any, result: Any = None, *, status: str = "completed") -> Optional[str]:
+def publish_planning_run(
+    agent: Any,
+    result: Any = None,
+    *,
+    status: str = "completed",
+    clone_snapshot: bool = True,
+) -> Optional[str]:
     """Persist the current active aliases as the reserved run's snapshot."""
     memory = agent.memory
     meta = getattr(result, "metadata", {}) or {}
     planning_id = str(meta.get("planning_id") or active_planning_id(memory) or "")
     if not planning_id:
         return None
-    snapshot = _capture_current(memory)
+    # A fast restore points active aliases at immutable algorithm-owned arrays.
+    # Reusing those references avoids a second full dose-grid copy during the
+    # publish step. All existing callers retain the defensive deep-copy
+    # default; only the restore route opts into this narrow contract.
+    snapshot = _capture_current(memory, clone=clone_snapshot)
     _memory_put(memory, PLANNING_RUN_PREFIX + planning_id, snapshot)
     metrics = memory.retrieve("dose_metrics") or {}
     guide = memory.retrieve("surgical_guide")
