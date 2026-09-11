@@ -325,6 +325,17 @@ def test_manual_needle_refresh_does_not_rebuild_the_whole_planning_scene():
     assert "data?.needles" in refresh_body
 
 
+def test_manual_needle_replan_rebuilds_authoritative_seed_meshes():
+    """A reprojected seed must not remain at its pre-drag WebGL position."""
+    source = _read("web/app/static/js/brachybot-3d-manual.js")
+    refresh_body = source.split("async function _refreshManualDoseViews", 1)[1].split("function _manualUiPosition", 1)[0]
+
+    assert "const authoritativeSeedIds = new Set" in refresh_body
+    assert "mesh?.userData?.type !== 'seed'" in refresh_body
+    assert "_upsertSceneMesh(seed.id, _makeSeedMesh(seed));" in refresh_body
+    assert "_syncSeedsOverlayFromDataTree();" in refresh_body
+
+
 def test_manual_replan_has_stable_id_change_detection_and_deadline_guard():
     source = _read("web/server_support.py")
     assert "stable needle id first" in source

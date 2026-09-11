@@ -1764,6 +1764,33 @@ async function _refreshManualDoseViews(data, wasDoseTextureEnabled, options = {}
         }
     }
 
+    // The dose endpoint returns the authoritative seed coordinates after a
+    // needle replan.  ``updateSeeds`` updates the planning records, but it
+    // intentionally does not rebuild the existing Three.js seed meshes.  A
+    // moved endpoint can therefore leave the yellow seed cylinder at its
+    // pre-replan position while the needle and its clipped display endpoint
+    // use the new position; visually the seed then appears on the needle's
+    // extension even though the persisted coordinates and dose calculation
+    // are correct.  Reconcile the scene objects and 2-D overlay from the
+    // same response in this narrow refresh path.
+    if (Array.isArray(data?.seeds) && typeof dataTreeState !== 'undefined') {
+        const authoritativeSeedIds = new Set(
+            data.seeds.map(seed => String(seed?.id || '')),
+        );
+        Object.entries(scene3D?.meshes || {}).forEach(([id, mesh]) => {
+            if (mesh?.userData?.type !== 'seed' || authoritativeSeedIds.has(String(id))) return;
+            scene3D.scene?.remove(mesh);
+            try { mesh.geometry?.dispose?.(); } catch (_) {}
+            try { mesh.material?.dispose?.(); } catch (_) {}
+            delete scene3D.meshes[id];
+        });
+        for (const seed of dataTreeState?.planning?.seeds || []) {
+            _upsertSceneMesh(seed.id, _makeSeedMesh(seed));
+        }
+        _syncSeedsOverlayFromDataTree();
+        if (scene3D?.requestRender) scene3D.requestRender(3);
+    }
+
     state.metrics = metrics;
     state.dvhData = metrics.dvh_data || data?.dvh_data || null;
     if (state.dvhData && typeof drawDVH === 'function') {
