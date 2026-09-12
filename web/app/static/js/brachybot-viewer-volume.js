@@ -5269,7 +5269,12 @@ function openColorPicker(id, swatchEl) {
     const existing = document.getElementById('colorDialog');
     if (existing) existing.remove();
 
-    const currentColor = itemState.color || '#888888';
+    const normalizedCurrentColor = typeof _normalizeStructureColor === 'function'
+        ? _normalizeStructureColor(itemState.color || '#888888')
+        : String(itemState.color || '#888888').trim().toLowerCase();
+    const currentColor = /^#[0-9a-f]{6}$/i.test(normalizedCurrentColor)
+        ? normalizedCurrentColor.toLowerCase()
+        : '#888888';
 
     // Create dialog
     const dialog = document.createElement('div');
@@ -5281,69 +5286,94 @@ function openColorPicker(id, swatchEl) {
         min-width: 280px; font-size: 0.75rem;
     `;
 
-    // Convert hex to HSV
-    function hexToHSV(hex) {
-        let r = parseInt(hex.slice(1,3), 16) / 255;
-        let g = parseInt(hex.slice(3,5), 16) / 255;
-        let b = parseInt(hex.slice(5,7), 16) / 255;
-        let max = Math.max(r, g, b), min = Math.min(r, g, b);
-        let h, s, v = max;
-        let d = max - min;
-        s = max === 0 ? 0 : d / max;
-        if (max === min) h = 0;
-        else {
-            switch (max) {
-                case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-                case g: h = (b - r) / d + 2; break;
-                case b: h = (r - g) / d + 4; break;
-            }
-            h /= 6;
-        }
-        return [h * 360, s * 100, v * 100];
+    // Use the same direct RGB model exposed by Qt's QColorDialog.  The
+    // previous HSV sliders were difficult to use for structure labels because
+    // changing one channel also changed the perceived meaning of the other
+    // two.  RGB channels are predictable, reproducible, and map directly to
+    // the LUT values used by the 2D and 3D viewers.
+    function hexToRGB(hex) {
+        const normalized = typeof _normalizeStructureColor === 'function'
+            ? _normalizeStructureColor(hex)
+            : String(hex || '').trim().toLowerCase();
+        const match = normalized.match(/^#([0-9a-f]{6})$/i);
+        if (!match) return [136, 136, 136];
+        return [
+            parseInt(match[1].slice(0, 2), 16),
+            parseInt(match[1].slice(2, 4), 16),
+            parseInt(match[1].slice(4, 6), 16),
+        ];
     }
 
-    function hsvToHex(h, s, v) {
-        h /= 360; s /= 100; v /= 100;
-        let r, g, b;
-        let i = Math.floor(h * 6);
-        let f = h * 6 - i;
-        let p = v * (1 - s);
-        let q = v * (1 - f * s);
-        let t = v * (1 - (1 - f) * s);
-        switch (i % 6) {
-            case 0: r = v; g = t; b = p; break;
-            case 1: r = q; g = v; b = p; break;
-            case 2: r = p; g = v; b = t; break;
-            case 3: r = p; g = q; b = v; break;
-            case 4: r = t; g = p; b = v; break;
-            case 5: r = v; g = p; b = q; break;
-        }
-        return '#' + [r, g, b].map(x => Math.round(x * 255).toString(16).padStart(2, '0')).join('');
+    function clampRgbChannel(value) {
+        const numeric = Number(value);
+        return Number.isFinite(numeric) ? Math.max(0, Math.min(255, Math.round(numeric))) : 0;
     }
 
-    let [h, s, v] = hexToHSV(currentColor);
+    function rgbToHex(r, g, b) {
+        return '#' + [r, g, b]
+            .map(channel => clampRgbChannel(channel).toString(16).padStart(2, '0'))
+            .join('');
+    }
+
+    // Qt's basic color palette: grayscale, primary/secondary colors, and
+    // their lighter/darker companions.  Keeping the palette explicit makes
+    // the choices stable across browsers and sessions.
+    const qtStandardPalette = [
+        { name: 'Black', color: '#000000' },
+        { name: 'Dark gray', color: '#404040' },
+        { name: 'Gray', color: '#808080' },
+        { name: 'Light gray', color: '#c0c0c0' },
+        { name: 'White', color: '#ffffff' },
+        { name: 'Dark red', color: '#800000' },
+        { name: 'Red', color: '#ff0000' },
+        { name: 'Light red', color: '#ff8080' },
+        { name: 'Dark green', color: '#008000' },
+        { name: 'Green', color: '#00ff00' },
+        { name: 'Light green', color: '#80ff80' },
+        { name: 'Dark yellow', color: '#808000' },
+        { name: 'Yellow', color: '#ffff00' },
+        { name: 'Light yellow', color: '#ffff80' },
+        { name: 'Dark blue', color: '#000080' },
+        { name: 'Blue', color: '#0000ff' },
+        { name: 'Light blue', color: '#8080ff' },
+        { name: 'Dark magenta', color: '#800080' },
+        { name: 'Magenta', color: '#ff00ff' },
+        { name: 'Light magenta', color: '#ff80ff' },
+        { name: 'Dark cyan', color: '#008080' },
+        { name: 'Cyan', color: '#00ffff' },
+        { name: 'Light cyan', color: '#80ffff' },
+        { name: 'Orange', color: '#ff8000' },
+    ];
+
+    const [red, green, blue] = hexToRGB(currentColor);
+    const rgbControls = [
+        { id: 'R', label: 'Red', value: red, accent: '#ef4444' },
+        { id: 'G', label: 'Green', value: green, accent: '#22c55e' },
+        { id: 'B', label: 'Blue', value: blue, accent: '#3b82f6' },
+    ].map(channel => `
+        <div style="display:grid;grid-template-columns:54px 1fr 34px;gap:8px;align-items:center;margin-bottom:7px;">
+            <label for="color${channel.id}" style="color:var(--text-dim);font-size:0.65rem;">${channel.label}</label>
+            <input type="range" id="color${channel.id}" min="0" max="255" step="1" value="${channel.value}" aria-label="${channel.label} channel" style="width:100%;accent-color:${channel.accent};">
+            <output id="color${channel.id}Value" for="color${channel.id}" style="color:var(--text);font-size:0.65rem;text-align:right;font-variant-numeric:tabular-nums;">${channel.value}</output>
+        </div>
+    `).join('');
 
     dialog.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
             <span style="font-weight:600;color:var(--text);">Color Picker</span>
             <span id="colorDialogClose" style="cursor:pointer;font-size:1rem;color:var(--text-dim);">✕</span>
         </div>
-        <div id="colorPreview" style="width:100%;height:40px;border-radius:8px;margin-bottom:12px;border:1px solid var(--card-border);background:${currentColor};"></div>
-        <div style="margin-bottom:8px;">
-            <label style="color:var(--text-dim);font-size:0.65rem;">Hue</label>
-            <input type="range" id="colorH" min="0" max="360" value="${h}" style="width:100%;accent-color:#ff4444;">
+        <div id="colorPreview" style="width:100%;height:40px;border-radius:8px;margin-bottom:8px;border:1px solid var(--card-border);background:${currentColor};"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;color:var(--text-dim);font-size:0.65rem;">
+            <span>RGB channels</span>
+            <code id="colorHexValue" style="color:var(--text);font-size:0.68rem;">${currentColor}</code>
         </div>
-        <div style="margin-bottom:8px;">
-            <label style="color:var(--text-dim);font-size:0.65rem;">Saturation</label>
-            <input type="range" id="colorS" min="0" max="100" value="${s}" style="width:100%;accent-color:#4488ff;">
-        </div>
-        <div style="margin-bottom:8px;">
-            <label style="color:var(--text-dim);font-size:0.65rem;">Value</label>
-            <input type="range" id="colorV" min="0" max="100" value="${v}" style="width:100%;accent-color:#44dd44;">
-        </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
-            ${['#ff4444','#ff8800','#ffcc00','#44dd44','#4488ff','#8844ff','#ff44aa','#ffffff','#888888','#000000'].map(c =>
-                `<div class="color-preset" data-color="${c}" style="width:24px;height:24px;border-radius:6px;background:${c};cursor:pointer;border:2px solid transparent;"></div>`
+        ${rgbControls}
+        <div id="colorRgbValue" style="text-align:right;color:var(--text-dim);font-size:0.62rem;font-variant-numeric:tabular-nums;margin:1px 0 11px;">RGB(${red}, ${green}, ${blue})</div>
+        <div style="color:var(--text-dim);font-size:0.65rem;margin-bottom:6px;">Standard colors</div>
+        <div class="color-palette-grid" role="group" aria-label="Qt standard RGB color palette" style="display:grid;grid-template-columns:repeat(8, 1fr);gap:5px;margin-bottom:12px;">
+            ${qtStandardPalette.map(({ name, color }) =>
+                `<button type="button" class="color-preset" data-color="${color}" title="${name} (${color})" aria-label="${name} ${color}" style="width:100%;height:22px;min-width:22px;border-radius:5px;background:${color};cursor:pointer;border:1px solid rgba(255,255,255,0.22);padding:0;"></button>`
             ).join('')}
         </div>
         <div style="display:flex;justify-content:flex-end;gap:8px;">
@@ -5361,28 +5391,46 @@ function openColorPicker(id, swatchEl) {
     document.body.appendChild(backdrop);
 
     const preview = dialog.querySelector('#colorPreview');
-    const hSlider = dialog.querySelector('#colorH');
-    const sSlider = dialog.querySelector('#colorS');
-    const vSlider = dialog.querySelector('#colorV');
+    const rSlider = dialog.querySelector('#colorR');
+    const gSlider = dialog.querySelector('#colorG');
+    const bSlider = dialog.querySelector('#colorB');
+    const rOutput = dialog.querySelector('#colorRValue');
+    const gOutput = dialog.querySelector('#colorGValue');
+    const bOutput = dialog.querySelector('#colorBValue');
+    const hexOutput = dialog.querySelector('#colorHexValue');
+    const rgbOutput = dialog.querySelector('#colorRgbValue');
 
     let pendingColor = currentColor;
 
-    function updateFromSliders() {
-        pendingColor = hsvToHex(parseFloat(hSlider.value), parseFloat(sSlider.value), parseFloat(vSlider.value));
+    function updateFromRgbSliders() {
+        const r = clampRgbChannel(rSlider.value);
+        const g = clampRgbChannel(gSlider.value);
+        const b = clampRgbChannel(bSlider.value);
+        rSlider.value = r;
+        gSlider.value = g;
+        bSlider.value = b;
+        rOutput.textContent = r;
+        gOutput.textContent = g;
+        bOutput.textContent = b;
+        pendingColor = rgbToHex(r, g, b);
         preview.style.background = pendingColor;
+        hexOutput.textContent = pendingColor;
+        rgbOutput.textContent = `RGB(${r}, ${g}, ${b})`;
     }
 
-    hSlider.addEventListener('input', updateFromSliders);
-    sSlider.addEventListener('input', updateFromSliders);
-    vSlider.addEventListener('input', updateFromSliders);
+    rSlider.addEventListener('input', updateFromRgbSliders);
+    gSlider.addEventListener('input', updateFromRgbSliders);
+    bSlider.addEventListener('input', updateFromRgbSliders);
 
     // Preset colors
     dialog.querySelectorAll('.color-preset').forEach(el => {
         el.addEventListener('click', () => {
             pendingColor = el.dataset.color;
-            [h, s, v] = hexToHSV(pendingColor);
-            hSlider.value = h; sSlider.value = s; vSlider.value = v;
-            preview.style.background = pendingColor;
+            const [r, g, b] = hexToRGB(pendingColor);
+            rSlider.value = r;
+            gSlider.value = g;
+            bSlider.value = b;
+            updateFromRgbSliders();
         });
     });
 
