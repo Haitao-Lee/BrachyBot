@@ -626,18 +626,43 @@ def _segment_segment_distance(
 def _manual_geometry_key_order(*values: Any) -> list[str]:
     """Return association aliases in the caller's authority order."""
     ordered: list[str] = []
+
+    def _append(value: Any) -> None:
+        if value is None or value == "":
+            return
+        key = str(value).strip()
+        if key and key not in ordered:
+            ordered.append(key)
+
     for value in values:
         if value is None or value == "":
             continue
         raw = str(value).strip()
         if not raw:
             continue
-        aliases = [raw]
+        _append(raw)
+        aliases = []
         if raw.isdigit():
-            aliases.append(f"traj_{int(raw) + 1}")
+            # Automatic planning stores zero-based numeric trajectory indices
+            # but exposes one-based public IDs (traj_1, needle_1, ...).
+            aliases.extend((f"traj_{int(raw) + 1}", f"needle_{int(raw) + 1}"))
+        match = re.fullmatch(r"(?:needle|traj|trajectory)_(\d+)", raw)
+        if match:
+            number = match.group(1)
+            aliases.extend((f"traj_{number}", f"needle_{number}"))
+        match = re.fullmatch(r"seed_(\d+)_\d+", raw)
+        if match:
+            number = match.group(1)
+            # Public seed IDs are stable and encode their one-based owning
+            # trajectory.  This repairs legacy/restored records whose
+            # trajectory_id was dropped during a Viewer hydration cycle.
+            aliases.extend((f"traj_{number}", f"needle_{number}"))
+        match = re.fullmatch(r"manual_(?:needle|traj)_(\d+)", raw)
+        if match:
+            number = match.group(1)
+            aliases.extend((f"manual_traj_{number}", f"manual_needle_{number}"))
         for key in aliases:
-            if key not in ordered:
-                ordered.append(key)
+            _append(key)
     return ordered
 
 
@@ -652,6 +677,36 @@ def _manual_geometry_keys(*values: Any) -> set[str]:
     rewritten globally.
     """
     return set(_manual_geometry_key_order(*values))
+
+
+def _manual_canonical_trajectory_id(*values: Any) -> str:
+    """Return the public trajectory ID for a legacy owner alias.
+
+    Needle/seed associations have existed in several serialized forms:
+    ``needle_9``, ``traj_9``, ``trajectory_9``, zero-based numeric values, and
+    the manual ``manual_needle_1``/``manual_traj_1`` pair.  The aliases above
+    are intentionally permissive for matching, but persisted normalized seed
+    records need one deterministic value so a subsequent request cannot lose
+    its owner.
+    """
+    for value in values:
+        if value is None or value == "":
+            continue
+        raw = str(value).strip()
+        if not raw:
+            continue
+        match = re.fullmatch(r"(?:traj|trajectory|needle)_(\d+)", raw)
+        if match:
+            return f"traj_{int(match.group(1))}"
+        match = re.fullmatch(r"seed_(\d+)_\d+", raw)
+        if match:
+            return f"traj_{int(match.group(1))}"
+        match = re.fullmatch(r"manual_(?:traj|needle)_(\d+)", raw)
+        if match:
+            return f"manual_traj_{int(match.group(1))}"
+        if raw.isdigit():
+            return f"traj_{int(raw) + 1}"
+    return ""
 
 
 def _seed_interference_report(agent, seeds, needles) -> Dict[str, Any]:
@@ -725,7 +780,7 @@ def _seed_interference_report(agent, seeds, needles) -> Dict[str, Any]:
         if not position:
             continue
         seed_keys = _manual_geometry_keys(
-            seed.get("needle_id"), seed.get("trajectory_id")
+            seed.get("needle_id"), seed.get("trajectory_id"), seed.get("id")
         )
         needle_id = str(seed.get("needle_id") or seed.get("trajectory_id") or "")
         # The owning needle is authoritative.  A browser can legitimately
@@ -740,7 +795,7 @@ def _seed_interference_report(agent, seeds, needles) -> Dict[str, Any]:
             (
                 needle_directions.get(key)
                 for key in _manual_geometry_key_order(
-                    seed.get("needle_id"), seed.get("trajectory_id")
+                    seed.get("needle_id"), seed.get("trajectory_id"), seed.get("id")
                 )
                 if key in needle_directions
             ),
@@ -799,6 +854,88 @@ def _seed_interference_report(agent, seeds, needles) -> Dict[str, Any]:
         "seed_count": len(entries),
         "close_pairs": close_pairs[:50],
     }
+
+
+def _manual_seed_interference_delta(
+    agent,
+    candidate_seeds,
+    candidate_needles,
+    *,
+    baseline_seeds=None,
+    baseline_needles=None,
+    candidate_report: Optional[Dict[str, Any]] = None,
+    tolerance_mm: float = 1e-3,
+) -> tuple[Dict[str, Any], list[dict]]:
+    """Separate newly introduced spacing conflicts from old case warnings.
+
+    A needle replan validates the complete seed list.  If an automatic plan
+    already contains a close pair on an unrelated needle, the old gate rejects
+    every later drag even when the edited needle is moved into clear space.
+    Compare the proposed geometry with the committed pre-edit geometry and
+    block only a new or worsened conflict.  Existing conflicts remain in the
+    returned diagnostic payload so they are not hidden from QA/monitoring.
+
+    When no trustworthy baseline is available, fail closed and treat all
+    candidate conflicts as blocking.
+    """
+    candidate = (
+        dict(candidate_report)
+        if isinstance(candidate_report, dict)
+        else _seed_interference_report(agent, candidate_seeds, candidate_needles)
+    )
+    candidate_pairs = list(candidate.get("close_pairs") or [])
+    if not isinstance(baseline_seeds, (list, tuple)) or not isinstance(
+        baseline_needles, (list, tuple)
+    ):
+        candidate["new_close_pairs"] = candidate_pairs
+        candidate["preexisting_close_pairs"] = []
+        candidate["blocking_close_pairs"] = candidate_pairs
+        candidate["blocking_status"] = candidate.get("status")
+        return candidate, candidate_pairs
+
+    baseline = _seed_interference_report(agent, baseline_seeds, baseline_needles)
+    baseline_by_pair = {}
+    for pair in baseline.get("close_pairs") or []:
+        key = tuple(sorted((str(pair.get("first_id") or ""), str(pair.get("second_id") or ""))))
+        if key != ("", ""):
+            baseline_by_pair[key] = pair
+
+    blocking = []
+    preexisting = []
+    for pair in candidate_pairs:
+        key = tuple(sorted((str(pair.get("first_id") or ""), str(pair.get("second_id") or ""))))
+        previous = baseline_by_pair.get(key)
+        if previous is None:
+            blocking.append(pair)
+            continue
+        try:
+            previous_axis = float(previous.get("axis_distance_mm"))
+            candidate_axis = float(pair.get("axis_distance_mm"))
+        except (TypeError, ValueError):
+            blocking.append(pair)
+            continue
+        # A pair that was already unsafe is allowed to remain a warning when
+        # this edit did not make its finite-cylinder clearance worse.  A newly
+        # unsafe or worsened pair still blocks the dose transaction.
+        if candidate_axis + float(tolerance_mm) < previous_axis:
+            blocking.append(pair)
+        else:
+            preexisting.append(pair)
+
+    candidate["new_close_pairs"] = blocking
+    candidate["blocking_close_pairs"] = blocking
+    candidate["preexisting_close_pairs"] = preexisting
+    candidate["baseline_close_pairs"] = list(baseline.get("close_pairs") or [])[:50]
+    candidate["blocking_status"] = "attention" if blocking else (
+        "preexisting" if preexisting else candidate.get("status")
+    )
+    if preexisting and not blocking:
+        logger.warning(
+            "Manual dose continues with %d pre-existing seed spacing warning(s); "
+            "no conflict was introduced or worsened by this edit",
+            len(preexisting),
+        )
+    return candidate, blocking
 
 
 def _latest_plan_snapshot(
@@ -1928,7 +2065,7 @@ def _reproject_seeds_onto_needles(
             if position is None:
                 continue
             for key in _manual_geometry_keys(
-                seed.get("needle_id"), seed.get("trajectory_id")
+                seed.get("needle_id"), seed.get("trajectory_id"), seed.get("id")
             ):
                 seeds_by_key.setdefault(key, []).append(position)
         for item in items or []:
@@ -2021,7 +2158,7 @@ def _reproject_seeds_onto_needles(
         if seed_id:
             previous_by_id[seed_id] = previous_seed
         for key in _manual_geometry_keys(
-            previous_seed.get("needle_id"), previous_seed.get("trajectory_id")
+            previous_seed.get("needle_id"), previous_seed.get("trajectory_id"), previous_seed.get("id")
         ):
             previous_by_owner.setdefault(key, []).append(previous_seed)
 
@@ -2032,7 +2169,7 @@ def _reproject_seeds_onto_needles(
             updated.append(seed)
             continue
         owner_keys = _manual_geometry_key_order(
-            seed.get("needle_id"), seed.get("trajectory_id")
+            seed.get("needle_id"), seed.get("trajectory_id"), seed.get("id")
         )
         matching_keys = [key for key in owner_keys if key in old_by_traj and key in new_by_traj]
         old_line = old_by_traj.get(matching_keys[0]) if matching_keys else None
@@ -2772,14 +2909,14 @@ def _compute_manual_ai_dose(
                 seed for seed in previous_seed_records
                 if isinstance(seed, dict)
                 and _manual_geometry_keys(
-                    seed.get("needle_id"), seed.get("trajectory_id")
+                    seed.get("needle_id"), seed.get("trajectory_id"), seed.get("id")
                 ).intersection(changed_trajectories)
             ]
             new_records = [
                 seed for seed in norm_seeds
                 if isinstance(seed, dict)
                 and _manual_geometry_keys(
-                    seed.get("needle_id"), seed.get("trajectory_id")
+                    seed.get("needle_id"), seed.get("trajectory_id"), seed.get("id")
                 ).intersection(changed_trajectories)
             ]
             old_norm, old_model = _prepare_model_seeds(old_records)

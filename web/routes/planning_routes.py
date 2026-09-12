@@ -673,8 +673,10 @@ _build_plan_advice = _server_support._build_plan_advice
 _build_system_readiness = _server_support._build_system_readiness
 _compute_manual_ai_dose = _server_support._compute_manual_ai_dose
 _seed_interference_report = _server_support._seed_interference_report
+_manual_seed_interference_delta = _server_support._manual_seed_interference_delta
 _effective_manual_seeds_for_interference = _server_support._effective_manual_seeds_for_interference
 _manual_geometry_keys = _server_support._manual_geometry_keys
+_manual_canonical_trajectory_id = _server_support._manual_canonical_trajectory_id
 _manual_dose_transaction_lock = _server_support._manual_dose_transaction_lock
 _decode_png_data_url = _server_support._decode_png_data_url
 _make_screenshot_url = _server_support._make_screenshot_url
@@ -1348,6 +1350,45 @@ def _current_planning_snapshot(agent):
     return {"seeds": [], "needles": []}
 
 
+def _manual_interference_baseline(
+    current_snapshot,
+    *,
+    current_needles,
+    previous_needles=None,
+    previous_seeds=None,
+    previous_snapshot=None,
+    reproject_seeds=False,
+):
+    """Resolve the geometry that existed immediately before a dose edit.
+
+    Needle replan requests carry a pre-drag snapshot because the browser has
+    already moved the handle optimistically. Seed edits, on the other hand,
+    commit the new seed list before the dose request and carry only
+    ``previous_seeds``. Using the wrong side of that transaction as the
+    baseline makes already-existing warnings look like new conflicts.
+    """
+    current_snapshot = current_snapshot if isinstance(current_snapshot, dict) else {}
+    if reproject_seeds:
+        snapshot = previous_snapshot if isinstance(previous_snapshot, dict) else {}
+        baseline_seeds = snapshot.get("seeds")
+        baseline_needles = snapshot.get("needles")
+        if not isinstance(baseline_seeds, list):
+            baseline_seeds = previous_seeds if isinstance(previous_seeds, list) else current_snapshot.get("seeds")
+        if not isinstance(baseline_needles, list):
+            baseline_needles = previous_needles if isinstance(previous_needles, list) else current_snapshot.get("needles")
+    elif isinstance(previous_seeds, list):
+        baseline_seeds = previous_seeds
+        baseline_needles = current_snapshot.get("needles")
+    else:
+        baseline_seeds = current_snapshot.get("seeds")
+        baseline_needles = current_snapshot.get("needles")
+    if not isinstance(baseline_needles, list):
+        baseline_needles = current_needles if isinstance(current_needles, list) else None
+    if not isinstance(baseline_seeds, list) or not isinstance(baseline_needles, list):
+        return None, None
+    return list(baseline_seeds), list(baseline_needles)
+
+
 def _restore_failed_manual_mutation(
     agent,
     *,
@@ -1425,15 +1466,21 @@ def _normalize_manual_seed_records(
     settings = _manual_seed_geometry_settings(memory)
     needle_by_trajectory = {}
     needle_canonical_trajectory = {}
+    needle_canonical_id = {}
     for needle in needles or []:
         if not isinstance(needle, dict):
             continue
         points = needle.get("points")
         if not isinstance(points, list) or len(points) < 2:
             continue
-        trajectory_id = str(needle.get("trajectory_id") or needle.get("id") or "").strip()
+        trajectory_id = _manual_canonical_trajectory_id(
+            needle.get("trajectory_id"),
+            needle.get("id"),
+            needle.get("needle_id"),
+        ) or str(needle.get("trajectory_id") or needle.get("id") or "").strip()
         if not trajectory_id:
             continue
+        needle_id = str(needle.get("id") or needle.get("needle_id") or trajectory_id).strip()
         start = np.asarray(points[0], dtype=np.float64).reshape(-1)[:3]
         end = np.asarray(points[-1], dtype=np.float64).reshape(-1)[:3]
         if start.size != 3 or end.size != 3 or not np.all(np.isfinite([*start, *end])):
@@ -1448,6 +1495,7 @@ def _normalize_manual_seed_records(
         ):
             needle_by_trajectory[key] = geometry
             needle_canonical_trajectory[key] = trajectory_id
+            needle_canonical_id[key] = needle_id
 
     normalized = []
     seen_ids = set()
@@ -1461,7 +1509,7 @@ def _normalize_manual_seed_records(
             raise ValueError(f"Duplicate seed id: {seed_id}")
         seen_ids.add(seed_id)
         seed_keys = _server_support._manual_geometry_key_order(
-            seed.get("needle_id"), seed.get("trajectory_id")
+            seed.get("needle_id"), seed.get("trajectory_id"), seed_id
         )
         trajectory_key = next(
             (key for key in seed_keys if key in needle_by_trajectory),
@@ -1472,7 +1520,13 @@ def _normalize_manual_seed_records(
             raise ValueError(f"Seed {seed_id} has no valid owning needle")
         trajectory_id = needle_canonical_trajectory.get(
             trajectory_key,
-            str(seed.get("trajectory_id") or seed.get("needle_id") or "").strip(),
+            _manual_canonical_trajectory_id(
+                seed.get("trajectory_id"), seed.get("needle_id"), seed_id
+            ) or str(seed.get("trajectory_id") or seed.get("needle_id") or "").strip(),
+        )
+        owner_needle_id = needle_canonical_id.get(
+            trajectory_key,
+            str(seed.get("needle_id") or "").strip(),
         )
         position = np.asarray(seed.get("position") or seed.get("pos"), dtype=np.float64).reshape(-1)[:3]
         if position.size != 3 or not np.all(np.isfinite(position)):
@@ -1511,6 +1565,7 @@ def _normalize_manual_seed_records(
         projected = start + position_unit * distance_mm
         normalized.append({
             "id": seed_id,
+            "needle_id": owner_needle_id or None,
             "position": projected.tolist(),
             "direction": direction_unit.tolist(),
             "trajectory_id": trajectory_id,
@@ -5148,11 +5203,25 @@ def register_planning_routes(
             previous_snapshot=previous_snapshot,
             reproject_seeds=reproject_seeds,
         )
-        interference = _seed_interference_report(agent, safety_seeds, needles)
+        baseline_safety_seeds, baseline_safety_needles = _manual_interference_baseline(
+            current_snapshot,
+            current_needles=needles,
+            previous_needles=previous_needles,
+            previous_seeds=previous_seeds,
+            previous_snapshot=previous_snapshot,
+            reproject_seeds=reproject_seeds,
+        )
+        interference, blocking_pairs = _manual_seed_interference_delta(
+            agent,
+            safety_seeds,
+            needles,
+            baseline_seeds=baseline_safety_seeds,
+            baseline_needles=baseline_safety_needles,
+        )
         if reproject_seeds and safety_reprojection_count:
             interference["validated_after_reprojection"] = True
             interference["reprojected_seed_count"] = safety_reprojection_count
-        if interference.get("status") == "attention" and not safety_override:
+        if blocking_pairs and not safety_override:
             current = _current_planning_snapshot(agent)
             return jsonify({
                 "success": False,
@@ -5169,7 +5238,7 @@ def register_planning_routes(
                 "safety_warning": "Dose update requires an explicit decision about the unsafe seed geometry.",
                 "artifact_status": agent.memory.retrieve("manual_artifact_status") or {},
             }), 422
-        if safety_override and interference.get("status") == "attention":
+        if safety_override and blocking_pairs:
             logger.warning(
                 "Retaining seed geometry after explicit safety override during dose update session=%s",
                 session_id,
@@ -5224,7 +5293,7 @@ def register_planning_routes(
                 previous_dose=previous_dose,
                 reproject_seeds=reproject_seeds,
             )
-            safety_override_applied = safety_override and interference.get("status") == "attention"
+            safety_override_applied = safety_override and bool(blocking_pairs)
             if safety_override_applied:
                 result["artifact_status"] = _annotate_manual_safety_status(
                     agent.memory,
@@ -5839,8 +5908,16 @@ def register_planning_routes(
                 logger.warning("Repairing duplicate submitted seed IDs: %s", repaired_seed_ids)
             normalized_seeds = _normalize_manual_seed_records(memory, raw_seeds, needles)
             interference = _seed_interference_report(agent, normalized_seeds, needles)
+            interference, blocking_pairs = _manual_seed_interference_delta(
+                agent,
+                normalized_seeds,
+                needles,
+                baseline_seeds=current.get("seeds"),
+                baseline_needles=current.get("needles"),
+                candidate_report=interference,
+            )
             if (
-                interference.get("status") == "attention"
+                blocking_pairs
                 and not safety_override
                 and not seed_creation_mode
             ):
@@ -5866,13 +5943,13 @@ def register_planning_routes(
                     "safety_warning": "Seed geometry requires an explicit decision before it can be retained.",
                     "artifact_status": memory.retrieve("manual_artifact_status") or {},
                 }), 422
-            if safety_override and interference.get("status") == "attention":
+            if safety_override and blocking_pairs:
                 logger.warning(
                     "Retaining seed geometry after explicit safety override session=%s seed_count=%s",
                     session_id,
                     len(normalized_seeds),
                 )
-            if seed_creation_mode and interference.get("status") == "attention":
+            if seed_creation_mode and interference.get("status") == "attention" and blocking_pairs:
                 logger.info(
                     "Retaining seed geometry as an editable Add Seed draft despite spacing warning session=%s seed_count=%s",
                     session_id,
@@ -5926,8 +6003,8 @@ def register_planning_routes(
                 reason=reason,
                 planning_version=next_version,
             )
-            safety_override_applied = safety_override and interference.get("status") == "attention"
-            creation_warning_applied = seed_creation_mode and interference.get("status") == "attention"
+            safety_override_applied = safety_override and bool(blocking_pairs)
+            creation_warning_applied = seed_creation_mode and bool(blocking_pairs)
             if safety_override_applied:
                 artifact_status = _annotate_manual_safety_status(
                     memory,
