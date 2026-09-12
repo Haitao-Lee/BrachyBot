@@ -63,3 +63,19 @@ def test_palette_defaults_are_shared_by_config_and_data_tree():
     assert "dataTreeState.ctv?.color || '#ff304c'" in report
     assert '"oar_non_traversable_color": "#e58a48"' in config
     assert '"oar_traversable_color": "#3ccb8f"' in config
+
+
+def test_data_tree_color_picker_uses_direct_rgb_controls_and_qt_palette():
+    viewer = read("web/app/static/js/brachybot-viewer-volume.js")
+
+    assert "{ id: 'R', label: 'Red'" in viewer
+    assert "{ id: 'G', label: 'Green'" in viewer
+    assert "{ id: 'B', label: 'Blue'" in viewer
+    assert "id=\"color${channel.id}\"" in viewer
+    assert "Qt's basic color palette" in viewer
+    assert "Qt standard RGB color palette" in viewer
+    assert "id=\"colorHexValue\"" in viewer
+    assert "id=\"colorH\"" not in viewer
+    assert "id=\"colorS\"" not in viewer
+    assert "id=\"colorV\"" not in viewer
+    assert "hsvToHex" not in viewer
