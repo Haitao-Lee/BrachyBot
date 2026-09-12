@@ -18,6 +18,7 @@ from web.routes.planning_routes import (
 )
 from web.server_support import (
     _effective_manual_seeds_for_interference,
+    _manual_seed_interference_delta,
     _manual_grid_array,
     _reproject_seeds_onto_needles,
     _seed_interference_report,
@@ -150,6 +151,109 @@ def test_needle_replan_validates_reprojected_seeds_not_stale_payload_positions()
     assert reprojection_count == 1
     assert np.allclose(effective[0]["position"], [5.0, 0.0, 10.0])
     assert effective_report["status"] == "clear"
+
+
+def test_needle_replan_does_not_block_on_preexisting_unrelated_spacing_warning():
+    """An old conflict on another needle must not veto a clear endpoint edit."""
+    memory = Memory({
+        "plan_config": {
+            "seed_info": {
+                "length": 4.5,
+                "radius": 0.4,
+                "minimum_clearance_mm": 0.5,
+            },
+        },
+    })
+    agent = SimpleNamespace(memory=memory)
+    baseline_needles = [
+        {"id": "needle_1", "trajectory_id": "traj_1", "points": [[0, 0, 0], [0, 0, 20]]},
+        {"id": "needle_2", "trajectory_id": "traj_2", "points": [[0.2, 0, 0], [0.2, 0, 20]]},
+        {"id": "needle_9", "trajectory_id": "traj_9", "points": [[10, 0, 0], [10, 0, 20]]},
+    ]
+    candidate_needles = [*baseline_needles[:2], {
+        "id": "needle_9", "trajectory_id": "traj_9", "points": [[11, 0, 0], [11, 0, 20]],
+    }]
+    baseline_seeds = [
+        {"id": "seed_1_1", "trajectory_id": "traj_1", "position": [0, 0, 10]},
+        {"id": "seed_2_1", "trajectory_id": "traj_2", "position": [0.2, 0, 10]},
+        {"id": "seed_9_1", "trajectory_id": "traj_9", "position": [10, 0, 10]},
+    ]
+    candidate_seeds = [*baseline_seeds[:2], {
+        "id": "seed_9_1", "trajectory_id": "traj_9", "position": [11, 0, 10],
+    }]
+
+    report, blocking = _manual_seed_interference_delta(
+        agent,
+        candidate_seeds,
+        candidate_needles,
+        baseline_seeds=baseline_seeds,
+        baseline_needles=baseline_needles,
+    )
+
+    assert blocking == []
+    assert report["blocking_status"] == "preexisting"
+    assert [
+        (pair["first_id"], pair["second_id"])
+        for pair in report["preexisting_close_pairs"]
+    ] == [("seed_1_1", "seed_2_1")]
+
+
+def test_needle_replan_still_blocks_a_new_spacing_conflict():
+    memory = Memory({
+        "plan_config": {
+            "seed_info": {
+                "length": 4.5,
+                "radius": 0.4,
+                "minimum_clearance_mm": 0.5,
+            },
+        },
+    })
+    agent = SimpleNamespace(memory=memory)
+    baseline_needles = [
+        {"id": "needle_1", "trajectory_id": "traj_1", "points": [[0, 0, 0], [0, 0, 20]]},
+        {"id": "needle_9", "trajectory_id": "traj_9", "points": [[10, 0, 0], [10, 0, 20]]},
+    ]
+    candidate_needles = [
+        baseline_needles[0],
+        {"id": "needle_9", "trajectory_id": "traj_9", "points": [[0.2, 0, 0], [0.2, 0, 20]]},
+    ]
+    baseline_seeds = [
+        {"id": "seed_1_1", "trajectory_id": "traj_1", "position": [0, 0, 10]},
+        {"id": "seed_9_1", "trajectory_id": "traj_9", "position": [10, 0, 10]},
+    ]
+    candidate_seeds = [
+        baseline_seeds[0],
+        {"id": "seed_9_1", "trajectory_id": "traj_9", "position": [0.2, 0, 10]},
+    ]
+
+    _report, blocking = _manual_seed_interference_delta(
+        agent,
+        candidate_seeds,
+        candidate_needles,
+        baseline_seeds=baseline_seeds,
+        baseline_needles=baseline_needles,
+    )
+
+    assert [(pair["first_id"], pair["second_id"]) for pair in blocking] == [
+        ("seed_1_1", "seed_9_1"),
+    ]
+
+
+def test_seed_owner_is_repaired_from_public_seed_and_needle_ids():
+    """Hydration must recover ownership when trajectory_id was omitted."""
+    memory = Memory({"plan_config": {"seed_info": {"length": 4.5, "radius": 0.4}}})
+    needles = [{
+        "id": "needle_9",
+        "points": [[0.0, 0.0, 0.0], [0.0, 0.0, 20.0]],
+    }]
+
+    result = _normalize_manual_seed_records(memory, [{
+        "id": "seed_9_1",
+        "position": [0.0, 0.0, 10.0],
+    }], needles)
+
+    assert result[0]["trajectory_id"] == "traj_9"
+    assert result[0]["needle_id"] == "needle_9"
 
 
 def test_needle_replan_uses_pre_edit_seeds_and_display_endpoint_contract():
@@ -682,6 +786,7 @@ def test_add_seed_spacing_exception_is_narrow_and_keeps_later_edits_strict():
     assert "seed_creation_mode = _manual_seed_creation_requested(data, reason)" in update_route
     assert "and not seed_creation_mode" in update_route
     assert "if seed_creation_mode and interference.get(\"status\") == \"attention\"" in update_route
+    assert "blocking_close_pairs" in manual
     assert "_annotate_manual_seed_creation_status" in update_route
     assert '"seed_creation_mode": "draft" if seed_creation_mode else None' in update_route
     assert '"requires_user_decision": True' in update_route

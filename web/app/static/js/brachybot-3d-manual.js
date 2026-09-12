@@ -436,7 +436,13 @@ function _reportCommittedManualEvent(data, fallbackType, fallbackLabel, detail =
 }
 
 function _seedInterferenceDetails(interference = {}) {
-    const pairs = Array.isArray(interference.close_pairs) ? interference.close_pairs : [];
+    // The backend keeps pre-existing warnings for QA, but an edit rejection
+    // must explain only the new or worsened conflicts that actually blocked
+    // this transaction. Otherwise an unrelated old pair (for example
+    // seed_1_1 / seed_1_2) makes a needle_9 drag look guilty.
+    const pairs = Array.isArray(interference.blocking_close_pairs)
+        ? interference.blocking_close_pairs
+        : (Array.isArray(interference.close_pairs) ? interference.close_pairs : []);
     const details = pairs.slice(0, 4).map(pair => {
         const first = pair.first_id || '?';
         const second = pair.second_id || '?';
