@@ -22,6 +22,7 @@ from tool_factory.seed_plan.planning_pipeline import (
     _build_radiation_volume,
     _filter_world_safe_trajectories,
     _validated_needle_geometry,
+    _clip_needle_to_farthest_seed,
     _seed_plan_entry_needle_points,
     _world_segment_hits_obstacle,
     _resolve_data_tree_obstacle_labels,
@@ -172,6 +173,67 @@ class NeedleObstacleSafetyTests(unittest.TestCase):
         points = _seed_plan_entry_needle_points(entry, 150.0)
         self.assertTrue(np.allclose(points[0], [20.0, 8.0, 6.0]))
         self.assertTrue(np.allclose(points[1], [-140.0, 8.0, 6.0]))
+
+    def test_published_needle_ends_at_farthest_on_axis_seed(self):
+        points = [
+            np.array([0.0, 0.0, 10.0]),
+            np.array([0.0, 0.0, -150.0]),
+        ]
+        seeds = [
+            (np.array([0.0, 0.0, 2.0]), np.array([0.0, 0.0, 1.0])),
+            (np.array([0.0, 0.0, 8.0]), np.array([0.0, 0.0, 1.0])),
+        ]
+
+        clipped, changed = _clip_needle_to_farthest_seed(points, seeds)
+
+        self.assertTrue(changed)
+        self.assertTrue(np.allclose(clipped[0], [0.0, 0.0, 8.0]))
+        self.assertTrue(np.allclose(clipped[1], points[1]))
+
+    def test_off_axis_seed_cannot_change_published_needle_endpoint(self):
+        points = [
+            np.array([0.0, 0.0, 10.0]),
+            np.array([0.0, 0.0, -150.0]),
+        ]
+        stale_seed = {
+            "position": [0.0, 4.0, 8.0],
+            "direction": [0.0, 0.0, 1.0],
+        }
+
+        clipped, changed = _clip_needle_to_farthest_seed(points, [stale_seed])
+
+        self.assertFalse(changed)
+        self.assertTrue(np.allclose(clipped[0], points[0]))
+        self.assertTrue(np.allclose(clipped[1], points[1]))
+
+    def test_validated_geometry_publishes_clipped_endpoint(self):
+        image = sitk.Image([20, 20, 20], sitk.sitkInt16)
+        image.SetOrigin((0.0, 0.0, 0.0))
+        image.SetSpacing((1.0, 1.0, 1.0))
+        ctv = np.zeros((20, 20, 20), dtype=np.uint8)
+        oar = np.zeros_like(ctv)
+        trajectory = [
+            np.array([10.0, 0.0, 10.0]),
+            np.array([0.0, 1.0, 0.0]),
+            [3.0],
+            [],
+        ]
+        plan_res = [[
+            trajectory,
+            [
+                (np.array([10.0, 0.0, 10.0]), np.array([0.0, 1.0, 0.0])),
+                (np.array([10.0, 3.0, 10.0]), np.array([0.0, 1.0, 0.0])),
+            ],
+            [],
+        ]]
+
+        geometry, unsafe = _validated_needle_geometry(
+            plan_res, image, image, ctv, oar, set()
+        )
+
+        self.assertEqual(unsafe, [])
+        self.assertTrue(np.allclose(geometry["0"][0], [10.0, 3.0, 10.0]))
+        self.assertTrue(np.allclose(geometry["0"][1], [10.0, -150.0, 10.0]))
 
     def test_candidate_entering_through_truncated_z_boundary_is_rejected(self):
         from tool_factory.seed_plan.planning_pipeline import (
