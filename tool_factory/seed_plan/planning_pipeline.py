@@ -1494,6 +1494,99 @@ def _candidate_world_needle_points(trajectory, planning_image, extension_mm=None
         return None
 
 
+def _clip_needle_to_farthest_seed(points, seeds, tolerance_mm=1e-3):
+    """Clip a candidate needle at the farthest final seed on its axis.
+
+    Candidate trajectories are represented as [deep, external]. The complete
+    candidate must still be safety-validated before clipping, because the
+    physical needle insertion path is longer than the active seed span. This
+    helper only publishes the clinically meaningful segment: its deep endpoint
+    is the projection of the farthest seed center that is actually on the
+    candidate axis. A stale or mismatched seed is ignored rather than moving
+    the needle to an unrelated position.
+    """
+    if not isinstance(points, (list, tuple)) or len(points) < 2:
+        return points, False
+    try:
+        deep = np.asarray(points[0], dtype=np.float64).reshape(-1)[:3]
+        external = np.asarray(points[-1], dtype=np.float64).reshape(-1)[:3]
+        if (
+            deep.size != 3
+            or external.size != 3
+            or not np.all(np.isfinite(deep))
+            or not np.all(np.isfinite(external))
+        ):
+            return points, False
+
+        axis = deep - external
+        length_sq = float(np.dot(axis, axis))
+        length = float(np.sqrt(length_sq))
+        if not np.isfinite(length) or length <= 1e-12:
+            return points, False
+
+        try:
+            tolerance = float(tolerance_mm)
+        except (TypeError, ValueError):
+            tolerance = 1e-3
+        if not np.isfinite(tolerance) or tolerance <= 0.0:
+            tolerance = 1e-3
+        param_tolerance = tolerance / length
+
+        seed_records = seeds if isinstance(seeds, (list, tuple)) else []
+        farthest_param = None
+        farthest_projection = None
+        for seed in seed_records:
+            if isinstance(seed, dict):
+                position = seed.get("position")
+                if position is None:
+                    position = seed.get("pos")
+            elif isinstance(seed, (list, tuple)) and len(seed) >= 1:
+                position = seed[0]
+            else:
+                continue
+            if position is None:
+                continue
+            try:
+                seed_position = np.asarray(position, dtype=np.float64).reshape(-1)[:3]
+            except (TypeError, ValueError):
+                continue
+            if seed_position.size != 3 or not np.all(np.isfinite(seed_position)):
+                continue
+
+            # Parameter zero is the external end and one is the candidate
+            # deep end. Do not extend a needle because of a seed outside the
+            # validated candidate segment.
+            parameter = float(np.dot(seed_position - external, axis) / length_sq)
+            if (
+                not np.isfinite(parameter)
+                or parameter < -param_tolerance
+                or parameter > 1.0 + param_tolerance
+            ):
+                continue
+            parameter = float(np.clip(parameter, 0.0, 1.0))
+            projection = external + parameter * axis
+            distance = float(np.linalg.norm(seed_position - projection))
+            if not np.isfinite(distance) or distance > tolerance:
+                continue
+            if farthest_param is None or parameter > farthest_param:
+                farthest_param = parameter
+                farthest_projection = projection
+
+        if farthest_projection is None:
+            return points, False
+
+        clipped_points = list(points)
+        clipped_points[0] = farthest_projection
+        changed = bool(np.linalg.norm(farthest_projection - deep) > 1e-6)
+        return clipped_points, changed
+    except Exception:
+        # Endpoint publication must never turn a malformed optional seed
+        # record into a planning failure. The full candidate remains the
+        # conservative fallback.
+        logger.debug("[needle_safety] Unable to clip needle to final seeds", exc_info=True)
+        return points, False
+
+
 def _sample_preview_items(values, limit):
     """Sample a long optimizer list across its full range, deterministically."""
     items = list(values or [])
@@ -1528,6 +1621,10 @@ def _preview_seed_plan_geometry(plan_res, dose_image, *, coordinate_space="voxel
             continue
         trajectory = entry[0]
         points = _candidate_world_needle_points(trajectory, dose_image)
+        if str(coordinate_space).strip().lower() in {
+            "world", "patient_world_lps", "physical", "lps",
+        }:
+            points, _ = _clip_needle_to_farthest_seed(points, entry[1])
         if points is not None:
             needles.append({
                 "id": f"preview_needle_{trajectory_index}",
@@ -1990,14 +2087,15 @@ def _filter_world_safe_trajectories(
 
 
 def _validated_needle_geometry(plan_res, ct_image, planning_image, ctv_mask, oar_mask, obstacle_labels):
-    """Return geometry from the final algorithm trajectory only when it is safe.
+    """Return safe final geometry, ending at each needle's farthest seed.
 
     A previous implementation reconstructed a line from the returned seed
     positions. That is not equivalent to the optimizer's trajectory: seed
     directions can be transformed to world space independently and the
     reconstructed line may therefore differ from the candidate that was
-    filtered. The trajectory is the authoritative needle geometry and must be
-    validated and rendered as-is.
+    filtered. The trajectory remains authoritative for direction and safety;
+    after validating the complete physical candidate, only its deep endpoint
+    is clipped to the farthest seed that lies on that validated line.
     """
     geometry = {}
     unsafe_indices = []
@@ -2012,13 +2110,29 @@ def _validated_needle_geometry(plan_res, ct_image, planning_image, ctv_mask, oar
         points = _candidate_world_needle_points(
             trajectory, planning_image, extension
         )
-        if safety_context is not None and safety_context.segment_hits_obstacle(points):
-            unsafe_indices.append(index)
-            continue
         if safety_context is None or points is None:
             unsafe_indices.append(index)
             continue
-        geometry[str(index)] = [np.asarray(point, dtype=float).tolist() for point in points]
+        if safety_context.segment_hits_obstacle(points):
+            unsafe_indices.append(index)
+            continue
+        if isinstance(entry, dict):
+            seed_records = entry.get("seeds") or []
+        elif isinstance(entry, (list, tuple)) and len(entry) >= 2:
+            seed_records = entry[1] or []
+        else:
+            seed_records = []
+        published_points, clipped = _clip_needle_to_farthest_seed(
+            points, seed_records
+        )
+        if clipped:
+            logger.debug(
+                "[needle_safety] clipped trajectory %d deep endpoint to its farthest final seed",
+                index,
+            )
+        geometry[str(index)] = [
+            np.asarray(point, dtype=float).tolist() for point in published_points
+        ]
     return geometry, unsafe_indices
 
 
