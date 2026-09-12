@@ -1630,6 +1630,11 @@ const state = {
     doseOpacity: 0.4,
     doseTexture: {
         enabled: false,
+        // Persist the operator's intended display mode separately from the
+        // Three.js runtime mapping.  During a cold restore the desired mode
+        // can be true while meshes/materials are still being hydrated.
+        desiredEnabled: false,
+        restorePending: false,
         applying: false,
         mappedMeshIds: [],
         renderSignature: '',
@@ -2927,6 +2932,12 @@ async function handleFileSelect(input, targetId) {
             await loadCTToViewers(data.path, {
                 sessionId: ownerSessionId,
                 announce: isCurrentOwner(),
+                // Explicit CT uploads may have a CTV/OAR file selected first;
+                // allow the compatibility pass to import that user file.
+                // Session restoration leaves this disabled and restores the
+                // authoritative label arrays instead of re-posting a model
+                // output path as if it were an uploaded mask.
+                restoreUploadedMasks: true,
             });
         } else if (targetId === 'ctvPath' || targetId === 'oarPath') {
             await importUploadedMask(targetId === 'ctvPath' ? 'ctv' : 'oar', data.path, {
@@ -2967,15 +2978,15 @@ async function handleFileSelect(input, targetId) {
  */
 const _segmentationHydrationInFlight = new Map();
 
-function _segmentationHydrationRequestKey(body, sessionId) {
-    return `${String(sessionId || '')}\u0000${JSON.stringify(body || {})}`;
+function _segmentationHydrationRequestKey(body, sessionId, scopeKey = '') {
+    return `${String(sessionId || '')}\u0000${String(scopeKey || '')}\u0000${JSON.stringify(body || {})}`;
 }
 
-async function _postSegmentationWithHydrationRetry(body, sessionId) {
-    const key = _segmentationHydrationRequestKey(body, sessionId);
+async function _postSegmentationWithHydrationRetry(body, sessionId, options = {}) {
+    const key = _segmentationHydrationRequestKey(body, sessionId, options.scopeKey);
     const existing = _segmentationHydrationInFlight.get(key);
     if (existing) return existing;
-    const promise = _postSegmentationWithHydrationRetryCore(body, sessionId);
+    const promise = _postSegmentationWithHydrationRetryCore(body, sessionId, options);
     _segmentationHydrationInFlight.set(key, promise);
     return promise.finally(() => {
         if (_segmentationHydrationInFlight.get(key) === promise) {
@@ -2984,11 +2995,15 @@ async function _postSegmentationWithHydrationRetry(body, sessionId) {
     });
 }
 
-async function _postSegmentationWithHydrationRetryCore(body, sessionId) {
+async function _postSegmentationWithHydrationRetryCore(body, sessionId, options = {}) {
     const maxPendingAttempts = 240;
+    const shouldContinue = typeof options.isCurrent === 'function'
+        ? options.isCurrent
+        : () => true;
     let response = null;
     let payload = {};
     for (let attempt = 0; attempt <= maxPendingAttempts; attempt += 1) {
+        if (!shouldContinue()) return { stale: true, response: null, payload: {} };
         response = await fetch(API + '/segmentation', {
             method: 'POST',
             headers: {
@@ -2998,6 +3013,7 @@ async function _postSegmentationWithHydrationRetryCore(body, sessionId) {
             body: JSON.stringify(body),
         });
         payload = await response.clone().json().catch(() => ({}));
+        if (!shouldContinue()) return { stale: true, response: null, payload: {} };
         const hydrationPending = response.status === 202;
         const rateLimited = response.status === 429
             && payload.code === 'rate_limit_exceeded';
@@ -3018,6 +3034,7 @@ async function _postSegmentationWithHydrationRetryCore(body, sessionId) {
             resolve,
             Math.max(1000, Math.min(maxDelay, Number.isFinite(retryAfter) ? retryAfter : 1000)),
         ));
+        if (!shouldContinue()) return { stale: true, response: null, payload: {} };
     }
     throw new Error('The segmentation request did not reach a terminal server response.');
 }
@@ -3026,7 +3043,11 @@ window._postSegmentationWithHydrationRetry = _postSegmentationWithHydrationRetry
 /** Import a user-provided label into the session-scoped agent memory. */
 async function importUploadedMask(kind, labelPath, options = {}) {
     const ownerSessionId = String(options.sessionId || _activeApiSessionId());
-    const isCurrentOwner = () => ownerSessionId === String(_activeApiSessionId());
+    const ownerRenderGeneration = Number(
+        options.renderGeneration ?? window.__viewerRenderGeneration ?? 0,
+    );
+    const isCurrentOwner = () => ownerSessionId === String(_activeApiSessionId())
+        && ownerRenderGeneration === Number(window.__viewerRenderGeneration || 0);
     const ctPath = String(
         options.ctPath
         || (isCurrentOwner() ? document.getElementById('ctPath')?.value : '')
@@ -3053,10 +3074,20 @@ async function importUploadedMask(kind, labelPath, options = {}) {
             body.target_value = options.targetValue
                 ?? (isCurrentOwner() ? Number(document.getElementById('targetValue')?.value || 1) : 1);
         }
-        const { response: res, payload } = await _postSegmentationWithHydrationRetry(
+        const segmentationResult = await _postSegmentationWithHydrationRetry(
             body,
             ownerSessionId,
+            {
+                // A switch away and back to the same Session must not reuse
+                // an old in-flight request from the previous render
+                // generation. Otherwise its Failed-to-fetch result can be
+                // replayed into the newly restored case.
+                scopeKey: `viewer-render-${ownerRenderGeneration}`,
+                isCurrent: isCurrentOwner,
+            },
         );
+        if (segmentationResult?.stale) return segmentationResult;
+        const { response: res, payload } = segmentationResult;
         if (!res.ok || !payload.success) throw new Error(payload.error || `HTTP ${res.status}`);
         if (!isCurrentOwner()) return payload;
         const stagedCtv = kind === 'ctv' && payload.staged_only === true;
@@ -3729,7 +3760,7 @@ function clearClientWorkspace(options = {}) {
         window.resetSurgicalGuideControls();
     }
     if (typeof clearDoseOverlayRuntime === 'function') {
-        clearDoseOverlayRuntime();
+        clearDoseOverlayRuntime({ preserveDesired: false });
     }
     const loading3D = document.getElementById('loading3D');
     if (loading3D) {
@@ -4266,7 +4297,11 @@ state.dvhPlanningId = null;
             // idempotency boundary. This migrates old direct imports into the
             // candidate tree after restart while preserving a promoted CTV
             // when its source collection is already present.
-            setTimeout(() => {
+            const restoreUploadedCtv = options.restoreUploadedMasks === true
+                || options.restoreUploadedMasks?.ctv === true;
+            const restoreUploadedOar = options.restoreUploadedMasks === true
+                || options.restoreUploadedMasks?.oar === true;
+            if (restoreUploadedCtv || restoreUploadedOar) setTimeout(() => {
                 if (!isCurrentOwner() || renderGeneration !== window.__viewerRenderGeneration) return;
                 const normalizedPath = value => String(value || '').trim().split(String.fromCharCode(92)).join('/');
                 const ctvSourcePath = normalizedPath(state.ctvPath);
@@ -4274,16 +4309,18 @@ state.dvhPlanningId = null;
                     && dataTreeState.uploadMasks.some(upload => (
                         normalizedPath(upload?.source_path) === ctvSourcePath
                     ));
-                if (state.ctvPath && (!dataTreeState.ctv.loaded || !hasStagedCtvSource)) {
+                if (restoreUploadedCtv && state.ctvPath && (!dataTreeState.ctv.loaded || !hasStagedCtvSource)) {
                     importUploadedMask('ctv', state.ctvPath, {
                         sessionId: ownerSessionId,
                         ctPath,
+                        renderGeneration,
                     });
                 }
-                if (state.oarPath && !dataTreeState.oar.loaded) {
+                if (restoreUploadedOar && state.oarPath && !dataTreeState.oar.loaded) {
                     importUploadedMask('oar', state.oarPath, {
                         sessionId: ownerSessionId,
                         ctPath,
+                        renderGeneration,
                     });
                 }
             }, 0);
@@ -4325,6 +4362,18 @@ state.dvhPlanningId = null;
     }
 }
 
+function _isExplicitUploadedMaskSource(value) {
+    const source = String(value || '').trim().toLowerCase();
+    return source === 'uploaded'
+        || source === 'uploaded_mask'
+        || source === 'uploaded_unknown'
+        || source === 'manual'
+        || source === 'manual_upload'
+        || source === 'manual_label'
+        || source.startsWith('uploaded_')
+        || source.startsWith('manual_');
+}
+
 function _statusFromWorkspaceSnapshot(workspace, sessionId) {
     const agent = workspace?.agent || {};
     const results = agent.planning_results || {};
@@ -4348,6 +4397,8 @@ function _statusFromWorkspaceSnapshot(workspace, sessionId) {
         ct_path: value(['ct_path', 'ctPath', 'ct_image_path', 'ctImagePath']),
         ctv_path: value(['ctv_path', 'ctvPath', 'ctv_mask_path', 'ctvMaskPath']),
         oar_path: value(['oar_path', 'oarPath', 'oar_mask_path', 'oarMaskPath']),
+        ctv_source: value(['ctv_source', 'ctvSource']),
+        oar_source: value(['oar_source', 'oarSource']),
         stored_keys: Object.keys(results),
         // A persisted workspace snapshot does not instantiate the configured
         // model. Preserve "unknown" until a real Agent/task reports status.
@@ -4531,11 +4582,50 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     const ctPath = String(status.ct_path || '').trim();
     const savedControls = workspace?.ui?.state?.controls || workspace?.ui?.controls || {};
     const savedAgentUi = workspace?.agent?.ui_state || {};
-    const savedInputPath = (kind) => {
+    const planningResults = workspace?.agent?.planning_results || {};
+    const ctvSource = String(
+        status.ctv_source || planningResults.ctv_source || savedAgentUi.ctv_source || '',
+    ).trim().toLowerCase();
+    const oarSource = String(
+        status.oar_source || planningResults.oar_source || savedAgentUi.oar_source || '',
+    ).trim().toLowerCase();
+    const normalizePath = value => String(value || '')
+        .trim()
+        .replaceAll('\\', '/');
+    const pathBelongsToSession = value => {
+        const path = normalizePath(value).toLowerCase();
+        const sessionId = String(sessionAtStart || '').trim().toLowerCase();
+        if (!path || !sessionId) return false;
+        return path.split('/').includes(sessionId);
+    };
+    const candidatePath = (kind) => {
         const controlId = kind === 'ctv' ? 'ctvPath' : 'oarPath';
-        return savedAgentUi[`${kind}_path`]
-            || savedControls?.[controlId]?.value
-            || '';
+        const candidates = [
+            status?.[`${kind}_path`],
+            savedAgentUi?.[`${kind}_path`],
+            planningResults?.[`${kind}_path`],
+            planningResults?.[`${kind}_mask_path`],
+            savedControls?.[controlId]?.value,
+        ];
+        const paths = candidates.map(value => String(value || '').trim()).filter(Boolean);
+        // When a compact snapshot and a generic controls snapshot disagree,
+        // prefer the path physically nested in this session's workspace.
+        // Uploaded paths outside that layout remain supported by the fallback
+        // below, but a stale cross-session path cannot win over a matching one.
+        return paths.find(pathBelongsToSession) || paths[0] || '';
+    };
+    const savedInputPath = (kind) => {
+        const source = kind === 'ctv' ? ctvSource : oarSource;
+        const candidate = candidatePath(kind);
+        // A model/classified CTV path is a generated result, not an upload
+        // input. Replaying it through /api/segmentation during restore is what
+        // produced the misleading browser-level "Failed to fetch" error.
+        if (_isExplicitUploadedMaskSource(source)) return candidate;
+        if (source) return '';
+        // Legacy snapshots may lack provenance. Accept only a path physically
+        // under this session's workspace; a generic controls snapshot can be
+        // stale and may point to another patient's case.
+        return pathBelongsToSession(candidate) ? candidate : '';
     };
     // Input paths are part of the durable case, not a generic browser form.
     // Restore them before CT hydration so a user-provided CTV/OAR mask can be
@@ -4549,9 +4639,24 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         const input = document.getElementById(inputId);
         if (input) input.value = path;
     };
-    restoreCaseInputPath('ctv', status.ctv_path || savedInputPath('ctv'));
-    restoreCaseInputPath('oar', status.oar_path || savedInputPath('oar'));
+    restoreCaseInputPath('ctv', savedInputPath('ctv'));
+    restoreCaseInputPath('oar', savedInputPath('oar'));
     if (_activeApiSessionId() !== sessionAtStart) return null;
+    const storedKeys = new Set(Array.isArray(status.stored_keys) ? status.stored_keys : []);
+    // The authenticated workspace snapshot is authoritative when the
+    // lightweight status shell was read before the Agent finished decoding
+    // its durable sidecars.
+    Object.keys(planningResults).forEach(key => storedKeys.add(String(key)));
+    const restoreUploadedMasks = {
+        // Only an explicitly uploaded mask may use the compatibility import
+        // after CT load. Model/classified output is restored by label volumes.
+        ctv: _isExplicitUploadedMaskSource(ctvSource)
+            && !!state.ctvPath
+            && !['ctv_array', 'ctv_mask'].some(key => storedKeys.has(key)),
+        oar: _isExplicitUploadedMaskSource(oarSource)
+            && !!state.oarPath
+            && !storedKeys.has('oar_array'),
+    };
     if (!ctPath) {
         if (workspace && typeof applyWorkspaceSnapshot === 'function') {
             await applyWorkspaceSnapshot(workspace, {
@@ -4596,6 +4701,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         try {
             ctVolumeResult = await loadCTToViewers(ctPath, {
                 announce: false, sessionId: sessionAtStart, skipReset: true,
+                restoreUploadedMasks,
                 timeoutMs: options.background === true ? 45000 : 60000,
             });
         } catch (e) {
@@ -4606,14 +4712,12 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         }
     })();
 
-    const storedKeys = new Set(Array.isArray(status.stored_keys) ? status.stored_keys : []);
     // On a fresh server process the lightweight status endpoint can only see
     // the metadata shell while the Agent is decoding its durable sidecars.
     // The authenticated workspace snapshot already contains the authoritative
     // planning-result keys, so use both sources when deciding whether the
     // planning restore must run. Otherwise restart recovery restores CT/labels
     // but silently skips seeds, dose, DVH, and guide reconstruction.
-    Object.keys(workspace?.agent?.planning_results || {}).forEach(key => storedKeys.add(String(key)));
     const hasPlanning = [
         'dose_metrics', 'dose_distribution', 'dose_distribution_gy',
         'seed_plan', 'seed_plan_serialized', 'manual_planning_preview',

@@ -6362,6 +6362,8 @@ def register_planning_routes(
                     "ct_path": first_path("ct_path", "ctPath", "ct_image_path", "ctImagePath"),
                     "ctv_path": first_path("ctv_path", "ctvPath", "ctv_mask_path", "ctvMaskPath"),
                     "oar_path": first_path("oar_path", "oarPath", "oar_mask_path", "oarMaskPath"),
+                    "ctv_source": first_path("ctv_source", "ctvSource"),
+                    "oar_source": first_path("oar_source", "oarSource"),
                     "stored_keys": sorted(str(key) for key in results.keys()),
                     "brain_available": None,
                     "runtime": agent_state.get("runtime_state") or {},
@@ -6386,6 +6388,8 @@ def register_planning_routes(
         status["ct_path"] = agent.memory.retrieve("ct_path")
         status["ctv_path"] = agent.memory.retrieve("ctv_path")
         status["oar_path"] = agent.memory.retrieve("oar_path")
+        status["ctv_source"] = agent.memory.retrieve("ctv_source")
+        status["oar_source"] = agent.memory.retrieve("oar_source")
         status["brain_available"] = agent.brain_available
         if hasattr(agent, "run_ledger"):
             # Expose only compact, JSON-safe lifecycle evidence. The frontend

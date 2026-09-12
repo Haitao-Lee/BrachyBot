@@ -643,6 +643,7 @@
         // A mesh or chart restore may deliberately run after asynchronous
         // rendering settles. Those callbacks belong to one case only: a
         // newer case selection must never let an older snapshot repaint it.
+        try { window._cancelWorkspaceDoseSurfaceRestore?.(); } catch (_) {}
         workspaceRestoreGeneration += 1;
         workspaceRestoreTimers.forEach(timer => clearTimeout(timer));
         workspaceRestoreTimers.clear();
@@ -862,6 +863,11 @@
     function sceneViewState() {
         if (typeof scene3D === 'undefined' || !scene3D?.camera) return {};
         const camera = scene3D.camera;
+        const doseSurfaceEnabled = typeof state !== 'undefined' && state?.doseTexture
+            ? (typeof state.doseTexture.desiredEnabled === 'boolean'
+                ? state.doseTexture.desiredEnabled
+                : !!state.doseTexture.enabled)
+            : false;
         return {
             camera_position: numberArray(camera.position),
             camera_quaternion: camera.quaternion ? [camera.quaternion.x, camera.quaternion.y, camera.quaternion.z, camera.quaternion.w] : null,
@@ -872,7 +878,9 @@
             camera_fov: Number.isFinite(camera.fov) ? camera.fov : null,
             camera_zoom: Number.isFinite(camera.zoom) ? camera.zoom : null,
             camera_target: numberArray(scene3D.controls?.target),
-            display_mode: typeof state !== 'undefined' ? state.doseTexture?.enabled ? 'dose_surface' : 'normal_surface' : null,
+            display_mode: typeof state !== 'undefined'
+                ? (doseSurfaceEnabled ? 'dose_surface' : 'normal_surface')
+                : null,
         };
     }
 
@@ -888,6 +896,11 @@
 
     function workspaceUiState(ownerSessionId = '') {
         const sessionId = String(ownerSessionId || (typeof activeSessionId !== 'undefined' ? activeSessionId : '') || '');
+        const doseSurfaceEnabled = typeof state !== 'undefined' && state?.doseTexture
+            ? (typeof state.doseTexture.desiredEnabled === 'boolean'
+                ? state.doseTexture.desiredEnabled
+                : !!state.doseTexture.enabled)
+            : false;
         return {
             dose_value_unit: 'gy',
             prescription_base_gy: 120,
@@ -906,7 +919,12 @@
                 // Raw slices, promises and Three.js materials are runtime-only.
                 // Persisting them would create circular JSON and cannot restore a
                 // WebGL resource after a restart; the enabled mode is sufficient.
-                doseTexture: typeof state !== 'undefined' && state.doseTexture ? { enabled: !!state.doseTexture.enabled } : null,
+                doseTexture: typeof state !== 'undefined' && state.doseTexture
+                    ? {
+                        enabled: doseSurfaceEnabled,
+                        desired_enabled: doseSurfaceEnabled,
+                    }
+                    : null,
                 annotations: typeof state !== 'undefined' && Array.isArray(state.annotations)
                     ? jsonClone(state.annotations)
                     : [],
@@ -1936,7 +1954,15 @@
         applyDataTreePresentation(savedTree);
     }
 
-    function restoreSceneView(scene, dvh, generation) {
+    function restoreSceneView(scene, dvh, generation, doseTexture = null) {
+        // A previous restore may still be waiting for meshes. Remove its
+        // listener before installing the new case's restore chain.
+        try { window._cancelWorkspaceDoseSurfaceRestore?.(); } catch (_) {}
+        const restoreSessionId = String(
+            typeof activeSessionId !== 'undefined'
+                ? activeSessionId
+                : (typeof state !== 'undefined' ? state?.sessionId : '') || '',
+        );
         // Mark the camera as restore-owned until the hydrated scene has had a
         // chance to replace the old mesh set. The saved target is still
         // applied first so a valid user view is preserved, but the delayed
@@ -2076,14 +2102,110 @@
         // calling relayout on a placeholder div.
         scheduleDeferredWorkspaceRestore(generation, applyDvh, 2200);
 
-        if (scene?.display_mode === 'dose_surface' && typeof setDoseTextureMode === 'function') {
-            // Recreate textures from the restored dose grid; WebGL materials
-            // themselves are intentionally not persisted in the workspace.
+        const doseSurfaceRequested = scene?.display_mode === 'dose_surface'
+            || doseTexture?.desired_enabled === true
+            || doseTexture?.enabled === true;
+        if (doseSurfaceRequested && typeof setDoseTextureMode === 'function') {
+            // Recreate textures from the restored dose grid only after the
+            // current case's meshes exist. One fixed timeout was racy on a
+            // cold restore: it could run while the OAR queue was still
+            // building and permanently leave the case in normal-surface mode.
+            const restoreState = {
+                cancelled: false,
+                finished: false,
+                inFlight: false,
+                attempt: 0,
+            };
+            const retryDelays = [150, 350, 750, 1400, 2600, 5000, 10000, 20000, 30000];
+            const cleanup = () => {
+                restoreState.cancelled = true;
+                if (typeof window.removeEventListener === 'function') {
+                    window.removeEventListener('brachybot:segmentation-meshes-ready', onMeshesReady);
+                }
+                if (window._cancelWorkspaceDoseSurfaceRestore === cleanup) {
+                    window._cancelWorkspaceDoseSurfaceRestore = null;
+                }
+            };
+            const isCurrentRestore = () => {
+                if (restoreState.cancelled || restoreState.finished) return false;
+                if (generation !== workspaceRestoreGeneration) return false;
+                if (String(activeSessionId || '') !== restoreSessionId) return false;
+                if (typeof scene3D !== 'undefined' && scene3D) {
+                    if (scene3D._workspaceDoseSurfaceRestoreCancelled === true) return false;
+                    if (scene3D._workspaceDoseSurfaceRestoreGeneration !== generation) return false;
+                }
+                return state?.doseTexture?.desiredEnabled !== false;
+            };
+            const finish = () => {
+                restoreState.finished = true;
+                cleanup();
+                if (typeof scene3D !== 'undefined' && scene3D
+                    && scene3D._workspaceDoseSurfaceRestoreGeneration === generation) {
+                    scene3D._workspaceDoseSurfaceRestoreGeneration = null;
+                }
+            };
+            const tryRestore = async () => {
+                if (!isCurrentRestore() || restoreState.inFlight) return;
+                if (typeof window.isDoseTextureRuntimeReady === 'function'
+                    && window.isDoseTextureRuntimeReady()) {
+                    finish();
+                    return;
+                }
+                restoreState.inFlight = true;
+                let result = null;
+                try {
+                    result = await setDoseTextureMode(true, {
+                        silent: true,
+                        persist: false,
+                        restore: true,
+                        reason: 'workspace-restore',
+                    });
+                } catch (error) {
+                    result = { success: false, error: error?.message || String(error) };
+                } finally {
+                    restoreState.inFlight = false;
+                }
+                if (!isCurrentRestore()) return;
+                if (result?.success === true && result.enabled === true) {
+                    finish();
+                    return;
+                }
+                if (restoreState.attempt >= retryDelays.length - 1) {
+                    console.debug(
+                        '[workspace] Dose Surface restore deferred:',
+                        result?.error || 'viewer meshes are not ready',
+                    );
+                    finish();
+                    return;
+                }
+                restoreState.attempt += 1;
+                scheduleDeferredWorkspaceRestore(
+                    generation,
+                    () => { void tryRestore(); },
+                    retryDelays[restoreState.attempt],
+                );
+            };
+            function onMeshesReady(event) {
+                const eventSessionId = String(event?.detail?.sessionId || '');
+                if (eventSessionId && eventSessionId !== restoreSessionId) return;
+                scheduleDeferredWorkspaceRestore(generation, () => { void tryRestore(); }, 0);
+            }
+            if (typeof scene3D !== 'undefined' && scene3D) {
+                scene3D._workspaceDoseSurfaceRestoreGeneration = generation;
+                scene3D._workspaceDoseSurfaceRestoreCancelled = false;
+            }
+            window._cancelWorkspaceDoseSurfaceRestore = cleanup;
+            if (typeof window.addEventListener === 'function') {
+                window.addEventListener('brachybot:segmentation-meshes-ready', onMeshesReady);
+            }
             scheduleDeferredWorkspaceRestore(
                 generation,
-                () => setDoseTextureMode(true, { silent: true }),
-                900,
+                () => { void tryRestore(); },
+                retryDelays[0],
             );
+        } else if (typeof scene3D !== 'undefined' && scene3D) {
+            scene3D._workspaceDoseSurfaceRestoreGeneration = null;
+            scene3D._workspaceDoseSurfaceRestoreCancelled = false;
         }
     }
 
@@ -2410,7 +2532,34 @@
                 state.slices = Object.assign(state.slices || {}, uiState.viewer.slices || {});
                 state.viewerSettings = Object.assign(state.viewerSettings || {}, uiState.viewer.settings || {});
                 if (uiState.viewer.doseOpacity != null) state.doseOpacity = uiState.viewer.doseOpacity;
-                if (uiState.viewer.doseTexture) state.doseTexture = Object.assign(state.doseTexture || {}, uiState.viewer.doseTexture);
+                const savedDoseTexture = uiState.viewer.doseTexture || {};
+                const savedSceneMode = String(uiState.viewer.scene?.display_mode || '').trim().toLowerCase();
+                const hasDesiredDoseFlag = typeof savedDoseTexture.desired_enabled === 'boolean';
+                const savedDoseEnabled = hasDesiredDoseFlag
+                    ? savedDoseTexture.desired_enabled
+                    : savedSceneMode === 'dose_surface'
+                        || savedDoseTexture.enabled === true;
+                const previousDoseTexture = state.doseTexture || {};
+                const hadDoseRuntime = !!previousDoseTexture.enabled
+                    || !!previousDoseTexture.applying
+                    || Array.isArray(previousDoseTexture.mappedMeshIds)
+                        && previousDoseTexture.mappedMeshIds.length > 0
+                    || Object.keys(previousDoseTexture.originalMaterials || {}).length > 0;
+                if (!savedDoseEnabled && hadDoseRuntime
+                    && typeof window.resetDoseTextureRuntime === 'function') {
+                    window.resetDoseTextureRuntime({ preserveDesired: false });
+                }
+                state.doseTexture = Object.assign(state.doseTexture || {}, savedDoseTexture);
+                state.doseTexture.desiredEnabled = !!savedDoseEnabled;
+                const doseRuntimeReady = savedDoseEnabled
+                    && typeof window.isDoseTextureRuntimeReady === 'function'
+                    && window.isDoseTextureRuntimeReady();
+                // Persisted materials cannot be trusted after a restart. Keep
+                // the desired flag, but expose enabled=true only after the
+                // current case has a verified mapping; restoreSceneView()
+                // will rebuild it when the mesh queue becomes ready.
+                state.doseTexture.enabled = !!doseRuntimeReady;
+                state.doseTexture.restorePending = savedDoseEnabled && !doseRuntimeReady;
                 if (Array.isArray(uiState.viewer.annotations)) {
                     state.annotations = jsonClone(uiState.viewer.annotations);
                 }
@@ -2728,7 +2877,12 @@
             // state.viewerSettings from the DOM — this locks them back.
             _syncViewerControlsFromState();
             if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
-            restoreSceneView(uiState.viewer?.scene, uiState.viewer?.dvh, restoreGeneration);
+            restoreSceneView(
+                uiState.viewer?.scene,
+                uiState.viewer?.dvh,
+                restoreGeneration,
+                uiState.viewer?.doseTexture,
+            );
             // The printable guide is a persisted clinical artifact, but its
             // mesh is loaded separately from the lightweight workspace JSON.
             // Bind the async restoration to this snapshot's session so a

@@ -436,6 +436,6 @@ def test_screenshot_autoframing_is_target_derived_verified_and_reversible():
     assert "mpr_object_currently_hidden_or_unavailable" in annotation
     assert "does not" in annotation and "remain inside the restored live camera" in annotation
 
-    assert "brachybot-ui-api.js?v=78" in index
-    assert "brachybot-3d-manual.js?v=94" in index
+    assert "brachybot-ui-api.js?v=80" in index
+    assert "brachybot-3d-manual.js?v=95" in index
     assert "brachybot-manual-annotation.js?v=26" in index
