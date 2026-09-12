@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import threading
 import time
 from types import SimpleNamespace
@@ -21,6 +22,7 @@ from web.uploaded_mask_service import (
     MAX_UPLOADED_MASK_LABELS,
     UploadedMaskError,
     normalize_uploaded_mask_results,
+    public_uploaded_mask_collections,
     stage_uploaded_ctv_mask,
 )
 
@@ -202,6 +204,39 @@ def test_only_explicit_ctv_move_promotes_selected_uploaded_child():
     assert entries[0]["classification"] == "ctv"
     assert entries[0]["ctv_promoted_from_upload"]["source_label"] == 1
     assert entries[1]["classification"] == "unclassified"
+
+
+def test_promoting_one_uploaded_child_keeps_sibling_after_restore(tmp_path):
+    """A promoted label must not make its remaining Upload Mask sibling disappear."""
+    ct_path, label_path, _ = _write_case(tmp_path)
+    memory = _Memory()
+    ct = sitk.ReadImage(str(ct_path))
+    memory.store("ct_image", ct)
+    memory.store("ct_data", sitk.GetArrayFromImage(ct))
+    staged = stage_uploaded_ctv_mask(memory, str(ct_path), str(label_path))
+    selected_id = next(
+        item["object_id"] for item in staged["children"]
+        if int(item["source_label"]) == 2
+    )
+
+    reclassify_generic_segmentation_masks(memory, [selected_id], "ctv")
+    live_entries = memory.retrieve("generic_segmentation_masks")
+    assert len(live_entries) == 2
+    assert {item["classification"] for item in live_entries} == {"ctv", "unclassified"}
+    assert len(public_uploaded_mask_collections(memory)[0]["child_mask_ids"]) == 2
+
+    # Simulate the decoded planning-results mapping used by workspace
+    # hydration after a server restart.
+    restored = copy.deepcopy({
+        "generic_segmentation_masks": live_entries,
+        "uploaded_mask_collections": memory.retrieve("uploaded_mask_collections"),
+    })
+    normalize_uploaded_mask_results(restored)
+    assert len(restored["generic_segmentation_masks"]) == 2
+    assert sum(item["classification"] == "unclassified" for item in restored["generic_segmentation_masks"]) == 1
+    assert restored["uploaded_mask_collections"][0]["child_mask_ids"] == [
+        item["mask_id"] for item in live_entries
+    ]
 
 
 def test_all_explicit_ctv_children_are_merged_for_planning_but_keep_source_rows():

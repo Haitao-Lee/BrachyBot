@@ -1338,6 +1338,23 @@ async function hydrateGenericMasksFromServer(scope, retryAttempt = 0) {
             const id = String(metadata.mask_id || '').trim();
             if (!id) return false;
             const existing = state.maskLabels[id] || {};
+            const pendingSessionId = String(
+                window.__pendingMaskPresentationSessionId || '',
+            ).trim();
+            const pendingPresentation = pendingSessionId === scopeSessionId
+                && window.__pendingMaskPresentationById
+                && typeof window.__pendingMaskPresentationById === 'object'
+                ? window.__pendingMaskPresentationById
+                : null;
+            const presentationRefs = [
+                id,
+                metadata.object_id,
+                metadata.objectId,
+                `mask:${id}`,
+            ].map(value => String(value || '').trim()).filter(Boolean);
+            const savedPresentation = pendingPresentation
+                ? presentationRefs.map(ref => pendingPresentation[ref]).find(Boolean)
+                : null;
             const serverClassification = [
                 metadata.classification,
                 metadata.moved_to,
@@ -1374,6 +1391,19 @@ async function hydrateGenericMasksFromServer(scope, retryAttempt = 0) {
                     : (metadata.kind === 'uploaded_mask_label' ? 0.6 : 0.42),
                 color: existing.color || '#f08a5d',
             };
+            if (savedPresentation && typeof savedPresentation === 'object') {
+                [
+                    'visible', 'visible2D', 'visible3D', 'opacity', 'color',
+                    'material', 'locked', 'standaloneVisible', 'label', 'name',
+                ].forEach(key => {
+                    if (Object.prototype.hasOwnProperty.call(savedPresentation, key)) {
+                        nextMask[key] = savedPresentation[key];
+                    }
+                });
+                presentationRefs.forEach(ref => {
+                    if (pendingPresentation) delete pendingPresentation[ref];
+                });
+            }
             state.maskLabels[id] = nextMask;
 
             // Promoted masks are rendered through the authoritative CTV/OAR
