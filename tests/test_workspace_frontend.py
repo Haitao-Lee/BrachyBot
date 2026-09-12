@@ -1571,6 +1571,28 @@ def test_generic_segmentation_masks_keep_a_real_tree_and_structure_contract():
     assert "structure_catalog" in structures
 
 
+def test_preserve_clinical_restore_does_not_drop_server_owned_upload_siblings():
+    """A presentation snapshot must not replace the hydrated mask catalogue."""
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    viewer = read("web/app/static/js/brachybot-viewer-volume.js")
+    start = workspace.index("// Restore manual/threshold masks")
+    end = workspace.index("if (uiState.data_tree", start)
+    restore_block = workspace[start:end]
+
+    assert "const preserveClinicalData = options.preserveClinicalData === true" in restore_block
+    assert "if (!preserveClinicalData)" in restore_block
+    assert "const currentLabels = state.maskLabels || (state.maskLabels = {})" in restore_block
+    assert "copyDisplayProperties(currentLabels[currentId], m)" in restore_block
+    assert "pending[ref] = presentation" in restore_block
+    # The old unconditional assignment erased a remaining Upload Mask child
+    # after one sibling had been promoted to CTV. It is now limited to the
+    # non-clinical restore branch.
+    assert restore_block.count("state.maskLabels = {};") == 1
+    assert restore_block.index("state.maskLabels = {};") > restore_block.index("if (!preserveClinicalData)")
+    assert "window.__pendingMaskPresentationById" in viewer
+    assert "savedPresentation" in viewer
+
+
 def test_replanning_history_and_midrun_dose_publication_have_stable_contracts():
     """Replanning and in-progress dose refresh must be version-bound."""
     planning_runs = read("web/planning_runs.py")

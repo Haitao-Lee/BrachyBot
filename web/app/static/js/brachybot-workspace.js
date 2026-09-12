@@ -1749,7 +1749,7 @@
         // These are presentation preferences. Geometry, voxel counts,
         // categories, and planning arrays are reconstructed from the current
         // case and must not be copied from a UI snapshot.
-        ['visible', 'visible2D', 'visible3D', 'opacity', 'color', 'material', 'locked'].forEach(key => {
+        ['visible', 'visible2D', 'visible3D', 'opacity', 'color', 'material', 'locked', 'standaloneVisible'].forEach(key => {
             if (Object.prototype.hasOwnProperty.call(saved, key)) target[key] = saved[key];
         });
         // A user-renamed node label is a deliberate presentation override and
@@ -2564,44 +2564,140 @@
                     state.annotations = jsonClone(uiState.viewer.annotations);
                 }
                 // Restore manual/threshold masks (voxels are stored as arrays
-                // by jsonClone; convert back to Sets).
+                // by jsonClone; convert back to Sets). During the clinical
+                // restore pass, Upload Mask children have already been
+                // hydrated from the server. Replacing the complete registry
+                // with an older browser snapshot can drop an unclassified
+                // sibling after another label was moved to CTV, while its
+                // already-created 3D mesh remains in the scene. Merge
+                // presentation only for server-owned masks and keep a small
+                // presentation hand-off for masks whose async catalogue
+                // request has not completed yet.
                 if (uiState.viewer.masks && typeof state !== 'undefined') {
                     const labels = uiState.viewer.masks.labels || {};
-                    state.maskLabels = {};
                     const maxUploadedMaskLabels = Math.max(
                         1,
                         Math.trunc(Number(window.BRACHYBOT_MAX_UPLOADED_MASK_LABELS) || 64),
                     );
                     let restoredUploadedMaskLabels = 0;
                     let skippedUploadedMaskLabels = 0;
-                    Object.entries(labels).forEach(([id, m]) => {
-                        if (!m || typeof m !== 'object') return;
-                        const isUploaded = m.kind === 'uploaded_mask_label'
-                            || m.source === 'uploaded_mask'
-                            || Boolean(m.upload_mask_id);
-                        const classification = [m.classification, m.movedTo, m.moved_to]
-                            .map(value => String(value || '').trim().toLowerCase())
-                            .find(value => value === 'ctv' || value === 'oar') || '';
-                        if (isUploaded && !classification) {
-                            if (restoredUploadedMaskLabels >= maxUploadedMaskLabels) {
-                                skippedUploadedMaskLabels += 1;
+                    const preserveClinicalData = options.preserveClinicalData === true;
+                    const identityVariants = (id, item = {}) => {
+                        const values = [
+                            id, item.id, item.mask_id, item.objectId, item.object_id,
+                        ].map(value => String(value || '').trim()).filter(Boolean);
+                        const refs = new Set(values);
+                        values.forEach(value => {
+                            if (value.startsWith('mask:')) {
+                                refs.add(value.slice(5));
+                            } else if (value.startsWith('mask_')) {
+                                refs.add(value.slice(5));
+                                refs.add(`mask:${value.slice(5)}`);
+                            } else {
+                                refs.add(`mask:${value}`);
+                            }
+                        });
+                        return [...refs].filter(Boolean);
+                    };
+                    const isUploadedMask = item => item?.kind === 'uploaded_mask_label'
+                        || item?.source === 'uploaded_mask'
+                        || Boolean(item?.upload_mask_id);
+                    const classificationOf = item => [
+                        item?.classification, item?.movedTo, item?.moved_to,
+                    ].map(value => String(value || '').trim().toLowerCase())
+                        .find(value => value === 'ctv' || value === 'oar') || '';
+
+                    if (!preserveClinicalData) {
+                        state.maskLabels = {};
+                        Object.entries(labels).forEach(([id, m]) => {
+                            if (!m || typeof m !== 'object') return;
+                            const isUploaded = isUploadedMask(m);
+                            const classification = classificationOf(m);
+                            if (isUploaded && !classification) {
+                                if (restoredUploadedMaskLabels >= maxUploadedMaskLabels) {
+                                    skippedUploadedMaskLabels += 1;
+                                    return;
+                                }
+                                restoredUploadedMaskLabels += 1;
+                            }
+                            state.maskLabels[id] = {
+                                ...m,
+                                voxels: new Set(Array.isArray(m.voxels) ? m.voxels : []),
+                            };
+                        });
+                    } else {
+                        const currentLabels = state.maskLabels || (state.maskLabels = {});
+                        const currentByIdentity = new Map();
+                        Object.entries(currentLabels).forEach(([id, item]) => {
+                            identityVariants(id, item).forEach(ref => currentByIdentity.set(ref, id));
+                        });
+                        const pendingSessionId = String(
+                            window.__pendingMaskPresentationSessionId || '',
+                        ).trim();
+                        if (pendingSessionId !== sessionId) {
+                            window.__pendingMaskPresentationById = {};
+                        }
+                        const pending = window.__pendingMaskPresentationById
+                            && typeof window.__pendingMaskPresentationById === 'object'
+                            ? window.__pendingMaskPresentationById
+                            : (window.__pendingMaskPresentationById = {});
+                        // Presentation hand-off is session-scoped. A delayed
+                        // generic-mask request from another case must never
+                        // consume the current case's saved opacity/visibility.
+                        window.__pendingMaskPresentationSessionId = sessionId;
+
+                        Object.entries(labels).forEach(([id, m]) => {
+                            if (!m || typeof m !== 'object') return;
+                            const isUploaded = isUploadedMask(m);
+                            const classification = classificationOf(m);
+                            if (isUploaded && !classification) {
+                                if (restoredUploadedMaskLabels >= maxUploadedMaskLabels) {
+                                    skippedUploadedMaskLabels += 1;
+                                    return;
+                                }
+                                restoredUploadedMaskLabels += 1;
+                            }
+                            const currentId = identityVariants(id, m)
+                                .map(ref => currentByIdentity.get(ref))
+                                .find(Boolean);
+                            if (currentId && currentLabels[currentId]) {
+                                copyDisplayProperties(currentLabels[currentId], m);
                                 return;
                             }
-                            restoredUploadedMaskLabels += 1;
-                        }
-                        state.maskLabels[id] = {
-                            ...m,
-                            voxels: new Set(Array.isArray(m.voxels) ? m.voxels : []),
-                        };
-                    });
+                            if (isUploaded) {
+                                const presentation = {};
+                                copyDisplayProperties(presentation, m);
+                                identityVariants(id, m).forEach(ref => {
+                                    pending[ref] = presentation;
+                                });
+                                return;
+                            }
+                            // Manual/threshold masks have no server catalogue;
+                            // they still need to be restored from the snapshot.
+                            currentLabels[id] = {
+                                ...m,
+                                voxels: new Set(Array.isArray(m.voxels) ? m.voxels : []),
+                            };
+                            identityVariants(id, currentLabels[id]).forEach(ref => currentByIdentity.set(ref, id));
+                        });
+                    }
                     if (skippedUploadedMaskLabels > 0) {
                         window.showBrachyBotNotice?.(
                             `已跳过 ${skippedUploadedMaskLabels} 个异常上传掩膜标签，避免浏览器卡顿。请确认上传的是离散 mask 而不是 CT。`,
                             'warning',
                         );
                     }
-                    state.maskLabelCounter = Number(uiState.viewer.masks.counter) || 0;
-                    state.activeMaskId = uiState.viewer.masks.activeMaskId || null;
+                    if (!preserveClinicalData || !state.maskLabelCounter) {
+                        state.maskLabelCounter = Number(uiState.viewer.masks.counter) || 0;
+                    } else {
+                        state.maskLabelCounter = Math.max(
+                            Number(state.maskLabelCounter) || 0,
+                            Number(uiState.viewer.masks.counter) || 0,
+                        );
+                    }
+                    if (!preserveClinicalData || !state.activeMaskId) {
+                        state.activeMaskId = uiState.viewer.masks.activeMaskId || null;
+                    }
                 }
             }
             if (uiState.data_tree && typeof dataTreeState !== 'undefined') {
