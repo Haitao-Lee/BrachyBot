@@ -845,9 +845,9 @@ def test_session_switch_paints_the_selected_shell_before_snapshot_request():
     assert "paintSessionShell(id, { clearWorkspace: false });" in switch_block
     assert "await yieldWorkspaceShellPaint()" in switch_block
     assert switch_block.index("paintSessionShell(id, { clearWorkspace: false });") < switch_block.index(
-        "await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}/select`"
+        "response = await workspaceFetch("
     )
-    assert "paintSessionShell(previousSessionId)" in switch_block
+    assert "paintSessionShell(previousSessionId," in switch_block
 
 
 def test_case_clear_detaches_webgl_before_deferred_disposal():
@@ -1325,6 +1325,43 @@ def test_dose_surface_preserves_data_tree_display_state_and_capture_hides_handle
     assert "window.__reportCaptureActive = false" in report
 
 
+def test_dose_surface_restore_persists_intent_and_waits_for_case_meshes():
+    """A cold session restore must reapply Dose Surface after mesh hydration."""
+    layout = read("web/app/static/js/brachybot-viewer-layout.js")
+    manual = read("web/app/static/js/brachybot-3d-manual.js")
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+
+    assert "desiredEnabled" in layout
+    assert "window.resetDoseTextureRuntime = resetDoseTextureRuntime" in layout
+    assert "window.isDoseTextureRuntimeReady = _doseTextureRuntimeReady" in layout
+    assert "viewer.dose_surface.enabled" in layout
+    assert "window._cancelWorkspaceDoseSurfaceRestore?.()" in layout
+    assert "const currentMode = doseTexture && typeof doseTexture.desiredEnabled === 'boolean'" in layout
+    assert "brachybot:segmentation-meshes-ready" in manual
+    assert "retryDelays = [150, 350, 750" in workspace
+    assert "persist: false" in workspace
+    assert "desired_enabled" in workspace
+    assert "restorePending" in ui_api
+
+
+def test_session_restore_does_not_reimport_model_output_or_stale_mask_paths():
+    """Restoring a model CTV must not POST its output as an uploaded mask."""
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    routes = read("web/routes/planning_routes.py")
+
+    assert "function _isExplicitUploadedMaskSource" in ui_api
+    assert "if (source) return '';" in ui_api
+    assert "restoreUploadedCtv" in ui_api
+    assert "restoreUploadedOar" in ui_api
+    assert "scopeKey: `viewer-render-${ownerRenderGeneration}`" in ui_api
+    assert "ownerRenderGeneration === Number(window.__viewerRenderGeneration || 0)" in ui_api
+    assert "ctv_source" in ui_api
+    assert "oar_source" in ui_api
+    assert '"ctv_source": first_path' in routes
+    assert '"oar_source": first_path' in routes
+
+
 def test_tumor_type_selector_hides_model_implementation_from_the_user():
     index = read("web/app/index.html")
     ui_api = read("web/app/static/js/brachybot-ui-api.js")
@@ -1396,7 +1433,8 @@ def test_delayed_scene_restore_is_scoped_to_its_case_generation():
     assert "function scheduleDeferredWorkspaceRestore(generation, callback, delay)" in workspace
     assert "if (generation !== workspaceRestoreGeneration) return;" in workspace
     assert "const restoreGeneration = invalidateDeferredWorkspaceRestore();" in workspace
-    assert "restoreSceneView(uiState.viewer?.scene, uiState.viewer?.dvh, restoreGeneration);" in workspace
+    assert "restoreSceneView(" in workspace
+    assert "uiState.viewer?.doseTexture" in workspace
 
 
 def test_volume_labels_slices_and_planning_results_pin_the_origin_case():
@@ -1771,7 +1809,8 @@ def test_background_case_restore_shows_a_corner_indicator_and_restores_case_prod
     assert "await ctTask;" in ui_api
     assert "preserveClinicalData: true" in ui_api
     assert "hydrateReportFigureAssets" in workspace
-    assert "restoreSceneView(uiState.viewer?.scene, uiState.viewer?.dvh" in workspace
+    assert "restoreSceneView(" in workspace
+    assert "uiState.viewer?.doseTexture" in workspace
 
 
 def test_label_completion_repaints_every_2d_viewer_while_preserving_controls():

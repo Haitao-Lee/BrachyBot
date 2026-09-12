@@ -1632,7 +1632,11 @@ async function recomputeManualDose(reason = 'manual_update', options = {}) {
         addChat('error', _manualText('当前没有可用于重算的手动粒子，请先添加至少一颗粒子。', 'No manual seeds available. Add at least one seed before recomputing dose.'));
         return null;
     }
-    const wasDoseTextureEnabled = !!(state && state.doseTexture && state.doseTexture.enabled);
+    const wasDoseTextureEnabled = !!(
+        state
+        && state.doseTexture
+        && (state.doseTexture.desiredEnabled ?? state.doseTexture.enabled)
+    );
     manualPlanningState._doseRecomputeJob = { payload, wasDoseTextureEnabled };
     if (manualPlanningState.doseRecomputeRunning) {
         // Invalidate the active job immediately. This prevents a response
@@ -6935,6 +6939,20 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
         }
         updateLoading('Finalizing 3D scene...');
         reportProgress({ phase: 'finalizing', current: 1, total: 1 });
+        // Workspace restoration uses this event to retry a persisted Dose
+        // Surface immediately after the mesh queue settles. Timers remain as
+        // a fallback for legacy loaders that do not use this prewarm path.
+        try {
+            window.dispatchEvent(new CustomEvent('brachybot:segmentation-meshes-ready', {
+                detail: {
+                    sessionId: sessionId || '',
+                    kind,
+                    requested: ctvLabelIds.length + oarIds.length,
+                    completed: ctvResults.length + oarResults.filter(Boolean).length,
+                    failed: failedResources.length,
+                },
+            }));
+        } catch (_) {}
         // The all-OAR restore is deliberately progressive. Reframe once the
         // last batch has arrived, but only while this restore still owns the
         // camera. A pointer interaction cancels the ownership immediately.
@@ -7185,7 +7203,7 @@ function _doseOverlaySessionId() {
  * enough because a late response from the previous case could still paint a
  * slice into the newly selected case.
  */
-function clearDoseOverlayRuntime() {
+function clearDoseOverlayRuntime(options = {}) {
     _doseOverlayLoadGeneration += 1;
     _doseOverlayRequestVersion += 1;
     _doseOverlayAbortControllers.forEach(controller => {
@@ -7223,10 +7241,25 @@ function clearDoseOverlayRuntime() {
     _doseOverlayData = null;
     _doseOverlayVisible = false;
     _doseOverlayOpacity = 0.5;
+    if (typeof window.resetDoseTextureRuntime === 'function') {
+        // A planning refresh invalidates the current vertex-colour mapping,
+        // but a case switch must drop the user's display preference as well.
+        // The helper also restores original materials before the old meshes
+        // are removed, preventing a same-id mesh in the next case from
+        // inheriting the previous case's material.
+        window.resetDoseTextureRuntime({
+            preserveDesired: options.preserveDesired !== false,
+        });
+    }
     if (state.doseTexture) {
         state.doseTexture.rawAxialSlices = {};
         state.doseTexture.rawAxialSlicePromises = {};
         state.doseTexture.enabled = false;
+        state.doseTexture.applying = false;
+        if (options.preserveDesired === false) {
+            state.doseTexture.desiredEnabled = false;
+            state.doseTexture.restorePending = false;
+        }
     }
     ['axial', 'sagittal', 'coronal'].forEach(axis => {
         ['doseCanvas', 'contourCanvas'].forEach(prefix => {

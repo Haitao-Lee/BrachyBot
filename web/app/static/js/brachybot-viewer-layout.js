@@ -1846,6 +1846,39 @@ function _restoreDoseTextureMaterials() {
     }
 }
 
+// Three.js materials and vertex colours are runtime objects.  They must be
+// restored before a case switch, otherwise a newly hydrated mesh can inherit
+// the previous case's material through an id collision.  Keep the user's
+// desired display mode separate from that runtime state: a case may request
+// Dose Surface while its meshes are still being reconstructed.
+function resetDoseTextureRuntime(options = {}) {
+    const doseTexture = typeof state !== 'undefined' ? state?.doseTexture : null;
+    if (!doseTexture) return;
+    const preserveDesired = options.preserveDesired !== false;
+    const hasRuntimeState = !!doseTexture.enabled
+        || !!doseTexture.applying
+        || Array.isArray(doseTexture.mappedMeshIds) && doseTexture.mappedMeshIds.length > 0
+        || Object.keys(doseTexture.originalMaterials || {}).length > 0
+        || Object.keys(doseTexture.originalSceneStyle || {}).length > 0
+        || !!doseTexture.originalSkinStyle;
+    const desiredEnabled = doseTexture.desiredEnabled === true;
+    if (hasRuntimeState) _restoreDoseTextureMaterials();
+    doseTexture.enabled = false;
+    doseTexture.applying = false;
+    doseTexture.mappedMeshIds = [];
+    doseTexture.renderSignature = '';
+    doseTexture.originalMaterials = {};
+    doseTexture.originalSceneStyle = {};
+    doseTexture.originalSkinStyle = null;
+    doseTexture.restorePending = preserveDesired && desiredEnabled;
+    if (!preserveDesired) doseTexture.desiredEnabled = false;
+    else if (typeof doseTexture.desiredEnabled !== 'boolean') doseTexture.desiredEnabled = false;
+    Object.values(typeof scene3D !== 'undefined' ? (scene3D.meshes || {}) : {})
+        .forEach(mesh => _markDoseTextureRuntime(mesh, false));
+}
+window.resetDoseTextureRuntime = resetDoseTextureRuntime;
+window.isDoseTextureRuntimeReady = _doseTextureRuntimeReady;
+
 function _isSeedOrNeedleMesh(id, mesh) {
     const t = mesh?.userData?.type || mesh?.userData?.source || '';
     // Handles are interaction affordances, never treatment geometry.  In
@@ -2185,6 +2218,21 @@ async function _reconstructThresholdMask3D(id, silent = false) {
 
 async function setDoseTextureMode(enabled, opts = {}) {
     const requestScope = _captureViewer3DRequestScope();
+    const requestedEnabled = !!enabled;
+    const userIntent = opts.restore !== true
+        && opts.silent !== true
+        && opts.userIntent !== false;
+    if (userIntent && typeof scene3D !== 'undefined' && scene3D) {
+        // A manual mode change cancels a pending case-restore retry.  The
+        // restore chain must never turn Dose Surface back on behind the user.
+        try { window._cancelWorkspaceDoseSurfaceRestore?.(); } catch (_) {}
+        scene3D._workspaceDoseSurfaceRestoreCancelled = true;
+        scene3D._workspaceDoseSurfaceRestoreGeneration = null;
+    }
+    if (userIntent && state?.doseTexture) {
+        state.doseTexture.desiredEnabled = requestedEnabled;
+        state.doseTexture.restorePending = false;
+    }
     // Report capture and an operator-triggered toggle can overlap during
     // workspace hydration.  The old early return let the report continue
     // with the normal materials while it still appended a dose colorbar.
@@ -2202,8 +2250,8 @@ async function setDoseTextureMode(enabled, opts = {}) {
                 error: 'Dose surface mapping is still in progress',
             };
         }
-        if (enabled === !!state.doseTexture.enabled
-            && (!enabled || _doseTextureRuntimeReady())) {
+        if (requestedEnabled === !!state.doseTexture.enabled
+            && (!requestedEnabled || _doseTextureRuntimeReady())) {
             return { success: true, enabled: !!state.doseTexture.enabled, waited: true };
         }
     }
@@ -2211,7 +2259,7 @@ async function setDoseTextureMode(enabled, opts = {}) {
     // current WebGL scene still contains normal materials.  Clear that stale
     // flag and rebuild the runtime mapping instead of treating the mode as
     // already complete.  This is the key boundary for truthful Fig 2(d).
-    if (enabled && state.doseTexture.enabled && !_doseTextureRuntimeReady()) {
+    if (requestedEnabled && state.doseTexture.enabled && !_doseTextureRuntimeReady()) {
         _restoreDoseTextureMaterials();
         state.doseTexture.enabled = false;
     }
@@ -2220,7 +2268,7 @@ async function setDoseTextureMode(enabled, opts = {}) {
     const btn = document.getElementById('doseTextureToggle');
     if (btn) {
         btn.disabled = true;
-        btn.textContent = enabled ? 'Mapping...' : 'Dose Surface';
+        btn.textContent = requestedEnabled ? 'Mapping...' : 'Dose Surface';
     }
     // Safety timer: if the operation hangs (network timeout, server stall),
     // reset the button after 60 seconds so the user can retry.
@@ -2234,7 +2282,7 @@ async function setDoseTextureMode(enabled, opts = {}) {
         }
     }, 60000);
     try {
-        if (enabled) {
+        if (requestedEnabled) {
             // Dose surface mode only changes mesh texture — it does NOT
             // add or remove models, nor reset camera. Whatever CTV/OAR
             // meshes are already visible get the dose texture; anything
@@ -2257,6 +2305,8 @@ async function setDoseTextureMode(enabled, opts = {}) {
             if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
             _prepareDoseTextureSceneVisibility();
             state.doseTexture.enabled = true;
+            state.doseTexture.desiredEnabled = true;
+            state.doseTexture.restorePending = false;
             state.doseTexture.mappedMeshIds = mappedMeshIds.slice();
             state.doseTexture.renderSignature = DOSE_TEXTURE_RUNTIME_SIGNATURE;
             if (typeof window.syncSceneAppearanceFromDataTree === 'function') {
@@ -2267,6 +2317,8 @@ async function setDoseTextureMode(enabled, opts = {}) {
         } else {
             _restoreDoseTextureMaterials();
             state.doseTexture.enabled = false;
+            state.doseTexture.desiredEnabled = false;
+            state.doseTexture.restorePending = false;
             state.doseTexture.mappedMeshIds = [];
             state.doseTexture.renderSignature = '';
             if (typeof window.syncSceneAppearanceFromDataTree === 'function') {
@@ -2280,6 +2332,11 @@ async function setDoseTextureMode(enabled, opts = {}) {
         // frame and paint only an inner rectangle of the viewer.
         if (typeof scene3D.renderNow === 'function') scene3D.renderNow();
         else if (scene3D.requestRender) scene3D.requestRender(2);
+        if (userIntent && typeof window.scheduleWorkspaceSave === 'function') {
+            window.scheduleWorkspaceSave(
+                requestedEnabled ? 'viewer.dose_surface.enabled' : 'viewer.dose_surface.disabled',
+            );
+        }
         return { success: true, enabled: !!state.doseTexture.enabled, mappedMeshIds };
     } catch (e) {
         if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
@@ -2291,6 +2348,13 @@ async function setDoseTextureMode(enabled, opts = {}) {
         }
         _restoreDoseTextureMaterials();
         state.doseTexture.enabled = false;
+        if (opts.restore === true) {
+            state.doseTexture.desiredEnabled = true;
+            state.doseTexture.restorePending = true;
+        } else if (userIntent) {
+            state.doseTexture.desiredEnabled = requestedEnabled;
+            state.doseTexture.restorePending = false;
+        }
         state.doseTexture.mappedMeshIds = [];
         state.doseTexture.renderSignature = '';
         if (typeof window.syncSceneAppearanceFromDataTree === 'function') {
@@ -2312,7 +2376,16 @@ async function setDoseTextureMode(enabled, opts = {}) {
 }
 
 function toggleDoseTextureMode() {
-    setDoseTextureMode(!state.doseTexture.enabled);
+    // During a cold session restore, `enabled` is deliberately false until
+    // the current case's WebGL materials have been rebuilt.  The operator's
+    // actual mode is `desiredEnabled`; toggling the runtime flag here would
+    // otherwise turn a pending "restore Dose Surface" click into another
+    // enable request and could not cancel the restore.
+    const doseTexture = typeof state !== 'undefined' ? state?.doseTexture : null;
+    const currentMode = doseTexture && typeof doseTexture.desiredEnabled === 'boolean'
+        ? doseTexture.desiredEnabled
+        : !!doseTexture?.enabled;
+    setDoseTextureMode(!currentMode);
 }
 
 function _hexToRgbArray(hex, fallback = [255, 204, 0]) {
