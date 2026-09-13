@@ -180,7 +180,7 @@ class SeedPlanningTool(BaseTool):
         norm_min, norm_max, norm_scale = image_normalize[0], image_normalize[1], image_normalize[2]
 
         if mode == "rl":
-            rf_params = kwargs.get("rf_params", {"max_episodes": 100, "bandwidth": 0.1})
+            rf_params = kwargs.get("rf_params", {"max_episodes": 200, "bandwidth": 0.1})
             interval_rate = kwargs.get("interval_rate", 2)
             optimal_plan = core.optimal_plan_rf(
                 init_trajectories=trajectories,

@@ -149,7 +149,7 @@ class RLSeedPlanningTool(BaseTool):
         dose_cal_model, model_error = resolve_dose_model(kwargs, dl_params)
         if dose_cal_model is None:
             return ToolResult(success=False, error=model_error or "Dose model is unavailable")
-        rf_params = kwargs.get("rf_params", {"max_episodes": 100, "bandwidth": 0.1})
+        rf_params = kwargs.get("rf_params", {"max_episodes": 200, "bandwidth": 0.1})
         target_value = kwargs.get("target_value", 1)
         in_lowest_dose = planning_dose_value_to_model(
             kwargs.get("in_lowest_dose", DEFAULT_PRESCRIPTION_GY),

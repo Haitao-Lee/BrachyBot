@@ -3235,6 +3235,15 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                             i,
                         )
                         continue
+                    # Old completed plans may predate endpoint clipping. Only
+                    # shorten an already validated segment when ALL seed
+                    # centers/directions match it; never move seeds during a
+                    # read request or silently change the stored dose plan.
+                    from tool_factory.seed_plan.planning_pipeline import (
+                        _clip_needle_to_farthest_seed, _needle_seed_alignment_error,
+                    )
+                    if not _needle_seed_alignment_error(points, seed_list):
+                        points, _ = _clip_needle_to_farthest_seed(points, seed_list)
                     needles.append({
                         "id": f"needle_{i + 1}",
                         "points": [point.tolist() for point in points],

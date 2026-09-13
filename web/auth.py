@@ -5,10 +5,11 @@ from __future__ import annotations
 import os
 import re
 import secrets
+from datetime import timedelta
 from functools import wraps
 from typing import Any, Callable, Dict, Optional
 
-from flask import Flask, jsonify, request, session
+from flask import Flask, current_app, jsonify, request, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from web.server_support import rate_limit, require_api_key
@@ -17,6 +18,87 @@ from web.workspace_store import WorkspaceError, WorkspaceStore
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_.-]{3,64}$")
 MIN_PASSWORD_LENGTH = 12
+DEFAULT_DEBUG_ACCOUNT_USERNAME = "HaitaoLi"
+DEFAULT_DEBUG_SESSION_LIFETIME_DAYS = 3650
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+_PUBLIC_DEPLOYMENT_MODES = {"public", "production", "release"}
+
+
+def _configured_debug_account(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Resolve the development-only long-lived login policy.
+
+    The account exception is deliberately a server-side deployment policy,
+    rather than a property that can be supplied by a browser.  The public
+    entrypoint passes ``deployment_mode=public`` and therefore cannot enable
+    this policy even if a debug environment variable was inherited.
+    """
+    mode = str(
+        config.get("deployment_mode")
+        or os.environ.get("BRACHYBOT_DEPLOYMENT_MODE")
+        or "development"
+    ).strip().lower()
+    enabled_value = config.get("enable_debug_account")
+    if enabled_value is None:
+        enabled_value = os.environ.get("BRACHYBOT_DEBUG_ACCOUNT_ENABLED", "1")
+    enabled = mode not in _PUBLIC_DEPLOYMENT_MODES and str(enabled_value).lower() in _TRUE_VALUES
+
+    username_value = config.get("debug_account_username")
+    if username_value is None:
+        username_value = os.environ.get(
+            "BRACHYBOT_DEBUG_ACCOUNT",
+            DEFAULT_DEBUG_ACCOUNT_USERNAME,
+        )
+    username = str(username_value or "").strip()
+    if not USERNAME_RE.fullmatch(username):
+        username = ""
+        enabled = False
+
+    lifetime_value = config.get("debug_session_lifetime_days")
+    if lifetime_value is None:
+        lifetime_value = os.environ.get(
+            "BRACHYBOT_DEBUG_SESSION_LIFETIME_DAYS",
+            str(DEFAULT_DEBUG_SESSION_LIFETIME_DAYS),
+        )
+    try:
+        lifetime_days = int(lifetime_value)
+    except (TypeError, ValueError):
+        lifetime_days = DEFAULT_DEBUG_SESSION_LIFETIME_DAYS
+    lifetime_days = max(1, min(lifetime_days, 36500))
+
+    return {
+        "deployment_mode": mode,
+        "enabled": bool(enabled),
+        "username": username,
+        "lifetime_days": lifetime_days,
+    }
+
+
+def _debug_account_matches(user: Dict[str, Any]) -> bool:
+    """Return whether *user* is the configured development-only account."""
+    try:
+        policy = current_app.extensions.get("brachybot_auth_policy") or {}
+    except RuntimeError:
+        return False
+    expected = str(policy.get("username") or "").strip()
+    actual = str(user.get("username") or "").strip()
+    return bool(policy.get("enabled") and expected and actual.casefold() == expected.casefold())
+
+
+def _apply_debug_session_policy(user: Dict[str, Any]) -> None:
+    """Upgrade the debug account to a renewable persistent cookie.
+
+    Applying this on every authenticated request is intentional.  It upgrades
+    an already-open browser that logged in before this policy was introduced,
+    without forcing a logout/login cycle.  A public/normal deployment removes
+    the marker and downgrades only a cookie that was created by this policy.
+    """
+    if _debug_account_matches(user):
+        session.permanent = True
+        session["bb_debug_account"] = True
+        return
+    if session.get("bb_debug_account"):
+        session.pop("bb_debug_account", None)
+        session.permanent = False
 
 
 def _persistent_development_secret(store: WorkspaceStore) -> str:
@@ -60,6 +142,7 @@ def _json_error(message: str, status: int):
 def configure_auth(app: Flask, store: WorkspaceStore, config: Optional[Dict[str, Any]] = None) -> None:
     """Configure cookie security and install the API authentication boundary."""
     config = config or {}
+    debug_policy = _configured_debug_account(config)
     secret = config.get("secret_key") or os.environ.get("BRACHYBOT_SECRET_KEY")
     if not secret:
         secret = _persistent_development_secret(store)
@@ -72,7 +155,17 @@ def configure_auth(app: Flask, store: WorkspaceStore, config: Optional[Dict[str,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=str(os.environ.get("BRACHYBOT_COOKIE_SECURE", "")).lower() in {"1", "true", "yes", "on"},
+        SESSION_REFRESH_EACH_REQUEST=True,
     )
+    # Flask only adds an Expires/Max-Age attribute when ``session.permanent``
+    # is true.  Keep the long lifetime scoped to the debug account; ordinary
+    # accounts retain the normal session-cookie behaviour, and the public
+    # entrypoint can never enable this policy.
+    if debug_policy["enabled"]:
+        app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(
+            days=debug_policy["lifetime_days"]
+        )
+    app.extensions["brachybot_auth_policy"] = debug_policy
     app.extensions["brachybot_workspace_store"] = store
 
     @app.before_request
@@ -104,6 +197,9 @@ def current_user(store: WorkspaceStore) -> Optional[Dict[str, Any]]:
     if issued_epoch != int(user.get("auth_epoch") or 0):
         session.clear()
         return None
+    # Also upgrades an existing HaitaoLi cookie after a server-side policy
+    # change, so the developer does not need to log out and back in once.
+    _apply_debug_session_policy(user)
     return user
 
 
@@ -111,6 +207,7 @@ def _bind_session_identity(session_obj, user: Dict[str, Any]) -> None:
     """Record the authenticated identity and its current auth epoch."""
     session_obj["bb_user_id"] = user["id"]
     session_obj["bb_auth_epoch"] = int(user.get("auth_epoch") or 0)
+    _apply_debug_session_policy(user)
 
 
 def csrf_token() -> str:

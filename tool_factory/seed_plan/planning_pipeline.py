@@ -562,7 +562,9 @@ _RF_PARAM_KEYS = {
     "lr", "gamma", "max_episodes", "print_every", "bandwidth",
     "hierarchical_optimization", "segmented_rewards", "flip_ratio",
     "candidate_limit", "dense_seed_limit", "max_hierarchy_depth",
-    "max_actions_per_episode", "max_wall_seconds", "fallback_to_rule_based",
+    "max_actions_per_episode", "max_wall_seconds", "coverage_repair_seconds",
+    "coverage_repair_extension_seconds", "coverage_repair_max_seconds",
+    "fallback_to_rule_based",
 }
 _PLANNING_PARAM_KEYS = {
     "dose_value_unit", "in_lowest_energy", "out_highest_energy",
@@ -774,6 +776,107 @@ def _finite_number(value, name, *, minimum=None, maximum=None):
     return parsed
 
 
+def _coverage_repair_adaptive_policy(rf_params, target_coverage, status):
+    """Resolve the bounded second chance for residual-dose repair.
+
+    The first repair pass keeps the normal budget.  A second pass is allowed
+    only when the first pass produced measurable evidence that the case is
+    still actionable: it must have improved coverage (or be already close to
+    the target), and it must have accepted/generated at least one useful
+    action.  ``no_safe_positive_gain`` and similar terminal states never get
+    an extension.  This keeps hopeless cases on the original fast failure
+    path while allowing promising cases to spend more time on real dose
+    improvements.
+
+    Returns a small, serializable policy record so the decision is visible in
+    planning provenance and can be explained to the operator.
+    """
+    params = rf_params if isinstance(rf_params, dict) else {}
+
+    def _seconds(name, default):
+        try:
+            value = float(params.get(name, default))
+        except (TypeError, ValueError):
+            value = float(default)
+        if not np.isfinite(value) or value <= 0.0:
+            return float(default)
+        return value
+
+    base_seconds = _seconds("coverage_repair_seconds", 60.0)
+    extension_seconds = _seconds("coverage_repair_extension_seconds", 120.0)
+    max_seconds = _seconds("coverage_repair_max_seconds", base_seconds + extension_seconds)
+    max_seconds = max(base_seconds, max_seconds)
+    extension_seconds = min(extension_seconds, max(0.0, max_seconds - base_seconds))
+
+    record = status if isinstance(status, dict) else {}
+    try:
+        target = float(target_coverage)
+    except (TypeError, ValueError):
+        target = 0.9
+    if not np.isfinite(target):
+        target = 0.9
+    try:
+        initial = float(record.get("initial_coverage", 0.0))
+        final = float(record.get("final_coverage", initial))
+    except (TypeError, ValueError):
+        initial, final = 0.0, 0.0
+    if not np.isfinite(initial):
+        initial = 0.0
+    if not np.isfinite(final):
+        final = initial
+
+    try:
+        actions = sum(
+            max(0, int(record.get(key, 0) or 0))
+            for key in ("added_needles", "added_seeds", "generated")
+        )
+    except (TypeError, ValueError):
+        actions = 0
+    stop_reason = str(record.get("stop_reason") or "")
+    gain = max(0.0, final - initial)
+    remaining_gap = max(0.0, target - final)
+
+    # One percentage point is large enough to distinguish a real dose gain
+    # from numerical noise.  A plan within 15 percentage points of its target
+    # is also worth a second pass, provided a useful action was observed.
+    measurable_gain = gain >= 0.01
+    near_target = remaining_gap <= 0.15
+    retryable_stop = stop_reason in {"time_budget", "round_budget"}
+    has_actionable_evidence = actions > 0
+    should_extend = bool(
+        extension_seconds > 0.0
+        and final < target - 1e-6
+        and retryable_stop
+        and has_actionable_evidence
+        and (measurable_gain or near_target)
+    )
+
+    if should_extend:
+        reason = "measurable_gain_with_remaining_gap"
+    elif final >= target - 1e-6:
+        reason = "target_reached"
+    elif not retryable_stop:
+        reason = f"terminal_status:{stop_reason or 'unknown'}"
+    elif not has_actionable_evidence:
+        reason = "no_actionable_candidate"
+    else:
+        reason = "gain_below_extension_threshold"
+
+    return {
+        "base_seconds": float(base_seconds),
+        "extension_seconds": float(extension_seconds),
+        "max_seconds": float(max_seconds),
+        "initial_coverage": float(initial),
+        "base_final_coverage": float(final),
+        "coverage_gain": float(gain),
+        "remaining_gap": float(remaining_gap),
+        "action_count": int(actions),
+        "base_stop_reason": stop_reason,
+        "should_extend": should_extend,
+        "decision_reason": reason,
+    }
+
+
 def _apply_planning_overrides(args, overrides):
     """Apply validated per-call UI settings to a fresh ``plans.config`` object.
 
@@ -867,7 +970,8 @@ def _apply_planning_overrides(args, overrides):
             elif key in {
                 "max_episodes", "print_every", "bandwidth", "candidate_limit",
                 "dense_seed_limit", "max_hierarchy_depth", "max_actions_per_episode",
-                "max_wall_seconds",
+                "max_wall_seconds", "coverage_repair_seconds",
+                "coverage_repair_extension_seconds", "coverage_repair_max_seconds",
             }:
                 args.rf_params[key] = int(_finite_number(value, f"rf_params.{key}", minimum=1, maximum=1000))
             elif key in {"lr", "gamma", "flip_ratio"}:
@@ -1492,6 +1596,37 @@ def _candidate_world_needle_points(trajectory, planning_image, extension_mm=None
     except Exception:
         logger.exception("[needle_safety] Unable to build candidate world needle segment")
         return None
+
+
+def _needle_seed_alignment_error(points, seeds, tolerance_mm=1e-3):
+    """Check every published seed against its owning physical segment."""
+    try:
+        deep, external = np.asarray(points, dtype=float)
+        axis = deep - external
+        length = np.linalg.norm(axis)
+        if not np.isfinite(length) or length <= tolerance_mm:
+            return 'invalid needle axis'
+        unit = axis / length
+        for index, seed in enumerate(seeds):
+            if isinstance(seed, dict):
+                pos = seed.get('position', seed.get('pos'))
+                direction = seed.get('direction', seed.get('dir'))
+            else:
+                pos, direction = seed[:2]
+            pos = np.asarray(pos, dtype=float).reshape(3)
+            direction = np.asarray(direction, dtype=float).reshape(3)
+            depth = float(np.dot(pos-external, unit))
+            offset = float(np.linalg.norm(pos-external-depth*unit))
+            norm = np.linalg.norm(direction)
+            if not np.all(np.isfinite(pos)) or not np.isfinite(norm) or norm <= 1e-12:
+                return f'seed {index}: invalid position/direction'
+            if offset > tolerance_mm or depth < -tolerance_mm or depth > length+tolerance_mm:
+                return f'seed {index}: off-axis {offset:.6f} mm, depth {depth:.6f}/{length:.6f} mm'
+            if abs(float(np.dot(direction/norm, unit))) < 1-1e-6:
+                return f'seed {index}: direction differs from owning needle'
+    except (TypeError, ValueError):
+        return 'invalid seed/needle geometry'
+    return None
 
 
 def _clip_needle_to_farthest_seed(points, seeds, tolerance_mm=1e-3):
@@ -2122,6 +2257,11 @@ def _validated_needle_geometry(plan_res, ct_image, planning_image, ctv_mask, oar
             seed_records = entry[1] or []
         else:
             seed_records = []
+        alignment_error = _needle_seed_alignment_error(points, seed_records)
+        if alignment_error:
+            logger.error('[needle_safety] trajectory %d: %s', index, alignment_error)
+            unsafe_indices.append(index)
+            continue
         published_points, clipped = _clip_needle_to_farthest_seed(
             points, seed_records
         )
@@ -3934,8 +4074,12 @@ class PlanningPipelineTool(BaseTool):
             repair_context = utilizations.DoseImageContext(
                 dose_image, args.image_normalize[0], args.image_normalize[1], dose_model
             )
+            repair_geometry_cache = {}
+            repair_needle_context = None
+            repair_boundary_faces = None
 
             def _repair_validate(trajectory, selected):
+                nonlocal repair_needle_context, repair_boundary_faces
                 spacing_safe = utilizations.get_trajectory_spacing_safety_mask(
                     [trajectory], selected, dose_image,
                     base_min_distance_mm=args.distance_filtter['lower_bound'],
@@ -3944,10 +4088,24 @@ class PlanningPipelineTool(BaseTool):
                 )
                 if not spacing_safe[0]:
                     return False
-                return bool(_filter_world_safe_trajectories(
-                    [trajectory], resampled_ct, ct_image, ctv_mask, oar_mask,
-                    obstacle_labels, body_mask=body_mask,
-                ))
+                key = (tuple(np.asarray(trajectory[0])), tuple(np.asarray(trajectory[1])),
+                       tuple(trajectory[2]), tuple(trajectory[3]))
+                if key not in repair_geometry_cache:
+                    # Masks and image geometry are immutable during this
+                    # repair. Reuse them instead of rebuilding full CT body
+                    # and obstacle volumes for every one-path trial.
+                    if repair_needle_context is None:
+                        repair_needle_context = build_needle_safety_context(
+                            ct_image, ctv_mask, oar_mask, obstacle_labels)
+                        repair_boundary_faces = utilizations.infer_truncated_boundary_faces_from_image(ct_image)
+                    points = _candidate_world_needle_points(trajectory, resampled_ct)
+                    repair_geometry_cache[key] = bool(
+                        points is not None and repair_needle_context is not None
+                        and not _needle_enters_through_truncated_boundary(
+                            points, ct_image, body_mask=body_mask,
+                            truncated_boundary_faces=repair_boundary_faces)
+                        and not repair_needle_context.segment_hits_obstacle(points))
+                return repair_geometry_cache[key]
 
             def _repair_infer(point, direction):
                 return utilizations.single_seed_dose_calculation_dl(
@@ -3962,13 +4120,21 @@ class PlanningPipelineTool(BaseTool):
                 # then reuse the ordinary initializer and all safety checks.
                 target = radiation_volume == args.radiation_array_params['target_value']
                 representatives = core.sample_spatial_trajectories(
-                    [(p, np.array([1., 0., 0.])) for p in cold], 4,
+                    [(p, np.array([1., 0., 0.])) for p in cold], 12,
                     tuple(reversed(dose_image.GetSpacing())),
                 )
-                directions = core.sample_spatial_trajectories(trajectories, 12)
+                unique_directions = {}
+                for t in trajectories:
+                    unit = np.asarray(t[1], dtype=float)
+                    unit = unit / np.linalg.norm(unit)
+                    unique_directions.setdefault(tuple(np.round(unit, 8)), t)
+                directions = core.sample_spatial_trajectories(list(unique_directions.values()), 12)
                 extra = []
-                for representative in representatives:
-                    for template in directions:
+                # Visit every cold region before trying another direction.
+                # Region-first nesting spent short budgets entirely on the
+                # first region and could omit the opposite end of the CTV.
+                for template in directions:
+                    for representative in representatives:
                         if time.monotonic() >= deadline:
                             return extra
                         direction = np.asarray(template[1])
@@ -4000,20 +4166,110 @@ class PlanningPipelineTool(BaseTool):
                     source="seed_planning OAR grid",
                 ) > 0
             repair_organs &= radiation_volume != args.radiation_array_params['target_value']
-            repair_budget = min(30.0, max(0.0, 0.1 * (time.monotonic() - optimization_started)))
-            try:
-                repaired_plan, repair_status = repair_coverage(
-                    plan_res, trajectories, radiation_volume, dose_image,
+            # Keep a dedicated, configurable budget for cold-region repair.
+            # It is intentionally independent of the elapsed initial
+            # optimization time, so a fast run does not starve this phase.
+            # A promising first pass may receive one bounded extension; a
+            # stagnant or unsafe case keeps the original fast budget.
+            rf_params = getattr(args, "rf_params", {}) or {}
+
+            def _run_repair_pass(input_plan, seconds, rounds):
+                return repair_coverage(
+                    input_plan, trajectories, radiation_volume, dose_image,
                     args.radiation_array_params['target_value'], repair_organs,
                     in_lowest_model, out_highest_model, args.DVH_rate, args.seed_info,
                     _repair_infer, _repair_validate, _repair_generate,
-                    seconds=repair_budget, rounds=4,
+                    seconds=seconds, rounds=rounds, shortlist=3,
                     candidate_limit=args.radiation_array_params['maximum_candidate_trajectories'],
                 )
-                plan_res = repaired_plan
+
+            def _status_int(status, key):
+                try:
+                    return max(0, int((status or {}).get(key, 0) or 0))
+                except (TypeError, ValueError):
+                    return 0
+
+            repair_status = {
+                'stop_reason': 'internal_error_original_plan_retained',
+                'initial_coverage': None,
+                'final_coverage': None,
+                'adaptive_extension_used': False,
+            }
+            base_plan = None
+            base_status = None
+            try:
+                base_budget_policy = _coverage_repair_adaptive_policy(
+                    rf_params, args.DVH_rate, {}
+                )
+                base_plan, base_status = _run_repair_pass(
+                    plan_res, base_budget_policy['base_seconds'], 24
+                )
+                policy = _coverage_repair_adaptive_policy(
+                    rf_params, args.DVH_rate, base_status
+                )
+                repair_status = copy.deepcopy(base_status)
+                repair_status['adaptive_extension_used'] = False
+                repair_status['adaptive_policy'] = policy
+                repair_status['base_status'] = copy.deepcopy(base_status)
+                repair_status['extension_status'] = None
+                plan_res = base_plan
+
+                if policy['should_extend']:
+                    logger.info(
+                        '[coverage_repair] First pass is promising '
+                        '(coverage %.4f -> %.4f, reason=%s); extending by %.1fs',
+                        policy['initial_coverage'],
+                        policy['base_final_coverage'],
+                        policy['decision_reason'],
+                        policy['extension_seconds'],
+                    )
+                    extension_plan, extension_status = _run_repair_pass(
+                        base_plan, policy['extension_seconds'], 48
+                    )
+                    base_final = float(base_status.get('final_coverage', 0.0) or 0.0)
+                    extension_final = float(extension_status.get('final_coverage', base_final) or base_final)
+                    # Repair only adds accepted seeds, but retain the first
+                    # pass defensively if a custom integration returns a
+                    # lower-coverage extension result.
+                    if extension_final + 1e-9 >= base_final:
+                        plan_res = extension_plan
+                    repair_status['extension_status'] = copy.deepcopy(extension_status)
+                    repair_status['adaptive_extension_used'] = True
+                    repair_status['initial_coverage'] = base_status.get('initial_coverage')
+                    repair_status['final_coverage'] = max(base_final, extension_final)
+                    for key in ('trials', 'added_needles', 'added_seeds', 'generated'):
+                        repair_status[key] = _status_int(base_status, key) + _status_int(extension_status, key)
+                    try:
+                        repair_status['elapsed_seconds'] = float(
+                            base_status.get('elapsed_seconds', 0.0) or 0.0
+                        ) + float(extension_status.get('elapsed_seconds', 0.0) or 0.0)
+                    except (TypeError, ValueError):
+                        pass
+                    repair_status['stop_reason'] = extension_status.get(
+                        'stop_reason', 'time_budget'
+                    )
+                    repair_status['budget_used_seconds'] = (
+                        policy['base_seconds'] + policy['extension_seconds']
+                    )
+                else:
+                    repair_status['budget_used_seconds'] = policy['base_seconds']
             except Exception:
                 logger.exception('[coverage_repair] Retaining original plan after repair failure')
-                repair_status = {'stop_reason': 'internal_error_original_plan_retained'}
+                # If the base pass completed but the adaptive extension
+                # failed, keep its accepted plan and diagnostics instead of
+                # discarding useful work from the first pass.
+                if base_plan is not None and isinstance(base_status, dict):
+                    plan_res = base_plan
+                    repair_status = copy.deepcopy(base_status)
+                    repair_status['adaptive_extension_used'] = False
+                    repair_status['extension_error'] = 'internal_error_extension_retained_base'
+                else:
+                    repair_status = {
+                        'stop_reason': 'internal_error_original_plan_retained',
+                        'initial_coverage': None,
+                        'final_coverage': None,
+                        'adaptive_extension_used': False,
+                    }
             logger.info('[coverage_repair] %s', repair_status)
             if agent:
                 agent.memory.store('coverage_repair_status', repair_status)

@@ -379,12 +379,11 @@ class NeedleObstacleSafetyTests(unittest.TestCase):
             _needle_enters_through_truncated_boundary(nearly_outside, image),
         )
 
-    def test_final_geometry_uses_candidate_trajectory_not_seed_reconstruction(self):
+    def test_final_geometry_rejects_seed_beyond_validated_candidate(self):
         image, ctv, oar = _image_and_masks()
         # The optimizer trajectory is clear at y=0.  The seed payload is
         # deliberately placed in the hard mask at y=10.  A validator that
-        # reconstructs a needle from seeds would reject this plan; the
-        # authoritative candidate trajectory must be accepted instead.
+        # checks only the candidate would miss this inconsistent seed payload.
         trajectory = [
             np.array([10.0, 0.0, 10.0]),
             np.array([0.0, 1.0, 0.0]),
@@ -403,11 +402,15 @@ class NeedleObstacleSafetyTests(unittest.TestCase):
         geometry, unsafe = _validated_needle_geometry(
             plan_res, image, image, ctv, oar, {77}
         )
-        self.assertEqual(unsafe, [])
-        self.assertIn("0", geometry)
-        self.assertFalse(_world_segment_hits_obstacle(
-            geometry["0"], image, ctv, oar, {77}
-        ))
+        self.assertEqual(unsafe, [0])
+        self.assertEqual(geometry, {})
+
+    def test_alignment_rejects_off_axis_and_wrong_direction(self):
+        from tool_factory.seed_plan.planning_pipeline import _needle_seed_alignment_error
+        points = [[0., 0., 10.], [0., 0., -150.]]
+        self.assertIsNone(_needle_seed_alignment_error(points, [([0., 0., 8.], [0., 0., 1.])]))
+        self.assertIn('off-axis', _needle_seed_alignment_error(points, [([1., 0., 8.], [0., 0., 1.])]))
+        self.assertIn('direction', _needle_seed_alignment_error(points, [([0., 0., 8.], [0., 1., 0.])]))
 
     def test_manual_needles_cannot_bypass_data_tree_hard_obstacles(self):
         image, ctv, oar = _image_and_masks()

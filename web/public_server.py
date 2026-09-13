@@ -81,6 +81,9 @@ def main():
         return
     # Fixed here so inherited development settings cannot weaken this entrypoint.
     os.environ.update({
+        "BRACHYBOT_DEPLOYMENT_MODE": "public",
+        "BRACHYBOT_DEBUG_ACCOUNT_ENABLED": "0",
+        "BRACHYBOT_DEBUG_ACCOUNT": "",
         "BRACHYBOT_COOKIE_SECURE": "1", "BRACHYBOT_REQUIRE_API_KEY": "1",
         "BRACHYBOT_ALLOW_SELF_REGISTRATION": "0", "BRACHYBOT_TRUST_PROXY": "0",
         "ALLOWED_ORIGINS": os.environ["BRACHYBOT_PUBLIC_ORIGIN"],
