@@ -388,7 +388,7 @@ async function applyHyperparams() {
             ],
         },
         rf_params: {
-            max_episodes: Math.round(_num('rfMaxEpisodes', 100)),
+            max_episodes: Math.round(_num('rfMaxEpisodes', 200)),
             bandwidth: _num('rfBandwidth', 50),
         },
     };

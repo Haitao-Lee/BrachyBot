@@ -42,7 +42,7 @@ def test_frontend_uses_one_mapping_for_pointer_navigation_and_annotations():
     assert "mapVoxel(axis, coords.x, coords.y" in manual
     assert "volZ = state.slices.axial" not in manual
     assert "updates.axial = volZ" not in manual
-    assert "brachybot-viewer-volume.js?v=54" in index
+    assert "brachybot-viewer-volume.js?v=65" in index
     assert "brachybot-manual-annotation.js?v=26" in index
 
 

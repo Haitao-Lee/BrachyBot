@@ -2367,47 +2367,259 @@ def draw_radiations(radiation_volume, single_seed_radiations, target_value, thre
 
 
 
-def get_close_points(dose_image, radiation_array, ref_direc, target_value, extract_angle, max_point_num=20000):
+_CLOSE_POINT_MAX_SURFACE_POINTS = 256
+_CLOSE_POINT_PREFERRED_SPACING_MM = 2.5
+_CLOSE_POINT_BACK_QUANTILE = 0.70
+_CLOSE_POINT_BACK_SEED_FRACTION = 0.75
+
+
+def _deterministic_point_subsample(points, max_points):
+    """Reduce a point cloud without random sampling or centroid drift."""
+    points = np.asarray(points)
+    max_points = max(1, int(max_points))
+    if points.ndim != 2 or points.shape[0] <= max_points:
+        return points
+    if points.shape[1] != 3:
+        raise ValueError("points must have shape (N, 3)")
+
+    finite = np.all(np.isfinite(points), axis=1)
+    points = points[finite]
+    if points.shape[0] <= max_points:
+        return points
+    mins = np.min(points, axis=0)
+    spans = np.maximum(np.ptp(points, axis=0), 1.0)
+    voxel_size = max(1.0, float(np.prod(spans) / max_points) ** (1.0 / 3.0))
+    bins = np.floor((points - mins) / voxel_size).astype(np.int64)
+    _, first_indices = np.unique(bins, axis=0, return_index=True)
+    reduced = points[np.sort(first_indices)]
+    if reduced.shape[0] <= max_points:
+        return reduced
+
+    keep = np.linspace(0, reduced.shape[0] - 1, max_points, dtype=np.int64)
+    return reduced[keep]
+
+
+def _farthest_point_sample_indices(
+    points_world,
+    limit,
+    preferred_spacing_mm=0.0,
+    seed_indices=None,
+):
+    """Sample physical points with optional protected seed indices in O(N*M)."""
+    points_world = np.asarray(points_world, dtype=np.float64)
+    if points_world.ndim != 2 or points_world.shape[1] != 3:
+        raise ValueError("points_world must have shape (N, 3)")
+    count = points_world.shape[0]
+    limit = min(max(int(limit), 0), count)
+    if limit == 0:
+        return np.empty((0,), dtype=np.int64)
+    if not np.all(np.isfinite(points_world)):
+        raise ValueError("points_world contains non-finite coordinates")
+
+    selected_mask = np.zeros(count, dtype=bool)
+    selected = []
+    if seed_indices is not None:
+        for raw_index in np.asarray(seed_indices).reshape(-1):
+            index = int(raw_index)
+            if 0 <= index < count and not selected_mask[index]:
+                selected_mask[index] = True
+                selected.append(index)
+                if len(selected) >= limit:
+                    return np.asarray(selected[:limit], dtype=np.int64)
+
+    nearest_sq = np.full(count, np.inf, dtype=np.float64)
+    if selected:
+        for index in selected:
+            delta = points_world - points_world[index]
+            nearest_sq = np.minimum(nearest_sq, np.einsum("ij,ij->i", delta, delta))
+    else:
+        center = np.mean(points_world, axis=0)
+        delta = points_world - center
+        first = int(np.argmax(np.einsum("ij,ij->i", delta, delta)))
+        selected_mask[first] = True
+        selected.append(first)
+        first_delta = points_world - points_world[first]
+        nearest_sq = np.einsum("ij,ij->i", first_delta, first_delta)
+    nearest_sq[selected_mask] = -1.0
+
+    preferred_spacing_sq = max(float(preferred_spacing_mm), 0.0) ** 2
+    while len(selected) < limit:
+        if preferred_spacing_sq > 0.0:
+            eligible = (~selected_mask) & (nearest_sq >= preferred_spacing_sq)
+            if np.any(eligible):
+                scores = np.where(eligible, nearest_sq, -1.0)
+                index = int(np.argmax(scores))
+            else:
+                index = int(np.argmax(nearest_sq))
+        else:
+            index = int(np.argmax(nearest_sq))
+        if selected_mask[index]:
+            break
+        selected_mask[index] = True
+        selected.append(index)
+        delta = points_world - points_world[index]
+        nearest_sq = np.minimum(
+            nearest_sq, np.einsum("ij,ij->i", delta, delta)
+        )
+        nearest_sq[selected_mask] = -1.0
+    return np.asarray(selected, dtype=np.int64)
+
+
+def _target_surface_coordinates(radiation_array, target_value):
+    """Return all target voxels and their 26-connected boundary voxels."""
+    target_mask = np.asarray(radiation_array) == target_value
+    if target_mask.ndim != 3:
+        raise ValueError("radiation_array must be a 3-D array")
+    coordinates = np.argwhere(target_mask)
+    if coordinates.shape[0] == 0:
+        return coordinates, coordinates
+
+    from scipy import ndimage
+
+    structure = np.ones((3, 3, 3), dtype=bool)
+    interior = ndimage.binary_erosion(
+        target_mask, structure=structure, border_value=0
+    )
+    surface = np.argwhere(target_mask & ~interior)
+    if surface.shape[0] == 0:
+        surface = coordinates
+    return coordinates, surface
+
+
+def get_close_points(
+    dose_image,
+    radiation_array,
+    ref_direc,
+    target_value,
+    extract_angle,
+    max_point_num=20000,
+    max_surface_points=_CLOSE_POINT_MAX_SURFACE_POINTS,
+    surface_spacing_mm=_CLOSE_POINT_PREFERRED_SPACING_MM,
+):
     """
-    Identify points in a radiation array that are close to a specified direction 
-    while also matching a given target radiation value within a defined angular range.
+    Build a spatially uniform set of trajectory anchors on the target surface.
 
     Parameters:
     radiation_array (np.ndarray): A 3D array representing the distribution of radiation values.
-    ref_direc (np.ndarray): A unit vector indicating the reference direction for filtering.
+    ref_direc (np.ndarray): Approximate insertion direction in voxel coordinates.
     target_value (float): The target radiation value used to filter points in the radiation array.
-    extract_angle (float): The maximum angular deviation (in radians) allowed for points to be 
-                           considered close to the reference direction.
-    max_point_num (int): The maximum number of points to be extracted.
+    extract_angle (float): Retained for compatibility with existing callers.
+    max_point_num (int): Maximum number of target/surface points used internally.
+    max_surface_points (int): Maximum number of returned surface anchors.
+    surface_spacing_mm (float): Preferred spacing for physical-space sampling.
 
     Returns:
     tuple: A tuple containing two elements:
-        - np.ndarray: An array of coordinates that meet the criteria of proximity to 
-          the target value and alignment with the reference direction within the 
-          specified angular range.
-        - float: The `length` variable, which represents the projection length from the 
-          filtered points to the reference direction.
+        - np.ndarray: Voxel coordinates selected from the target surface.
+        - float: The physical projection length of the target along the
+          reference direction.
 
-    Steps:
-    1. Locate all coordinates in the radiation array that match the specified target value.
-    2. Calculate the geometric center of these coordinates.
-    3. Define a light source position along the reference direction, positioned far from the center 
-       to ensure accurate angular filtering.
-    4. Use the 'get_backlit_points' function to filter coordinates that lie within 
-       the specified angular range relative to the light source.
+    The sampler extracts the complete 26-connected boundary, protects a
+    deterministic quota from the far side of the target relative to the
+    physical reference direction, then fills the remaining budget with
+    farthest-point samples over the whole boundary. This avoids the old
+    view-dependent O(N^2) angular grouping and keeps the existing downstream
+    entry, obstacle, and candidate-budget checks authoritative.
 
     Notes:
-    - This function assumes the presence of a 'geometry' module with a 'get_backlit_points' 
-      method for filtering coordinates based on the defined angle.
-    - The light source is purposely set far away to guarantee precise angular filtering.
-    """  
-    coordinates = geometry.downsample_point_cloud(np.argwhere(radiation_array == target_value), max_point_num)
-    trans_coordinates = position_transform(dose_image, coordinates.copy())
-    length = geometry.projection_length(trans_coordinates, ref_direc)
-    coord_center = np.mean(trans_coordinates, axis=0)
-    light_source = coord_center + 5 * length * direction_transform(dose_image, ref_direc)
-    _, indices = geometry.get_backlit_points(trans_coordinates, light_source, extract_angle)
-    close_coordinates = coordinates[indices]
+    - extract_angle remains in the signature so older planner integrations
+      do not need to change; it no longer controls surface coverage.
+    - All distance calculations used for the direction and length are in
+      physical millimetres, including anisotropic CT spacing.
+    """
+    del extract_angle  # retained for compatibility; no angular matrix is built
+    try:
+        surface_limit = max(int(max_surface_points), 1)
+    except (TypeError, ValueError):
+        surface_limit = _CLOSE_POINT_MAX_SURFACE_POINTS
+    try:
+        preferred_spacing_mm = float(surface_spacing_mm)
+    except (TypeError, ValueError):
+        preferred_spacing_mm = _CLOSE_POINT_PREFERRED_SPACING_MM
+    if not np.isfinite(preferred_spacing_mm) or preferred_spacing_mm < 0.0:
+        preferred_spacing_mm = _CLOSE_POINT_PREFERRED_SPACING_MM
+    coordinates, surface_coordinates = _target_surface_coordinates(
+        radiation_array, target_value
+    )
+    if coordinates.shape[0] == 0:
+        logger.warning("[close_points] target label %s is empty", target_value)
+        return np.empty((0, 3), dtype=np.float64), 0.0
+
+    coordinates_for_length = _deterministic_point_subsample(
+        coordinates, max_point_num
+    )
+    surface_coordinates = _deterministic_point_subsample(
+        surface_coordinates, max_point_num
+    )
+    trans_coordinates = position_transform(
+        dose_image, coordinates_for_length.astype(np.float64, copy=False)
+    )
+    trans_surface = position_transform(
+        dose_image, surface_coordinates.astype(np.float64, copy=False)
+    )
+
+    ref_direction = np.asarray(ref_direc, dtype=np.float64).reshape(-1)
+    if ref_direction.size != 3 or not np.all(np.isfinite(ref_direction)):
+        ref_direction = np.array([0.0, 0.0, 1.0], dtype=np.float64)
+    try:
+        physical_direction = np.asarray(
+            direction_transform(dose_image, ref_direction),
+            dtype=np.float64,
+        ).reshape(-1)
+    except Exception:
+        logger.warning(
+            "[close_points] physical direction conversion failed; using voxel direction",
+            exc_info=True,
+        )
+        physical_direction = ref_direction.copy()
+    direction_norm = float(np.linalg.norm(physical_direction))
+    if not np.isfinite(direction_norm) or direction_norm <= 1e-12:
+        physical_direction = np.array([0.0, 0.0, 1.0], dtype=np.float64)
+        direction_norm = 1.0
+    physical_direction /= direction_norm
+
+    # Use a physical direction for physical coordinates. The old code mixed
+    # world coordinates with the voxel-space reference direction.
+    length = float(geometry.projection_length(
+        trans_coordinates, physical_direction
+    ))
+    centroid = np.mean(trans_coordinates, axis=0)
+    projections = np.dot(trans_surface - centroid, physical_direction)
+    back_cut = float(np.quantile(projections, _CLOSE_POINT_BACK_QUANTILE))
+    back_indices = np.flatnonzero(projections <= back_cut + 1e-9)
+
+    surface_limit = min(surface_limit, surface_coordinates.shape[0])
+    back_seed_limit = min(
+        back_indices.shape[0],
+        max(1, int(math.ceil(
+            surface_limit * _CLOSE_POINT_BACK_SEED_FRACTION
+        ))),
+    )
+    back_seed_indices = _farthest_point_sample_indices(
+        trans_surface[back_indices],
+        back_seed_limit,
+        preferred_spacing_mm=preferred_spacing_mm,
+    )
+    protected_global_indices = back_indices[back_seed_indices]
+    selected_indices = _farthest_point_sample_indices(
+        trans_surface,
+        surface_limit,
+        preferred_spacing_mm=preferred_spacing_mm,
+        seed_indices=protected_global_indices,
+    )
+    close_coordinates = surface_coordinates[selected_indices]
+    logger.info(
+        "[close_points] target=%d surface=%d sampled_surface=%d "
+        "back_pool=%d back_seeds=%d selected=%d spacing_mm=%.2f length_mm=%.2f",
+        int(coordinates.shape[0]),
+        int(coordinates.shape[0]),
+        int(surface_coordinates.shape[0]),
+        int(back_indices.shape[0]),
+        int(protected_global_indices.shape[0]),
+        int(close_coordinates.shape[0]),
+        preferred_spacing_mm,
+        length,
+    )
 
     # append_filter = vtk.vtkAppendPolyData()
 
@@ -3815,16 +4027,16 @@ def hierarchical_planning_rf(
         return value if value > 0 else default
 
     candidate_limit = _positive_int("candidate_limit", 20)
-    dense_seed_limit = _positive_int("dense_seed_limit", 24)
-    max_hierarchy_depth = _positive_int("max_hierarchy_depth", 4)
+    dense_seed_limit = _positive_int("dense_seed_limit", 40)
+    max_hierarchy_depth = _positive_int("max_hierarchy_depth", 8)
     if rl_status is not None:
         rl_status["candidate_limit"] = candidate_limit
         rl_status["dense_seed_limit"] = dense_seed_limit
         rl_status["max_hierarchy_depth"] = max_hierarchy_depth
     try:
-        max_wall_seconds = float(rf_params.get("max_wall_seconds", 180.0))
+        max_wall_seconds = float(rf_params.get("max_wall_seconds", 300.0))
     except (TypeError, ValueError):
-        max_wall_seconds = 180.0
+        max_wall_seconds = 300.0
     deadline = (
         time.monotonic() + max_wall_seconds
         if np.isfinite(max_wall_seconds) and max_wall_seconds > 0.0
@@ -3838,7 +4050,7 @@ def hierarchical_planning_rf(
         max_wall_seconds,
         candidate_limit,
         dense_seed_limit,
-        _positive_int("max_actions_per_episode", 24),
+        _positive_int("max_actions_per_episode", 40),
     )
 
     if len(candidate_trajectories) > candidate_limit:
@@ -4097,7 +4309,7 @@ def hierarchical_planning_rf(
         DVH_rate,
         progressDialog,
         deadline=deadline,
-        max_actions_per_episode=_positive_int("max_actions_per_episode", 24),
+        max_actions_per_episode=_positive_int("max_actions_per_episode", 40),
         diagnostics=rl_status,
         preview_callback=preview_callback,
     )
@@ -4186,7 +4398,7 @@ def put_seeds(radiation_volume, dose_image, dose_cal_model, infer_img_size, radi
         updated_point = np.array(point + selected_length * update_direction)
         
         cur_seed_radiation = single_seed_dose_calculation_dl(
-            updated_point.astype(int).reshape(-1),
+            updated_point.reshape(-1),
             direction,
             dose_image,
             dose_cal_model,
@@ -4581,7 +4793,7 @@ def add_proper_seed(traj_seed_radiations, radiation_volume, radiation, dose_imag
                 
 
                 tmp_seed_radiation = single_seed_dose_calculation_dl(
-                    np.array(updated_point).astype(int).reshape(-1),
+                    np.asarray(updated_point, dtype=float).reshape(-1),
                     direction,
                     dose_image,
                     dose_cal_model,
@@ -4690,7 +4902,7 @@ def replan(traj_seed_radiations, radiation_volume, radiation, dose_image, dose_c
                 
 
                 tmp_seed_radiation = single_seed_dose_calculation_dl(
-                    np.array(updated_point).astype(int).reshape(-1),
+                    np.asarray(updated_point, dtype=float).reshape(-1),
                     direction,
                     dose_image,
                     dose_cal_model,

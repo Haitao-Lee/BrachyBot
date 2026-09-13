@@ -62,12 +62,21 @@
   "rf_params": {
     "lr": 0.001,
     "gamma": 0.99,
-    "max_episodes": 400,
+    "max_episodes": 200,
     "print_every": 100,
     "bandwidth": 200,
     "hierarchical_optimization": true,
     "segmented_rewards": true,
-    "flip_ratio": 1
+    "flip_ratio": 1,
+    "candidate_limit": 20,
+    "dense_seed_limit": 40,
+    "max_hierarchy_depth": 8,
+    "max_actions_per_episode": 40,
+    "max_wall_seconds": 300,
+    "coverage_repair_seconds": 60,
+    "coverage_repair_extension_seconds": 120,
+    "coverage_repair_max_seconds": 180,
+    "fallback_to_rule_based": true
   },
   "display_3d": {
     "_comment": "Default 3D viewer rendering settings. Used by addMeshToScene and the data tree when the user has not overridden via the meshOpacity3D slider. Compatible with the data tree's per-mesh visibility + opacity controls.",
