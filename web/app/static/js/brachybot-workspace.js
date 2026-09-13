@@ -7,6 +7,11 @@
     const sessionRevisions = Object.create(null);
     let saveTimer = null;
     const workspaceSaveInFlight = Object.create(null);
+    // Resource loaders legitimately touch the live renderer while a Session
+    // restore is in progress.  Their debounced save must not snapshot a
+    // half-hydrated/default scene over the authoritative server snapshot.
+    // Keep only the latest reason and flush it after the visual barrier.
+    let deferredPresentationSave = null;
     let restoring = false;
     let workspaceTransition = null;
     let pendingSessionCreationId = null;
@@ -804,6 +809,287 @@
         return String(snapshot?.session_id || snapshot?.session?.id || '');
     }
 
+    // A workspace is restored in several asynchronous phases. The raw
+    // Data Tree snapshot is authoritative, but it used to be applied only
+    // after some loaders had already recreated nodes with their defaults.
+    // Keep a session-scoped presentation index alive for the whole restore so
+    // every late loader can resolve the same saved appearance by durable ID.
+    const WORKSPACE_PRESENTATION_KEYS = Object.freeze([
+        'visible',
+        'visible2D',
+        'visible3D',
+        'opacity',
+        'color',
+        'material',
+        'locked',
+        'standaloneVisible',
+        'colorbarVisible2D',
+        'colorbarVisible3D',
+        'visibilityConfigured',
+    ]);
+    let workspacePresentationRestore = null;
+
+    function _presentationClone(value) {
+        if (value === null || typeof value !== 'object') return value;
+        try { return jsonClone(value); } catch (_) { return value; }
+    }
+
+    function _presentationRecord(item, fallbackId = '') {
+        if (!item || typeof item !== 'object') return null;
+        const record = {};
+        WORKSPACE_PRESENTATION_KEYS.forEach(key => {
+            if (Object.prototype.hasOwnProperty.call(item, key)) {
+                record[key] = _presentationClone(item[key]);
+            }
+        });
+        // Labels/names are presentation state too. The loader still decides
+        // which of these is safe to expose as an anatomical name; keeping both
+        // here prevents a delayed catalogue response from losing a rename.
+        ['label', 'name'].forEach(key => {
+            if (Object.prototype.hasOwnProperty.call(item, key)
+                && typeof item[key] === 'string') {
+                record[key] = item[key];
+            }
+        });
+        const id = String(item.id || item.nodeId || fallbackId || '').trim();
+        if (id) record.id = id;
+        if (item.nodeId != null) record.nodeId = String(item.nodeId);
+        if (item.objectId != null) record.objectId = String(item.objectId);
+        if (item.labelId != null || item.label_id != null) {
+            record.labelId = item.labelId ?? item.label_id;
+        }
+        if (item.threshold != null || item.thresholdGy != null) {
+            record.threshold = item.threshold ?? item.thresholdGy;
+        }
+        return record;
+    }
+
+    function _presentationFamily(value) {
+        return String(value || '')
+            .trim()
+            .toLowerCase()
+            .replace(/[\s-]+/g, '_');
+    }
+
+    function _presentationAdd(registry, item, family, fallbackId = '') {
+        const record = _presentationRecord(item, fallbackId);
+        if (!record) return;
+        const normalizedFamily = _presentationFamily(family);
+        const id = String(record.id || fallbackId || '').trim();
+        const nodeId = String(record.nodeId || item.nodeId || '').trim();
+        const objectId = String(record.objectId || item.objectId || '').trim();
+        const label = String(record.label || record.name || '').trim();
+        const labelId = String(record.labelId ?? item.label_id ?? '').trim();
+        if (id) registry.byId[id] = record;
+        if (nodeId) registry.byNodeId[nodeId] = record;
+        if (objectId) registry.byObjectId[objectId] = record;
+        if (label) {
+            registry.byLabel[label] = registry.byLabel[label] || record;
+            if (normalizedFamily) {
+                registry.byFamilyLabel[normalizedFamily + ':' + label] = record;
+            }
+        }
+        if (labelId) {
+            registry.byLabelId[labelId] = registry.byLabelId[labelId] || record;
+            if (normalizedFamily) {
+                registry.byFamilyLabel[normalizedFamily + ':' + labelId] = record;
+            }
+        }
+    }
+
+    function stageWorkspacePresentation(snapshotOrTree, sessionId = '', restoreToken = null) {
+        const sid = String(sessionId || workspaceSnapshotSessionId(snapshotOrTree)
+            || (typeof activeSessionId !== 'undefined' ? activeSessionId : '') || '').trim();
+        if (!sid || !snapshotOrTree || typeof snapshotOrTree !== 'object') {
+            clearWorkspacePresentationRestore(sid);
+            return null;
+        }
+        const ui = snapshotOrTree.ui || {};
+        const uiState = ui.state || ui;
+        const tree = uiState.data_tree || snapshotOrTree.data_tree || snapshotOrTree.dataTree || {};
+        const viewer = uiState.viewer || snapshotOrTree.viewer || {};
+        const registry = {
+            sessionId: sid,
+            restoreToken: restoreToken == null ? null : String(restoreToken),
+            active: true,
+            createdAt: Date.now(),
+            byId: Object.create(null),
+            byNodeId: Object.create(null),
+            byObjectId: Object.create(null),
+            byLabel: Object.create(null),
+            byLabelId: Object.create(null),
+            byFamilyLabel: Object.create(null),
+        };
+        const add = (item, family, fallbackId = '') => _presentationAdd(
+            registry, item, family, fallbackId,
+        );
+        [
+            ['ct', tree.ct, 'ct'],
+            ['ctv', tree.ctv, 'ctv'],
+            ['oar', tree.oar, 'oar'],
+            ['skin', tree.skin, 'skin_surface'],
+            ['dose', tree.dose, 'dose'],
+            ['seeds', tree.seeds, 'seed_collection'],
+            ['needles', tree.needles, 'needle_collection'],
+            ['planning', tree.planning, 'planning'],
+            ['dose_overlay', tree.planning?.doseOverlay, 'dose_overlay'],
+            ['dvh', tree.planning?.dvh, 'dvh'],
+        ].forEach(([family, item, id]) => add(item, family, id));
+        Object.entries(tree.ctvLabels || tree.ctv_labels || {}).forEach(([id, item]) =>
+            add(item, 'ctv', id.startsWith('ctv_') ? id : 'ctv_' + id));
+        (tree.organs || []).forEach(item => add(item, 'oar', item?.id || ''));
+        (tree.planning?.trajectories || []).forEach(item =>
+            add(item, 'trajectory', item?.id || ''));
+        (tree.planning?.seeds || []).forEach(item =>
+            add(item, 'seed', item?.id || ''));
+        (tree.planning?.needles || []).forEach(item =>
+            add(item, 'needle', item?.id || ''));
+        (tree.planning?.doseLevels || []).forEach(item => {
+            const threshold = item?.threshold ?? item?.thresholdGy;
+            add(item, 'dose_iso', 'dose_iso_' + threshold);
+        });
+        (tree.planning?.meshes || []).forEach(item =>
+            add(item, 'planning_mesh', item?.id || ''));
+        (tree.annotations || []).forEach(item =>
+            add(item, 'annotation', item?.id || ''));
+        (tree.exportArtifacts || []).forEach(item =>
+            add(item, 'artifact', item?.id || ''));
+        // Generic/uploaded masks are stored in viewer.masks rather than in
+        // data_tree. Index the object under both its durable mask id and the
+        // data-tree node id so a catalogue response can restore it before the
+        // normal snapshot merge runs.
+        Object.entries(viewer.masks?.labels || {}).forEach(([id, item]) =>
+            add(item, 'mask', item?.id || item?.mask_id || id));
+        Object.entries(tree).forEach(([key, item]) => {
+            if ([
+                'ct', 'ctv', 'oar', 'skin', 'dose', 'seeds', 'needles',
+                'planning', 'ctvLabels', 'ctv_labels', 'organs', 'annotations',
+                'exportArtifacts', 'expansionState', 'expansion_state',
+            ].includes(key)) return;
+            if (item && typeof item === 'object' && !Array.isArray(item)) {
+                add(item, key, key);
+            }
+        });
+        workspacePresentationRestore = registry;
+        deferredPresentationSave = null;
+        window.__pendingWorkspacePresentation = registry;
+        window.__pendingWorkspacePresentationSessionId = sid;
+        return registry;
+    }
+
+    function getWorkspacePresentationForNode(criteria = {}) {
+        const registry = workspacePresentationRestore
+            || window.__pendingWorkspacePresentation;
+        if (!registry?.active) return null;
+        const sid = String(
+            criteria.sessionId
+            || (typeof activeSessionId !== 'undefined' ? activeSessionId : '')
+            || (typeof state !== 'undefined' ? state?.sessionId : '')
+            || '',
+        ).trim();
+        if (sid && registry.sessionId !== sid) return null;
+        const family = _presentationFamily(criteria.family || criteria.type);
+        const values = [
+            criteria.objectId,
+            criteria.object_id,
+            criteria.nodeId,
+            criteria.node_id,
+            criteria.id,
+        ].map(value => String(value || '').trim()).filter(Boolean);
+        for (const value of values) {
+            const record = registry.byObjectId[value]
+                || registry.byNodeId[value]
+                || registry.byId[value];
+            if (record) return _presentationClone(record);
+        }
+        const labelId = String(
+            criteria.labelId ?? criteria.label_id ?? criteria.threshold ?? '',
+        ).trim();
+        if (labelId) {
+            const record = registry.byFamilyLabel[family + ':' + labelId]
+                || registry.byLabelId[labelId];
+            if (record) return _presentationClone(record);
+        }
+        const labels = [criteria.label, criteria.name]
+            .map(value => String(value || '').trim()).filter(Boolean);
+        for (const label of labels) {
+            const record = registry.byFamilyLabel[family + ':' + label]
+                || registry.byLabel[label];
+            if (record) return _presentationClone(record);
+        }
+        return null;
+    }
+
+    function isWorkspacePresentationRestoreActive(sessionId = null) {
+        const registry = workspacePresentationRestore
+            || window.__pendingWorkspacePresentation;
+        if (!registry?.active) return false;
+        const sid = String(sessionId || '').trim();
+        return !sid || registry.sessionId === sid;
+    }
+
+    function finalizeWorkspacePresentationRestore(sessionId = null, restoreToken = null) {
+        const registry = workspacePresentationRestore
+            || window.__pendingWorkspacePresentation;
+        if (!registry) return false;
+        const sid = String(sessionId || '').trim();
+        if (sid && registry.sessionId !== sid) return false;
+        if (restoreToken != null && registry.restoreToken != null
+            && String(restoreToken) !== String(registry.restoreToken)) return false;
+        const deferredSave = deferredPresentationSave
+            && deferredPresentationSave.sessionId === registry.sessionId
+            ? deferredPresentationSave
+            : null;
+        deferredPresentationSave = null;
+        registry.active = false;
+        if (window.__pendingWorkspacePresentation === registry) {
+            delete window.__pendingWorkspacePresentation;
+            delete window.__pendingWorkspacePresentationSessionId;
+        }
+        if (window.__pendingOarPresentation) delete window.__pendingOarPresentation;
+        if (typeof scene3D !== 'undefined' && scene3D
+            && (!sid || String(scene3D._workspaceRestoreSessionId || '') === sid)) {
+            scene3D._workspaceRestoreActive = false;
+            scene3D._workspaceRestoreHasSavedPose = false;
+            scene3D._workspaceRestoreAllowFit = false;
+            scene3D._workspaceRestoreSessionId = null;
+        }
+        workspacePresentationRestore = null;
+        // The queued writes came from asynchronous resource reconciliation (or
+        // a genuine user edit made while the non-blocking restore was visible).
+        // Persist only after every registered visual producer has settled, so
+        // the resulting snapshot contains the complete current-case scene.
+        if (deferredSave && typeof persistWorkspace === 'function') {
+            setTimeout(() => {
+                if (String(activeSessionId || '') !== deferredSave.sessionId) return;
+                void persistWorkspace(deferredSave.reason || 'workspace.restore.settled');
+            }, 0);
+        }
+        return true;
+    }
+
+    function clearWorkspacePresentationRestore(sessionId = null) {
+        const registry = workspacePresentationRestore
+            || window.__pendingWorkspacePresentation;
+        const sid = String(sessionId || '').trim();
+        if (registry && sid && registry.sessionId !== sid) return false;
+        if (!sid || !registry || registry.sessionId === sid) deferredPresentationSave = null;
+        if (registry) registry.active = false;
+        if (!sid || !registry || registry.sessionId === sid) {
+            workspacePresentationRestore = null;
+            delete window.__pendingWorkspacePresentation;
+            delete window.__pendingWorkspacePresentationSessionId;
+            if (window.__pendingOarPresentation) delete window.__pendingOarPresentation;
+        }
+        return true;
+    }
+
+    window.stageWorkspacePresentation = stageWorkspacePresentation;
+    window.getWorkspacePresentationForNode = getWorkspacePresentationForNode;
+    window.isWorkspacePresentationRestoreActive = isWorkspacePresentationRestoreActive;
+    window.finalizeWorkspacePresentationRestore = finalizeWorkspacePresentationRestore;
+    window.clearWorkspacePresentationRestore = clearWorkspacePresentationRestore;
+
     function workspacePlanningIdentity(snapshot) {
         const results = snapshot?.agent?.planning_results;
         const ids = new Set();
@@ -894,6 +1180,267 @@
         };
     }
 
+    // The clinical state and Data Tree rows are only part of the visible
+    // workspace.  A restart/switch must also restore the operator's UI chrome:
+    // selected panel, scroll positions, colorbar popover, fullscreen card,
+    // manual viewer geometry, and the Data Tree width.  Keep this separate
+    // from `viewerSettings` because these values are DOM/layout state rather
+    // than dose or image state.  Never record transient loading overlays or
+    // modal dialogs here.
+    function _workspaceScrollState(element) {
+        if (!element) return { top: 0, left: 0 };
+        const top = Number(element.scrollTop);
+        const left = Number(element.scrollLeft);
+        return {
+            top: Number.isFinite(top) && top >= 0 ? Math.round(top) : 0,
+            left: Number.isFinite(left) && left >= 0 ? Math.round(left) : 0,
+        };
+    }
+
+    function _workspaceViewerCardStyle(card, view) {
+        if (!card) return null;
+        const style = card.style;
+        const row = {
+            view: String(view || card.dataset?.view || '').trim(),
+            width: style?.width || '',
+            height: style?.height || '',
+            flex: style?.flex || '',
+            resizeH: style?.getPropertyValue?.('--resize-h') || '',
+            resized: card.classList.contains('viewer-resized'),
+        };
+        const hasOverride = !!(row.width || row.height || row.flex || row.resizeH || row.resized);
+        return hasOverride ? row : null;
+    }
+
+    function workspaceChromeState() {
+        const validPanels = new Set(['input', 'metrics', 'viewers', 'report']);
+        const activeTab = Array.from(document.querySelectorAll('.panel-tab.active'))
+            .find(tab => validPanels.has(String(tab.dataset?.panel || '').trim()));
+        const activePanel = String(activeTab?.dataset?.panel || '').trim() || null;
+        const panelScroll = {};
+        ['input', 'metrics', 'viewers', 'report'].forEach(name => {
+            const panel = document.getElementById('panel' + String(name).charAt(0).toUpperCase() + String(name).slice(1));
+            if (panel) panelScroll[name] = _workspaceScrollState(panel);
+        });
+
+        const dataTreeBody = document.getElementById('dataTreeBody');
+        const dataTreeContainer = document.getElementById('dataTreeContainer');
+        const viewersPanel = document.getElementById('viewersPanel');
+        const reportEditor = document.getElementById('reportEditor');
+        const reportPreview = document.getElementById('reportPreview');
+        const colorbarPanel = document.getElementById('doseColorbarPanel');
+        const cards = {};
+        [
+            ['axial', 'viewerAxial'],
+            ['sagittal', 'viewerSagittal'],
+            ['coronal', 'viewerCoronal'],
+            ['3d', 'viewer3d'],
+        ].forEach(([view, id]) => {
+            const record = _workspaceViewerCardStyle(document.getElementById(id), view);
+            if (record) cards[view] = record;
+        });
+        const rows = Array.from(viewersPanel?.querySelectorAll('.viewers-row') || [])
+            .map((row, index) => ({
+                index,
+                height: row.style?.height || '',
+                flex: row.style?.flex || '',
+                resizeH: row.style?.getPropertyValue?.('--resize-h') || '',
+                resized: row.classList.contains('viewer-resized'),
+            }))
+            .filter(row => !!(row.height || row.flex || row.resizeH || row.resized));
+        const fullscreenCard = Array.from(viewersPanel?.querySelectorAll('.viewer-card.fullscreen') || [])
+            .find(card => String(card.dataset?.view || '').trim());
+
+        return {
+            version: 1,
+            activePanel,
+            panelScroll,
+            dataTreeScroll: _workspaceScrollState(dataTreeBody),
+            viewersScroll: _workspaceScrollState(viewersPanel),
+            dataTreeWidth: dataTreeContainer?.style?.width || '',
+            // In report 2-column mode the outer report panel is not the
+            // scrolling element. Keep the two inner panes separately so a
+            // case switch/restart returns the operator to the same report
+            // position instead of only restoring the parent panel scroll.
+            reportPaneScroll: {
+                editor: _workspaceScrollState(reportEditor),
+                preview: _workspaceScrollState(reportPreview),
+            },
+            // Report layout/zoom/split are case presentation preferences, not
+            // browser-global preferences. The report shell exposes this
+            // small serializable contract; older builds simply return null.
+            reportPresentation: typeof window.getReportPresentationState === 'function'
+                ? jsonClone(window.getReportPresentationState())
+                : null,
+            doseColorbarPanelOpen: colorbarPanel
+                ? (!colorbarPanel.hidden && colorbarPanel.style.display !== 'none')
+                : null,
+            viewerFullscreen: String(fullscreenCard?.dataset?.view || '').trim() || null,
+            viewerCards: cards,
+            viewerRows: rows,
+        };
+    }
+
+    function _workspaceChromeSessionIsCurrent(sessionId) {
+        const sid = String(sessionId || '').trim();
+        return !sid || sid === String(
+            typeof activeSessionId !== 'undefined' ? activeSessionId : ''
+        ).trim();
+    }
+
+    function _restoreWorkspaceScrollElement(element, saved) {
+        if (!element || !saved || typeof saved !== 'object') return;
+        const top = Number(saved.top);
+        const left = Number(saved.left);
+        if (Number.isFinite(top) && top >= 0) element.scrollTop = top;
+        if (Number.isFinite(left) && left >= 0) element.scrollLeft = left;
+    }
+
+    function _restoreWorkspaceViewerGeometry(chrome) {
+        const cards = chrome?.viewerCards && typeof chrome.viewerCards === 'object'
+            ? chrome.viewerCards : {};
+        Object.entries(cards).forEach(([view, saved]) => {
+            if (!saved || typeof saved !== 'object') return;
+            const id = view === '3d' ? 'viewer3d' : 'viewer' + String(view).charAt(0).toUpperCase() + String(view).slice(1);
+            const card = document.getElementById(id);
+            if (!card || card.classList.contains('fullscreen')) return;
+            if (saved.width) card.style.width = String(saved.width); else card.style.removeProperty('width');
+            if (saved.height) card.style.height = String(saved.height); else card.style.removeProperty('height');
+            if (saved.flex) card.style.flex = String(saved.flex); else card.style.removeProperty('flex');
+            if (saved.resizeH) card.style.setProperty('--resize-h', String(saved.resizeH));
+            else card.style.removeProperty('--resize-h');
+            card.classList.toggle('viewer-resized', saved.resized === true);
+        });
+        const rows = Array.isArray(chrome?.viewerRows) ? chrome.viewerRows : [];
+        Array.from(document.querySelectorAll('#viewersPanel .viewers-row')).forEach((row, index) => {
+            const saved = rows.find(item => Number(item?.index) === index) || (index === 0 ? rows[0] : null);
+            if (!saved) return;
+            if (saved.height) row.style.height = String(saved.height); else row.style.removeProperty('height');
+            if (saved.flex) row.style.flex = String(saved.flex); else row.style.removeProperty('flex');
+            if (saved.resizeH) row.style.setProperty('--resize-h', String(saved.resizeH));
+            else row.style.removeProperty('--resize-h');
+            row.classList.toggle('viewer-resized', saved.resized === true);
+        });
+    }
+
+    // Apply the non-clinical UI state after layout functions have rebuilt the
+    // viewer DOM.  This function is deliberately idempotent: it can run once
+    // during the fast snapshot pass and again at the visual restore barrier.
+    function restoreWorkspaceChrome(chrome, options = {}) {
+        if (!chrome || typeof chrome !== 'object') return false;
+        const sessionId = String(options.sessionId || '').trim();
+        if (!_workspaceChromeSessionIsCurrent(sessionId)) return false;
+        const validPanels = new Set(['input', 'metrics', 'viewers', 'report']);
+        const activePanel = String(chrome.activePanel || '').trim();
+        if (validPanels.has(activePanel)) {
+            const tab = Array.from(document.querySelectorAll('.panel-tab'))
+                .find(item => String(item.dataset?.panel || '').trim() === activePanel);
+            const currentTab = Array.from(document.querySelectorAll('.panel-tab.active'))
+                .find(item => validPanels.has(String(item.dataset?.panel || '').trim()));
+            const currentPanel = String(currentTab?.dataset?.panel || '').trim();
+            if (tab && currentPanel !== activePanel && typeof window.switchPanel === 'function') {
+                try { window.switchPanel(activePanel, tab); } catch (_) {}
+            } else if (tab && currentPanel !== activePanel) {
+                // Very early boot can precede the global switchPanel script.
+                // Keep the saved tab usable without invoking panel-specific
+                // loading side effects.
+                document.querySelectorAll('.panel-tab').forEach(item => {
+                    const selected = item === tab;
+                    item.classList.toggle('active', selected);
+                    item.setAttribute('aria-selected', selected ? 'true' : 'false');
+                });
+                document.querySelectorAll('.panel-content').forEach(panel => {
+                    panel.classList.toggle('active', panel.id === 'panel' + activePanel.charAt(0).toUpperCase() + activePanel.slice(1));
+                });
+            }
+        }
+
+        const colorbarPanel = document.getElementById('doseColorbarPanel');
+        if (colorbarPanel && typeof chrome.doseColorbarPanelOpen === 'boolean') {
+            colorbarPanel.hidden = !chrome.doseColorbarPanelOpen;
+            if (chrome.doseColorbarPanelOpen) {
+                try { window.syncDoseColorbarControls?.(); } catch (_) {}
+            }
+        }
+        if (chrome.reportPresentation
+            && typeof window.restoreReportPresentationState === 'function') {
+            try {
+                window.restoreReportPresentationState(chrome.reportPresentation, {
+                    persist: false,
+                });
+            } catch (_) {}
+        }
+        const dataTreeContainer = document.getElementById('dataTreeContainer');
+        if (dataTreeContainer && typeof chrome.dataTreeWidth === 'string' && chrome.dataTreeWidth) {
+            dataTreeContainer.style.width = chrome.dataTreeWidth;
+        }
+        _restoreWorkspaceViewerGeometry(chrome);
+
+        const fullscreen = String(chrome.viewerFullscreen || '').trim();
+        if (fullscreen && typeof window.toggleViewerFullscreen === 'function') {
+            const panel = document.getElementById('viewersPanel');
+            const current = Array.from(panel?.querySelectorAll('.viewer-card.fullscreen') || [])
+                .find(card => String(card.dataset?.view || '').trim());
+            const currentView = String(current?.dataset?.view || '').trim();
+            if (currentView !== fullscreen) {
+                if (currentView) {
+                    try { window.toggleViewerFullscreen(currentView); } catch (_) {}
+                }
+                const target = document.getElementById(fullscreen === '3d'
+                    ? 'viewer3d'
+                    : 'viewer' + fullscreen.charAt(0).toUpperCase() + fullscreen.slice(1));
+                if (target && !target.classList.contains('fullscreen')) {
+                    try { window.toggleViewerFullscreen(fullscreen); } catch (_) {}
+                }
+            }
+        } else if (chrome.viewerFullscreen === null) {
+            // Null is the explicit representation of a normal non-fullscreen
+            // workspace. Legacy snapshots omit the key and must not alter the
+            // current browser presentation.
+            const panel = document.getElementById('viewersPanel');
+            const current = Array.from(panel?.querySelectorAll('.viewer-card.fullscreen') || [])
+                .find(card => String(card.dataset?.view || '').trim());
+            if (current && typeof window.toggleViewerFullscreen === 'function') {
+                try { window.toggleViewerFullscreen(current.dataset.view); } catch (_) {}
+            }
+        }
+        // Entering/leaving fullscreen can itself clear or preserve inline
+        // dimensions depending on the active layout. Apply the saved card
+        // overrides once more after that transition so a normal card keeps
+        // its width/height and a fullscreen card has them ready for exit.
+        _restoreWorkspaceViewerGeometry(chrome);
+
+        const applyScroll = () => {
+            if (!_workspaceChromeSessionIsCurrent(sessionId)) return;
+            const panelScroll = chrome.panelScroll && typeof chrome.panelScroll === 'object'
+                ? chrome.panelScroll : {};
+            Object.entries(panelScroll).forEach(([name, saved]) => {
+                const id = 'panel' + String(name).charAt(0).toUpperCase() + String(name).slice(1);
+                _restoreWorkspaceScrollElement(document.getElementById(id), saved);
+            });
+            _restoreWorkspaceScrollElement(document.getElementById('dataTreeBody'), chrome.dataTreeScroll);
+            _restoreWorkspaceScrollElement(document.getElementById('viewersPanel'), chrome.viewersScroll);
+            const reportPaneScroll = chrome.reportPaneScroll
+                && typeof chrome.reportPaneScroll === 'object'
+                ? chrome.reportPaneScroll : {};
+            _restoreWorkspaceScrollElement(
+                document.getElementById('reportEditor'), reportPaneScroll.editor,
+            );
+            _restoreWorkspaceScrollElement(
+                document.getElementById('reportPreview'), reportPaneScroll.preview,
+            );
+            try { window.syncViewerGeometry?.({ resetPositions: false, settleMs: 0 }); } catch (_) {}
+        };
+        applyScroll();
+        // CSS flex/grid, report preview, and asynchronously inserted Data Tree
+        // rows can change scroll ranges in a later frame. Reapply the saved
+        // coordinates only while this Session is still active.
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(applyScroll);
+        const timer = setTimeout(applyScroll, Number(options.settleMs ?? 180));
+        if (timer && typeof timer.unref === 'function') timer.unref();
+        return true;
+    }
+
     function workspaceUiState(ownerSessionId = '') {
         const sessionId = String(ownerSessionId || (typeof activeSessionId !== 'undefined' ? activeSessionId : '') || '');
         const doseSurfaceEnabled = typeof state !== 'undefined' && state?.doseTexture
@@ -916,6 +1463,18 @@
                 slices: (typeof state !== 'undefined' && state.slices) ? jsonClone(state.slices) : {},
                 settings: (typeof state !== 'undefined' && state.viewerSettings) ? jsonClone(state.viewerSettings) : {},
                 doseOpacity: typeof state !== 'undefined' ? state.doseOpacity : null,
+                // The legacy toolbar controls are not all represented in
+                // viewerSettings. Keep the complete per-view label state and
+                // the independent 2D/3D dose colorbar configuration beside
+                // the raw control values so a session switch does not merely
+                // restore the HTML widgets while leaving the renderer at its
+                // defaults.
+                labelImage: typeof state !== 'undefined' && state.labelImage
+                    ? jsonClone(state.labelImage)
+                    : {},
+                doseColorbar: typeof window.getDoseColorbarState === 'function'
+                    ? jsonClone(window.getDoseColorbarState())
+                    : null,
                 // Raw slices, promises and Three.js materials are runtime-only.
                 // Persisting them would create circular JSON and cannot restore a
                 // WebGL resource after a restart; the enabled mode is sufficient.
@@ -936,6 +1495,10 @@
                     : { labels: {}, counter: 0, activeMaskId: null },
                 scene: sceneViewState(),
                 dvh: dvhViewState(),
+                // Panel/layout state is case-owned as well. Keep it under the
+                // viewer namespace so older snapshots remain readable while
+                // the clinical fields above retain their existing shape.
+                chrome: workspaceChromeState(),
             },
             data_tree: typeof dataTreeState !== 'undefined' ? jsonClone(dataTreeState) : {},
             manual: typeof _manualState === 'function' ? jsonClone(_manualState()) : {},
@@ -1727,29 +2290,274 @@
     }
 
     function _syncViewerControlsFromState() {
-        var vs = (typeof state !== 'undefined') ? (state.viewerSettings || {}) : {};
-        var dm = document.getElementById('displayMode');
-        if (dm && vs.displayMode) dm.value = vs.displayMode;
-        var ctv = document.getElementById('overlayCTV');
-        if (ctv) ctv.checked = !!(vs.showCTV ?? true);
-        var oar = document.getElementById('overlayOAR');
-        if (oar) oar.checked = !!(vs.showOAR ?? false);
-        var thr = document.getElementById('viewerThreshold');
-        if (thr && vs.threshold != null) thr.value = vs.threshold;
-        var doseSlider = document.getElementById('doseOverlayOpacity');
-        if (doseSlider && typeof state.doseOpacity === 'number') doseSlider.value = Math.round(state.doseOpacity * 100);
-        var doseLabel = document.getElementById('doseOpacityVal');
-        if (doseLabel && typeof state.doseOpacity === 'number') doseLabel.textContent = Math.round(state.doseOpacity * 100) + '%';
-        var seedCb = document.getElementById('overlaySeeds');
-        if (seedCb) seedCb.checked = !!(vs.showSeeds ?? true);
+        var hasState = typeof state !== 'undefined' && state;
+        var vs = hasState ? (state.viewerSettings || {}) : {};
+        var setValue = (id, value, allowEmpty = true) => {
+            const element = document.getElementById(id);
+            if (!element || value === undefined || value === null) return;
+            if (!allowEmpty && String(value) === '') return;
+            element.value = String(value);
+        };
+
+        // Restore both the visible HTML controls and the state fields that
+        // actually drive the MPR renderer.  applyControls() only restores
+        // DOM values; it intentionally does not fire handlers.
+        setValue('displayMode', vs.displayMode, false);
+        setValue('viewerWindow', vs.window, false);
+        setValue('viewerLevel', vs.level, false);
+        setValue('viewerZoom', Number.isFinite(Number(vs.zoom))
+            ? Math.round(Number(vs.zoom) * 100) : undefined, false);
+        const zoomLabel = document.getElementById('zoomLabel');
+        if (zoomLabel && Number.isFinite(Number(vs.zoom))) {
+            zoomLabel.textContent = Math.round(Number(vs.zoom) * 100) + '%';
+        }
+        const preset = document.getElementById('windowPreset');
+        if (preset && typeof vs.windowPreset === 'string') preset.value = vs.windowPreset;
+        const ctv = document.getElementById('overlayCTV');
+        if (ctv && vs.showCTV !== undefined) ctv.checked = !!vs.showCTV;
+        const oar = document.getElementById('overlayOAR');
+        if (oar && vs.showOAR !== undefined) oar.checked = !!vs.showOAR;
+        const thr = document.getElementById('viewerThreshold');
+        if (thr && Object.prototype.hasOwnProperty.call(vs, 'threshold')) {
+            thr.value = vs.threshold == null ? '' : String(vs.threshold);
+        }
+        const seedCb = document.getElementById('overlaySeeds');
+        if (seedCb && vs.showSeeds !== undefined) seedCb.checked = !!vs.showSeeds;
+        const skinCb = document.getElementById('skinToggle3D');
+        if (skinCb && typeof dataTreeState !== 'undefined') {
+            const skinNode = dataTreeState.skin;
+            const thresholdMask = typeof state !== 'undefined' ? state.maskLabels?.mask_threshold : null;
+            if (skinNode?.loaded) {
+                skinCb.checked = skinNode.visible3D !== false && skinNode.visible !== false;
+            } else if (thresholdMask) {
+                skinCb.checked = thresholdMask.visible3D !== false && thresholdMask.visible !== false;
+            } else if (vs.skinVisible3D !== undefined) {
+                skinCb.checked = !!vs.skinVisible3D;
+            }
+        }
+
+        // The 2-D dose slider and the 3-D dose-surface slider are different
+        // settings.  The previous restore path fed state.doseOpacity into the
+        // 2-D control, which made a session appear to have changed its dose
+        // opacity after a restart.
+        const dose2d = Number(
+            (typeof dataTreeState !== 'undefined'
+                ? dataTreeState?.planning?.doseOverlay?.opacity
+                : undefined)
+            ?? state?.doseOverlay?.opacity,
+        );
+        if (Number.isFinite(dose2d)) {
+            const doseSlider = document.getElementById('doseOverlayOpacity');
+            if (doseSlider) doseSlider.value = String(Math.round(dose2d * 100));
+            const doseLabel = document.getElementById('doseOverlayOpacityVal');
+            if (doseLabel) doseLabel.textContent = Math.round(dose2d * 100) + '%';
+        }
+        const dose3d = Number(hasState ? state.doseOpacity : NaN);
+        if (Number.isFinite(dose3d)) {
+            const doseSlider3d = document.getElementById('doseOpacity');
+            if (doseSlider3d) doseSlider3d.value = String(Math.round(dose3d * 100));
+            const doseLabel3d = document.getElementById('doseOpacityVal');
+            if (doseLabel3d) doseLabel3d.textContent = Math.round(dose3d * 100) + '%';
+        }
+
+        // Keep the Data Tree W/L range and toolbar preset derived from the
+        // restored canonical values, not from the controls left by the prior
+        // Session.  This function is optional during very early boot.
+        if (typeof window.syncViewerWindowLevelControls === 'function') {
+            try { window.syncViewerWindowLevelControls(); } catch (_) {}
+        }
+        if (typeof window.syncDoseColorbarControls === 'function') {
+            try { window.syncDoseColorbarControls(); } catch (_) {}
+        }
     }
+
+    // Final restore barrier for the complete viewer presentation. Every
+    // clinical loader is allowed to create/replace its own geometry, but the
+    // selected Session's presentation snapshot remains the authority for the
+    // last state -> DOM -> renderer synchronisation. This is intentionally
+    // idempotent and restore-fenced: calling it after a different Session has
+    // become active must be a no-op.
+    function reconcileWorkspacePresentation({
+        sessionId = null,
+        snapshot = null,
+        reason = 'workspace.restore.final-presentation',
+    } = {}) {
+        const sid = String(
+            sessionId
+            || (typeof activeSessionId !== 'undefined' ? activeSessionId : '')
+            || (typeof state !== 'undefined' ? state?.sessionId : '')
+            || '',
+        ).trim();
+        if (!sid || typeof window.isWorkspacePresentationRestoreActive !== 'function'
+            || !window.isWorkspacePresentationRestoreActive(sid)) return false;
+
+        const workspace = snapshot || window._activeWorkspaceSnapshot || null;
+        const ui = workspace?.ui || {};
+        const uiState = ui.state || ui;
+        const viewer = uiState.viewer || {};
+        const savedTree = uiState.data_tree
+            || workspace?.data_tree
+            || workspace?.dataTree
+            || null;
+
+        // Restore raw form controls first. This is safe for the clinical
+        // restore because path/CT fields are protected by preserveClinicalData;
+        // it also repairs a late loader that changed a toolbar value back to a
+        // browser default.
+        if (uiState.controls && typeof applyControls === 'function') {
+            try {
+                applyControls(uiState.controls, {
+                    preserveClinicalData: true,
+                    doseValueUnit: uiState.dose_value_unit,
+                    prescriptionBaseGy: uiState.prescription_base_gy,
+                    doseScaleGy: uiState.dose_model_scale_gy,
+                });
+            } catch (error) {
+                console.debug('[workspace] final control reconciliation deferred:', error);
+            }
+        }
+
+        if (typeof state !== 'undefined') {
+            if (viewer.settings && typeof viewer.settings === 'object') {
+                state.viewerSettings = Object.assign(
+                    state.viewerSettings || {},
+                    jsonClone(viewer.settings),
+                );
+            }
+            if (Number.isFinite(Number(viewer.doseOpacity))) {
+                state.doseOpacity = Number(viewer.doseOpacity);
+            }
+            if (viewer.labelImage && typeof viewer.labelImage === 'object') {
+                state.labelImage = jsonClone(viewer.labelImage);
+            }
+            if (viewer.doseColorbar
+                && typeof window.setDoseColorbarState === 'function') {
+                try {
+                    window.setDoseColorbarState(viewer.doseColorbar, {
+                        persist: false,
+                        refresh: false,
+                    });
+                } catch (_) {}
+            }
+            const savedDoseTexture = viewer.doseTexture || {};
+            const hasDesiredDoseFlag = typeof savedDoseTexture.desired_enabled === 'boolean';
+            const savedSceneMode = String(viewer.scene?.display_mode || '').trim().toLowerCase();
+            const desiredDoseSurface = hasDesiredDoseFlag
+                ? savedDoseTexture.desired_enabled
+                : savedSceneMode === 'dose_surface' || savedDoseTexture.enabled === true;
+            state.doseTexture = state.doseTexture || {};
+            if (!desiredDoseSurface && state.doseTexture.enabled
+                && typeof window.resetDoseTextureRuntime === 'function') {
+                try { window.resetDoseTextureRuntime({ preserveDesired: false }); } catch (_) {}
+            }
+            state.doseTexture.desiredEnabled = !!desiredDoseSurface;
+            state.doseTexture.restorePending = !!desiredDoseSurface
+                && !(typeof window.isDoseTextureRuntimeReady === 'function'
+                    && window.isDoseTextureRuntimeReady());
+            if (state.doseTexture.restorePending) state.doseTexture.enabled = false;
+            else if (desiredDoseSurface) state.doseTexture.enabled = true;
+        }
+
+        if (savedTree && typeof applyDataTreePresentation === 'function') {
+            try { applyDataTreePresentation(savedTree); } catch (error) {
+                console.debug('[workspace] final Data Tree reconciliation deferred:', error);
+            }
+        }
+        try { window.syncStructureColorLUTsFromTree?.(dataTreeState); } catch (_) {}
+        try { window.applyDataTreeViewVisibility?.(); } catch (_) {}
+        try { window.syncSceneAppearanceFromDataTree?.({ preserveDoseTexture: true }); } catch (_) {}
+        try { _syncViewerControlsFromState(); } catch (_) {}
+        try { applyViewerTransform?.(); } catch (_) {}
+        try {
+            if (typeof setViewerLayout === 'function') {
+                setViewerLayout(state?.viewerSettings?.layout, { persist: false });
+            }
+        } catch (_) {}
+        try {
+            restoreWorkspaceChrome(
+                viewer.chrome || uiState.chrome,
+                { sessionId: sid, settleMs: 220 },
+            );
+        } catch (error) {
+            console.debug('[workspace] final UI chrome reconciliation deferred:', error);
+        }
+        try { window.applyRestoredViewerPresentationControls?.({ restoreOnly: true }); } catch (_) {}
+        try { window.applyRestoredViewerToolPresentation?.(); } catch (_) {}
+
+        // Reapply the saved 3D pose after the final mesh/material pass. A
+        // late Fit request must not turn a deliberate saved camera into a new
+        // viewpoint; if the operator interacted during hydration, their live
+        // pose remains authoritative instead.
+        const scene = viewer.scene || {};
+        const finiteArray = (value, length) => Array.isArray(value)
+            && value.length === length
+            && value.every(item => Number.isFinite(Number(item)));
+        const hasPose = finiteArray(scene.camera_position, 3)
+            && (finiteArray(scene.camera_target, 3) || finiteArray(scene.camera_quaternion, 4));
+        if (hasPose && typeof scene3D !== 'undefined' && scene3D
+            && scene3D._cameraUserInteracted !== true
+            && typeof window.sync3DCameraPose === 'function'
+            && typeof THREE !== 'undefined') {
+            const vector = value => finiteArray(value, 3)
+                ? new THREE.Vector3().fromArray(value) : null;
+            const quaternion = finiteArray(scene.camera_quaternion, 4)
+                ? new THREE.Quaternion().fromArray(scene.camera_quaternion) : null;
+            try {
+                window.sync3DCameraPose({
+                    position: vector(scene.camera_position),
+                    target: vector(scene.camera_target),
+                    quaternion,
+                    up: vector(scene.camera_up),
+                    near: scene.camera_near,
+                    far: scene.camera_far,
+                    aspect: undefined,
+                    fov: scene.camera_fov,
+                    zoom: scene.camera_zoom,
+                    saveState: false,
+                });
+                scene3D._workspaceRestoreActive = true;
+                scene3D._workspaceRestoreHasSavedPose = true;
+                scene3D._workspaceRestoreAllowFit = false;
+                scene3D._workspaceRestoreSessionId = sid;
+            } catch (error) {
+                console.debug('[workspace] final camera reconciliation deferred:', error);
+            }
+        }
+
+        const doseButton = document.getElementById('doseTextureToggle');
+        if (doseButton && typeof state !== 'undefined' && !state.doseTexture?.applying) {
+            const desiredDoseSurface = state.doseTexture?.desiredEnabled === true;
+            doseButton.textContent = desiredDoseSurface ? 'Normal Surface' : 'Dose Surface';
+            doseButton.classList.toggle('active', !!state.doseTexture?.enabled);
+            doseButton.disabled = false;
+        }
+        ['axial', 'sagittal', 'coronal'].forEach(axis => {
+            try {
+                if (state?.slices && Number.isFinite(Number(state.slices[axis]))) {
+                    renderSliceFromVolume(axis, Number(state.slices[axis]));
+                }
+            } catch (_) {}
+        });
+        try {
+            window.reconcile2DViewerLayers?.({
+                reason,
+                rerender: true,
+                immediate: true,
+            });
+        } catch (_) {}
+        try { window.forceRender3DViewer?.(); } catch (_) {}
+        return true;
+    }
+    window.reconcileWorkspacePresentation = reconcileWorkspacePresentation;
+    window.workspaceChromeState = workspaceChromeState;
+    window.restoreWorkspaceChrome = restoreWorkspaceChrome;
 
     function copyDisplayProperties(target, saved) {
         if (!target || !saved || typeof saved !== 'object') return;
         // These are presentation preferences. Geometry, voxel counts,
         // categories, and planning arrays are reconstructed from the current
         // case and must not be copied from a UI snapshot.
-        ['visible', 'visible2D', 'visible3D', 'opacity', 'color', 'material', 'locked', 'standaloneVisible'].forEach(key => {
+        WORKSPACE_PRESENTATION_KEYS.forEach(key => {
             if (Object.prototype.hasOwnProperty.call(saved, key)) target[key] = saved[key];
         });
         // A user-renamed node label is a deliberate presentation override and
@@ -1823,7 +2631,8 @@
             // children that are about to be restored from the server.  A
             // real user hide is marked explicitly by the viewer and remains
             // authoritative even while hydration is in flight.
-            ['visible2D', 'visible3D', 'opacity', 'color', 'material', 'locked'].forEach(key => {
+            ['visible2D', 'visible3D', 'opacity', 'color', 'material', 'locked',
+                'standaloneVisible', 'colorbarVisible2D', 'colorbarVisible3D'].forEach(key => {
                 if (Object.prototype.hasOwnProperty.call(savedTree.planning, key)) {
                     dataTreeState.planning[key] = savedTree.planning[key];
                 }
@@ -1865,6 +2674,14 @@
             (dataTreeState.planning.seeds || []).forEach(s => copyDisplayProperties(s, savedSeed.get(String(s?.id || ''))));
             (dataTreeState.planning.needles || []).forEach(n => copyDisplayProperties(n, savedNeedle.get(String(n?.id || ''))));
             (dataTreeState.planning.doseLevels || []).forEach(d => copyDisplayProperties(d, savedDose.get(String(d?.threshold ?? d?.thresholdGy ?? ''))));
+            copyDisplayProperties(
+                dataTreeState.planning.doseOverlay,
+                savedTree.planning.doseOverlay,
+            );
+            copyDisplayProperties(
+                dataTreeState.planning.dvh,
+                savedTree.planning.dvh,
+            );
         }
         const savedLabels = savedTree.ctvLabels || savedTree.ctv_labels || {};
         if (!dataTreeState.ctvLabels) dataTreeState.ctvLabels = {};
@@ -1875,6 +2692,9 @@
         });
         const byId = new Map((savedTree.organs || []).map(item => [String(item?.id || ''), item]));
         const byLabel = new Map((savedTree.organs || []).map(item => [String(item?.labelId ?? item?.label_id ?? ''), item]));
+        const byObjectId = new Map((savedTree.organs || [])
+            .filter(item => item?.objectId || item?.object_id)
+            .map(item => [String(item.objectId || item.object_id), item]));
         // OAR metadata may arrive after the fast control-plane snapshot. Keep
         // these presentation-only values until updateOrganList() materializes
         // the current case's authoritative rows; never restore old geometry or
@@ -1882,9 +2702,16 @@
         window.__pendingOarPresentation = {
             byId: Object.fromEntries(byId),
             byLabel: Object.fromEntries(byLabel),
+            byObjectId: Object.fromEntries(
+                (savedTree.organs || [])
+                    .filter(item => item?.objectId)
+                    .map(item => [String(item.objectId), item]),
+            ),
         };
         (dataTreeState.organs || []).forEach(organ => {
-            const saved = byId.get(String(organ.id)) || byLabel.get(String(organ.labelId));
+            const saved = byId.get(String(organ.id))
+                || byLabel.get(String(organ.labelId ?? organ.label_id))
+                || byObjectId.get(String(organ.objectId || organ.object_id));
             copyDisplayProperties(organ, saved);
         });
         window.syncStructureColorLUTsFromTree?.(dataTreeState);
@@ -1963,13 +2790,22 @@
                 ? activeSessionId
                 : (typeof state !== 'undefined' ? state?.sessionId : '') || '',
         );
+        const finiteArray = (value, length) => Array.isArray(value)
+            && value.length === length
+            && value.every(item => Number.isFinite(Number(item)));
+        const hasSavedCameraPose = finiteArray(scene?.camera_position, 3)
+            && (finiteArray(scene?.camera_target, 3)
+                || finiteArray(scene?.camera_quaternion, 4));
         // Mark the camera as restore-owned until the hydrated scene has had a
-        // chance to replace the old mesh set. The saved target is still
-        // applied first so a valid user view is preserved, but the delayed
-        // guard can reframe a stale target around the live objects.
+        // chance to replace the old mesh set. A valid saved pose is
+        // authoritative: asynchronous mesh hydration must not silently turn
+        // a user's saved camera into an automatic Fit view.
         if (typeof scene3D !== 'undefined' && scene3D) {
             scene3D._workspaceRestoreActive = true;
             scene3D._cameraUserInteracted = false;
+            scene3D._workspaceRestoreHasSavedPose = hasSavedCameraPose;
+            scene3D._workspaceRestoreSessionId = restoreSessionId;
+            scene3D._workspaceRestoreAllowFit = false;
         }
         const applyScene = ({ initial = false } = {}) => {
             if (!scene || typeof scene3D === 'undefined' || !scene3D?.camera) return;
@@ -2048,6 +2884,7 @@
         // non-destructive frustum guard after both layout and hydration settle.
         scheduleDeferredWorkspaceRestore(generation, () => {
             try {
+                if (hasSavedCameraPose) return;
                 if (typeof scene3D === 'undefined' || scene3D?._cameraUserInteracted !== true) {
                     window.ensureCameraFitsVisibleScene?.({
                         forceCenter: true,
@@ -2057,8 +2894,24 @@
             } catch (_) {}
         }, 1800);
         scheduleDeferredWorkspaceRestore(generation, () => {
+            // Keep the restore camera guard alive while the non-blocking
+            // visual barrier still owns this Session. A fixed three-second
+            // timeout used to release it while slow OAR/guide resources were
+            // still arriving, allowing a late automatic Fit to overwrite the
+            // saved camera pose.
+            const presentationStillRestoring = typeof window.isWorkspacePresentationRestoreActive === 'function'
+                && window.isWorkspacePresentationRestoreActive(restoreSessionId);
+            if (presentationStillRestoring) {
+                if (typeof scene3D !== 'undefined' && scene3D) {
+                    scene3D._workspaceRestoreActive = true;
+                    scene3D._workspaceRestoreAllowFit = false;
+                    scene3D._workspaceRestoreSessionId = restoreSessionId;
+                }
+                return;
+            }
             try {
-                if (typeof scene3D === 'undefined' || scene3D?._cameraUserInteracted !== true) {
+                if (!hasSavedCameraPose
+                    && (typeof scene3D === 'undefined' || scene3D?._cameraUserInteracted !== true)) {
                     window.ensureCameraFitsVisibleScene?.({
                         forceCenter: true,
                         reason: 'workspace-restore-settled',
@@ -2067,6 +2920,7 @@
             } catch (_) {}
             if (typeof scene3D !== 'undefined' && scene3D) {
                 scene3D._workspaceRestoreActive = false;
+                scene3D._workspaceRestoreAllowFit = false;
             }
         }, 3000);
 
@@ -2532,6 +3386,23 @@
                 state.slices = Object.assign(state.slices || {}, uiState.viewer.slices || {});
                 state.viewerSettings = Object.assign(state.viewerSettings || {}, uiState.viewer.settings || {});
                 if (uiState.viewer.doseOpacity != null) state.doseOpacity = uiState.viewer.doseOpacity;
+                if (uiState.viewer.labelImage && typeof uiState.viewer.labelImage === 'object') {
+                    state.labelImage = Object.assign(
+                        state.labelImage || {},
+                        jsonClone(uiState.viewer.labelImage),
+                    );
+                }
+                if (uiState.viewer.doseColorbar
+                    && typeof window.setDoseColorbarState === 'function') {
+                    // Colorbar preferences are case-owned workspace state.
+                    // Do not overwrite the browser-global fallback storage
+                    // while restoring another session; the active workspace
+                    // snapshot is the authority for this case.
+                    window.setDoseColorbarState(uiState.viewer.doseColorbar, {
+                        persist: false,
+                        refresh: false,
+                    });
+                }
                 const savedDoseTexture = uiState.viewer.doseTexture || {};
                 const savedSceneMode = String(uiState.viewer.scene?.display_mode || '').trim().toLowerCase();
                 const hasDesiredDoseFlag = typeof savedDoseTexture.desired_enabled === 'boolean';
@@ -2955,7 +3826,22 @@
                     void window.resumeSessionChatTask();
                 }, 0);
             }
-            if (typeof setViewerLayout === 'function' && state?.viewerSettings?.layout) setViewerLayout(state.viewerSettings.layout);
+            if (typeof setViewerLayout === 'function' && state?.viewerSettings?.layout) {
+                // Layout is restored, not edited.  Do not enqueue a save from
+                // this call while the old case is still being replaced.
+                setViewerLayout(state.viewerSettings.layout, { persist: false });
+            }
+            // Restore the surrounding UI after the layout contract has been
+            // rebuilt. The visual-barrier reconciliation repeats this after
+            // late resources have added rows and meshes.
+            try {
+                restoreWorkspaceChrome(
+                    uiState.viewer?.chrome || uiState.chrome,
+                    { sessionId, settleMs: 220 },
+                );
+            } catch (error) {
+                console.debug('[workspace] UI chrome restore deferred:', error);
+            }
             if (typeof renderDataTree === 'function') renderDataTree();
             // Label/planning hydration may finish before this presentation
             // snapshot is applied. Reconcile once more after the snapshot so
@@ -2972,6 +3858,28 @@
             // restores raw DOM values, but onchange handlers can desync
             // state.viewerSettings from the DOM — this locks them back.
             _syncViewerControlsFromState();
+            // The transform is a renderer-side style, not just a slider
+            // value.  Reapply zoom/pan/flip/rotation after the old canvases
+            // were cleared; late slice paints keep the same CSS transform.
+            if (typeof applyViewerTransform === 'function') {
+                try { applyViewerTransform(); } catch (_) {}
+            }
+            // Raw control values are restored above, but onchange/oninput
+            // handlers are intentionally not fired by applyControls(). Apply
+            // the corresponding real Three.js/material and label state now;
+            // late mesh loaders call the same idempotent helper again while
+            // the presentation-restore fence is active.
+            if (typeof window.applyRestoredViewerPresentationControls === 'function') {
+                window.applyRestoredViewerPresentationControls({ restoreOnly: true });
+            } else if (typeof updateLabelImage === 'function') {
+                ['axial', 'sagittal', 'coronal', '3d'].forEach(view => {
+                    try { updateLabelImage(view); } catch (_) {}
+                });
+            }
+            // Restore the active measurement/annotation tool's button and
+            // cursor without invoking its clinical side effects (for example,
+            // Draw would otherwise create a new mask during hydration).
+            window.applyRestoredViewerToolPresentation?.();
             if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
             restoreSceneView(
                 uiState.viewer?.scene,
@@ -3130,8 +4038,18 @@
     }
 
     function scheduleWorkspaceSave(reason) {
-        clearScheduledWorkspaceSave();
         const ownerSessionId = String(activeSessionId || '');
+        const presentationRestore = window.__pendingWorkspacePresentation;
+        if (presentationRestore?.active
+            && presentationRestore.sessionId === ownerSessionId) {
+            clearScheduledWorkspaceSave();
+            deferredPresentationSave = {
+                sessionId: ownerSessionId,
+                reason: reason || 'workspace.restore.settled',
+            };
+            return;
+        }
+        clearScheduledWorkspaceSave();
         saveTimer = setTimeout(() => {
             saveTimer = null;
             // The transition path flushes the old case explicitly. A timer
@@ -4074,5 +4992,31 @@
         scene3D.controls._workspacePersistenceHook = true;
         scene3D.controls.addEventListener('change', () => scheduleWorkspaceSave('viewer.camera'));
     }
+    // Scroll positions are part of the case presentation, but scrolling does
+    // not otherwise touch a control and therefore used to be absent from the
+    // debounced workspace-save path.  Wire every case-owned scroll pane once;
+    // scheduleWorkspaceSave() already coalesces high-frequency wheel events
+    // and defers them behind the presentation-restore fence.
+    function installWorkspaceChromePersistenceHooks() {
+        const ids = [
+            'panelInput', 'panelMetrics', 'panelViewers', 'panelReport',
+            'dataTreeBody', 'viewersPanel', 'reportEditor', 'reportPreview',
+        ];
+        let missing = false;
+        ids.forEach(id => {
+            const element = document.getElementById(id);
+            if (!element) {
+                missing = true;
+                return;
+            }
+            if (element._workspaceScrollPersistenceHook) return;
+            element._workspaceScrollPersistenceHook = true;
+            element.addEventListener('scroll', () => {
+                scheduleWorkspaceSave(`ui.scroll:${id}`);
+            }, { passive: true });
+        });
+        if (missing) setTimeout(installWorkspaceChromePersistenceHooks, 500);
+    }
     setTimeout(installScenePersistenceHook, 500);
+    setTimeout(installWorkspaceChromePersistenceHooks, 0);
 })();

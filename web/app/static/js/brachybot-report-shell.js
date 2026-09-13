@@ -221,9 +221,12 @@ window.Report = (function () {
         editor() { const fn = _legacy('renderReportEditor'); if (fn) fn(); },
         preview() { const fn = _legacy('_updateReportPreview'); if (fn) fn(); },
         switch(mode) { /* In the new top/bottom layout both panes are always visible. */ },
-        layout2col(on) {
+        layout2col(on, options = {}) {
+            const persist = options?.persist !== false;
             try { document.body.classList.toggle('report-2col', !!on); } catch (e) {}
-            try { localStorage.setItem('brachyplan_report_2col', on ? '1' : '0'); } catch (e) {}
+            if (persist) {
+                try { localStorage.setItem('brachyplan_report_2col', on ? '1' : '0'); } catch (e) {}
+            }
             // BUG FIX 2026-06-16: sync the actual checkbox UI when
             // layout2col is called from anywhere (auto-restore, the
             // toolbar toggle, etc.) so the visible state matches the
@@ -236,6 +239,10 @@ window.Report = (function () {
             // browser has computed the new grid dimensions before preview
             // fit-to-panel measurement runs.
             try { _scheduleReport2colLayout(); } catch (_) {}
+            if (persist && !window.isWorkspacePresentationRestoreActive?.()
+                && typeof window.scheduleWorkspaceSave === 'function') {
+                window.scheduleWorkspaceSave('report.layout.2col');
+            }
         },
     };
 
@@ -348,9 +355,16 @@ window.Report = (function () {
                 if (!isNaN(v) && v >= MIN && v <= MAX) _zoom = v;
             } catch (e) {}
         }
-        function setZoom(z) {
+        function setZoom(z, options = {}) {
             _zoom = Math.max(MIN, Math.min(MAX, z));
-            refresh(); _persist();
+            refresh();
+            if (options?.persist !== false) {
+                _persist();
+                if (!window.isWorkspacePresentationRestoreActive?.()
+                    && typeof window.scheduleWorkspaceSave === 'function') {
+                    window.scheduleWorkspaceSave('report.preview.zoom');
+                }
+            }
         }
         function zoomIn() { setZoom(_zoom + STEP); }
         function zoomOut() { setZoom(_zoom - STEP); }
@@ -1704,8 +1718,13 @@ window.Report = (function () {
             splitter.setAttribute('aria-valuenow', String(percent));
             splitter.setAttribute('aria-valuetext', `${percent}% editor, ${100 - percent}% preview`);
         }
-        if (persist) _persistReportSplitRatio();
-        else if (refresh) _queueReportSplitPersist();
+        if (persist) {
+            _persistReportSplitRatio();
+            if (!window.isWorkspacePresentationRestoreActive?.()
+                && typeof window.scheduleWorkspaceSave === 'function') {
+                window.scheduleWorkspaceSave('report.layout.split');
+            }
+        } else if (refresh) _queueReportSplitPersist();
         if (refresh) {
             try {
                 if (typeof preview !== 'undefined' && preview && typeof preview.refresh === 'function') {
@@ -1722,6 +1741,10 @@ window.Report = (function () {
         document.body.style.removeProperty('user-select');
         document.body.style.removeProperty('-webkit-user-select');
         _persistReportSplitRatio();
+        if (!window.isWorkspacePresentationRestoreActive?.()
+            && typeof window.scheduleWorkspaceSave === 'function') {
+            window.scheduleWorkspaceSave('report.layout.split');
+        }
     }
 
     function _installReport2colInteraction() {
@@ -1815,6 +1838,45 @@ window.Report = (function () {
         if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(install);
         else window.setTimeout(install, 0);
     }
+
+    // The report editor/preview is part of a case workspace.  Keep its
+    // presentation preferences separate from the report text itself so a
+    // Session switch can restore the exact layout without copying narrative
+    // content between cases.
+    function getReportPresentationState() {
+        const checkbox = document.querySelector('.rp-2col-toggle input[type="checkbox"]');
+        return {
+            version: 1,
+            layout2col: checkbox
+                ? checkbox.checked === true
+                : document.body.classList.contains('report-2col'),
+            previewZoom: typeof preview?.getZoom === 'function'
+                ? Number(preview.getZoom()) : 1,
+            splitRatio: Number(_reportSplitRatio),
+        };
+    }
+
+    function restoreReportPresentationState(saved, options = {}) {
+        if (!saved || typeof saved !== 'object') return false;
+        const persist = options?.persist === true;
+        if (typeof saved.layout2col === 'boolean') {
+            panels.layout2col(saved.layout2col, { persist });
+        }
+        if (Number.isFinite(Number(saved.previewZoom))) {
+            preview.setZoom(Number(saved.previewZoom), { persist });
+        }
+        if (Number.isFinite(Number(saved.splitRatio))) {
+            _setReportSplitRatio(Number(saved.splitRatio), {
+                persist,
+                refresh: false,
+            });
+        }
+        _scheduleReport2colLayout();
+        return true;
+    }
+
+    window.getReportPresentationState = getReportPresentationState;
+    window.restoreReportPresentationState = restoreReportPresentationState;
 
     // ---------- 2-col CSS (P17) ----------
     function _install2colCss() {
@@ -1949,6 +2011,10 @@ window.Report = (function () {
         refs, figures, oar, audit, review, snapshots, sign, persist,
         export: exportFns, validation,
         boot, metricBadge, preview,
+        presentation: {
+            get: getReportPresentationState,
+            restore: restoreReportPresentationState,
+        },
         _closeModal, _escHtml, _setByPath, _getByPath, _attachLangHint, _showModal,
         _toggleExportMenu, _hideExportMenu,
     };

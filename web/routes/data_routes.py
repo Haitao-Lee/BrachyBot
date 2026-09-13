@@ -19,6 +19,7 @@ from web.server_support import (
 )
 from web.structure_service import (
     StructureError,
+    _DOWNSTREAM_KEYS,
     _batch_memory_update,
     delete_structure,
     delete_structures,
@@ -341,12 +342,41 @@ def register_data_routes(
                 "traversability": category,
             })
             # The classification changes the actual obstacle policy consumed by
-            # trajectory initialization and seed optimization.  Persist it
-            # synchronously and invalidate all downstream clinical artifacts so
-            # a restart or a fast replan cannot reuse the old policy.
-            store.flush_agent_checkpoint(
-                str(user["id"]), session_id, agent,
-                reason="structures.traversability_changed.durable",
+            # trajectory initialization and seed optimization.  Persist the
+            # small policy transaction synchronously, but do not serialize all
+            # CT/mask/dose arrays on the request thread.  A full checkpoint is
+            # queued below and the generation guard prevents an older heavy
+            # checkpoint from overwriting this policy patch.
+            policy_keys = (
+                "structure_overrides",
+                "structure_catalog",
+                "structure_artifact_status",
+                "manual_artifact_status",
+                "planning_version",
+                "ctv_source_object_ids",
+                "ctv_label_map",
+                "organ_names",
+                "organ_counts",
+                "ctv_source",
+                "oar_source",
+            )
+            policy_updates = {
+                key: agent.memory.retrieve(key)
+                for key in policy_keys
+                if agent.memory.retrieve(key) is not None
+            }
+            store.save_agent_results_patch(
+                str(user["id"]),
+                session_id,
+                updates=policy_updates,
+                removals=_DOWNSTREAM_KEYS,
+                reason="structures.traversability_changed.policy_durable",
+            )
+            store.schedule_agent_checkpoint(
+                str(user["id"]),
+                session_id,
+                agent,
+                reason="structures.traversability_changed.full_checkpoint",
             )
             return jsonify({
                 "success": True,
@@ -360,6 +390,10 @@ def register_data_routes(
                     "surgical_guide",
                 ],
                 "artifact_status": agent.memory.retrieve("structure_artifact_status") or {},
+                "durability": {
+                    "policy": "committed",
+                    "full_agent_checkpoint": "queued",
+                },
             })
         except Exception as exc:
             logger.warning("Structure traversability update failed: %s", exc)

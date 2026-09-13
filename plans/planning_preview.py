@@ -20,6 +20,7 @@ PREVIEW_SCHEMA_VERSION = 1
 MAX_PREVIEW_TRAJECTORIES = 64
 MAX_PREVIEW_NEEDLES = 32
 MAX_PREVIEW_SEEDS = 256
+MAX_PREVIEW_CLOSE_POINTS = 256
 
 
 def safe_preview(callback: Optional[Callable[[Dict[str, Any]], None]], payload: Dict[str, Any]) -> None:
@@ -55,7 +56,12 @@ def _point(value: Any) -> Optional[list[float]]:
 
 def _bounded_geometry(geometry: Any) -> Dict[str, list]:
     source = geometry if isinstance(geometry, dict) else {}
-    result: Dict[str, list] = {"trajectories": [], "needles": [], "seeds": []}
+    result: Dict[str, list] = {
+        "trajectories": [],
+        "needles": [],
+        "seeds": [],
+        "close_points": [],
+    }
 
     for key, limit in (
         ("trajectories", MAX_PREVIEW_TRAJECTORIES),
@@ -100,6 +106,27 @@ def _bounded_geometry(geometry: Any) -> Dict[str, list]:
                 "position": position,
                 "direction": direction,
                 "status": str(item.get("status") or "candidate"),
+            })
+
+    close_points = source.get("close_points")
+    if isinstance(close_points, Iterable) and not isinstance(close_points, (str, bytes, dict)):
+        for index, item in enumerate(close_points):
+            if index >= MAX_PREVIEW_CLOSE_POINTS:
+                break
+            if isinstance(item, dict):
+                position = _point(item.get("position") or item.get("point"))
+                item_id = item.get("id")
+                status = item.get("status") or "close_point"
+            else:
+                position = _point(item)
+                item_id = None
+                status = "close_point"
+            if position is None:
+                continue
+            result["close_points"].append({
+                "id": str(item_id or f"preview_close_point_{index}"),
+                "position": position,
+                "status": str(status),
             })
     return result
 

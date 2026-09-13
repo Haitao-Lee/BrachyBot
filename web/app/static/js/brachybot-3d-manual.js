@@ -15,6 +15,27 @@ function _syncTrajectoryChildren() {
     dataTreeState.planning.trajectoriesLoaded = (dataTreeState.planning.trajectories || []).length > 0;
 }
 
+function _setPlanningPreviewClosePoints(mesh, entries) {
+    if (!mesh) return;
+    const points = (Array.isArray(entries) ? entries : []).slice(0, 256);
+    const matrix = new THREE.Matrix4();
+    const position = new THREE.Vector3();
+    const quaternion = new THREE.Quaternion();
+    const scale = new THREE.Vector3(1, 1, 1);
+    let count = 0;
+    points.forEach(entry => {
+        const pos = (entry?.position || entry?.point || []).slice(0, 3).map(Number);
+        if (pos.length !== 3 || !pos.every(Number.isFinite)) return;
+        position.set(...pos);
+        matrix.compose(position, quaternion, scale);
+        mesh.setMatrixAt(count, matrix);
+        count += 1;
+    });
+    mesh.count = count;
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.visible = count > 0;
+}
+
 function _syncSeedsOverlayFromDataTree() {
     _syncTrajectoryChildren();
     const seeds = (dataTreeState.planning.seeds || []).map(s => ({
@@ -3939,6 +3960,25 @@ window.centerWorldGeometryForDepthSort = centerWorldGeometryForDepthSort;
 function addMeshToScene(meshData) {
     init3DScene();
     const id = meshData.organ_id || meshData.source || 'mesh_' + Date.now();
+    const source = meshData.source || 'mesh';
+    const presentationFamily = id === 'ctv' || id.startsWith('ctv_')
+        ? 'ctv'
+        : id.startsWith('organ_') || source === 'oar' || source === 'organ'
+            ? 'oar'
+            : id.startsWith('seed_') ? 'seed'
+                : id.startsWith('needle_') ? 'needle'
+                    : id.startsWith('dose_iso_') ? 'dose_iso'
+                        : (typeof window.isDataTreeMaskId === 'function'
+                            && window.isDataTreeMaskId(id)) ? 'mask'
+                            : 'planning_mesh';
+    const restoredMeshPresentation = window.isWorkspacePresentationRestoreActive?.()
+        ? window.getWorkspacePresentationForNode?.({
+            id,
+            objectId: meshData.object_id,
+            nodeId: meshData.data_tree_node_id,
+            family: presentationFamily,
+        })
+        : null;
 
     // Remove existing mesh with same ID
     if (scene3D.meshes[id]) {
@@ -3965,8 +4005,15 @@ function addMeshToScene(meshData) {
     geometry.setIndex(new THREE.BufferAttribute(indices, 1));
     geometry.computeVertexNormals();
 
-    // Use physical coordinates directly (mm) — no scaling
-    const color = meshData.color || 0x0ea5e9;
+    // Use physical coordinates directly (mm) — no scaling.  During a
+    // restart, an asynchronous mesh response can arrive after a default
+    // Data Tree row has already been created.  Resolve the saved presentation
+    // before constructing the material so the first rendered frame already
+    // has the user's colour, opacity and visibility instead of being briefly
+    // painted with the loader defaults.
+    const color = restoredMeshPresentation?.color
+        || meshData.color
+        || 0x0ea5e9;
     // BUG FIX 2026-06-17 (3D opacity source): previously the
     // opacity came only from the meshOpacity3D slider. The user
     // wanted the DEFAULT opacity to come from the display_3d
@@ -3977,7 +4024,9 @@ function addMeshToScene(meshData) {
     //   3. meshOpacity3D slider (user's live tweak)
     //   4. hard-coded fallback (0.7)
     let opacity;
-    if (typeof meshData.opacity === 'number' && !isNaN(meshData.opacity)) {
+    if (Number.isFinite(Number(restoredMeshPresentation?.opacity))) {
+        opacity = Number(restoredMeshPresentation.opacity);
+    } else if (typeof meshData.opacity === 'number' && !isNaN(meshData.opacity)) {
         opacity = meshData.opacity;
     } else if (_3dConfigCache) {
         const src = meshData.source || '';
@@ -3991,7 +4040,6 @@ function addMeshToScene(meshData) {
     }
 
     // Clean surface rendering (like 3D Slicer polydata)
-    const source = meshData.source || 'mesh';
     // A transparent surgical guide is still a physical boundary.  It must
     // write depth so a needle behind the guide is occluded, while the guide
     // itself remains alpha blended.  Anatomical overlays and dose surfaces
@@ -4017,7 +4065,12 @@ function addMeshToScene(meshData) {
     // A mesh created during hydration/reconstruction must inherit the data
     // tree state.  Otherwise a hidden planning or structure node reappears
     // as soon as its real geometry finishes loading.
-    const visible = meshData.visible !== false && meshData.visible3D !== false;
+    const visible = (Object.prototype.hasOwnProperty.call(restoredMeshPresentation || {}, 'visible')
+        ? restoredMeshPresentation.visible !== false
+        : meshData.visible !== false)
+        && (Object.prototype.hasOwnProperty.call(restoredMeshPresentation || {}, 'visible3D')
+            ? restoredMeshPresentation.visible3D !== false
+            : meshData.visible3D !== false);
     mesh.visible = visible && opacity > 0.001;
     mesh.userData = {
         type: 'mesh',
@@ -4025,7 +4078,7 @@ function addMeshToScene(meshData) {
         objectId: meshData.object_id || id,
         nodeId: meshData.data_tree_node_id || id,
         source,
-        label: meshData.label || id,
+        label: restoredMeshPresentation?.label || meshData.label || id,
         labelId: meshData.label_id,
         organId: id,
         planningId: meshData.planning_id || null,
@@ -4151,7 +4204,13 @@ function addMeshToScene(meshData) {
         const colorHex = typeof color === 'number'
             ? '#' + color.toString(16).padStart(6, '0')
             : (typeof color === 'string' ? color : '#0ea5e9');
-        const label = (meshData.label || meshData.organ_id || meshData.source || id).toString();
+        const label = (
+            restoredMeshPresentation?.label
+            || meshData.label
+            || meshData.organ_id
+            || meshData.source
+            || id
+        ).toString();
         const existing = dataTreeState.planning.meshes.findIndex(m => m.id === id);
         const entry = {
             id,
@@ -4166,10 +4225,25 @@ function addMeshToScene(meshData) {
             dataVersion: Number(meshData.data_version || dataTreeState.planning.version || 0),
             status: meshData.status || 'ready',
             color: colorHex,
-            visible: meshData.visible !== false,
-            visible2D: meshData.visible2D !== false,
-            visible3D: meshData.visible3D !== false,
+            visible: Object.prototype.hasOwnProperty.call(restoredMeshPresentation || {}, 'visible')
+                ? restoredMeshPresentation.visible !== false
+                : meshData.visible !== false,
+            visible2D: Object.prototype.hasOwnProperty.call(restoredMeshPresentation || {}, 'visible2D')
+                ? restoredMeshPresentation.visible2D !== false
+                : meshData.visible2D !== false,
+            visible3D: Object.prototype.hasOwnProperty.call(restoredMeshPresentation || {}, 'visible3D')
+                ? restoredMeshPresentation.visible3D !== false
+                : meshData.visible3D !== false,
             opacity,
+            material: restoredMeshPresentation?.material ?? meshData.material,
+            locked: restoredMeshPresentation?.locked === true || meshData.locked === true,
+            standaloneVisible: Object.prototype.hasOwnProperty.call(restoredMeshPresentation || {}, 'standaloneVisible')
+                ? restoredMeshPresentation.standaloneVisible !== false
+                : meshData.standaloneVisible !== false,
+            colorbarVisible2D: restoredMeshPresentation?.colorbarVisible2D,
+            colorbarVisible3D: restoredMeshPresentation?.colorbarVisible3D,
+            visibilityConfigured: restoredMeshPresentation?.visibilityConfigured === true
+                || meshData.visibilityConfigured === true,
             vertexCount: meshData.vertex_count || (meshData.vertices ? meshData.vertices.length / 3 : 0),
         };
         if (existing >= 0) dataTreeState.planning.meshes[existing] = entry;
@@ -4193,6 +4267,14 @@ function addMeshToScene(meshData) {
                 if (scene3D.requestRender) scene3D.requestRender(2);
             })
             .catch(e => console.warn('[addMeshToScene] dose remap failed:', e));
+    }
+
+    // A structural resource may arrive several seconds after the workspace
+    // snapshot. Reapply the saved toolbar presentation after each late mesh
+    // so wireframe/mesh opacity/labels remain identical to the pre-restart
+    // view instead of depending on which loader happened to finish last.
+    if (typeof window.applyRestoredViewerPresentationControls === 'function') {
+        window.applyRestoredViewerPresentationControls({ restoreOnly: true });
     }
 
     if (scene3D.requestRender) scene3D.requestRender(4);
@@ -4319,6 +4401,16 @@ function fitCameraToScene() {
 // calls remain non-destructive and only correct genuine clipping.
 function ensureCameraFitsVisibleScene({ forceCenter = false, reason = '' } = {}) {
     if (!scene3D?.camera || !scene3D?.controls || !scene3D?.initialized) return false;
+    // A valid saved pose must survive asynchronous reconstruction exactly.
+    // The restore transaction has already applied it; a later mesh callback
+    // may request a "forceCenter" fit, but that would turn a persisted user
+    // view into a different camera after every restart/session switch.
+    if (scene3D._workspaceRestoreActive === true
+        && scene3D._workspaceRestoreHasSavedPose === true
+        && scene3D._workspaceRestoreAllowFit !== true) {
+        scene3D.requestRender?.(2);
+        return false;
+    }
     const camera = scene3D.camera;
     if (!camera.isPerspectiveCamera) return false;
     scene3D.resize?.();
@@ -5208,7 +5300,114 @@ function update3DMeshOpacity(val) {
         applyMeshOpacity(mesh, opacity, true);
     });
     if (scene3D.requestRender) scene3D.requestRender(2);
+    if (typeof window.scheduleWorkspaceSave === 'function') {
+        window.scheduleWorkspaceSave('viewer.mesh_opacity');
+    }
 }
+
+// `applyControls()` restores the DOM values without dispatching input/change
+// events.  The old restore path therefore showed the saved slider positions
+// while newly rebuilt Three.js meshes still used their hard-coded wireframe,
+// opacity, and label defaults.  Keep one idempotent bridge from the complete
+// toolbar state to the actual renderer.  It is deliberately restore-scoped:
+// normal user actions continue to use their existing handlers, while late
+// resource loaders can safely call this again without changing clinical data.
+function applyRestoredViewerPresentationControls({ restoreOnly = false } = {}) {
+    const presentationRestoreActive = window.isWorkspacePresentationRestoreActive?.() === true;
+    if (restoreOnly && !presentationRestoreActive) return false;
+    // During a cold restore the DOM can still contain the previous Session's
+    // values when this helper is called by the first mesh loader.  In
+    // restore-only mode the already-hydrated Session state is authoritative;
+    // copy it into the controls before reading the controls back below.
+    if (restoreOnly && typeof state !== 'undefined') {
+        const savedLabel = state.labelImage?.['3d'];
+        const labelShowInput = document.getElementById('labelShow3d');
+        const labelOpacityInput = document.getElementById('labelOp3d');
+        if (savedLabel && typeof savedLabel.visible === 'boolean' && labelShowInput) {
+            labelShowInput.checked = savedLabel.visible;
+        }
+        if (savedLabel && Number.isFinite(Number(savedLabel.opacity)) && labelOpacityInput) {
+            labelOpacityInput.value = String(Math.round(Number(savedLabel.opacity) * 100));
+        }
+        if (Number.isFinite(Number(state.doseOpacity))) {
+            const doseOpacityInput = document.getElementById('doseOpacity');
+            if (doseOpacityInput) {
+                doseOpacityInput.value = String(Math.round(Number(state.doseOpacity) * 100));
+            }
+        }
+        try { syncDoseColorbarControls(); } catch (_) {}
+    }
+    const meshOpacityInput = document.getElementById('meshOpacity3D');
+    const meshOpacityValue = Number(meshOpacityInput?.value);
+    const meshOpacity = Number.isFinite(meshOpacityValue)
+        ? Math.max(0, Math.min(1, meshOpacityValue / 100))
+        : 0.7;
+    const wireframe = document.getElementById('wireframe3D')?.checked === true;
+    const labelShow = document.getElementById('labelShow3d')?.checked !== false;
+    const labelOpacityValue = Number(document.getElementById('labelOp3d')?.value);
+    const labelOpacity = Number.isFinite(labelOpacityValue)
+        ? Math.max(0, Math.min(1, labelOpacityValue / 100))
+        : 0.6;
+
+    if (typeof state !== 'undefined') {
+        state.labelImage = state.labelImage || {};
+        state.labelImage['3d'] = { visible: labelShow, opacity: labelOpacity };
+        // `doseOpacity` is shared by the legacy 3D dose slider and the dose
+        // overlay renderer.  Keep state aligned even when no dose mesh exists
+        // yet; the next loader will read the same value.
+        const doseOpacityValue = Number(document.getElementById('doseOpacity')?.value);
+        if (Number.isFinite(doseOpacityValue)) {
+            state.doseOpacity = Math.max(0, Math.min(1, doseOpacityValue / 100));
+        }
+    }
+    const overlay = document.getElementById('labelOverlay_3d');
+    if (overlay) {
+        overlay.style.display = labelShow ? 'block' : 'none';
+        overlay.style.opacity = String(labelOpacity);
+    }
+
+    Object.values(scene3D?.meshes || {}).forEach(mesh => {
+        if (!mesh || mesh?.userData?.type === 'needle_handle') return;
+        const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        materials.forEach(material => {
+            // Three.js materials expose `wireframe` differently across
+            // versions (and custom materials may inherit it).  Checking only
+            // own-properties left some late-created meshes in the default
+            // solid mode after a restart.
+            if (material && typeof material === 'object') material.wireframe = wireframe;
+        });
+        // A dose texture owns the surface opacity while it is active.  The
+        // global Mesh Op slider still applies to ordinary anatomy, seeds,
+        // needles, and untextured planning meshes. Preserve the current
+        // visibility resolved by the Data Tree rather than resurrecting a
+        // node that the operator hid before the restart.
+        const meshId = String(mesh?.userData?.id || '');
+        const isDoseSurface = (typeof _isDoseIsoMesh === 'function'
+            && _isDoseIsoMesh(meshId, mesh))
+            || mesh?.userData?.type === 'dose_isosurface'
+            || mesh?.userData?.renderRole === 'dose_surface'
+            || (typeof _isDoseTexturableMesh === 'function'
+                && _isDoseTexturableMesh(meshId, mesh));
+        if (!state?.doseTexture?.enabled || !isDoseSurface) {
+            applyMeshOpacity(mesh, wireframe ? 0.8 : meshOpacity, mesh.visible !== false);
+        }
+    });
+    try {
+        if (typeof updateLabelImage === 'function') {
+            ['axial', 'sagittal', 'coronal', '3d'].forEach(view => updateLabelImage(view, {
+                persist: !restoreOnly,
+            }));
+        }
+    } catch (_) {}
+    try {
+        if (typeof update3DColorbar === 'function') {
+            update3DColorbar(!!state?.doseTexture?.enabled);
+        }
+    } catch (_) {}
+    scene3D?.requestRender?.(3);
+    return true;
+}
+window.applyRestoredViewerPresentationControls = applyRestoredViewerPresentationControls;
 
 function toggle3DWireframe(on) {
     Object.values(scene3D.meshes).forEach(mesh => {
@@ -5226,6 +5425,9 @@ function toggle3DWireframe(on) {
         }
     });
     if (scene3D.requestRender) scene3D.requestRender(2);
+    if (typeof window.scheduleWorkspaceSave === 'function') {
+        window.scheduleWorkspaceSave('viewer.wireframe');
+    }
 }
 
 async function toggle3DSkin(on) {
@@ -5240,6 +5442,9 @@ async function toggle3DSkin(on) {
         }
         window.applyDataTreeViewVisibility?.();
         renderDataTree?.();
+        if (typeof window.scheduleWorkspaceSave === 'function') {
+            window.scheduleWorkspaceSave('viewer.skin_visibility');
+        }
         return;
     }
     // A threshold-derived skin is a first-class Data Tree mask. Keep the
@@ -5254,6 +5459,9 @@ async function toggle3DSkin(on) {
         }
         if (typeof window.applyDataTreeViewVisibility === 'function') window.applyDataTreeViewVisibility();
         if (typeof renderDataTree === 'function') renderDataTree();
+        if (typeof window.scheduleWorkspaceSave === 'function') {
+            window.scheduleWorkspaceSave('viewer.skin_visibility');
+        }
         return;
     }
     if (!on) {
@@ -5262,6 +5470,9 @@ async function toggle3DSkin(on) {
             scene3D.skinMesh.geometry.dispose();
             scene3D.skinMesh.material.dispose();
             scene3D.skinMesh = null;
+        }
+        if (typeof window.scheduleWorkspaceSave === 'function') {
+            window.scheduleWorkspaceSave('viewer.skin_visibility');
         }
         return;
     }
@@ -5310,6 +5521,9 @@ async function toggle3DSkin(on) {
                 _prepareDoseTextureSceneVisibility();
             }
             // Fit removed — camera only resets on explicit button click
+            if (typeof window.scheduleWorkspaceSave === 'function') {
+                window.scheduleWorkspaceSave('viewer.skin_visibility');
+            }
         }
     } catch (e) {
         if (_planningSceneScopeIsCurrent(requestScope)) console.error('CT skin failed:', e);
@@ -5480,14 +5694,36 @@ async function _loadSeeds3D(requestScope) {
 
         // Rebuild geometry while preserving this session's Data Tree
         // appearance. A viewer reload must not invent a second visual state.
+        const presentationRestoreActive = window.isWorkspacePresentationRestoreActive?.() === true;
         const savedSeedAppearance = new Map(
             (dataTreeState.planning.seeds || []).map(seed => [String(seed.id), seed]),
         );
         const savedNeedleAppearance = new Map(
             (dataTreeState.planning.needles || []).map(needle => [String(needle.id), needle]),
         );
+        const restoredAppearance = (current, criteria) => {
+            const persisted = presentationRestoreActive
+                ? window.getWorkspacePresentationForNode?.(criteria)
+                : null;
+            // A server response may arrive after updateSeeds/updateTrajectories
+            // has already created a default row.  Merge the persisted record
+            // over that row; using `current || persisted` would silently lose
+            // a saved colour/opacity/visibility as soon as the default row
+            // existed.
+            return presentationRestoreActive
+                ? { ...(current || {}), ...(persisted || {}) }
+                : (current || persisted || {});
+        };
         dataTreeState.planning.seeds = _dedupeManualSeeds(data.seeds).map(seed => {
-            const saved = savedSeedAppearance.get(String(seed.id)) || {};
+            const saved = restoredAppearance(
+                savedSeedAppearance.get(String(seed.id)),
+                {
+                    id: seed.id,
+                    objectId: seed.object_id,
+                    nodeId: seed.data_tree_node_id,
+                    family: 'seed',
+                },
+            );
             const position = _vec3Array(seed.position || seed.pos);
             return {
                 id: seed.id,
@@ -5506,22 +5742,39 @@ async function _loadSeeds3D(requestScope) {
                 visible3D: saved.visible3D !== false,
                 opacity: saved.opacity ?? 1.0,
                 color: saved.color || '#ffcc00',
+                material: saved.material,
+                locked: saved.locked === true,
+                standaloneVisible: saved.standaloneVisible !== false,
             };
         });
         _syncManualObjectCounters();
 
-        dataTreeState.planning.needles = data.needles.map(needle => ({
-            id: needle.id,
-            points: needle.points,
-            trajectory_id: _normalizeTrajectoryId(needle.trajectory_id),
-            visible: savedNeedleAppearance.get(String(needle.id))?.visible !== false,
-            visible2D: savedNeedleAppearance.get(String(needle.id))?.visible2D !== false,
-            visible3D: savedNeedleAppearance.get(String(needle.id))?.visible3D !== false,
-            opacity: savedNeedleAppearance.get(String(needle.id))?.opacity ?? 0.9,
-            color: savedNeedleAppearance.get(String(needle.id))?.color || '#ff2266',
-            // Preserve a user-assigned label across server reloads.
-            label: needle.label || savedNeedleAppearance.get(String(needle.id))?.label || undefined,
-        }));
+        dataTreeState.planning.needles = data.needles.map(needle => {
+            const saved = restoredAppearance(
+                savedNeedleAppearance.get(String(needle.id)),
+                {
+                    id: needle.id,
+                    objectId: needle.object_id,
+                    nodeId: needle.data_tree_node_id,
+                    family: 'needle',
+                },
+            );
+            return {
+                id: needle.id,
+                points: needle.points,
+                trajectory_id: _normalizeTrajectoryId(needle.trajectory_id),
+                visible: saved.visible !== false,
+                visible2D: saved.visible2D !== false,
+                visible3D: saved.visible3D !== false,
+                opacity: saved.opacity ?? 0.9,
+                color: saved.color || '#ff2266',
+                material: saved.material,
+                locked: saved.locked === true,
+                standaloneVisible: saved.standaloneVisible !== false,
+                // Preserve a user-assigned label across server reloads.
+                label: needle.label || saved.label || undefined,
+            };
+        });
         manualPlanningState.planningId = data.planning_id || manualPlanningState.planningId;
         manualPlanningState.planningVersion = Number(
             data.planning_version ?? manualPlanningState.planningVersion ?? 0,
@@ -5552,10 +5805,34 @@ async function _loadSeeds3D(requestScope) {
             color: seed.color,
         }));
 
+        const savedSeedsRoot = restoredAppearance(dataTreeState.seeds, {
+            id: 'seeds',
+            family: 'seed_collection',
+        });
+        const savedNeedlesRoot = restoredAppearance(dataTreeState.needles, {
+            id: 'needles',
+            family: 'needle_collection',
+        });
         dataTreeState.seeds.loaded = true;
-        dataTreeState.seeds.visible = true;
+        dataTreeState.seeds.visible = savedSeedsRoot.visible
+            ?? dataTreeState.seeds.visible
+            ?? true;
+        dataTreeState.seeds.visible2D = savedSeedsRoot.visible2D
+            ?? dataTreeState.seeds.visible2D
+            ?? true;
+        dataTreeState.seeds.visible3D = savedSeedsRoot.visible3D
+            ?? dataTreeState.seeds.visible3D
+            ?? true;
         dataTreeState.needles.loaded = true;
-        dataTreeState.needles.visible = true;
+        dataTreeState.needles.visible = savedNeedlesRoot.visible
+            ?? dataTreeState.needles.visible
+            ?? true;
+        dataTreeState.needles.visible2D = savedNeedlesRoot.visible2D
+            ?? dataTreeState.needles.visible2D
+            ?? true;
+        dataTreeState.needles.visible3D = savedNeedlesRoot.visible3D
+            ?? dataTreeState.needles.visible3D
+            ?? true;
 
         // Render the physical seed geometry returned by the active plan. The
         // same length/radius are used by the 2D cylinder projection, so a
@@ -5568,15 +5845,29 @@ async function _loadSeeds3D(requestScope) {
             // direction may be [[x,y,z]] (nested) or [x,y,z] (flat) — flatten it
             const rawDir = Array.isArray(seed.direction[0]) ? seed.direction[0] : seed.direction;
             const dir = new THREE.Vector3(...rawDir).normalize();
+            const treeSeed = dataTreeState.planning.seeds.find(item => String(item.id) === String(seed.id)) || seed;
+            const seedColor = _parseTreeColorValue(
+                treeSeed.color,
+                _parseTreeColorValue(dataTreeState.seeds?.color, 0xe6e64d),
+            );
+            const seedOpacity = Math.max(0, Math.min(1, Number(
+                treeSeed.opacity ?? dataTreeState.seeds?.opacity ?? 1,
+            )));
+            const seedVisible = treeSeed.visible !== false
+                && treeSeed.visible3D !== false
+                && dataTreeState.seeds?.visible !== false
+                && dataTreeState.seeds?.visible3D !== false
+                && dataTreeState.planning?.visible !== false
+                && dataTreeState.planning?.visible3D !== false;
 
             const geometry = new THREE.CylinderGeometry(seedRadius, seedRadius, seedLength, 16);
             const material = new THREE.MeshPhysicalMaterial({
-                color: 0xe6e64d,  // Zhiyuan yellow: RGB(230, 230, 77)
+                color: seedColor,
                 // Keep seeds in the transparent planning layer so the guide
                 // can write its physical wall depth before seeds/needles are
                 // drawn. Opacity is still one; this only controls queueing.
                 transparent: true,
-                opacity: 1,
+                opacity: seedOpacity,
                 metalness: 0.5,
                 roughness: 0.3,
                 emissive: 0x332200,
@@ -5593,6 +5884,7 @@ async function _loadSeeds3D(requestScope) {
             mesh.position.copy(pos);
 
             mesh.renderOrder = 40;
+            mesh.visible = seedVisible && seedOpacity > 0.001;
             mesh.userData = {
                 type: 'seed',
                 id: seed.id,
@@ -5609,7 +5901,7 @@ async function _loadSeeds3D(requestScope) {
         });
 
         // Render needles as VIVID TUBES (LineBasicMaterial linewidth doesn't work in WebGL).
-        // Bright magenta-red for clear visibility against the CTV mesh & dose cloud.
+            // Bright magenta-red for clear visibility against the CTV mesh & dose cloud.
         data.needles.forEach(needle => {
             if (needle.points.length < 2) return;
             // Use the same seed-clipped display geometry as the endpoint
@@ -5617,6 +5909,19 @@ async function _loadSeeds3D(requestScope) {
             // here made the shaft protrude beyond the deepest seed even
             // though the endpoint handles appeared correctly placed.
             const treeNeedle = dataTreeState.planning.needles.find(item => item.id === needle.id) || needle;
+            const needleColor = _parseTreeColorValue(
+                treeNeedle.color,
+                _parseTreeColorValue(dataTreeState.needles?.color, 0xff2266),
+            );
+            const needleOpacity = Math.max(0, Math.min(1, Number(
+                treeNeedle.opacity ?? dataTreeState.needles?.opacity ?? 0.9,
+            )));
+            const needleVisible = treeNeedle.visible !== false
+                && treeNeedle.visible3D !== false
+                && dataTreeState.needles?.visible !== false
+                && dataTreeState.needles?.visible3D !== false
+                && dataTreeState.planning?.visible !== false
+                && dataTreeState.planning?.visible3D !== false;
             let points = (typeof _needleDisplayPoints === 'function'
                 ? _needleDisplayPoints(treeNeedle)
                 : needle.points.map(p => new THREE.Vector3(...p)));
@@ -5638,7 +5943,7 @@ async function _loadSeeds3D(requestScope) {
                     const needleRadius = 0.28;
                     const geo = new THREE.CylinderGeometry(needleRadius, needleRadius, length, 10);
                     const mat = new THREE.MeshPhysicalMaterial({
-                        color: 0xff2266, transparent: true, opacity: 0.9,
+                        color: needleColor, transparent: true, opacity: needleOpacity,
                         metalness: 0.1, roughness: 0.4,
                         emissive: 0x550011, emissiveIntensity: 0.6,
                         depthWrite: false,
@@ -5646,6 +5951,7 @@ async function _loadSeeds3D(requestScope) {
                     });
                     tube = new THREE.Mesh(geo, mat);
                     tube.renderOrder = 30;
+                    tube.visible = needleVisible && needleOpacity > 0.001;
                     // Position at midpoint
                     const mid = new THREE.Vector3().addVectors(points[0], points[1]).multiplyScalar(0.5);
                     tube.position.copy(mid);
@@ -5657,7 +5963,7 @@ async function _loadSeeds3D(requestScope) {
                     const curve = new THREE.CatmullRomCurve3(points);
                     const tubeGeometry = new THREE.TubeGeometry(curve, 32, 0.28, 10, false);
                     const tubeMaterial = new THREE.MeshPhysicalMaterial({
-                        color: 0xff2266, transparent: true, opacity: 0.9,
+                        color: needleColor, transparent: true, opacity: needleOpacity,
                         metalness: 0.1, roughness: 0.4,
                         emissive: 0x550011, emissiveIntensity: 0.6,
                         depthWrite: false,
@@ -5665,6 +5971,7 @@ async function _loadSeeds3D(requestScope) {
                     });
                     tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
                     tube.renderOrder = 30;
+                    tube.visible = needleVisible && needleOpacity > 0.001;
                 }
                 tube.userData = {
                     type: 'needle',
@@ -5693,15 +6000,21 @@ async function _loadSeeds3D(requestScope) {
                     id: needle.id,
                     points: needle.points,
                     trajectory_id: _normalizeTrajectoryId(needle.trajectory_id),
-                    visible: true,
-                    opacity: 0.9,
+                    visible: treeNeedle.visible,
+                    opacity: needleOpacity,
                 });
             } catch (e) {
                 // Fallback: render as a simple line
                 const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
-                const lineMat = new THREE.LineBasicMaterial({ color: 0xff2266, linewidth: 2 });
+                const lineMat = new THREE.LineBasicMaterial({
+                    color: needleColor,
+                    transparent: true,
+                    opacity: needleOpacity,
+                    linewidth: 2,
+                });
                 const line = new THREE.Line(lineGeo, lineMat);
                 line.renderOrder = 30;
+                line.visible = needleVisible && needleOpacity > 0.001;
                 line.userData = {
                     type: 'needle',
                     id: needle.id,
@@ -5722,8 +6035,8 @@ async function _loadSeeds3D(requestScope) {
                     id: needle.id,
                     points: needle.points,
                     trajectory_id: _normalizeTrajectoryId(needle.trajectory_id),
-                    visible: true,
-                    opacity: 0.9,
+                    visible: treeNeedle.visible,
+                    opacity: needleOpacity,
                 });
             }
         });
@@ -5751,6 +6064,12 @@ async function _loadSeeds3D(requestScope) {
             updateTrajectories(state.trajectories);
         }
         renderDataTree();
+        if (typeof window.applyDataTreeViewVisibility === 'function') {
+            window.applyDataTreeViewVisibility();
+        }
+        if (typeof window.applyRestoredViewerPresentationControls === 'function') {
+            window.applyRestoredViewerPresentationControls({ restoreOnly: true });
+        }
         forceRender3DViewer();
         ['axial', 'sagittal', 'coronal'].forEach(axis => {
             if (state.slices && state.slices[axis] !== undefined) {
@@ -5853,10 +6172,26 @@ async function loadDoseIsosurface(
         geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(data.faces.flat()), 1));
         geometry.computeVertexNormals();
 
+        const savedSurfacePresentation = window.getWorkspacePresentationForNode?.({
+            id: 'dose_iso_' + threshold,
+            threshold,
+            family: 'dose_iso',
+            sessionId: scope?.sessionId,
+        });
+        const savedSurfaceColor = /^#[0-9a-f]{6}$/i.test(
+            String(savedSurfacePresentation?.color || ''),
+        )
+            ? Number.parseInt(String(savedSurfacePresentation.color).slice(1), 16)
+            : color;
+        const savedSurfaceOpacity = Number.isFinite(
+            Number(savedSurfacePresentation?.opacity),
+        )
+            ? Math.max(0, Math.min(1, Number(savedSurfacePresentation.opacity)))
+            : 0.3;
         const material = new THREE.MeshPhysicalMaterial({
-            color: color,
+            color: savedSurfaceColor,
             transparent: true,
-            opacity: 0.3,
+            opacity: savedSurfaceOpacity,
             side: THREE.DoubleSide,
             metalness: 0.1,
             roughness: 0.6,
@@ -5891,7 +6226,10 @@ async function loadDoseIsosurface(
         const doseScaleGy = data.dose_scale_gy || _getDoseScaleGy();
         const dMaxGy = dMax * doseScaleGy;
         const pct = dMaxGy > 0 ? Math.round((threshold / dMaxGy) * 100) : 0;
-        const existingLevel = dataTreeState.planning.doseLevels.find(d => Math.abs(d.threshold - threshold) < 1e-6);
+        const currentLevel = dataTreeState.planning.doseLevels.find(
+            d => Math.abs(d.threshold - threshold) < 1e-6,
+        );
+        const existingLevel = currentLevel || savedSurfacePresentation;
         mesh.visible = existingLevel
             ? existingLevel.visible !== false
                 && existingLevel.visible3D !== false
@@ -5919,11 +6257,12 @@ async function loadDoseIsosurface(
             const levelEntry = {
                 threshold: threshold,
                 thresholdGy: parseFloat(absGy),
-                visible: true,
-                visible2D: true,
-                visible3D: true,
-                opacity: 0.3,
-                color: '#' + color.toString(16).padStart(6, '0'),
+                visible: savedSurfacePresentation?.visible ?? true,
+                visible2D: savedSurfacePresentation?.visible2D ?? true,
+                visible3D: savedSurfacePresentation?.visible3D ?? true,
+                opacity: savedSurfacePresentation?.opacity ?? 0.3,
+                color: savedSurfacePresentation?.color
+                    || ('#' + color.toString(16).padStart(6, '0')),
                 pctLabel: `${absGy} Gy`,
                 loaded: true,
                 status: data.dose_stale === true ? 'stale' : 'ready',
@@ -6100,6 +6439,15 @@ async function _loadAllIsoSurfaces(options = {}, scope = null) {
         const color = (r << 16) | (g << 8) | b;
         const opacity = (opacities[i] !== undefined) ? opacities[i] : 0.3;
         const existing = priorLevels.get(v);
+        const savedPresentation = window.getWorkspacePresentationForNode?.({
+            id: 'dose_iso_' + v,
+            threshold: v,
+            family: 'dose_iso',
+            sessionId: requestScope.sessionId,
+        });
+        const presentation = existing
+            ? Object.assign(existing, savedPresentation || {})
+            : (savedPresentation ? { ...savedPresentation } : null);
         try {
             let isoResult = null;
             if (reconstruct3d) {
@@ -6146,8 +6494,13 @@ async function _loadAllIsoSurfaces(options = {}, scope = null) {
                 }
                 // Override the just-added mesh's opacity with the per-level
                 // config value (loadDoseIsosurface uses a hard-coded 0.3).
-                if (mesh) applyMeshOpacity(mesh, opacity, (levelAvailable
+                const visualOpacity = Number.isFinite(Number(presentation?.opacity))
+                    ? Number(presentation.opacity) : opacity;
+                const visualVisible = (presentation?.visible ?? true) !== false
+                    && (presentation?.visible3D ?? true) !== false;
+                if (mesh) applyMeshOpacity(mesh, visualOpacity, (levelAvailable
                     || preserveExistingMesh)
+                    && visualVisible
                     && dataTreeState.planning.visible !== false
                     && dataTreeState.planning.visible3D !== false);
             } else {
@@ -6183,15 +6536,17 @@ async function _loadAllIsoSurfaces(options = {}, scope = null) {
                 const levelError = effectiveLevelAvailable
                     ? undefined
                     : (isoResult?.error || (!reconstruct3d ? '3D reconstruction disabled' : 'No isosurface mesh returned'));
-                if (!existing) {
+                if (!presentation) {
                     const levelEntry = {
                         threshold: v,
                         thresholdGy: parseFloat(absGy),
-                        visible: true,
-                        visible2D: true,
-                        visible3D: true,
-                        opacity,
-                        color: '#' + color.toString(16).padStart(6, '0'),
+                        visible: presentation?.visible ?? true,
+                        visible2D: presentation?.visible2D ?? true,
+                        visible3D: presentation?.visible3D ?? true,
+                        opacity: Number.isFinite(Number(presentation?.opacity))
+                            ? Number(presentation.opacity) : opacity,
+                        color: presentation?.color
+                            || ('#' + color.toString(16).padStart(6, '0')),
                         pctLabel: `${absGy} Gy`,
                         loaded: effectiveLevelAvailable,
                         status: levelStatus,
@@ -6206,22 +6561,24 @@ async function _loadAllIsoSurfaces(options = {}, scope = null) {
                     // Keep Data Tree-selected appearance and independent
                     // 2D/3D visibility when a dose refresh replaces mesh
                     // geometry for the same threshold.
-                    existing.visible = existing.visible !== false;
-                    existing.visible2D = existing.visible2D !== false;
-                    existing.visible3D = existing.visible3D !== false;
-                    existing.opacity = Number.isFinite(Number(existing.opacity)) ? existing.opacity : opacity;
-                    existing.color = existing.color || ('#' + color.toString(16).padStart(6, '0'));
-                    existing.thresholdGy = parseFloat(absGy);
-                    existing.pctLabel = `${absGy} Gy`;
-                    existing.loaded = effectiveLevelAvailable;
-                    existing.status = levelStatus;
-                    existing.doseStale = effectiveDoseStale;
-                    existing.doseSource = effectiveDoseSource;
-                    existing.doseSourcePlanningId = effectiveSourcePlanningId;
-                    if (levelError) existing.error = levelError;
-                    else delete existing.error;
-                    applyDoseCoverageAudit(existing, isoResult?.coverageAudit);
-                    rebuiltLevels[i] = existing;
+                    presentation.visible = presentation.visible !== false;
+                    presentation.visible2D = presentation.visible2D !== false;
+                    presentation.visible3D = presentation.visible3D !== false;
+                    presentation.opacity = Number.isFinite(Number(presentation.opacity))
+                        ? Number(presentation.opacity) : opacity;
+                    presentation.color = presentation.color
+                        || ('#' + color.toString(16).padStart(6, '0'));
+                    presentation.thresholdGy = parseFloat(absGy);
+                    presentation.pctLabel = `${absGy} Gy`;
+                    presentation.loaded = effectiveLevelAvailable;
+                    presentation.status = levelStatus;
+                    presentation.doseStale = effectiveDoseStale;
+                    presentation.doseSource = effectiveDoseSource;
+                    presentation.doseSourcePlanningId = effectiveSourcePlanningId;
+                    if (levelError) presentation.error = levelError;
+                    else delete presentation.error;
+                    applyDoseCoverageAudit(presentation, isoResult?.coverageAudit);
+                    rebuiltLevels[i] = presentation;
                 }
             }
         } catch (e) {
@@ -6242,7 +6599,7 @@ async function _loadAllIsoSurfaces(options = {}, scope = null) {
             const alreadySettled = rebuiltLevels[i] !== undefined;
             if (preserved && !alreadySettled) loadedLevels += 1;
             if (dataTreeState?.planning) {
-                const levelEntry = existing || {
+                const levelEntry = presentation || existing || {
                     threshold: v,
                     thresholdGy: parseFloat(absGy),
                     visible: true,
@@ -6252,6 +6609,17 @@ async function _loadAllIsoSurfaces(options = {}, scope = null) {
                     color: '#' + color.toString(16).padStart(6, '0'),
                     pctLabel: `${absGy} Gy`,
                 };
+                levelEntry.threshold = levelEntry.threshold ?? v;
+                levelEntry.thresholdGy = levelEntry.thresholdGy ?? parseFloat(absGy);
+                levelEntry.pctLabel = levelEntry.pctLabel || `${absGy} Gy`;
+                levelEntry.visible = levelEntry.visible !== false;
+                levelEntry.visible2D = levelEntry.visible2D !== false;
+                levelEntry.visible3D = levelEntry.visible3D !== false;
+                levelEntry.opacity = Number.isFinite(Number(levelEntry.opacity))
+                    ? Math.max(0, Math.min(1, Number(levelEntry.opacity)))
+                    : opacity;
+                levelEntry.color = levelEntry.color
+                    || ('#' + color.toString(16).padStart(6, '0'));
                 levelEntry.loaded = preserved;
                 levelEntry.status = preserved ? 'stale' : 'error';
                 levelEntry.error = reason;
@@ -6304,6 +6672,9 @@ async function _loadAllIsoSurfaces(options = {}, scope = null) {
         });
     }
     if (typeof window.applyDataTreeViewVisibility === 'function') window.applyDataTreeViewVisibility();
+    if (typeof window.applyRestoredViewerPresentationControls === 'function') {
+        window.applyRestoredViewerPresentationControls({ restoreOnly: true });
+    }
     try { renderDataTree(); } catch (_) {}
     window.scheduleCameraFitForSceneMutation?.('dose-isosurfaces-loaded');
     return { stale: false, levels: relValues.length, loadedLevels, failedLevels };
@@ -6809,7 +7180,14 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
                     source: 'ctv',
                     organId: `ctv_${lid}`,
                     label: (window._ctvLabelMap || {})[lid] || `CTV Label ${lid}`,
-                    color: c ? ((c[0] << 16) | (c[1] << 8) | c[2]) : 0xff6b6b,
+                    // The LUT is only the first-use fallback.  A restored
+                    // Data Tree color is an operator setting and must win
+                    // before the mesh is created, otherwise dose-texture
+                    // toggles can expose the wrong normal-surface color.
+                    color: _parseTreeColorValue(
+                        ctvNode.color,
+                        c ? ((c[0] << 16) | (c[1] << 8) | c[2]) : 0xff6b6b,
+                    ),
                     opacity: ctvNode.opacity,
                     visible2D: ctvNode.visible2D,
                     visible3D: ctvNode.visible3D,
@@ -7292,6 +7670,7 @@ const _planningPreviewState = {
     trajectoryLine: null,
     needleLine: null,
     seedMesh: null,
+    closePointMesh: null,
     pendingFrame: null,
     rafId: 0,
     latestEvent: null,
@@ -7420,12 +7799,30 @@ function _ensurePlanningPreviewLayer() {
         editable: false,
         renderRole: 'planning_preview',
     };
-    group.add(trajectories, needles, seeds);
+    const closePointGeometry = new THREE.SphereGeometry(1.6, 10, 8);
+    const closePointMaterial = new THREE.MeshBasicMaterial({
+        color: 0x9dff5a,
+        transparent: true,
+        opacity: 0.94,
+        depthTest: true,
+        depthWrite: false,
+    });
+    const closePoints = new THREE.InstancedMesh(closePointGeometry, closePointMaterial, 256);
+    closePoints.count = 0;
+    closePoints.frustumCulled = false;
+    closePoints.renderOrder = 723;
+    closePoints.userData = {
+        ephemeral: true,
+        editable: false,
+        renderRole: 'planning_close_points',
+    };
+    group.add(trajectories, needles, seeds, closePoints);
     scene3D.scene.add(group);
     _planningPreviewState.group = group;
     _planningPreviewState.trajectoryLine = trajectories;
     _planningPreviewState.needleLine = needles;
     _planningPreviewState.seedMesh = seeds;
+    _planningPreviewState.closePointMesh = closePoints;
     return group;
 }
 
@@ -7489,6 +7886,11 @@ function _emptyPlanningPreviewLayer() {
         stateRef.seedMesh.visible = false;
         stateRef.seedMesh.instanceMatrix.needsUpdate = true;
     }
+    if (stateRef.closePointMesh) {
+        stateRef.closePointMesh.count = 0;
+        stateRef.closePointMesh.visible = false;
+        stateRef.closePointMesh.instanceMatrix.needsUpdate = true;
+    }
     if (stateRef.group) stateRef.group.visible = false;
     scene3D?.requestRender?.(2);
 }
@@ -7510,6 +7912,7 @@ function _disposePlanningPreviewLayer() {
     _planningPreviewState.trajectoryLine = null;
     _planningPreviewState.needleLine = null;
     _planningPreviewState.seedMesh = null;
+    _planningPreviewState.closePointMesh = null;
 }
 
 function clearPlanningPreview(reason = 'cleared', options = {}) {
@@ -7544,6 +7947,10 @@ function _renderPlanningPreviewFrame(event) {
     _setPlanningPreviewLine(_planningPreviewState.trajectoryLine, geometry.trajectories);
     _setPlanningPreviewLine(_planningPreviewState.needleLine, geometry.needles);
     _setPlanningPreviewSeeds(_planningPreviewState.seedMesh, geometry.seeds);
+    _setPlanningPreviewClosePoints(
+        _planningPreviewState.closePointMesh,
+        geometry.close_points,
+    );
     _showPlanningPreviewStatus(event);
     scene3D?.requestRender?.(2);
 }
@@ -7561,9 +7968,19 @@ function handlePlanningPreviewEvent(event) {
         if (_planningPreviewState.runId && _planningPreviewState.runId !== runId) {
             clearPlanningPreview('new-run');
         }
+        const nextStage = String(event.stage || 'planning');
+        if (
+            _planningPreviewState.runId === runId
+            && _planningPreviewState.stage
+            && _planningPreviewState.stage !== nextStage
+        ) {
+            // Keep close points visible through the completed initialization
+            // event, then hide them exactly when the next planning stage starts.
+            _emptyPlanningPreviewLayer();
+        }
         _planningPreviewState.sessionId = eventSession;
         _planningPreviewState.runId = runId;
-        _planningPreviewState.stage = String(event.stage || 'planning');
+        _planningPreviewState.stage = nextStage;
         _planningPreviewState.closedStage = '';
         _planningPreviewState.sequence = Number.isFinite(sequence)
             ? sequence : _planningPreviewState.sequence + 1;
@@ -7599,7 +8016,16 @@ function handlePlanningPreviewEvent(event) {
         }
         _planningPreviewState.pendingFrame = null;
         _planningPreviewState.closedStage = String(event.stage || _planningPreviewState.stage);
-        _emptyPlanningPreviewLayer();
+        if (_planningPreviewState.closedStage === 'trajectory_init') {
+            // Leave the final close-point frame visible during the transition
+            // gap. The next stage's start event clears it.
+            _setPlanningPreviewLine(_planningPreviewState.trajectoryLine, []);
+            _setPlanningPreviewLine(_planningPreviewState.needleLine, []);
+            _setPlanningPreviewSeeds(_planningPreviewState.seedMesh, []);
+            if (_planningPreviewState.group) _planningPreviewState.group.visible = true;
+        } else {
+            _emptyPlanningPreviewLayer();
+        }
         _hidePlanningPreviewStatus();
         _planningPreviewState.latestEvent = null;
         return true;
@@ -7820,6 +8246,28 @@ function getDoseColorbarConfig(scope) {
     const cfg = _loadDoseColorbarConfig()[_validDoseColorbarScope(scope)];
     return { ...cfg };
 }
+
+// The browser-local colorbar preference is a useful first-use fallback, but
+// it is not sufficient for a multi-Session workspace: Session A and Session B
+// must be able to keep different dose windows/palettes.  Expose a normalized
+// whole-config snapshot so workspace persistence can own the active case
+// without writing another case's settings into localStorage.
+function getDoseColorbarState() {
+    return _normalizeDoseColorbarConfig(_loadDoseColorbarConfig());
+}
+
+function setDoseColorbarState(raw, options = {}) {
+    _doseColorbarConfig = _normalizeDoseColorbarConfig(raw);
+    if (options.persist !== false) _saveDoseColorbarConfig();
+    if (options.refresh !== false) {
+        try { syncDoseColorbarControls(); } catch (_) {}
+        try { updateDoseColorbars(!!state?.doseOverlay?.visible); } catch (_) {}
+        try { update3DColorbar(!!state?.doseTexture?.enabled); } catch (_) {}
+    }
+    return getDoseColorbarState();
+}
+window.getDoseColorbarState = getDoseColorbarState;
+window.setDoseColorbarState = setDoseColorbarState;
 
 function _saveDoseColorbarConfig() {
     try { localStorage.setItem(DOSE_COLORBAR_STORAGE_KEY, JSON.stringify(_doseColorbarConfig)); } catch (_) {}
@@ -8106,6 +8554,11 @@ function toggleDoseColorbarPanel(force) {
     const open = typeof force === 'boolean' ? force : panel.hidden;
     panel.hidden = !open;
     if (open) syncDoseColorbarControls();
+    if (!(typeof window.isWorkspacePresentationRestoreActive === 'function'
+        && window.isWorkspacePresentationRestoreActive())
+        && typeof window.scheduleWorkspaceSave === 'function') {
+        window.scheduleWorkspaceSave('viewer.dose_colorbar_panel');
+    }
 }
 
 function closeDoseColorbarPanel() {
@@ -8138,6 +8591,12 @@ function syncDoseColorbarControls() {
     if (palette) palette.value = cfg.palette;
 }
 
+// Workspace restore needs to update the visible colorbar controls after the
+// dose configuration has been hydrated. Keep this small synchronizer public,
+// just like the window/level synchronizer; it only mirrors case-owned state to
+// the DOM and does not start a dose calculation.
+window.syncDoseColorbarControls = syncDoseColorbarControls;
+
 async function applyDoseColorbarSettings() {
     const scope = _validDoseColorbarScope(document.getElementById('doseColorbarScope')?.value);
     const minGy = Number(document.getElementById('doseColorbarMinInput')?.value);
@@ -8167,6 +8626,9 @@ async function applyDoseColorbarSettings() {
         if (typeof refreshAllViewerCanvases === 'function') refreshAllViewerCanvases('dose-colorbar-3d');
     }
     syncDoseColorbarControls();
+    if (typeof window.scheduleWorkspaceSave === 'function') {
+        window.scheduleWorkspaceSave('viewer.dose_colorbar');
+    }
 }
 
 function resetDoseColorbarSettings() {
@@ -8220,16 +8682,36 @@ async function _loadDoseOverlayImpl() {
         // Preserve user-set opacity when reloading (e.g. after manual
         // recompute or when Dose Surface triggers a reload). Default to
         // 0.4 only on the very first load.
-        const priorDoseNode = dataTreeState?.planning?.doseOverlay;
-        const priorOverlayVisible = state.doseOverlay
-            && Object.prototype.hasOwnProperty.call(state.doseOverlay, 'visible')
-            ? state.doseOverlay.visible !== false
-            : priorDoseNode?.visible !== false;
-        const priorOverlayVisible2D = state.doseOverlay?.visible2D
-            ?? priorDoseNode?.visible2D;
-        const prevOpacity = Number.isFinite(Number(state.doseOverlay?.opacity))
-            ? state.doseOverlay.opacity
-            : dataTreeState?.planning?.doseOverlay?.opacity;
+        const savedDosePresentation = window.isWorkspacePresentationRestoreActive?.()
+            ? window.getWorkspacePresentationForNode?.({
+                id: 'dose_overlay',
+                family: 'dose_overlay',
+            })
+            : null;
+        const currentDoseNode = dataTreeState?.planning?.doseOverlay;
+        const priorDoseNode = savedDosePresentation
+            ? { ...(currentDoseNode || {}), ...savedDosePresentation }
+            : currentDoseNode;
+        const hasSavedOverlayVisible = Object.prototype.hasOwnProperty.call(
+            savedDosePresentation || {}, 'visible',
+        );
+        const priorOverlayVisible = hasSavedOverlayVisible
+            ? savedDosePresentation.visible !== false
+            : state.doseOverlay
+                && Object.prototype.hasOwnProperty.call(state.doseOverlay, 'visible')
+                ? state.doseOverlay.visible !== false
+                : priorDoseNode?.visible !== false;
+        const priorOverlayVisible2D = Object.prototype.hasOwnProperty.call(
+            savedDosePresentation || {}, 'visible2D',
+        )
+            ? savedDosePresentation.visible2D !== false
+            : state.doseOverlay?.visible2D
+                ?? priorDoseNode?.visible2D;
+        const prevOpacity = Number.isFinite(Number(savedDosePresentation?.opacity))
+            ? Number(savedDosePresentation.opacity)
+            : Number.isFinite(Number(state.doseOverlay?.opacity))
+                ? state.doseOverlay.opacity
+                : priorDoseNode?.opacity;
         state.doseOverlay = {
             shape: data.dose_shape,
             planningId: data.planning_id || _doseContourPlanningId(),
@@ -8270,7 +8752,14 @@ async function _loadDoseOverlayImpl() {
             } : null,
         };
         if (dataTreeState?.planning?.doseOverlay) {
-            dataTreeState.planning.doseOverlay.opacity = state.doseOverlay.opacity;
+            dataTreeState.planning.doseOverlay = {
+                ...dataTreeState.planning.doseOverlay,
+                ...(savedDosePresentation || {}),
+                id: 'dose_overlay',
+                opacity: state.doseOverlay.opacity,
+                visible: priorOverlayVisible,
+                visible2D: priorOverlayVisible2D !== false,
+            };
         }
         applyDoseOverlayLayerOpacity();
         if (typeof invalidateDoseOverlayRenderCache === 'function') invalidateDoseOverlayRenderCache();

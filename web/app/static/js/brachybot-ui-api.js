@@ -3603,11 +3603,65 @@ function resetAllState(options = {}) {
     dataTreeState.skin.loading = false;
     dataTreeState.skin.error = null;
     dataTreeState.skin.voxelCount = 0;
+    // A case reset must also reset presentation fields that are not replaced
+    // by the clinical loaders. Without this, a new/empty Session can inherit
+    // the previous case's colours, opacity, material, or per-view switches
+    // until (or even after) its next resource response arrives.
+    const resetTreeNodePresentation = (node, defaults) => {
+        if (node && typeof node === 'object') Object.assign(node, defaults);
+    };
+    resetTreeNodePresentation(dataTreeState.ct, {
+        visible: true, visible2D: true, visible3D: true, opacity: 1,
+        color: '#888', material: 'default', locked: false,
+        standaloneVisible: true, colorbarVisible2D: false, colorbarVisible3D: false,
+    });
+    resetTreeNodePresentation(dataTreeState.ctv, {
+        visible: true, visible2D: true, visible3D: true, opacity: 0.7,
+        color: '#ff304c', material: 'default', locked: false,
+        standaloneVisible: true, colorbarVisible2D: false, colorbarVisible3D: false,
+    });
+    resetTreeNodePresentation(dataTreeState.oar, {
+        visible: true, visible2D: true, visible3D: true, opacity: 0.5,
+        color: '#4d9de0', material: 'default', locked: false,
+        standaloneVisible: true, colorbarVisible2D: false, colorbarVisible3D: false,
+    });
+    resetTreeNodePresentation(dataTreeState.skin, {
+        visible: true, visible2D: true, visible3D: true, opacity: 0.10,
+        color: '#f2a088', material: 'default', locked: false,
+        standaloneVisible: true, colorbarVisible2D: false, colorbarVisible3D: false,
+    });
+    resetTreeNodePresentation(dataTreeState.dose, {
+        visible: true, visible2D: true, visible3D: true, opacity: 0.4,
+        color: '#f59e0b', material: 'default', locked: false,
+        standaloneVisible: true, colorbarVisible2D: true, colorbarVisible3D: true,
+    });
+    resetTreeNodePresentation(dataTreeState.seeds, {
+        visible: true, visible2D: true, visible3D: true, opacity: 1,
+        color: '#ffcc00', material: 'default', locked: false,
+        standaloneVisible: true, colorbarVisible2D: false, colorbarVisible3D: false,
+    });
+    resetTreeNodePresentation(dataTreeState.needles, {
+        visible: true, visible2D: true, visible3D: true, opacity: 0.8,
+        color: '#ff6644', material: 'default', locked: false,
+        standaloneVisible: true, colorbarVisible2D: false, colorbarVisible3D: false,
+    });
+    if (dataTreeState.planning && typeof dataTreeState.planning === 'object') {
+        Object.assign(dataTreeState.planning, {
+            id: null, activePlanningId: null, runs: [], label: null, status: null,
+            dataVersion: 0, version: 0, visible: true, visible2D: true,
+            visible3D: true, visibilityConfigured: false, opacity: 1,
+            color: '#60a5fa', material: 'default', locked: false,
+            standaloneVisible: true, colorbarVisible2D: false,
+            colorbarVisible3D: false, artifactStatus: {}, guideStatus: null,
+            doseOverlay: null, dvh: null,
+        });
+    }
     // The source belongs to the current case. Keeping it during a case reset
     // can make a fresh uploaded mask inherit the previous case's ontology.
     dataTreeState.oarSource = '';
     dataTreeState.organs = [];
     dataTreeState.ctvLabels = {};
+    dataTreeState.uploadMasks = [];
     dataTreeState.expansionState = {};
     // Selection is case-scoped UI state. Clear it together with the tree so
     // an old Shift anchor cannot select or mutate rows in the next Session.
@@ -3640,10 +3694,100 @@ function resetAllState(options = {}) {
     // Prevent cross-session seed/needle contamination in 2D viewer
     state.seedsOverlay = null;
 
-    // Reset the presentation preference marker with the case.  Without this
-    // reset a previous case's explicit CT-only choice can suppress overlays
-    // in a newly created case even though its masks are valid and loaded.
-    if (state.viewerSettings) state.viewerSettings.userConfigured = false;
+    // Reset every case-owned viewer presentation field before the next
+    // Session's snapshot is applied. This is also the fallback for a genuinely
+    // new case that has no saved workspace yet.
+    if (state.viewerSettings) {
+        Object.assign(state.viewerSettings, {
+            window: 400,
+            level: 40,
+            threshold: null,
+            showCTV: false,
+            showOAR: false,
+            displayMode: 'ct',
+            userConfigured: false,
+            zoom: 1.0,
+            panX: 0,
+            panY: 0,
+            flipH: false,
+            flipV: false,
+            rotation: 0,
+            activeTool: 'crosshair',
+            layout: '3d-top',
+        });
+    }
+    state.doseOpacity = 0.4;
+    state.labelImage = {
+        axial: { visible: true, opacity: 0.6 },
+        sagittal: { visible: true, opacity: 0.6 },
+        coronal: { visible: true, opacity: 0.6 },
+        '3d': { visible: true, opacity: 0.6 },
+    };
+    if (state.doseTexture) {
+        Object.assign(state.doseTexture, {
+            enabled: false,
+            desiredEnabled: false,
+            restorePending: false,
+            applying: false,
+            mappedMeshIds: [],
+            renderSignature: '',
+            rawAxialSlices: {},
+            rawAxialSlicePromises: {},
+            originalMaterials: {},
+            originalSceneStyle: {},
+            originalSkinStyle: null,
+        });
+    }
+    state.doseOverlay = null;
+    state.dvhData = null;
+    state.dvhPlanningId = null;
+    const resetViewerControl = (id, value, checked = null) => {
+        const element = document.getElementById(id);
+        if (!element) return;
+        if (checked !== null && (element.type === 'checkbox' || element.type === 'radio')) {
+            element.checked = !!checked;
+        } else if (value !== undefined) {
+            element.value = String(value);
+        }
+    };
+    resetViewerControl('windowPreset', 'soft');
+    resetViewerControl('viewerWindow', 400);
+    resetViewerControl('viewerLevel', 40);
+    resetViewerControl('viewerZoom', 100);
+    resetViewerControl('viewerThreshold', '');
+    resetViewerControl('displayMode', 'ct');
+    resetViewerControl('overlayCTV', undefined, false);
+    resetViewerControl('overlayOAR', undefined, false);
+    resetViewerControl('overlaySeeds', undefined, false);
+    resetViewerControl('doseOverlayOpacity', 40);
+    resetViewerControl('meshOpacity3D', 70);
+    resetViewerControl('wireframe3D', undefined, false);
+    resetViewerControl('skinToggle3D', undefined, false);
+    resetViewerControl('doseOpacity', 40);
+    resetViewerControl('labelShow3d', undefined, true);
+    resetViewerControl('labelOp3d', 60);
+    const zoomLabel = document.getElementById('zoomLabel');
+    if (zoomLabel) zoomLabel.textContent = '100%';
+    const doseOpacityLabel = document.getElementById('doseOpacityVal');
+    if (doseOpacityLabel) doseOpacityLabel.textContent = '40%';
+    const doseOverlayOpacityLabel = document.getElementById('doseOverlayOpacityVal');
+    if (doseOverlayOpacityLabel) doseOverlayOpacityLabel.textContent = '40%';
+    const doseTextureButton = document.getElementById('doseTextureToggle');
+    if (doseTextureButton) {
+        doseTextureButton.disabled = false;
+        doseTextureButton.textContent = 'Dose Surface';
+        doseTextureButton.classList.remove('active');
+    }
+    if (typeof window.setDoseColorbarState === 'function') {
+        try {
+            window.setDoseColorbarState({
+                twoD: { minGy: 0, maxGy: 600, palette: 'petRainbow2' },
+                threeD: { minGy: 0, maxGy: 200, palette: 'petRainbow2' },
+            }, { persist: false, refresh: false });
+        } catch (_) {}
+    }
+    try { window.setViewerLayout?.('3d-top', { persist: false }); } catch (_) {}
+    try { window.applyViewerTransform?.(); } catch (_) {}
 
     // Clear 3D meshes
     if (typeof scene3D !== 'undefined' && scene3D.meshes) {
@@ -4503,6 +4647,20 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         recordStage('restore.status', statusStartedAt);
     }
     if (_activeApiSessionId() !== sessionAtStart) return null;
+    // Preserve the complete display snapshot outside the clinical reset.
+    // CT/label/planning resources are restored asynchronously and may rebuild
+    // Data Tree rows several times; their loaders consult this session-scoped
+    // registry so they cannot replace saved colors or visibility with
+    // defaults. The registry is finalized only after visual readiness settles.
+    if (workspace && typeof window.stageWorkspacePresentation === 'function') {
+        window.stageWorkspacePresentation(
+            workspace,
+            sessionAtStart,
+            options.hydrationScope?.runId ?? null,
+        );
+    } else {
+        window.clearWorkspacePresentationRestore?.(sessionAtStart);
+    }
 
     state.sessionId = status.session_id || sessionAtStart;
     if (trainingMonitorState.sessionId !== sessionAtStart) {
@@ -4944,9 +5102,20 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     // has the same visible result as pressing Fit manually.
     if (typeof window.fitAllViewersAfterWorkspaceRestore === 'function') {
         try {
+            const savedScene = workspace?.ui?.state?.viewer?.scene
+                || workspace?.ui?.viewer?.scene
+                || workspace?.agent?.ui_state?.viewer?.scene
+                || null;
+            const finiteArray = (value, length) => Array.isArray(value)
+                && value.length === length
+                && value.every(item => Number.isFinite(Number(item)));
+            const preserveSavedView = finiteArray(savedScene?.camera_position, 3)
+                && (finiteArray(savedScene?.camera_target, 3)
+                    || finiteArray(savedScene?.camera_quaternion, 4));
             await window.fitAllViewersAfterWorkspaceRestore({
                 sessionId: sessionAtStart,
                 reason: 'workspace-hydration-fit',
+                preserveSavedView,
             });
         } catch (error) {
             console.warn('[session restore] automatic viewer fit failed:', error);
@@ -5087,7 +5256,35 @@ function restoreActiveSessionWorkspace(options = {}) {
     transaction.promise.then(async () => {
         const entry = _workspaceVisualReadinessStore()[sessionId || '__no_session__'];
         if (entry) await entry.promise;
+        // All registered late resources (OAR/CTV meshes, seeds/needles, dose
+        // surfaces, guide, masks and report read dependencies) are settled at
+        // this point. Reconcile once more before releasing the presentation
+        // fence so the last loader cannot leave a default colour, visibility,
+        // opacity, camera, layout, or dose mode on screen.
+        if (String(_activeApiSessionId() || '') === sessionId
+            && typeof window.reconcileWorkspacePresentation === 'function') {
+            try {
+                window.reconcileWorkspacePresentation({
+                    sessionId,
+                    snapshot: window._activeWorkspaceSnapshot,
+                    reason: 'workspace.restore.visual-barrier-settled',
+                });
+            } catch (error) {
+                console.debug('[session restore] final presentation reconciliation deferred:', error);
+            }
+        }
     }).catch(() => {}).finally(() => {
+        // The core restore may return before registered mesh/guide/mask tasks
+        // finish. Keep the saved presentation authoritative until that shared
+        // visual barrier settles, then allow ordinary user updates to own the
+        // Data Tree again.
+        // Finalization is token-scoped as well as session-scoped.  A late
+        // restore from an older transaction must not release the presentation
+        // fence belonging to a newer restore of the same Session.
+        window.finalizeWorkspacePresentationRestore?.(
+            sessionId,
+            window.__workspaceHydrationRunId || null,
+        );
         if (_workspaceRestoreTransaction === transaction) _workspaceRestoreTransaction = null;
     });
     return transaction.promise;
@@ -5717,15 +5914,32 @@ function toggleViewerFullscreen(view) {
             el.style.display = '';
             delete el.dataset.fullscreenHidden;
         });
-        // Reset card inline styles
+        // Reset fullscreen-only inline styles while preserving the user's
+        // pre-fullscreen geometry.  Without this, leaving fullscreen erased
+        // a deliberately resized card and a later Session restore could not
+        // reproduce the same layout.
         card.style.position = ''; card.style.top = ''; card.style.left = '';
         card.style.right = ''; card.style.bottom = ''; card.style.zIndex = '';
-        card.style.width = ''; card.style.height = ''; card.style.flex = '';
+        const savedGeometry = card._workspacePreFullscreenGeometry || {};
+        if (savedGeometry.width) card.style.width = savedGeometry.width; else card.style.removeProperty('width');
+        if (savedGeometry.height) card.style.height = savedGeometry.height; else card.style.removeProperty('height');
+        if (savedGeometry.flex) card.style.flex = savedGeometry.flex; else card.style.removeProperty('flex');
+        if (savedGeometry.resizeH) card.style.setProperty('--resize-h', savedGeometry.resizeH);
+        else card.style.removeProperty('--resize-h');
+        card.classList.toggle('viewer-resized', savedGeometry.resized === true);
+        delete card._workspacePreFullscreenGeometry;
         if (typeof window.syncViewerGeometry === 'function') {
             window.syncViewerGeometry({ resetPositions: true, settleMs: 160, viewportSnapshot });
         }
     } else {
         // Enter fullscreen
+        card._workspacePreFullscreenGeometry = {
+            width: card.style.width || '',
+            height: card.style.height || '',
+            flex: card.style.flex || '',
+            resizeH: card.style.getPropertyValue('--resize-h') || '',
+            resized: card.classList.contains('viewer-resized'),
+        };
         panel.classList.add('viewer-fullscreen-active');
         card.classList.add('fullscreen');
         card.querySelector('.viewer-card-expand-btn').innerHTML = '&#10006;';
@@ -5754,6 +5968,11 @@ function toggleViewerFullscreen(view) {
             window.syncViewerGeometry({ resetPositions: true, settleMs: 160, viewportSnapshot });
         }
     }
+    if (!(typeof window.isWorkspacePresentationRestoreActive === 'function'
+        && window.isWorkspacePresentationRestoreActive())
+        && typeof window.scheduleWorkspaceSave === 'function') {
+        window.scheduleWorkspaceSave('viewer.fullscreen');
+    }
     return {
         success: true,
         viewer: view,
@@ -5763,6 +5982,7 @@ function toggleViewerFullscreen(view) {
             : `${view} viewer restored.`,
     };
 }
+window.toggleViewerFullscreen = toggleViewerFullscreen;
 
 /******** VIEWER RESIZE — free stretching with scroll overflow ********/
 function setupViewerResizers() {

@@ -20,6 +20,11 @@
     function onDragEnd() {
         document.removeEventListener('mousemove', onDrag);
         document.removeEventListener('mouseup', onDragEnd);
+        if (!(typeof window.isWorkspacePresentationRestoreActive === 'function'
+            && window.isWorkspacePresentationRestoreActive())
+            && typeof window.scheduleWorkspaceSave === 'function') {
+            window.scheduleWorkspaceSave('viewer.data_tree.width');
+        }
     }
 })();
 
@@ -65,6 +70,9 @@ function applyZoom(val) {
     state.viewerSettings.zoom = parseInt(val) / 100;
     document.getElementById('zoomLabel').textContent = val + '%';
     applyViewerTransform();
+    if (typeof window.scheduleWorkspaceSave === 'function') {
+        window.scheduleWorkspaceSave('viewer.zoom');
+    }
 }
 
 function wrapViewersInRow(panel, mode) {
@@ -302,16 +310,23 @@ document.addEventListener('mousemove', e => {
 // Global mouseup
 document.addEventListener('mouseup', () => {
     if (_resize.active) {
+        const changed = !!_resize.active;
         _resize.active = false;
         _resize.card = null;
         _resize.cards = [];
         _resize.handle = null;
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
+        if (changed
+            && !(typeof window.isWorkspacePresentationRestoreActive === 'function'
+                && window.isWorkspacePresentationRestoreActive())
+            && typeof window.scheduleWorkspaceSave === 'function') {
+            window.scheduleWorkspaceSave('viewer.geometry');
+        }
     }
 });
 
-function setViewerLayout(layout) {
+function setViewerLayout(layout, options = {}) {
     const panel = document.getElementById('viewersPanel');
     if (!panel) return;
     _installViewerGeometryObserver();
@@ -383,6 +398,12 @@ function setViewerLayout(layout) {
         btn.classList.toggle('active', btn.dataset.layout === layout);
     });
     state.viewerSettings.layout = layout;
+    if (options.persist !== false
+        && !(typeof window.isWorkspacePresentationRestoreActive === 'function'
+            && window.isWorkspacePresentationRestoreActive())
+        && typeof window.scheduleWorkspaceSave === 'function') {
+        window.scheduleWorkspaceSave('viewer.layout');
+    }
     // Wait for flex/grid geometry, then resize all viewers without changing
     // the user's camera pose or slice values.
     syncViewerGeometry({ resetPositions: true, settleMs: 150 });
@@ -413,6 +434,9 @@ function setViewerTool(tool) {
             const canvas = document.getElementById('sliceCanvas' + capitalize(axis));
             if (canvas) canvas.style.cursor = 'default';
         });
+        if (typeof window.scheduleWorkspaceSave === 'function') {
+            window.scheduleWorkspaceSave('viewer.tool');
+        }
         return;
     }
     state.viewerSettings.activeTool = tool;
@@ -469,7 +493,58 @@ function setViewerTool(tool) {
         const canvas = document.getElementById('sliceCanvas' + capitalize(axis));
         if (canvas) canvas.style.cursor = cursors[tool] || 'default';
     });
+    if (typeof window.scheduleWorkspaceSave === 'function') {
+        window.scheduleWorkspaceSave('viewer.tool');
+    }
 }
+
+// Restore only the visual affordance of the active tool.  Calling
+// setViewerTool() during hydration is unsafe because selecting Draw creates a
+// new mask and selecting another tool finalises the current one.  The tool is
+// already persisted in viewerSettings; this helper synchronises buttons and
+// cursors without creating or mutating clinical annotations.
+function applyRestoredViewerToolPresentation() {
+    const tool = state?.viewerSettings?.activeTool || null;
+    const toolIds = [
+        'toolCrosshair', 'toolMeasure', 'toolAngle', 'toolRect',
+        'toolZoombox', 'toolAnnotate', 'toolEraser',
+        'toolSat3dPositive', 'toolSat3dNegative',
+    ];
+    toolIds.forEach(id => {
+        const button = document.getElementById(id);
+        if (button) button.style.background = '';
+    });
+    const toolMap = {
+        crosshair: 'toolCrosshair',
+        measure: 'toolMeasure',
+        angle: 'toolAngle',
+        rect: 'toolRect',
+        zoombox: 'toolZoombox',
+        annotate: 'toolAnnotate',
+        eraser: 'toolEraser',
+        sat3d_positive: 'toolSat3dPositive',
+        sat3d_negative: 'toolSat3dNegative',
+    };
+    const activeButton = document.getElementById(toolMap[tool]);
+    if (activeButton) activeButton.style.background = 'var(--primary)';
+    const cursors = {
+        crosshair: 'crosshair',
+        measure: 'crosshair',
+        angle: 'crosshair',
+        rect: 'crosshair',
+        zoombox: 'zoom-in',
+        annotate: 'crosshair',
+        eraser: 'cell',
+        sat3d_positive: 'crosshair',
+        sat3d_negative: 'crosshair',
+    };
+    ['axial', 'sagittal', 'coronal'].forEach(axis => {
+        const canvas = document.getElementById('sliceCanvas' + capitalize(axis));
+        if (canvas) canvas.style.cursor = cursors[tool] || 'default';
+    });
+    return tool;
+}
+window.applyRestoredViewerToolPresentation = applyRestoredViewerToolPresentation;
 
 function fitView() {
     // Lightweight reset: only center and fit, preserve window/level and other settings
@@ -493,6 +568,9 @@ function fitView() {
     applyViewerTransform();
     if (state.ctLoaded) loadAllSlices();
     syncViewerGeometry({ resetPositions: true, settleMs: 80 });
+    if (typeof window.scheduleWorkspaceSave === 'function') {
+        window.scheduleWorkspaceSave('viewer.fit');
+    }
 }
 
 // Session restore is different from an operator pressing Fit: the CT canvas,
@@ -505,6 +583,7 @@ let _workspaceViewerFitGeneration = 0;
 async function fitAllViewersAfterWorkspaceRestore({
     sessionId = null,
     reason = 'workspace-restore-fit',
+    preserveSavedView = false,
 } = {}) {
     const generation = ++_workspaceViewerFitGeneration;
     const requestedSessionId = String(sessionId || '');
@@ -533,9 +612,10 @@ async function fitAllViewersAfterWorkspaceRestore({
     });
 
     if (!isCurrent()) return false;
-    // This is the same operation as the visible Fit control, including all
-    // three MPR panes and their shared image-space transform.
-    if (typeof fitView === 'function') fitView();
+    // A saved workspace view is an operator choice, not a request to Fit.
+    // Only use the visible Fit behavior for legacy/empty snapshots that have
+    // no valid camera pose.
+    if (!preserveSavedView && typeof fitView === 'function') fitView();
     await waitPaint();
     if (!isCurrent()) return false;
 
@@ -547,7 +627,10 @@ async function fitAllViewersAfterWorkspaceRestore({
     }
     if (!isCurrent()) return false;
     if (typeof syncViewerGeometry === 'function') {
-        syncViewerGeometry({ resetPositions: true, settleMs: 120 });
+        syncViewerGeometry({
+            resetPositions: !preserveSavedView,
+            settleMs: 120,
+        });
     }
     await waitPaint();
     await waitPaint();
@@ -561,7 +644,12 @@ async function fitAllViewersAfterWorkspaceRestore({
         });
     }
     if (typeof window.resizeViewer3D === 'function') window.resizeViewer3D();
-    if (typeof window.ensureCameraFitsVisibleScene === 'function') {
+    if (preserveSavedView) {
+        // Reapply the Data Tree-owned visibility/opacity after all late meshes
+        // exist, but do not recenter the camera or alter the saved 2D pose.
+        window.applyDataTreeViewVisibility?.();
+        window.syncSceneAppearanceFromDataTree?.({ preserveDoseTexture: true });
+    } else if (typeof window.ensureCameraFitsVisibleScene === 'function') {
         window.ensureCameraFitsVisibleScene({ forceCenter: true, reason });
     }
     if (typeof window.forceRender3DViewer === 'function') window.forceRender3DViewer();
@@ -2597,7 +2685,11 @@ function _makeNeedleHandle(needle, pointIndex) {
     const mat = new THREE.MeshPhysicalMaterial({
         color,
         transparent: true,
-        opacity: Math.max(0.35, needle.opacity ?? 0.8),
+        // Endpoint handles follow the needle's saved opacity.  A minimum
+        // alpha of 0.35 made a deliberately faint/hidden needle reappear
+        // after a workspace restore even though the shaft itself was
+        // correctly restored.
+        opacity: Math.max(0.001, Math.min(1, Number(needle.opacity ?? 0.8))),
         emissive: pointIndex === 0 ? 0x551122 : 0x003355,
         emissiveIntensity: 0.55,
         metalness: 0.15,
@@ -2628,7 +2720,20 @@ function _syncNeedleHandles(needle) {
         const handle = _makeNeedleHandle(needle, i);
         if (handle) _upsertSceneMesh(handle.userData.id, handle);
     });
-    _setNeedleHandlesVisibility(needle.id, needle.visible !== false, needle.opacity ?? 0.8);
+    // Endpoint handles are part of the needle's 3D presentation.  A late
+    // seed/needle rebuild used to pass only the all-view flag here, so a
+    // needle hidden in 3D (or hidden through the Planning/Needles parent)
+    // could briefly reappear after session hydration.
+    const planning = typeof dataTreeState !== 'undefined' ? dataTreeState?.planning : null;
+    const needlesRoot = typeof dataTreeState !== 'undefined' ? dataTreeState?.needles : null;
+    const visible3D = needle.visible !== false
+        && needle.visible3D !== false
+        && needlesRoot?.visible !== false
+        && needlesRoot?.visible3D !== false
+        && planning?.visible !== false
+        && planning?.visible3D !== false;
+    const opacity = Number.isFinite(Number(needle.opacity)) ? Number(needle.opacity) : 0.8;
+    _setNeedleHandlesVisibility(needle.id, visible3D, opacity);
 }
 
 function _setNeedleHandlesVisibility(needleId, visible, opacity = 0.8) {

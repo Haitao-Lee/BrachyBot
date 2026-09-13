@@ -46,7 +46,7 @@
     "DVH_rate": 0.9,
     "max_iter": 4,
     "replan_rate": 0.6,
-    "direc_resolution": [30, 3, 2],
+    "direc_resolution": [30, 3, 6],
     "dl_params": {
         "lr": 0.0004,
         "lr_decay": 1.5,
@@ -97,6 +97,7 @@
         "max_hierarchy_depth": 8,
         "max_actions_per_episode": 40,
         "max_wall_seconds": 300,
+        "fallback_max_wall_seconds": 120,
         "coverage_repair_seconds": 60,
         "coverage_repair_extension_seconds": 120,
         "coverage_repair_max_seconds": 180,

@@ -23,8 +23,13 @@ from tool_factory.seed_plan.planning_pipeline import (
     _filter_world_safe_trajectories,
     _validated_needle_geometry,
     _clip_needle_to_farthest_seed,
+    _seed_derived_needle_points,
+    _canonical_needle_points_from_seeds,
     _seed_plan_entry_needle_points,
     _world_segment_hits_obstacle,
+    _plan_seed_count,
+    _prune_unsafe_plan_entries,
+    _sum_plan_seed_doses,
     _resolve_data_tree_obstacle_labels,
     _normalize_mask_to_ct_grid,
     needle_safety_provenance_matches,
@@ -55,6 +60,31 @@ def test_legacy_flattened_mask_is_restored_to_current_ct_grid():
 def test_mask_from_another_grid_is_rejected_before_needle_validation():
     image, _, _ = _image_and_masks()
     assert _normalize_mask_to_ct_grid(np.zeros((8, 8, 8), dtype=np.uint8), image, "CTV") is None
+
+
+def test_seed_derived_geometry_uses_actual_center_and_farthest_seed_endpoint():
+    candidate = [[0.0, 0.0, 10.0], [0.0, 0.0, -150.0]]
+    seeds = [
+        {"position": [2.0, 0.0, 8.0], "direction": [0.0, 0.0, 1.0]},
+    ]
+
+    repaired, reason = _seed_derived_needle_points(seeds, candidate, extension_mm=150.0)
+
+    assert reason is None
+    assert np.allclose(repaired[0], [2.0, 0.0, 8.0])
+    assert np.allclose(repaired[1], [2.0, 0.0, -142.0])
+
+
+def test_canonical_geometry_repairs_stale_candidate_without_moving_seed():
+    candidate = [[0.0, 0.0, 10.0], [0.0, 0.0, -150.0]]
+    seeds = [([2.0, 0.0, 8.0], [0.0, 0.0, 1.0])]
+
+    canonical, changed, reason = _canonical_needle_points_from_seeds(candidate, seeds)
+
+    assert changed is True
+    assert "rebuilt" in reason
+    assert np.allclose(canonical[0], [2.0, 0.0, 8.0])
+    assert np.allclose(canonical[1], [2.0, 0.0, -142.0])
 
 
 def test_needle_safety_provenance_distinguishes_restored_input_versions():
@@ -190,6 +220,27 @@ class NeedleObstacleSafetyTests(unittest.TestCase):
         self.assertTrue(np.allclose(clipped[0], [0.0, 0.0, 8.0]))
         self.assertTrue(np.allclose(clipped[1], points[1]))
 
+    def test_safety_pruning_keeps_safe_entries_and_rebuilds_only_retained_dose(self):
+        dose_a = np.ones((2, 2, 2), dtype=np.float32)
+        dose_b = np.full((2, 2, 2), 2.0, dtype=np.float32)
+        plan = [
+            [None, [([0.0, 0.0, 0.0], [1.0, 0.0, 0.0])], [dose_a]],
+            [None, [
+                ([1.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+                ([2.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+            ], [dose_b]],
+        ]
+
+        retained, removed, removed_seed_count = _prune_unsafe_plan_entries(plan, [1])
+
+        self.assertEqual(removed, [1])
+        self.assertEqual(removed_seed_count, 2)
+        self.assertEqual(_plan_seed_count(retained), 1)
+        np.testing.assert_allclose(
+            _sum_plan_seed_doses(retained, np.zeros((2, 2, 2), dtype=np.float32)),
+            dose_a,
+        )
+
     def test_off_axis_seed_cannot_change_published_needle_endpoint(self):
         points = [
             np.array([0.0, 0.0, 10.0]),
@@ -265,6 +316,42 @@ class NeedleObstacleSafetyTests(unittest.TestCase):
         self.assertFalse(
             _needle_enters_through_truncated_boundary(lateral_needle, image, body_mask=body),
             "a lateral needle should not be flagged as truncation",
+        )
+
+    def test_external_extension_after_real_skin_does_not_count_as_truncation(self):
+        from tool_factory.seed_plan.planning_pipeline import (
+            _body_mask_from_ct,
+            _needle_enters_through_truncated_boundary,
+        )
+
+        # The body ends well before the flagged z-max face.  A rendered needle
+        # continues through air after crossing real skin; that external segment
+        # must not be mistaken for a needle entering through a truncated scan.
+        z_count, yx, radius = 24, 32, 12
+        ct = np.full((z_count, yx, yx), -1000, dtype=np.int16)
+        for z in range(4, 20):
+            for y in range(yx):
+                for x in range(yx):
+                    if (x - yx / 2) ** 2 + (y - yx / 2) ** 2 <= radius ** 2:
+                        ct[z, y, x] = 40
+        image = sitk.GetImageFromArray(ct)
+        image.SetSpacing((1.0, 1.0, 1.0))
+        image.SetOrigin((0.0, 0.0, 0.0))
+        body = _body_mask_from_ct(image, threshold=-300)
+
+        external_extension = [
+            np.array([16.0, 16.0, 12.0]),
+            np.array([16.0, 16.0, 40.0]),
+        ]
+        flagged_faces = (True, True, False, False, False, False)
+        self.assertFalse(
+            _needle_enters_through_truncated_boundary(
+                external_extension,
+                image,
+                body_mask=body,
+                truncated_boundary_faces=flagged_faces,
+            ),
+            "a CT-face crossing after real skin must not remove a valid candidate",
         )
 
     def test_filter_world_safe_trajectories_rejects_truncated_entries(self):

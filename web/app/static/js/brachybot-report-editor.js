@@ -665,8 +665,40 @@ function _reportCaptureUiFinish(runId, { failed = false, stale = false, captured
 
 function _reportCaptureUiNextPaint() {
     return new Promise(resolve => {
-        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve());
-        else setTimeout(resolve, 0);
+        let settled = false;
+        const finish = () => {
+            if (settled) return;
+            settled = true;
+            if (fallbackTimer) clearTimeout(fallbackTimer);
+            resolve();
+        };
+        const fallbackTimer = setTimeout(finish, 250);
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(finish);
+        else finish();
+    });
+}
+
+// A report capture is presentation-only work.  It must never leave the
+// operator with an immortal spinner because a WebGL/Plotly promise stopped
+// settling (this is especially easy to trigger for a large OAR set).  Keep
+// the timeout at the operation boundary so the finally blocks below still
+// restore the live Viewer and the report UI can publish a truthful failure.
+const REPORT_CAPTURE_OPERATION_TIMEOUT_MS = 20000;
+function _reportCaptureAwait(operation, label, timeoutMs = REPORT_CAPTURE_OPERATION_TIMEOUT_MS) {
+    let timer = null;
+    let promise;
+    try {
+        promise = typeof operation === 'function' ? operation() : operation;
+    } catch (error) {
+        return Promise.reject(error);
+    }
+    return Promise.race([
+        Promise.resolve(promise),
+        new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs} ms`)), timeoutMs);
+        }),
+    ]).finally(() => {
+        if (timer) clearTimeout(timer);
     });
 }
 
@@ -983,19 +1015,25 @@ async function captureReportDvhFigure(dvhEl = null, options = {}) {
         };
 
         if (typeof Plotly.newPlot === 'function') {
-            await Plotly.newPlot(host, traces, reportLayout, {
+            await _reportCaptureAwait(() => Plotly.newPlot(host, traces, reportLayout, {
                 staticPlot: true,
                 responsive: false,
                 displayModeBar: false,
                 displaylogo: false,
-            });
-            await _reportDvhWaitForPaint();
-            return await Plotly.toImage(host, { format: 'png', width, height, scale: 1 });
+            }), 'DVH Plotly layout');
+            await _reportCaptureAwait(_reportDvhWaitForPaint(), 'DVH paint');
+            return await _reportCaptureAwait(
+                () => Plotly.toImage(host, { format: 'png', width, height, scale: 1 }),
+                'DVH image export',
+            );
         }
         // Compatibility fallback for a partially loaded Plotly bundle.  The
         // normal application always has newPlot, but still preserve a useful
         // high-resolution image rather than silently returning nothing.
-        return await Plotly.toImage(source, { format: 'png', width, height, scale: 1 });
+        return await _reportCaptureAwait(
+            () => Plotly.toImage(source, { format: 'png', width, height, scale: 1 }),
+            'DVH source image export',
+        );
     } finally {
         if (typeof Plotly !== 'undefined' && typeof Plotly.purge === 'function') {
             try { Plotly.purge(host); } catch (_) {}
@@ -1167,6 +1205,17 @@ async function autoCaptureReportFigures(options = {}) {
             || requestedPlanningId !== _currentReportCapturePlanningId()) return { stale: true };
         return autoCaptureReportFigures(options);
     }
+    // Reconcile any late mesh response with the persisted Data Tree before
+    // taking the presentation snapshot.  This is intentionally a synchronous
+    // appearance pass, not a reconstruction: hiding OARs must take effect in
+    // the existing scene without rebuilding their geometry.
+    try {
+        window.syncSceneAppearanceFromDataTree?.({
+            preserveDoseTexture: !!state.doseTexture?.enabled,
+        });
+    } catch (error) {
+        console.warn('[Report] Data Tree appearance reconciliation failed:', error);
+    }
     const context = {
         generation: _reportCaptureGeneration,
         sessionId: requestedSessionId,
@@ -1190,9 +1239,27 @@ async function autoCaptureReportFigures(options = {}) {
     } finally {
         if (_reportCapturePromise === promise) {
             let restoreError = null;
-            try { await restoreViewer(); }
+            try {
+                await _reportCaptureAwait(
+                    () => restoreViewer(),
+                    'Viewer presentation restore',
+                );
+            }
             catch (error) { restoreError = error; }
-            finally { window.__reportCaptureActive = false; }
+            finally {
+                window.__reportCaptureActive = false;
+                // Re-apply the canonical Data Tree state after the temporary
+                // report presentation has ended. This also handles a late
+                // mesh response and makes a user change made during capture
+                // win over the old snapshot.
+                try {
+                    window.syncSceneAppearanceFromDataTree?.({
+                        preserveDoseTexture: !!state.doseTexture?.enabled,
+                    });
+                } catch (error) {
+                    console.warn('[Report] Final Data Tree appearance restore failed:', error);
+                }
+            }
             _reportCaptureUiFinish(context.reportCaptureUiRunId, {
                 failed: !!captureError || captureResult?.success === false,
                 stale: captureResult?.stale === true,
@@ -1232,7 +1299,10 @@ function snapshotReportViewerPresentation() {
             || planningId !== _currentReportCapturePlanningId()) return;
         try {
             if (textureEnabled !== !!state.doseTexture?.enabled) {
-                await setDoseTextureMode(textureEnabled, { silent: true });
+                await _reportCaptureAwait(
+                    () => setDoseTextureMode(textureEnabled, { silent: true }),
+                    'Viewer dose-surface restore',
+                );
             }
         } finally {
             objects.forEach(({ object, visible, renderOrder }) => {
@@ -1435,10 +1505,27 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
     };
 
     // Helper: wait for render
-    const _waitFrames = (n = 2) => new Promise(r => {
+    const _waitFrames = (n = 2) => new Promise(resolve => {
+        const target = Math.max(1, Number(n) || 1);
         let count = 0;
-        const tick = () => { if (++count >= n) r(); else requestAnimationFrame(tick); };
-        requestAnimationFrame(tick);
+        let settled = false;
+        const finish = () => {
+            if (settled) return;
+            settled = true;
+            if (fallbackTimer) clearTimeout(fallbackTimer);
+            resolve();
+        };
+        // requestAnimationFrame can be throttled or suspended when a browser
+        // tab is backgrounded. A capture must still terminate in that case.
+        const fallbackTimer = setTimeout(finish, Math.max(500, target * 250));
+        const tick = () => {
+            if (settled) return;
+            if (++count >= target) finish();
+            else if (typeof requestAnimationFrame === 'function') requestAnimationFrame(tick);
+            else finish();
+        };
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(tick);
+        else finish();
     });
 
     // Helper: draw image onto canvas context, returns Promise
@@ -2051,7 +2138,10 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
     try {
         // Figure 1 is normal anatomy, regardless of the operator's live mode.
         if (state.doseTexture?.enabled) {
-            const normalMode = await setDoseTextureMode(false, { silent: true });
+            const normalMode = await _reportCaptureAwait(
+                () => setDoseTextureMode(false, { silent: true }),
+                'Viewer normal-surface preparation',
+            );
             if (!normalMode?.success) throw new Error('Normal surface mode was not prepared');
         }
         const _meshCount = Object.keys(scene3D.meshes).length;
@@ -2400,8 +2490,13 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             // ── View A: Front-facing with all OARs ──
             if (!isCurrentCapture()) return { stale: true };
             window.__reportCaptureActive = true;
-            // Show all models for the overall panel. The focused camera below
-            // still limits the frame to the target and its local OAR context.
+            // Figure 1(a) is the standard global evidence view and therefore
+            // temporarily includes the available anatomy/OAR context. This
+            // is a capture-only mutation: _restoreFigure1State and the outer
+            // snapshot transaction put every Data Tree visibility choice back
+            // immediately after the image is read. A bounded capture is
+            // essential here; otherwise this temporary view can look like a
+            // user setting for the duration of a stuck spinner.
             for (const [id, mesh] of Object.entries(scene3D.meshes)) {
                 if (mesh) applyMeshVisibility(mesh, true, 1);
             }
@@ -2838,7 +2933,10 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                         // directions. The old code only restored normal mode;
                         // a failed recapture could therefore leave an already
                         // dose-mapped Viewer in the wrong state.
-                        await setDoseTextureMode(savedTextureMode, { silent: true });
+                        await _reportCaptureAwait(
+                            () => setDoseTextureMode(savedTextureMode, { silent: true }),
+                            'Viewer dose-surface state restore',
+                        );
                     }
                     if (isCurrentCapture() && savedCamera
                         && scene3D.camera === savedCamera.camera
@@ -2871,10 +2969,10 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     }
                     if (isCurrentCapture()) forceRender3DViewer();
                 };
-                const doseModeResult = await setDoseTextureMode(true, {
+                const doseModeResult = await _reportCaptureAwait(() => setDoseTextureMode(true, {
                     silent: true,
                     reason: 'report-figure-2d',
-                });
+                }), 'Viewer dose-surface preparation');
                 if (!isCurrentCapture()) return { stale: true };
                 if (!doseModeResult?.success || doseModeResult.enabled !== true) {
                     throw new Error(
@@ -3087,9 +3185,12 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 // Fallback: html2canvas
                 if (!dvhDataUrl && typeof html2canvas !== 'undefined') {
                     try {
-                        const canvas = await html2canvas(dvhEl, {
-                            useCORS: true, scale: 2, backgroundColor: '#ffffff',
-                        });
+                        const canvas = await _reportCaptureAwait(
+                            () => html2canvas(dvhEl, {
+                                useCORS: true, scale: 2, backgroundColor: '#ffffff',
+                            }),
+                            'DVH html2canvas fallback',
+                        );
                         dvhDataUrl = canvas.toDataURL('image/png');
                         uiDebugLog('[Report] DVH captured via html2canvas:', Math.round(dvhDataUrl.length / 1024), 'KB');
                     } catch (e) {

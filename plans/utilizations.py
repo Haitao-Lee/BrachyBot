@@ -839,40 +839,72 @@ def cal_next_seed_direc(radiation_volume, cur_radiation, pos):
 
 def get_cone(dire, angle, r_resolution, c_resolution):
     """
-    Generates a cone of unit vectors around a specified central direction vector.
+    Generate a full three-dimensional cone of unit vectors around the axis.
     
     Parameters:
         dire (numpy.ndarray): The central direction vector (3D) around which the cone is generated.
-        angle (float): The angle of the cone in radians.
-        r_resolution (int): Radial resolution - the number of points to sample from the center to the cone edge.
-        c_resolution (int): Circumferential resolution - the number of rotations around the central direction.
+        angle (float): Cone half-angle in degrees. The planning UI and the
+            persisted configuration use degrees.
+        r_resolution (int): Number of radial rings between the axis and the
+            cone boundary.
+        c_resolution (int): Requested number of circumferential sectors.
+            A three-dimensional cone needs at least six sectors. Older
+            configurations used 2 here, which produced two opposite azimuths
+            only, so every candidate direction lay in one plane.
 
     Returns:
         list of numpy.ndarray: A list of 3D unit vectors representing points on the cone.
     """
-    # Generate an orthogonal direction to `dire` to form the initial radial vector
-    orth_dir = geometry.perpendicular_vector(dire)
-    
-    # Calculate the radius based on the specified cone angle
-    radius = np.tan(np.deg2rad(angle))
-    
-    # Rotation matrix to rotate around `dire` in `c_resolution` steps
-    rot_mtx = scipy.linalg.expm(np.cross(np.eye(3), dire / np.linalg.norm(dire) * 2 * np.pi / c_resolution))
-    
-    # Start cone with the central direction
-    cone = [dire]
-    
-    # Generate the cone's vectors
-    for _ in range(c_resolution):
-        # Rotate the orthogonal direction around `dire`
-        orth_dir = np.dot(rot_mtx, orth_dir)
-        
-        # Add vectors moving radially from `dire` outwards to the edge of the cone
-        for j in range(1, r_resolution + 1):
-            n_dir = dire + orth_dir * radius * (j / r_resolution)
-            n_dir = n_dir / np.linalg.norm(n_dir)  # Normalize to keep it a unit vector
-            cone.append(n_dir)
-    
+    axis = np.asarray(dire, dtype=np.float64).reshape(-1)
+    if axis.size != 3 or not np.all(np.isfinite(axis)):
+        raise ValueError("dire must be a finite 3-D vector")
+    axis_norm = float(np.linalg.norm(axis))
+    if axis_norm <= 1e-12:
+        raise ValueError("dire must be non-zero")
+    axis = axis / axis_norm
+
+    try:
+        radial_count = max(1, int(r_resolution))
+    except (TypeError, ValueError):
+        radial_count = 1
+    try:
+        requested_sectors = max(1, int(c_resolution))
+    except (TypeError, ValueError):
+        requested_sectors = 1
+    # Two opposite azimuths are not a cone sampling. Promote legacy values
+    # to a hexagonal azimuth ring so the candidate set has genuine 3-D
+    # coverage without requiring every caller to change saved parameters.
+    sectors = max(6, requested_sectors)
+
+    try:
+        half_angle_deg = float(angle)
+    except (TypeError, ValueError):
+        half_angle_deg = 0.0
+    if not np.isfinite(half_angle_deg):
+        half_angle_deg = 0.0
+    half_angle_deg = min(max(half_angle_deg, 0.0), 89.0)
+    radius = float(np.tan(np.deg2rad(half_angle_deg)))
+
+    # Build a stable orthonormal basis for the plane perpendicular to the
+    # reference axis. Explicit basis vectors avoid the old 180-degree
+    # rotation loop, whose c_resolution=2 case was the planar bug.
+    basis_u = np.asarray(geometry.perpendicular_vector(axis), dtype=np.float64)
+    basis_u /= max(float(np.linalg.norm(basis_u)), 1e-12)
+    basis_v = np.cross(axis, basis_u)
+    basis_v /= max(float(np.linalg.norm(basis_v)), 1e-12)
+
+    cone = [axis.copy()]
+    for ring in range(1, radial_count + 1):
+        ring_radius = radius * (ring / radial_count)
+        # Stagger alternate rings by half a sector to improve coverage.
+        phase = (ring % 2) * (np.pi / sectors)
+        for sector in range(sectors):
+            azimuth = (2.0 * np.pi * sector / sectors) + phase
+            radial = np.cos(azimuth) * basis_u + np.sin(azimuth) * basis_v
+            candidate = axis + ring_radius * radial
+            candidate_norm = float(np.linalg.norm(candidate))
+            if candidate_norm > 1e-12:
+                cone.append(candidate / candidate_norm)
     return cone
 
 
@@ -2465,6 +2497,83 @@ def _farthest_point_sample_indices(
     return np.asarray(selected, dtype=np.int64)
 
 
+def _prepare_close_point_geometry(
+    dose_image,
+    radiation_array,
+    target_value,
+    max_point_num=20000,
+):
+    """Prepare target/surface points once for direction-conditioned sampling.
+
+    The old implementation recomputed this geometry whenever a caller wanted
+    to inspect another insertion direction. Direction-conditioned close-point
+    sampling needs the same target surface in several directions, so all
+    direction-independent work is intentionally cached in this small record.
+    Coordinates remain in planner array order ``[z, y, x]`` while the ``*_world``
+    arrays are physical patient coordinates in millimetres.
+    """
+    coordinates, surface_coordinates = _target_surface_coordinates(
+        radiation_array, target_value
+    )
+    if coordinates.shape[0] == 0:
+        return None
+
+    coordinates_for_length = _deterministic_point_subsample(
+        coordinates, max_point_num
+    )
+    surface_coordinates = _deterministic_point_subsample(
+        surface_coordinates, max_point_num
+    )
+    target_world = np.asarray(
+        position_transform(
+            dose_image, coordinates_for_length.astype(np.float64, copy=False)
+        ),
+        dtype=np.float64,
+    )
+    surface_world = np.asarray(
+        position_transform(
+            dose_image, surface_coordinates.astype(np.float64, copy=False)
+        ),
+        dtype=np.float64,
+    )
+    if target_world.ndim != 2 or target_world.shape[1] != 3:
+        raise ValueError("target world coordinates must have shape (N, 3)")
+    if surface_world.ndim != 2 or surface_world.shape[1] != 3:
+        raise ValueError("surface world coordinates must have shape (N, 3)")
+    return {
+        "target_count": int(coordinates.shape[0]),
+        "surface_coordinates": surface_coordinates,
+        "target_world": target_world,
+        "surface_world": surface_world,
+        "centroid": np.mean(target_world, axis=0),
+    }
+
+
+def _physical_unit_direction(dose_image, direction):
+    """Convert a planner-grid direction to a finite physical unit vector."""
+    direction = np.asarray(direction, dtype=np.float64).reshape(-1)
+    if direction.size != 3 or not np.all(np.isfinite(direction)):
+        direction = np.array([0.0, 0.0, 1.0], dtype=np.float64)
+    try:
+        physical = np.asarray(
+            direction_transform(dose_image, direction),
+            dtype=np.float64,
+        ).reshape(-1)
+    except Exception:
+        logger.warning(
+            "[close_points] physical direction conversion failed; using voxel direction",
+            exc_info=True,
+        )
+        physical = direction.copy()
+    if physical.size < 3:
+        physical = np.array([0.0, 0.0, 1.0], dtype=np.float64)
+    physical = physical[:3]
+    norm = float(np.linalg.norm(physical))
+    if not np.isfinite(norm) or norm <= 1e-12:
+        return np.array([0.0, 0.0, 1.0], dtype=np.float64)
+    return physical / norm
+
+
 def _target_surface_coordinates(radiation_array, target_value):
     """Return all target voxels and their 26-connected boundary voxels."""
     target_mask = np.asarray(radiation_array) == target_value
@@ -2664,6 +2773,149 @@ def get_close_points(
     # stl_writer.Write()
     
     return close_coordinates, length
+
+
+def get_shared_close_points_for_directions(
+    dose_image,
+    radiation_array,
+    candidate_directions,
+    target_value,
+    extract_angle=None,
+    max_point_num=20000,
+    max_surface_points=_CLOSE_POINT_MAX_SURFACE_POINTS,
+    surface_spacing_mm=_CLOSE_POINT_PREFERRED_SPACING_MM,
+):
+    """Create one spatially complete close-point set for all cone directions.
+
+    The path initializer combines every returned point with every candidate
+    direction. Each direction contributes a protected, spatially distributed
+    sample from its own target-side surface, and the remaining slots are filled
+    by farthest-point sampling over the complete target boundary. This keeps
+    the point set broad instead of allowing one reference direction to choose
+    all anchors from one face.
+
+    Returns ``(points, lengths, stats)`` where ``lengths`` has one projected
+    target length per direction. ``stats`` is intentionally lightweight and is
+    used by the live preview to make missing surface coverage diagnosable.
+    """
+    del extract_angle  # retained for compatibility with legacy callers
+    directions = np.asarray(candidate_directions, dtype=np.float64)
+    if directions.size == 0:
+        return np.empty((0, 3), dtype=np.float64), [], {
+            "direction_count": 0,
+            "selected_points": 0,
+        }
+    if directions.ndim == 1:
+        directions = directions.reshape(1, -1)
+    if directions.ndim != 2 or directions.shape[1] != 3:
+        raise ValueError("candidate_directions must have shape (N, 3)")
+
+    try:
+        surface_limit = max(int(max_surface_points), 1)
+    except (TypeError, ValueError):
+        surface_limit = _CLOSE_POINT_MAX_SURFACE_POINTS
+    try:
+        preferred_spacing_mm = float(surface_spacing_mm)
+    except (TypeError, ValueError):
+        preferred_spacing_mm = _CLOSE_POINT_PREFERRED_SPACING_MM
+    if not np.isfinite(preferred_spacing_mm) or preferred_spacing_mm < 0.0:
+        preferred_spacing_mm = _CLOSE_POINT_PREFERRED_SPACING_MM
+
+    prepared = _prepare_close_point_geometry(
+        dose_image,
+        radiation_array,
+        target_value,
+        max_point_num=max_point_num,
+    )
+    if prepared is None:
+        logger.warning("[close_points] target label %s is empty", target_value)
+        return (
+            np.empty((0, 3), dtype=np.float64),
+            [0.0] * len(directions),
+            {
+                "direction_count": int(len(directions)),
+                "target_count": 0,
+                "surface_count": 0,
+                "selected_points": 0,
+                "protected_points": 0,
+            },
+        )
+
+    surface_coordinates = prepared["surface_coordinates"]
+    surface_world = prepared["surface_world"]
+    surface_limit = min(surface_limit, surface_coordinates.shape[0])
+    direction_lengths = []
+    direction_back_pools = []
+    for direction in directions:
+        physical_direction = _physical_unit_direction(dose_image, direction)
+        direction_lengths.append(float(
+            geometry.projection_length(prepared["target_world"], physical_direction)
+        ))
+        projections = np.dot(
+            surface_world - prepared["centroid"], physical_direction
+        )
+        back_cut = float(np.quantile(projections, _CLOSE_POINT_BACK_QUANTILE))
+        direction_back_pools.append(
+            np.flatnonzero(projections <= back_cut + 1e-9)
+        )
+
+    # Reserve a modest quota for every direction's far/back surface. The rest
+    # is selected from the complete boundary so the union remains spatially
+    # uniform instead of becoming a collection of overlapping back faces.
+    protected_budget = min(
+        surface_limit,
+        max(len(directions), int(math.ceil(surface_limit * 0.35))),
+    )
+    per_direction_budget = max(
+        1,
+        int(math.ceil(protected_budget / max(len(directions), 1))),
+    )
+    protected_indices = []
+    for back_indices in direction_back_pools:
+        if back_indices.size == 0:
+            continue
+        take = min(per_direction_budget, int(back_indices.size))
+        local = _farthest_point_sample_indices(
+            surface_world[back_indices],
+            take,
+            preferred_spacing_mm=preferred_spacing_mm,
+        )
+        protected_indices.extend(back_indices[local].tolist())
+    protected_indices = np.asarray(sorted(set(protected_indices)), dtype=np.int64)
+    if protected_indices.size > protected_budget:
+        keep = _farthest_point_sample_indices(
+            surface_world[protected_indices],
+            protected_budget,
+            preferred_spacing_mm=preferred_spacing_mm,
+        )
+        protected_indices = protected_indices[keep]
+
+    selected_indices = _farthest_point_sample_indices(
+        surface_world,
+        surface_limit,
+        preferred_spacing_mm=preferred_spacing_mm,
+        seed_indices=protected_indices,
+    )
+    close_coordinates = surface_coordinates[selected_indices]
+    stats = {
+        "direction_count": int(len(directions)),
+        "target_count": int(prepared["target_count"]),
+        "surface_count": int(len(surface_coordinates)),
+        "selected_points": int(len(close_coordinates)),
+        "protected_points": int(len(protected_indices)),
+        "direction_back_pool_sizes": [int(len(pool)) for pool in direction_back_pools],
+    }
+    logger.info(
+        "[close_points] shared target=%d surface=%d directions=%d "
+        "selected=%d protected=%d spacing_mm=%.2f",
+        stats["target_count"],
+        stats["surface_count"],
+        stats["direction_count"],
+        stats["selected_points"],
+        stats["protected_points"],
+        preferred_spacing_mm,
+    )
+    return close_coordinates, direction_lengths, stats
 
 
 def voxel_grid_downsampling(points, voxel_size = 1):
@@ -4331,7 +4583,7 @@ def hierarchical_planning_rf(
     return optimal_plan, optimal_reward
     
     
-def put_seeds(radiation_volume, dose_image, dose_cal_model, infer_img_size, radiation, target_value, in_lowest_dose, trajectory, seed_info, DVH_rate, distance_map, image_normalize_min, image_normalize_max, image_normalize_scale, dose_context=None):
+def put_seeds(radiation_volume, dose_image, dose_cal_model, infer_img_size, radiation, target_value, in_lowest_dose, trajectory, seed_info, DVH_rate, distance_map, image_normalize_min, image_normalize_max, image_normalize_scale, dose_context=None, deadline=None):
     """Optimize and place radioactive seeds along a predefined trajectory.
 
     Places seeds within a treatment volume to ensure a desired dose
@@ -4383,6 +4635,8 @@ def put_seeds(radiation_volume, dose_image, dose_cal_model, infer_img_size, radi
     max_iterations = len(effective_range)
     iterations = 0
     while len(effective_range) > 0 and cur_DVH_rate < DVH_rate:
+        if deadline is not None and time.monotonic() >= float(deadline):
+            break
         if iterations >= max_iterations:
             logger.error(
                 "[put_seeds] Candidate range did not converge; stopping the trajectory"
@@ -4397,18 +4651,22 @@ def put_seeds(radiation_volume, dose_image, dose_cal_model, infer_img_size, radi
         selected_length = previous_range[0]
         updated_point = np.array(point + selected_length * update_direction)
         
-        cur_seed_radiation = single_seed_dose_calculation_dl(
-            updated_point.reshape(-1),
-            direction,
-            dose_image,
-            dose_cal_model,
-            infer_img_size,
-            seed_info,
-            image_normalize_min,
-            image_normalize_max,
-            image_normalize_scale,
-            dose_context=dose_context
-        )
+        try:
+            cur_seed_radiation = single_seed_dose_calculation_dl(
+                updated_point.reshape(-1),
+                direction,
+                dose_image,
+                dose_cal_model,
+                infer_img_size,
+                seed_info,
+                image_normalize_min,
+                image_normalize_max,
+                image_normalize_scale,
+                dose_context=dose_context,
+                deadline=deadline,
+            )
+        except TimeoutError:
+            break
         cur_radiation = radiation + cur_seed_radiation
         cur_DVH_rate = np.sum(cur_radiation * mask_volume > in_lowest_dose) / target_v
         cur_point = np.copy(updated_point)
@@ -4723,7 +4981,7 @@ def remove_seed_sequentially(traj_seed_radiations, all_seeds, itera, radiation):
                         
 def add_proper_seed(traj_seed_radiations, radiation_volume, radiation, dose_image, dose_cal_model, infer_img_size, 
                     in_lowest_dose, out_highest_dose, target_value, background_value, obstacle_value, 
-                    DVH_rate, seed_info, distance_map, image_normalize_min, image_normalize_max, image_normalize_scale, dose_context=None):
+                    DVH_rate, seed_info, distance_map, image_normalize_min, image_normalize_max, image_normalize_scale, dose_context=None, deadline=None):
     """Strategically add a radioactive seed to improve dose coverage.
 
     Evaluates potential seed placements along predefined trajectories to
@@ -4802,7 +5060,8 @@ def add_proper_seed(traj_seed_radiations, radiation_volume, radiation, dose_imag
                     image_normalize_min,
                     image_normalize_max,
                     image_normalize_scale,
-                    dose_context=dose_context
+                    dose_context=dose_context,
+                    deadline=deadline
                 )
 
                 tmp_radiation = radiation + tmp_seed_radiation
@@ -4830,7 +5089,7 @@ def add_proper_seed(traj_seed_radiations, radiation_volume, radiation, dose_imag
 
 
 def replan(traj_seed_radiations, radiation_volume, radiation, dose_image, dose_cal_model, infer_img_size, in_lowest_dose, target_value,
-           background_value, obstacle_value, seed_info, distance_map, image_normalize_min, image_normalize_max, image_normalize_scale, dose_context=None):
+           background_value, obstacle_value, seed_info, distance_map, image_normalize_min, image_normalize_max, image_normalize_scale, dose_context=None, deadline=None):
     """Optimize and replan radioactive seed placements along trajectories.
 
     Evaluates potential seed placements along each trajectory, selects optimal
@@ -4911,7 +5170,8 @@ def replan(traj_seed_radiations, radiation_volume, radiation, dose_image, dose_c
                     image_normalize_min,
                     image_normalize_max,
                     image_normalize_scale,
-                    dose_context=dose_context
+                    dose_context=dose_context,
+                    deadline=deadline
                 )
 
                 tmp_radiation = radiation + tmp_seed_radiation

@@ -4,7 +4,7 @@ import threading
 from pathlib import Path
 from unittest.mock import patch
 
-from plans.device_manager import DeviceManager
+from plans.device_manager import DeviceInfo, DeviceManager
 
 
 def _manager_with_two_gpus():
@@ -28,6 +28,26 @@ def test_acquire_accepts_its_cached_canonical_cuda_device_name():
     assert selected == "cuda:1"
     assert manager._active_per_device == {"cuda:1": 1}
     auto_pick.assert_not_called()
+
+
+def test_cached_gpu_is_reselected_when_saturated():
+    manager = _manager_with_two_gpus()
+    manager._preferred["dose"] = "cuda:0"
+    manager._read_info = lambda index: DeviceInfo(
+        index=index,
+        name=f"gpu-{index}",
+        total_mem_mb=24576,
+        used_mem_mb=22000 if index == 0 else 1000,
+        free_mem_mb=2576 if index == 0 else 23576,
+        utilization_pct=100 if index == 0 else 0,
+        is_available=True,
+    )
+
+    with patch.object(manager, "_auto_pick", return_value="cuda:1") as auto_pick:
+        selected = manager.acquire(caller="dose")
+
+    assert selected == "cuda:1"
+    auto_pick.assert_called_once()
 
 
 def test_explicit_numeric_gpu_preference_remains_supported():

@@ -2339,6 +2339,115 @@ class WorkspaceStore:
                 expected_revision=expected_revision, reason=reason,
             )
 
+    def save_agent_results_patch(
+        self,
+        user_id: str,
+        session_id: str,
+        updates: Optional[Mapping[str, Any]] = None,
+        removals: Optional[Iterable[str]] = None,
+        *,
+        reason: str = "agent.results.patch",
+    ) -> Dict[str, Any]:
+        """Durably patch small Agent planning state without encoding arrays.
+
+        Structure-policy changes (for example moving a selected OAR between
+        traversable and non-traversable) must be visible immediately to the
+        running planner and must survive a restart. Calling
+        flush_agent_checkpoint for that mutation walks every CT/mask/dose
+        array and can block the HTTP request for minutes. This path changes
+        only the JSON metadata and invalidates the requested result keys; the
+        normal debounced full Agent checkpoint is queued separately by the
+        caller.
+
+        The generation bump also supersedes a full checkpoint that was
+        prepared before this transaction. _commit_agent_snapshot performs a
+        second generation check immediately before committing so an older
+        heavy snapshot cannot overwrite this small, authoritative patch.
+        """
+        updates = dict(updates or {})
+        removal_keys = {str(key) for key in (removals or ())}
+        key = (str(user_id), str(session_id))
+        with self._lock:
+            timer = self._checkpoint_timers.pop(key, None)
+            if timer:
+                timer.cancel()
+            generation = self._checkpoint_generations.get(key, 0) + 1
+            self._checkpoint_generations[key] = generation
+
+        with self._case_guard(str(user_id), str(session_id)):
+            root = self.workspace_root(user_id, session_id, create=True)
+            snapshot = self.load_snapshot(user_id, session_id)
+            agent_state = (
+                dict(snapshot.get("agent") or {})
+                if isinstance(snapshot.get("agent"), Mapping)
+                else {}
+            )
+            planning_results = (
+                dict(agent_state.get("planning_results") or {})
+                if isinstance(agent_state.get("planning_results"), Mapping)
+                else {}
+            )
+            planning_versions = (
+                dict(agent_state.get("planning_versions") or {})
+                if isinstance(agent_state.get("planning_versions"), Mapping)
+                else {}
+            )
+            conversation_state = (
+                dict(agent_state.get("conversation_state") or {})
+                if isinstance(agent_state.get("conversation_state"), Mapping)
+                else {}
+            )
+            available = {
+                str(value)
+                for value in (conversation_state.get("data_available") or [])
+            }
+
+            # Removals are applied first so an explicit update can
+            # intentionally reintroduce a small metadata key in the same
+            # transaction.
+            for result_key in removal_keys:
+                planning_results.pop(result_key, None)
+                planning_versions[result_key] = (
+                    int(planning_versions.get(result_key, 0) or 0) + 1
+                )
+                available.discard(result_key)
+            for result_key, value in updates.items():
+                result_key = str(result_key)
+                planning_results[result_key] = _safe_json(value)
+                planning_versions[result_key] = (
+                    int(planning_versions.get(result_key, 0) or 0) + 1
+                )
+                if value is None:
+                    available.discard(result_key)
+                else:
+                    available.add(result_key)
+
+            conversation_state["data_available"] = sorted(available)
+            agent_state["planning_results"] = planning_results
+            agent_state["planning_versions"] = _safe_json(planning_versions)
+            agent_state["conversation_state"] = _safe_json(conversation_state)
+            snapshot["agent"] = agent_state
+            snapshot["saved_at"] = _now()
+            self._write_snapshot(user_id, root / "snapshot.json", snapshot)
+            recovery_status = _workspace_recovery_status(snapshot)
+            with self._connection() as connection:
+                connection.execute(
+                    "UPDATE case_sessions SET updated_at = ?, revision = revision + 1, recovery_status = ? "
+                    "WHERE id = ? AND user_id = ?",
+                    (_now(), recovery_status, session_id, user_id),
+                )
+            self._audit(
+                user_id,
+                session_id,
+                reason,
+                {
+                    "updated_keys": sorted(str(value) for value in updates),
+                    "removed_keys": sorted(removal_keys),
+                    "checkpoint_generation": generation,
+                },
+            )
+            return self.load_snapshot(user_id, session_id)
+
     def replace_snapshot_section(
         self,
         user_id: str,
@@ -2528,6 +2637,7 @@ class WorkspaceStore:
             with self._case_guard(user_id, session_id):
                 result = self._commit_agent_snapshot(
                     user_id, session_id, payload, reason=reason, operation=operation,
+                    checkpoint_generation=checkpoint_generation,
                 )
             logger.info(
                 "workspace checkpoint completed session=%s reason=%s duration_ms=%.1f commit_ms=%.1f discarded=%s",
@@ -2870,6 +2980,7 @@ class WorkspaceStore:
         *,
         reason: str = "agent.checkpoint",
         operation: Optional[Mapping[str, Any]] = None,
+        checkpoint_generation: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Merge the prepared agent state into the durable JSON snapshot
         and update SQLite — must be called inside _case_guard."""
@@ -2878,6 +2989,30 @@ class WorkspaceStore:
         created_array_paths = payload["created_array_paths"]
         root = payload["root"]
         commit_started = time.perf_counter()
+        if checkpoint_generation is not None:
+            with self._lock:
+                current_generation = self._checkpoint_generations.get(
+                    (str(user_id), str(session_id)), 0
+                )
+            if int(checkpoint_generation) != int(current_generation):
+                # The payload was prepared before a small metadata transaction
+                # superseded it. Do not let this old full snapshot overwrite
+                # the policy patch; only remove sidecars created by this
+                # discarded preparation.
+                for relative in created_array_paths:
+                    try:
+                        _safe_workspace_child(root, relative).unlink(missing_ok=True)
+                    except (OSError, WorkspaceError):
+                        continue
+                logger.info(
+                    "workspace checkpoint skipped stale commit session=%s reason=%s "
+                    "generation=%s current_generation=%s",
+                    session_id,
+                    reason,
+                    checkpoint_generation,
+                    current_generation,
+                )
+                return {}
         try:
             snapshot = self.load_snapshot(user_id, session_id)
         except WorkspaceNotFound:

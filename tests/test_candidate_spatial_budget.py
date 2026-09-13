@@ -10,7 +10,9 @@ def namespace():
     source = Path(__file__).resolve().parents[1] / 'plans/core.py'
     tree = ast.parse(source.read_text())
     functions = [n for n in tree.body if isinstance(n, ast.FunctionDef)
-                 and n.name in ('sample_spatial_trajectories', 'init_plan')]
+                 and n.name in ('sample_spatial_trajectories',
+                                'sample_anchor_covering_trajectories',
+                                'init_plan')]
     env = {'np': np, 'time': time}
     exec(compile(ast.Module(body=functions, type_ignores=[]), str(source), 'exec'), env)
     return env
@@ -30,6 +32,22 @@ def test_budget_preserves_positions_and_directions():
     assert [id(t) for t in result] == [id(t) for t in sample(paths, 500, (5, 0.7, 0.7))]
     assert len(sample(paths, 1)) == 1
     assert sample([], 500) == []
+
+
+def test_anchor_budget_keeps_every_surface_anchor_before_extra_directions():
+    sample = namespace()['sample_anchor_covering_trajectories']
+    paths = [
+        (np.array([anchor, 0, 0]), np.array(direction), [], [], 1)
+        for anchor in range(25)
+        for direction in ((1, 0, 1), (-1, 0, 1), (0, 1, 1), (0, -1, 1))
+    ]
+    result = sample(paths, 50, (1, 1, 1))
+    anchors = {int(np.rint(path[0][0])) for path in result}
+    assert len(result) == 50
+    assert anchors == set(range(25))
+    assert [id(path) for path in result] == [
+        id(path) for path in sample(paths, 50, (1, 1, 1))
+    ]
 
 
 def test_initializer_and_every_preview_respect_budget_after_filtering():
