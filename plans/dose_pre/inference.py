@@ -16,6 +16,7 @@ so the established LPS/voxel coordinate chain is not changed at its callers.
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -43,6 +44,20 @@ def _ensure_before_deadline(deadline: Optional[float]) -> None:
         raise DoseInferenceDeadlineExceeded(
             "DoseUNet inference exceeded the interactive planning time budget"
         )
+
+def _configure_cuda_inference(device: torch.device) -> None:
+    """Enable safe CUDA inference fast paths without changing the model contract."""
+    if getattr(device, "type", None) != "cuda":
+        return
+    # cuDNN autotuning is beneficial here because DoseUNet repeatedly sees
+    # the same 64^3 patch shape. TF32 is only enabled for CUDA float32
+    # inference and keeps the existing output dtype/coordinate contract.
+    torch.backends.cudnn.benchmark = True
+    if str(os.environ.get("BRACHYBOT_ENABLE_TF32", "1")).strip().lower() not in {
+        "0", "false", "no", "off"
+    }:
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
 
 
 def normalize_ct(ct: np.ndarray) -> np.ndarray:
@@ -249,7 +264,7 @@ def crop_or_pad(array: np.ndarray, start: Sequence[int], patch_size: Sequence[in
     return result
 
 
-@torch.no_grad()
+@torch.inference_mode()
 def sliding_window_predict(
     model: torch.nn.Module,
     inputs: np.ndarray,
@@ -264,6 +279,7 @@ def sliding_window_predict(
     if len(patch_size) != 3 or any(v <= 0 for v in patch_size):
         raise ValueError(f"Invalid DoseUNet patch size: {patch_size}")
     overlap = min(max(float(overlap), 0.0), 0.95)
+    _configure_cuda_inference(device)
     stride = tuple(max(1, int(round(p * (1.0 - overlap)))) for p in patch_size)
     starts = [starts_for_dim(shape[i], patch_size[i], stride[i]) for i in range(3)]
     pred_sum = np.zeros(shape, dtype=np.float32)
@@ -283,7 +299,7 @@ def sliding_window_predict(
     return pred_sum / np.maximum(pred_count, 1.0)
 
 
-@torch.no_grad()
+@torch.inference_mode()
 def sliding_window_predict_batch(
     model: torch.nn.Module,
     inputs: np.ndarray,
@@ -312,6 +328,7 @@ def sliding_window_predict_batch(
     if len(patch_size) != 3 or any(v <= 0 for v in patch_size):
         raise ValueError(f"Invalid DoseUNet patch size: {patch_size}")
     overlap = min(max(float(overlap), 0.0), 0.95)
+    _configure_cuda_inference(device)
     stride = tuple(max(1, int(round(p * (1.0 - overlap)))) for p in patch_size)
     starts = [starts_for_dim(shape[i], patch_size[i], stride[i]) for i in range(3)]
 

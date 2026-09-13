@@ -29,7 +29,7 @@
     "iter_rate": 2,
     "max_iter": 4,
     "replan_rate": 0.6,
-    "direc_resolution": [30, 3, 2],
+    "direc_resolution": [30, 3, 6],
     "image_normalize": [-1000, 3000, 255]
   },
   "distance_filter": {
@@ -73,6 +73,7 @@
     "max_hierarchy_depth": 8,
     "max_actions_per_episode": 40,
     "max_wall_seconds": 300,
+    "fallback_max_wall_seconds": 120,
     "coverage_repair_seconds": 60,
     "coverage_repair_extension_seconds": 120,
     "coverage_repair_max_seconds": 180,

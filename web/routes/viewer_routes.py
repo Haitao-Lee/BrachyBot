@@ -2767,6 +2767,8 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     _merge_embedded_hard_obstacles,
                     _resolve_data_tree_obstacle_labels,
                     _world_segment_hits_obstacle,
+                    _canonical_needle_points_from_seeds,
+                    _seed_derived_needle_points,
                     needle_safety_provenance_matches,
                 )
 
@@ -2889,6 +2891,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
 
             seeds = []
             needles = []
+            geometry_repairs = {}
 
             # Automatic plans created before the coordinate-contract fix may
             # have persisted voxel-space seed positions even though their
@@ -3226,24 +3229,66 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     if validated_points is None:
                         validated_points = verified_needle_geometry.get(i)
                 try:
-                    points = [np.asarray(point, dtype=np.float64).reshape(-1)[:3] for point in validated_points]
-                    if len(points) != 2 or not all(point.size == 3 and np.all(np.isfinite(point)) for point in points):
-                        raise ValueError("invalid validated needle points")
+                    geometry_repair = None
+                    if isinstance(validated_points, (list, tuple)) and len(validated_points) >= 2:
+                        points = [
+                            np.asarray(point, dtype=np.float64).reshape(-1)[:3]
+                            for point in validated_points[:2]
+                        ]
+                    else:
+                        points = None
+
+                    if points is None or len(points) != 2 or not all(
+                        point.size == 3 and np.all(np.isfinite(point)) for point in points
+                    ):
+                        # Some legacy plans persisted seeds but no verified
+                        # endpoint map.  A one-seed path is still
+                        # unambiguous because its direction is persisted.
+                        points, reason = _seed_derived_needle_points(
+                            seed_list,
+                            reference_points=None,
+                        )
+                        if points is None:
+                            raise ValueError(f"invalid validated needle points: {reason}")
+                        points = [np.asarray(point, dtype=np.float64) for point in points]
+                        geometry_repair = [point.tolist() for point in points]
+                        logger.warning(
+                            "[seeds_3d] Rebuilt automatic needle_%s from owned seed centers: %s",
+                            i + 1,
+                            reason or "missing persisted geometry",
+                        )
+                    else:
+                        # Do not leave an old candidate line in place when the
+                        # actual seed payload is the newer/correct artifact.
+                        # This helper clips aligned paths and rebuilds a
+                        # mismatched path from its owned seed centers without
+                        # moving the dose seed positions.
+                        canonical_points, changed, reason = _canonical_needle_points_from_seeds(
+                            points,
+                            seed_list,
+                        )
+                        if canonical_points is None:
+                            raise ValueError(f"seed/needle geometry mismatch: {reason}")
+                        points = [
+                            np.asarray(point, dtype=np.float64).reshape(-1)[:3]
+                            for point in canonical_points[:2]
+                        ]
+                        if changed:
+                            geometry_repair = [point.tolist() for point in points]
+                            logger.warning(
+                                "[seeds_3d] Repaired automatic needle_%s from owned seed centers: %s",
+                                i + 1,
+                                reason or "endpoint clipped to farthest seed",
+                            )
+
                     if not _automatic_needle_is_safe(points):
                         logger.error(
                             "[seeds_3d] Withholding needle_%s because current Data Tree obstacles reject its geometry",
                             i,
                         )
                         continue
-                    # Old completed plans may predate endpoint clipping. Only
-                    # shorten an already validated segment when ALL seed
-                    # centers/directions match it; never move seeds during a
-                    # read request or silently change the stored dose plan.
-                    from tool_factory.seed_plan.planning_pipeline import (
-                        _clip_needle_to_farthest_seed, _needle_seed_alignment_error,
-                    )
-                    if not _needle_seed_alignment_error(points, seed_list):
-                        points, _ = _clip_needle_to_farthest_seed(points, seed_list)
+                    if geometry_repair is not None:
+                        geometry_repairs[str(i)] = geometry_repair
                     needles.append({
                         "id": f"needle_{i + 1}",
                         "points": [point.tolist() for point in points],
@@ -3253,6 +3298,49 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     logger.warning(
                         "[seeds_3d] Withholding automatic needle_%s because no validated geometry is available; re-run planning.",
                         i,
+                    )
+
+            # A legacy persisted plan may have seed centers that are correct
+            # while its old endpoint map is stale.  Persist the canonical
+            # geometry after a successful response so the puncture guide,
+            # report capture, and the next restart all consume the same line.
+            # This is idempotent and never changes the seed dose positions.
+            if geometry_repairs and not has_manual_geometry:
+                repaired_geometry = dict(verified_needle_geometry or {})
+                repaired_geometry.update(geometry_repairs)
+                agent.memory.store("verified_needle_geometry", repaired_geometry)
+                baseline = agent.memory.retrieve("algorithm_plan_snapshot")
+                if isinstance(baseline, dict) and isinstance(baseline.get("needles"), list):
+                    baseline = dict(baseline)
+                    baseline_needles = []
+                    for baseline_needle in baseline.get("needles") or []:
+                        if not isinstance(baseline_needle, dict):
+                            baseline_needles.append(baseline_needle)
+                            continue
+                        item = dict(baseline_needle)
+                        trajectory_id = str(item.get("trajectory_id") or "")
+                        try:
+                            trajectory_index = int(trajectory_id.rsplit("_", 1)[-1]) - 1
+                        except (TypeError, ValueError):
+                            trajectory_index = -1
+                        replacement = geometry_repairs.get(str(trajectory_index))
+                        if replacement is not None:
+                            item["points"] = replacement
+                        baseline_needles.append(item)
+                    baseline["needles"] = baseline_needles
+                    agent.memory.store("algorithm_plan_snapshot", baseline)
+                try:
+                    store, user, case_session_id = request_case_context()
+                    store.schedule_agent_checkpoint(
+                        user["id"],
+                        case_session_id,
+                        agent,
+                        "viewer.needle_geometry_repair",
+                    )
+                except Exception:
+                    logger.warning(
+                        "[seeds_3d] Repaired geometry is visible but checkpoint scheduling failed",
+                        exc_info=True,
                     )
 
             logger.info(f"[seeds_3d] returning {len(seeds)} seeds, {len(needles)} needles")

@@ -694,10 +694,64 @@ def _algorithm_planning_snapshot(agent: Any) -> Dict[str, List[Dict[str, Any]]]:
     memory = agent.memory
     baseline = memory.retrieve("algorithm_plan_snapshot")
     if isinstance(baseline, Mapping):
-        return {
+        snapshot = {
             "seeds": list(baseline.get("seeds") or []),
             "needles": list(baseline.get("needles") or []),
         }
+        # Older checkpoints may contain a stale trajectory line while the
+        # persisted seed centers are already the correct dose geometry.  Keep
+        # guide channels on the same canonical line as the Viewer.  This is a
+        # read-only normalization: seed positions and dose arrays are not
+        # changed here.
+        try:
+            from tool_factory.seed_plan.planning_pipeline import (
+                _canonical_needle_points_from_seeds,
+            )
+
+            seeds_by_trajectory: Dict[str, List[Mapping[str, Any]]] = {}
+            for seed in snapshot["seeds"]:
+                if isinstance(seed, Mapping):
+                    seeds_by_trajectory.setdefault(
+                        str(seed.get("trajectory_id") or ""),
+                        [],
+                    ).append(seed)
+            normalized_needles = []
+            for needle in snapshot["needles"]:
+                if not isinstance(needle, Mapping):
+                    continue
+                item = dict(needle)
+                trajectory_id = str(item.get("trajectory_id") or item.get("id") or "")
+                owned = seeds_by_trajectory.get(trajectory_id, [])
+                if owned and isinstance(item.get("points"), list):
+                    points, changed, reason = _canonical_needle_points_from_seeds(
+                        item.get("points"),
+                        owned,
+                    )
+                    if points is None:
+                        logger.error(
+                            "[surgical_guide] Omitting needle %s with inconsistent seed geometry: %s",
+                            item.get("id") or trajectory_id,
+                            reason,
+                        )
+                        continue
+                    if changed:
+                        item["points"] = [
+                            np.asarray(point, dtype=np.float64).reshape(-1)[:3].tolist()
+                            for point in points[:2]
+                        ]
+                        logger.warning(
+                            "[surgical_guide] Normalized needle %s from its owned seed centers: %s",
+                            item.get("id") or trajectory_id,
+                            reason or "endpoint clipped",
+                        )
+                normalized_needles.append(item)
+            snapshot["needles"] = normalized_needles
+        except Exception:
+            logger.warning(
+                "[surgical_guide] Could not normalize legacy seed/needle geometry",
+                exc_info=True,
+            )
+        return snapshot
     serialized = memory.retrieve("seed_plan_serialized") or []
     geometry = memory.retrieve("verified_needle_geometry") or {}
     seeds: List[Dict[str, Any]] = []

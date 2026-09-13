@@ -143,7 +143,7 @@ class TrajectoryInitTool(BaseTool):
         dose_image = kwargs["dose_image"]
         radiation_volume = kwargs["radiation_volume"]
         ref_direc = kwargs.get("ref_direc")
-        direc_resolution = kwargs.get("direc_resolution", [30, 3, 2])
+        direc_resolution = kwargs.get("direc_resolution", [30, 3, 6])
         extract_angle = kwargs.get("extract_angle", math.pi / 2)
         target_value = kwargs.get("target_value", 1)
         background_value = kwargs.get("background_value", 0)

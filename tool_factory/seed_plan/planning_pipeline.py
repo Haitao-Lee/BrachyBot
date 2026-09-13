@@ -564,7 +564,7 @@ _RF_PARAM_KEYS = {
     "candidate_limit", "dense_seed_limit", "max_hierarchy_depth",
     "max_actions_per_episode", "max_wall_seconds", "coverage_repair_seconds",
     "coverage_repair_extension_seconds", "coverage_repair_max_seconds",
-    "fallback_to_rule_based",
+    "fallback_max_wall_seconds", "fallback_to_rule_based",
 }
 _PLANNING_PARAM_KEYS = {
     "dose_value_unit", "in_lowest_energy", "out_highest_energy",
@@ -972,6 +972,7 @@ def _apply_planning_overrides(args, overrides):
                 "dense_seed_limit", "max_hierarchy_depth", "max_actions_per_episode",
                 "max_wall_seconds", "coverage_repair_seconds",
                 "coverage_repair_extension_seconds", "coverage_repair_max_seconds",
+                "fallback_max_wall_seconds",
             }:
                 args.rf_params[key] = int(_finite_number(value, f"rf_params.{key}", minimum=1, maximum=1000))
             elif key in {"lr", "gamma", "flip_ratio"}:
@@ -1722,16 +1723,167 @@ def _clip_needle_to_farthest_seed(points, seeds, tolerance_mm=1e-3):
         return points, False
 
 
+def _seed_derived_needle_points(
+    seeds,
+    reference_points=None,
+    extension_mm=None,
+    line_tolerance_mm=0.75,
+):
+    """Build a needle segment from the *actual* centers of its owned seeds.
+
+    A persisted plan can contain a trajectory record from an older planning
+    pass while its seed records have subsequently been repaired, migrated, or
+    restored from a different representation.  In that state blindly
+    publishing the old trajectory makes the Viewer draw a needle that misses
+    its own seeds.  This helper makes the ownership contract explicit:
+
+    * seed centers are never moved by a read/render operation;
+    * seed directions define the physical needle axis when available;
+    * the deep endpoint is exactly the farthest seed center on that axis; and
+    * a multi-seed group is accepted only when all of its centers are
+      collinear within a small physical tolerance.
+
+    The returned segment is ``[deep_seed_center, external_endpoint]`` in
+    patient-world coordinates.  ``None`` means that the seed payload itself
+    is inconsistent and must not be silently turned into a clinical path.
+    """
+    try:
+        records = []
+        for index, seed in enumerate(seeds or []):
+            if isinstance(seed, dict):
+                position = seed.get("position")
+                if position is None:
+                    position = seed.get("pos")
+                direction = seed.get("direction")
+                if direction is None:
+                    direction = seed.get("dir")
+            elif isinstance(seed, (list, tuple)) and len(seed) >= 1:
+                position = seed[0]
+                direction = seed[1] if len(seed) >= 2 else None
+            else:
+                continue
+            position = np.asarray(position, dtype=np.float64).reshape(-1)[:3]
+            if position.size != 3 or not np.all(np.isfinite(position)):
+                return None, f"seed {index}: invalid position"
+            unit = None
+            if direction is not None:
+                raw_direction = np.asarray(direction, dtype=np.float64).reshape(-1)[:3]
+                norm = float(np.linalg.norm(raw_direction)) if raw_direction.size == 3 else 0.0
+                if raw_direction.size != 3 or not np.all(np.isfinite(raw_direction)) or norm <= 1e-12:
+                    return None, f"seed {index}: invalid direction"
+                unit = raw_direction / norm
+            records.append((position, unit))
+
+        if not records:
+            return None, "no valid seed centers"
+
+        reference_unit = None
+        try:
+            if isinstance(reference_points, (list, tuple)) and len(reference_points) >= 2:
+                reference = (
+                    np.asarray(reference_points[0], dtype=np.float64).reshape(-1)[:3]
+                    - np.asarray(reference_points[-1], dtype=np.float64).reshape(-1)[:3]
+                )
+                reference_norm = float(np.linalg.norm(reference))
+                if reference.size == 3 and np.all(np.isfinite(reference)) and reference_norm > 1e-12:
+                    reference_unit = reference / reference_norm
+        except (TypeError, ValueError):
+            reference_unit = None
+
+        directions = [unit for _, unit in records if unit is not None]
+        axis = None
+        if directions:
+            base = directions[0]
+            aligned = [unit if float(np.dot(unit, base)) >= 0.0 else -unit for unit in directions]
+            axis = np.sum(np.asarray(aligned, dtype=np.float64), axis=0)
+            axis_norm = float(np.linalg.norm(axis))
+            if not np.isfinite(axis_norm) or axis_norm <= 1e-12:
+                return None, "seed directions cancel out"
+            axis = axis / axis_norm
+        elif reference_unit is not None:
+            axis = reference_unit.copy()
+        elif len(records) >= 2:
+            positions = np.asarray([position for position, _ in records], dtype=np.float64)
+            centered = positions - positions.mean(axis=0)
+            _u, _s, vh = np.linalg.svd(centered, full_matrices=False)
+            axis = np.asarray(vh[0], dtype=np.float64)
+            axis_norm = float(np.linalg.norm(axis))
+            if not np.isfinite(axis_norm) or axis_norm <= 1e-12:
+                return None, "seed centers do not define an axis"
+            axis = axis / axis_norm
+        else:
+            return None, "one seed has no usable direction"
+
+        if reference_unit is not None and float(np.dot(axis, reference_unit)) < 0.0:
+            axis = -axis
+
+        # A seed's longitudinal orientation must agree with its owning needle.
+        # Opposite signs are physically equivalent for the line, so compare the
+        # absolute dot product here; the sign was already aligned above.
+        for index, unit in enumerate(directions):
+            if abs(float(np.dot(unit, axis))) < 0.995:
+                return None, f"seed direction {index} is not parallel to the owning line"
+
+        positions = np.asarray([position for position, _ in records], dtype=np.float64)
+        origin = positions.mean(axis=0)
+        projections = np.dot(positions - origin, axis)
+        residuals = positions - (origin[None, :] + projections[:, None] * axis[None, :])
+        max_residual = float(np.max(np.linalg.norm(residuals, axis=1))) if len(positions) else 0.0
+        try:
+            tolerance = float(line_tolerance_mm)
+        except (TypeError, ValueError):
+            tolerance = 0.75
+        if not np.isfinite(tolerance) or tolerance <= 0.0:
+            tolerance = 0.75
+        if not np.isfinite(max_residual) or max_residual > tolerance:
+            return None, f"seed centers are not collinear (max residual {max_residual:.3f} mm)"
+
+        shallow = origin + float(np.min(projections)) * axis
+        deep = origin + float(np.max(projections)) * axis
+        extension = _needle_extension_mm() if extension_mm is None else float(extension_mm)
+        if not np.isfinite(extension) or extension <= 0.0:
+            extension = _needle_extension_mm()
+        external = shallow - extension * axis
+        return [deep, external], None
+    except (TypeError, ValueError, np.linalg.LinAlgError) as exc:
+        logger.debug("[needle_safety] Unable to derive needle from seed centers: %s", exc)
+        return None, "invalid seed-derived needle geometry"
+
+
+def _canonical_needle_points_from_seeds(points, seeds, extension_mm=None):
+    """Return one canonical segment and whether it was repaired from seeds."""
+    alignment_error = _needle_seed_alignment_error(points, seeds)
+    if alignment_error is None:
+        clipped, changed = _clip_needle_to_farthest_seed(points, seeds)
+        return clipped, bool(changed), None
+    repaired, reason = _seed_derived_needle_points(
+        seeds,
+        reference_points=points,
+        extension_mm=extension_mm,
+    )
+    if repaired is None:
+        return None, False, f"{alignment_error}; {reason}"
+    return repaired, True, f"{alignment_error}; rebuilt from owned seed centers"
+
+
 def _sample_preview_items(values, limit):
     """Sample a long optimizer list across its full range, deterministically."""
-    items = list(values or [])
+    items = [] if values is None else list(values)
     if len(items) <= limit:
         return list(enumerate(items))
     indices = np.linspace(0, len(items) - 1, num=limit, dtype=int)
     return [(int(index), items[int(index)]) for index in indices]
 
 
-def _preview_trajectory_geometry(trajectories, planning_image, *, status="candidate"):
+def _preview_trajectory_geometry(
+    trajectories,
+    planning_image,
+    *,
+    status="candidate",
+    close_points=None,
+):
+    from plans import utilizations
+
     geometry = []
     for original_index, trajectory in _sample_preview_items(trajectories, 64):
         points = _candidate_world_needle_points(trajectory, planning_image)
@@ -1742,7 +1894,32 @@ def _preview_trajectory_geometry(trajectories, planning_image, *, status="candid
             "points": [point.tolist() for point in points],
             "status": status,
         })
-    return {"trajectories": geometry, "needles": [], "seeds": []}
+    preview_close_points = []
+    close_point_values = [] if close_points is None else close_points
+    for point_index, point in _sample_preview_items(close_point_values, 256):
+        try:
+            world = np.asarray(
+                utilizations.position_transform(
+                    planning_image,
+                    np.asarray(point, dtype=np.float64).reshape(-1)[:3],
+                )[0],
+                dtype=np.float64,
+            ).reshape(-1)[:3]
+            if world.size != 3 or not np.all(np.isfinite(world)):
+                continue
+            preview_close_points.append({
+                "id": f"preview_close_point_{point_index}",
+                "position": world.tolist(),
+                "status": "close_point",
+            })
+        except Exception:
+            logger.debug("Unable to serialize one close-point preview", exc_info=True)
+    return {
+        "trajectories": geometry,
+        "needles": [],
+        "seeds": [],
+        "close_points": preview_close_points,
+    }
 
 
 def _preview_seed_plan_geometry(plan_res, dose_image, *, coordinate_space="voxel"):
@@ -1759,7 +1936,7 @@ def _preview_seed_plan_geometry(plan_res, dose_image, *, coordinate_space="voxel
         if str(coordinate_space).strip().lower() in {
             "world", "patient_world_lps", "physical", "lps",
         }:
-            points, _ = _clip_needle_to_farthest_seed(points, entry[1])
+            points, _, _ = _canonical_needle_points_from_seeds(points, entry[1])
         if points is not None:
             needles.append({
                 "id": f"preview_needle_{trajectory_index}",
@@ -2003,22 +2180,27 @@ def _needle_enters_through_truncated_boundary(
     margin_mm=8.0,
     truncated_boundary_faces=None,
 ):
-    """Return True when a needle segment crosses a truncated CT face.
+    """Return True only when a needle reaches a truncated CT face through body.
 
-    ``_candidate_world_needle_points`` returns ``[deep, external]``.  The
-    deep endpoint can be a fraction of a voxel outside the CT after planning
-    resampling, so checking only ``points[0]`` as an in-volume anchor is not
-    safe.  Instead, test every intersection of the complete segment with the
-    six CT faces and reject only crossings whose face is known to contain a
-    substantial amount of patient tissue in the raw CT.  This catches both
-    endpoint orderings and keeps valid lateral skin entries.
+    The candidate needle includes a long external extension for stable rendered
+    geometry.  That extension may continue through air outside the scan.  The
+    previous implementation rejected any crossing of a flagged CT face,
+    including a path that had already crossed real skin and was only crossing
+    the image boundary in external air.  On short CT acquisitions this removed
+    valid candidates from an entire side of the CTV.
+
+    A flagged face is rejected only when the line is still inside the body
+    immediately before it reaches that face.  If a compatible body mask is
+    unavailable, retain the fail-closed behavior used by legacy callers.
     """
+    del margin_mm  # kept for the public compatibility contract
     if ct_image is None or points is None or len(points) != 2:
         return False
     try:
         size_xyz = np.asarray(ct_image.GetSize(), dtype=np.int64)
         if size_xyz.size != 3 or np.any(size_xyz < 3):
             return False
+
         # Convert world points to continuous CT indices (xyz order).
         indices = []
         for point in points:
@@ -2033,6 +2215,7 @@ def _needle_enters_through_truncated_boundary(
         end_idx = indices[1]
         if np.any(~np.isfinite(start_idx)) or np.any(~np.isfinite(end_idx)):
             return False
+
         if truncated_boundary_faces is None:
             try:
                 from plans.utilizations import infer_truncated_boundary_faces_from_image
@@ -2048,8 +2231,7 @@ def _needle_enters_through_truncated_boundary(
             faces_zyx = (False, False, False, False, False, False)
 
         # World/CT continuous indices are XYZ, while the raw image helper and
-        # planning body mask use ZYX.  Map each XYZ face to its corresponding
-        # ZYX flag explicitly instead of relying on a fragile axis convention.
+        # planning body mask use ZYX. Map each XYZ face explicitly.
         xyz_face_flags = (
             (faces_zyx[4], faces_zyx[5]),  # x_min, x_max
             (faces_zyx[2], faces_zyx[3]),  # y_min, y_max
@@ -2064,10 +2246,31 @@ def _needle_enters_through_truncated_boundary(
         def _inside(value):
             return bool(np.all(value >= 0.0) and np.all(value <= max_idx))
 
-        # Check all line/box-face intersections.  The small parameter probe is
-        # intentionally outside the segment at t=0/1 so an endpoint that is a
-        # few hundredths of a voxel beyond the CT (the observed failure mode)
-        # is still classified as a crossing.
+        body = None
+        if body_mask is not None:
+            candidate_body = np.asarray(body_mask, dtype=bool)
+            expected_shape = (
+                int(size_xyz[2]),
+                int(size_xyz[1]),
+                int(size_xyz[0]),
+            )
+            if candidate_body.shape == expected_shape:
+                body = candidate_body
+            else:
+                logger.warning(
+                    "[needle_safety] Ignoring incompatible body mask shape %s; "
+                    "expected ZYX %s; truncation check remains fail-closed",
+                    candidate_body.shape,
+                    expected_shape,
+                )
+
+        def _body_at_xyz(value):
+            if body is None or not _inside(value):
+                return None
+            index = np.rint(value).astype(np.int64)
+            index = np.clip(index, 0, max_idx.astype(np.int64))
+            return bool(body[int(index[2]), int(index[1]), int(index[0])])
+
         for axis in range(3):
             component = float(delta[axis])
             if abs(component) <= 1e-12:
@@ -2085,16 +2288,51 @@ def _needle_enters_through_truncated_boundary(
                     for index in other_axes
                 ):
                     continue
-                probe_t = min(1e-4, max(1e-8, 1e-3 / max(1.0, float(np.max(np.abs(delta))))))
+
+                probe_t = min(
+                    1e-4,
+                    max(1e-8, 1e-3 / max(1.0, float(np.max(np.abs(delta))))),
+                )
                 before = start_idx + (t - probe_t) * delta
                 after = start_idx + (t + probe_t) * delta
-                if _inside(before) != _inside(after):
+                before_inside = _inside(before)
+                after_inside = _inside(after)
+                if before_inside == after_inside:
+                    continue
+
+                # Identify the in-volume side and sample a short neighborhood
+                # toward it. A crossing is a true CT truncation only when the
+                # path is still in body tissue at this boundary.
+                inside_endpoint = start_idx if before_inside else end_idx
+                inward = inside_endpoint - crossing
+                inward_norm = float(np.linalg.norm(inward))
+                if inward_norm <= 1e-12:
+                    if body is None:
+                        return True
+                    continue
+
+                if body is None:
+                    # Without body geometry we cannot distinguish air from
+                    # tissue at the face; preserve the conservative rule.
                     return True
+
+                body_seen = False
+                for distance in (0.25, 0.75, 1.5, 3.0):
+                    sample = crossing + inward * (distance / inward_norm)
+                    if not _inside(sample):
+                        break
+                    if _body_at_xyz(sample):
+                        body_seen = True
+                        break
+                if body_seen:
+                    return True
+                # The line crossed air/skin before this flagged face. The
+                # remaining external extension is not a truncated entry.
+
         return False
     except Exception:
         logger.exception("[needle_safety] Truncated-boundary check failed")
         return False
-
 
 def _is_flat_slice(a, b):
     """A truncation plane keeps a large, roughly constant cross-section; a
@@ -2224,13 +2462,12 @@ def _filter_world_safe_trajectories(
 def _validated_needle_geometry(plan_res, ct_image, planning_image, ctv_mask, oar_mask, obstacle_labels):
     """Return safe final geometry, ending at each needle's farthest seed.
 
-    A previous implementation reconstructed a line from the returned seed
-    positions. That is not equivalent to the optimizer's trajectory: seed
-    directions can be transformed to world space independently and the
-    reconstructed line may therefore differ from the candidate that was
-    filtered. The trajectory remains authoritative for direction and safety;
-    after validating the complete physical candidate, only its deep endpoint
-    is clipped to the farthest seed that lies on that validated line.
+    The trajectory remains authoritative when its seed payload is aligned.
+    Older plans and some repair/migration paths can, however, retain a stale
+    trajectory anchor while the actual seed centers are already correct.  In
+    that case the published line is rebuilt from the owning seed centers and
+    revalidated as a complete physical segment; a mismatched line is never
+    merely displayed and never causes the seed dose positions to be moved.
     """
     geometry = {}
     unsafe_indices = []
@@ -2248,32 +2485,110 @@ def _validated_needle_geometry(plan_res, ct_image, planning_image, ctv_mask, oar
         if safety_context is None or points is None:
             unsafe_indices.append(index)
             continue
-        if safety_context.segment_hits_obstacle(points):
-            unsafe_indices.append(index)
-            continue
         if isinstance(entry, dict):
             seed_records = entry.get("seeds") or []
         elif isinstance(entry, (list, tuple)) and len(entry) >= 2:
             seed_records = entry[1] or []
         else:
             seed_records = []
-        alignment_error = _needle_seed_alignment_error(points, seed_records)
-        if alignment_error:
-            logger.error('[needle_safety] trajectory %d: %s', index, alignment_error)
+        published_points, repaired, geometry_reason = _canonical_needle_points_from_seeds(
+            points,
+            seed_records,
+            extension_mm=extension,
+        )
+        if published_points is None:
+            logger.error('[needle_safety] trajectory %d: %s', index, geometry_reason)
             unsafe_indices.append(index)
             continue
-        published_points, clipped = _clip_needle_to_farthest_seed(
-            points, seed_records
-        )
-        if clipped:
+        if repaired:
+            if geometry_reason:
+                logger.warning(
+                    "[needle_safety] trajectory %d geometry normalized: %s",
+                    index,
+                    geometry_reason,
+                )
+        if safety_context.segment_hits_obstacle(published_points):
+            logger.error(
+                "[needle_safety] trajectory %d: canonical seed/needle segment intersects an obstacle",
+                index,
+            )
+            unsafe_indices.append(index)
+            continue
+        if repaired:
             logger.debug(
-                "[needle_safety] clipped trajectory %d deep endpoint to its farthest final seed",
+                "[needle_safety] published trajectory %d from its owned seed centers",
                 index,
             )
         geometry[str(index)] = [
             np.asarray(point, dtype=float).tolist() for point in published_points
         ]
     return geometry, unsafe_indices
+
+
+def _plan_entry_seed_count(entry):
+    """Return the number of seed records in one optimizer plan entry."""
+    if isinstance(entry, dict):
+        seeds = entry.get("seeds") or []
+    elif isinstance(entry, (list, tuple)) and len(entry) >= 2:
+        seeds = entry[1] or []
+    else:
+        seeds = []
+    try:
+        return int(len(seeds))
+    except TypeError:
+        return 0
+
+
+def _plan_seed_count(plan_res):
+    """Count seeds without assuming that a plan entry is a particular container."""
+    return sum(_plan_entry_seed_count(entry) for entry in (plan_res or []))
+
+
+def _prune_unsafe_plan_entries(plan_res, unsafe_indices):
+    """Remove only final plan entries rejected by physical needle validation.
+
+    Candidate filtering and the final validator are deliberately fail-closed.
+    A late safety mismatch in one trajectory must therefore never be bypassed,
+    but it also must not discard unrelated safe trajectories. The caller
+    recomputes the cumulative dose from the returned entries before publishing
+    the partial plan.
+    """
+    unsafe = set()
+    for index in unsafe_indices or []:
+        try:
+            unsafe.add(int(index))
+        except (TypeError, ValueError):
+            continue
+    retained = []
+    removed_seed_count = 0
+    removed_indices = []
+    for index, entry in enumerate(plan_res or []):
+        if index in unsafe:
+            removed_indices.append(index)
+            removed_seed_count += _plan_entry_seed_count(entry)
+            continue
+        retained.append(entry)
+    return retained, removed_indices, removed_seed_count
+
+
+def _sum_plan_seed_doses(plan_res, reference_volume):
+    """Rebuild cumulative dose from exactly the entries being published."""
+    total = np.zeros_like(reference_volume, dtype=np.float32)
+    for entry in plan_res or []:
+        if isinstance(entry, dict):
+            dose_maps = entry.get("dose_maps") or entry.get("single_seed_radiations") or []
+        elif isinstance(entry, (list, tuple)) and len(entry) >= 3:
+            dose_maps = entry[2] or []
+        else:
+            dose_maps = []
+        for dose_map in dose_maps:
+            dose = np.asarray(dose_map, dtype=np.float32)
+            if dose.shape != total.shape:
+                raise ValueError(
+                    "plan contains a dose map whose geometry differs from the planning grid"
+                )
+            total += dose
+    return total
 
 
 def _build_algorithm_plan_snapshot(seed_plan_serialized, verified_needle_geometry):
@@ -3298,12 +3613,21 @@ class PlanningPipelineTool(BaseTool):
                 detail="Generating sampled candidate paths",
             )
 
+        preview_close_points = []
+
         def _trajectory_preview_observer(event):
+            nonlocal preview_close_points
             if preview_emitter is None or not isinstance(event, dict):
                 return
+            if event.get("close_points") is not None:
+                preview_close_points = event.get("close_points")
             candidates = event.get("trajectories") or []
             preview_emitter.frame(
-                _preview_trajectory_geometry(candidates, resampled_ct),
+                _preview_trajectory_geometry(
+                    candidates,
+                    resampled_ct,
+                    close_points=event.get("close_points"),
+                ),
                 stage="trajectory_init",
                 phase=str(event.get("phase") or "candidate_generation"),
                 detail=str(event.get("detail") or ""),
@@ -3389,7 +3713,12 @@ class PlanningPipelineTool(BaseTool):
 
         if preview_emitter is not None:
             preview_emitter.frame(
-                _preview_trajectory_geometry(trajectories, resampled_ct, status="safe"),
+                _preview_trajectory_geometry(
+                    trajectories,
+                    resampled_ct,
+                    status="safe",
+                    close_points=preview_close_points,
+                ),
                 stage="trajectory_init",
                 phase="safety_filtered",
                 detail=f"{len(trajectories)} safe candidate paths",
@@ -3883,7 +4212,27 @@ class PlanningPipelineTool(BaseTool):
                 # diagnostic record must remain queryable for provenance.
                 agent.memory.store("rl_status", copy.deepcopy(rl_status))
 
-        optimization_started = time.monotonic()
+        rf_params = getattr(args, "rf_params", {}) or {}
+
+        def _budget_deadline(value, default):
+            try:
+                seconds = float(value)
+            except (TypeError, ValueError):
+                seconds = float(default)
+            if not np.isfinite(seconds) or seconds <= 0.0:
+                seconds = float(default)
+            return time.monotonic() + seconds
+
+        # Rule-based optimization used to have no wall-clock guard. It could
+        # continue evaluating every remaining seed position after the
+        # interactive RL budget had already expired, which made the UI appear
+        # stuck in seed optimization. Reuse the configured 300 s planning
+        # budget for the normal path; coverage repair remains separately
+        # bounded below.
+        rule_based_deadline = (
+            _budget_deadline(rf_params.get("max_wall_seconds", 300.0), 300.0)
+            if mode != "rl" else None
+        )
         try:
             if mode == "rl":
                 # RL uses the same filtered trajectories and radiation volume
@@ -3938,6 +4287,7 @@ class PlanningPipelineTool(BaseTool):
                     parallel_min_distance_mm=parallel_min_distance_mm,
                     parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
                     preview_callback=_seed_preview_observer,
+                    deadline=rule_based_deadline,
                 )
             effective_mode = mode
             rl_fallback_used = False
@@ -3967,6 +4317,10 @@ class PlanningPipelineTool(BaseTool):
                         "fallback (it will replace RL only after a strict coverage improvement)",
                         rl_target_coverage, float(args.DVH_rate),
                     )
+                    fallback_deadline = _budget_deadline(
+                        rf_params.get("fallback_max_wall_seconds", 120.0),
+                        120.0,
+                    )
                     fallback_plan = core.optimal_plan(
                         trajectories,
                         radiation_volume,
@@ -3992,6 +4346,7 @@ class PlanningPipelineTool(BaseTool):
                         parallel_min_distance_mm=parallel_min_distance_mm,
                         parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
                         preview_callback=_seed_preview_observer,
+                        deadline=fallback_deadline,
                     )
                     fallback_coverage = _plan_target_coverage(
                         fallback_plan,
@@ -4273,12 +4628,10 @@ class PlanningPipelineTool(BaseTool):
             logger.info('[coverage_repair] %s', repair_status)
             if agent:
                 agent.memory.store('coverage_repair_status', repair_status)
-            # Compute dose distribution
-            sum_image = np.zeros_like(radiation_volume, dtype=np.float32)
-            for entry in plan_res:
-                if isinstance(entry, (list, tuple)) and len(entry) >= 3:
-                    for seed_dose in entry[2]:
-                        sum_image += seed_dose
+            # Compute dose from exactly the plan that survived optimization
+            # and coverage repair. This is repeated after any late safety
+            # pruning below.
+            sum_image = _sum_plan_seed_doses(plan_res, radiation_volume)
         except Exception as e:
             logger.error(
                 "Planning failed: %s (planning_grid_ct=%s, ctv_grid=%s, "
@@ -4311,6 +4664,8 @@ class PlanningPipelineTool(BaseTool):
         if rl_status is not None:
             _finalize_rl_status()
 
+        safety_pruned_trajectory_indices = []
+        safety_pruned_seed_count = 0
         verified_needle_geometry, unsafe_needle_indices = _validated_needle_geometry(
             plan_res,
             ct_image,
@@ -4322,19 +4677,79 @@ class PlanningPipelineTool(BaseTool):
         if unsafe_needle_indices:
             # This is a defense-in-depth assertion. Candidate validation above
             # should prevent it, but a plan must never be accepted or rendered
-            # when its actual seed-derived 150 mm needle is unsafe.
+            # when its actual seed-derived 150 mm needle is unsafe. Retain
+            # independent safe entries instead of throwing away the complete
+            # plan; dose is rebuilt from the retained entries so no rejected
+            # needle contributes to the published result.
+            raw_seed_count_before_safety = _plan_seed_count(plan_res)
+            safe_plan, safety_pruned_trajectory_indices, safety_pruned_seed_count = (
+                _prune_unsafe_plan_entries(plan_res, unsafe_needle_indices)
+            )
+            safe_seed_count = _plan_seed_count(safe_plan)
             logger.error(
                 "[needle_safety] Final seed plan failed physical obstacle validation for needles: %s",
                 unsafe_needle_indices,
             )
-            if preview_emitter is not None:
-                preview_emitter.complete("seed_planning", status="error")
-            return ToolResult(
-                success=False,
-                error=(
-                    "[seed_planning] Safety validation rejected the final needle geometry "
-                    f"for trajectory indices {unsafe_needle_indices}. No unsafe plan was published."
-                ),
+            if safe_seed_count <= 0:
+                if preview_emitter is not None:
+                    preview_emitter.complete("seed_planning", status="error")
+                return ToolResult(
+                    success=False,
+                    error=(
+                        "[seed_planning] Safety validation rejected all final needle geometry "
+                        f"for trajectory indices {unsafe_needle_indices}; the optimizer had "
+                        f"{raw_seed_count_before_safety} seed(s), but none can be published safely."
+                    ),
+                    metadata={
+                        "step_executed": "seed_planning",
+                        "total_seeds": raw_seed_count_before_safety,
+                        "safe_seed_count": 0,
+                        "num_trajectories": len(plan_res or []),
+                        "unsafe_needle_indices": list(unsafe_needle_indices),
+                        "planning_grid_ct_type": type(resampled_ct).__name__,
+                        "rl_status": copy.deepcopy(rl_status) if rl_status is not None else None,
+                    },
+                )
+
+            plan_res = safe_plan
+            sum_image = _sum_plan_seed_doses(plan_res, radiation_volume)
+            verified_needle_geometry, remaining_unsafe_indices = _validated_needle_geometry(
+                plan_res,
+                ct_image,
+                resampled_ct,
+                ctv_mask,
+                oar_mask,
+                obstacle_labels,
+            )
+            if remaining_unsafe_indices:
+                # A second pass protects against an indexing or malformed-entry
+                # bug in the pruning path. Never publish a plan that still
+                # contains an unsafe line.
+                logger.error(
+                    "[needle_safety] Safe-plan revalidation still rejected needles: %s",
+                    remaining_unsafe_indices,
+                )
+                if preview_emitter is not None:
+                    preview_emitter.complete("seed_planning", status="error")
+                return ToolResult(
+                    success=False,
+                    error=(
+                        "[seed_planning] Safety validation still rejected the retained plan "
+                        f"for trajectory indices {remaining_unsafe_indices}; no plan was published."
+                    ),
+                    metadata={
+                        "step_executed": "seed_planning",
+                        "total_seeds": _plan_seed_count(plan_res),
+                        "unsafe_needle_indices": list(remaining_unsafe_indices),
+                        "initial_unsafe_needle_indices": list(unsafe_needle_indices),
+                        "safety_pruned_trajectory_indices": list(safety_pruned_trajectory_indices),
+                        "rl_status": copy.deepcopy(rl_status) if rl_status is not None else None,
+                    },
+                )
+            logger.warning(
+                "[needle_safety] Published safe partial plan after pruning trajectories=%s, removed_seeds=%d",
+                safety_pruned_trajectory_indices,
+                safety_pruned_seed_count,
             )
 
         # Extract results
@@ -4435,6 +4850,15 @@ class PlanningPipelineTool(BaseTool):
                     "parallel_angle_tolerance_deg": float(parallel_angle_tolerance_deg),
                     "source": "physical_guide_primary_bore_diameter",
                 },
+                "safety_validation": {
+                    "status": (
+                        "partial_plan_published"
+                        if safety_pruned_trajectory_indices
+                        else "passed"
+                    ),
+                    "pruned_trajectory_indices": list(safety_pruned_trajectory_indices),
+                    "pruned_seed_count": int(safety_pruned_seed_count),
+                },
                 "seed_info": {
                     "radius": float(args.seed_info.get("radius", 0.4)),
                     "length": float(args.seed_info.get("length", 3.7)),
@@ -4498,6 +4922,8 @@ class PlanningPipelineTool(BaseTool):
                 "rl_status": copy.deepcopy(rl_status) if rl_status is not None else None,
                 "target_coverage": final_target_coverage,
                 "planning_fingerprint": agent_config.get("_planning_fingerprint"),
+                "safety_pruned_trajectory_indices": list(safety_pruned_trajectory_indices),
+                "safety_pruned_seed_count": int(safety_pruned_seed_count),
             },
         )
 

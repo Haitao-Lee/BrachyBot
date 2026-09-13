@@ -154,6 +154,34 @@ def test_snapshot_preserves_unpaired_surrogates_and_unicode(tmp_path):
     assert json.loads(path.read_text(encoding="utf-8"))["text"] == text
 
 
+def test_agent_results_patch_commits_policy_and_invalidates_downstream(tmp_path):
+    store = WorkspaceStore(tmp_path / "runtime")
+    user = store.create_user("policy_owner", "hash")
+    case = store.create_session(user["id"], "Policy case")
+    agent = _Agent()
+
+    store.snapshot_agent(user["id"], case.id, agent, reason="initial")
+    updated = store.save_agent_results_patch(
+        user["id"],
+        case.id,
+        updates={
+            "structure_overrides": {"structure:oar:3": {"traversability": "traversable"}},
+            "structure_artifact_status": {"planning": "stale"},
+        },
+        removals={"trajectories", "seed_plan_serialized", "dose_metrics"},
+        reason="test.policy",
+    )
+
+    results = updated["agent"]["planning_results"]
+    assert results["structure_overrides"]["structure:oar:3"]["traversability"] == "traversable"
+    assert results["structure_artifact_status"]["planning"] == "stale"
+    assert "trajectories" not in results
+    assert "seed_plan_serialized" not in results
+    assert "dose_metrics" not in results
+    assert "ct_data" in results
+    assert "structure_overrides" in updated["agent"]["conversation_state"]["data_available"]
+
+
 def test_workspace_snapshot_round_trip_preserves_arrays_and_ui(tmp_path):
     store = WorkspaceStore(tmp_path / "runtime")
     user = store.create_user("planner", "hash")

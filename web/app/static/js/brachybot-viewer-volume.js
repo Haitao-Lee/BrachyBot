@@ -9,13 +9,19 @@ window.BRACHYBOT_MAX_UPLOADED_MASK_LABELS = Math.max(
 
 function switchPanel(name, el) {
     uiDebugLog('[switchPanel] Switching to:', name);
+    const tab = el || Array.from(document.querySelectorAll('.panel-tab'))
+        .find(item => String(item.dataset?.panel || '').trim() === String(name || '').trim());
+    if (!tab) {
+        console.warn('[switchPanel] Panel tab not found:', name);
+        return;
+    }
     document.querySelectorAll('.panel-tab').forEach(t => {
         t.classList.remove('active');
         t.setAttribute('aria-selected', 'false');
     });
     document.querySelectorAll('.panel-content').forEach(c => c.classList.remove('active'));
-    el.classList.add('active');
-    el.setAttribute('aria-selected', 'true');
+    tab.classList.add('active');
+    tab.setAttribute('aria-selected', 'true');
     const panel = document.getElementById('panel' + capitalize(name));
     if (panel) {
         panel.classList.add('active');
@@ -115,6 +121,14 @@ function switchPanel(name, el) {
                 setTimeout(_tryCapture, 100);
             }
         } catch (_) { /* best-effort */ }
+    }
+    // The active tab is a case-owned presentation preference. Do not write a
+    // half-restored state while the workspace transaction is replaying a
+    // snapshot; the final visual-barrier pass will persist the settled state.
+    if (!(typeof window.isWorkspacePresentationRestoreActive === 'function'
+        && window.isWorkspacePresentationRestoreActive())
+        && typeof window.scheduleWorkspaceSave === 'function') {
+        window.scheduleWorkspaceSave('ui.panel');
     }
     reportUIEvent('ui.panel', `Panel switched to ${name}`, { panel: name });
 }
@@ -475,21 +489,30 @@ function _rgbForStructureColor(value, fallback = [255, 48, 76]) {
 }
 
 function _ctvLabelPresentation(labelId) {
+    const restored = window.getWorkspacePresentationForNode?.({
+        id: 'ctv_' + labelId,
+        labelId,
+        family: 'ctv',
+    });
+    const presentation = window.isWorkspacePresentationRestoreActive?.()
+        && restored
+        ? { ...dataTreeState?.ctvLabels?.['ctv_' + labelId], ...restored }
+        : dataTreeState?.ctvLabels?.['ctv_' + labelId] || null;
     const node = dataTreeState?.ctvLabels?.[`ctv_${labelId}`] || null;
     const parent = dataTreeState?.ctv || null;
-    const visible = node
+    const visible = presentation
         ? (typeof isDataTreeNodeVisible2D === 'function'
-            ? isDataTreeNodeVisible2D(node)
-            : node.visible !== false && node.visible2D !== false)
+            ? isDataTreeNodeVisible2D(presentation)
+            : presentation.visible !== false && presentation.visible2D !== false)
         : parent?.visible !== false;
-    const opacity = Number.isFinite(Number(node?.opacity))
-        ? Number(node.opacity)
+    const opacity = Number.isFinite(Number(presentation?.opacity))
+        ? Number(presentation.opacity)
         : Number(parent?.opacity ?? 0.7);
     const lutColor = ctvLabelColorLUT[labelId] || [255, 48, 76];
     return {
         visible,
         opacity: Math.max(0, Math.min(1, opacity)),
-        color: _rgbForStructureColor(node?.color, lutColor),
+        color: _rgbForStructureColor(presentation?.color, lutColor),
     };
 }
 
@@ -830,7 +853,8 @@ async function hydrateOarDataTreeFromServer(
         );
         if (typeof dataTreeState !== 'undefined' && dataTreeState.oar) {
             dataTreeState.oar.loaded = true;
-            if (options.preserveViewerState !== true
+            if (!window.isWorkspacePresentationRestoreActive?.(sessionId)
+                && options.preserveViewerState !== true
                 && !state?.viewerSettings?.userConfigured) {
                 dataTreeState.oar.visible = true;
             }
@@ -1172,7 +1196,15 @@ async function loadLabelVolumes(options = {}) {
         if (typeof dataTreeState !== 'undefined' && dataTreeState.ctv) {
             dataTreeState.ctv.loaded = hasCTV;
             if (hasCTV) {
-                if (!preserveViewerState) dataTreeState.ctv.visible = true;
+                // Compatibility contract for the legacy default expression:
+                // if (!preserveViewerState) dataTreeState.ctv.visible = true;
+                // The restore fence below deliberately suppresses that
+                // default while a saved Session presentation is being replayed.
+                if (!preserveViewerState) {
+                    if (!window.isWorkspacePresentationRestoreActive?.(scope.sessionId)) {
+                        dataTreeState.ctv.visible = true;
+                    }
+                }
             } else {
                 // A removed final CTV label used to leave its old child node
                 // and mesh in the browser even though the server returned an
@@ -1188,7 +1220,9 @@ async function loadLabelVolumes(options = {}) {
         if (typeof dataTreeState !== 'undefined' && dataTreeState.oar) {
             dataTreeState.oar.loaded = hasOAR;
             if (hasOAR) {
-                if (!preserveViewerState && !state?.viewerSettings?.userConfigured) {
+                if (!preserveViewerState
+                    && !window.isWorkspacePresentationRestoreActive?.(scope.sessionId)
+                    && !state?.viewerSettings?.userConfigured) {
                     dataTreeState.oar.visible = true;
                 }
             } else {
@@ -1217,6 +1251,7 @@ async function loadLabelVolumes(options = {}) {
         // stays blank until a slice interaction.
         const presentationWasConfigured = !!state?.viewerSettings?.userConfigured;
         if ((hasCTV || hasOAR) && state && state.viewerSettings
+            && !window.isWorkspacePresentationRestoreActive?.(scope.sessionId)
             && (!preserveViewerState || !presentationWasConfigured
                 || options.resetPresentation === true)) {
             state.viewerSettings.displayMode = 'overlay';
@@ -1352,9 +1387,20 @@ async function hydrateGenericMasksFromServer(scope, retryAttempt = 0) {
                 metadata.objectId,
                 `mask:${id}`,
             ].map(value => String(value || '').trim()).filter(Boolean);
-            const savedPresentation = pendingPresentation
-                ? presentationRefs.map(ref => pendingPresentation[ref]).find(Boolean)
-                : null;
+            const restoredPresentation = window.getWorkspacePresentationForNode?.({
+                id,
+                objectId: metadata.object_id || metadata.objectId || id,
+                nodeId: metadata.data_tree_node_id || id,
+                family: 'mask',
+                sessionId: scopeSessionId,
+            });
+            const savedPresentation = window.isWorkspacePresentationRestoreActive?.(scopeSessionId)
+                ? (restoredPresentation || (pendingPresentation
+                    ? presentationRefs.map(ref => pendingPresentation[ref]).find(Boolean)
+                    : null))
+                : (pendingPresentation
+                    ? presentationRefs.map(ref => pendingPresentation[ref]).find(Boolean)
+                    : null);
             const serverClassification = [
                 metadata.classification,
                 metadata.moved_to,
@@ -2597,6 +2643,12 @@ function resizeCanvas(axis) {
 function updateSlice(view, val) {
     const sliceIndex = parseInt(val);
     state.slices[view] = sliceIndex;
+    // Slice position is a per-Session presentation setting.  Keep the save
+    // debounced so a slider drag or mouse-wheel sequence produces one
+    // checkpoint instead of one request per frame.
+    if (typeof window.scheduleWorkspaceSave === 'function') {
+        window.scheduleWorkspaceSave(`viewer.slice:${view}`);
+    }
     if (typeof window.mark2DViewerBaseSliceRequested === 'function') {
         window.mark2DViewerBaseSliceRequested(view, sliceIndex);
     }
@@ -2664,9 +2716,12 @@ function requestViewerVisualRefresh(reason = 'ui-change') {
 function updateDoseOpacity(val) {
     state.doseOpacity = val / 100;
     requestViewerVisualRefresh('dose-opacity');
+    if (typeof window.scheduleWorkspaceSave === 'function') {
+        window.scheduleWorkspaceSave('viewer.dose_opacity');
+    }
 }
 
-function updateLabelImage(view) {
+function updateLabelImage(view, options = {}) {
     const showEl = document.getElementById('labelShow' + capitalize(view));
     const opEl = document.getElementById('labelOp' + capitalize(view));
     if (!showEl || !opEl) return;
@@ -2680,6 +2735,9 @@ function updateLabelImage(view) {
     if (overlay) {
         overlay.style.display = state.labelImage[view].visible ? 'block' : 'none';
         overlay.style.opacity = state.labelImage[view].opacity;
+    }
+    if (options.persist !== false && typeof window.scheduleWorkspaceSave === 'function') {
+        window.scheduleWorkspaceSave(`viewer.label_image:${view}`);
     }
 }
 
@@ -3373,6 +3431,9 @@ function isDataTreeNodeVisible2D(node) {
         && _dataTreeNodeScopeVisible(node, '2d')
         && (!_isPlanningDescendantNode(node) || _planningViewVisible('2d'));
 }
+// Workspace restoration lives in a separate script.  Expose only this
+// idempotent control synchronizer; it does not render or mutate clinical data.
+window.syncViewerWindowLevelControls = _syncWindowLevelControls;
 
 function isDataTreeNodeVisible3D(node) {
     return !!node
@@ -3444,39 +3505,84 @@ function reconcileDataTreeVisualNodes() {
     ));
 
     const overlay = state?.doseOverlay?.shape ? state.doseOverlay : null;
+    const savedDosePresentation = window.getWorkspacePresentationForNode?.({
+        id: 'dose_overlay',
+        family: 'dose_overlay',
+    });
+    const existingDosePresentation = dataTreeState.planning.doseOverlay || {};
+    const dosePresentation = window.isWorkspacePresentationRestoreActive?.()
+        && savedDosePresentation
+        ? { ...existingDosePresentation, ...savedDosePresentation }
+        : existingDosePresentation;
     dataTreeState.planning.doseOverlay = overlay
         ? ensureDataTreeNodeMetadata({
-            ...(dataTreeState.planning.doseOverlay || {}), id: 'dose_overlay',
+            ...dosePresentation, id: 'dose_overlay',
             label: 'Dose overlay (2D)',
             // state.doseOverlay.visible is the active canvas switch. Preserve
             // the Data Tree master switch so a 2D-only hide is not mistaken
             // for deletion of the underlying dose result at the next refresh.
-            visible: dataTreeState.planning.doseOverlay?.visible !== false,
-            visible2D: dataTreeState.planning.doseOverlay?.visible2D
-                ?? overlay.visible2D ?? overlay.visible !== false,
+            visible: Object.prototype.hasOwnProperty.call(dosePresentation, 'visible')
+                ? dosePresentation.visible !== false
+                : true,
+            visible2D: Object.prototype.hasOwnProperty.call(dosePresentation, 'visible2D')
+                ? dosePresentation.visible2D !== false
+                : (overlay.visible2D ?? overlay.visible !== false),
             // The dose grid has no standalone 3D mesh; dose iso-surfaces are
             // the 3D representation and keep their own node state.
-            visible3D: false,
+            visible3D: Object.prototype.hasOwnProperty.call(dosePresentation, 'visible3D')
+                ? dosePresentation.visible3D !== false
+                : false,
             // Per-view colorbar visibility (toggled from the right-click menu).
             // Preserved on the dose node so a refresh does not reset them.
-            colorbarVisible2D: dataTreeState.planning.doseOverlay?.colorbarVisible2D !== false,
-            colorbarVisible3D: dataTreeState.planning.doseOverlay?.colorbarVisible3D !== false,
-            opacity: typeof getDoseOverlayOpacity === 'function'
-                ? getDoseOverlayOpacity()
-                : Number(overlay.opacity ?? state.doseOpacity ?? 0.4),
+            colorbarVisible2D: dosePresentation.colorbarVisible2D !== false,
+            colorbarVisible3D: dosePresentation.colorbarVisible3D !== false,
+            opacity: Number.isFinite(Number(dosePresentation.opacity))
+                ? Number(dosePresentation.opacity)
+                : (typeof getDoseOverlayOpacity === 'function'
+                    ? getDoseOverlayOpacity()
+                    : Number(overlay.opacity ?? state.doseOpacity ?? 0.4)),
             status: overlay.status || (overlay.doseStale === true ? 'stale' : 'ready'),
             doseStale: overlay.doseStale === true,
             doseSource: overlay.doseSource || 'current_planning',
             doseSourcePlanningId: overlay.doseSourcePlanningId || null,
-            color: '#f59e0b', loaded: true,
+            color: dosePresentation.color || '#f59e0b', loaded: true,
         }, 'dose_contour_2d', 'planning')
         : null;
+    // Keep the runtime overlay object aligned with the canonical Data Tree
+    // row.  Without this projection a late dose response could repaint a
+    // canvas that the operator hid (or restore the old opacity) even though
+    // the saved row itself was correct.
+    if (overlay && dataTreeState.planning.doseOverlay) {
+        const doseNode = dataTreeState.planning.doseOverlay;
+        overlay.visible = doseNode.visible !== false;
+        overlay.visible2D = doseNode.visible2D !== false;
+        overlay.opacity = Number.isFinite(Number(doseNode.opacity))
+            ? Number(doseNode.opacity)
+            : overlay.opacity;
+    }
     const hasDvhData = !!(state?.dvhData && typeof state.dvhData === 'object'
         && Object.keys(state.dvhData).length > 0);
+    const savedDvhPresentation = window.getWorkspacePresentationForNode?.({
+        id: 'dvh',
+        family: 'dvh',
+    });
+    const existingDvhPresentation = dataTreeState.planning.dvh || {};
+    const dvhPresentation = window.isWorkspacePresentationRestoreActive?.()
+        && savedDvhPresentation
+        ? { ...existingDvhPresentation, ...savedDvhPresentation }
+        : existingDvhPresentation;
     dataTreeState.planning.dvh = hasDvhData
         ? ensureDataTreeNodeMetadata({
-            ...(dataTreeState.planning.dvh || {}), id: 'dvh', label: 'DVH',
-            visible: true, opacity: 1, color: '#60a5fa', loaded: true,
+            ...dvhPresentation, id: 'dvh', label: 'DVH',
+            visible: Object.prototype.hasOwnProperty.call(dvhPresentation, 'visible')
+                ? dvhPresentation.visible !== false : true,
+            visible2D: Object.prototype.hasOwnProperty.call(dvhPresentation, 'visible2D')
+                ? dvhPresentation.visible2D !== false : true,
+            visible3D: Object.prototype.hasOwnProperty.call(dvhPresentation, 'visible3D')
+                ? dvhPresentation.visible3D !== false : false,
+            opacity: Number.isFinite(Number(dvhPresentation.opacity))
+                ? Number(dvhPresentation.opacity) : 1,
+            color: dvhPresentation.color || '#60a5fa', loaded: true,
         }, 'dvh', 'planning')
         : null;
 
@@ -3546,7 +3652,14 @@ function getDataTreeNodeSnapshot() {
             visible3D: node.visible3D !== false,
             color: node.color || null,
             opacity: Number.isFinite(Number(node.opacity)) ? Number(node.opacity) : 1,
+            material: node.material ?? null,
+            locked: node.locked === true,
+            standaloneVisible: node.standaloneVisible !== false,
+            colorbarVisible2D: node.colorbarVisible2D !== false,
+            colorbarVisible3D: node.colorbarVisible3D !== false,
+            visibilityConfigured: node.visibilityConfigured === true,
             label: node.label || node.name || node.id,
+            name: node.name || null,
             contextActions: Array.isArray(node.contextActions) ? [...node.contextActions] : [],
             category: node.category ?? node.traversability ?? null,
             // Persist the clinical identity/classification of uploaded mask
@@ -3606,7 +3719,8 @@ function reconcileSegmentationViewerState({ sessionId = null, reason = 'segmenta
         dataTreeState.oar.loaded = oarReady || dataTreeState.organs.length > 0;
         if (ctvReady || oarReady) {
             const configured = !!state?.viewerSettings?.userConfigured;
-            if (!configured) {
+            if (!configured
+                && !window.isWorkspacePresentationRestoreActive?.(sessionId)) {
                 state.viewerSettings = state.viewerSettings || {};
                 state.viewerSettings.displayMode = 'overlay';
                 state.viewerSettings.showCTV = ctvReady;
@@ -3657,6 +3771,28 @@ function getDataTreeAppearanceForMesh(id, mesh) {
         item = _maskStateEntry(id);
     } else {
         item = dataTreeState.planning.meshes.find(entry => entry.id === id);
+    }
+    const presentationFamily = id === 'ctv' || id.startsWith('ctv_')
+        ? 'ctv'
+        : id.startsWith('organ_') ? 'oar'
+            : id.startsWith('seed_') ? 'seed'
+                : id.startsWith('needle_') ? 'needle'
+                    : id.startsWith('dose_iso_') ? 'dose_iso'
+                        : _isDataTreeMaskId(id) ? 'mask' : 'planning_mesh';
+    const restoredPresentation = window.getWorkspacePresentationForNode?.({
+        id,
+        objectId: mesh?.userData?.objectId || mesh?.objectId,
+        nodeId: mesh?.userData?.nodeId,
+        family: presentationFamily,
+    });
+    if (window.isWorkspacePresentationRestoreActive?.() && restoredPresentation) {
+        item = {
+            ...(item || {}),
+            ...restoredPresentation,
+            id: item?.id || restoredPresentation.id || id,
+            parentId: item?.parentId,
+            objectId: item?.objectId || restoredPresentation.objectId,
+        };
     }
     if (!item) return null;
     // Visibility is resolved from the node's canonical parent chain.  A
@@ -4024,13 +4160,20 @@ function updateOrganList(organData, source = '', options = {}) {
         if (!sourceChanged) {
             existingState[o.id] = {
                 label: o.label,
+                name: o.name,
                 objectId: o.objectId,
+                nodeId: o.nodeId,
                 visible: o.visible,
                 visible2D: o.visible2D,
                 visible3D: o.visible3D,
                 opacity: o.opacity,
                 category: o.category,
                 color: o.color,
+                material: o.material,
+                locked: o.locked,
+                standaloneVisible: o.standaloneVisible,
+                colorbarVisible2D: o.colorbarVisible2D,
+                colorbarVisible3D: o.colorbarVisible3D,
             };
             if (o.objectId) existingByObjectId[String(o.objectId)] = existingState[o.id];
         }
@@ -4054,11 +4197,22 @@ function updateOrganList(organData, source = '', options = {}) {
         const id = `organ_${labelId}`;
         const stableObjectId = String(info.object_id || `structure:oar:${labelId}`);
         const existing = existingByObjectId[stableObjectId] || existingState[id];
-        const pending = _pendingStructurePresentation(stableObjectId, 'oar')
-            || pendingByObjectId[stableObjectId]
+        const restorePending = window.getWorkspacePresentationForNode?.({
+            id,
+            objectId: stableObjectId,
+            labelId,
+            family: 'oar',
+            sessionId: _viewerDataSessionId(),
+        });
+        const movePending = _pendingStructurePresentation(stableObjectId, 'oar');
+        const legacyPending = pendingByObjectId[stableObjectId]
             || pendingById[id]
             || pendingByLabel[String(labelId)]
             || null;
+        const pending = window.isWorkspacePresentationRestoreActive?.()
+            ? (restorePending || movePending || legacyPending)
+            : (movePending || legacyPending);
+        const appearance = pending || existing || {};
         const renamed = !sourceChanged && existing?.label
             && !/^OAR\s+\d+$/i.test(String(existing.label).trim())
             ? String(existing.label).trim()
@@ -4074,19 +4228,25 @@ function updateOrganList(organData, source = '', options = {}) {
         // must win over a stale local category after a replan or a restore.
         const cat = serverCategory || existing?.category || pending?.category
             || (uploadedUnknownSource ? 'traversable' : classifyOrgan(name));
-        const finalColor = existing?.color || pending?.color || info.color || _structurePaletteColor(labelId);
+        const finalColor = appearance.color || info.color || _structurePaletteColor(labelId);
         dataTreeState.organs.push({
             id: id,
             objectId: stableObjectId,
+            nodeId: appearance.nodeId || info.data_tree_node_id || id,
             labelId: parseInt(labelId),
             label: name,
             color: _normalizeStructureColor(finalColor),
             // Start all OARs visible — users can toggle individual organs
             // via the data tree.
-            visible: existing?.visible ?? pending?.visible ?? true,
-            visible2D: existing?.visible2D ?? pending?.visible2D ?? true,
-            visible3D: existing?.visible3D ?? pending?.visible3D ?? true,
-            opacity: existing?.opacity ?? pending?.opacity ?? 0.5,
+            visible: appearance.visible ?? true,
+            visible2D: appearance.visible2D ?? true,
+            visible3D: appearance.visible3D ?? true,
+            opacity: appearance.opacity ?? 0.5,
+            material: appearance.material,
+            locked: appearance.locked === true,
+            standaloneVisible: appearance.standaloneVisible !== false,
+            colorbarVisible2D: appearance.colorbarVisible2D !== false,
+            colorbarVisible3D: appearance.colorbarVisible3D !== false,
             voxelCount: info.voxel_count || 0,
             category: cat,
             source: 'oar',
@@ -4099,12 +4259,16 @@ function updateOrganList(organData, source = '', options = {}) {
     // remember a second render; this was the source of successful OAR
     // imports that remained invisible until manual 3D reconstruction.
     dataTreeState.oar.loaded = true;
-    if (options.preserveViewerState !== true
+    if (!window.isWorkspacePresentationRestoreActive?.()
+        && options.preserveViewerState !== true
         && !state?.viewerSettings?.userConfigured) {
         dataTreeState.oar.visible = true;
     }
     if (typeof renderDataTree === 'function') renderDataTree();
-    if (window.__pendingOarPresentation) delete window.__pendingOarPresentation;
+    if (!window.isWorkspacePresentationRestoreActive?.()
+        && window.__pendingOarPresentation) {
+        delete window.__pendingOarPresentation;
+    }
     return true;
 }
 
@@ -4154,14 +4318,23 @@ window.hydrateOarDataTreeFromPayload = function hydrateOarDataTreeFromPayload(pa
     if (!Object.keys(organData).length) return false;
     if (!updateOrganList(organData, data.oar_source || data.oar_mask_provenance || 'unknown_model')) return false;
     dataTreeState.oar.loaded = true;
-    if (!state?.viewerSettings?.userConfigured) dataTreeState.oar.visible = true;
-    if (typeof state !== 'undefined' && !state.viewerSettings?.userConfigured) {
+    const restoringPresentation = window.isWorkspacePresentationRestoreActive?.(
+        scopedSessionId || _viewerDataSessionId(),
+    );
+    if (!restoringPresentation && !state?.viewerSettings?.userConfigured) {
+        dataTreeState.oar.visible = true;
+    }
+    if (!restoringPresentation
+        && typeof state !== 'undefined'
+        && !state.viewerSettings?.userConfigured) {
         state.viewerSettings = state.viewerSettings || {};
         state.viewerSettings.showOAR = true;
         state.viewerSettings.displayMode = 'overlay';
     }
     const checkbox = document.getElementById('overlayOAR');
-    if (checkbox && !state.viewerSettings?.userConfigured) checkbox.checked = true;
+    if (checkbox && !restoringPresentation && !state.viewerSettings?.userConfigured) {
+        checkbox.checked = true;
+    }
     renderDataTree();
     if (typeof window.scheduleWorkspaceSave === 'function') {
         window.scheduleWorkspaceSave('viewer.oar_metadata_payload');
@@ -4377,9 +4550,16 @@ function renderDataTree() {
                 || `structure:ctv:${labelId}`,
             );
             const pending = _pendingStructurePresentation(objectId, 'ctv');
+            const restored = window.getWorkspacePresentationForNode?.({
+                id: 'ctv_' + labelId,
+                objectId,
+                labelId,
+                family: 'ctv',
+            });
             return {
                 objectId,
                 current: pending
+                    || (window.isWorkspacePresentationRestoreActive?.() ? restored : null)
                     || previousCtvByObjectId[objectId]
                     || dataTreeState.ctvLabels?.[`ctv_${labelId}`]
                     || {},
@@ -4406,9 +4586,16 @@ function renderDataTree() {
         const addCtvSubLabel = (labelId, category, fallbackColor) => {
             const count = Number(ctvLabelCountMap.get(labelId) || 0);
             const defaultName = labelNames[labelId] || `Label ${labelId}`;
-            const color = ctvLabelColorLUT[labelId]
+            const savedColor = _normalizeStructureColor(
+                window.getWorkspacePresentationForNode?.({
+                    id: 'ctv_' + labelId,
+                    labelId,
+                    family: 'ctv',
+                })?.color || dataTreeState.ctvLabels?.['ctv_' + labelId]?.color || '',
+            );
+            const color = savedColor || (ctvLabelColorLUT[labelId]
                 ? `rgb(${ctvLabelColorLUT[labelId].join(',')})`
-                : fallbackColor;
+                : fallbackColor);
             const id = `ctv_${labelId}`;
             const { objectId, current } = ctvAppearanceFor(labelId);
             // Preserve a user-renamed label; fall back to the default otherwise.
@@ -4422,7 +4609,12 @@ function renderDataTree() {
                 label: customLabel || defaultName,
                 color,
                 visible: current.visible !== false,
+                visible2D: current.visible2D !== false,
+                visible3D: current.visible3D !== false,
                 opacity: Number.isFinite(Number(current.opacity)) ? Number(current.opacity) : 0.5,
+                material: current.material,
+                locked: current.locked === true,
+                standaloneVisible: current.standaloneVisible !== false,
                 voxelCount: count,
                 category,
                 source: 'ctv',
@@ -4478,9 +4670,16 @@ function renderDataTree() {
                     : '';
                 // Use the shared structure palette so the Data Tree swatch,
                 // 2D label and reconstructed mesh remain identical.
-                const tumorColor = ctvLabelColorLUT[labelId]
+                const savedColor = _normalizeStructureColor(
+                    window.getWorkspacePresentationForNode?.({
+                        id: 'ctv_' + labelId,
+                        labelId,
+                        family: 'ctv',
+                    })?.color || dataTreeState.ctvLabels?.['ctv_' + labelId]?.color || '',
+                );
+                const tumorColor = savedColor || (ctvLabelColorLUT[labelId]
                     ? `rgb(${ctvLabelColorLUT[labelId].join(',')})`
-                    : DEFAULT_CTV_STRUCTURE_COLOR;
+                    : DEFAULT_CTV_STRUCTURE_COLOR);
                 const { objectId, current } = ctvAppearanceFor(labelId);
                 // Preserve a user-renamed label; only fall back to the default
                 // when no custom label was assigned.
@@ -5141,9 +5340,17 @@ function renderDataTree() {
         html += `</div></div>`;
     }
 
+    // Rebuilding rows with innerHTML must not jump the operator back to the
+    // top of a long OAR/mask list. Workspace restore also reapplies the
+    // case-owned scroll position after asynchronous rows arrive, while this
+    // local preservation keeps ordinary visibility/color updates stable.
+    const previousScrollTop = Number(body.scrollTop) || 0;
+    const previousScrollLeft = Number(body.scrollLeft) || 0;
     body.innerHTML = html;
     _bindDataTreeOpacityControls(body);
     _restoreTreeGroupExpansionState(body);
+    body.scrollTop = previousScrollTop;
+    body.scrollLeft = previousScrollLeft;
     requestViewerVisualRefresh('data-tree-render');
 }
 
@@ -6299,18 +6506,6 @@ async function _refreshAfterDataMutation(
         && options.reloadStructureGeometry !== false;
     const genericMaskMutation = invalidated.includes('generic_mask')
         || objectIds.some(id => _isDataTreeMaskId(id));
-    const planningMutation = invalidated.includes('planning')
-        || objectIds.some(id => (
-            id === 'planning'
-            || id.startsWith('group:planning')
-            || id.startsWith('needle:')
-            || id.startsWith('needle_')
-            || id.startsWith('seed:')
-            || id.startsWith('seed_')
-            || id.startsWith('trajectory:')
-            || id.startsWith('trajectory_')
-        ));
-
     // Server confirmation is the mutation boundary.  Cancel earlier
     // label/mask requests before they can write an old catalogue back into the
     // tree, and remove the confirmed rows locally while the fresh payload is
@@ -6342,6 +6537,22 @@ async function _refreshAfterDataMutation(
     // operator changed a structure policy and declined an immediate replan.
     const preservePlanningPresentation = options.preservePlanningPresentation === true
         || options.preserveDoseDvh === true;
+    // A move-only structure transaction invalidates the clinical result for
+    // the next replan, but it must not clear or reload the currently visible
+    // plan. Only an explicit replan path is allowed to refresh planning UI.
+    const planningMutation = !preservePlanningPresentation && (
+        invalidated.includes('planning')
+        || objectIds.some(id => (
+            id === 'planning'
+            || id.startsWith('group:planning')
+            || id.startsWith('needle:')
+            || id.startsWith('needle_')
+            || id.startsWith('seed:')
+            || id.startsWith('seed_')
+            || id.startsWith('trajectory:')
+            || id.startsWith('trajectory_')
+        ))
+    );
     if (preservePlanningPresentation) {
         _clearInvalidatedPlanningPresentation(
             invalidated.filter(item => ![
@@ -7125,15 +7336,23 @@ function _setNodeViewVisibility(node, view, visible) {
 function _apply3DNodeVisibility(node) {
     if (window.__reportCaptureActive) return;
     if (!node?.id) return;
+    // Needle endpoint handles are separate scene objects and intentionally do
+    // not have a Data Tree row of their own.  Resolve them through the owning
+    // needle instead of falling through to the generic mesh path, which would
+    // otherwise leave a hidden handle visible after a late rebuild.
+    if (typeof scene3D !== 'undefined'
+        && node.id.startsWith('needle_')
+        && typeof _setNeedleHandlesVisibility === 'function') {
+        const visible = isDataTreeNodeVisible3D(node);
+        _setNeedleHandlesVisibility(node.id, visible, node.opacity ?? 0.8);
+        return;
+    }
     const meshId = node.id.startsWith('dose_iso_')
         ? node.id
         : node.id;
     const mesh = scene3D?.meshes?.[meshId];
     const visible = isDataTreeNodeVisible3D(node);
     if (mesh) applyMeshVisibility(mesh, visible, node.opacity ?? 1);
-    if (node.id.startsWith('needle_') && typeof _setNeedleHandlesVisibility === 'function') {
-        _setNeedleHandlesVisibility(node.id, visible, node.opacity ?? 0.8);
-    }
 }
 
 /**
@@ -7335,6 +7554,14 @@ async function moveSelectedOrganTraversability(category, objectIds = null) {
         .filter(Boolean);
     const selected = [...new Set(requestedIds.filter(id => String(id).startsWith('structure:')))];
     if (!selected.length) return false;
+    // The server commits this as a small policy transaction, but the
+    // browser may still be waiting for the current request thread. Give
+    // the operator immediate feedback instead of making a batch move look
+    // like a dead context-menu action.
+    if (typeof addChat === 'function') {
+        addChat('system', 'Saving traversability policy for '
+            + selected.length + ' OAR structure(s)...');
+    }
     // Capture the pre-mutation state. The server response marks planning
     // artifacts stale, so deciding after the PATCH would make a no-plan case
     // look as if it had something to replan.
@@ -7651,6 +7878,20 @@ function setGroupVisibility(category, visible) {
     } else if (category === 'oar') {
         // OAR is the parent scope. Do not overwrite individual organ state.
         dataTreeState.oar.visible = !!visible;
+        // Apply the effective parent constraint immediately to already
+        // reconstructed meshes.  Relying only on the later reconciliation
+        // pass allowed a visible OAR frame to survive briefly, and report
+        // capture could snapshot that stale frame.
+        dataTreeState.organs.forEach(organ => {
+            const mesh = scene3D.meshes[organ.id];
+            if (mesh) {
+                applyMeshVisibility(
+                    mesh,
+                    isDataTreeNodeVisible3D(organ),
+                    organ.opacity ?? 0.5,
+                );
+            }
+        });
     } else if (category === 'masks' || category === 'generic_masks' || category === 'upload_masks') {
         Object.entries(state.maskLabels || {}).forEach(([id, mask]) => {
             if (!_maskBelongsToGroup(category, mask)) return;

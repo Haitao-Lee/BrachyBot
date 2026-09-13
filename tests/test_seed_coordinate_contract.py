@@ -111,3 +111,55 @@ def test_optimal_plan_early_return_keeps_world_coordinate_contract(monkeypatch):
     position, direction = result[0][1][0]
     np.testing.assert_allclose(position, [18.0, 29.0, 38.0])
     np.testing.assert_allclose(direction, [0.0, 1.0, 0.0])
+
+
+def test_optimal_plan_rf_does_not_double_convert_rl_world_coordinates(monkeypatch):
+    """RL already emits patient-world seeds before returning from the planner."""
+    sitk = pytest.importorskip("SimpleITK")
+    from plans import core
+
+    image = sitk.Image([8, 8, 8], sitk.sitkFloat32)
+    image.SetSpacing((2.0, 3.0, 4.0))
+    image.SetOrigin((10.0, 20.0, 30.0))
+    dose_map = np.zeros((8, 8, 8), dtype=np.float32)
+    trajectory = (
+        np.array([2.0, 3.0, 4.0]),
+        np.array([1.0, 0.0, 0.0]),
+        [1],
+        [],
+        1,
+    )
+    world_position = np.array([101.0, 202.0, 303.0])
+    world_direction = np.array([0.1, 0.2, 0.3])
+    world_direction /= np.linalg.norm(world_direction)
+    world_plan = [[trajectory, [(world_position, world_direction)], [dose_map]]]
+
+    monkeypatch.setattr(
+        core.utilizations,
+        "hierarchical_planning_rf",
+        lambda **_kwargs: (world_plan, 1.0),
+    )
+
+    result = core.optimal_plan_rf(
+        [trajectory],
+        np.ones((8, 8, 8), dtype=np.int32),
+        image,
+        object(),
+        {},
+        {},
+        2,
+        1,
+        (8, 8, 8),
+        0.5,
+        1.0,
+        0.9,
+        {"length": 4.5},
+        -1000.0,
+        3000.0,
+        255.0,
+        progressDialog=core._MockProgressDialog(),
+    )
+
+    position, direction = result[0][1][0]
+    np.testing.assert_allclose(position, world_position)
+    np.testing.assert_allclose(direction, world_direction)

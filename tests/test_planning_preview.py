@@ -54,6 +54,29 @@ def test_preview_emitter_is_bounded_ephemeral_and_lifecycle_ordered():
     assert [event["sequence"] for event in events] == [1, 2, 3, 4]
 
 
+def test_preview_emitter_transports_bounded_close_points():
+    from plans.planning_preview import PlanningPreviewEmitter
+
+    events = []
+    emitter = PlanningPreviewEmitter(
+        events.append,
+        session_id="case-a",
+        planning_id="planning-a",
+    )
+    emitter.frame(
+        {
+            "close_points": [
+                {"id": f"p-{index}", "position": [index, 0, 0]}
+                for index in range(300)
+            ],
+        },
+        force=True,
+    )
+
+    assert len(events) == 1
+    assert len(events[0]["geometry"]["close_points"]) == 256
+
+
 def test_preview_callback_failure_cannot_fail_planning_observer():
     from plans.planning_preview import PlanningPreviewEmitter, safe_preview
 

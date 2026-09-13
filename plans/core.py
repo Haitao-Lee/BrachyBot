@@ -143,6 +143,64 @@ def sample_spatial_trajectories(trajectories, limit, spacing=(1, 1, 1)):
     return [trajectories[i] for i in selected]
 
 
+def sample_anchor_covering_trajectories(trajectories, limit, spacing=(1, 1, 1)):
+    """Keep at least one path for every sampled target-surface anchor.
+
+    The candidate budget is a path budget, but spatial close-point coverage is
+    the first requirement. A plain global farthest-point sampler can retain
+    many directions at the same anchor and discard an entire target surface
+    patch. This sampler first chooses one valid trajectory per anchor, then
+    spends the remaining budget on spatial and directional diversity.
+    """
+    limit = max(1, int(limit))
+    if len(trajectories) <= limit:
+        return list(trajectories)
+
+    groups = {}
+    for index, trajectory in enumerate(trajectories):
+        try:
+            point = np.asarray(trajectory[0], dtype=np.float64).reshape(-1)
+            if point.size < 3 or not np.all(np.isfinite(point[:3])):
+                key = ("invalid", index)
+            else:
+                # Initializer points are on the planning voxel grid. Rounding
+                # avoids splitting the same anchor because of float wrappers.
+                key = tuple(np.rint(point[:3]).astype(np.int64).tolist())
+        except Exception:
+            key = ("invalid", index)
+        groups.setdefault(key, []).append((index, trajectory))
+
+    representatives = [members[0] for members in groups.values()]
+    if len(representatives) > limit:
+        # The budget is smaller than the number of anchors. At that point the
+        # best possible contract is spatially uniform anchor selection while
+        # retaining the direction feature in the sampler. Using only the first
+        # path per anchor would make input order decide the direction and could
+        # collapse the result to the first cone sector.
+        return sample_spatial_trajectories(
+            trajectories,
+            limit,
+            spacing,
+        )
+
+    representative_indices = {index for index, _trajectory in representatives}
+    selected = [trajectory for _index, trajectory in representatives]
+    remaining = [
+        trajectory
+        for index, trajectory in enumerate(trajectories)
+        if index not in representative_indices
+    ]
+    if len(selected) < limit and remaining:
+        selected.extend(
+            sample_spatial_trajectories(
+                remaining,
+                limit - len(selected),
+                spacing,
+            )
+        )
+    return selected[:limit]
+
+
 def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract_angle,
               target_value, background_value, obstacle_value, maximum_candidate_trajectories, progressDialog=None,
               min_depth=2, preview_callback=None, entry_body_mask=None,
@@ -224,13 +282,37 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
     progressDialog.setValue(35)
     progressDialog.setLabelText("Initial Planning...")
 
-    # ---- 2.  Extract candidate voxels inside cone ----
+    # ---- 2.  Build a shared, surface-covering close-point set ----
     candidate_limit = max(1, int(maximum_candidate_trajectories))
     sampling_spacing = tuple(reversed(dose_image.GetSpacing())) if hasattr(dose_image, 'GetSpacing') else (1, 1, 1)
-
-    close_points, max_length = utilizations.get_close_points(
-        dose_image, radiation_volume, ref_direc, target_value, extract_angle
+    shared_sampler = getattr(
+        utilizations,
+        "get_shared_close_points_for_directions",
+        None,
     )
+    has_physical_image_geometry = all(
+        hasattr(dose_image, name)
+        for name in ("GetSize", "GetDirection", "GetOrigin", "GetSpacing")
+    )
+    close_point_stats = {}
+    if callable(shared_sampler) and has_physical_image_geometry:
+        close_points, direction_lengths, close_point_stats = shared_sampler(
+            dose_image,
+            radiation_volume,
+            candidate_dirs,
+            target_value,
+            extract_angle,
+            max_surface_points=min(256, candidate_limit),
+            surface_spacing_mm=2.5,
+        )
+    else:
+        # Preserve the lightweight/legacy integration contract used by tools
+        # that provide only a minimal image stub. Production SimpleITK images
+        # always take the shared direction-conditioned path above.
+        close_points, max_length = utilizations.get_close_points(
+            dose_image, radiation_volume, ref_direc, target_value, extract_angle
+        )
+        direction_lengths = [max_length] * len(candidate_dirs)
 
     progressDialog.setValue(40)
     progressDialog.setLabelText("Initial Planning...")
@@ -246,6 +328,11 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
         progressDialog.setValue(45)
         progressDialog.setLabelText("Initial Planning...")
         direction_points = close_points
+        max_length = (
+            direction_lengths[i]
+            if i < len(direction_lengths)
+            else (direction_lengths[0] if direction_lengths else 0.0)
+        )
         if entry_body_mask is not None:
             direction_points, rejected = utilizations.filter_trajectory_entry_points(
                 close_points,
@@ -284,30 +371,60 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
                 entry_body_mask=entry_body_mask,
                 truncated_boundary_faces=entry_boundary_faces,
             )
+        # Keep all valid anchors for each direction until the final
+        # surface-covering sampler. Applying the global path budget here would
+        # let several directions select the same anchors and could remove an
+        # entire surface patch before the anchor coverage pass sees it.
         init_trajectories += sample_spatial_trajectories(
-            traj_list, candidate_limit, sampling_spacing
+            traj_list,
+            max(1, len(close_points)),
+            sampling_spacing,
         )
 
         now = time.monotonic()
         if preview_callback is not None and now - last_preview_at >= 0.20:
             last_preview_at = now
-            preview = sample_spatial_trajectories(init_trajectories, candidate_limit, sampling_spacing)
+            preview_sampler = globals().get(
+                "sample_anchor_covering_trajectories",
+                sample_spatial_trajectories,
+            )
+            preview = preview_sampler(
+                init_trajectories,
+                candidate_limit,
+                sampling_spacing,
+            )
             safe_preview(preview_callback, {
                 "phase": "candidate_generation",
                 "current": i + 1,
                 "total": len(candidate_dirs),
                 "trajectories": preview,
-                "detail": f"{len(preview)} spatially sampled candidate paths (limit {candidate_limit})",
+                "close_points": close_points,
+                "detail": (
+                    f"{len(preview)} surface-covering candidate paths "
+                    f"(limit {candidate_limit}; directions {len(candidate_dirs)}; "
+                    f"close points {close_point_stats.get('selected_points', len(close_points))})"
+                ),
             })
 
-    init_trajectories = sample_spatial_trajectories(init_trajectories, candidate_limit, sampling_spacing)
+    final_sampler = globals().get(
+        "sample_anchor_covering_trajectories",
+        sample_spatial_trajectories,
+    )
+    init_trajectories = final_sampler(
+        init_trajectories,
+        candidate_limit,
+        sampling_spacing,
+    )
     safe_preview(preview_callback, {
         "phase": "candidate_generation",
         "current": len(candidate_dirs),
         "total": len(candidate_dirs),
         "trajectories": init_trajectories,
+        "close_points": close_points,
         "detail": (
-            f"{len(init_trajectories)} candidate paths"
+            f"{len(init_trajectories)} surface-covering candidate paths"
+            f"; directions={len(candidate_dirs)}"
+            f"; close_points={close_point_stats.get('selected_points', len(close_points))}"
             + (f"; {entry_rejected} invalid CT-entry paths rejected" if entry_rejected else "")
         ),
         "force": True,
@@ -320,7 +437,7 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
                  target_value, background_value, obstacle_value, infer_img_size, in_lowest_dose, out_highest_dose,
                  DVH_rate, seed_info, iter_rate, image_normalize_min, image_normalize_max, image_normalize_scale,
                  progressDialog=None, parallel_min_distance_mm=None,
-                 parallel_angle_tolerance_deg=None, preview_callback=None):
+                 parallel_angle_tolerance_deg=None, preview_callback=None, deadline=None):
     """
     Generate an optimized radiation treatment plan by selecting seed trajectories, placing seeds, and refining the plan
     to ensure effective tumor coverage while minimizing radiation exposure to healthy tissues.
@@ -344,6 +461,9 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
         dose_image, image_normalize_min, image_normalize_max, dose_cal_model
     )
     last_preview_at = 0.0
+
+    def _deadline_expired():
+        return deadline is not None and time.monotonic() >= float(deadline)
 
     def _emit_plan_preview(plan, phase, iteration, coverage=None, force=False):
         nonlocal last_preview_at
@@ -369,6 +489,9 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
     if len(candidate_trajectories) == 0:
         _logger.warning(f"[optimal_plan] 0 candidates! radiation_volume target_voxels={int(np.sum(radiation_volume == target_value))}, dose_image type={type(dose_image).__name__}")
     while cur_DVH_rate < DVH_rate:
+        if _deadline_expired():
+            _logger.info("[optimal_plan] deadline reached during Stage 1")
+            break
         stage1_count += 1
         if stage1_count > min(100, len(candidate_trajectories)):
             break
@@ -409,7 +532,7 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
             image_normalize_min,
             image_normalize_max,
             image_normalize_scale,
-            dose_context=dose_context
+            dose_context=dose_context, deadline=deadline
         )
 
         if len(optimal_seeds) == 0:
@@ -445,6 +568,9 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
     progressDialog.setLabelText("Optimal Planning...")
 
     while cur_DVH_rate < DVH_rate:
+        if _deadline_expired():
+            _logger.info("[optimal_plan] deadline reached during Stage 2")
+            break
         stage2_iterations += 1
         if stage2_iterations > max_stage2_iterations:
             _logger.warning(
@@ -473,7 +599,7 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
                 image_normalize_min,
                 image_normalize_max,
                 image_normalize_scale,
-                dose_context=dose_context
+                dose_context=dose_context, deadline=deadline
             )
         except Exception as e:
             minus_res = copy.deepcopy(init_planned_res)
@@ -522,6 +648,9 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
     max_no_improvement = seed_num
 
     while iter_count < iter_rate * seed_num:
+        if _deadline_expired():
+            _logger.info("[optimal_plan] deadline reached during Stage 3")
+            break
         progressDialog.setValue(60)
         progressDialog.setLabelText("Optimal Planning...")
         rest_res, rest_radiation = utilizations.remove_seed_sequentially(
@@ -550,7 +679,7 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
                 image_normalize_min,
                 image_normalize_max,
                 image_normalize_scale,
-                dose_context=dose_context
+                dose_context=dose_context, deadline=deadline
             )
         except Exception as e:
             sign = False
@@ -668,7 +797,12 @@ def optimal_plan_rf(
         planning_kwargs["preview_callback"] = preview_callback
     optimal_res, _ = utilizations.hierarchical_planning_rf(**planning_kwargs)
 
-    # RL and rule-based optimization share the same public result contract.
-    # The hierarchical utility intentionally keeps voxel coordinates while it
-    # searches, so convert its final result before it leaves this module.
-    return seed_plan_to_world_coordinates(optimal_res, dose_image)
+    # The hierarchical RL utility already converts both seed positions and
+    # directions to patient-world coordinates while it builds the plan:
+    # planned_position2planned_res and the low-level refinement loop use
+    # position_transform/direction_transform before returning. Do not apply
+    # seed_plan_to_world_coordinates a second time here. The previous double
+    # conversion treated world millimetres as [z, y, x] voxels, which made the
+    # persisted seeds drift away from their owning trajectory and caused the
+    # final physical needle validator to reject an otherwise valid RL plan.
+    return optimal_res

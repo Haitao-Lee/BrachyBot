@@ -372,7 +372,7 @@ async function applyHyperparams() {
         direc_resolution: [
             Math.round(_num('direcResCone', 30)),
             Math.round(_num('direcResStep', 3)),
-            Math.round(_num('direcResRings', 2)),
+            Math.round(_num('direcResRings', 6)),
         ],
         dl_params: {
             lr: _num('dlLR', 0.0004),

@@ -257,6 +257,46 @@ class DeviceManager:
             utilization_pct=util, is_available=(free > 200),
         )
 
+    @staticmethod
+    def _health_thresholds() -> Tuple[int, int]:
+        """Return (minimum free MB, maximum utilization) for cached GPUs."""
+        try:
+            minimum_free = int(os.getenv("BRACHYBOT_DEVICE_MIN_FREE_MB", "4096"))
+        except (TypeError, ValueError):
+            minimum_free = 4096
+        try:
+            maximum_util = int(os.getenv("BRACHYBOT_DEVICE_MAX_UTILIZATION_PCT", "90"))
+        except (TypeError, ValueError):
+            maximum_util = 90
+        return max(0, minimum_free), min(100, max(0, maximum_util))
+
+    def _cached_device_is_healthy(self, device_str: str) -> bool:
+        """Avoid pinning a long-lived caller to a newly saturated GPU.
+
+        A cached device is useful while its model is warm, but a different
+        process can start training or reserve most of its memory later. In
+        that case the next request must re-evaluate all GPUs instead of
+        repeatedly returning the stale cached choice.
+        """
+        if not isinstance(device_str, str) or not device_str.startswith("cuda:"):
+            return True
+        try:
+            index = int(device_str.split(":", 1)[1])
+            info = self._read_info(index)
+        except (AttributeError, TypeError, ValueError, IndexError):
+            # Minimal test/dry-run managers may not have a probe. Preserve the
+            # existing warm-device behavior when health is unknowable.
+            return True
+        if info is None or not info.is_available:
+            return False
+        if info.total_mem_mb > 0:
+            minimum_free, maximum_util = self._health_thresholds()
+            if info.free_mem_mb < minimum_free:
+                return False
+            if info.utilization_pct >= 0 and info.utilization_pct >= maximum_util:
+                return False
+        return True
+
     # --- acquisition ---
     def acquire(self, caller: str = "default", prefer: Optional[str] = None) -> str:
         """Pick the best device for `caller`. Returns a torch device
@@ -277,7 +317,17 @@ class DeviceManager:
             # explicitly asked for something different this time.
             if prefer is None or prefer == "auto":
                 if caller in self._preferred:
-                    prefer = self._preferred[caller]
+                    cached = self._preferred[caller]
+                    if self._cached_device_is_healthy(cached):
+                        prefer = cached
+                    else:
+                        logger.info(
+                            "device_manager: cached device %s for %s is saturated; "
+                            "reselecting from current GPU status",
+                            cached,
+                            caller,
+                        )
+                        prefer = None
             if prefer == "cpu":
                 chosen = "cpu"
             elif prefer is not None:
