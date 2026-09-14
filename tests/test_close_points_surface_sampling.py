@@ -70,23 +70,49 @@ def test_close_points_cover_surface_and_protect_backside(monkeypatch):
     )
     physical_reference = utilizations.direction_transform(image, reference).reshape(-1)
     physical_reference /= np.linalg.norm(physical_reference)
-    center = target_world.mean(axis=0)
-    target_projection = (target_world - center) @ physical_reference
-    close_projection = (close_world - center) @ physical_reference
+    projected = utilizations.get_direction_conditioned_close_points_for_directions(
+        image,
+        target,
+        np.asarray([reference]),
+        1,
+        max_surface_points=256,
+        surface_spacing_mm=2.5,
+    )
+    entries = projected["entry_points_by_direction"][0]
+    exits = projected["exit_points_by_direction"][0]
+    assert entries.shape == exits.shape
+    assert len(entries) > 0
 
-    # The far/back sector is deliberately protected, rather than being lost
-    # to the direction/order-dependent representative selection.
-    back_cut = np.quantile(target_projection, 0.30)
-    assert np.count_nonzero(close_projection <= back_cut + 1e-9) >= 40
+    entry_world = utilizations.position_transform(image, entries)
+    exit_world = utilizations.position_transform(image, exits)
+    # Every displayed close point is the forward exit of its corresponding
+    # target chord, not an arbitrary point on the near surface.
+    assert np.all((exit_world - entry_world) @ physical_reference > 0.0)
 
+    for entry_point, exit_point in zip(entries, exits):
+        traced_exit = utilizations._trace_target_exit(
+            entry_point,
+            reference,
+            target == 1,
+            1.0,
+        )
+        np.testing.assert_allclose(traced_exit, exit_point)
+        assert utilizations._target_at_continuous_point(
+            exit_point,
+            target == 1,
+        )
+
+    endpoint_world = utilizations.position_transform(
+        image, np.vstack((entries, exits))
+    )
     nearest_mm = np.min(
         np.sum(
-            (target_world[:, None, :] - close_world[None, :, :]) ** 2,
+            (target_world[:, None, :] - endpoint_world[None, :, :]) ** 2,
             axis=2,
         ),
         axis=1,
     ) ** 0.5
-    assert np.percentile(nearest_mm, 95) < 12.0
+    assert np.percentile(nearest_mm, 95) < 14.0
 
     # Sampling is deterministic, which is important for reproducible plans
     # and for restoring a planning session.

@@ -88,7 +88,7 @@ def test_replan_and_guide_plan_survives_when_sentence_is_not_detected_as_compoun
     )
 
 
-def test_short_replan_follow_up_keeps_planning_as_a_required_action():
+def test_short_replan_follow_up_queues_dependent_guide_generation():
     policy = classify_local_turn("我是让你重新规划")
 
     assert policy.intent == "semantic_action"
@@ -97,8 +97,13 @@ def test_short_replan_follow_up_keeps_planning_as_a_required_action():
         "ctv_segmentation",
         "oar_segmentation",
         "planning_pipeline",
+        "surgical_guide",
     )
     assert "planning_pipeline" in policy.execution_grants
+    assert "surgical_guide" in policy.execution_grants
+    assert policy.action_plan.ordered_steps()[3].depends_on == (
+        "planning_pipeline",
+    )
 
 
 def test_action_plan_preserves_repeated_provider_steps_and_order_after_merge():

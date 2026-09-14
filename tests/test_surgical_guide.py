@@ -1314,6 +1314,93 @@ def test_lateral_ct_boundary_entry_is_not_treated_as_skin():
         )
 
 
+def test_continuous_entry_near_truncated_face_is_rejected():
+    """A sub-voxel entry near a cap must not pass via rounded indices."""
+    from web.surgical_guide import (
+        SurgicalGuideError,
+        _body_mask,
+        _largest_component,
+        _sample_skin_entry,
+        _truncated_boundary_faces,
+    )
+
+    agent = _truncated_cylinder_agent()
+    image = agent.memory.retrieve("ct_image")
+    ct = agent.memory.retrieve("ct_data")
+    raw_body = _largest_component(ct > -300)
+    body = _body_mask(ct, -300)
+    faces = _truncated_boundary_faces(raw_body)
+
+    # The lateral cylinder surface is reached at z=22.49, which rounds to
+    # z=22 and therefore evaded the old exact-edge test although it is only
+    # 0.51 mm below the flagged z-max acquisition cap.
+    with pytest.raises(SurgicalGuideError):
+        _sample_skin_entry(
+            image,
+            body,
+            np.asarray([16.0, 16.0, 22.49]),
+            np.asarray([-20.0, 16.0, 22.49]),
+            truncated_boundary_faces=faces,
+            truncation_margin_mm=5.0,
+        )
+
+
+def test_truncated_boundary_check_allows_external_extension_after_real_skin():
+    """An outside needle extension must not be mistaken for a cap entry."""
+    from web.surgical_guide import _segment_crosses_truncated_boundary
+
+    shape = (32, 32, 32)
+    zz, yy, xx = np.indices(shape)
+    body = (xx - 16) ** 2 + (yy - 16) ** 2 + (zz - 16) ** 2 <= 8 ** 2
+    image = sitk.GetImageFromArray(np.where(body, 40, -1000).astype(np.int16))
+    image.SetSpacing((1.0, 1.0, 1.0))
+    faces = {
+        "z_min": False,
+        "z_max": True,
+        "y_min": False,
+        "y_max": False,
+        "x_min": False,
+        "x_max": False,
+    }
+
+    # The line exits the spherical skin around z=24, then crosses z=31 only
+    # as an external extension. It is safe to use the real skin entry.
+    assert not _segment_crosses_truncated_boundary(
+        image,
+        np.asarray([16.0, 16.0, 16.0]),
+        np.asarray([16.0, 16.0, 40.0]),
+        faces,
+        body_mask=body,
+    )
+
+
+def test_truncated_boundary_check_rejects_body_continuing_to_cap():
+    """A line whose body still reaches the flagged face remains unsafe."""
+    from web.surgical_guide import _segment_crosses_truncated_boundary
+
+    shape = (32, 32, 32)
+    _, yy, xx = np.indices(shape)
+    body = (xx - 16) ** 2 + (yy - 16) ** 2 <= 8 ** 2
+    image = sitk.GetImageFromArray(np.where(body, 40, -1000).astype(np.int16))
+    image.SetSpacing((1.0, 1.0, 1.0))
+    faces = {
+        "z_min": False,
+        "z_max": True,
+        "y_min": False,
+        "y_max": False,
+        "x_min": False,
+        "x_max": False,
+    }
+
+    assert _segment_crosses_truncated_boundary(
+        image,
+        np.asarray([16.0, 16.0, 8.0]),
+        np.asarray([16.0, 16.0, 40.0]),
+        faces,
+        body_mask=body,
+    )
+
+
 def test_guide_with_only_truncated_entries_refuses_to_generate():
     """A guide whose only entry would be on a truncation plane must fail."""
     from web.surgical_guide import SurgicalGuideError, generate_surgical_guide

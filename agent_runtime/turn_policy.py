@@ -243,19 +243,21 @@ def _planning_and_guide_plan() -> ActionPlan:
     )
 
 
-def _planning_only_plan() -> ActionPlan:
-    """Build the ordered plan for an explicit re-planning request.
+def _planning_and_guide_replan_plan() -> ActionPlan:
+    """Build the complete plan for an explicit re-planning request.
 
     Existing masks are reusable prerequisites.  The planning pipeline is not:
     a re-plan must create a new planning revision even when CTV/OAR are already
-    present in memory.  Keeping this dependency in the turn plan prevents a
-    later guide-only shortcut from silently consuming the request.
+    present in memory.  A successful re-plan also invalidates the previous
+    guide, so guide generation is an explicit dependent step in the same
+    action plan rather than an optional provider-side follow-up.
     """
     return ActionPlan.from_tools(
-        ("ctv_segmentation", "oar_segmentation", "planning_pipeline"),
+        ("ctv_segmentation", "oar_segmentation", "planning_pipeline", "surgical_guide"),
         source="semantic_replan_dependency_guard",
         dependencies={
             "planning_pipeline": ("ctv_segmentation", "oar_segmentation"),
+            "surgical_guide": ("planning_pipeline",),
         },
     )
 
@@ -1677,7 +1679,7 @@ def classify_local_turn(
         return _semantic_action_policy(
             complexity="high",
             review=True,
-            action_plan=_planning_only_plan(),
+            action_plan=_planning_and_guide_replan_plan(),
         )
 
     # Resolve compound requests before every read-only or operation-specific
@@ -1693,7 +1695,11 @@ def classify_local_turn(
             action_plan=(
                 _planning_and_guide_plan()
                 if requires_planning_before_guide(text)
-                else (_planning_only_plan() if is_planning_reexecution_request(text) else None)
+                else (
+                    _planning_and_guide_replan_plan()
+                    if is_planning_reexecution_request(text)
+                    else None
+                )
             ),
         )
 
