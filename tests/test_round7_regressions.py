@@ -267,7 +267,7 @@ def test_local_replan_plan_wins_if_provider_overwrites_turn_ledger_with_guide_on
     assert calls[0]["params"]["step"] == "full"
 
 
-def test_short_replan_action_plan_builds_planning_queue_without_guide():
+def test_short_replan_action_plan_builds_planning_and_guide_queue():
     from AgenticSys import BrachyAgent
     from agent_runtime.execution_authorization import TurnExecutionAuthorization
     from agent_runtime.turn_policy import classify_local_turn
@@ -301,7 +301,10 @@ def test_short_replan_action_plan_builds_planning_queue_without_guide():
 
     calls = agent._detect_tool_request(message)
 
-    assert [call["tool"] for call in calls] == ["planning_pipeline"]
+    assert [call["tool"] for call in calls] == [
+        "planning_pipeline",
+        "surgical_guide",
+    ]
     assert calls[0]["params"]["step"] == "full"
 
 
@@ -639,8 +642,8 @@ def test_needle_render_scheduler_survives_mixed_static_asset_revisions():
     # Keep this contract aligned with the actual cache-busting revisions in
     # index.html. A stale assertion here falsely reports a deployment bug and
     # hides whether the endpoint interaction bundle is really versioned.
-    assert "brachybot-viewer-layout.js?v=43" in index
-    assert "brachybot-3d-manual.js?v=95" in index
+    assert "brachybot-viewer-layout.js?v=45" in index
+    assert "brachybot-3d-manual.js?v=98" in index
     assert "scene3D.requestRender(1)" in layout
     assert "scene3D.requestRender(2)" in layout
     assert "window.requestRender = requestRender;" in manual
@@ -729,8 +732,8 @@ def test_dose_overlay_opacity_is_invariant_during_slice_scrubbing():
     assert "_composite2DViewerCanvas(cfg.ax, { doseOpacity: 0.75 })" in report_editor
     assert "_composite2DViewerCanvas(cfg.ax, { doseOpacity: 0.75 })" in dvh_planning
     assert "_composite2DViewerCanvas(a.ax, { doseOpacity: 0.7 })" in ui_api
-    assert "brachybot-viewer-volume.js?v=65" in index
-    assert "brachybot-3d-manual.js?v=95" in index
+    assert "brachybot-viewer-volume.js?v=69" in index
+    assert "brachybot-3d-manual.js?v=98" in index
     assert "brachybot-manual-annotation.js?v=26" in index
 
 

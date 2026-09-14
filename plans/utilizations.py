@@ -2401,8 +2401,10 @@ def draw_radiations(radiation_volume, single_seed_radiations, target_value, thre
 
 _CLOSE_POINT_MAX_SURFACE_POINTS = 256
 _CLOSE_POINT_PREFERRED_SPACING_MM = 2.5
-_CLOSE_POINT_BACK_QUANTILE = 0.70
-_CLOSE_POINT_BACK_SEED_FRACTION = 0.75
+_CLOSE_POINT_RAY_STEP_FRACTION = 0.5
+_CLOSE_POINT_RAY_PROBE_MULTIPLIER = 4
+_CLOSE_POINT_RAY_PROBE_CAP = 4096
+_CLOSE_POINT_MIN_CHORD_MM = 0.5
 
 
 def _deterministic_point_subsample(points, max_points):
@@ -2595,6 +2597,328 @@ def _target_surface_coordinates(radiation_array, target_value):
     return coordinates, surface
 
 
+def _array_unit_direction(direction):
+    vector = np.asarray(direction, dtype=np.float64).reshape(-1)
+    if vector.size != 3 or not np.all(np.isfinite(vector)):
+        return None
+    dominant = float(np.max(np.abs(vector)))
+    if not np.isfinite(dominant) or dominant <= 1e-12:
+        return None
+    return vector / dominant
+
+
+def _target_at_continuous_point(point, target_mask):
+    coordinates = np.floor(np.asarray(point, dtype=np.float64)).astype(np.int64)
+    if coordinates.size != 3 or np.any(coordinates < 0):
+        return False
+    if np.any(coordinates >= np.asarray(target_mask.shape, dtype=np.int64)):
+        return False
+    return bool(target_mask[tuple(coordinates)])
+
+
+def _refine_target_boundary(inside_point, outside_point, target_mask):
+    lower = np.asarray(inside_point, dtype=np.float64).copy()
+    upper = np.asarray(outside_point, dtype=np.float64).copy()
+    for _ in range(10):
+        midpoint = (lower + upper) * 0.5
+        if _target_at_continuous_point(midpoint, target_mask):
+            lower = midpoint
+        else:
+            upper = midpoint
+    return lower
+
+
+def _trace_target_exit(start_point, array_direction, target_mask, sign):
+    direction = _array_unit_direction(array_direction)
+    start = np.asarray(start_point, dtype=np.float64).reshape(-1)
+    if direction is None or start.size != 3:
+        return None
+    if not _target_at_continuous_point(start, target_mask):
+        return None
+    step = _CLOSE_POINT_RAY_STEP_FRACTION
+    step_vector = direction * float(sign) * step
+    previous = start.copy()
+    max_steps = int(np.ceil(float(np.sum(target_mask.shape)) / step)) + 8
+    for _ in range(max_steps):
+        current = previous + step_vector
+        current_index = np.floor(current).astype(np.int64)
+        outside_image = (
+            np.any(current_index < 0)
+            or np.any(current_index >= np.asarray(target_mask.shape))
+        )
+        if outside_image:
+            return previous
+        if not _target_at_continuous_point(current, target_mask):
+            return _refine_target_boundary(previous, current, target_mask)
+        previous = current
+    return previous
+
+
+def _project_surface_points_to_target_chords(
+    dose_image,
+    target_mask,
+    surface_coordinates,
+    surface_world,
+    direction,
+    output_limit,
+    preferred_spacing_mm,
+    target_world=None,
+    target_centroid=None,
+):
+    surface_coordinates = np.asarray(surface_coordinates, dtype=np.float64)
+    surface_world = np.asarray(surface_world, dtype=np.float64)
+    if surface_coordinates.ndim != 2 or surface_coordinates.shape[1] != 3:
+        return (np.empty((0, 3)), np.empty((0, 3)), [])
+    probe_limit = min(
+        int(surface_coordinates.shape[0]),
+        int(_CLOSE_POINT_RAY_PROBE_CAP),
+        max(
+            int(output_limit) * _CLOSE_POINT_RAY_PROBE_MULTIPLIER,
+            int(output_limit) + 256,
+        ),
+    )
+    if probe_limit <= 0:
+        return (np.empty((0, 3)), np.empty((0, 3)), [])
+    if surface_coordinates.shape[0] > probe_limit:
+        probe_indices = _farthest_point_sample_indices(
+            surface_world, probe_limit, preferred_spacing_mm=0.0
+        )
+    else:
+        probe_indices = np.arange(surface_coordinates.shape[0], dtype=np.int64)
+
+    # Keep a spatially uniform quota on entry-side probes as well as the
+    # global surface quota. Without this, a broad target can lose the
+    # small entry-side patch whose forward ray produces a far endpoint
+    # before endpoint projection even starts.
+    if (
+        target_world is not None
+        and target_centroid is not None
+        and len(probe_indices) > 0
+    ):
+        physical_direction = _physical_unit_direction(dose_image, direction)
+        target_projection = (
+            np.asarray(target_world, dtype=np.float64)
+            - np.asarray(target_centroid, dtype=np.float64)
+        ) @ physical_direction
+        back_cut = float(np.quantile(target_projection, 0.30))
+        surface_projection = (
+            surface_world - np.asarray(target_centroid, dtype=np.float64)
+        ) @ physical_direction
+        back_pool = np.flatnonzero(surface_projection <= back_cut + 1e-9)
+        if back_pool.size:
+            back_limit = min(
+                int(back_pool.size),
+                max(1, int(math.ceil(probe_limit * 0.25))),
+            )
+            local_back = _farthest_point_sample_indices(
+                surface_world[back_pool],
+                back_limit,
+                preferred_spacing_mm=0.0,
+            )
+            protected_global = back_pool[local_back]
+            union = np.unique(
+                np.concatenate(
+                    [
+                        np.asarray(probe_indices, dtype=np.int64),
+                        np.asarray(protected_global, dtype=np.int64),
+                    ]
+                )
+            )
+            if union.size > probe_limit:
+                protected_local = np.searchsorted(union, protected_global)
+                kept_local = _farthest_point_sample_indices(
+                    surface_world[union],
+                    probe_limit,
+                    preferred_spacing_mm=0.0,
+                    seed_indices=protected_local,
+                )
+                probe_indices = union[kept_local]
+            else:
+                probe_indices = union
+
+    entries = []
+    exits = []
+    lengths = []
+    for index in probe_indices:
+        start = surface_coordinates[int(index)]
+        entry = _trace_target_exit(start, direction, target_mask, -1.0)
+        if entry is None:
+            continue
+        exit_point = _trace_target_exit(entry, direction, target_mask, 1.0)
+        if exit_point is None:
+            continue
+        endpoints_world = np.asarray(
+            position_transform(
+                dose_image, np.asarray([entry, exit_point], dtype=np.float64)
+            ),
+            dtype=np.float64,
+        )
+        if endpoints_world.shape != (2, 3):
+            continue
+        chord_length = float(np.linalg.norm(endpoints_world[1] - endpoints_world[0]))
+        if (
+            not np.isfinite(chord_length)
+            or chord_length < _CLOSE_POINT_MIN_CHORD_MM
+        ):
+            continue
+        entries.append(entry)
+        exits.append(exit_point)
+        lengths.append(chord_length)
+    if not exits:
+        return (np.empty((0, 3)), np.empty((0, 3)), [])
+
+    entries = np.asarray(entries, dtype=np.float64)
+    exits = np.asarray(exits, dtype=np.float64)
+    exit_world = np.asarray(position_transform(dose_image, exits), dtype=np.float64)
+    keep_limit = min(max(int(output_limit), 1), exits.shape[0])
+    keep = _farthest_point_sample_indices(
+        exit_world,
+        keep_limit,
+        preferred_spacing_mm=preferred_spacing_mm,
+    )
+    return entries[keep], exits[keep], [lengths[int(i)] for i in keep]
+
+
+def get_direction_conditioned_close_points_for_directions(
+    dose_image,
+    radiation_array,
+    candidate_directions,
+    target_value,
+    extract_angle=None,
+    max_point_num=20000,
+    max_surface_points=_CLOSE_POINT_MAX_SURFACE_POINTS,
+    surface_spacing_mm=_CLOSE_POINT_PREFERRED_SPACING_MM,
+):
+    """Return trajectory entry anchors and far/exit preview points."""
+    del extract_angle
+    directions = np.asarray(candidate_directions, dtype=np.float64)
+    if directions.size == 0:
+        return {
+            "entry_points_by_direction": [],
+            "exit_points_by_direction": [],
+            "preview_close_points": np.empty((0, 3), dtype=np.float64),
+            "direction_lengths": [],
+            "stats": {"direction_count": 0, "selected_points": 0},
+        }
+    if directions.ndim == 1:
+        directions = directions.reshape(1, -1)
+    if directions.ndim != 2 or directions.shape[1] != 3:
+        raise ValueError("candidate_directions must have shape (N, 3)")
+    try:
+        surface_limit = max(int(max_surface_points), 1)
+    except (TypeError, ValueError):
+        surface_limit = _CLOSE_POINT_MAX_SURFACE_POINTS
+    try:
+        preferred_spacing = float(surface_spacing_mm)
+    except (TypeError, ValueError):
+        preferred_spacing = _CLOSE_POINT_PREFERRED_SPACING_MM
+    if not np.isfinite(preferred_spacing) or preferred_spacing < 0.0:
+        preferred_spacing = _CLOSE_POINT_PREFERRED_SPACING_MM
+
+    prepared = _prepare_close_point_geometry(
+        dose_image, radiation_array, target_value, max_point_num=max_point_num
+    )
+    if prepared is None:
+        empty = [np.empty((0, 3), dtype=np.float64) for _ in directions]
+        return {
+            "entry_points_by_direction": empty,
+            "exit_points_by_direction": [
+                np.empty((0, 3), dtype=np.float64) for _ in directions
+            ],
+            "preview_close_points": np.empty((0, 3), dtype=np.float64),
+            "direction_lengths": [0.0] * len(directions),
+            "stats": {
+                "direction_count": int(len(directions)),
+                "target_count": 0,
+                "surface_count": 0,
+                "selected_points": 0,
+                "protected_points": 0,
+                "direction_projected_counts": [0] * len(directions),
+            },
+        }
+
+    target_mask = np.asarray(radiation_array) == target_value
+    surface_coordinates = prepared["surface_coordinates"]
+    surface_world = prepared["surface_world"]
+    direction_entries = []
+    direction_exits = []
+    direction_lengths = []
+    projected_counts = []
+    all_exits = []
+    for direction in directions:
+        physical_direction = _physical_unit_direction(dose_image, direction)
+        projected_length = float(
+            geometry.projection_length(
+                prepared["target_world"], physical_direction
+            )
+        )
+        entries, exits, _chord_lengths = _project_surface_points_to_target_chords(
+            dose_image,
+            target_mask,
+            surface_coordinates,
+            surface_world,
+            direction,
+            surface_limit,
+            preferred_spacing,
+            target_world=prepared["target_world"],
+            target_centroid=prepared["centroid"],
+        )
+        direction_entries.append(entries)
+        direction_exits.append(exits)
+        direction_lengths.append(projected_length)
+        projected_counts.append(int(len(exits)))
+        if len(exits):
+            all_exits.append(exits)
+
+    if all_exits:
+        all_exits_array = np.concatenate(all_exits, axis=0)
+        all_exits_world = np.asarray(
+            position_transform(dose_image, all_exits_array), dtype=np.float64
+        )
+        preview_limit = min(surface_limit, all_exits_array.shape[0])
+        preview_indices = _farthest_point_sample_indices(
+            all_exits_world,
+            preview_limit,
+            preferred_spacing_mm=preferred_spacing,
+        )
+        preview_close_points = all_exits_array[preview_indices]
+    else:
+        preview_close_points = np.empty((0, 3), dtype=np.float64)
+
+    stats = {
+        "direction_count": int(len(directions)),
+        "target_count": int(prepared["target_count"]),
+        "surface_count": int(len(surface_coordinates)),
+        "selected_points": int(len(preview_close_points)),
+        "protected_points": int(len(preview_close_points)),
+        "projected_points": int(sum(projected_counts)),
+        "direction_projected_counts": projected_counts,
+        # The public preview points are the forward target exits.  Planning
+        # itself consumes the paired entry points above; keeping this role
+        # explicit prevents a UI or future caller from confusing front/entry
+        # anchors with the target-side close points.
+        "preview_point_role": "target_exit",
+        "planning_anchor_role": "target_entry",
+    }
+    logger.info(
+        "[close_points] projected target=%d surface=%d directions=%d "
+        "projected=%d preview=%d spacing_mm=%.2f",
+        stats["target_count"],
+        stats["surface_count"],
+        stats["direction_count"],
+        stats["projected_points"],
+        stats["selected_points"],
+        preferred_spacing,
+    )
+    return {
+        "entry_points_by_direction": direction_entries,
+        "exit_points_by_direction": direction_exits,
+        "preview_close_points": preview_close_points,
+        "direction_lengths": direction_lengths,
+        "stats": stats,
+    }
+
+
 def get_close_points(
     dose_image,
     radiation_array,
@@ -2606,7 +2930,7 @@ def get_close_points(
     surface_spacing_mm=_CLOSE_POINT_PREFERRED_SPACING_MM,
 ):
     """
-    Build a spatially uniform set of trajectory anchors on the target surface.
+    Return spatially uniform target-side far/exit endpoints for one direction.
 
     Parameters:
     radiation_array (np.ndarray): A 3D array representing the distribution of radiation values.
@@ -2619,16 +2943,14 @@ def get_close_points(
 
     Returns:
     tuple: A tuple containing two elements:
-        - np.ndarray: Voxel coordinates selected from the target surface.
+        - np.ndarray: Voxel coordinates of target-side far/exit endpoints.
         - float: The physical projection length of the target along the
           reference direction.
 
-    The sampler extracts the complete 26-connected boundary, protects a
-    deterministic quota from the far side of the target relative to the
-    physical reference direction, then fills the remaining budget with
-    farthest-point samples over the whole boundary. This avoids the old
-    view-dependent O(N^2) angular grouping and keeps the existing downstream
-    entry, obstacle, and candidate-budget checks authoritative.
+    The sampler probes the complete 26-connected target boundary, follows
+    each probe along the reference direction until the first target-to-outside
+    transition, and samples the resulting far endpoints in physical space.
+    It does not use the old view-dependent angular grouping.
 
     Notes:
     - extract_angle remains in the signature so older planner integrations
@@ -2636,143 +2958,21 @@ def get_close_points(
     - All distance calculations used for the direction and length are in
       physical millimetres, including anisotropic CT spacing.
     """
-    del extract_angle  # retained for compatibility; no angular matrix is built
-    try:
-        surface_limit = max(int(max_surface_points), 1)
-    except (TypeError, ValueError):
-        surface_limit = _CLOSE_POINT_MAX_SURFACE_POINTS
-    try:
-        preferred_spacing_mm = float(surface_spacing_mm)
-    except (TypeError, ValueError):
-        preferred_spacing_mm = _CLOSE_POINT_PREFERRED_SPACING_MM
-    if not np.isfinite(preferred_spacing_mm) or preferred_spacing_mm < 0.0:
-        preferred_spacing_mm = _CLOSE_POINT_PREFERRED_SPACING_MM
-    coordinates, surface_coordinates = _target_surface_coordinates(
-        radiation_array, target_value
+    projected = get_direction_conditioned_close_points_for_directions(
+        dose_image,
+        radiation_array,
+        np.asarray(ref_direc, dtype=np.float64).reshape(1, -1),
+        target_value,
+        extract_angle=extract_angle,
+        max_point_num=max_point_num,
+        max_surface_points=max_surface_points,
+        surface_spacing_mm=surface_spacing_mm,
     )
-    if coordinates.shape[0] == 0:
-        logger.warning("[close_points] target label %s is empty", target_value)
-        return np.empty((0, 3), dtype=np.float64), 0.0
-
-    coordinates_for_length = _deterministic_point_subsample(
-        coordinates, max_point_num
+    lengths = projected["direction_lengths"]
+    return (
+        projected["preview_close_points"],
+        float(lengths[0]) if lengths else 0.0,
     )
-    surface_coordinates = _deterministic_point_subsample(
-        surface_coordinates, max_point_num
-    )
-    trans_coordinates = position_transform(
-        dose_image, coordinates_for_length.astype(np.float64, copy=False)
-    )
-    trans_surface = position_transform(
-        dose_image, surface_coordinates.astype(np.float64, copy=False)
-    )
-
-    ref_direction = np.asarray(ref_direc, dtype=np.float64).reshape(-1)
-    if ref_direction.size != 3 or not np.all(np.isfinite(ref_direction)):
-        ref_direction = np.array([0.0, 0.0, 1.0], dtype=np.float64)
-    try:
-        physical_direction = np.asarray(
-            direction_transform(dose_image, ref_direction),
-            dtype=np.float64,
-        ).reshape(-1)
-    except Exception:
-        logger.warning(
-            "[close_points] physical direction conversion failed; using voxel direction",
-            exc_info=True,
-        )
-        physical_direction = ref_direction.copy()
-    direction_norm = float(np.linalg.norm(physical_direction))
-    if not np.isfinite(direction_norm) or direction_norm <= 1e-12:
-        physical_direction = np.array([0.0, 0.0, 1.0], dtype=np.float64)
-        direction_norm = 1.0
-    physical_direction /= direction_norm
-
-    # Use a physical direction for physical coordinates. The old code mixed
-    # world coordinates with the voxel-space reference direction.
-    length = float(geometry.projection_length(
-        trans_coordinates, physical_direction
-    ))
-    centroid = np.mean(trans_coordinates, axis=0)
-    projections = np.dot(trans_surface - centroid, physical_direction)
-    back_cut = float(np.quantile(projections, _CLOSE_POINT_BACK_QUANTILE))
-    back_indices = np.flatnonzero(projections <= back_cut + 1e-9)
-
-    surface_limit = min(surface_limit, surface_coordinates.shape[0])
-    back_seed_limit = min(
-        back_indices.shape[0],
-        max(1, int(math.ceil(
-            surface_limit * _CLOSE_POINT_BACK_SEED_FRACTION
-        ))),
-    )
-    back_seed_indices = _farthest_point_sample_indices(
-        trans_surface[back_indices],
-        back_seed_limit,
-        preferred_spacing_mm=preferred_spacing_mm,
-    )
-    protected_global_indices = back_indices[back_seed_indices]
-    selected_indices = _farthest_point_sample_indices(
-        trans_surface,
-        surface_limit,
-        preferred_spacing_mm=preferred_spacing_mm,
-        seed_indices=protected_global_indices,
-    )
-    close_coordinates = surface_coordinates[selected_indices]
-    logger.info(
-        "[close_points] target=%d surface=%d sampled_surface=%d "
-        "back_pool=%d back_seeds=%d selected=%d spacing_mm=%.2f length_mm=%.2f",
-        int(coordinates.shape[0]),
-        int(coordinates.shape[0]),
-        int(surface_coordinates.shape[0]),
-        int(back_indices.shape[0]),
-        int(protected_global_indices.shape[0]),
-        int(close_coordinates.shape[0]),
-        preferred_spacing_mm,
-        length,
-    )
-
-    # append_filter = vtk.vtkAppendPolyData()
-
-    # for p in close_coordinates:
-    #     # Create a sphere
-    #     p = position_transform(dose_image, p)[0]
-    #     sphere = vtk.vtkSphereSource()
-    #     sphere.SetCenter(p.tolist())
-    #     sphere.SetRadius(1)
-    #     sphere.SetThetaResolution(16)  # Control sphere resolution
-    #     sphere.SetPhiResolution(16)
-
-    #     sphere.Update()
-    #     append_filter.AddInputData(sphere.GetOutput())
-
-    # p = light_source[0]
-    # sphere = vtk.vtkSphereSource()
-    # sphere.SetCenter(p.tolist())
-    # sphere.SetRadius(1)
-    # sphere.SetThetaResolution(16)  # Control sphere resolution
-    # sphere.SetPhiResolution(16)
-
-    # sphere.Update()
-    # append_filter.AddInputData(sphere.GetOutput())
-
-    # p = coord_center
-    # sphere = vtk.vtkSphereSource()
-    # sphere.SetCenter(p.tolist())
-    # sphere.SetRadius(1)
-    # sphere.SetThetaResolution(16)  # Control sphere resolution
-    # sphere.SetPhiResolution(16)
-
-    # sphere.Update()
-    # append_filter.AddInputData(sphere.GetOutput())
-    # # Merge all spheres
-    # append_filter.Update()
-
-    # # Write to STL file
-    # stl_writer = vtk.vtkSTLWriter()
-    # stl_writer.SetFileName('close_points.stl')
-    # stl_writer.SetInputData(append_filter.GetOutput())
-    # stl_writer.Write()
-    
-    return close_coordinates, length
 
 
 def get_shared_close_points_for_directions(
@@ -2785,137 +2985,32 @@ def get_shared_close_points_for_directions(
     max_surface_points=_CLOSE_POINT_MAX_SURFACE_POINTS,
     surface_spacing_mm=_CLOSE_POINT_PREFERRED_SPACING_MM,
 ):
-    """Create one spatially complete close-point set for all cone directions.
+    """Compatibility wrapper returning spatially complete far endpoints.
 
-    The path initializer combines every returned point with every candidate
-    direction. Each direction contributes a protected, spatially distributed
-    sample from its own target-side surface, and the remaining slots are filled
-    by farthest-point sampling over the complete target boundary. This keeps
-    the point set broad instead of allowing one reference direction to choose
-    all anchors from one face.
+    The current initializer uses the direction-conditioned entry arrays
+    directly and uses this wrapper only for older integrations. The returned
+    points are the direction-conditioned far endpoints, sampled in physical
+    space across the complete target boundary.
 
     Returns ``(points, lengths, stats)`` where ``lengths`` has one projected
     target length per direction. ``stats`` is intentionally lightweight and is
     used by the live preview to make missing surface coverage diagnosable.
     """
-    del extract_angle  # retained for compatibility with legacy callers
-    directions = np.asarray(candidate_directions, dtype=np.float64)
-    if directions.size == 0:
-        return np.empty((0, 3), dtype=np.float64), [], {
-            "direction_count": 0,
-            "selected_points": 0,
-        }
-    if directions.ndim == 1:
-        directions = directions.reshape(1, -1)
-    if directions.ndim != 2 or directions.shape[1] != 3:
-        raise ValueError("candidate_directions must have shape (N, 3)")
-
-    try:
-        surface_limit = max(int(max_surface_points), 1)
-    except (TypeError, ValueError):
-        surface_limit = _CLOSE_POINT_MAX_SURFACE_POINTS
-    try:
-        preferred_spacing_mm = float(surface_spacing_mm)
-    except (TypeError, ValueError):
-        preferred_spacing_mm = _CLOSE_POINT_PREFERRED_SPACING_MM
-    if not np.isfinite(preferred_spacing_mm) or preferred_spacing_mm < 0.0:
-        preferred_spacing_mm = _CLOSE_POINT_PREFERRED_SPACING_MM
-
-    prepared = _prepare_close_point_geometry(
+    projected = get_direction_conditioned_close_points_for_directions(
         dose_image,
         radiation_array,
+        candidate_directions,
         target_value,
+        extract_angle=extract_angle,
         max_point_num=max_point_num,
+        max_surface_points=max_surface_points,
+        surface_spacing_mm=surface_spacing_mm,
     )
-    if prepared is None:
-        logger.warning("[close_points] target label %s is empty", target_value)
-        return (
-            np.empty((0, 3), dtype=np.float64),
-            [0.0] * len(directions),
-            {
-                "direction_count": int(len(directions)),
-                "target_count": 0,
-                "surface_count": 0,
-                "selected_points": 0,
-                "protected_points": 0,
-            },
-        )
-
-    surface_coordinates = prepared["surface_coordinates"]
-    surface_world = prepared["surface_world"]
-    surface_limit = min(surface_limit, surface_coordinates.shape[0])
-    direction_lengths = []
-    direction_back_pools = []
-    for direction in directions:
-        physical_direction = _physical_unit_direction(dose_image, direction)
-        direction_lengths.append(float(
-            geometry.projection_length(prepared["target_world"], physical_direction)
-        ))
-        projections = np.dot(
-            surface_world - prepared["centroid"], physical_direction
-        )
-        back_cut = float(np.quantile(projections, _CLOSE_POINT_BACK_QUANTILE))
-        direction_back_pools.append(
-            np.flatnonzero(projections <= back_cut + 1e-9)
-        )
-
-    # Reserve a modest quota for every direction's far/back surface. The rest
-    # is selected from the complete boundary so the union remains spatially
-    # uniform instead of becoming a collection of overlapping back faces.
-    protected_budget = min(
-        surface_limit,
-        max(len(directions), int(math.ceil(surface_limit * 0.35))),
+    return (
+        projected["preview_close_points"],
+        projected["direction_lengths"],
+        projected["stats"],
     )
-    per_direction_budget = max(
-        1,
-        int(math.ceil(protected_budget / max(len(directions), 1))),
-    )
-    protected_indices = []
-    for back_indices in direction_back_pools:
-        if back_indices.size == 0:
-            continue
-        take = min(per_direction_budget, int(back_indices.size))
-        local = _farthest_point_sample_indices(
-            surface_world[back_indices],
-            take,
-            preferred_spacing_mm=preferred_spacing_mm,
-        )
-        protected_indices.extend(back_indices[local].tolist())
-    protected_indices = np.asarray(sorted(set(protected_indices)), dtype=np.int64)
-    if protected_indices.size > protected_budget:
-        keep = _farthest_point_sample_indices(
-            surface_world[protected_indices],
-            protected_budget,
-            preferred_spacing_mm=preferred_spacing_mm,
-        )
-        protected_indices = protected_indices[keep]
-
-    selected_indices = _farthest_point_sample_indices(
-        surface_world,
-        surface_limit,
-        preferred_spacing_mm=preferred_spacing_mm,
-        seed_indices=protected_indices,
-    )
-    close_coordinates = surface_coordinates[selected_indices]
-    stats = {
-        "direction_count": int(len(directions)),
-        "target_count": int(prepared["target_count"]),
-        "surface_count": int(len(surface_coordinates)),
-        "selected_points": int(len(close_coordinates)),
-        "protected_points": int(len(protected_indices)),
-        "direction_back_pool_sizes": [int(len(pool)) for pool in direction_back_pools],
-    }
-    logger.info(
-        "[close_points] shared target=%d surface=%d directions=%d "
-        "selected=%d protected=%d spacing_mm=%.2f",
-        stats["target_count"],
-        stats["surface_count"],
-        stats["direction_count"],
-        stats["selected_points"],
-        stats["protected_points"],
-        preferred_spacing_mm,
-    )
-    return close_coordinates, direction_lengths, stats
 
 
 def voxel_grid_downsampling(points, voxel_size = 1):
@@ -3885,24 +3980,48 @@ def select_optimal_trajectory(
         _log.getLogger(__name__).info(f"[select_optimal] scores.size=0, candidates={len(candidate_trajectories)}")
         return None, None
 
+    # A dose score remains dominant, but prefer candidates that can safely
+    # carry more than one seed when their physical dose benefit is comparable.
+    # This is deliberately a bounded soft bonus: a focal/edge target is still
+    # allowed to use a legitimate one-seed needle, while long usable chords
+    # are no longer systematically discarded in favour of short paths.
     _avail_count = 0
+    available_counts = np.zeros(len(candidate_trajectories), dtype=np.int32)
     for i, candidate_trajectory in enumerate(candidate_trajectories):
         throttled_process_events()
         avail = get_available_position(candidate_trajectory, [], seed_info, dose_image, distance_map)
-        if len(avail) == 0 or i in selected_indices:
+        available_count = int(len(avail))
+        available_counts[i] = available_count
+        if available_count == 0 or i in selected_indices:
             candidate_traj_scores[i] = 0
         else:
             _avail_count += 1
+            capacity_bonus = min(1.0, max(0.0, (available_count - 1) / 3.0))
+            candidate_traj_scores[i] *= 1.0 + 0.12 * capacity_bonus
     import logging as _log
-    _log.getLogger(__name__).info(f"[select_optimal] {len(candidate_trajectories)} candidates, {_avail_count} with available positions, max_score={np.max(candidate_traj_scores) if candidate_traj_scores.size > 0 else 'empty'}")
+    _logger = _log.getLogger(__name__)
+    _logger.info(
+        "[select_optimal] %d candidates, %d with available positions, max_capacity=%d, max_score=%s",
+        len(candidate_trajectories),
+        _avail_count,
+        int(np.max(available_counts)) if available_counts.size else 0,
+        np.max(candidate_traj_scores) if candidate_traj_scores.size > 0 else 'empty',
+    )
 
     # All candidates may have been masked AFTER the score fallback.
     candidate_traj_scores = np.asarray(candidate_traj_scores, dtype=float)
     candidate_traj_scores[~np.isfinite(candidate_traj_scores)] = 0.0
     if not np.any(candidate_traj_scores > 0):
         return None, None
-    # Step 6: Select and return the trajectory with the highest score
-    return candidate_trajectories[np.argmax(candidate_traj_scores)], np.argmax(candidate_traj_scores)
+    # Step 6: Select and return the trajectory with the highest score.
+    best_index = int(np.argmax(candidate_traj_scores))
+    _logger.info(
+        "[select_optimal] selected_index=%d available_seed_positions=%d score=%.6g",
+        best_index,
+        int(available_counts[best_index]) if best_index < available_counts.size else 0,
+        float(candidate_traj_scores[best_index]),
+    )
+    return candidate_trajectories[best_index], best_index
 
 
 def update_available_traj(

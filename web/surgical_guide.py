@@ -1578,16 +1578,23 @@ def _segment_crosses_truncated_boundary(
     target: np.ndarray,
     external: np.ndarray,
     boundary_faces: Mapping[str, bool],
+    *,
+    body_mask: Optional[np.ndarray] = None,
 ) -> bool:
-    """Return whether a planned needle crosses a flagged CT acquisition face.
+    """Return whether a planned needle enters through a flagged CT face.
 
-    The skin-entry sampler intentionally finds a valid *first* body sample.
-    That is not sufficient for a stale plan whose deep endpoint continues out
-    through a truncated cap after traversing the body.  The trajectory-init
-    safety filter normally removes such a path, but the guide generator is an
-    independent entry point and must fail closed when handed an older snapshot.
-    Work in continuous XYZ CT indices and test the complete target/external
-    segment against all six faces; this also handles a target endpoint that is
+    A planned needle usually stores an external endpoint beyond the CT
+    volume. Therefore its line can legitimately cross a finite-FOV face after
+    it has already left the patient's real skin. The old implementation
+    rejected every such crossing and could discard every needle in a valid
+    plan. When body_mask is supplied, only a crossing where the body still
+    occupies the segment immediately inside the face is unsafe. If the body
+    ended earlier, the remaining part is only the needle's outside extension
+    and must not be treated as a truncated anatomical entry.
+
+    Without a body mask the function retains the conservative historical
+    behavior and rejects a flagged-face crossing. Work in continuous XYZ CT
+    indices and test all six faces; this also handles a target endpoint that is
     only a fraction of a voxel outside the image after resampling.
     """
     if ct_image is None or not isinstance(boundary_faces, Mapping):
@@ -1598,6 +1605,33 @@ def _segment_crosses_truncated_boundary(
         size_xyz = np.asarray(ct_image.GetSize(), dtype=np.float64)
         if size_xyz.size != 3 or np.any(size_xyz < 3):
             return False
+        body = None
+        if body_mask is not None:
+            body = np.asarray(body_mask, dtype=bool)
+            expected_shape = (
+                int(size_xyz[2]),
+                int(size_xyz[1]),
+                int(size_xyz[0]),
+            )
+            if body.ndim != 3 or tuple(body.shape) != expected_shape:
+                logger.warning(
+                    "[surgical_guide] truncated-boundary body mask shape mismatch "
+                    "shape=%s expected=%s",
+                    tuple(body.shape),
+                    expected_shape,
+                )
+                # An unavailable/mismatched safety mask must not silently turn
+                # a potentially truncated entry into a valid guide.
+                return True
+
+        def body_at(index: np.ndarray) -> bool:
+            if body is None:
+                return False
+            xyz = np.rint(np.asarray(index, dtype=np.float64)).astype(np.int64)
+            if np.any(xyz < 0) or np.any(xyz >= size_xyz.astype(np.int64)):
+                return False
+            return bool(body[int(xyz[2]), int(xyz[1]), int(xyz[0])])
+
         points = []
         for point in (target, external):
             points.append(np.asarray(
@@ -1643,7 +1677,26 @@ def _segment_crosses_truncated_boundary(
                 before = start + (t - probe_t) * delta
                 after = start + (t + probe_t) * delta
                 if inside(before) != inside(after):
-                    return True
+                    if body is None:
+                        # No body mask means that the conservative historical
+                        # interpretation is the only safe one.
+                        return True
+                    # The crossing is unsafe only when the patient's body
+                    # continues right up to the flagged acquisition face. A
+                    # few inward probes avoid relying on a single rounded
+                    # boundary voxel and make the test robust to anisotropic
+                    # spacing and sub-voxel endpoint migration.
+                    index_length = max(1.0, float(np.linalg.norm(delta)))
+                    one_voxel_t = 1.0 / index_length
+                    for inward_voxels in (0.25, 0.75, 1.5, 2.5):
+                        probe_t = float(t) - inward_voxels * one_voxel_t
+                        if probe_t < -1e-8:
+                            break
+                        if body_at(start + max(0.0, probe_t) * delta):
+                            return True
+                    # The path has left the actual body before reaching this
+                    # face, so the rest is an external needle extension.
+                    continue
         return False
     except Exception:
         logger.warning("[surgical_guide] truncated-boundary segment check failed", exc_info=True)
@@ -1684,6 +1737,7 @@ def _sample_skin_entry(
     truncated_z_min: bool = False,
     truncated_z_max: bool = False,
     truncated_boundary_faces: Optional[Mapping[str, bool]] = None,
+    truncation_margin_mm: float = 5.0,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Find the first body voxel entered by the physical needle segment.
 
@@ -1710,6 +1764,37 @@ def _sample_skin_entry(
     z_count = int(size_xyz[2])
     boundary_faces = truncated_boundary_faces or {}
     boundary_tolerance_voxels = 1
+    # The continuous index is the only reliable coordinate at a thick-slice
+    # boundary. Rounding an entry at z=14.49 to z=14 can make a path appear
+    # to be on real skin even though it is only 2.55 mm from a flagged z-max
+    # acquisition cap. Use the configured physical margin, with at least one
+    # voxel of protection on every axis, so the entry decision matches the
+    # finite-FOV CSG guard.
+    spacing_mm = np.maximum(np.abs(spacing), 1e-6)
+    boundary_tolerance_mm = max(
+        float(truncation_margin_mm), float(np.max(spacing_mm))
+    )
+    face_names = (
+        (0, "x_min", "x_max"),
+        (1, "y_min", "y_max"),
+        (2, "z_min", "z_max"),
+    )
+
+    def _near_truncated_face(index_xyz: np.ndarray) -> bool:
+        """Return whether a continuous-index point is inside a flagged cap."""
+        for axis, low_name, high_name in face_names:
+            if bool(boundary_faces.get(low_name)) and (
+                float(index_xyz[axis]) * float(spacing_mm[axis])
+                <= boundary_tolerance_mm
+            ):
+                return True
+            high_distance = (
+                float(size_xyz[axis] - 1) - float(index_xyz[axis])
+            ) * float(spacing_mm[axis])
+            if bool(boundary_faces.get(high_name)) and high_distance <= boundary_tolerance_mm:
+                return True
+        return False
+
     inside_before = False
     first_inside: Optional[np.ndarray] = None
     for fraction in np.linspace(0.0, 1.0, samples, dtype=np.float64):
@@ -1749,6 +1834,11 @@ def _sample_skin_entry(
                     and bool(boundary_faces.get("y_max"))
                 )
             )
+            # Do not let a rounded voxel index undo the physical cap guard.
+            # The explicit z flags are retained above for callers that only
+            # provide z truncation booleans; the face map adds the continuous
+            # x/y/z check.
+            on_truncated_boundary = on_truncated_boundary or _near_truncated_face(index_xyz)
             if on_truncated_boundary:
                 # The needle enters through the CT truncation plane, not real
                 # skin. Keep searching: a real lateral skin entry may exist
@@ -1773,6 +1863,10 @@ def _path_records(
     body: np.ndarray,
     selected_needle_ids: Optional[Iterable[Any]] = None,
     truncated_boundary_faces: Optional[Mapping[str, bool]] = None,
+    *,
+    boundary_body_mask: Optional[np.ndarray] = None,
+    truncation_margin_mm: float = 5.0,
+    skipped_paths: Optional[List[Dict[str, Any]]] = None,
 ) -> List[NeedleGuidePath]:
     memory = agent.memory
     ct_image = memory.retrieve("ct_image")
@@ -1816,19 +1910,43 @@ def _path_records(
         target = _as_point(points[0], "needle target")
         external = _as_point(points[-1], "needle external endpoint")
         if _segment_crosses_truncated_boundary(
-            ct_image, target, external, boundary_faces
+            ct_image,
+            target,
+            external,
+            boundary_faces,
+            body_mask=(boundary_body_mask if boundary_body_mask is not None else body),
         ):
+            if skipped_paths is not None:
+                skipped_paths.append({
+                    "needle_id": needle_id,
+                    "reason": "segment_crosses_truncated_ct_face",
+                })
             logger.warning(
                 "[surgical_guide] skipping needle %s: segment crosses a truncated CT face",
                 needle_id,
             )
             continue
-        entry, inward = _sample_skin_entry(
-            ct_image, body, target, external,
-            truncated_z_min=trunc_z_min,
-            truncated_z_max=trunc_z_max,
-            truncated_boundary_faces=boundary_faces,
-        )
+        try:
+            entry, inward = _sample_skin_entry(
+                ct_image, body, target, external,
+                truncated_z_min=trunc_z_min,
+                truncated_z_max=trunc_z_max,
+                truncated_boundary_faces=boundary_faces,
+                truncation_margin_mm=truncation_margin_mm,
+            )
+        except SurgicalGuideError as exc:
+            if skipped_paths is not None:
+                skipped_paths.append({
+                    "needle_id": needle_id,
+                    "reason": "invalid_skin_entry",
+                    "detail": str(exc),
+                })
+            logger.warning(
+                "[surgical_guide] skipping needle %s: %s",
+                needle_id,
+                exc,
+            )
+            continue
         trajectory_id = str(needle.get("trajectory_id") or needle_id)
         linked_seeds = seed_by_trajectory.get(trajectory_id, [])
         if linked_seeds:
@@ -3277,7 +3395,11 @@ def generate_surgical_guide(
     # Detect finite-FOV caps from the original thresholded component before
     # binary closing or smoothing. Both operations can erode a one-voxel CT
     # face and erase the evidence that the acquisition was truncated.
-    boundary_faces = _truncated_boundary_faces(_largest_component(raw_candidate))
+    # Keep the unsmoothed component for finite-FOV safety decisions. Smoothing
+    # is useful for printable skin geometry but can erase a one-voxel cap and
+    # would make a true acquisition truncation look like an earlier skin exit.
+    raw_body_component = _largest_component(raw_candidate)
+    boundary_faces = _truncated_boundary_faces(raw_body_component)
     body = _body_mask(np.asarray(ct_data), params["skin_threshold_hu"])
     # Smooth the body envelope so the guide plate follows a smooth skin
     # surface instead of the CT's slice steps (real CTs often have 5 mm
@@ -3304,11 +3426,15 @@ def generate_surgical_guide(
     # record the truncation state so the caller can warn the operator.
     trunc_z_min = bool(boundary_faces["z_min"])
     trunc_z_max = bool(boundary_faces["z_max"])
+    excluded_needle_paths: List[Dict[str, Any]] = []
     paths = _path_records(
         agent,
         body,
         selected_needle_ids,
         truncated_boundary_faces=boundary_faces,
+        boundary_body_mask=raw_body_component,
+        truncation_margin_mm=float(params["truncation_margin_mm"]),
+        skipped_paths=excluded_needle_paths,
     )
     if not paths:
         raise SurgicalGuideError(
@@ -3959,6 +4085,9 @@ def generate_surgical_guide(
         "validation": {
             **validation,
             "source_needle_count": len(paths),
+            "excluded_needle_paths": [
+                dict(item) for item in excluded_needle_paths
+            ],
             "auxiliary_holes": {
                 key: value
                 for key, value in auxiliary_holes.items()

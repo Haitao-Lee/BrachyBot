@@ -625,6 +625,10 @@ function _reportCaptureUiUpdate(runId, { current = 0, label = '', state = 'activ
 
 function _reportCaptureUiFinish(runId, { failed = false, stale = false, captured = 0 } = {}) {
     if (runId == null || runId !== _reportCaptureUiState.activeRunId) return;
+    if (_reportCaptureUiState.hideTimer) {
+        clearTimeout(_reportCaptureUiState.hideTimer);
+        _reportCaptureUiState.hideTimer = null;
+    }
     const host = _reportCaptureUiElement();
     if (!host) return;
     const total = _reportCaptureUiState.total;
@@ -684,6 +688,10 @@ function _reportCaptureUiNextPaint() {
 // the timeout at the operation boundary so the finally blocks below still
 // restore the live Viewer and the report UI can publish a truthful failure.
 const REPORT_CAPTURE_OPERATION_TIMEOUT_MS = 20000;
+// A whole capture is a presentation transaction, not an unbounded background
+// job. Per-operation timeouts protect individual WebGL/Plotly calls; this
+// watchdog also covers third-party promises that never settle.
+const REPORT_CAPTURE_TOTAL_TIMEOUT_MS = 180000;
 function _reportCaptureAwait(operation, label, timeoutMs = REPORT_CAPTURE_OPERATION_TIMEOUT_MS) {
     let timer = null;
     let promise;
@@ -1186,7 +1194,7 @@ if (!window.__brachybotReportPlanningLifecycleBound) {
 
 // Serialize report captures. A planning refresh can be triggered by several
 // SSE events; overlapping captures otherwise race over mesh visibility and
-// leave the 3D renderer in the partially hidden state used by Figure 1.
+// leave the 3D renderer in the partially hidden state used for Figure 1.
 async function autoCaptureReportFigures(options = {}) {
     const requestedSessionId = String(options.sessionId || _currentReportCaptureSessionId());
     const requestedPlanningId = String(options.planningId || _currentReportCapturePlanningId());
@@ -1197,6 +1205,13 @@ async function autoCaptureReportFigures(options = {}) {
     });
     if (!captureGate.allowed) {
         uiDebugLog('[Report] capture blocked:', captureGate.reason, captureGate.status);
+        const staleHost = _reportCaptureUiElement();
+        if (staleHost?.getAttribute('aria-busy') === 'true') {
+            _reportCaptureUiFinish(_reportCaptureUiState.activeRunId, {
+                stale: true,
+                captured: 0,
+            });
+        }
         return { stale: false, blocked: true, reason: captureGate.reason };
     }
     if (_reportCapturePromise) {
@@ -1205,10 +1220,6 @@ async function autoCaptureReportFigures(options = {}) {
             || requestedPlanningId !== _currentReportCapturePlanningId()) return { stale: true };
         return autoCaptureReportFigures(options);
     }
-    // Reconcile any late mesh response with the persisted Data Tree before
-    // taking the presentation snapshot.  This is intentionally a synchronous
-    // appearance pass, not a reconstruction: hiding OARs must take effect in
-    // the existing scene without rebuilding their geometry.
     try {
         window.syncSceneAppearanceFromDataTree?.({
             preserveDoseTexture: !!state.doseTexture?.enabled,
@@ -1216,6 +1227,10 @@ async function autoCaptureReportFigures(options = {}) {
     } catch (error) {
         console.warn('[Report] Data Tree appearance reconciliation failed:', error);
     }
+    const captureLanguage = String(
+        options.language || window._i18nLang || window.reportForm?.language || 'en',
+    );
+    const reportCaptureUiRunId = _reportCaptureUiStart(REPORT_CAPTURE_STEP_TOTAL, captureLanguage);
     const context = {
         generation: _reportCaptureGeneration,
         sessionId: requestedSessionId,
@@ -1223,8 +1238,77 @@ async function autoCaptureReportFigures(options = {}) {
         reportForm: window.reportForm,
         dataVersion: Number(dataTreeState?.planning?.dataVersion || 0),
         allowTerminalPlanning: options.allowTerminalPlanning === true,
+        reportCaptureUiRunId,
+        reportCaptureUiCaptured: 0,
+        captureFinished: false,
+        captureCancelled: false,
+        captureWatchdog: null,
     };
-    const restoreViewer = snapshotReportViewerPresentation();
+    let restoreViewer;
+    try {
+        restoreViewer = snapshotReportViewerPresentation();
+    } catch (error) {
+        window.__reportCaptureActive = false;
+        _reportCaptureUiFinish(reportCaptureUiRunId, { failed: true, captured: 0 });
+        throw error;
+    }
+    context.restorePromise = null;
+    context.restoreViewerOnce = () => {
+        if (context.restorePromise) return context.restorePromise;
+        context.restorePromise = (async () => {
+            let restoreError = null;
+            try {
+                await _reportCaptureAwait(
+                    () => restoreViewer(),
+                    'Viewer presentation restore',
+                );
+            } catch (error) {
+                restoreError = error;
+            } finally {
+                window.__reportCaptureActive = false;
+                try {
+                    window.syncSceneAppearanceFromDataTree?.({
+                        preserveDoseTexture: !!state.doseTexture?.enabled,
+                    });
+                } catch (error) {
+                    console.warn('[Report] Final Data Tree appearance restore failed:', error);
+                }
+            }
+            if (restoreError) throw restoreError;
+        })();
+        return context.restorePromise;
+    };
+    context.onCaptureReady = () => {
+        if (!context.captureReadyPromise) {
+            context.captureReadyPromise = (async () => {
+                try {
+                    await context.restoreViewerOnce();
+                } finally {
+                    context.captureFinished = true;
+                    _reportCaptureUiFinish(context.reportCaptureUiRunId, {
+                        captured: context.reportCaptureUiCaptured,
+                    });
+                }
+            })();
+        }
+        return context.captureReadyPromise;
+    };
+    // Close the visual transaction even if a browser/WebGL/Plotly operation
+    // stops settling. Incrementing the generation makes late callbacks stale,
+    // so they cannot write figures or reapply a temporary presentation.
+    context.captureWatchdog = setTimeout(() => {
+        if (context.captureFinished || context.captureCancelled) return;
+        context.captureCancelled = true;
+        _reportCaptureGeneration += 1;
+        window.__reportCaptureActive = false;
+        _reportCaptureUiFinish(context.reportCaptureUiRunId, {
+            failed: true,
+            captured: context.reportCaptureUiCaptured,
+        });
+        Promise.resolve(context.restoreViewerOnce?.()).catch(error => {
+            console.warn('[Report] Watchdog viewer restore failed:', error);
+        });
+    }, REPORT_CAPTURE_TOTAL_TIMEOUT_MS);
     window.__reportCaptureActive = true;
     const promise = _autoCaptureReportFiguresImpl(context);
     _reportCapturePromise = promise;
@@ -1240,29 +1324,21 @@ async function autoCaptureReportFigures(options = {}) {
         if (_reportCapturePromise === promise) {
             let restoreError = null;
             try {
-                await _reportCaptureAwait(
-                    () => restoreViewer(),
-                    'Viewer presentation restore',
-                );
-            }
-            catch (error) { restoreError = error; }
-            finally {
-                window.__reportCaptureActive = false;
-                // Re-apply the canonical Data Tree state after the temporary
-                // report presentation has ended. This also handles a late
-                // mesh response and makes a user change made during capture
-                // win over the old snapshot.
-                try {
-                    window.syncSceneAppearanceFromDataTree?.({
-                        preserveDoseTexture: !!state.doseTexture?.enabled,
-                    });
-                } catch (error) {
-                    console.warn('[Report] Final Data Tree appearance restore failed:', error);
-                }
+                if (context.captureReadyPromise) await context.captureReadyPromise;
+                await context.restoreViewerOnce();
+            } catch (error) { restoreError = error; }
+            const captureIsStale = captureResult?.stale === true
+                || context.generation !== _reportCaptureGeneration
+                || context.sessionId !== _currentReportCaptureSessionId()
+                || context.planningId !== _currentReportCapturePlanningId();
+            if (context.captureWatchdog) {
+                clearTimeout(context.captureWatchdog);
+                context.captureWatchdog = null;
             }
             _reportCaptureUiFinish(context.reportCaptureUiRunId, {
-                failed: !!captureError || captureResult?.success === false,
-                stale: captureResult?.stale === true,
+                failed: !!captureError || !!restoreError || context.captureCancelled
+                    || captureResult?.success === false,
+                stale: captureIsStale,
                 captured: context.reportCaptureUiCaptured,
             });
             _reportCapturePromise = null;
@@ -1340,7 +1416,8 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
         uiDebugLog('[Report] capture implementation blocked:', captureGate.reason, captureGate.status);
         return { stale: false, blocked: true, reason: captureGate.reason };
     }
-    const isCurrentCapture = () => captureGeneration === _reportCaptureGeneration
+    const isCurrentCapture = () => captureContext.captureCancelled !== true
+        && captureGeneration === _reportCaptureGeneration
         && captureSessionId === _currentReportCaptureSessionId()
         && capturePlanningId === _currentReportCapturePlanningId()
         && Number(captureContext.dataVersion ?? dataTreeState?.planning?.dataVersion ?? 0)
@@ -1401,7 +1478,8 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
     // camera/visibility change. The next-paint yield gives the browser one
     // frame to paint this non-blocking status, so the scene never appears to
     // change “by itself” without an explanation.
-    const reportCaptureUiRunId = _reportCaptureUiStart(REPORT_CAPTURE_STEP_TOTAL, lang);
+    const reportCaptureUiRunId = captureContext.reportCaptureUiRunId
+        ?? _reportCaptureUiStart(REPORT_CAPTURE_STEP_TOTAL, lang);
     captureContext.reportCaptureUiRunId = reportCaptureUiRunId;
     await _reportCaptureUiNextPaint();
     if (!isCurrentCapture()) return { stale: true };
@@ -1503,6 +1581,59 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
         captureContext.reportCaptureUiCaptured = Number(captureContext.reportCaptureUiCaptured || 0) + 1;
         uiDebugLog('[Report] Figure captured:', title, Math.round(dataUrl.length / 1024), 'KB');
     };
+
+    // Generic/uploaded masks are independent Data Tree objects until the
+    // user explicitly promotes them to CTV/OAR. They must never be treated as
+    // report anatomy merely because a legacy mesh carries source/type='ctv'.
+    // Resolve the authoritative mask registry through every historical mesh
+    // identifier used by the viewer.
+    const _reportMaskStateForMesh = (id, mesh) => {
+        const userData = mesh?.userData || {};
+        const refs = [
+            id,
+            userData.maskId,
+            userData.mask_id,
+            userData.uploadMaskId,
+            userData.upload_mask_id,
+            userData.objectId,
+            userData.nodeId,
+        ].filter(value => value !== undefined && value !== null && String(value));
+        for (const ref of refs) {
+            const entry = window.getDataTreeMaskState?.(ref);
+            if (entry) return entry;
+        }
+        return null;
+    };
+    const _isStandaloneGenericReportMask = (id, mesh) => {
+        const userData = mesh?.userData || {};
+        const mask = _reportMaskStateForMesh(id, mesh);
+        const kind = String(mask?.kind || userData.kind || '').toLowerCase();
+        const source = String(mask?.source || userData.source || '').toLowerCase();
+        const key = String(id || '').toLowerCase();
+        const hasUploadReference = Boolean(
+            mask?.upload_mask_id || mask?.uploadMaskId
+            || userData.upload_mask_id || userData.uploadMaskId,
+        );
+        if (mask) {
+            return kind === 'generic_segmentation'
+                || kind === 'uploaded_mask_label'
+                || source === 'uploaded_mask'
+                || source === 'biomedparse_v2'
+                || source === 'generic'
+                || hasUploadReference;
+        }
+        return kind === 'generic_segmentation'
+            || kind === 'uploaded_mask_label'
+            || source === 'uploaded_mask'
+            || source === 'biomedparse_v2'
+            || source === 'generic'
+            || hasUploadReference
+            || key.startsWith('upload_mask_')
+            || key.startsWith('uploaded_mask_');
+    };
+    const _isReportCtvMesh = (id, mesh) => !_isStandaloneGenericReportMask(id, mesh)
+        && (id === 'ctv' || id.startsWith('ctv_')
+            || mesh?.userData?.source === 'ctv' || mesh?.userData?.type === 'ctv');
 
     // Helper: wait for render
     const _waitFrames = (n = 2) => new Promise(resolve => {
@@ -2059,6 +2190,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
         const mappedMeshIds = [];
         Object.entries(scene3D.meshes || {}).forEach(([id, mesh]) => {
             if (!mesh || typeof _isDoseTexturableMesh !== 'function'
+                || _isStandaloneGenericReportMask(id, mesh)
                 || !_isDoseTexturableMesh(id, mesh)) return;
             const surface = typeof getMeshSurface === 'function'
                 ? getMeshSurface(mesh) : mesh;
@@ -2333,7 +2465,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 };
                 for (const [id, mesh] of Object.entries(scene3D.meshes)) {
                     if (!mesh) continue;
-                    const isCtv = id === 'ctv' || id.startsWith('ctv_') || mesh?.userData?.source === 'ctv' || mesh?.userData?.type === 'ctv';
+                    const isCtv = _isReportCtvMesh(id, mesh);
                     const isSeed = id.startsWith('seed_') || mesh?.userData?.type === 'seed';
                     const isNeedleHandle = mesh?.userData?.type === 'needle_handle';
                     const isNeedle = !isNeedleHandle && (id.startsWith('needle_') || mesh?.userData?.type === 'needle');
@@ -2362,7 +2494,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     const localContext = targetBox.clone().expandByScalar(contextPadding);
                     for (const [id, mesh] of Object.entries(scene3D.meshes)) {
                         if (!mesh) continue;
-                        const isCtv = id === 'ctv' || id.startsWith('ctv_') || mesh?.userData?.source === 'ctv' || mesh?.userData?.type === 'ctv';
+                        const isCtv = _isReportCtvMesh(id, mesh);
                         const isSeed = id.startsWith('seed_') || mesh?.userData?.type === 'seed';
                         const isNeedle = mesh?.userData?.type !== 'needle_handle' && (id.startsWith('needle_') || mesh?.userData?.type === 'needle');
                         const isDose = id.startsWith('dose_iso_') || mesh?.userData?.type === 'dose_isosurface';
@@ -2400,7 +2532,8 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                         || ['skin', 'skin_surface', 'guide_skin_surface'].includes(type);
                     const isNeedle = !isNeedleHandle
                         && (key.startsWith('needle_') || type === 'needle');
-                    if (isNeedleHandle || isDose || isSkin || (!includeNeedles && isNeedle)) continue;
+                    const isStandaloneGenericMask = _isStandaloneGenericReportMask(id, mesh);
+                    if (isStandaloneGenericMask || isNeedleHandle || isDose || isSkin || (!includeNeedles && isNeedle)) continue;
                     try { box.expandByObject(mesh); } catch (_) {}
                 }
                 if (!(box.min.x < box.max.x)) {
@@ -2498,11 +2631,17 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             // essential here; otherwise this temporary view can look like a
             // user setting for the duration of a stuck spinner.
             for (const [id, mesh] of Object.entries(scene3D.meshes)) {
-                if (mesh) applyMeshVisibility(mesh, true, 1);
+                if (!mesh) continue;
+                if (_isStandaloneGenericReportMask(id, mesh)) {
+                    // A report-only “show all” must not resurrect an
+                    // independent Upload Mask that the operator hid.
+                    applyMeshVisibility(mesh, false, 1);
+                } else {
+                    applyMeshVisibility(mesh, true, 1);
+                }
             }
             _savedHandleObjects.forEach(({ object }) => { if (object) object.visible = false; });
-            const _isFigureOneCtv = (id, mesh) => id === 'ctv' || id.startsWith('ctv_')
-                || mesh?.userData?.source === 'ctv' || mesh?.userData?.type === 'ctv';
+            const _isFigureOneCtv = (id, mesh) => _isReportCtvMesh(id, mesh);
             const _isFigureOneSeed = (id, mesh) => id.startsWith('seed_')
                 || mesh?.userData?.type === 'seed' || mesh?.userData?.kind === 'seed';
             const _isFigureOneNeedle = (id, mesh) => mesh?.userData?.type !== 'needle_handle'
@@ -2513,6 +2652,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             // priority over the allow-list below so an incorrectly inherited
             // source tag can never leak an OAR into the close-up.
             const _isFigureOneOar = (id, mesh) => {
+                if (_isStandaloneGenericReportMask(id, mesh)) return true;
                 const key = String(id || '').toLowerCase();
                 const source = String(mesh?.userData?.source || '').toLowerCase();
                 const type = String(mesh?.userData?.type || '').toLowerCase();
@@ -2647,13 +2787,14 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
 
             // OARs semi-transparent (not seeds, needles, dose, or CTV)
             for (const [id, mesh] of Object.entries(scene3D.meshes)) {
-                if (!mesh || _isFigureOneSkin(id, mesh) || _isFigureOneCtv(id, mesh) || _isFigureOneSeed(id, mesh)
+                if (!mesh || _isStandaloneGenericReportMask(id, mesh) || _isFigureOneSkin(id, mesh)
+                    || _isFigureOneCtv(id, mesh) || _isFigureOneSeed(id, mesh)
                     || _isFigureOneNeedle(id, mesh) || id.startsWith('dose_iso_')) continue;
                 _setFigureOneOpacity(mesh, 0.15);
             }
             // CTV semi-transparent
             const ctvMesh = scene3D.meshes['ctv']
-                || Object.values(scene3D.meshes).find(m => m?.userData?.source === 'ctv');
+                || Object.entries(scene3D.meshes).find(([id, mesh]) => _isReportCtvMesh(id, mesh))?.[1];
             _setFigureOneOpacity(ctvMesh, 0.30);
 
             // Figure 1(a) is the global plan. Include the full planned needle
@@ -2683,7 +2824,8 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             // restored mesh carries an ambiguous or stale CTV source tag.
             for (const [id, mesh] of Object.entries(scene3D.meshes)) {
                 if (!mesh) continue;
-                mesh.visible = !_isFigureOneOar(id, mesh)
+                mesh.visible = !_isStandaloneGenericReportMask(id, mesh)
+                    && !_isFigureOneOar(id, mesh)
                     && (_isFigureOneCtv(id, mesh)
                         || _isFigureOneSeed(id, mesh)
                         || _isFigureOneNeedle(id, mesh));
@@ -2993,7 +3135,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 if (!isCurrentCapture()) return { stale: true };
                 for (const [id, mesh] of Object.entries(scene3D.meshes || {})) {
                     if (!mesh) continue;
-                    const isCtv = id === 'ctv' || id.startsWith('ctv_') || mesh?.userData?.type === 'ctv';
+                    const isCtv = _isReportCtvMesh(id, mesh);
                     const isSeed = id.startsWith('seed_') || mesh?.userData?.type === 'seed';
                     const isNeedle = id.startsWith('needle_') || mesh?.userData?.type === 'needle';
                     const isDoseSurface = id.startsWith('dose_iso_')
@@ -3026,7 +3168,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                         applyMeshVisibility(mesh, true, 1);
                         return;
                     }
-                    const isCtv = id === 'ctv' || id.startsWith('ctv_') || mesh?.userData?.type === 'ctv';
+                    const isCtv = _isReportCtvMesh(id, mesh);
                     const isSeed = id.startsWith('seed_') || mesh?.userData?.type === 'seed';
                     // Needles remain visible, but their long external shafts do
                     // not define the close-up framing box.
@@ -3045,9 +3187,11 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                         if (!mesh) return;
                         const isDoseSurface = id.startsWith('dose_iso_')
                             || mesh?.userData?.type === 'dose_isosurface';
-                        if (!isDoseSurface && (typeof _isDoseTexturableMesh !== 'function'
+                        if (!isDoseSurface && (_isStandaloneGenericReportMask(id, mesh)
+                            || typeof _isDoseTexturableMesh !== 'function'
                             || !_isDoseTexturableMesh(id, mesh))) return;
-                        if (id === 'ctv' || id.startsWith('ctv_')) return;
+                        const isCtv = _isReportCtvMesh(id, mesh);
+                        if (isCtv) return;
                         const candidate = new THREE.Box3();
                         try { candidate.expandByObject(mesh); } catch (_) { return; }
                         if (!candidate.intersectsBox(context)) return;
@@ -3245,10 +3389,29 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
         )).concat(stagedFigures);
         uiDebugLog('[Report] Total figures captured:', window.reportForm.figures.length);
         renderReportEditor(); _updateReportPreview(); _scheduleReportAutoSave();
+        captureContext.reportCaptureUiCaptured = stagedFigures.length;
+        // Restore the live viewer and finish the visual progress indicator as
+        // soon as the image set is complete. Saving the same report form to the
+        // Session is deliberately a separate, bounded persistence phase.
+        if (typeof captureContext.onCaptureReady === 'function') {
+            try {
+                // Restore the live Data Tree/Viewer before the potentially slow
+                // checkpoint save, so a finished capture never leaves the
+                // operator looking at a temporary report presentation.
+                await captureContext.onCaptureReady();
+            } catch (error) {
+                console.warn('[Report] Viewer restore after capture failed:', error);
+            }
+        }
         if (typeof window.persistWorkspace === 'function') {
-            const persisted = await window.persistWorkspace('report.figures.captured');
+            const persisted = await _reportCaptureAwait(
+                () => window.persistWorkspace('report.figures.captured'),
+                'Report image persistence',
+                120000,
+            );
             if (persisted === false) throw new Error('Report images could not be saved to this Session.');
         }
+        if (!isCurrentCapture()) return { stale: true };
         const requiredAxes = Object.keys(REPORT_FIGURE_CAPTURE_CONTRACTS);
         const missing = requiredAxes.filter(axis => !window.reportForm.figures.some(figure => (
             figure.axis === axis && String(figure.planningId || '') === capturePlanningId

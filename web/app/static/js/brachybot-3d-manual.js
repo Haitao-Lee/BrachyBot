@@ -15,8 +15,12 @@ function _syncTrajectoryChildren() {
     dataTreeState.planning.trajectoriesLoaded = (dataTreeState.planning.trajectories || []).length > 0;
 }
 
-function _setPlanningPreviewClosePoints(mesh, entries) {
+function _setPlanningPreviewClosePoints(mesh, entries, role = 'target_exit') {
     if (!mesh) return;
+    mesh.userData = {
+        ...(mesh.userData || {}),
+        pointRole: String(role || 'target_exit'),
+    };
     const points = (Array.isArray(entries) ? entries : []).slice(0, 256);
     const matrix = new THREE.Matrix4();
     const position = new THREE.Vector3();
@@ -7950,6 +7954,7 @@ function _renderPlanningPreviewFrame(event) {
     _setPlanningPreviewClosePoints(
         _planningPreviewState.closePointMesh,
         geometry.close_points,
+        geometry.close_points_role || 'target_exit',
     );
     _showPlanningPreviewStatus(event);
     scene3D?.requestRender?.(2);

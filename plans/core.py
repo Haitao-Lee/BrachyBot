@@ -295,7 +295,29 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
         for name in ("GetSize", "GetDirection", "GetOrigin", "GetSpacing")
     )
     close_point_stats = {}
-    if callable(shared_sampler) and has_physical_image_geometry:
+    direction_entries_by_direction = None
+    directional_sampler = getattr(
+        utilizations,
+        "get_direction_conditioned_close_points_for_directions",
+        None,
+    )
+    if callable(directional_sampler) and has_physical_image_geometry:
+        directional_result = directional_sampler(
+            dose_image,
+            radiation_volume,
+            candidate_dirs,
+            target_value,
+            extract_angle,
+            max_surface_points=min(256, candidate_limit),
+            surface_spacing_mm=2.5,
+        )
+        direction_entries_by_direction = directional_result[
+            "entry_points_by_direction"
+        ]
+        close_points = directional_result["preview_close_points"]
+        direction_lengths = directional_result["direction_lengths"]
+        close_point_stats = directional_result["stats"]
+    elif callable(shared_sampler) and has_physical_image_geometry:
         close_points, direction_lengths, close_point_stats = shared_sampler(
             dose_image,
             radiation_volume,
@@ -327,7 +349,13 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
     for i, direc in enumerate(candidate_dirs):
         progressDialog.setValue(45)
         progressDialog.setLabelText("Initial Planning...")
-        direction_points = close_points
+        if (
+            direction_entries_by_direction is not None
+            and i < len(direction_entries_by_direction)
+        ):
+            direction_points = direction_entries_by_direction[i]
+        else:
+            direction_points = close_points
         max_length = (
             direction_lengths[i]
             if i < len(direction_lengths)
@@ -335,7 +363,7 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
         )
         if entry_body_mask is not None:
             direction_points, rejected = utilizations.filter_trajectory_entry_points(
-                close_points,
+                direction_points,
                 direc,
                 entry_body_mask,
                 truncated_boundary_faces=entry_boundary_faces,
@@ -377,7 +405,7 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
         # entire surface patch before the anchor coverage pass sees it.
         init_trajectories += sample_spatial_trajectories(
             traj_list,
-            max(1, len(close_points)),
+            max(1, len(direction_points)),
             sampling_spacing,
         )
 
@@ -399,6 +427,7 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
                 "total": len(candidate_dirs),
                 "trajectories": preview,
                 "close_points": close_points,
+                "close_points_role": close_point_stats.get("preview_point_role", "target_exit"),
                 "detail": (
                     f"{len(preview)} surface-covering candidate paths "
                     f"(limit {candidate_limit}; directions {len(candidate_dirs)}; "
@@ -421,6 +450,7 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
         "total": len(candidate_dirs),
         "trajectories": init_trajectories,
         "close_points": close_points,
+        "close_points_role": close_point_stats.get("preview_point_role", "target_exit"),
         "detail": (
             f"{len(init_trajectories)} surface-covering candidate paths"
             f"; directions={len(candidate_dirs)}"
@@ -550,6 +580,15 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
 
     if not init_planned_res:
         return []
+
+    initial_seed_counts = [len(entry[1]) for entry in init_planned_res]
+    _logger.info(
+        "[optimal_plan] Stage 1 seed distribution: needles=%d single_seed=%d multi_seed=%d max_seeds_per_needle=%d",
+        len(initial_seed_counts),
+        sum(count == 1 for count in initial_seed_counts),
+        sum(count >= 2 for count in initial_seed_counts),
+        max(initial_seed_counts) if initial_seed_counts else 0,
+    )
 
     # --- Stage 2: Plan Refinement ---
     minus_res = copy.copy(init_planned_res)
@@ -723,6 +762,14 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
         force=True,
     )
     final_res = seed_plan_to_world_coordinates(opti_res, dose_image)
+    final_seed_counts = [len(entry[1]) for entry in opti_res]
+    _logger.info(
+        "[optimal_plan] Final seed distribution: needles=%d single_seed=%d multi_seed=%d max_seeds_per_needle=%d",
+        len(final_seed_counts),
+        sum(count == 1 for count in final_seed_counts),
+        sum(count >= 2 for count in final_seed_counts),
+        max(final_seed_counts) if final_seed_counts else 0,
+    )
     _logger.info(
         "[optimal_plan] Exact seed-dose cache: hits=%d misses=%d entries=%d bytes=%d",
         dose_context.seed_dose_cache_hits,
