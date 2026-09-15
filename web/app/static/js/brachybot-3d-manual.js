@@ -6416,8 +6416,9 @@ async function _loadAllIsoSurfaces(options = {}, scope = null) {
     // ref.py: args.iso_dose_params['iso_dose_values'] = inLowestEnergy * np.array(iso_dose_values)
     const relValues = display3d.iso_dose_values || [1.0, 1.5, 2.0, 4.0];
     // Colors now match the 2D contour colors and the colorbar (petRainbow2 colormap).
-    // 1.0×Rx (120 Gy) = green, 1.5×Rx (180 Gy) = yellow-green,
-    // 2.0×Rx (240 Gy) = yellow, 4.0×Rx (480 Gy) = orange.
+    // The thresholds are computed as 1.0×Rx, 1.5×Rx, 2.0×Rx, and 4.0×Rx;
+    // the current prescription is resolved at runtime, so these are not
+    // hard-coded Gy values.
     const hexColors = display3d.iso_surface_colors || ['#00ff00', '#88ff00', '#ffff00', '#ff8800'];
     const opacities = display3d.iso_surface_opacities || [0.15, 0.25, 0.35, 0.45];
     const rxGy = _getCurrentPrescriptionGy();
@@ -6425,6 +6426,8 @@ async function _loadAllIsoSurfaces(options = {}, scope = null) {
     // Keep the currently displayed surfaces until each replacement has been
     // fetched successfully. A transient 202/429/5xx must never turn a
     // previously valid dose plan into an empty viewer.
+    (dataTreeState?.planning?.doseLevels || []).forEach(level =>
+        window.normalizeDoseIsoSurfaceLevel?.(level));
     const priorLevels = new Map((dataTreeState?.planning?.doseLevels || [])
         .map(level => [Number(level?.threshold), level]));
     if (!reconstruct3d) {
@@ -8133,7 +8136,16 @@ async function _refreshDoseAfterPlanningEvent(detail = {}) {
                     switchToViewers: false,
                     autoGenerateGuide: false,
                     preserveReport: true,
-                    captureReportFigures: false,
+                    // A long planning run can publish its dose and DVH long
+                    // after the chat-turn terminal refresh stopped retrying
+                    // (~2 minutes). This refresh is then the only remaining
+                    // readiness boundary, so it must be allowed to repair
+                    // missing report figures. Capture stays gated inside
+                    // refreshPlanningUI on reportCaptureReady (completed run,
+                    // current non-stale dose, renderable DVH) plus
+                    // reportFiguresNeedCapture(), so an in-progress or
+                    // already-captured run still captures nothing.
+                    captureReportFigures: true,
                     reason: 'dose-result-updated',
                 });
             } else if (typeof loadDoseOverlay === 'function') {

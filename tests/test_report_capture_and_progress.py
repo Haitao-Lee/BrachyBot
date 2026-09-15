@@ -123,7 +123,7 @@ def test_figure_one_capture_contract_survives_report_artifact_round_trip():
     assert "report_fig1_global: REPORT_FIGURE_ONE_CAPTURE_CONTRACT" in editor
     assert "report_fig1_closeup: REPORT_FIGURE_ONE_CLOSEUP_CAPTURE_CONTRACT" in editor
     assert "const _isFigureOneOar = (id, mesh)" in editor
-    assert "mesh.visible = !_isFigureOneOar(id, mesh)" in editor
+    assert "mesh.visible = !_isStandaloneGenericReportMask(id, mesh)" in editor
     assert "OAR and guide-skin meshes are hidden" in editor
     assert "function _computeGlobalPlanBox" in editor
     assert "captureProfile: 'global_overview'" in editor
@@ -403,3 +403,55 @@ def test_figure_two_never_pairs_a_normal_surface_with_a_dose_colorbar():
     assert "return { success: true, enabled: !!state.doseTexture.enabled, mappedMeshIds }" in layout
     assert "return { success: false, enabled: false, error: e?.message || String(e) }" in layout
     assert "figure2-dose-surface-v5-runtime-mapped" in workspace
+
+
+def test_late_dose_readiness_can_repair_missing_report_figures():
+    """A planning run that outlives the chat retry window must still capture.
+
+    Dose and DVH can be published many minutes after the run starts. The
+    chat-turn terminal refresh used to stop retrying after ~2 minutes and the
+    dose-refresh boundary explicitly forbade report capture, so a slow run
+    silently shipped a report with no figures.
+    """
+    manual = _read("web/app/static/js/brachybot-3d-manual.js")
+    chat = _read("web/app/static/js/brachybot-chat-todo.js")
+
+    dose_block = manual.split("async function _refreshDoseAfterPlanningEvent", 1)[1].split(
+        "})().finally", 1
+    )[0]
+    assert "captureReportFigures: true" in dose_block
+    assert "captureReportFigures: false" not in dose_block
+    # The chat-turn refresh keeps retrying long enough for the real pipeline.
+    assert "attempt < 400" in chat
+    assert "Math.min(2500, 250 + (attempt + 1) * 25)" in chat
+
+
+def test_figure_one_is_always_normal_surface_and_export_never_recaptures():
+    """Fig 1 is normal anatomy; export must print the on-screen report.
+
+    Two regressions:
+      * Figure 1 only disabled dose-surface mode when the persisted flag read
+        true, so a stale runtime mapping could leak a dose wash into Fig 1(b).
+      * Export re-ran the full capture before printing, which mutated the
+        report and, because the print window was opened after an await, let
+        the browser block the dialog.
+    """
+    editor = _read("web/app/static/js/brachybot-report-editor.js")
+    export = _read("web/app/static/js/brachybot-report-export.js")
+
+    figure1 = editor.split("FIGURE 1: 3D SEED IMPLANT PLAN", 1)[1].split(
+        "FIGURE 2", 1
+    )[0]
+    assert "setDoseTextureMode(false, { silent: true })" in figure1
+    assert "if (state.doseTexture?.enabled) {" not in figure1
+    assert "if (normalMode?.stale) return { stale: true };" in editor
+
+    pdf = export.split("async function exportReportPDF()", 1)[1].split(
+        "function exportReportHTML()", 1
+    )[0]
+    assert "autoCaptureReportFigures" not in pdf
+    open_index = pdf.index("window.open('', '_blank')")
+    first_await = pdf.index("await ")
+    assert open_index < first_await, (
+        "the print window must open inside the click gesture, before any await"
+    )
