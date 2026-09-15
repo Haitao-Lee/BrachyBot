@@ -708,6 +708,7 @@ class ChatWorkflowMixin:
                 route = "local_small_talk_fallback"
             else:
                 thinking_step["status"] = "error"
+                thinking_step["code"] = "llm_unavailable"
                 thinking_step["content"] = (
                     "AI 语言服务不可用" if trace_zh else "AI language service unavailable"
                 )

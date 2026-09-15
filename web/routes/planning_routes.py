@@ -6366,6 +6366,7 @@ def register_planning_routes(
                     "oar_source": first_path("oar_source", "oarSource"),
                     "stored_keys": sorted(str(key) for key in results.keys()),
                     "brain_available": None,
+                    "brain_state": None,
                     "runtime": agent_state.get("runtime_state") or {},
                     "workspace": {
                         "revision": snapshot.get("session", {}).get("revision"),
@@ -6391,6 +6392,9 @@ def register_planning_routes(
         status["ctv_source"] = agent.memory.retrieve("ctv_source")
         status["oar_source"] = agent.memory.retrieve("oar_source")
         status["brain_available"] = agent.brain_available
+        # brain_state reflects live LLM health (a configured provider can
+        # still be offline); the UI prefers it over the static flag.
+        status["brain_state"] = getattr(agent, "brain_state", None)
         if hasattr(agent, "run_ledger"):
             # Expose only compact, JSON-safe lifecycle evidence. The frontend
             # can recover an interrupted turn without accessing model memory,
@@ -7417,6 +7421,7 @@ def register_planning_routes(
                     },
                     "session_id": agent.memory.session_id,
                     "brain_available": agent.brain_available,
+                    "brain_state": getattr(agent, "brain_state", None),
                 })
             except Exception as e:
                 checkpoint_operation(agent, "interrupted", "Chat response failed", checkpoint={"kind": "chat"})

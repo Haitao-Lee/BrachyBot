@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, List, Any, Optional
 import json
+import time
 
 if TYPE_CHECKING:
     from .tool_registry import ToolRegistry
@@ -29,6 +30,26 @@ class LLMResponse:
 
 class BaseLLM(ABC):
     """Abstract base for LLM providers."""
+
+    # A configured provider is not necessarily a working one: credentials can
+    # be stale, the endpoint can reject the key, or the upstream can be down.
+    # Record the outcome of real calls so status surfaces (Brain indicator,
+    # /api/status) can report offline instead of staying green.
+    def _record_llm_success(self) -> None:
+        self._llm_last_success_at = time.time()
+
+    def _record_llm_error(self, error: object = "") -> None:
+        self._llm_last_error_at = time.time()
+        self._llm_last_error = str(error or "")[:300]
+
+    @property
+    def llm_health(self) -> Optional[bool]:
+        """True/False after the first observed call, None while unobserved."""
+        last_ok = float(getattr(self, "_llm_last_success_at", 0.0) or 0.0)
+        last_err = float(getattr(self, "_llm_last_error_at", 0.0) or 0.0)
+        if not last_ok and not last_err:
+            return None
+        return last_ok >= last_err
 
     @property
     @abstractmethod

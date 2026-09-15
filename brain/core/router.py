@@ -107,6 +107,14 @@ class LLMRouter:
         if not self.default_provider and self.providers:
             self.default_provider = next(iter(self.providers))
 
+    @property
+    def llm_health(self) -> Optional[bool]:
+        """Liveness of the default provider: True/False/None (unobserved)."""
+        provider = self.providers.get(self.default_provider) if self.providers else None
+        if provider is None:
+            return None
+        return getattr(provider, "llm_health", None)
+
     def _create_llm(self, name: str, cfg: Dict) -> Optional[BaseLLM]:
         """Create an LLM instance from config."""
         # Generic OpenAI-compatible provider: works with ANY vendor

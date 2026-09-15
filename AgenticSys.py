@@ -293,6 +293,16 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             _base = os.environ.get("ANTHROPIC_BASE_URL", "")
             _key = os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
             _model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
+            # Make the credential source explicit. A stale AUTH_TOKEN left in
+            # the shell used to silently override the intended API key and
+            # every request failed with an upstream auth error.
+            if not os.environ.get("ANTHROPIC_API_KEY") and os.environ.get("ANTHROPIC_AUTH_TOKEN"):
+                logger.warning(
+                    "LLM credential source: ANTHROPIC_AUTH_TOKEN fallback "
+                    "(ANTHROPIC_API_KEY is unset or empty); verify the token "
+                    "matches %s",
+                    _base or "the provider endpoint",
+                )
 
             # Auto-detect API format from URL and model:
             #   - Contains "/anthropic" or "anthropic" in host → Anthropic SDK
@@ -567,6 +577,24 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
     @property
     def brain_available(self) -> bool:
         return self._brain_available
+
+    @property
+    def brain_state(self) -> str:
+        """Live LLM health for status surfaces.
+
+        ``brain_available`` only says a provider is configured. The Brain
+        indicator must not stay green when real calls fail (stale key, wrong
+        endpoint, upstream outage), so expose what the last call observed:
+        online / offline / checking (no call yet) / unconfigured.
+        """
+        if not self._brain_available:
+            return "unconfigured"
+        health = getattr(getattr(self, "brain_router", None), "llm_health", None)
+        if health is True:
+            return "online"
+        if health is False:
+            return "offline"
+        return "checking"
 
     def _build_planning_context(self) -> Dict[str, Any]:
         context = {
