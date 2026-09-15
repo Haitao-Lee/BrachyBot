@@ -30,6 +30,25 @@ def test_chat_segmentation_completion_loads_labels_before_background_meshes():
     assert "normalizedKind" in viewer
 
 
+def test_oar_mesh_queue_starts_before_metadata_fallback_and_stays_detached():
+    viewer = read("web/app/static/js/brachybot-viewer-volume.js")
+    chat = read("web/app/static/js/brachybot-chat-todo.js")
+    completion = viewer.split(
+        "window.hydrateCompletedSegmentationArtifacts", 1
+    )[1].split("// Pre-allocate pixel buffer", 1)[0]
+
+    # The binary label volume is enough to enumerate every OAR.  Metadata is
+    # allowed to enrich those nodes, but it must not sit on the critical path
+    # before the progressively parallel mesh queue starts.
+    assert "deferOarMetadata: normalizedKind === 'oar'" in completion
+    assert completion.index("startSegmentationMeshPrewarm") < completion.index(
+        "void hydrateOarDataTreeFromServer"
+    )
+    assert "await hydrateOarDataTreeFromServer" not in completion
+    assert "meshStarted" in completion
+    assert "data.tool_name" in chat
+
+
 def test_full_oar_reconstruction_is_tracked_until_all_meshes_settle():
     manual = read("web/app/static/js/brachybot-3d-manual.js")
     block = manual.split("async function _loadCTVAndObstacleMeshes", 1)[1].split(

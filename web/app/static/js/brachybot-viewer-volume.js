@@ -1174,7 +1174,12 @@ async function loadLabelVolumes(options = {}) {
         // a partial projection (for example while a restored TotalSegmentator
         // map is still being merged with embedded CTV structures); the
         // session-scoped organs endpoint is the authoritative Data Tree view.
-        if (hasOAR) {
+        // A completed-segmentation hydration may deliberately defer this
+        // metadata request until the mesh queue has been started.  The binary
+        // label payload above already contains enough information to build a
+        // complete OAR Data Tree target list; metadata only improves names,
+        // object IDs, and classifications.
+        if (hasOAR && options.deferOarMetadata !== true) {
             if (preserveViewerState) {
                 void hydrateOarDataTreeFromServer(
                     scope.dataGeneration,
@@ -1795,27 +1800,73 @@ window.hydrateCompletedSegmentationArtifacts = function hydrateCompletedSegmenta
                         forceFresh: true,
                         preserveViewerState: true,
                         resetPresentation: true,
+                        // Start the OAR mesh queue from the binary labels
+                        // first.  The lightweight organs endpoint is a
+                        // control-plane enhancement and must not delay 3D.
+                        deferOarMetadata: normalizedKind === 'oar',
                     });
                     if (!_viewerDataScopeIsCurrent(scope)) return { stale: true };
                     if (loaded && _segmentationLabelsReady(normalizedKind)) {
-                        if (normalizedKind === 'oar') {
-                            try { await hydrateOarDataTreeFromServer(scope.dataGeneration, sid); } catch (_) {}
-                        }
                         reconcileSegmentationViewerState({ sessionId: sid, reason });
                         try { renderDataTree(); } catch (_) {}
+                        let meshTask = null;
+                        let meshStarted = false;
                         if (typeof startSegmentationMeshPrewarm === 'function') {
                             // Mesh extraction is deliberately background work.
-                            // It begins immediately and carries the current
-                            // result generation, while the user can continue
-                            // reviewing the freshly painted 2D structures.
-                            startSegmentationMeshPrewarm(normalizedKind, {
-                                sessionId: sid,
-                                allOAR: normalizedKind === 'oar',
-                                force: true,
-                                batchSize: 3,
-                            });
+                            // It starts from the already decoded binary labels,
+                            // before the optional metadata request below, so
+                            // planning can continue while every OAR surface is
+                            // progressively added to the 3D scene.
+                            meshStarted = true;
+                            try {
+                                meshTask = startSegmentationMeshPrewarm(normalizedKind, {
+                                    sessionId: sid,
+                                    allOAR: normalizedKind === 'oar',
+                                    force: true,
+                                    batchSize: 3,
+                                });
+                            } catch (error) {
+                                meshStarted = false;
+                                console.warn('[viewer] segmentation mesh prewarm could not start:', error);
+                            }
                         }
-                        return { ready: true, kind: normalizedKind };
+                        if (normalizedKind === 'oar') {
+                            // The binary-derived nodes are sufficient for mesh
+                            // requests. Enrich them in parallel without making
+                            // the segmentation completion boundary wait.
+                            void hydrateOarDataTreeFromServer(
+                                scope.dataGeneration,
+                                sid,
+                                { preserveViewerState: true },
+                            ).then(() => {
+                                if (!_viewerDataScopeIsCurrent(scope)) return;
+                                reconcileSegmentationViewerState({
+                                    sessionId: sid,
+                                    reason: 'oar-metadata-hydrated',
+                                });
+                                try { renderDataTree(); } catch (_) {}
+                            }).catch(error => console.debug(
+                                '[viewer] OAR metadata hydration failed:',
+                                error,
+                            ));
+                        }
+                        if (meshTask && typeof meshTask.then === 'function') {
+                            void Promise.resolve(meshTask).then(() => {
+                                if (!_viewerDataScopeIsCurrent(scope)) return;
+                                reconcileSegmentationViewerState({
+                                    sessionId: sid,
+                                    reason: 'segmentation-meshes-complete',
+                                });
+                            }).catch(error => console.debug(
+                                '[viewer] segmentation mesh prewarm failed:',
+                                error,
+                            ));
+                        }
+                        return {
+                            ready: true,
+                            kind: normalizedKind,
+                            meshStarted,
+                        };
                     }
                 } catch (error) {
                     lastError = error;
