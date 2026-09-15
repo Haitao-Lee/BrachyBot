@@ -554,14 +554,20 @@
                     <label class="form-label">CT Image *</label>
                     <div class="form-row">
                         <input type="text" class="form-input" id="ctPath" placeholder="/path/to/ct.nii.gz · .dcm · DICOM folder" onkeydown="if(event.key==='Enter'){event.preventDefault();loadCTToViewers(this.value);}">
-                        <button class="file-btn" title="Pick a single file (NIfTI / .dcm) or multi-select many .dcm files in a folder" onclick="document.getElementById('fileCT').click()">&#128193; Browse</button>
+                        <button class="file-btn" title="Pick a CT file (.nii/.nii.gz/.mha/.nrrd/.dcm); multi-select DICOM slices together" onclick="document.getElementById('fileCT').click()">&#128193; Browse</button>
+                        <button class="file-btn" title="Pick a DICOM folder (supports extensionless DICOM files)" onclick="document.getElementById('fileCTFolder').click()">&#128449; Folder</button>
                         <div class="upload-progress-overlay" id="uploadProgressOverlay">
                             <div class="spinner-ring"></div>
                             <div class="upload-progress-text" id="uploadProgressText">Uploading...</div>
                             <div class="upload-progress-filename" id="uploadProgressFilename"></div>
                         </div>
                     </div>
-                    <input type="file" id="fileCT" multiple accept=".nii,.nii.gz,.mha,.nrrd,.mhd,.dcm,.dicom,image/*,application/dicom" onchange="handleFileSelect(this, 'ctPath')">
+                    <!-- No accept filter: Chromium cannot match multi-dot
+                         extensions (.nii.gz) and hides extensionless DICOM,
+                         so a filter here silently removes valid CT inputs.
+                         The server validates extensions instead. -->
+                    <input type="file" id="fileCT" multiple onchange="handleFileSelect(this, 'ctPath')">
+                    <input type="file" id="fileCTFolder" webkitdirectory multiple hidden onchange="handleFileSelect(this, 'ctPath')">
                 </div>
 
                 <!-- CTV file picker -->
@@ -576,7 +582,10 @@
                             <div class="upload-progress-filename"></div>
                         </div>
                     </div>
-                    <input type="file" id="fileCTV" accept=".nii,.nii.gz,.mha,.nrrd,.mhd,image/*" onchange="handleFileSelect(this, 'ctvPath')">
+                    <!-- .gz is listed instead of .nii.gz: Chromium matches
+                         the final extension only, so the multi-dot token was
+                         silently hiding .nii.gz masks. -->
+                    <input type="file" id="fileCTV" accept=".nii,.gz,.mha,.nrrd,.mhd,image/*" onchange="handleFileSelect(this, 'ctvPath')">
                 </div>
 
                 <!-- The selected model is part of the manual segmentation
@@ -627,7 +636,7 @@
                             <div class="upload-progress-filename"></div>
                         </div>
                     </div>
-                    <input type="file" id="fileOAR" accept=".nii,.nii.gz,.mha,.nrrd,.mhd,image/*" onchange="handleFileSelect(this, 'oarPath')">
+                    <input type="file" id="fileOAR" accept=".nii,.gz,.mha,.nrrd,.mhd,image/*" onchange="handleFileSelect(this, 'oarPath')">
                 </div>
 
                 <div class="form-group">
@@ -1577,22 +1586,22 @@
   versioned change so implicit legacy bindings cannot break selectively.
 -->
 <script src="static/js/brachybot-chat-core.js?v=24"></script>
-<script src="static/js/brachybot-chat-todo.js?v=38"></script>
-<script src="static/js/brachybot-ui-api.js?v=81"></script>
+<script src="static/js/brachybot-chat-todo.js?v=40"></script>
+<script src="static/js/brachybot-ui-api.js?v=83"></script>
 <script src="static/js/brachybot-auth.js?v=10"></script>
-<script src="static/js/brachybot-viewer-volume.js?v=69"></script>
+<script src="static/js/brachybot-viewer-volume.js?v=70"></script>
 <script src="static/js/brachybot-viewer-layout.js?v=45"></script>
 <script src="static/js/brachybot-depth-peeling.js?v=2"></script>
-<script src="static/js/brachybot-3d-manual.js?v=100"></script>
+<script src="static/js/brachybot-3d-manual.js?v=102"></script>
 <script src="static/js/brachybot-manual-annotation.js?v=26"></script>
 <script src="static/js/brachybot-surgical-guide.js?v=20"></script>
 <script src="static/js/brachybot-visual-annotation.js?v=7"></script>
 <script src="static/js/brachybot-dvh-planning.js?v=40"></script>
 <script src="static/js/brachybot-report-shell.js?v=31"></script>
-<script src="static/js/brachybot-report-editor.js?v=43"></script>
+<script src="static/js/brachybot-report-editor.js?v=44"></script>
 <script src="static/js/brachybot-workspace.js?v=55"></script>
 <script src="static/js/brachybot-session-cache.js?v=2"></script>
-<script src="static/js/brachybot-report-export.js?v=39"></script>
+<script src="static/js/brachybot-report-export.js?v=40"></script>
 <script src="static/js/brachybot-data-export.js?v=5"></script>
 <script src="static/js/brachybot-theme.js?v=1"></script>
 </body>

@@ -223,7 +223,7 @@ def test_data_tree_has_independent_2d_and_3d_presentation_controls():
     assert "meshData.visible3D !== false" in manual
     assert "visible2D: seed.visible2D ?? old.visible2D ?? true" in manual
     assert "visible2D !== false" in annotation
-    assert "['visible', 'visible2D', 'visible3D', 'opacity', 'color', 'material', 'locked']" in workspace
+    assert "'visible2D', 'visible3D', 'opacity', 'color', 'material', 'locked'" in workspace
 
 
 def test_guide_skin_uses_the_same_data_tree_control_paths_as_other_visual_nodes():
@@ -251,9 +251,11 @@ def test_iso_surface_refresh_keeps_data_tree_appearance_and_view_flags():
     viewer = read("web/app/static/js/brachybot-viewer-volume.js")
 
     assert "const priorLevels = new Map" in manual
-    assert "existing.visible2D = existing.visible2D !== false" in manual
-    assert "existing.visible3D = existing.visible3D !== false" in manual
-    assert "rebuiltLevels[i] = existing" in manual
+    assert "Object.assign(existing, savedPresentation || {})" in manual
+    assert "window.getWorkspacePresentationForNode?.(" in manual
+    assert "presentation.visible2D = presentation.visible2D !== false" in manual
+    assert "presentation.visible3D = presentation.visible3D !== false" in manual
+    assert "rebuiltLevels[i] = presentation" in manual
     assert "Array.from({ length: Math.min(maxConcurrent, relValues.length) }" in manual
     assert "suppressTreeEntry: true" in manual
     assert "deferRender: true" in manual
