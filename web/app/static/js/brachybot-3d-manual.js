@@ -2715,6 +2715,9 @@ function init3DScene() {
     // setting, a renderer state left by another capture path can make the
     // order of overlapping semi-transparent meshes depend on insertion order.
     scene3D.renderer.sortObjects = true;
+    // Resolve intersecting translucent surfaces per pixel instead of sorting
+    // entire organs by their centers.
+    scene3D.depthPeeling = new window.BrachyDepthPeeling(scene3D.renderer);
     // Keep the WebGL drawing surface in the host's exact content rectangle.
     // Percentage-sized flex children can retain a stale layout size while a
     // viewer card is being resized, which makes the visible surface and the
@@ -2742,6 +2745,11 @@ function init3DScene() {
     }, false);
     scene3D.renderer.domElement.addEventListener('webglcontextrestored', () => {
         scene3D.contextLost = false;
+        // Query handles belong to the lost context; rebuild offscreen targets
+        // and shader clones before the first restored frame.
+        scene3D.depthPeeling.queryBatch = null;
+        scene3D.depthPeeling.dispose();
+        scene3D.depthPeeling = new window.BrachyDepthPeeling(scene3D.renderer);
         uiDebugLog('[3D health] WebGL context restored; scheduling redraw');
         if (scene3D.requestRender) scene3D.requestRender(8);
         setTimeout(() => forceRender3DViewer(), 0);
@@ -3089,7 +3097,10 @@ function init3DScene() {
         scene3D.renderer.setScissor(0, 0, cssWidth, cssHeight);
         scene3D.renderer.setScissorTest(false);
         scene3D.renderer.autoClear = true;
-        scene3D.renderer.render(scene3D.scene, scene3D.camera);
+        scene3D.depthPeeling.render(scene3D.scene, scene3D.camera, {
+            interactive: !!controlsChanged || scene3D.peelingInteraction === true,
+            capture: scene3D.peelingCapture === true,
+        });
 
         // Render axes in bottom-left corner (transparent background)
         const axisSizeCss = Math.min(100, Math.min(cssWidth, cssHeight) * 0.2);
@@ -3122,7 +3133,8 @@ function init3DScene() {
             return false;
         }
         pendingFrames = Math.max(pendingFrames, 1);
-        drawFrame();
+        scene3D.peelingCapture = true;
+        try { drawFrame(); } finally { scene3D.peelingCapture = false; }
         return true;
     }
 
@@ -3182,6 +3194,11 @@ function init3DScene() {
         passive: true,
     });
     scene3D.controls.addEventListener('start', markCameraInteraction);
+    scene3D.controls.addEventListener('start', () => { scene3D.peelingInteraction = true; });
+    scene3D.controls.addEventListener('end', () => {
+        scene3D.peelingInteraction = false;
+        requestRender(2);
+    });
     scene3D.controls.addEventListener('change', () => requestRender(8));
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) requestRender(2);
