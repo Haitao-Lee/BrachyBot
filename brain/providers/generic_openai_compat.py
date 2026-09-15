@@ -117,9 +117,11 @@ class GenericOpenAICompatLLM(BaseLLM):
         try:
             import openai
         except ImportError:
+            self._record_llm_error("openai package not installed")
             return LLMResponse(content="Error: openai package not installed", finish_reason="error")
 
         if not self.api_key:
+            self._record_llm_error("no API key provided")
             return LLMResponse(content="Error: No API key provided", finish_reason="error")
 
         for attempt in range(self.max_retries + 1):
@@ -164,6 +166,7 @@ class GenericOpenAICompatLLM(BaseLLM):
                         "total_tokens": response.usage.total_tokens,
                     }
 
+                self._record_llm_success()
                 return LLMResponse(
                     content=content,
                     tool_calls=tool_calls,
@@ -185,6 +188,7 @@ class GenericOpenAICompatLLM(BaseLLM):
                     time.sleep(wait_time)
                 else:
                     logger.error(f"Generic OpenAI-compat call failed: {e}")
+                    self._record_llm_error(e)
                     return LLMResponse(content=f"Error: {str(e)}", finish_reason="error")
 
         return LLMResponse(content="Error: retry loop exhausted", finish_reason="error")
@@ -199,10 +203,12 @@ class GenericOpenAICompatLLM(BaseLLM):
         try:
             import openai
         except ImportError:
+            self._record_llm_error("openai package not installed")
             yield {"type": "error", "content": "Error: openai package not installed"}
             return
 
         if not self.api_key:
+            self._record_llm_error("no API key provided")
             yield {"type": "error", "content": "Error: No API key provided"}
             return
 
@@ -284,6 +290,7 @@ class GenericOpenAICompatLLM(BaseLLM):
                             "arguments": args,
                         })
 
+                self._record_llm_success()
                 yield {
                     "type": "final",
                     "content": full_content,
@@ -306,5 +313,6 @@ class GenericOpenAICompatLLM(BaseLLM):
                     time.sleep(wait_time)
                 else:
                     logger.error(f"Generic stream failed: {e}")
+                    self._record_llm_error(e)
                     yield {"type": "error", "content": f"Error: {str(e)}"}
                     return

@@ -154,15 +154,18 @@ class AnthropicLLM(BaseLLM):
         try:
             from anthropic import Anthropic
         except ImportError:
+            self._record_llm_error("anthropic package not installed")
             return LLMResponse(content="Error: anthropic package not installed", finish_reason="error")
 
         api_key = self.api_key or os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
         if not api_key:
+            self._record_llm_error("no API key provided")
             return LLMResponse(content="Error: No API key provided", finish_reason="error")
 
         try:
             client = self._get_client(api_key)
         except Exception as e:
+            self._record_llm_error(e)
             return LLMResponse(content=f"Error creating client: {str(e)}", finish_reason="error")
 
         system_msg = ""
@@ -209,8 +212,10 @@ class AnthropicLLM(BaseLLM):
                     time.sleep(wait_time)
                 else:
                     logger.error(f"Anthropic API call failed after {attempt+1} attempts: {e}")
+                    self._record_llm_error(e)
                     return LLMResponse(content=f"Error: {str(e)}", finish_reason="error")
         else:
+            self._record_llm_error(last_error)
             return LLMResponse(content=f"Error: {str(last_error)}", finish_reason="error")
 
         latency_ms = (time.time() - start_time) * 1000
@@ -233,6 +238,7 @@ class AnthropicLLM(BaseLLM):
             "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
         }
 
+        self._record_llm_success()
         return LLMResponse(
             content=content,
             tool_calls=tool_calls,
@@ -353,17 +359,20 @@ class AnthropicLLM(BaseLLM):
         try:
             from anthropic import Anthropic
         except ImportError:
+            self._record_llm_error("anthropic package not installed")
             yield {"type": "error", "content": "Error: anthropic package not installed"}
             return
 
         api_key = self.api_key or os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
         if not api_key:
+            self._record_llm_error("no API key provided")
             yield {"type": "error", "content": "Error: No API key provided"}
             return
 
         try:
             client = self._get_client(api_key)
         except Exception as e:
+            self._record_llm_error(e)
             yield {"type": "error", "content": f"Error creating client: {str(e)}"}
             return
 
@@ -438,6 +447,7 @@ class AnthropicLLM(BaseLLM):
                 except json.JSONDecodeError:
                     tc["arguments"] = {}
 
+            self._record_llm_success()
             yield {
                 "type": "final",
                 "content": full_content,
@@ -459,6 +469,7 @@ class AnthropicLLM(BaseLLM):
                     if block.type == "text":
                         content += block.text
                 
+                self._record_llm_success()
                 yield {
                     "type": "final",
                     "content": content,
@@ -473,4 +484,5 @@ class AnthropicLLM(BaseLLM):
                 }
             except Exception as fallback_e:
                 logger.error(f"Fallback also failed: {fallback_e}")
+                self._record_llm_error(fallback_e)
                 yield {"type": "error", "content": f"Error: {str(e)}"}

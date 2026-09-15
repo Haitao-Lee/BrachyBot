@@ -2488,6 +2488,9 @@ class LLMRuntimeMixin:
             if llm_error:
                 logger.error("LLM provider stream failed: %s", llm_error)
                 thinking_step["status"] = "error"
+                # Machine-readable marker so the UI can flip the Brain
+                # indicator to offline without matching localized text.
+                thinking_step["code"] = "llm_unavailable"
                 thinking_step["content"] = (
                     "AI 语言服务暂时不可用"
                     if _trace_zh
