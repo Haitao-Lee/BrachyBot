@@ -1122,7 +1122,12 @@ def create_app(config: Optional[Dict] = None):
             user, session_id = _request_session_context()
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-            if len(files) == 1:
+            # A folder picker always uploads a DICOM series, even when the
+            # folder contains a single extensionless file that the file
+            # branch would reject as an unsupported type.
+            force_series = str(request.form.get("dicom_series") or "").strip().lower() in TRUE_VALUES
+
+            if len(files) == 1 and not force_series:
                 f = files[0]
                 if f.filename == "":
                     return jsonify({"error": "No file selected"}), 400
