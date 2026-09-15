@@ -2255,7 +2255,10 @@ def _needle_enters_through_truncated_boundary(
                 int(size_xyz[0]),
             )
             if candidate_body.shape == expected_shape:
-                body = candidate_body
+                # An empty/mismatched envelope is not evidence that a
+                # CT-face entry is safe. Treat it as unavailable so a
+                # flagged finite-FOV face remains fail-closed.
+                body = candidate_body if np.any(candidate_body) else None
             else:
                 logger.warning(
                     "[needle_safety] Ignoring incompatible body mask shape %s; "
@@ -2459,7 +2462,16 @@ def _filter_world_safe_trajectories(
     return safe
 
 
-def _validated_needle_geometry(plan_res, ct_image, planning_image, ctv_mask, oar_mask, obstacle_labels):
+def _validated_needle_geometry(
+    plan_res,
+    ct_image,
+    planning_image,
+    ctv_mask,
+    oar_mask,
+    obstacle_labels,
+    body_mask=None,
+    truncated_boundary_faces=None,
+):
     """Return safe final geometry, ending at each needle's farthest seed.
 
     The trajectory remains authoritative when its seed payload is aligned.
@@ -2472,6 +2484,25 @@ def _validated_needle_geometry(plan_res, ct_image, planning_image, ctv_mask, oar
     geometry = {}
     unsafe_indices = []
     extension = _needle_extension_mm()
+    if body_mask is None:
+        try:
+            body_mask = _body_mask_from_ct(ct_image)
+        except Exception:
+            logger.warning(
+                "[needle_safety] Final geometry body envelope unavailable; "
+                "truncation validation remains fail-closed",
+                exc_info=True,
+            )
+    if truncated_boundary_faces is None:
+        try:
+            from plans.utilizations import infer_truncated_boundary_faces_from_image
+
+            truncated_boundary_faces = infer_truncated_boundary_faces_from_image(ct_image)
+        except Exception:
+            logger.warning(
+                "[needle_safety] Final geometry CT truncation metadata unavailable",
+                exc_info=True,
+            )
     safety_context = build_needle_safety_context(ct_image, ctv_mask, oar_mask, obstacle_labels)
     for index, entry in enumerate(plan_res or []):
         trajectory = None
@@ -2507,6 +2538,19 @@ def _validated_needle_geometry(plan_res, ct_image, planning_image, ctv_mask, oar
                     index,
                     geometry_reason,
                 )
+        if _needle_enters_through_truncated_boundary(
+            published_points,
+            ct_image,
+            body_mask=body_mask,
+            truncated_boundary_faces=truncated_boundary_faces,
+        ):
+            logger.error(
+                "[needle_safety] trajectory %d enters through a truncated CT "
+                "scan face; withholding it from the published plan",
+                index,
+            )
+            unsafe_indices.append(index)
+            continue
         if safety_context.segment_hits_obstacle(published_points):
             logger.error(
                 "[needle_safety] trajectory %d: canonical seed/needle segment intersects an obstacle",
@@ -4667,12 +4711,8 @@ class PlanningPipelineTool(BaseTool):
         safety_pruned_trajectory_indices = []
         safety_pruned_seed_count = 0
         verified_needle_geometry, unsafe_needle_indices = _validated_needle_geometry(
-            plan_res,
-            ct_image,
-            resampled_ct,
-            ctv_mask,
-            oar_mask,
-            obstacle_labels,
+            plan_res, ct_image, resampled_ct, ctv_mask, oar_mask, obstacle_labels,
+            body_mask=body_mask,
         )
         if unsafe_needle_indices:
             # This is a defense-in-depth assertion. Candidate validation above
@@ -4714,12 +4754,8 @@ class PlanningPipelineTool(BaseTool):
             plan_res = safe_plan
             sum_image = _sum_plan_seed_doses(plan_res, radiation_volume)
             verified_needle_geometry, remaining_unsafe_indices = _validated_needle_geometry(
-                plan_res,
-                ct_image,
-                resampled_ct,
-                ctv_mask,
-                oar_mask,
-                obstacle_labels,
+                plan_res, ct_image, resampled_ct, ctv_mask, oar_mask, obstacle_labels,
+                body_mask=body_mask,
             )
             if remaining_unsafe_indices:
                 # A second pass protects against an indexing or malformed-entry

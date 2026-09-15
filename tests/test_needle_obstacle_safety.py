@@ -258,7 +258,9 @@ class NeedleObstacleSafetyTests(unittest.TestCase):
         self.assertTrue(np.allclose(clipped[1], points[1]))
 
     def test_validated_geometry_publishes_clipped_endpoint(self):
-        image = sitk.Image([20, 20, 20], sitk.sitkInt16)
+        image = sitk.GetImageFromArray(
+            np.full((20, 20, 20), -1000, dtype=np.int16)
+        )
         image.SetOrigin((0.0, 0.0, 0.0))
         image.SetSpacing((1.0, 1.0, 1.0))
         ctv = np.zeros((20, 20, 20), dtype=np.uint8)
@@ -614,6 +616,56 @@ def test_flattened_mask_is_restored_and_incompatible_masks_fail_closed():
         image, ctv, oar, {77},
     ) is False
 
+def test_final_geometry_rejects_truncated_ct_entry_even_after_seed_canonicalization():
+    from plans import utilizations
+    from tool_factory.seed_plan.planning_pipeline import (
+        _body_mask_from_ct,
+        _candidate_world_needle_points,
+    )
+
+    z_count, yx, radius = 24, 32, 12
+    ct = np.full((z_count, yx, yx), -1000, dtype=np.int16)
+    for z in range(z_count):
+        for y in range(yx):
+            for x in range(yx):
+                if (x - yx / 2) ** 2 + (y - yx / 2) ** 2 <= radius ** 2:
+                    ct[z, y, x] = 40
+    image = sitk.GetImageFromArray(ct)
+    image.SetSpacing((1.0, 1.0, 1.0))
+    image.SetOrigin((0.0, 0.0, 0.0))
+
+    trajectory = [
+        np.array([16.0, 16.0, 12.0]),
+        np.array([-1.0, 0.0, 0.0]),
+        [3.0],
+        [],
+    ]
+    candidate_points = _candidate_world_needle_points(
+        trajectory, image, extension_mm=150.0
+    )
+    assert candidate_points is not None
+    seed_direction = np.asarray(
+        utilizations.direction_transform(image, trajectory[1])[0],
+        dtype=np.float64,
+    )
+    plan_res = [[
+        trajectory,
+        [(np.asarray(candidate_points[0]), seed_direction)],
+        [],
+    ]]
+
+    geometry, unsafe = _validated_needle_geometry(
+        plan_res,
+        image,
+        image,
+        np.zeros((z_count, yx, yx), dtype=np.uint8),
+        np.zeros((z_count, yx, yx), dtype=np.uint8),
+        set(),
+        body_mask=_body_mask_from_ct(image),
+    )
+
+    assert geometry == {}
+    assert unsafe == [0]
 
 if __name__ == "__main__":
     unittest.main()
