@@ -64,6 +64,7 @@ logs/
 uploads/
 screenshots/
 test_screenshots/
+tests/depth-peeling-test.png
 .runtime/
 
 # Documentation generated for this project is tracked.
