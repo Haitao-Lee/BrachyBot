@@ -2268,14 +2268,18 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
     // ═══════════════════════════════════════════════════════════
     let _restoreFigure1State = null;
     try {
-        // Figure 1 is normal anatomy, regardless of the operator's live mode.
-        if (state.doseTexture?.enabled) {
-            const normalMode = await _reportCaptureAwait(
-                () => setDoseTextureMode(false, { silent: true }),
-                'Viewer normal-surface preparation',
-            );
-            if (!normalMode?.success) throw new Error('Normal surface mode was not prepared');
-        }
+        // Figure 1 is normal anatomy; only Figure 2(d) opts into the dose
+        // surface. Do not trust the persisted flag alone: a restored session
+        // can carry dose-mapped materials while the flag reads false, and a
+        // failed restore can leave normal materials while it reads true.
+        // Always run the disable path so Fig 1 can never inherit a dose
+        // surface; the outer viewer snapshot restores the operator's mode.
+        const normalMode = await _reportCaptureAwait(
+            () => setDoseTextureMode(false, { silent: true }),
+            'Viewer normal-surface preparation',
+        );
+        if (normalMode?.stale) return { stale: true };
+        if (!normalMode?.success) throw new Error('Normal surface mode was not prepared');
         const _meshCount = Object.keys(scene3D.meshes).length;
         if (scene3D.camera && scene3D.controls && scene3D.renderer && _meshCount > 0) {
             uiDebugLog('[Report] Figure 1: starting 3D capture, meshes:', _meshCount);

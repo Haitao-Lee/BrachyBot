@@ -2044,15 +2044,14 @@ async function _waitForReportPrintAssets(printWindow, timeoutMs = 15000) {
 }
 
 async function exportReportPDF() {
-    // Auto-capture visual evidence before rendering PDF.
-    try { await autoCaptureReportFigures(); } catch (e) { console.warn('autoCaptureReportFigures failed:', e); }
-    // Re-render preview so captured figures appear in the pages.
+    // Export must never re-capture. The operator already approved the figures
+    // that are on screen; a late recapture mutates the report and, because
+    // the print window can only be opened inside the click gesture, awaiting
+    // first made the browser block the dialog entirely. Refresh the preview
+    // synchronously, open the window immediately, then load its assets.
     _updateReportPreview();
-    // Small delay to let the preview DOM update.
-    await new Promise(r => setTimeout(r, 200));
     const pages = document.querySelectorAll('#reportPages .report-page');
     if (!pages.length) return;
-    const f = window.reportForm;
     const css = _printableCss();
     const pagesHtml = Array.from(pages).map(p => p.outerHTML).join('');
     const printWindow = window.open('', '_blank');

@@ -1759,11 +1759,16 @@ function _scheduleCasePlanningRefresh(sessionId, delay = 250) {
             }));
             return;
         }
-        if (retryable && attempt < 120) {
+        // Planning runs in this environment regularly publish dose and DVH
+        // many minutes after the run starts. The old ~2.5 minute budget
+        // expired first, the capture gate never saw a ready planning, and
+        // reports silently shipped without figures. Keep retrying for a
+        // realistic window; the request itself is a cheap control-plane GET.
+        if (retryable && attempt < 400) {
             window._sessionPlanningRefreshAttempts[key] = attempt + 1;
             _scheduleCasePlanningRefresh(
                 key,
-                Math.min(1500, 250 + (attempt + 1) * 25),
+                Math.min(2500, 250 + (attempt + 1) * 25),
             );
             return;
         }
@@ -3408,6 +3413,13 @@ async function sendChat(prefill, options) {
                         window._todoTurnToolCount = 0;
                     }
                     if (currentEvent === 'step' && data) {
+                        if (data.code === 'llm_unavailable'
+                            && typeof window.updateBrainStatusIndicator === 'function') {
+                            // The turn fell back to a local answer because the
+                            // provider rejected the call; the Brain chip must
+                            // stop claiming the model is online.
+                            window.updateBrainStatusIndicator(false, 'llm-unavailable');
+                        }
                         if (isInternalFollowup) {
                             // Hidden visual-analysis children have no
                             // independent Execution Trace in the chat. The
@@ -3950,6 +3962,12 @@ async function sendChat(prefill, options) {
                         // event; we just stash it for later rendering.
                         if (data.llm_meta) {
                             window._lastLLMMeta = data.llm_meta;
+                            if (Number(data.llm_meta.llm_calls || 0) > 0
+                                && typeof window.updateBrainStatusIndicator === 'function') {
+                                // A real model call succeeded; recover the chip
+                                // from a previous offline state.
+                                window.updateBrainStatusIndicator(true, 'llm-response');
+                            }
                         }
                         // Some providers close the stream immediately after
                         // the final response and do not emit a separate
