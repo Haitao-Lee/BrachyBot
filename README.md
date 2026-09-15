@@ -138,6 +138,7 @@
 
 - [Overview](#-overview)
 - [Architecture](#-architecture)
+- [Architecture & Maintenance Guide](docs/ARCHITECTURE_AND_MAINTENANCE.md)
 - [Self-Evolving Mechanisms](#-self-evolving-mechanisms)
 - [Key Features](#-key-features)
 - [Installation](#-installation)
@@ -217,6 +218,11 @@ Supporting:
 ---
 
 ## 🏗️ Architecture
+
+> 📖 **Maintainer deep dive:** [docs/ARCHITECTURE_AND_MAINTENANCE.md](docs/ARCHITECTURE_AND_MAINTENANCE.md)
+> documents the full request lifecycle, runtime contracts, planning pipeline,
+> dose unit conventions, web/workspace persistence model, testing strategy, hard
+> safety invariants, and a hands-on maintenance playbook.
 
 ### System Overview
 
