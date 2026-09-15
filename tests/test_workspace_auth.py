@@ -562,3 +562,44 @@ def test_transient_task_feed_filters_by_workspace_owner():
     assert tasks.get_task(first, workspace_owner="user-a:case-a")["id"] == first
     assert tasks.get_task(second, workspace_owner="user-a:case-a") is None
     assert set(tasks.get_all_tasks(workspace_owner="user-a:case-a")) == {first}
+
+
+def test_folder_upload_of_one_extensionless_dicom_is_a_series(tmp_path):
+    """A folder picker must stay a DICOM series even for a single file.
+
+    Chromium folder pickers can hand back one extensionless DICOM file, which
+    the single-file branch rejects as unsupported. The explicit series flag
+    keeps that legitimate input path working.
+    """
+    from web.server import create_app
+
+    app = create_app({
+        "runtime_dir": str(tmp_path / "server-runtime"),
+        "secret_key": "test-secret",
+        "workspace_maintenance": False,
+    })
+    client = app.test_client()
+    created = _register(client, "dicom_folder_owner")
+    dicom_bytes = b"\x00" * 128 + b"DICM" + b"\x00" * 200
+
+    rejected = client.post(
+        "/api/upload",
+        data={"file": (BytesIO(dicom_bytes), "IM0001")},
+        content_type="multipart/form-data",
+        headers={"X-CSRF-Token": created["csrf_token"]},
+    )
+    assert rejected.status_code == 400
+
+    accepted = client.post(
+        "/api/upload",
+        data={
+            "dicom_series": "1",
+            "file": (BytesIO(dicom_bytes), "IM0001"),
+        },
+        content_type="multipart/form-data",
+        headers={"X-CSRF-Token": created["csrf_token"]},
+    )
+    assert accepted.status_code == 200
+    payload = accepted.get_json()
+    assert payload["kind"] == "dicom_folder"
+    assert payload["file_count"] == 1
