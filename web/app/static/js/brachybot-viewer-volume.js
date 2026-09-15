@@ -3526,6 +3526,46 @@ function _migrateSegmentationMirrorsOutOfPlanning() {
     });
 }
 
+// Dose iso-surfaces are configured as relative prescription multipliers
+// (1.0/1.5/2.0/4.0), but the persisted Data Tree historically used the
+// multiplier in `threshold` and sometimes even in `label`.  The visual and
+// interaction contract is absolute Gy.  Normalize legacy rows as soon as
+// they re-enter the live tree so the label, row id, visibility handlers, and
+// later workspace snapshots all refer to the same absolute threshold.
+function _isRelativeDoseIsoLabel(label) {
+    const text = String(label || '').trim();
+    const match = text.match(/^([0-9]+(?:\.[0-9]+)?)\s*(?:[×x*]\s*(?:rx|prescription|处方(?:剂量)?)?)?$/i);
+    if (!match) return false;
+    const value = Number(match[1]);
+    // A numeric-only value in this small range is a legacy Rx multiplier;
+    // the physical Gy value is always carried separately in thresholdGy.
+    return value > 0 && value <= 5;
+}
+
+function normalizeDoseIsoSurfaceLevel(level) {
+    if (!level || typeof level !== 'object') return level;
+    const threshold = Number(level.threshold);
+    const thresholdGy = Number(level.thresholdGy);
+    const hasAbsoluteGy = Number.isFinite(thresholdGy) && thresholdGy > 5;
+    const hasRelativeThreshold = Number.isFinite(threshold)
+        && threshold > 0 && threshold <= 5;
+    if (hasAbsoluteGy && hasRelativeThreshold
+        && Math.abs(thresholdGy - threshold) > 1e-6) {
+        // Keep the multiplier for diagnostics/config round-tripping, while
+        // making the stable tree identity and all UI handlers use Gy.
+        if (level.relativeThreshold == null) level.relativeThreshold = threshold;
+        level.threshold = thresholdGy;
+    }
+    const absoluteGy = Number(level.thresholdGy ?? level.threshold);
+    if (Number.isFinite(absoluteGy) && absoluteGy > 5
+        && _isRelativeDoseIsoLabel(level.label)) {
+        level.label = `${Math.round(absoluteGy)} Gy`;
+    }
+    return level;
+}
+
+window.normalizeDoseIsoSurfaceLevel = normalizeDoseIsoSurfaceLevel;
+
 function reconcileDataTreeVisualNodes() {
     _migrateSegmentationMirrorsOutOfPlanning();
     const roots = [
@@ -3547,6 +3587,7 @@ function reconcileDataTreeVisualNodes() {
     (dataTreeState.planning?.seeds || []).forEach(node => ensureDataTreeNodeMetadata(node, 'seed', node.trajectory_id || 'planning'));
     (dataTreeState.planning?.needles || []).forEach(node => ensureDataTreeNodeMetadata(node, 'needle', node.trajectory_id || 'planning'));
     (dataTreeState.planning?.doseLevels || []).forEach(node => {
+        normalizeDoseIsoSurfaceLevel(node);
         node.id = node.id || `dose_iso_${node.threshold}`;
         ensureDataTreeNodeMetadata(node, 'dose_iso_surface', 'planning');
     });
@@ -4989,6 +5030,7 @@ function renderDataTree() {
     const planningSeeds = _planningItems('seeds');
     const planningNeedles = _planningItems('needles');
     const doseLevels = _planningItems('doseLevels');
+    doseLevels.forEach(normalizeDoseIsoSurfaceLevel);
     const planningMeshes = _planningItems('meshes');
     const hasDoseOverlay = !!(state.doseOverlay && state.doseOverlay.shape);
     const hasPlanning = planningTrajectories.length > 0 || planningSeeds.length > 0 || planningNeedles.length > 0 || doseLevels.length > 0 || planningMeshes.length > 0 || hasDoseOverlay;
@@ -5264,12 +5306,18 @@ function renderDataTree() {
             // 2026-06-16 fix: `threshold` is now stored in ABSOLUTE Gy
             // (previously it was a relative multiplier × prescription,
             // so the label was wrong after the user's Rx changed).
-            // Show "120 Gy" not "1.0× Rx".
-            const absGy = (level.thresholdGy != null)
+            // Show the computed absolute Gy value, not the legacy relative
+            // multiplier (for example `1.0× Rx`).
+            normalizeDoseIsoSurfaceLevel(level);
+            const absGy = Number(level.thresholdGy != null
                 ? level.thresholdGy
-                : Math.round(level.threshold);
-            // Preserve a user-renamed iso-surface label; default remains "N Gy".
-            const doseLabel = level.label || `${absGy} Gy`;
+                : level.threshold);
+            // Preserve a genuinely user-renamed iso-surface label, but never
+            // expose the legacy relative multiplier (for example `1`) as the
+            // primary label when the absolute value is 120 Gy.
+            const doseLabel = level.label && !_isRelativeDoseIsoLabel(level.label)
+                ? level.label
+                : `${Math.round(absGy)} Gy`;
             const levelState = ensureDataTreeNodeMetadata({
                 ...level,
                 visible: planningMasterVisible && level.visible !== false,

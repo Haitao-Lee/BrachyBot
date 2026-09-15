@@ -1734,7 +1734,12 @@ var trainingMonitorState = {
 };
 
 function updateBrainStatusIndicator(value, source = '') {
-    const available = value === true ? true : (value === false ? false : null);
+    // Accept both the legacy boolean flag and the live brain_state string
+    // ("online"/"offline"/"checking"/"unconfigured").
+    const normalized = typeof value === 'string' ? value.trim().toLowerCase() : value;
+    const available = normalized === true || normalized === 'online'
+        ? true
+        : (normalized === false || normalized === 'offline' ? false : null);
     state.brainAvailable = available;
     const dot = document.getElementById('brainDot');
     const label = document.getElementById('brainStatusText');
@@ -2892,11 +2897,17 @@ async function handleFileSelect(input, targetId) {
         ownerTargetValue = Number(document.getElementById('targetValue')?.value || 1);
 
         const formData = new FormData();
+        // A folder selection is always a DICOM series, even when the folder
+        // resolves to one extensionless file that the single-file branch
+        // would reject. Keep webkitRelativePath so the server sees a
+        // relative name rather than only the leaf.
+        const folderUpload = !!input && input.hasAttribute('webkitdirectory');
+        if (folderUpload) formData.append('dicom_series', '1');
         // Append every file with the same form key — the server's
-        // `getlist('file')` collects them all. For folder uploads each
-        // File carries its webkitRelativePath so the server can keep
-        // per-folder structure.
-        for (const f of files) formData.append('file', f, f.name);
+        // `getlist('file')` collects them all.
+        for (const f of files) {
+            formData.append('file', f, folderUpload ? (f.webkitRelativePath || f.name) : f.name);
+        }
 
         const res = await fetch(API + '/upload', {
             method: 'POST',
@@ -4669,7 +4680,10 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         trainingMonitorState.lastFeedbackAt = 0;
         trainingMonitorState.lastScreenshotAt = 0;
     }
-    updateBrainStatusIndicator(status.brain_available, status.lightweight ? 'lightweight-status' : 'status');
+    updateBrainStatusIndicator(
+        status.brain_state ?? status.brain_available,
+        status.lightweight ? 'lightweight-status' : 'status',
+    );
     const sessionDisplay = document.getElementById('sessionDisplay');
     if (sessionDisplay) sessionDisplay.textContent = state.sessionId;
     // DICOM-RT metadata is lightweight and case-scoped. Restore its summary
@@ -5542,7 +5556,7 @@ async function init() {
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
         _statusData = data;
-        updateBrainStatusIndicator(data.brain_available, 'startup-status');
+        updateBrainStatusIndicator(data.brain_state ?? data.brain_available, 'startup-status');
         state.sessionId = data.session_id || 'web';
         document.getElementById('sessionDisplay').textContent = state.sessionId;
     }).catch(e => {
