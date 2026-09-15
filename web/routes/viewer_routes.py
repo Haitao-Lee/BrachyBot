@@ -2758,6 +2758,9 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             safety_oar = None
             obstacle_labels = set()
             world_validator = None
+            truncation_validator = None
+            display_body_mask = None
+            display_truncated_boundary_faces = None
             safety_state = "deferred"
             safety_warning = None
             stored_safety_context = agent.memory.retrieve("needle_safety_context")
@@ -2769,8 +2772,27 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     _world_segment_hits_obstacle,
                     _canonical_needle_points_from_seeds,
                     _seed_derived_needle_points,
+                    _needle_enters_through_truncated_boundary,
+                    _body_mask_from_ct,
                     needle_safety_provenance_matches,
                 )
+                truncation_validator = _needle_enters_through_truncated_boundary
+                if ct_image is not None:
+                    try:
+                        from plans.utilizations import infer_truncated_boundary_faces_from_image
+
+                        display_body_mask = _body_mask_from_ct(ct_image)
+                        display_truncated_boundary_faces = (
+                            infer_truncated_boundary_faces_from_image(ct_image)
+                        )
+                    except Exception:
+                        # If the body envelope cannot be reconstructed, the
+                        # truncation helper remains conservative when a
+                        # flagged CT face is crossed.
+                        logger.warning(
+                            "[seeds_3d] Unable to prepare CT truncation guard",
+                            exc_info=True,
+                        )
 
                 # Safety revalidation is meaningful only on the original CT
                 # grid. During a cold restore the registry and verified
@@ -2859,10 +2881,33 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     "before clinical use."
                 )
 
+            def _enters_truncated_ct_face(points):
+                if truncation_validator is None or ct_image is None:
+                    return False
+                try:
+                    return bool(
+                        truncation_validator(
+                            points,
+                            ct_image,
+                            body_mask=display_body_mask,
+                            truncated_boundary_faces=display_truncated_boundary_faces,
+                        )
+                    )
+                except Exception:
+                    # A geometry that cannot be checked against a flagged
+                    # finite-FOV face must not be displayed as a safe needle.
+                    logger.exception(
+                        "[seeds_3d] CT truncation validation failed; "
+                        "withholding the needle"
+                    )
+                    return True
+
             def _current_needle_is_safe(points):
                 # Manual geometry must always be checked against the current
                 # original-grid masks. Missing masks are not evidence of
                 # safety for an edit.
+                if _enters_truncated_ct_face(points):
+                    return False
                 if world_validator is None:
                     return False
                 return not world_validator(
@@ -2870,10 +2915,11 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 )
 
             def _automatic_needle_is_safe(points):
-                # A persisted automatic geometry is already validated. A
-                # changed-input or legacy state is review-only, so preserve
-                # the geometry for the Viewer while exposing the stale state
-                # to the UI and keeping clinical edit paths fail-closed.
+                # Automatic geometry may be review-only when its input
+                # provenance is stale or still hydrating, but a CT
+                # truncation-face entry is never displayable in any state.
+                if _enters_truncated_ct_face(points):
+                    return False
                 if safety_state in {"deferred", "stale", "legacy_verified"}:
                     return True
                 return _current_needle_is_safe(points)
@@ -3145,6 +3191,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 else:
                     continue
 
+                pending_seed_data = []
                 needle_seeds = []
                 for j, seed in enumerate(seed_list):
                     if isinstance(seed, dict):
@@ -3188,7 +3235,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                         ),
                         "seed_index": j,
                     }
-                    seeds.append(seed_data)
+                    pending_seed_data.append(seed_data)
                     needle_seeds.append(pos_world)
 
                 # A manual update stores explicit world-coordinate endpoint
@@ -3212,6 +3259,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                             i,
                         )
                         continue
+                    seeds.extend(pending_seed_data)
                     needles.append({
                         "id": needle_id,
                         "points": explicit_needle_points,
@@ -3289,6 +3337,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                         continue
                     if geometry_repair is not None:
                         geometry_repairs[str(i)] = geometry_repair
+                    seeds.extend(pending_seed_data)
                     needles.append({
                         "id": f"needle_{i + 1}",
                         "points": [point.tolist() for point in points],
