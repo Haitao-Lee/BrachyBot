@@ -3812,7 +3812,15 @@ async function sendChat(prefill, options) {
                             // load label volumes so masks appear in viewer + data tree.
                             // Without this, masks are stored server-side but never
                             // fetched by the frontend.
-                            const completedSegmentationTool = String(data.tool || data.parent_tool || '');
+                            // Different SSE producers use tool, tool_name,
+                            // function_name, or parent_tool for the same
+                            // terminal event.  Accept all canonical forms so
+                            // an OAR completion can never lose its immediate
+                            // viewer hydration solely because of its envelope.
+                            const completedSegmentationTool = String(
+                                data.tool || data.tool_name || data.function_name
+                                || data.function || data.parent_tool || data.parentTool || '',
+                            ).trim().toLowerCase();
                             if (toolCompleted && SEG_TOOLS.includes(completedSegmentationTool)) {
                                 if (completedSegmentationTool === 'biomedparse_segmentation') {
                                     // Open-ended masks are not part of the CTV/OAR
