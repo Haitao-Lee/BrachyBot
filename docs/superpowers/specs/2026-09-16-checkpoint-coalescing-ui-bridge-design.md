@@ -28,17 +28,17 @@
 ### A. 检查点合并（`web/workspace_store.py`）
 
 新增（`__init__`，均受 `self._lock` 保护）：
-- `_checkpoint_inflight: Dict[Tuple[str, str], bool]`
-- `_checkpoint_dirty: Dict[Tuple[str, str], bool]`
+- `_checkpoint_inflight: Dict[Tuple[str, str], int]`（值=在飞快照启动时的代际）
+- `_checkpoint_dirty: Dict[Tuple[str, str], Dict[str, Any]]`（值=最新一次被合并的调度载荷）
 
 `schedule_agent_checkpoint`：
 - 在现有 `with self._lock:` 内先判断：`_checkpoint_inflight[key]` 存在（值为在飞快照启动时的代际）**且当前代际与之相等** → 合并：`_checkpoint_dirty[key] = {"agent", "reason", "operation"}`（保留最新一次调度的载荷），`logger.debug("workspace checkpoint coalesced ...")`，**直接返回**（不 bump generation、不动定时器）。
 - 一旦有外部写入者 bump 了代际（如 `save_agent_results_patch` 等部分写入者、flush、discard），说明在飞快照已失效：后续调度**回到原有路径**（取消旧定时器、bump 代际、按载荷排新定时器），与改动前语义一致，避免吞掉调用方显式排队的全量检查点。
 - 在飞快照收尾时（`finally`，持锁）：若存在合并载荷且代际未变 → 重放该载荷（`reason` 只追加一次 `.coalesced`，使用捕获的 agent/operation，异常只记 warning 不掩盖原异常）；若代际已变 → 丢弃更旧的载荷并记 debug（由更新的写入者负责持久化）。重放与代际检查在同一临界区内完成。
 
-`_snapshot_agent_locked`：
-- 在开头代际早退分支之后，`with self._lock:` 标记 `_checkpoint_inflight[key] = True`；
-- 用 **外层 `try/finally`** 包裹现有主体：`finally` 中（`with self._lock:`）清 inflight；若 `_checkpoint_dirty.pop(key, None)` 为真，则调用 `schedule_agent_checkpoint(...)` 排一次跟进（`reason=f"{reason}.coalesced"`，走正常 0.75s 防抖）。异常路径同样触发跟进。
+`_snapshot_agent_locked`（wrapper，原主体改名为 `_snapshot_agent_locked_inner`）：
+- 在开头代际早退分支之后，`with self._lock:` 记 `generation_at_entry` 并标记 `_checkpoint_inflight[key] = generation_at_entry`；
+- 外层 `try/finally` 包裹 inner 调用：`finally` 中在同一临界区内清 inflight、弹出合并载荷，若代际未变则重放（用捕获的 agent/operation，`reason` 只追加一次 `.coalesced`，排程异常只记 warning）；代际已变则丢弃更旧载荷并记 debug。
 - 现有 `_CheckpointSuperseded` / 丢弃语义保持不变（flush/discard 仍 bump generation 并可取消在飞快照）。
 
 `flush_agent_checkpoint` / `discard_agent_checkpoint`：
