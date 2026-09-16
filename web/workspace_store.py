@@ -88,6 +88,31 @@ MIN_OPEN_FILE_LIMIT = int(
 logger = logging.getLogger(__name__)
 
 
+def _checkpoint_max_staleness_seconds() -> float:
+    """Bound how long a busy case may defer its scheduled full checkpoint.
+
+    ``0`` disables deferral entirely and restores the pre-deferral timing.
+    Invalid values fall back to the default instead of disabling durability.
+    """
+    default = 60.0
+    raw = os.environ.get("BRACHYBOT_CHECKPOINT_MAX_STALENESS_SECONDS")
+    if raw is None or str(raw).strip() == "":
+        return default
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            "Invalid BRACHYBOT_CHECKPOINT_MAX_STALENESS_SECONDS=%r; using %.0f",
+            raw,
+            default,
+        )
+        return default
+    return max(0.0, value)
+
+
+DEFER_RETRY_SECONDS = 3.0
+
+
 class _CheckpointSuperseded(RuntimeError):
     """Internal signal used to stop an obsolete background checkpoint."""
 
@@ -1662,6 +1687,12 @@ class WorkspaceStore:
         self._lock = threading.RLock()
         self._checkpoint_timers: Dict[Tuple[str, str], threading.Timer] = {}
         self._checkpoint_generations: Dict[Tuple[str, str], int] = {}
+        # A busy case may defer its debounced full checkpoint for a bounded
+        # window so planning does not compete with 30MB snapshot rewrites.
+        # Without an injected probe the timer runs exactly as before.
+        self._heavy_task_probe: Optional[Callable[[str, str], bool]] = None
+        self._checkpoint_completed_at: Dict[Tuple[str, str], float] = {}
+        self.checkpoint_max_staleness_seconds = _checkpoint_max_staleness_seconds()
         # Heavy snapshot preparation is serialized per case. Multiple UI
         # events may request a checkpoint at once, but they must not each scan
         # and fsync the same CT-sized artifact set concurrently.
@@ -2647,6 +2678,11 @@ class WorkspaceStore:
                 (time.perf_counter() - commit_started) * 1000.0,
                 not bool(result),
             )
+            if result:
+                with self._lock:
+                    self._checkpoint_completed_at[
+                        (str(user_id), str(session_id))
+                    ] = time.monotonic()
             return result
         except _CheckpointSuperseded:
             logger.info(
@@ -3567,6 +3603,43 @@ class WorkspaceStore:
             # A damaged CT must not prevent the rest of the session metadata
             # from being inspected or deleted.
             return
+
+    def set_heavy_task_probe(
+        self, probe: Optional[Callable[[str, str], bool]],
+    ) -> None:
+        """Install the per-case heavy-task query used to defer checkpoints.
+
+        The probe is query-only and must stay cheap: it is called for every
+        scheduled checkpoint of an active case.
+        """
+        self._heavy_task_probe = probe
+
+    def _should_defer_checkpoint(self, user_id: str, session_id: str) -> bool:
+        """Return whether a scheduled checkpoint should wait for a busy case.
+
+        Deferral is opt-in: without an injected probe, a positive staleness
+        window, or one already completed checkpoint, the timer runs now.
+        """
+        if self.checkpoint_max_staleness_seconds <= 0:
+            return False
+        probe = self._heavy_task_probe
+        if probe is None:
+            return False
+        key = (str(user_id), str(session_id))
+        with self._lock:
+            completed_at = self._checkpoint_completed_at.get(key)
+        if completed_at is None:
+            return False
+        try:
+            busy = bool(probe(key[0], key[1]))
+        except Exception:
+            logger.debug(
+                "Heavy task probe failed; checkpoint will run now", exc_info=True,
+            )
+            return False
+        if not busy:
+            return False
+        return (time.monotonic() - completed_at) < self.checkpoint_max_staleness_seconds
 
     def schedule_agent_checkpoint(
         self,
