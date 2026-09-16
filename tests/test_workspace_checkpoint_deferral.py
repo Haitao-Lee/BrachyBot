@@ -424,3 +424,46 @@ def test_discard_clears_dirty(tmp_path):
     store._checkpoint_dirty[key] = {"agent": None, "reason": "test", "operation": None}
     store.discard_agent_checkpoint(user["id"], case.id)
     assert key not in store._checkpoint_dirty
+
+
+def test_latest_coalesced_schedule_wins(tmp_path):
+    store, user, case, agent = _case(tmp_path)
+    key = (user["id"], case.id)
+    store._checkpoint_inflight[key] = True
+    store.schedule_agent_checkpoint(
+        user["id"], case.id, agent, "operation.checkpoint",
+        operation={"state": "running", "message": "first"},
+    )
+    store.schedule_agent_checkpoint(
+        user["id"], case.id, agent, "operation.checkpoint",
+        operation={"state": "running", "message": "second"},
+    )
+    assert store._checkpoint_dirty[key]["operation"] == {
+        "state": "running", "message": "second",
+    }
+
+
+def test_replay_skipped_when_newer_writer_won(tmp_path):
+    store, user, case, agent = _case(tmp_path)
+    key = (user["id"], case.id)
+
+    def _inner(*args, **kwargs):
+        store.schedule_agent_checkpoint(
+            user["id"], case.id, agent, "operation.checkpoint",
+            operation={"state": "running"},
+        )
+        with store._lock:
+            store._checkpoint_generations[key] = (
+                store._checkpoint_generations.get(key, 0) + 1
+            )
+        return {}
+
+    store._snapshot_agent_locked_inner = _inner
+    try:
+        store._snapshot_agent_locked(user["id"], case.id, agent, reason="test.run")
+        assert key not in store._checkpoint_inflight
+        assert key not in store._checkpoint_dirty
+        assert key not in store._checkpoint_timers
+    finally:
+        _cancel_timers(store, key)
+        del store._snapshot_agent_locked_inner
