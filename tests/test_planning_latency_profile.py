@@ -69,3 +69,22 @@ def test_nested_request_restores_outer_profile():
 
     assert outer().metadata['latency_profile']['nested_timings'] == {}
     assert _profile.get() is None
+
+
+def test_profile_records_contention_context():
+    result = SimpleNamespace(success=True, metadata={})
+
+    @collect_planning_latency
+    def request():
+        return result
+
+    assert request() is result
+    contention = result.metadata['latency_profile']['contention']
+    for field in (
+        'loadavg_1m_start', 'loadavg_1m_end', 'process_cpu_seconds',
+        'wall_seconds', 'avg_parallelism', 'threads_start', 'threads_end',
+    ):
+        assert isinstance(contention[field], (int, float)), field
+    assert contention['wall_seconds'] >= 0.0
+    assert contention['avg_parallelism'] >= 0.0
+    assert contention['threads_end'] >= 1
