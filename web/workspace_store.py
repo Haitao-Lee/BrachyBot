@@ -3646,7 +3646,14 @@ class WorkspaceStore:
             return False
         if not busy:
             return False
-        return (time.monotonic() - completed_at) < self.checkpoint_max_staleness_seconds
+        staleness = time.monotonic() - completed_at
+        if staleness < self.checkpoint_max_staleness_seconds:
+            return True
+        logger.info(
+            "workspace checkpoint forced by staleness session=%s staleness_s=%.1f",
+            session_id, staleness,
+        )
+        return False
 
     def schedule_agent_checkpoint(
         self,
@@ -3713,10 +3720,18 @@ class WorkspaceStore:
                 existing.cancel()
         if self._should_defer_checkpoint(user_id, session_id):
             with self._lock:
+                latest_generation = self._checkpoint_generations.get(key, 0)
+                if (
+                    generation is not None
+                    and int(generation) != int(latest_generation)
+                ):
+                    # A newer mutation/flush owns persistence now. Leave its
+                    # timer (or synchronous write) alone instead of re-arming
+                    # an obsolete scheduled checkpoint.
+                    return
                 existing = self._checkpoint_timers.pop(key, None)
                 if existing is not None:
                     existing.cancel()
-                latest_generation = self._checkpoint_generations.get(key, 0)
                 retry = threading.Timer(
                     DEFER_RETRY_SECONDS,
                     self._checkpoint_timer,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from types import SimpleNamespace
@@ -236,6 +237,34 @@ def test_discard_cancels_deferred_timer(tmp_path):
     store.discard_agent_checkpoint(user["id"], case.id)
     assert key not in store._checkpoint_timers
     assert key not in store._checkpoint_completed_at
+
+
+def test_deferral_does_not_resurrect_superseded_checkpoint(tmp_path):
+    store, user, case, agent = _case(tmp_path)
+    key = (user["id"], case.id)
+    calls = _install_counter(store)
+    store._checkpoint_completed_at[key] = time.monotonic()
+
+    def _probe(_u, _s):
+        store._checkpoint_generations[key] = store._checkpoint_generations.get(key, 0) + 1
+        return True
+
+    store.set_heavy_task_probe(_probe)
+    try:
+        store._checkpoint_timer(user["id"], case.id, agent, "test.superseded", generation=0)
+        assert calls == []
+        assert key not in store._checkpoint_timers
+    finally:
+        _cancel_timers(store, key)
+
+
+def test_staleness_forced_run_logs_info(tmp_path, caplog):
+    store, user, case, _agent = _case(tmp_path)
+    store.set_heavy_task_probe(lambda _u, _s: True)
+    store._checkpoint_completed_at[(user["id"], case.id)] = time.monotonic() - 999.0
+    with caplog.at_level(logging.INFO, logger="web.workspace_store"):
+        assert store._should_defer_checkpoint(user["id"], case.id) is False
+    assert any("forced by staleness" in record.message for record in caplog.records)
 
 
 def test_create_app_wires_heavy_task_probe(tmp_path):
