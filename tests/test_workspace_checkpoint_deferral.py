@@ -7,6 +7,8 @@ import threading
 import time
 from types import SimpleNamespace
 
+import pytest
+
 from web.workspace_store import WorkspaceStore
 
 
@@ -306,15 +308,35 @@ def test_schedule_during_inflight_coalesces(tmp_path):
     store.schedule_agent_checkpoint(user["id"], case.id, agent, "test.inflight")
     assert store._checkpoint_generations.get(key, 0) == generation_before
     assert key not in store._checkpoint_timers
-    assert store._checkpoint_dirty.get(key) is True
+    pending = store._checkpoint_dirty.get(key)
+    assert pending is not None
+    assert pending["agent"] is agent
+    assert pending["reason"] == "test.inflight"
+    assert pending["operation"] is None
 
 
-def test_inflight_completion_schedules_coalesced_followup(tmp_path):
+def test_coalesced_payload_keeps_latest_operation(tmp_path):
+    store, user, case, agent = _case(tmp_path)
+    key = (user["id"], case.id)
+    store._checkpoint_inflight[key] = True
+    store.schedule_agent_checkpoint(
+        user["id"], case.id, agent, "operation.checkpoint",
+        operation={"state": "running", "message": "step 2"},
+    )
+    pending = store._checkpoint_dirty[key]
+    assert pending["reason"] == "operation.checkpoint"
+    assert pending["operation"] == {"state": "running", "message": "step 2"}
+
+
+def test_inflight_completion_replays_latest_payload(tmp_path):
     store, user, case, agent = _case(tmp_path)
     key = (user["id"], case.id)
 
     def _inner(*args, **kwargs):
-        store.schedule_agent_checkpoint(user["id"], case.id, agent, "test.during")
+        store.schedule_agent_checkpoint(
+            user["id"], case.id, agent, "operation.checkpoint",
+            operation={"state": "running"},
+        )
         return {}
 
     store._snapshot_agent_locked_inner = _inner
@@ -322,22 +344,83 @@ def test_inflight_completion_schedules_coalesced_followup(tmp_path):
         store._snapshot_agent_locked(user["id"], case.id, agent, reason="test.run")
         assert key not in store._checkpoint_inflight
         assert key not in store._checkpoint_dirty
-        assert key in store._checkpoint_timers
         timer = store._checkpoint_timers[key]
-        assert timer.args[3] == "test.run.coalesced"
+        assert timer.args[3] == "operation.checkpoint.coalesced"
+        assert timer.args[4] == {"state": "running"}
     finally:
         _cancel_timers(store, key)
-        store._snapshot_agent_locked_inner = None
+        del store._snapshot_agent_locked_inner
+
+
+def test_clean_completion_schedules_no_followup(tmp_path):
+    store, user, case, agent = _case(tmp_path)
+    key = (user["id"], case.id)
+    store._snapshot_agent_locked_inner = lambda *a, **k: {}
+    try:
+        generation_before = store._checkpoint_generations.get(key, 0)
+        store._snapshot_agent_locked(user["id"], case.id, agent, reason="test.clean")
+        assert key not in store._checkpoint_timers
+        assert store._checkpoint_generations.get(key, 0) == generation_before
+        assert key not in store._checkpoint_inflight
+    finally:
+        del store._snapshot_agent_locked_inner
+
+
+def test_inner_exception_still_replays_dirty(tmp_path):
+    store, user, case, agent = _case(tmp_path)
+    key = (user["id"], case.id)
+
+    def _inner(*args, **kwargs):
+        store.schedule_agent_checkpoint(user["id"], case.id, agent, "test.during")
+        raise RuntimeError("snapshot boom")
+
+    store._snapshot_agent_locked_inner = _inner
+    try:
+        with pytest.raises(RuntimeError, match="snapshot boom"):
+            store._snapshot_agent_locked(user["id"], case.id, agent, reason="test.run")
+        assert key not in store._checkpoint_inflight
+        assert key not in store._checkpoint_dirty
+        assert store._checkpoint_timers[key].args[3] == "test.during.coalesced"
+    finally:
+        _cancel_timers(store, key)
+        del store._snapshot_agent_locked_inner
+
+
+def test_coalesced_reason_does_not_accumulate(tmp_path):
+    store, user, case, agent = _case(tmp_path)
+    key = (user["id"], case.id)
+
+    def _inner(*args, **kwargs):
+        store.schedule_agent_checkpoint(
+            user["id"], case.id, agent, "test.during.coalesced",
+        )
+        return {}
+
+    store._snapshot_agent_locked_inner = _inner
+    try:
+        store._snapshot_agent_locked(user["id"], case.id, agent, reason="test.run")
+        assert store._checkpoint_timers[key].args[3] == "test.during.coalesced"
+    finally:
+        _cancel_timers(store, key)
+        del store._snapshot_agent_locked_inner
 
 
 def test_flush_clears_dirty(tmp_path):
     store, user, case, agent = _case(tmp_path)
     key = (user["id"], case.id)
-    store._checkpoint_dirty[key] = True
+    store._checkpoint_dirty[key] = {"agent": None, "reason": "test", "operation": None}
     store._snapshot_agent_locked_inner = lambda *a, **k: {}
     try:
         store.flush_agent_checkpoint(user["id"], case.id, agent, "test.flush")
         assert key not in store._checkpoint_dirty
     finally:
-        store._snapshot_agent_locked_inner = None
+        del store._snapshot_agent_locked_inner
         _cancel_timers(store, key)
+
+
+def test_discard_clears_dirty(tmp_path):
+    store, user, case, _agent = _case(tmp_path)
+    key = (user["id"], case.id)
+    store._checkpoint_dirty[key] = {"agent": None, "reason": "test", "operation": None}
+    store.discard_agent_checkpoint(user["id"], case.id)
+    assert key not in store._checkpoint_dirty

@@ -1700,10 +1700,10 @@ class WorkspaceStore:
         self._heavy_task_probe: Optional[Callable[[str, str], bool]] = None
         self._checkpoint_completed_at: Dict[Tuple[str, str], float] = {}
         # Coalesce checkpoint scheduling while a full snapshot is in flight:
-        # a new schedule must not cancel the running write, and the skipped
-        # mutation is replayed once as a follow-up after it completes.
+        # a new schedule must not cancel the running write; the latest
+        # scheduled payload is replayed once as a follow-up afterwards.
         self._checkpoint_inflight: Dict[Tuple[str, str], bool] = {}
-        self._checkpoint_dirty: Dict[Tuple[str, str], bool] = {}
+        self._checkpoint_dirty: Dict[Tuple[str, str], Dict[str, Any]] = {}
         self.checkpoint_max_staleness_seconds = _checkpoint_max_staleness_seconds()
         # Heavy snapshot preparation is serialized per case. Multiple UI
         # events may request a checkpoint at once, but they must not each scan
@@ -2654,15 +2654,28 @@ class WorkspaceStore:
         finally:
             with self._lock:
                 self._checkpoint_inflight.pop(key, None)
-                dirty = self._checkpoint_dirty.pop(key, None)
-            if dirty:
+                pending = self._checkpoint_dirty.pop(key, None)
+            if pending is not None:
+                replay_reason = str(pending.get("reason") or reason)
+                if not replay_reason.endswith(".coalesced"):
+                    replay_reason = f"{replay_reason}.coalesced"
                 logger.info(
                     "workspace checkpoint coalesced follow-up session=%s reason=%s",
-                    session_id, reason,
+                    session_id, replay_reason,
                 )
-                self.schedule_agent_checkpoint(
-                    user_id, session_id, agent, f"{reason}.coalesced",
-                )
+                try:
+                    self.schedule_agent_checkpoint(
+                        user_id,
+                        session_id,
+                        pending.get("agent") if pending.get("agent") is not None else agent,
+                        replay_reason,
+                        pending.get("operation"),
+                    )
+                except Exception:
+                    logger.warning(
+                        "Unable to schedule coalesced checkpoint session=%s reason=%s",
+                        session_id, replay_reason, exc_info=True,
+                    )
 
     def _snapshot_agent_locked_inner(
         self,
@@ -3735,7 +3748,11 @@ class WorkspaceStore:
         key = (user_id, session_id)
         with self._lock:
             if self._checkpoint_inflight.get(key):
-                self._checkpoint_dirty[key] = True
+                self._checkpoint_dirty[key] = {
+                    "agent": agent,
+                    "reason": reason,
+                    "operation": operation,
+                }
                 logger.debug(
                     "workspace checkpoint coalesced session=%s reason=%s",
                     session_id, reason,
