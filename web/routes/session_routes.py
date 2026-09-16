@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, Optional
 
 from flask import jsonify, request, send_file, session
 
+from web import server_support as _server_support
 from web.auth import current_user
 from web.server_support import require_api_key
 from web.workspace_store import (
@@ -384,6 +385,15 @@ def register_session_routes(
             # routes, while the durable snapshot already contains the full
             # serializable transcript and UI state needed for first paint.
             snapshot = store.load_snapshot(user["id"], session_id)
+            # The sidecar is the live UI-bridge writer; merge the newest copy
+            # so background monitor close-out state is not read from a frozen
+            # snapshot bridge.
+            ui = snapshot.get("ui")
+            if isinstance(ui, dict):
+                ui["bridge"] = _server_support.select_case_bridge(
+                    ui.get("bridge") or {},
+                    store.load_ui_bridge(user["id"], session_id),
+                )
         except WorkspaceError as exc:
             return jsonify({"error": str(exc)}), 404
         return jsonify({"success": True, "workspace": snapshot})

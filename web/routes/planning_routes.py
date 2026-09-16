@@ -1043,6 +1043,10 @@ def _flush_ui_bridge_checkpoint(key: tuple) -> None:
         # This is a background durability retry point, not a user-facing
         # workflow failure; avoid emitting a misleading traceback per event.
         logger.warning("Unable to persist UI bridge state for case %s", selected, exc_info=False)
+    except Exception:
+        # The debounce timer dies after this call; an unsanitized payload or
+        # filesystem error must not silently stop bridge persistence.
+        logger.warning("Unable to persist UI bridge state for case %s", selected, exc_info=True)
 
 
 def _validate_label_geometry(ct_path: str, label_path: str) -> Optional[str]:

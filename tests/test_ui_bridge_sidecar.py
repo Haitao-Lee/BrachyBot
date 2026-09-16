@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+import time
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
 from web.server import _select_case_bridge
-from web.workspace_store import WorkspaceStore
+from web.workspace_store import WorkspaceArchived, WorkspaceStore
 
 
 def _store(tmp_path):
@@ -11,6 +17,22 @@ def _store(tmp_path):
     user = store.create_user("bridge_user", "hash")
     case = store.create_session(user["id"], "Bridge case")
     return store, user, case
+
+
+def _app_client_store(tmp_path, username):
+    from web.server import create_app
+
+    app = create_app({
+        "runtime_dir": str(tmp_path / "server-runtime"),
+        "secret_key": "test-secret",
+        "workspace_maintenance": False,
+    })
+    client = app.test_client()
+    body = client.post(
+        "/api/auth/register",
+        json={"username": username, "password": "bridge-password-123"},
+    ).get_json()
+    return client, body, app.extensions["brachybot_workspace_store"]
 
 
 def test_ui_bridge_roundtrip(tmp_path):
@@ -111,3 +133,134 @@ def test_ui_state_restores_from_sidecar(tmp_path):
     restored = client.get("/api/ui/state", query_string={"session_id": sid})
     assert restored.status_code == 200
     assert restored.get_json()["state"] == {"viewer": {"axial": 7}}
+
+
+def test_sidecar_write_does_not_touch_snapshot_or_revision(tmp_path):
+    store, user, case = _store(tmp_path)
+    before_revision = store.get_session(user["id"], case.id).revision
+    before_bridge = store.load_snapshot(user["id"], case.id).get("ui", {}).get("bridge")
+    store.save_ui_bridge(
+        user["id"],
+        case.id,
+        {"state": {"a": 1}, "events": [], "training": {}},
+    )
+    assert store.get_session(user["id"], case.id).revision == before_revision
+    after_bridge = store.load_snapshot(user["id"], case.id).get("ui", {}).get("bridge")
+    assert after_bridge == before_bridge
+    assert store.load_ui_bridge(user["id"], case.id)["state"] == {"a": 1}
+
+
+def test_sidecar_sanitizes_non_json_payloads(tmp_path):
+    store, user, case = _store(tmp_path)
+    store.save_ui_bridge(
+        user["id"],
+        case.id,
+        {"state": {
+            "nan": float("nan"),
+            "s": {1, 2},
+            "p": Path("/tmp/x"),
+            "obj": object(),
+        }},
+    )
+    loaded = store.load_ui_bridge(user["id"], case.id)
+    assert loaded["state"]["nan"] is None
+    assert isinstance(loaded["state"]["s"], list)
+    assert loaded["state"]["p"] == "/tmp/x"
+    assert loaded["state"]["obj"] == {"$unsupported": "object"}
+
+
+def test_ui_bridge_archived_case_is_not_resurrected(tmp_path, monkeypatch):
+    store, user, case = _store(tmp_path)
+    monkeypatch.setattr(
+        store,
+        "get_session",
+        lambda *args, **kwargs: SimpleNamespace(storage_status="archived"),
+    )
+    with pytest.raises(WorkspaceArchived):
+        store.save_ui_bridge(user["id"], case.id, {"state": {"a": 1}})
+    assert store.load_ui_bridge(user["id"], case.id) == {}
+
+
+def test_select_case_bridge_tie_prefers_snapshot():
+    snapshot = {"state": {"a": 1}, "updated_at": 200.0}
+    sidecar = {"state": {"a": 2}, "saved_at": 200.0}
+    assert _select_case_bridge(snapshot, sidecar)["state"] == {"a": 1}
+
+
+def test_select_case_bridge_non_mapping():
+    assert _select_case_bridge(None, ["not-a-bridge"]) == {}
+    assert _select_case_bridge("bad", "worse") == {}
+
+
+def test_load_ui_bridge_corrupt_shapes_return_empty(tmp_path):
+    store, user, case = _store(tmp_path)
+    root = store.workspace_root(user["id"], case.id, create=True)
+    (root / "ui_bridge.json").write_text(
+        '{"state": "oops", "events": 1, "training": []}', encoding="utf-8",
+    )
+    assert store.load_ui_bridge(user["id"], case.id) == {}
+
+
+def test_flush_swallows_writer_failure():
+    from web.routes import planning_routes
+
+    class _Store:
+        def save_ui_bridge(self, *args, **kwargs):
+            raise ValueError("not JSON serializable")
+
+    key = ("user-2", "case-2")
+    planning_routes._UI_BRIDGE_CHECKPOINT_PENDING[key] = (
+        _Store(), "user-2", "case-2", {"state": {}}, "ui.state_saved",
+    )
+    try:
+        planning_routes._flush_ui_bridge_checkpoint(key)
+    finally:
+        planning_routes._UI_BRIDGE_CHECKPOINT_TIMERS.pop(key, None)
+    assert key not in planning_routes._UI_BRIDGE_CHECKPOINT_PENDING
+
+
+def test_legacy_snapshot_only_case_restores(tmp_path):
+    from web import server_support as _server_support
+
+    client, body, store = _app_client_store(tmp_path, "legacy_bridge")
+    sid = body["active_session_id"]
+    user_id = body["user"]["id"]
+    store.save_snapshot_patch(
+        user_id,
+        sid,
+        {"ui": {"bridge": {
+            "state": {"legacy": 1},
+            "events": [],
+            "training": {},
+            "updated_at": time.time(),
+        }}},
+    )
+    _server_support._ui_bucket(sid).clear()
+    restored = client.get("/api/ui/state", query_string={"session_id": sid})
+    assert restored.status_code == 200
+    assert restored.get_json()["state"] == {"legacy": 1}
+
+
+def test_workspace_snapshot_prefers_sidecar_bridge(tmp_path):
+    client, body, store = _app_client_store(tmp_path, "snapshot_bridge")
+    sid = body["active_session_id"]
+    user_id = body["user"]["id"]
+    store.save_snapshot_patch(
+        user_id,
+        sid,
+        {"ui": {"bridge": {
+            "state": {"snap": 1},
+            "events": [],
+            "training": {},
+            "updated_at": time.time() - 100.0,
+        }}},
+    )
+    store.save_ui_bridge(
+        user_id,
+        sid,
+        {"state": {"side": 2}, "events": [], "training": {}, "updated_at": time.time()},
+    )
+    response = client.get("/api/workspace/snapshot")
+    assert response.status_code == 200
+    bridge = response.get_json()["workspace"]["ui"]["bridge"]
+    assert bridge["state"] == {"side": 2}

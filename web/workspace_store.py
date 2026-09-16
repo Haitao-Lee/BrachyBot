@@ -3700,24 +3700,38 @@ class WorkspaceStore:
         High-frequency UI events (sliders, monitor status) belong to a small
         sidecar so a 30MB snapshot rewrite is not paid per event. The snapshot
         keeps its last bridge copy as a read-only fallback for older cases.
+        Archived cases are never resurrected locally by a delayed browser
+        event; they must be activated first.
         """
-        self.get_session(user_id, session_id)
-        payload = dict(bridge) if isinstance(bridge, Mapping) else {}
+        self.require_local_session(user_id, session_id)
+        payload = _safe_json(dict(bridge)) if isinstance(bridge, Mapping) else {}
+        if not isinstance(payload, dict):
+            payload = {}
         payload["reason"] = str(reason)
         payload["saved_at"] = time.time()
         root = self.workspace_root(user_id, session_id, create=True)
         _atomic_json(_safe_workspace_child(root, "ui_bridge.json"), payload)
+        self._invalidate_storage_usage(user_id)
+        self._audit(user_id, session_id, reason, {"keys": sorted(str(k) for k in payload.keys())})
 
     def load_ui_bridge(self, user_id: str, session_id: str) -> Dict[str, Any]:
         """Return persisted sidecar bridge state, or {} when absent/invalid."""
         try:
-            self.get_session(user_id, session_id)
+            self.require_local_session(user_id, session_id)
             root = self.workspace_root(user_id, session_id)
             path = _safe_workspace_child(root, "ui_bridge.json")
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (WorkspaceError, OSError, ValueError, TypeError):
             return {}
-        return dict(payload) if isinstance(payload, dict) else {}
+        if not isinstance(payload, dict):
+            return {}
+        if "state" in payload and not isinstance(payload["state"], Mapping):
+            return {}
+        if "events" in payload and not isinstance(payload["events"], list):
+            return {}
+        if "training" in payload and not isinstance(payload["training"], Mapping):
+            return {}
+        return dict(payload)
 
     def set_heavy_task_probe(
         self, probe: Optional[Callable[[str, str], bool]],

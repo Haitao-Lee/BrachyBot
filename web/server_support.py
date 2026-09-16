@@ -386,7 +386,13 @@ def _ui_bucket(session_id: Optional[str] = None) -> Dict[str, Any]:
 
 
 def select_case_bridge(snapshot_bridge: Any, sidecar_bridge: Any) -> Dict[str, Any]:
-    """Prefer the newest persisted UI bridge between snapshot and sidecar."""
+    """Prefer the newest persisted UI bridge between snapshot and sidecar.
+
+    ``saved_at`` is a flush stamp written after the event is durable, so a
+    sidecar stamp strictly newer than the snapshot bridge's ``updated_at``
+    wins. Ties prefer the snapshot, and any future snapshot-bridge writer
+    must keep ``updated_at`` event-time semantics for this rule to hold.
+    """
     snapshot = snapshot_bridge if isinstance(snapshot_bridge, Mapping) else {}
     sidecar = sidecar_bridge if isinstance(sidecar_bridge, Mapping) else {}
 
