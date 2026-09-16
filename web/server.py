@@ -317,6 +317,14 @@ def create_app(config: Optional[Dict] = None):
     app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500MB max upload
 
     workspace_store = WorkspaceStore(config.get("runtime_dir"))
+    # Defer scheduled full checkpoints while a case owns a running heavy
+    # task (planning/guide/segmentation). The extension is looked up lazily
+    # because register_planning_routes installs the task registry later.
+    workspace_store.set_heavy_task_probe(
+        lambda user_id, session_id: _case_has_running_chat_task(
+            app.extensions.get("brachybot_chat_tasks"), user_id, session_id
+        )
+    )
     # WorkspaceStore reconciles restart lifecycle state once, immediately
     # after opening its database. Running the scan again here used to race the
     # first repair pass and advance revisions twice for the same Session.

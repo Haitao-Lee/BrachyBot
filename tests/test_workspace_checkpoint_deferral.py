@@ -236,3 +236,34 @@ def test_discard_cancels_deferred_timer(tmp_path):
     store.discard_agent_checkpoint(user["id"], case.id)
     assert key not in store._checkpoint_timers
     assert key not in store._checkpoint_completed_at
+
+
+def test_create_app_wires_heavy_task_probe(tmp_path):
+    from web.server import create_app
+
+    app = create_app({
+        "runtime_dir": str(tmp_path / "server-runtime"),
+        "secret_key": "test-secret",
+        "workspace_maintenance": False,
+    })
+    store = app.extensions["brachybot_workspace_store"]
+    assert store._heavy_task_probe is not None
+    assert store._heavy_task_probe("missing-user", "0" * 32) is False
+
+
+def test_wired_probe_reflects_running_task(tmp_path):
+    from web.server import create_app
+
+    app = create_app({
+        "runtime_dir": str(tmp_path / "server-runtime"),
+        "secret_key": "test-secret",
+        "workspace_maintenance": False,
+    })
+    store = app.extensions["brachybot_workspace_store"]
+
+    class _Registry:
+        def live(self, _user_id, _session_id):
+            return object()
+
+    app.extensions["brachybot_chat_tasks"] = _Registry()
+    assert store._heavy_task_probe("u", "s") is True
