@@ -107,6 +107,13 @@ def _checkpoint_max_staleness_seconds() -> float:
             default,
         )
         return default
+    if not math.isfinite(value):
+        logger.warning(
+            "Non-finite BRACHYBOT_CHECKPOINT_MAX_STALENESS_SECONDS=%r; using %.0f",
+            raw,
+            default,
+        )
+        return default
     return max(0.0, value)
 
 
@@ -3702,6 +3709,22 @@ class WorkspaceStore:
                 self._checkpoint_timers.pop(key, None)
                 return
             self._checkpoint_timers.pop(key, None)
+        if self._should_defer_checkpoint(user_id, session_id):
+            with self._lock:
+                latest_generation = self._checkpoint_generations.get(key, 0)
+                retry = threading.Timer(
+                    DEFER_RETRY_SECONDS,
+                    self._checkpoint_timer,
+                    args=(user_id, session_id, agent, reason, operation, latest_generation),
+                )
+                retry.daemon = True
+                self._checkpoint_timers[key] = retry
+                retry.start()
+            logger.debug(
+                "workspace checkpoint deferred session=%s reason=%s",
+                session_id, reason,
+            )
+            return
         work_lock = self._checkpoint_work_lock(user_id, session_id)
         if not work_lock.acquire(blocking=False):
             with self._lock:
@@ -3768,6 +3791,7 @@ class WorkspaceStore:
             if timer:
                 timer.cancel()
             self._checkpoint_generations[key] = self._checkpoint_generations.get(key, 0) + 1
+            self._checkpoint_completed_at.pop(key, None)
 
     def mark_operation(self, user_id: str, session_id: str, agent: Any, operation: Mapping[str, Any]) -> Dict[str, Any]:
         return self.snapshot_agent(user_id, session_id, agent, reason="operation.checkpoint", operation=operation)

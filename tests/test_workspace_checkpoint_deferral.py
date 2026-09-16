@@ -98,3 +98,93 @@ def test_successful_checkpoint_records_completion_time(tmp_path):
     assert key not in store._checkpoint_completed_at
     store.snapshot_agent(user["id"], case.id, agent, reason="seed")
     assert key in store._checkpoint_completed_at
+
+
+def _install_counter(store):
+    calls = []
+
+    def _fake_snapshot(*args, **kwargs):
+        calls.append(kwargs.get("reason"))
+        return {}
+
+    store._snapshot_agent_locked = _fake_snapshot
+    return calls
+
+
+def _cancel_timers(store, key):
+    timer = store._checkpoint_timers.pop(key, None)
+    if timer is not None:
+        timer.cancel()
+
+
+def test_timer_defers_and_rearms_while_busy(tmp_path):
+    store, user, case, agent = _case(tmp_path)
+    key = (user["id"], case.id)
+    calls = _install_counter(store)
+    store.set_heavy_task_probe(lambda _u, _s: True)
+    store._checkpoint_completed_at[key] = time.monotonic()
+    try:
+        store._checkpoint_timer(user["id"], case.id, agent, "test.defer", generation=0)
+        assert calls == []
+        assert key in store._checkpoint_timers
+    finally:
+        _cancel_timers(store, key)
+
+
+def test_timer_runs_when_stale_even_if_busy(tmp_path):
+    store, user, case, agent = _case(tmp_path)
+    key = (user["id"], case.id)
+    calls = _install_counter(store)
+    store.set_heavy_task_probe(lambda _u, _s: True)
+    store._checkpoint_completed_at[key] = (
+        time.monotonic() - store.checkpoint_max_staleness_seconds - 5.0
+    )
+    try:
+        store._checkpoint_timer(user["id"], case.id, agent, "test.stale", generation=0)
+        assert calls == ["test.stale"]
+    finally:
+        _cancel_timers(store, key)
+
+
+def test_timer_runs_when_probe_idle(tmp_path):
+    store, user, case, agent = _case(tmp_path)
+    key = (user["id"], case.id)
+    calls = _install_counter(store)
+    store.set_heavy_task_probe(lambda _u, _s: False)
+    store._checkpoint_completed_at[key] = time.monotonic()
+    try:
+        store._checkpoint_timer(user["id"], case.id, agent, "test.idle", generation=0)
+        assert calls == ["test.idle"]
+    finally:
+        _cancel_timers(store, key)
+
+
+def test_invalid_staleness_env_falls_back(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRACHYBOT_CHECKPOINT_MAX_STALENESS_SECONDS", "abc")
+    store, _user, _case_obj, _agent = _case(tmp_path)
+    assert store.checkpoint_max_staleness_seconds == 60.0
+
+
+def test_non_finite_staleness_env_falls_back(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRACHYBOT_CHECKPOINT_MAX_STALENESS_SECONDS", "inf")
+    store, _user, _case_obj, _agent = _case(tmp_path)
+    assert store.checkpoint_max_staleness_seconds == 60.0
+
+
+def test_superseded_checkpoint_does_not_record_completion(tmp_path):
+    store, user, case, agent = _case(tmp_path)
+    key = (user["id"], case.id)
+    store._checkpoint_generations[key] = 5
+    result = store._snapshot_agent_locked(
+        user["id"], case.id, agent, reason="stale", checkpoint_generation=4,
+    )
+    assert result == {}
+    assert key not in store._checkpoint_completed_at
+
+
+def test_discard_checkpoint_clears_completion_time(tmp_path):
+    store, user, case, _agent = _case(tmp_path)
+    key = (user["id"], case.id)
+    store._checkpoint_completed_at[key] = time.monotonic()
+    store.discard_agent_checkpoint(user["id"], case.id)
+    assert key not in store._checkpoint_completed_at
