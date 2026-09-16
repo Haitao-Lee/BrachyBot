@@ -166,9 +166,16 @@ def test_invalid_staleness_env_falls_back(tmp_path, monkeypatch):
 
 
 def test_non_finite_staleness_env_falls_back(tmp_path, monkeypatch):
-    monkeypatch.setenv("BRACHYBOT_CHECKPOINT_MAX_STALENESS_SECONDS", "inf")
+    for value in ("nan", "inf", "-inf"):
+        monkeypatch.setenv("BRACHYBOT_CHECKPOINT_MAX_STALENESS_SECONDS", value)
+        store, _user, _case_obj, _agent = _case(tmp_path / value)
+        assert store.checkpoint_max_staleness_seconds == 60.0
+
+
+def test_negative_staleness_env_clamps_to_zero(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRACHYBOT_CHECKPOINT_MAX_STALENESS_SECONDS", "-5")
     store, _user, _case_obj, _agent = _case(tmp_path)
-    assert store.checkpoint_max_staleness_seconds == 60.0
+    assert store.checkpoint_max_staleness_seconds == 0.0
 
 
 def test_superseded_checkpoint_does_not_record_completion(tmp_path):
@@ -187,4 +194,45 @@ def test_discard_checkpoint_clears_completion_time(tmp_path):
     key = (user["id"], case.id)
     store._checkpoint_completed_at[key] = time.monotonic()
     store.discard_agent_checkpoint(user["id"], case.id)
+    assert key not in store._checkpoint_completed_at
+
+
+def test_deferral_cancels_orphaned_timer(tmp_path):
+    store, user, case, agent = _case(tmp_path)
+    key = (user["id"], case.id)
+    fired = []
+    orphan = threading.Timer(0.05, fired.append, args=("orphan",))
+    orphan.daemon = True
+    store._checkpoint_timers[key] = orphan
+    orphan.start()
+    store.set_heavy_task_probe(lambda _u, _s: True)
+    store._checkpoint_completed_at[key] = time.monotonic()
+    try:
+        store._checkpoint_timer(user["id"], case.id, agent, "test.orphan", generation=0)
+        time.sleep(0.25)
+        assert fired == []
+        assert key in store._checkpoint_timers
+    finally:
+        _cancel_timers(store, key)
+
+
+def test_flush_checkpoint_is_not_deferred_while_busy(tmp_path):
+    store, user, case, agent = _case(tmp_path)
+    key = (user["id"], case.id)
+    calls = _install_counter(store)
+    store.set_heavy_task_probe(lambda _u, _s: True)
+    store._checkpoint_completed_at[key] = time.monotonic()
+    store.flush_agent_checkpoint(user["id"], case.id, agent, "test.flush")
+    assert calls == ["test.flush"]
+
+
+def test_discard_cancels_deferred_timer(tmp_path):
+    store, user, case, agent = _case(tmp_path)
+    key = (user["id"], case.id)
+    store.set_heavy_task_probe(lambda _u, _s: True)
+    store._checkpoint_completed_at[key] = time.monotonic()
+    store._checkpoint_timer(user["id"], case.id, agent, "test.defer", generation=0)
+    assert key in store._checkpoint_timers
+    store.discard_agent_checkpoint(user["id"], case.id)
+    assert key not in store._checkpoint_timers
     assert key not in store._checkpoint_completed_at

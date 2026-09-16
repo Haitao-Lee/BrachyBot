@@ -3708,9 +3708,14 @@ class WorkspaceStore:
             if generation is not None and int(generation) != int(current_generation):
                 self._checkpoint_timers.pop(key, None)
                 return
-            self._checkpoint_timers.pop(key, None)
+            existing = self._checkpoint_timers.pop(key, None)
+            if existing is not None:
+                existing.cancel()
         if self._should_defer_checkpoint(user_id, session_id):
             with self._lock:
+                existing = self._checkpoint_timers.pop(key, None)
+                if existing is not None:
+                    existing.cancel()
                 latest_generation = self._checkpoint_generations.get(key, 0)
                 retry = threading.Timer(
                     DEFER_RETRY_SECONDS,
