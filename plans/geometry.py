@@ -1097,9 +1097,6 @@ def get_trajectory_info(point, array, direction, target_value, background_value,
         # geometric walk.
         return True, [], []
     
-    # Copy the starting point for updates
-    update_point = np.copy(point)  
-    
     # Normalize the direction for consistent movement scaling
     update_direction = direction / max_component
 
@@ -1109,49 +1106,50 @@ def get_trajectory_info(point, array, direction, target_value, background_value,
     background_lengths = []  # List to store lengths of contiguous background segments
     target_length = 0  # Length of the current target segment
     background_length = 0  # Length of the current background segment
-    step = 0  # Step counter for movement
 
     # A dominant voxel component moves by one every iteration. Keep an
     # explicit bound as defense in depth so malformed array metadata cannot
     # turn a geometric walk into an unbounded request thread.
     max_steps = int(np.sum(array.shape)) + 1
 
-    # Check for obstacles and ensure the point is within bounds of the array.
-    for _ in range(max_steps):
-        if not is_point_inside_array(update_point, array) or obs_sign:
-            break
-        int_coords = tuple(update_point.astype(int))  # Convert the point to integer coordinates
-        step += 1
-        if array[int_coords] == obstacle_value:
-            obs_sign = True  # Set to True if an obstacle is encountered
-        update_point = (point - step * update_direction).astype(np.float64)  # Move the point along the direction
-    
-    step = 0  # Reset step for the main traversal loop
-    update_point = (point + step * update_direction).astype(np.float64)    # Continue traversing the array if no obstacle was encountered and the point is within bounds
-    for _ in range(max_steps):
-        if not is_point_inside_array(update_point, array) or obs_sign:
-            break
-        int_coords = tuple(update_point.astype(int))  # Convert the point to integer coordinates
-        step += 1
+    # Generate the identical point +/- step*direction samples in one batch.
+    # A linear ray cannot re-enter a convex image box after exiting, but keep
+    # explicit first-exit truncation to preserve the original stopping rule.
+    # Match Python-int * floating-array promotion (not int64-array promotion,
+    # which would turn a float32 caller into a different float64 ray).
+    steps = np.arange(max_steps, dtype=update_direction.dtype)[:, None]
+    shape = np.asarray(array.shape)
+
+    def sampled_values(sign):
+        samples = (point + sign * (steps * update_direction)).astype(np.float64)
+        inside = np.all((samples >= 0) & (samples < shape), axis=1)
+        exits = np.flatnonzero(~inside)
+        count = int(exits[0]) if exits.size else max_steps
+        indices = samples[:count].astype(int)
+        return array[tuple(indices.T)]
+
+    reverse_values = sampled_values(-1)
+    obs_sign = bool(np.any(reverse_values == obstacle_value))
+
+    forward_values = [] if obs_sign else sampled_values(1)
+    for value in forward_values:
         # Check the value at the current position and update the respective segment lengths
-        if array[int_coords] == target_value:
+        if value == target_value:
             target_length += 1
             if background_length != 0:
                 background_lengths.append(background_length)  # Save background length if a target is found
                 background_length = 0  # Reset background length counter
-        elif array[int_coords] == background_value:
+        elif value == background_value:
             background_length += 1
             if target_length != 0:
                 target_lengths.append(target_length)  # Save target length if a background is found
                 target_length = 0  # Reset target length counter
-        elif array[int_coords] == obstacle_value:
+        elif value == obstacle_value:
             if target_length != 0:
                 target_lengths.append(target_length)  # Save target length before breaking if an obstacle is encountered
                 target_length = 0
             break  # Stop if an obstacle is encountered
         
-        # Move the point further in the direction by the step size
-        update_point = (point + step * update_direction).astype(np.float64)
         
     return obs_sign, target_lengths, background_lengths  # Return the obstacle sign and lengths of target/background segments
 

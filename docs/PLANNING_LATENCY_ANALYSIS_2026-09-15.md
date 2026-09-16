@@ -1,490 +1,282 @@
-# BrachyBot 规划性能分析报告
+# BrachyBot 规划性能复核、等价加速与验证报告
 
-> **主题**：一次胰腺病例 `planning_pipeline` 耗时 607 秒（整轮对话 921.9 秒）的根因分析与加速方案
-> **日期**：2026-09-15
-> **基线**：commit `8444676b8`（分支 `codex/session-task-recovery`）
-> **结论先行**：607 秒中几乎没有"算法必需"的开销，绝大部分是**重复计算、单点推理与 CPU 串行预处理**。在不改变算法参数、候选集合与顺序、阈值、坐标与浮点语义的前提下，预计可压缩到 **130–210 秒（3–4.5×）**；若同时隔离 GPU 训练负载，可到 **100–150 秒**。
+日期：2026-09-15
 
----
+原分析报告及代码基线：`a7fbbba23`（原文引用的更早版本为 `8444676b8`）
 
-## 目录
+范围：规划五步链路及其中的针道安全校验、几何搜索、DoseUNet 输入构造；不改变规划参数、物理安全约束或剂量模型。
 
-1. [案例与基线数据](#1-案例与基线数据)
-2. [测量环境与外部因素](#2-测量环境与外部因素)
-3. [测量方法](#3-测量方法)
-4. [逐步根因分析](#4-逐步根因分析)
-   - 4.1 [trajectory_init（183.5 s）](#41-trajectory_init1835-s)
-   - 4.2 [trajectory_refine（96.9 s）](#42-trajectory_refine969-s)
-   - 4.3 [seed_planning（270.8 s）](#43-seed_planning2708-s)
-   - 4.4 [管线外开销](#44-管线外开销)
-5. [实测数据汇总](#5-实测数据汇总)
-6. [优化原则（同过程、同结果）](#6-优化原则同过程同结果)
-7. [优化方案](#7-优化方案)
-   - 7.1 [Tier 0：环境隔离（零算法风险）](#71-tier-0环境隔离零算法风险)
-   - 7.2 [Tier 1：缓存与去重（bit-exact）](#72-tier-1缓存与去重bit-exact)
-   - 7.3 [Tier 2：等价向量化与表达式重排（需 bit-exact 回归）](#73-tier-2等价向量化与表达式重排需-bit-exact-回归)
-   - 7.4 [Tier 3：并行与流水线](#74-tier-3并行与流水线)
-   - 7.5 [Tier 4：工程化复用](#75-tier-4工程化复用)
-   - 7.6 [方案明细表](#76-方案明细表)
-8. [预期收益汇总](#8-预期收益汇总)
-9. [验证方案](#9-验证方案)
-10. [风险与红线](#10-风险与红线)
-11. [实施路线图](#11-实施路线图)
-12. [附录 A：原始测量数据](#附录-a原始测量数据)
-13. [附录 B：关键代码位置索引](#附录-b关键代码位置索引)
-14. [附录 C：不要做的事](#附录-c不要做的事)
+## 1. 结论与测量口径
 
----
+原报告抓住了两个关键瓶颈：**逐针重复读取整幅 CT 以判断截断面**，以及 **DoseUNet 的逐粒子 line-map 预处理**。方案总体可行，但原报告把不同粒度的计时相加、重复计算优化收益，并把未验证的预测表述得过于确定。本次先对实际链路测量，再实施等价优化。
 
-## 1. 案例与基线数据
+第一组同病例、顺序运行的独立回放：
 
-**病例**：胰腺肿瘤，CT 已上传；用户指令"请执行放射性粒子植入规划"。
-
-**图像**：`ct_20260915_160711.nii.gz`，403×313×201 体素，spacing 0.8984375×0.8984375×1.0 mm，共 25,353,939 体素。
-
-**整体时间线**：
-
-| 阶段 | 耗时 | 备注 |
-|---|---:|---|
-| 整轮对话（16:17→16:33） | **921.9 s** | 含 OAR 分割、规划、LLM 回复、导板 |
-| `planning_pipeline`（full） | **607 s** | 规划主体 |
-| └ `trajectory_init` | 183,530 ms | 349 条轨迹 |
-| └ `trajectory_refine` | 96,880 ms | — |
-| └ `seed_planning` | 270,830 ms | 106 粒子 / 18 针 |
-| └ `dose_calc` | 490 ms | 剂量已在 seed_planning 内算好 |
-| └ `dose_eval` | 160 ms | DVH/指标 |
-
-**最终计划**：106 粒子、18 轨迹、V100=90.2%、D90=120.63 Gy、评分 83/100、coverage_repair 未添加任何粒子。
-
-```mermaid
-pie title 规划管线耗时归因（607 s 基线）
-    "trajectory_init" : 183.5
-    "trajectory_refine" : 96.9
-    "seed_planning" : 270.8
-    "dose_calc" : 0.5
-    "dose_eval" : 0.2
-    "管线包装/未归因（模型加载、预处理、安全校验等）" : 55
-```
-
----
-
-## 2. 测量环境与外部因素
-
-规划执行期间本机状态（`nvidia-smi` / `ps` / `uptime` 实测）：
-
-| 项目 | 状态 |
-|---|---|
-| GPU 0 / GPU 1 | RTX 3090，利用率 **100% / 95%**，显存各约 6.9–7.2 GB |
-| 占用进程 | 两个 `nnUNetv2_train`（PID 2928093 / 2928094），99% CPU，11:02 启动 |
-| CPU | 24 核，load average **14.4–16.9** |
-| BrachyBot 服务 | 与训练任务同时运行 |
-
-**影响**：剂量推理（DoseUNet）与训练任务共享 GPU 计算。实测单种子 GPU 滑窗在争用下约 0.28 s（热）；空载 GPU 通常为 0.05–0.1 s 量级。**这是本次"10 分钟+"的近因之一，且只能通过调度/隔离解决，代码优化无法消除。**
-
----
-
-## 3. 测量方法
-
-对同一病例的真实数据做只读微基准（不修改任何项目代码，脚本在 `/tmp` 运行，使用 `~/.conda/envs/brachytherapy/bin/python`）：
-
-1. 直接用 `SimpleITK` 读取病例 CT；
-2. 直接调用被测函数（`infer_truncated_boundary_faces_from_image`、`_body_mask_from_ct`、`_prepare_seed_input`、`generate_line_map`、`sliding_window_predict`、`predict_seed_dose(s)`、`_load_dose_model`）；
-3. 对 `generate_line_map` 使用 `cProfile` 定位函数内部分布；
-4. 从病例 workspace `snapshot.json` 读取真实运行结果（`coverage_repair_status`、`dose_metrics`、`needle_safety_context` 等）作为运行时证据。
-
-> 注：测量时两台 GPU 仍在被训练任务占满，因此 GPU 相关数字反映的是**与用户实际遭遇的同等争用条件**，属于偏保守的估计。
-
----
-
-## 4. 逐步根因分析
-
-### 4.1 trajectory_init（183.5 s）
-
-文件：`tool_factory/seed_plan/planning_pipeline.py`，`_step_trajectory_init`（约 L3559–3788）。
-
-**（A）每条轨迹重算截断面统计——纯重复计算**
-
-- 每条完整针道在物理坐标校验时都会调用 `_needle_enters_through_truncated_boundary`（`planning_pipeline.py:2176`）。
-- 该函数在 `truncated_boundary_faces is None` 时，**为每条轨迹重新执行一次** `infer_truncated_boundary_faces_from_image(ct_image)`（`planning_pipeline.py:2219–2223`）。
-- 该函数（`plans/utilizations.py:3125`）会把整幅原始 CT（25,353,939 体素）转成 float32 并计算六个面的占用率。
-
-实测单次耗时：**0.115–0.143 s**（3 次测量）。349 条轨迹 → **约 40–50 s 纯重复**。相同输入下结果是确定性的，缓存后输出逐位一致。
-
-**（B）`init_plan` 内部 Python 逐点射线步进——最大未知量**
-
-`plans/core.py:204 init_plan` 调用链中的以下函数是纯 Python 逐点循环：
-
-- `_trace_target_exit`（`plans/utilizations.py:2631`）：0.5 体素/步，最多约 648 步/条；
-- `trajectory_entry_is_valid`（`utilizations.py:3190`）：同样的逐步判断；
-- `init_trajectories_with_depth`（`utilizations.py:3314`）内部 `get_trajectory_info`（`plans/geometry.py:1069`）含两个 max_steps≈321 的 Python 循环；
-- `_farthest_point_sample_indices`（`utilizations.py:2436`）：O(N×1024) 的 FPS 降采样，N 最多 2 万。
-
-锥采样为 19 个方向 × 每方向最多 1024 个 probe × 每条 2 次射线步进，量级约 10⁷ 次 Python 循环迭代。**预计占本步 80–120 s（需加计时确认）**。
-
-**（C）两条过滤器重复调用**
-
-- `_filter_safe_trajectories`（`planning_pipeline.py:1516`，调用点 L3720）：349 条 × 每条约 1100–1500 个 0.25 体素步长采样点。
-- `_filter_world_safe_trajectories`（`planning_pipeline.py:2403`，调用点 L3725）：每条轨迹调用 `_candidate_world_needle_points`（2 次 `position_transform` + 1 次 `direction_transform`）+ 上述截断面重算 + `segment_hits_obstacle` 世界坐标采样。
-- 其中 `_body_mask_from_ct(原始 CT)` 实测 **1.91 s/次**（形态学闭运算 + 填洞，25M 体素）。
-
-### 4.2 trajectory_refine（96.9 s）
-
-文件：同文件，`_step_trajectory_refine`（约 L3790–3962）。
-
-**（A）重复执行 init 刚做过的全部过滤**
-
-- L3895 再跑 `_filter_safe_trajectories`，L3905 再跑 `_filter_world_safe_trajectories`；
-- 两条过滤在同一 full run 内输入（轨迹集合、CTV/OAR、障碍白名单）未变，结果确定且可复用；
-- 截断面又被逐轨迹重算一轮（同 4.1A）；
-- L3864 还把 `_build_radiation_volume` 重建一次。
-
-**（B）`get_available_position` 内部存在重复计算**
-
-`plans/utilizations.py:4832 get_available_position`：
-
-- L4894–4898 的列表推导中，**同一个 `position_transform(...)` 表达式对每个候选位置算了 2 次**；
-- 其中 `np.linalg.norm(position_transform(...total_depth...))` 与 x 无关，却**在循环内每个 x 重算一次**；
-- L4903–4914 对每个已放粒子再对整个候选列表扫一遍（每个元素一次 `position_transform`）。
-
-refine 对全部 349 条轨迹调用它做深度过滤（L3886–3889），Stage2/3 也会每轮重新调用。
-
-**（C）`distance_transform_edt` 与安全上下文重建**
-
-L3885 的 EDT 很快；但 `build_needle_safety_context`（全 OAR `np.isin`）与 body mask 在两步中重复构建。
-
-### 4.3 seed_planning（270.8 s）
-
-文件：`planning_pipeline.py` `_step_seed_planning`（约 L3964–4966）、`plans/core.py:466 optimal_plan`、`plans/utilizations.py`、`plans/dose_pre/inference.py`。
-
-**（A）先排除一个常见误判：coverage_repair 本次耗时几乎为 0**
-
-从病例 `snapshot.json` 的真实记录（`coverage_repair_status`）：
-
-```json
-{"initial_coverage": 0.9019, "final_coverage": 0.9019,
- "trials": 0, "added_needles": 0, "added_seeds": 0,
- "stop_reason": "target_reached", "adaptive_extension_used": false,
- "adaptive_policy": {"base_seconds": 60.0, "extension_seconds": 120.0,
-                     "should_extend": false, "decision_reason": "target_reached"}}
-```
-
-规则优化结束后覆盖率已达 90.19% ≥ `DVH_rate=0.9`，repair 第一轮直接退出。**270.8 s 全部来自 Stage1/2/3 与周边预处理。**
-
-**（B）规则模式 Stage2/3 是"单候选、单次推理、串行"**
-
-- Stage1：轨迹选择 + `put_seeds`；Stage2 `replan`（每轮对每条针的每个可用位置）；Stage3 `remove/add`（上限 `iter_rate(2) × seed_num`）。
-- 每个位置都走 `single_seed_dose_calculation_dl`（`utilizations.py:956`）→ `predict_seed_dose`（`inference.py:450`），**batch=1**。
-- 每个种子 = 1 次 12 cm 裁剪 + 1 mm 重采样 + 3 通道构造 + **27 个 64³ 滑窗前向**（120³ 输入、patch 64、overlap 0.5，每轴 starts=[0,32,56]）。
-- 实测每个冷候选 **约 1.0 s**：
-  - CPU 预处理 **0.575 s**（其中 `generate_line_map` **0.52 s**，crop 0.04 s，soft 0.03 s，resample 0.005 s）
-  - GPU 滑窗（热）0.28 s
-  - 回写/缩放约 0.1 s
-- 270 个冷候选 × 1.0 s ≈ **270 s，与实测完全吻合**。
-
-**（C）`generate_line_map` 为什么慢**
-
-`inference.py:208–239`：对 120³ 网格做 float64 全量运算，其中：
-
-- `np.stack((vx,vy,vz), axis=-1)` 构造 120³×3 中间量；
-- 两次 `np.linalg.norm(vectors, axis=-1)`；
-- 两次 `np.arccos`、`np.sin`、多个 `nan_to_num/clip/max`；
-- 最后转 float32 写回 SimpleITK。
-
-cProfile（5 次调用，共 2.512 s）：
-
-| 项 | 累计 | 占比 |
+| 阶段 | 修改前 | 修改后 |
 |---|---:|---:|
-| `generate_line_map` 自身 | 1.737 s | 69% |
-| `np.linalg.norm` ×10 | 0.279 s | 11% |
-| `ufunc.reduce`（max/sum） | 0.279 s | 11% |
-| `np.stack` ×5 | 0.144 s | 6% |
-| `nan_to_num` ×15 | 0.099 s | 4% |
-| `image_from_xyz_array` | 0.069 s | 3% |
+| trajectory_init | 104.377 s | 10.929 s |
+| trajectory_refine | 82.636 s | 0.671 s |
+| seed_planning | 175.513 s | 65.544 s |
+| dose_calc | 0.144 s | 0.145 s |
+| dose_eval | 0.163 s | 0.163 s |
+| **五步合计** | **362.834 s** | **77.451 s** |
 
-**（D）批处理在争用 GPU 下收益有限，CPU 预处理才是主矛盾**
+五步合计提速 **4.68 倍**，耗时减少 **78.7%**。这些是一次配对测量，不是所有病例的 SLA。
 
-实测（热，争用环境）：
+第二组独立配对复测：
 
-| 调用 | 总耗时 | 每种子 |
+| 阶段 | 修改前 | 修改后 |
 |---|---:|---:|
-| `predict_seed_dose`（单） | 0.974–1.071 s | ~1.0 s |
-| `predict_seed_doses`（batch 8） | 6.47–6.55 s | **0.82 s** |
+| trajectory_init | 71.135 s | 11.124 s |
+| trajectory_refine | 49.133 s | 0.466 s |
+| seed_planning | 199.444 s | 68.385 s |
+| dose_calc | 0.097 s | 0.100 s |
+| dose_eval | 0.175 s | 0.177 s |
+| **五步合计** | **319.984 s** | **80.251 s** |
 
-batch 8 只把每种子降到 0.82 s：因为 8×0.575 s≈4.6 s 的 CPU 预处理是串行的，GPU 部分被训练任务占满。**仅靠批处理不足以解决问题，必须同时压缩 CPU 预处理并实现 CPU/GPU 重叠。**
+第二组提速 **3.99 倍**、耗时减少 **74.9%**。两组分别为 4.68/3.99 倍，不把最快一次当作稳定上限。
 
-**（E）模型与缓存**
+### 同步后完整入口验证（2026-09-16）
 
-- `_load_dose_model`（`planning_pipeline.py:1396`）每次规划重新加载 65 MB checkpoint（实测 **3.73 s**），无进程级单例；
-- `DoseImageContext`（`utilizations.py:66`）请求级 LRU 默认 768 MB（`BRACHYBOT_PLANNING_DOSE_CACHE_MB`），键为精确 float64 物理坐标+方向的字节串（`:114–119`）；规划网格剂量图约 4 MB/张，容量约 190 张，Stage2/3 上百候选时存在抖动风险；
-- repair 使用**独立的** `DoseImageContext`（`planning_pipeline.py:4473`），不与优化器共享缓存；
-- 命中/未命中计数已存在（`core.py:775`），可用于评估。
+直接导入远端已同步的源文件、使用正常 GPU 策略调用 `_run_full_pipeline`：
 
-**（F）300 s 墙钟上限**
+- 独立进程的数据解码、加载和方向准备：**47.994 s**；
+- 完整 pipeline wrapper（含公共 body mask 和五步）：**79.532 s**；
+- 五步：10.51 / 0.59 / 64.32 / 0.09 / 0.16 s；
+- 两部分合计约 **127.53 s**，仍不包括模块首次导入、分割、LLM、导板、截图与浏览器恢复；
+- 成功返回，五步 pending/done 事件正常，`latency_profile` 与原 `substep_timings` 同时存在；
+- 106 粒子、18 针；V100=90.18965113556544%、D90=120.63172149658203 Gy；
+- **八项输出指纹全部与第二组旧版基线一致**，包括独立粒子坐标/方向/归属字段；
+- 欠覆盖修补因 `target_reached` 正常退出，trials=0，未靠超时结束规划。
 
-规则模式有 `rule_based_deadline = now + 300 s`（`planning_pipeline.py:4276`）。本次步骤总耗时 270.8 s（含预处理），未触及上限；但**该机制意味着结果会随机器负载漂移**——负载越高，被 deadline 截断的概率越大。加速到远低于上限后可显著降低这种不确定性。
+该检查验证真实代码导入和完整工具入口，不是浏览器端到端测试。数据读取 48 s 属于这次独立回放的恢复成本，不能当作每次已加载 Session 请求的固定附加耗时。
 
-### 4.4 管线外开销
+- 用户历史日志的五步合计为 551.89 s，而 planning_pipeline 约 607 s、整轮对话 921.9 s。**不能把当前 77.45 s 与历史整轮时间直接相除作为代码加速比。**
+- 上表不计读取快照、加载 CT/掩膜、公共 body mask 构建和外层请求处理；不包含分割、LLM、导板生成、报告截图和 Session checkpoint。
+- 复测时 GPU 训练仍在运行；未暂停、迁移或修改任何训练任务。负载、缓存、文件 IO 会引起墙钟波动。
+- 本次是读取原 Session 输入后的独立内存回放，不写回病例，不触发浏览器或 checkpoint。后续实机 UI 全链路仍应单独计时。
+- 单病例一致性是明确证据，但不是所有输入、硬件或并发状态下的数学证明。
 
-整轮 921.9 s − 规划 607 s ≈ **315 s** 在规划管线之外：
+## 2. 结果一致性
 
-- OAR 分割（50 个器官，TotalSegmentator）——重复请求同一 CT 时会重跑；
-- LLM 请求分析、最终回复生成、完整性检查；
-- 手术导板生成失败路径（本次报错）。
+第一组对照中的以下内容 SHA-256 完全一致：
 
-这部分不属于 `planning_pipeline`，但同样有明确的"同结果"加速手段（见 7.5）。
-
----
-
-## 5. 实测数据汇总
-
-| # | 测量项 | 结果 | 用途 |
-|---|---|---:|---|
-| 1 | CT 规模 | 403×313×201 / 25.35 M 体素 | 全量特征计算成本 |
-| 2 | `infer_truncated_boundary_faces_from_image` | 0.115–0.143 s/次 | 4.1A / 4.2A 重复计算量 |
-| 3 | `_body_mask_from_ct`（原始 CT） | 1.91 s/次 | 过滤上下文重复构建 |
-| 4 | `_load_dose_model` | 3.73 s/次 | 无单例 |
-| 5 | `_prepare_seed_input` | 0.575 s/次 | CPU 预处理 |
-| 6 | └ `generate_line_map` | **0.52 s/次** | CPU 预处理主因 |
-| 7 | └ crop / resample / soft | 0.04 / 0.005 / 0.03 s | 可忽略 |
-| 8 | `sliding_window_predict`（热） | 0.282–0.284 s/次 | GPU 侧单点成本 |
-| 9 | `predict_seed_dose`（热） | 0.974–1.071 s/次 | = 5+8+回写 |
-| 10 | `predict_seed_doses` batch 8 | 6.47–6.55 s → 0.82 s/粒子 | 批处理收益（争用下） |
-| 11 | `coverage_repair_status` | trials=0，0 s | 排除 repair |
-| 12 | 环境 | 双 GPU 100%/95%、两个 nnUNet 训练、load 14–17 | 外部因素 |
-
----
-
-## 6. 优化原则（同过程、同结果）
-
-所有方案必须满足：
-
-1. **不改** `planning_params`（`maximum_candidate_trajectories`、`iter_rate`、`DVH_rate`、`DV_rate`、distance filter 等）；
-2. **不改** 模型契约（patch 64、overlap 0.5、target spacing 1 mm、通道顺序 line/ct/soft、`dose_scale_gy`）；
-3. **不改** 候选集合、顺序、阈值、坐标变换语义与浮点运算顺序；
-4. 只做：**缓存、去重、等价向量化、批处理、并行、资源复用**；
-5. 每一项都能用同一病例做 **bit-exact 回归**（见第 9 节）。
-
----
-
-## 7. 优化方案
-
-### 7.1 Tier 0：环境隔离（零算法风险）
-
-| 方案 | 做法 | 预计收益 |
-|---|---|---|
-| T0-1 GPU 分卡/分时 | 训练固定用 GPU1，规划固定用 GPU0（或设备选择同时参考利用率/保留卡），规划高峰时暂停训练 | GPU 单点推理 0.28 s → 0.05–0.1 s 量级；seed_planning 额外 1.5–3× |
-| T0-2 规划并发信号量 | 同一 GPU 上禁止并发规划叠加（`device_manager` 增加数上限/排队） | 避免多个规划相互拖慢 |
-| T0-3 高负载告警 | 规划开始时检测 GPU/CPU 利用率，超阈值在日志与 trace 中提示 | 可观测性，避免再误判 |
-
-### 7.2 Tier 1：缓存与去重（bit-exact）
-
-| 方案 | 位置 | 做法 | 预计收益 |
-|---|---|---|---|
-| T1-1 截断面一次计算并传参 | `planning_pipeline.py:2219–2223`、调用点 `:2403`、`:3725`、`:3905` | 每步在原始 CT 上算一次 `truncated_boundary_faces` 并以参数传入；过滤函数不再逐轨迹重算 | **55–90 s**（init ~45 s + refine ~10–45 s） |
-| T1-2 过滤结果复用 | `planning_pipeline.py:3895/3905` | init 的 `_filter_safe_trajectories` / `_filter_world_safe_trajectories` 结果按"轨迹集合+masks 指纹"缓存；refine 输入未变时直接复用 | **30–60 s**（refine 内） |
-| T1-3 安全上下文/掩膜复用 | `:2426/2432`、`:3864`、`:4473` | `body_mask`、`radiation_volume`、`build_needle_safety_context`、obstacle volume 在 init/refine/seed/repair 间按指纹共享 | 5–15 s |
-| T1-4 模型进程级单例 | `planning_pipeline.py:1396` | 模块级缓存已加载模型（含 device 校验），后续请求直接复用 | 3–4 s/次规划 |
-| T1-5 缓存共享与扩容 | `planning_pipeline.py:4473`、`utilizations.py:107` | repair 复用优化器同一 `DoseImageContext`；LRU 默认上限提高到 1–2 GB（纯内存换时间，结果不变） | 5–20 s |
-
-### 7.3 Tier 2：等价向量化与表达式重排（需 bit-exact 回归）
-
-| 方案 | 位置 | 做法 | 预计收益 |
-|---|---|---|---|
-| T2-1 `generate_line_map` 表达式优化 | `inference.py:208–239` | 去掉 `np.stack(axis=-1)` 与两次 `linalg.norm`（复用 `distance_squared` 的 sqrt）；`total_depth/point_a/point_b` 相关量循环外提；减少 `nan_to_num/clip` 次数。保持 float64、同样运算顺序与 NaN 处理 | 0.52 → 0.10–0.20 s/粒子 → **80–110 s** |
-| T2-2 `init_plan` 射线步进批量化 | `utilizations.py:2631/3190/3314`、`geometry.py:1069`、`core.py:204` | 逐点 Python 循环改为"每条射线一次性生成采样索引并向量化判断"，步长/判停/返回点保持一致；FPS 用 numpy 等价实现 | **50–90 s** |
-| T2-3 `get_available_position` 去重 | `utilizations.py:4894–4914` | 一次 `position_transform` 结果用于两个比较；与 x 无关的 `total_depth` 世界距离循环外算一次；已放粒子的排除用批量距离计算 | 10–30 s（refine+Stage2/3） |
-| T2-4 轨迹过滤跨轨迹批量 | `planning_pipeline.py:1516` | 349 条轨迹共用同一采样矩阵与步进，一次 numpy 判定替代 349 次 Python 循环 | 5–15 s |
-
-### 7.4 Tier 3：并行与流水线
-
-| 方案 | 位置 | 做法 | 预计收益 |
-|---|---|---|---|
-| T3-1 CPU 预处理与 GPU 重叠 | `utilizations.py` Stage2/3 调用点 | 线程池预生成下一批 `_prepare_seed_input` 结果，GPU 消费队列；每粒子 wall ≈ max(CPU/N, GPU) | 每粒子 1.0 → 0.3–0.4 s |
-| T3-2 Stage2/3/repair 候选批量推理 | `core.py:609–748`、`coverage_repair` | 收集同形批量候选，走 `predict_seed_doses`（batch 8–16，与 RL dense 相同函数）；逐粒子输出与顺序不变 | 与 T3-1 叠加：seed_planning **270 → 60–90 s** |
-| T3-3 轨迹过滤按轨迹并行 | `planning_pipeline.py:1516/2403` | 纯 numpy 的逐轨迹判断用线程/进程池并行，结果按原顺序聚合 | 5–15 s |
-
-### 7.5 Tier 4：工程化复用
-
-| 方案 | 位置 | 做法 | 预计收益 |
-|---|---|---|---|
-| T4-1 整份规划结果缓存 | `PlanningPipelineTool` | 以 (CT/CTV/OAR 指纹 + 全部 planning_params) 为键缓存 `seed_plan/dose_metrics`；医生反复调参复盘时，同参数命中直接返回 | 重复规划近 0 s |
-| T4-2 OAR/CTV 分割缓存 | `OAR_seg`、`CTV_seg` | 以 (CT 指纹 + 模型指纹 + 器官清单) 为键缓存分割结果；同一病例重复请求不重跑 TotalSegmentator | 整轮节省 2–5 min（管线外） |
-| T4-3 分割与规划的流水线化 | `chat_workflows` | 规划所需掩膜齐备即可启动，不必等全部展示数据 | 管线外重叠 |
-| T4-4 导板失败排查 | `surgical_guide` | 本次生成失败；失败路径的重试/超时行为核实 | 管线外稳定性 |
-
-### 7.6 方案明细表
-
-| 编号 | 目标 | 风险 | 结果影响 | 依赖 |
-|---|---|---|---|---|
-| T0-* | GPU/调度 | 低 | 无（更快，不会被 deadline 截断） | 运维/部署 |
-| T1-1 | init/refine | 极低 | 无（确定性函数缓存） | 无 |
-| T1-2 | refine | 低（需指纹正确） | 无 | T1-1 可同时做 |
-| T1-3 | 全流程 | 低 | 无 | 指纹设计 |
-| T1-4/1-5 | seed_planning | 低 | 无 | 无 |
-| T2-1 | seed_planning | 中（浮点语义） | 需 bit-exact 回归 | T1-4 |
-| T2-2 | trajectory_init | 中（循环改写） | 需 bit-exact 回归 | 分段计时 |
-| T2-3/2-4 | refine/过滤 | 低-中 | 需 bit-exact 回归 | 无 |
-| T3-1/3-2 | seed_planning | 中（顺序/异常处理） | 逐粒子结果不变 | T2-1 |
-| T3-3 | 过滤 | 低 | 顺序聚合保证不变 | T2-4 |
-| T4-* | 全局 | 低 | 无（缓存键正确时） | 指纹体系 |
-
----
-
-## 8. 预期收益汇总
-
-| 部分 | 基线 | Tier 1 后 | Tier 1+2 后 | 全部（含 Tier 0） |
-|---|---:|---:|---:|---:|
-| trajectory_init | 183.5 s | 120–140 s | 30–60 s | 30–60 s |
-| trajectory_refine | 96.9 s | 40–60 s | 20–40 s | 20–40 s |
-| seed_planning | 270.8 s | 250–265 s | 150–190 s | **60–90 s** |
-| 其他/包装 | ~55 s | ~35 s | ~20 s | ~20 s |
-| **pipeline 合计** | **607 s** | **~450–500 s** | **220–310 s** | **130–210 s（争用）/ 100–150 s（隔离）** |
-| 整轮对话 | 921.9 s | — | — | ~400 s（含 T4 管线外） |
-
-**加速比**：pipeline 约 **3–4.5×**；若 GPU 隔离到位约 **4–6×**。全部收益在"同过程、同结果"约束下取得。
-
----
-
-## 9. 验证方案
-
-### 9.1 第一步：只加计时（零行为变更）
-
-在以下位置加 `perf_counter` 分段计时并写入 tool metadata / 日志：
-
-- `_step_trajectory_init`：resample、body/faces、`init_plan`、safe filter、world filter；
-- `_step_trajectory_refine`：EDT、`get_available_position` 循环、safe filter、world filter；
-- `optimal_plan`：Stage1 / Stage2 / Stage3；
-- 剂量：`_prepare_seed_input`（细分 crop/resample/soft/line）、`sliding_window_predict`、回写；
-- `coverage_repair`：已有 `elapsed_seconds`，直接读取。
-
-用同一病例复跑，确认第 4 节的归因比例（特别是 `init_plan` 的真实占比）。
-
-### 9.2 结果指纹回归（bit-exact）
-
-对同一病例固化以下结果的 SHA-256：
-
-- `seed_positions` / `verified_needle_geometry`（针与粒子的世界坐标）；
-- `dose_distribution_gy`（规划网格数组）；
-- `dose_metrics`（D90/V100/V150/V200 等）；
-- `dvh_data`；
-- `coverage_repair_status`。
-
-每一项优化后必须与原基线 **逐位一致**（Tier 2 尤其）。若出现差异：
-
-1. 先排查是否因加速后不再触及 300 s deadline（基线可能在负载高时被截断）——此时差异来自"更快"，需与临床确认以哪个为准；
-2. 否则视为回归，回退该项。
-
-### 9.3 分阶段验收
-
-| 阶段 | 交付 | 验收标准 |
-|---|---|---|
-| Phase 0 | 分段计时 | 三次复跑归因稳定；不改任何结果 |
-| Phase 1 | Tier 1 | 指纹 bit-exact；pipeline ≤ 500 s |
-| Phase 2 | Tier 2 | 指纹 bit-exact；pipeline ≤ 310 s |
-| Phase 3 | Tier 3 | 指纹 bit-exact；pipeline ≤ 210 s |
-| Phase 4 | Tier 0/4 | 隔离/缓存生效；整轮 ≤ ~400 s |
-
----
-
-## 10. 风险与红线
-
-1. **浮点等价性**：Tier 2 的表达式重排可能引入 1 ulp 差异，必须用 9.2 的指纹验证后才可合入；不得为了速度改 float32 或调整运算顺序。
-2. **deadline 语义**：`rule_based_deadline=300 s`（`planning_pipeline.py:4276`）会让结果依赖机器负载。加速后结果可能"变快且更稳定"，但必须确认基线是否曾被截断。
-3. **临床红线保持不动**：
-   - 150 mm 整针物理校验与 fail-closed 截断策略；
-   - 非可穿越掩膜与 Data Tree 语义；
-   - 针尖止于最深种子；
-   - 剂量单位约定（Vx 内部 fraction、报告边界只转一次、`dose_scale_gy` 默认 190.8/旧 120 不重折算）；
-   - LPI + 同物理网格。
-4. **缓存键正确性**：T1/T4 的指纹必须包含所有影响输出的输入（CT/CTV/OAR、参数、模型版本、障碍白名单）；错误键会导致"看似加速、实则错误复用"。
-5. **并发副作用**：T1-4 进程级模型单例与 T3 并行需保证线程安全；不可在请求间泄漏中间状态。
-6. **可回退**：每项优化独立提交，保留环境变量开关（如 `BRACHYBOT_PLANNING_*`）。
-
----
-
-## 11. 实施路线图
-
-```mermaid
-flowchart LR
-    P0["Phase 0\n分段计时"] --> P1["Phase 1\nTier 1 缓存去重\n预估 → ~450–500 s"]
-    P1 --> P2["Phase 2\nTier 2 等价向量化\n预估 → ~220–310 s"]
-    P2 --> P3["Phase 3\nTier 3 并行流水线\n预估 → ~130–210 s"]
-    P3 --> P4["Phase 4\nTier 0/4 隔离与复用\n预估 → ~100–150 s"]
-```
-
-**建议先做**（风险最低、收益确定、一天内可完成）：
-
-1. T1-1 截断面一次计算（55–90 s）；
-2. T1-4 模型单例（3–4 s/次）；
-3. T1-2 refine 过滤复用（30–60 s）。
-
-三项合计预计 **607 s → 450–500 s**，且不触碰任何浮点路径，回归风险接近于零。
-
----
-
-## 附录 A：原始测量数据
-
-```
-# 截断面统计（原始 CT 403×313×201）
-call 0: 0.139 s -> (True, True, True, False, False, False)
-call 1: 0.143 s -> (True, True, True, False, False, False)
-call 2: 0.115 s -> (True, True, True, False, False, False)
-
-# body mask
-_body_mask_from_ct(original CT): 1.91 s, 16,340,724 体素
-
-# 模型
-model load: 3.73 s
-contract: patch (64,64,64), overlap 0.5, spacing (1,1,1), batch 8
-
-# 预处理（热，最小值/均值）
-crop      min/avg 0.036/0.043 s
-resample  min/avg 0.004/0.005 s
-soft      min/avg 0.032/0.033 s
-line      min/avg 0.520/0.527 s
-prep      min/avg 0.575/0.593 s
-sliding   min/avg 0.282/0.284 s（热）
-single_total min/avg 0.974/1.071 s（热）
-batch8    min/avg 6.471/6.547 s（0.818 s/粒子）
-
-# generate_line_map cProfile（5 次调用，共 2.512 s）
-tottime generate_line_map 1.737 s
-np.linalg.norm ×10 0.279 s；ufunc.reduce 0.279 s；np.stack ×5 0.144 s
-nan_to_num ×15 0.099 s；image_from_xyz_array 0.069 s
-```
-
-## 附录 B：关键代码位置索引
-
-| 关注点 | 位置 |
+| 对象 | 结果 |
 |---|---|
-| 五步管线 | `tool_factory/seed_plan/planning_pipeline.py:2739` |
-| trajectory_init | `planning_pipeline.py:3559`（过滤调用 `:3720/:3725`） |
-| trajectory_refine | `planning_pipeline.py:3790`（过滤调用 `:3895/:3905`） |
-| seed_planning | `planning_pipeline.py:3964`（规则优化 `:4309`） |
-| 截断面重复计算 | `planning_pipeline.py:2219–2223` |
-| world 安全过滤 | `planning_pipeline.py:2403` |
-| body mask | `planning_pipeline.py:2382`（实测 1.91 s） |
-| 规则 300 s 上限 | `planning_pipeline.py:4276` |
-| repair 独立 context | `planning_pipeline.py:4473` |
-| 模型加载 | `planning_pipeline.py:1396` |
-| `optimal_plan` | `plans/core.py:466`（Stage1/2/3） |
-| 单粒子推理 | `plans/utilizations.py:956` |
-| `get_available_position` | `plans/utilizations.py:4832`（重复 transform `:4894–4898`） |
-| 剂量推理入口 | `plans/dose_pre/inference.py:450/479` |
-| `_prepare_seed_input` | `inference.py:398` |
-| `generate_line_map` | `inference.py:208–239` |
-| 滑窗 | `inference.py:267–299`（27 窗口） |
-| `DoseImageContext` | `utilizations.py:66`（键 `:114–119`，默认 768 MB `:107`） |
-| LLM 端到端 | `agent_runtime/llm_runtime.py:1912` |
+| 初始安全候选集合及顺序 | 一致 |
+| 精修候选集合及顺序 | 一致 |
+| 最终已校验针道几何 | 一致 |
+| 规划空间完整剂量数组 | 一致 |
+| Gy 剂量数组 | 一致 |
+| 完整剂量指标 | 一致 |
+| algorithm_plan_dvh_data | 一致 |
 
-## 附录 C：不要做的事
+数值结果均为：
 
-1. 不要通过改 `planning_params`（候选上限、迭代率、DVH_rate 等）省时间——会改变结果；
-2. 不要改模型 patch/overlap/通道/单位——会改变数值结果；
-3. 不要凭"提前终止/缩短预算"省时间——会改变结果，且让结果更不可复现；
-4. 不要删除或弱化任何安全校验（150 mm 整针、截断 fail-closed、非可穿越掩膜）来换速度；
-5. 不要在未做 bit-exact 指纹回归前合入任何浮点路径的改动。
+- 最终安全候选：349 条；
+- 最终针道：18 条；粒子：106 枚；
+- V100：0.9018965113556544，即 90.18965113556544%；
+- V150：0.6094591430578319；
+- V200：0.33809412315616943；
+- D90：120.63167572021484 Gy。
 
----
+第一组脚本未记录有效的独立粒子坐标字段（旧脚本使用了不存在的 `seed_positions` 别名）。第二组及正式回放脚本改用实际保存的 `seed_plan_serialized`，其中包含逐针归属、粒子中心和方向。**第二组该字段及上表全部字段 SHA-256 均精确一致**。剂量数组一致并不替代粒子字段的独立核对。
 
-*报告完。下一步建议从 Phase 0（分段计时）与 Tier 1（三项低风险去重）开始；如需，我可以先实现 Phase 0 并给出该病例的精确分段数据。*
+两组各自配对精确一致，但第一/第二组的 D90 分别为 120.63167572021484 / 120.63172149658203 Gy，相差约 0.000046 Gy；旧版自身也出现该差异。正常推理的既有 CUDA 配置启用 cuDNN autotuning，不能把正常跨进程重复运行泛化成 bit-exact 保证。此次未更改该 GPU 策略；另提供仅在回放进程生效的 `--deterministic` 来固定算法选择、检查 CPU 修改的严格等价性。
+
+### 固定算法回放的预算边界（2026-09-16 补充）
+
+额外运行完整入口的旧热点基线并开启 `--deterministic`：加载 31.68 s，pipeline 841.12 s；五步分别为 128.17 / 96.29 / 613.00 / 0.13 / 0.19 s。规则 Stage 1 用了 301.885 s，触发原有 300 s 墙钟预算，之后补偿基本预算 60 s 和扩展 120 s 也用尽，最终为 105 枚粒子、18 条针、V100=89.9087%、D90=119.7102 Gy。
+
+**这不是有效的“完整执行后结果相同”验收基线，也不纳入加速比。** 固定算法配置及当时负载与正常两组不同，并且预算已经改变实际完成的动作数量。本次没有为使测试通过而延长预算，也没有将未达到覆盖目标视为达标。`--deterministic` 仅排除部分 GPU 算法选择不确定性，不能消除墙钟截止条件。正常 GPU 策略下的两组配对及 CPU 差分测试才是本次已通过的一致性证据。
+
+## 3. 实际根因与原报告需要修改的地方
+
+### 3.1 CT 截断面信息被每条针重复计算
+
+调用链：
+
+`_filter_world_safe_trajectories` → `_needle_enters_through_truncated_boundary` → `infer_truncated_boundary_faces_from_image`
+
+旧代码把 `truncated_boundary_faces=None` 传给逐针检查，导致一批内每条针都重新复制、统计原始 CT 的边界信息。init、refine、seed 三个阶段均会经过这一过滤器。
+
+实测三次批量过滤合计 **205.758 s → 1.153 s**。这不是取消针道验证，而是将同一批次不变的 CT 六面标志计算一次，再传给每条针。
+
+仍逐针执行：
+
+- 完整 150 mm 物理针道校验；
+- 截断扫描面入口拒绝；
+- non-traversable 障碍检测；
+- 缺失安全上下文时拒绝；
+- 最终粒子/针道几何重新校验。
+
+失败时仍保留原来的逐针检查回退；不因元数据计算异常把针道判为安全。
+
+**没有实施跳过 refine 的全部安全过滤。** 输入掩膜、结构分类、可穿刺性或手工状态可能变化，跨步缓存必须覆盖完整版本身份。消除本轮重复 CT 统计已获得大部分收益，无需冒险复用“已安全”的旧结论。
+
+### 3.2 line-map 大临时数组造成内存带宽开销
+
+109 次 `generate_line_map` 累计 **83.660 s → 19.270 s**。完整预处理累计 **98.199 s → 26.925 s**；两者是嵌套时间，不能相加。
+
+采用沿 X 轴每次 8 层的体素分块计算：
+
+- 保留原浮点类型、三角函数、向量归一化和逐体素表达式；
+- 保留 `np.stack`、原向量 norm 的归约方式；
+- 保留 NaN/Inf 和轴向特例处理；
+- 全部块计算完成后才执行**全局**最大值归一化；
+- 输出仍使用原 SimpleITK 元数据和转换路径。
+
+原报告建议用距离平方的 sqrt 替换 norm 等代数重排，可能改变末位舍入，本次没有采用。旧代码每次调用的两次 norm 中，一次只是 3 元素方向向量，并非两次完整体积 norm。
+
+模型 checkpoint、patch、overlap、输入通道、spacing、dose scale、推理批大小、精度均未改变。
+
+### 3.3 射线逐采样 Python 循环
+
+实现逐射线批量判断，保留原采样顺序和停止规则：
+
+- `_trace_target_exit`：用 `np.add.accumulate` 保留原来反复相加的舍入语义；不能简单改成 start+n*step。
+- `trajectory_entry_is_valid`：批量计算相同位置，仍在首次出图像或首次进入空气处判定；所有边界面规则不变。
+- `get_trajectory_info`：批量取样，保留原目标/背景段统计状态机、不新增终端段补记；float32 输入保持原标量乘法的类型语义。
+
+第一组回放中 trace-exit 为 38,912 次：11.413 s → 6.884 s；entry-check 为 9,572 次：6.041 s → 0.801 s。调用数量未减少。
+
+原报告估计射线循环占 init 的 80–120 s，缺乏真实全链路支持。当前测量显示最大项是重复 CT 统计，不应据此缩减 close point 或方向覆盖。
+
+### 3.4 可用粒子位置坐标变换去重
+
+`get_available_position` 内相同候选坐标的物理变换/距离只计算一次；针道末端距离按需计算一次，再复用到已有粒子间距排除中。
+
+- 保留候选顺序、边界严格大于/小于、坐标转换和已有种子的距离表达式；
+- 没有改变可放置位置、粒子间距或深度策略；
+- 全流程 14,044 次：6.447 s → 3.318 s；
+- 精修阶段只有约 0.11 s，原报告“精修位置筛选占较大比例”的预估不成立。
+
+### 3.5 已有复用和低优先级项
+
+- `_run_full_pipeline` 已经共享 CT body mask；不能重复计入“每步重新构建 body mask”的预计节省。
+- 体素过滤三次累计仅约 0.075 s，不值得先做跨轨迹并行。
+- 当前实测剂量 line-map 调用为 109 次，原文“270 个冷候选 × 1 s”不是已观测事实。
+- 第一组旧/新版 GPU 滑窗合计为 21.707/26.461 s；新版 GPU 计时反而略长，总体仍显著变快，支持主要收益来自 CPU 重复工作的判断。
+- “607 秒几乎没有算法必需开销”不准确：几何生成、安全判定、剂量推理与评估都有不可省略工作。
+
+## 4. 已实现的代码范围
+
+| 文件 | 变更 |
+|---|---|
+| `tool_factory/seed_plan/planning_pipeline.py` | 每批次推断 CT 截断面一次；全流程/关键函数计时 |
+| `plans/utilizations.py` | 射线边界与入口等价批量判定；可放置位置变换去重 |
+| `plans/geometry.py` | 轨迹体素取样批量化，段统计语义不变 |
+| `plans/dose_pre/inference.py` | line-map 分块计算；剂量预处理/滑窗计时 |
+| `plans/core.py` | 候选生成、规则优化 Stage 1/2/3 分段计时 |
+| `plans/performance.py` | ContextVar 请求独立计时，异常时恢复上下文 |
+| `tests/test_planning_latency_equivalence.py` | 冻结旧实现的差分回归 |
+| `tests/latency_reference.json` | 从 a7fbbba23 提取的原函数，不含患者数据 |
+| `tests/test_planning_latency_profile.py` | 计时不改变返回/异常、并发隔离、嵌套恢复 |
+| `scripts/benchmark_planning_latency.py` | 可重复运行的只读病例回放，输出时间与结果指纹 |
+
+原有规划参数、预算、候选数量、方向、close point 策略、精修顺序、RL/规则兜底、修补条件、剂量模型和导板策略均未更改。
+
+配对原始计时、结果指纹和比较结果另存于 `docs/PLANNING_LATENCY_BENCHMARK_2026-09-15.json`，不含影像/掩膜/粒子坐标明文。原始病例快照未写回。
+
+## 5. 计时与回归验证
+
+### 自动回归
+
+新增几何差分覆盖随机点、体素边界、内部空洞、非凸掩膜、截断面组合、不同步长、旋转/各向异性网格、float32/float64 射线和已有粒子排除。
+
+line-map 差分覆盖 120³ 及裁剪体积、轴向/斜向粒子、非零 origin、旋转 direction、各向异性 spacing，要求数组精确相等并保持图像元数据。
+
+安全测试验证“一次 CT 统计”同时仍逐针做截断与障碍检查；缺少障碍上下文仍拒绝。既有 close point、剂量契约、物理针道等测试另行运行。
+
+实际结果：临时差分安装下 71 项通过；同步源文件后直接运行扩展测试集，**83 passed, 3 warnings**。后者包含新增差分/计时测试、close point、性能契约、物理针道安全、平行针道间距、剂量单位、规划预算/循环终止、RL 批处理契约、候选容量偏好及规划预览/运行记录等。warnings 不影响通过，但不据此声称已经完成浏览器全流程验证。
+
+补充冻结基线清单完整性测试后，两个新增测试文件单独重跑为 **8 passed, 3 warnings**（与前述扩展集有重叠，不能相加作总数）。
+
+### 运行时计时
+
+full pipeline 返回的 tool metadata 新增：
+
+```text
+latency_profile.total_seconds
+latency_profile.nested_timings.<name>.calls
+latency_profile.nested_timings.<name>.seconds
+```
+
+同时记录 `[planning_latency]` 日志。**nested_timings 存在父子重叠，不可逐项求和。** 计时上下文不保存患者数组/模型实例，不跨请求共享字典。既有 substep_timings 与 UI 事件不变。
+
+### 可复现回放
+
+在仓库根目录、brachytherapy 环境中顺序执行，不要让两个规划互相争抢 GPU：
+
+```bash
+python scripts/benchmark_planning_latency.py \
+  --workspace /absolute/path/to/session \
+  --variant baseline --output /tmp/planning-baseline.json
+
+python scripts/benchmark_planning_latency.py \
+  --workspace /absolute/path/to/session \
+  --variant current --output /tmp/planning-current.json
+```
+
+要求 source snapshot 在两次回放间不变；比对 snapshot/inputs 哈希、所有结果 hashes 和指标。输出必须位于源 Session 外，已有输出文件不会被覆盖。baseline 仅恢复本次优化涉及的旧热点函数，并非切换整个应用到历史版本。
+
+严格数值验证时，两条命令均增加 `--deterministic`。该选项只在独立回放进程中设置 cuDNN deterministic / 禁用 benchmark，并保留原 TF32 策略，不写入生产配置。其耗时不能与正常 GPU 策略的配对时间混算。
+
+`load_seconds` 是数据解码/加载/方向准备；`pipeline_seconds` 是完整五步 wrapper（包含公共 body mask）；`substep_timings` 是五步；这三种口径应区分。
+
+## 6. 暂未实施的方案及原因
+
+| 方案 | 评估 |
+|---|---|
+| 跨步直接跳过安全过滤 | 必须具有完整输入/策略版本身份；当前无需冒此风险 |
+| 更改 batch、混合精度或并行候选评估 | GPU 浮点归约、候选依赖和截止时间会影响结果；不属于已经证明等价的优化 |
+| 模型进程级单例 | 可省少量加载时间，但需 device/checkpoint 身份、并发锁及生命周期设计 |
+| 扩大剂量缓存/跨优化器共享 | 先测命中与驱逐；多用户情况下需要总内存预算，不能任意扩大 |
+| 整份计划或分割缓存 | 必须包含输入/模型/参数/结构策略与版本；重复请求是否应重算也是用户语义 |
+| 暂停或迁移训练 | 属于资源调度选择，本次未操作 |
+| 导板失败及截图耗时 | 独立问题，本次优化不把失败标成成功，也不弱化制造/针道安全限制 |
+
+## 7. 验收边界与后续顺序
+
+1. 本次先交付已观测到大收益且结果一致的 CPU 优化，不以所有方案同时实施为目标。
+2. 对当前病例完成配对回放后，还需用其他大小、形状、RL 模式病例扩展覆盖；不能把单病例 4.68 倍承诺为所有病例的速度。
+3. **不缩短时间预算。** 如果某次旧实现因墙钟截止提前停止，而新版能完成更多原定动作，结果可能不同；这时须单独记录停止原因，不能声称逐位相同。
+4. 下一步从真实请求新增计时查看剩余瓶颈，再考虑 GPU 调度、模型缓存或安全的预处理流水线。
+5. 规划成功不等于导板成功；用户日志中的导板失败仍应单独报告。此文只证明软件结果等价，不构成临床剂量/导板有效性验证。
+6. 本次不自动提交/push，不重启服务、不替换 public release；源代码同步、测试和服务是否实际加载新版应分别说明。
+
+原报告的 130–210 s / 100–150 s 预测、各 Tier 可直接相加的节省值及“全部结果不变”的泛化结论已撤回，改用上述配对测量和明确的验证边界。原稿可从 Git 基线检索。
+
+## 8. 2026-09-16 独立复核反馈与补强
+
+独立复核的主要结论成立。本轮再次用 Git 原文核对六个冻结函数，均逐字一致；没有用当前优化函数重建旧基线。
+
+已实施：
+
+- `latency_reference.json` 增加从 `a7fbbba23` 提取的 36 个共享符号源码指纹，覆盖递归局部 helper、坐标网格缓存配置及相关导入声明，并显式覆盖跨模块的 `voxel_to_world` 和局部导入的截断面推断。源码换行归一为 LF，避免 CRLF 造成伪漂移。`scripts/latency_dependency_guard.py` 在等价测试和旧基线回放前校验，依赖改动会中止验证；附带故意删除 helper 的负向测试。这不等于冻结整个 Python/NumPy/Torch 环境或所有跨模块实现，配对仍须使用同一环境。
+- 增加保守的结果等价声明门禁：规则优化须有明确的未触及 deadline 记录、最终 `target_reached`，基础及扩展补偿均不能发生预算截止，并且八项结果指纹齐全。两次运行还须输入指纹、推理策略相同且全部输出指纹相同。单次 `eligible` 仅表示可参与比较，并不代表已经与另一次运行相同。旧证据缺新增预算字段时标记未验证，不补造字段；RL 尚缺完整预算归因，暂不准入端到端“同结果”声明。
+- 补偿每个 pass 记录实测 `elapsed_seconds`，新增 `budget_allocated_seconds`。旧 `budget_used_seconds` 暂保留以兼容消费端，并明确标记为历史配额别名，不再将其解释为实际运行时间。
+- 删除 `trajectory_entry_is_valid` 中已由 `stops` 保证成立的重复条件，保留截断面拒绝逻辑。
+- 最终针道校验与裁剪后的复检共享当前 CT 的边界面信息；计算异常继续使用原有安全回退。第二次校验仅在裁剪发生时执行，不应称为固定每次节省两次检查。未跳过逐针安全校验，也未建立跨患者缓存。
+
+本轮当前实现的真实胰腺病例回放：输入加载 26.369 s，规划主链 69.630 s，106 枚粒子、18 条针道，V100=90.189651%，D90=120.631676 Gy。零次补偿试探的配额为 60 s、实测耗时 0.022688 s；规则阶段未触及截止。本轮和上一轮独立回放的针道/粒子指纹一致，剂量字段出现微小跨次差异，因此不把 79.5 s 到 69.6 s 当成本轮修改带来的收益，也不将跨次剂量称为逐位相同。原有严格配对证据与本轮重复性检查分开存档。
+
+### 后续性能优先级（按当前实测重新排序）
+
+本轮 `rule_stage1=49.244 s`；109 次预处理共 25.695 s，其中 line map 18.254 s，GPU 窗口推理 17.785 s。计时嵌套，不能相加估算总耗时。模型加载仅 0.703 s，故进程级单例不应优先于预处理，且必须解决 checkpoint/device 身份、并发及显存生命周期。
+
+1. **有界 CPU 预取值得实验，但不直接默认开四线程。** `put_seeds` 在每次接受粒子后重算可用位置，下一动作取决于前一步结果和覆盖率。正确实现应只预处理可丢弃的候选输入，保持实际接受顺序、batch=1、GPU 调用顺序及缓存写入语义；必须限制在途内存、处理取消/截止和线程上下文计时，避免 SimpleITK 内部线程与外部线程过度竞争。先进行隔离 A/B，证明有效后再启用。
+2. 批量 GPU 推理、混合精度以及重新排序候选不属于本轮逐位等价优化，未启用。
+3. 精确射线去重或 line-map 中间量复用，应先采样相同完整键的实际重复率；缓存键必须包含图像几何/掩膜身份、方向、起点、步长等所有依赖，不能用容差合并候选。
+4. 长期采用“算法工作量上限 + 独立安全墙钟上限”双预算更合理。计数应至少区分候选试探、实际剂量推理、修复轮数和 RL 动作，明确缓存命中是否计数。单纯将秒换成迭代次数会改变既有策略，故本轮不改默认预算。
+5. 尚未完成不同真实病例及 RL 端到端严格配对；合成非凸/空洞/各向异性测试不能替代它们，也不能将单病例速度泛化。
+
+这批性能代码、冻结资产、测试、计时模块、benchmark 和报告须一并交付；取消流程、工作区、导板、前端等并行修改不纳入性能提交。未重启服务、未替换 public release、未回写病例 Session。
+
+### 本轮追加严格配对结果
+
+`docs/PLANNING_LATENCY_REVIEW_2026-09-16.json` 保存两次原始摘要和门禁判断。冻结旧热点实现的主链耗时 374.569 s，当前实现 69.630 s，约 5.38 倍；输入加载分别为 27.246 s 和 26.369 s，单独列出，不混入主链加速比。两次输入指纹相同，八项输出 SHA-256 全部一致，均为 106 枚粒子、18 条针道，V100=90.189651%，D90=120.631676 Gy；规则阶段均未触及 deadline，补偿均为 `target_reached`。比较门禁通过。
+
+这是整批已有热点优化相对原基线在该病例上的再次验证，不是本轮遥测/防漂移补强又额外带来 5.38 倍提升，也不是对其他病例或 RL 的速度承诺。更早的跨次微小剂量差异记录保留，不用本轮成功配对覆盖或抹去。
+
+本轮相关测试覆盖 39 个独立测试项（等价与计时、预算声明门禁、依赖漂移与交付契约、补偿策略、默认预算和规划预览）；仅有既存的三个 SWIG 类型弃用警告。性能文件按独立提交整理，其余在制品保留在工作区；本节为前轮“未自动提交”状态的后续更新，不表示已 push 或已重启线上服务。

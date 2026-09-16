@@ -2637,21 +2637,24 @@ def _trace_target_exit(start_point, array_direction, target_mask, sign):
         return None
     step = _CLOSE_POINT_RAY_STEP_FRACTION
     step_vector = direction * float(sign) * step
-    previous = start.copy()
     max_steps = int(np.ceil(float(np.sum(target_mask.shape)) / step)) + 8
-    for _ in range(max_steps):
-        current = previous + step_vector
-        current_index = np.floor(current).astype(np.int64)
-        outside_image = (
-            np.any(current_index < 0)
-            or np.any(current_index >= np.asarray(target_mask.shape))
-        )
-        if outside_image:
-            return previous
-        if not _target_at_continuous_point(current, target_mask):
-            return _refine_target_boundary(previous, current, target_mask)
-        previous = current
-    return previous
+    # accumulate performs the SAME repeated additions as the old walk.
+    # start + arange * step would drift at voxel boundaries and is not used.
+    samples = np.empty((max_steps + 1, 3), dtype=np.float64)
+    samples[0] = start
+    samples[1:] = step_vector
+    np.add.accumulate(samples, axis=0, out=samples)
+    indices = np.floor(samples[1:]).astype(np.int64)
+    inside = np.all((indices >= 0) & (indices < np.asarray(target_mask.shape)), axis=1)
+    occupied = np.zeros(max_steps, dtype=bool)
+    occupied[inside] = target_mask[tuple(indices[inside].T)]
+    stops = np.flatnonzero(~occupied)
+    if not stops.size:
+        return samples[-1]
+    index = int(stops[0])
+    if not inside[index]:
+        return samples[index]
+    return _refine_target_boundary(samples[index], samples[index + 1], target_mask)
 
 
 def _project_surface_points_to_target_chords(
@@ -3213,7 +3216,9 @@ def trajectory_entry_is_valid(
     """
     try:
         mask = np.asarray(body_mask, dtype=bool)
-        if mask.ndim != 3 or not np.any(mask):
+        # Starting-voxel membership below already rejects an empty mask.
+        # Avoid scanning the entire body volume once per candidate ray.
+        if mask.ndim != 3:
             return False
         point_array = np.asarray(point, dtype=np.float64).reshape(-1)
         direction_array = np.asarray(direction, dtype=np.float64).reshape(-1)
@@ -3256,29 +3261,32 @@ def trajectory_entry_is_valid(
         # distance.  This bound is finite for every valid image and leaves
         # enough room for diagonal rays to reach a real exterior surface.
         max_steps = int(np.ceil(float(np.sum(shape)) / step)) + 8
-        for step_index in range(1, max_steps + 1):
-            sample = point_array - direction_array * (step_index * step)
-            if not _inside(sample):
-                # The reverse ray reached the CT border while still inside
-                # the body: this is exactly the invalid truncated-FOV case.
+        distances = np.arange(1, max_steps + 1, dtype=np.float64) * step
+        samples = point_array - direction_array * distances[:, None]
+        inside = np.all((samples >= 0.0) & (samples < shape), axis=1)
+        indices = np.floor(samples).astype(np.int64)
+        occupied = np.zeros(max_steps, dtype=bool)
+        occupied[inside] = mask[tuple(indices[inside].T)]
+        stops = np.flatnonzero(~occupied)
+        if stops.size:
+            first = int(stops[0])
+            if not inside[first]:
                 return False
-            sample_index = np.floor(sample).astype(np.int64)
-            if not bool(mask[tuple(sample_index)]):
-                # The body-to-air transition is inside the image volume, so a
-                # real skin entry exists for this candidate unless the
-                # transition is on a face known to be truncated by the CT FOV.
-                if boundary_faces is not None:
-                    at_flagged_face = (
-                        (sample_index[0] <= 0 and boundary_faces[0])
-                        or (sample_index[0] >= mask.shape[0] - 1 and boundary_faces[1])
-                        or (sample_index[1] <= 0 and boundary_faces[2])
-                        or (sample_index[1] >= mask.shape[1] - 1 and boundary_faces[3])
-                        or (sample_index[2] <= 0 and boundary_faces[4])
-                        or (sample_index[2] >= mask.shape[2] - 1 and boundary_faces[5])
-                    )
-                    if at_flagged_face:
-                        return False
-                return True
+            sample_index = indices[first]
+            # stops selects unoccupied samples; the first in-volume stop is
+            # a body-to-air transition, unless it lies on a truncated face.
+            if boundary_faces is not None:
+                at_flagged_face = (
+                    (sample_index[0] <= 0 and boundary_faces[0])
+                    or (sample_index[0] >= mask.shape[0] - 1 and boundary_faces[1])
+                    or (sample_index[1] <= 0 and boundary_faces[2])
+                    or (sample_index[1] >= mask.shape[1] - 1 and boundary_faces[3])
+                    or (sample_index[2] <= 0 and boundary_faces[4])
+                    or (sample_index[2] >= mask.shape[2] - 1 and boundary_faces[5])
+                )
+                if at_flagged_face:
+                    return False
+            return True
         return False
     except Exception:
         logger.warning("[trajectory_entry] Entry-point validation failed", exc_info=True)
@@ -4891,12 +4899,24 @@ def get_available_position(trajectory, seeds, seed_info, dose_image, distance_ma
     #     rate *= 2
     # if len(effective_range) > seed_info['num_of_seeds'][1]:
     #     rate *= 2
-    effective_range = [
-        x for x in effective_range
-        if np.linalg.norm(position_transform(dose_image, np.array(update_direction * x + point))[0] - world_p) > rate * seed_info['length'] / 2
-        and np.linalg.norm(position_transform(dose_image, np.array(update_direction * x + point))[0] - world_p) < np.linalg.norm(position_transform(dose_image, np.array(update_direction * total_depth + point)) - world_p) - rate * seed_info['length'] / 2
-        and _safe_distance_lookup(distance_map, np.array(update_direction * x + point)) > distance_margin * seed_volume_length
-    ]
+    # Preserve scalar transform/norm arithmetic, including endpoint shape.
+    # Each distance is invariant throughout this call, also during exclusion.
+    distances = {}
+    end_distance = None
+    available = []
+    for x in effective_range:
+        candidate = np.array(update_direction * x + point)
+        distance = np.linalg.norm(position_transform(dose_image, candidate)[0] - world_p)
+        distances[x] = distance
+        if not distance > rate * seed_info['length'] / 2:
+            continue
+        if end_distance is None:
+            end_distance = np.linalg.norm(position_transform(
+                dose_image, np.array(update_direction * total_depth + point)) - world_p)
+        if (distance < end_distance - rate * seed_info['length'] / 2
+                and _safe_distance_lookup(distance_map, candidate) > distance_margin * seed_volume_length):
+            available.append(x)
+    effective_range = available
     _logger.debug(f"[get_avail_pos] after margin/distance filter: {len(effective_range)} positions (margin_rate={rate}, seed_length={seed_info['length']})")
 
     # Adjust the effective range to exclude positions influenced by each already-placed seed.
@@ -4910,7 +4930,7 @@ def get_available_position(trajectory, seeds, seed_info, dose_image, distance_ma
         end = distance + seed_info['length']
         effective_range = [
             x for x in effective_range
-            if not (start < np.linalg.norm(position_transform(dose_image, np.array(update_direction * x + point))[0] - world_p) < end)
+            if not (start < distances[x] < end)
         ]
 
     

@@ -1,0 +1,269 @@
+{
+  "baseline": {
+    "variant": "baseline",
+    "success": true,
+    "error": null,
+    "deterministic_validation": false,
+    "snapshot_sha256": "3a464e096a9346ccb19b16f7ddc8ee3432def6768f2b43f85bec168219ac66e6",
+    "inputs_sha256": "ccb41c405fc56e0f01c6caf3c80177f8185c53b2b0c726182c35a54aa7f65f2a",
+    "load_seconds": 27.24614336108789,
+    "pipeline_seconds": 374.56879725679755,
+    "substep_timings": {
+      "trajectory_init": 103.9,
+      "trajectory_refine": 76.83,
+      "seed_planning": 190.51,
+      "dose_calc": 0.09,
+      "dose_eval": 0.16
+    },
+    "latency_profile": {
+      "total_seconds": 374.5687380847521,
+      "nested_timings": {
+        "resample_planning_grid": {
+          "calls": 1,
+          "seconds": 0.46373408008366823
+        },
+        "candidate_generation": {
+          "calls": 1,
+          "seconds": 23.096618918236345
+        },
+        "voxel_safety_filter": {
+          "calls": 3,
+          "seconds": 0.07943906122818589
+        },
+        "load_dose_model": {
+          "calls": 1,
+          "seconds": 1.6057877480052412
+        },
+        "dose_prepare_input": {
+          "calls": 109,
+          "seconds": 103.12860672641546
+        },
+        "dose_sliding_windows": {
+          "calls": 109,
+          "seconds": 17.408724788110703
+        },
+        "rule_stage1": {
+          "calls": 1,
+          "seconds": 125.66722895903513
+        },
+        "rule_stage2": {
+          "calls": 1,
+          "seconds": 4.094041832257062
+        },
+        "rule_stage3": {
+          "calls": 1,
+          "seconds": 4.379772383719683
+        },
+        "rule_based_optimizer": {
+          "calls": 1,
+          "seconds": 134.34995658881962
+        }
+      }
+    },
+    "hashes": {
+      "trajectories": "8c9ac0c32826feadd619459b80b3b6c988b988d620f46c87baf65ce8a6d51ed3",
+      "refined_trajectories": "3cd7283fbc6a52394d55b96f6da73d44baec23028b8b9319dcccff341e3ff84d",
+      "seed_plan_serialized": "c94845437affffd57f73823fb8fe76e046219bec257b39e407f0add6a6f9d439",
+      "verified_needle_geometry": "fdf58158739b87cd56371c559ab65cfa918a32a8f687068f82d0999caae98d5b",
+      "dose_distribution": "7f37fe7cde429f05e2681559377e7d09fec754fa8727b55472beed5736c74937",
+      "dose_distribution_gy": "c559708e46c9203fa66ac48ba3af5042447a2ee720a17f5bc39aabd3dc38a6c5",
+      "dose_metrics": "6b8dd9bc02ee0a9ce3af690b36531961f306fa0fc6966f5f6e21e312d9ae6a33",
+      "algorithm_plan_dvh_data": "87f01dc039cacf9825a14ab5825ecca6792c1acb84df459c17f6ef957113f16b"
+    },
+    "total_seeds": 106,
+    "num_trajectories": 18,
+    "metrics": {
+      "v100": 0.9018965113556544,
+      "v150": 0.6094591430578319,
+      "v200": 0.33809412315616943,
+      "d90": 120.63167572021484
+    },
+    "coverage_repair_status": {
+      "initial_coverage": 0.9018965113556544,
+      "final_coverage": 0.9018965113556544,
+      "trials": 0,
+      "added_needles": 0,
+      "added_seeds": 0,
+      "generated": 0,
+      "stop_reason": "target_reached",
+      "elapsed_seconds": 0.02547022933140397,
+      "budget_allocated_seconds": 60.0,
+      "adaptive_extension_used": false,
+      "adaptive_policy": {
+        "base_seconds": 60.0,
+        "extension_seconds": 120.0,
+        "max_seconds": 180.0,
+        "initial_coverage": 0.9018965113556544,
+        "base_final_coverage": 0.9018965113556544,
+        "coverage_gain": 0.0,
+        "remaining_gap": 0.0,
+        "action_count": 0,
+        "base_stop_reason": "target_reached",
+        "should_extend": false,
+        "decision_reason": "target_reached"
+      },
+      "base_status": {
+        "initial_coverage": 0.9018965113556544,
+        "final_coverage": 0.9018965113556544,
+        "trials": 0,
+        "added_needles": 0,
+        "added_seeds": 0,
+        "generated": 0,
+        "stop_reason": "target_reached",
+        "elapsed_seconds": 0.02547022933140397,
+        "budget_allocated_seconds": 60.0
+      },
+      "extension_status": null,
+      "budget_used_seconds": 60.0,
+      "budget_used_seconds_semantics": "allocated_budget_legacy_alias"
+    },
+    "planning_latency_budget_status": {
+      "mode": "rule_based",
+      "rule_based_deadline_reached": false
+    },
+    "same_result_claim_eligibility": {
+      "eligible": true,
+      "reasons": []
+    }
+  },
+  "current": {
+    "variant": "current",
+    "success": true,
+    "error": null,
+    "deterministic_validation": false,
+    "snapshot_sha256": "3a464e096a9346ccb19b16f7ddc8ee3432def6768f2b43f85bec168219ac66e6",
+    "inputs_sha256": "ccb41c405fc56e0f01c6caf3c80177f8185c53b2b0c726182c35a54aa7f65f2a",
+    "load_seconds": 26.3688206509687,
+    "pipeline_seconds": 69.62967604910955,
+    "substep_timings": {
+      "trajectory_init": 10.07,
+      "trajectory_refine": 0.51,
+      "seed_planning": 54.96,
+      "dose_calc": 0.09,
+      "dose_eval": 0.15
+    },
+    "latency_profile": {
+      "total_seconds": 69.62962559890002,
+      "nested_timings": {
+        "resample_planning_grid": {
+          "calls": 1,
+          "seconds": 0.29057268192991614
+        },
+        "candidate_generation": {
+          "calls": 1,
+          "seconds": 9.337226908188313
+        },
+        "voxel_safety_filter": {
+          "calls": 3,
+          "seconds": 0.08148722164332867
+        },
+        "world_safety_filter": {
+          "calls": 3,
+          "seconds": 0.9816472949460149
+        },
+        "load_dose_model": {
+          "calls": 1,
+          "seconds": 0.7027186579070985
+        },
+        "dose_line_map": {
+          "calls": 109,
+          "seconds": 18.25386044429615
+        },
+        "dose_prepare_input": {
+          "calls": 109,
+          "seconds": 25.69471353245899
+        },
+        "dose_sliding_windows": {
+          "calls": 109,
+          "seconds": 17.78534935042262
+        },
+        "rule_stage1": {
+          "calls": 1,
+          "seconds": 49.243649643845856
+        },
+        "rule_stage2": {
+          "calls": 1,
+          "seconds": 1.614122805185616
+        },
+        "rule_stage3": {
+          "calls": 1,
+          "seconds": 2.7077125860378146
+        },
+        "rule_based_optimizer": {
+          "calls": 1,
+          "seconds": 53.73326031723991
+        }
+      }
+    },
+    "hashes": {
+      "trajectories": "8c9ac0c32826feadd619459b80b3b6c988b988d620f46c87baf65ce8a6d51ed3",
+      "refined_trajectories": "3cd7283fbc6a52394d55b96f6da73d44baec23028b8b9319dcccff341e3ff84d",
+      "seed_plan_serialized": "c94845437affffd57f73823fb8fe76e046219bec257b39e407f0add6a6f9d439",
+      "verified_needle_geometry": "fdf58158739b87cd56371c559ab65cfa918a32a8f687068f82d0999caae98d5b",
+      "dose_distribution": "7f37fe7cde429f05e2681559377e7d09fec754fa8727b55472beed5736c74937",
+      "dose_distribution_gy": "c559708e46c9203fa66ac48ba3af5042447a2ee720a17f5bc39aabd3dc38a6c5",
+      "dose_metrics": "6b8dd9bc02ee0a9ce3af690b36531961f306fa0fc6966f5f6e21e312d9ae6a33",
+      "algorithm_plan_dvh_data": "87f01dc039cacf9825a14ab5825ecca6792c1acb84df459c17f6ef957113f16b"
+    },
+    "total_seeds": 106,
+    "num_trajectories": 18,
+    "metrics": {
+      "v100": 0.9018965113556544,
+      "v150": 0.6094591430578319,
+      "v200": 0.33809412315616943,
+      "d90": 120.63167572021484
+    },
+    "coverage_repair_status": {
+      "initial_coverage": 0.9018965113556544,
+      "final_coverage": 0.9018965113556544,
+      "trials": 0,
+      "added_needles": 0,
+      "added_seeds": 0,
+      "generated": 0,
+      "stop_reason": "target_reached",
+      "elapsed_seconds": 0.022687732707709074,
+      "budget_allocated_seconds": 60.0,
+      "adaptive_extension_used": false,
+      "adaptive_policy": {
+        "base_seconds": 60.0,
+        "extension_seconds": 120.0,
+        "max_seconds": 180.0,
+        "initial_coverage": 0.9018965113556544,
+        "base_final_coverage": 0.9018965113556544,
+        "coverage_gain": 0.0,
+        "remaining_gap": 0.0,
+        "action_count": 0,
+        "base_stop_reason": "target_reached",
+        "should_extend": false,
+        "decision_reason": "target_reached"
+      },
+      "base_status": {
+        "initial_coverage": 0.9018965113556544,
+        "final_coverage": 0.9018965113556544,
+        "trials": 0,
+        "added_needles": 0,
+        "added_seeds": 0,
+        "generated": 0,
+        "stop_reason": "target_reached",
+        "elapsed_seconds": 0.022687732707709074,
+        "budget_allocated_seconds": 60.0
+      },
+      "extension_status": null,
+      "budget_used_seconds": 60.0,
+      "budget_used_seconds_semantics": "allocated_budget_legacy_alias"
+    },
+    "planning_latency_budget_status": {
+      "mode": "rule_based",
+      "rule_based_deadline_reached": false
+    },
+    "same_result_claim_eligibility": {
+      "eligible": true,
+      "reasons": []
+    }
+  },
+  "comparison": {
+    "eligible": true,
+    "reasons": []
+  },
+  "note": "Read-only detached replay. No Session writes, service restart or GPU job rescheduling. Historical cross-run floating-point differences are not treated as bit-exact evidence."
+}

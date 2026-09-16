@@ -1,0 +1,582 @@
+{
+  "baseline_revision": "a7fbbba23b9481f8ff1a6058e8b6b0eb1a0dc277",
+  "scope": "detached five-stage replay; excludes snapshot loading and shared body-mask construction",
+  "normal_gpu_pairs": [
+    {
+      "before": {
+        "trajectory_init": {
+          "seconds": 104.37749218102545,
+          "success": true,
+          "error": null
+        },
+        "trajectories_sha256": "8c9ac0c32826feadd619459b80b3b6c988b988d620f46c87baf65ce8a6d51ed3",
+        "hotspots": {
+          "_trace_target_exit": {
+            "calls": 38912,
+            "seconds": 11.412729579024017
+          },
+          "trajectory_entry_is_valid": {
+            "calls": 9572,
+            "seconds": 6.041038500610739
+          },
+          "_filter_safe_trajectories": {
+            "calls": 3,
+            "seconds": 0.07498756563290954
+          },
+          "_filter_world_safe_trajectories": {
+            "calls": 3,
+            "seconds": 205.75782912876457
+          },
+          "get_available_position": {
+            "calls": 14044,
+            "seconds": 6.446947103831917
+          },
+          "generate_line_map": {
+            "calls": 109,
+            "seconds": 83.65978549933061
+          },
+          "_prepare_seed_input": {
+            "calls": 109,
+            "seconds": 98.19891315512359
+          },
+          "sliding_window_predict": {
+            "calls": 109,
+            "seconds": 21.707353587262332
+          }
+        },
+        "total_seeds": 106,
+        "num_trajectories": 18,
+        "metrics": {
+          "v100": 0.9018965113556544,
+          "v150": 0.6094591430578319,
+          "v200": 0.33809412315616943,
+          "d90": 120.63167572021484
+        },
+        "trajectory_refine": {
+          "seconds": 82.63589742407203,
+          "success": true,
+          "error": null
+        },
+        "refined_trajectories_sha256": "3cd7283fbc6a52394d55b96f6da73d44baec23028b8b9319dcccff341e3ff84d",
+        "seed_planning": {
+          "seconds": 175.51298967702314,
+          "success": true,
+          "error": null
+        },
+        "verified_needle_geometry_sha256": "fdf58158739b87cd56371c559ab65cfa918a32a8f687068f82d0999caae98d5b",
+        "dose_distribution_sha256": "7f37fe7cde429f05e2681559377e7d09fec754fa8727b55472beed5736c74937",
+        "dose_calc": {
+          "seconds": 0.14433000423014164,
+          "success": true,
+          "error": null
+        },
+        "dose_distribution_gy_sha256": "c559708e46c9203fa66ac48ba3af5042447a2ee720a17f5bc39aabd3dc38a6c5",
+        "dose_eval": {
+          "seconds": 0.16275583673268557,
+          "success": true,
+          "error": null
+        },
+        "dose_metrics_sha256": "6b8dd9bc02ee0a9ce3af690b36531961f306fa0fc6966f5f6e21e312d9ae6a33",
+        "algorithm_plan_dvh_data_sha256": "87f01dc039cacf9825a14ab5825ecca6792c1acb84df459c17f6ef957113f16b"
+      },
+      "after": {
+        "trajectory_init": {
+          "seconds": 10.929176958743483,
+          "success": true,
+          "error": null
+        },
+        "trajectories_sha256": "8c9ac0c32826feadd619459b80b3b6c988b988d620f46c87baf65ce8a6d51ed3",
+        "hotspots": {
+          "_trace_target_exit": {
+            "calls": 38912,
+            "seconds": 6.884029341395944
+          },
+          "trajectory_entry_is_valid": {
+            "calls": 9572,
+            "seconds": 0.8007169496268034
+          },
+          "_filter_safe_trajectories": {
+            "calls": 3,
+            "seconds": 0.08365752128884196
+          },
+          "_filter_world_safe_trajectories": {
+            "calls": 3,
+            "seconds": 1.152707093860954
+          },
+          "get_available_position": {
+            "calls": 14044,
+            "seconds": 3.317872568964958
+          },
+          "generate_line_map": {
+            "calls": 109,
+            "seconds": 19.270439404062927
+          },
+          "_prepare_seed_input": {
+            "calls": 109,
+            "seconds": 26.924855902325362
+          },
+          "sliding_window_predict": {
+            "calls": 109,
+            "seconds": 26.460998474620283
+          }
+        },
+        "total_seeds": 106,
+        "num_trajectories": 18,
+        "metrics": {
+          "v100": 0.9018965113556544,
+          "v150": 0.6094591430578319,
+          "v200": 0.33809412315616943,
+          "d90": 120.63167572021484
+        },
+        "trajectory_refine": {
+          "seconds": 0.6707421489991248,
+          "success": true,
+          "error": null
+        },
+        "refined_trajectories_sha256": "3cd7283fbc6a52394d55b96f6da73d44baec23028b8b9319dcccff341e3ff84d",
+        "seed_planning": {
+          "seconds": 65.54393300414085,
+          "success": true,
+          "error": null
+        },
+        "verified_needle_geometry_sha256": "fdf58158739b87cd56371c559ab65cfa918a32a8f687068f82d0999caae98d5b",
+        "dose_distribution_sha256": "7f37fe7cde429f05e2681559377e7d09fec754fa8727b55472beed5736c74937",
+        "dose_calc": {
+          "seconds": 0.14465447468683124,
+          "success": true,
+          "error": null
+        },
+        "dose_distribution_gy_sha256": "c559708e46c9203fa66ac48ba3af5042447a2ee720a17f5bc39aabd3dc38a6c5",
+        "dose_eval": {
+          "seconds": 0.1626503523439169,
+          "success": true,
+          "error": null
+        },
+        "dose_metrics_sha256": "6b8dd9bc02ee0a9ce3af690b36531961f306fa0fc6966f5f6e21e312d9ae6a33",
+        "algorithm_plan_dvh_data_sha256": "87f01dc039cacf9825a14ab5825ecca6792c1acb84df459c17f6ef957113f16b"
+      },
+      "matching_hashes": {
+        "trajectories_sha256": true,
+        "refined_trajectories_sha256": true,
+        "verified_needle_geometry_sha256": true,
+        "dose_distribution_sha256": true,
+        "dose_distribution_gy_sha256": true,
+        "dose_metrics_sha256": true,
+        "algorithm_plan_dvh_data_sha256": true
+      }
+    },
+    {
+      "before": {
+        "trajectory_init": {
+          "seconds": 71.13517832197249,
+          "success": true,
+          "error": null
+        },
+        "trajectories_sha256": "8c9ac0c32826feadd619459b80b3b6c988b988d620f46c87baf65ce8a6d51ed3",
+        "hotspots": {
+          "_trace_target_exit": {
+            "calls": 38912,
+            "seconds": 12.110761912539601
+          },
+          "trajectory_entry_is_valid": {
+            "calls": 9572,
+            "seconds": 6.590612369589508
+          },
+          "_filter_safe_trajectories": {
+            "calls": 3,
+            "seconds": 0.08125339634716511
+          },
+          "_filter_world_safe_trajectories": {
+            "calls": 3,
+            "seconds": 144.3212398258038
+          },
+          "get_available_position": {
+            "calls": 14044,
+            "seconds": 6.827520401682705
+          },
+          "generate_line_map": {
+            "calls": 109,
+            "seconds": 84.20958281261846
+          },
+          "_prepare_seed_input": {
+            "calls": 109,
+            "seconds": 101.84030896611512
+          },
+          "sliding_window_predict": {
+            "calls": 109,
+            "seconds": 28.933462367393076
+          }
+        },
+        "total_seeds": 106,
+        "num_trajectories": 18,
+        "metrics": {
+          "v100": 0.9018965113556544,
+          "v150": 0.6094591430578319,
+          "v200": 0.33809412315616943,
+          "d90": 120.63172149658203
+        },
+        "trajectory_refine": {
+          "seconds": 49.13291586888954,
+          "success": true,
+          "error": null
+        },
+        "refined_trajectories_sha256": "3cd7283fbc6a52394d55b96f6da73d44baec23028b8b9319dcccff341e3ff84d",
+        "seed_planning": {
+          "seconds": 199.44385787192732,
+          "success": true,
+          "error": null
+        },
+        "seed_plan_serialized_sha256": "c94845437affffd57f73823fb8fe76e046219bec257b39e407f0add6a6f9d439",
+        "verified_needle_geometry_sha256": "fdf58158739b87cd56371c559ab65cfa918a32a8f687068f82d0999caae98d5b",
+        "dose_distribution_sha256": "f32ab628cb382e7fa43858217afab9aeb18536ae360f20f4beee9a96da868c97",
+        "dose_calc": {
+          "seconds": 0.09694739803671837,
+          "success": true,
+          "error": null
+        },
+        "dose_distribution_gy_sha256": "898cb38c92d281244f38362472786b26f8b61da138d222267d161bc984acf343",
+        "dose_eval": {
+          "seconds": 0.1746381432749331,
+          "success": true,
+          "error": null
+        },
+        "dose_metrics_sha256": "8363732b0dc2c38c08ad2e70d60d4d56eda3796f222059705a76d149f94da316",
+        "algorithm_plan_dvh_data_sha256": "0a6194247a120f25efc9c10564e36b8f9b5e8b0d3ff5a957c5b4ca257999bcd3"
+      },
+      "after": {
+        "trajectory_init": {
+          "seconds": 11.123691922985017,
+          "success": true,
+          "error": null
+        },
+        "trajectories_sha256": "8c9ac0c32826feadd619459b80b3b6c988b988d620f46c87baf65ce8a6d51ed3",
+        "hotspots": {
+          "_trace_target_exit": {
+            "calls": 38912,
+            "seconds": 6.862646573688835
+          },
+          "trajectory_entry_is_valid": {
+            "calls": 9572,
+            "seconds": 0.7760174013674259
+          },
+          "_filter_safe_trajectories": {
+            "calls": 3,
+            "seconds": 0.08582668239250779
+          },
+          "_filter_world_safe_trajectories": {
+            "calls": 3,
+            "seconds": 0.799082666169852
+          },
+          "get_available_position": {
+            "calls": 14044,
+            "seconds": 3.2908653211779892
+          },
+          "generate_line_map": {
+            "calls": 109,
+            "seconds": 19.254088875371963
+          },
+          "_prepare_seed_input": {
+            "calls": 109,
+            "seconds": 25.83235932327807
+          },
+          "sliding_window_predict": {
+            "calls": 109,
+            "seconds": 29.35329275764525
+          }
+        },
+        "total_seeds": 106,
+        "num_trajectories": 18,
+        "metrics": {
+          "v100": 0.9018965113556544,
+          "v150": 0.6094591430578319,
+          "v200": 0.33809412315616943,
+          "d90": 120.63172149658203
+        },
+        "trajectory_refine": {
+          "seconds": 0.46599964099004865,
+          "success": true,
+          "error": null
+        },
+        "refined_trajectories_sha256": "3cd7283fbc6a52394d55b96f6da73d44baec23028b8b9319dcccff341e3ff84d",
+        "seed_planning": {
+          "seconds": 68.38460302073509,
+          "success": true,
+          "error": null
+        },
+        "seed_plan_serialized_sha256": "c94845437affffd57f73823fb8fe76e046219bec257b39e407f0add6a6f9d439",
+        "verified_needle_geometry_sha256": "fdf58158739b87cd56371c559ab65cfa918a32a8f687068f82d0999caae98d5b",
+        "dose_distribution_sha256": "f32ab628cb382e7fa43858217afab9aeb18536ae360f20f4beee9a96da868c97",
+        "dose_calc": {
+          "seconds": 0.1004084488376975,
+          "success": true,
+          "error": null
+        },
+        "dose_distribution_gy_sha256": "898cb38c92d281244f38362472786b26f8b61da138d222267d161bc984acf343",
+        "dose_eval": {
+          "seconds": 0.1765018031001091,
+          "success": true,
+          "error": null
+        },
+        "dose_metrics_sha256": "8363732b0dc2c38c08ad2e70d60d4d56eda3796f222059705a76d149f94da316",
+        "algorithm_plan_dvh_data_sha256": "0a6194247a120f25efc9c10564e36b8f9b5e8b0d3ff5a957c5b4ca257999bcd3"
+      },
+      "matching_hashes": {
+        "trajectories_sha256": true,
+        "refined_trajectories_sha256": true,
+        "seed_plan_serialized_sha256": true,
+        "verified_needle_geometry_sha256": true,
+        "dose_distribution_sha256": true,
+        "dose_distribution_gy_sha256": true,
+        "dose_metrics_sha256": true,
+        "algorithm_plan_dvh_data_sha256": true
+      }
+    }
+  ],
+  "deployed_full_entry_normal": {
+    "current": {
+      "variant": "current",
+      "success": true,
+      "error": null,
+      "deterministic_validation": false,
+      "snapshot_sha256": "d7782023f7863392f31473735b192835a9cf9c0fcf3a1009b9a6b73fafe0e603",
+      "inputs_sha256": "ccb41c405fc56e0f01c6caf3c80177f8185c53b2b0c726182c35a54aa7f65f2a",
+      "load_seconds": 47.99377077072859,
+      "pipeline_seconds": 79.53183741122484,
+      "substep_timings": {
+        "trajectory_init": 10.51,
+        "trajectory_refine": 0.59,
+        "seed_planning": 64.32,
+        "dose_calc": 0.09,
+        "dose_eval": 0.16
+      },
+      "latency_profile": {
+        "total_seconds": 79.53177159000188,
+        "nested_timings": {
+          "resample_planning_grid": {
+            "calls": 1,
+            "seconds": 0.25446232594549656
+          },
+          "candidate_generation": {
+            "calls": 1,
+            "seconds": 9.706564883235842
+          },
+          "voxel_safety_filter": {
+            "calls": 3,
+            "seconds": 0.08583389036357403
+          },
+          "world_safety_filter": {
+            "calls": 3,
+            "seconds": 1.2874688492156565
+          },
+          "load_dose_model": {
+            "calls": 1,
+            "seconds": 1.1909637642093003
+          },
+          "dose_line_map": {
+            "calls": 109,
+            "seconds": 18.896528597921133
+          },
+          "dose_prepare_input": {
+            "calls": 109,
+            "seconds": 25.520706673152745
+          },
+          "dose_sliding_windows": {
+            "calls": 109,
+            "seconds": 26.97951253550127
+          },
+          "rule_stage1": {
+            "calls": 1,
+            "seconds": 57.5978748514317
+          },
+          "rule_stage2": {
+            "calls": 1,
+            "seconds": 1.9044740851968527
+          },
+          "rule_stage3": {
+            "calls": 1,
+            "seconds": 2.8288936521857977
+          },
+          "rule_based_optimizer": {
+            "calls": 1,
+            "seconds": 62.45498276595026
+          }
+        }
+      },
+      "hashes": {
+        "trajectories": "8c9ac0c32826feadd619459b80b3b6c988b988d620f46c87baf65ce8a6d51ed3",
+        "refined_trajectories": "3cd7283fbc6a52394d55b96f6da73d44baec23028b8b9319dcccff341e3ff84d",
+        "seed_plan_serialized": "c94845437affffd57f73823fb8fe76e046219bec257b39e407f0add6a6f9d439",
+        "verified_needle_geometry": "fdf58158739b87cd56371c559ab65cfa918a32a8f687068f82d0999caae98d5b",
+        "dose_distribution": "f32ab628cb382e7fa43858217afab9aeb18536ae360f20f4beee9a96da868c97",
+        "dose_distribution_gy": "898cb38c92d281244f38362472786b26f8b61da138d222267d161bc984acf343",
+        "dose_metrics": "8363732b0dc2c38c08ad2e70d60d4d56eda3796f222059705a76d149f94da316",
+        "algorithm_plan_dvh_data": "0a6194247a120f25efc9c10564e36b8f9b5e8b0d3ff5a957c5b4ca257999bcd3"
+      },
+      "total_seeds": 106,
+      "num_trajectories": 18,
+      "metrics": {
+        "v100": 0.9018965113556544,
+        "v150": 0.6094591430578319,
+        "v200": 0.33809412315616943,
+        "d90": 120.63172149658203
+      },
+      "coverage_repair_status": {
+        "initial_coverage": 0.9018965113556544,
+        "final_coverage": 0.9018965113556544,
+        "trials": 0,
+        "added_needles": 0,
+        "added_seeds": 0,
+        "generated": 0,
+        "stop_reason": "target_reached",
+        "adaptive_extension_used": false,
+        "adaptive_policy": {
+          "base_seconds": 60,
+          "extension_seconds": 120,
+          "max_seconds": 180,
+          "initial_coverage": 0.9018965113556544,
+          "base_final_coverage": 0.9018965113556544,
+          "coverage_gain": 0,
+          "remaining_gap": 0,
+          "action_count": 0,
+          "base_stop_reason": "target_reached",
+          "should_extend": false,
+          "decision_reason": "target_reached"
+        },
+        "base_status": {
+          "initial_coverage": 0.9018965113556544,
+          "final_coverage": 0.9018965113556544,
+          "trials": 0,
+          "added_needles": 0,
+          "added_seeds": 0,
+          "generated": 0,
+          "stop_reason": "target_reached"
+        },
+        "extension_status": null,
+        "budget_used_seconds": 60
+      }
+    },
+    "matches_old2": {
+      "trajectories": true,
+      "refined_trajectories": true,
+      "seed_plan_serialized": true,
+      "verified_needle_geometry": true,
+      "dose_distribution": true,
+      "dose_distribution_gy": true,
+      "dose_metrics": true,
+      "algorithm_plan_dvh_data": true
+    }
+  },
+  "fixed_algorithm_budget_diagnostic": {
+    "deterministic_validation": true,
+    "success": true,
+    "load_seconds": 31.679128812160343,
+    "pipeline_seconds": 841.1202266160399,
+    "substep_timings": {
+      "trajectory_init": 128.17,
+      "trajectory_refine": 96.29,
+      "seed_planning": 613,
+      "dose_calc": 0.13,
+      "dose_eval": 0.19
+    },
+    "latency_profile": {
+      "total_seconds": 841.1201467840001,
+      "nested_timings": {
+        "resample_planning_grid": {
+          "calls": 1,
+          "seconds": 1.8367723738774657
+        },
+        "candidate_generation": {
+          "calls": 1,
+          "seconds": 24.81454144511372
+        },
+        "voxel_safety_filter": {
+          "calls": 3,
+          "seconds": 0.0991420466452837
+        },
+        "load_dose_model": {
+          "calls": 1,
+          "seconds": 7.15871628606692
+        },
+        "dose_prepare_input": {
+          "calls": 307,
+          "seconds": 348.621193846222
+        },
+        "dose_sliding_windows": {
+          "calls": 307,
+          "seconds": 114.37567490618676
+        },
+        "rule_stage1": {
+          "calls": 1,
+          "seconds": 301.884881765116
+        },
+        "rule_stage2": {
+          "calls": 1,
+          "seconds": 0.8868608269840479
+        },
+        "rule_stage3": {
+          "calls": 1,
+          "seconds": 1.0423063323833048
+        },
+        "rule_based_optimizer": {
+          "calls": 1,
+          "seconds": 304.117291205097
+        }
+      }
+    },
+    "total_seeds": 105,
+    "num_trajectories": 18,
+    "metrics": {
+      "v100": 0.899086864902833,
+      "v150": 0.597752282837743,
+      "v200": 0.3284944977756965,
+      "d90": 119.7102279663086
+    },
+    "coverage_repair_status": {
+      "initial_coverage": 0.8908920627487708,
+      "final_coverage": 0.8990868649028331,
+      "trials": 259,
+      "added_needles": 1,
+      "added_seeds": 1,
+      "generated": 132,
+      "stop_reason": "time_budget",
+      "elapsed_seconds": 182.45684710005298,
+      "adaptive_extension_used": true,
+      "adaptive_policy": {
+        "base_seconds": 60,
+        "extension_seconds": 120,
+        "max_seconds": 180,
+        "initial_coverage": 0.8908920627487708,
+        "base_final_coverage": 0.8990868649028331,
+        "coverage_gain": 0.00819480215406232,
+        "remaining_gap": 0.0009131350971669505,
+        "action_count": 64,
+        "base_stop_reason": "time_budget",
+        "should_extend": true,
+        "decision_reason": "measurable_gain_with_remaining_gap"
+      },
+      "base_status": {
+        "initial_coverage": 0.8908920627487708,
+        "final_coverage": 0.8990868649028331,
+        "trials": 73,
+        "added_needles": 1,
+        "added_seeds": 1,
+        "generated": 62,
+        "stop_reason": "time_budget",
+        "elapsed_seconds": 60.58085888903588
+      },
+      "extension_status": {
+        "initial_coverage": 0.8990868649028331,
+        "final_coverage": 0.8990868649028331,
+        "trials": 186,
+        "added_needles": 0,
+        "added_seeds": 0,
+        "generated": 70,
+        "stop_reason": "time_budget",
+        "elapsed_seconds": 121.8759882110171
+      },
+      "budget_used_seconds": 180
+    },
+    "accepted_as_equivalence_baseline": false,
+    "reason": "Original wall-clock budget exhausted; not comparable as a completed-plan equivalence baseline"
+  }
+}

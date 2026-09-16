@@ -23,6 +23,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 import numpy as np
 import SimpleITK as sitk
 import torch
+from plans.performance import timed
 
 
 # Seed-centered preprocessing repeatedly builds the same physical coordinate
@@ -205,6 +206,7 @@ def generate_soft_pos(image: sitk.Image, position: Sequence[float], sphere_radiu
     return image_from_xyz_array(soft, image)
 
 
+@timed('dose_line_map')
 def generate_line_map(image: sitk.Image, position: Sequence[float], direction: Sequence[float], line_length: float = 4.5) -> sitk.Image:
     x_phys, y_phys, z_phys = _local_physical_coordinate_arrays(image)
     position = np.asarray(position, dtype=np.float32) - np.asarray(image.GetOrigin(), dtype=np.float32)
@@ -214,6 +216,24 @@ def generate_line_map(image: sitk.Image, position: Sequence[float], direction: S
         raise ValueError("Particle direction vector is zero")
     direction /= norm
     position = np.asarray(position, dtype=np.float64)
+    # Tile only the independent voxel expressions. Keep their dtypes,
+    # operation/reduction order, axial handling and GLOBAL normalization.
+    # This avoids repeatedly streaming full 120^3 x 3 temporaries through
+    # memory and leaves the model input bit-for-bit unchanged.
+    line_map = np.empty(image.GetSize(), dtype=np.float64)
+    for start in range(0, line_map.shape[0], 8):
+        region = slice(start, start + 8)
+        line_map[region] = _line_map_values(
+            x_phys[region], y_phys[region], z_phys[region],
+            position, direction, line_length,
+        )
+    maximum = float(np.max(line_map))
+    if maximum > 0.0:
+        line_map /= maximum
+    return image_from_xyz_array(line_map, image)
+
+
+def _line_map_values(x_phys, y_phys, z_phys, position, direction, line_length):
     vx, vy, vz = x_phys - position[0], y_phys - position[1], z_phys - position[2]
     distance_squared = np.maximum(vx * vx + vy * vy + vz * vz, 1e-8)
     half = float(line_length) / 2.0
@@ -233,10 +253,7 @@ def generate_line_map(image: sitk.Image, position: Sequence[float], direction: S
     axial_values = (distance_squared - float(line_length) ** 2 / 4.0) ** -1
     line_map[axial] = np.nan_to_num(axial_values[axial], nan=0.0, posinf=0.0, neginf=0.0)
     line_map = np.nan_to_num(line_map, nan=0.0, posinf=0.0, neginf=0.0)
-    maximum = float(np.max(line_map))
-    if maximum > 0.0:
-        line_map /= maximum
-    return image_from_xyz_array(line_map, image)
+    return line_map
 
 
 def starts_for_dim(size: int, patch: int, stride: int) -> List[int]:
@@ -265,6 +282,7 @@ def crop_or_pad(array: np.ndarray, start: Sequence[int], patch_size: Sequence[in
 
 
 @torch.inference_mode()
+@timed('dose_sliding_windows')
 def sliding_window_predict(
     model: torch.nn.Module,
     inputs: np.ndarray,
@@ -395,6 +413,7 @@ def _model_contract(model: torch.nn.Module) -> Dict[str, Any]:
     return contract
 
 
+@timed('dose_prepare_input')
 def _prepare_seed_input(
     position_xyz: Sequence[float],
     direction_lps: Sequence[float],

@@ -13,6 +13,7 @@ import traceback as _tb
 import time
 
 from .planning_preview import safe_preview
+from .performance import timed, record_timing
 
 try:
     import slicer
@@ -201,6 +202,7 @@ def sample_anchor_covering_trajectories(trajectories, limit, spacing=(1, 1, 1)):
     return selected[:limit]
 
 
+@timed('candidate_generation')
 def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract_angle,
               target_value, background_value, obstacle_value, maximum_candidate_trajectories, progressDialog=None,
               min_depth=2, preview_callback=None, entry_body_mask=None,
@@ -463,6 +465,7 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
     return init_trajectories
 
 
+@timed('rule_based_optimizer')
 def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model, dl_params, lower_bound, upper_bound, distance_rate,
                  target_value, background_value, obstacle_value, infer_img_size, in_lowest_dose, out_highest_dose,
                  DVH_rate, seed_info, iter_rate, image_normalize_min, image_normalize_max, image_normalize_scale,
@@ -511,6 +514,7 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
         })
 
     # --- Stage 1: Trajectory Selection and Initial Planning ---
+    stage_started = time.perf_counter()
     selected_indices = []
     stage1_count = 0
     import logging as _log
@@ -578,6 +582,7 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
             cur_DVH_rate,
         )
 
+    record_timing('rule_stage1', time.perf_counter() - stage_started)
     if not init_planned_res:
         return []
 
@@ -591,6 +596,7 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
     )
 
     # --- Stage 2: Plan Refinement ---
+    stage_started = time.perf_counter()
     minus_res = copy.copy(init_planned_res)
     for i in range(len(minus_res)):
         minus_res[i] = [minus_res[i][0], [], []]
@@ -675,6 +681,8 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
         minus_radiation = cur_radiation.copy()
 
     # --- Stage 3: Fine-tuning for Safety ---
+    record_timing('rule_stage2', time.perf_counter() - stage_started)
+    stage_started = time.perf_counter()
     opti_res = copy.deepcopy(minus_res)
     all_seeds = []
     for _, (_, seeds, _) in enumerate(opti_res):
@@ -747,6 +755,7 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
         if consecutive_no_improvement >= max_no_improvement:
             break
 
+    record_timing('rule_stage3', time.perf_counter() - stage_started)
     # Retain the better coverage/deficit result if seed removal degraded it.
     initial_values = minus_radiation[target_mask]
     final_values = opti_radiation[target_mask]

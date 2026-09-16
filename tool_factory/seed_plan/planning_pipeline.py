@@ -29,6 +29,7 @@ from typing import Dict, List, Optional, Any
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from tool_factory import BaseTool, ToolResult
+from plans.performance import collect_planning_latency, timed
 from plans.dose_pre.model_loader import (
     DEFAULT_PRESCRIPTION_GY,
     DOSE_MODEL_SCALE_GY,
@@ -981,6 +982,7 @@ def _apply_planning_overrides(args, overrides):
     return args
 
 
+@timed('resample_planning_grid')
 def _resample_for_planning(ct_image, ctv_mask, oar_mask, new_size=[128, 128, 64]):
     """Resample CT/CTV/OAR to planning grid size.
 
@@ -1393,6 +1395,7 @@ def _resolve_ref_direc(ref_direc_input, ct_image, ctv_mask, agent) -> np.ndarray
     return _normalize_ref_direc(_GLOBAL_DEFAULT_REFDIREC)
 
 
+@timed('load_dose_model')
 def _load_dose_model(device=None):
     """Load the dose prediction model.
 
@@ -1513,6 +1516,7 @@ def _trajectory_path_hits_obstacle(trajectory, radiation_volume, obstacle_value,
         return True
 
 
+@timed('voxel_safety_filter')
 def _filter_safe_trajectories(trajectories, radiation_volume, obstacle_value):
     """Keep only trajectories whose complete usable path is obstacle-free."""
     safe = []
@@ -2400,6 +2404,7 @@ def _body_mask_from_ct(ct_image, threshold=-300):
     return body
 
 
+@timed('world_safety_filter')
 def _filter_world_safe_trajectories(
     trajectories,
     planning_image,
@@ -2429,6 +2434,14 @@ def _filter_world_safe_trajectories(
         except Exception:
             logger.warning("[needle_safety] Body mask unavailable; truncation check skipped", exc_info=True)
     # One combined obstacle volume + affine for the whole candidate batch.
+    # CT face occupancy is invariant within this batch. Passing None through
+    # made the single-segment validator copy/scan the entire CT for EACH ray.
+    if truncated_boundary_faces is None:
+        try:
+            from plans.utilizations import infer_truncated_boundary_faces_from_image
+            truncated_boundary_faces = infer_truncated_boundary_faces_from_image(ct_image)
+        except Exception:
+            logger.warning("[needle_safety] Batch CT face metadata unavailable", exc_info=True)
     safety_context = build_needle_safety_context(ct_image, ctv_mask, oar_mask, obstacle_labels)
     for trajectory in trajectories or []:
         points = _candidate_world_needle_points(trajectory, planning_image, extension)
@@ -4333,6 +4346,15 @@ class PlanningPipelineTool(BaseTool):
                     preview_callback=_seed_preview_observer,
                     deadline=rule_based_deadline,
                 )
+            # Conservative telemetry: a return at/after the deadline is not
+            # eligible for a same-result latency claim, even if target reached.
+            agent.memory.store('planning_latency_budget_status', {
+                'mode': mode,
+                'rule_based_deadline_reached': (
+                    time.monotonic() >= rule_based_deadline
+                    if rule_based_deadline is not None else None
+                ),
+            })
             effective_mode = mode
             rl_fallback_used = False
             rl_target_coverage = None
@@ -4573,7 +4595,8 @@ class PlanningPipelineTool(BaseTool):
             rf_params = getattr(args, "rf_params", {}) or {}
 
             def _run_repair_pass(input_plan, seconds, rounds):
-                return repair_coverage(
+                repair_started = time.perf_counter()
+                repaired_plan, status = repair_coverage(
                     input_plan, trajectories, radiation_volume, dose_image,
                     args.radiation_array_params['target_value'], repair_organs,
                     in_lowest_model, out_highest_model, args.DVH_rate, args.seed_info,
@@ -4581,6 +4604,10 @@ class PlanningPipelineTool(BaseTool):
                     seconds=seconds, rounds=rounds, shortlist=3,
                     candidate_limit=args.radiation_array_params['maximum_candidate_trajectories'],
                 )
+                status = dict(status)
+                status['elapsed_seconds'] = time.perf_counter() - repair_started
+                status['budget_allocated_seconds'] = float(seconds)
+                return repaired_plan, status
 
             def _status_int(status, key):
                 try:
@@ -4652,6 +4679,10 @@ class PlanningPipelineTool(BaseTool):
                     )
                 else:
                     repair_status['budget_used_seconds'] = policy['base_seconds']
+                # Retain the legacy key for clients; it has always meant quota,
+                # not measured runtime. elapsed_seconds is measured per pass.
+                repair_status['budget_allocated_seconds'] = repair_status['budget_used_seconds']
+                repair_status['budget_used_seconds_semantics'] = 'allocated_budget_legacy_alias'
             except Exception:
                 logger.exception('[coverage_repair] Retaining original plan after repair failure')
                 # If the base pass completed but the adaptive extension
@@ -4710,9 +4741,17 @@ class PlanningPipelineTool(BaseTool):
 
         safety_pruned_trajectory_indices = []
         safety_pruned_seed_count = 0
+        # Local to this immutable CT, never shared across sessions. Inference
+        # failure retains the existing validator's fail-closed fallback.
+        final_boundary_faces = None
+        try:
+            final_boundary_faces = utilizations.infer_truncated_boundary_faces_from_image(ct_image)
+        except Exception:
+            logger.warning('[needle_safety] CT faces unavailable; retaining validator fallback', exc_info=True)
         verified_needle_geometry, unsafe_needle_indices = _validated_needle_geometry(
             plan_res, ct_image, resampled_ct, ctv_mask, oar_mask, obstacle_labels,
             body_mask=body_mask,
+            truncated_boundary_faces=final_boundary_faces,
         )
         if unsafe_needle_indices:
             # This is a defense-in-depth assertion. Candidate validation above
@@ -4756,6 +4795,7 @@ class PlanningPipelineTool(BaseTool):
             verified_needle_geometry, remaining_unsafe_indices = _validated_needle_geometry(
                 plan_res, ct_image, resampled_ct, ctv_mask, oar_mask, obstacle_labels,
                 body_mask=body_mask,
+                truncated_boundary_faces=final_boundary_faces,
             )
             if remaining_unsafe_indices:
                 # A second pass protects against an indexing or malformed-entry
@@ -5455,6 +5495,7 @@ class PlanningPipelineTool(BaseTool):
     # Full pipeline
     # ============================================================
 
+    @collect_planning_latency
     def _run_full_pipeline(self, ct_image, ctv_mask, oar_mask, ref_direc,
                            mode, agent_config, agent, step_callback=None,
                            preview_emitter=None):
