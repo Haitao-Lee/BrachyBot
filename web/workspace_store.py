@@ -1699,6 +1699,11 @@ class WorkspaceStore:
         # Without an injected probe the timer runs exactly as before.
         self._heavy_task_probe: Optional[Callable[[str, str], bool]] = None
         self._checkpoint_completed_at: Dict[Tuple[str, str], float] = {}
+        # Coalesce checkpoint scheduling while a full snapshot is in flight:
+        # a new schedule must not cancel the running write, and the skipped
+        # mutation is replayed once as a follow-up after it completes.
+        self._checkpoint_inflight: Dict[Tuple[str, str], bool] = {}
+        self._checkpoint_dirty: Dict[Tuple[str, str], bool] = {}
         self.checkpoint_max_staleness_seconds = _checkpoint_max_staleness_seconds()
         # Heavy snapshot preparation is serialized per case. Multiple UI
         # events may request a checkpoint at once, but they must not each scan
@@ -2613,6 +2618,53 @@ class WorkspaceStore:
             )
 
     def _snapshot_agent_locked(
+        self,
+        user_id: str,
+        session_id: str,
+        agent: Any,
+        *,
+        reason: str = "agent.checkpoint",
+        operation: Optional[Mapping[str, Any]] = None,
+        checkpoint_generation: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Run one full snapshot and replay coalesced schedules afterwards."""
+        if checkpoint_generation is not None:
+            with self._lock:
+                current_generation = self._checkpoint_generations.get(
+                    (user_id, session_id), 0
+                )
+            if int(checkpoint_generation) != int(current_generation):
+                logger.debug(
+                    "workspace checkpoint skipped stale session=%s reason=%s generation=%s current_generation=%s",
+                    session_id, reason, checkpoint_generation, current_generation,
+                )
+                return {}
+        key = (str(user_id), str(session_id))
+        with self._lock:
+            self._checkpoint_inflight[key] = True
+        try:
+            return self._snapshot_agent_locked_inner(
+                user_id,
+                session_id,
+                agent,
+                reason=reason,
+                operation=operation,
+                checkpoint_generation=checkpoint_generation,
+            )
+        finally:
+            with self._lock:
+                self._checkpoint_inflight.pop(key, None)
+                dirty = self._checkpoint_dirty.pop(key, None)
+            if dirty:
+                logger.info(
+                    "workspace checkpoint coalesced follow-up session=%s reason=%s",
+                    session_id, reason,
+                )
+                self.schedule_agent_checkpoint(
+                    user_id, session_id, agent, f"{reason}.coalesced",
+                )
+
+    def _snapshot_agent_locked_inner(
         self,
         user_id: str,
         session_id: str,
@@ -3682,6 +3734,13 @@ class WorkspaceStore:
             return
         key = (user_id, session_id)
         with self._lock:
+            if self._checkpoint_inflight.get(key):
+                self._checkpoint_dirty[key] = True
+                logger.debug(
+                    "workspace checkpoint coalesced session=%s reason=%s",
+                    session_id, reason,
+                )
+                return
             existing = self._checkpoint_timers.pop(key, None)
             if existing:
                 existing.cancel()
@@ -3784,6 +3843,7 @@ class WorkspaceStore:
     ) -> Dict[str, Any]:
         key = (user_id, session_id)
         with self._lock:
+            self._checkpoint_dirty.pop(key, None)
             timer = self._checkpoint_timers.pop(key, None)
             if timer:
                 timer.cancel()
@@ -3807,6 +3867,7 @@ class WorkspaceStore:
         """
         key = (user_id, session_id)
         with self._lock:
+            self._checkpoint_dirty.pop(key, None)
             timer = self._checkpoint_timers.pop(key, None)
             if timer:
                 timer.cancel()

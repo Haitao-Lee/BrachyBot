@@ -296,3 +296,48 @@ def test_wired_probe_reflects_running_task(tmp_path):
 
     app.extensions["brachybot_chat_tasks"] = _Registry()
     assert store._heavy_task_probe("u", "s") is True
+
+
+def test_schedule_during_inflight_coalesces(tmp_path):
+    store, user, case, agent = _case(tmp_path)
+    key = (user["id"], case.id)
+    store._checkpoint_inflight[key] = True
+    generation_before = store._checkpoint_generations.get(key, 0)
+    store.schedule_agent_checkpoint(user["id"], case.id, agent, "test.inflight")
+    assert store._checkpoint_generations.get(key, 0) == generation_before
+    assert key not in store._checkpoint_timers
+    assert store._checkpoint_dirty.get(key) is True
+
+
+def test_inflight_completion_schedules_coalesced_followup(tmp_path):
+    store, user, case, agent = _case(tmp_path)
+    key = (user["id"], case.id)
+
+    def _inner(*args, **kwargs):
+        store.schedule_agent_checkpoint(user["id"], case.id, agent, "test.during")
+        return {}
+
+    store._snapshot_agent_locked_inner = _inner
+    try:
+        store._snapshot_agent_locked(user["id"], case.id, agent, reason="test.run")
+        assert key not in store._checkpoint_inflight
+        assert key not in store._checkpoint_dirty
+        assert key in store._checkpoint_timers
+        timer = store._checkpoint_timers[key]
+        assert timer.args[3] == "test.run.coalesced"
+    finally:
+        _cancel_timers(store, key)
+        store._snapshot_agent_locked_inner = None
+
+
+def test_flush_clears_dirty(tmp_path):
+    store, user, case, agent = _case(tmp_path)
+    key = (user["id"], case.id)
+    store._checkpoint_dirty[key] = True
+    store._snapshot_agent_locked_inner = lambda *a, **k: {}
+    try:
+        store.flush_agent_checkpoint(user["id"], case.id, agent, "test.flush")
+        assert key not in store._checkpoint_dirty
+    finally:
+        store._snapshot_agent_locked_inner = None
+        _cancel_timers(store, key)
