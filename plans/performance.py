@@ -2,6 +2,9 @@
 
 Nested rows overlap and must not be summed. No patient arrays or model state
 are retained here. ContextVars isolate simultaneous planning requests.
+`process_cpu_seconds`/`avg_parallelism`/`threads_*` are process-wide snapshots
+and therefore an upper-bound contention signal for a single request when other
+server threads are active.
 """
 from contextvars import ContextVar
 from functools import wraps
@@ -56,21 +59,23 @@ def collect_planning_latency(function):
         load_started = _loadavg_1m()
         try:
             result = function(*args, **kwargs)
+            wall = time.perf_counter() - started
+            cpu = time.process_time() - cpu_started
+            load_end = _loadavg_1m()
+            threads_end = threading.active_count()
             metadata = getattr(result, 'metadata', None)
             if isinstance(metadata, dict):
-                wall = time.perf_counter() - started
-                cpu = time.process_time() - cpu_started
                 metadata['latency_profile'] = {
                     'total_seconds': wall,
                     'nested_timings': profile,
                     'contention': {
                         'loadavg_1m_start': load_started,
-                        'loadavg_1m_end': _loadavg_1m(),
+                        'loadavg_1m_end': load_end,
                         'process_cpu_seconds': cpu,
                         'wall_seconds': wall,
                         'avg_parallelism': (cpu / wall) if wall > 0 else 0.0,
                         'threads_start': threads_started,
-                        'threads_end': threading.active_count(),
+                        'threads_end': threads_end,
                     },
                 }
             return result

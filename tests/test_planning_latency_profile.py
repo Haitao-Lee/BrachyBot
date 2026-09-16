@@ -88,3 +88,16 @@ def test_profile_records_contention_context():
     assert contention['wall_seconds'] >= 0.0
     assert contention['avg_parallelism'] >= 0.0
     assert contention['threads_end'] >= 1
+    assert contention['wall_seconds'] == pytest.approx(result.metadata['latency_profile']['total_seconds'])
+    assert contention['avg_parallelism'] == pytest.approx(
+        contention['process_cpu_seconds'] / contention['wall_seconds'])
+
+
+def test_loadavg_fallback_returns_zero(monkeypatch):
+    import plans.performance as performance
+
+    def _boom():
+        raise OSError("no loadavg")
+
+    monkeypatch.setattr(performance.os, "getloadavg", _boom)
+    assert performance._loadavg_1m() == 0.0
