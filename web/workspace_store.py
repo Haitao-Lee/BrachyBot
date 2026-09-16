@@ -1701,8 +1701,10 @@ class WorkspaceStore:
         self._checkpoint_completed_at: Dict[Tuple[str, str], float] = {}
         # Coalesce checkpoint scheduling while a full snapshot is in flight:
         # a new schedule must not cancel the running write; the latest
-        # scheduled payload is replayed once as a follow-up afterwards.
-        self._checkpoint_inflight: Dict[Tuple[str, str], bool] = {}
+        # scheduled payload is replayed once as a follow-up afterwards. The
+        # value is the generation the in-flight snapshot was armed with, so a
+        # generation bump by another writer ends the coalescing window.
+        self._checkpoint_inflight: Dict[Tuple[str, str], int] = {}
         self._checkpoint_dirty: Dict[Tuple[str, str], Dict[str, Any]] = {}
         self.checkpoint_max_staleness_seconds = _checkpoint_max_staleness_seconds()
         # Heavy snapshot preparation is serialized per case. Multiple UI
@@ -2641,8 +2643,8 @@ class WorkspaceStore:
                 return {}
         key = (str(user_id), str(session_id))
         with self._lock:
-            self._checkpoint_inflight[key] = True
             generation_at_entry = int(self._checkpoint_generations.get(key, 0))
+            self._checkpoint_inflight[key] = generation_at_entry
         try:
             return self._snapshot_agent_locked_inner(
                 user_id,
@@ -3756,7 +3758,11 @@ class WorkspaceStore:
             return
         key = (user_id, session_id)
         with self._lock:
-            if self._checkpoint_inflight.get(key):
+            inflight_generation = self._checkpoint_inflight.get(key)
+            if (
+                inflight_generation is not None
+                and int(self._checkpoint_generations.get(key, 0)) == int(inflight_generation)
+            ):
                 self._checkpoint_dirty[key] = {
                     "agent": agent,
                     "reason": reason,

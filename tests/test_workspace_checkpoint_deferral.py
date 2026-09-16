@@ -303,7 +303,7 @@ def test_wired_probe_reflects_running_task(tmp_path):
 def test_schedule_during_inflight_coalesces(tmp_path):
     store, user, case, agent = _case(tmp_path)
     key = (user["id"], case.id)
-    store._checkpoint_inflight[key] = True
+    store._checkpoint_inflight[key] = store._checkpoint_generations.get(key, 0)
     generation_before = store._checkpoint_generations.get(key, 0)
     store.schedule_agent_checkpoint(user["id"], case.id, agent, "test.inflight")
     assert store._checkpoint_generations.get(key, 0) == generation_before
@@ -318,7 +318,7 @@ def test_schedule_during_inflight_coalesces(tmp_path):
 def test_coalesced_payload_keeps_latest_operation(tmp_path):
     store, user, case, agent = _case(tmp_path)
     key = (user["id"], case.id)
-    store._checkpoint_inflight[key] = True
+    store._checkpoint_inflight[key] = store._checkpoint_generations.get(key, 0)
     store.schedule_agent_checkpoint(
         user["id"], case.id, agent, "operation.checkpoint",
         operation={"state": "running", "message": "step 2"},
@@ -429,7 +429,7 @@ def test_discard_clears_dirty(tmp_path):
 def test_latest_coalesced_schedule_wins(tmp_path):
     store, user, case, agent = _case(tmp_path)
     key = (user["id"], case.id)
-    store._checkpoint_inflight[key] = True
+    store._checkpoint_inflight[key] = store._checkpoint_generations.get(key, 0)
     store.schedule_agent_checkpoint(
         user["id"], case.id, agent, "operation.checkpoint",
         operation={"state": "running", "message": "first"},
@@ -467,3 +467,19 @@ def test_replay_skipped_when_newer_writer_won(tmp_path):
     finally:
         _cancel_timers(store, key)
         del store._snapshot_agent_locked_inner
+
+
+def test_schedule_after_partial_writer_bump_arms_new_timer(tmp_path):
+    store, user, case, agent = _case(tmp_path)
+    key = (user["id"], case.id)
+    store._checkpoint_inflight[key] = store._checkpoint_generations.get(key, 0)
+    # A partial writer (e.g. save_agent_results_patch) bumps the generation
+    # without arming a timer; the caller then queues a full checkpoint.
+    store._checkpoint_generations[key] = store._checkpoint_generations.get(key, 0) + 1
+    store.schedule_agent_checkpoint(
+        user["id"], case.id, agent, "structures.full_checkpoint",
+    )
+    assert key in store._checkpoint_timers
+    assert store._checkpoint_generations[key] == 2
+    assert store._checkpoint_timers[key].args[3] == "structures.full_checkpoint"
+    _cancel_timers(store, key)
