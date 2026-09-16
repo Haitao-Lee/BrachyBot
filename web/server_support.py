@@ -20,7 +20,7 @@ import math
 import re
 from collections import deque
 from datetime import datetime
-from typing import Dict, Any, Optional, Iterable
+from typing import Dict, Any, Mapping, Optional, Iterable
 from functools import wraps
 
 # Add parent directory to Python path for imports
@@ -383,6 +383,22 @@ def _ui_bucket(session_id: Optional[str] = None) -> Dict[str, Any]:
                 "feedback": [],
             },
         })
+
+
+def select_case_bridge(snapshot_bridge: Any, sidecar_bridge: Any) -> Dict[str, Any]:
+    """Prefer the newest persisted UI bridge between snapshot and sidecar."""
+    snapshot = snapshot_bridge if isinstance(snapshot_bridge, Mapping) else {}
+    sidecar = sidecar_bridge if isinstance(sidecar_bridge, Mapping) else {}
+
+    def _stamp(payload: Mapping[str, Any], field: str) -> float:
+        try:
+            return float(payload.get(field) or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    if _stamp(sidecar, "saved_at") > _stamp(snapshot, "updated_at"):
+        return dict(sidecar)
+    return dict(snapshot)
 
 
 def _close_stale_training_snapshot(

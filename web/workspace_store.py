@@ -3687,6 +3687,38 @@ class WorkspaceStore:
             # from being inspected or deleted.
             return
 
+    def save_ui_bridge(
+        self,
+        user_id: str,
+        session_id: str,
+        bridge: Mapping[str, Any],
+        *,
+        reason: str = "ui.bridge",
+    ) -> None:
+        """Persist UI bridge telemetry without rewriting the case snapshot.
+
+        High-frequency UI events (sliders, monitor status) belong to a small
+        sidecar so a 30MB snapshot rewrite is not paid per event. The snapshot
+        keeps its last bridge copy as a read-only fallback for older cases.
+        """
+        self.get_session(user_id, session_id)
+        payload = dict(bridge) if isinstance(bridge, Mapping) else {}
+        payload["reason"] = str(reason)
+        payload["saved_at"] = time.time()
+        root = self.workspace_root(user_id, session_id, create=True)
+        _atomic_json(_safe_workspace_child(root, "ui_bridge.json"), payload)
+
+    def load_ui_bridge(self, user_id: str, session_id: str) -> Dict[str, Any]:
+        """Return persisted sidecar bridge state, or {} when absent/invalid."""
+        try:
+            self.get_session(user_id, session_id)
+            root = self.workspace_root(user_id, session_id)
+            path = _safe_workspace_child(root, "ui_bridge.json")
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (WorkspaceError, OSError, ValueError, TypeError):
+            return {}
+        return dict(payload) if isinstance(payload, dict) else {}
+
     def set_heavy_task_probe(
         self, probe: Optional[Callable[[str, str], bool]],
     ) -> None:

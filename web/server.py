@@ -177,6 +177,11 @@ def _report_ctv_volume_mm3(agent: Any) -> Optional[float]:
     return None
 
 
+def _select_case_bridge(snapshot_bridge: Any, sidecar_bridge: Any) -> dict:
+    """Prefer the newest persisted UI bridge between snapshot and sidecar."""
+    return _server_support.select_case_bridge(snapshot_bridge, sidecar_bridge)
+
+
 def _case_has_running_chat_task(task_manager: Any, user_id: str, session_id: str) -> bool:
     """Return whether a case owns a detached chat/planning worker.
 
@@ -579,7 +584,10 @@ def create_app(config: Optional[Dict] = None):
             except WorkspaceError:
                 logger.info("Discarded hydration for removed case %s", resolved_session_id)
                 return None
-            bridge = ((hydrated_snapshot.get("ui") or {}).get("bridge") or {})
+            bridge = _select_case_bridge(
+                (hydrated_snapshot.get("ui") or {}).get("bridge") or {},
+                workspace_store.load_ui_bridge(user["id"], resolved_session_id),
+            )
             if isinstance(bridge, dict):
                 bucket = _server_support._ui_bucket(resolved_session_id)
                 training = _server_support._close_stale_training_snapshot(

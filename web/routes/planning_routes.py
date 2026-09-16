@@ -1035,13 +1035,7 @@ def _flush_ui_bridge_checkpoint(key: tuple) -> None:
         return
     store, user_id, selected, bridge, reason = item
     try:
-        store.save_snapshot_patch(
-            user_id,
-            selected,
-            {"ui": {"bridge": bridge}},
-            expected_revision=None,
-            reason=reason,
-        )
+        store.save_ui_bridge(user_id, selected, bridge, reason=reason)
     except WorkspaceNotFound:
         # A delayed browser event can arrive after explicit case deletion.
         logger.debug("Ignoring UI bridge checkpoint for deleted case %s", selected)
@@ -4676,7 +4670,10 @@ def register_planning_routes(
             if store is not None and user is not None and selected:
                 try:
                     snapshot = store.load_snapshot(user["id"], selected)
-                    bridge = ((snapshot.get("ui") or {}).get("bridge") or {})
+                    bridge = _server_support.select_case_bridge(
+                        (snapshot.get("ui") or {}).get("bridge") or {},
+                        store.load_ui_bridge(user["id"], selected),
+                    )
                     if isinstance(bridge, dict):
                         return {
                             "state": dict(bridge.get("state") or {}),
