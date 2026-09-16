@@ -62,6 +62,16 @@ def register_session_routes(
         entry = store.require_local_session(user["id"], candidate)
         return entry.id
 
+    def _snapshot_with_newest_bridge(user_id: str, session_id: str, snapshot: dict) -> dict:
+        """Merge the newest persisted UI bridge into a snapshot response."""
+        ui = snapshot.get("ui")
+        if isinstance(ui, dict):
+            ui["bridge"] = _server_support.select_case_bridge(
+                ui.get("bridge") or {},
+                store.load_ui_bridge(user_id, session_id),
+            )
+        return snapshot
+
     def assert_target_editable(user: Dict[str, Any], session_id: str) -> None:
         """Apply the edit lease to an explicitly addressed case session.
 
@@ -189,7 +199,9 @@ def register_session_routes(
             # Selecting a case is a control-plane operation and must remain
             # responsive; the data-plane agent is hydrated lazily by the first
             # status/planning request after the lightweight snapshot is shown.
-            snapshot = store.load_snapshot(user["id"], entry.id)
+            snapshot = _snapshot_with_newest_bridge(
+                user["id"], entry.id, store.load_snapshot(user["id"], entry.id),
+            )
         except WorkspaceError as exc:
             return jsonify({"error": str(exc)}), 404
         return jsonify({"success": True, "active_session_id": entry.id, "workspace": snapshot})
@@ -204,7 +216,9 @@ def register_session_routes(
         try:
             entry = store.restore_archived_session(user["id"], session_id)
             session["bb_session_id"] = entry.id
-            snapshot = store.load_snapshot(user["id"], entry.id)
+            snapshot = _snapshot_with_newest_bridge(
+                user["id"], entry.id, store.load_snapshot(user["id"], entry.id),
+            )
         except WorkspaceLeaseConflict as exc:
             return jsonify({"error": str(exc), "code": "workspace_locked"}), 409
         except WorkspaceArchived as exc:
@@ -271,7 +285,11 @@ def register_session_routes(
             replacement = remaining[0] if remaining else store.create_session(user["id"], "New case")
             session["bb_session_id"] = replacement.id
         active_session_id = session.get("bb_session_id")
-        snapshot = store.load_snapshot(user["id"], str(active_session_id))
+        snapshot = _snapshot_with_newest_bridge(
+            user["id"],
+            str(active_session_id),
+            store.load_snapshot(user["id"], str(active_session_id)),
+        )
         return jsonify({
             "success": True,
             "active_session_id": active_session_id,
@@ -388,12 +406,7 @@ def register_session_routes(
             # The sidecar is the live UI-bridge writer; merge the newest copy
             # so background monitor close-out state is not read from a frozen
             # snapshot bridge.
-            ui = snapshot.get("ui")
-            if isinstance(ui, dict):
-                ui["bridge"] = _server_support.select_case_bridge(
-                    ui.get("bridge") or {},
-                    store.load_ui_bridge(user["id"], session_id),
-                )
+            snapshot = _snapshot_with_newest_bridge(user["id"], session_id, snapshot)
         except WorkspaceError as exc:
             return jsonify({"error": str(exc)}), 404
         return jsonify({"success": True, "workspace": snapshot})
@@ -469,7 +482,11 @@ def register_session_routes(
             return jsonify(payload), 409
         except WorkspaceError as exc:
             return jsonify({"error": str(exc)}), 400
-        return jsonify({"success": True, "revision": snapshot["session"]["revision"], "workspace": snapshot})
+        return jsonify({
+            "success": True,
+            "revision": snapshot["session"]["revision"],
+            "workspace": _snapshot_with_newest_bridge(user["id"], session_id, snapshot),
+        })
 
     @app.route("/api/workspace/checkpoint", methods=["POST"])
     @require_api_key

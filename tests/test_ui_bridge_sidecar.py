@@ -264,3 +264,41 @@ def test_workspace_snapshot_prefers_sidecar_bridge(tmp_path):
     assert response.status_code == 200
     bridge = response.get_json()["workspace"]["ui"]["bridge"]
     assert bridge["state"] == {"side": 2}
+
+
+def test_sidecar_persists_lone_surrogates(tmp_path):
+    store, user, case = _store(tmp_path)
+    store.save_ui_bridge(
+        user["id"], case.id, {"state": {"label": "\ud800oops"}},
+    )
+    loaded = store.load_ui_bridge(user["id"], case.id)
+    assert loaded["state"]["label"].endswith("oops")
+
+
+def test_session_select_returns_newest_bridge(tmp_path):
+    client, body, store = _app_client_store(tmp_path, "select_bridge")
+    sid = body["active_session_id"]
+    user_id = body["user"]["id"]
+    token = body["csrf_token"]
+    store.save_snapshot_patch(
+        user_id,
+        sid,
+        {"ui": {"bridge": {
+            "state": {"snap": 1},
+            "events": [],
+            "training": {},
+            "updated_at": time.time() - 100.0,
+        }}},
+    )
+    store.save_ui_bridge(
+        user_id,
+        sid,
+        {"state": {"side": 2}, "events": [], "training": {}, "updated_at": time.time()},
+    )
+    response = client.post(
+        f"/api/sessions/{sid}/select",
+        headers={"X-CSRF-Token": token},
+    )
+    assert response.status_code == 200
+    workspace = response.get_json()["workspace"]
+    assert workspace["ui"]["bridge"]["state"] == {"side": 2}

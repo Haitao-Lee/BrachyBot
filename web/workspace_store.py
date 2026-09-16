@@ -3705,12 +3705,17 @@ class WorkspaceStore:
         """
         self.require_local_session(user_id, session_id)
         payload = _safe_json(dict(bridge)) if isinstance(bridge, Mapping) else {}
-        if not isinstance(payload, dict):
-            payload = {}
         payload["reason"] = str(reason)
         payload["saved_at"] = time.time()
         root = self.workspace_root(user_id, session_id, create=True)
-        _atomic_json(_safe_workspace_child(root, "ui_bridge.json"), payload)
+        path = _safe_workspace_child(root, "ui_bridge.json")
+        # JS text can contain an unpaired UTF-16 surrogate (an emoji split by
+        # a browser-side slice); mirror the snapshot writer and preserve it as
+        # a JSON escape instead of failing the whole flush.
+        payload_bytes = json.dumps(
+            payload, ensure_ascii=False, indent=2, allow_nan=False,
+        ).encode("utf-8", errors="backslashreplace")
+        _atomic_bytes(path, payload_bytes)
         self._invalidate_storage_usage(user_id)
         self._audit(user_id, session_id, reason, {"keys": sorted(str(k) for k in payload.keys())})
 
