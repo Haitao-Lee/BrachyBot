@@ -15,6 +15,7 @@ from agent_runtime.shortcut_contract import shortcut_supported
 from agent_runtime.intent_boundary import (
     canonical_resource_read, canonical_report_generation, has_explicit_read_request,
 )
+from agent_runtime import request_parse as _request_parse
 
 
 KNOWLEDGE_TOOLS: FrozenSet[str] = frozenset({
@@ -88,6 +89,11 @@ class LocalTurnPolicy:
     routing_source: str = "legacy_candidate"
     routing_reason: str = ""
     candidate_intent: str = ""
+    # Structured view of the current request.  Purely informational: it is
+    # written into the execution trace and the provider context, and it never
+    # grants execution by itself.
+    parsed_goals: Tuple[Tuple[str, str], ...] = ()
+    parsed_reference: str = ""
 
 
 def visual_analysis_policy() -> LocalTurnPolicy:
@@ -383,35 +389,10 @@ def _is_canonical_execution_command(message: str, *, operation: str) -> bool:
 def _is_interrogative(message: str) -> bool:
     """Return True when the message reads like a question, not a command.
 
-    A question asks for information; a command asks for action.  The
-    distinction drives whether to auto-execute tools (command) or route
-    through the LLM for a plain-text answer (question).
+    Thin adapter over :mod:`agent_runtime.request_parse` so every layer uses
+    one interrogative definition.
     """
-    text = str(message or "").strip()
-    if not text:
-        return False
-    lower = text.lower()
-    if re.search(r"[?？吗呢]$", text.rstrip('!！')):
-        return True
-    if re.search(
-        r'(?:是不是|有没有|能不能|可不可以|是否|怎么样|如何|怎么|为什么|为何|什么|谁|哪里|哪儿|在哪|哪次|哪个|哪一个|'
-        r'完成.*[了没]|做了[没吗]|好了[没吗]|分割.*[了没]|规划.*[了没])',
-        lower,
-    ):
-        return True
-    if re.search(
-        r'\b(?:what|which|where|when|why|who|whose|how|is it|are (?:you|there)|can (?:you|i)|'
-        r'could|would|should|has (?:it|the)|have (?:you|they)|'
-        r'did (?:you|it)|does (?:it|the))\b',
-        lower,
-    ):
-        return True
-    # Negation + passive inspection = "don't do anything, just check"
-    if re.search(r'(?:不要|别|不准|不许)', lower) and re.search(
-        r'(?:查看|看看|检查|确认|告诉)', lower,
-    ):
-        return True
-    return False
+    return _request_parse.is_interrogative(message)
 
 
 def _is_location_question(message: str) -> bool:
@@ -609,7 +590,7 @@ def _visual_target_from_text(message: str) -> Optional[str]:
     return targets[0] if targets else None
 
 
-def _recent_user_visual_target(conversation: Optional[Iterable[object]]) -> Optional[str]:
+def _recent_user_visual_target(conversation: Optional[Iterable[object]], *, skip_surface: bool = False) -> Optional[str]:
     """Resolve the nearest explicit visual target from recent user turns.
 
     A short, user-only context window lets ``截图给我在哪里`` follow a
@@ -634,7 +615,7 @@ def _recent_user_visual_target(conversation: Optional[Iterable[object]]) -> Opti
                 for part in content
             )
         candidate = _visual_target_from_text(str(content or ""))
-        if candidate:
+        if candidate and not (skip_surface and candidate == "data_tree"):
             return candidate
     return None
 
@@ -1144,6 +1125,7 @@ def resolve_report_request_action(message: str) -> Optional[str]:
     chinese_mutation = _contains_any(text, (
         "\u751f\u6210", "\u66f4\u65b0", "\u5237\u65b0", "\u91cd\u505a", "\u91cd\u5efa",
         "\u5236\u4f5c", "\u521b\u5efa", "\u586b\u5145", "\u8865\u5168", "\u5b8c\u5584",
+        "\u5199", "\u64b0\u5199",
     ))
     incomplete_report = bool(re.search(
         r"(?:\u6b63\u6587|\u6587\u5b57|\u8868\u683c|reference|status|content|text|table)"
@@ -1167,6 +1149,40 @@ def resolve_report_request_action(message: str) -> Optional[str]:
 def is_report_generation_request(message: str) -> bool:
     """Return whether a turn mutates the editable report."""
     return resolve_report_request_action(message) == "regenerate"
+
+
+def unambiguous_report_generation_request(message: str) -> bool:
+    """Return whether the whole turn is a clear report mutation.
+
+    A report noun with a generation/update verb names the report as the
+    protected object, even when that noun carries a domain qualifier such as
+    ``手术报告``, ``剂量报告`` or ``分析报告``.  The structural protection is
+    "the report is the object of the command verb": qualifier content does not
+    change the requested action.  Negation, correction, conditions, questions,
+    quoted text and compound goals are not unambiguous and must stay on the
+    semantic route.
+
+    This is the object-level contract shared by the routing layer and the
+    provider tool-selection boundary: a report request may never be executed
+    by the guide capability.
+    """
+    text = str(message or "")
+    if not is_report_generation_request(text):
+        return False
+    return _request_parse.unambiguous_report_generation(text)
+
+
+def unambiguous_guide_generation_request(message: str) -> bool:
+    """Return whether the whole turn is a clear guide mutation (not compound).
+
+    Shared by the provider boundary so a report/screenshot call selected for an
+    explicit guide command is corrected, while a compound "guide and report"
+    turn is left to the semantic plan.
+    """
+    text = str(message or "")
+    if not is_surgical_guide_generation_request(text):
+        return False
+    return _request_parse.unambiguous_guide_generation(text)
 
 
 def is_surgical_guide_generation_request(message: str) -> bool:
@@ -1513,6 +1529,26 @@ def resolve_session_visual_location_request(
 
     control_target = resolve_ui_control_location_target(text)
     current_targets = list(_visual_targets_from_text(text))
+    # "Where in the Data Tree?" names the presentation surface, not a new
+    # object. Unlike "Where is the Data Tree?", it inherits the user's last
+    # explicit subject. Full-clause matching prevents unknown object names
+    # from being silently replaced by a previous guide.
+    surface_followup = bool(re.fullmatch(
+        r"(?:在\s*(?:data\s*tree|数据树)(?:里|中)?(?:的)?\s*(?:哪里|哪儿|哪个位置)(?:呢|呀|啊|吗)?"
+        r"|where\s+(?:is\s+it\s+)?in\s+(?:the\s+)?data\s*tree)[？?。.!！\s]*",
+        text,
+    ))
+    if surface_followup:
+        inherited = _recent_user_visual_target(conversation, skip_surface=True)
+        if inherited:
+            return {
+                "semantic_targets": [inherited],
+                "target_refs": list(_CANONICAL_VISUAL_TARGET_REFS.get(inherited, ())),
+                "target_query": text,
+                "target_source": "conversation_reference",
+                "target_surfaces": ["data-tree"],
+                "requires_discovery": False,
+            }
     if control_target:
         current_targets = [control_target]
 
@@ -1704,8 +1740,9 @@ def _classify_local_candidate(
     # sees the second action. The only routing-level dependency encoded here
     # is the safety-critical planning -> guide relationship; all other actions
     # are selected and ordered by the primary LLM.
-    if _looks_like_compound_action(text):
-        return _semantic_action_policy(
+    if _looks_like_compound_action(text) or _request_parse.parse_request(text).compound_write:
+        parsed = _request_parse.parse_request(text)
+        policy = _semantic_action_policy(
             complexity="high",
             review=True,
             action_plan=(
@@ -1717,6 +1754,37 @@ def _classify_local_candidate(
                     else None
                 )
             ),
+        )
+        # An ordered goal list is attached for the provider/trace.  Only the
+        # safety-critical planning -> guide dependency is executed
+        # deterministically; every other compound turn is resolved as a whole
+        # by the primary model instead of being split into guessed shortcuts.
+        if parsed.goals:
+            policy = replace(
+                policy,
+                parsed_goals=parsed.goals,
+                routing_reason="compound_goals_parsed",
+            )
+        return policy
+
+    # Object + action priority: a report noun is the protected object of a
+    # generation/update command. Resolve it before the guide, Viewer, and
+    # dose shortcuts so a domain qualifier such as "手术" cannot be read as
+    # "手术导板" and so "剂量报告" is a report, not a dose recalculation.
+    # Negation, correction and compound goals were already delegated above,
+    # so reaching here means the whole turn is a positive report command.
+    if is_report_generation_request(text):
+        if not canonical_report_generation(text):
+            return _semantic_action_policy(complexity="medium", review=False)
+        return LocalTurnPolicy(
+            "report_generation",
+            "low",
+            False,
+            False,
+            False,
+            UI_TOOLS,
+            direct_execution=True,
+            execution_grants=frozenset({"ui_controller"}),
         )
 
     # "Where can I generate a guide?" asks for workflow/UI guidance, not for
@@ -1840,20 +1908,6 @@ def _classify_local_candidate(
             False,
             False,
             UI_TOOLS,
-        )
-
-    if is_report_generation_request(text):
-        if _requires_semantic_resolution(text) or not canonical_report_generation(text):
-            return _semantic_action_policy(complexity="medium", review=False)
-        return LocalTurnPolicy(
-            "report_generation",
-            "low",
-            False,
-            False,
-            False,
-            UI_TOOLS,
-            direct_execution=True,
-            execution_grants=frozenset({"ui_controller"}),
         )
 
     # Guide generation is a real case mutation and must never fall through to

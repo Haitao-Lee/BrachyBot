@@ -1861,6 +1861,8 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 metadata["num_trajectories"] = len(filtered)
                 result.data = filtered
             if tool_name == "ctv_segmentation" and "ctv_array" in metadata:
+                for provenance_key in ("model_validation", "inference_precision", "inference_script", "inference_gpu", "ct_phase"):
+                    self.memory.store(provenance_key, metadata.get(provenance_key))
                 self.memory.store("ctv_array", metadata["ctv_array"])
                 if "ctv_mask" in metadata:
                     self.memory.store("ctv_mask", metadata["ctv_mask"])
@@ -2570,6 +2572,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 "sat3d_negative_points_zyx", "sat3d_requires_clinician_review",
                 "image_modality", "volume_index", "target_semantics",
                 "text_prompt", "object_existence_confidence",
+                "model_validation", "inference_precision", "inference_script", "inference_gpu", "ct_phase",
             ):
                 if provenance_key in meta:
                     self.memory.store(provenance_key, meta.get(provenance_key))

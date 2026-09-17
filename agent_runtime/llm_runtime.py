@@ -599,6 +599,18 @@ class LLMRuntimeMixin:
             "it, or generation for a question about it. Report tool failure, cancellation or "
             "pending confirmation honestly; do not claim completion without execution evidence."
         )
+        policy = getattr(self, "_active_turn_policy", None)
+        parsed_goals = getattr(policy, "parsed_goals", ()) or ()
+        if parsed_goals:
+            ordered = " -> ".join(
+                f"{target}.{action}" for target, action in parsed_goals
+            )
+            semantic_contract += (
+                "\n[Ordered request goals]\n"
+                + ordered
+                + "\nExecute the listed goals in the given order, reusing existing results when "
+                "their inputs are unchanged. Do not add, drop, or reorder a goal."
+            )
         messages = [dict(entry) for entry in messages]
         system = next((entry for entry in messages if entry.get("role") == "system"
                        and isinstance(entry.get("content"), str)), None)

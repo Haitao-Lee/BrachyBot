@@ -165,6 +165,21 @@ class RunLedger:
                 self.active.context_manifest = _json_safe(dict(manifest))
                 self.active.updated_at = time.time()
 
+    def record_routing(self, routing: Mapping[str, Any]) -> None:
+        """Append a structured routing/parse record without changing status.
+
+        Low-cost and non-blocking for callers without an active run.  Used so
+        the deterministic request parse is durably traceable instead of only a
+        single log line.
+        """
+        with self._lock:
+            if self.active is None:
+                return
+            self.active.events.append(RuntimeEvent(
+                time.time(), "request.routed", _json_safe(dict(routing)),
+            ))
+            self.active.updated_at = time.time()
+
     def export_state(self) -> Dict[str, Any]:
         with self._lock:
             state = {"history": list(self.history[-self.max_history:])}

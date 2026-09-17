@@ -2356,6 +2356,41 @@ class ChatWorkflowMixin:
             else "Presenting the accessible content in the current Session.",
         )
 
+    def _report_generation_state_gate(self) -> Optional[str]:
+        """Return a readable refusal when no planning result can fill a report.
+
+        Purely in-memory and deterministic.  When the live agent Memory exposes
+        no usable planning/dose state, running the report pipeline would either
+        fail late or produce an empty report; the user gets an actionable
+        Chinese prompt instead.  A Memory without ``retrieve`` (test doubles)
+        returns ``None`` so the existing contract is preserved.
+        """
+        memory = getattr(self, "memory", None)
+        retrieve = getattr(memory, "retrieve", None)
+        if not callable(retrieve):
+            return None
+        try:
+            for key in (
+                "dose_metrics", "metrics", "dose_distribution",
+                "dose_distribution_gy", "seeds",
+            ):
+                if retrieve(key):
+                    return None
+        except Exception:
+            return None
+        lang = getattr(memory, "user_lang", "en")
+        if lang == "zh":
+            return (
+                "\u5f53\u524d Session \u8fd8\u6ca1\u6709\u53ef\u7528\u7684\u89c4\u5212\u7ed3\u679c\uff0c"
+                "\u65e0\u6cd5\u751f\u6210\u62a5\u544a\u3002\u8bf7\u5148\u5b8c\u6210 CTV/OAR \u5206\u5272"
+                "\u4e0e\u7c92\u5b50\u690d\u5165\u89c4\u5212\uff0c\u7136\u540e\u518d\u8bf4\u201c\u91cd\u65b0\u751f\u6210\u62a5\u544a\u201d\u3002"
+            )
+        return (
+            "This Session has no usable planning result yet, so the report cannot "
+            "be generated. Complete CTV/OAR segmentation and planning first, then "
+            "ask to regenerate the report."
+        )
+
     @staticmethod
     def _report_generation_params() -> Dict[str, Any]:
         """Build the single browser action that owns full report generation.
@@ -2373,11 +2408,12 @@ class ChatWorkflowMixin:
     @staticmethod
     def _report_generation_response(lang: str = "en", success: bool = True) -> str:
         if success:
+            # The tool validates/dispatches a browser action. Only the browser
+            # can acknowledge capture, presentation restoration and persistence.
             return (
-                "\u5df2\u6839\u636e\u5f53\u524d Session \u7684 CT\u3001\u5206\u5272\u3001\u89c4\u5212\u3001\u5242\u91cf\u548c DVH \u7ed3\u679c\u91cd\u65b0\u751f\u6210\u62a5\u544a\u3002"
-                "\u62a5\u544a\u6b63\u6587\u3001\u8868\u683c\u3001Reference/Status \u8bc4\u4f30\u548c\u6807\u51c6\u56fe\u4ef6\u5df2\u540c\u6b65\u66f4\u65b0\u5e76\u4fdd\u5b58\u3002"
-                if lang == "zh"
-                else "The report has been regenerated from the current Session's CT, segmentation, planning, dose, and DVH results. Report text, tables, Reference/Status assessment, and canonical figures were updated and saved together."
+                "报告生成请求已提交，正在等待浏览器完成截图、恢复显示并保存报告。"
+                if lang == "zh" else
+                "Report generation was requested; waiting for the browser to capture figures, restore the viewer and save the report."
             )
         return (
             "\u5f53\u524d Session \u7684\u62a5\u544a\u751f\u6210\u64cd\u4f5c\u672a\u80fd\u542f\u52a8\u3002\u8bf7\u786e\u8ba4\u8be5 Session \u5df2\u5b8c\u6210\u52a0\u8f7d\u4e14\u5df2\u6709\u53ef\u7528\u7684\u89c4\u5212\u7ed3\u679c\u540e\u91cd\u8bd5\u3002"
@@ -2501,7 +2537,7 @@ class ChatWorkflowMixin:
             ledger.begin(message)
         return token
 
-    def _activate_turn_policy(self, policy) -> None:
+    def _activate_turn_policy(self, policy, message: str = "") -> None:
         """Install a routing hint and its explicit fast-path grants."""
         self._active_turn_policy = policy
         logger.info(
@@ -2510,9 +2546,19 @@ class ChatWorkflowMixin:
             getattr(policy, "routing_source", ""),
             getattr(policy, "routing_reason", ""), policy.direct_execution,
         )
+        routing_trace = self._routing_trace(message, policy)
+        if routing_trace:
+            ledger = getattr(self, "run_ledger", None)
+            if ledger is not None:
+                ledger.record_routing(routing_trace)
         authorization = self._current_execution_authorization()
         if authorization is not None:
             authorization.grant_policy(policy)
+            if routing_trace:
+                authorization.events.append({
+                    "source": "request_parse",
+                    "routing": routing_trace,
+                })
             action_plan = getattr(policy, "action_plan", None)
             if action_plan is not None:
                 authorization.set_action_plan(action_plan, source="local_action_plan")
@@ -2523,6 +2569,38 @@ class ChatWorkflowMixin:
                         "action.plan.created",
                         action_plan=authorization.action_plan.to_dict(),
                     )
+
+    @staticmethod
+    def _routing_trace(message: str, policy) -> Dict[str, Any]:
+        """Build the low-cost structured routing record for the ledger."""
+        from agent_runtime import request_parse
+
+        trace: Dict[str, Any] = {
+            "source": getattr(policy, "routing_source", ""),
+            "reason": getattr(policy, "routing_reason", ""),
+            "candidate_intent": getattr(policy, "candidate_intent", ""),
+            "selected_intent": getattr(policy, "intent", ""),
+            "direct_execution": bool(getattr(policy, "direct_execution", False)),
+        }
+        parsed_goals = getattr(policy, "parsed_goals", ()) or ()
+        if not message and not parsed_goals:
+            return trace
+        parsed = request_parse.parse_request(message)
+        trace["parse"] = {
+            "target": parsed.target,
+            "action": parsed.action,
+            "scope": parsed.scope,
+            "negated": parsed.negated,
+            "conditional": parsed.conditional,
+            "interrogative": parsed.interrogative,
+            "quoted": parsed.quoted,
+            "objects": list(parsed.objects),
+            "goals": [list(goal) for goal in (parsed_goals or parsed.goals)],
+            "reference": getattr(policy, "parsed_reference", "") or (
+                parsed.references[0] if parsed.references else ""
+            ),
+        }
+        return trace
 
     def _current_execution_authorization(self):
         """Return the authorization ledger owned by the calling turn."""
@@ -2812,7 +2890,7 @@ class ChatWorkflowMixin:
                 ui_state=self._ui_state_snapshot(),
             )
         )
-        self._activate_turn_policy(local_policy)
+        self._activate_turn_policy(local_policy, message)
         if local_policy.intent in {
             "planning_provenance_query",
             "planning_assessment_query",
@@ -2830,6 +2908,12 @@ class ChatWorkflowMixin:
             return response
 
         if local_policy.intent == "report_generation" and local_policy.direct_execution:
+            _blocked = self._report_generation_state_gate()
+            if _blocked:
+                self.memory.add_message("assistant", _blocked)
+                self._record_experience(message, _blocked)
+                self._finish_turn(_blocked)
+                return _blocked
             try:
                 result = self._execute_tool_with_memory(
                     "ui_controller", self._report_generation_params(),
@@ -3011,7 +3095,7 @@ class ChatWorkflowMixin:
                 ui_state=self._ui_state_snapshot(),
             )
         )
-        self._activate_turn_policy(local_policy)
+        self._activate_turn_policy(local_policy, message)
 
         local_read_intents = {
             "planning_provenance_query",
@@ -3073,6 +3157,22 @@ class ChatWorkflowMixin:
             }
 
         if local_policy.intent == "report_generation" and local_policy.direct_execution:
+            _blocked = self._report_generation_state_gate()
+            if _blocked:
+                self.memory.add_message("assistant", _blocked)
+                self._record_experience(message, _blocked, steps)
+                self._finish_turn(_blocked)
+                return {
+                    "response": _blocked,
+                    "steps": steps,
+                    "llm_meta": {
+                        "usage": {},
+                        "latency_ms": 0,
+                        "llm_calls": 0,
+                        "route": "local_report_generation_blocked",
+                        "response_contract": response_contract,
+                    },
+                }
             title = "\u91cd\u65b0\u751f\u6210\u62a5\u544a" if self.memory.user_lang == "zh" else "Regenerate Report"
             params = self._report_generation_params()
             add_step(
@@ -3867,7 +3967,7 @@ class ChatWorkflowMixin:
                 ui_state=self._ui_state_snapshot(),
             )
         )
-        self._activate_turn_policy(local_policy)
+        self._activate_turn_policy(local_policy, message)
 
         # Multi-agent routing (if available). The local policy decides whether
         # this expensive route is needed for the current intent, while the LLM
@@ -4010,6 +4110,16 @@ class ChatWorkflowMixin:
             return
 
         if local_policy.intent == "report_generation" and local_policy.direct_execution:
+            _blocked = self._report_generation_state_gate()
+            if _blocked:
+                response = _blocked
+                self.memory.add_message("assistant", response)
+                self._finish_turn(response)
+                llm_meta["route"] = "local_report_generation_blocked"
+                llm_meta["phase_timings_ms"] = dict(getattr(self, "_turn_timings", {}) or {})
+                yield from final_response_events({"response": response, "llm_meta": llm_meta})
+                yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})
+                return
             params = self._report_generation_params()
             state_step = add_step(
                 "tool",
