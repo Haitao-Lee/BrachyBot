@@ -129,3 +129,21 @@ def test_biomedparse_external_inference_is_pinned_and_locked(monkeypatch):
     except Exception:
         pass
     assert seen['env'].get('CUDA_VISIBLE_DEVICES') == '3'
+
+
+def test_unsupported_tumor_points_at_open_vocabulary():
+    import numpy as np, SimpleITK as sitk
+    from tool_factory.CTV_seg import CTVSegmentationTool
+
+    image = sitk.GetImageFromArray(np.zeros((4, 4, 4), dtype=np.int16))
+    r = CTVSegmentationTool()._execute(image=image, tumor_type='食管癌')
+    assert r.success is False
+    assert (r.metadata or {}).get('open_vocabulary_available') is True
+    assert (r.metadata or {}).get('suggested_tool') == 'biomedparse_segmentation'
+
+
+def test_open_vocabulary_route_is_a_registered_peer():
+    assert route('biomedparse_segmentation') is not None
+    assert target_semantics('biomedparse_segmentation') == 'candidate_mask'
+    assert is_registered_model_source('biomedparse_segmentation')
+    assert 'biomedparse_segmentation' not in {r.id for r in ui_routes()}

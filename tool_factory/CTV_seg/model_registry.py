@@ -29,6 +29,7 @@ class CTVRoute:
     family_key: str = ''    # key inside that family's spec table
     catalog_status: str = 'experimental'
     requires_review: bool = True
+    ui_visible: bool = True
     aliases: Tuple[str, ...] = ()
 
 
@@ -69,6 +70,12 @@ CTV_ROUTES: Dict[str, CTVRoute] = {
         'subprocess', labels={1: 'lung tumor'},
         family='site_model', family_key='vista3d_lung_tumor',
         aliases=('肺', '肺部', '肺部肿瘤', '肺肿瘤', '肺癌', 'lung', 'lung tumor')),
+    'biomedparse_segmentation': CTVRoute(
+        'biomedparse_segmentation', 'open_vocabulary', '开放词汇（任意部位/肿瘤）', 'Open vocabulary (any site)',
+        'text_guided', target_semantics='candidate_mask',
+        family='biomedparse', family_key='open_vocabulary',
+        catalog_status='experimental', requires_review=True, ui_visible=False,
+        aliases=('开放词汇', 'open vocabulary', 'open-vocabulary')),
     'biomedparse_colon_primary': CTVRoute(
         'biomedparse_colon_primary', 'colon', '结肠肿瘤', 'Colon tumor',
         'text_guided', labels={1: 'colon tumor'},
@@ -131,7 +138,7 @@ def is_registered_model_source(source) -> bool:
 
 def ui_routes():
     """Routes the front-end selector lists, in display order."""
-    return [CTV_ROUTES[key] for key in CTV_ROUTES]
+    return [r for r in CTV_ROUTES.values() if r.ui_visible]
 
 
 def aliases() -> Dict[str, str]:
