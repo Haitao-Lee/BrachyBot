@@ -39,7 +39,7 @@ def test_chat_ui_state_capture_and_workspace_conflicts_are_non_blocking():
     assert "Optional UI state capture failed; sending request without it" in chat
     assert "workspaceSaveInFlight" in workspace
     assert "Promise.resolve(prior).catch(() => false)" in workspace
-    assert "_writeWorkspaceSnapshot(ownerSessionId, reason)" in workspace
+    assert "_writeWorkspaceSnapshot(ownerSessionId, reason" in workspace
     assert "workspaceSaveQueuedReasons" not in workspace
     assert "for (let attempt = 0; attempt < 2; attempt += 1)" in workspace
     assert 'payload["current_revision"] = current_revision' in routes
@@ -265,7 +265,7 @@ def test_report_restore_does_not_erase_newer_generated_text():
     assert "async function persistWorkspace(reason, options = {})" in workspace
     assert "options.allowDuringRestore" in workspace
     assert "sessionId: ownerSessionId" in report
-    assert "workspaceSavePayload(ownerSessionId, reason)" in workspace
+    assert "workspaceSavePayload(ownerSessionId, reason" in workspace
     assert "reportState(ownerSessionId)" in workspace
     assert "const previousCaseFlush = typeof flushActiveReportState === 'function'" in workspace
     assert "flushActiveReportState({ sessionId: previousSessionId })" in workspace
@@ -681,7 +681,8 @@ def test_case_switch_clears_only_case_scoped_progress_presentation():
     manual = read("web/app/static/js/brachybot-3d-manual.js")
 
     assert "clearCaseScopedProgressPresentation" in chat_todo
-    assert "trace.sessionId !== activeSessionId" in chat_todo
+    assert "const visibleOwner = trace.sessionId === activeSessionId" in chat_todo
+    assert "const trace = owner.trace" in chat_todo
     assert "if (activeSessionId !== turnSessionId) return;" in chat_todo
     assert "clearCaseScopedProgressPresentation" in ui_api
     assert "clearManualDoseProgressPresentation" in ui_api
@@ -1660,10 +1661,24 @@ def test_replanning_history_and_midrun_dose_publication_have_stable_contracts():
 def test_ctv_model_provenance_keeps_embedded_anatomy_after_oar_load():
     routes = read("web/routes/viewer_routes.py")
     structures = read("web/structure_service.py")
-    assert 'ctv_source.startswith("nnunet_")' in routes
+    # The viewer delegates model-vs-upload provenance to the CTV registry
+    # instead of sniffing source-string prefixes.
+    assert "is_registered_model_source as _registered_ctv_model" in routes
     assert "is_model_ctv" in routes
     assert "def _is_model_ctv_source" in structures
     assert "_is_model_ctv_source(ctv_source)" in structures
+
+    # Behavior: the nnUNet pancreatic route embeds anatomy in labels 2..N and
+    # must survive an OAR reload, while uploaded/manual masks must not.
+    from web.structure_service import _is_model_ctv_source
+    from tool_factory.CTV_seg.model_registry import is_registered_model_source
+
+    assert _is_model_ctv_source("nnunet_pancreatic") is True
+    assert _is_model_ctv_source("model") is True
+    assert _is_model_ctv_source("manual_label") is False
+    assert _is_model_ctv_source("uploaded") is False
+    assert is_registered_model_source("nnunet_pancreatic") is True
+    assert is_registered_model_source("manual_label") is False
 
 
 def test_task_resume_distinguishes_reconnect_from_a_server_lost_task():
@@ -2275,12 +2290,66 @@ def test_partial_visual_restore_does_not_block_evidence_capture():
     assert "visual_restore_partial_with_live_scene" in ui_api
     assert "window._activeWorkspaceSnapshot, requestedSession)) {" in ui_api
 
-def test_a_finished_report_releases_the_chat_turn_within_a_bounded_wait():
-    """Figure capture/persist may continue after the report is visible; the
-    chat must neither hang nor call a still-running action a failure."""
+def test_uploaded_mask_presentation_survives_a_restore_without_defaults():
+    """A restored mask keeps its saved colour/opacity instead of the defaults.
+
+    Two regressions made an uploaded mask look "reset" after a server restart
+    or session switch:
+      * the global 3D Mesh Op pass ran after the per-node appearance restore
+        and overwrote a saved mask opacity with the global slider value;
+      * a failed/partial restore still persisted the cleared presentation
+        snapshot, so the next reload had no saved colours to restore at all.
+    """
+    volume = read("web/app/static/js/brachybot-viewer-volume.js")
+    manual = read("web/app/static/js/brachybot-3d-manual.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+
+    # The global slider must not clobber a Data Tree owned opacity during a
+    # restore; the per-node appearance is authoritative.
+    restored_start = manual.index("function applyRestoredViewerPresentationControls(")
+    restored_end = manual.index("window.applyRestoredViewerPresentationControls = applyRestoredViewerPresentationControls;", restored_start)
+    restored = manual[restored_start:restored_end]
+    assert "getDataTreeAppearanceForMesh" in restored
+    assert "restoredAppearance" in restored
+    assert "applyMeshOpacity(mesh, restoredAppearance.opacity, restoredAppearance.visible)" in restored
+    assert restored.index("restoredAppearance") < restored.index(
+        "applyMeshOpacity(mesh, wireframe ? 0.8 : meshOpacity, mesh.visible !== false)")
+
+    # Normal-surface colours must be reapplied during the final reconcile even
+    # when a dose surface is active; only dose-mapped meshes keep vertex colours.
+    sync_start = volume.index("function syncSceneAppearanceFromDataTree(")
+    sync_end = volume.index("window.getDataTreeAppearanceForMesh = getDataTreeAppearanceForMesh;", sync_start)
+    sync = volume[sync_start:sync_end]
+    assert "_isDoseTexturableMesh(id, mesh)" in sync
+    assert "_setMeshMaterialColor(mesh, appearance.color)" in sync
+    assert "if (!preserveDoseTexture) _setMeshMaterialColor(mesh, appearance.color);" not in sync
+
+    # A restore that did not actually finish must not persist its cleared
+    # presentation state over the saved one.
+    assert "persistDeferred" in ui_api
+    assert "visualResult" in ui_api
+    assert "persistDeferred: persistRestoredPresentation" in ui_api
+    assert "options.persistDeferred !== false" in workspace
+    # While the restore owns the case, ordinary saves keep chat/report durable
+    # but must omit the partial ui_state instead of overwriting saved styles.
+    assert "function lockWorkspacePresentationWrites(sessionId)" in workspace
+    assert "function isWorkspacePresentationWriteLocked(sessionId = null)" in workspace
+    assert "isWorkspacePresentationWriteLocked(ownerSessionId)" in workspace
+    assert "if (options.skipUiState !== true)" in workspace
+    assert "payload.ui_state = workspaceUiState(ownerSessionId)" in workspace
+    assert "window.lockWorkspacePresentationWrites?.(sessionId)" in ui_api
+    assert "window.unlockWorkspacePresentationWrites?.(presentationWriteLockToken)" in ui_api
+    assert "_workspaceHasSavedPresentation(workspace)" in ui_api
+    assert "allowDuringRestore: true" in workspace
+
+
+def test_report_turn_waits_for_actual_browser_completion():
+    """Dispatch and elapsed time are not a completion acknowledgment."""
     chat = read("web/app/static/js/brachybot-chat-todo.js")
 
-    assert "const CHAT_UI_ACTION_MAX_WAIT_MS = 30000;" in chat
-    assert "const allSettled = Promise.allSettled(uiActionTasks).then(() => true);" in chat
-    assert "uiActionsStillRunning = (await Promise.race([allSettled, capped])) === false;" in chat
-    assert "const reportActionFailed = !uiActionsStillRunning" in chat
+    assert "CHAT_UI_ACTION_MAX_WAIT_MS" not in chat
+    assert "await _awaitChatUIActions(uiActionTasks, turnAbortController?.signal)" in chat
+    assert "Promise.allSettled(tasks)" in chat
+    assert "signal?.addEventListener('abort'" in chat
+    assert "uiActionResults.length === 0" in chat

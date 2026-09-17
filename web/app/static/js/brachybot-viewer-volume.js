@@ -3970,9 +3970,14 @@ function syncSceneAppearanceFromDataTree({ preserveDoseTexture = !!state.doseTex
             applyMeshOpacity(mesh, appearance.opacity, appearance.visible);
         }
         // Vertex colors are the dose surface itself.  Retain them while that
-        // mode is active, but restore the user-selected normal-surface color
-        // the moment normal rendering is selected again.
-        if (!preserveDoseTexture) _setMeshMaterialColor(mesh, appearance.color);
+        // mode is active, but always restore the user-selected normal-surface
+        // color for ordinary meshes (masks, seeds, needles).  Skipping the
+        // whole pass whenever a dose surface was active left a restored mask
+        // mesh with its default colour after the state had been corrected.
+        const doseMappedMesh = preserveDoseTexture
+            && typeof _isDoseTexturableMesh === 'function'
+            && _isDoseTexturableMesh(id, mesh);
+        if (!doseMappedMesh) _setMeshMaterialColor(mesh, appearance.color);
     });
     if (scene3D.requestRender) scene3D.requestRender(2);
 }

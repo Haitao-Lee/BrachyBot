@@ -5410,6 +5410,19 @@ function applyRestoredViewerPresentationControls({ restoreOnly = false } = {}) {
             || (typeof _isDoseTexturableMesh === 'function'
                 && _isDoseTexturableMesh(meshId, mesh));
         if (!state?.doseTexture?.enabled || !isDoseSurface) {
+            // During a restore the Data Tree owns each node's opacity.  This
+            // global Mesh Op pass runs after the per-node appearance restore,
+            // so applying the global slider value here used to reset a saved
+            // structure/mask opacity (an upload mask saved at 0.24 rendered at
+            // the global 0.70).  Re-assert the restored appearance instead.
+            const restoredAppearance = restoreOnly
+                && typeof window.getDataTreeAppearanceForMesh === 'function'
+                ? window.getDataTreeAppearanceForMesh(meshId, mesh)
+                : null;
+            if (restoredAppearance) {
+                applyMeshOpacity(mesh, restoredAppearance.opacity, restoredAppearance.visible);
+                return;
+            }
             applyMeshOpacity(mesh, wireframe ? 0.8 : meshOpacity, mesh.visible !== false);
         }
     });

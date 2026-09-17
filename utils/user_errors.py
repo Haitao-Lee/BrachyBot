@@ -135,6 +135,38 @@ def is_internal_error(value: Any) -> bool:
     return bool(re.search(r"(?:/home/|/workspace/|[a-z]:\\|error\s*code\s*:)", text))
 
 
+_INTERNAL_PATH_RE = re.compile(
+    r"(?:/home/|/workspace/|[A-Za-z]:\\)[^\s`'\"()\[\]{}<>,;，。；、）】]*"
+)
+
+
+def redact_internal_paths(value: Any, *, lang: str = "en") -> str:
+    """Hide server-side absolute paths without discarding a useful answer.
+
+    A completed action may legitimately name its output ("saved to
+    plan_x.md").  Replacing that whole reply with a failure notice because the
+    model quoted the server directory is both wrong and alarming, so absolute
+    runtime paths are rewritten to their file name (or a placeholder) instead.
+    """
+    text = str(value or "")
+    if not text:
+        return text
+    placeholder = (
+        "（服务器本地路径已隐藏）" if _language(lang) == "zh" else "(server path hidden)"
+    )
+
+    def _replacement(match: "re.Match[str]") -> str:
+        matched = match.group(0)
+        candidate = matched.rstrip(".,;:!?")
+        tail = matched[len(candidate):]
+        name = re.split(r"[\\/]+", candidate)[-1]
+        if name and "." in name:
+            return name + tail
+        return placeholder + tail
+
+    return _INTERNAL_PATH_RE.sub(_replacement, text)
+
+
 def _generic_message(lang: str) -> str:
     if lang == "zh":
         return (
@@ -289,6 +321,9 @@ def sanitize_user_response(response: Any, *, lang: str = "en", tool_name: str = 
     text = str(response or "").strip()
     if not text:
         return text
-    if is_provider_error(text) or is_internal_error(text):
+    if is_provider_error(text):
         return format_tool_error(tool_name or "request", text, {}, lang)
-    return text
+    redacted = redact_internal_paths(text, lang=lang)
+    if is_internal_error(redacted):
+        return format_tool_error(tool_name or "request", text, {}, lang)
+    return redacted

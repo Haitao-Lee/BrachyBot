@@ -418,7 +418,7 @@ def test_data_tree_delete_reconciles_canonical_ids_and_stale_hydration():
     assert "function _purgeDeletedDataTreePresentation(objectIds)" in viewer
     assert "_purgeDeletedDataTreePresentation(objectIds);" in viewer
     assert "invalidateViewerDataLoads();" in viewer
-    assert "if (genericMaskMutation && !structureMutation)" in viewer
+    assert "if (genericMaskMutation && !reloadStructureGeometry)" in viewer
     assert "dataTreeState.ctv.loaded = hasCTV;" in viewer
     assert "dataTreeState.oar.loaded = hasOAR;" in viewer
     assert "const liveCtvNodeIds = new Set(ctvLabels.map(labelId => `ctv_${labelId}`));" in viewer

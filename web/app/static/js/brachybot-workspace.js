@@ -12,6 +12,12 @@
     // half-hydrated/default scene over the authoritative server snapshot.
     // Keep only the latest reason and flush it after the visual barrier.
     let deferredPresentationSave = null;
+    // Set while a workspace restore owns a case.  Ordinary UI saves still
+    // persist chat/report, but must not write the partially cleared ui.state
+    // over the saved presentation: a restore that never finishes used to
+    // publish an empty mask registry, so the next reload could only show
+    // default colours and opacities.
+    let presentationWriteLock = null;
     let restoring = false;
     let workspaceTransition = null;
     let pendingSessionCreationId = null;
@@ -1082,7 +1088,7 @@
         return !sid || registry.sessionId === sid;
     }
 
-    function finalizeWorkspacePresentationRestore(sessionId = null, restoreToken = null) {
+    function finalizeWorkspacePresentationRestore(sessionId = null, restoreToken = null, options = {}) {
         const registry = workspacePresentationRestore
             || window.__pendingWorkspacePresentation;
         if (!registry) return false;
@@ -1113,12 +1119,13 @@
         // a genuine user edit made while the non-blocking restore was visible).
         // Persist only after every registered visual producer has settled, so
         // the resulting snapshot contains the complete current-case scene.
-        if (deferredSave && typeof persistWorkspace === 'function') {
+        if (deferredSave && typeof persistWorkspace === 'function'
+            && options.persistDeferred !== false) {
             setTimeout(() => {
                 if (String(activeSessionId || '') !== deferredSave.sessionId) return;
                 void persistWorkspace(
                     deferredSave.reason || 'workspace.restore.settled',
-                    { sessionId: deferredSave.sessionId },
+                    { sessionId: deferredSave.sessionId, allowDuringRestore: true },
                 );
             }, 0);
         }
@@ -1141,11 +1148,48 @@
         return true;
     }
 
+    let presentationWriteLockToken = 0;
+
+    function lockWorkspacePresentationWrites(sessionId) {
+        const sid = String(sessionId || '').trim();
+        if (!sid) return null;
+        presentationWriteLockToken += 1;
+        presentationWriteLock = {
+            sessionId: sid,
+            token: presentationWriteLockToken,
+            startedAt: Date.now(),
+        };
+        // The token is required to release the lock so a superseded restore
+        // cannot release the lock owned by a newer restore of the same case.
+        return presentationWriteLockToken;
+    }
+
+    function unlockWorkspacePresentationWrites(tokenOrSessionId = null) {
+        if (!presentationWriteLock) return false;
+        const asToken = Number(tokenOrSessionId);
+        if (Number.isFinite(asToken) && asToken > 0) {
+            if (presentationWriteLock.token !== asToken) return false;
+        } else {
+            const sid = String(tokenOrSessionId || '').trim();
+            if (sid && presentationWriteLock.sessionId !== sid) return false;
+        }
+        presentationWriteLock = null;
+        return true;
+    }
+
+    function isWorkspacePresentationWriteLocked(sessionId = null) {
+        const sid = String(sessionId || '').trim();
+        return !!(presentationWriteLock && presentationWriteLock.sessionId === sid);
+    }
+
     window.stageWorkspacePresentation = stageWorkspacePresentation;
     window.getWorkspacePresentationForNode = getWorkspacePresentationForNode;
     window.isWorkspacePresentationRestoreActive = isWorkspacePresentationRestoreActive;
     window.finalizeWorkspacePresentationRestore = finalizeWorkspacePresentationRestore;
     window.clearWorkspacePresentationRestore = clearWorkspacePresentationRestore;
+    window.lockWorkspacePresentationWrites = lockWorkspacePresentationWrites;
+    window.unlockWorkspacePresentationWrites = unlockWorkspacePresentationWrites;
+    window.isWorkspacePresentationWriteLocked = isWorkspacePresentationWriteLocked;
 
     function workspacePlanningIdentity(snapshot) {
         const results = snapshot?.agent?.planning_results;
@@ -1662,7 +1706,7 @@
         report_fig1_global: {
             figureGroup: 'figure1', figureNumber: 1, subfigure: 'a', sortOrder: 1,
             captureRole: 'planning_overview',
-            captureContract: 'figure1-global-overview-target-detail-v8-semantic-recapture',
+            captureContract: 'figure1-global-overview-v9-normal-surface-only',
             captureProfile: 'global_overview',
             title: 'Reference-direction plan overview',
             caption: 'Global view along the needle reference direction, showing the CTV, selected OARs, needle paths, and seeds.',
@@ -1670,7 +1714,7 @@
         report_fig1_closeup: {
             figureGroup: 'figure1', figureNumber: 1, subfigure: 'b', sortOrder: 2,
             captureRole: 'planning_closeup',
-            captureContract: 'figure1-target-closeup-v8-required-focus-crop',
+            captureContract: 'figure1-target-closeup-v9-normal-surface-only',
             captureProfile: 'target_closeup',
             title: 'CTV seed-distribution close-up',
             caption: 'Target close-up with the CTV made translucent to show seed distribution and needle paths.',
@@ -1678,21 +1722,21 @@
         report_fig2_axial: {
             figureGroup: 'figure2', figureNumber: 2, subfigure: 'a', sortOrder: 1,
             captureRole: 'peak_dose_axial',
-            captureContract: 'figure2-peak-dose-axial-v2',
+            captureContract: 'figure2-peak-dose-axial-v3-dose-only-overlay',
             title: 'Peak-dose axial view',
             caption: 'Axial CT slice through the peak-dose location with dose overlay and planning projections.',
         },
         report_fig2_sagittal: {
             figureGroup: 'figure2', figureNumber: 2, subfigure: 'b', sortOrder: 2,
             captureRole: 'peak_dose_sagittal',
-            captureContract: 'figure2-peak-dose-sagittal-v2',
+            captureContract: 'figure2-peak-dose-sagittal-v3-dose-only-overlay',
             title: 'Peak-dose sagittal view',
             caption: 'Sagittal CT slice through the peak-dose location with dose overlay and planning projections.',
         },
         report_fig2_coronal: {
             figureGroup: 'figure2', figureNumber: 2, subfigure: 'c', sortOrder: 3,
             captureRole: 'peak_dose_coronal',
-            captureContract: 'figure2-peak-dose-coronal-v2',
+            captureContract: 'figure2-peak-dose-coronal-v3-dose-only-overlay',
             title: 'Peak-dose coronal view',
             caption: 'Coronal CT slice through the peak-dose location with dose overlay and planning projections.',
         },
@@ -1798,6 +1842,8 @@
                     || String(figure.renderSignature || '') !== 'dose_texture_vertex_colors')) {
                 figure._invalidCapture = true;
             }
+            if ((axis === 'report_fig1_global' || axis === 'report_fig1_closeup')
+                && figure.displayMode !== 'normal_surface') figure._invalidCapture = true;
             // Catalog-only recovery is evidence recovery rather than user-authored
             // report content. Give it the canonical title and caption so a legacy
             // random screenshot name or historical encoding cannot create a
@@ -4235,15 +4281,20 @@
         }
     }
 
-    function workspaceSavePayload(ownerSessionId, reason) {
-        return {
+    function workspaceSavePayload(ownerSessionId, reason, options = {}) {
+        const payload = {
             session_id: ownerSessionId,
             revision: sessionRevisions[ownerSessionId] ?? revision,
-            ui_state: workspaceUiState(ownerSessionId),
             report: reportState(ownerSessionId),
             chat: chatState(ownerSessionId),
             reason,
         };
+        // Chat and report remain durable while a restore is incomplete, but the
+        // partial ui.state is not published over the saved presentation.
+        if (options.skipUiState !== true) {
+            payload.ui_state = workspaceUiState(ownerSessionId);
+        }
+        return payload;
     }
 
     async function postWorkspaceSave(ownerSessionId, payload) {
@@ -4281,13 +4332,13 @@
         }
     }
 
-    async function _writeWorkspaceSnapshot(ownerSessionId, reason) {
+    async function _writeWorkspaceSnapshot(ownerSessionId, reason, options = {}) {
         // Capture the old case's complete payload before any asynchronous
         // retry or Session transition can change the global UI state. A
         // retry must update only its compare-and-swap revision; rebuilding
         // the payload from workspaceSavePayload() after a switch would send
         // the newly selected case's report/chat under the old session_id.
-        const initialPayload = workspaceSavePayload(ownerSessionId, reason);
+        const initialPayload = workspaceSavePayload(ownerSessionId, reason, options);
         return (async () => {
             // A server-side checkpoint can advance the revision between a
             // browser render and its debounced save. The route returns that
@@ -4341,11 +4392,31 @@
         // registered, which could self-await or surface the previous save's
         // false result to a report action.  Each caller now owns a distinct
         // chained Promise and receives the result of its own payload.
+        // A save that runs before the restore transaction has installed its
+        // write lock can still race the cleared in-memory state. Treat "the
+        // active case has a saved presentation but its CT is not loaded yet"
+        // as the same protected window: chat/report stay durable, ui.state is
+        // published only after a restore actually finishes.
+        const presentationPendingRestore = !options.allowDuringRestore
+            && typeof state !== 'undefined'
+            && state?.ctLoaded !== true
+            && (() => {
+                const workspace = window._activeWorkspaceSnapshot;
+                if (!workspace) return false;
+                const wsSid = workspaceSnapshotSessionId(workspace);
+                if (wsSid && ownerSessionId && wsSid !== ownerSessionId) return false;
+                return typeof window.workspaceHasSavedPresentation === 'function'
+                    && window.workspaceHasSavedPresentation(workspace);
+            })();
+        const skipUiState = !options.allowDuringRestore
+            && ((typeof isWorkspacePresentationWriteLocked === 'function'
+                && isWorkspacePresentationWriteLocked(ownerSessionId))
+                || presentationPendingRestore);
         const prior = workspaceSaveInFlight[ownerSessionId];
         const save = prior
             ? Promise.resolve(prior).catch(() => false)
-                .then(() => _writeWorkspaceSnapshot(ownerSessionId, reason))
-            : _writeWorkspaceSnapshot(ownerSessionId, reason);
+                .then(() => _writeWorkspaceSnapshot(ownerSessionId, reason, { skipUiState }))
+            : _writeWorkspaceSnapshot(ownerSessionId, reason, { skipUiState });
         workspaceSaveInFlight[ownerSessionId] = save;
         try {
             return await save;
