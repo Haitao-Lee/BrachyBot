@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 import numpy as np
 import pytest
 import SimpleITK as sitk
@@ -1788,3 +1789,13 @@ def test_bore_wall_projection_never_recloses_a_crossing_primary_channel():
 
     assert np.allclose(projected, vertices)
     assert sum(item["cross_bore_protected_vertex_count"] for item in qa["primary"]) >= 1
+
+
+def test_frontend_accepts_the_current_bore_wall_policy():
+    """The printable-guide guard must track web/surgical_guide.py's policy."""
+    js = (
+        Path(__file__).resolve().parents[1]
+        / "web" / "app" / "static" / "js" / "brachybot-surgical-guide.js"
+    ).read_text(encoding="utf-8")
+
+    assert BORE_WALL_POLICY in js

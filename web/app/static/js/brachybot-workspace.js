@@ -26,6 +26,7 @@
     const backgroundRestoreRetryCounts = Object.create(null);
     let backgroundRestoreNoticeTimer = null;
     let hydrationHideTimer = null;
+    let recoveryNoticeAutoHideTimer = null;
     // The server can be restarted while the browser tab remains open. In
     // that situation there is no page navigation to start the normal case
     // hydration path again, so keep a small control-plane health monitor and
@@ -36,6 +37,7 @@
     let workspaceServerRecoveryPending = false;
     let workspaceServerAvailable = null;
     let workspaceServerInstanceId = '';
+    let loadSessionsInFlight = null;
     const WORKSPACE_SERVER_HEALTH_INTERVAL_MS = 5000;
     const WORKSPACE_SERVER_HEALTH_TIMEOUT_MS = 5000;
     // Dose controls are persisted in physical Gy. Legacy snapshots that
@@ -134,22 +136,34 @@
         if (workspaceServerRecoveryInFlight || typeof window.loadSessions !== 'function') return;
         if (document.hidden) return;
         const recoverySessionId = String(activeSessionId || '');
+        const preserveVisibleClinicalState = recoverySessionId
+            && typeof window.workspaceHasLiveVisibleClinicalState === 'function'
+            && window.workspaceHasLiveVisibleClinicalState(
+                window._activeWorkspaceSnapshot || null,
+                recoverySessionId,
+            ) === true;
         if (recoverySessionId) {
             // This is a new server instance, so the previous completed
             // marker no longer owns the next recovery notice.
             window.__workspaceRestoreCompletedSessionId = null;
-            // Give the user immediate feedback even while the compact session
-            // list/snapshot request is in flight. loadSessions will replace
-            // this scope with the real restore generation once it schedules
-            // the case-owned CT/mesh hydration.
-            window.showCaseResourceLoading?.({
-                sessionId: recoverySessionId,
-                runId: `server-recovery-${Date.now()}`,
-            });
+            if (!preserveVisibleClinicalState) {
+                // Give the user immediate feedback even while the compact
+                // session list/snapshot request is in flight. loadSessions
+                // will replace this scope with the real restore generation
+                // once it schedules the case-owned CT/mesh hydration.
+                window.showCaseResourceLoading?.({
+                    sessionId: recoverySessionId,
+                    runId: `server-recovery-${Date.now()}`,
+                });
+            }
         }
         workspaceServerRecoveryInFlight = (async () => {
             try {
-                await window.loadSessions();
+                await window.loadSessions({
+                    reason: 'server-recovery',
+                    preserveVisibleClinicalState,
+                    suppressVisibleNotice: preserveVisibleClinicalState,
+                });
                 workspaceServerRecoveryPending = false;
             } catch (error) {
                 workspaceServerRecoveryPending = true;
@@ -420,7 +434,7 @@
     }
     window.workspaceSnapshotHasClinicalResources = workspaceSnapshotHasClinicalResources;
 
-    function scheduleBackgroundWorkspaceRestore(workspace, sessionId) {
+    function scheduleBackgroundWorkspaceRestore(workspace, sessionId, restoreOptions = {}) {
         if (String(sessionId || '') !== String(activeSessionId || '')
             || !workspaceSnapshotHasClinicalResources(workspace)) {
             cancelBackgroundWorkspaceRestore();
@@ -436,42 +450,63 @@
                 && window.__workspaceRestoreCompletedSessionId !== String(sessionId))) return;
         const generation = ++backgroundRestoreGeneration;
         const restoreStartedAt = workspaceNow();
+        const hasLiveVisibleClinicalState = typeof window.workspaceHasLiveVisibleClinicalState === 'function'
+            && window.workspaceHasLiveVisibleClinicalState(workspace, sessionId) === true;
+        const preserveVisibleClinicalState = hasLiveVisibleClinicalState
+            || (restoreOptions.preserveVisibleClinicalState === true
+                && typeof window.workspaceHasLiveVisibleClinicalState !== 'function');
+        const suppressVisibleNotice = preserveVisibleClinicalState
+            || (restoreOptions.suppressVisibleNotice === true && hasLiveVisibleClinicalState);
         // Startup and session switching share this scheduler. The init path
         // must be able to see that a restore is already scheduled, otherwise
         // a browser restart launches a second CT/plan hydration in parallel.
         window.__workspaceRestoreScheduledSessionId = String(sessionId);
         window.__workspaceRestoreCompletedSessionId = null;
-        recordWorkspacePerformance('restore.scheduled', { sessionId });
+        recordWorkspacePerformance('restore.scheduled', {
+            sessionId,
+            details: {
+                reason: restoreOptions.reason || 'background-scheduled',
+                preserve_visible_clinical_state: preserveVisibleClinicalState,
+            },
+        });
         if (backgroundRestoreTimer) clearTimeout(backgroundRestoreTimer);
         if (backgroundRestoreNoticeTimer) clearTimeout(backgroundRestoreNoticeTimer);
         // Hydration is deliberately non-blocking. Keep one scoped progress
         // hint alive until the restore wrapper's real completion boundary
         // settles; a fixed-duration spinner creates a silent gap while the
         // slower 3D products are still arriving.
-        window.setWorkspaceHydrationState?.(
-            true,
-            typeof window._t === 'function'
-                ? window._t('正在恢复病例资源…', 'Restoring case resources...')
-                : 'Restoring case resources...',
-            { sessionId, runId: generation },
-        );
-        // Override legacy wording with the shared startup/switch notice.
-        window.showCaseResourceLoading?.({ sessionId, runId: generation });
-        document.body.classList.add('workspace-hydrating');
-        backgroundRestoreNoticeTimer = setTimeout(() => {
-            if (generation !== backgroundRestoreGeneration || sessionId !== activeSessionId) return;
+        if (suppressVisibleNotice) {
+            // The active case is already visible. A reconnect or duplicate
+            // scheduler invocation must not turn a background reconciliation
+            // into a user-visible "Loading case resources" transition.
+            window.setWorkspaceHydrationState?.(false, '', { immediate: true });
+            document.body.classList.remove('workspace-hydrating');
+        } else {
             window.setWorkspaceHydrationState?.(
                 true,
                 typeof window._t === 'function'
-                    ? window._t(
-                        '病例资源仍在后台加载；当前页面可以继续操作。',
-                        'Case resources are still loading in the background; this page remains usable.',
-                    )
-                : 'Case resources are still loading in the background; this page remains usable.',
+                    ? window._t('正在恢复病例资源…', 'Restoring case resources...')
+                    : 'Restoring case resources...',
                 { sessionId, runId: generation },
             );
-            backgroundRestoreNoticeTimer = null;
-        }, 30000);
+            // Override legacy wording with the shared startup/switch notice.
+            window.showCaseResourceLoading?.({ sessionId, runId: generation });
+            document.body.classList.add('workspace-hydrating');
+            backgroundRestoreNoticeTimer = setTimeout(() => {
+                if (generation !== backgroundRestoreGeneration || sessionId !== activeSessionId) return;
+                window.setWorkspaceHydrationState?.(
+                    true,
+                    typeof window._t === 'function'
+                        ? window._t(
+                            '病例资源仍在后台加载；当前页面可以继续操作。',
+                            'Case resources are still loading in the background; this page remains usable.',
+                        )
+                    : 'Case resources are still loading in the background; this page remains usable.',
+                    { sessionId, runId: generation },
+                );
+                backgroundRestoreNoticeTimer = null;
+            }, 30000);
+        }
         backgroundRestoreTimer = setTimeout(async () => {
             backgroundRestoreTimer = null;
             if (generation !== backgroundRestoreGeneration || sessionId !== activeSessionId) return;
@@ -517,6 +552,9 @@
                         clearReport: false,
                         workspace: authoritativeWorkspace,
                         background: true,
+                        reason: restoreOptions.reason || 'background-scheduled',
+                        preserveVisibleClinicalState,
+                        suppressVisibleNotice,
                         // The optimistic shell has already cleared the old
                         // case. Do not erase a just-resumed task trace while
                         // the heavier CT/mesh resources hydrate.
@@ -876,11 +914,21 @@
         if (!record) return;
         const normalizedFamily = _presentationFamily(family);
         const id = String(record.id || fallbackId || '').trim();
+        const fallback = String(fallbackId || '').trim();
         const nodeId = String(record.nodeId || item.nodeId || '').trim();
         const objectId = String(record.objectId || item.objectId || '').trim();
         const label = String(record.label || record.name || '').trim();
         const labelId = String(record.labelId ?? item.label_id ?? '').trim();
         if (id) registry.byId[id] = record;
+        // A viewer map key can be the durable identity while the item itself
+        // carries a different UI id (generic uploaded masks are the common
+        // example). Keep that alias scoped to its family so a numeric mask
+        // id cannot accidentally override a CTV/OAR id in the global table.
+        if (normalizedFamily) {
+            [id, fallback].filter(Boolean).forEach(ref => {
+                registry.byFamilyId[normalizedFamily + ':' + ref] = record;
+            });
+        }
         if (nodeId) registry.byNodeId[nodeId] = record;
         if (objectId) registry.byObjectId[objectId] = record;
         if (label) {
@@ -914,6 +962,7 @@
             active: true,
             createdAt: Date.now(),
             byId: Object.create(null),
+            byFamilyId: Object.create(null),
             byNodeId: Object.create(null),
             byObjectId: Object.create(null),
             byLabel: Object.create(null),
@@ -954,6 +1003,9 @@
             add(item, 'annotation', item?.id || ''));
         (tree.exportArtifacts || []).forEach(item =>
             add(item, 'artifact', item?.id || ''));
+        (tree.uploadMasks || tree.upload_masks || []).forEach(item =>
+            add(item, 'mask', item?.id || item?.mask_id || item?.maskId
+                || item?.object_id || item?.objectId || ''));
         // Generic/uploaded masks are stored in viewer.masks rather than in
         // data_tree. Index the object under both its durable mask id and the
         // data-tree node id so a catalogue response can restore it before the
@@ -964,7 +1016,8 @@
             if ([
                 'ct', 'ctv', 'oar', 'skin', 'dose', 'seeds', 'needles',
                 'planning', 'ctvLabels', 'ctv_labels', 'organs', 'annotations',
-                'exportArtifacts', 'expansionState', 'expansion_state',
+                'exportArtifacts', 'uploadMasks', 'upload_masks',
+                'expansionState', 'expansion_state',
             ].includes(key)) return;
             if (item && typeof item === 'object' && !Array.isArray(item)) {
                 add(item, key, key);
@@ -997,7 +1050,8 @@
             criteria.id,
         ].map(value => String(value || '').trim()).filter(Boolean);
         for (const value of values) {
-            const record = registry.byObjectId[value]
+            const record = (family && registry.byFamilyId[family + ':' + value])
+                || registry.byObjectId[value]
                 || registry.byNodeId[value]
                 || registry.byId[value];
             if (record) return _presentationClone(record);
@@ -1062,7 +1116,10 @@
         if (deferredSave && typeof persistWorkspace === 'function') {
             setTimeout(() => {
                 if (String(activeSessionId || '') !== deferredSave.sessionId) return;
-                void persistWorkspace(deferredSave.reason || 'workspace.restore.settled');
+                void persistWorkspace(
+                    deferredSave.reason || 'workspace.restore.settled',
+                    { sessionId: deferredSave.sessionId },
+                );
             }, 0);
         }
         return true;
@@ -2055,6 +2112,85 @@
         return reportSection;
     }
 
+    // Report figures are case- and Planning-owned evidence.  A delayed
+    // screenshot/catalog callback must never be allowed to paint an image
+    // from another Session, even for the short interval before the async
+    // catalog restore completes.  Keep this synchronous and conservative:
+    // clear only explicit screenshot URLs whose Session path is foreign, or
+    // figures whose Planning owner is demonstrably different.  Data URLs with
+    // no provenance are retained when their Planning owner is valid; they may
+    // be a freshly captured, not-yet-uploaded image.
+    function reportScreenshotSessionFromUrl(value) {
+        const raw = String(value || '').trim();
+        if (!raw || /^data:image\//i.test(raw)) return '';
+        let parsed;
+        try {
+            parsed = new URL(raw, window.location.origin);
+        } catch (_) {
+            return '';
+        }
+        if (parsed.origin !== window.location.origin || parsed.hash) return '';
+        const parts = parsed.pathname.split('/');
+        if (parts.length !== 6
+            || parts[1] !== 'api'
+            || parts[2] !== 'sessions'
+            || parts[4] !== 'screenshots'
+            || !parts[3] || !parts[5]) return '';
+        try {
+            const filename = decodeURIComponent(parts[5]);
+            if (!/^[A-Za-z0-9_.-]+\.(?:png|jpe?g|webp)$/i.test(filename)) return '';
+            return decodeURIComponent(parts[3]);
+        } catch (_) {
+            return '';
+        }
+    }
+
+    function sanitizeReportFiguresForSession(form, sessionId, planningId) {
+        if (!form || !Array.isArray(form.figures)) return false;
+        const expectedSessionId = String(sessionId || '').trim();
+        const expectedPlanningId = String(
+            planningId || form.planningId || form.planning_id || '__unassigned__',
+        ).trim();
+        let changed = false;
+        const assetKeys = [
+            'dataUrl', 'data_url', '_serverUrl', 'serverUrl', 'url', 'original_url',
+        ];
+        form.figures = form.figures.map(figure => {
+            if (!figure || typeof figure !== 'object') return figure;
+            const figurePlanningId = String(
+                figure.planningId || figure.planning_id || '',
+            ).trim();
+            const planningMismatch = expectedPlanningId
+                && expectedPlanningId !== '__unassigned__'
+                && figurePlanningId
+                && figurePlanningId !== expectedPlanningId;
+            const foreignSessionUrl = assetKeys.some(key => {
+                const owner = reportScreenshotSessionFromUrl(figure[key]);
+                return !!owner && !!expectedSessionId && owner !== expectedSessionId;
+            });
+            if (!planningMismatch && !foreignSessionUrl) return figure;
+            changed = true;
+            return {
+                ...figure,
+                ...(expectedPlanningId ? { planningId: expectedPlanningId } : {}),
+                dataUrl: '',
+                data_url: '',
+                _serverUrl: '',
+                serverUrl: '',
+                url: '',
+                original_url: '',
+                _cacheKey: '',
+                // Make a repaired placeholder lose to a valid catalog
+                // artifact for the same role during normalization.  It will
+                // otherwise look like a user-authored figure with score 100
+                // and hide the recoverable current-Planning image.
+                _artifactFallback: true,
+                _invalidCapture: true,
+            };
+        });
+        return changed;
+    }
+
     function _preservePopulatedReport(current, saved, options) {
         if (!options?.preserveClinicalData || !current || !saved) return false;
         if (current.sessionId && String(current.sessionId) !== String(activeSessionId || '')) return false;
@@ -2110,23 +2246,84 @@
         return changed;
     }
 
-    function renderRecoveryNotice(operation) {
+    function clearRecoveryNoticeAutoHideTimer() {
+        if (recoveryNoticeAutoHideTimer) {
+            clearTimeout(recoveryNoticeAutoHideTimer);
+            recoveryNoticeAutoHideTimer = null;
+        }
+    }
+
+    function recoveryTranscriptContainsNotice(sessionId, operation) {
+        const session = typeof sessions !== 'undefined' && sessions
+            ? sessions[String(sessionId || '')]
+            : null;
+        const messages = Array.isArray(session?.messages) ? session.messages : [];
+        const operationMessage = String(operation?.message || '').toLowerCase();
+        const restartContext = /server restarted|服务.*重启|服务器.*重启|任务.*中断/.test(operationMessage);
+        return messages.some(message => {
+            if (!message || typeof message !== 'object') return false;
+            const meta = message.meta && typeof message.meta === 'object' ? message.meta : {};
+            if (meta.recoveryNotice === true || meta.recovery_notice === true) return true;
+            if (!['error', 'system'].includes(String(message.type || ''))) return false;
+            const content = String(message.content || '').toLowerCase();
+            if (!content) return false;
+            return /no longer running this task|task is no longer running|saved case data.*retained|rerun the unfinished|服务端不再运行该任务|已保存的病例数据会保留|重新运行未完成|未完成的任务/.test(content)
+                || (restartContext && /server restarted|服务.*重启|任务.*中断|task.*interrupted/.test(content));
+        });
+    }
+
+    function hideWorkspaceRecoveryNotice(options = {}) {
+        const target = document.getElementById('workspaceRecoveryNotice');
+        if (!target) return false;
+        const requestedSession = String(options.sessionId || '');
+        const displayedSession = String(target.dataset.sessionId || '');
+        if (requestedSession && displayedSession && requestedSession !== displayedSession) return false;
+        clearRecoveryNoticeAutoHideTimer();
+        const displayedRecoveryKey = String(target.dataset.recoveryKey || '');
+        if (options.persist && displayedRecoveryKey) {
+            try { sessionStorage.setItem(displayedRecoveryKey, '1'); } catch (_) {}
+        }
+        target.hidden = true;
+        target.classList.remove('workspace-recovery-fallback');
+        if (options.clearIdentity) {
+            delete target.dataset.sessionId;
+            delete target.dataset.recoveryKey;
+            recoveryNoticeDismissKey = '';
+        }
+        return true;
+    }
+    window.hideWorkspaceRecoveryNotice = hideWorkspaceRecoveryNotice;
+
+    function renderRecoveryNotice(operation, snapshot = null) {
         bindWorkspaceNoticeControls();
         const target = document.getElementById('workspaceRecoveryNotice');
         if (!target) return;
         if (operation?.state !== 'interrupted') {
-            target.hidden = true;
+            hideWorkspaceRecoveryNotice({ clearIdentity: true });
             const message = document.getElementById('workspaceRecoveryMessage');
             if (message) message.textContent = '';
-            recoveryNoticeDismissKey = '';
             return;
         }
         const session = String(typeof activeSessionId !== 'undefined' ? activeSessionId : 'current');
         const identity = String(operation.interrupted_at || operation.updated_at || operation.revision || operation.message || 'interrupted');
         const dismissKey = `brachybot:recovery-notice:${session}:${identity}`;
         recoveryNoticeDismissKey = dismissKey;
+        const chat = snapshot?.chat || window._activeWorkspaceSnapshot?.chat || {};
+        const chatOwned = String(operation.checkpoint?.kind || '') === 'chat';
+        const chatStillActive = String(chat.task_status || '') === 'running' || !!chat.task_id;
+        // Chat-task recovery has its own transcript message and live replay
+        // indicator. Showing a second global notice here was the source of
+        // the duplicate red warning + permanent spinner after a restart.
+        if (chatOwned && (chatStillActive || recoveryTranscriptContainsNotice(session, operation))) {
+            hideWorkspaceRecoveryNotice({ sessionId: session, persist: true });
+            return;
+        }
+        if (recoveryTranscriptContainsNotice(session, operation)) {
+            hideWorkspaceRecoveryNotice({ sessionId: session, persist: true });
+            return;
+        }
         if (readRecoveryDismissal(dismissKey)) {
-            target.hidden = true;
+            hideWorkspaceRecoveryNotice({ sessionId: session });
             return;
         }
         const checkpoint = operation.checkpoint || {};
@@ -2135,7 +2332,23 @@
         const text = `${operation.message || 'The previous task was interrupted.'}${step} The last saved case state is available; rerun the unfinished action when ready.`;
         if (message) message.textContent = text;
         else target.textContent = text;
+        const sameNoticeVisible = !target.hidden
+            && String(target.dataset.sessionId || '') === session
+            && String(target.dataset.recoveryKey || '') === dismissKey;
+        if (sameNoticeVisible && recoveryNoticeAutoHideTimer) return;
+        clearRecoveryNoticeAutoHideTimer();
+        target.dataset.sessionId = session;
+        target.dataset.recoveryKey = dismissKey;
+        target.classList.add('workspace-recovery-fallback');
         target.hidden = false;
+        // This fallback is informational only. The durable operation and
+        // transcript remain available; do not make a spinner look like an
+        // active resource load or leave it blocking the composer forever.
+        recoveryNoticeAutoHideTimer = setTimeout(() => {
+            if (target.dataset.recoveryKey === dismissKey) {
+                hideWorkspaceRecoveryNotice({ sessionId: session, persist: true });
+            }
+        }, 9000);
     }
 
     function applyChatSnapshotFast(snapshot, options = {}) {
@@ -3144,13 +3357,77 @@
         let artifacts = typeof dataTreeState !== 'undefined'
             && Array.isArray(dataTreeState?.exportArtifacts)
             ? dataTreeState.exportArtifacts : [];
-        if (!artifacts.length && typeof hydrateDataTreeArtifactCatalog === 'function') {
-            try { artifacts = await hydrateDataTreeArtifactCatalog(); } catch (_) { artifacts = []; }
+        const reportArtifactOwner = item => String(
+            item?.sessionId || item?.session_id
+            || item?.caseId || item?.case_id || '',
+        ).trim();
+        const hasSessionScopedReportArtifact = artifacts.some(item => {
+            const dataType = String(item?.dataType || item?.type || '');
+            return ['screenshot', 'report_figure'].includes(dataType)
+                && reportArtifactOwner(item) === String(sessionId || '');
+        });
+        if ((!artifacts.length || !hasSessionScopedReportArtifact)
+            && typeof hydrateDataTreeArtifactCatalog === 'function') {
+            try {
+                const refreshed = await hydrateDataTreeArtifactCatalog({
+                    force: true,
+                });
+                if (Array.isArray(refreshed)) artifacts = refreshed;
+            } catch (_) {}
         }
         if (!isCurrentReport()) return 0;
         // The report snapshot may arrive before its raster cache. Repair
         // every existing figure against the same case/planning catalog
-        // before stable-identity de-duplication runs.
+        // before stable-identity de-duplication runs. Report screenshots are
+        // case-owned files; a filename or planning id alone is not enough
+        // because deterministic names can be reused by another Session.
+        const reportScreenshotPathSession = value => {
+            const raw = String(value || '').trim();
+            if (!raw || raw.toLowerCase().startsWith('data:image/')) return '';
+            let parsed;
+            try {
+                parsed = new URL(raw, window.location.origin);
+            } catch (_) {
+                return '';
+            }
+            if (parsed.origin !== window.location.origin || parsed.hash) return '';
+            const parts = parsed.pathname.split('/');
+            if (parts.length !== 6
+                || parts[1] !== 'api'
+                || parts[2] !== 'sessions'
+                || parts[4] !== 'screenshots'
+                || !parts[3] || !parts[5]) return '';
+            try {
+                const filename = decodeURIComponent(parts[5]);
+                if (!/^[A-Za-z0-9_.-]+\.(?:png|jpe?g|webp)$/i.test(filename)) return '';
+                return decodeURIComponent(parts[3]);
+            } catch (_) {
+                return '';
+            }
+        };
+        const reportArtifactBelongsToSession = (item, ownerSessionId) => {
+            const rowOwner = reportArtifactOwner(item);
+            if (rowOwner) return rowOwner === String(ownerSessionId || '');
+            const candidates = [
+                item?.url, item?.screenshot_url, item?.screenshotUrl,
+                item?.dataUrl, item?.data_url,
+            ];
+            // An ownerless data URL cannot be proven to belong to this case.
+            // A same-session screenshot path can.
+            return candidates.some(value =>
+                reportScreenshotPathSession(value) === String(ownerSessionId || ''),
+            );
+        };
+        const reportArtifactCandidateIsSafe = (item, candidate, ownerSessionId) => {
+            const value = String(candidate || '').trim();
+            if (!value) return false;
+            const rowOwner = reportArtifactOwner(item);
+            if (value.toLowerCase().startsWith('data:image/')
+                && value.includes(';base64,')) {
+                return rowOwner === String(ownerSessionId || '');
+            }
+            return reportScreenshotPathSession(value) === String(ownerSessionId || '');
+        };
         const canonicalFigureUrl = figure => {
             const figurePlanningId = String(
                 figure?.planningId || figure?.planning_id || expectedPlanningId || '',
@@ -3162,11 +3439,30 @@
                     { planningId: figurePlanningId, artifacts },
                 )
                 : '';
-            return url
-                ? Object.assign({}, figure, { dataUrl: url, _serverUrl: url })
+            if (url) {
+                return Object.assign({}, figure, { dataUrl: url, _serverUrl: url });
+            }
+            // Do not leave an obsolete Session URL in the report form when
+            // the current catalogue rejects it. The empty figure can then be
+            // recaptured for the selected case instead of displaying the
+            // previous case's image.
+            const hadSessionScreenshot = [
+                figure?.dataUrl, figure?.data_url, figure?._serverUrl,
+                figure?.serverUrl, figure?.url, figure?.original_url,
+            ].some(value => !!reportScreenshotPathSession(value));
+            return hadSessionScreenshot
+                ? Object.assign({}, figure, {
+                    dataUrl: '', data_url: '', _serverUrl: '',
+                    serverUrl: '', url: '', original_url: '',
+                })
                 : figure;
         };
-        targetForm.figures = targetForm.figures.map(canonicalFigureUrl);
+        let repairedExistingFigures = false;
+        targetForm.figures = targetForm.figures.map(figure => {
+            const canonical = canonicalFigureUrl(figure);
+            if (canonical !== figure) repairedExistingFigures = true;
+            return canonical;
+        });
         const screenshots = artifacts.filter(item => {
             const dataType = String(item?.dataType || item?.type || '');
             const objectId = String(item?.objectId || '');
@@ -3174,9 +3470,9 @@
             const ownerPlanning = String(item?.planningId || item?.planning_id || '');
             return ['screenshot', 'report_figure'].includes(dataType)
                 && /^report_screenshot_[^/\\]+\.png$/i.test(filename)
-                // An owner-less legacy artifact is not safe to associate with
-                // a known Planning: accepting it here can import another
-                // run's deterministic axis into the current report.
+                && reportArtifactBelongsToSession(item, sessionId)
+                // A planning id is still required when restoring a known run;
+                // the Session check above prevents cross-case filename reuse.
                 && (!planningId || ownerPlanning === String(planningId));
         });
         if (!screenshots.length) {
@@ -3184,6 +3480,12 @@
                 language: targetForm.language,
             });
             targetForm.figures = currentFigures;
+            if (repairedExistingFigures) {
+                scheduleWorkspaceSave(
+                    'report.figures.foreign-assets-cleared',
+                    { sessionId: String(sessionId || '') },
+                );
+            }
             return currentFigures.length;
         }
         const recoveredFigureMetadata = (axis, viewMetadata = {}) => {
@@ -3245,21 +3547,23 @@
             const catalogUrl = String(
                 item?.url || item?.screenshot_url || item?.screenshotUrl || '',
             ).trim();
-            const fallbackUrl = String(
-                item?.dataUrl
-                || item?.data_url
-                || catalogUrl
-                || (contentVersion ? baseUrl + '?v=' + encodeURIComponent(contentVersion) : baseUrl),
-            ).trim();
+            const fallbackUrl = [
+                item?.dataUrl,
+                item?.data_url,
+                catalogUrl,
+                contentVersion ? baseUrl + '?v=' + encodeURIComponent(contentVersion) : baseUrl,
+            ].map(value => String(value || '').trim())
+                .find(value => reportArtifactCandidateIsSafe(item, value, sessionId)) || '';
             const serverUrl = typeof window.resolveSessionScreenshotUrl === 'function'
-                ? (
-                    window.resolveSessionScreenshotUrl(
+                ? (fallbackUrl
+                    ? window.resolveSessionScreenshotUrl(
                         fallbackUrl,
                         sessionId,
                         { planningId: planningId || expectedPlanningId, artifacts },
-                    ) || fallbackUrl
-                )
+                    )
+                    : '')
                 : fallbackUrl;
+            if (!serverUrl) return null;
             return {
                 id: `restored-report-${filename.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
                 type: 'screenshot',
@@ -3273,7 +3577,7 @@
                 ...(contentVersion ? { sha256: contentVersion } : {}),
                 ...figureMetadata,
             };
-        });
+        }).filter(Boolean);
         // Merge, rather than append, catalog artifacts. A workspace snapshot
         // wins for an already-known role; catalog files only fill genuinely
         // missing roles and old UUID copies collapse to one stable subfigure.
@@ -3291,7 +3595,10 @@
         );
         try { renderReportEditor(); } catch (_) {}
         try { _updateReportPreview(); } catch (_) {}
-        scheduleWorkspaceSave('report.figures.restored-from-catalog');
+        scheduleWorkspaceSave(
+            'report.figures.restored-from-catalog',
+            { sessionId: String(sessionId || '') },
+        );
         return targetForm.figures.length;
     }
 
@@ -3309,6 +3616,11 @@
             restored.editedFields = new Set(restored.editedFields || []);
             restored.sessionId = String(activeSessionId || restored.sessionId || '');
             restored.planningId = target || restored.planningId || '__unassigned__';
+            sanitizeReportFiguresForSession(
+                restored,
+                String(activeSessionId || ''),
+                target || restored.planningId,
+            );
             if (Array.isArray(restored.figures)) {
                 restored.figures = normalizeReportFigures(restored.figures, {
                     language: restored.language,
@@ -3703,6 +4015,16 @@
                 }
                 const targetReport = keepCurrentReport ? window.reportForm : report;
                 if (targetReport && targetPlanningId) targetReport.planningId = targetPlanningId;
+                if (sanitizeReportFiguresForSession(
+                    targetReport,
+                    sessionId,
+                    targetPlanningId || targetReport?.planningId || targetReport?.planning_id,
+                )) {
+                    // This is a durable repair, not a cosmetic redraw. The
+                    // normal reportState save below rewrites the repaired
+                    // figure map under the current Session/Planning owner.
+                    reportOwnershipNeedsPersist = true;
+                }
                 if (keepCurrentReport) {
                     // The current form may already contain hydrated narrative
                     // text, while the control-plane snapshot is the authority
@@ -3811,7 +4133,7 @@
                     loadSessionChat(sessionId);
                 }
             }
-            renderRecoveryNotice(snapshot.operation);
+            renderRecoveryNotice(snapshot.operation, snapshot);
             if (!options.skipTaskResume && !options.skipChat
                 && typeof window.resumeSessionChatTask === 'function') {
                 // The selected-case task endpoint is authoritative. Query it
@@ -4037,8 +4359,9 @@
         }
     }
 
-    function scheduleWorkspaceSave(reason) {
-        const ownerSessionId = String(activeSessionId || '');
+    function scheduleWorkspaceSave(reason, options = {}) {
+        const requestedSessionId = String(options?.sessionId || '').trim();
+        const ownerSessionId = requestedSessionId || String(activeSessionId || '');
         const presentationRestore = window.__pendingWorkspacePresentation;
         if (presentationRestore?.active
             && presentationRestore.sessionId === ownerSessionId) {
@@ -4056,7 +4379,10 @@
             // that outlives that transition must never serialize the new case
             // using the old case's report/chat payload.
             if (!ownerSessionId || ownerSessionId !== String(activeSessionId || '')) return;
-            void persistWorkspace(reason || 'ui.changed');
+            void persistWorkspace(
+                reason || 'ui.changed',
+                requestedSessionId ? { sessionId: ownerSessionId } : {},
+            );
         }, 700);
     }
 
@@ -4320,7 +4646,7 @@
         }
     }
 
-    window.loadSessions = async function loadSessions() {
+    async function loadSessions(options = {}) {
         const listStartedAt = workspaceNow();
         let data;
         try {
@@ -4361,11 +4687,29 @@
         // reconstructing the compact workspace response; waiting until after
         // that request made the UI look idle during the exact period in which
         // the case was already being restored.
+        const hasLiveVisibleClinicalState = typeof window.workspaceHasLiveVisibleClinicalState === 'function'
+            && window.workspaceHasLiveVisibleClinicalState(
+                window._activeWorkspaceSnapshot || null,
+                activeSessionId,
+            ) === true;
+        const preserveVisibleClinicalState = hasLiveVisibleClinicalState
+            || (options.preserveVisibleClinicalState === true
+                && typeof window.workspaceHasLiveVisibleClinicalState !== 'function');
+        const suppressVisibleNotice = preserveVisibleClinicalState
+            || (options.suppressVisibleNotice === true && hasLiveVisibleClinicalState);
         window.__workspaceRestoreCompletedSessionId = null;
-        window.showCaseResourceLoading?.({
-            sessionId: activeSessionId,
-            runId: `startup-${Date.now()}`,
-        });
+        if (suppressVisibleNotice) {
+            // Refreshing the session directory is a control-plane operation.
+            // If the same CT is already visible, do not flash the case
+            // resource spinner while the compact snapshot is revalidated.
+            window.setWorkspaceHydrationState?.(false, '', { immediate: true });
+            document.body.classList.remove('workspace-hydrating');
+        } else {
+            window.showCaseResourceLoading?.({
+                sessionId: activeSessionId,
+                runId: `startup-${Date.now()}`,
+            });
+        }
         const snapshotStartedAt = workspaceNow();
         let workspace;
         try {
@@ -4411,10 +4755,31 @@
         if (!workspaceSnapshotHasClinicalResources(workspace)) {
             cancelBackgroundWorkspaceRestore();
         } else {
-            scheduleBackgroundWorkspaceRestore(workspace, activeSessionId);
+            scheduleBackgroundWorkspaceRestore(workspace, activeSessionId, {
+                reason: options.reason || 'background-scheduled',
+                preserveVisibleClinicalState,
+                suppressVisibleNotice,
+            });
         }
         startWorkspaceServerHealthMonitor();
         return data;
+    };
+
+    // /api/sessions can be requested by startup and by recovery close
+    // together. Coalesce those callers so a second request cannot repaint the
+    // same case and launch a second restore transaction while the first one
+    // is still handing the snapshot to the viewer.
+    // Keep this function expression anonymous: naming it loadSessions would
+    // bind the wrapper to its own body, so the loadSessions() call below
+    // would recurse until RangeError and startup would silently restore
+    // nothing.
+    window.loadSessions = function (options = {}) {
+        if (loadSessionsInFlight) return loadSessionsInFlight;
+        const run = loadSessions(options);
+        loadSessionsInFlight = run;
+        return run.finally(() => {
+            if (loadSessionsInFlight === run) loadSessionsInFlight = null;
+        });
     };
 
     window.saveSessions = function saveSessions() {

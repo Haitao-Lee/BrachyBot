@@ -18,6 +18,7 @@ import uuid
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from tool_factory import ToolResult
+from utils.cancellation import OperationCancelled
 
 
 class RunStatus(str, Enum):
@@ -409,6 +410,12 @@ class ToolCallGateway:
             result = executor()
             if not isinstance(result, ToolResult):
                 result = ToolResult(False, error="Tool returned an invalid result", message="Tool returned an invalid result")
+        except OperationCancelled:
+            # The user cancelled the turn. Unwind the agent loop instead of
+            # journaling a recoverable tool failure that the next LLM round
+            # would try to repair while the browser already shows "Stopped".
+            self.ledger.transition(RunStatus.CANCELLED, "tool.cancelled", tool=call.name, call_id=call.id)
+            raise
         except Exception as exc:  # The gateway must never let a malformed tool escape the trace.
             result = ToolResult(False, error=str(exc), message=f"Tool execution failed: {exc}")
         result.execution_time = result.execution_time or (time.time() - started)

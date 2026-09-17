@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Mapping, Optional
 from agent_runtime.core import ToolResultPipeline
 from agent_runtime.response_contract import presentation_fallback_message
 from agent_runtime.turn_policy import (
+    classify_local_turn,
     is_current_case_dose_recompute_request,
     is_planning_reexecution_request,
     is_surgical_guide_generation_request,
@@ -25,6 +26,7 @@ from agent_runtime.turn_policy import (
     resolve_ui_operation_request,
     _has_visual_annotation_request,
 )
+from agent_runtime.shortcut_contract import planning_command, explicit_repeat, explicit_segmentation_request
 from plans.dose_pre.model_loader import resolve_prescription_gy
 from tool_factory.ui_controller import normalize_ui_controller_request
 from utils.user_errors import format_tool_error, sanitize_user_response
@@ -42,14 +44,16 @@ class ResponseToolMixin:
         safety validation.
         """
         params = params or {}
+        if explicit_repeat(message):
+            return True
         if any(bool(params.get(key)) for key in ("force_reexecution", "force", "overwrite", "rerun")):
             return True
-        if is_planning_reexecution_request(message):
+        if is_planning_reexecution_request(message) and planning_command(message):
             return True
-        return bool(re.search(
+        return bool(re.fullmatch(
             r"(?:\u518d\u6b21|\u518d\u5206\u5272|\u91cd\u65b0\u5206\u5272|\u91cd\u65b0\u89c4\u5212|\u518d\u89c4\u5212|\u91cd\u505a|\u91cd\u8dd1|\u5ffd\u7565\u73b0\u6709|\u4e0d\u4f7f\u7528\u73b0\u6709|"
             r"force|overwrite|rerun|re-run|run again|ignore (?:the )?existing)",
-            str(message or "").lower(),
+            re.sub(r"^(?:请|帮我|please\s+)", "", str(message or "").strip().lower()).strip(" 。.!"),
             re.IGNORECASE,
         ))
 
@@ -632,6 +636,22 @@ print(json.dumps(result))
         function only materializes commands whose target and parameters are
         unambiguous from the user's request.
         """
+        # Independent/legacy callers must pass the same whole-request gate as
+        # all chat entrypoints. A rejected candidate must never be revived by
+        # the older keyword materializer further below.
+        memory = getattr(self, "memory", None)
+        ui_state_getter = getattr(memory, "get_ui_state", None)
+        ui_state = ui_state_getter() if callable(ui_state_getter) else None
+        retrieve = getattr(memory, "retrieve", None)
+        pending = retrieve("pending_clarification") if callable(retrieve) else None
+        policy = classify_local_turn(
+            message, pending_tumor_site=bool(pending),
+            conversation=getattr(memory, "conversation", None), ui_state=ui_state,
+        )
+        inherited_repeat = explicit_repeat(message) and callable(retrieve) and retrieve("last_segmentation_target") in {"ctv", "oar"}
+        if not (policy.direct_execution or policy.action_plan or inherited_repeat
+                or explicit_segmentation_request(message)):
+            return None
         # This is the only direct clinical call for a current Dose/DVH
         # refresh. Do it before the legacy action-pattern scan so wording such
         # as "重新计算DVH相关指标" cannot be mistaken for a full plan, and so

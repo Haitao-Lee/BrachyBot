@@ -97,7 +97,7 @@ def test_cold_restore_keeps_one_loading_owner_until_parallel_viewer_work_finishe
     assert "onProgress: options.onHydrationProgress" in planning
     assert "registerBackgroundTask(completion, { kind: 'viewer_3d' })" in ui_api
     assert "Promise.allSettled(backgroundTasks).finally" in ui_api
-    assert "if (!backgroundNoticeTransferred)" in ui_api
+    assert "if (!backgroundNoticeTransferred && !suppressVisibleNotice)" in ui_api
     assert "registerBackgroundTask: options.registerBackgroundTask" in ui_api
     assert "pendingBackgroundKinds" in ui_api
     assert "const maxConcurrent = Math.max(" in manual

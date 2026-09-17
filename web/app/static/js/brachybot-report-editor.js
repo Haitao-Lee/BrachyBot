@@ -2280,6 +2280,24 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
         );
         if (normalMode?.stale) return { stale: true };
         if (!normalMode?.success) throw new Error('Normal surface mode was not prepared');
+        // The flag is not evidence. An aborted capture or a session restore
+        // can leave dose vertex colours behind after their restore snapshot is
+        // gone, and then Figure 1 would publish the dose surface as if it were
+        // the planning overview (observed as Fig 1 inheriting Fig 2(d)).
+        // Repair what can be repaired and refuse to publish otherwise.
+        if (typeof window.clearDoseTexturePresentationLeftovers === 'function') {
+            window.clearDoseTexturePresentationLeftovers();
+        }
+        const doseMarkedMeshes = Object.entries(scene3D.meshes || {})
+            .filter(([, mesh]) => [mesh, (typeof getMeshSurface === 'function' ? getMeshSurface(mesh) : null)]
+                .some(node => node?.userData?.doseTextureMapped === true))
+            .map(([id]) => id);
+        if (doseMarkedMeshes.length) {
+            throw new Error(
+                'Figure 1 capture refused: the dose surface is still applied to '
+                + doseMarkedMeshes.join(', ') + '. Clear the dose surface and retry.',
+            );
+        }
         const _meshCount = Object.keys(scene3D.meshes).length;
         if (scene3D.camera && scene3D.controls && scene3D.renderer && _meshCount > 0) {
             uiDebugLog('[Report] Figure 1: starting 3D capture, meshes:', _meshCount);

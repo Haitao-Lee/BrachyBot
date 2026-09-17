@@ -10,6 +10,7 @@ Stop action to cancel the owning Agent.
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import threading
@@ -32,6 +33,78 @@ MAX_TASK_JOURNAL_EVENTS = 2000
 MAX_TASK_STEPS = 2000
 
 logger = logging.getLogger(__name__)
+
+# While a turn waits for case resources, the worker publishes progress at
+# least this often. The cadence stays well below the browser's idle-stream
+# timeout so "loading" can never be mistaken for a dead connection.
+HYDRATION_PROGRESS_HEARTBEAT_SECONDS = 8.0
+
+# Phase labels owned by the worker so the route layer never formats UI text.
+_HYDRATION_PHASE_TEXT = {
+    "initializing": ("正在准备病例资源…", "Preparing case resources..."),
+    "metadata": ("正在准备病例元数据…", "Preparing case metadata..."),
+    "ct": ("正在加载 CT 影像…", "Loading the CT volume..."),
+    "artifacts": ("正在恢复计划与剂量数据…", "Restoring plans and dose data..."),
+    "background": (
+        "本次回答无需等待资源；病例继续在后台加载。",
+        "Answering now; the case keeps loading in the background.",
+    ),
+    "ready": ("病例资源已恢复。", "Case resources restored."),
+    "failed": ("病例资源加载失败。", "Case resource loading failed."),
+}
+
+
+class ChatTaskError(RuntimeError):
+    """A classified chat-turn failure the browser can explain precisely."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "chat_task_failed",
+        phase: str = "",
+        retryable: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.code = str(code or "chat_task_failed")
+        self.phase = str(phase or "")
+        self.retryable = bool(retryable)
+
+
+class ChatTaskCancelled(ChatTaskError):
+    """The turn was stopped before it reached the workflow."""
+
+    def __init__(self, message: str = "Stopped") -> None:
+        super().__init__(message, code="cancelled")
+
+
+def _trace_is_zh(task: "ChatTask") -> bool:
+    return str(task.response_language or task.ui_language or "").lower().startswith("zh")
+
+
+def _hydration_phase_text(phase: str, zh: bool) -> str:
+    chinese, english = _HYDRATION_PHASE_TEXT.get(
+        str(phase or ""), ("正在恢复病例资源…", "Restoring case resources...")
+    )
+    return chinese if zh else english
+
+
+def _supplier_accepts_progress(supplier: Callable[..., Any]) -> bool:
+    """Return whether an agent supplier can consume a progress callback."""
+    try:
+        parameters = inspect.signature(supplier).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(
+        parameter.kind
+        in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            inspect.Parameter.KEYWORD_ONLY,
+            inspect.Parameter.VAR_POSITIONAL,
+        )
+        for parameter in parameters
+    )
 
 
 def _event_parts(raw: Any) -> Tuple[str, Dict[str, Any]]:
@@ -496,6 +569,25 @@ class ChatTaskManager:
         def worker() -> None:
             finalized = False
             terminal_event = ""
+            hydration_step_published = False
+
+            def fail_hydration_step(message: str) -> None:
+                """Keep the visible loading row honest when the turn fails."""
+                if not hydration_step_published:
+                    return
+                zh = _trace_is_zh(task)
+                task.publish(task.encode_event(
+                    "step",
+                    {
+                        "id": f"workspace-hydration-{task.task_id}",
+                        "type": "tool",
+                        "tool": "workspace_hydration",
+                        "title": "加载病例资源" if zh else "Loading case resources",
+                        "status": "error",
+                        "content": str(message or _hydration_phase_text("failed", zh)),
+                    },
+                ))
+
             try:
                 if predecessor is not None:
                     predecessor.wait_for_worker(timeout=None)
@@ -511,41 +603,81 @@ class ChatTaskManager:
                 with app.app_context():
                     hydrated_agent_now = False
                     if task.agent is None and agent_supplier is not None:
-                        trace_zh = str(
-                            task.response_language or task.ui_language or ""
-                        ).lower().startswith("zh")
-                        task.publish(task.encode_event(
-                            "step",
-                            {
-                                "id": f"workspace-hydration-{task.task_id}",
-                                "type": "tool",
-                                "tool": "workspace_hydration",
-                                "title": "加载病例资源" if trace_zh else "Loading case resources",
-                                "status": "pending",
-                                "content": (
-                                    "开始本次对话前正在恢复病例资源。"
-                                    if trace_zh
-                                    else "Restoring the case before starting this chat turn."
-                                ),
-                            },
-                        ))
-                        task.agent = agent_supplier()
+                        trace_zh = _trace_is_zh(task)
+                        hydration_step = {
+                            "id": f"workspace-hydration-{task.task_id}",
+                            "type": "tool",
+                            "tool": "workspace_hydration",
+                            "title": "加载病例资源" if trace_zh else "Loading case resources",
+                            "status": "pending",
+                            "content": (
+                                "开始本次对话前正在恢复病例资源。"
+                                if trace_zh
+                                else "Restoring the case before starting this chat turn."
+                            ),
+                        }
+                        task.publish(task.encode_event("step", hydration_step))
+                        hydration_step_published = True
+                        hydration_progress = {"phase": "", "published_at": 0.0}
+
+                        def report_hydration_progress(payload):
+                            """Publish throttled progress and honour Stop.
+
+                            Returning ``False`` tells the supplier to abort its
+                            wait so an explicit Stop (or case deletion) never
+                            keeps a turn holding the case task slot.
+                            """
+                            if not task.is_running():
+                                return False
+                            info = payload if isinstance(payload, dict) else {}
+                            phase = str(info.get("phase") or "")
+                            now = time.monotonic()
+                            changed = phase != hydration_progress["phase"]
+                            heartbeat_due = (
+                                now - hydration_progress["published_at"]
+                                >= HYDRATION_PROGRESS_HEARTBEAT_SECONDS
+                            )
+                            if not changed and not heartbeat_due:
+                                return True
+                            hydration_progress["phase"] = phase
+                            hydration_progress["published_at"] = now
+                            update = dict(hydration_step)
+                            update["status"] = "pending"
+                            update["content"] = _hydration_phase_text(phase, trace_zh)
+                            task.publish(task.encode_event("step", update))
+                            return True
+
+                        if _supplier_accepts_progress(agent_supplier):
+                            task.agent = agent_supplier(report_hydration_progress)
+                        else:
+                            task.agent = agent_supplier()
                         hydrated_agent_now = True
                         if task.agent is None:
-                            raise RuntimeError("Case resources are not available")
+                            raise ChatTaskError(
+                                "Case resources are not available",
+                                code="workspace_hydration_failed",
+                                phase="metadata",
+                                retryable=True,
+                            )
                         if not task.is_running():
                             return
-                        task.publish(task.encode_event(
-                            "step",
-                            {
-                                "id": f"workspace-hydration-{task.task_id}",
-                                "type": "tool",
-                                "tool": "workspace_hydration",
-                                "title": "加载病例资源" if trace_zh else "Loading case resources",
-                                "status": "done",
-                                "content": "病例资源已恢复。" if trace_zh else "Case resources restored.",
-                            },
-                        ))
+                        data_ready = bool(
+                            getattr(task.agent, "_workspace_data_ready", True)
+                        )
+                        completion_step = dict(hydration_step)
+                        completion_step["status"] = "done"
+                        if data_ready:
+                            completion_step["content"] = (
+                                "病例资源已恢复。" if trace_zh else "Case resources restored."
+                            )
+                        else:
+                            # A metadata-only shell answered this turn without
+                            # waiting for clinical arrays; say so instead of
+                            # claiming a fully restored workspace.
+                            completion_step["content"] = _hydration_phase_text(
+                                "background", trace_zh
+                            )
+                        task.publish(task.encode_event("step", completion_step))
                     if task.agent is None:
                         raise RuntimeError("Agent not available")
                     agent = task.agent
@@ -674,7 +806,11 @@ class ChatTaskManager:
                                 "step",
                                 task.commit_step("error", failure),
                             ))
-                            task.publish(task.encode_event("error", {"message": failure}))
+                            task.publish(task.encode_event("error", {
+                                "message": failure,
+                                "code": "commit_failed",
+                                "retryable": True,
+                            }))
                             task.finish("failed", failure)
                             return
                         task.result_committed = True
@@ -689,11 +825,47 @@ class ChatTaskManager:
                         if not finalized:
                             on_finish(task)
                             finalized = True
+            except ChatTaskCancelled:
+                # An explicit Stop or a case deletion raced case hydration.
+                # Cancellation owns its terminal state and never publishes a
+                # recoverable error into the transcript.
+                logger.info("Chat task %s cancelled while preparing case resources", task.task_id)
+                task.completion_status = "cancelled"
+                fail_hydration_step("已停止。" if _trace_is_zh(task) else "Stopped.")
+                task.finish("cancelled")
+            except ChatTaskError as exc:
+                logger.warning(
+                    "Chat task %s failed (%s, phase=%s): %s",
+                    task.task_id, exc.code, exc.phase or "-", exc,
+                )
+                task.completion_status = "failed"
+                fail_hydration_step(str(exc))
+                task.publish("event: error\ndata: " + json.dumps({
+                    "message": str(exc),
+                    "code": exc.code,
+                    "phase": exc.phase,
+                    "retryable": exc.retryable,
+                }) + "\n\n")
+                if (
+                    on_finish is not None
+                    and task.agent is not None
+                    and not task._skip_finalization
+                ):
+                    try:
+                        with app.app_context():
+                            on_finish(task)
+                            finalized = True
+                    except Exception:
+                        logger.exception("Chat task %s finalization failed", task.task_id)
+                task.finish("failed", str(exc))
             except Exception as exc:  # pragma: no cover - exercised by integration tests
                 logger.exception("Chat task %s failed", task.task_id)
                 task.completion_status = "failed"
+                fail_hydration_step(str(exc))
                 task.publish(
-                    "event: error\ndata: " + json.dumps({"message": str(exc)}) + "\n\n"
+                    "event: error\ndata: "
+                    + json.dumps({"message": str(exc), "code": "chat_task_failed"})
+                    + "\n\n"
                 )
                 if (
                     on_finish is not None

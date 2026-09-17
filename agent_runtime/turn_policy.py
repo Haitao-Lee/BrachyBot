@@ -5,12 +5,16 @@ only for deterministic, low-risk requests.  Clinical execution and evidence
 based medical advice keep the normal routing and review gates.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import re
 from typing import Any, Dict, FrozenSet, Iterable, List, Mapping, Optional, Tuple
 
 from agent_runtime.action_plan import ActionPlan
 from agent_runtime.ui_operations import resolve_ui_operation_request
+from agent_runtime.shortcut_contract import shortcut_supported
+from agent_runtime.intent_boundary import (
+    canonical_resource_read, canonical_report_generation, has_explicit_read_request,
+)
 
 
 KNOWLEDGE_TOOLS: FrozenSet[str] = frozenset({
@@ -79,6 +83,11 @@ class LocalTurnPolicy:
     # executor, provider-tool filter, trace, and response formatter without
     # reparsing the user's sentence in several layers.
     ui_operation: Optional[Dict[str, Any]] = None
+    # Auditable distinction between a lexical candidate and an accepted
+    # whole-request execution contract. These never grant execution themselves.
+    routing_source: str = "legacy_candidate"
+    routing_reason: str = ""
+    candidate_intent: str = ""
 
 
 def visual_analysis_policy() -> LocalTurnPolicy:
@@ -203,8 +212,13 @@ def is_planning_reexecution_request(message: str) -> bool:
         # Keep the planning verb adjacent to the re-execution verb. A loose
         # gap here misclassified "重新计算当前规划方案的 DVH" as re-planning
         # simply because the noun "规划方案" appeared later in the sentence.
+        # A single qualifier may sit before the plan noun ("重新执行手术规划",
+        # "重做治疗计划"); without it the phrase fell through to the open
+        # semantic router, where the word "手术" steered the model into
+        # surgical_guide instead of the planning pipeline.
         r"(?:\u91cd\u65b0|\u518d\u6b21|\u518d|\u91cd\u505a|\u91cd\u8dd1)"
-        r"(?:\u6267\u884c|\u8fdb\u884c|\u5f00\u59cb|\u505a)?\s*(?:\u89c4\u5212|\u8ba1\u5212)|"
+        r"(?:\u6267\u884c|\u8fdb\u884c|\u5f00\u59cb|\u505a)?\s*"
+        r"(?:\u624b\u672f|\u6cbb\u7597)?\s*(?:\u89c4\u5212|\u8ba1\u5212)|"
         r"\b(?:replan|re-plan|rerun(?: the)? plan|rerun planning)\b",
         text,
         flags=re.IGNORECASE,
@@ -1145,6 +1159,8 @@ def resolve_report_request_action(message: str) -> Optional[str]:
         "figure", "fig", "screenshot", "image", "images", "picture", "figures",
         "\u622a\u56fe", "\u622a\u5c4f", "\u56fe\u7247", "\u56fe\u50cf", "\u56fe\u4ef6",
     )
+    if not has_explicit_read_request(positive_text):
+        return None
     return "view_figures" if _contains_any(positive_text, figure_terms) else "view"
 
 
@@ -1601,7 +1617,7 @@ def resolve_session_content_presentation(message: str, target: Optional[str] = N
     return "open" if resolved_target == "artifact" and explicit_selected else "auto"
 
 
-def classify_local_turn(
+def _classify_local_candidate(
     message: str,
     pending_tumor_site: bool = False,
     conversation: Optional[Iterable[object]] = None,
@@ -1827,7 +1843,7 @@ def classify_local_turn(
         )
 
     if is_report_generation_request(text):
-        if _requires_semantic_resolution(text):
+        if _requires_semantic_resolution(text) or not canonical_report_generation(text):
             return _semantic_action_policy(complexity="medium", review=False)
         return LocalTurnPolicy(
             "report_generation",
@@ -1933,7 +1949,7 @@ def classify_local_turn(
     # a viewer mutation, or a knowledge lookup. Keep it out of the expensive
     # router and let the Session-content bridge resolve real stored data.
     if resolve_session_content_target(text):
-        if _requires_semantic_resolution(text):
+        if _requires_semantic_resolution(text) or not canonical_resource_read(text):
             return _semantic_action_policy(complexity="medium", review=False)
         return LocalTurnPolicy(
             "session_content_query",
@@ -1943,6 +1959,12 @@ def classify_local_turn(
             False,
             frozenset(),
         )
+
+    # A report noun without a canonical operation is not permission to open
+    # it. Keep clear/edit/export/help requests on the primary semantic route,
+    # with the real controller/inspector capabilities and no execution grant.
+    if re.search(r"\breports?\b|报告", lower):
+        return _semantic_action_policy(complexity="medium", review=False)
 
     if is_current_oar_count_query(text):
         return LocalTurnPolicy(
@@ -2054,6 +2076,58 @@ def classify_local_turn(
     # instead of silently reducing the turn to a knowledge-only whitelist.
     # Explicit questions above remain on the smaller low-latency read path.
     return _semantic_action_policy(complexity="medium", review=False)
+
+
+def classify_local_turn(
+    message: str,
+    pending_tumor_site: bool = False,
+    conversation: Optional[Iterable[object]] = None,
+    ui_state: Optional[Mapping[str, Any]] = None,
+) -> LocalTurnPolicy:
+    """One acceptance boundary shared by plain, trace and streaming chat.
+
+    Lexical candidates are hints, not permission. In particular an action plan
+    can trigger direct execution even if direct_execution=False, so grants and
+    plans must be checked as well. Semantic fallback must drop *all* of them.
+    """
+    candidate = _classify_local_candidate(
+        message, pending_tumor_site, conversation, ui_state,
+    )
+    if candidate.intent == "small_talk" and not re.fullmatch(
+        r"(?:你好|您好|嗨|哈喽|早上好|下午好|晚上好|谢谢|感谢|"
+        r"hi|hello|hey|good morning|good afternoon|good evening|thanks|thank you|"
+        r"(?:请)?介绍自己|你是谁|你能做什么|你可以做什么|使用说明|"
+        r"introduce yourself|who are you|what can you do|how do i use (?:this|brachybot))",
+        str(message or "").strip().lower().strip("!?.,，。！？ "),
+    ):
+        return replace(_semantic_action_policy(review=False),
+                       routing_source="primary_semantic", candidate_intent=candidate.intent,
+                       routing_reason="greeting_is_only_part_of_request")
+    bypasses_semantics = bool(
+        candidate.direct_execution or candidate.execution_grants
+        or candidate.workflow_grants or candidate.action_plan
+    )
+    if bypasses_semantics and not shortcut_supported(
+        message, candidate, pending_tumor_site=pending_tumor_site, ui_state=ui_state,
+    ):
+        return replace(
+            _semantic_action_policy(
+                complexity=candidate.complexity, review=candidate.requires_review,
+            ),
+            routing_source="primary_semantic",
+            routing_reason="whole_request_contract_not_satisfied",
+            candidate_intent=candidate.intent,
+        )
+    # Topic words may guide the prompt but cannot hide unrelated capabilities
+    # from the primary model. No pregrants are added by broadening schemas.
+    if candidate.intent in {"knowledge_query", "clinical_knowledge", "external_project_query", "ui_control"}:
+        return replace(candidate, allow_tools=frozenset(
+                           set(candidate.allow_tools or ()) | set(UI_TOOLS)
+                           | {"case_memory", "plan_comparator"}),
+                       routing_source="primary_semantic", candidate_intent=candidate.intent,
+                       routing_reason="topic_hint_does_not_restrict_capabilities")
+    return replace(candidate, routing_source="whole_request_contract" if bypasses_semantics else "local_read_or_semantic",
+                   candidate_intent=candidate.intent)
 
 
 def filter_tool_schemas(tools, policy: Optional[LocalTurnPolicy]):

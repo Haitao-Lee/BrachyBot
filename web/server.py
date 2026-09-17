@@ -4,6 +4,7 @@ The public entry point remains `python web/server.py`; shared helpers and route
 groups live in smaller modules so each file is easier to audit.
 """
 
+import logging
 import os
 import re
 import sys
@@ -1037,6 +1038,36 @@ def create_app(config: Optional[Dict] = None):
                     workspace_store.schedule_agent_checkpoint(
                         workspace[0], workspace[1], agent, "request.completed",
                     )
+        return response
+
+    @app.before_request
+    def _record_request_started_at():
+        """Stamp each request so a stall can be identified from the log."""
+        try:
+            g.brachybot_request_started_at = time.perf_counter()
+        except Exception:
+            g.brachybot_request_started_at = None
+        return None
+
+    @app.after_request
+    def _log_slow_requests(response):
+        """Persist requests that took long enough to risk a browser timeout.
+
+        The public browser abandons a chat handshake after 30 seconds; without
+        this trace a saturated server leaves no evidence explaining why the
+        next request never received response headers.
+        """
+        started_at = getattr(g, "brachybot_request_started_at", None)
+        if started_at is not None:
+            elapsed = time.perf_counter() - started_at
+            if elapsed >= 5.0:
+                logger.warning(
+                    "Slow request %.1fs %s %s status=%s",
+                    elapsed,
+                    request.method,
+                    request.path,
+                    response.status_code,
+                )
         return response
 
     @app.before_request
@@ -2239,6 +2270,79 @@ def run_server(port: int = 8080, host: str = "127.0.0.1", config: Optional[Dict]
         print("\nServer stopped.")
 
 
+def _configure_file_logging() -> None:
+    """Mirror server logs to disk so failures remain diagnosable offline.
+
+    stdout still receives every record; the file handler is best-effort and
+    must never block startup when the runtime directory is not writable.
+    Set ``BRACHYBOT_SERVER_LOG=0`` to disable, or to a path to relocate the
+    file. The default lives under the runtime directory beside case data.
+    """
+    target = str(os.environ.get("BRACHYBOT_SERVER_LOG", "") or "").strip()
+    if target.lower() in {"0", "off", "false", "none"}:
+        return
+    try:
+        root = logging.getLogger()
+        if any(isinstance(handler, logging.FileHandler) for handler in root.handlers):
+            return
+        if target:
+            path = os.path.expanduser(target)
+        else:
+            repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            path = os.path.join(repo_root, ".runtime", "logs", "server.log")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        from logging.handlers import RotatingFileHandler
+
+        handler = RotatingFileHandler(
+            path, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
+        )
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+        )
+        handler.setLevel(logging.INFO)
+        root.addHandler(handler)
+        if root.level == logging.NOTSET or root.level > logging.INFO:
+            root.setLevel(logging.INFO)
+        logger.info("Server log file enabled: %s", path)
+    except Exception:
+        logger.warning("Unable to enable the server log file", exc_info=True)
+
+
+def prewarm_agent_runtime() -> None:
+    """Build one throwaway Agent off the request path.
+
+    The first authenticated case after a restart otherwise pays the whole
+    import graph and tool-registry construction inside the user request
+    (measured at ~5-12 s under load), which shows up as a long
+    "Connecting & preparing" phase. The dummy session never touches a real
+    case workspace; failures are logged and ignored.
+    """
+    started = time.perf_counter()
+    try:
+        from AgenticSys import BrachyAgent
+
+        agent = BrachyAgent(session_id="__startup_prewarm__", config={})
+        del agent
+        logger.info(
+            "Agent runtime prewarmed duration_ms=%.1f",
+            (time.perf_counter() - started) * 1000.0,
+        )
+    except Exception:
+        logger.warning("Agent runtime prewarm skipped", exc_info=True)
+
+
+def schedule_agent_runtime_prewarm() -> None:
+    """Run the one-time Agent construction in a background daemon thread."""
+    try:
+        threading.Thread(
+            target=prewarm_agent_runtime,
+            name="brachy-agent-prewarm",
+            daemon=True,
+        ).start()
+    except Exception:
+        logger.warning("Unable to schedule agent runtime prewarm", exc_info=True)
+
+
 def main():
     import argparse
 
@@ -2251,6 +2355,9 @@ def main():
     parser.add_argument("--host", default=default_host, help="Server host")
     parser.add_argument("--session", default="web", help="Session ID")
     args = parser.parse_args()
+
+    _configure_file_logging()
+    schedule_agent_runtime_prewarm()
 
     config = {
         "session_id": args.session,

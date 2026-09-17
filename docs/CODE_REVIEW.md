@@ -1,3 +1,281 @@
+# 2026-09-15 Incident Review — Release logout/login restored an empty workspace; report capture, LLM status, and input contracts repaired
+
+> **This is the newest authoritative review entry and is intentionally located
+> at the absolute beginning of the file.**
+> It records the release-version report in which chat history and case
+> resources appeared empty after logout/login, the report-figure capture and
+> Figure 1 dose-surface repairs, the live LLM health contract, the CT/mask
+> input acceptance contracts, the image/mask format-equivalence proof, the
+> absolute-Gy dose-isosurface labels, the per-pixel depth-peeling work, and the
+> test-contract realignment completed in the same window. All earlier entries
+> remain below for traceability.
+
+## 1. Executive verdict
+
+The reported release-version data loss was not data loss. The release database
+and every case snapshot were fully intact; the browser never loaded them
+because the release-only coalescing wrapper around `loadSessions()` called the
+function expression's own bound name and recursed until
+`RangeError: Maximum call stack size exceeded`. The wrapped loader was never
+reached, the startup caller swallowed the error, and the case directory, the
+durable transcript, and the clinical restore all stayed empty. A second
+release-only defect made the `/api/status` fallback restore treat an empty
+active session as "already scheduled", removing the remaining self-healing
+path. The release repair carries a behavioral regression test that executes the
+real wrapper bytes in Node and would have caught the recursion.
+
+The same window repaired the report-figure capture window for long planning
+runs, the Figure 1 normal-surface contract, PDF export re-capture, the LLM
+provider health contract, CT/mask input acceptance, dose-isosurface Gy labels,
+and verified that all supported CT/mask formats resolve to identical LPI
+arrays and voxel-exact masks.
+
+| Confirmed problem | Root cause | Status |
+|---|---|---|
+| Release logout/login showed no cases and no chat | `window.loadSessions = function loadSessions(...)` referenced its own name inside the body, recursing forever; startup catches hid the RangeError | **FIXED; BEHAVIORAL REGRESSION TEST** |
+| The `/api/status` fallback restore never ran after a failed session list | `String(activeSessionId \|\| '') === String(marker \|\| '')` was true for two empty strings in two init guards | **FIXED** |
+| Report figures stayed missing for long planning runs | The dose/DVH-ready refresh hard-coded `captureReportFigures: false`; the only capture-enabled refresh retried ~2.5 min while planning ran 10–16 min | **FIXED** |
+| Figure 1(b) captured with the dose texture mode | Figure 1 reset to the normal surface only when a texture object already existed | **FIXED** |
+| Exporting the PDF recaptured figures and could lose the click gesture | `exportReportPDF()` called `autoCaptureReportFigures()` before `window.open` | **FIXED** |
+| LLM outage looked like a silent application failure | No provider health state reached the UI; a stale `ANTHROPIC_AUTH_TOKEN` fallback answered 401 | **FIXED** |
+| CT/mask pickers rejected valid inputs | CT `accept` filtered extensionless DICOM; a single-file DICOM series was coerced to one slice; mask `accept` missed `.nii.gz` | **FIXED** |
+| Dose isosurface labels stayed relative in the release viewer | The release frontend lacked the Gy normalization already used by the editor | **FIXED; SYNCED TO RELEASE** |
+| Translucent 3D surfaces sorted incorrectly | Screen-space sorting cannot order per-pixel overlap of dose/OAR/skin surfaces | **FIXED; PER-PIXEL DEPTH PEELING** |
+| Three frontend contract tests asserted superseded code shapes | Assertions pinned pre-repair strings | **FIXED; REALIGNED AND GREEN** |
+
+## 2. Release logout/login blank workspace repair (critical)
+
+### 2.1 Direct evidence that the server still owned the case
+
+The release runtime is `BrachyBot-release/release-state/runtime`. Querying the
+release database read-only showed account `Haitao`
+(`da61a486170e4d5592d2c53a45eedc6f`) still owned three cases, including
+`4b9e533780c941fabc2fc226b937db03` at revision 58 with a snapshot written at
+17:50:02 the same day and **12 chat messages** in `chat.messages`. Logout only
+clears the signed session cookie (`web/auth.py`), and login reuses the
+newest case. Nothing in the server path deletes or rotates case data.
+
+### 2.2 Root cause — the coalescing wrapper resolved its own name
+
+`BrachyBot-release/web/app/static/js/brachybot-workspace.js` assigned:
+
+```js
+window.loadSessions = function loadSessions(options = {}) {
+    if (loadSessionsInFlight) return loadSessionsInFlight;
+    const run = loadSessions(options);   // resolves to this expression itself
+    ...
+};
+```
+
+A named function expression binds its own name inside its body
+(`var f = function g() { g(); }`), so `loadSessions(options)` recursed until
+`RangeError`. `loadSessionsInFlight` was only assigned after the recursive
+call, so the coalescing guard could never break the cycle. `init()` in
+`brachybot-ui-api.js` wraps the call in `try { ... } catch (e) { console.warn('Session init failed:', e); }`
+and therefore continued with an empty workspace. The wrapper was introduced by
+release commit `8ee2788ae` ("fix: preserve live workspace during background
+restore", 2026-09-15 12:31). The internal build never had this wrapper, which
+is why internal auto-load worked.
+
+### 2.3 Secondary guard — an empty session id faked a scheduled restore
+
+The same release `brachybot-ui-api.js` compared the scheduler markers with
+`String(activeSessionId || '')`. With a null active session the comparison
+`'' === ''` evaluated true in two places:
+
+1. `startupClinicalRestoreScheduled` skipped the legacy state clear as if a
+   restore were in flight;
+2. `restoreAlreadyScheduled` suppressed the `/api/status?lightweight=1`
+   fallback restore.
+
+Together they removed the recovery that could have restored clinical resources
+after the session-list failure.
+
+### 2.4 Repair
+
+- `BrachyBot-release/web/app/static/js/brachybot-workspace.js`: the wrapper is
+  now an anonymous function expression, so `loadSessions(options)` resolves to
+  the outer loader declaration. A comment states the constraint explicitly.
+- `BrachyBot-release/web/app/static/js/brachybot-ui-api.js`: both guards now
+  require a non-empty session key before comparing markers:
+
+  ```js
+  const startupSessionKey = String(activeSessionId || '');
+  const startupClinicalRestoreScheduled = startupSessionKey !== ''
+      && (String(window.__workspaceRestoreScheduledSessionId || '') === startupSessionKey
+          || String(window.__workspaceRestoreCompletedSessionId || '') === startupSessionKey);
+  ```
+
+  and the equivalent `restoreSessionKey` form for `restoreAlreadyScheduled`.
+- Cache-busters in `BrachyBot-release/web/app/index.html`:
+  `brachybot-workspace.js?v=56 → v57`, `brachybot-ui-api.js?v=84 → v85`, so an
+  already-open browser fetches the fixed bundles on refresh. No server restart
+  is required for static-asset fixes.
+- The release fix stays in the release working tree; public-release code is not
+  pushed to GitHub by deployment policy.
+
+### 2.5 Verification
+
+- New release test `tests/test_workspace_session_loader_runtime.py` extracts
+  the real wrapper bytes from the bundle and runs them in Node (the driver
+  bundled with Playwright, v24.15.0) with a gated loader. Before the repair it
+  reproduced `RangeError: Maximum call stack size exceeded` with zero loader
+  calls; after the repair it asserts no throw, exactly one shared load for two
+  overlapping callers, and one resolved session id.
+- Release `tests/test_workspace_frontend.py` gained
+  `test_empty_session_never_counts_as_an_already_scheduled_restore`; its two
+  split anchors were updated to the anonymous wrapper, and version pins were
+  realigned in `tests/test_workspace_server_recovery_indicator.py`,
+  `tests/test_runtime_contracts.py`, and `tests/test_visual_annotation_contract.py`.
+- Deployed end-to-end check: a clean headless Chromium logged in to
+  `https://app.brachybot.com` as `Haitao`. The session directory rendered
+  **3 of 3 cases**, the newest case `4b9e5337…` auto-selected, the transcript
+  painted **12 of 12 messages**, and the console contained **no**
+  `Maximum call stack` error and no `Session init failed` warning.
+
+## 3. Report capture, Figure 1 surface mode, and PDF export repair
+
+### 3.1 Late dose readiness now captures figures
+
+The terminal "dose/DVH ready" refresh that follows a long planning run passed
+`captureReportFigures: false`, while the only capture-enabled refresh retried
+for about 2.5 minutes. Real planning runs took 10–16 minutes, so the report
+stayed permanently without figures and the all-or-nothing staging showed
+nothing. `web/app/static/js/brachybot-3d-manual.js`
+(`_refreshDoseAfterPlanningEvent`) now passes `captureReportFigures: true`, and
+`web/app/static/js/brachybot-chat-todo.js` retries with `attempt < 400` and a
+`Math.min(2500, 250 + (attempt + 1) * 25)` ms delay. Regression:
+`tests/test_report_capture_and_progress.py::test_late_dose_readiness_can_repair_missing_report_figures`.
+
+### 3.2 Figure 1 renders the normal dose surface
+
+`web/app/static/js/brachybot-report-editor.js` prepared Figure 1 with
+`setDoseTextureMode(false)` only when `state.doseTexture?.enabled` was already
+set, so the capture could inherit the dose-texture mode from a prior figure.
+Figure 1 now always requests the normal surface (`setDoseTextureMode(false, { silent: true })`),
+returns `{ stale: true }` if the normal mode cannot settle, and only Figure
+2(d) re-enables the dose texture. The close-up visibility allow-list is now
+`mesh.visible = !_isStandaloneGenericReportMask(id, mesh) && !_isFigureOneOar(id, mesh) && (...Ctv || ...Seed || ...Needle)`.
+
+### 3.3 PDF export prints the already-staged figures
+
+`web/app/static/js/brachybot-report-export.js` `exportReportPDF()` no longer
+calls `autoCaptureReportFigures()`. It synchronously refreshes the report
+preview, opens the print window immediately to preserve the user gesture, then
+awaits the staged assets and prints. This prevents export from starting a
+second, competing capture transaction.
+
+## 4. Live LLM provider health contract
+
+An internal-server session reported "AI 语言服务暂时不可用" while the real
+cause was a 401: `ANTHROPIC_API_KEY` was empty in the server environment and
+`brain/core/router.py` fell back to a stale `ANTHROPIC_AUTH_TOKEN`
+(`tp-ceb…`). The same request succeeded with the correct key plus the
+`x-opencode-session` header. The repair makes provider health observable
+instead of silent:
+
+- `brain/core/base.py`: `_record_llm_success`, `_record_llm_error`, and
+  `llm_health` on `BaseLLM`; providers record both streaming and non-streaming
+  outcomes (`brain/providers/anthropic_llm.py`,
+  `brain/providers/generic_openai_compat.py`).
+- `brain/core/router.py`: router-level `llm_health`; `AgenticSys.brain_state`
+  reports `online` / `offline` / `checking` / `unconfigured` and warns when the
+  legacy `ANTHROPIC_AUTH_TOKEN` fallback is in use.
+- `web/routes/planning_routes.py`: `brain_state` is included in the status
+  payloads; `agent_runtime/llm_runtime.py` and
+  `agent_runtime/chat_workflows.py` mark failed turns with
+  `code="llm_unavailable"`.
+- `web/app/static/js/brachybot-ui-api.js` accepts the string states (and still
+  prefers `brain_state` over `brain_available`);
+  `web/app/static/js/brachybot-chat-todo.js` flips the Brain chip on
+  `llm_unavailable` and on recovered `llm_meta.llm_calls > 0`.
+- Regression: `tests/test_llm_health_contract.py`.
+
+## 5. CT and mask input acceptance contracts
+
+- `web/app/index.html`: the CT file input no longer carries an `accept`
+  filter (extensionless DICOM volumes were rejected by the picker), a new
+  `fileCTFolder` input selects a whole folder via `webkitdirectory`, and mask
+  inputs accept `.gz` instead of the narrower `.nii.gz`.
+- `web/app/static/js/brachybot-ui-api.js`: folder uploads send
+  `webkitRelativePath` and append `dicom_series=1`.
+- `web/server.py`: `/api/upload` honors `force_series`, so a one-file upload
+  that is really a DICOM series (`len(files) == 1 and not force_series`) is no
+  longer coerced to a single slice.
+- Regression: `tests/test_upload_input_contract.py` plus the functional
+  `tests/test_workspace_auth.py::test_folder_upload_of_one_extensionless_dicom_is_a_series`.
+
+## 6. Image and mask format equivalence proof
+
+Independent checks (SimpleITK + pydicom) confirmed that `.nii.gz`, `.mha`,
+`.nrrd`, a single `.dcm`, and a real 7-slice pydicom DICOM series with rotated
+geometry and `RescaleIntercept = -1024` produce byte-identical LPI arrays,
+spacing, origin, and direction versus the NIfTI reference. Masks
+(`.nii.gz`, `.mha`, `.nrrd`, rotated frame, finer grid) align voxel-exactly
+through `align_label_to_reference`. Regression:
+`tests/test_image_format_equivalence.py`.
+
+## 7. Absolute-Gy dose isosurface normalization
+
+`web/app/static/js/brachybot-viewer-volume.js` exposes
+`normalizeDoseIsoSurfaceLevel` / `_isRelativeDoseIsoLabel`, and
+`web/app/static/js/brachybot-3d-manual.js` calls it whenever an isodose level
+is created or relabeled, so relative labels resolve to absolute Gy against the
+active prescription. The same normalization was synced into the release build.
+
+## 8. Per-pixel depth peeling for translucent 3D surfaces
+
+`web/app/static/js/brachybot-depth-peeling.js` implements per-pixel depth
+peeling so overlapping translucent surfaces (dose isosurfaces versus OAR
+meshes and skin) composite in true depth order instead of draw order; it is
+integrated through `brachybot-3d-manual.js`. A real-Chromium check passed
+13/13 in both repositories, and a capture sampling check confirmed the
+lit-pixel report checks are unaffected. Companion commits in the same window:
+`e169f03f2` (OAR mesh prewarm before metadata enrichment), `12809ca93`
+(fail-closed truncated-CT boundary needle check), `254f35dd4` (depth peeling
+plus browser test), `1a5d1f47f` (cache-busted version alignment), and
+`500e1b4ce` (replanning guide generation and FOV handling).
+
+## 9. Test-contract realignment and byte-exact line-ending restoration
+
+- Three stale assertions were realigned in both repositories to the current
+  contracts: `presentation.visible2D / visible3D` plus
+  `rebuiltLevels[i] = presentation` in
+  `tests/test_planning_visual_delivery.py`, and the Figure 1 close-up
+  allow-list `_isStandaloneGenericReportMask` in
+  `tests/test_report_capture_and_progress.py`.
+- Earlier byte-level edits had converted CRLF to LF in test sources. The
+  original endings were restored with a `difflib` byte comparison for
+  `tests/test_round7_regressions.py`, `tests/test_runtime_contracts.py`, and
+  `tests/test_uploaded_mask_staging.py` (release additionally
+  `web/app/index.html`), removing thousand-line phantom diffs.
+- Internal implementation commits pushed to `origin/codex/session-task-recovery`
+  and fast-forwarded to `main` (`6c45ae6a9..f0a2eae63`): `bf6a4af28` (LLM
+  health), `8737245ca` (upload inputs), `52dbe9d95` (report capture, Figure 1,
+  export), `f0a2eae63` (viewer status, dose iso labels, contract tests).
+
+## 10. Second-pass verification
+
+- Internal focused suite (LLM health, upload inputs, format equivalence,
+  report capture, round-7 regressions, runtime contracts, uploaded-mask
+  staging, visual annotation, workspace auth, planning visual delivery):
+  **175 passed, 0 failed**.
+- Release focused suite (new session-loader runtime test, workspace frontend,
+  server-recovery indicator, runtime contracts, visual annotation):
+  **195 passed, 0 failed**.
+- Deployed release end-to-end login as `Haitao` restored the case directory
+  and the 12-message transcript with a clean console (Section 2.5).
+- The release full suite was also re-run: **1090 passed, 16 failed, 8 skipped**
+  (excluding `tests/test_release_access.py`, which needs PyJWT and is only
+  installed in the public venv). Every failure was checked against a clean
+  worktree at the pre-pass release HEAD: **13 reproduce there unchanged**
+  (release divergence in public-hybrid auth, brain integration, report-capture
+  UI progress, theme, and viewer-coordinate contract tests), and the remaining
+  **3 assert the previous `index.html` shape against the in-flight public-login
+  splash work** in the release working tree (`class="auth-booting"` and
+  `brachybot-release-login.js?v=5`), not against this pass. No failure was
+  introduced by the repairs above.
+
 # 2026-08-30 Incident Review — Restart hydration lost or delayed Planning resources
 
 > **This is the newest authoritative review entry and is intentionally located

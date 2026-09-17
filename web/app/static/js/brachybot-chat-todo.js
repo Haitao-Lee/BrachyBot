@@ -190,6 +190,10 @@ function _todoCreate() {
     // todo visible at a time per chat (sendChat wipes the dock at
     // start), so a
     // single global ref is enough.
+    // Replacing the single visible Progress dock supersedes the previous
+    // turn's presentation. Cancel it explicitly so an orphaned active row
+    // cannot keep its elapsed timer running behind the new task.
+    try { window._activeTodoApi?.cancel?.('Stopped'); } catch (_) {}
     window._activeTodoApi = null; // will be set after api is built
     toggle.onclick = () => {
         root.classList.toggle('folded');
@@ -1156,6 +1160,11 @@ function handleChatInput(el) {
 // or `ReadableStream` API is missing), fall back to a single JSON call
 // and render the final response.
 const CHAT_CONNECT_TIMEOUT_MS = 30000;
+// A report regeneration keeps capturing figures and flushing its durable save
+// after the report itself is already on screen. The report UI owns that
+// progress; the chat turn may wait only a bounded window for it before
+// releasing the final reply.
+const CHAT_UI_ACTION_MAX_WAIT_MS = 30000;
 const CHAT_IDLE_TIMEOUT_MS = 90000;
 const CHAT_PLANNING_IDLE_TIMEOUT_MS = 900000; // 15 min — medical planning tools can run 5-10 min
 const CHAT_ABORT_TIMEOUT_MS = 4000;
@@ -1333,11 +1342,39 @@ function _chatLanguageForSession(sessionId) {
         : window._i18nLang) === 'zh' ? 'zh' : 'en';
 }
 
-function _chatUserVisibleFailure(sessionId, kind = 'request') {
+function _chatUserVisibleFailure(sessionId, kind = 'request', code = '') {
     // Server error payloads can contain internal tool output, file paths, or
     // upstream provider text. Keep those details in the browser console and
     // show the user one concise, request-language explanation instead.
     const zh = _chatLanguageForSession(sessionId) === 'zh';
+    // Server failures are classified. Explain the real cause instead of
+    // blaming "session still loading" for every failed turn.
+    const codeMessages = {
+        workspace_hydration_failed: [
+            '病例资源加载失败。请重新打开该病例后重试；如反复失败，请检查服务端日志。',
+            'Case resources failed to load. Reopen the case and retry; if it keeps failing, check the server log.',
+        ],
+        workspace_hydration_timeout: [
+            '病例资源加载时间过长，本次请求已暂停。资源可能仍在后台加载，请稍后重试。',
+            'Case resources are taking too long to load, so this request was paused. They may still be loading in the background; retry shortly.',
+        ],
+        workspace_hydration_cancelled: [
+            '病例资源加载被中断（病例可能已切换或更新）。请重试。',
+            'Case resource loading was interrupted (the case may have switched or refreshed). Please retry.',
+        ],
+        commit_failed: [
+            '回答已生成，但保存到病例失败。请重试。',
+            'The answer was generated but could not be saved to the case. Please retry.',
+        ],
+        chat_task_running: [
+            '当前病例已有请求正在执行。请等待完成，或点击停止后重试。',
+            'Another request is already running for this case. Wait for it to finish, or stop it and retry.',
+        ],
+    };
+    if (code && codeMessages[code]) {
+        const pair = codeMessages[code];
+        return zh ? pair[0] : pair[1];
+    }
     const messages = {
         request: [
             '本次请求暂时无法完成。请稍后重试；如果刚切换或加载 Session，请等待加载完成后再试。',
@@ -1354,6 +1391,16 @@ function _chatUserVisibleFailure(sessionId, kind = 'request') {
     };
     const pair = messages[kind] || messages.request;
     return zh ? pair[0] : pair[1];
+}
+
+function _chatWorkspaceLockedMessage(sessionId) {
+    // A workspace lease conflict is a different failure from a timeout or a
+    // broken provider. Explaining it lets the operator close the other
+    // browser or use the takeover action instead of retrying blindly.
+    const zh = _chatLanguageForSession(sessionId) === 'zh';
+    return zh
+        ? '该病例正在另一个浏览器中编辑。请关闭另一个浏览器中的这个病例，或使用页面上的「接管编辑权」后重试。'
+        : 'This case is being edited in another browser. Close it in the other browser, or use the on-page "Take over editing" action, then retry.';
 }
 
 function _visualAnalysisUnavailableMessage(sessionId, responseLanguage = '') {
@@ -1693,7 +1740,30 @@ function _addTaskRecoveryNotice(sessionId, taskId, state) {
             : 'The server is no longer running this task, possibly after a server restart or task termination. Saved case data is retained; please rerun the unfinished step.',
     };
     if (typeof addChat === 'function') {
-        addChat(state === 'unavailable' ? 'error' : 'system', messages[state], true, Date.now(), false, sessionId);
+        const messageId = `task-recovery-${String(taskId || 'unknown')}-${String(state || 'notice')}`;
+        const existing = sessions?.[String(sessionId || '')]?.messages;
+        const alreadyPersisted = Array.isArray(existing)
+            && existing.some(message => String(message?.id || '') === messageId
+                || (message?.meta?.recoveryNotice === true
+                    && String(message?.meta?.recoveryTaskId || '') === String(taskId || '')
+                    && String(message?.meta?.recoveryState || '') === String(state || '')));
+        if (!alreadyPersisted) {
+            addChat(state === 'unavailable' ? 'error' : 'system', messages[state], true, Date.now(), false, sessionId, {
+                messageId,
+                messageKind: 'task_recovery_notice',
+                recoveryNotice: true,
+                recoveryTaskId: String(taskId || ''),
+                recoveryState: String(state || ''),
+            });
+        }
+        // The transcript is the durable/actionable surface for a chat task;
+        // close the separate recovery fallback immediately. This does not
+        // touch the case-resource hydration notice.
+        window.hideWorkspaceRecoveryNotice?.({
+            sessionId,
+            persist: true,
+            reason: 'chat_task_recovery_message',
+        });
     }
 }
 
@@ -2490,6 +2560,12 @@ async function sendChat(prefill, options) {
                 window.cancelVisibleChatProgress('Stopped');
             }
         } catch (_) {}
+        // Defensive: the visible Progress dock is a single global surface.
+        // Cancel it directly as well, so a task whose closure never owned a
+        // todo instance cannot leave an active row ticking after Stop.
+        try {
+            window._activeTodoApi?.cancel?.('Stopped');
+        } catch (_) {}
         try {
             if (stopTurnAbortController) {
                 // The old stream must recognise this as an intentional stop
@@ -2727,7 +2803,7 @@ async function sendChat(prefill, options) {
     if (savedItems && savedItems.length && typeof _todoCreate === 'function') {
         todo = _todoCreate();
         const dock = document.getElementById('chatTodoDock');
-        if (dock) { dock.appendChild(todo.root); dock.style.display = ''; }
+        if (dock) { dock.replaceChildren(todo.root); dock.style.display = ''; }
         for (const si of savedItems) {
             // Rebuild the dedup anchors lost in the previous restore path.
             // Predicted items were born with toolName=null but carry
@@ -2808,7 +2884,10 @@ async function sendChat(prefill, options) {
         // done and yields it twice). Match by server id so the second event
         // updates the row in place instead of appending a duplicate.
         if (index < 0 && step.id != null) {
-            index = steps.findIndex(item => item._serverId === step.id);
+            // A server step that appended directly (without consuming the
+            // optimistic row) must still update in place when the same logical
+            // step is re-emitted — for example hydration progress heartbeats.
+            index = steps.findIndex(item => item._serverId === step.id || item.id === step.id);
         }
         if (index < 0) return { step, index: -1 };
         // Keep the DOM identity created on click-send. This turns the
@@ -3003,6 +3082,7 @@ async function sendChat(prefill, options) {
     const presentationMessages = [];
     const uiActionTasks = [];
     const uiActionResults = [];
+    let uiActionsStillRunning = false;
     // Keep an explicit marker in addition to inspecting the reconstructed
     // step list. Some replayed SSE streams expose the UI action metadata only
     // on the tool event; the final response must still be held back until the
@@ -3115,14 +3195,15 @@ async function sendChat(prefill, options) {
                     {
                         id: optimisticTraceStepIds.router,
                         type: 'thinking',
-                        // This row is a client-side connection placeholder.  It
-                        // must not claim that the multi-agent router ran: local
-                        // policy may execute the request directly, and a delayed
-                        // handshake can otherwise leave a misleading "router
-                        // pending" row in the error trace.
-                        title: zh ? '\u8bf7\u6c42\u5206\u6790' : 'Request analysis',
+                        // This row is a client-side connection placeholder. It
+                        // covers the time the request spends connecting and
+                        // queuing before the server publishes the real local
+                        // intent step; it must not claim that analysis is
+                        // running while the browser is only waiting for the
+                        // task handshake.
+                        title: zh ? '\u8fde\u63a5\u4e0e\u51c6\u5907' : 'Connecting & preparing',
                         status: 'pending',
-                        content: zh ? '\u6b63\u5728\u786e\u5b9a\u6267\u884c\u8def\u5f84\u2026' : 'Determining execution path...',
+                        content: zh ? '\u6b63\u5728\u8fde\u63a5\u670d\u52a1\u7aef\u2026' : 'Connecting to the server...',
                     },
                 );
             }
@@ -3134,29 +3215,12 @@ async function sendChat(prefill, options) {
             };
         }
 
-        const connectTimer = turnAbortController
-            ? setTimeout(() => turnAbortController.abort(), CHAT_CONNECT_TIMEOUT_MS)
-            : null;
-        let resp;
-        try {
-            if (isResumingTask) {
-                const afterSeq = Number(opts.afterSeq || 0);
-                resp = await fetch(
-                    API + '/chat/tasks/' + encodeURIComponent(opts.resumeTaskId)
-                    + '/stream?after_seq=' + encodeURIComponent(String(afterSeq)),
-                    {
-                        headers: { 'X-BrachyBot-Session': turnSessionId },
-                        signal: turnAbortController ? turnAbortController.signal : undefined,
-                    },
-                );
-            } else {
-                resp = await fetch(API + '/chat', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-BrachyBot-Session': turnSessionId,
-                    },
-                    body: JSON.stringify({
+        // A proxy can drop an idle keep-alive connection exactly when the
+        // turn starts, losing the POST before the server ever sees it. The
+        // request id is an idempotency key on the server (a duplicate returns
+        // the same task), so one clean retry on a fresh connection can only
+        // join the same turn instead of duplicating it.
+        const turnRequestBody = isResumingTask ? null : JSON.stringify({
                         message: text,
                         ui_state: uiState,
                         stream: true,
@@ -3182,26 +3246,103 @@ async function sendChat(prefill, options) {
                             || window._responseLanguage
                             || window._i18nLang
                             || '',
-                    }),
-                    signal: turnAbortController ? turnAbortController.signal : undefined,
-                });
+                    });
+
+        const performHandshake = async (controller) => {
+            const signal = controller ? controller.signal : undefined;
+            if (isResumingTask) {
+                const afterSeq = Number(opts.afterSeq || 0);
+                return await fetch(
+                    API + '/chat/tasks/' + encodeURIComponent(opts.resumeTaskId)
+                    + '/stream?after_seq=' + encodeURIComponent(String(afterSeq)),
+                    {
+                        headers: { 'X-BrachyBot-Session': turnSessionId },
+                        signal,
+                    },
+                );
             }
-        } finally {
-            if (connectTimer) clearTimeout(connectTimer);
+            return await fetch(API + '/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-BrachyBot-Session': turnSessionId,
+                },
+                body: turnRequestBody,
+                signal,
+            });
+        };
+
+        const handshakeAttempts = 2;
+        let resp = null;
+        let handshakeFailure = null;
+        for (let attempt = 0; attempt < handshakeAttempts; attempt += 1) {
+            const attemptController = attempt === 0
+                ? turnAbortController
+                : ((typeof AbortController !== 'undefined') ? new AbortController() : null);
+            if (attempt > 0) {
+                // Keep Stop bound to the live attempt, not to the aborted one.
+                chatAbortController = attemptController;
+                turnAbortController = attemptController;
+                console.warn('[chat] stream handshake was lost; retrying with the same request id');
+            }
+            const connectTimer = attemptController
+                ? setTimeout(() => attemptController.abort(), CHAT_CONNECT_TIMEOUT_MS)
+                : null;
+            try {
+                resp = await performHandshake(attemptController);
+                handshakeFailure = null;
+                break;
+            } catch (handshakeError) {
+                handshakeFailure = handshakeError;
+                const interrupted = handshakeError?.name === 'AbortError';
+                const explicitStop = !!attemptController?.__brachybotExplicitStop;
+                // A case switch detaches the turn by aborting it; the user is
+                // no longer looking at this case, so the turn must not be
+                // re-sent behind their back.
+                const detached = window._chatDetachRequestedFor === turnSessionId
+                    || String(activeSessionId || '') !== turnSessionId;
+                if (!interrupted || explicitStop || detached
+                    || attempt + 1 >= handshakeAttempts) break;
+            } finally {
+                if (connectTimer) clearTimeout(connectTimer);
+            }
         }
+        if (handshakeFailure) throw handshakeFailure;
 
         if (!resp.ok) {
             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
             let serverError = '';
+            let serverCode = '';
             try {
                 const errBody = await resp.json();
                 serverError = String(errBody?.error || errBody?.message || '');
+                serverCode = String(errBody?.code || '');
             } catch (_) { /* non-JSON error body */ }
             console.warn('[chat] HTTP request failed', {
                 status: resp.status,
                 serverError,
+                serverCode,
                 sessionId: turnSessionId,
             });
+            if (resp.status === 409 && serverCode === 'workspace_locked') {
+                // The case edit lease belongs to another browser. Surface the
+                // existing takeover flow with a precise explanation instead
+                // of the generic "request could not be completed" message.
+                try { void window.brachybotAuth?.acquireLease?.(turnSessionId); } catch (_) {}
+                if (typeof addChat === 'function') {
+                    addChat(
+                        'error',
+                        _chatWorkspaceLockedMessage(turnSessionId),
+                        true,
+                        Date.now(),
+                        false,
+                        turnSessionId,
+                        turnIdentity,
+                    );
+                }
+                setStreamingState(false);
+                return false;
+            }
             if (typeof addChat === 'function') {
                 addChat(
                     isInternalFollowup ? 'bot-response' : 'error',
@@ -3212,7 +3353,7 @@ async function sendChat(prefill, options) {
                             turnIdentity.responseLanguage,
                             text,
                         )
-                        : _chatUserVisibleFailure(turnSessionId, 'request'),
+                        : _chatUserVisibleFailure(turnSessionId, 'request', serverCode),
                     true,
                     Date.now(),
                     false,
@@ -3381,6 +3522,21 @@ async function sendChat(prefill, options) {
                                 window._activeChatTaskSessionId = turnSessionId;
                             }
                         }
+                        // Connection confirmed: the turn is accepted but the
+                        // local intent step is still queued behind case-context
+                        // preparation. Show the real wait instead of letting
+                        // "analysis" absorb the queueing time.
+                        const pendingRouterStep = steps.find(s => s && s.id === optimisticTraceStepIds.router
+                            && (s.status === 'pending' || s.status === 'active'));
+                        if (pendingRouterStep) {
+                            const routerZh = _chatLanguageForSession(turnSessionId) === 'zh';
+                            pendingRouterStep.content = routerZh
+                                ? '\u5df2\u8fde\u63a5\uff0c\u6b63\u5728\u51c6\u5907\u75c5\u4f8b\u4e0a\u4e0b\u6587\u2026'
+                                : 'Connected; preparing the case context...';
+                            if (typeof appendStepToChain === 'function') {
+                                appendStepToChain(stepsDiv, pendingRouterStep, steps.indexOf(pendingRouterStep));
+                            }
+                        }
                         if (!text && data.message) text = String(data.message);
                     }
                     if (currentEvent === 'brain_status' && data) {
@@ -3493,7 +3649,9 @@ async function sendChat(prefill, options) {
                                 // #chatInput).
                                 const dock = document.getElementById('chatTodoDock');
                                 if (dock) {
-                                    dock.appendChild(todo.root);
+                                    // Single-owner dock: drop any previous
+                                    // turn's root before attaching this one.
+                                    dock.replaceChildren(todo.root);
                                     dock.style.display = '';
                                 } else {
                                     // Fallback: append to the message
@@ -4002,9 +4160,11 @@ async function sendChat(prefill, options) {
                         }
                         try { window.clearPlanningPreview?.('stream-error'); } catch (_) {}
                         _setCaseTaskState(turnSessionId, 'failed', null);
+                        const failureCode = String(data.code || '');
                         console.warn('[chat] SSE request failed', {
                             sessionId: turnSessionId,
                             message: data.message,
+                            code: failureCode,
                         });
                         // Keep an SSE error within the owning response lifecycle.
                         // Raw provider/tool text is intentionally not rendered in
@@ -4018,8 +4178,23 @@ async function sendChat(prefill, options) {
                                     turnIdentity.responseLanguage,
                                     text,
                                 )
-                                : _chatUserVisibleFailure(turnSessionId, 'request');
+                                : _chatUserVisibleFailure(turnSessionId, 'request', failureCode);
                             finalResponseReceived = true;
+                            // A failed turn must not leave a "done / Response
+                            // delivered" row in the visible trace while the
+                            // reply bubble shows an error.
+                            for (let index = steps.length - 1; index >= 0; index -= 1) {
+                                const row = steps[index];
+                                if (!row || String(row.type || '') !== 'assistant') continue;
+                                if (_isTerminalToolStatus(row.status)) {
+                                    row.status = 'error';
+                                    row.content = responseText;
+                                    if (typeof appendStepToChain === 'function' && stepsDiv) {
+                                        appendStepToChain(stepsDiv, row, index);
+                                    }
+                                }
+                                break;
+                            }
                         }
                     } else if (currentEvent === 'done') {
                         // Server says stream is complete
@@ -4108,13 +4283,25 @@ async function sendChat(prefill, options) {
             await Promise.allSettled(sessionContentTasks);
         }
         if (uiActionTasks.length) {
-            await Promise.allSettled(uiActionTasks);
+            // The report surface owns figure capture and the durable save and
+            // may legitimately keep working after the report is visible. Tying
+            // the chat turn to it left a finished report showing a running
+            // chat for minutes (and forever when the capture promise stalled),
+            // so bound the in-turn wait and release the reply; a still-running
+            // action completes in the background and reports through its own
+            // progress surface instead of being called a failure here.
+            const allSettled = Promise.allSettled(uiActionTasks).then(() => true);
+            const capped = new Promise(resolve => {
+                setTimeout(() => resolve(false), CHAT_UI_ACTION_MAX_WAIT_MS);
+            });
+            uiActionsStillRunning = (await Promise.race([allSettled, capped])) === false;
         }
         if (reportUiActionRequested || _hasReportGenerationAction(steps)) {
-            const reportActionFailed = uiActionResults.length === 0
-                || uiActionResults.some(result => result === false
-                    || result?.success === false
-                    || result?.stale === true);
+            const reportActionFailed = !uiActionsStillRunning
+                && (uiActionResults.length === 0
+                    || uiActionResults.some(result => result === false
+                        || result?.success === false
+                        || result?.stale === true));
             if (reportActionFailed) {
                 responseText = _reportGenerationFailureMessage(turnSessionId);
                 finalResponseReceived = true;
@@ -4513,6 +4700,14 @@ async function sendChat(prefill, options) {
             window._activeChatRequestId = null;
             window._activeChatParentRequestId = null;
             window._activeChatInternalFollowup = false;
+            // The turn is over. Never let its explicit-stop flag survive into
+            // the next turn, where a failed abort acknowledgement would make a
+            // fresh request render as "Stopped".
+            try {
+                if (turnSessionId && window._explicitChatStopSessions) {
+                    delete window._explicitChatStopSessions[turnSessionId];
+                }
+            } catch (_) {}
         }
         if (isCurrentTurn) {
             if (!isInternalFollowup) {
@@ -4728,6 +4923,7 @@ window.resumeSessionChatTask = async function resumeSessionChatTask(options = {}
             // loss and must not produce the "no longer running" notice.
             setResumeState('unavailable', { taskId: staleTaskId, reason: 'status_http_error' });
             if (hadInFlight) _addTaskRecoveryNotice(sessionId, staleTaskId, 'unavailable');
+            else window.hideWorkspaceRecoveryNotice?.({ sessionId, persist: true, reason: 'no_task' });
             return false;
         }
         const payload = await response.json();
@@ -4770,6 +4966,7 @@ window.resumeSessionChatTask = async function resumeSessionChatTask(options = {}
                     console.warn('[chat] completed case refresh deferred:', error);
                 }
             }
+            window.hideWorkspaceRecoveryNotice?.({ sessionId, persist: true, reason: 'task_terminal' });
             window._lastChatTaskResumeState = window._lastChatTaskResumeState || {};
             window._lastChatTaskResumeState[sessionId] = {
                 status: task?.status || (hadInFlight ? 'unavailable' : 'none'),
@@ -4788,6 +4985,7 @@ window.resumeSessionChatTask = async function resumeSessionChatTask(options = {}
             return false;
         }
         const taskId = task.task_id;
+        window.hideWorkspaceRecoveryNotice?.({ sessionId, persist: true, reason: 'task_running' });
         // Preserve the original wall-clock baseline when a detached task is
         // replayed. Otherwise the restored trace looks as if it just started
         // after a case switch even though the worker has been running longer.
@@ -4835,6 +5033,7 @@ window.resumeSessionChatTask = async function resumeSessionChatTask(options = {}
         return true;
     } catch (error) {
         console.warn('[chat] task resume deferred:', error);
+        window.hideWorkspaceRecoveryNotice?.({ sessionId, reason: 'resume_status_unavailable' });
         setResumeState('unavailable', { reason: 'status_request_failed' });
         return false;
     } finally {

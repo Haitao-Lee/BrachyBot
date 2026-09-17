@@ -4567,6 +4567,49 @@ function _statusFromWorkspaceSnapshot(workspace, sessionId) {
     };
 }
 
+function _normalizeWorkspaceResourcePath(value) {
+    return String(value || '')
+        .trim()
+        .replaceAll('\\', '/')
+        .replace(/\/+/g, '/')
+        .replace(/\/$/, '')
+        .toLowerCase();
+}
+
+function _workspaceSnapshotCtPath(workspace) {
+    if (!workspace || typeof workspace !== 'object') return '';
+    return String(_statusFromWorkspaceSnapshot(
+        workspace,
+        workspace.session_id || workspace.session?.id || '',
+    )?.ct_path || '').trim();
+}
+
+// A background restore may be requested by the health monitor while the
+// current case is still fully visible.  That is not a case switch: clearing
+// the live CT/meshes first creates the blank 3D flash reported by users and
+// makes a completed plan look like it disappeared.  Keep this predicate
+// deliberately strict so a genuinely new case or a mismatched CT path still
+// takes the normal cold-restore path.
+function _workspaceHasLiveVisibleClinicalState(workspace, sessionId) {
+    const expectedSessionId = String(sessionId || _activeApiSessionId() || '').trim();
+    if (!expectedSessionId || typeof state === 'undefined' || !state) return false;
+    const workspaceSessionId = String(
+        workspace?.session_id || workspace?.session?.id || '',
+    ).trim();
+    if (workspaceSessionId && workspaceSessionId !== expectedSessionId) return false;
+    if (String(state.sessionId || '').trim() !== expectedSessionId) return false;
+    if (state.ctLoaded !== true) return false;
+    const currentCtPath = _normalizeWorkspaceResourcePath(state.ctPath);
+    if (!currentCtPath) return false;
+    const expectedCtPath = _normalizeWorkspaceResourcePath(_workspaceSnapshotCtPath(workspace));
+    if (expectedCtPath && expectedCtPath !== currentCtPath) return false;
+    const decodedVoxelCount = (typeof volumeData !== 'undefined' && volumeData)
+        ? Number(volumeData.length || 0)
+        : 0;
+    return decodedVoxelCount > 0;
+}
+window.workspaceHasLiveVisibleClinicalState = _workspaceHasLiveVisibleClinicalState;
+
 function _workspaceNeedsClinicalRestore(workspace, status) {
     // An authoritative empty workspace must win over any stale lightweight
     // status object left by the previous case. This is the key guard against
@@ -4588,6 +4631,10 @@ function _workspaceNeedsClinicalRestore(workspace, status) {
 
 async function _restoreActiveSessionWorkspace(options = {}) {
     const sessionAtStart = _activeApiSessionId();
+    const initialWorkspace = options.workspace || window._activeWorkspaceSnapshot || null;
+    const preserveVisibleClinicalState = options.preserveVisibleClinicalState === true
+        || (options.background === true
+            && _workspaceHasLiveVisibleClinicalState(initialWorkspace, sessionAtStart));
     const restoreStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
     const recordStage = (stage, startedAt, details = {}) => {
         if (typeof window.recordWorkspacePerformance === 'function') {
@@ -4608,10 +4655,10 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     // The optimistic case shell already cleared the visible workspace before
     // scheduling background hydration. Clearing it again here can erase a
     // just-resumed execution trace for this same case.
-    if (options.skipClientClear !== true) {
+    if (options.skipClientClear !== true && !preserveVisibleClinicalState) {
         clearClientWorkspace({ clearReport: options.clearReport !== false });
     }
-    let workspace = options.workspace || window._activeWorkspaceSnapshot || null;
+    let workspace = initialWorkspace;
     const workspaceSessionId = (value) => String(value?.session_id || value?.session?.id || '');
     if (workspace && workspaceSessionId(workspace) !== sessionAtStart) workspace = null;
     if (!workspace) {
@@ -4861,28 +4908,44 @@ async function _restoreActiveSessionWorkspace(options = {}) {
 
     // --- CT data exists: restore dependency layers in order ---
     // Labels and planning results depend on CT geometry held by the current
-    // Agent. The shell remains responsive, but CT must hydrate first.
-    resetAllState({ deferDisposal: true });
-    // Let the reset paint before initiating network I/O.
-    await _yield();
-
+    // Agent. The shell remains responsive, but CT must hydrate first. If the
+    // same case is already decoded in this browser, keep that live CT/scene
+    // in place while the control-plane snapshot is reconciled. A background
+    // health/reconnect pass must never blank a working case before it knows
+    // that a replacement CT is available.
+    const preserveCurrentCt = preserveVisibleClinicalState
+        && _workspaceHasLiveVisibleClinicalState(workspace, sessionAtStart);
     let ctVolumeResult = null;
     let ctLoadError = null;
-    const ctTask = (async () => {
+    let ctTask;
+    if (preserveCurrentCt) {
         const ctStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
-        try {
-            ctVolumeResult = await loadCTToViewers(ctPath, {
-                announce: false, sessionId: sessionAtStart, skipReset: true,
-                restoreUploadedMasks,
-                timeoutMs: options.background === true ? 45000 : 60000,
-            });
-        } catch (e) {
-            ctLoadError = e;
-            console.warn('[session restore] CT load failed:', e);
-        } finally {
-            recordStage('restore.ct_first_paint', ctStartedAt, { loaded: !!state.ctLoaded });
-        }
-    })();
+        ctVolumeResult = { success: true, preserved: true };
+        recordStage('restore.ct_preserved', ctStartedAt, { loaded: true, preserved: true });
+        ctTask = Promise.resolve(ctVolumeResult);
+    } else {
+        // A cold restore is allowed to clear and rebuild the clinical layer.
+        // This branch is used for a new case, a different CT, or a page load
+        // where no decoded viewer state exists yet.
+        resetAllState({ deferDisposal: true });
+        // Let the reset paint before initiating network I/O.
+        await _yield();
+        ctTask = (async () => {
+            const ctStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+            try {
+                ctVolumeResult = await loadCTToViewers(ctPath, {
+                    announce: false, sessionId: sessionAtStart, skipReset: true,
+                    restoreUploadedMasks,
+                    timeoutMs: options.background === true ? 45000 : 60000,
+                });
+            } catch (e) {
+                ctLoadError = e;
+                console.warn('[session restore] CT load failed:', e);
+            } finally {
+                recordStage('restore.ct_first_paint', ctStartedAt, { loaded: !!state.ctLoaded });
+            }
+        })();
+    }
 
     // On a fresh server process the lightweight status endpoint can only see
     // the metadata shell while the Agent is decoding its durable sidecars.
@@ -5252,7 +5315,27 @@ window.awaitWorkspaceVisualReady = async function awaitWorkspaceVisualReady(
     });
     try {
         const result = await Promise.race([entry.promise, timeout]);
-        return Object.assign({ ready: true, session_id: requestedSession }, result || {});
+        const settled = Object.assign({ ready: true, session_id: requestedSession }, result || {});
+        if (settled.ready === false
+            && String(settled.reason || '') === 'visual_restore_partial'
+            && _workspaceHasLiveVisibleClinicalState(
+                window._activeWorkspaceSnapshot, requestedSession)) {
+            // A soft restore producer (an optional mesh or the guide) failed
+            // while the clinical scene itself finished loading. Evidence
+            // capture must not stay blocked forever by a partial task the
+            // operator cannot see or retry; the capture manifest still
+            // verifies that the requested target is actually on screen.
+            console.warn(
+                '[session restore] allowing evidence capture after a partial visual restore:',
+                settled,
+            );
+            return Object.assign({}, settled, {
+                ready: true,
+                partial: true,
+                reason: 'visual_restore_partial_with_live_scene',
+            });
+        }
+        return settled;
     } finally {
         if (timer) clearTimeout(timer);
     }
@@ -5314,6 +5397,7 @@ async function _runWorkspaceRestoreTransaction(options = {}) {
     const pendingBackgroundKinds = new Map();
     let backgroundTaskSequence = 0;
     let backgroundNoticeTransferred = false;
+    let suppressVisibleNotice = false;
     const registerBackgroundTask = (task, metadata = {}) => {
         if (!task || typeof task.then !== 'function') return task;
         const token = ++backgroundTaskSequence;
@@ -5339,6 +5423,7 @@ async function _runWorkspaceRestoreTransaction(options = {}) {
         return task;
     };
     const updateHydrationProgress = detail => {
+        if (suppressVisibleNotice) return;
         if (String(_activeApiSessionId() || '') !== sessionAtStart
             || window.__workspaceHydrationRunId !== hydrationRunId) return;
         const phase = String(detail?.phase || 'viewer');
@@ -5399,6 +5484,22 @@ async function _runWorkspaceRestoreTransaction(options = {}) {
     readinessEntry.resolveReady = settleVisualReady;
     readinessStore[readinessKey] = readinessEntry;
     const authoritativeWorkspace = options.workspace || window._activeWorkspaceSnapshot || null;
+    const preserveVisibleClinicalState = options.background === true
+        && options.preserveVisibleClinicalState !== false
+        && _workspaceHasLiveVisibleClinicalState(authoritativeWorkspace, sessionAtStart);
+    suppressVisibleNotice = preserveVisibleClinicalState
+        && options.suppressVisibleNotice !== false;
+    if (typeof window.recordWorkspacePerformance === 'function') {
+        window.recordWorkspacePerformance('restore.started', {
+            sessionId: sessionAtStart,
+            details: {
+                reason: options.reason || 'unspecified',
+                background: options.background === true,
+                preserve_visible_clinical_state: preserveVisibleClinicalState,
+                suppress_visible_notice: suppressVisibleNotice,
+            },
+        });
+    }
     if (authoritativeWorkspace && !_workspaceNeedsClinicalRestore(authoritativeWorkspace, options.status)) {
         console.debug('[session restore] skipped empty case', authoritativeWorkspace.session_id || authoritativeWorkspace.session?.id);
         settleVisualReady({ ready: true, reason: 'empty_case' });
@@ -5408,18 +5509,26 @@ async function _runWorkspaceRestoreTransaction(options = {}) {
     // Show a small non-blocking status while the case is restored. Clinical
     // controls remain usable; heavy meshes and report figures may finish in
     // the background after the essential transcript and paths are visible.
-    window.setWorkspaceHydrationState?.(
-        true,
-        typeof _t === 'function'
-            ? _t('正在加载病例资源…', 'Loading case resources...')
-            : 'Loading case resources...',
-        hydrationScope,
-    );
-    // The workspace bridge owns the single loading presentation. Keep this
-    // compatibility call after its older local wording so startup and a
-    // session switch converge on the same lower-right notice.
-    window.showCaseResourceLoading?.(hydrationScope);
-    const slowNoticeTimer = setTimeout(() => {
+    if (suppressVisibleNotice) {
+        // A same-case background refresh is not a visible transition. Remove
+        // any stale scheduler notice immediately, but leave the clinical DOM
+        // and Three.js scene untouched while the restore checks for updates.
+        window.setWorkspaceHydrationState?.(false, '', { immediate: true });
+        document.body.classList.remove('workspace-hydrating');
+    } else {
+        window.setWorkspaceHydrationState?.(
+            true,
+            typeof _t === 'function'
+                ? _t('正在加载病例资源…', 'Loading case resources...')
+                : 'Loading case resources...',
+            hydrationScope,
+        );
+        // The workspace bridge owns the single loading presentation. Keep this
+        // compatibility call after its older local wording so startup and a
+        // session switch converge on the same lower-right notice.
+        window.showCaseResourceLoading?.(hydrationScope);
+    }
+    const slowNoticeTimer = suppressVisibleNotice ? null : setTimeout(() => {
         if (String(_activeApiSessionId() || '') !== sessionAtStart
             || window.__workspaceHydrationRunId !== hydrationRunId) return;
         const notice = document.getElementById('workspaceHydrationNotice');
@@ -5437,6 +5546,8 @@ async function _runWorkspaceRestoreTransaction(options = {}) {
         const result = await _restoreActiveSessionWorkspace({
             ...options,
             hydrationScope,
+            preserveVisibleClinicalState,
+            suppressVisibleNotice,
             registerBackgroundTask,
             onHydrationProgress: updateHydrationProgress,
         });
@@ -5462,7 +5573,9 @@ async function _runWorkspaceRestoreTransaction(options = {}) {
                 });
                 if (String(_activeApiSessionId() || '') !== sessionAtStart
                     || window.__workspaceHydrationRunId !== hydrationRunId) return;
-                window.setWorkspaceHydrationState?.(false, '', hydrationScope);
+                if (!suppressVisibleNotice) {
+                    window.setWorkspaceHydrationState?.(false, '', hydrationScope);
+                }
             });
         } else if (String(_activeApiSessionId() || '') === sessionAtStart
             && window.__workspaceHydrationRunId === hydrationRunId) {
@@ -5480,7 +5593,7 @@ async function _runWorkspaceRestoreTransaction(options = {}) {
         throw error;
     } finally {
         clearTimeout(slowNoticeTimer);
-        if (!backgroundNoticeTransferred) {
+        if (!backgroundNoticeTransferred && !suppressVisibleNotice) {
             window.setWorkspaceHydrationState?.(false, '', hydrationScope);
         }
     }
@@ -5541,7 +5654,9 @@ async function init() {
         // still contains a localStorage-compatible loadSessions binding for
         // old embeds; calling it here would restore a different case than the
         // authenticated browser workspace.
-        if (typeof window.loadSessions === 'function') await window.loadSessions();
+        if (typeof window.loadSessions === 'function') {
+            await window.loadSessions({ reason: 'startup' });
+        }
         if (typeof renderSessionList === 'function') renderSessionList();
     } catch (e) { console.warn('Session init failed:', e); }
 
@@ -5574,9 +5689,12 @@ async function init() {
     // restore before this init pass reaches the legacy startup reset. Never
     // clear planning arrays, dose state, or meshes after that hand-off: doing
     // so races the restore and leaves only the compact Planning history shell.
-    const startupClinicalRestoreScheduled =
-        String(window.__workspaceRestoreScheduledSessionId || '') === String(activeSessionId || '')
-        || String(window.__workspaceRestoreCompletedSessionId || '') === String(activeSessionId || '');
+    // An empty activeSessionId must not compare equal to the empty scheduler
+    // markers, otherwise a failed session list would fake an in-flight restore.
+    const startupSessionKey = String(activeSessionId || '');
+    const startupClinicalRestoreScheduled = startupSessionKey !== ''
+        && (String(window.__workspaceRestoreScheduledSessionId || '') === startupSessionKey
+            || String(window.__workspaceRestoreCompletedSessionId || '') === startupSessionKey);
 
     // Clear frontend state (runs once per page load)
     if (!window._stateCleared) {
@@ -5691,8 +5809,14 @@ state.dvhPlanningId = null;
     // runs in the background.  The session snapshot has already painted the
     // durable chat/control-plane state above, so waiting here only delays input.
     const authoritativeWorkspace = window._activeWorkspaceSnapshot || null;
-    const restoreAlreadyScheduled = String(window.__workspaceRestoreScheduledSessionId || '') === String(activeSessionId || '')
-        || String(window.__workspaceRestoreCompletedSessionId || '') === String(activeSessionId || '');
+    // An empty activeSessionId must never compare equal to the scheduler's
+    // empty markers: that made a failed session-list load look "already
+    // scheduled", so the /status fallback restore was skipped and the case
+    // stayed blank after login.
+    const restoreSessionKey = String(activeSessionId || '');
+    const restoreAlreadyScheduled = restoreSessionKey !== ''
+        && (String(window.__workspaceRestoreScheduledSessionId || '') === restoreSessionKey
+            || String(window.__workspaceRestoreCompletedSessionId || '') === restoreSessionKey);
     if (_workspaceNeedsClinicalRestore(authoritativeWorkspace, _statusData) && !restoreAlreadyScheduled) {
         void restoreActiveSessionWorkspace({ status: _statusData, clearReport: true, background: true })
             .catch(error => {
@@ -8307,13 +8431,31 @@ function _dataTreeRowSemanticIdentity(row) {
     };
 }
 
-function _dataTreeRowMatchesTargetRef(row, targetRef) {
+function _isLiveDataTreeTargetRow(row) {
+    if (!row) return false;
+    const dataset = row.dataset || {};
+    const nodeType = String(dataset.nodeType || '').trim().toLowerCase();
+    // Planning-history artifact rows remain clickable summaries for switching
+    // to an old Planning, but they are not the live visual object represented
+    // by the label. They must not win a screenshot lookup due to DOM order or
+    // translated text matching the current object.
+    return dataset.liveNode !== 'false'
+        && dataset.visualTarget !== 'false'
+        && nodeType !== 'planning_artifact'
+        && !row.classList?.contains?.('planning-history-artifact');
+}
+window.isLiveDataTreeTargetRow = _isLiveDataTreeTargetRow;
+
+function _dataTreeRowMatchScore(row, targetRef, options = {}) {
     const ref = String(targetRef || '').trim().toLowerCase();
-    if (!row || !ref) return false;
+    if (!row || !ref) return 0;
+    const live = _isLiveDataTreeTargetRow(row);
+    if (!live) return 0;
     const semantic = _dataTreeRowSemanticIdentity(row);
-    if (semantic.identities.some(identity => identity === ref
-        || (identity.length >= 4 && ref.length >= 4
-            && (identity.endsWith(ref) || ref.endsWith(identity))))) return true;
+    const score = value => live ? value : Math.max(1, Math.floor(value / 100));
+    if (semantic.identities.some(identity => identity === ref)) return score(1000);
+    // Explicit identities must never alias by suffix (seed_1 vs seed_11,
+    // or an object from another planning revision).
 
     // Active aliases are capabilities, not literal node IDs. Resolve them
     // against typed live rows. In particular, CTV label 1 is the tumor target;
@@ -8326,32 +8468,58 @@ function _dataTreeRowMatchesTargetRef(row, targetRef) {
         const singleCtv = semantic.group === 'ctv'
             && semantic.nodeType === 'segmentation'
             && !semantic.organId.startsWith('ctv_');
-        return primaryCtv || singleCtv;
+        return primaryCtv || singleCtv ? score(800) : 0;
     }
     if (ref === 'structure:oar:active') {
-        return semantic.nodeType === 'oar_mask'
+        const isOar = semantic.nodeType === 'oar_mask'
             || semantic.organId.startsWith('organ_')
             || semantic.identities.some(identity => identity.startsWith('structure:oar:'));
+        return isOar ? score(800) : 0;
     }
     if (ref === 'group:planning:seeds') {
-        return semantic.nodeType === 'seed'
+        const isSeed = semantic.nodeType === 'seed'
             || semantic.identities.some(identity => identity.startsWith('seed'));
+        return isSeed ? score(700) : 0;
     }
     if (ref === 'group:planning:needles') {
-        return semantic.nodeType === 'needle'
+        const isNeedle = semantic.nodeType === 'needle'
             || semantic.identities.some(identity => identity.startsWith('needle'));
+        return isNeedle ? score(700) : 0;
     }
     if (ref === 'group:planning:trajectories') {
-        return semantic.nodeType === 'trajectory'
+        const isTrajectory = semantic.nodeType === 'trajectory'
             || semantic.identities.some(identity => identity.startsWith('trajectory'));
+        return isTrajectory ? score(700) : 0;
     }
-    if (/(?:surgical|puncture)[_:-]?guide/.test(ref)) {
-        return semantic.nodeType === 'surgical_guide'
-            || semantic.source === 'surgical_guide'
-            || /surgical[_\s-]?guide|puncture[_\s-]?guide|手术导板|穿刺导板/.test(semantic.text);
+    if (['surgical_guide:active', 'surgical_guide', 'puncture_guide:active'].includes(ref)) {
+        const isGuide = semantic.nodeType === 'surgical_guide'
+            || semantic.source === 'surgical_guide';
+        return isGuide ? score(800) : 0;
     }
-    return false;
+    return 0;
 }
+
+function _dataTreeRowMatchesTargetRef(row, targetRef) {
+    return _dataTreeRowMatchScore(row, targetRef) > 0;
+}
+window.resolveDataTreeRowTargetRef = function resolveDataTreeRowTargetRef(targetRef, options = {}) {
+    const body = document.querySelector('#dataTreeBody');
+    if (!body) return null;
+    const rows = Array.from(body.querySelectorAll('.tree-item'));
+    let best = null;
+    let bestScore = 0;
+    let bestIndex = Number.POSITIVE_INFINITY;
+    rows.forEach((row, index) => {
+        const score = _dataTreeRowMatchScore(row, targetRef, options);
+        if (score > bestScore || (score === bestScore && score > 0 && index < bestIndex)) {
+            best = row;
+            bestScore = score;
+            bestIndex = index;
+        }
+    });
+    return best;
+};
+window.dataTreeRowMatchScore = _dataTreeRowMatchScore;
 window.matchDataTreeRowTargetRef = _dataTreeRowMatchesTargetRef;
 
 function _dataTreeEvidenceRows(plan = {}) {
@@ -8374,22 +8542,15 @@ function _dataTreeEvidenceRows(plan = {}) {
     ].map(normalize).filter(Boolean);
     const requestedMatch = row => requested.length > 0
         && requested.some(targetRef => _dataTreeRowMatchesTargetRef(row, targetRef));
-    const guideMatch = row => {
-        const haystack = [
-            row?.dataset?.nodeType,
-            row?.dataset?.artifactKey,
-            row?.dataset?.source,
-            rowText(row),
-        ].map(normalize).join(' ');
-        return /surgical[_\s-]?guide|puncture[_\s-]?guide|手术导板|穿刺导板|导板/.test(haystack);
-    };
+    const guideMatch = row => _dataTreeRowMatchesTargetRef(row, 'surgical_guide:active');
     const groupFor = row => row?.closest?.('.tree-group') || null;
     const groupLabelFor = group => {
         const header = group?.querySelector?.('.tree-group-header');
         return String(header?.textContent || '').replace(/\s+/g, ' ').trim();
     };
-    const requestedRows = rows.filter(requestedMatch);
-    const guideRows = rows.filter(guideMatch);
+    const requestedRows = [...new Set(requested.map(ref =>
+        window.resolveDataTreeRowTargetRef(ref)).filter(Boolean))];
+    const guideRows = rows.filter(row => _dataTreeRowMatchesTargetRef(row, 'surgical_guide:active'));
     let selectedRows = requestedRows;
     let groupLabel = '';
     if (requestedRows.length) {
@@ -8455,13 +8616,7 @@ function _dataTreeRowIdentities(row) {
 function _dataTreeRowForTargetRef(targetRef, evidence) {
     const ref = String(targetRef || '').trim().toLowerCase();
     if (!ref) return null;
-    const rows = Array.from(document.querySelectorAll('#dataTreeBody .tree-item'));
-    const compatible = rows.find(row => _dataTreeRowMatchesTargetRef(row, ref));
-    if (compatible) return compatible;
-    if (/surgical[_:-]?guide|puncture[_:-]?guide/.test(ref)) {
-        return evidence?.guideRows?.[0] || null;
-    }
-    return null;
+    return window.resolveDataTreeRowTargetRef(ref);
 }
 
 function _dataTreeSnapshotForRow(row) {
@@ -9247,6 +9402,7 @@ function _reportFiguresFromArtifactCatalog(ownerSessionId, activePlanningId, art
         const ownerPlanningId = String(item?.planningId || item?.planning_id || '');
         if (!['screenshot', 'report_figure'].includes(dataType)
             || !/^report_screenshot_[^/\\]+\.png$/i.test(filename)
+            || !_screenshotArtifactBelongsToSession(item, ownerSessionId)
             || (activePlanningId && ownerPlanningId !== activePlanningId)) {
             return null;
         }
@@ -9268,21 +9424,41 @@ function _reportFiguresFromArtifactCatalog(ownerSessionId, activePlanningId, art
         const catalogUrl = String(
             item?.url || item?.screenshot_url || item?.screenshotUrl || '',
         ).trim();
-        const fallbackUrl = String(
-            item?.dataUrl
-            || item?.data_url
-            || catalogUrl
-            || (contentVersion ? `${baseUrl}?v=${encodeURIComponent(contentVersion)}` : baseUrl),
-        ).trim();
-        const serverUrl = typeof window.resolveSessionScreenshotUrl === 'function'
-            ? (
-                window.resolveSessionScreenshotUrl(
-                    fallbackUrl,
-                    ownerSessionId,
-                    { planningId: ownerPlanningId || activePlanningId, artifacts },
-                ) || fallbackUrl
+        const rowOwner = _screenshotArtifactOwnerSessionId(item);
+        const candidates = [
+            item?.dataUrl, item?.data_url, catalogUrl,
+        ].map(value => String(value || '').trim());
+        const trustedCandidate = candidates.find(value => {
+            if (!value) return false;
+            if (value.toLowerCase().startsWith('data:image/')
+                && value.includes(';base64,')) {
+                return rowOwner === String(ownerSessionId || '');
+            }
+            const parsed = _parseSessionScreenshotUrl(value, ownerSessionId);
+            return !!parsed && !parsed.dataUrl;
+        });
+        const fallbackUrl = trustedCandidate
+            || (rowOwner === String(ownerSessionId || '')
+                ? (contentVersion
+                    ? baseUrl + '?v=' + encodeURIComponent(contentVersion)
+                    : baseUrl)
+                : '');
+        const resolvedUrl = fallbackUrl
+            && typeof window.resolveSessionScreenshotUrl === 'function'
+            ? window.resolveSessionScreenshotUrl(
+                fallbackUrl,
+                ownerSessionId,
+                { planningId: ownerPlanningId || activePlanningId, artifacts },
             )
-            : fallbackUrl;
+            : '';
+        const serverUrl = resolvedUrl
+            || (fallbackUrl && (
+                (fallbackUrl.toLowerCase().startsWith('data:image/')
+                    && fallbackUrl.includes(';base64,'))
+                    ? rowOwner === String(ownerSessionId || '')
+                    : !!_parseSessionScreenshotUrl(fallbackUrl, ownerSessionId)
+            ) ? fallbackUrl : '');
+        if (!serverUrl) return null;
         return Object.assign({
             id: `report-artifact-${filename.replace(/[^A-Za-z0-9_-]/g, '_')}`,
             type: 'screenshot',
@@ -9351,7 +9527,7 @@ async function _appendPersistedReportFigures(plan, galleryContext, ownerSessionI
     // first; do not fall back to rasterizing an unmounted report panel.
     if (
         String(ownerSessionId || '') === String(_activeApiSessionId())
-        && (!form || (form.sessionId && String(form.sessionId) !== String(ownerSessionId)))
+        && (!form || !form.sessionId || String(form.sessionId) !== String(ownerSessionId))
         && typeof window.restoreReportForPlanning === 'function'
     ) {
         try {
@@ -9362,8 +9538,12 @@ async function _appendPersistedReportFigures(plan, galleryContext, ownerSessionI
             console.debug('[report-content] Unable to restore persisted report form', error);
         }
     }
-    const formSessionMatches = !form?.sessionId
-        || String(form.sessionId) === String(ownerSessionId || '');
+    // An ownerless legacy form is not safe to use as a durable report source:
+    // it may contain a screenshot captured by the Session that was active
+    // before the current restore.  The catalog below is the only source that
+    // can prove Session ownership for such a record.
+    const formSessionMatches = !!form?.sessionId
+        && String(form.sessionId) === String(ownerSessionId || '');
     const activePlanningId = String(
         requestedPlanningId
         || form?.active_planning_id
@@ -11634,6 +11814,28 @@ function _screenshotArtifactFilename(item) {
     }
 }
 
+function _screenshotArtifactOwnerSessionId(item) {
+    return String(
+        item?.session_id || item?.sessionId
+        || item?.case_id || item?.caseId || '',
+    ).trim();
+}
+
+function _screenshotArtifactBelongsToSession(item, ownerSessionId) {
+    const rowOwner = _screenshotArtifactOwnerSessionId(item);
+    if (rowOwner) return rowOwner === String(ownerSessionId || '');
+    const candidates = [
+        item?.url, item?.screenshot_url, item?.screenshotUrl,
+        item?.dataUrl, item?.data_url,
+    ];
+    // An ownerless legacy data URL has no case provenance. Only an explicit
+    // URL under this Session's screenshot namespace is recoverable.
+    return candidates.some(value => {
+        const parsed = _parseSessionScreenshotUrl(value, ownerSessionId);
+        return !!parsed && !parsed.dataUrl;
+    });
+}
+
 function _screenshotArtifactRows(artifacts) {
     if (Array.isArray(artifacts)) return artifacts;
     return typeof dataTreeState !== 'undefined'
@@ -11658,8 +11860,7 @@ function _catalogScreenshotUrl(candidate, ownerSessionId, options = {}) {
     const planningId = String(opts.planningId || opts.planning_id || '').trim();
     const rows = _screenshotArtifactRows(opts.artifacts);
     const matches = rows.filter(item => {
-        const rowSessionId = String(item?.session_id || item?.sessionId || '').trim();
-        if (rowSessionId && rowSessionId !== String(ownerSessionId || '')) return false;
+        if (!_screenshotArtifactBelongsToSession(item, ownerSessionId)) return false;
         if (_screenshotArtifactFilename(item).toLowerCase() !== parsed.filename.toLowerCase()) return false;
         const rowPlanningId = String(item?.planningId || item?.planning_id || '').trim();
         return !planningId || !rowPlanningId || rowPlanningId === planningId;

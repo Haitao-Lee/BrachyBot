@@ -14,8 +14,30 @@ from typing import Dict, Any, Optional
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from tool_factory import BaseTool, ToolResult
+from tool_factory.plan_shapes import normalize_plan_entries
 
 logger = logging.getLogger(__name__)
+
+# What each metric result actually answers.  The runtime uses this to decide
+# whether a typed read may replace the normal answer path: a total seed count
+# must not silently stand in for a per-needle distribution question.
+_METRIC_COVERAGE: Dict[str, tuple] = {
+    "dose_metrics": ("dose",),
+    "ctv_volume": ("ctv_volume",),
+    "oar_volumes": ("oar_volume",),
+    "seed_count": ("seed_total",),
+    "needle_count": ("needle_count",),
+    "needle_seed_counts": ("needle_count", "seed_total", "seeds_per_needle"),
+    "hu_statistics": ("hu",),
+    "spacing_info": ("spacing",),
+    "all_metrics": (
+        "dose", "ctv_volume", "oar_volume", "seed_total", "hu", "spacing",
+    ),
+}
+
+# The published mirror is updated by both the automatic pipeline and every
+# manual edit; the legacy aliases can lag behind it, so it must win.
+_SEED_SOURCE_KEYS = ("seed_plan_serialized", "manual_seeds", "seed_plan", "seed_positions")
 
 
 class QueryMetricsTool(BaseTool):
@@ -28,18 +50,52 @@ class QueryMetricsTool(BaseTool):
         Metric queries read the active session; they never mutate planning
         state and never need a second model pass just to turn JSON into a
         user-facing table.  The contract is deliberately capability-based so
-        callers can make that decision without matching user wording.
+        callers can make that decision without matching user wording.  The
+        ``covers`` list names the data aspects the payload answers so the
+        runtime can require synthesis/review when the question asks for more.
         """
         metadata = dict(values or {})
         metadata["metric_type"] = metric_type
-        metadata["response_contract"] = {
+        contract = {
             "mode": "direct_read",
             "resource": f"session_metrics:{metric_type}",
             "source": "active_session",
             "requires_synthesis": False,
             "requires_review": False,
         }
+        covers = _METRIC_COVERAGE.get(metric_type)
+        if covers:
+            contract["covers"] = list(covers)
+        metadata["response_contract"] = contract
         return metadata
+
+    def _resolved_seed_facts(self, kw) -> tuple:
+        """Resolve (entries, seed total, needle count) from live plan data.
+
+        A plan is stored as one entry per needle, so ``len(plan)`` is the
+        needle count, never the seed count.  Structured geometry is preferred;
+        the declared memory totals are the fallback for geometry-less states.
+        """
+        entries = []
+        for key in _SEED_SOURCE_KEYS:
+            entries = normalize_plan_entries(kw.get(key))
+            if entries:
+                break
+        structured_seeds = sum(entry["seed_count"] for entry in entries)
+        structured_needles = len(entries)
+        declared_seeds = self._declared_total(kw.get("total_seeds"))
+        declared_needles = self._declared_total(kw.get("num_trajectories"))
+        seed_total = structured_seeds if structured_seeds > 0 else declared_seeds
+        needle_count = structured_needles if structured_needles > 0 else declared_needles
+        return entries, seed_total, needle_count
+
+    @staticmethod
+    def _declared_total(value: Any) -> int:
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            return 0
+        return number if number > 0 else 0
 
     @property
     def name(self) -> str:
@@ -49,7 +105,11 @@ class QueryMetricsTool(BaseTool):
     def description(self) -> str:
         return (
             "Query dose metrics (V100, D90, V150, V200), plan quality, CTV/OAR volumes, "
-            "seed count, HU statistics. The agent passes data from memory via kwargs. "
+            "seed count, needle count, per-needle seed counts, HU statistics. "
+            "Use metric_type='seed_count' for the total number of seeds, "
+            "'needle_count' for how many needles/trajectories were planned, and "
+            "'needle_seed_counts' when the user asks how many needles exist or how "
+            "many seeds are on each needle. The agent passes data from memory via kwargs. "
             "Use when user asks about plan quality, dose coverage, organ doses, etc."
         )
 
@@ -61,6 +121,7 @@ class QueryMetricsTool(BaseTool):
                 "metric_type": {
                     "type": "string",
                     "enum": ["dose_metrics", "ctv_volume", "oar_volumes", "seed_count",
+                             "needle_count", "needle_seed_counts",
                              "hu_statistics", "spacing_info", "plan_score", "all_metrics"],
                     "description": "Type of metric to query"
                 },
@@ -110,6 +171,26 @@ class QueryMetricsTool(BaseTool):
                     "description": "Total seed count from the active workspace",
                     "x-server-injected": True,
                 },
+                "num_trajectories": {
+                    "type": "integer",
+                    "description": "Planned needle/trajectory count from the active workspace",
+                    "x-server-injected": True,
+                },
+                "seed_plan_serialized": {
+                    "type": "array",
+                    "description": "Published per-needle plan mirror from the active workspace",
+                    "x-server-injected": True,
+                },
+                "manual_seeds": {
+                    "type": "array",
+                    "description": "Manual seed records from the active workspace",
+                    "x-server-injected": True,
+                },
+                "seed_plan": {
+                    "type": "array",
+                    "description": "Optimizer plan entries from the active workspace",
+                    "x-server-injected": True,
+                },
             },
             "required": ["metric_type"]
         }
@@ -126,6 +207,10 @@ class QueryMetricsTool(BaseTool):
                 return self._get_oar_volumes(kwargs)
             elif metric_type == "seed_count":
                 return self._get_seed_count(kwargs)
+            elif metric_type == "needle_count":
+                return self._get_needle_count(kwargs)
+            elif metric_type == "needle_seed_counts":
+                return self._get_needle_seed_counts(kwargs)
             elif metric_type == "hu_statistics":
                 return self._get_hu_statistics(kwargs)
             elif metric_type == "spacing_info":
@@ -207,20 +292,45 @@ class QueryMetricsTool(BaseTool):
         )
 
     def _get_seed_count(self, kw) -> ToolResult:
-        seeds = kw.get("seed_positions", [])
-        total = kw.get("total_seeds", 0)
-        # NumPy arrays do not have a scalar truth value.  Use an explicit
-        # length check so live planning arrays and serialized lists behave the
-        # same way when the metrics tool is called from the agent bridge.
-        try:
-            seed_count = len(seeds) if seeds is not None else 0
-        except TypeError:
-            seed_count = 0
-        count = seed_count if seed_count > 0 else total
+        # A plan container holds one entry per needle; counting the container
+        # itself reported the needle count as the seed count.  Resolve the
+        # actual seed records first and use the declared total only as a
+        # fallback for geometry-less states.
+        _entries, count, _needles = self._resolved_seed_facts(kw)
         return ToolResult(
             success=True,
+            data={"seed_count": count},
             message=f"Total seeds: {count}",
             metadata=self._read_metadata({"seed_count": count}, "seed_count"),
+        )
+
+    def _get_needle_count(self, kw) -> ToolResult:
+        _entries, _seeds, needle_count = self._resolved_seed_facts(kw)
+        return ToolResult(
+            success=True,
+            data={"needle_count": needle_count},
+            message=f"Total needles: {needle_count}",
+            metadata=self._read_metadata({"needle_count": needle_count}, "needle_count"),
+        )
+
+    def _get_needle_seed_counts(self, kw) -> ToolResult:
+        entries, seed_total, needle_count = self._resolved_seed_facts(kw)
+        per_needle = []
+        for index, entry in enumerate(entries, start=1):
+            row: Dict[str, Any] = {"index": index, "seed_count": int(entry["seed_count"])}
+            if entry.get("needle_id"):
+                row["needle_id"] = str(entry["needle_id"])
+            per_needle.append(row)
+        values = {
+            "needle_count": needle_count,
+            "total_seeds": seed_total,
+            "per_needle": per_needle,
+        }
+        return ToolResult(
+            success=True,
+            data=values,
+            message=f"{needle_count} needles, {seed_total} seeds total",
+            metadata=self._read_metadata(values, "needle_seed_counts"),
         )
 
     def _get_hu_statistics(self, kw) -> ToolResult:

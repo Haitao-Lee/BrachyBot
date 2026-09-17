@@ -13,7 +13,10 @@ def namespace():
                  and n.name in ('sample_spatial_trajectories',
                                 'sample_anchor_covering_trajectories',
                                 'init_plan')]
-    env = {'np': np, 'time': time}
+    # The extracted functions carry the production @timed / record_timing
+    # decorators, so the isolated namespace needs those names too.
+    from plans.performance import timed, record_timing
+    env = {'np': np, 'time': time, 'timed': timed, 'record_timing': record_timing}
     exec(compile(ast.Module(body=functions, type_ignores=[]), str(source), 'exec'), env)
     return env
 

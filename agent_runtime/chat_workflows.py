@@ -20,6 +20,7 @@ import SimpleITK as sitk
 
 from agent_runtime.core import PlanningPhase, ToolResultPipeline, resolve_reference_direction_input
 from agent_runtime.contracts import RunStatus
+from agent_runtime.answer_coverage import direct_read_decision
 from agent_runtime.execution_authorization import TurnExecutionAuthorization
 from agent_runtime.visual_evidence import (
     LEGACY_VISUAL_EVIDENCE_PROTOCOL_MARKER,
@@ -540,9 +541,10 @@ class ChatWorkflowMixin:
         prompt, injects runtime context, and loops up to N LLM rounds. A plain
         casual greeting therefore used to wait ~30s for a response.
 
-        This method performs one non-tool LLM call with a minimal prompt, so
-        conversational intents complete in a couple of seconds. It is a
-        structural optimization keyed on the *intent category* produced by
+        This method performs one non-tool streaming LLM call with a minimal
+        prompt, so conversational intents start painting in the browser as
+        soon as the provider emits its first token. It is a structural
+        optimization keyed on the *intent category* produced by
         turn_policy.classify_local_turn (any small_talk turn), not on a
         whitelist of greeting keywords.
 
@@ -644,14 +646,69 @@ class ChatWorkflowMixin:
             except Exception as _p:
                 logger.debug("Lightweight context packing skipped: %s", _p)
             call_start = time.perf_counter()
-            response = router.chat_messages(messages=messages, tools=None, task_type="general")
+            content = ""
+            usage = {}
+            latency_ms = 0.0
+            finish_reason = ""
+            stream_error = ""
+            streamed_text_len = 0
+
+            from agent_runtime.llm_runtime import _chat_messages_stream_with_retry
+
+            # Stream the conversational answer. The previous single blocking
+            # call made the browser wait for the complete generation (~25 s
+            # for a short greeting) before the first character appeared.
+            # Text is forwarded as it arrives; the final envelope carries the
+            # provider usage/latency contract used by the response footer.
+            for chunk in _chat_messages_stream_with_retry(
+                router, messages=messages, tools=None, max_retries=1
+            ):
+                if isinstance(chunk, str):
+                    if not chunk:
+                        continue
+                    if isinstance(getattr(self, "_turn_timings", None), dict):
+                        self._turn_timings.setdefault(
+                            "llm_first_token_ms",
+                            round(
+                                (
+                                    time.perf_counter()
+                                    - getattr(self, "_turn_started_at", time.perf_counter())
+                                )
+                                * 1000,
+                                1,
+                            ),
+                        )
+                    content += chunk
+                    cleaned = self._clean_response_text(content)
+                    if cleaned and len(cleaned) > streamed_text_len:
+                        new_text = cleaned[streamed_text_len:]
+                        if not re.match(
+                            r'(\[\s*\{\s*["\']type["\']\s*:\s*["\']tool_use|```tool_call|<tool_call>|<minimax:tool_call>|\[\s*TOOL_CALL\s*\])',
+                            new_text,
+                        ):
+                            yield yield_event("text_chunk", {"text": new_text})
+                        streamed_text_len = len(cleaned)
+                elif isinstance(chunk, dict):
+                    if chunk.get("type") == "final":
+                        if chunk.get("content") and not content:
+                            # A provider without native streaming returns the
+                            # whole answer in the final envelope.
+                            content = str(chunk["content"])
+                        finish_reason = str(chunk.get("finish_reason") or finish_reason)
+                        if chunk.get("usage"):
+                            usage = dict(chunk["usage"])
+                    elif chunk.get("type") == "error":
+                        stream_error = str(chunk.get("content") or "")
             latency_ms = round((time.perf_counter() - call_start) * 1000, 1)
-            content = response.content or ""
-            finish_reason = getattr(response, "finish_reason", "") or ""
-            if hasattr(response, "usage") and response.usage:
-                usage = dict(response.usage)
-            else:
-                usage = {}
+            if stream_error:
+                content = stream_error
+                finish_reason = "error"
+            elif content and not streamed_text_len:
+                # Non-streaming provider fallback: publish the answer once so
+                # the browser still renders it through the same channel.
+                cleaned = self._clean_response_text(content)
+                if cleaned:
+                    yield yield_event("text_chunk", {"text": cleaned})
             # Providers may return a graceful error instead of raising. Keep
             # technical details in logs; raw credentials/endpoints/errors do
             # not belong in the user-facing chat stream.
@@ -2447,6 +2504,12 @@ class ChatWorkflowMixin:
     def _activate_turn_policy(self, policy) -> None:
         """Install a routing hint and its explicit fast-path grants."""
         self._active_turn_policy = policy
+        logger.info(
+            "Turn routing candidate=%s selected=%s source=%s reason=%s direct=%s",
+            getattr(policy, "candidate_intent", ""), policy.intent,
+            getattr(policy, "routing_source", ""),
+            getattr(policy, "routing_reason", ""), policy.direct_execution,
+        )
         authorization = self._current_execution_authorization()
         if authorization is not None:
             authorization.grant_policy(policy)
@@ -3485,19 +3548,26 @@ class ChatWorkflowMixin:
         memory and persistence semantics.
         """
         turn_context = getattr(self, "_active_turn_context", {}) or {}
-        if not bool(turn_context.get("internal_followup")):
-            yield from self._chat_with_stream_impl(message)
-            return
+        # Workflow tools (CTV/OAR/planning/guide) run directly in this worker
+        # thread. Install the same cooperative cancellation scope the tool
+        # helper thread uses, so an explicit Stop aborts their heavy loops
+        # instead of blocking the next same-case turn behind them.
+        from utils.cancellation import cancellation_scope
 
-        snapshot = self._snapshot_internal_turn_memory()
-        memory = self.memory
-        previous_suppression = bool(getattr(memory, "_suppress_persistence", False))
-        memory._suppress_persistence = True
-        try:
-            yield from self._chat_with_stream_impl(message)
-        finally:
-            memory._suppress_persistence = previous_suppression
-            self._restore_internal_turn_memory(snapshot)
+        with cancellation_scope(lambda: self._is_turn_cancelled(self._current_turn_token())):
+            if not bool(turn_context.get("internal_followup")):
+                yield from self._chat_with_stream_impl(message)
+                return
+
+            snapshot = self._snapshot_internal_turn_memory()
+            memory = self.memory
+            previous_suppression = bool(getattr(memory, "_suppress_persistence", False))
+            memory._suppress_persistence = True
+            try:
+                yield from self._chat_with_stream_impl(message)
+            finally:
+                memory._suppress_persistence = previous_suppression
+                self._restore_internal_turn_memory(snapshot)
 
     def _chat_with_stream_impl(self, message: str):
         """Streaming version of chat_with_trace. Yields SSE events."""
@@ -4720,12 +4790,20 @@ class ChatWorkflowMixin:
         _high_value_called = _tools_called & _high_value_tools
         _knowledge_tools = {"web_search", "web_fetch", "web_access"}
         _knowledge_called = _tools_called & _knowledge_tools
-        _direct_read_result = any(
-            isinstance((step.get("metadata") or {}).get("response_contract"), dict)
-            and (step.get("metadata") or {}).get("response_contract", {}).get("mode") == "direct_read"
-            and step.get("status") == "done"
+        _direct_read_contracts = [
+            (step.get("metadata") or {}).get("response_contract")
             for step in steps
             if step.get("type") == "tool"
+            and step.get("status") == "done"
+            and isinstance((step.get("metadata") or {}).get("response_contract"), dict)
+            and (step.get("metadata") or {}).get("response_contract", {}).get("mode") == "direct_read"
+        ]
+        # A typed read skips review only when it covers every asked aspect.
+        # Otherwise the final completeness check must run: a partial metric
+        # answer (for example a seed total for a per-needle question) is
+        # exactly what review exists to catch.
+        _direct_read_result, _direct_read_gaps = direct_read_decision(
+            message, _direct_read_contracts
         )
         _has_plan = self._has_completed_planning_in_steps(steps)
         _router_requires_review = bool(
@@ -4746,6 +4824,11 @@ class ChatWorkflowMixin:
             # checker round here.
             _needs_review = False
             _review_reason = "direct_read_contract"
+        elif _direct_read_gaps:
+            # The read ran but did not answer every asked aspect; the final
+            # completeness check must still run before the answer ships.
+            _needs_review = True
+            _review_reason = f"direct_read_coverage_gap: {sorted(_direct_read_gaps)}"
         elif _router_requires_review:
             _needs_review = True
             _review_reason = "router_requires_review"
@@ -4954,6 +5037,11 @@ class ChatWorkflowMixin:
                     _checks.append("planning request detected but planning_pipeline has not completed")
                 if _has_plan_now and not (self.memory.retrieve("dose_metrics") or self.memory.retrieve("metrics")):
                     _checks.append("planning completed but dose metrics were not found in memory")
+                if _direct_read_gaps:
+                    _checks.append(
+                        "direct-read metric did not cover: "
+                        + ", ".join(sorted(_direct_read_gaps))
+                    )
                 if response and len(response) < 80:
                     _checks.append("final response is unusually short")
 

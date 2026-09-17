@@ -31,6 +31,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Iterator, List, Mapping, Optional, Tuple
+from urllib.parse import unquote, urlsplit
 
 import numpy as np
 
@@ -1445,7 +1446,8 @@ def _report_timestamp(form: Any) -> float:
 
 
 _REPORT_FORM_KEYS = frozenset({
-    "version", "language", "templateKey", "sessionId", "updatedAt", "updated_at",
+    "version", "language", "templateKey", "sessionId", "planningId", "planning_id",
+    "updatedAt", "updated_at",
     "hospital", "patient", "study", "case", "imaging", "segmentation",
     "planning", "metrics", "qualityAssessment", "oarDose", "interpretation", "safety", "qaNotes",
     "references", "figures", "signature", "editedFields",
@@ -1577,6 +1579,116 @@ def _report_form_session_id(section: Any) -> str:
     return str(form.get("sessionId") or form.get("session_id") or "").strip()
 
 
+_REPORT_FIGURE_ASSET_KEYS = (
+    "dataUrl", "data_url", "_serverUrl", "serverUrl", "url", "original_url",
+)
+
+
+def _report_screenshot_session_from_url(value: Any) -> str:
+    """Extract a Session owner from the server screenshot URL namespace."""
+    raw = str(value or "").strip()
+    if not raw or raw.lower().startswith("data:image/"):
+        return ""
+    try:
+        parsed = urlsplit(raw)
+    except ValueError:
+        return ""
+    if parsed.fragment:
+        return ""
+    parts = parsed.path.split("/")
+    if (
+        len(parts) != 6
+        or parts[1] != "api"
+        or parts[2] != "sessions"
+        or parts[4] != "screenshots"
+        or not parts[3]
+        or not parts[5]
+    ):
+        return ""
+    try:
+        session_id = unquote(parts[3])
+        filename = unquote(parts[5])
+    except (TypeError, ValueError):
+        return ""
+    if (
+        not session_id
+        or "/" in filename
+        or "\\" in filename
+        or not filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
+    ):
+        return ""
+    return session_id
+
+
+def _sanitize_report_figure_for_snapshot(
+    figure: Mapping[str, Any],
+    session_id: str,
+    planning_id: str = "",
+) -> Dict[str, Any]:
+    """Remove a report image that is proven to belong to another run/case."""
+    result = dict(figure or {})
+    expected_session = str(session_id or "").strip()
+    expected_planning = str(planning_id or "").strip()
+    figure_planning = str(
+        result.get("planningId") or result.get("planning_id") or "",
+    ).strip()
+    foreign_session = any(
+        owner and expected_session and owner != expected_session
+        for owner in (
+            _report_screenshot_session_from_url(result.get(key))
+            for key in _REPORT_FIGURE_ASSET_KEYS
+        )
+    )
+    planning_mismatch = bool(
+        expected_planning
+        and figure_planning
+        and figure_planning != expected_planning
+    )
+    if not foreign_session and not planning_mismatch:
+        return result
+    if expected_planning:
+        result["planningId"] = expected_planning
+    for key in _REPORT_FIGURE_ASSET_KEYS:
+        if key in result:
+            result[key] = ""
+    result.pop("_cacheKey", None)
+    # Keep the placeholder explicitly invalid so the browser can replace it
+    # with the current Session/Planning artifact instead of treating the
+    # cleared legacy row as a complete user-authored figure.
+    result["_artifactFallback"] = True
+    result["_invalidCapture"] = True
+    return result
+
+
+def _sanitize_report_section_for_snapshot(
+    section: Mapping[str, Any],
+    session_id: str,
+    planning_id: str = "",
+) -> Dict[str, Any]:
+    """Apply figure ownership checks without changing report narrative text."""
+    result = dict(section or {})
+    form, has_form = _report_form_from_section(section)
+    if not has_form:
+        return result
+    safe_form = dict(form)
+    safe_form["sessionId"] = str(session_id or "")
+    if planning_id:
+        safe_form["planningId"] = str(planning_id)
+    if isinstance(safe_form.get("figures"), list):
+        safe_form["figures"] = [
+            _sanitize_report_figure_for_snapshot(figure, session_id, planning_id)
+            if isinstance(figure, Mapping) else figure
+            for figure in safe_form["figures"]
+        ]
+    if isinstance(section.get("form"), Mapping):
+        result["form"] = safe_form
+    else:
+        for key in _REPORT_FORM_KEYS:
+            if key in safe_form:
+                result[key] = safe_form[key]
+    return result
+
+
 def _sanitize_report_for_snapshot(
     report: Mapping[str, Any],
     snapshot: Mapping[str, Any],
@@ -1603,7 +1715,11 @@ def _sanitize_report_for_snapshot(
             owner = _report_form_session_id(section)
             if owner and owner != str(session_id):
                 continue
-            filtered[planning_id] = dict(section)
+            filtered[planning_id] = _sanitize_report_section_for_snapshot(
+                section,
+                session_id,
+                planning_id,
+            )
 
     # Legacy snapshots kept the active report only at the top level. Promote
     # that section into the active run when it belongs to this Session.
@@ -1612,6 +1728,12 @@ def _sanitize_report_for_snapshot(
         if key not in {"active_planning_id", "by_planning_id"}
     }
     legacy_owner = _report_form_session_id(legacy_section)
+    if not legacy_owner or legacy_owner == str(session_id):
+        legacy_section = _sanitize_report_section_for_snapshot(
+            legacy_section,
+            session_id,
+            active_id or "",
+        )
     if active_id and active_id not in filtered and (
         not legacy_owner or legacy_owner == str(session_id)
     ):
@@ -1620,9 +1742,17 @@ def _sanitize_report_for_snapshot(
             filtered[active_id] = legacy_section
 
     if active_id and active_id in filtered:
-        sanitized = dict(filtered[active_id])
+        sanitized = _sanitize_report_section_for_snapshot(
+            filtered[active_id],
+            session_id,
+            active_id,
+        )
     elif not legacy_owner or legacy_owner == str(session_id):
-        sanitized = legacy_section
+        sanitized = _sanitize_report_section_for_snapshot(
+            legacy_section,
+            session_id,
+            active_id or "",
+        )
     else:
         sanitized = {}
     sanitized["active_planning_id"] = active_id
@@ -1992,6 +2122,25 @@ class WorkspaceStore:
             connection.close()
 
     @contextmanager
+    def _read_connection(self) -> Iterator[sqlite3.Connection]:
+        """Open a bounded read connection for request-path guards.
+
+        Lease/session guards run before every mutating request and must never
+        queue behind a multi-second checkpoint writer. The database header
+        already persists WAL mode, so this connection only needs a short busy
+        timeout; ``query_only`` makes it impossible for a guard to take the
+        write lock. Expired-lease cleanup is deferred to the next acquire,
+        which replaces an expired row in its own single write transaction.
+        """
+        connection = sqlite3.connect(self.database_path, timeout=2.0, isolation_level=None)
+        connection.row_factory = sqlite3.Row
+        try:
+            connection.execute("PRAGMA query_only = ON")
+            yield connection
+        finally:
+            connection.close()
+
+    @contextmanager
     def _case_guard(self, user_id: str, session_id: str) -> Iterator[None]:
         """Serialize snapshot writers for one case without blocking others."""
         key = (user_id, session_id)
@@ -2213,7 +2362,7 @@ class WorkspaceStore:
 
     def get_session(self, user_id: str, session_id: str, *, include_trashed: bool = False) -> WorkspaceSession:
         condition = "" if include_trashed else "AND status = 'active'"
-        with self._connection() as connection:
+        with self._read_connection() as connection:
             row = connection.execute(
                 f"SELECT * FROM case_sessions WHERE id = ? AND user_id = ? {condition}",
                 (session_id, user_id),
@@ -2360,6 +2509,16 @@ class WorkspaceStore:
             # images merely because the original writes were out of order.
             snapshot["chat"] = _strip_internal_visual_records(
                 _reconcile_chat_attachment_registry(snapshot["chat"])
+            )
+        if isinstance(snapshot.get("report"), Mapping):
+            # Read-time defense-in-depth: an older snapshot may already carry
+            # a screenshot URL from the Session that was active before a
+            # switch. Return a case-bound report immediately, even before the
+            # browser has a chance to persist its synchronous repair.
+            snapshot["report"] = _sanitize_report_for_snapshot(
+                snapshot["report"],
+                snapshot,
+                session_id,
             )
         snapshot["session"] = record.public_dict()
         snapshot["workspace"] = {
@@ -2522,6 +2681,12 @@ class WorkspaceStore:
                 # merely because this path bypassed the merge helper.
                 safe_value = _strip_internal_visual_records(
                     _reconcile_chat_attachment_registry(safe_value)
+                )
+            elif section == "report":
+                safe_value = _sanitize_report_for_snapshot(
+                    safe_value,
+                    snapshot,
+                    session_id,
                 )
             snapshot[section] = _safe_json(safe_value)
             snapshot["saved_at"] = _now()
@@ -4172,12 +4337,14 @@ class WorkspaceStore:
         """
         self.get_session(user_id, session_id)
         now = _now()
-        with self._connection() as connection:
+        with self._read_connection() as connection:
             row = connection.execute("SELECT owner_token, expires_at FROM workspace_leases WHERE session_id = ?", (session_id,)).fetchone()
             if not row:
                 return
             if float(row["expires_at"]) <= now:
-                connection.execute("DELETE FROM workspace_leases WHERE session_id = ?", (session_id,))
+                # An expired lease is not a lock. The next acquire replaces it
+                # in its own write transaction; a request-path guard must not
+                # take the write lock just to clean it up.
                 return
             if not owner_token or row["owner_token"] != owner_token:
                 raise WorkspaceLeaseConflict("This case is being edited in another browser")
@@ -4192,7 +4359,7 @@ class WorkspaceStore:
         """Return whether another live browser is using this case."""
         self.get_session(user_id, session_id)
         now = _now()
-        with self._connection() as connection:
+        with self._read_connection() as connection:
             row = connection.execute(
                 "SELECT owner_token, expires_at FROM workspace_leases "
                 "WHERE session_id = ?",
@@ -4201,10 +4368,8 @@ class WorkspaceStore:
             if not row:
                 return False
             if float(row["expires_at"]) <= now:
-                connection.execute(
-                    "DELETE FROM workspace_leases WHERE session_id = ?",
-                    (session_id,),
-                )
+                # Expired leases are cleaned by the next acquire, not by a
+                # request-path guard (see assert_editable).
                 return False
             return not owner_token or str(row["owner_token"]) != str(owner_token)
 

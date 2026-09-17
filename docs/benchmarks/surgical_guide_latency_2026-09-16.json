@@ -1,0 +1,229 @@
+{
+  "scope": "Detached generator replay; not browser/checkpoint latency; single measurements on shared host",
+  "pairs": [
+    {
+      "label": "truncated_fov_4_needles",
+      "needle_count": 4,
+      "resolution_mm": 0.2,
+      "inputs_match": true,
+      "output_hashes_match": true,
+      "hashes": {
+        "vertices": "7b553252a2618344e736d413a7cf8b8c2a8252cac11d0a180e44bc2b0b1e0cf3",
+        "faces": "dc13e5fef4c506666bac523c9e0d8576cbfd485e5df1af0ce04085ab85dc8c8a",
+        "needle_paths": "466e85afe6bafa52bb21f99d34304f03f8f6b9c2f3bd4a98354bc2da9051f5d7",
+        "auxiliary_holes": "67ac35fd1a98c6cfb59e0fa7fa7fa45227277c1367dace036b852fe19b0c77b3",
+        "validation_without_timing": "0b3612f4455552baecfd98135e1fbdefcf5a717818043d056ef2486e9154be7a"
+      },
+      "baseline_stages_seconds": {
+        "skin_envelope": 0.395,
+        "skin_surface_persisted": 0.021,
+        "local_grid_resampled": 1.5,
+        "skin_distance_field_reused": 0.0,
+        "plate_patch": 4.355,
+        "auxiliary_holes": 0.383,
+        "primary_sleeves_and_bores": 0.521,
+        "solid_cleanup": 3.564,
+        "mesh_extraction_and_validation": 8.34,
+        "total": 19.081
+      },
+      "current_stages_seconds": {
+        "skin_envelope": 0.386,
+        "skin_surface_persisted": 0.025,
+        "local_grid_resampled": 1.481,
+        "skin_distance_field_reused": 0.0,
+        "plate_patch": 1.481,
+        "auxiliary_holes": 0.107,
+        "primary_sleeves_and_bores": 0.108,
+        "solid_cleanup": 1.229,
+        "mesh_extraction_and_validation": 1.828,
+        "total": 6.646
+      },
+      "speedup": 2.8710502557929583,
+      "baseline_peak_rss_gib": 6.866825103759766,
+      "current_peak_rss_gib": 3.9239501953125,
+      "vertex_count": 420393,
+      "face_count": 841450,
+      "watertight": true,
+      "topology_repair_attempted": false
+    },
+    {
+      "label": "eight_needles",
+      "needle_count": 8,
+      "resolution_mm": 0.2,
+      "inputs_match": true,
+      "output_hashes_match": true,
+      "hashes": {
+        "vertices": "1393e60815e83eddbc10621d4c7342aca89542a116e4337d1609a569becf0565",
+        "faces": "6e25a25f674ed0a5bc740c23694369b1228b90322d52e1e42c1a4c8d5fd71bea",
+        "auxiliary_holes": "b8559ed843e696e5ddf17c11772a3a4dd83558b7eef45f222b5a3f79560c4324",
+        "validation_without_timing": "cf8960cf48ba43bd9bed9396afd3a67355a5f800dc7683f9e1cec508acaec1b5"
+      },
+      "baseline_stages_seconds": {
+        "skin_envelope": 0.979,
+        "skin_surface_persisted": 0.003,
+        "local_grid_resampled": 1.869,
+        "skin_distance_field_reused": 0.0,
+        "plate_patch": 6.643,
+        "auxiliary_holes": 0.258,
+        "primary_sleeves_and_bores": 0.244,
+        "solid_cleanup": 2.942,
+        "mesh_extraction_and_validation": 14.599,
+        "total": 27.539
+      },
+      "current_stages_seconds": {
+        "skin_envelope": 0.975,
+        "skin_surface_persisted": 0.021,
+        "local_grid_resampled": 1.939,
+        "skin_distance_field_reused": 0.0,
+        "plate_patch": 2.728,
+        "auxiliary_holes": 0.135,
+        "primary_sleeves_and_bores": 0.134,
+        "solid_cleanup": 1.183,
+        "mesh_extraction_and_validation": 3.209,
+        "total": 10.328
+      },
+      "speedup": 2.666440743609605,
+      "baseline_peak_rss_gib": 8.131614685058594,
+      "current_peak_rss_gib": 4.191959381103516,
+      "vertex_count": 573872,
+      "face_count": 1148952,
+      "watertight": true,
+      "topology_repair_attempted": false
+    },
+    {
+      "label": "dense_50_needles_with_repair",
+      "needle_count": 50,
+      "resolution_mm": 0.2,
+      "inputs_match": true,
+      "output_hashes_match": true,
+      "hashes": {
+        "vertices": "48c1eb1423d0cc48af8de108f675cb799be73fa753c4e4c95f23fae58feb1911",
+        "faces": "3400f90269b4c47baffa59579e42d8bab667fd3eaf5e6fc59d72347469add906",
+        "auxiliary_holes": "3c40853837f9b1f0bec8c55154e531d2bc28634793cd4bd3433fe7728af8453e",
+        "validation_without_timing": "5480ff07e69a6c497e1fed1fd99671f1dbe16d26f2120a101ea2a58777f46feb"
+      },
+      "baseline_stages_seconds": {
+        "skin_envelope": 1.754,
+        "skin_surface_persisted": 0.003,
+        "local_grid_resampled": 4.191,
+        "skin_distance_field_reused": 0.0,
+        "plate_patch": 13.3,
+        "auxiliary_holes": 0.519,
+        "primary_sleeves_and_bores": 1.63,
+        "solid_cleanup": 5.342,
+        "mesh_extraction_and_validation": 24.528,
+        "mesh_topology_repair": 67.899,
+        "total": 119.178
+      },
+      "current_stages_seconds": {
+        "skin_envelope": 1.209,
+        "skin_surface_persisted": 0.006,
+        "local_grid_resampled": 3.591,
+        "skin_distance_field_reused": 0.0,
+        "plate_patch": 5.586,
+        "auxiliary_holes": 0.2,
+        "primary_sleeves_and_bores": 0.604,
+        "solid_cleanup": 1.97,
+        "mesh_extraction_and_validation": 7.658,
+        "mesh_topology_repair": 22.39,
+        "total": 43.227
+      },
+      "speedup": 2.757026858213617,
+      "baseline_peak_rss_gib": 9.756187438964844,
+      "current_peak_rss_gib": 5.212368011474609,
+      "vertex_count": 955262,
+      "face_count": 1911140,
+      "watertight": true,
+      "topology_repair_attempted": true
+    },
+    {
+      "label": "eight_needles_035mm_validation",
+      "needle_count": 8,
+      "resolution_mm": 0.35,
+      "inputs_match": true,
+      "output_hashes_match": true,
+      "hashes": {
+        "vertices": "9f44255083348fbda1f4df5291225c74e769e498759c8b674a57c7c6a85610bb",
+        "faces": "fbcfe47a058c3e08459a8b5e52a0ff1d1839ec4790ead1cb28fd0bbe63da78b8",
+        "auxiliary_holes": "5abd81f648f7fd9faffb6e5c5783a730d6ff2e5434b58e84a6492f830e07dc7c",
+        "validation_without_timing": "4a6203a7f20582c25d01bec2f09144afe83d9938affe94e8246bdc3ee4acff6b"
+      },
+      "baseline_stages_seconds": {
+        "skin_envelope": 0.979,
+        "skin_surface_persisted": 0.002,
+        "local_grid_resampled": 0.756,
+        "skin_distance_field_reused": 0.0,
+        "plate_patch": 1.378,
+        "auxiliary_holes": 0.086,
+        "primary_sleeves_and_bores": 0.065,
+        "solid_cleanup": 0.666,
+        "mesh_extraction_and_validation": 3.688,
+        "total": 7.625
+      },
+      "current_stages_seconds": {
+        "skin_envelope": 1.12,
+        "skin_surface_persisted": 0.026,
+        "local_grid_resampled": 0.812,
+        "skin_distance_field_reused": 0.0,
+        "plate_patch": 0.439,
+        "auxiliary_holes": 0.071,
+        "primary_sleeves_and_bores": 0.045,
+        "solid_cleanup": 0.288,
+        "mesh_extraction_and_validation": 1.399,
+        "total": 4.205
+      },
+      "speedup": 1.8133174791914388,
+      "baseline_peak_rss_gib": 2.731781005859375,
+      "current_peak_rss_gib": 1.9814834594726562,
+      "vertex_count": 186408,
+      "face_count": 373792,
+      "watertight": true,
+      "topology_repair_attempted": false
+    },
+    {
+      "label": "eight_needles_repeat_including_path_metadata",
+      "needle_count": 8,
+      "resolution_mm": 0.2,
+      "inputs_match": true,
+      "output_hashes_match": true,
+      "hashes": {
+        "vertices": "1393e60815e83eddbc10621d4c7342aca89542a116e4337d1609a569becf0565",
+        "faces": "6e25a25f674ed0a5bc740c23694369b1228b90322d52e1e42c1a4c8d5fd71bea",
+        "needle_paths": "9a6dd8002f09debd84a02d45b7d9eee6a04905b7684f734a2cf85bab63182ad9",
+        "auxiliary_holes": "b8559ed843e696e5ddf17c11772a3a4dd83558b7eef45f222b5a3f79560c4324",
+        "validation_without_timing": "cf8960cf48ba43bd9bed9396afd3a67355a5f800dc7683f9e1cec508acaec1b5"
+      },
+      "baseline_stages_seconds": {
+        "skin_envelope": 0.984,
+        "skin_surface_persisted": 0.003,
+        "local_grid_resampled": 1.938,
+        "skin_distance_field_reused": 0.0,
+        "plate_patch": 6.915,
+        "auxiliary_holes": 0.293,
+        "primary_sleeves_and_bores": 0.242,
+        "solid_cleanup": 2.967,
+        "mesh_extraction_and_validation": 12.832,
+        "total": 26.178
+      },
+      "current_stages_seconds": {
+        "skin_envelope": 1.05,
+        "skin_surface_persisted": 0.013,
+        "local_grid_resampled": 2.131,
+        "skin_distance_field_reused": 0.0,
+        "plate_patch": 2.427,
+        "auxiliary_holes": 0.147,
+        "primary_sleeves_and_bores": 0.15,
+        "solid_cleanup": 1.142,
+        "mesh_extraction_and_validation": 3.464,
+        "total": 10.527
+      },
+      "speedup": 2.4867483613565122,
+      "baseline_peak_rss_gib": 8.152877807617188,
+      "current_peak_rss_gib": 4.1920928955078125,
+      "vertex_count": 573872,
+      "face_count": 1148952,
+      "watertight": true,
+      "topology_repair_attempted": false
+    }
+  ]
+}

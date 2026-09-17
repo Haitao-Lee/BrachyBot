@@ -1,0 +1,11 @@
+{
+  "source": "Remote working tree before guide optimization, including existing uncommitted guide fixes",
+  "base_commit": "d09a104ea",
+  "module_sha256": "dad562e79d2036fb836c2656f487658bf3344675bd09f8bf08186b839f1f06ff",
+  "dependencies": {
+    "plans/guide_geometry.py": "fbd6d7531a1e060988e730899f530882010d9cb5fb0350fd672ea97f675de770",
+    "tool_factory/seed_plan/planning_pipeline.py": "551d660844161de9919c9e902c92204e4f14626ff8a2db73b77199db15a3631a",
+    "web/planning_runs.py": "315e488b260d790597bef740c66e772bdedff8728ebd6dd8f78e220c1e4797ff"
+  },
+  "validation_environment": {"numpy": "2.4.6", "scipy": "1.15.3", "skimage": "0.26.0", "SimpleITK": "2.5.0"}
+}

@@ -88,6 +88,28 @@ def test_replan_and_guide_plan_survives_when_sentence_is_not_detected_as_compoun
     )
 
 
+def test_surgical_replan_wording_keeps_the_planning_pipeline_first():
+    """A qualifier before the plan noun must not fall through to the model."""
+    policy = classify_local_turn("请重新执行手术规划")
+
+    assert policy.intent == "semantic_action"
+    assert policy.direct_execution is False
+    assert policy.action_plan is not None
+    assert [step.tool for step in policy.action_plan.ordered_steps()] == [
+        "ctv_segmentation",
+        "oar_segmentation",
+        "planning_pipeline",
+        "surgical_guide",
+    ]
+    assert policy.action_plan.ordered_steps()[2].depends_on == (
+        "ctv_segmentation",
+        "oar_segmentation",
+    )
+    assert policy.action_plan.ordered_steps()[3].depends_on == (
+        "planning_pipeline",
+    )
+
+
 def test_short_replan_follow_up_queues_dependent_guide_generation():
     policy = classify_local_turn("我是让你重新规划")
 

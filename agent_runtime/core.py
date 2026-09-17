@@ -1171,6 +1171,35 @@ class ToolResultPipeline:
         if metric_type == "seed_count":
             title = "粒子数量" if lang == "zh" else "Seed count"
             return f"## {title}\n\n{fmt(number('seed_count'), 0)}"
+        if metric_type == "needle_count":
+            title = "穿刺针数量" if lang == "zh" else "Needle count"
+            return f"## {title}\n\n{fmt(number('needle_count'), 0)}"
+        if metric_type == "needle_seed_counts":
+            # Per-needle distribution: the deterministic table is the answer,
+            # so every planned needle must appear even when the total matches.
+            title = "穿刺针与粒子分布" if lang == "zh" else "Needle and seed distribution"
+            needle_count = number("needle_count")
+            total_seeds = number("total_seeds")
+            if lang == "zh":
+                summary = f"共 {fmt(needle_count, 0)} 枚穿刺针，{fmt(total_seeds, 0)} 颗粒子。"
+            else:
+                summary = f"{fmt(needle_count, 0)} needles, {fmt(total_seeds, 0)} seeds in total."
+            lines = [f"## {title}", "", summary]
+            per_needle = values.get("per_needle")
+            if isinstance(per_needle, (list, tuple)) and per_needle:
+                header = "针道 | 粒子数" if lang == "zh" else "Needle | Seeds"
+                lines.extend(["", f"| {header} |", "|---|---:|"])
+                for row in per_needle:
+                    if not isinstance(row, Mapping):
+                        continue
+                    try:
+                        index = int(float(row.get("index")))
+                        count = int(float(row.get("seed_count")))
+                    except (TypeError, ValueError):
+                        continue
+                    label = f"针道 {index}" if lang == "zh" else f"Needle {index}"
+                    lines.append(f"| {label} | {count} |")
+            return "\n".join(lines)
         if metric_type == "oar_volumes":
             title = "OAR 体积" if lang == "zh" else "OAR volumes"
             rows = [f"| {'结构' if lang == 'zh' else 'Structure'} | {'体积 (cm³)' if lang == 'zh' else 'Volume (cm³)'} |", "|---|---:|"]

@@ -398,9 +398,20 @@
         }
     }
 
+    // Mirror of web/surgical_guide.py's BORE_WALL_POLICY set. The policy was
+    // renamed when the CSG channel pipeline replaced the smoothing pass; the
+    // legacy string is still accepted so older persisted guides keep their
+    // printable status. A guide is only "stale" when its policy is unknown —
+    // not merely because the server upgraded its geometry pipeline.
+    const PRINTABLE_BORE_WALL_POLICIES = new Set([
+        'global_primary_csg_drilling_and_analytic_cylindrical_projection_v2',
+        'analytic_cylindrical_projection_after_mesh_smoothing',
+    ]);
+
     function hasPrintableBoreQuality(guide) {
-        return guide?.validation?.bore_quality?.wall_policy
-            === 'analytic_cylindrical_projection_after_mesh_smoothing';
+        return PRINTABLE_BORE_WALL_POLICIES.has(
+            String(guide?.validation?.bore_quality?.wall_policy || ''),
+        );
     }
 
     function guideStatusState(payload) {
@@ -451,7 +462,17 @@
     }
 
     function addGuideMesh(guide) {
-        if (!guide?.vertices?.length || !guide?.faces?.length || typeof addMeshToScene !== 'function') return false;
+        if (!guide?.vertices?.length || !guide?.faces?.length || typeof addMeshToScene !== 'function') {
+            // A silent false here is indistinguishable from "the guide was
+            // never generated" in the UI. Leave one console breadcrumb so a
+            // missing mesh can be diagnosed without a debug build.
+            console.warn('[guide] mesh not added to the scene', {
+                hasVertices: Boolean(guide?.vertices?.length),
+                hasFaces: Boolean(guide?.faces?.length),
+                addMeshToScene: typeof addMeshToScene,
+            });
+            return false;
+        }
         const previous = window.dataTreeState?.planning?.meshes?.find(item => item.id === GUIDE_ID);
         addMeshToScene({
             organ_id: GUIDE_ID,

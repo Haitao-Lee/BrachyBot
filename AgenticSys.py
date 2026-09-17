@@ -67,6 +67,7 @@ from agent_runtime.response_tools import ResponseToolMixin
 from agent_runtime.llm_runtime import LLMRuntimeMixin
 from agent_runtime.chat_workflows import ChatWorkflowMixin
 from agent_runtime.turn_policy import (
+    classify_local_turn,
     is_current_case_dose_recompute_request,
     is_planning_reexecution_request,
 )
@@ -1077,7 +1078,8 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         # request into a full planning workflow. This guard is intentionally
         # before _planning_requested(): the presence of a provider-emitted
         # planning_pipeline call must not manufacture planning authorization.
-        if is_current_case_dose_recompute_request(message):
+        if (tool_calls and is_current_case_dose_recompute_request(message)
+                and classify_local_turn(message).intent == "dose_recompute"):
             provider_call = next(
                 (
                     call for call in (tool_calls or [])
@@ -1091,6 +1093,8 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 {},
             )
             provider_params = dict(provider_call.get("params") or {})
+            if not provider_call:
+                return tool_calls
             allowed_params = {
                 key: provider_params[key]
                 for key in ("planning_id", "reason", "compare_with_previous")
@@ -1491,6 +1495,20 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 if total_seeds is not None
                 else current_plan.get("total_seeds", 0)
             )
+            # The legacy aliases can lag behind manual edits. The published
+            # mirror is what the Viewer, guide, and exports consume, so the
+            # metric tool must see it to count seeds and needles accurately
+            # instead of treating one plan entry (one needle) as one seed.
+            num_trajectories = self.memory.retrieve("num_trajectories")
+            params["num_trajectories"] = (
+                num_trajectories
+                if num_trajectories is not None
+                else current_plan.get("num_trajectories", 0)
+            )
+            for plan_key in ("seed_plan_serialized", "manual_seeds", "seed_plan"):
+                plan_value = self.memory.retrieve(plan_key)
+                if plan_value is not None:
+                    params[plan_key] = plan_value
 
         if tool_name == "safety_validator":
             # The selected Planning is server-owned clinical state, not an LLM

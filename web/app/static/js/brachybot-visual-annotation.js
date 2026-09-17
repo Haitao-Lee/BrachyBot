@@ -214,7 +214,10 @@
     function semanticDataTreeTarget(targetRef) {
         const ref = text(targetRef, 220).toLowerCase();
         if (!ref) return null;
-        const rows = Array.from(document.querySelectorAll('#dataTreeBody .tree-item'));
+        const rows = Array.from(document.querySelectorAll('#dataTreeBody .tree-item')).filter(row =>
+            row.dataset?.liveNode !== 'false' && row.dataset?.visualTarget !== 'false'
+            && row.dataset?.nodeType !== 'planning_artifact'
+            && !row.classList?.contains('planning-history-artifact'));
         const identity = row => [
             row?.dataset?.objectId,
             row?.dataset?.nodeId,
@@ -225,16 +228,8 @@
         const registered = typeof window.matchDataTreeRowTargetRef === 'function'
             ? rows.find(row => window.matchDataTreeRowTargetRef(row, ref))
             : null;
-        const isGuide = /(?:surgical|puncture)[_\s:-]*guide|手术导板|穿刺导板|导板/.test(ref);
-        const row = exact || registered || (isGuide ? rows.find(candidate => {
-            const haystack = [
-                candidate?.dataset?.nodeType,
-                candidate?.dataset?.artifactKey,
-                candidate?.dataset?.source,
-                candidate?.textContent,
-            ].map(value => text(value, 400).toLowerCase()).join(' ');
-            return /(?:surgical|puncture)[_\s:-]*guide|手术导板|穿刺导板|导板/.test(haystack);
-        }) : null);
+        const row = typeof window.resolveDataTreeRowTargetRef === 'function'
+            ? window.resolveDataTreeRowTargetRef(ref) : exact || registered;
         if (!row) return null;
         const style = window.getComputedStyle?.(row);
         const rect = row.getBoundingClientRect?.();
@@ -270,6 +265,11 @@
             let element = null;
             try { element = document.querySelector(selector); } catch (_) { element = null; }
             if (!element) continue;
+            const treeRow = element.closest?.('#dataTreeBody .tree-item');
+            if (treeRow && (treeRow.dataset?.liveNode === 'false'
+                || treeRow.dataset?.visualTarget === 'false'
+                || treeRow.dataset?.nodeType === 'planning_artifact'
+                || treeRow.classList?.contains('planning-history-artifact'))) continue;
             const style = window.getComputedStyle?.(element);
             const rect = element.getBoundingClientRect?.();
             const rendered = style?.display !== 'none' && style?.visibility !== 'hidden'

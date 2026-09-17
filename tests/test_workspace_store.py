@@ -523,6 +523,66 @@ def test_report_snapshot_does_not_let_older_blank_form_erase_narrative(tmp_path)
     assert store.load_snapshot(user["id"], case.id)["report"]["form"]["interpretation"] == ""
 
 
+def test_report_figures_are_bound_to_session_and_planning(tmp_path):
+    store = WorkspaceStore(tmp_path / "runtime")
+    user = store.create_user("report_figure_owner", "hash")
+    case = store.create_session(user["id"], "Report figure ownership case")
+    agent = _Agent()
+    planning_id = "planning-report-ownership"
+    agent.memory.planning_results.update({
+        "planning_runs": [{"planning_id": planning_id, "status": "completed"}],
+        "active_planning_id": planning_id,
+        "planning_run_id": planning_id,
+    })
+    agent.memory._planning_versions.update({
+        key: 1 for key in agent.memory.planning_results
+    })
+    store.snapshot_agent(user["id"], case.id, agent, reason="report.figure.seed")
+
+    foreign_session = "previous-session"
+    foreign_figure = {
+        "axis": "report_fig1_global",
+        "planningId": planning_id,
+        "dataUrl": f"/api/sessions/{foreign_session}/screenshots/report_screenshot_report_fig1_global_abc123.png",
+        "_cacheKey": "report_fig_foreign",
+    }
+    wrong_planning_figure = {
+        "axis": "report_fig1_closeup",
+        "planningId": "previous-planning",
+        "dataUrl": f"/api/sessions/{case.id}/screenshots/report_screenshot_report_fig1_closeup_def456.png",
+        "_cacheKey": "report_fig_wrong_planning",
+    }
+    current_figure = {
+        "axis": "report_fig2_dvh",
+        "planningId": planning_id,
+        "dataUrl": f"/api/sessions/{case.id}/screenshots/report_screenshot_report_fig2_dvh_ghi789.png",
+    }
+    store.save_snapshot_patch(user["id"], case.id, {
+        "report": {
+            "by_planning_id": {
+                planning_id: {
+                    "form": {
+                        "sessionId": case.id,
+                        "planningId": planning_id,
+                        "figures": [foreign_figure, wrong_planning_figure, current_figure],
+                    },
+                },
+            },
+            "active_planning_id": planning_id,
+        },
+    })
+
+    form = store.load_snapshot(user["id"], case.id)["report"]["form"]
+    figures = {figure["axis"]: figure for figure in form["figures"]}
+    assert figures["report_fig1_global"]["dataUrl"] == ""
+    assert figures["report_fig1_global"].get("_cacheKey") is None
+    assert figures["report_fig1_closeup"]["dataUrl"] == ""
+    assert figures["report_fig1_closeup"]["planningId"] == planning_id
+    assert figures["report_fig2_dvh"]["dataUrl"].startswith(
+        f"/api/sessions/{case.id}/screenshots/",
+    )
+
+
 def test_legacy_direct_report_form_is_canonicalized_without_losing_text(tmp_path):
     store = WorkspaceStore(tmp_path / "runtime")
     user = store.create_user("legacy_report_owner", "hash")
@@ -1435,3 +1495,54 @@ def test_case_audit_and_review_comments_are_owned_and_persistent(tmp_path):
         assert False, "another account must not read review comments"
     except WorkspaceNotFound:
         pass
+
+
+def test_expired_lease_guard_is_read_only_and_never_blocks(tmp_path):
+    """A stale lease must not make a request wait on the write lock."""
+    import sqlite3
+    import time as _time
+
+    store = WorkspaceStore(tmp_path / "runtime")
+    user = store.create_user("lease_guard_user", "hash")
+    case = store.create_session(user["id"], "Lease guard case")
+    store.acquire_lease(user["id"], case.id, "a" * 20)
+
+    with sqlite3.connect(store.database_path) as connection:
+        connection.execute(
+            "UPDATE workspace_leases SET expires_at = ? WHERE session_id = ?",
+            (_time.time() - 5.0, case.id),
+        )
+        connection.commit()
+
+    # The guard treats an expired lease as unlocked and returns without a
+    # write; the row survives for the next acquire to replace transactionally.
+    store.assert_editable(user["id"], case.id, "b" * 20)
+    assert store.has_live_lease(user["id"], case.id, owner_token="a" * 20) is False
+
+    with sqlite3.connect(store.database_path) as connection:
+        row = connection.execute(
+            "SELECT owner_token FROM workspace_leases WHERE session_id = ?",
+            (case.id,),
+        ).fetchone()
+    assert row is not None, "expired-lease cleanup must be deferred to acquire"
+
+    result = store.acquire_lease(user["id"], case.id, "b" * 20)
+    assert result["editable"] is True
+    store.assert_editable(user["id"], case.id, "b" * 20)
+
+
+def test_read_connection_rejects_writes(tmp_path):
+    """Request-path guards must never be able to take the write lock."""
+    import sqlite3
+
+    store = WorkspaceStore(tmp_path / "runtime")
+    with store._read_connection() as connection:
+        try:
+            connection.execute(
+                "INSERT INTO workspace_leases"
+                "(session_id, owner_token, expires_at, updated_at) "
+                "VALUES ('session', 'token', 0, 0)"
+            )
+            assert False, "read connections must be query_only"
+        except sqlite3.OperationalError:
+            pass

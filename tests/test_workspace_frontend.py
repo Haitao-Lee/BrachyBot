@@ -145,8 +145,8 @@ def test_startup_renders_server_session_directory_before_the_heavy_snapshot():
     """A slow restored case must never keep the left session list empty."""
     auth = read("web/app/static/js/brachybot-auth.js")
     workspace = read("web/app/static/js/brachybot-workspace.js")
-    load_sessions = workspace.split("window.loadSessions =", 1)[1].split(
-        "window.saveSessions =", 1
+    load_sessions = workspace.split("async function loadSessions", 1)[1].split(
+        "window.loadSessions = function (options = {})", 1
     )[0]
 
     assert "let authenticationPromise = null;" in auth
@@ -202,6 +202,43 @@ def test_workspace_loading_notice_tracks_real_background_viewer_completion():
     assert "showLoading: !options.hydrationScope" in ui_api
     assert "Object.defineProperty(refreshOutcome, 'backgroundCompletion'" in planning
     assert "value: viewerCompletionPromise" in planning
+
+
+def test_same_case_background_restore_does_not_blank_live_viewer():
+    """A reconnect/duplicate restore must preserve an already decoded case."""
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+
+    assert "function _workspaceHasLiveVisibleClinicalState" in ui_api
+    assert "state.ctLoaded !== true" in ui_api
+    assert "decodedVoxelCount > 0" in ui_api
+    assert "preserveVisibleClinicalState" in ui_api
+    assert "const preserveCurrentCt = preserveVisibleClinicalState" in ui_api
+    assert "if (preserveCurrentCt)" in ui_api
+    assert "recordStage('restore.ct_preserved'" in ui_api
+    assert "let suppressVisibleNotice = false" in ui_api
+    assert "if (suppressVisibleNotice) return;" in ui_api
+    assert "let loadSessionsInFlight = null" in workspace
+    assert "return loadSessionsInFlight" in workspace
+    assert "preserve_visible_clinical_state" in workspace
+    assert "reason: 'server-recovery'" in workspace
+
+
+def test_empty_session_never_counts_as_an_already_scheduled_restore():
+    """A failed session-list load must not fake a scheduled clinical restore."""
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    assert "const startupSessionKey = String(activeSessionId || '')" in ui_api
+    assert "const startupClinicalRestoreScheduled = startupSessionKey !== ''" in ui_api
+    assert "const restoreSessionKey = String(activeSessionId || '')" in ui_api
+    assert "const restoreAlreadyScheduled = restoreSessionKey !== ''" in ui_api
+    assert (
+        "String(window.__workspaceRestoreScheduledSessionId || '') === startupSessionKey"
+        in ui_api
+    )
+    assert (
+        "String(window.__workspaceRestoreCompletedSessionId || '') === restoreSessionKey"
+        in ui_api
+    )
 
 
 def test_session_restore_fits_all_viewers_with_authoritative_session_guard():
@@ -671,8 +708,8 @@ def test_background_hydration_cannot_overwrite_authoritative_case_data_with_a_ui
 def test_cold_start_uses_the_same_clinical_restore_contract_as_session_switch():
     """A compact startup snapshot must never masquerade as decoded CT data."""
     workspace = read("web/app/static/js/brachybot-workspace.js")
-    startup = workspace.split("window.loadSessions =", 1)[1].split(
-        "window.saveSessions =", 1
+    startup = workspace.split("async function loadSessions", 1)[1].split(
+        "window.loadSessions = function (options = {})", 1
     )[0]
     assert "authoritativeChat: true" in startup
     assert "preserveClinicalData: true" in startup
@@ -797,8 +834,12 @@ def test_chat_connection_placeholder_does_not_claim_a_router_execution():
     """A local/direct turn must not leave a false Multi-Agent Router row."""
     chat_todo = read("web/app/static/js/brachybot-chat-todo.js")
     index = read("web/app/index.html")
-    assert "title: zh ? '\\u8bf7\\u6c42\\u5206\\u6790' : 'Request analysis'" in chat_todo
-    assert "Determining execution path..." in chat_todo
+    assert "title: zh ? '\\u8fde\\u63a5\\u4e0e\\u51c6\\u5907' : 'Connecting & preparing'" in chat_todo
+    assert "Connecting to the server..." in chat_todo
+    # The row updates to the real phase once the task handshake lands; it
+    # must not keep claiming that "analysis" is running while the server is
+    # still preparing the case context.
+    assert "Connected; preparing the case context..." in chat_todo
     assert "title: zh ? '\\u591a\\u667a\\u80fd\\u4f53\\u8def\\u7531' : 'Multi-Agent Router'" not in chat_todo
     assert re.search(r"static/js/brachybot-chat-todo\.js\?v=\d+", index)
 
@@ -2190,3 +2231,56 @@ def test_loading_spinners_are_transformable_and_stay_live_in_reduced_motion():
         assert "transform-origin: center;" in match.group(1)
     assert "animation-name: spin !important;" in report_css
     assert "animation-name: reportCaptureSpin !important;" in report_css
+
+
+def test_chat_failures_are_classified_instead_of_blaming_session_loading():
+    """Hydration, commit, and busy-case failures must explain their real cause."""
+    chat_todo = read("web/app/static/js/brachybot-chat-todo.js")
+    for code in (
+        "workspace_hydration_failed",
+        "workspace_hydration_timeout",
+        "workspace_hydration_cancelled",
+        "commit_failed",
+        "chat_task_running",
+    ):
+        assert code in chat_todo
+    # A repeated server step (hydration progress heartbeats) updates in place.
+    assert "item._serverId === step.id || item.id === step.id" in chat_todo
+    # A failed turn must not leave a visible "Response delivered" row.
+    assert "row.status = 'error'" in chat_todo
+    assert "_chatUserVisibleFailure(turnSessionId, 'request', serverCode)" in chat_todo
+    assert "_chatUserVisibleFailure(turnSessionId, 'request', failureCode)" in chat_todo
+
+    routes = read("web/routes/planning_routes.py")
+    assert "raise ChatTaskError(" in routes
+    assert "raise ChatTaskCancelled(" in routes
+    assert "ready_event.wait(timeout=2.0)" in routes
+    assert "workspace_hydration_timeout" in routes
+    # The clinical wait is progress-aware; the old hard 120 s total cap is gone.
+    assert "did not finish within 120s" not in routes
+
+
+def test_server_logs_to_disk_for_offline_failure_diagnosis():
+    server = read("web/server.py")
+    assert "def _configure_file_logging" in server
+    assert "BRACHYBOT_SERVER_LOG" in server
+    assert "RotatingFileHandler" in server
+    assert "_configure_file_logging()" in server
+
+def test_partial_visual_restore_does_not_block_evidence_capture():
+    """A failed optional restore task must not freeze screenshots forever."""
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+
+    assert "'visual_restore_partial'" in ui_api
+    assert "visual_restore_partial_with_live_scene" in ui_api
+    assert "window._activeWorkspaceSnapshot, requestedSession)) {" in ui_api
+
+def test_a_finished_report_releases_the_chat_turn_within_a_bounded_wait():
+    """Figure capture/persist may continue after the report is visible; the
+    chat must neither hang nor call a still-running action a failure."""
+    chat = read("web/app/static/js/brachybot-chat-todo.js")
+
+    assert "const CHAT_UI_ACTION_MAX_WAIT_MS = 30000;" in chat
+    assert "const allSettled = Promise.allSettled(uiActionTasks).then(() => true);" in chat
+    assert "uiActionsStillRunning = (await Promise.race([allSettled, capped])) === false;" in chat
+    assert "const reportActionFailed = !uiActionsStillRunning" in chat

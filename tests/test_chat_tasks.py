@@ -9,7 +9,10 @@ from web.chat_tasks import (
     MAX_TASK_JOURNAL_EVENTS,
     MAX_TASK_STEPS,
     ChatTask,
+    ChatTaskCancelled,
+    ChatTaskError,
     ChatTaskManager,
+    _supplier_accepts_progress,
 )
 from web.server import _case_has_running_chat_task
 
@@ -691,6 +694,7 @@ def test_failed_case_commit_never_emits_a_false_done_event():
     assert task.result_committed is False
     assert not any(item.startswith("event: done") for item in events)
     assert any("Case results could not be saved" in item for item in events)
+    assert any('"code": "commit_failed"' in item for item in events)
 
 
 def test_task_steps_and_cancel_event_remain_bounded_after_overflow():
@@ -711,3 +715,138 @@ def test_task_steps_and_cancel_event_remain_bounded_after_overflow():
     replayed = list(task.iter_events(0))
     assert len(replayed) == MAX_TASK_JOURNAL_EVENTS
     assert replayed[-1] == _event("done", {"cancelled": True})
+
+
+def test_supplier_progress_detection_keeps_the_zero_arg_contract():
+    """Existing zero-argument suppliers must keep working unchanged."""
+    assert _supplier_accepts_progress(lambda: None) is False
+    assert _supplier_accepts_progress(lambda progress: None) is True
+    assert _supplier_accepts_progress(lambda *args: None) is True
+
+
+def test_hydration_wait_reports_progress_on_one_step_and_completes():
+    """A cold turn shows one live hydration row, then runs the workflow."""
+    manager = ChatTaskManager(retention_seconds=300)
+    agent = _Agent([
+        _event("response", {"response": "hydrated"}),
+        _event("done", {}),
+    ])
+    agent._workspace_data_ready = False
+    received = []
+
+    def supplier(progress):
+        received.append(progress)
+        assert callable(progress) is True
+        assert progress({"phase": "metadata"}) is True
+        assert progress({"phase": "ct"}) is True
+        agent._workspace_data_ready = True
+        assert progress({"phase": "ready"}) is True
+        return agent
+
+    task = manager.start(
+        _App(), "user-a", "case-a", None, "hello", {},
+        agent_supplier=supplier,
+        response_language="zh",
+    )
+
+    deadline = time.time() + 2
+    while task.status == "running" and time.time() < deadline:
+        time.sleep(0.01)
+
+    assert task.status == "completed"
+    assert received and callable(received[0])
+    hydration_steps = [step for step in task.steps if step.get("tool") == "workspace_hydration"]
+    assert hydration_steps
+    assert len({step["id"] for step in hydration_steps}) == 1
+    assert hydration_steps[0]["status"] == "pending"
+    assert hydration_steps[-1]["status"] == "done"
+    assert hydration_steps[-1]["content"] == "病例资源已恢复。"
+    assert any(step.get("content") == "正在加载 CT 影像…" for step in hydration_steps)
+    assert not any(item.startswith("event: error") for item in task.iter_events(0))
+
+
+def test_metadata_shell_completion_reports_background_loading():
+    """Small talk may answer on the shell; the row must not claim a full restore."""
+    manager = ChatTaskManager(retention_seconds=300)
+    agent = _Agent([
+        _event("response", {"response": "hi"}),
+        _event("done", {}),
+    ])
+    agent._workspace_data_ready = False
+
+    def supplier(progress):
+        assert progress({"phase": "background"}) is True
+        return agent
+
+    task = manager.start(
+        _App(), "user-a", "case-a", None, "hello", {},
+        agent_supplier=supplier,
+        response_language="zh",
+    )
+
+    deadline = time.time() + 2
+    while task.status == "running" and time.time() < deadline:
+        time.sleep(0.01)
+
+    assert task.status == "completed"
+    hydration_steps = [step for step in task.steps if step.get("tool") == "workspace_hydration"]
+    assert hydration_steps[-1]["status"] == "done"
+    assert "后台加载" in hydration_steps[-1]["content"]
+
+
+def test_cold_hydration_failure_is_classified_and_marks_the_step():
+    """A cold hydration failure explains itself instead of blaming a generic timeout."""
+    manager = ChatTaskManager(retention_seconds=300)
+
+    def supplier(progress):
+        assert progress({"phase": "ct"}) is True
+        raise ChatTaskError(
+            "CT decode failed",
+            code="workspace_hydration_failed",
+            phase="ct",
+            retryable=True,
+        )
+
+    task = manager.start(
+        _App(), "user-a", "case-a", None, "hello", {},
+        agent_supplier=supplier,
+        response_language="zh",
+    )
+
+    deadline = time.time() + 2
+    while task.status == "running" and time.time() < deadline:
+        time.sleep(0.01)
+
+    assert task.status == "failed"
+    events = list(task.iter_events(0))
+    assert any('"code": "workspace_hydration_failed"' in item for item in events)
+    assert any('"phase": "ct"' in item for item in events)
+    hydration_steps = [step for step in task.steps if step.get("tool") == "workspace_hydration"]
+    assert hydration_steps[-1]["status"] == "error"
+    assert hydration_steps[-1]["content"] == "CT decode failed"
+
+
+def test_cancelled_hydration_wait_is_not_reported_as_an_error():
+    """Stop during case loading ends the turn without a false failure bubble."""
+    manager = ChatTaskManager(retention_seconds=300)
+
+    def supplier(progress):
+        assert progress({"phase": "ct"}) is True
+        raise ChatTaskCancelled("Stopped while the case was loading")
+
+    task = manager.start(
+        _App(), "user-a", "case-a", None, "hello", {},
+        agent_supplier=supplier,
+        response_language="zh",
+    )
+
+    deadline = time.time() + 2
+    while task.status == "running" and time.time() < deadline:
+        time.sleep(0.01)
+
+    assert task.status == "cancelled"
+    events = list(task.iter_events(0))
+    assert not any(item.startswith("event: error") for item in events)
+    hydration_steps = [step for step in task.steps if step.get("tool") == "workspace_hydration"]
+    assert hydration_steps[-1]["status"] == "error"
+    assert hydration_steps[-1]["content"] == "已停止。"

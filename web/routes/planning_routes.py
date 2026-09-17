@@ -27,7 +27,7 @@ from plans.dose_pre.model_loader import (
 )
 from memory.language import detect as detect_language, normalize_language
 from web.auth import current_user
-from web.chat_tasks import ChatTask, ChatTaskManager
+from web.chat_tasks import ChatTask, ChatTaskCancelled, ChatTaskError, ChatTaskManager
 from web.workspace_store import WorkspaceError, WorkspaceQuotaExceeded, WorkspaceNotFound
 from web.uploaded_mask_service import UploadedMaskError, stage_uploaded_ctv_mask
 from web.viewer_cache import (
@@ -1773,6 +1773,87 @@ def _chat_requires_full_workspace(message: str, image_path: str = "") -> bool:
         elif term in text:
             return True
     return False
+
+
+# A cold case may be installing its metadata shell in another request thread.
+# Wait for that install instead of treating it as unavailable resources.
+_CHAT_AGENT_RESOLVE_TIMEOUT_SECONDS = 120.0
+# Bound "no progress at all" instead of total hydration time: large CTs and
+# busy disks legitimately take minutes, while a stalled decoder must not pin
+# the case task slot forever. Progress heartbeats keep the browser stream
+# alive in the meantime.
+_CHAT_HYDRATION_STALL_TIMEOUT_SECONDS = float(
+    os.environ.get("BRACHYBOT_CHAT_HYDRATION_STALL_SECONDS", "300") or 300
+)
+
+
+def await_chat_case_resources(agent, report, *, session_id: str = "") -> None:
+    """Wait until a lightweight case Agent has its clinical arrays.
+
+    ``report(phase)`` publishes progress and returns ``False`` when the turn
+    was cancelled. The wait is progress-aware: it is bounded by "no phase
+    change for ``_CHAT_HYDRATION_STALL_TIMEOUT_SECONDS``", not by a total
+    time cap, so a large CT on a busy disk may finish while a stalled decoder
+    still fails the turn with a precise code. Cancellation, hydration errors,
+    and superseded restores each raise their own classified error.
+    """
+    ready_event = getattr(agent, "_workspace_ready_event", None)
+    last_phase = ""
+    last_progress_at = time.monotonic()
+    while not getattr(agent, "_workspace_data_ready", False):
+        phase = str(getattr(agent, "_workspace_hydration_phase", "") or "artifacts")
+        if phase != last_phase:
+            last_phase = phase
+            last_progress_at = time.monotonic()
+        if not report(phase):
+            raise ChatTaskCancelled("Stopped while the case was loading")
+        hydration_error = str(getattr(agent, "_workspace_hydration_error", "") or "")
+        if hydration_error:
+            raise ChatTaskError(
+                hydration_error,
+                code="workspace_hydration_failed",
+                phase=phase,
+                retryable=True,
+            )
+        if getattr(
+            agent, "_workspace_hydration_superseded", False
+        ) and not getattr(agent, "_workspace_hydration_in_progress", False):
+            raise ChatTaskError(
+                "Case resources were reloaded for another action",
+                code="workspace_hydration_cancelled",
+                phase=phase,
+                retryable=True,
+            )
+        if not getattr(agent, "_workspace_hydration_in_progress", False):
+            raise ChatTaskError(
+                "Case resource loading stopped before completion",
+                code="workspace_hydration_failed",
+                phase=phase,
+                retryable=True,
+            )
+        if ready_event is not None:
+            if ready_event.wait(timeout=2.0):
+                # A resolved event can precede a retry generation; avoid a
+                # tight spin while the state above is re-evaluated.
+                time.sleep(0.25)
+        else:
+            time.sleep(2.0)
+        if (
+            time.monotonic() - last_progress_at
+            > _CHAT_HYDRATION_STALL_TIMEOUT_SECONDS
+        ):
+            logger.warning(
+                "Full case hydration made no progress for %.0fs session=%s phase=%s",
+                _CHAT_HYDRATION_STALL_TIMEOUT_SECONDS,
+                session_id,
+                phase,
+            )
+            raise ChatTaskError(
+                "Case resources are still loading",
+                code="workspace_hydration_timeout",
+                phase=phase,
+                retryable=True,
+            )
 
 
 def register_planning_routes(
@@ -7122,35 +7203,75 @@ def register_planning_routes(
             full_message = f"{message}\n\n[Uploaded image path: {image_path}]"
 
         if stream:
-            def agent_supplier():
-                resolved = (
-                    get_agent_for_owner(owner, session_id, _lightweight=True)
-                    if callable(get_agent_for_owner)
-                    else get_agent(session_id, _lightweight=True)
+            def agent_supplier(progress=None):
+                """Resolve the case Agent, waiting visibly only when needed.
+
+                ``progress`` is supplied by the chat worker: it publishes
+                throttled hydration progress and returns ``False`` once the
+                turn has been cancelled (Stop, delete, or case switch).
+                """
+                def report(phase):
+                    if callable(progress):
+                        return bool(progress({"phase": phase}))
+                    return True
+
+                def resolve():
+                    return (
+                        get_agent_for_owner(owner, session_id, _lightweight=True)
+                        if callable(get_agent_for_owner)
+                        else get_agent(session_id, _lightweight=True)
+                    )
+
+                resolved = resolve()
+                if resolved is None:
+                    # A cold case may be installing its metadata shell in
+                    # another request thread. Treat "installing" as progress
+                    # and retry instead of failing the turn as if the case
+                    # had no resources.
+                    resolve_deadline = (
+                        time.monotonic() + _CHAT_AGENT_RESOLVE_TIMEOUT_SECONDS
+                    )
+                    while resolved is None:
+                        if not report("initializing"):
+                            raise ChatTaskCancelled("Stopped before the case was ready")
+                        if time.monotonic() >= resolve_deadline:
+                            raise ChatTaskError(
+                                "Case resources are not available",
+                                code="workspace_hydration_failed",
+                                phase="initializing",
+                                retryable=True,
+                            )
+                        time.sleep(0.25)
+                        resolved = resolve()
+                hydration_error = str(
+                    getattr(resolved, "_workspace_hydration_error", "") or ""
                 )
-                # A chat task already exposes a visible hydration step. Wait
-                # on the case-owned readiness event here rather than blocking
-                # the HTTP/SSE handshake in get_agent while large arrays load.
-                ready_event = getattr(resolved, "_workspace_ready_event", None) if resolved is not None else None
-                if resolved is not None and not getattr(resolved, "_workspace_data_ready", True):
+                if hydration_error:
+                    raise ChatTaskError(
+                        hydration_error,
+                        code="workspace_hydration_failed",
+                        phase=str(
+                            getattr(resolved, "_workspace_hydration_phase", "failed")
+                            or "failed"
+                        ),
+                        retryable=True,
+                    )
+                if not getattr(resolved, "_workspace_data_ready", True):
                     # Low-risk knowledge/status turns can use the JSON
-                    # metadata shell immediately.  Only clinical actions wait
-                    # for arrays, and the wait is bounded so a damaged CT or
-                    # stalled decoder cannot leave a chat spinner forever.
+                    # metadata shell immediately. Only clinical actions wait
+                    # for arrays, and the wait is progress-aware so a damaged
+                    # CT or stalled decoder cannot leave a chat spinner
+                    # forever.
                     if not _chat_requires_full_workspace(message, image_path):
+                        report("background")
                         logger.info(
                             "Using metadata-only case shell for lightweight chat session=%s",
                             session_id,
                         )
                     else:
-                        if ready_event is not None:
-                            ready_event.wait(timeout=120)
-                        if not getattr(resolved, "_workspace_data_ready", False):
-                            logger.warning(
-                                "Full case hydration did not finish within 120s session=%s",
-                                session_id,
-                            )
-                            return None
+                        await_chat_case_resources(
+                            resolved, report, session_id=session_id
+                        )
                 if resolved is not None and clear_context:
                     resolved.memory.clear_conversation()
                 return resolved

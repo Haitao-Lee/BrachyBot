@@ -103,6 +103,9 @@ def main():
     app = create_app()
     configure_public_app(app, host)
     serve(app, host="127.0.0.1", port=port, threads=threads,
+          # Memory-mapped case arrays legitimately hold ~1000 descriptors; the
+          # default select(2) loop dies above FD_SETSIZE (1023).
+          asyncore_use_poll=True,
           trusted_proxy="127.0.0.1", trusted_proxy_count=1,
           trusted_proxy_headers={"x-forwarded-for", "x-forwarded-proto"},
           clear_untrusted_proxy_headers=True, channel_timeout=3600,

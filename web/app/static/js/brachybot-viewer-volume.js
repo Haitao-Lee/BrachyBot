@@ -1348,8 +1348,37 @@ async function hydrateGenericMasksFromServer(scope, retryAttempt = 0) {
             );
         }
         if (Array.isArray(payload.uploads)) {
-            dataTreeState.uploadMasks = payload.uploads;
-            const quarantinedUpload = payload.uploads.find(upload =>
+            const uploadRows = payload.uploads.map(upload => {
+                if (!upload || typeof upload !== 'object') return upload;
+                const refs = [
+                    upload.mask_id, upload.maskId, upload.object_id,
+                    upload.objectId, upload.data_tree_node_id,
+                    upload.dataTreeNodeId,
+                    'mask:' + (upload.mask_id || upload.maskId || ''),
+                ].map(value => String(value || '').trim()).filter(Boolean);
+                const restored = refs
+                    .map(ref => window.getWorkspacePresentationForNode?.({
+                        id: ref,
+                        objectId: ref,
+                        nodeId: ref,
+                        family: 'mask',
+                        sessionId: scopeSessionId,
+                    }))
+                    .find(value => value && typeof value === 'object');
+                if (!restored) return upload;
+                const nextUpload = { ...upload };
+                [
+                    'visible', 'visible2D', 'visible3D', 'opacity', 'color',
+                    'material', 'locked', 'standaloneVisible',
+                ].forEach(key => {
+                    if (Object.prototype.hasOwnProperty.call(restored, key)) {
+                        nextUpload[key] = restored[key];
+                    }
+                });
+                return nextUpload;
+            });
+            dataTreeState.uploadMasks = uploadRows;
+            const quarantinedUpload = uploadRows.find(upload =>
                 upload && (upload.status === 'rejected' || upload.status === 'partially_quarantined'),
             );
             if (quarantinedUpload) {
@@ -3383,6 +3412,17 @@ async function hydrateDataTreeArtifactCatalog({ force = false } = {}) {
                 .filter(item => ['report_data', 'report', 'report_figure', 'screenshot'].includes(
                     String(item?.data_type || ''),
                 ))
+                .filter(item => {
+                    // The endpoint is Session-scoped, but keep the browser
+                    // side defensive against a stale/proxy response.  An
+                    // explicit foreign owner must never enter the active
+                    // Data Tree and later become a report-figure fallback.
+                    const owner = String(
+                        item?.session_id || item?.sessionId
+                        || item?.case_id || item?.caseId || '',
+                    ).trim();
+                    return !owner || owner === sessionId;
+                })
                 .map((item, index) => ensureDataTreeNodeMetadata({
                     id: `artifact_${index + 1}`,
                     objectId: String(item.object_id),
@@ -3394,6 +3434,14 @@ async function hydrateDataTreeArtifactCatalog({ force = false } = {}) {
                     opacity: 1,
                     color: ['screenshot', 'report_figure'].includes(item.data_type)
                         ? '#38bdf8' : '#a78bfa',
+                    sessionId: String(
+                        item.session_id || item.sessionId
+                        || item.case_id || item.caseId || sessionId,
+                    ),
+                    caseId: String(
+                        item.case_id || item.caseId
+                        || item.session_id || item.sessionId || sessionId,
+                    ),
                     planningId: item.planning_id,
                     dataVersion: item.data_version,
                     sha256: item.sha256 || item.metadata?.sha256 || item.metadata?.view_metadata?.sha256 || null,
@@ -5177,7 +5225,7 @@ function renderDataTree() {
                 </div>
                 <div class="tree-group-items planning-history-artifacts">`;
             artifactRows.forEach(([key, label, status, lifecycle]) => {
-                html += `<div class="tree-item planning-history-artifact" data-node-id="planning:${escHtml(runId)}:${escHtml(key)}" data-node-type="planning_artifact" data-planning-id="${escHtml(runId)}"
+                html += `<div class="tree-item planning-history-artifact" data-node-id="planning:${escHtml(runId)}:${escHtml(key)}" data-node-type="planning_artifact" data-live-node="false" data-visual-target="false" data-source="planning_history" data-planning-id="${escHtml(runId)}"
                     data-artifact-key="${escHtml(key)}" data-status="${escHtml(lifecycle)}"
                     onclick="activatePlanningRunFromTree(${runArg})" title="Activate ${escHtml(runLabel)} to show this artifact">
                     <span style="color:${lifecycle === 'ready' ? 'var(--accent-green, #38d39f)' : 'var(--text-dim)'};">${lifecycle === 'ready' ? '&#9679;' : '&#9675;'}</span>
@@ -5511,7 +5559,7 @@ function renderTreeItem(id, itemState, info) {
     const statusLabel = itemState.status && itemState.status !== 'ready'
         ? `<span class="item-status item-status-${itemState.status}" title="${escHtml(itemState.error || itemState.status)}">${escHtml(_dtStatusText(itemState.status))}</span>`
         : '';
-    return `<div class="tree-item ${isCt ? 'tree-item--ct' : ''} ${selectedClass}" data-node-id="${escHtml(itemState.nodeId || id)}" data-object-id="${escHtml(itemState.objectId || id)}" data-node-type="${escHtml(itemState.type || 'visual') }" data-status="${escHtml(itemState.status || 'ready')}" data-visible="${itemState.visible !== false}" data-visible-2d="${itemState.visible2D !== false}" data-visible-3d="${itemState.visible3D !== false}" ${loadedClass} ${indent} ${dataAttr}
+    return `<div class="tree-item ${isCt ? 'tree-item--ct' : ''} ${selectedClass}" data-node-id="${escHtml(itemState.nodeId || id)}" data-object-id="${escHtml(itemState.objectId || id)}" data-node-type="${escHtml(itemState.type || 'visual') }" data-source="${escHtml(itemState.source || '')}" data-planning-id="${escHtml(itemState.planningId || itemState.planning_id || '')}" data-live-node="true" data-visual-target="true" data-status="${escHtml(itemState.status || 'ready')}" data-visible="${itemState.visible !== false}" data-visible-2d="${itemState.visible2D !== false}" data-visible-3d="${itemState.visible3D !== false}" ${loadedClass} ${indent} ${dataAttr}
         onclick="handleTreeItemClick('${id}', event)"
         oncontextmenu="event.preventDefault();event.stopPropagation();handleTreeItemRightClick('${id}', event)">
         <button class="eye-btn ${eyeClass}" onclick="event.stopPropagation();toggleDataVisibility('${id}')" ${disabledAttr}>${eyeIcon}</button>
@@ -5532,7 +5580,7 @@ function renderArtifactTreeItem(itemState) {
     const typeLabel = itemState.dataType === 'screenshot'
         ? _dtText('截图', 'Screenshot')
         : _dtText('报告', 'Report');
-    return `<div class="tree-item ${selectedClass}" data-node-id="${escHtml(itemState.nodeId || id)}" data-object-id="${escHtml(itemState.objectId || id)}" data-node-type="${escHtml(itemState.type || 'artifact')}" data-status="${escHtml(itemState.status || 'ready')}" data-visible="${itemState.visible !== false}" data-visible-2d="${itemState.visible2D !== false}" data-visible-3d="${itemState.visible3D !== false}"
+    return `<div class="tree-item ${selectedClass}" data-node-id="${escHtml(itemState.nodeId || id)}" data-object-id="${escHtml(itemState.objectId || id)}" data-node-type="${escHtml(itemState.type || 'artifact')}" data-source="${escHtml(itemState.source || 'artifact')}" data-live-node="true" data-visual-target="true" data-status="${escHtml(itemState.status || 'ready')}" data-visible="${itemState.visible !== false}" data-visible-2d="${itemState.visible2D !== false}" data-visible-3d="${itemState.visible3D !== false}"
         onclick="handleTreeItemClick('${id}', event)"
         oncontextmenu="event.preventDefault();event.stopPropagation();handleTreeItemRightClick('${id}', event)">
         <span class="color-swatch" style="background:${itemState.color};pointer-events:none;"></span>

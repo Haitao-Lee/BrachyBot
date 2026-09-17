@@ -16,11 +16,13 @@ and DICOM import paths.  Do not add ad-hoc RAS/LPS flips in this module.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import io
 import json
 import logging
 import math
+import os
 import re
 import struct
 import time
@@ -32,9 +34,85 @@ from plans.guide_geometry import (
     DEFAULT_GUIDE_CHANNEL_RADIUS_MM,
     GUIDE_BORE_MARGIN_MM,
 )
+from utils.cancellation import raise_if_cancelled
 
 
 logger = logging.getLogger(__name__)
+
+
+def _guide_fast_path() -> bool:
+    """Keep an operational rollback for the exact geometry optimizations."""
+    return os.environ.get("BRACHYBOT_GUIDE_FAST_PATH", "1") != "0"
+
+
+def _occupied_box(mask):
+    """Find a tight box without allocating an N-by-3 array of occupied voxels."""
+    ranges = [np.flatnonzero(np.any(mask, axis=tuple(a for a in range(3) if a != d)))
+              for d in range(3)]
+    if any(not len(r) for r in ranges):
+        return tuple(slice(0, 0) for _ in range(3))
+    return tuple(slice(int(r[0]), int(r[-1]) + 1) for r in ranges)
+
+
+def _repair_morphology(mask, *, opening=False):
+    """Same one-iteration morphology on the occupied box plus its full halo."""
+    from scipy import ndimage
+    structure = (np.ones((3, 3, 3), dtype=bool) if opening
+                 else ndimage.generate_binary_structure(3, 1))
+    operation = ndimage.binary_opening if opening else ndimage.binary_closing
+    if not _guide_fast_path():
+        return operation(mask, structure=structure, iterations=1)
+    bounds = _occupied_box(mask)
+    # Each elementary dilation/erosion has radius one; both passes therefore
+    # have radius two. Clip to the real array edge to retain border_value=0.
+    box = tuple(slice(max(0, s.start - 2), min(n, s.stop + 2))
+                for s, n in zip(bounds, mask.shape))
+    result = np.zeros_like(mask, dtype=bool)
+    result[box] = operation(mask[box], structure=structure, iterations=1)
+    return result
+
+
+def _entry_patch_mask(plate_mask, entry_indices, radius):
+    """Intersect the plate with entry balls without querying the entire shell.
+
+    Entries retain their historical float32 quantization. Near the decision
+    boundary use the original cKDTree query, including its rounding behavior.
+    """
+    from scipy.spatial import cKDTree
+
+    result = np.zeros_like(plate_mask)
+    if not len(entry_indices):
+        return result
+    if not _guide_fast_path() or max(plate_mask.shape) >= 2**24:
+        points = np.argwhere(plate_mask)
+        if points.size:
+            distance, _ = cKDTree(entry_indices).query(points.astype(np.float32))
+            points = points[distance <= radius]
+            result[tuple(points.T)] = True
+        return result
+    shape = np.asarray(plate_mask.shape)
+    tree = cKDTree(entry_indices)
+    for entry in np.asarray(entry_indices, dtype=np.float64):
+        raise_if_cancelled()
+        lo = np.maximum(0, np.floor(entry - radius).astype(np.int64))
+        hi = np.minimum(shape, np.ceil(entry + radius).astype(np.int64) + 1)
+        if np.any(hi <= lo):
+            continue
+        box = tuple(slice(int(a), int(b)) for a, b in zip(lo, hi))
+        indices = np.nonzero(plate_mask[box] & ~result[box])
+        if not indices[0].size:
+            continue
+        offsets = [indices[d].astype(np.float64) + lo[d] - entry[d] for d in range(3)]
+        distance = np.sqrt(offsets[0]**2 + offsets[1]**2 + offsets[2]**2)
+        keep = distance <= radius
+        # The band is deliberately much wider than the arithmetic error;
+        # only these rare points pay for the historical nearest-entry query.
+        near = np.abs(distance - radius) <= 1e-10 * max(1.0, radius)
+        if np.any(near):
+            points = np.column_stack([indices[d][near] + lo[d] for d in range(3)])
+            keep[near] = tree.query(points.astype(np.float32))[0] <= radius
+        result[box][tuple(index[keep] for index in indices)] = True
+    return result
 
 
 class SurgicalGuideError(ValueError):
@@ -79,6 +157,12 @@ DEFAULT_GUIDE_PARAMETERS: Dict[str, Any] = {
 # A bounded history preserves clinically reviewable guide alternatives without
 # allowing repeated mesh generation to grow one case workspace without limit.
 MAX_SAVED_GUIDE_VERSIONS = 5
+
+# The request-time guide grid is sampled in independent z slabs. Bounded
+# parallel workers keep a large template crop responsive (an 836M-voxel grid
+# took ~117 s single-threaded and ~15 s with eight workers, with byte-identical
+# output) without saturating the shared planning server.
+GUIDE_RESAMPLE_MAX_WORKERS = 8
 
 # Stable identity for the exact CT-derived envelope used by guide generation.
 # The mask is persisted separately from the printable guide mesh because it is
@@ -2133,7 +2217,10 @@ def _cylinder_sdf_in_region(
     cylinder_start: np.ndarray,
     cylinder_end: np.ndarray,
     radius: float,
-) -> Tuple[np.ndarray, Tuple[slice, slice, slice]]:
+    *,
+    active_mask: Optional[np.ndarray] = None,
+    return_sparse: bool = False,
+) -> Any:
     """Evaluate an exact cylinder SDF on a tight local box, not the full grid.
 
     Returns the SDF values over a compact bounding box around the cylinder axis
@@ -2167,7 +2254,17 @@ def _cylinder_sdf_in_region(
     z = np.arange(zs, ze, dtype=np.float64)
     y = np.arange(ys, ye, dtype=np.float64)
     x = np.arange(xs, xe, dtype=np.float64)
-    zz, yy, xx = np.meshgrid(z, y, x, indexing="ij")
+    box = (slice(zs, ze), slice(ys, ye), slice(xs, xe))
+    active_indices = None
+    if active_mask is not None and _guide_fast_path():
+        active_indices = np.nonzero(active_mask[box])
+        zz = active_indices[0].astype(np.float64) + zs
+        yy = active_indices[1].astype(np.float64) + ys
+        xx = active_indices[2].astype(np.float64) + xs
+    else:
+        # Broadcast coordinates without allocating three full-volume grids.
+        # Keep the physical transform and arithmetic order exactly unchanged.
+        zz, yy, xx = np.meshgrid(z, y, x, indexing="ij", sparse=_guide_fast_path())
     scaled_x = xx * spacing[0]
     scaled_y = yy * spacing[1]
     scaled_z = zz * spacing[2]
@@ -2175,8 +2272,67 @@ def _cylinder_sdf_in_region(
     world_y = crop_origin[1] + direction[1, 0] * scaled_x + direction[1, 1] * scaled_y + direction[1, 2] * scaled_z
     world_z = crop_origin[2] + direction[2, 0] * scaled_x + direction[2, 1] * scaled_y + direction[2, 2] * scaled_z
     sdf = _flat_cylinder_sdf((world_x, world_y, world_z), cylinder_start, cylinder_end, radius)
-    box = (slice(zs, ze), slice(ys, ye), slice(xs, xe))
+    if active_indices is not None and return_sparse:
+        # Subtraction callers only need the values at currently-solid voxels;
+        # do not materialise a dense float64 field only to compare its inactive
+        # entries against zero.  The coordinate expressions above are exactly
+        # the historical active-mask path, so this changes storage, not the
+        # cylinder geometry or floating-point decision.
+        return sdf, box, active_indices
+    if active_indices is not None:
+        field = np.full((ze - zs, ye - ys, xe - xs), np.inf, dtype=np.float64)
+        field[active_indices] = sdf
+        sdf = field
     return sdf, box
+
+
+def _subtract_cylinder_from_mask(
+    solid: np.ndarray,
+    ct_image: Any,
+    lower_xyz: np.ndarray,
+    spacing_xyz: Sequence[float],
+    start: np.ndarray,
+    end: np.ndarray,
+    radius: float,
+    *,
+    retain_mask: Optional[np.ndarray] = None,
+) -> int:
+    """Remove one cylinder without materialising inactive SDF voxels.
+
+    ``retain_mask`` narrows the removal to a domain such as the plate. The
+    active indices are taken from ``solid`` before evaluating the unchanged
+    flat-cylinder formula, therefore this is exactly the same boolean
+    operation as ``solid[box] &= ~(retain_mask & (sdf <= 0))`` while avoiding
+    the dense float64 sentinel field used by the compatibility API.
+    """
+    region = _cylinder_sdf_in_region(
+        ct_image,
+        lower_xyz,
+        solid.shape,
+        spacing_xyz,
+        start,
+        end,
+        radius,
+        active_mask=solid,
+        return_sparse=True,
+    )
+    if len(region) == 3:
+        cylinder_sdf, box, active_indices = region
+        selected = cylinder_sdf <= 0.0
+        if retain_mask is not None:
+            selected &= np.asarray(retain_mask[box])[active_indices]
+        if bool(np.any(selected)):
+            local_solid = solid[box]
+            local_solid[tuple(index[selected] for index in active_indices)] = False
+        return int(np.count_nonzero(selected))
+
+    cylinder_sdf, box = region
+    selected = cylinder_sdf <= 0.0
+    if retain_mask is not None:
+        selected &= np.asarray(retain_mask[box], dtype=bool)
+    removed = np.asarray(solid[box], dtype=bool) & selected
+    solid[box] &= ~selected
+    return int(np.count_nonzero(removed))
 
 
 def _subtract_cylinder_specs_from_mask(
@@ -2194,19 +2350,15 @@ def _subtract_cylinder_specs_from_mask(
     sleeve-only bore and re-closing a channel at a sleeve intersection.
     """
     for spec in cylinder_specs:
-        start = np.asarray(spec["start"], dtype=np.float64)
-        end = np.asarray(spec["end"], dtype=np.float64)
-        radius = float(spec["radius_mm"])
-        cylinder_sdf, box = _cylinder_sdf_in_region(
+        _subtract_cylinder_from_mask(
+            solid,
             ct_image,
             lower_xyz,
-            solid.shape,
             spacing_xyz,
-            start,
-            end,
-            radius,
+            np.asarray(spec["start"], dtype=np.float64),
+            np.asarray(spec["end"], dtype=np.float64),
+            float(spec["radius_mm"]),
         )
-        solid[box] &= ~(cylinder_sdf <= 0.0)
     return solid
 
 
@@ -2345,6 +2497,17 @@ def _retain_largest_printable_component(
     from scipy import ndimage
 
     source = np.asarray(mask, dtype=bool)
+    if _guide_fast_path():
+        box = _occupied_box(source)
+        cropped = source[box]
+        if cropped.shape != source.shape:
+            # C-order scan and connectivity are unchanged when only all-zero
+            # exterior planes are omitted. Thus label-order tie breaking stays
+            # identical. Embed the retained component in the original lattice.
+            result = np.zeros_like(source)
+            retained, metadata = _retain_largest_printable_component(cropped, minimum_voxels)
+            result[box] = retained
+            return result, metadata
     structure = ndimage.generate_binary_structure(3, 1)
     labels, count = ndimage.label(source, structure=structure)
     input_voxels = int(np.count_nonzero(source))
@@ -2624,8 +2787,11 @@ def _face_component_count(mask: np.ndarray) -> int:
     """Count printable solids using face connectivity, not corner contact."""
     from scipy import ndimage
 
+    source = np.asarray(mask, dtype=bool)
+    if _guide_fast_path():
+        source = source[_occupied_box(source)]
     _labels, count = ndimage.label(
-        np.asarray(mask, dtype=bool),
+        source,
         structure=ndimage.generate_binary_structure(3, 1),
     )
     return int(count)
@@ -2748,7 +2914,10 @@ def _connect_plate_patch_components(
     plate = np.asarray(plate_mask, dtype=bool)
     solid = np.asarray(plate_patch, dtype=bool).copy()
     structure = ndimage.generate_binary_structure(3, 1)
-    labels, initial_count = ndimage.label(solid, structure=structure)
+    label_box = (_occupied_box(solid) if _guide_fast_path()
+                 else tuple(slice(0, n) for n in solid.shape))
+    label_origin = np.array([s.start for s in label_box], dtype=np.int64)
+    labels, initial_count = ndimage.label(solid[label_box], structure=structure)
     metadata: Dict[str, Any] = {
         "initial_component_count": int(initial_count),
         "final_component_count": int(initial_count),
@@ -2760,27 +2929,27 @@ def _connect_plate_patch_components(
     if initial_count <= 1:
         return solid, metadata
 
-    solid_points = np.argwhere(solid)
-    plate_points = np.argwhere(plate)
+    solid_points = np.argwhere(solid[label_box]) + label_origin
+    plate_points = None if _guide_fast_path() else np.argwhere(plate)
     entries = np.asarray(entry_indices_zyx, dtype=np.float64)
     spacing = np.asarray(spacing_zyx, dtype=np.float64)
-    if solid_points.size == 0 or plate_points.size == 0 or entries.size == 0:
+    if solid_points.size == 0 or not np.any(plate) or entries.size == 0:
         raise SurgicalGuideError("Guide plate components have no valid skin anchors")
 
     solid_tree = cKDTree(solid_points.astype(np.float32) * spacing.astype(np.float32))
     _distance, nearest = solid_tree.query(entries * spacing)
     entry_anchors = solid_points[np.asarray(nearest, dtype=np.int64)]
-    seeded_labels = labels[tuple(entry_anchors.T)]
+    seeded_labels = labels[tuple((entry_anchors - label_origin).T)]
     seeded_labels = np.unique(seeded_labels[seeded_labels > 0])
     # A sphere around an entry can touch a second folded or opposing body
     # surface.  Such a component has no needle anchor and must not become part
     # of the printed guide merely because it is larger than the speck filter.
-    solid &= np.isin(labels, seeded_labels)
-    labels, _seeded_count = ndimage.label(solid, structure=structure)
+    solid[label_box] &= np.isin(labels, seeded_labels)
+    labels, _seeded_count = ndimage.label(solid[label_box], structure=structure)
 
     anchor_by_label: Dict[int, np.ndarray] = {}
     for anchor in entry_anchors:
-        label = int(labels[tuple(anchor)])
+        label = int(labels[tuple(anchor - label_origin)])
         if label > 0 and label not in anchor_by_label:
             anchor_by_label[label] = np.asarray(anchor, dtype=np.int64)
     anchors = np.asarray(list(anchor_by_label.values()), dtype=np.int64)
@@ -2789,6 +2958,8 @@ def _connect_plate_patch_components(
         return solid, metadata
 
     bridge_edges = _minimum_spanning_edges(anchors.astype(np.float64) * spacing)
+    if plate_points is None:
+        plate_points = np.argwhere(plate)
     plate_points_float = plate_points.astype(np.float32)
     bridge_half_width = max(float(bridge_width_mm) / 2.0, float(np.max(spacing)))
     for source, target in bridge_edges:
@@ -2807,7 +2978,7 @@ def _connect_plate_patch_components(
             if selected.size:
                 solid[tuple(selected.T)] = True
 
-    _labels, final_count = ndimage.label(solid, structure=structure)
+    final_count = _face_component_count(solid)
     metadata.update({
         "final_component_count": int(final_count),
         "bridge_count": len(bridge_edges),
@@ -2819,6 +2990,22 @@ def _connect_plate_patch_components(
             "increase CT skin coverage or revise the distant needle groups"
         )
     return solid, metadata
+
+
+def _resample_worker_count(slab_count: int) -> int:
+    """Return the bounded worker count for guide grid slab sampling."""
+    if slab_count <= 1:
+        return 1
+    override = os.environ.get("BRACHYBOT_GUIDE_RESAMPLE_WORKERS", "").strip()
+    if override:
+        try:
+            configured = int(override)
+        except ValueError:
+            configured = 0
+        if configured > 0:
+            return max(1, min(configured, slab_count))
+    available = os.cpu_count() or 1
+    return max(1, min(GUIDE_RESAMPLE_MAX_WORKERS, available, slab_count))
 
 
 def _resample_mask_to_local_grid(
@@ -2878,22 +3065,52 @@ def _resample_mask_to_local_grid(
 
     # Sampling the complete coordinate volume at 0.2 mm can temporarily use
     # several gigabytes. Process z slabs with a bounded point count so guide
-    # detail does not trade away server responsiveness.
+    # detail does not trade away server responsiveness. Slabs are independent
+    # output ranges, so they are sampled by a small worker pool: a large
+    # template crop produced an 836M-voxel grid whose single-threaded scan
+    # blocked Stop and the next chat turn for about two minutes.
     plane_points = max(1, int(target_shape[1]) * int(target_shape[2]))
     slab_depth = max(1, min(int(target_shape[0]), 4_000_000 // plane_points))
-    for z_start in range(0, int(target_shape[0]), slab_depth):
+    slab_starts = list(range(0, int(target_shape[0]), slab_depth))
+
+    def _sample_slab(z_start: int) -> None:
+        raise_if_cancelled()
         z_stop = min(int(target_shape[0]), z_start + slab_depth)
         coordinates = np.meshgrid(axes[0][z_start:z_stop], axes[1], axes[2], indexing="ij")
+        slab_shape = (z_stop - z_start, int(target_shape[1]), int(target_shape[2]))
+        # ``map_coordinates`` returns float32 for this float32 SDF. Supplying
+        # the already allocated destination avoids a second slab-sized array
+        # and a copy into ``sampled_signed_distance`` while retaining the
+        # library's interpolation and rounding path.
+        sampled_distance = (
+            sampled_signed_distance[z_start:z_stop]
+            if sampled_signed_distance is not None
+            else np.empty(slab_shape, dtype=np.float32)
+        )
         sampled_distance = ndimage.map_coordinates(
             signed_distance,
             coordinates,
             order=1,
             mode="nearest",
             prefilter=False,
+            output=sampled_distance,
         )
         sampled_mask[z_start:z_stop] = sampled_distance <= 0.0
-        if sampled_signed_distance is not None:
-            sampled_signed_distance[z_start:z_stop] = sampled_distance
+
+    workers = _resample_worker_count(len(slab_starts))
+    if workers <= 1:
+        for z_start in slab_starts:
+            _sample_slab(z_start)
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(_sample_slab, z_start) for z_start in slab_starts]
+            try:
+                for future in futures:
+                    future.result()
+            except BaseException:
+                for future in futures:
+                    future.cancel()
+                raise
 
     result_spacing = tuple(float(value) for value in target_spacing)
     if sampled_signed_distance is not None:
@@ -2995,15 +3212,37 @@ def _mesh_from_mask(
     # the smallest guide feature (the needle bore) so the through-holes stay
     # open, and it never exceeds a fraction of a voxel on coarse grids.
     blur_sigma = min(0.4, 0.35 * float(np.min(spacing_zyx)))
-    field = _ndi.gaussian_filter(mask.astype(np.float64), sigma=blur_sigma)
-    padded = np.pad(field, 1, mode="constant", constant_values=0.0)
+    extraction_offset = np.zeros(3, dtype=np.int64)
+    binary_crop = (_guide_fast_path() and int(4.0 * blur_sigma + 0.5) == 0
+                   and np.asarray(mask).dtype == np.bool_
+                   and max(mask.shape) < 2**22 and np.all(spacing_xyz == spacing_xyz[0]))
+    if binary_crop:
+        box = _occupied_box(mask)
+        extraction_offset = np.array([s.start for s in box], dtype=np.int64)
+        mask = mask[box]
+    if _guide_fast_path() and int(4.0 * blur_sigma + 0.5) == 0:
+        # SciPy's default truncate=4 gives a radius-zero kernel here (including
+        # the default 0.2 mm lattice). The old float64 blur was exactly the
+        # binary input, then marching_cubes converted it to float32. Build that
+        # identical MC input directly, without three multi-GB float64 arrays.
+        padded = np.zeros(tuple(int(n) + 2 for n in mask.shape), dtype=np.float32)
+        padded[1:-1, 1:-1, 1:-1] = mask
+    else:
+        field = _ndi.gaussian_filter(mask.astype(np.float64), sigma=blur_sigma)
+        padded = np.pad(field, 1, mode="constant", constant_values=0.0)
     vertices_zyx, faces, _, _ = measure.marching_cubes(
         padded,
         level=0.5,
-        spacing=spacing_zyx,
+        spacing=(1., 1., 1.) if binary_crop else spacing_zyx,
         allow_degenerate=False,
         method="lewiner",
     )
+    if binary_crop:
+        # Binary MC vertices lie on integer/half-integer grid coordinates.
+        # Restore original grid coordinates BEFORE the historical spacing
+        # multiplication and float32 rounding, then smooth in the same frame.
+        vertices_zyx = ((vertices_zyx + extraction_offset).astype(np.float32)
+                        * np.asarray(spacing_zyx)).astype(np.float32)
     # Remove the one-voxel padding and transform local physical coordinates
     # through the CT direction matrix.  The local origin crossed SimpleITK's
     # canonical transform above, so this is equivalent to index-to-world for
@@ -3070,6 +3309,16 @@ def _smooth_mesh_vertices(
 
     smoothed = verts.copy()
     for _ in range(int(iterations)):
+        if _guide_fast_path():
+            # Preserve each original arithmetic operation and its ordering;
+            # reuse the sparse product buffer instead of four N-by-3 arrays.
+            for factor in (float(lambda_factor), mu):
+                change = np.asarray(adjacency.dot(smoothed))
+                change /= degree[:, None]
+                change -= smoothed
+                change *= factor
+                smoothed += change
+            continue
         neighbour_sum = np.asarray(adjacency.dot(smoothed))
         average = neighbour_sum / degree[:, None]
         # Positive lambda pass.
@@ -3161,6 +3410,20 @@ def _project_bore_walls(
             "radius_mm": float(spec["radius_mm"]),
         })
 
+    def conservative_bounds(start, end, margin):
+        # The large numerical halo deliberately trades a little pruning for
+        # safety at floating-point boundaries, including translated CT frames.
+        scale = max(1.0, float(np.max(np.abs(start))), float(np.max(np.abs(end))))
+        guard = float(margin) + scale * 1e-8
+        return np.minimum(start, end) - guard, np.maximum(start, end) + guard
+
+    if _guide_fast_path():
+        for protected in protected_bores:
+            protected["bounds"] = conservative_bounds(
+                protected["start"], protected["end"],
+                protected["radius_mm"] + 2.0 * cross_bore_guard_mm,
+            )
+
     def _inside_flat_cylinder(
         points: np.ndarray,
         start: np.ndarray,
@@ -3199,19 +3462,34 @@ def _project_bore_walls(
         axis = axis_vector / length
         relative = result - np.asarray(start, dtype=np.float64)
         axial = relative @ axis
-        radial_vector = relative - np.outer(axial, axis)
+        if _guide_fast_path():
+            # Keep the historical full GEMV (and its rounding), but only build
+            # radial vectors for vertices which can meet the wall predicate.
+            # radius + 2*tolerance also encloses both extended flat end caps.
+            lower, upper = conservative_bounds(start, end, float(radius) + 2.0 * tolerance)
+            possible = (axial >= -tolerance) & (axial <= length + tolerance)
+            # Avoid two N-by-3 comparison arrays plus strided axis reductions.
+            for dimension in range(3):
+                possible &= result[:, dimension] >= lower[dimension]
+                possible &= result[:, dimension] <= upper[dimension]
+            candidates = np.flatnonzero(possible)
+        else:
+            candidates = np.arange(len(result))
+        radial_vector = relative[candidates] - np.outer(axial[candidates], axis)
         radial = np.linalg.norm(radial_vector, axis=1)
         radial_error_before = np.abs(radial - float(radius))
         selected = (
-            (axial >= -tolerance)
-            & (axial <= length + tolerance)
+            (axial[candidates] >= -tolerance)
+            & (axial[candidates] <= length + tolerance)
             & (radial > 1e-8)
             & (radial_error_before <= tolerance)
         )
-        selected_indices = np.flatnonzero(selected)
+        selected_local = np.flatnonzero(selected)
+        selected_indices = candidates[selected_local]
+        selected_errors = radial_error_before[selected_local]
         protected_count = 0
         if selected_indices.size:
-            unit_radial = radial_vector[selected_indices] / radial[selected_indices, None]
+            unit_radial = radial_vector[selected_local] / radial[selected_local, None]
             # Keep the original axial coordinate.  Only the cross-sectional
             # radius is corrected, preserving the flat end faces and the
             # sleeve/plate intersection generated by the boolean volume.
@@ -3224,6 +3502,12 @@ def _project_bore_walls(
             for protected in protected_bores:
                 if protected["identity"] == identity:
                     continue
+                if _guide_fast_path():
+                    p_lower, p_upper = protected["bounds"]
+                    # Projected points are enclosed by the current wall's
+                    # conservative bounds, so disjoint boxes cannot conflict.
+                    if np.any(upper < p_lower) or np.any(lower > p_upper):
+                        continue
                 keep &= ~_inside_flat_cylinder(
                     candidate_points,
                     protected["start"],
@@ -3232,6 +3516,7 @@ def _project_bore_walls(
                 )
             protected_count = int(np.count_nonzero(~keep))
             selected_indices = selected_indices[keep]
+            selected_errors = selected_errors[keep]
             candidate_points = candidate_points[keep]
             if selected_indices.size:
                 result[selected_indices] = candidate_points
@@ -3248,7 +3533,7 @@ def _project_bore_walls(
             "radius_mm": float(radius),
             "length_mm": length,
             "projected_vertex_count": int(selected_indices.size),
-            "max_radius_error_before_mm": float(radial_error_before[selected_indices].max()) if selected_indices.size else 0.0,
+            "max_radius_error_before_mm": float(selected_errors.max()) if selected_indices.size else 0.0,
             "max_radius_error_after_mm": float(np.abs(radial_after - float(radius)).max()) if selected_indices.size else 0.0,
             "tolerance_mm": tolerance,
             "cross_bore_protected_vertex_count": protected_count,
@@ -3307,7 +3592,13 @@ def mesh_validation(vertices: np.ndarray, faces: np.ndarray) -> Dict[str, Any]:
         return {"valid": False, "watertight": False, "reason": "face_index_out_of_range"}
     edges = np.concatenate((faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]), axis=0)
     edges.sort(axis=1)
-    _, edge_counts = np.unique(edges, axis=0, return_counts=True)
+    if _guide_fast_path() and len(vertices) <= 2**32:
+        # Injective integer packing preserves exactly the unordered edge
+        # multiplicities; scalar uint64 sorting avoids structured-row sorting.
+        packed = (edges[:, 0].astype(np.uint64) << np.uint64(32)) | edges[:, 1].astype(np.uint64)
+        _, edge_counts = np.unique(packed, return_counts=True)
+    else:
+        _, edge_counts = np.unique(edges, axis=0, return_counts=True)
     watertight = bool(np.all(edge_counts == 2))
     open_edges = int(np.count_nonzero(edge_counts == 1))
     nonmanifold_edges = int(np.count_nonzero(edge_counts > 2))
@@ -3353,6 +3644,43 @@ def generate_surgical_guide(
     *,
     selected_needle_ids: Optional[Iterable[Any]] = None,
 ) -> Dict[str, Any]:
+    """Coalesce identical overlapping tool/API requests at their shared entry."""
+    from web.guide_generation_runtime import singleflight
+
+    if agent is None or not hasattr(agent, "memory"):
+        raise SurgicalGuideError("Agent is unavailable")
+    params = normalize_guide_parameters(raw_parameters)
+    selected = None if selected_needle_ids is None else list(selected_needle_ids)
+    if not _guide_fast_path():
+        return _generate_surgical_guide(agent, params, selected_needle_ids=selected)
+    memory = agent.memory
+    ct_image, ct_data = memory.retrieve("ct_image"), memory.retrieve("ct_data")
+    if ct_image is None or ct_data is None:
+        raise SurgicalGuideError("Load a CT image before generating a puncture guide")
+    data = np.ascontiguousarray(ct_data)
+    key = (
+        hashlib.sha256(data.view(np.uint8)).hexdigest(), data.shape, data.dtype.str,
+        tuple(ct_image.GetSpacing()), tuple(ct_image.GetOrigin()), tuple(ct_image.GetDirection()),
+        tuple(ct_image.GetSize()),
+        _read_active_planning_id(agent), str(memory.retrieve("manual_planning_id") or ""),
+        int(memory.retrieve("manual_plan_version") or 0),
+        planning_signature(_current_planning_snapshot(agent)),
+        planning_signature(_algorithm_planning_snapshot(agent)),
+        json.dumps(params, sort_keys=True),
+        None if selected is None else tuple(sorted(str(value) for value in selected)),
+    )
+    return singleflight(memory, key, lambda: _generate_surgical_guide(
+        agent, params, selected_needle_ids=selected, skin_cache_key=key[:7],
+    ))
+
+
+def _generate_surgical_guide(
+    agent: Any,
+    raw_parameters: Optional[Mapping[str, Any]] = None,
+    *,
+    selected_needle_ids: Optional[Iterable[Any]] = None,
+    skin_cache_key: Any = None,
+) -> Dict[str, Any]:
     """Generate a CT skin-fitting puncture guide from current planned needles.
 
     The guide is an implicit solid: an external skin-offset shell intersected
@@ -3365,19 +3693,24 @@ def generate_surgical_guide(
     if agent is None or not hasattr(agent, "memory"):
         raise SurgicalGuideError("Agent is unavailable")
     generation_started = time.perf_counter()
+    call_id = __import__("uuid").uuid4().hex[:12]
     stage_started = generation_started
     stage_timings: Dict[str, float] = {}
 
     def finish_stage(name: str, **details: Any) -> None:
         """Record one stage without retaining any large intermediate arrays."""
         nonlocal stage_started
+        # An explicit user Stop must abort the guide between stages as well as
+        # inside the long resample loop.
+        raise_if_cancelled()
         now = time.perf_counter()
         duration = round(now - stage_started, 3)
         stage_timings[name] = duration
         stage_started = now
         suffix = " ".join(f"{key}={value}" for key, value in details.items())
         logger.info(
-            "Surgical guide stage completed stage=%s duration_s=%.3f%s",
+            "Surgical guide stage completed call_id=%s stage=%s duration_s=%.3f%s",
+            call_id,
             name,
             duration,
             f" {suffix}" if suffix else "",
@@ -3389,26 +3722,34 @@ def generate_surgical_guide(
     ct_data = memory.retrieve("ct_data")
     if ct_image is None or ct_data is None:
         raise SurgicalGuideError("Load a CT image before generating a puncture guide")
-    raw_candidate = np.asarray(ct_data, dtype=np.float32) > float(
-        params["skin_threshold_hu"]
-    )
     # Detect finite-FOV caps from the original thresholded component before
     # binary closing or smoothing. Both operations can erode a one-voxel CT
     # face and erase the evidence that the acquisition was truncated.
     # Keep the unsmoothed component for finite-FOV safety decisions. Smoothing
     # is useful for printable skin geometry but can erase a one-voxel cap and
     # would make a true acquisition truncation look like an earlier skin exit.
-    raw_body_component = _largest_component(raw_candidate)
-    boundary_faces = _truncated_boundary_faces(raw_body_component)
-    body = _body_mask(np.asarray(ct_data), params["skin_threshold_hu"])
     # Smooth the body envelope so the guide plate follows a smooth skin
     # surface instead of the CT's slice steps (real CTs often have 5 mm
     # slices — far coarser than the 3 mm plate). Entries and the printable
     # shell must use the exact same smoothed envelope so the sleeves always
     # meet the exported plate.
-    body = _smooth_body_mask(body, source_spacing_zyx=tuple(
-        float(value) for value in np.asarray(ct_image.GetSpacing(), dtype=np.float64)[::-1]
-    ), sigma_mm=2.0)
+    def compute_skin():
+        raw_candidate = np.asarray(ct_data, dtype=np.float32) > float(params["skin_threshold_hu"])
+        raw = _largest_component(raw_candidate)
+        faces = _truncated_boundary_faces(raw)
+        envelope = _body_mask(np.asarray(ct_data), params["skin_threshold_hu"])
+        envelope = _smooth_body_mask(envelope, source_spacing_zyx=tuple(
+            float(value) for value in np.asarray(ct_image.GetSpacing(), dtype=np.float64)[::-1]
+        ), sigma_mm=2.0)
+        return raw, faces, envelope
+
+    if skin_cache_key is None:
+        raw_body_component, boundary_faces, body = compute_skin()
+    else:
+        from web.guide_generation_runtime import cached_skin
+        raw_body_component, boundary_faces, body = cached_skin(
+            memory, (skin_cache_key, float(params["skin_threshold_hu"]), 2.0), compute_skin,
+        )
     finish_stage("skin_envelope", source_shape=tuple(int(value) for value in body.shape))
     # Persist before the expensive guide CSG begins. Even when a downstream
     # manufacturability check rejects the guide mesh, the successfully derived
@@ -3471,12 +3812,40 @@ def generate_surgical_guide(
     # Reconstruct the local skin zero-level surface on the requested isotropic
     # physical grid. The CT is never globally resampled or written back; only
     # the bounded guide patch is sampled for CSG and STL extraction.
-    body_crop, spacing_zyx, skin_signed_distance = _resample_mask_to_local_grid(
-        body_crop,
-        source_spacing_zyx,
-        params["geometry_resolution_mm"],
-        return_signed_distance=True,
-    )
+    def compute_local_grid():
+        return _resample_mask_to_local_grid(
+            body_crop,
+            source_spacing_zyx,
+            params["geometry_resolution_mm"],
+            return_signed_distance=True,
+        )
+
+    if skin_cache_key is None:
+        body_crop, spacing_zyx, skin_signed_distance = compute_local_grid()
+    else:
+        # The resampled value depends on the CT-derived envelope, the exact
+        # inclusive source crop and the requested construction spacing. Keep
+        # every one of those inputs in the key; in particular, the CT hash
+        # alone is not enough because different needle selections produce
+        # different entry crops. The cache stores only immutable intermediate
+        # arrays and never a finished guide, so explicit regeneration and
+        # guide-version persistence remain unchanged.
+        from web.guide_generation_runtime import cached_resampled
+        resample_cache_key = (
+            "local-grid-sdf-v1",
+            skin_cache_key,
+            float(params["skin_threshold_hu"]),
+            tuple(int(value) for value in lower_zyx),
+            tuple(int(value) for value in upper_zyx),
+            source_spacing_zyx,
+            float(params["geometry_resolution_mm"]),
+            True,
+        )
+        body_crop, spacing_zyx, skin_signed_distance = cached_resampled(
+            memory,
+            resample_cache_key,
+            compute_local_grid,
+        )
     # The full skin mask is a first-class Data Tree segmentation, but it is
     # never allowed to define a printable cap at a finite CT boundary. Keep a
     # separate local safety domain for CSG instead of mutating the persisted
@@ -3534,20 +3903,11 @@ def generate_surgical_guide(
     # exact (the same continuous-index transform as the world grid) and avoids
     # the full-size per-entry squared-distance array pass.
     patch_radius_index = params["patch_margin_mm"] / float(spacing_zyx[0])
-    plate_voxel_indices = np.argwhere(plate_mask)
     entry_indices = np.array([
         _world_to_local_index_zyx(ct_image, lower_xyz, path.entry, spacing_xyz)
         for path in paths
     ], dtype=np.float32)
-    patch_mask = np.zeros_like(plate_mask)
-    if plate_voxel_indices.size:
-        from scipy.spatial import cKDTree
-
-        if len(entry_indices):
-            entry_tree = cKDTree(entry_indices)
-            distance, _ = entry_tree.query(plate_voxel_indices.astype(np.float32))
-            plate_voxel_indices = plate_voxel_indices[distance <= patch_radius_index]
-            patch_mask[tuple(plate_voxel_indices.T)] = True
+    patch_mask = _entry_patch_mask(plate_mask, entry_indices, patch_radius_index)
     solid = plate_mask & patch_mask
     solid, plate_connectivity = _connect_plate_patch_components(
         plate_mask,
@@ -3588,22 +3948,23 @@ def generate_surgical_guide(
             spec["skipped"] = True
             spec["skip_reason"] = support_reason
             continue
-        hole_sdf, box = _cylinder_sdf_in_region(
-            ct_image, lower_xyz, body_crop.shape, spacing_xyz,
+        removed_voxels = _subtract_cylinder_from_mask(
+            solid,
+            ct_image,
+            lower_xyz,
+            spacing_xyz,
             np.asarray(spec["start"], dtype=np.float64),
             np.asarray(spec["end"], dtype=np.float64),
             float(spec["radius_mm"]),
+            retain_mask=plate_mask,
         )
-        hole_mask = hole_sdf <= 0.0
-        removable = solid[box] & plate_mask[box] & hole_mask
-        if not bool(np.any(removable)):
+        if removed_voxels <= 0:
             # The requested alternate line can fall outside a sharply curved
             # or truncated patch. Record it as skipped rather than silently
             # claiming that a physical hole was generated.
             spec["skipped"] = True
             spec["skip_reason"] = "outside_plate_patch"
             continue
-        solid[box] &= ~(plate_mask[box] & hole_mask)
         realized_auxiliary_specs.append(spec)
     finish_stage(
         "auxiliary_holes",
@@ -3642,16 +4003,16 @@ def generate_surgical_guide(
     # the sleeve pass, while limiting the operation to plate voxels so no
     # primary sleeve wall can be damaged.
     for spec in realized_auxiliary_specs:
-        hole_sdf, box = _cylinder_sdf_in_region(
+        _subtract_cylinder_from_mask(
+            solid,
             ct_image,
             lower_xyz,
-            body_crop.shape,
             spacing_xyz,
             np.asarray(spec["start"], dtype=np.float64),
             np.asarray(spec["end"], dtype=np.float64),
             float(spec["radius_mm"]),
+            retain_mask=plate_mask,
         )
-        solid[box] &= ~(plate_mask[box] & (hole_sdf <= 0.0))
 
     # Pass 3: drill every main channel from the fully-unioned solid. The
     # cutter is deliberately longer than its own sleeve where another sleeve
@@ -3814,16 +4175,16 @@ def generate_surgical_guide(
             candidate &= boundary_safe_mask
 
             for spec in realized_auxiliary_specs:
-                hole_sdf, box = _cylinder_sdf_in_region(
+                _subtract_cylinder_from_mask(
+                    candidate,
                     ct_image,
                     lower_xyz,
-                    body_crop.shape,
                     spacing_xyz,
                     np.asarray(spec["start"], dtype=np.float64),
                     np.asarray(spec["end"], dtype=np.float64),
                     float(spec["radius_mm"]),
+                    retain_mask=plate_mask,
                 )
-                candidate[box] &= ~(hole_sdf <= 0.0)
             # Re-cut every primary channel after morphology.  In particular,
             # this keeps an opening/closing repair from restoring material at
             # a crossing sleeve or at a shared dense-channel intersection.
@@ -3914,11 +4275,7 @@ def generate_surgical_guide(
         # This is conservative for ordinary plate cracks and keeps the exact
         # previous behavior for sparse plans.
         repaired = try_mesh_repair_candidate(
-            ndimage.binary_closing(
-                solid,
-                structure=ndimage.generate_binary_structure(3, 1),
-                iterations=1,
-            ),
+            _repair_morphology(solid),
             "restricted_voxel_closing_and_bore_recut",
         )
 
@@ -3934,11 +4291,7 @@ def generate_surgical_guide(
         # trajectory or weakening the strict final QA.
         if not repaired and int(validation.get("nonmanifold_edges") or 0) > 0:
             try_mesh_repair_candidate(
-                ndimage.binary_opening(
-                    solid,
-                    structure=np.ones((3, 3, 3), dtype=bool),
-                    iterations=1,
-                ),
+                _repair_morphology(solid, opening=True),
                 "dense_channel_26_connected_opening_and_bore_recut",
             )
 

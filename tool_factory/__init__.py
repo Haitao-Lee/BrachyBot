@@ -13,6 +13,7 @@ import logging
 import time
 
 from utils.operation_tracker import track_operation
+from utils.cancellation import OperationCancelled
 from utils.user_errors import format_tool_error, normalize_metadata
 
 logger = logging.getLogger(__name__)
@@ -145,6 +146,16 @@ class BaseTool(ABC):
             result.execution_time = time.time() - start_time
             logger.info(f"Tool {self.name} completed in {result.execution_time:.2f}s")
             return result
+        except OperationCancelled:
+            # A cancelled turn must abort the tool promptly instead of being
+            # converted into a normal failed result that the agent loop would
+            # treat as a recoverable tool error and keep executing.
+            logger.info(
+                "Tool %s cancelled after %.2fs",
+                self.name,
+                time.time() - start_time,
+            )
+            raise
         except Exception as e:
             execution_time = time.time() - start_time
             logger.error(f"Tool {self.name} failed: {str(e)}")

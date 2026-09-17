@@ -183,6 +183,10 @@ def test_query_metrics_workspace_inputs_are_server_injected():
         "ct_data",
         "seed_positions",
         "total_seeds",
+        "num_trajectories",
+        "seed_plan_serialized",
+        "manual_seeds",
+        "seed_plan",
     ):
         assert properties[field]["x-server-injected"] is True
 
@@ -275,6 +279,79 @@ def test_agent_query_metrics_uses_live_workspace_values_without_numpy_truth_chec
     assert "oar_array" not in params
     assert isinstance(params["ct_spacing"], np.ndarray)
     assert isinstance(params["total_seeds"], np.integer)
+    assert memory.logged
+
+
+def test_agent_query_metrics_reports_needle_and_seed_distribution_from_plan():
+    """A per-needle plan must never be counted as one seed per needle."""
+    from AgenticSys import BrachyAgent
+    from agent_runtime.core import ToolRegistry
+    from tool_factory.viewer_command.query_metrics import QueryMetricsTool
+
+    needle_counts = [8, 13]
+    plan = []
+    serialized = []
+    for index, count in enumerate(needle_counts):
+        trajectory = ([0.0, 0.0, float(index)], [0.0, 0.0, float(index) + 1.0])
+        seeds = [
+            ((float(seed), 0.0, float(index)), (1.0, 0.0, 0.0))
+            for seed in range(count)
+        ]
+        plan.append([trajectory, seeds, []])
+        serialized.append({
+            "trajectory_id": f"traj_{index + 1}",
+            "seeds": [
+                {
+                    "position": [float(seed), 0.0, float(index)],
+                    "direction": [1.0, 0.0, 0.0],
+                }
+                for seed in range(count)
+            ],
+            "num_seeds": count,
+        })
+
+    class _Memory:
+        def __init__(self):
+            self.values = {
+                "dose_metrics": {"v100": 0.914, "d90": 122.5},
+                "seed_positions": plan,
+                "seed_plan_serialized": serialized,
+                "total_seeds": 21,
+                "num_trajectories": 2,
+            }
+            self.conversation_state = {"last_tool_calls": []}
+            self.logged = []
+
+        def retrieve(self, key):
+            return self.values.get(key)
+
+        def get_ui_state(self):
+            return {}
+
+        def store(self, key, value):
+            self.values[key] = value
+
+        def log_tool_call(self, *args):
+            self.logged.append(args)
+
+    memory = _Memory()
+    registry = ToolRegistry()
+    registry.register(QueryMetricsTool())
+    agent = object.__new__(BrachyAgent)
+    agent.memory = memory
+    agent.registry = registry
+    agent.run_ledger = RunLedger()
+    agent.tool_gateway = ToolCallGateway(agent.run_ledger)
+
+    params = {"metric_type": "needle_seed_counts"}
+    result = agent._execute_tool_with_memory("query_metrics", params)
+
+    assert result.success is True
+    assert result.data["needle_count"] == 2
+    assert result.data["total_seeds"] == 21
+    assert [row["seed_count"] for row in result.data["per_needle"]] == needle_counts
+    assert params["num_trajectories"] == 2
+    assert params["seed_plan_serialized"] is serialized
     assert memory.logged
 
 
@@ -514,7 +591,7 @@ def test_viewer_script_dependency_contract_is_cache_busted_and_syntax_safe():
     # versions whenever this cross-bundle contract changes, otherwise an old
     # 3D bundle can coexist with a new UI action bundle and hide its parse
     # failure as a missing global helper.
-    assert 'brachybot-ui-api.js?v=83' in index
+    assert 'brachybot-ui-api.js?v=86' in index
     assert 'brachybot-3d-manual.js?v=102' in index
     assert "window._normalizeTrajectoryId = function _normalizeTrajectoryId" in ui_api
 

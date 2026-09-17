@@ -638,10 +638,10 @@
     align-items: center;
     gap: 9px;
     padding: 8px 12px;
-    border: 1px solid var(--primary);
-    border-radius: 999px;
-    background: var(--bg-card);
-    color: var(--text);
+    border: 1px solid color-mix(in srgb, var(--warning) 68%, var(--border-emphasis));
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--warning-soft) 86%, var(--bg-card));
+    color: var(--warning);
     box-shadow: var(--shadow-md);
     font-size: 12px;
     backdrop-filter: var(--blur-md);
@@ -738,7 +738,23 @@ body.workspace-hydrating::after { display: none; }
 @keyframes workspaceHydrationSpin { to { transform: rotate(360deg); } }
 .workspace-lock-notice:not([hidden]) { animation: workspaceNoticeIn 180ms ease-out both; }
 .workspace-recovery-notice:not([hidden]) { animation: workspaceRecoveryIn 260ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
-.workspace-recovery-notice .workspace-recovery-spinner { flex: 0 0 auto; }
+.workspace-recovery-notice.workspace-recovery-fallback {
+    /* Informational restart fallback; it is never the case-resource loader. */
+    pointer-events: auto;
+}
+.workspace-recovery-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+}
 .workspace-lock-notice .workspace-notice-action[aria-busy="true"] { cursor: wait; }
 /*
  * Loading is a functional progress signal, not decorative motion. Keep a

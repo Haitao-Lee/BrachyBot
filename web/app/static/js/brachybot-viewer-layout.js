@@ -1934,6 +1934,54 @@ function _restoreDoseTextureMaterials() {
     }
 }
 
+// A capture that is aborted between the dose mapping and its restore (or a
+// session restore that re-applies the mapping) can leave meshes carrying dose
+// vertex colours after the material snapshot is already gone.  The regular
+// restore then has nothing to restore and the viewer keeps rendering the dose
+// surface behind a normal-looking flag.  Report captures must be truthful, so
+// expose one unconditional cleanup and report exactly which meshes it had to
+// repair; callers can verify that zero dose-marked meshes remain.
+function clearDoseTexturePresentationLeftovers() {
+    if (typeof state === 'undefined' || !state?.doseTexture || typeof scene3D === 'undefined' || !scene3D) {
+        return { cleared: 0, remaining: [] };
+    }
+    try { _restoreDoseTextureMaterials(); } catch (_) {}
+    const isDoseMarked = node => node?.userData?.doseTextureMapped === true;
+    const markersFor = mesh => [mesh, getMeshSurface(mesh)].filter(Boolean);
+    const remaining = [];
+    Object.entries(scene3D.meshes || {}).forEach(([id, mesh]) => {
+        if (!mesh) return;
+        if (markersFor(mesh).some(isDoseMarked)) remaining.push([id, mesh]);
+    });
+    remaining.forEach(([id, mesh]) => {
+        markersFor(mesh).forEach(node => {
+            const geometry = node.geometry;
+            if (geometry?.attributes?.color && !node.userData?.doseTextureBaseColorsRetained) {
+                geometry.deleteAttribute('color');
+            }
+            _forEachMaterial(node, material => { if (material) material.needsUpdate = true; });
+        });
+        markersFor(mesh).forEach(node => _markDoseTextureRuntime(node, false));
+    });
+    if (remaining.length) {
+        state.doseTexture.enabled = false;
+        state.doseTexture.mappedMeshIds = [];
+        state.doseTexture.renderSignature = '';
+        if (typeof update3DColorbar === 'function') update3DColorbar(false);
+        if (typeof window.syncSceneAppearanceFromDataTree === 'function') {
+            window.syncSceneAppearanceFromDataTree({ preserveDoseTexture: false });
+        }
+        console.warn('[DoseTexture] Cleared dose-surface leftovers with no restore snapshot:',
+            remaining.map(([id]) => id));
+    }
+    const stillMarked = [];
+    Object.entries(scene3D.meshes || {}).forEach(([id, mesh]) => {
+        if (mesh && markersFor(mesh).some(isDoseMarked)) stillMarked.push(id);
+    });
+    return { cleared: remaining.length, remaining: stillMarked };
+}
+window.clearDoseTexturePresentationLeftovers = clearDoseTexturePresentationLeftovers;
+
 // Three.js materials and vertex colours are runtime objects.  They must be
 // restored before a case switch, otherwise a newly hydrated mesh can inherit
 // the previous case's material through an id collision.  Keep the user's
