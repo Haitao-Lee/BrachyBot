@@ -41,6 +41,11 @@ function _composite2DViewerCanvas(axis, options = {}) {
         `annotationCanvas${cap}`,
     ];
     layerIds.forEach(id => {
+        // A dose panel is CT + dose + isodose contours. Filled anatomy masks
+        // and interactive crosshairs are not dose evidence. Exclude them in
+        // the offscreen composition without changing the user's live layers.
+        if (options.reportDoseProfile && (id === `labelOverlay_${cap}`
+            || id === `crosshairCanvas${cap}` || id === `annotationCanvas${cap}`)) return;
         const layer = document.getElementById(id);
         if (!layer || layer.width < 1 || layer.height < 1) return;
         const style = window.getComputedStyle ? window.getComputedStyle(layer) : layer.style;
@@ -53,7 +58,8 @@ function _composite2DViewerCanvas(axis, options = {}) {
         const opacity = Number.isFinite(captureDoseOpacity)
             ? Math.max(0, Math.min(1, captureDoseOpacity))
             : liveOpacity;
-        if (style?.display === 'none' || style?.visibility === 'hidden' || opacity <= 0) return;
+        const requiredDose = options.reportDoseProfile && id === `doseOverlayCanvas${cap}`;
+        if (!requiredDose && (style?.display === 'none' || style?.visibility === 'hidden' || opacity <= 0)) return;
         // During a network fallback the live viewer deliberately holds the
         // last committed contour frame to avoid a visible blink while the
         // requested slice is loading. Do not export that held frame as if it
@@ -76,7 +82,7 @@ function _composite2DViewerCanvas(axis, options = {}) {
     const colorbar = document.getElementById(`doseColorbar${cap}`);
     const colorbarStyle = colorbar && window.getComputedStyle
         ? window.getComputedStyle(colorbar) : colorbar?.style;
-    if (colorbar && colorbarStyle?.display !== 'none' && colorbarStyle?.visibility !== 'hidden'
+    if ((options.reportDoseProfile || (colorbar && colorbarStyle?.display !== 'none' && colorbarStyle?.visibility !== 'hidden'))
         && typeof _drawDoseColorbarGradient === 'function'
         && typeof _doseColorbarLabelSpecs === 'function') {
         const pad = Math.max(12, Math.round(out.width * 0.012));
@@ -1087,12 +1093,12 @@ const _REPORT_FIGURE_AXIS_GROUPS = Object.freeze({
 });
 
 function _reportFigureGroup(figure) {
-    const explicit = String(figure?.figureGroup || '').toLowerCase();
-    if (explicit === 'figure1' || explicit === 'figure2') return explicit;
     const axis = String(figure?.axis || '').toLowerCase();
     for (const [group, axes] of Object.entries(_REPORT_FIGURE_AXIS_GROUPS)) {
         if (axes.has(axis)) return group;
     }
+    const explicit = String(figure?.figureGroup || '').toLowerCase();
+    if (explicit === 'figure1' || explicit === 'figure2') return explicit;
     return '';
 }
 
@@ -1128,12 +1134,23 @@ function _reportFigurePageOrientation() {
 function _reportFigureIsInvalidForExport(figure) {
     if (!figure || figure._invalidCapture) return true;
     const axis = String(figure.axis || '');
+    const canonicalSlots = {
+        report_fig1_global: ['figure1', 'a'], report_fig1_closeup: ['figure1', 'b'],
+        report_fig2_axial: ['figure2', 'a'], report_fig2_sagittal: ['figure2', 'b'],
+        report_fig2_coronal: ['figure2', 'c'], report_fig2_dose_surface: ['figure2', 'd'],
+        report_fig2_dvh: ['figure2', 'e'],
+    };
+    const slot = canonicalSlots[axis];
+    if (slot && (figure.figureGroup !== slot[0] || figure.subfigure !== slot[1])) return true;
     const expectedContract = typeof window.reportFigureCaptureContractForAxis === 'function'
         ? String(window.reportFigureCaptureContractForAxis(axis) || '') : '';
     if (expectedContract && String(figure.captureContract || '') !== expectedContract) return true;
     const expectedProfile = typeof window.reportFigureCaptureProfileForAxis === 'function'
         ? String(window.reportFigureCaptureProfileForAxis(axis) || '') : '';
     if (expectedProfile && String(figure.captureProfile || '') !== expectedProfile) return true;
+    if (axis === 'report_fig1_global' || axis === 'report_fig1_closeup') {
+        return figure.displayMode !== 'normal_surface';
+    }
     if (axis === 'report_fig2_dose_surface') {
         return String(figure.displayMode || '') !== 'dose_surface'
             || String(figure.renderSignature || '') !== 'dose_texture_vertex_colors';

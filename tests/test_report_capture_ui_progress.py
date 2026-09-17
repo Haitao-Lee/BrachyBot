@@ -35,4 +35,5 @@ def test_report_capture_status_is_scoped_to_the_canonical_capture_promise():
     assert "captureContext.reportCaptureUiRunId = reportCaptureUiRunId" in source
     assert "captureContext.reportCaptureUiCaptured = Number(captureContext.reportCaptureUiCaptured || 0) + 1" in source
     assert "captured: context.reportCaptureUiCaptured" in source
-    assert "stale: captureResult?.stale === true" in source
+    assert "const captureIsStale = captureResult?.stale === true" in source
+    assert "stale: captureIsStale," in source

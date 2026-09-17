@@ -24,6 +24,9 @@ async function main() {
     const context = vm.createContext({
         window: {}, API: '/api', AbortController, setTimeout, clearTimeout,
         console, _activeApiSessionId: () => sid,
+        _reportCaptureAwait: async operation => operation(),
+        REPORT_CAPTURE_STEP_TOTAL: 7, REPORT_CAPTURE_TOTAL_TIMEOUT_MS: 180000,
+        _reportCaptureUiStart: () => 1,
         _planningRunHeaders: session => ({'X-Session-ID': session}),
         state: {slices: {axial: 8, sagittal: 9, coronal: 10},
             doseOverlay: {shape: [20, 20, 20], visible: false},
@@ -129,7 +132,7 @@ async function main() {
     assert(editor.includes('doseSlicesReady.some(ready => ready !== true)'));
     const commit = editor.indexOf('window.reportForm.figures = (window.reportForm.figures');
     assert(editor.indexOf('if (missingAxes.length)') < commit);
-    assert(!editor.includes('syncSceneAppearanceFromDataTree?.'));
+    assert(editor.includes('preserveDoseTexture: !!state.doseTexture?.enabled'));
     console.log('PASS: read-only report checks, version/running/pending/offline failures, exact presentation restore, case isolation, capture guards and atomic figure publication');
 }
 main().catch(error => {console.error(error); process.exitCode = 1;});

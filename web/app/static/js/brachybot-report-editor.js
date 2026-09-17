@@ -1059,8 +1059,8 @@ window.captureReportDvhFigure = captureReportDvhFigure;
 // subfigures allowed an old pair containing two copies of the overview to
 // survive restore because the metadata looked valid even though the pixels
 // were semantically wrong.
-const REPORT_FIGURE_ONE_CAPTURE_CONTRACT = 'figure1-global-overview-target-detail-v8-semantic-recapture';
-const REPORT_FIGURE_ONE_CLOSEUP_CAPTURE_CONTRACT = 'figure1-target-closeup-v8-required-focus-crop';
+const REPORT_FIGURE_ONE_CAPTURE_CONTRACT = 'figure1-global-overview-v9-normal-surface-only';
+const REPORT_FIGURE_ONE_CLOSEUP_CAPTURE_CONTRACT = 'figure1-target-closeup-v9-normal-surface-only';
 window.REPORT_FIGURE_ONE_CAPTURE_CONTRACT = REPORT_FIGURE_ONE_CAPTURE_CONTRACT;
 window.REPORT_FIGURE_ONE_CLOSEUP_CAPTURE_CONTRACT = REPORT_FIGURE_ONE_CLOSEUP_CAPTURE_CONTRACT;
 
@@ -1070,9 +1070,9 @@ window.REPORT_FIGURE_ONE_CLOSEUP_CAPTURE_CONTRACT = REPORT_FIGURE_ONE_CLOSEUP_CA
 const REPORT_FIGURE_CAPTURE_CONTRACTS = Object.freeze({
     report_fig1_global: REPORT_FIGURE_ONE_CAPTURE_CONTRACT,
     report_fig1_closeup: REPORT_FIGURE_ONE_CLOSEUP_CAPTURE_CONTRACT,
-    report_fig2_axial: 'figure2-peak-dose-axial-v2',
-    report_fig2_sagittal: 'figure2-peak-dose-sagittal-v2',
-    report_fig2_coronal: 'figure2-peak-dose-coronal-v2',
+    report_fig2_axial: 'figure2-peak-dose-axial-v3-dose-only-overlay',
+    report_fig2_sagittal: 'figure2-peak-dose-sagittal-v3-dose-only-overlay',
+    report_fig2_coronal: 'figure2-peak-dose-coronal-v3-dose-only-overlay',
     report_fig2_dose_surface: 'figure2-dose-surface-v5-runtime-mapped',
     report_fig2_dvh: REPORT_DVH_CAPTURE_CONTRACT,
 });
@@ -1220,6 +1220,9 @@ async function autoCaptureReportFigures(options = {}) {
             || requestedPlanningId !== _currentReportCapturePlanningId()) return { stale: true };
         return autoCaptureReportFigures(options);
     }
+    if (window.isWorkspacePresentationWriteLocked?.(requestedSessionId)) {
+        return { blocked: true, reason: 'presentation_busy' };
+    }
     try {
         window.syncSceneAppearanceFromDataTree?.({
             preserveDoseTexture: !!state.doseTexture?.enabled,
@@ -1253,6 +1256,7 @@ async function autoCaptureReportFigures(options = {}) {
         throw error;
     }
     context.restorePromise = null;
+    const presentationToken = window.lockWorkspacePresentationWrites?.(requestedSessionId) ?? null;
     context.restoreViewerOnce = () => {
         if (context.restorePromise) return context.restorePromise;
         context.restorePromise = (async () => {
@@ -1266,6 +1270,7 @@ async function autoCaptureReportFigures(options = {}) {
                 restoreError = error;
             } finally {
                 window.__reportCaptureActive = false;
+                if (presentationToken !== null) window.unlockWorkspacePresentationWrites?.(presentationToken);
                 try {
                     window.syncSceneAppearanceFromDataTree?.({
                         preserveDoseTexture: !!state.doseTexture?.enabled,
@@ -1296,6 +1301,8 @@ async function autoCaptureReportFigures(options = {}) {
     // Close the visual transaction even if a browser/WebGL/Plotly operation
     // stops settling. Incrementing the generation makes late callbacks stale,
     // so they cannot write figures or reapply a temporary presentation.
+    let rejectCaptureTimeout;
+    const captureTimeout = new Promise((_, reject) => { rejectCaptureTimeout = reject; });
     context.captureWatchdog = setTimeout(() => {
         if (context.captureFinished || context.captureCancelled) return;
         context.captureCancelled = true;
@@ -1308,9 +1315,10 @@ async function autoCaptureReportFigures(options = {}) {
         Promise.resolve(context.restoreViewerOnce?.()).catch(error => {
             console.warn('[Report] Watchdog viewer restore failed:', error);
         });
+        rejectCaptureTimeout(new Error('Report capture timed out; previous figures retained.'));
     }, REPORT_CAPTURE_TOTAL_TIMEOUT_MS);
     window.__reportCaptureActive = true;
-    const promise = _autoCaptureReportFiguresImpl(context);
+    const promise = Promise.race([_autoCaptureReportFiguresImpl(context), captureTimeout]);
     _reportCapturePromise = promise;
     let captureResult = null;
     let captureError = null;
@@ -1349,6 +1357,17 @@ async function autoCaptureReportFigures(options = {}) {
 
 // Restore presentation on every exit, including a dose-slice timeout. Restore
 // only the original objects in the original session, never a newly loaded case.
+function _setReportNormalSurface(mesh) {
+    mesh?.traverse?.(object => {
+        const materials = Array.isArray(object.material) ? object.material : [object.material];
+        materials.forEach(material => {
+            if (!material) return;
+            material.vertexColors = false;
+            material.needsUpdate = true;
+        });
+    });
+}
+
 function snapshotReportViewerPresentation() {
     const sessionId = _currentReportCaptureSessionId();
     const planningId = _currentReportCapturePlanningId();
@@ -1356,6 +1375,10 @@ function snapshotReportViewerPresentation() {
     const overlay = state.doseOverlay;
     const doseVisible = overlay?.visible;
     const textureEnabled = !!state.doseTexture?.enabled;
+    const textureIntent = state.doseTexture ? {
+        desiredEnabled: state.doseTexture.desiredEnabled,
+        restorePending: state.doseTexture.restorePending,
+    } : null;
     const objects = [];
     const materials = new Map();
     for (const mesh of Object.values(scene3D.meshes || {})) {
@@ -1366,6 +1389,7 @@ function snapshotReportViewerPresentation() {
                 materials.set(material, {
                     opacity: material.opacity, transparent: material.transparent,
                     depthTest: material.depthTest, depthWrite: material.depthWrite,
+                    vertexColors: material.vertexColors,
                 });
             }
         });
@@ -1381,6 +1405,9 @@ function snapshotReportViewerPresentation() {
                 );
             }
         } finally {
+            if (sessionId !== _currentReportCaptureSessionId()
+                || planningId !== _currentReportCapturePlanningId()) return;
+            if (textureIntent && state.doseTexture) Object.assign(state.doseTexture, textureIntent);
             objects.forEach(({ object, visible, renderOrder }) => {
                 object.visible = visible;
                 object.renderOrder = renderOrder;
@@ -2349,6 +2376,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                                 transparent: material.transparent,
                                 depthWrite: material.depthWrite,
                                 depthTest: material.depthTest,
+                                vertexColors: material.vertexColors,
                             });
                         });
                     });
@@ -2400,6 +2428,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                         target.transparent = savedMaterial.transparent;
                         target.depthWrite = savedMaterial.depthWrite;
                         target.depthTest = savedMaterial.depthTest;
+                        target.vertexColors = savedMaterial.vertexColors;
                         target.needsUpdate = true;
                     });
                 }
@@ -2606,6 +2635,13 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 // Render once more after the browser has committed visibility,
                 // material, and camera changes. This avoids intermittent black
                 // captures when the report is generated during reconstruction.
+                // Verify after the last async boundary, immediately before readback.
+                if (state.doseTexture?.enabled || Object.entries(scene3D.meshes).some(([id, mesh]) =>
+                    mesh?.visible && (id.startsWith('dose_iso_')
+                        || mesh.userData?.doseTextureMapped
+                        || getMeshSurface(mesh)?.userData?.doseTextureMapped))) {
+                    throw new Error('Implant capture was changed to a dose presentation');
+                }
                 scene3D.renderNow?.();
                 try {
                     const gl = renderer.getContext?.();
@@ -2803,7 +2839,16 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             // it out of Figure 1(a) so the global plan is not framed or hidden
             // by the whole-body surface. The saved state is restored below.
             for (const [id, mesh] of Object.entries(scene3D.meshes)) {
-                if (_isFigureOneSkin(id, mesh) && mesh) mesh.visible = false;
+                if (!mesh) continue;
+                const allowed = !_isStandaloneGenericReportMask(id, mesh)
+                    && !_isFigureOneSkin(id, mesh)
+                    && !id.startsWith('dose_iso_')
+                    && (_isFigureOneCtv(id, mesh) || _isFigureOneOar(id, mesh)
+                        || _isFigureOneSeed(id, mesh) || _isFigureOneNeedle(id, mesh));
+                applyMeshVisibility(mesh, allowed, 1);
+                // Implant evidence uses the anatomical material color, never
+                // a surviving dose vertex-color buffer from a restored scene.
+                if (allowed) _setReportNormalSurface(mesh);
             }
             if (scene3D.skinMesh) scene3D.skinMesh.visible = false;
 
@@ -2951,12 +2996,14 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 captureRole: 'planning_overview',
                 captureContract: REPORT_FIGURE_ONE_CAPTURE_CONTRACT,
                 captureProfile: 'global_overview',
+                displayMode: 'normal_surface',
             });
             if (imgB) _push(labels.lblInside, labels.capInside, imgB, 'report_fig1_closeup', {
                 figureGroup: 'figure1', figureNumber: 1, subfigure: 'b', sortOrder: 2,
                 captureRole: 'planning_closeup',
                 captureContract: REPORT_FIGURE_ONE_CLOSEUP_CAPTURE_CONTRACT,
                 captureProfile: 'target_closeup',
+                displayMode: 'normal_surface',
             });
 
             // Restore immediately on the normal path; the finally block
@@ -3042,7 +3089,9 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             // Capture all 3 views
             for (const cfg of axesCfg) {
                 reportCaptureStep(2 + cfg.order, `${cfg.title}剂量截图（Fig 2${cfg.subfigure}）`, `${cfg.title} dose figure (Fig 2${cfg.subfigure})`);
-                const composite = _composite2DViewerCanvas(cfg.ax, { doseOpacity: 0.75 });
+                const composite = _composite2DViewerCanvas(cfg.ax, {
+                    doseOpacity: 0.75, reportDoseProfile: true,
+                });
                 if (composite) {
                     _push(cfg.title, cfg.caption, composite, cfg.axis, {
                         figureGroup: 'figure2', figureNumber: 2,
@@ -3422,7 +3471,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 // operator looking at a temporary report presentation.
                 await captureContext.onCaptureReady();
             } catch (error) {
-                console.warn('[Report] Viewer restore after capture failed:', error);
+                throw new Error('Report captured but viewer restoration failed', { cause: error });
             }
         }
         if (typeof window.persistWorkspace === 'function') {

@@ -25,7 +25,12 @@ class SurgicalGuideTool(BaseTool):
             "uses the same physical patient coordinates as planning, records QA, "
             "and can be exported as STL. It includes optional non-protruding "
             "auxiliary puncture holes around each primary channel for patient-motion "
-            "robustness. Use only after a CT and needle plan exist."
+            "robustness. Use only after a CT and needle plan exist. This tool is "
+            "for a printable GUIDE (导板/guide) only. A request to generate a "
+            "report (报告/report, including 手术报告 or surgical report) is not a "
+            "guide request; use the report capability (ui_controller with "
+            "report.autofill) instead. Never call this tool when no guide noun "
+            "(导板, guide, 插植导板, 穿刺导板, 3D 打印导板) is present."
         )
 
     @property

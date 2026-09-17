@@ -37,7 +37,8 @@ def test_all_report_dvh_paths_use_the_readable_exporter():
     editor = _read("web/app/static/js/brachybot-report-editor.js")
     planning = _read("web/app/static/js/brachybot-dvh-planning.js")
 
-    assert "dvhDataUrl = await window.captureReportDvhFigure(dvhEl);" in editor
+    assert "dvhDataUrl = await window.captureReportDvhFigure(dvhEl, {" in editor
+    assert "dvhData: _reportCurrentDvhData()" in editor
     assert "width: 2400, height: 800" not in editor
     assert "width: 900, height: 450" not in planning
     assert "await window.captureReportDvhFigure(dvhEl)" in planning

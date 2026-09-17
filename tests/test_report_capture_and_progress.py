@@ -118,8 +118,8 @@ def test_figure_one_capture_contract_survives_report_artifact_round_trip():
     api = _read("web/app/static/js/brachybot-ui-api.js")
     export_service = _read("web/export_service.py")
 
-    assert "REPORT_FIGURE_ONE_CAPTURE_CONTRACT = 'figure1-global-overview-target-detail-v8-semantic-recapture'" in editor
-    assert "REPORT_FIGURE_ONE_CLOSEUP_CAPTURE_CONTRACT = 'figure1-target-closeup-v8-required-focus-crop'" in editor
+    assert "REPORT_FIGURE_ONE_CAPTURE_CONTRACT = 'figure1-global-overview-v9-normal-surface-only'" in editor
+    assert "REPORT_FIGURE_ONE_CLOSEUP_CAPTURE_CONTRACT = 'figure1-target-closeup-v9-normal-surface-only'" in editor
     assert "report_fig1_global: REPORT_FIGURE_ONE_CAPTURE_CONTRACT" in editor
     assert "report_fig1_closeup: REPORT_FIGURE_ONE_CLOSEUP_CAPTURE_CONTRACT" in editor
     assert "const _isFigureOneOar = (id, mesh)" in editor
@@ -137,8 +137,8 @@ def test_figure_one_capture_contract_survives_report_artifact_round_trip():
     assert "capture_profile: String(figure.captureProfile || '')" in api
     assert "viewMetadata: item.metadata?.view_metadata || item.metadata || {}" in viewer
     assert '"capture_contract": figure.get("captureContract")' in export_service
-    assert "captureContract: 'figure1-global-overview-target-detail-v8-semantic-recapture'" in workspace
-    assert "captureContract: 'figure1-target-closeup-v8-required-focus-crop'" in workspace
+    assert "captureContract: 'figure1-global-overview-v9-normal-surface-only'" in workspace
+    assert "captureContract: 'figure1-target-closeup-v9-normal-surface-only'" in workspace
     assert "captureProfile: 'global_overview'" in workspace
     assert "captureProfile: 'target_closeup'" in workspace
 

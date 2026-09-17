@@ -95,9 +95,12 @@ class ReportAutoFillTool(BaseTool):
             "DICOM header, and planning results. Returns a partial form "
             "patch that the UI applies (skipping fields the user has "
             "manually edited). Use when the user asks to 'fill the "
-            "report', '生成报告', 'fill the interpretation', or wants "
-            "patient / metrics / OAR / narrative auto-populated. Pair "
-            "with /report en or /report zh in chat to set language."
+            "report', '生成报告', '重新生成报告', '手术报告' (surgical "
+            "report), '剂量报告', '计划报告', 'fill the interpretation', or "
+            "wants patient / metrics / OAR / narrative auto-populated. A "
+            "report noun with a generation/update verb is always a report "
+            "request and is never a guide request. Pair with /report en or "
+            "/report zh in chat to set language."
         )
 
     @property
