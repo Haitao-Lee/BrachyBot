@@ -38,6 +38,7 @@ from web.viewer_cache import (
 from agent_runtime.core import resolve_reference_direction_input
 from agent_runtime.visual_evidence import (
     build_visual_evidence_prompt,
+    grounded_location_answer,
     normalize_visual_evidence_context,
 )
 from web.planning_runs import (
@@ -2501,7 +2502,8 @@ def register_planning_routes(
                         request_id=durable_request_id,
                     )
             else:
-                final_response = task.response or task.streamed_response
+                final_response = (getattr(task, "grounded_visual_answer", None)
+                                  or task.response or task.streamed_response)
                 screenshot_steps = [
                     step for step in persisted_steps
                     if str(step.get("tool") or "") == "ui_screenshot"
@@ -3557,6 +3559,8 @@ def register_planning_routes(
                             "sat3d_negative_points_zyx", "sat3d_requires_clinician_review",
                             "image_modality", "volume_index", "target_semantics",
                             "text_prompt", "object_existence_confidence",
+                            "model_validation", "inference_precision", "inference_script",
+                            "inference_gpu", "ct_phase",
                         ):
                             agent.memory.store(provenance_key, meta.get(provenance_key))
                     except Exception as e:
@@ -7198,6 +7202,12 @@ def register_planning_routes(
         # normal user turn through compaction or task replay.
         full_message = message
         if visual_context is not None:
+            # The hidden protocol is English; language comes from the actual
+            # parent question, never from that protocol or screenshot labels.
+            response_language = detect_language(
+                visual_context.get("parent_request", ""),
+                fallback=response_language,
+            ).get("code") or response_language
             full_message = build_visual_evidence_prompt(visual_context, response_language)
         elif image_path:
             full_message = f"{message}\n\n[Uploaded image path: {image_path}]"
@@ -7297,6 +7307,13 @@ def register_planning_routes(
                     internal_followup=internal_followup,
                     response_language=response_language,
                     ui_language=ui_language,
+                )
+                # Set before start_gate is released. The durable finalizer
+                # must not persist ungrounded model prose and resurrect it
+                # after a reload even if the browser already corrected it.
+                task.grounded_visual_answer = (
+                    grounded_location_answer(visual_context, response_language)
+                    if visual_context is not None else None
                 )
             except RuntimeError as exc:
                 return jsonify({

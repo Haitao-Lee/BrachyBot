@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 import pytest
 import web.routes.planning_routes as planning_routes
@@ -436,6 +437,6 @@ def test_screenshot_autoframing_is_target_derived_verified_and_reversible():
     assert "mpr_object_currently_hidden_or_unavailable" in annotation
     assert "does not" in annotation and "remain inside the restored live camera" in annotation
 
-    assert "brachybot-ui-api.js?v=86" in index
-    assert "brachybot-3d-manual.js?v=102" in index
-    assert "brachybot-manual-annotation.js?v=26" in index
+    assert int(re.search(r'brachybot-ui-api.js\?v=(\d+)', index)[1]) >= 91
+    assert int(re.search(r'brachybot-3d-manual.js\?v=(\d+)', index)[1]) >= 102
+    assert int(re.search(r'brachybot-manual-annotation.js\?v=(\d+)', index)[1]) >= 26

@@ -164,6 +164,16 @@ def detect(
             else _language_info("en", "default")
         )
 
+    # Latin UI labels are words, not a competing sentence: counting every
+    # letter makes '在 data tree 的哪里呢' incorrectly English. Compare word
+    # units for mixed Chinese prose, while leaving genuinely English prose,
+    # short ambiguous labels, and other scripts on the existing path.
+    latin_words = len(re.findall(r"[A-Za-z]+(?:[-_][A-Za-z]+)*", cleaned))
+    if (counts.get("zh", 0) >= 3
+            and counts["zh"] >= latin_words
+            and not any(counts.get(code, 0) for code in ("ja", "ko", "ru", "ar"))):
+        return _language_info("zh", "detected")
+
     # Pick the dominant script.  A tie is intentionally language-neutral:
     # English is the documented fallback and avoids dictionary insertion
     # order making a mixed Chinese/Latin (or other mixed-script) message

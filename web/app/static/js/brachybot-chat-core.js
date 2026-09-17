@@ -992,10 +992,12 @@ function loadSessionChat(id) {
                     || msg.meta?.traceLanguage
                     || msg.meta?.responseLanguage
                     || '';
+                msg.steps = reconcileHistoricalUIActions(msg.steps, id, traceLanguage);
                 const restoredSteps = typeof window._traceStepForDisplay === 'function'
                     ? (msg.steps || []).map(step => window._traceStepForDisplay(step, id, traceLanguage))
                     : msg.steps;
                 renderThinkingChain(restoredSteps, {
+                    sessionId: id,
                     requestId: msg.request_id,
                     messageId: msg.id,
                     traceLanguage,
@@ -2838,6 +2840,38 @@ function toggleStep(bodyId) {
 }
 
 // Static renderer used by loadSessionChat() to redraw a saved chain.
+function reconcileHistoricalUIActions(steps, sessionId, language = '') {
+    const merged = new Map();
+    for (const [index, original] of (steps || []).entries()) {
+        if (!original) continue;
+        let step = { ...original };
+        const uiAction = step.parent_tool === 'ui_controller' && /^ui-action-/.test(step.id || step.tool || '');
+        const key = uiAction ? String(step.id || step.tool) : `row:${index}`;
+        const previous = merged.get(key);
+        if (uiAction && previous && !['pending','active','running'].includes(previous.status)
+            && ['pending','active','running'].includes(step.status)) continue;
+        if (uiAction && ['pending','active','running'].includes(step.status)) {
+            const owner = window._brachyUIActionOwners?.get(key);
+            if (owner?.trace?.sessionId === String(sessionId)) {
+                step = { ...step, ...owner.step };
+            } else {
+                step.status = 'error';
+                step.content = step.result = String(language).startsWith('zh')
+                    ? '该界面操作没有收到完成确认，且已不在当前浏览器执行。结果未确认；如仍需要，请重新执行。'
+                    : 'No completion acknowledgment was received and this browser no longer owns the action. The result is unconfirmed; retry if needed.';
+                step.recovery_reason = 'ui_action_owner_lost';
+            }
+        }
+        // A real terminal event always wins over a synthesized unknown state.
+        if (uiAction && previous && previous.recovery_reason === 'ui_action_owner_lost'
+            && !['pending','active','running'].includes(original.status)) {
+            step = { ...original };
+        }
+        merged.set(key, step);
+    }
+    return Array.from(merged.values());
+}
+
 function renderThinkingChain(steps, identity = {}) {
     const container = document.getElementById('chatMessages');
     if (!container) return;
@@ -2934,6 +2968,13 @@ function renderThinkingChain(steps, identity = {}) {
     row.appendChild(avatar);
     row.appendChild(wrapper);
     container.appendChild(row);
+    // Reattach late UI completions to their restored trace, not the next turn.
+    for (const owner of window._brachyUIActionOwners?.values?.() || []) {
+        if (owner.trace.requestId === requestId
+            && owner.trace.sessionId === String(identity.sessionId || activeSessionId)) {
+            Object.assign(owner.trace, { steps, chainEl: wrapper, stepsDiv, headerEl: header });
+        }
+    }
     scrollToBottom();
 }
 

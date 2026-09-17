@@ -150,25 +150,56 @@ function _todoLabelForStep(step) {
 if (!window._brachyUiTraceListenerReady) {
     window._brachyUiTraceListenerReady = true;
     document.addEventListener('brachy:ui-action-progress', (event) => {
-        const trace = window._brachyLiveTrace;
         const step = event && event.detail;
-        // UI-controller actions are emitted asynchronously.  A case switch
-        // may happen between the server emitting the action and the browser
-        // receiving it, so never append an old case's progress to the newly
-        // selected case.
-        if (!trace || !step || trace.sessionId !== activeSessionId
-            || (step.session_id && String(step.session_id) !== String(activeSessionId || ''))) return;
-        const index = trace.steps.length;
-        trace.steps.push(step);
-        if (typeof appendStepToChain === 'function') {
+        if (!step?.id) return;
+        const owners = window._brachyUIActionOwners ||= new Map();
+        let owner = owners.get(step.id);
+        if (owner && ((step.request_id && step.request_id !== owner.trace.requestId)
+            || (step.session_id && step.session_id !== owner.trace.sessionId))) return;
+        if (owner && !['pending', 'active', 'running'].includes(owner.step.status)
+            && ['pending', 'active', 'running'].includes(step.status)) return;
+        if (!owner) {
+            const candidate = window._brachyLiveTrace;
+            if (!candidate || (step.session_id && step.session_id !== candidate.sessionId)
+                || (step.request_id && step.request_id !== candidate.requestId)) return;
+            owner = { trace: candidate, step };
+            owners.set(step.id, owner);
+        }
+        owner.step = step;
+        const trace = owner.trace;
+        // Keep the owner captured at dispatch, even after a new turn/case.
+        // Persist late results there; never append them to the new trace.
+        if (!trace) return;
+        let index = trace.steps.findIndex(row => row.id === step.id && !!step.id);
+        if (index < 0) {
+            index = trace.steps.length;
+            trace.steps.push(step);
+        } else {
+            trace.steps[index] = { ...trace.steps[index], ...step };
+        }
+        const visibleOwner = trace.sessionId === activeSessionId;
+        if (visibleOwner && typeof appendStepToChain === 'function') {
             appendStepToChain(trace.stepsDiv, step, index);
         }
-        if (typeof updateChainHeader === 'function') {
+        if (visibleOwner && typeof updateChainHeader === 'function') {
             updateChainHeader(trace.headerEl, trace.steps);
         }
-        const activeTodo = typeof trace.getTodo === 'function' ? trace.getTodo() : null;
+        const activeTodo = visibleOwner && trace === window._brachyLiveTrace
+            && typeof trace.getTodo === 'function' ? trace.getTodo() : null;
         if (activeTodo && typeof _todoUpdateFromStep === 'function') {
             _todoUpdateFromStep(activeTodo, step);
+        }
+        if (trace.requestId && typeof saveSessionMessage === 'function') {
+            saveSessionMessage('thinking', '', trace.steps, Date.now(), trace.sessionId, {
+                requestId: trace.requestId, messageId: `trace-${trace.requestId}`,
+                messageKind: 'execution_trace', turnSequence: 1,
+                responseLanguage: trace.responseLanguage, traceLanguage: trace.responseLanguage,
+            });
+        }
+        // Bound retained terminal owners; never evict an in-flight action.
+        if (owners.size > 256) for (const [key, value] of owners) {
+            if (!['pending', 'active', 'running'].includes(value.step.status)) owners.delete(key);
+            if (owners.size <= 256) break;
         }
     });
 }
@@ -1164,7 +1195,22 @@ const CHAT_CONNECT_TIMEOUT_MS = 30000;
 // after the report itself is already on screen. The report UI owns that
 // progress; the chat turn may wait only a bounded window for it before
 // releasing the final reply.
-const CHAT_UI_ACTION_MAX_WAIT_MS = 30000;
+// A server stream ending acknowledges dispatch, not browser-side completion.
+async function _awaitChatUIActions(tasks, signal) {
+    if (signal?.aborted) throw new DOMException('Stopped', 'AbortError');
+    let abort;
+    try {
+        return await Promise.race([
+            Promise.allSettled(tasks),
+            new Promise((_, reject) => {
+                abort = () => reject(new DOMException('Stopped', 'AbortError'));
+                signal?.addEventListener('abort', abort, { once: true });
+            }),
+        ]);
+    } finally {
+        if (abort) signal?.removeEventListener('abort', abort);
+    }
+}
 const CHAT_IDLE_TIMEOUT_MS = 90000;
 const CHAT_PLANNING_IDLE_TIMEOUT_MS = 900000; // 15 min — medical planning tools can run 5-10 min
 const CHAT_ABORT_TIMEOUT_MS = 4000;
@@ -1562,6 +1608,14 @@ function _visualEvidenceFallbackResponse(evidence, sessionId, responseLanguage =
                 ? `${view}：截图已生成，但没有足够的稳定目标信息可以安全标注。`
                 : `${view}: the screenshot was captured, but it did not contain a stable target that could be marked safely.`);
         }
+        if (attachmentTarget === 'data-tree' && target?.scene_visible === false) {
+            rows.push(zh ? '该节点在 Data Tree 截图时的三维显示处于隐藏状态。'
+                : 'This node was hidden in 3D when the Data Tree was captured.');
+        }
+        if (metadata.temporary_reveal === true) {
+            rows.push(zh ? '为定位目标，截图过程中临时调整了显示与取景；截图结束后已恢复原显示设置。'
+                : 'Visibility and framing were temporarily adjusted for this capture; the original display settings were restored afterwards.');
+        }
     });
     const isLocate = items.some(item => String(
         item.visual_purpose || item.visualPurpose
@@ -1596,6 +1650,16 @@ function _visualEvidenceFallbackResponse(evidence, sessionId, responseLanguage =
 }
 
 function _visualResponseNeedsGroundedFallback(value, evidence = []) {
+    // Location is a verifiable identity/state question, not an invitation to
+    // improvise anatomy from similarly colored pixels. Use the grounded
+    // renderer even when plausible model prose happens to mention the label.
+    if ((Array.isArray(evidence) ? evidence : []).some(item => {
+        const meta = item?.view_metadata || item?.viewMetadata || {};
+        const purpose = item?.visual_purpose || meta.visual_purpose;
+        const manifest = item?.grounding_manifest || meta.grounding_manifest || {};
+        return purpose === 'locate' || (manifest.targets || []).some(target =>
+            target.visible === false || target.annotatable === false);
+    })) return true;
     const clean = String(value || '').replace(/\s+/g, ' ').trim();
     if (!clean || /^(?:\(no reply\)|\(No validated response\)|Tools executed\. Check the execution trace above for results\.)$/i.test(clean)) {
         return true;
@@ -3082,7 +3146,7 @@ async function sendChat(prefill, options) {
     const presentationMessages = [];
     const uiActionTasks = [];
     const uiActionResults = [];
-    let uiActionsStillRunning = false;
+    const deferredFinalSteps = [];
     // Keep an explicit marker in addition to inspecting the reconstructed
     // step list. Some replayed SSE streams expose the UI action metadata only
     // on the tool event; the final response must still be held back until the
@@ -3211,6 +3275,7 @@ async function sendChat(prefill, options) {
             updateChainHeader?.(headerEl, steps);
             window._brachyLiveTrace = {
                 sessionId: turnSessionId, steps, chainEl, stepsDiv, headerEl,
+                requestId: turnRequestId, responseLanguage: turnIdentity.responseLanguage,
                 getTodo: () => todo,
             };
         }
@@ -3590,6 +3655,13 @@ async function sendChat(prefill, options) {
                             _traceStepForDisplay(data, turnSessionId, turnIdentity.responseLanguage),
                         );
                         const displayStep = traced.step;
+                        if (reportUiActionRequested && displayStep.type === 'assistant'
+                            && !displayStep.tool && _isTerminalToolStatus(displayStep.status)) {
+                            deferredFinalSteps.push(displayStep);
+                            displayStep.status = 'pending';
+                            displayStep.content = turnIdentity.responseLanguage === 'zh'
+                                ? '等待报告截图、显示恢复和保存完成' : 'Waiting for report capture, viewer restore and save';
+                        }
                         const stepIndex = traced.index >= 0 ? traced.index : steps.length;
                         if (traced.index < 0) steps.push(displayStep);
                         if (data.tool === 'ctv_segmentation' && typeof updateTumorTypeSelector === 'function') {
@@ -3613,6 +3685,7 @@ async function sendChat(prefill, options) {
                             }
                             window._brachyLiveTrace = {
                                 sessionId: turnSessionId, steps, chainEl, stepsDiv, headerEl,
+                                requestId: turnRequestId, responseLanguage: turnIdentity.responseLanguage,
                                 getTodo: () => todo,
                             };
                         }
@@ -3743,6 +3816,7 @@ async function sendChat(prefill, options) {
                                         if (typeof _executeUIActionsWithProgress === 'function') {
                                             const actionTask = _executeUIActionsWithProgress(actions, {
                                                 sessionId: turnSessionId,
+                                                requestId: turnRequestId,
                                             });
                                             uiActionTasks.push(Promise.resolve(actionTask).then(group => {
                                                 uiActionResults.push(...(Array.isArray(group) ? group : [group]));
@@ -4201,7 +4275,9 @@ async function sendChat(prefill, options) {
                         turnCompleted = true;
                         turnCancelled = Boolean(data?.cancelled);
                         const terminalStatus = turnCancelled ? 'cancelled' : (turnFailed ? 'failed' : 'completed');
-                        _setCaseTaskState(turnSessionId, terminalStatus, null);
+                        if (turnCancelled || !uiActionTasks.length) {
+                            _setCaseTaskState(turnSessionId, terminalStatus, null);
+                        }
                         delete window._detachedChatTasks[turnSessionId];
                         try { window.clearPlanningPreview?.('stream-complete'); } catch (_) {}
                         if (turnCancelled) {
@@ -4283,31 +4359,36 @@ async function sendChat(prefill, options) {
             await Promise.allSettled(sessionContentTasks);
         }
         if (uiActionTasks.length) {
-            // The report surface owns figure capture and the durable save and
-            // may legitimately keep working after the report is visible. Tying
-            // the chat turn to it left a finished report showing a running
-            // chat for minutes (and forever when the capture promise stalled),
-            // so bound the in-turn wait and release the reply; a still-running
-            // action completes in the background and reports through its own
-            // progress surface instead of being called a failure here.
-            const allSettled = Promise.allSettled(uiActionTasks).then(() => true);
-            const capped = new Promise(resolve => {
-                setTimeout(() => resolve(false), CHAT_UI_ACTION_MAX_WAIT_MS);
-            });
-            uiActionsStillRunning = (await Promise.race([allSettled, capped])) === false;
+            const settled = await _awaitChatUIActions(uiActionTasks, turnAbortController?.signal);
+            if (settled.some(result => result.status === 'rejected')) {
+                uiActionResults.push({ success: false });
+            }
         }
         if (reportUiActionRequested || _hasReportGenerationAction(steps)) {
-            const reportActionFailed = !uiActionsStillRunning
-                && (uiActionResults.length === 0
+            const reportActionFailed = (uiActionResults.length === 0
                     || uiActionResults.some(result => result === false
                         || result?.success === false
                         || result?.stale === true));
             if (reportActionFailed) {
+                turnFailed = true;
                 responseText = _reportGenerationFailureMessage(turnSessionId);
+                finalResponseReceived = true;
+            } else {
+                responseText = turnIdentity.responseLanguage === 'zh'
+                    ? '报告已重新生成：正文、表格和标准图件已更新并保存到当前 Session，截图时的临时显示设置已恢复。'
+                    : 'The report was regenerated: text, tables and canonical figures were updated and saved to the current Session, and temporary capture display settings were restored.';
                 finalResponseReceived = true;
             }
         }
         if (String(activeSessionId || '') !== turnSessionId) return;
+        if (uiActionTasks.length) {
+            _setCaseTaskState(turnSessionId, turnFailed ? 'failed' : 'completed', null);
+        }
+        deferredFinalSteps.forEach(step => {
+            step.status = turnFailed ? 'error' : 'done';
+            step.content = turnFailed ? responseText : (turnIdentity.responseLanguage === 'zh' ? '回复已完成' : 'Response delivered');
+            if (stepsDiv) appendStepToChain(stepsDiv, step, steps.indexOf(step));
+        });
         // Screenshot/tool events may be replayed after a reconnect with new
         // event or attachment ids.  Preserve one durable artifact per URL in
         // the assistant reply; otherwise the same image is rendered and

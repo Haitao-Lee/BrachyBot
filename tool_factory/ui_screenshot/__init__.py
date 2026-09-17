@@ -184,9 +184,9 @@ class UIScreenshotTool(BaseTool):
                     "default": False,
                     "description": (
                         "Temporarily hide unrelated 3D objects when a local close-up is required. "
-                        "A locate request that sets preserve_current_view keeps the operator's "
-                        "current 3D composition instead; the browser restores any temporary "
-                        "Data Tree scroll/width change immediately afterwards."
+                        "A targeted locate capture first records the real Data Tree row, then "
+                        "temporarily reveals and frames the resolved target for verified evidence. "
+                        "The browser restores visibility, camera and sidebar afterwards."
                     ),
                 },
                 "focus": {
@@ -292,10 +292,10 @@ class UIScreenshotTool(BaseTool):
                     "type": "boolean",
                     "default": False,
                     "description": (
-                        "For a location question, keep the current 2D slice, 3D "
-                        "camera, visibility, and appearance. The browser may still "
-                        "scroll the real Data Tree to the target row for a readable "
-                        "capture, then restores that sidebar state."
+                        "Preserve the operator's view outside the capture transaction. "
+                        "A targeted 3D locate capture may temporarily reveal/frame the object "
+                        "after capturing its real Data Tree row, then restore the original state. "
+                        "Unloaded or unresolved targets must be reported, never guessed."
                     ),
                 },
                 "target_refs": {

@@ -898,7 +898,8 @@ def test_report_generation_stream_emits_real_autofill_action_not_report_figures(
     assert not any(data.get("tool") == "ui_content" for event, data in parsed if event == "step")
     response = next(data for event, data in parsed if event == "response")
     assert response["llm_meta"]["route"] == "local_report_generation"
-    assert "Reference/Status" in response["response"]
+    assert "等待浏览器" in response["response"]
+    assert "已同步更新并保存" not in response["response"]
 
 
 def test_session_content_stream_keeps_report_figures_in_the_owning_reply():
@@ -1419,7 +1420,8 @@ def test_report_chat_target_reads_session_owned_figure_artifacts_not_the_report_
     assert "source: 'report_artifact'" in ui_api
     assert "report_figures_unavailable" in ui_api
     assert "const reportViews = plan.views.filter" in ui_api
-    assert "const captureViews = plan.views.filter" in ui_api
+    assert "const captureViews = _orderLocateCaptureViews(plan," in ui_api
+    assert "plan.views.filter(view => String(view?.target || '') !== 'report')" in ui_api
 
 
 def test_user_visible_screenshot_language_prefers_request_language_over_global_ui():
