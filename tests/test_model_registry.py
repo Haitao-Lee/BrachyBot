@@ -183,3 +183,25 @@ def test_direct_ctv_phrase_is_a_canonical_execution_command():
     for msg in ('请分割胰腺 CTV', '请分割肝脏 CTV', '请分割肺部 CTV',
                 '请分割鼻咽癌 CTV', '请分割头颈部肿瘤 CTV', '分割胰腺 CTV'):
         assert c(msg).intent == 'segmentation', msg
+
+
+def test_nasopharynx_direct_request_asks_for_phase():
+    from AgenticSys import BrachyAgent
+
+    class Memory:
+        def retrieve(self, key, default=None):
+            return "/tmp/case.nii.gz" if key == "ct_path" else default
+        def get_ui_state(self):
+            return {}
+
+    agent = object.__new__(BrachyAgent)
+    agent.memory = Memory()
+    # The routing layer keeps the phase sentinel (no intensity guessing);
+    # the CTV tool then asks the user for ncct/cect.
+    assert agent._map_tumor_type("鼻咽癌") == "nasopharynx"
+    assert agent._map_tumor_type("nasopharyngeal") == "nasopharynx"
+
+    routed = agent._detect_tool_request("请分割鼻咽癌 CTV")
+    assert routed
+    assert routed[0]["tool"] == "ctv_segmentation"
+    assert routed[0]["params"]["tumor_type"] == "nasopharynx"
