@@ -48,3 +48,37 @@ def test_canonical_ctv_source_maps_legacy_to_route_id():
 def test_ui_routes_are_all_available_peers():
     ids = {r.id for r in ui_routes()}
     assert EXPECTED.keys() <= ids
+
+
+def test_metadata_contract_is_identical_across_engines():
+    import numpy as np, SimpleITK as sitk
+    from tool_factory.CTV_seg import CTVSegmentationTool
+    from tool_factory.CTV_seg.model_registry import canonical_ctv_source
+
+    # Legacy adapter output shape used by pancreatic.  The wrapper must
+    # normalize ctv_source and compute label_stats for every engine.
+    image = sitk.GetImageFromArray(np.zeros((4, 4, 4), dtype=np.int16))
+    label = np.zeros((4, 4, 4), dtype=np.uint8)
+    label[1:3, 1:3, 1:3] = 1
+    label[0, 0, 0] = 2
+    mask = sitk.GetImageFromArray(label)
+    mask.CopyInformation(image)
+
+    class FakeTool:
+        name = 'nnunet_pancreatic'
+        def _execute(self, **kwargs):
+            from tool_factory import ToolResult
+            return ToolResult(success=True, data=label, metadata={
+                'ctv_mask': mask, 'ctv_array': (label == 1).astype(np.uint8),
+                'full_label_array': label, 'label_map': {1: 'pancreatic tumor', 2: 'artery'},
+                'label_counts': {1: 8, 2: 1},
+            })
+
+    tool = CTVSegmentationTool()
+    tool._resolve_tool = lambda tumor_type: FakeTool()
+    result = tool._execute(image=image, tumor_type='nnunet_pancreatic')
+    assert result.success
+    meta = result.metadata
+    assert canonical_ctv_source(meta['ctv_source']) == 'nnunet_pancreatic'
+    assert meta['target_semantics'] == 'target_plus_anatomy'
+    assert meta['label_stats']['artery']['voxel_count'] == 1
