@@ -82,3 +82,21 @@ def test_metadata_contract_is_identical_across_engines():
     assert canonical_ctv_source(meta['ctv_source']) == 'nnunet_pancreatic'
     assert meta['target_semantics'] == 'target_plus_anatomy'
     assert meta['label_stats']['artery']['voxel_count'] == 1
+
+
+def test_pancreatic_inference_uses_shared_gpu_lock(monkeypatch):
+    import contextlib
+    import tool_factory.CTV_seg.pancreatic_tumor_nnunet as P
+    from tool_factory.CTV_seg import site_model_runtime
+
+    used = {}
+
+    @contextlib.contextmanager
+    def fake_lock(gpu, timeout=900):
+        used['gpu'] = gpu
+        yield
+
+    monkeypatch.setattr(site_model_runtime, 'gpu_lock', fake_lock)
+    with P.NNUNetPancreaticTumorTool()._gpu_guard('0'):
+        pass
+    assert used['gpu'] == '0'

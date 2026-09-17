@@ -20,6 +20,7 @@ import subprocess
 import tempfile
 import logging
 from collections.abc import Mapping
+from contextlib import contextmanager
 from typing import Dict
 
 import numpy as np
@@ -446,6 +447,18 @@ class NNUNetPancreaticTumorTool(BaseTool):
             },
         )
 
+    @contextmanager
+    def _gpu_guard(self, gpu_index: str):
+        """Serialise this in-process nnUNet run with every other CTV engine.
+
+        The pancreatic path used to run without the cross-process lock the
+        subprocess engines already share, so a lung/liver run could start on
+        the same card and OOM.  Same lock, same policy, no inference change.
+        """
+        from .site_model_runtime import gpu_lock
+        with gpu_lock(gpu_index):
+            yield
+
     def _run_nnunet_inference(self, image: sitk.Image, config_dir: str, fast_mode: bool) -> np.ndarray:
         """Run nnUNet v2 inference using Python API."""
         import gc
@@ -492,6 +505,12 @@ class NNUNetPancreaticTumorTool(BaseTool):
         else:
             device = torch.device("cpu")
             logger.info("No GPU available, using CPU")
+        _gpu_lock_cm = (
+            self._gpu_guard(str(_chosen_gpu).split(":")[-1])
+            if device.type == "cuda" else None
+        )
+        if _gpu_lock_cm is not None:
+            _gpu_lock_cm.__enter__()
         tile_step_size = _env_float(
             "BRACHYBOT_PANCREATIC_CTV_TILE_STEP_SIZE",
             0.75 if fast_mode else 0.5,
@@ -575,3 +594,5 @@ class NNUNetPancreaticTumorTool(BaseTool):
             if _gpu_session is not None:
                 _gpu_session.__exit__(None, None, None)
                 logger.info(f"Released GPU lease for {_chosen_gpu}")
+            if _gpu_lock_cm is not None:
+                _gpu_lock_cm.__exit__(None, None, None)
