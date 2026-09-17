@@ -100,3 +100,32 @@ def test_pancreatic_inference_uses_shared_gpu_lock(monkeypatch):
     with P.NNUNetPancreaticTumorTool()._gpu_guard('0'):
         pass
     assert used['gpu'] == '0'
+
+
+def test_biomedparse_external_inference_is_pinned_and_locked(monkeypatch):
+    import contextlib
+    import numpy as np
+    from tool_factory.CTV_seg import biomedparse_v2 as B
+
+    seen = {}
+
+    @contextlib.contextmanager
+    def fake_guard():
+        yield '3'
+
+    monkeypatch.setattr(B, '_inference_gpu_guard', fake_guard)
+
+    def fake_run(cmd, **kwargs):
+        seen['env'] = kwargs.get('env') or {}
+        return type('R', (), {'returncode': 1, 'stdout': '', 'stderr': 'stop'})()
+
+    monkeypatch.setattr(B.subprocess, 'run', fake_run)
+    try:
+        B._run_external_inference(
+            normalised=np.zeros((4, 4, 4), dtype=np.float32),
+            root=B.Path('.'), checkpoint=B.Path('x'), text_assets=B.Path('y'),
+            runtime_python=B.Path('/usr/bin/false'), prompt='lung', slice_batch_size=1,
+        )
+    except Exception:
+        pass
+    assert seen['env'].get('CUDA_VISIBLE_DEVICES') == '3'

@@ -18,6 +18,7 @@ import os
 import subprocess
 import sys
 import threading
+from contextlib import contextmanager
 import json
 import tempfile
 import hashlib
@@ -534,6 +535,28 @@ def _load_runtime(
         return runtime
 
 
+@contextmanager
+def _inference_gpu_guard():
+    """Hold the shared CTV GPU lock for one isolated BiomedParse inference.
+
+    The worker uses the process-default CUDA device, so without this it would
+    fall onto GPU 0 and contend with unrelated jobs.  Yields the elected GPU
+    index, or ``None`` when only a CPU runtime is available.
+    """
+    from .site_model_runtime import gpu_lock
+    from plans.device_manager import device_session
+
+    preferred = os.environ.get("BRACHYBOT_CTV_GPU") or None
+    with device_session(caller="biomedparse_v2", prefer=preferred) as lease:
+        device = str(lease.device_str)
+        if not device.startswith("cuda:"):
+            yield None
+            return
+        gpu_index = device.split(":", 1)[1]
+        with gpu_lock(gpu_index):
+            yield gpu_index
+
+
 def _run_external_inference(
     *,
     normalised: np.ndarray,
@@ -575,14 +598,20 @@ def _run_external_inference(
             "--slice-batch-size",
             str(max(1, int(slice_batch_size))),
         ]
-        completed = subprocess.run(
-            command,
-            cwd=str(root),
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=float(os.environ.get("BIOMEDPARSE_V2_INFERENCE_TIMEOUT", "1800")),
-        )
+        with _inference_gpu_guard() as gpu_index:
+            env = os.environ.copy()
+            if gpu_index is not None:
+                # Pin the worker to the leased card instead of its default cuda.
+                env["CUDA_VISIBLE_DEVICES"] = str(gpu_index)
+            completed = subprocess.run(
+                command,
+                cwd=str(root),
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=float(os.environ.get("BIOMEDPARSE_V2_INFERENCE_TIMEOUT", "1800")),
+            )
         if completed.returncode != 0:
             detail = (completed.stderr or completed.stdout or "").strip()[-4000:]
             raise RuntimeError(
