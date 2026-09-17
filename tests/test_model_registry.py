@@ -147,3 +147,20 @@ def test_open_vocabulary_route_is_a_registered_peer():
     assert target_semantics('biomedparse_segmentation') == 'candidate_mask'
     assert is_registered_model_source('biomedparse_segmentation')
     assert 'biomedparse_segmentation' not in {r.id for r in ui_routes()}
+
+
+def test_catalog_lists_registry_routes_as_peers():
+    from tool_factory.CTV_seg import filter_catalog, normalize_tumor_type
+
+    visible = [r for r in filter_catalog() if r.get('ui_visible')]
+    resolved = {
+        normalize_tumor_type(r.get('tumor_type') or r.get('id') or '')
+        for r in visible
+    }
+    for rid in ('nnunet_pancreatic', 'nnunet_liver_tumor', 'nnunet_kidney_tumor',
+                'nnunet_head_neck_gtv', 'nnunet_nasopharynx_ncct',
+                'nnunet_nasopharynx_cect', 'vista3d_lung_tumor',
+                'biomedparse_colon_primary', 'biomedparse_prostate_lesion'):
+        assert rid in resolved, rid
+    assert 'biomedparse_lung_lesion' not in resolved
+    assert 'biomedparse_head_neck_cancer' not in resolved
