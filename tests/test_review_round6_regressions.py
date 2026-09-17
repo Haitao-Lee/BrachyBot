@@ -1219,7 +1219,7 @@ def test_direct_ctv_request_uses_explicit_site_without_inventing_an_ambiguous_on
     assert agent._detect_tool_request("segment CTV") is None
     head_neck = agent._detect_tool_request("segment a head and neck tumor CTV")
     assert head_neck[0]["tool"] == "ctv_segmentation"
-    assert head_neck[0]["params"]["tumor_type"] == "biomedparse_head_neck_cancer"
+    assert head_neck[0]["params"]["tumor_type"] == "nnunet_head_neck_gtv"
 
 
 def test_direct_ctv_request_does_not_treat_manual_provenance_as_a_model():
@@ -1252,10 +1252,15 @@ def test_ctv_registry_exposes_only_automatic_or_explicit_interactive_routes():
     assert VoCoPancreaticTumorTool.LABEL_MAP[3] == ("artery", False)
     assert VoCoPancreaticTumorTool.LABEL_MAP[4] == ("pancreas", False)
     assert {"voco_liver", "voco_kidney", "voco_lung", "voco_colon"}.isdisjoint(TOOL_REGISTRY)
-    assert all(
-        isinstance(get_tool(alias), BiomedParseV2CTVTool)
-        for alias in ("voco_liver", "voco_kidney", "voco_lung", "voco_colon")
-    )
+    from tool_factory.CTV_seg.site_model_tumor import VistaLungTumorTool
+    from tool_factory.CTV_seg.nnunet_cascade_tumor import NNUNetCascadeTumorTool
+
+    # Liver and kidney are the installed five-fold cascades; colon and lung are
+    # no longer text-guided after the supplied-site migration.
+    assert isinstance(get_tool("voco_liver"), NNUNetCascadeTumorTool)
+    assert isinstance(get_tool("voco_kidney"), NNUNetCascadeTumorTool)
+    assert isinstance(get_tool("voco_colon"), BiomedParseV2CTVTool)
+    assert isinstance(get_tool("voco_lung"), VistaLungTumorTool)
     assert {
         "voco_btcv", "voco_segthor", "voco_fumpe", "voco_covid",
         "voco_aorta", "voco_brats21",

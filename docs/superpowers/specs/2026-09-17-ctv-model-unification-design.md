@@ -145,3 +145,13 @@
 
 - 发布树 `BrachyBot-release` 同步：另开一轮。
 - catalog 成熟度文案最终措辞（`verified`/`experimental` 仅说明文字）。
+
+## 10. 增补：BiomedParse v2 作为并列的开放词汇通路（2026-09-17 追加）
+
+已确认 BiomedParse v2 是开放词汇通路，与六个专用模型并列同一门类 `tumor_segmentation`，统一管理与调度：
+
+- **并列登记**：注册表新增 `biomedparse_segmentation`（`engine=text_guided`，开放词汇，`target`/`prompt` 任意文本）与已登记的 `biomedparse_colon_primary`/`biomedparse_prostate_lesion`（闭集 prompt）。三者与专用模型共用同一门类分组、可用性探测与前端呈现。
+- **下游语义**：新增 `target_semantics='candidate_mask'` —— 开放词汇产出**可复核候选 mask**（沿用 `generic_mask`，`source=biomedparse_v2`），不自动成为 CTV/OAR；用户可在 Data Tree 显式提升为 CTV 后进入规划链。
+- **无专用模型肿瘤的回退**：当 `ctv_segmentation` 收到未注册 `tumor_type` 时，失败元数据返回 `open_vocabulary_available=True` 与建议 prompt；路由允许改用 `biomedparse_segmentation`，前端明确标注"研究性候选，需复核"。
+- **统一调度**：BiomedParse 外部推理（`scripts/biomedparse_v2_worker.py`）必须与其他引擎共用 DeviceManager lease + 跨进程 `gpu_lock`，并通过 `CUDA_VISIBLE_DEVICES` 显式指定 DeviceManager 选出的卡（当前 worker 硬用默认 `cuda`，会抢 GPU0）。
+- **前端一致**：可用即绿；肿瘤类别与开放词汇通路同分组；提示其为研究性候选。

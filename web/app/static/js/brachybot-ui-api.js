@@ -3336,6 +3336,10 @@ function _syncTumorTypeSelectorAppearance() {
                 biomedparse_lung_lesion: ['CT'],
                 biomedparse_colon_primary: ['CT'],
                 biomedparse_head_neck_cancer: ['CT'],
+                vista3d_lung_tumor: ['CT'],
+                nnunet_head_neck_gtv: ['CT'],
+                nnunet_nasopharynx_ncct: ['CT'],
+                nnunet_nasopharynx_cect: ['CT'],
                 biomedparse_prostate_lesion: ['T2w', 'MRI'],
                 nnunet_pancreatic: ['CT'],
             };
@@ -3369,10 +3373,10 @@ function _syncTumorTypeSelectorAppearance() {
     // callable; missing runtimes and disabled routes are red.
     const callable = selected?.dataset?.callable === 'true'
         || capability === 'verified'
-        // The validated pancreatic route gets an immediate green bootstrap
-        // state; the async probe can still downgrade it if this runtime is
-        // missing the model resource.
-        || (capability === 'loading' && ['nnunet_pancreatic', 'nnunet_liver_tumor', 'nnunet_kidney_tumor'].includes(selected?.value));
+        // Every category rendered in this selector is supported. It shows
+        // green immediately and the async capability probe can still turn it
+        // red (with a reason) when this runtime is missing the model.
+        || capability === 'loading';
     ['available', 'unavailable', 'verified', 'experimental', 'disabled'].forEach(name => {
         select.classList.remove(`tumor-type-${name}`);
     });
@@ -3381,7 +3385,7 @@ function _syncTumorTypeSelectorAppearance() {
         const stateName = option.dataset.capabilityState || 'disabled';
         const optionCallable = option.dataset.callable === 'true'
             || stateName === 'verified'
-            || (stateName === 'loading' && ['nnunet_pancreatic', 'nnunet_liver_tumor', 'nnunet_kidney_tumor'].includes(option.value));
+            || stateName === 'loading';
         option.style.color = optionCallable ? '#4ade80' : '#fb7185';
         option.style.fontWeight = optionCallable ? '600' : '500';
         option.title = option.dataset.capabilityReason || '';
@@ -3470,6 +3474,19 @@ async function refreshTumorTypeAvailability() {
 function updateTumorTypeSelector(value) {
     const raw = String(value || '').trim();
     if (!raw) return false;
+    // Nasopharynx contrast phase is a clinical decision: never guess it from
+    // the wording or the image. Ask the user to pick ncct or cect.
+    if (/^(?:鼻咽|鼻咽癌|nasopharynx|nasopharyngeal)$/.test(raw.toLowerCase())) {
+        const help = document.getElementById('ctvModelHelp');
+        if (help) {
+            const zh = '请选择鼻咽 GTV 平扫 CT（ncct）或增强 CT（cect）模型。';
+            const en = 'Choose the nasopharynx GTV non-contrast (ncct) or contrast-enhanced (cect) model.';
+            help.dataset.i18nZh = zh;
+            help.dataset.i18nEn = en;
+            help.textContent = typeof window._t === 'function' ? window._t(zh, en) : en;
+        }
+        return false;
+    }
     const aliases = {
         pancreas: 'nnunet_pancreatic', pancreatic: 'nnunet_pancreatic',
         liver: 'nnunet_liver_tumor', kidney: 'nnunet_kidney_tumor',
@@ -3483,8 +3500,15 @@ function updateTumorTypeSelector(value) {
         '结肠': 'biomedparse_colon_primary', '结肠癌': 'biomedparse_colon_primary',
         '前列腺': 'biomedparse_prostate_lesion', '头颈': 'biomedparse_head_neck_cancer',
         '头颈部': 'biomedparse_head_neck_cancer', '头颈肿瘤': 'biomedparse_head_neck_cancer',
+        '头颈部肿瘤': 'nnunet_head_neck_gtv',
+        '鼻咽癌平扫': 'nnunet_nasopharynx_ncct', '鼻咽平扫': 'nnunet_nasopharynx_ncct',
+        '鼻咽癌增强': 'nnunet_nasopharynx_cect', '鼻咽增强': 'nnunet_nasopharynx_cect',
     };
-    const key = aliases[raw.toLowerCase()] || raw.toLowerCase();
+    const legacyKey = aliases[raw.toLowerCase()] || raw.toLowerCase();
+    const key = ({biomedparse_lung_lesion: 'vista3d_lung_tumor',
+        biomedparse_head_neck_cancer: 'nnunet_head_neck_gtv',
+        nasopharynx_ncct: 'nnunet_nasopharynx_ncct',
+        nasopharynx_cect: 'nnunet_nasopharynx_cect'})[legacyKey] || legacyKey;
     const select = document.getElementById('ctvModelSelect');
     if (!select || !Array.from(select.options).some(option => option.value === key)) {
         const help = document.getElementById('ctvModelHelp');
@@ -4610,6 +4634,25 @@ function _workspaceHasLiveVisibleClinicalState(workspace, sessionId) {
 }
 window.workspaceHasLiveVisibleClinicalState = _workspaceHasLiveVisibleClinicalState;
 
+function _workspaceHasSavedPresentation(workspace) {
+    // Any saved viewer/data-tree presentation means an interrupted restore
+    // must not publish a partially cleared ui.state over it.
+    if (!workspace || typeof workspace !== 'object') return false;
+    const uiState = (workspace.ui && (workspace.ui.state || workspace.ui)) || {};
+    const labels = uiState?.viewer?.masks?.labels;
+    if (labels && typeof labels === 'object' && Object.keys(labels).length > 0) return true;
+    const tree = uiState.data_tree || workspace.data_tree || workspace.dataTree;
+    if (!tree || typeof tree !== 'object') return false;
+    return ['uploadMasks', 'upload_masks', 'organs', 'ctvLabels', 'ctv_labels']
+        .some(key => {
+            const value = tree[key];
+            if (Array.isArray(value)) return value.length > 0;
+            return !!(value && typeof value === 'object' && Object.keys(value).length > 0);
+        });
+}
+window.workspaceHasSavedPresentation = _workspaceHasSavedPresentation;
+
+
 function _workspaceNeedsClinicalRestore(workspace, status) {
     // An authoritative empty workspace must win over any stale lightweight
     // status object left by the previous case. This is the key guard against
@@ -4718,6 +4761,11 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         );
     } else {
         window.clearWorkspacePresentationRestore?.(sessionAtStart);
+    }
+    // Nothing to protect for a brand-new/empty case; release the write lock so
+    // the user's own edits are persisted even if a later loader fails.
+    if (!_workspaceHasSavedPresentation(workspace)) {
+        window.unlockWorkspacePresentationWrites?.(sessionAtStart);
     }
 
     state.sessionId = status.session_id || sessionAtStart;
@@ -5348,11 +5396,17 @@ function restoreActiveSessionWorkspace(options = {}) {
     if (active?.sessionId === sessionId) return active.promise;
     const transaction = { sessionId, promise: null };
     _workspaceRestoreTransaction = transaction;
+    // Keep the saved ui.state authoritative for the whole restore. The lock is
+    // released only when the restore actually finishes; an interrupted restore
+    // must not let a partial snapshot overwrite saved colours/opacities.
+    const presentationWriteLockToken = window.lockWorkspacePresentationWrites?.(sessionId) ?? null;
     // Defer execution until ownership and the shared promise are published.
+    let coreFailed = false;
+    let visualResult = null;
     transaction.promise = Promise.resolve().then(() => _runWorkspaceRestoreTransaction(options));
     transaction.promise.then(async () => {
         const entry = _workspaceVisualReadinessStore()[sessionId || '__no_session__'];
-        if (entry) await entry.promise;
+        if (entry) visualResult = await entry.promise;
         // All registered late resources (OAR/CTV meshes, seeds/needles, dose
         // surfaces, guide, masks and report read dependencies) are settled at
         // this point. Reconcile once more before releasing the presentation
@@ -5370,7 +5424,9 @@ function restoreActiveSessionWorkspace(options = {}) {
                 console.debug('[session restore] final presentation reconciliation deferred:', error);
             }
         }
-    }).catch(() => {}).finally(() => {
+    }).catch(() => {
+        coreFailed = true;
+    }).finally(() => {
         // The core restore may return before registered mesh/guide/mask tasks
         // finish. Keep the saved presentation authoritative until that shared
         // visual barrier settles, then allow ordinary user updates to own the
@@ -5378,10 +5434,21 @@ function restoreActiveSessionWorkspace(options = {}) {
         // Finalization is token-scoped as well as session-scoped.  A late
         // restore from an older transaction must not release the presentation
         // fence belonging to a newer restore of the same Session.
+        // Only a restore whose visual barrier actually finished may flush a
+        // deferred UI save. A failed or partial restore used to persist the
+        // cleared presentation state over the saved colours and opacities, so
+        // every later reload could only show defaults.
+        const persistRestoredPresentation = !coreFailed
+            && visualResult != null
+            && visualResult.ready !== false;
         window.finalizeWorkspacePresentationRestore?.(
             sessionId,
             window.__workspaceHydrationRunId || null,
+            { persistDeferred: persistRestoredPresentation },
         );
+        if (persistRestoredPresentation) {
+            window.unlockWorkspacePresentationWrites?.(presentationWriteLockToken);
+        }
         if (_workspaceRestoreTransaction === transaction) _workspaceRestoreTransaction = null;
     });
     return transaction.promise;
@@ -5935,7 +6002,9 @@ async function loadDefaultParams() {
 
         // Keep the manual selector aligned with the server-side default.
         // The value is a model identifier, not a translated display label.
-        setVal('ctvModelSelect', d.tumor_type || 'nnunet_pancreatic');
+        setVal('ctvModelSelect', ({biomedparse_lung_lesion: 'vista3d_lung_tumor',
+            biomedparse_head_neck_cancer: 'nnunet_head_neck_gtv'})[d.tumor_type]
+            || d.tumor_type || 'nnunet_pancreatic');
 
         // Seed info
         if (d.seed_info) {
@@ -6598,6 +6667,7 @@ function _emitUIActionProgress(step) {
 
 async function _executeUIActionsWithProgress(actions, options = {}) {
     const ownerSessionId = String(options.sessionId || '');
+    const ownerRequestId = String(options.requestId || window._brachyLiveTrace?.requestId || '');
     const results = [];
     for (let i = 0; i < actions.length; i += 1) {
         if (!_uiActionSessionIsCurrent(ownerSessionId)) break;
@@ -6615,6 +6685,7 @@ async function _executeUIActionsWithProgress(actions, options = {}) {
             parent_tool: 'ui_controller',
             params: { target, command, value: action.value },
             session_id: ownerSessionId || _activeApiSessionId(),
+            request_id: ownerRequestId,
         };
         _emitUIActionProgress({ ...base, status: 'pending', content: 'Applying UI action' });
         // Yield once so the live Execution Trace can paint its breathing state
@@ -6622,7 +6693,12 @@ async function _executeUIActionsWithProgress(actions, options = {}) {
         await new Promise(resolve => setTimeout(resolve, 0));
         try {
             const result = await _executeUIAction(action, { sessionId: ownerSessionId });
-            if (!_uiActionSessionIsCurrent(ownerSessionId)) break;
+            if (!_uiActionSessionIsCurrent(ownerSessionId)) {
+                const stale = { success: false, stale: true, error: 'Session changed; UI action completion cannot be confirmed.' };
+                results.push(stale);
+                _emitUIActionProgress({ ...base, status: 'cancelled', result: stale.error });
+                break;
+            }
             results.push(result);
             const failed = result === false
                 || (result && (result.success === false || result.stale === true));
@@ -11042,7 +11118,8 @@ function _normalizeStructuredScreenshotPlan(target, question, options = {}) {
         overlays: supplied.overlays && typeof supplied.overlays === 'object' ? supplied.overlays : {},
         visual_purpose: visualPurpose,
         analysis_required: supplied.analysis_required ?? supplied.analysisRequired ?? true,
-        annotation_policy: annotationPolicy,
+        annotation_policy: visualPurpose === 'locate' && annotationPolicy === 'auto'
+            ? 'required' : annotationPolicy,
         request_intent: requestIntent,
         semantic_target: semanticTarget || (semanticTargets.length === 1 ? semanticTargets[0] : ''),
         semantic_targets: semanticTargets,
@@ -11450,6 +11527,69 @@ async function _annotateRequiredScreenshotBeforeDisplay(attachment, context = {}
     return attachment;
 }
 
+// Reveal only resolved live nodes for this evidence transaction. No clinical
+// generation, reconstruction, persisted preference change, or fuzzy label match.
+function _revealScreenshotNodes(plan, ownerStillActive = () => true) {
+    const saved = new Map();
+    const refs = _screenshotTargetRefs(plan);
+    const nodes = refs.map(ref => _dataTreeRowForTargetRef(ref))
+        .filter(Boolean).flatMap(row => _dataTreeRowIdentities(row)
+            .map(id => typeof _findDataTreeNode === 'function' ? _findDataTreeNode(id) : null)
+            .filter(Boolean));
+    // Canonical collection IDs mean the collection, not its first child row.
+    // Reuse the Data Tree's ownership model for CTV/OAR and planning groups.
+    const groups = {
+        'structure:ctv:active': 'ctv', 'structure:oar:active': 'oar',
+        'group:planning:seeds': 'planning_seeds',
+        'group:planning:needles': 'planning_needles',
+        'group:planning:trajectories': 'planning_trajectories',
+    };
+    refs.forEach(ref => {
+        if (groups[ref] && typeof _groupViewNodes === 'function') {
+            nodes.push(..._groupViewNodes(groups[ref]).filter(Boolean));
+        }
+    });
+    const remember = node => {
+        if (saved.has(node)) return;
+        saved.set(node, Object.fromEntries(['visible', 'visible3D', 'opacity'].map(key =>
+            [key, { present: Object.prototype.hasOwnProperty.call(node, key), value: node[key] }])));
+        node.visible = true;
+        node.visible3D = true;
+        if (Number(node.opacity) === 0) node.opacity = 1;
+    };
+    nodes.forEach(node => {
+        const seen = new Set();
+        while (node && !seen.has(node)) {
+            seen.add(node);
+            remember(node);
+            node = typeof _dataTreeParentNode === 'function' ? _dataTreeParentNode(node) : null;
+        }
+    });
+    const refresh = () => {
+        if (typeof applyDataTreeViewVisibility === 'function') applyDataTreeViewVisibility();
+        if (typeof renderDataTree === 'function') renderDataTree();
+    };
+    refresh();
+    return () => {
+        saved.forEach((values, node) => Object.entries(values).forEach(([key, entry]) => {
+            if (entry.present) node[key] = entry.value;
+            else delete node[key];
+        }));
+        // Restore the saved node objects, but never redraw a different case.
+        if (ownerStillActive()) refresh();
+    };
+}
+
+function _orderLocateCaptureViews(plan, views) {
+    if (plan.mode !== 'chat' || plan.visual_purpose !== 'locate'
+        || !_screenshotTargetRefs(plan).length
+        || !views.some(view => view.target === 'viewer-3d')) return views;
+    // Capture the original eye state before any temporary reveal. This is
+    // also useful when a mesh is missing: the real control remains evidence.
+    return [views.find(view => view.target === 'data-tree') || { target: 'data-tree' },
+        ...views.filter(view => view.target !== 'data-tree')];
+}
+
 async function _interceptScreenshot(target, question, galleryContext, options = {}) {
     const context = galleryContext || {};
     const ownerSessionId = String(options.sessionId || context.sessionId || _activeApiSessionId());
@@ -11501,9 +11641,17 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
     }
 
     const reportViews = plan.views.filter(view => String(view?.target || '') === 'report');
-    const captureViews = plan.views.filter(view => String(view?.target || '') !== 'report');
+    const captureViews = _orderLocateCaptureViews(plan,
+        plan.views.filter(view => String(view?.target || '') !== 'report'));
     const snapshot = captureViews.length ? _snapshotScreenshotViewerState() : null;
+    // A periodic UI checkpoint must not persist the temporary reveal as the
+    // operator's preference. Never take over an existing hydration lock.
+    const presentationToken = captureViews.length
+        && typeof window.lockWorkspacePresentationWrites === 'function'
+        && !window.isWorkspacePresentationWriteLocked?.(ownerSessionId)
+        ? window.lockWorkspacePresentationWrites(ownerSessionId) : null;
     let activeViewRestore = null;
+    let restoreVisibility = null;
     const attachments = [];
     try {
         if (reportViews.length) {
@@ -11517,6 +11665,15 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                 const view = captureViews[index];
                 const viewTarget = String(view.target || 'full');
                 const captureSpec = Object.assign({}, plan, view);
+                if (plan.mode === 'chat' && plan.visual_purpose === 'locate'
+                    && viewTarget === 'viewer-3d' && _screenshotTargetRefs(plan).length) {
+                    restoreVisibility = _revealScreenshotNodes(plan, ownerStillActive);
+                    captureSpec.preserve_current_view = false;
+                    captureSpec.preserveCurrentView = false;
+                    captureSpec.focus = { kind: 'auto', padding: 0.35 };
+                    captureSpec.annotation_policy = plan.annotation_policy === 'none' ? 'none' : 'required';
+                    await _waitScreenshotFrames(3);
+                }
                 const element = viewTarget === 'dose-overview'
                     ? document.body
                     : await _prepareScreenshotTarget(viewTarget, captureSpec);
@@ -11538,9 +11695,11 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                 captureSpec,
             );
             const dataUrl = evidenceBundle?.dataUrl || null;
+            if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
             if (!await _validateScreenshotDataUrl(dataUrl)) {
                 throw new Error(`blank_or_invalid:${viewTarget}`);
             }
+            if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
             const currentPlanningId = String(
                 plan.planning_id
                 || (typeof dataTreeState !== 'undefined'
@@ -11623,6 +11782,7 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                         preserve_current_view: plan.preserve_current_view === true
                             || plan.preserveCurrentView === true,
                         focus_result: captureSpec.__focusResult || null,
+                        temporary_reveal: !!restoreVisibility,
                         grounding_manifest: groundingManifest,
                     },
                 }),
@@ -11633,6 +11793,7 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
             if (!response.ok) throw new Error(payload.error || `upload_failed:${response.status}`);
             const screenshotUrl = payload.url || payload.screenshot_url || payload.path;
             if (!screenshotUrl) throw new Error('missing_screenshot_url');
+            if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
             const uploadedAttachment = Object.assign(
                 {},
                 payload.attachment || {},
@@ -11675,6 +11836,7 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                             preserve_current_view: plan.preserve_current_view === true
                                 || plan.preserveCurrentView === true,
                             focus_result: captureSpec.__focusResult || null,
+                            temporary_reveal: !!restoreVisibility,
                             grounding_manifest: groundingManifest,
                         },
                     ),
@@ -11704,12 +11866,16 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
             );
             if (attachment) attachments.push(attachment);
             } finally {
-                if (typeof activeViewRestore === 'function') {
+                if (ownerStillActive() && typeof activeViewRestore === 'function') {
                     try { activeViewRestore(); } catch (error) {
                         console.debug('[screenshot] per-view focus restore skipped:', error);
                     }
                 }
                 activeViewRestore = null;
+                if (restoreVisibility) {
+                    restoreVisibility();
+                    restoreVisibility = null;
+                }
             }
         }
         return {
@@ -11731,7 +11897,12 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
             plan,
         };
     } finally {
-        await _restoreScreenshotViewerState(snapshot, activeViewRestore);
+        // Never apply the previous case's camera/slices/DOM to a new Session.
+        try {
+            if (ownerStillActive()) await _restoreScreenshotViewerState(snapshot, activeViewRestore);
+        } finally {
+            if (presentationToken !== null) window.unlockWorkspacePresentationWrites?.(presentationToken);
+        }
     }
 }
 

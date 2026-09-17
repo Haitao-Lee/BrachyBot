@@ -59,7 +59,10 @@ def test_legacy_voco_aliases_route_to_current_ctv_executors():
     )
     from tool_factory.CTV_seg.pancreatic_tumor_nnunet import NNUNetPancreaticTumorTool
 
-    for alias in ("lung_tumor", "colon_tumor", "voco_lung", "voco_colon"):
+    from tool_factory.CTV_seg.site_model_tumor import VistaLungTumorTool
+    for alias in ("lung_tumor", "voco_lung"):
+        assert isinstance(get_tool(alias), VistaLungTumorTool), alias
+    for alias in ("colon_tumor", "voco_colon"):
         assert isinstance(get_tool(alias), BiomedParseV2CTVTool), alias
     for alias in ("kidney_tumor", "voco_kidney"):
         assert isinstance(get_tool(alias), NNUNetKidneyTumorTool), alias
@@ -82,9 +85,9 @@ def test_tumor_type_normalizer_unifies_catalog_display_and_legacy_aliases():
         "sat3d_liver_tumor": "nnunet_liver_tumor",
         "\u809d\u810f\u80bf\u7624": "nnunet_liver_tumor",
         "kidney": "nnunet_kidney_tumor",
-        "lung": "biomedparse_lung_lesion",
+        "lung": "vista3d_lung_tumor",
         "colon": "biomedparse_colon_primary",
-        "head and neck": "biomedparse_head_neck_cancer",
+        "head and neck": "nnunet_head_neck_gtv",
         "prostate": "biomedparse_prostate_lesion",
         "pancreatic tumor": "nnunet_pancreatic",
     }
@@ -351,7 +354,7 @@ def test_unavailable_liver_ctv_fails_closed_on_biomedparse_runtime(monkeypatch):
         lambda: {"available": False, "missing": ["checkpoint"]},
     )
     image = sitk.GetImageFromArray(np.zeros((4, 4, 4), dtype=np.int16))
-    result = CTVSegmentationTool().execute(image=image, tumor_type="biomedparse_lung_lesion")
+    result = CTVSegmentationTool().execute(image=image, tumor_type="biomedparse_colon_primary")
     assert result.success is False
     assert "BiomedParse" in (result.error or "")
     assert "SAT3D" not in (result.error or "")

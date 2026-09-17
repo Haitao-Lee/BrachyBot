@@ -21,6 +21,8 @@ from agent_runtime.turn_policy import (
     is_viewer_result_display_request,
     requires_planning_before_guide,
     resolve_report_request_action,
+    unambiguous_report_generation_request,
+    unambiguous_guide_generation_request,
     resolve_session_content_target,
     resolve_session_visual_location_request,
     resolve_ui_operation_request,
@@ -28,8 +30,10 @@ from agent_runtime.turn_policy import (
 )
 from agent_runtime.shortcut_contract import planning_command, explicit_repeat, explicit_segmentation_request
 from plans.dose_pre.model_loader import resolve_prescription_gy
-from tool_factory.ui_controller import normalize_ui_controller_request
+from tool_factory.ui_controller import normalize_ui_controller_request, CONTROL_REGISTRY
 from utils.user_errors import format_tool_error, sanitize_user_response
+from agent_runtime import request_parse as _request_parse
+from agent_runtime.execution_authorization import MUTATING_TOOLS
 
 logger = logging.getLogger(__name__)
 
@@ -855,6 +859,34 @@ print(json.dumps(result))
                     if planned_calls:
                         return planned_calls
                 return None
+            # State gate: a guide that is already ready and whose inputs were
+            # not explicitly changed is a read/presentation request, not a new
+            # long-running computation.  An explicit "重新/重建/重做/覆盖"
+            # keeps the regeneration path.
+            memory = getattr(self, "memory", None)
+            retrieve = getattr(memory, "retrieve", None)
+            existing_guide = None
+            if callable(retrieve):
+                try:
+                    existing_guide = retrieve("surgical_guide")
+                except Exception:
+                    existing_guide = None
+            guide_forced = bool(re.search(
+                r"(?:重新|再次|重建|重做|重跑|覆盖|无视现有|忽略现有|overwrite|rerun|re-run)",
+                message,
+            )) or self._force_reexecution_requested(message)
+            if existing_guide and not guide_forced:
+                logger.info(
+                    "Guide already ready and inputs unchanged; presenting it "
+                    "instead of recomputing"
+                )
+                return [{
+                    "id": "tool_direct_surgical_guide_ready",
+                    "tool": "ui_controller",
+                    "params": {
+                        "actions": [{"target": "viewer.refresh_planning", "command": "run"}],
+                    },
+                }]
             return [{
                 "id": "tool_direct_surgical_guide",
                 "tool": "surgical_guide",
@@ -2211,6 +2243,13 @@ Output (JSON array of strings):"""
     }
 
     _SUPPORTED_AUTOMATIC_CTV_TYPES = frozenset({
+        # Sentinel route: the phase (ncct/cect) is a clinical choice, so the
+        # tool asks for it instead of guessing from image intensity.
+        "nasopharynx",
+        "vista3d_lung_tumor",
+        "nnunet_head_neck_gtv",
+        "nnunet_nasopharynx_ncct",
+        "nnunet_nasopharynx_cect",
         "nnunet_pancreatic",
         "nnunet_liver_tumor",
         "nnunet_kidney_tumor",
@@ -2298,6 +2337,9 @@ Output (JSON array of strings):"""
         # transcript map above: they are real Unicode user input, not the
         # mojibake spellings found in older persisted prompts.
         unicode_aliases = (
+            ("nasopharynx", "nasopharynx"),
+            ("nasopharyngeal", "nasopharynx"),
+            ("鼻咽", "nasopharynx"),
             ("\u80f0\u817a\u764c", "nnunet_pancreatic"),
             ("\u80f0\u817a\u80bf\u7624", "nnunet_pancreatic"),
             ("\u80f0\u817a", "nnunet_pancreatic"),
@@ -2329,7 +2371,7 @@ Output (JSON array of strings):"""
             msg = text.lower()
             for keyword, tool_name in unicode_aliases:
                 if keyword in msg:
-                    return tool_name
+                    return self._map_tumor_type(tool_name)
             for keyword, tool_name in self._TUMOR_TYPE_MAP.items():
                 if keyword in msg:
                     return tool_name
@@ -2595,6 +2637,55 @@ Output (JSON array of strings):"""
                 },
             }]
 
+        # Object-level mis-selection guard: an unambiguous report mutation can
+        # never be executed by the guide tool or by a read-only presentation
+        # tool. A provider occasionally maps "手术报告" (surgical report) to
+        # `surgical_guide` because of the word "手术". Keep the protected
+        # report object attached to the single report capability even when a
+        # semantic/compound turn bypassed the deterministic report route.
+        # Negation/compound wording is excluded by the predicate itself, so
+        # only the wrong-object call is corrected and every other planned
+        # action is preserved.
+        guard_memory = getattr(self, "memory", None)
+        guard_question = ""
+        for item in reversed(getattr(guard_memory, "conversation", []) or []):
+            if isinstance(item, dict) and str(item.get("role", "")).lower() == "user":
+                guard_question = self._message_text(item.get("content", ""))
+                if guard_question:
+                    break
+        if guard_question and unambiguous_report_generation_request(guard_question):
+            guard_params = {"actions": [{"target": "report.autofill", "command": "run"}]}
+            guarded: List[Dict] = []
+            converted = False
+            for call in (tool_calls or []):
+                if str(call.get("tool") or "") in {"surgical_guide", "ui_screenshot", "ui_content"}:
+                    if not converted:
+                        guarded.append({**call, "tool": "ui_controller", "params": guard_params})
+                        converted = True
+                else:
+                    guarded.append(call)
+            tool_calls = guarded
+
+        # Symmetric object-level guard: an unambiguous guide mutation can never
+        # be executed by the report capability, even if the provider selected
+        # ``report_auto_fill``/``report_generator`` for wording that merely
+        # mentions a report as an output.  Compound "guide and report" turns
+        # are excluded by the predicate itself and keep their semantic plan.
+        if guard_question and unambiguous_guide_generation_request(guard_question):
+            guide_params = {"action": "generate"}
+            guided: List[Dict] = []
+            converted = False
+            for call in (tool_calls or []):
+                if str(call.get("tool") or "") in {
+                    "report_auto_fill", "report_generator", "ui_screenshot", "ui_content",
+                }:
+                    if not converted:
+                        guided.append({**call, "tool": "surgical_guide", "params": guide_params})
+                        converted = True
+                else:
+                    guided.append(call)
+            tool_calls = guided
+
         valid = []
         for tc in tool_calls:
             tn = tc.get("tool", "")
@@ -2728,6 +2819,36 @@ Output (JSON array of strings):"""
                 if not p.get("actions"):
                     logger.warning(f"Dropping ui_controller call with no actions")
                     continue
+                # Action-level whitelist and destructive-command gate. Unknown
+                # targets cannot execute, and clear/delete/reset actions require
+                # an explicit command in the current user turn instead of an
+                # inferred one.
+                current_turn = guard_question or ""
+                safe_actions = []
+                for action in p.get("actions") or []:
+                    if not isinstance(action, dict):
+                        continue
+                    target = str(action.get("target") or "")
+                    if target not in CONTROL_REGISTRY:
+                        logger.warning(
+                            "Dropping ui_controller action with unregistered target %r",
+                            target,
+                        )
+                        continue
+                    if current_turn and not _request_parse.ui_action_explicitly_authorized(
+                        current_turn, target
+                    ):
+                        logger.warning(
+                            "Blocking destructive ui_controller action %r without an "
+                            "explicit clear/delete command",
+                            target,
+                        )
+                        continue
+                    safe_actions.append(action)
+                if not safe_actions:
+                    logger.warning("Dropping ui_controller call with no authorized actions")
+                    continue
+                p["actions"] = safe_actions
             elif tn == "web_search":
                 # Validate required parameters for web_search
                 if not p.get("query", "").strip():
@@ -2750,6 +2871,40 @@ Output (JSON array of strings):"""
                     logger.warning(f"Dropping web_fetch call with no URL")
                     continue
             elif tn == "ui_screenshot":
+                # The provider chose a screenshot, not a clinical mutation.
+                # Preserve the actual user question (including its language)
+                # and bind location evidence to the whole-request resolver.
+                # This also carries a deictic Data Tree follow-up's subject;
+                # never infer its subject from whichever rows are on screen.
+                p["question"] = question or str(p.get("question") or "")
+                memory = getattr(self, "memory", None)
+                for item in reversed(getattr(memory, "conversation", []) or []):
+                    if isinstance(item, dict) and str(item.get("role", "")).lower() == "user":
+                        original_question = self._message_text(item.get("content", ""))
+                        if original_question:
+                            p["question"] = original_question
+                        break
+                getter = getattr(memory, "get_ui_state", None)
+                location = resolve_session_visual_location_request(
+                    p["question"],
+                    conversation=getattr(memory, "conversation", None),
+                    ui_state=getter() if callable(getter) else {},
+                )
+                if (p.get("mode", "chat") == "chat"
+                        and location and not location.get("requires_discovery")):
+                    grounded = self._session_visual_location_screenshot_params(p["question"], location)
+                    # Keep a specifically requested Data Tree-only view. All
+                    # other locate captures use the resolved multi-view plan.
+                    explicit_views = p.get("views") or [p.get("target")]
+                    tree_only = all(
+                        (v.get("target") if isinstance(v, dict) else v) == "data-tree"
+                        for v in explicit_views
+                    )
+                    p.update(grounded)
+                    if tree_only:
+                        p["views"] = ["data-tree"]
+                    p["annotation_policy"] = "required"
+                    tc["params"] = p
                 # A malformed screenshot call can otherwise enter the retry
                 # loop and waste several model calls before failing with a
                 # low-level missing-parameter error. A structured multi-view
@@ -2830,4 +2985,32 @@ Output (JSON array of strings):"""
                 ))
                 tc["params"] = p
             valid.append(tc)
+        # Second-line authorization for provider-selected mutations.  A local
+        # deterministic fast path already validated the whole request through
+        # ``shortcut_supported``; a semantic turn is checked against the parsed
+        # current command here so a question, negation, quoted log or purely
+        # conditional sentence can never execute a write merely because the
+        # provider selected its tool.  ui_controller is governed by the
+        # action-level gate above.
+        if guard_question and getattr(self, "_active_turn_policy", None) is not None and not getattr(
+            getattr(self, "_active_turn_policy", None), "direct_execution", False
+        ):
+            allowed = []
+            for call in valid:
+                tool_name = str(call.get("tool") or "")
+                if (
+                    tool_name in MUTATING_TOOLS
+                    and tool_name != "ui_controller"
+                    and not _request_parse.mutating_execution_authorized(
+                        guard_question, tool_name
+                    )
+                ):
+                    logger.warning(
+                        "Blocked mutating tool %r: current turn is not an affirmative "
+                        "command for that operation",
+                        tool_name,
+                    )
+                    continue
+                allowed.append(call)
+            valid = allowed
         return valid

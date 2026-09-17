@@ -20,6 +20,7 @@ import signal
 import subprocess
 import tempfile
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Dict, Optional
@@ -304,13 +305,15 @@ class NNUNetCascadeTumorTool(BaseTool):
             )
 
         queue_timeout = _positive_int_env("BRACHYBOT_CASCADE_QUEUE_TIMEOUT_SEC", 900)
-        if not _CASCADE_EXECUTION_LOCK.acquire(timeout=queue_timeout):
-            return self._failure(
-                f"The {self.SITE} nnUNet cascade is busy with another GPU inference. "
-                f"The request waited {queue_timeout}s; retry after the active case finishes.",
-                "cascade_gpu_busy",
-                availability=availability,
-            )
+        from utils.cancellation import raise_if_cancelled
+        deadline = time.monotonic() + queue_timeout
+        while True:
+            raise_if_cancelled()
+            if _CASCADE_EXECUTION_LOCK.acquire(timeout=0.2):
+                break
+            if time.monotonic() >= deadline:
+                return self._failure("CTV cascade GPU queue timeout", "cascade_gpu_busy",
+                                     availability=availability)
         try:
             from plans.device_manager import device_session
 
@@ -329,13 +332,24 @@ class NNUNetCascadeTumorTool(BaseTool):
                             availability=availability,
                         )
                     gpu_index = device.split(":", 1)[1] if ":" in device else "0"
-                    return self._run_cascade(
-                        image,
-                        gpu_index=gpu_index,
-                        availability=availability,
-                        fast_mode=fast_mode,
-                    )
+                    from .site_model_runtime import gpu_lock, is_cuda_oom
+                    try:
+                        with gpu_lock(gpu_index):
+                            return self._run_cascade(image, gpu_index=gpu_index,
+                                availability=availability, fast_mode=fast_mode)
+                    except Exception as exc:
+                        from plans.device_manager import DeviceManager
+                        if not is_cuda_oom(exc) or DeviceManager.instance().device_count() < 2:
+                            raise
+                        alternate = "1" if gpu_index == "0" else "0"
+                        with device_session(caller=f"nnunet_cascade_{self.SITE}_retry", prefer=alternate):
+                            with gpu_lock(alternate):
+                                return self._run_cascade(image, gpu_index=alternate,
+                                    availability=availability, fast_mode=fast_mode)
             except Exception as exc:
+                from utils.cancellation import OperationCancelled
+                if isinstance(exc, OperationCancelled):
+                    raise
                 logger.exception("nnUNet %s cascade failed", self.SITE)
                 return self._failure(
                     f"The {self.SITE} nnUNet cascade failed during local inference: {exc}",
@@ -405,7 +419,8 @@ class NNUNetCascadeTumorTool(BaseTool):
             )
             timeout_s = _positive_int_env("BRACHYBOT_CASCADE_TIMEOUT_SEC", 900)
             try:
-                output, _ = proc.communicate(timeout=timeout_s)
+                from .site_model_runtime import communicate_cancellable
+                output = communicate_cancellable(proc, timeout_s)
             except subprocess.TimeoutExpired:
                 self._terminate_subprocess_group(proc)
                 try:
@@ -510,10 +525,8 @@ class NNUNetCascadeTumorTool(BaseTool):
 
     @staticmethod
     def _clean_subprocess_env() -> dict:
-        env = os.environ.copy()
-        for var in ("PYTHONPATH", "PYTHONSTARTUP", "PYTHONEXECUTABLE", "PYTHONHOME"):
-            env.pop(var, None)
-        return env
+        from .site_model_runtime import inference_env
+        return inference_env()
 
     @staticmethod
     def _tail_output(output: str, max_lines: int) -> list[str]:

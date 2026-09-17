@@ -16,12 +16,19 @@ from tool_factory import BaseTool, ToolResult
 from .biomedparse_v2 import SITE_SPECS as BIOMEDPARSE_SITE_SPECS
 from .nnunet_cascade_tumor import CASCADE_SITE_SPECS, cascade_availability
 from .sat3d import SITE_SPECS as SAT3D_SITE_SPECS
+from .site_models import SITE_MODELS, site_model_availability
 
 
 DIFFTUMOR_BASE = "https://huggingface.co/MrGiovanni/DiffTumor/resolve/main/SegmentationModel"
 
 
 CTV_MODEL_CATALOG: List[Dict[str, object]] = [
+    *[dict(id=key, tumor_type=key, site=spec['site'], modality=spec['modality'],
+           target=spec['label'], status='integrated_external_runtime_requires_review',
+           tool='ctv_segmentation', ui_visible=True, model_root=str(spec['model']),
+           script_path=str(spec['script']), model_validation=spec['validation'],
+           ct_phase=spec.get('ct_phase'), inference_precision=spec['precision'])
+      for key, spec in SITE_MODELS.items()],
     {
         "id": "nnunet_pancreatic",
         "site": "pancreas",
@@ -518,18 +525,29 @@ def catalog_with_local_status(repo_root: Optional[str] = None) -> List[Dict[str,
         entry["data_tree_viewer_passed"] = False
         entry["clinical_case_validation"] = False
 
-        if tumor_type in {"biomedparse_liver_tumor", "biomedparse_kidney_lesion"}:
-            replacement = (
-                "nnunet_liver_tumor"
-                if tumor_type == "biomedparse_liver_tumor"
-                else "nnunet_kidney_tumor"
-            )
+        if tumor_type in SITE_MODELS:
+            probe = site_model_availability(tumor_type)
+            available = bool(probe['available'])
+            entry.update({
+                'capability_state': 'experimental' if available else 'unavailable',
+                'capability_color': 'green' if available else 'red',
+                'capability_reason': ('Supplied CT model and runtime are installed. '
+                    'Contours require review; evaluation metrics describe the supplied model, not this case.'
+                    if available else '; '.join(probe['missing'])),
+                'callable': available, 'runtime_available': available, 'runtime_probe': probe,
+                'requires_gpu': True,
+            })
+        elif tumor_type in {"biomedparse_liver_tumor", "biomedparse_kidney_lesion",
+                            "biomedparse_lung_lesion", "biomedparse_head_neck_cancer"}:
+            replacement = {"biomedparse_liver_tumor": "nnunet_liver_tumor",
+                           "biomedparse_kidney_lesion": "nnunet_kidney_tumor",
+                           "biomedparse_lung_lesion": "vista3d_lung_tumor",
+                           "biomedparse_head_neck_cancer": "nnunet_head_neck_gtv"}[tumor_type]
             entry.update({
                 "deprecated": True,
                 "ui_visible": False,
                 "deprecated_reason": (
-                    "Superseded by the dedicated local two-stage nnUNet v2 "
-                    "cascade for this site."
+                    "Superseded by the supplied site-specific CT inference route."
                 ),
                 "capability_state": "disabled",
                 "capability_color": "gray",

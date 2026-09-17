@@ -24,9 +24,9 @@ def test_automatic_routes_use_biomedparse_and_pancreas_stays_nnunet():
         "sat3d_liver_tumor": "nnunet_liver_tumor",
         "kidney": "nnunet_kidney_tumor",
         "sat3d_kidney_tumor": "nnunet_kidney_tumor",
-        "lung": "biomedparse_lung_lesion",
+        "lung": "vista3d_lung_tumor",
         "colon": "biomedparse_colon_primary",
-        "head and neck": "biomedparse_head_neck_cancer",
+        "head and neck": "nnunet_head_neck_gtv",
         "prostate": "biomedparse_prostate_lesion",
     }
     for alias, canonical in expected.items():
@@ -36,6 +36,9 @@ def test_automatic_routes_use_biomedparse_and_pancreas_stays_nnunet():
             assert isinstance(tool, NNUNetLiverTumorTool)
         elif canonical == "nnunet_kidney_tumor":
             assert isinstance(tool, NNUNetKidneyTumorTool)
+        elif canonical in {"vista3d_lung_tumor", "nnunet_head_neck_gtv"}:
+            from tool_factory.CTV_seg.site_model_tumor import SiteModelTumorTool
+            assert isinstance(tool, SiteModelTumorTool)
         else:
             assert isinstance(tool, BiomedParseV2CTVTool)
     assert normalize_tumor_type("sat3d_interactive_liver_tumor") == "sat3d_interactive_liver_tumor"
@@ -50,7 +53,7 @@ def test_brain_factory_preserves_automatic_and_interactive_default_routes():
     automatic = create_ctv_segmentation_tool("liver")
     interactive = create_ctv_segmentation_tool("sat3d_interactive_liver_tumor")
 
-    assert automatic.default_tumor_type == "nnunet_liver_tumor"
+    assert automatic.name == "nnunet_liver_tumor"
     assert automatic.input_schema["required"] == []
     assert interactive.default_tumor_type == "sat3d_liver_tumor"
     assert interactive.input_schema["required"] == ["positive_points"]
@@ -228,10 +231,12 @@ def test_frontend_exposes_biomedparse_automatic_routes_and_hides_sat3d_prompt_to
     for tumor_type in (
         "nnunet_liver_tumor",
         "nnunet_kidney_tumor",
-        "biomedparse_lung_lesion",
+        "vista3d_lung_tumor",
         "biomedparse_colon_primary",
         "biomedparse_prostate_lesion",
-        "biomedparse_head_neck_cancer",
+        "nnunet_head_neck_gtv",
+        "nnunet_nasopharynx_ncct",
+        "nnunet_nasopharynx_cect",
     ):
         assert f'value="{tumor_type}"' in html
     assert 'value="sat3d_liver_tumor"' not in html

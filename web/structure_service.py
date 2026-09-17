@@ -14,6 +14,10 @@ from typing import Any, Dict, Iterable, Mapping, Optional
 
 import numpy as np
 
+from tool_factory.CTV_seg.model_registry import (
+    target_semantics as _target_semantics,
+)
+
 
 _UPLOADED_MASK_SOURCES = frozenset({
     "manual_label",
@@ -169,23 +173,18 @@ def _explicit_traversability(value: Mapping[str, Any]) -> str:
     return ""
 
 
+def is_multitarget_gtv_source(source: Any) -> bool:
+    """Both source labels are target (GTVp/GTVn), decided by the registry."""
+    return _target_semantics(source) == "multi_target_gtv"
+
+
 def _is_model_ctv_source(source: Any) -> bool:
-    """Return whether a CTV source may carry embedded anatomy labels."""
-    token = str(source or "").strip().lower()
-    return (
-        token in {
-            "model",
-            "biomedparse_v2",
-            "biomedparse_v2_research_candidate",
-            "totalsegmentator",
-            "totalsegmentator_liver_tumor",
-            "sat3d",
-        }
-        or token.startswith("nnunet_")
-        or token.startswith("biomedparse_")
-        or token.startswith("totalsegmentator_")
-        or token.startswith("sat3d")
-    )
+    """Return whether a CTV source carries embedded anatomy labels.
+
+    Only ``target_plus_anatomy`` routes (the pancreatic model) embed
+    anatomy in labels 2..N; multi-target GTV and binary routes do not.
+    """
+    return _target_semantics(source) == "target_plus_anatomy"
 
 
 def _batch_memory_update(memory: Any, updates: Mapping[str, Any], removals: Iterable[str] = ()) -> None:
@@ -232,7 +231,11 @@ def _base_ctv_volume(memory: Any) -> tuple[Optional[np.ndarray], Dict[int, str],
         else memory.retrieve("ctv_full_labels")
     )
 
-    if _is_model_ctv_source(source) and full_labels is not None:
+    if is_multitarget_gtv_source(source) and full_labels is not None:
+        return full_labels, {label: label_map.get(label, f"GTV {label}")
+                             for label in (1, 2) if np.any(full_labels == label)}, source
+    if (_target_semantics(source) == "target_plus_anatomy"
+            and full_labels is not None):
         # The validated pancreatic model reserves label 1 for the actual tumor.
         # Labels 2-4 are anatomy and are represented as OAR source objects below.
         if np.any(full_labels == 1):

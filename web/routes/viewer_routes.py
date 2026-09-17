@@ -16,7 +16,7 @@ import SimpleITK as sitk
 from flask import Response, current_app, jsonify, request, send_from_directory, session as flask_session
 
 from web.auth import current_user
-from web.structure_service import build_effective_structures
+from web.structure_service import build_effective_structures, is_multitarget_gtv_source
 from web.viewer_cache import (
     load_viewer_cache,
     schedule_viewer_cache_write,
@@ -1121,19 +1121,20 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             # restore. The pancreatic nnUNet route uses a specific provenance
             # token, so treating only the legacy `model` token as multi-label
             # silently dropped pancreas/artery/vein when OAR was loaded later.
-            is_model_ctv = (
-                ctv_source in model_sources
-                or ctv_source.startswith("nnunet_")
-                or ctv_source.startswith("biomedparse_")
-                or ctv_source.startswith("totalsegmentator_")
-                or ctv_source.startswith("sat3d")
-                or base_ctv_source in model_sources
-                or base_ctv_source.startswith("nnunet_")
-                or base_ctv_source.startswith("biomedparse_")
-                or base_ctv_source.startswith("totalsegmentator_")
-                or base_ctv_source.startswith("sat3d")
+            # The registry owns the source -> semantics mapping so a
+            # registered model such as vista3d_lung_tumor is never mistaken
+            # for an uploaded mask.
+            from tool_factory.CTV_seg.model_registry import (
+                is_registered_model_source as _registered_ctv_model,
             )
-            ctv_full = ctv_full_memory if is_model_ctv else None
+            is_model_ctv = (
+                _registered_ctv_model(ctv_source)
+                or _registered_ctv_model(base_ctv_source)
+            )
+            is_multitarget_gtv = is_multitarget_gtv_source(base_ctv_source or ctv_source)
+            if is_multitarget_gtv:
+                is_model_ctv = False  # GTVn is target, never embedded artery label 2.
+            ctv_full = ctv_full_memory if is_model_ctv or is_multitarget_gtv else None
             if ctv_full is None:
                 ctv_full = _uploaded_label_array(ctv_source, "ctv_array", "ctv_path")
             oar_array = _uploaded_label_array(oar_source, "oar_array", "oar_path")
@@ -1148,7 +1149,9 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 # embedded anatomy labels.  An uploaded CTV is opaque user
                 # data, so every non-zero voxel is CTV even when its source
                 # label is 255 or another application-specific value.
-                if is_model_ctv:
+                if is_multitarget_gtv:
+                    ctv_array = np.asarray(ctv_full, dtype=np.uint8)
+                elif is_model_ctv:
                     ctv_array = (
                         (ctv_full == 1).astype(np.uint8)
                         if np.any(ctv_full == 1)
@@ -1169,7 +1172,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     4: 203,   # pancreas -> OAR label 203
                 }
                 has_nnunet_oar = False
-                if oar_source not in uploaded_sources:
+                if is_model_ctv and oar_source not in uploaded_sources:
                     for src_label, dst_label in nnunet_oar_labels.items():
                         if np.any(ctv_full == src_label):
                             has_nnunet_oar = True

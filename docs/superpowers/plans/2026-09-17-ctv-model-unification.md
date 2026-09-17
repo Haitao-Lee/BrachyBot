@@ -919,3 +919,133 @@ PY
 - **Placeholder scan**：无 TBD/TODO；每个代码步骤含可执行代码或精确锚点。
 - **Type consistency**：`target_semantics` / `canonical_ctv_source` / `is_registered_model_source` / `is_multitarget_gtv_source` 在 Task1 定义，Task2/4/5 使用同一签名；`UI_routes` 命名统一为 `ui_routes()`。
 - **已知外部干扰**：`turn_policy.py`、`response_tools.py`、`structure_service.py`、`viewer_routes.py`、`model_catalog.py`、`index.html`、`brachybot-ui-api.js` 与另一会话 WIP 重叠；每个相关任务末尾都不把这些文件入索引，并单列回归命令。
+
+---
+
+## Phase 1b — BiomedParse v2 并列接通（追加）
+
+### Task 4b: BiomedParse 外部推理纳入统一 GPU 调度
+
+**Files:**
+- Modify: `tool_factory/CTV_seg/biomedparse_v2.py`（`_run_external_inference`，约 510-617 行）
+- Test: `tests/test_model_registry.py`（追加）
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+def test_biomedparse_external_inference_is_pinned_and_locked(monkeypatch):
+    import numpy as np
+    from tool_factory.CTV_seg import biomedparse_v2 as B
+
+    seen = {}
+    real_run = B.subprocess.run
+
+    def fake_run(cmd, **kwargs):
+        seen['env'] = kwargs.get('env') or {}
+        return type('R', (), {'returncode': 1, 'stdout': '', 'stderr': 'stop'})()
+
+    monkeypatch.setattr(B.subprocess, 'run', fake_run)
+    try:
+        B._run_external_inference(
+            normalised=np.zeros((4, 4, 4), dtype=np.float32),
+            root=B.Path('.'), checkpoint=B.Path('x'), text_assets=B.Path('y'),
+            runtime_python=B.Path('/usr/bin/false'), prompt='lung', slice_batch_size=1,
+        )
+    except Exception:
+        pass
+    assert 'CUDA_VISIBLE_DEVICES' in seen['env']
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_model_registry.py::test_biomedparse_external_inference_is_pinned_and_locked -q -p no:cacheprovider`
+Expected: FAIL（env 未设置或 subprocess.run 未带 env）
+
+- [ ] **Step 3: Write minimal implementation**
+
+在 `_run_external_inference` 中，先经 DeviceManager + 共享锁选择并固定 GPU，再带 `env` 调用：
+
+```python
+    from .site_model_runtime import gpu_lock
+    from plans.device_manager import device_session
+
+    with device_session(caller='biomedparse_v2') as lease:
+        device = str(lease.device_str)
+        if not device.startswith('cuda:'):
+            raise RuntimeError('BiomedParse v2 requires an NVIDIA CUDA GPU.')
+        gpu_index = device.split(':', 1)[1]
+        env = os.environ.copy()
+        # The worker uses the process-default CUDA device; pin it to the
+        # lease instead of letting it fall onto GPU 0.
+        env['CUDA_VISIBLE_DEVICES'] = gpu_index
+        with gpu_lock(gpu_index):
+            completed = subprocess.run(
+                command, cwd=str(root), check=False, capture_output=True,
+                text=True, env=env,
+                timeout=float(os.environ.get('BIOMEDPARSE_V2_INFERENCE_TIMEOUT', '1800')),
+            )
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_model_registry.py -q -p no:cacheprovider`
+Expected: PASS
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd <workspace>/BrachyBot
+git add tests/test_model_registry.py
+git commit -m "feat(biomedparse): schedule open-vocabulary inference on the shared GPU lock"
+```
+
+### Task 4c: 无专用模型肿瘤的开放词汇回退提示
+
+**Files:**
+- Modify: `tool_factory/CTV_seg/__init__.py`（未支持 tumor_type 分支，约 554-567 行）
+- Test: `tests/test_model_registry.py`（追加）
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+def test_unsupported_tumor_points_at_open_vocabulary():
+    import numpy as np, SimpleITK as sitk
+    from tool_factory.CTV_seg import CTVSegmentationTool
+    image = sitk.GetImageFromArray(np.zeros((4, 4, 4), dtype=np.int16))
+    r = CTVSegmentationTool()._execute(image=image, tumor_type='食管癌')
+    assert r.success is False
+    assert (r.metadata or {}).get('open_vocabulary_available') is True
+    assert (r.metadata or {}).get('suggested_tool') == 'biomedparse_segmentation'
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_model_registry.py::test_unsupported_tumor_points_at_open_vocabulary -q -p no:cacheprovider`
+Expected: FAIL（metadata 缺字段）
+
+- [ ] **Step 3: Write minimal implementation**
+
+在未支持 `tumor_type` 的 `ToolResult` metadata 中追加：
+
+```python
+                        metadata={
+                            "tumor_type_used": tumor_type,
+                            "open_vocabulary_available": True,
+                            "suggested_tool": "biomedparse_segmentation",
+                            "suggested_prompt": f"{tumor_type} tumor",
+                            "model_catalog": filter_catalog(),
+                        },
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_model_registry.py -q -p no:cacheprovider`
+Expected: PASS
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd <workspace>/BrachyBot
+git add tests/test_model_registry.py
+git commit -m "feat(ctv): point unsupported tumors at the open-vocabulary route"
+```

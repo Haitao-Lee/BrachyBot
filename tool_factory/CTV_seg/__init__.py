@@ -50,6 +50,12 @@ from .biomedparse_v2 import (
 )
 from .sat3d import SAT3DCTVTool, SITE_SPECS as SAT3D_SITE_SPECS
 from .model_catalog import CTVModelCatalogTool, catalog_with_local_status, filter_catalog
+from .site_model_tumor import (SiteModelTumorTool, VistaLungTumorTool, HeadNeckGTVTool,
+                               NasopharynxNCCTTool, NasopharynxCECTTool)
+from .model_registry import (
+    canonical_ctv_source as _canonical_ctv_source,
+    target_semantics as _target_semantics,
+)
 
 
 def _mapping_or_empty(value):
@@ -83,6 +89,29 @@ def _normalize_label_stats(value):
             normalized[str(name)] = dict(raw)
     return normalized
 
+
+def _label_stats_from_array(array, label_map, spacing):
+    """Uniform per-label volume/centroid stats for every CTV engine."""
+    import numpy as _np
+    stats = {}
+    if array is None:
+        return stats
+    voxel_volume = float(spacing[0] * spacing[1] * spacing[2])
+    for raw_label, count in zip(*_np.unique(array, return_counts=True)):
+        label = int(raw_label)
+        if label <= 0:
+            continue
+        name = str(label_map.get(label, f"label_{label}"))
+        coords = _np.argwhere(array == label)
+        centroid = coords.mean(axis=0).tolist() if coords.size else []
+        stats[name] = {
+            "label_id": label,
+            "voxel_count": int(count),
+            "volume_mm3": float(count * voxel_volume),
+            "centroid_zyx": centroid,
+        }
+    return stats
+
 # Removed VoCoProstateTool (was using wrong Amos-MR weights)
 # Removed VoCoPancSegTool (was pointing to PANORAMA weights with wrong out_channels)
 
@@ -107,6 +136,10 @@ TOOL_REGISTRY = {
     # SAT3D remains available only under an explicit interactive route name.
     # Historical sat3d_* automatic ids are migrated by normalize_tumor_type.
     **{key: SAT3DCTVTool for key in SAT3D_INTERACTIVE_ROUTES},
+    "vista3d_lung_tumor": VistaLungTumorTool,
+    "nnunet_head_neck_gtv": HeadNeckGTVTool,
+    "nnunet_nasopharynx_ncct": NasopharynxNCCTTool,
+    "nnunet_nasopharynx_cect": NasopharynxCECTTool,
 }
 
 
@@ -192,7 +225,25 @@ def normalize_tumor_type(value) -> str:
         "\u524d\u5217\u817a": "biomedparse_prostate_lesion",
         "\u524d\u5217\u817a\u764c": "biomedparse_prostate_lesion",
     }
-    return aliases.get(normalized, raw)
+    aliases.update({
+        # Supplied head/neck and lung routes: the same site is also written
+        # with a 部/部肿瘤 suffix in ordinary clinical Chinese.
+        "头颈部": "nnunet_head_neck_gtv",
+        "头颈部肿瘤": "nnunet_head_neck_gtv",
+        "肺部": "vista3d_lung_tumor",
+        "肺部肿瘤": "vista3d_lung_tumor",
+    })
+    aliases.update({
+        "nasopharynx_ncct": "nnunet_nasopharynx_ncct",
+        "鼻咽癌平扫": "nnunet_nasopharynx_ncct", "鼻咽平扫": "nnunet_nasopharynx_ncct",
+        "nasopharynx_cect": "nnunet_nasopharynx_cect",
+        "鼻咽癌增强": "nnunet_nasopharynx_cect", "鼻咽增强": "nnunet_nasopharynx_cect",
+        "nasopharynx": "nasopharynx", "nasopharyngeal": "nasopharynx",
+        "鼻咽": "nasopharynx", "鼻咽癌": "nasopharynx",
+    })
+    canonical = aliases.get(normalized, normalized)
+    return {"biomedparse_lung_lesion": "vista3d_lung_tumor",
+            "biomedparse_head_neck_cancer": "nnunet_head_neck_gtv"}.get(canonical, canonical)
 
 
 def resolve_ctv_tumor_type(params) -> str:
@@ -218,6 +269,13 @@ def resolve_ctv_tumor_type(params) -> str:
         value = params.get(key)
         if value is not None and str(value).strip():
             candidate = normalize_tumor_type(value)
+            if candidate == "nasopharynx":
+                phase = str(params.get("ct_phase") or params.get("image_modality") or "").lower()
+                if phase in ("ncct", "noncontrast", "non-contrast", "平扫"):
+                    return "nnunet_nasopharynx_ncct"
+                if phase in ("cect", "contrast", "contrast-enhanced", "增强"):
+                    return "nnunet_nasopharynx_cect"
+                return "nasopharynx"
             if not candidate:
                 continue
             # Older catalog callers sometimes send a stale model id together
@@ -258,10 +316,11 @@ def list_tools():
 # tasks use BiomedParse v2 text prompts.
 _PREFERRED_TUMOR_TYPES = (
     ["pancreatic_tumor", "nnunet_pancreatic",
-     "nnunet_liver_tumor", "nnunet_kidney_tumor"]
+     "nnunet_liver_tumor", "nnunet_kidney_tumor", "vista3d_lung_tumor",
+     "nnunet_head_neck_gtv", "nnunet_nasopharynx_ncct", "nnunet_nasopharynx_cect"]
     + [
         key for key, spec in BIOMEDPARSE_SITE_SPECS.items()
-        if str(spec.get("site")) not in {"liver", "kidney"}
+        if str(spec.get("site")) not in {"liver", "kidney", "lung", "head_neck"}
     ]
 )
 
@@ -342,7 +401,8 @@ class CTVSegmentationTool(BaseTool):
         return (
             "Segment Clinical Target Volume (CTV/tumor) from CT images. "
             "Supports verified local pancreatic nnU-Net, dedicated five-fold liver "
-            "and kidney nnUNet v2 cascades, and BiomedParse v2 text-guided candidates "
+            "and kidney nnUNet v2 cascades, VISTA-3D lung tumor, HECKTOR CT GTV, "
+            "SegRap nasopharynx GTV (choose ncct or cect explicitly), and remaining BiomedParse candidates "
             "for other supported non-pancreatic tumors. SAT3D is an "
             "explicit point-prompted research option. Input: 3D image (SimpleITK) or path, required tumor_type for automatic "
             "segmentation, or label_path for an existing/manual CTV mask. "
@@ -412,6 +472,7 @@ class CTVSegmentationTool(BaseTool):
                 "point_coordinate_system": {"type": "string", "default": "voxel_zyx"},
                 "volume_index": {"type": "integer", "default": 0, "description": "Volume to extract from a 4D input"},
                 "slice_batch_size": {"type": "integer", "minimum": 1, "default": 4, "description": "BiomedParse v2 3D slice batch size"},
+                "ct_phase": {"type": "string", "enum": ["ncct", "cect"], "description": "Required for unspecified nasopharynx: ncct=non-contrast CT, cect=contrast-enhanced CT. Do not infer from intensity."},
                 "allow_empty": {"type": "boolean", "default": False, "description": "Only for tests; never allow empty clinical CTV by default"},
                 "force_reexecution": {"type": "boolean", "default": False, "description": "Explicitly replace an existing in-memory CTV result"},
             },
@@ -432,6 +493,14 @@ class CTVSegmentationTool(BaseTool):
             },
         }
 
+    def _resolve_tool(self, tumor_type: str):
+        """Instantiate the engine for a canonical route.
+
+        Kept as a single indirection so the executor boundary tests can inject
+        a fake engine, and so a future unified executor has one seam to own.
+        """
+        return TOOL_REGISTRY[tumor_type]()
+
     def _execute(self, **kwargs):
         import SimpleITK as sitk
         import numpy as np
@@ -440,6 +509,9 @@ class CTVSegmentationTool(BaseTool):
         image_path = kwargs.get("image_path")
         label_path = kwargs.get("label_path")
         tumor_type = resolve_ctv_tumor_type(kwargs)
+        if tumor_type == "nasopharynx" and not label_path:
+            return ToolResult(success=False, error="请选择鼻咽 GTV 平扫 CT（ncct）或增强 CT（cect）模型。",
+                              metadata={"code": "ct_phase_required", "requires_user_input": True})
         target_value = kwargs.get("target_value", 1)
         # Preserve the distinction between an omitted option and an explicit
         # false. The pancreatic executor uses the omitted form to select the
@@ -534,16 +606,24 @@ class CTVSegmentationTool(BaseTool):
                         ),
                         metadata={
                             "tumor_type_used": tumor_type,
+                            # No dedicated route: BiomedParse v2 is the
+                            # open-vocabulary peer and can still produce a
+                            # reviewable candidate mask.
+                            "open_vocabulary_available": True,
+                            "suggested_tool": "biomedparse_segmentation",
+                            "suggested_prompt": f"{tumor_type} tumor",
                             "model_catalog": filter_catalog(),
                         },
                     )
-                tool = TOOL_REGISTRY[tumor_type]()
+                tool = self._resolve_tool(tumor_type)
 
             tool_kwargs = {"image": image, "target_value": target_value}
             if fast_mode is not None:
                 tool_kwargs["fast_mode"] = bool(fast_mode)
             if isinstance(tool, NNUNetPancreaticTumorTool):
                 tool_kwargs["return_all_labels"] = True
+            if isinstance(tool, SiteModelTumorTool):
+                tool_kwargs["image_modality"] = kwargs.get("image_modality", "CT")
             tumor_type_used = tumor_type
             if isinstance(tool, BiomedParseV2CTVTool):
                 tool_kwargs.update({
@@ -802,7 +882,10 @@ class CTVSegmentationTool(BaseTool):
             "ctv_source": (
                 "manual_label"
                 if from_label_path
-                else res_meta.get("ctv_source", "model")
+                else _canonical_ctv_source(res_meta.get("ctv_source", "model"))
+            ),
+            "target_semantics": (
+                "single_target" if from_label_path else _target_semantics(tumor_type)
             ),
             "label_grid_orientation": "LPI",
             "manual_label_orientation": "LPI" if from_label_path else None,
@@ -813,6 +896,13 @@ class CTVSegmentationTool(BaseTool):
             ),
             "model_catalog": filter_catalog(),
         }
+        if not from_label_path and not meta["label_stats"]:
+            stats_source = res_meta.get("full_label_array")
+            if stats_source is None:
+                stats_source = ctv_array
+            meta["label_stats"] = _label_stats_from_array(
+                stats_source, meta["label_map"], ctv_mask.GetSpacing(),
+            )
         if from_label_path:
             meta.update({
                 "ctv_target_value": manual_label_selection.get("selected_target_value"),
@@ -833,6 +923,11 @@ class CTVSegmentationTool(BaseTool):
             })
         for provenance_key in (
             "model_name",
+            "model_validation",
+            "inference_precision",
+            "inference_script",
+            "inference_gpu",
+            "ct_phase",
             "repository",
             "model_url",
             "checkpoint",
