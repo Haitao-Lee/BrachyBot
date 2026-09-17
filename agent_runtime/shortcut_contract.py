@@ -67,9 +67,17 @@ def shortcut_supported(message, policy, *, pending_tumor_site=False, ui_state=No
             return True
         if pending_tumor_site and full(r"胰腺|肝脏?|肺|肾脏?|前列腺|pancreas|liver|lung|kidney|prostate", text):
             return True
-        return full(P + r"(?:重新)?(?:执行|进行|开始)?\s*(?:ctv|oar)\s*分割", text) or full(
-            P + r"(?:重新)?(?:分割|勾画)\s*(?:ctv|oar|肝脏?|胰腺|肺|肾脏?|前列腺)", text
-        ) or full(EP + r"(?:segment|delineate|outline)\s+(?:the\s+)?(?:ctv|oar|liver|pancreas|lung|kidney|prostate)", text)
+        site = (r"(?:肝脏?|胰腺|肺部?|肾脏?|前列腺|头颈部(?:肿瘤)?|鼻咽癌?|结肠|"
+                r"pancreas|liver|lung|kidney|prostate|head and neck|nasopharynx|colon)")
+        seg = r"(?:分割|勾画|勾勒)"
+        return (
+            full(P + r"(?:重新)?(?:执行|进行|开始)?\s*(?:ctv|oar)\s*" + seg, text)
+            # "<verb> <site> [CTV]" and "<verb> CTV <site>" and "<site> CTV 分割".
+            or full(P + r"(?:重新)?" + seg + r"\s*(?:ctv|oar)?\s*" + site
+                    + r"(?:\s*(?:ctv|oar))?", text)
+            or full(P + r"(?:重新)?" + site + r"\s*(?:ctv|oar)?\s*" + seg, text)
+            or full(EP + r"(?:segment|delineate|outline)\s+(?:the\s+)?(?:ctv|oar|liver|pancreas|lung|kidney|prostate)", text)
+        )
     if intent == 'surgical_guide_generation':
         return full(P + r"(?:重新)?(?:生成|制作|创建|更新|重建)" + GUIDE, text) or full(
             EP + r"(?:generate|regenerate|create|rebuild|update)\s+(?:the\s+)?(?:surgical |puncture )?guide", text)

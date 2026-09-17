@@ -164,3 +164,22 @@ def test_catalog_lists_registry_routes_as_peers():
         assert rid in resolved, rid
     assert 'biomedparse_lung_lesion' not in resolved
     assert 'biomedparse_head_neck_cancer' not in resolved
+
+
+def test_chinese_aliases_for_all_primary_sites():
+    from tool_factory.CTV_seg import normalize_tumor_type as n
+    assert n('头颈部肿瘤') == 'nnunet_head_neck_gtv'
+    assert n('头颈部') == 'nnunet_head_neck_gtv'
+    assert n('头颈肿瘤') == 'nnunet_head_neck_gtv'
+    assert n('肺部肿瘤') == 'vista3d_lung_tumor'
+    assert n('肺部') == 'vista3d_lung_tumor'
+    assert n('肺肿瘤') == 'vista3d_lung_tumor'
+    assert n('肝癌') == 'nnunet_liver_tumor'
+    assert n('肾癌') == 'nnunet_kidney_tumor'
+
+
+def test_direct_ctv_phrase_is_a_canonical_execution_command():
+    from agent_runtime.turn_policy import classify_local_turn as c
+    for msg in ('请分割胰腺 CTV', '请分割肝脏 CTV', '请分割肺部 CTV',
+                '请分割鼻咽癌 CTV', '请分割头颈部肿瘤 CTV', '分割胰腺 CTV'):
+        assert c(msg).intent == 'segmentation', msg
