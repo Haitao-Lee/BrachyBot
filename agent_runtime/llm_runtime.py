@@ -11,7 +11,7 @@ import os
 import re
 import time
 from functools import lru_cache
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import unquote, urlparse
 
 
@@ -27,6 +27,14 @@ from agent_runtime.response_contract import (
     build_response_contract,
     presentation_fallback_message,
     response_presentation_instruction,
+)
+from agent_runtime.context_window import (
+    CONTEXT_TRIGGER_RATIO,
+    DEFAULT_RESERVE_OUTPUT_TOKENS,
+    ContextWindowManager,
+    build_case_facts,
+    is_context_length_error,
+    resolve_context_window,
 )
 
 logger = logging.getLogger(__name__)
@@ -635,6 +643,138 @@ class LLMRuntimeMixin:
             timings["context_build_ms"] = round((time.perf_counter() - phase_started) * 1000, 1)
         return packed
 
+    # -- context-window management -----------------------------------------
+    def _context_window_manager(self) -> ContextWindowManager:
+        """Return the per-agent window manager (model window + calibration)."""
+        manager = getattr(self, "_ctx_window_manager_cache", None)
+        if manager is not None:
+            return manager
+        declared = 0
+        model = ""
+        try:
+            router = getattr(self, "brain_router", None)
+            meta = getattr(router, "provider_meta", {}) or {}
+            default = getattr(router, "default_provider", None)
+            info = meta.get(default, {}) if default else {}
+            declared = int(info.get("max_context_tokens") or 0)
+            model = str(info.get("model") or "")
+        except Exception:
+            pass
+        if not model:
+            model = os.environ.get("ANTHROPIC_MODEL", "")
+        config = getattr(self, "config", {}) or {}
+        runtime_cfg = config.get("agent_runtime", {}) if isinstance(config, dict) else {}
+        ratio = float(
+            runtime_cfg.get("context_trigger_ratio", CONTEXT_TRIGGER_RATIO)
+            or CONTEXT_TRIGGER_RATIO
+        )
+        reserve = int(
+            runtime_cfg.get("reserve_output_tokens", DEFAULT_RESERVE_OUTPUT_TOKENS)
+            or DEFAULT_RESERVE_OUTPUT_TOKENS
+        )
+        manager = ContextWindowManager(
+            window=resolve_context_window(model, declared),
+            trigger_ratio=ratio,
+            reserve_output_tokens=reserve,
+        )
+        self._ctx_window_manager_cache = manager
+        return manager
+
+    def _begin_context_turn(self) -> None:
+        """Reset per-turn compression retry bookkeeping."""
+        self._ctx_retry_used = False
+        self._ctx_last_meta = None
+        self._ctx_last_estimate = 0
+
+    def _enforce_context_budget(
+        self,
+        messages: List[Dict],
+        tools: Optional[Any] = None,
+        *,
+        aggressive: bool = False,
+        current_user_content: Any = None,
+    ) -> List[Dict]:
+        """Compress the provider message list when it approaches the window.
+
+        Returns the (possibly new) message list; the final snapshot is stored
+        on ``self._ctx_last_meta`` for the context indicator and diagnostics.
+        """
+        try:
+            manager = self._context_window_manager()
+        except Exception:
+            return messages
+        estimated = manager.usage(messages, tools)
+        self._ctx_last_estimate = estimated
+        if not aggressive and estimated < manager.trigger_tokens:
+            self._ctx_last_meta = manager.snapshot(messages, tools)
+            return messages
+        try:
+            facts = build_case_facts(getattr(self, "memory", None))
+            packed, meta = manager.compress(
+                messages,
+                fact_block=facts,
+                aggressive=aggressive,
+                tools=tools,
+                current_user_content=current_user_content,
+            )
+            logger.warning(
+                "Context window compression: window=%s before=%s after=%s "
+                "ratio_before=%.3f ratio_after=%.3f folds=%s passes=%s reason=%s",
+                meta.window, meta.before_tokens, meta.after_tokens,
+                meta.ratio_before, meta.ratio_after, meta.folded_messages,
+                meta.passes, meta.reason or "",
+            )
+            self._ctx_last_meta = meta.as_dict()
+            return packed
+        except Exception:
+            logger.warning("Context compression failed; sending original messages", exc_info=True)
+            self._ctx_last_meta = manager.snapshot(messages, tools)
+            return messages
+
+    def _record_context_usage(self, usage: Any) -> None:
+        """Calibrate the token estimator from real provider usage."""
+        try:
+            prompt_tokens = int((usage or {}).get("prompt_tokens") or 0)
+            estimated = int(getattr(self, "_ctx_last_estimate", 0) or 0)
+            if prompt_tokens and estimated:
+                self._context_window_manager().record_usage(
+                    actual_prompt_tokens=prompt_tokens, estimated_tokens=estimated
+                )
+        except Exception:
+            pass
+
+    def context_status(self, messages: Optional[List[Dict]] = None) -> Dict[str, Any]:
+        """Public snapshot for the context indicator and manual command."""
+        try:
+            manager = self._context_window_manager()
+        except Exception:
+            return {"window": 0, "used_tokens": 0, "ratio": 0.0}
+        meta = getattr(self, "_ctx_last_meta", None)
+        status: Dict[str, Any] = dict(meta) if isinstance(meta, dict) else {}
+        if messages is not None:
+            status.update(manager.snapshot(messages))
+        else:
+            status.setdefault("window", manager.window)
+            status.setdefault("target_tokens", manager.target_tokens)
+            status.setdefault("trigger_tokens", manager.trigger_tokens)
+            status.setdefault("trigger_ratio", manager.trigger_ratio)
+        return status
+
+    def compress_context_now(self, aggressive: bool = True) -> Dict[str, Any]:
+        """Manual/forced compression entry point (never calls the LLM)."""
+        before = self.context_status()
+        try:
+            self.memory.compact(keep_last=2)
+        except Exception:
+            pass
+        self._begin_context_turn()
+        meta = getattr(self, "_ctx_last_meta", None)
+        result = dict(meta) if isinstance(meta, dict) else {}
+        result.setdefault("compressed", True)
+        result["previous"] = before
+        result["manual"] = True
+        return result
+
     def _run_llm_function_calling(self, message: str, steps: List[Dict], step_id_ref: List[int]) -> str:
         """
         LLM-driven function calling loop with enhanced self-evolving memory.
@@ -653,6 +793,7 @@ class LLMRuntimeMixin:
         # Auto-compact conversation history if too long
         if self.memory.needs_compaction():
             self.memory.compact(keep_last=6)
+        self._begin_context_turn()
 
         enhanced_context = ""
         ui_state_for_override = self.memory.get_ui_state()
@@ -1103,16 +1244,34 @@ class LLMRuntimeMixin:
                 ),
             )
             messages = _bound_followup_messages(messages, base_message_count)
+            messages = self._enforce_context_budget(
+                messages, None, current_user_content=message
+            )
 
             try:
                 response = _chat_messages_with_retry(
                     self.brain_router, messages=messages, tools=None, max_retries=1
                 )
             except Exception as e:
-                logger.error(f"LLM call failed: {e}")
-                return f"LLM error: {e}"
+                if is_context_length_error(e) and not getattr(self, "_ctx_retry_used", False):
+                    self._ctx_retry_used = True
+                    logger.warning("Context window exceeded; compressing and retrying: %s", e)
+                    messages = self._enforce_context_budget(
+                        messages, None, aggressive=True, current_user_content=message
+                    )
+                    try:
+                        response = _chat_messages_with_retry(
+                            self.brain_router, messages=messages, tools=None, max_retries=1
+                        )
+                    except Exception as retry_error:
+                        logger.error(f"LLM call failed after context compression: {retry_error}")
+                        return f"LLM error: {retry_error}"
+                else:
+                    logger.error(f"LLM call failed: {e}")
+                    return f"LLM error: {e}"
 
             if response.usage:
+                self._record_context_usage(response.usage)
                 total_usage["prompt_tokens"] += response.usage.get("prompt_tokens", 0)
                 total_usage["completion_tokens"] += response.usage.get("completion_tokens", 0)
                 total_usage["total_tokens"] += response.usage.get("total_tokens", 0)
@@ -2000,6 +2159,7 @@ class LLMRuntimeMixin:
         # Auto-compact conversation history if too long
         if self.memory.needs_compaction():
             self.memory.compact(keep_last=6)
+        self._begin_context_turn()
 
         enhanced_context = ""
         ui_state_for_override = self.memory.get_ui_state()
@@ -2465,6 +2625,10 @@ class LLMRuntimeMixin:
                     tools_for_llm, getattr(self, "_active_turn_policy", None)
                 )
 
+                # Keep the request inside the model window before every call.
+                messages = self._enforce_context_budget(
+                    messages, tools_for_llm, current_user_content=message
+                )
                 # Use streaming LLM call with tools
                 prev_cleaned_len = 0
                 for chunk in _chat_messages_stream_with_retry(
@@ -2500,6 +2664,7 @@ class LLMRuntimeMixin:
                             llm_calls += 1
 
                             if chunk.get("usage"):
+                                self._record_context_usage(chunk["usage"])
                                 total_usage["prompt_tokens"] += chunk["usage"].get("prompt_tokens", 0)
                                 total_usage["completion_tokens"] += chunk["usage"].get("completion_tokens", 0)
                                 total_usage["total_tokens"] += chunk["usage"].get("total_tokens", 0)
@@ -2548,6 +2713,22 @@ class LLMRuntimeMixin:
                 logger.error(f"LLM stream call failed: {e}")
                 llm_error = str(e)
 
+            if (
+                llm_error
+                and is_context_length_error(llm_error)
+                and not getattr(self, "_ctx_retry_used", False)
+            ):
+                self._ctx_retry_used = True
+                logger.warning(
+                    "Context window exceeded in stream; compressing and retrying: %s", llm_error
+                )
+                retry_tools = tools_for_llm if "tools_for_llm" in locals() else None
+                messages = self._enforce_context_budget(
+                    messages, retry_tools, aggressive=True, current_user_content=message
+                )
+                # Retry the same iteration with the compressed context.
+                iteration -= 1
+                continue
             if llm_error:
                 logger.error("LLM provider stream failed: %s", llm_error)
                 thinking_step["status"] = "error"

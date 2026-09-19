@@ -2785,6 +2785,18 @@ async function sendChat(prefill, options) {
     const isResumingTask = !!opts.resumeTaskId;
     const isInternalFollowup = !!opts.internalFollowup || !!opts.visualFollowUp;
     if (!isInternalFollowup) window._lastLLMMeta = null;
+    // Manual context compression is a control-plane command, never an LLM turn.
+    if (!isInternalFollowup && typeof window.isContextCommand === 'function') {
+        const candidate = (typeof prefill === 'string' && prefill) ? prefill : (input ? input.value : '');
+        if (window.isContextCommand(candidate)) {
+            if (input) {
+                input.value = '';
+                if (typeof window.resizeChatInput === 'function') window.resizeChatInput(input);
+            }
+            if (typeof window.compressContextNow === 'function') await window.compressContextNow();
+            return;
+        }
+    }
     const parentRequestId = String(opts.parentRequestId || opts.parent_request_id || '');
     const parentUserMessageId = String(opts.parentUserMessageId || opts.parent_user_message_id || '');
     const parentAssistantMessageId = String(opts.parentAssistantMessageId || opts.parent_assistant_message_id || '');

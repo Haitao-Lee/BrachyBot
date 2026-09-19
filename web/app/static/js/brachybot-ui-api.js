@@ -12271,3 +12271,142 @@ async function _recoverSessionScreenshotImage(image, candidate, ownerSessionId, 
     return objectUrl;
 }
 window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
+
+// ── Context-window indicator + manual compression ────────────────────────
+(function () {
+    const RING_CIRCUMFERENCE = 2 * Math.PI * 15;
+    let _lastNotifiedCompression = '';
+
+    function _ensureContextRing() {
+        let ring = document.getElementById('contextRing');
+        if (ring) return ring;
+        const row = document.querySelector('.chat-input-row');
+        if (!row) return null;
+        ring = document.createElement('button');
+        ring.className = 'chat-context-ring';
+        ring.id = 'contextRing';
+        ring.type = 'button';
+        ring.title = 'Context usage';
+        ring.setAttribute('aria-label', 'Context usage; click to compress');
+        ring.onclick = () => {
+            if (typeof window.compressContextNow === 'function') window.compressContextNow();
+        };
+        ring.innerHTML = '<svg viewBox="0 0 36 36" aria-hidden="true"><circle class="context-ring-bg" cx="18" cy="18" r="15"></circle><circle class="context-ring-fg" id="contextRingFg" cx="18" cy="18" r="15"></circle></svg><span class="context-ring-label" id="contextRingLabel">–</span>';
+        row.insertBefore(ring, row.firstChild);
+        return ring;
+    }
+
+    function _ringEls() {
+        _ensureContextRing();
+        return {
+            ring: document.getElementById('contextRing'),
+            fg: document.getElementById('contextRingFg'),
+            label: document.getElementById('contextRingLabel'),
+        };
+    }
+
+    function updateContextIndicator(context) {
+        const { ring, fg, label } = _ringEls();
+        if (!ring || !fg || !label) return;
+        const ctx = context && typeof context === 'object' ? context : {};
+        let ratio = Number(ctx.ratio);
+        if (!Number.isFinite(ratio)) {
+            const used = Number(ctx.used_tokens || 0);
+            const windowSize = Number(ctx.window || 0);
+            ratio = windowSize > 0 ? used / windowSize : 0;
+        }
+        ratio = Math.max(0, Math.min(1, ratio));
+        fg.style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - ratio));
+        label.textContent = ratio > 0 ? Math.round(ratio * 100) + '%' : '–';
+        ring.classList.toggle('is-warn', ratio >= 0.6 && ratio < 0.8);
+        ring.classList.toggle('is-high', ratio >= 0.8 && ratio < 0.9);
+        ring.classList.toggle('is-critical', ratio >= 0.9);
+        const usedTokens = Number(ctx.used_tokens || 0);
+        const windowTokens = Number(ctx.window || 0);
+        ring.title = windowTokens
+            ? `Context: ${Math.round(ratio * 100)}% (${usedTokens.toLocaleString()} / ${windowTokens.toLocaleString()} tokens)`
+            : 'Context usage';
+    }
+    window.updateContextIndicator = updateContextIndicator;
+
+    function _maybeNotifyCompression(ctx) {
+        if (!ctx || !ctx.compressed) return;
+        const key = `${ctx.before_tokens}-${ctx.after_tokens}`;
+        if (!key || key === _lastNotifiedCompression) return;
+        _lastNotifiedCompression = key;
+        if (typeof addChat !== 'function') return;
+        const zh = typeof monitorConversationLanguage === 'function'
+            ? monitorConversationLanguage() === 'zh' : (window._i18nLang === 'zh');
+        const before = Number(ctx.before_tokens || 0).toLocaleString();
+        const after = Number(ctx.after_tokens || 0).toLocaleString();
+        const folds = Number(ctx.folded_messages || 0);
+        addChat('system', zh
+            ? `已自动压缩历史上下文：保留病例与关键结果，折叠 ${folds} 条旧对话（${before} → ${after} tokens）。`
+            : `Context auto-compressed: case facts and key results kept; folded ${folds} older messages (${before} → ${after} tokens).`);
+    }
+
+    async function refreshContextStatus() {
+        const { ring } = _ringEls();
+        if (ring) ring.classList.add('is-busy');
+        try {
+            const res = await fetch(API + '/chat/context', { method: 'GET' });
+            const data = await res.json().catch(() => null);
+            if (data && data.context) {
+                updateContextIndicator(data.context);
+                _maybeNotifyCompression(data.context);
+            }
+        } catch (_) {
+            /* indicator is best-effort */
+        } finally {
+            if (ring) ring.classList.remove('is-busy');
+        }
+    }
+    window.refreshContextStatus = refreshContextStatus;
+
+    async function compressContextNow() {
+        const { ring } = _ringEls();
+        if (ring) ring.classList.add('is-busy');
+        const zh = typeof monitorConversationLanguage === 'function'
+            ? monitorConversationLanguage() === 'zh' : (window._i18nLang === 'zh');
+        try {
+            const res = await fetch(API + '/chat/context/compress', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ aggressive: true }),
+            });
+            const data = await res.json().catch(() => null);
+            if (!res.ok || !data || data.success === false) {
+                throw new Error((data && data.error) || `HTTP ${res.status}`);
+            }
+            if (data.context) updateContextIndicator(data.context);
+            if (typeof addChat === 'function') {
+                addChat('system', zh ? '已压缩历史上下文：病例与关键结果已保留。'
+                                     : 'Context compressed; case facts and key results were preserved.');
+            }
+            return true;
+        } catch (error) {
+            if (typeof addChat === 'function') {
+                addChat('system', zh ? `压缩上下文失败：${error.message}`
+                                     : `Context compression failed: ${error.message}`);
+            }
+            return false;
+        } finally {
+            if (ring) ring.classList.remove('is-busy');
+        }
+    }
+    window.compressContextNow = compressContextNow;
+
+    function isContextCommand(text) {
+        const value = String(text || '').trim().toLowerCase();
+        if (!value) return false;
+        return /^(?:\/compress|\/压缩|压缩上下文|压缩对话|compress context|compact context|compress history)[!！。.]?$/.test(value);
+    }
+    window.isContextCommand = isContextCommand;
+
+    if (typeof window !== 'undefined') {
+        window.addEventListener('load', () => {
+            try { refreshContextStatus(); } catch (_) {}
+            setInterval(() => { try { refreshContextStatus(); } catch (_) {} }, 15000);
+        });
+    }
+}());

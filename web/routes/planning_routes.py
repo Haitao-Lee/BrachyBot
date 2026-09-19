@@ -7236,6 +7236,68 @@ def register_planning_routes(
             logger.error(f"STL export failed: {e}")
             return jsonify({"error": str(e)}), 500
 
+    def _chat_agent_for_context():
+        """Resolve the case-owned agent for context status/compression."""
+        try:
+            _store, _owner, session_id = request_case_context()
+        except WorkspaceError:
+            return None, None
+        agent = None
+        if callable(get_cached_agent):
+            agent = get_cached_agent(session_id)
+        if agent is None:
+            try:
+                agent = get_agent(session_id)
+            except TypeError:
+                agent = get_agent()
+        return agent, session_id
+
+    @app.route("/api/chat/context", methods=["GET"])
+    @require_api_key
+    @rate_limit
+    def api_chat_context():
+        """Expose the current provider context usage for the context indicator."""
+        agent, session_id = _chat_agent_for_context()
+        status = {}
+        status_fn = getattr(agent, "context_status", None) if agent is not None else None
+        if callable(status_fn):
+            try:
+                status = status_fn()
+            except Exception:
+                logger.warning("context_status failed", exc_info=True)
+        return jsonify({"success": True, "session_id": session_id, "context": status})
+
+    @app.route("/api/chat/context/compress", methods=["POST"])
+    @require_api_key
+    @rate_limit
+    def api_chat_context_compress():
+        """Force a context compression (manual user command / button)."""
+        data = request.get_json(silent=True) or {}
+        agent, session_id = _chat_agent_for_context()
+        if agent is None:
+            return jsonify({"success": False, "error": "Agent not available"}), 404
+        compress_fn = getattr(agent, "compress_context_now", None)
+        if not callable(compress_fn):
+            return jsonify({"success": False, "error": "Context compression unavailable"}), 501
+        try:
+            result = compress_fn(aggressive=bool(data.get("aggressive", True)))
+        except Exception as exc:
+            logger.warning("Manual context compression failed: %s", exc, exc_info=True)
+            return jsonify({"success": False, "error": "Compression failed"}), 500
+        status = {}
+        status_fn = getattr(agent, "context_status", None)
+        if callable(status_fn):
+            try:
+                status = status_fn()
+            except Exception:
+                pass
+        return jsonify({
+            "success": True,
+            "session_id": session_id,
+            "compression": result,
+            "context": status,
+        })
+
     @app.route("/api/chat", methods=["POST"])
     @require_api_key
     @rate_limit
