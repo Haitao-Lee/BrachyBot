@@ -94,6 +94,7 @@ class LocalTurnPolicy:
     # grants execution by itself.
     parsed_goals: Tuple[Tuple[str, str], ...] = ()
     parsed_reference: str = ""
+    parsed_subtasks: Tuple[Tuple[str, str], ...] = ()
 
 
 def visual_analysis_policy() -> LocalTurnPolicy:
@@ -1653,6 +1654,128 @@ def resolve_session_content_presentation(message: str, target: Optional[str] = N
     return "open" if resolved_target == "artifact" and explicit_selected else "auto"
 
 
+def _is_code_capability_query(message: str) -> bool:
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+    if not text or not _is_interrogative(text):
+        return False
+    has_code_topic = _contains_any(text, (
+        "代码", "编程", "程序", "脚本", "code", "coding", "programming", "script",
+    ))
+    asks_capability = _contains_any(text, (
+        "可以", "能不能", "能否", "会不会", "能做", "写", "编写",
+        "can you", "could you", "are you able", "do you",
+    ))
+    return has_code_topic and asks_capability
+
+
+def is_surgical_guide_status_query(message: str) -> bool:
+    """Recognize a read-only question about whether a guide exists or is ready."""
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+    if not text or not _is_interrogative(text) or _is_location_question(text):
+        return False
+    if not _contains_any(text, (
+        "surgical guide", "puncture guide", "guide mesh", "guide stl",
+        "手术导板", "穿刺导板", "手术刀板", "导板",
+    )):
+        return False
+    if _has_explicit_guide_generation_command(text):
+        return False
+    return bool(
+        re.search(
+            r"(?:生成|创建|制作|完成|存在|加载|保存|generate|create|build|load|save)"
+            r".{0,36}(?:了吗|了没|没有|有吗|是否|吗|\?|？|ready|available)",
+            text,
+            flags=re.IGNORECASE,
+        )
+        or re.search(
+            r"(?:是否|有没有|有无|已经|已|当前状态|状态是|status|whether|has|is)"
+            r".{0,36}(?:生成|创建|制作|完成|存在|加载|保存|generated|created|ready|available)",
+            text,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _split_compound_query_clauses(message: str) -> List[str]:
+    text = re.sub(r"\s+", " ", str(message or "").strip())
+    if not text or len(text) > 8000:
+        return []
+    parts = re.split(
+        r"[?？!！;；\n]+|[,，]+|(?:此外|另外|同时|顺便|而且|并且|另外还|此外还)|"
+        r"\b(?:additionally|besides|in addition|also)\b",
+        text,
+        flags=re.IGNORECASE,
+    )
+    clauses = []
+    for part in parts:
+        clause = re.sub(
+            r"^(?:此外|另外|同时|顺便|而且|并且|另外还|此外还|还有|然后)\s*",
+            "",
+            str(part or "").strip(),
+            flags=re.IGNORECASE,
+        )
+        if clause:
+            clauses.append(clause)
+    return clauses if 2 <= len(clauses) <= 6 else []
+
+
+def _read_query_subtask_intent(
+    clause: str,
+    conversation: Optional[Iterable[object]],
+    ui_state: Optional[Mapping[str, Any]],
+) -> Optional[str]:
+    if _is_code_capability_query(clause):
+        return "code_capability_query"
+    if is_surgical_guide_status_query(clause):
+        return "surgical_guide_status_query"
+    if is_current_planning_assessment_query(clause):
+        return "planning_assessment_query"
+    if is_current_planning_provenance_query(clause):
+        return "planning_provenance_query"
+    if is_case_state_question(clause):
+        return "case_state_question"
+    if _is_current_case_dose_query(clause):
+        return "case_dose_query"
+    if _is_current_image_metadata_query(clause):
+        return "image_metadata_query"
+    if is_current_oar_count_query(clause):
+        return "current_oar_query"
+    visual = resolve_session_visual_location_request(
+        clause, conversation=conversation, ui_state=ui_state,
+    )
+    if visual and not visual.get("requires_discovery"):
+        return "session_visual_location_query"
+    return None
+
+
+def resolve_compound_query_intents(
+    message: str,
+    conversation: Optional[Iterable[object]] = None,
+    ui_state: Optional[Mapping[str, Any]] = None,
+) -> Tuple[Tuple[str, str], ...]:
+    """Resolve a small compound turn only when every clause is a known read.
+
+    Any unknown clause, write goal, negation, condition, or quotation makes
+    this resolver abstain and leaves the established semantic workflow in
+    charge. Returned pairs are the read intent and original clause.
+    """
+    text = str(message or "").strip()
+    if not text or _request_parse.is_negated(text) or _request_parse.is_conditional(text) or _request_parse.is_quoted(text):
+        return ()
+    if _request_parse.parse_request(text).compound_write:
+        return ()
+    clauses = _split_compound_query_clauses(text)
+    if not clauses:
+        return ()
+    resolved = []
+    for clause in clauses:
+        intent = _read_query_subtask_intent(clause, conversation, ui_state)
+        if not intent:
+            return ()
+        resolved.append((intent, clause))
+    return tuple(resolved) if len(resolved) >= 2 else ()
+
+
 def _classify_local_candidate(
     message: str,
     pending_tumor_site: bool = False,
@@ -1676,6 +1799,29 @@ def _classify_local_candidate(
         # answer itself is still generated by the configured LLM.
         return LocalTurnPolicy("small_talk", "low", False, False, False, frozenset())
 
+    parsed_subtasks = resolve_compound_query_intents(
+        text, conversation=conversation, ui_state=ui_state,
+    )
+    if parsed_subtasks:
+        tool_names = set()
+        if any(intent == "session_visual_location_query" for intent, _ in parsed_subtasks):
+            tool_names.add("ui_screenshot")
+        if any(intent == "surgical_guide_status_query" for intent, _ in parsed_subtasks):
+            tool_names.add("surgical_guide")
+        return LocalTurnPolicy(
+            "multi_intent_query",
+            "medium",
+            False,
+            False,
+            False,
+            frozenset(tool_names),
+            direct_execution=True,
+            execution_grants=frozenset(
+                {"surgical_guide"} if "surgical_guide" in tool_names else set()
+            ),
+            parsed_subtasks=parsed_subtasks,
+        )
+
     # This is a read-only provenance lookup. Resolve it before re-plan and
     # compound-action detection so historical wording such as "这次重新计算
     # 是基于哪次规划" cannot be interpreted as permission to run planning.
@@ -1687,6 +1833,18 @@ def _classify_local_candidate(
             False,
             False,
             frozenset(),
+        )
+
+    if is_surgical_guide_status_query(text):
+        return LocalTurnPolicy(
+            "surgical_guide_status_query",
+            "low",
+            False,
+            False,
+            False,
+            frozenset({"surgical_guide"}),
+            direct_execution=True,
+            execution_grants=frozenset({"surgical_guide"}),
         )
 
     # A question about problems, risks, or review items in the active plan is

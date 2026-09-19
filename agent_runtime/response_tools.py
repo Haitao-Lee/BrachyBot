@@ -391,10 +391,11 @@ print(json.dumps(result))
     def _session_visual_location_screenshot_params(message: str, target: Any) -> Dict:
         """Build a grounded screenshot plan for a live location question.
 
-        The route deliberately produces a structured evidence request rather
-        than a textual location answer.  Stable IDs are passed to the browser,
-        which verifies that the object belongs to the active Session and is
-        actually loaded/visible before it frames or annotates it.
+        The browser captures the live Data Tree first. If the exact target row
+        is verified there, it may temporarily reveal that same Session-owned
+        object for a Viewer capture and annotation, then restore its prior
+        visibility, opacity, and focus. Missing or unresolved targets fail
+        closed instead of borrowing a neighboring object.
         """
         text = str(message or "").strip()
         request = dict(target) if isinstance(target, Mapping) else {
@@ -455,22 +456,19 @@ print(json.dumps(result))
             # even when the user did not repeat the words "圈出" or "标注".
             annotation_policy = "required"
         elif target == "surgical_guide":
-            views = ["viewer-3d", "data-tree"]
+            views = ["data-tree", "viewer-3d"]
             stable_refs = ["surgical_guide:active"]
             object_refs = list(stable_refs)
             data_tree_refs = list(stable_refs)
             title = "手术导板位置" if is_zh else "Surgical guide location"
             description = (
-                "定位当前已保存且实际可见的手术导板；仅在 Viewer/Data Tree 中验证后标注。"
+                "先在实时 Data Tree 中核验手术导板节点；如节点存在但 3D 隐藏，则临时显示同一对象后再截 Viewer 并标注，完成后恢复原显示状态。"
                 if is_zh
-                else "Locate the saved surgical guide and annotate it only after it is verified visible in the Viewer and Data Tree."
+                else "Verify the surgical-guide row in the live Data Tree first; if that exact object is hidden in 3D, temporarily reveal it for a marked Viewer capture, then restore its original display state."
             )
-            # A "where is it?" answer must point into the scene the operator
-            # is looking at.  Do not silently replace that scene with an
-            # isolated/highlighted camera composition; the screenshot marker
-            # is the explanation, while the live viewer remains the source of
-            # truth.  If the guide is not currently visible, the manifest
-            # reports that fact instead of turning it on for the screenshot.
+            # The Data Tree row is the first evidence surface. The browser
+            # transaction may reveal this exact live object for the Viewer
+            # capture, then restores the saved state before returning.
             focus = {"kind": "current-view"}
             overlays = {}
             hide_unrelated = False
@@ -490,7 +488,7 @@ print(json.dumps(result))
             stable_refs = [stable_ref_by_target[target]]
             object_refs = list(stable_refs)
             data_tree_refs = list(stable_refs)
-            views = ["viewer-3d", "data-tree"]
+            views = ["data-tree", "viewer-3d"]
             labels = {
                 "ctv": ("CTV 靶区位置", "CTV target location"),
                 "oar": ("危及器官位置", "OAR location"),
@@ -533,15 +531,15 @@ print(json.dumps(result))
                 layout = "single" if len(views) == 1 else "auto"
             else:
                 views = []
-                if not surfaces or surfaces.intersection({"3d", "viewer-3d", "scene"}):
-                    views.append("viewer-3d")
                 if not surfaces or surfaces.intersection({"data-tree", "tree", "data_tree"}):
                     views.append("data-tree")
+                if not surfaces or surfaces.intersection({"3d", "viewer-3d", "scene"}):
+                    views.append("viewer-3d")
                 if not views:
                     # A stable ID with an unknown/new provider may be exposed
                     # on either current visual surface.  Capture both and let
                     # each live manifest independently prove or reject it.
-                    views = ["viewer-3d", "data-tree"]
+                    views = ["data-tree", "viewer-3d"]
                 object_refs = list(stable_refs)
                 data_tree_refs = list(stable_refs)
             title = "目标对象位置" if is_zh else "Requested object locations"
@@ -587,7 +585,7 @@ print(json.dumps(result))
             hide_unrelated = False
             annotation_policy = "required" if _has_visual_annotation_request(text) else "auto"
         else:
-            views = ["viewer-3d", "data-tree"]
+            views = ["data-tree", "viewer-3d"]
             title = "规划对象位置" if is_zh else "Planning object location"
             description = "定位当前规划对象。" if is_zh else "Locate the current planning object."
             focus = {"kind": "close-up" if stable_refs else "auto", "padding": 0.35}
@@ -656,6 +654,45 @@ print(json.dumps(result))
         if not (policy.direct_execution or policy.action_plan or inherited_repeat
                 or explicit_segmentation_request(message)):
             return None
+        active_intent = getattr(getattr(self, "_active_turn_policy", None), "intent", None)
+
+        # Materialize only the read-only subcalls accepted by the structured
+        # clause resolver. Screenshot subcalls retain their exact clause for
+        # target resolution while the original whole request remains attached
+        # for the visual follow-up.
+        if policy.intent == "multi_intent_query":
+            calls = []
+            for index, (sub_intent, clause) in enumerate(policy.parsed_subtasks):
+                if sub_intent == "surgical_guide_status_query":
+                    calls.append({
+                        "id": f"tool_direct_guide_status_{index}",
+                        "tool": "surgical_guide",
+                        "params": {"action": "status"},
+                    })
+                elif sub_intent == "session_visual_location_query":
+                    visual = resolve_session_visual_location_request(
+                        clause,
+                        conversation=getattr(memory, "conversation", None),
+                        ui_state=ui_state,
+                    )
+                    if not visual or visual.get("requires_discovery"):
+                        return None
+                    params = self._session_visual_location_screenshot_params(clause, visual)
+                    params["question"] = message
+                    calls.append({
+                        "id": f"tool_direct_visual_location_{index}",
+                        "tool": "ui_screenshot",
+                        "params": params,
+                    })
+            return calls or None
+
+        if policy.intent == "surgical_guide_status_query":
+            return [{
+                "id": "tool_direct_surgical_guide_status",
+                "tool": "surgical_guide",
+                "params": {"action": "status"},
+            }]
+
         # This is the only direct clinical call for a current Dose/DVH
         # refresh. Do it before the legacy action-pattern scan so wording such
         # as "重新计算DVH相关指标" cannot be mistaken for a full plan, and so
@@ -1284,6 +1321,24 @@ print(json.dumps(result))
             response = raw_results
         elif (
             getattr(getattr(self, "_active_turn_policy", None), "intent", None)
+            == "surgical_guide_status_query"
+            and direct_tool_names == {"surgical_guide"}
+        ):
+            # Status is a server-derived lifecycle fact, not a text-generation
+            # task. Return the localized tool contract without another LLM turn.
+            response = raw_results
+        elif getattr(getattr(self, "_active_turn_policy", None), "intent", None) == "multi_intent_query":
+            # The parent response is also supplied to the hidden visual child
+            # as preliminary context. If a screenshot was requested, the child
+            # remains responsible for the final answer after capture evidence
+            # and annotation have completed.
+            if "ui_screenshot" in direct_tool_names:
+                self._visual_analysis_pending = True
+            response = self._build_multi_intent_response(
+                user_msg, steps, getattr(self, "_active_turn_policy", None),
+            )
+        elif (
+            getattr(getattr(self, "_active_turn_policy", None), "intent", None)
             == "session_visual_location_query"
             and direct_tool_names == {"ui_screenshot"}
         ):
@@ -1624,6 +1679,12 @@ print(json.dumps(result))
             f"已完成放射性粒子植入规划全流程,执行工具:{tools_summary}。靶区覆盖率V100达{v100_frac*100:.1f}%,D90为{d90_gy:.2f} Gy,规划评分{ps_pct:.0f}/100。",
             f"Brachytherapy planning pipeline completed. Tools executed: {tools_summary}. CTV coverage V100 = {v100_frac*100:.1f}%, D90 = {d90_gy:.2f} Gy, plan score = {ps_pct:.0f}/100."
         ))
+        target_coverage = float(plan_config.get("DVH_rate") or 0.9)
+        if v100_frac + 1e-9 < target_coverage:
+            lines.append(L(
+                f"⚠️ 当前计划未达到设定的靶区覆盖目标：V100 {v100_frac:.1%} < {target_coverage:.1%}。流程结束不代表剂量目标达成或临床可用；请勿将此结果作为已达标计划。",
+                f"⚠️ Configured coverage target NOT reached: V100 {v100_frac:.1%} < {target_coverage:.1%}. Workflow completion does not establish dosimetric goal attainment or clinical suitability."
+            ))
         lines.append("")
 
         # Section 2: CTV Segmentation

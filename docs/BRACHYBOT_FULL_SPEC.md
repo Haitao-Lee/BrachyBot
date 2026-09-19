@@ -1,5 +1,7 @@
 # BrachyBot 完整功能规格与实现状态
 
+规划监测的最新运行契约、时间线导出和审计修复见 [Monitor architecture and verified audit](TRAINING_MONITOR_VERIFIED_2026-09-19.md)。
+
 > 最后更新: 2026-06-22
 > 本文档覆盖项目所有功能模块、交互期望、已修复 bug、API 端点。
 

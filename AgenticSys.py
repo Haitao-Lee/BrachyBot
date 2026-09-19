@@ -276,6 +276,24 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         except Exception as e:
             logger.warning(f"Brain system initialization failed: {e}")
 
+    @staticmethod
+    def _load_opencode_go_token() -> str:
+        """Load the OpenCode Go token without exposing it in logs."""
+        explicit = str(os.environ.get("BRACHYBOT_OPENCODE_GO_TOKEN", "") or "").strip()
+        if explicit:
+            return explicit
+        auth_file = os.environ.get(
+            "BRACHYBOT_OPENCODE_AUTH_FILE",
+            "~/.local/share/opencode/auth.json",
+        )
+        try:
+            with open(os.path.expanduser(auth_file), encoding="utf-8") as handle:
+                payload = json.load(handle)
+            token = payload.get("opencode-go", {}).get("key", "")
+        except (OSError, ValueError, AttributeError):
+            token = ""
+        return token.strip() if isinstance(token, str) else ""
+
     def _auto_detect_llm_provider(self) -> Dict:
         """Auto-detect LLM provider from environment variables.
 
@@ -289,6 +307,47 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         _session_id = str(
             getattr(getattr(self, "memory", None), "session_id", "") or ""
         ).strip()
+        _base_env = str(os.environ.get("ANTHROPIC_BASE_URL", "") or "")
+        _provider_mode = str(os.environ.get("BRACHYBOT_LLM_PROVIDER", "") or "").strip().lower()
+        _bootstrap_disabled = (
+            _provider_mode == "legacy"
+            or os.environ.get("BRACHYBOT_DISABLE_OPENCODE_BOOTSTRAP", "").lower() in {"1", "true", "yes"}
+        )
+        _legacy_xiaomi_env = "token-plan-cn.xiaomimimo.com" in _base_env.lower()
+        if not _bootstrap_disabled and (_provider_mode in {"opencode-go", "opencode_go"} or _legacy_xiaomi_env):
+            _go_key = self._load_opencode_go_token()
+            if _go_key:
+                _go_base = str(
+                    os.environ.get("BRACHYBOT_LLM_BASE_URL", "https://opencode.ai/zen/go")
+                    or "https://opencode.ai/zen/go"
+                ).rstrip("/")
+                _go_model = str(
+                    os.environ.get("BRACHYBOT_LLM_MODEL", "")
+                    or os.environ.get("ANTHROPIC_MODEL", "mimo-v2.5")
+                ).strip()
+                _go_lower = _go_model.lower()
+                logger.info("Using OpenCode Go credential from the local auth file")
+                if _go_lower.startswith(("minimax-", "qwen3", "qwen-")):
+                    return {
+                        "anthropic": {
+                            "enabled": True,
+                            "model": _go_model,
+                            "base_url": _go_base,
+                            "api_key": _go_key,
+                            "session_id": _session_id,
+                        }
+                    }
+                _go_compat_base = _go_base if _go_base.endswith("/v1") else _go_base + "/v1"
+                return {
+                    "generic": {
+                        "enabled": True,
+                        "type": "openai_compat",
+                        "model": _go_model,
+                        "api_key": _go_key,
+                        "base_url": _go_compat_base,
+                        "session_id": _session_id,
+                    }
+                }
         # ── Anthropic / Anthropic-compatible proxy ──────────────────
         if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_BASE_URL"):
             _base = os.environ.get("ANTHROPIC_BASE_URL", "")

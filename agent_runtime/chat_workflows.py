@@ -448,6 +448,117 @@ class ChatWorkflowMixin:
             "run; read-only questions do not start a clinical workflow."
         )
 
+    def _code_capability_response(self, lang: str = "en") -> str:
+        """Describe code assistance and current execution availability honestly."""
+        registry = getattr(self, "registry", None)
+        try:
+            code_execution_enabled = bool(
+                registry.is_available("code_executor")
+                if registry is not None and callable(getattr(registry, "is_available", None))
+                else False
+            )
+        except Exception:
+            code_execution_enabled = False
+        if self._response_language(lang) == "zh":
+            execution = "当前受限代码执行器已开启。" if code_execution_enabled else "当前受限代码执行器默认关闭。"
+            return (
+                "可以协助编写、解释和修改代码；"
+                + execution
+                + "本次只是询问能力，没有运行代码。"
+            )
+        execution = (
+            "The restricted code executor is enabled in this environment."
+            if code_execution_enabled
+            else "The restricted code executor is disabled by default in this environment."
+        )
+        return (
+            "I can help write, explain, and modify code. "
+            + execution
+            + " No code was run for this capability question."
+        )
+
+    def _build_multi_intent_response(self, message: str, steps: List, policy=None) -> str:
+        """Build bounded, localized context for recognized read-only subquestions."""
+        policy = policy or getattr(self, "_active_turn_policy", None)
+        subtasks = tuple(getattr(policy, "parsed_subtasks", ()) or ())
+        lang = self._response_language(getattr(self.memory, "user_lang", "en"))
+        is_zh = lang == "zh"
+        labels = {
+            "planning_assessment_query": "当前规划结果",
+            "planning_provenance_query": "规划来源",
+            "case_state_question": "规划状态",
+            "case_dose_query": "剂量/DVH",
+            "image_metadata_query": "CT 元数据",
+            "current_oar_query": "OAR 状态",
+            "surgical_guide_status_query": "导板状态",
+            "session_visual_location_query": "对象截图/位置",
+            "code_capability_query": "代码能力",
+        }
+        builders = {
+            "planning_assessment_query": lambda clause: self._build_current_planning_assessment_response(lang),
+            "planning_provenance_query": lambda clause: self._build_current_planning_provenance_response(lang),
+            "case_state_question": lambda clause: self._build_case_state_question_response(lang, clause),
+            "case_dose_query": lambda clause: self._build_current_dose_response(lang),
+            "image_metadata_query": lambda clause: self._build_current_image_metadata_response(lang),
+            "current_oar_query": lambda clause: self._build_current_oar_count_response(lang),
+        }
+        sections = []
+        visual_pending = False
+        for intent, clause in subtasks:
+            if intent == "code_capability_query":
+                body = self._code_capability_response(lang)
+            elif intent in builders:
+                try:
+                    body = builders[intent](clause)
+                except Exception:
+                    logger.exception("Multi-intent read formatter failed for %s", intent)
+                    body = (
+                        "当前 Session 事实暂时无法读取，不能可靠回答这一部分。"
+                        if is_zh else
+                        "Current Session facts could not be read, so this part cannot be answered reliably."
+                    )
+            elif intent == "surgical_guide_status_query":
+                step = next(
+                    (
+                        item for item in reversed(steps or [])
+                        if item.get("tool") == "surgical_guide"
+                    ),
+                    None,
+                )
+                if step and step.get("status") == "done":
+                    body = str(step.get("result") or step.get("content") or "").strip()
+                elif step:
+                    body = str(step.get("result") or step.get("content") or "").strip()
+                else:
+                    body = (
+                        "未取得导板状态工具的返回，不能据此判断导板是否已生成。"
+                        if is_zh else
+                        "The guide-status tool returned no result, so guide generation cannot be determined."
+                    )
+            elif intent == "session_visual_location_query":
+                # The browser-owned child returns the actual location evidence.
+                # Do not let a pending screenshot acknowledgement survive as a final claim.
+                visual_pending = True
+                continue
+            else:
+                body = (
+                    "这一子问题未能可靠解析，本轮未对它采取操作。"
+                    if is_zh else
+                    "This subquestion could not be resolved reliably; no action was taken for it."
+                )
+            sections.append(
+                f"### {labels.get(intent, clause)}\n{body}"
+            )
+        if not sections:
+            if visual_pending:
+                return ""
+            return (
+                "没有可核验的子问题结果，本轮未启动临床操作。"
+                if is_zh else
+                "No subquestion produced a verifiable result; no clinical operation was started."
+            )
+        return "\n\n".join(sections)
+
     def _unmatched_turn_response(self, message: str = "", lang: Optional[str] = None) -> str:
         """Return a safe, same-language response when no reliable route exists."""
         response_lang = self._response_language(lang)
@@ -2600,6 +2711,12 @@ class ChatWorkflowMixin:
                 parsed.references[0] if parsed.references else ""
             ),
         }
+        parsed_subtasks = getattr(policy, "parsed_subtasks", ()) or ()
+        if parsed_subtasks:
+            trace["subtasks"] = [
+                {"intent": str(intent), "clause": str(clause)[:500]}
+                for intent, clause in parsed_subtasks[:6]
+            ]
         return trace
 
     def _current_execution_authorization(self):
@@ -3096,6 +3213,63 @@ class ChatWorkflowMixin:
             )
         )
         self._activate_turn_policy(local_policy, message)
+
+        # Fully resolved read-only routes stay out of provider tool-loop
+        # guessing. A compound turn executes each accepted read independently,
+        # and guide status can never fall through to the mutating default action.
+        local_direct_intents = {
+            "session_visual_location_query",
+            "surgical_guide_status_query",
+            "multi_intent_query",
+        }
+        if not internal_followup and local_policy.intent in local_direct_intents:
+            trace_zh = self.memory.user_lang == "zh"
+            add_step(
+                "thinking",
+                "只读意图路由" if trace_zh else "Read-only Intent Routing",
+                "已按整句解析结果执行只读查询；不会由此启动临床生成操作。"
+                if trace_zh else
+                "Routing the complete request as read-only; no clinical generation will be started.",
+                status="done",
+            )
+            direct_calls = self._detect_tool_request(message)
+            if direct_calls:
+                authorization = self._current_execution_authorization()
+                self._record_ordered_action_plan(direct_calls, source="local_direct_calls")
+                if authorization is not None:
+                    authorization.grant_tool_calls(direct_calls, source="local_direct_calls")
+                try:
+                    response = self._execute_direct_tools(direct_calls, steps, step_id)
+                except Exception:
+                    logger.exception("Local read-only tool route failed")
+                    response = ""
+            elif local_policy.intent == "multi_intent_query":
+                response = self._build_multi_intent_response(
+                    message, steps, local_policy,
+                )
+            else:
+                response = (
+                    "当前请求中的截图对象无法与界面中的数据树对象唯一对应；本轮没有截取其它视图，也没有推测位置。请提供数据树里显示的对象名称。"
+                    if trace_zh else
+                    "The requested screenshot target could not be uniquely matched to a live Data Tree object. No unrelated view was captured and no location was guessed; please provide the object's exact Data Tree name."
+                )
+            response = self._normalize_user_facing_response(message, response)
+            if response:
+                self.memory.add_message("assistant", response)
+            self._record_experience(message, response, steps)
+            self._finish_turn(response)
+            local_meta = {
+                "usage": {},
+                "latency_ms": 0,
+                "llm_calls": 0,
+                "route": "local_" + local_policy.intent,
+                "response_contract": response_contract,
+            }
+            if local_policy.intent == "multi_intent_query":
+                local_meta["multi_intent_query"] = True
+            if getattr(self, "_visual_analysis_pending", False):
+                local_meta["visual_analysis_pending"] = True
+            return {"response": response, "steps": steps, "llm_meta": local_meta}
 
         local_read_intents = {
             "planning_provenance_query",
@@ -4410,6 +4584,8 @@ class ChatWorkflowMixin:
                     "dose_recompute",
                     "viewer_display",
                     "session_visual_location_query",
+                    "surgical_guide_status_query",
+                    "multi_intent_query",
                     "ui_operation",
                 )
             )
@@ -4616,6 +4792,18 @@ class ChatWorkflowMixin:
                 # second synthesis call for this focused operation.
                 response = raw_response
             elif (
+                local_policy.intent == "surgical_guide_status_query"
+                and _direct_tool_names == {"surgical_guide"}
+            ):
+                response = raw_response
+            elif local_policy.intent == "multi_intent_query":
+                response = self._build_multi_intent_response(
+                    message, steps, local_policy,
+                )
+                llm_meta["multi_intent_query"] = True
+                if "ui_screenshot" in _direct_tool_names:
+                    llm_meta["visual_analysis_pending"] = True
+            elif (
                 local_policy.intent == "session_visual_location_query"
                 and _direct_tool_names == {"ui_screenshot"}
             ):
@@ -4740,6 +4928,32 @@ class ChatWorkflowMixin:
             self._finish_turn(response)
             llm_meta["phase_timings_ms"] = dict(getattr(self, "_turn_timings", {}) or {})
             llm_meta["route"] = "direct_tool"
+            yield from final_response_events({"response": response, "llm_meta": llm_meta})
+            yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})
+            return
+
+        # A compound turn containing only local facts/code capability has no
+        # browser tool call. Answer every validated clause without re-entering
+        # the model path that previously dropped all but one keyword.
+        if local_policy.intent == "multi_intent_query":
+            synthesis_step = add_step(
+                "assistant",
+                "整合只读子问题" if self.memory.user_lang == "zh" else "Combine Read-only Subquestions",
+                "正在逐项整理已核验的 Session 事实..." if self.memory.user_lang == "zh"
+                else "Preparing each validated read-only result...",
+                status="pending",
+            )
+            yield yield_event("step", synthesis_step)
+            response = self._build_multi_intent_response(message, steps, local_policy)
+            synthesis_step["status"] = "done"
+            synthesis_step["content"] = "已完成" if self.memory.user_lang == "zh" else "Completed"
+            yield yield_event("step", synthesis_step)
+            self.memory.add_message("assistant", response)
+            self._record_experience(message, response, steps)
+            self._finish_turn(response)
+            llm_meta["multi_intent_query"] = True
+            llm_meta["route"] = "local_multi_intent"
+            llm_meta["phase_timings_ms"] = dict(getattr(self, "_turn_timings", {}) or {})
             yield from final_response_events({"response": response, "llm_meta": llm_meta})
             yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})
             return

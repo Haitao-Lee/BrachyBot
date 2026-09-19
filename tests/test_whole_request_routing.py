@@ -189,3 +189,109 @@ def test_generated_guide_location_question_is_not_a_new_generation():
     assert not is_surgical_guide_generation_request('生成的手术导板在哪里')
     assert is_surgical_guide_generation_request('请生成手术导板')
 
+
+
+
+def test_guide_generation_status_question_only_calls_read_only_status():
+    message = "\u5f53\u524d\u89c4\u5212\u7ed3\u679c\u751f\u6210\u5bfc\u677f\u4e86\u5417"
+    policy = classify_local_turn(message)
+    assert policy.intent == 'surgical_guide_status_query'
+    assert policy.direct_execution
+    assert policy.execution_grants == {'surgical_guide'}
+    assert policy.action_plan is None
+    calls = ResponseToolMixin()._detect_tool_request(message)
+    assert calls == [{
+        'id': 'tool_direct_surgical_guide_status',
+        'tool': 'surgical_guide',
+        'params': {'action': 'status'},
+    }]
+
+
+def test_compound_planning_guide_screenshot_and_code_queries_are_all_retained():
+    message = (
+        "\u5f53\u524d\u89c4\u5212\u7ed3\u679c\u600e\u4e48\u6837\uff0c"
+        "\u8bf7\u622a\u56fe\u544a\u8bc9\u6211\u751f\u6210\u7684\u5bfc\u677f\u5728\u54ea\u91cc\uff1f"
+        "\u6b64\u5916\u4f60\u53ef\u4ee5\u5199\u4ee3\u7801\u505a\u4e8b\u60c5\u5417"
+    )
+    policy = classify_local_turn(message)
+    assert policy.intent == 'multi_intent_query'
+    assert [intent for intent, _ in policy.parsed_subtasks] == [
+        'planning_assessment_query', 'session_visual_location_query', 'code_capability_query',
+    ]
+    calls = ResponseToolMixin()._detect_tool_request(message)
+    assert len(calls) == 1 and calls[0]['tool'] == 'ui_screenshot'
+    params = calls[0]['params']
+    assert params['views'] == ['data-tree', 'viewer-3d']
+    assert params['target_refs'] == ['surgical_guide:active']
+
+
+def test_compound_status_and_location_do_not_turn_status_into_generation():
+    message = (
+        "\u5f53\u524d\u89c4\u5212\u7ed3\u679c\u751f\u6210\u5bfc\u677f\u4e86\u5417\uff0c"
+        "\u5e76\u622a\u56fe\u544a\u8bc9\u6211\u5bfc\u677f\u5728\u54ea\u91cc"
+    )
+    policy = classify_local_turn(message)
+    assert policy.intent == 'multi_intent_query'
+    assert [intent for intent, _ in policy.parsed_subtasks] == [
+        'surgical_guide_status_query', 'session_visual_location_query',
+    ]
+    calls = ResponseToolMixin()._detect_tool_request(message)
+    assert [call['tool'] for call in calls] == ['surgical_guide', 'ui_screenshot']
+    assert calls[0]['params'] == {'action': 'status'}
+    assert calls[1]['params']['views'][0] == 'data-tree'
+
+
+
+def test_multi_intent_response_keeps_local_answers_and_never_invents_visual_findings():
+    from types import SimpleNamespace
+    from agent_runtime.chat_workflows import ChatWorkflowMixin
+
+    class Stub:
+        _response_language = ChatWorkflowMixin._response_language
+        _code_capability_response = ChatWorkflowMixin._code_capability_response
+        _build_multi_intent_response = ChatWorkflowMixin._build_multi_intent_response
+        _build_current_planning_assessment_response = staticmethod(
+            lambda lang: 'Planning_2 is completed with verified metrics.'
+        )
+        memory = SimpleNamespace(user_lang='zh')
+        registry = None
+
+    message = (
+        "\u5f53\u524d\u89c4\u5212\u7ed3\u679c\u600e\u4e48\u6837\uff0c"
+        "\u8bf7\u622a\u56fe\u544a\u8bc9\u6211\u751f\u6210\u7684\u5bfc\u677f\u5728\u54ea\u91cc\uff1f"
+        "\u6b64\u5916\u4f60\u53ef\u4ee5\u5199\u4ee3\u7801\u505a\u4e8b\u60c5\u5417"
+    )
+    answer = Stub()._build_multi_intent_response(
+        message, [], classify_local_turn(message),
+    )
+    assert 'Planning_2 is completed with verified metrics.' in answer
+    assert '\u5f53\u524d\u89c4\u5212\u7ed3\u679c' in answer
+    assert '\u4ee3\u7801\u80fd\u529b' in answer
+    assert '\u53ef\u4ee5\u534f\u52a9\u7f16\u5199' in answer
+    assert 'Viewer' not in answer and '\u9888\u90e8' not in answer
+    assert '\\n' not in answer
+
+
+def test_multi_intent_response_uses_status_tool_result_for_guide_status_clause():
+    from types import SimpleNamespace
+    from agent_runtime.chat_workflows import ChatWorkflowMixin
+
+    class Stub:
+        _response_language = ChatWorkflowMixin._response_language
+        _code_capability_response = ChatWorkflowMixin._code_capability_response
+        _build_multi_intent_response = ChatWorkflowMixin._build_multi_intent_response
+        memory = SimpleNamespace(user_lang='zh')
+        registry = None
+
+    message = (
+        "\u5f53\u524d\u89c4\u5212\u7ed3\u679c\u751f\u6210\u5bfc\u677f\u4e86\u5417\uff0c"
+        "\u5e76\u622a\u56fe\u544a\u8bc9\u6211\u5bfc\u677f\u5728\u54ea\u91cc"
+    )
+    status = "\u5df2\u6838\u9a8c\uff1a\u5bfc\u677f v2 \u5df2\u751f\u6210\u5e76\u5df2\u52a0\u8f7d\u3002"
+    answer = Stub()._build_multi_intent_response(
+        message,
+        [{'tool': 'surgical_guide', 'status': 'done', 'result': status}],
+        classify_local_turn(message),
+    )
+    assert status in answer
+    assert '\u5bf9\u8c61\u622a\u56fe/\u4f4d\u7f6e' not in answer

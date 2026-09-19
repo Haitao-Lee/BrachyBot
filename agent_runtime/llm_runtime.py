@@ -917,6 +917,8 @@ class LLMRuntimeMixin:
                         "surgical_guide_generation",
                         "dose_recompute",
                         "session_visual_location_query",
+                        "surgical_guide_status_query",
+                        "multi_intent_query",
                         "ui_operation",
                     )
                 )

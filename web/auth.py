@@ -174,6 +174,12 @@ def configure_auth(app: Flask, store: WorkspaceStore, config: Optional[Dict[str,
             return None
         if request.path.startswith("/api/auth/"):
             return None
+        # Liveness must remain observable while no browser session is
+        # available (initial page load, reconnect, or a server restart).
+        # The route still passes the deployment API-key boundary; it simply
+        # must not depend on the case/account snapshot it is meant to test.
+        if request.path == "/api/healthz":
+            return None
         user = current_user(store)
         if not user:
             return _json_error("Authentication required", 401)

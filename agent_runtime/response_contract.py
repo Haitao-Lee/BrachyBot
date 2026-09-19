@@ -158,8 +158,8 @@ def presentation_fallback_message(
     """Provide a non-empty, honest fallback for a presentation-only turn.
 
     This is selected by typed tool metadata, not by matching a particular user
-    sentence.  It does not claim that a screenshot was uploaded until the
-    browser has returned the attachment result.
+    sentence.  The server only sees screenshot tool metadata before the browser
+    performs the capture, so this fallback must never claim that an image was attached.
     """
     is_zh = str(lang or "").lower().startswith("zh")
     contract = build_response_contract(message)
@@ -168,18 +168,18 @@ def presentation_fallback_message(
     if is_zh:
         if has_visual and contract.act in {"question", "mixed"}:
             return (
-                "对应的 Viewer/Data Tree 截图已保留在本条回复中，但当前没有得到可验证的图像解读，"
-                "因此没有盲目标注。若需要定位具体对象，请直接告诉我对象名称，我会基于当前可见状态重新核对。"
+                "本轮已发起截图请求；服务端结果不能确认浏览器已成功捕获或附加图像，也没有得到可验证的图像解读。"
+                "请以本条回复中实际显示的图片为准；如果没有图片，说明捕获未完成。"
             )
         if has_visual:
-            return "截图已保留在本条回复中；当前没有生成额外的文字解读。"
+            return "本轮已发起截图请求；请以本条回复中实际显示的图片为准，工具请求本身不代表截图已成功附加。"
         return "本轮没有生成可展示的文字回复；当前病例和规划未因此被修改，请重试。"
     if has_visual and contract.act in {"question", "mixed"}:
         return (
-            "The relevant Viewer/Data Tree screenshot is preserved in this reply, but no "
-            "verified visual interpretation was returned, so I did not annotate it blindly. "
-            "Name the object you want located and I will re-check the currently visible state."
+            "A screenshot was requested, but the server result does not confirm a successful capture "
+            "or attachment, and no verified visual interpretation is available. Use only images actually shown in this reply; "
+            "if none appear, capture did not complete."
         )
     if has_visual:
-        return "The screenshot is preserved in this reply; no additional textual interpretation was generated."
+        return "A screenshot was requested; use only images actually shown in this reply, since the server tool record alone does not confirm an attachment."
     return "No user-facing text was generated in this turn; the case and Planning were not changed. Please retry."

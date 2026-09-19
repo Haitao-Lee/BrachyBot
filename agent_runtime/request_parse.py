@@ -527,7 +527,9 @@ def parse_request(message: object) -> ParsedRequest:
     goals = _ordered_goals(text, objects, actions)
     # A generation verb used attributively (``重新生成的报告``) describes an
     # existing artifact rather than commanding a new one.
-    if action == "generate" and _ATTRIBUTIVE_REPORT.search(text):
+    if action == "generate" and (
+        _ATTRIBUTIVE_REPORT.search(text) or _ATTRIBUTIVE_GUIDE.search(text)
+    ):
         if not (canonical_report_mutation(text) or canonical_guide_generation(text)):
             action = ""
             actions = [item for item in actions if item != "generate"]
@@ -578,6 +580,13 @@ _ATTRIBUTIVE_REPORT = re.compile(
     r"(?:生成|更新|重做|重建|制作|创建|填充|补全|完善|generate|regenerate|"
     r"rebuild|create|update|refresh)\s*(?:的|出来的|得到的|好的|完的)\s*"
     r"(?:[^\s]{0,8})?(?:报告|report)",
+    re.IGNORECASE,
+)
+
+_ATTRIBUTIVE_GUIDE = re.compile(
+    r"(?:已生成|已经生成|生成|更新|重做|重建|制作|创建|刷新|generate|regenerate|"
+    r"rebuild|create|update|refresh)\s*(?:的|出来的|得到的|好的|完的)\s*"
+    r"(?:[^\s,，；;!?？。]{0,8})?(?:手术|穿刺)?导板",
     re.IGNORECASE,
 )
 

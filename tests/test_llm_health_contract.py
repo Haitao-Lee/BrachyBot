@@ -104,3 +104,25 @@ def test_server_and_frontend_surfaces_carry_machine_readable_health():
     assert "status.brain_state ?? status.brain_available" in ui_api
     assert "window.updateBrainStatusIndicator(false, 'llm-unavailable')" in chat
     assert "window.updateBrainStatusIndicator(true, 'llm-response')" in chat
+
+def test_opencode_go_bootstrap_replaces_legacy_xiaomi_environment(tmp_path, monkeypatch):
+    from AgenticSys import BrachyAgent
+
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text(
+        '{"opencode-go": {"type": "api", "key": "unit-opencode-go-token"}}',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://token-plan-cn.xiaomimimo.com/anthropic")
+    monkeypatch.setenv("ANTHROPIC_MODEL", "mimo-v2.5")
+    monkeypatch.delenv("BRACHYBOT_LLM_PROVIDER", raising=False)
+    monkeypatch.delenv("BRACHYBOT_DISABLE_OPENCODE_BOOTSTRAP", raising=False)
+    monkeypatch.setenv("BRACHYBOT_OPENCODE_AUTH_FILE", str(auth_file))
+
+    agent = object.__new__(BrachyAgent)
+    agent.memory = SimpleNamespace(session_id="unit-test")
+    config = agent._auto_detect_llm_provider()
+
+    assert list(config) == ["generic"]
+    assert config["generic"]["model"] == "mimo-v2.5"
+    assert config["generic"]["base_url"] == "https://opencode.ai/zen/go/v1"

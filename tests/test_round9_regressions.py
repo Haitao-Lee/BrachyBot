@@ -48,6 +48,36 @@ class Round9RegressionTests(unittest.TestCase):
         self.assertIn("animation-iteration-count: infinite !important", responsive)
         self.assertIn("todo-active-breathe-soft", responsive)
 
+    def test_busy_chat_turns_render_in_fifo_queue_dock_before_dispatch(self):
+        source = self.read("web/app/static/js/brachybot-chat-todo.js")
+        html = self.read("web/app/index.html")
+        css = self.read("web/app/static/css/brachybot-chat-status.css")
+        core = self.read("web/app/static/js/brachybot-chat-core.js")
+        self.assertIn("window.renderQueuedChatTurns = _renderQueuedChatTurns", source)
+        self.assertIn("const dock = document.getElementById('chatQueueDock')", source)
+        self.assertIn("_queueChatTurn(activeSessionId, queuedText)", source)
+        self.assertIn("queuedTurn: true", source)
+        self.assertIn("turnCompleted || turnFailed || turnCancelled", source)
+        # A queued prompt must not be inserted into the durable transcript or
+        # overwrite the active turn's last-user-message identity.
+        queue_block = source[source.index("if (isBusy && opts.queueIfBusy)"):source.index("// If user already has an active stream", source.index("if (isBusy && opts.queueIfBusy)"))]
+        self.assertNotIn("addChat('user', queuedText", queue_block)
+        self.assertNotIn("_lastUserMessage = queuedText", queue_block)
+        self.assertIn("id=\"chatQueueDock\"", html)
+        self.assertIn(".chat-queue-dock", css)
+        self.assertIn("@keyframes chat-queue-spin", css)
+        self.assertIn("window.flushQueuedChatTurns?.()", core)
+
+    def test_report_autofill_validates_live_scene_after_restore_barrier(self):
+        ui_api = self.read("web/app/static/js/brachybot-ui-api.js")
+        shell = self.read("web/app/static/js/brachybot-report-shell.js")
+        self.assertIn("prepareReportSceneReadWithRetry", ui_api)
+        self.assertIn("let visualBarrierResult = null", ui_api)
+        self.assertIn("live scene validation passed", ui_api)
+        self.assertIn("_captureReportFiguresWithRetry", shell)
+        self.assertIn("attempt < 2", shell)
+        self.assertIn("Previous figures were retained", shell)
+
     def test_seeded_ready_todo_reopens_when_current_tool_is_in_flight(self):
         source = self.read("web/app/static/js/brachybot-chat-todo.js")
         # Data Tree readiness can optimistically cross out a reusable CTV/OAR
@@ -308,7 +338,7 @@ class Round9RegressionTests(unittest.TestCase):
         )
         self.assertIn("_drawReport3DDoseColorbar(", report)
         self.assertIn("candidate.clone().intersect(context)", report)
-        self.assertIn("brachybot-report-editor.js?v=45", index)
+        self.assertIn("brachybot-report-editor.js?v=48", index)
 
 
 if __name__ == "__main__":

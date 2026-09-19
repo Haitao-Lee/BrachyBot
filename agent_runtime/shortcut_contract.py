@@ -60,6 +60,22 @@ def shortcut_supported(message, policy, *, pending_tumor_site=False, ui_state=No
     intent = policy.intent
     if policy.action_plan is not None:
         return planning_command(text)
+    if intent == 'multi_intent_query':
+        subtask_intents = {
+            str(item[0])
+            for item in (getattr(policy, "parsed_subtasks", ()) or ())
+            if isinstance(item, (list, tuple)) and item
+        }
+        safe_reads = {
+            "planning_provenance_query", "planning_assessment_query",
+            "case_state_question", "case_dose_query", "image_metadata_query",
+            "current_oar_query", "session_visual_location_query",
+            "surgical_guide_status_query", "code_capability_query",
+        }
+        return 2 <= len(subtask_intents) <= 6 and subtask_intents.issubset(safe_reads)
+    if intent == 'surgical_guide_status_query':
+        # This contract only reaches the read-only status action, never generate.
+        return True
     if intent in {'clinical_planning', 'planning', 'treatment_plan'}:
         return planning_command(text)
     if intent == 'segmentation':
@@ -96,11 +112,15 @@ def shortcut_supported(message, policy, *, pending_tumor_site=False, ui_state=No
         labels = [normalized(item.get('label')) for item in catalog
                   if isinstance(item, dict) and item.get('label')] if isinstance(catalog, list) else []
         obj = r"(?:" + OBJECT + r"|3d重建的按钮" + ''.join('|' + re.escape(label) for label in labels) + r")"
-        prefix = P + r"(?:请问|那)?(?:患者的|3d查看器里的)?(?:已生成的|生成的|当前的|当前)?"
+        prefix = r"(?:那\s*)?" + P + r"(?:请问|那)?(?:告诉我|告知我|说一下|说明)?(?:患者的|3d查看器里的)?(?:已生成的|生成的|当前的|当前)?"
+        screenshot_suffix = (
+            r"(?:[，,;；]\s*(?:(?:并|然后|再)\s*)?(?:请)?"
+            r"(?:截图|截屏)(?:告知|说明|告诉我|给我看(?:看)?|展示|标注)?(?:一下)?)?"
+        )
         # Context-dependent forms are accepted only after the candidate
         # resolver has found an unambiguous target from recent user context.
-        return full(prefix + obj + r"(?:在)?(?:哪里|哪儿|在哪|的位置)(?:呢|呀|啊|吗)?", text) or full(
-            P + r"(?:截图|截屏)(?:告诉我|标出|标注|指出)" + obj + r"(?:在)?(?:哪里|哪儿|的位置)", text
+        return full(prefix + obj + r"(?:在)?(?:哪里|哪儿|在哪|的位置)(?:呢|呀|啊|吗)?" + screenshot_suffix, text) or full(
+            r"(?:那\s*)?" + P + r"(?:截图|截屏)(?:告诉我|标出|标注|指出)" + r"(?:已生成的|生成的|当前的|当前)?" + obj + r"(?:在)?(?:哪里|哪儿|的位置)", text
         ) or full(P + r"(?:圈出|标出|指出)\s*" + obj + r"\s*(?:在哪里)?", text) or full(
             P + r"圈出来哪个是" + obj, text
         ) or full(r"(?:please )?(?:where is|where are|locate|find)\s+(?:the |current |generated )*" + obj, text) or text == '截图给我在哪里'

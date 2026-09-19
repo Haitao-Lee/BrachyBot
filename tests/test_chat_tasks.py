@@ -662,12 +662,14 @@ def test_terminal_done_is_withheld_until_case_results_are_committed():
     assert observed[-1] == _event("done", {})
 
 
-def test_idle_task_stream_emits_sse_keepalive_comment():
+def test_idle_task_stream_emits_sse_keepalive_event():
     """Long model phases must not be mistaken for a broken live connection."""
     task = ChatTask("task-id", "user-a", "case-a", _Agent([]), "hello")
     with patch.object(task._condition, "wait", return_value=False):
         event = next(task.iter_events(0))
-    assert event == ": brachybot-task-alive\n\n"
+    assert ": brachybot-task-alive\n" in event
+    assert "event: heartbeat\n" in event
+    assert '"task_id": "task-id"' in event
 
 
 def test_failed_case_commit_never_emits_a_false_done_event():

@@ -13,6 +13,7 @@ from __future__ import annotations
 import inspect
 import json
 import logging
+import os
 import threading
 import time
 import uuid
@@ -38,6 +39,17 @@ logger = logging.getLogger(__name__)
 # least this often. The cadence stays well below the browser's idle-stream
 # timeout so "loading" can never be mistaken for a dead connection.
 HYDRATION_PROGRESS_HEARTBEAT_SECONDS = 8.0
+
+# Send a real SSE event rather than only an SSE comment. Some reverse proxies
+# and browser/network stacks do not flush comment-only chunks consistently;
+# an explicit event gives the long-running chat stream a protocol-visible
+# keepalive while remaining outside the task journal and clinical trace.
+try:
+    CHAT_TASK_HEARTBEAT_SECONDS = max(
+        2.0, float(os.environ.get("BRACHYBOT_CHAT_HEARTBEAT_SECONDS", "5"))
+    )
+except (TypeError, ValueError):
+    CHAT_TASK_HEARTBEAT_SECONDS = 5.0
 
 # Phase labels owned by the worker so the route layer never formats UI text.
 _HYDRATION_PHASE_TEXT = {
@@ -322,7 +334,7 @@ class ChatTask:
                     # after a bounded idle interval so reverse proxies and
                     # browsers keep the stream open instead of showing a
                     # misleading "connection interrupted" recovery state.
-                    if not self._condition.wait(timeout=10.0):
+                    if not self._condition.wait(timeout=CHAT_TASK_HEARTBEAT_SECONDS):
                         heartbeat = True
                         break
                     relative = max(0, index - self._event_base)
@@ -332,7 +344,16 @@ class ChatTask:
             for event in batch:
                 yield event
             if heartbeat and not terminal:
-                yield ": brachybot-task-alive\n\n"
+                # Keep the legacy comment for older clients/proxies while
+                # adding a named event that modern clients can observe. Both
+                # are one SSE frame so neither changes task sequencing.
+                yield (
+                    ": brachybot-task-alive\n"
+                    + self.encode_event("heartbeat", {
+                        "task_id": self.task_id,
+                        "event_count": self._event_base + len(self._events),
+                    })
+                )
             if terminal:
                 return
 

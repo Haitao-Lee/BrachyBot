@@ -1,5 +1,7 @@
 # BrachyBot — Architecture & Maintenance Guide
 
+For the live planning monitor lifecycle, deterministic engine, persistence, and bounded timeline export, see [Monitor architecture and verified audit](TRAINING_MONITOR_VERIFIED_2026-09-19.md).
+
 > **Audience:** engineers maintaining, debugging, and extending BrachyBot.
 > **Scope:** end-to-end system architecture, runtime contracts, clinical data flow,
 > persistence model, testing strategy, and a maintenance playbook with hard safety

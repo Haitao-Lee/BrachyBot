@@ -28,6 +28,10 @@ def test_question_and_mixed_turns_require_text_without_answer_whitelists():
     assert question.text_required is True
     assert question.evidence_supplemental is True
     assert question.presentation_mode == "explain_with_evidence"
+    visual_question = build_response_contract("\u6709\u6ca1\u6709\u56fe\u8bf4\u660e\u4e00\u4e0b")
+    assert visual_question.act == "question"
+    assert visual_question.text_required is True
+    assert visual_question.presentation_mode == "explain_with_evidence"
     assert mixed.act == "mixed"
     assert mixed.text_required is True
     assert command.act == "command"
@@ -41,10 +45,14 @@ def test_presentation_fallback_is_typed_and_language_matched():
     zh = presentation_fallback_message("zh", "生成结果在哪里？", ["ui_screenshot"])
     en = presentation_fallback_message("en", "Where is the generated result?", ["ui_screenshot"])
 
-    assert "Viewer/Data Tree" in zh
+    assert "\u622a\u56fe\u8bf7\u6c42" in zh
+    assert "\u6210\u529f\u6355\u83b7\u6216\u9644\u52a0" in zh
+    assert "\u4fdd\u7559" not in zh
     assert "截图" in zh
-    assert "Viewer/Data Tree" in en
+    assert "screenshot was requested" in en.lower()
     assert "screenshot" in en.lower()
+    assert "confirm a successful capture" in en.lower()
+    assert "preserved" not in en.lower()
 
 
 def test_server_and_browser_preserve_text_for_screenshot_questions():
