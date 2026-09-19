@@ -164,6 +164,151 @@ MAX_SAVED_GUIDE_VERSIONS = 5
 # output) without saturating the shared planning server.
 GUIDE_RESAMPLE_MAX_WORKERS = 8
 
+# A guide crop is local in *physical* space, but a 0.2 mm lattice can still
+# become enormous when a plan contains needle groups far apart on the skin.
+# The old code admitted the requested lattice unconditionally, so a large
+# plan could allocate the mask, signed-distance field, slab workspaces and
+# marching-cubes intermediates at the same time. That starved the Flask
+# worker and made the browser report an apparently lost connection even
+# though the guide worker was still consuming resources. Keep the normal
+# 0.2 mm geometry unchanged below this budget; only oversized crops are
+# promoted to a coarser, explicitly recorded construction lattice.
+GUIDE_MAX_LOCAL_GRID_VOXELS_DEFAULT = 450_000_000
+GUIDE_MAX_EFFECTIVE_RESOLUTION_MM_DEFAULT = 0.5
+
+
+def _guide_env_int(name: str, default: int, minimum: int = 1) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return int(default)
+    try:
+        return max(int(minimum), int(raw))
+    except (TypeError, ValueError):
+        logger.warning("Ignoring invalid %s=%r", name, raw)
+        return int(default)
+
+
+def _guide_env_float(name: str, default: float, minimum: float) -> float:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return float(default)
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        logger.warning("Ignoring invalid %s=%r", name, raw)
+        return float(default)
+    if not math.isfinite(value) or value < float(minimum):
+        logger.warning("Ignoring invalid %s=%r", name, raw)
+        return float(default)
+    return value
+
+
+def _guide_grid_shape(
+    source_shape: Sequence[int],
+    source_spacing_zyx: Sequence[float],
+    target_spacing_mm: float,
+) -> np.ndarray:
+    """Return the exact destination shape used by local-grid resampling."""
+    source = np.asarray(source_shape, dtype=np.float64).reshape(3)
+    spacing = np.asarray(source_spacing_zyx, dtype=np.float64).reshape(3)
+    target = float(target_spacing_mm)
+    if (
+        np.any(source < 2.0)
+        or np.any(spacing <= 0.0)
+        or not math.isfinite(target)
+        or target <= 0.0
+    ):
+        raise SurgicalGuideError("Invalid physical geometry for guide grid budgeting")
+    extent = (source - 1.0) * spacing
+    shape = np.floor(extent / target + 1e-8).astype(np.int64) + 1
+    return np.maximum(shape, 2)
+
+
+def _bounded_guide_resolution(
+    source_shape: Sequence[int],
+    source_spacing_zyx: Sequence[float],
+    requested_resolution_mm: float,
+) -> Tuple[float, Dict[str, Any]]:
+    """Bound an oversized guide crop before allocating any target arrays.
+
+    The default budget is deliberately just above the largest successful
+    clinical crop observed on this server. A coarser lattice is an explicit
+    operational safeguard, not a hidden change to the requested parameter:
+    the returned budget records both resolutions and the exact voxel counts.
+    If even the configured maximum resolution cannot fit the budget, fail
+    before allocating gigabytes and leave the case/server responsive.
+    """
+    requested = float(requested_resolution_mm)
+    requested_shape = _guide_grid_shape(source_shape, source_spacing_zyx, requested)
+    requested_voxels = math.prod(int(value) for value in requested_shape)
+    max_voxels = _guide_env_int(
+        "BRACHYBOT_GUIDE_MAX_LOCAL_GRID_VOXELS",
+        GUIDE_MAX_LOCAL_GRID_VOXELS_DEFAULT,
+    )
+    max_resolution = max(
+        requested,
+        _guide_env_float(
+            "BRACHYBOT_GUIDE_MAX_EFFECTIVE_RESOLUTION_MM",
+            GUIDE_MAX_EFFECTIVE_RESOLUTION_MM_DEFAULT,
+            requested,
+        ),
+    )
+    if requested_voxels <= max_voxels:
+        return requested, {
+            "requested_resolution_mm": requested,
+            "effective_resolution_mm": requested,
+            "requested_grid_shape": [int(value) for value in requested_shape],
+            "effective_grid_shape": [int(value) for value in requested_shape],
+            "requested_grid_voxels": int(requested_voxels),
+            "effective_grid_voxels": int(requested_voxels),
+            "resolution_adjusted": False,
+            "max_grid_voxels": int(max_voxels),
+        }
+
+    # Volume scales approximately with the inverse cube of the spacing. Start
+    # at the analytic spacing that meets the budget, then round upward through
+    # the exact discrete shape calculation so the real allocation is bounded.
+    effective = requested * (
+        float(requested_voxels) / float(max_voxels)
+    ) ** (1.0 / 3.0)
+    effective = min(max_resolution, max(requested, effective))
+    effective_shape = _guide_grid_shape(source_shape, source_spacing_zyx, effective)
+    effective_voxels = math.prod(int(value) for value in effective_shape)
+    for _ in range(32):
+        if effective_voxels <= max_voxels:
+            break
+        effective = min(max_resolution, math.nextafter(effective * 1.01, math.inf))
+        effective_shape = _guide_grid_shape(source_shape, source_spacing_zyx, effective)
+        effective_voxels = math.prod(int(value) for value in effective_shape)
+    if effective_voxels > max_voxels:
+        raise SurgicalGuideError(
+            "The selected needle spread is too large for a safe guide grid "
+            f"({requested_voxels:,} voxels requested; limit {max_voxels:,}). "
+            "Reduce the guide region or split the distant needle groups before retrying."
+        )
+    budget = {
+        "requested_resolution_mm": requested,
+        "effective_resolution_mm": float(effective),
+        "requested_grid_shape": [int(value) for value in requested_shape],
+        "effective_grid_shape": [int(value) for value in effective_shape],
+        "requested_grid_voxels": int(requested_voxels),
+        "effective_grid_voxels": int(effective_voxels),
+        "resolution_adjusted": True,
+        "max_grid_voxels": int(max_voxels),
+    }
+    logger.warning(
+        "Surgical guide grid resolution adjusted requested=%.4f effective=%.4f "
+        "requested_shape=%s requested_voxels=%d effective_shape=%s effective_voxels=%d limit=%d",
+        requested,
+        float(effective),
+        tuple(int(value) for value in requested_shape),
+        requested_voxels,
+        tuple(int(value) for value in effective_shape),
+        effective_voxels,
+        max_voxels,
+    )
+    return float(effective), budget
+
 # Stable identity for the exact CT-derived envelope used by guide generation.
 # The mask is persisted separately from the printable guide mesh because it is
 # also a first-class segmentation shown in the Data Tree and MPR viewers.
@@ -3047,9 +3192,7 @@ def _resample_mask_to_local_grid(
     )
     signed_distance = (outside_distance - inside_distance).astype(np.float32, copy=False)
 
-    extent = (np.asarray(source.shape, dtype=np.float64) - 1.0) * source_spacing
-    target_shape = np.floor(extent / target_spacing + 1e-8).astype(np.int64) + 1
-    target_shape = np.maximum(target_shape, 2)
+    target_shape = _guide_grid_shape(source.shape, source_spacing, target_spacing_mm)
     axes = [
         np.arange(int(target_shape[axis]), dtype=np.float32)
         * np.float32(target_spacing[axis] / source_spacing[axis])
@@ -3590,14 +3733,21 @@ def mesh_validation(vertices: np.ndarray, faces: np.ndarray) -> Dict[str, Any]:
         return {"valid": False, "watertight": False, "reason": "empty_or_nonfinite_mesh"}
     if np.any(faces < 0) or np.any(faces >= len(vertices)):
         return {"valid": False, "watertight": False, "reason": "face_index_out_of_range"}
-    edges = np.concatenate((faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]), axis=0)
-    edges.sort(axis=1)
     if _guide_fast_path() and len(vertices) <= 2**32:
         # Injective integer packing preserves exactly the unordered edge
         # multiplicities; scalar uint64 sorting avoids structured-row sorting.
-        packed = (edges[:, 0].astype(np.uint64) << np.uint64(32)) | edges[:, 1].astype(np.uint64)
+        # Fill one edge block at a time. No 3F-by-2 int64 edge table or row
+        # sort is needed, and edge order/counts are identical to the old path.
+        packed = np.empty(3 * len(faces), dtype=np.uint64)
+        for block, (a, b) in enumerate(((0, 1), (1, 2), (2, 0))):
+            target = packed[block * len(faces):(block + 1) * len(faces)]
+            target[:] = np.minimum(faces[:, a], faces[:, b])
+            np.left_shift(target, np.uint64(32), out=target)
+            np.bitwise_or(target, np.maximum(faces[:, a], faces[:, b]).astype(np.uint64), out=target)
         _, edge_counts = np.unique(packed, return_counts=True)
     else:
+        edges = np.concatenate((faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]), axis=0)
+        edges.sort(axis=1)
         _, edge_counts = np.unique(edges, axis=0, return_counts=True)
     watertight = bool(np.all(edge_counts == 2))
     open_edges = int(np.count_nonzero(edge_counts == 1))
@@ -3808,6 +3958,27 @@ def _generate_surgical_guide(
         raise SurgicalGuideError("The planned skin entry lies outside the CT-derived body surface")
     source_spacing_zyx = tuple(
         float(value) for value in np.asarray(ct_image.GetSpacing(), dtype=np.float64)[::-1]
+    )
+    requested_geometry_resolution_mm = float(params["geometry_resolution_mm"])
+    effective_geometry_resolution_mm, grid_budget = _bounded_guide_resolution(
+        body_crop.shape,
+        source_spacing_zyx,
+        requested_geometry_resolution_mm,
+    )
+    if grid_budget["resolution_adjusted"]:
+        # Keep the actual construction parameter in the persisted guide while
+        # retaining the user/default request in validation for auditability.
+        params = dict(params)
+        params["geometry_resolution_mm"] = effective_geometry_resolution_mm
+        params["requested_geometry_resolution_mm"] = requested_geometry_resolution_mm
+    finish_stage(
+        "local_grid_preflight",
+        requested_grid_shape=tuple(grid_budget["requested_grid_shape"]),
+        requested_grid_voxels=grid_budget["requested_grid_voxels"],
+        effective_grid_shape=tuple(grid_budget["effective_grid_shape"]),
+        effective_grid_voxels=grid_budget["effective_grid_voxels"],
+        resolution_mm=effective_geometry_resolution_mm,
+        resolution_adjusted=grid_budget["resolution_adjusted"],
     )
     # Reconstruct the local skin zero-level surface on the requested isotropic
     # physical grid. The CT is never globally resampled or written back; only
@@ -4450,6 +4621,8 @@ def _generate_surgical_guide(
             "skin_fit": "Physical signed-distance skin surface with explicit clearance",
             "skin_surface_interpolation": "physical_signed_distance_linear",
             "geometry_resolution_mm": params["geometry_resolution_mm"],
+            "requested_geometry_resolution_mm": requested_geometry_resolution_mm,
+            "grid_budget": dict(grid_budget),
             "stage_timings_seconds": stage_timings,
             "bore_quality": bore_quality,
             "component_cleanup": component_cleanup,

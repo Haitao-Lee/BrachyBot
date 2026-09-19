@@ -88,6 +88,12 @@ mykey.py
 # Local debug scripts (never committed)
 debug_*.py
 
+# Stale patch backups (.orig) and rejected hunks (.rej) are artifacts of
+# `patch`/`git apply`, never source. Ignore them everywhere so they can stay
+# on disk for recovery without polluting status or risking accidental staging.
+*.orig
+*.rej
+
 # Local root-level test scripts may contain hardcoded machine paths. The
 # maintained pytest suite under tests/ must remain trackable.
 /test_*.py

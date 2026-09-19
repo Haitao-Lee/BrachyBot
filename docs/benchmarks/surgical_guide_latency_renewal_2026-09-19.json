@@ -1,0 +1,155 @@
+{
+  "scope": "Detached generator replay; not browser/checkpoint latency; single measurements on shared host",
+  "renewal": {
+    "date": "2026-09-19",
+    "reason": "tool_factory/seed_plan/planning_pipeline.py changed (rule_based_max_wall_seconds deadline handling; unrelated to guide geometry). The reference manifest dependency hash was renewed after auditing that guide geometry is bit-exact.",
+    "guard_test": "tests/test_surgical_guide_latency.py (41 passed after manifest renewal)",
+    "inputs": {
+      "truncated_fov_4_needles_frozen": "surviving frozen manifest sha256 9c916d5194151f1b530d06c0b7dab01b11bac4ad40a740e9773a0f9ee30b52a5, 4 needles, 0.2 mm",
+      "saved_session_4_needles_0p2": "current saved Session snapshot sha256 42171a3204ba715734354681886885a86b6f195b633b6b166960bfd1018ae2e8, 4 needles, 0.2 mm",
+      "saved_session_4_needles_0p35": "same saved Session snapshot, 0.35 mm validation"
+    },
+    "lost_inputs": "The original 8-needle and 50-needle synthetic snapshot manifests used by the 2026-09-16 evidence are no longer on disk and could not be reproduced; only the 4-needle frozen input survived. The historical pairs remain in docs/benchmarks/surgical_guide_latency_2026-09-16.json.",
+    "normalization": "validation_without_timing excludes additive reporting keys ('grid_budget', 'requested_geometry_resolution_mm') introduced after the frozen reference was captured. Removing them re-hashes the current validation to the original 0b3612f4455552baecfd98135e1fbdefcf5a717818043d056ef2486e9154be7a, so the equivalence hash stays comparable with the 2026-09-16 evidence."
+  },
+  "pairs": [
+    {
+      "label": "truncated_fov_4_needles_frozen",
+      "needle_count": 4,
+      "resolution_mm": 0.2,
+      "inputs_match": true,
+      "output_hashes_match": true,
+      "hashes": {
+        "vertices": "7b553252a2618344e736d413a7cf8b8c2a8252cac11d0a180e44bc2b0b1e0cf3",
+        "faces": "dc13e5fef4c506666bac523c9e0d8576cbfd485e5df1af0ce04085ab85dc8c8a",
+        "needle_paths": "466e85afe6bafa52bb21f99d34304f03f8f6b9c2f3bd4a98354bc2da9051f5d7",
+        "auxiliary_holes": "67ac35fd1a98c6cfb59e0fa7fa7fa45227277c1367dace036b852fe19b0c77b3",
+        "validation_without_timing": "0b3612f4455552baecfd98135e1fbdefcf5a717818043d056ef2486e9154be7a"
+      },
+      "baseline_stages_seconds": {
+        "skin_envelope": 0.581,
+        "skin_surface_persisted": 0.003,
+        "local_grid_resampled": 3.266,
+        "skin_distance_field_reused": 0.0,
+        "plate_patch": 9.045,
+        "auxiliary_holes": 0.591,
+        "primary_sleeves_and_bores": 0.655,
+        "solid_cleanup": 5.3,
+        "mesh_extraction_and_validation": 16.425,
+        "total": 35.869
+      },
+      "current_stages_seconds": {
+        "skin_envelope": 0.557,
+        "skin_surface_persisted": 0.002,
+        "local_grid_preflight": 0.13,
+        "local_grid_resampled": 3.092,
+        "skin_distance_field_reused": 0.0,
+        "plate_patch": 3.859,
+        "auxiliary_holes": 0.224,
+        "primary_sleeves_and_bores": 0.173,
+        "solid_cleanup": 2.328,
+        "mesh_extraction_and_validation": 2.783,
+        "total": 13.151
+      },
+      "speedup": 2.7274731959546803,
+      "baseline_peak_rss_gib": 6.480571746826172,
+      "current_peak_rss_gib": 3.8328628540039062,
+      "vertex_count": 420393,
+      "face_count": 841450,
+      "watertight": true,
+      "topology_repair_attempted": false
+    },
+    {
+      "label": "saved_session_4_needles_0p2",
+      "needle_count": 4,
+      "resolution_mm": 0.2,
+      "inputs_match": true,
+      "output_hashes_match": true,
+      "hashes": {
+        "vertices": "7b553252a2618344e736d413a7cf8b8c2a8252cac11d0a180e44bc2b0b1e0cf3",
+        "faces": "dc13e5fef4c506666bac523c9e0d8576cbfd485e5df1af0ce04085ab85dc8c8a",
+        "needle_paths": "466e85afe6bafa52bb21f99d34304f03f8f6b9c2f3bd4a98354bc2da9051f5d7",
+        "auxiliary_holes": "67ac35fd1a98c6cfb59e0fa7fa7fa45227277c1367dace036b852fe19b0c77b3",
+        "validation_without_timing": "0b3612f4455552baecfd98135e1fbdefcf5a717818043d056ef2486e9154be7a"
+      },
+      "baseline_stages_seconds": {
+        "skin_envelope": 0.576,
+        "skin_surface_persisted": 0.005,
+        "local_grid_resampled": 3.603,
+        "skin_distance_field_reused": 0.001,
+        "plate_patch": 10.019,
+        "auxiliary_holes": 0.646,
+        "primary_sleeves_and_bores": 0.672,
+        "solid_cleanup": 5.542,
+        "mesh_extraction_and_validation": 15.948,
+        "total": 37.019
+      },
+      "current_stages_seconds": {
+        "skin_envelope": 0.524,
+        "skin_surface_persisted": 0.002,
+        "local_grid_preflight": 0.148,
+        "local_grid_resampled": 2.943,
+        "skin_distance_field_reused": 0.0,
+        "plate_patch": 4.674,
+        "auxiliary_holes": 0.185,
+        "primary_sleeves_and_bores": 0.163,
+        "solid_cleanup": 2.407,
+        "mesh_extraction_and_validation": 2.977,
+        "total": 14.026
+      },
+      "speedup": 2.639312704976472,
+      "baseline_peak_rss_gib": 6.480140686035156,
+      "current_peak_rss_gib": 3.8144874572753906,
+      "vertex_count": 420393,
+      "face_count": 841450,
+      "watertight": true,
+      "topology_repair_attempted": false
+    },
+    {
+      "label": "saved_session_4_needles_0p35",
+      "needle_count": 4,
+      "resolution_mm": 0.35,
+      "inputs_match": true,
+      "output_hashes_match": true,
+      "hashes": {
+        "vertices": "8540d7e3bd75e851253a87f8eb3491ac36f448a14c5e987cbba375d680568ee8",
+        "faces": "a70d91e7df41480105406f30f916e5c312b0d6c93c8d29cca83982a892e533d9",
+        "needle_paths": "466e85afe6bafa52bb21f99d34304f03f8f6b9c2f3bd4a98354bc2da9051f5d7",
+        "auxiliary_holes": "c90888051a0aba24b63a43e442749de51796edc3aadd7d726adf06de17c76b56",
+        "validation_without_timing": "72760133d4e089474f9c758212c2810fadecf28e83003705fe6a502329d1e138"
+      },
+      "baseline_stages_seconds": {
+        "skin_envelope": 0.555,
+        "skin_surface_persisted": 0.002,
+        "local_grid_resampled": 1.062,
+        "skin_distance_field_reused": 0.0,
+        "plate_patch": 2.067,
+        "auxiliary_holes": 0.141,
+        "primary_sleeves_and_bores": 0.072,
+        "solid_cleanup": 0.959,
+        "mesh_extraction_and_validation": 2.602,
+        "total": 7.463
+      },
+      "current_stages_seconds": {
+        "skin_envelope": 0.544,
+        "skin_surface_persisted": 0.003,
+        "local_grid_preflight": 0.095,
+        "local_grid_resampled": 0.919,
+        "skin_distance_field_reused": 0.0,
+        "plate_patch": 0.713,
+        "auxiliary_holes": 0.043,
+        "primary_sleeves_and_bores": 0.037,
+        "solid_cleanup": 0.496,
+        "mesh_extraction_and_validation": 0.743,
+        "total": 3.594
+      },
+      "speedup": 2.0765164162493046,
+      "baseline_peak_rss_gib": 2.50701904296875,
+      "current_peak_rss_gib": 1.8672866821289062,
+      "vertex_count": 135892,
+      "face_count": 272292,
+      "watertight": true,
+      "topology_repair_attempted": false
+    }
+  ]
+}

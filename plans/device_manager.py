@@ -195,8 +195,18 @@ class DeviceManager:
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
-                    cls._instance = cls.__new__(cls)
-                    cls._instance.__init__()
+                    # Do not publish a partially initialised singleton.  A
+                    # transient CUDA/NVML probe failure during __init__ used
+                    # to leave _instance pointing at an object without
+                    # _cuda_available; the next /api/status call then raised
+                    # AttributeError instead of retrying initialisation.
+                    candidate = cls.__new__(cls)
+                    try:
+                        candidate.__init__()
+                    except Exception:
+                        cls._instance = None
+                        raise
+                    cls._instance = candidate
         return cls._instance
 
     @classmethod

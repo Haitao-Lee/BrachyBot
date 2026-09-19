@@ -12,6 +12,7 @@ from agent_runtime.core import ToolResultPipeline
 from tool_factory.surgical_guide import SurgicalGuideTool
 from web.surgical_guide import (
     BORE_WALL_POLICY,
+    _bounded_guide_resolution,
     GUIDE_MINIMUM_WALL_MM,
     NeedleGuidePath,
     _auxiliary_hole_specs,
@@ -80,6 +81,23 @@ def _synthetic_agent():
             }],
         },
     })
+
+def test_large_local_guide_grid_is_bounded_without_changing_small_crops(monkeypatch):
+    """Oversized crops are coarsened before target arrays are allocated."""
+    monkeypatch.delenv("BRACHYBOT_GUIDE_MAX_LOCAL_GRID_VOXELS", raising=False)
+    monkeypatch.delenv("BRACHYBOT_GUIDE_MAX_EFFECTIVE_RESOLUTION_MM", raising=False)
+    effective, budget = _bounded_guide_resolution(
+        (48, 516, 308), (5.0, 0.578125, 0.578125), 0.2,
+    )
+    assert budget["requested_grid_voxels"] > budget["max_grid_voxels"]
+    assert budget["resolution_adjusted"] is True
+    assert effective > 0.2
+    assert budget["effective_grid_voxels"] <= budget["max_grid_voxels"]
+    small_effective, small_budget = _bounded_guide_resolution(
+        (20, 20, 20), (1.0, 1.0, 1.0), 0.2,
+    )
+    assert small_effective == pytest.approx(0.2)
+    assert small_budget["resolution_adjusted"] is False
 
 
 def test_auxiliary_hole_support_rejects_a_cylinder_that_ends_inside_the_plate():

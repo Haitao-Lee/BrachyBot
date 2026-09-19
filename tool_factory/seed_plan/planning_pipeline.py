@@ -565,7 +565,7 @@ _RF_PARAM_KEYS = {
     "candidate_limit", "dense_seed_limit", "max_hierarchy_depth",
     "max_actions_per_episode", "max_wall_seconds", "coverage_repair_seconds",
     "coverage_repair_extension_seconds", "coverage_repair_max_seconds",
-    "fallback_max_wall_seconds", "fallback_to_rule_based",
+    "fallback_max_wall_seconds", "fallback_to_rule_based", "rule_based_max_wall_seconds",
 }
 _PLANNING_PARAM_KEYS = {
     "dose_value_unit", "in_lowest_energy", "out_highest_energy",
@@ -878,6 +878,20 @@ def _coverage_repair_adaptive_policy(rf_params, target_coverage, status):
     }
 
 
+def _rule_based_deadline(rf_params):
+    """Only an explicit rule-planner budget may truncate its finite search.
+
+    max_wall_seconds is the RL budget, not a shared planning timeout. Using
+    it here silently published partial Stage-1 plans on slower/large cases.
+    Zero (the default) retains the bounded candidate/iteration search.
+    """
+    seconds = _finite_number(
+        (rf_params or {}).get("rule_based_max_wall_seconds", 0),
+        "rule_based_max_wall_seconds", minimum=0.0, maximum=86400.0,
+    )
+    return time.monotonic() + seconds if seconds > 0 else None
+
+
 def _apply_planning_overrides(args, overrides):
     """Apply validated per-call UI settings to a fresh ``plans.config`` object.
 
@@ -968,6 +982,10 @@ def _apply_planning_overrides(args, overrides):
                     args.rf_params[key] = value.strip().lower() not in {"0", "false", "no", "off"}
                 else:
                     args.rf_params[key] = bool(value)
+            elif key == "rule_based_max_wall_seconds":
+                args.rf_params[key] = _finite_number(
+                    value, f"rf_params.{key}", minimum=0.0, maximum=86400.0,
+                )
             elif key in {
                 "max_episodes", "print_every", "bandwidth", "candidate_limit",
                 "dense_seed_limit", "max_hierarchy_depth", "max_actions_per_episode",
@@ -4280,16 +4298,9 @@ class PlanningPipelineTool(BaseTool):
                 seconds = float(default)
             return time.monotonic() + seconds
 
-        # Rule-based optimization used to have no wall-clock guard. It could
-        # continue evaluating every remaining seed position after the
-        # interactive RL budget had already expired, which made the UI appear
-        # stuck in seed optimization. Reuse the configured 300 s planning
-        # budget for the normal path; coverage repair remains separately
-        # bounded below.
-        rule_based_deadline = (
-            _budget_deadline(rf_params.get("max_wall_seconds", 300.0), 300.0)
-            if mode != "rl" else None
-        )
+        # Keep normal rule planning independent of the RL timeout. Explicit
+        # RL fallback and residual coverage repair remain separately bounded.
+        rule_based_deadline = _rule_based_deadline(rf_params) if mode != "rl" else None
         try:
             if mode == "rl":
                 # RL uses the same filtered trajectories and radiation volume
@@ -5651,11 +5662,17 @@ class PlanningPipelineTool(BaseTool):
         v100_val = metrics.get("v100") or 0
         d90_val = metrics.get("d90") or 0
         score_val = metrics.get("plan_score") or 0
+        final_config = agent.memory.retrieve("plan_config") or {} if agent else {}
+        target_coverage = float(final_config.get("DVH_rate") or 0.9)
+        target_coverage_met = bool(eval_result.success and v100_val + 1e-9 >= target_coverage)
         summary = (
-            f"Planning completed: {total_seeds} seeds. "
+            f"Planning computation completed: {total_seeds} seeds. "
             f"V100={v100_val:.1%}, D90={d90_val:.2f}, "
             f"Score={score_val:.0f}/100, "
-            f"Mode={results.get('effective_mode') or mode}"
+            f"Mode={results.get('effective_mode') or mode}. "
+            f"Configured coverage target {target_coverage:.1%}: "
+            f"{'reached' if target_coverage_met else 'NOT REACHED'}. "
+            "Computation completion is not clinical approval."
         )
 
         return ToolResult(
@@ -5669,6 +5686,8 @@ class PlanningPipelineTool(BaseTool):
                 "dose_metrics": results.get("dose_metrics", {}),
                 "total_seeds": total_seeds,
                 "num_trajectories": num_trajectories,
+                "target_coverage": target_coverage,
+                "target_coverage_met": target_coverage_met,
                 "mode": results.get("mode", mode),
                 "requested_mode": results.get("requested_mode", mode),
                 "effective_mode": results.get("effective_mode", mode),

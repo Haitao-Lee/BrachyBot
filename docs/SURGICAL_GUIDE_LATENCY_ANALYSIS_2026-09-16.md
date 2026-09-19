@@ -352,3 +352,12 @@ python scripts/summarize_guide_latency.py --pair case /tmp/guide-before.json /tm
 - 规模：`(465, 218, 748)` = 75,824,760 体素（真实网格的 1/8）
 - 环境：AMD Ryzen 9 5900X（24 线程）、scipy 0.3.31/OpenBLAS、`~/.conda/envs/brachytherapy`
 - 说明：结果为单次测量，用于量级外推；实施时应在目标病例上按第 4 节重新采集。
+
+## 附录 D：2026-09-19 依赖哈希续证
+
+`tool_factory/seed_plan/planning_pipeline.py` 后续被另一工作流修改（`rule_based_max_wall_seconds` 截止时间处理，`551d6608…` → `9e56f0c1…`），触发了参考守卫的 fail-closed 收集失败。
+
+- **审计结论**：该改动不涉及导板几何。用现存的冻结输入（`9c916d51…`，4 针、0.2 mm）以及当前保存 Session 快照（`42171a32…`，0.2/0.35 mm）重跑 baseline/current，顶点、三角面、针道来源、辅助孔及去计时 validation 全部逐位一致；导板实现仍是位精确优化。
+- **归一化说明**：当前实现新增了纯报告字段 `grid_budget` 与 `requested_geometry_resolution_mm`；剔除这两个附加字段后，当前 validation 重新哈希回原值 `0b3612f4…`。基准脚本 `scripts/benchmark_surgical_guide_latency.py` 现按显式白名单排除这两个附加字段，使等价哈希与 2026-09-16 证据保持可比。
+- **证据**：新增 `docs/benchmarks/surgical_guide_latency_renewal_2026-09-19.json`（3 对，均 `inputs_match`/`output_hashes_match`）。原 8 针与 50 针合成快照清单已丢失、无法复现，历史数据保留在 `docs/benchmarks/surgical_guide_latency_2026-09-16.json`。
+- **续证结果**：`tests/guide_latency_reference.json` 更新依赖哈希并记录续证信息；`tests/test_surgical_guide_latency.py` 41 项通过。

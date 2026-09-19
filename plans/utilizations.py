@@ -4624,6 +4624,13 @@ def hierarchical_planning_rf(
         not hierarchical_available_traj_with_seeds
         or not hierarchical_available_traj_with_seeds[-1]
     ):
+        # An expired dense/hierarchy budget is not evidence that the case
+        # has no feasible actions. Preserve the interruption provenance.
+        prior_reason = (rl_status or {}).get("_stop_reason")
+        if prior_reason in {"wall_clock_budget", "dose_inference_deadline"}:
+            return _finish([], -np.inf)
+        if deadline is not None and time.monotonic() >= deadline:
+            return _finish([], -np.inf, execution="interrupted", stop_reason="wall_clock_budget")
         set_outcome(
             rl_status,
             execution="failed",

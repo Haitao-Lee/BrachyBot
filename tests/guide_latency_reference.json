@@ -4,8 +4,14 @@
   "module_sha256": "dad562e79d2036fb836c2656f487658bf3344675bd09f8bf08186b839f1f06ff",
   "dependencies": {
     "plans/guide_geometry.py": "fbd6d7531a1e060988e730899f530882010d9cb5fb0350fd672ea97f675de770",
-    "tool_factory/seed_plan/planning_pipeline.py": "551d660844161de9919c9e902c92204e4f14626ff8a2db73b77199db15a3631a",
+    "tool_factory/seed_plan/planning_pipeline.py": "9e56f0c12f9a4d74831e03b1832129ca4b20ecb1806a5bc9144636a9b1b2961b",
     "web/planning_runs.py": "315e488b260d790597bef740c66e772bdedff8728ebd6dd8f78e220c1e4797ff"
+  },
+  "renewal": {
+    "date": "2026-09-19",
+    "planning_pipeline.py": "551d660844161de9919c9e902c92204e4f14626ff8a2db73b77199db15a3631a -> 9e56f0c12f9a4d74831e03b1832129ca4b20ecb1806a5bc9144636a9b1b2961b (rule_based_max_wall_seconds deadline handling; no guide geometry change)",
+    "evidence": "docs/benchmarks/surgical_guide_latency_renewal_2026-09-19.json",
+    "note": "Guide geometry re-verified bit-exact against the frozen reference; test_surgical_guide_latency.py passes."
   },
   "validation_environment": {"numpy": "2.4.6", "scipy": "1.15.3", "skimage": "0.26.0", "SimpleITK": "2.5.0"}
 }

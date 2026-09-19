@@ -20,6 +20,15 @@ import numpy as np
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
+# Validation keys that only report grid/resolution bookkeeping. They were added
+# after the frozen reference module was captured, so they are excluded from the
+# equivalence hash to keep it comparable with the historical evidence. Any key
+# that carries a geometry or QA value must NOT be listed here.
+_ADDITIVE_METADATA_VALIDATION_KEYS = frozenset({
+    "grid_budget",
+    "requested_geometry_resolution_mm",
+})
+
 
 class Memory:
     def __init__(self, values):
@@ -112,7 +121,12 @@ def main():
         validation = dict(result["validation"])
         summary["stages"] = validation.pop("stage_timings_seconds", {})
         summary["hashes"] = {k: fingerprint(result[k]) for k in ("vertices", "faces", "needle_paths", "auxiliary_holes")}
-        summary["hashes"]["validation_without_timing"] = fingerprint(validation)
+        summary["hashes"]["validation_without_timing"] = fingerprint({
+            k: v for k, v in validation.items() if k not in _ADDITIVE_METADATA_VALIDATION_KEYS
+        })
+        summary["additive_metadata_keys"] = sorted(
+            set(validation) & _ADDITIVE_METADATA_VALIDATION_KEYS
+        )
         summary["validation"] = validation
         summary["selected_needle_count"] = len(result["selected_needle_ids"])
     except Exception as exc:
