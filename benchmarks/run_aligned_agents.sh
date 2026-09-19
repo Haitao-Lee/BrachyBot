@@ -3,7 +3,7 @@
 # Each agent handles different categories
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BASE_DIR="<workspace>/BrachyBot"
+BASE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SCREENSHOT_DIR="$BASE_DIR/docs/benchmark_result/screenshots_v2"
 REPORT_DIR="$BASE_DIR/docs/benchmark_result/reports_v2"
 

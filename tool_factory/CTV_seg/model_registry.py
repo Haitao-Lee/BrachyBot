@@ -7,11 +7,16 @@ one entry here.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Mapping, Optional, Tuple
 
-DEPLOY_ROOT = Path('<workspace>')
+# Root that contains the sibling model/inference directories.  Never hardcode a
+# machine-specific path; set BRACHYBOT_DEPLOY_ROOT in the deployment shell.
+DEPLOY_ROOT = Path(
+    os.environ.get("BRACHYBOT_DEPLOY_ROOT") or Path(__file__).resolve().parents[3]
+)
 
 
 @dataclass(frozen=True)

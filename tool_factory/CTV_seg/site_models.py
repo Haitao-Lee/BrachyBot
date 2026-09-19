@@ -5,7 +5,9 @@ from functools import lru_cache
 import json
 import subprocess
 
-ROOT = Path('<workspace>')
+ROOT = Path(
+    os.environ.get("BRACHYBOT_DEPLOY_ROOT") or Path(__file__).resolve().parents[3]
+)
 SITE_MODELS = {
     'vista3d_lung_tumor': dict(
         site='lung', label='Lung tumor', script=ROOT/'lung_tumor_seg/infer_lung_vista.py',

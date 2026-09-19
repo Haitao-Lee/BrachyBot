@@ -55,8 +55,8 @@ CTV_MODEL_CATALOG: List[Dict[str, object]] = [
         "tumor_type": "nnunet_liver_tumor",
         "ui_visible": True,
         "runtime_kind": "nnunet_v2_two_stage_cascade",
-        "script_path": "<workspace>/prostate_lesion_seg/cascade_infer_v2.py",
-        "model_root": "<workspace>/prostate_lesion_seg/trained_models/liver_cancer_seg",
+        "script_path": str(CASCADE_SITE_SPECS["liver"]["script"]),
+        "model_root": str(CASCADE_SITE_SPECS["liver"]["model_root"]),
         "folds": 5,
         "notes": (
             "Dedicated local cascade: CT -> liver organ -> organ bbox + 30 mm -> "
@@ -80,8 +80,8 @@ CTV_MODEL_CATALOG: List[Dict[str, object]] = [
         "tumor_type": "nnunet_kidney_tumor",
         "ui_visible": True,
         "runtime_kind": "nnunet_v2_two_stage_cascade",
-        "script_path": "<workspace>/kidney_tumor_seg/cascade_infer_kidney.py",
-        "model_root": "<workspace>/kidney_tumor_seg/trained_models/kidney_cancer_seg",
+        "script_path": str(CASCADE_SITE_SPECS["kidney"]["script"]),
+        "model_root": str(CASCADE_SITE_SPECS["kidney"]["model_root"]),
         "folds": 5,
         "notes": (
             "Dedicated local cascade: CT -> kidney organ -> organ bbox + 30 mm -> "

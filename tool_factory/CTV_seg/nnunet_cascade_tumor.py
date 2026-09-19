@@ -40,12 +40,16 @@ logger = logging.getLogger(__name__)
 _CASCADE_EXECUTION_LOCK = threading.Lock()
 
 
+_DEPLOY_ROOT = Path(
+    os.environ.get("BRACHYBOT_DEPLOY_ROOT") or Path(__file__).resolve().parents[3]
+)
+
 CASCADE_SITE_SPECS: Dict[str, Dict[str, object]] = {
     "liver": {
         "tumor_type": "nnunet_liver_tumor",
         "label": "liver tumor",
-        "script": "<workspace>/prostate_lesion_seg/cascade_infer_v2.py",
-        "model_root": "<workspace>/prostate_lesion_seg/trained_models/liver_cancer_seg",
+        "script": str(_DEPLOY_ROOT / "prostate_lesion_seg" / "cascade_infer_v2.py"),
+        "model_root": str(_DEPLOY_ROOT / "prostate_lesion_seg" / "trained_models" / "liver_cancer_seg"),
         "stage1": "stage1_liver",
         "stage2": "stage2_tumor",
         "model_validation": {
@@ -59,8 +63,8 @@ CASCADE_SITE_SPECS: Dict[str, Dict[str, object]] = {
     "kidney": {
         "tumor_type": "nnunet_kidney_tumor",
         "label": "kidney tumor",
-        "script": "<workspace>/kidney_tumor_seg/cascade_infer_kidney.py",
-        "model_root": "<workspace>/kidney_tumor_seg/trained_models/kidney_cancer_seg",
+        "script": str(_DEPLOY_ROOT / "kidney_tumor_seg" / "cascade_infer_kidney.py"),
+        "model_root": str(_DEPLOY_ROOT / "kidney_tumor_seg" / "trained_models" / "kidney_cancer_seg"),
         "stage1": "stage1_kidney",
         "stage2": "stage2_tumor",
         "model_validation": {

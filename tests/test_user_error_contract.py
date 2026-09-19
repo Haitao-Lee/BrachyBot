@@ -38,7 +38,7 @@ def test_provider_diagnostics_are_not_user_visible():
 def test_successful_answer_with_server_path_is_redacted_not_failed():
     raw = (
         "治疗报告已重新生成。文件已保存至："
-        "`<workspace>/BrachyBot/tool_factory/report_generator/../output/reports/plan_20260917_115806.md`"
+        "`/srv/brachybot/BrachyBot/tool_factory/report_generator/../output/reports/plan_20260917_115806.md`"
     )
     message = sanitize_user_response(raw, lang="zh")
     assert "治疗报告已重新生成" in message
@@ -50,7 +50,7 @@ def test_successful_answer_with_server_path_is_redacted_not_failed():
 def test_exception_text_containing_a_path_still_fails_closed():
     raw = (
         "Traceback (most recent call last):\n"
-        '  File "<workspace>/BrachyBot/web/server.py", line 1, in <module>\n'
+        '  File "/srv/brachybot/BrachyBot/web/server.py", line 1, in <module>\n'
         "ValueError: boom"
     )
     message = sanitize_user_response(raw, lang="zh")

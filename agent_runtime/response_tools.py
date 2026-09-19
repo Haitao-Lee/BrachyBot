@@ -2482,7 +2482,7 @@ Output (JSON array of strings):"""
         low = msg.lower()
         local_markers = (
             "brachybot", "brachyplan", "本项目", "当前项目", "本地代码",
-            "当前仓库", "<workspace>/brachybot",
+            "当前仓库",
         )
         if any(marker in low for marker in local_markers):
             return None
