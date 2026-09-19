@@ -122,3 +122,33 @@ def test_ctv_contract_error_explains_internal_format_failure():
     assert "内部校验" in message
     assert "误传到 CTV mask 入口" in message
     assert "attribute" not in message.lower()
+
+
+def test_model_prose_that_quotes_a_provider_error_is_not_a_failure():
+    """A normal answer must survive even when it mentions an error phrase.
+
+    Regression: the user asked whether the AI service was available; the model
+    explained a past outage and quoted ``Error: No LLM provider available``,
+    and the old substring scan replaced the whole answer with the unavailable
+    notice.
+    """
+    raw = (
+        "关于「现在 AI 服务是否可用」，需要如实说明两点：\n"
+        "- 对话服务可用 ≠ 规划服务可用。本会话历史上出现过 "
+        "`Error: No LLM provider available`，规划链路也曾不稳定（V100 从 3.4% 到 90.5%）。\n"
+        "- 本次调用已经成功返回，因此可以正常对话并读取当前病例状态。"
+    )
+    assert not ChatWorkflowMixin._is_llm_provider_error(raw)
+    message = sanitize_user_response(raw, lang="zh")
+    assert "现在 AI 服务是否可用" in message
+    assert "AI 语言服务暂时不可用" not in message
+
+
+def test_error_led_provider_diagnostics_are_still_detected():
+    assert ChatWorkflowMixin._is_llm_provider_error("LLM error: All providers failed")
+    assert ChatWorkflowMixin._is_llm_provider_error(
+        "Error code: 502 - provider unavailable"
+    )
+    assert ChatWorkflowMixin._is_llm_provider_error(
+        "⚠️ Error: Request is missing x-opencode-session"
+    )

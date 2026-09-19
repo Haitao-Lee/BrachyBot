@@ -61,34 +61,67 @@ def _localized(metadata: Any, lang: str) -> str:
     return ""
 
 
+_PROVIDER_ERROR_MARKERS = (
+    "all providers failed",
+    "no llm provider available",
+    "invalid api key",
+    "authentication failed",
+    "unauthorized",
+    "forbidden",
+    "rate limit",
+    "connection refused",
+    "timed out",
+    "missing sessionid",
+    "x-opencode-session",
+    "request is missing",
+    "error from provider",
+    "console go",
+    "failed to route",
+    "provider unavailable",
+)
+
+# A provider/transport diagnostic is a short, error-led machine string.  Model
+# authored prose can legitimately mention one of the markers above (for
+# example when explaining a past outage), so a plain substring scan must never
+# classify a normal answer as a failure.  Require both a recognized lead at the
+# very start of the text (after only punctuation/emoji/whitespace) and a
+# bounded length.
+_PROVIDER_ERROR_LEADS = (
+    "error",
+    "llm error",
+    "exception",
+    "traceback",
+    "failed",
+    "unable",
+    "all providers failed",
+    "no llm provider available",
+    "provider unavailable",
+    "error from provider",
+    "failed to route",
+)
+_PROVIDER_ERROR_MAX_CHARS = 500
+_LEADING_NON_WORD_RE = re.compile(r"^[\s\W_]+", re.UNICODE)
+
+
 def is_provider_error(value: Any) -> bool:
-    """Detect provider/transport diagnostics that must never reach chat."""
-    text = str(value or "").strip().lower()
-    if not text:
+    """Detect provider/transport diagnostics that must never reach chat.
+
+    Diagnostics are short, error-led machine strings; ordinary model prose that
+    merely quotes one of the markers is not a failure.  Both a recognized error
+    lead and a bounded length are required, so an answer such as "this session
+    once reported ``Error: No LLM provider available``" is preserved.
+    """
+    text = str(value or "").strip()
+    if not text or len(text) > _PROVIDER_ERROR_MAX_CHARS:
         return False
-    return any(
-        marker in text
-        for marker in (
-            "all providers failed",
-            "no llm provider available",
-            "invalid api key",
-            "authentication failed",
-            "unauthorized",
-            "forbidden",
-            "rate limit",
-            "connection refused",
-            "timed out",
-            "missing sessionid",
-            "x-opencode-session",
-            "request is missing",
-            "error from provider",
-            "console go",
-            "failed to route",
-            "provider unavailable",
-        )
-    ) or bool(re.search(r"error\s*code\s*:\s*4\d\d", text)) and (
-        "provider" in text or "session" in text or "request" in text
+    low = text.lower()
+    structured = bool(re.search(r"error\s*code\s*:\s*4\d\d", low)) and (
+        "provider" in low or "session" in low or "request" in low
     )
+    if not any(marker in low for marker in _PROVIDER_ERROR_MARKERS) and not structured:
+        return False
+    head = _LEADING_NON_WORD_RE.sub("", low)
+    return head.startswith(_PROVIDER_ERROR_LEADS)
 
 
 def is_internal_error(value: Any) -> bool:
