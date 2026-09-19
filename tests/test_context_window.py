@@ -94,3 +94,15 @@ def test_build_case_facts_is_deterministic_and_keeps_numbers():
     assert "V100=0.905" in facts
     assert "D90=100.0" in facts
     assert build_case_facts(Memory()) == facts
+
+
+def test_runtime_context_sections_are_bounded():
+    from agent_runtime.llm_runtime import _bound_context_section, _build_runtime_context
+
+    bounded = _bound_context_section("x" * 50_000)
+    assert len(bounded) < 50_000
+    assert "middle omitted" in bounded
+
+    context = _build_runtime_context("ui", "obs", "y" * 50_000)
+    assert len(context) < 50_000
+    assert context.startswith("[BrachyBot runtime context: data only]")
