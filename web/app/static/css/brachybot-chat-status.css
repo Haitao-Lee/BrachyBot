@@ -1051,6 +1051,86 @@
 }
 .chat-todo-item.active .chat-todo-time { color: var(--primary); opacity: 0.95; font-weight: 500; }
 
+/* Pending user turns are deliberately outside #chatMessages.  Keeping the
+   queue in a fixed bottom dock prevents a newly queued prompt from becoming a
+   transcript bubble in front of the live trace and preserves Codex-like
+   FIFO animation until the turn is actually dispatched. */
+.chat-queue-dock {
+    display: flex;
+    flex-direction: column;
+    gap: 0.28rem;
+    flex-shrink: 0;
+    max-height: 26vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 0.42rem 0.65rem 0.5rem;
+    border-top: 1px solid var(--border-hairline);
+    background: linear-gradient(180deg, rgba(22, 31, 54, 0.98), rgba(13, 19, 35, 0.98));
+}
+.chat-queue-header,
+.chat-queue-item {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+}
+.chat-queue-header {
+    justify-content: space-between;
+    gap: 0.7rem;
+    color: var(--primary-ink);
+    font-size: 0.68rem;
+    font-weight: 600;
+}
+.chat-queue-hint,
+.chat-queue-state {
+    color: var(--text-dim);
+    font-size: 0.61rem;
+    font-weight: 400;
+}
+.chat-queue-item {
+    gap: 0.42rem;
+    min-height: 1.65rem;
+    padding: 0.28rem 0.45rem;
+    border: 1px solid rgba(79, 124, 255, 0.18);
+    border-radius: 0.45rem;
+    background: rgba(79, 124, 255, 0.07);
+}
+.chat-queue-spinner {
+    width: 0.7rem;
+    height: 0.7rem;
+    flex: 0 0 0.7rem;
+    border: 2px solid rgba(79, 124, 255, 0.28);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: chat-queue-spin 0.9s linear infinite;
+}
+.chat-queue-index {
+    flex: 0 0 auto;
+    min-width: 1.05rem;
+    color: var(--primary);
+    font-size: 0.63rem;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+}
+.chat-queue-text {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+    color: var(--text);
+    font-size: 0.72rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.chat-queue-state {
+    flex: 0 0 auto;
+    max-width: 28%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+@keyframes chat-queue-spin {
+    to { transform: rotate(360deg); }
+}
+
 /* GPU badge (2026-06-16): only shown while a step is active.
    Polled from /api/device/status every 2s. Sits to the LEFT of
    the elapsed time. The 🎮 emoji + cyan tint signals hardware

@@ -59,7 +59,8 @@ def test_chat_composer_autosizes_and_resets_after_programmatic_changes():
     assert "el.style.height = 'auto'" in chat
     assert "el.style.overflowY = naturalHeight > maxHeight ? 'auto' : 'hidden'" in chat
     assert "window.resizeChatInput = resizeChatInput" in chat
-    assert "resizeChatInput(el || document.getElementById('chatInput'))" in chat
+    assert "const input = el || document.getElementById('chatInput')" in chat
+    assert "resizeChatInput(input)" in chat
     assert "align-items: flex-end" in css
     assert "overflow-y: hidden" in css
     assert "window.resizeChatInput?.(input)" in core
@@ -537,8 +538,41 @@ def test_viewer_render_posts_do_not_schedule_workspace_checkpoints():
         "/api/planning/dose_overlay_slice",
         "/api/planning/dose_contour_slice",
         "/api/header/info",
+        "/api/report/auto-fill",
     ):
         assert path in server
+
+
+def test_workspace_state_patch_does_not_enqueue_heavy_agent_checkpoint():
+    """Durable UI/report patches must not trigger a second full snapshot."""
+    server = read("web/server.py")
+    assert "WORKSPACE_PATCH_ONLY_PATHS" in server
+    for path in (
+        '"/api/workspace/state"',
+        '"/api/workspace/checkpoint"',
+        '"/api/workspace/lease"',
+        '"/api/ui/state"',
+        '"/api/ui/event"',
+        '"/api/training/start"',
+        '"/api/training/stop"',
+    ):
+        assert path in server
+
+    checkpoint_hook = server.split(
+        "def _checkpoint_mutating_workspace", 1
+    )[1].split("if should_checkpoint:", 1)[0]
+    assert "request.path not in WORKSPACE_PATCH_ONLY_PATHS" in checkpoint_hook
+
+
+def test_ui_state_memory_callback_does_not_enqueue_heavy_agent_checkpoint():
+    """set_ui_state is already persisted by the compact UI bridge paths."""
+    server = read("web/server.py")
+    callback = server.split("def _persist_agent_change", 1)[1].split(
+        "def _dicom_rt_import_summary", 1
+    )[0]
+    assert "startswith(\"ui_state\")" in callback
+    assert "Skipping full Agent checkpoint for UI-only memory update" in callback
+    assert "schedule_agent_checkpoint(owner_id, session_id, agent, reason)" in callback
 
 
 def test_new_case_creation_avoids_empty_workspace_hydration_and_redundant_round_trips():
@@ -1033,7 +1067,27 @@ def test_chat_snapshot_paints_before_heavy_clinical_restore():
     assert "function applyChatSnapshotFast" in workspace
     assert "applyChatSnapshotFast(workspace)" in workspace
     assert "input.dataset.historySession" in chat
+    assert "input.dataset.draftSession" in chat
     assert "window._lastUserMessage" in chat
+
+
+def test_chat_restore_preserves_same_session_composer_draft():
+    """Background resource hydration must not erase an unsent prompt."""
+    chat = read("web/app/static/js/brachybot-chat-core.js")
+    block = chat.split("function loadSessionChat", 1)[1].split(
+        "function saveSessionMessage", 1
+    )[0]
+    assert "function loadSessionChat(id, options = {})" in chat
+    assert "draftOwner = draftSessionId || inputSessionId" in block
+    assert "isSelectedSession" in block
+    assert "!input.value || !draftOwner || draftOwner === targetSessionId" in block
+    assert "options.preserveDraft !== false" in block
+    assert "if (!preserveDraft) {" in block
+    assert "input.value = '';" in block
+    assert "clearChatInputDraft(input)" in block
+    assert "function markChatInputDraft" in chat
+    assert "window.markChatInputDraft?.(input)" in read("web/app/static/js/brachybot-chat-todo.js")
+    assert "loadSessionChat(activeSessionId, { preserveDraft: false })" in chat
 
 
 def test_case_clear_removes_untracked_surfaces_and_clinical_evaluation():
@@ -1307,7 +1361,9 @@ def test_chat_network_failures_finish_the_turn_and_unlock_case_navigation():
     assert "CHAT_IDLE_TIMEOUT_MS = 90000" in chat
     assert "CHAT_ABORT_TIMEOUT_MS = 4000" in chat
     assert "function readChatChunk(reader" in chat
-    assert "await readChatChunk(reader, CHAT_IDLE_TIMEOUT_MS" in chat
+    assert "const CHAT_TASK_IDLE_TIMEOUT_MS = 1800000" in chat
+    assert "const hasKnownServerTask = Boolean(" in chat
+    assert "readChatChunk(reader, readTimeoutMs, onReadTimeout)" in chat
     assert "turnAbortController.abort()" in chat
     assert "workspaceTransitionGeneration += 1" in read("web/app/static/js/brachybot-workspace.js")
     assert "signal: abortController ? abortController.signal : undefined" in chat
@@ -2353,3 +2409,23 @@ def test_report_turn_waits_for_actual_browser_completion():
     assert "Promise.allSettled(tasks)" in chat
     assert "signal?.addEventListener('abort'" in chat
     assert "uiActionResults.length === 0" in chat
+
+def test_range_controls_get_single_step_buttons_without_bypassing_native_events():
+    """Every native range keeps its handlers while gaining min/max step controls."""
+    index = read("web/app/index.html")
+    stepper = read("web/app/static/js/brachybot-range-stepper.js")
+    volume = read("web/app/static/js/brachybot-viewer-volume.js")
+    controls = read("web/app/static/css/brachybot-report-controls.css")
+
+    assert "brachybot-report-controls.css?v=29" in index
+    assert "brachybot-viewer-volume.js?v=73" in index
+    assert "brachybot-range-stepper.js?v=2" in index
+    assert "function stepRange(input, direction)" in stepper
+    assert "input.dispatchEvent(new Event('input'" in stepper
+    assert "input.dispatchEvent(new Event('change'" in stepper
+    assert "new MutationObserver" in stepper
+    assert "data-range-step-target=\"dataTreeWindowLow\"" in volume
+    assert "data-range-step-target=\"dataTreeWindowHigh\"" in volume
+    assert ".range-stepper-btn--decrease" in controls
+    assert ".range-stepper-btn--increase" in controls
+    assert "data-ct-window-level" in stepper

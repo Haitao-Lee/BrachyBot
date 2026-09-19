@@ -648,7 +648,7 @@ BrachyBot can now operate as both an agentic planner and a standalone manual pla
 - **Inspectable UI capability contract**: `GET /api/ui/capabilities` exposes the structured control registry, screenshot targets, manual workflow steps, training monitor support, and execution-tool enablement state for tests and operators.
 - **Manual planning without LLM dependency**: the Input panel exposes CTV/OAR segmentation, trajectory initialization/refinement, seed planning, dose calculation, dose evaluation, report fill, and export controls as direct UI actions.
 - **Manual 3D fine planning**: users can add editable needles in the 3D viewer, drag needle endpoints, add or drag seeds, and recompute myDoseNet dose/DVH after edits.
-- **Training monitor**: users can ask BrachyBot to monitor a manual or automatic planning process, receive live feedback after key interactions, capture rate-limited review screenshots at key checkpoints, request detailed advice at any time, and stop monitoring to receive a final workflow report.
+- **Training monitor**: users can ask BrachyBot to monitor a manual or automatic planning process, receive live feedback after key interactions, capture rate-limited review screenshots at key checkpoints, request detailed advice at any time, and stop monitoring to receive a final workflow report. `GET /api/training/timeline` exports the selected case's retained event details and full-run counters as JSON; `/api/ui/capabilities` publishes the endpoint and its retention limit.
 
 ### Explicit Re-execution and Case-Local Data Management
 

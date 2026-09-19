@@ -96,6 +96,7 @@ WORKSPACE_READ_ONLY_POST_PATHS = frozenset({
     "/api/planning/dose_overlay_slice",
     "/api/planning/dose_contour_slice",
     "/api/training/advice",
+    "/api/report/auto-fill",
     "/api/readiness",
     "/api/viewer/slice",
     "/api/viewer/overlay",
@@ -104,6 +105,25 @@ WORKSPACE_READ_ONLY_POST_PATHS = frozenset({
     "/api/viewer/3d",
     "/api/viewer/3d_mask",
     "/api/viewer/3d_skin",
+})
+
+# These endpoints persist small workspace/control-plane changes directly
+# through the workspace store. They must not also enqueue a full Agent
+# checkpoint: the patch already contains the durable UI/report/chat state,
+# the explicit checkpoint route schedules its own checkpoint, and the lease
+# route only changes editor ownership. The generic checkpoint serializes the
+# large CT/planning arrays and can take several seconds. In particular,
+# report.autofill waits for /api/workspace/state to confirm the current
+# Session is saved; adding a second checkpoint here only delays UI-action
+# settlement and the final response.
+WORKSPACE_PATCH_ONLY_PATHS = frozenset({
+    "/api/workspace/state",
+    "/api/workspace/checkpoint",
+    "/api/workspace/lease",
+    "/api/ui/state",
+    "/api/ui/event",
+    "/api/training/start",
+    "/api/training/stop",
 })
 
 
@@ -224,6 +244,20 @@ def _persist_agent_change(
     mutation routes wait for the ready barrier before changing Agent memory;
     UI-only changes use ``save_snapshot_patch`` and do not enter this callback.
     """
+    # AgentMemory.set_ui_state() notifies the generic persistence observer for
+    # historical compatibility. UI state is presentation/control-plane data,
+    # however: /api/ui/state and /api/workspace/state persist it through their
+    # compact bridge/snapshot patch. Letting this callback serialize the full
+    # CT/planning workspace as well creates the ui_state.coalesced checkpoint
+    # storm seen while a report is being saved.
+    if str(reason or "").strip().lower().startswith("ui_state"):
+        logger.debug(
+            "Skipping full Agent checkpoint for UI-only memory update "
+            "session=%s reason=%s",
+            session_id,
+            reason,
+        )
+        return
     if getattr(agent, "_workspace_hydration_in_progress", False):
         logger.debug(
             "Deferring Agent persistence callback during workspace hydration "
@@ -299,6 +333,10 @@ def create_app(config: Optional[Dict] = None):
 
     app = Flask(__name__, static_folder=APP_DIR, static_url_path="")
     app.config["BRACHYBOT_SERVER_INSTANCE_ID"] = _SERVER_INSTANCE_ID
+    # The health endpoint must report process age without touching a selected
+    # case snapshot or a GPU-backed Agent. Keep this process-local timestamp
+    # in app config so it is safe to read from any request thread.
+    app.config["BRACHYBOT_SERVER_STARTED_MONOTONIC"] = time.monotonic()
     # CORS: restrict to localhost by default. Trusted LAN mode permits
     # loopback/private-network browser origins, not arbitrary websites.
     _origin_env = os.environ.get("ALLOWED_ORIGINS")
@@ -1014,6 +1052,7 @@ def create_app(config: Optional[Dict] = None):
         should_checkpoint = (
             request.method in {"POST", "PUT", "PATCH", "DELETE"}
             and request.path not in WORKSPACE_READ_ONLY_POST_PATHS
+            and request.path not in WORKSPACE_PATCH_ONLY_PATHS
             and response.status_code < 400
         )
         if should_checkpoint:

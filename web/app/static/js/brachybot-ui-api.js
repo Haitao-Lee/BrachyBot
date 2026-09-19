@@ -2125,8 +2125,9 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                 || ss.target === 'dose-overview'
                 || ss.target === 'dvh';
             if ((isStageCheckpoint || isDoseCheckpoint || now - trainingMonitorState.lastScreenshotAt > 45000)
-                && typeof _interceptScreenshot === 'function') {
-                trainingMonitorState.lastScreenshotAt = now;
+                && typeof _interceptScreenshot === 'function'
+                && !document.hidden && !trainingMonitorState.screenshotPendingRunId) {
+                trainingMonitorState.screenshotPendingRunId = ownerRunId;
                 // ``description`` is kept as a compatibility fallback for
                 // older servers; current training payloads use ``question``.
                 setTimeout(() => {
@@ -2134,7 +2135,10 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                     // leak into a newly selected case.
                     if (!trainingMonitorState.active
                         || ownerRunId !== trainingMonitorState.runId
-                        || ownerSessionId !== _activeApiSessionId()) return;
+                        || ownerSessionId !== _activeApiSessionId() || document.hidden) {
+                        if (trainingMonitorState.screenshotPendingRunId === ownerRunId) trainingMonitorState.screenshotPendingRunId = null;
+                        return;
+                    }
                     if (!trainingMonitorState.screenshotGalleryContext) {
                         trainingMonitorState.screenshotGalleryContext = {
                             keys: new Set(),
@@ -2162,7 +2166,7 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                             mode: 'monitor',
                             monitorOnly: true,
                             plan: {
-                                version: 2,
+                                version: 5,
                                 mode: 'monitor',
                                 question: ss.question || ss.description || '',
                                 description: ss.description || '',
@@ -2184,10 +2188,13 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                             },
                         },
                     ).then(result => {
-                        if (!result?.success
-                            || !trainingMonitorState.active
+                        if (!trainingMonitorState.active
                             || ownerRunId !== trainingMonitorState.runId
                             || ownerSessionId !== _activeApiSessionId()) return;
+                        if (!result?.success) {
+                            _recordMonitorCaptureFailure(ownerSessionId, ownerRunId);
+                            return;
+                        }
                         const title = monitorChatText('监测证据', 'Monitor evidence', ownerSessionId);
                         const evidenceCaption = monitorChatText(
                             '已捕获与当前规划检查对应的可视化证据。',
@@ -2197,7 +2204,12 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                         const capturedAttachments = Array.isArray(result.attachments) && result.attachments.length
                             ? result.attachments
                             : (monitorScreenshotContext.items || []);
-                        if (!capturedAttachments.length) return;
+                        if (!capturedAttachments.length) {
+                            _recordMonitorCaptureFailure(ownerSessionId, ownerRunId);
+                            return;
+                        }
+                        trainingMonitorState.lastScreenshotAt = Date.now();
+                        trainingMonitorState.captureFailures = 0;
                         addChat(
                             'bot-response',
                             `**${title}**\n\n${evidenceCaption}`,
@@ -2220,6 +2232,9 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                         );
                     }).catch(error => {
                         console.debug('[monitor] screenshot evidence skipped:', error);
+                        _recordMonitorCaptureFailure(ownerSessionId, ownerRunId);
+                    }).finally(() => {
+                        if (trainingMonitorState.screenshotPendingRunId === ownerRunId) trainingMonitorState.screenshotPendingRunId = null;
                     });
                 }, 500);
             }
@@ -2235,6 +2250,18 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
         console.debug('[ui-event] report skipped:', e);
     }
     return null;
+}
+
+function _recordMonitorCaptureFailure(sessionId, runId) {
+    if (!trainingMonitorState.active || trainingMonitorState.runId !== runId
+        || _activeApiSessionId() !== sessionId) return;
+    trainingMonitorState.captureFailures = (trainingMonitorState.captureFailures || 0) + 1;
+    if (trainingMonitorState.captureFailures === 2) {
+        addChat('bot-response', monitorChatText(
+            '监测截图连续失败，请保持 Viewer 页面可见；后续检查点会再次尝试。监测事件仍在记录。',
+            'Monitor capture failed repeatedly. Keep the Viewer tab visible; the next checkpoint will retry. Events are still being recorded.', sessionId),
+            true, Date.now(), false, sessionId, { messageKind: 'monitor_feedback' });
+    }
 }
 
 function _parseUIControlPayload(value) {
@@ -5316,6 +5343,35 @@ async function prepareReportSceneRead(sessionId) {
     }
 }
 
+// The visual-restore promise is a useful scheduler barrier, but it can settle
+// false because an optional producer (for example, a stale guide mesh) failed
+// after the clinical Viewer is already usable.  Conversely, a cold restore can
+// settle the promise before the last renderer/dose frame is painted.  A report
+// read must therefore validate the live scene as well, with a short bounded
+// retry, instead of treating the historical promise result as authoritative.
+async function prepareReportSceneReadWithRetry(sessionId, options = {}) {
+    const rawTimeout = Number(options.timeoutMs ?? 15000);
+    const timeoutMs = Math.max(0, Math.min(60000, Number.isFinite(rawTimeout) ? rawTimeout : 15000));
+    const delayMs = Math.max(50, Math.min(1000, Number(options.delayMs ?? 250)));
+    const deadline = Date.now() + timeoutMs;
+    let last = null;
+    do {
+        last = await prepareReportSceneRead(sessionId);
+        if (last?.success) return last;
+        const stage = String(last?.stage || '');
+        if (!['report_scene_not_ready', 'report_catalog_not_ready', 'report_validation_failed'].includes(stage)) {
+            return last;
+        }
+        if (Date.now() >= deadline) return last;
+        await _workspaceVisualReadinessSleep(Math.min(delayMs, Math.max(1, deadline - Date.now())));
+    } while (Date.now() < deadline);
+    return last || {
+        success: false,
+        stage: 'report_scene_not_ready',
+        error: '报告所需的 Viewer 证据尚未完成准备。当前显示已保留，请稍后重试。',
+    };
+}
+
 window.awaitWorkspaceVisualReady = async function awaitWorkspaceVisualReady(
     sessionId,
     options = {},
@@ -6704,7 +6760,8 @@ async function _executeUIActionsWithProgress(actions, options = {}) {
                 || (result && (result.success === false || result.stale === true));
             if (failed) {
                 const message = (result && result.error) || 'The browser could not apply this UI action.';
-                _emitUIActionProgress({ ...base, status: 'error', result: message });
+                _emitUIActionProgress({ ...base, status: 'error', result: message,
+                    metadata: { stage: result?.stage, captureFailure: result?.captureFailure } });
                 break;
             }
             _emitUIActionProgress({
@@ -7964,6 +8021,7 @@ async function _executeUIActionRaw(a, options = {}) {
         if (target === 'report.autofill') {
             const reportSessionId = ownerSessionId || _activeApiSessionId();
             let reportPlanningId = '';
+            let visualBarrierResult = null;
             // A report regeneration is a read of the complete saved case. A
             // cold-restored planning result can have its transcript, report
             // form, and DVH snapshot available before the 3D/dose canvases
@@ -7972,21 +8030,31 @@ async function _executeUIActionRaw(a, options = {}) {
             // fail even though the numeric report data exists.
             if (typeof window.awaitWorkspaceVisualReady === 'function') {
                 const visualReady = await window.awaitWorkspaceVisualReady(reportSessionId, {
-                    timeoutMs: 300000,
+                    // The live scene validation below is the authoritative
+                    // readiness check for an explicit report command.  Do
+                    // not inherit the five-minute cold-restore barrier used
+                    // by ordinary evidence screenshots: a stale optional
+                    // mesh/visual promise otherwise keeps the UI action open
+                    // long after the report is already visible.
+                    timeoutMs: 15000,
                     reason: 'report-regeneration',
                 });
                 if (visualReady?.ready === false) {
-                    return {
-                        success: false,
-                        error: '当前病例的 Viewer 仍在恢复，报告截图尚未达到可生成状态。请等待恢复完成后重试。',
-                        stage: 'workspace_visual_restore_incomplete',
-                    };
+                    visualBarrierResult = visualReady;
                 }
             }
             // Report generation reads the restored scene. Never invoke the
             // planning refresh here: it reloads labels and replaces meshes,
             // even with preserveViewerState, and can race the capture.
-            const preparation = await prepareReportSceneRead(reportSessionId);
+            // Always validate the current live renderer after the scheduler
+            // barrier. This also recovers from a stale partial-restore result
+            // when the meshes and dose are already usable.
+            const preparation = await prepareReportSceneReadWithRetry(reportSessionId, {
+                timeoutMs: visualBarrierResult ? 20000 : 15000,
+            });
+            if (visualBarrierResult && preparation?.success) {
+                console.info('[report] visual restore barrier was partial, but live scene validation passed; continuing with current scene');
+            }
             if (!preparation.success) return preparation;
             reportPlanningId = preparation.planningId;
             if (typeof Report !== 'undefined' && Report.autoFill) {
@@ -7995,6 +8063,9 @@ async function _executeUIActionRaw(a, options = {}) {
                         ? String(activeReportPlanningId() || '') : '');
                 const result = await Report.autoFill.fromAll({
                     sessionId: reportSessionId,
+                    language: (typeof conversationLanguageForSession === 'function'
+                        ? conversationLanguageForSession(reportSessionId) : '')
+                        || window._brachyLiveTrace?.responseLanguage || window._responseLanguage || window._i18nLang || 'en',
                     planningId: reportPlanningId,
                     captureFigures: true,
                     allowTerminalPlanning: true,
@@ -8304,14 +8375,21 @@ function _resolveScreenshotTarget(target) {
 }
 
 function _waitScreenshotFrames(n = 2) {
-    return new Promise(resolve => {
+    return new Promise((resolve, reject) => {
         let count = 0;
+        let frame;
+        const timeout = setTimeout(() => {
+            cancelAnimationFrame(frame);
+            reject(new Error('Screenshot render frames timed out; keep the viewer tab visible.'));
+        }, 8000);
         const tick = () => {
             count += 1;
-            if (count >= n) resolve();
-            else requestAnimationFrame(tick);
+            if (count >= n) {
+                clearTimeout(timeout);
+                resolve();
+            } else frame = requestAnimationFrame(tick);
         };
-        requestAnimationFrame(tick);
+        frame = requestAnimationFrame(tick);
     });
 }
 
@@ -8901,9 +8979,12 @@ async function _captureDataTreeEvidenceBundle(plan = {}) {
             'loading', 'error', 'failed', 'not_generated', 'not-generated',
             'unresolved', 'missing', 'deleted',
         ].includes(status);
-        const sceneVisible = row && typeof window.isDataTreeNodeVisible3D === 'function'
-            ? window.isDataTreeNodeVisible3D(node)
-            : node.visible !== false && node.visible3D !== false;
+        const sceneVisibilityKnown = !!node && Object.keys(node).length > 0;
+        const sceneVisible = sceneVisibilityKnown
+            ? (typeof window.isDataTreeNodeVisible3D === 'function'
+                ? window.isDataTreeNodeVisible3D(node)
+                : node.visible !== false && node.visible3D !== false)
+            : false;
         return {
             target_ref: targetRef,
             label: String(row?.querySelector?.('.item-label')?.textContent || targetRef)
@@ -8912,7 +8993,8 @@ async function _captureDataTreeEvidenceBundle(plan = {}) {
             locator: 'live-data-tree-dom',
             captured_from_live_dom: true,
             visible: rendered,
-            scene_visible: sceneVisible,
+            scene_visible: sceneVisibilityKnown && sceneVisible,
+            scene_visibility_known: sceneVisibilityKnown,
             data_tree_visible: true,
             in_view: inView,
             annotatable: inView && !unavailable,
@@ -11453,8 +11535,23 @@ function _validateScreenshotDataUrl(dataUrl) {
 function _screenshotFailureMessage(galleryContext, errorCode) {
     const context = galleryContext || {};
     const language = _screenshotLanguage(context.sessionId, context.responseLanguage);
-    const reportUnavailable = String(errorCode || '').includes('report_figures_unavailable');
-    const visualRestoreIncomplete = String(errorCode || '').includes('workspace_visual_restore_incomplete');
+    const code = String(errorCode || '');
+    const reportUnavailable = code.includes('report_figures_unavailable');
+    const visualRestoreIncomplete = code.includes('workspace_visual_restore_incomplete');
+    const treeTargetUnverified = /target_(?:row|node)_not_(?:verified|found|loaded)_in_live_data_tree/.test(code)
+        || code === 'target_row_outside_live_capture';
+    const viewerTargetUnverified = code === 'target_not_verified_visible_in_viewer'
+        || code === 'target_object_not_loaded_in_live_data_tree';
+    if (treeTargetUnverified) {
+        return language === 'zh'
+            ? '未能在当前 Data Tree 中实时核验这个目标行，因此没有继续截取 Viewer，也没有根据无关画面推测位置。请确认目标对象已加载并显示在当前病例的数据树中。'
+            : 'The target row could not be verified in the live Data Tree, so Viewer capture was stopped and no location was inferred from an unrelated scene. Confirm that the object is loaded in the current case Data Tree.';
+    }
+    if (viewerTargetUnverified) {
+        return language === 'zh'
+            ? '已保留 Data Tree 中的目标行截图，但 Viewer 中没有核验到同一对象可见，未附加无关 Viewer 画面，也未描述其三维位置。'
+            : 'The Data Tree target-row screenshot was retained, but the same object was not verified as visible in the Viewer. No unrelated Viewer image was attached and no 3D location was described.';
+    }
     if (visualRestoreIncomplete) {
         return language === 'zh'
             ? '当前病例的 Viewer/Data Tree 仍在恢复，尚未达到可核验的截图状态；本次没有保存不完整证据，请稍后重试。'
@@ -11532,22 +11629,26 @@ async function _annotateRequiredScreenshotBeforeDisplay(attachment, context = {}
 function _revealScreenshotNodes(plan, ownerStillActive = () => true) {
     const saved = new Map();
     const refs = _screenshotTargetRefs(plan);
-    const nodes = refs.map(ref => _dataTreeRowForTargetRef(ref))
-        .filter(Boolean).flatMap(row => _dataTreeRowIdentities(row)
-            .map(id => typeof _findDataTreeNode === 'function' ? _findDataTreeNode(id) : null)
-            .filter(Boolean));
-    // Canonical collection IDs mean the collection, not its first child row.
-    // Reuse the Data Tree's ownership model for CTV/OAR and planning groups.
     const groups = {
         'structure:ctv:active': 'ctv', 'structure:oar:active': 'oar',
         'group:planning:seeds': 'planning_seeds',
         'group:planning:needles': 'planning_needles',
         'group:planning:trajectories': 'planning_trajectories',
     };
+    const nodes = [];
+    const resolvedRefs = new Set();
     refs.forEach(ref => {
-        if (groups[ref] && typeof _groupViewNodes === 'function') {
-            nodes.push(..._groupViewNodes(groups[ref]).filter(Boolean));
-        }
+        const row = _dataTreeRowForTargetRef(ref);
+        const rowNodes = row
+            ? _dataTreeRowIdentities(row)
+                .map(id => typeof _findDataTreeNode === 'function' ? _findDataTreeNode(id) : null)
+                .filter(Boolean)
+            : [];
+        const groupNodes = groups[ref] && typeof _groupViewNodes === 'function'
+            ? _groupViewNodes(groups[ref]).filter(Boolean)
+            : [];
+        nodes.push(...rowNodes, ...groupNodes);
+        if (rowNodes.length || groupNodes.length) resolvedRefs.add(ref);
     });
     const remember = node => {
         if (saved.has(node)) return;
@@ -11555,7 +11656,7 @@ function _revealScreenshotNodes(plan, ownerStillActive = () => true) {
             [key, { present: Object.prototype.hasOwnProperty.call(node, key), value: node[key] }])));
         node.visible = true;
         node.visible3D = true;
-        if (Number(node.opacity) === 0) node.opacity = 1;
+        if (Number.isFinite(Number(node.opacity))) node.opacity = 1;
     };
     nodes.forEach(node => {
         const seen = new Set();
@@ -11570,7 +11671,7 @@ function _revealScreenshotNodes(plan, ownerStillActive = () => true) {
         if (typeof renderDataTree === 'function') renderDataTree();
     };
     refresh();
-    return () => {
+    const restore = () => {
         saved.forEach((values, node) => Object.entries(values).forEach(([key, entry]) => {
             if (entry.present) node[key] = entry.value;
             else delete node[key];
@@ -11578,6 +11679,8 @@ function _revealScreenshotNodes(plan, ownerStillActive = () => true) {
         // Restore the saved node objects, but never redraw a different case.
         if (ownerStillActive()) refresh();
     };
+    restore.unresolvedTargetRefs = refs.filter(ref => !resolvedRefs.has(ref));
+    return restore;
 }
 
 function _orderLocateCaptureViews(plan, views) {
@@ -11668,6 +11771,9 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                 if (plan.mode === 'chat' && plan.visual_purpose === 'locate'
                     && viewTarget === 'viewer-3d' && _screenshotTargetRefs(plan).length) {
                     restoreVisibility = _revealScreenshotNodes(plan, ownerStillActive);
+                    if (!restoreVisibility || restoreVisibility.unresolvedTargetRefs?.length) {
+                        throw new Error('target_object_not_loaded_in_live_data_tree');
+                    }
                     captureSpec.preserve_current_view = false;
                     captureSpec.preserveCurrentView = false;
                     captureSpec.focus = { kind: 'auto', padding: 0.35 };
@@ -11686,6 +11792,16 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                 const viewTransaction = await _applyStructuredScreenshotPlan(captureSpec, viewTarget);
                 activeViewRestore = viewTransaction?.restoreFocus || null;
                 captureSpec.__focusResult = viewTransaction?.focusResult || null;
+                if (plan.mode === 'chat'
+                    && plan.visual_purpose === 'locate'
+                    && viewTarget === 'data-tree'
+                    && _screenshotTargetRefs(plan).length
+                    && captureSpec.__focusResult?.status !== 'resolved') {
+                    throw new Error(
+                        captureSpec.__focusResult?.reason
+                        || 'target_row_not_verified_in_live_data_tree'
+                    );
+                }
                 if (viewTarget !== 'dose-overview') {
                     await _prepareScreenshotTarget(viewTarget, captureSpec);
                 }
@@ -11694,6 +11810,30 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                 element,
                 captureSpec,
             );
+            if (plan.mode === 'chat'
+                && plan.visual_purpose === 'locate'
+                && viewTarget === 'viewer-3d'
+                && _screenshotTargetRefs(plan).length) {
+                const targets = evidenceBundle?.groundingManifest?.targets;
+                const unresolved = _screenshotTargetRefs(plan).filter(targetRef => {
+                    const target = Array.isArray(targets)
+                        ? targets.find(item => String(item?.target_ref || '') === targetRef)
+                        : null;
+                    return !target
+                        || target.visible !== true
+                        || target.scene_visible !== true
+                        || target.data_tree_visible !== true
+                        || target.in_view !== true
+                        || target.annotatable !== true
+                        || target.loaded === false
+                        || ['unresolved', 'missing', 'deleted', 'not_generated', 'loading', 'failed', 'error']
+                            .includes(String(target.status || '').toLowerCase())
+                        || !Array.isArray(target.normalized_bounds);
+                });
+                if (unresolved.length) {
+                    throw new Error('target_not_verified_visible_in_viewer');
+                }
+            }
             const dataUrl = evidenceBundle?.dataUrl || null;
             if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
             if (!await _validateScreenshotDataUrl(dataUrl)) {

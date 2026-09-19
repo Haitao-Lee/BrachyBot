@@ -8,6 +8,7 @@ Run: python web/server.py
 import os
 import sys
 import json
+import copy
 import logging
 import time
 import threading
@@ -26,7 +27,7 @@ from functools import wraps
 # Add parent directory to Python path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
-from flask import request, jsonify, send_from_directory, Response
+from flask import request, jsonify, send_from_directory, Response, has_request_context
 from flask_cors import CORS
 from plans.dose_pre.model_loader import (
     DOSE_MODEL_SCALE_GY,
@@ -354,8 +355,11 @@ class TaskManager:
 task_manager = TaskManager()
 
 _UI_BRIDGE_LOCK = threading.Lock()
+from uuid import uuid4
 _UI_BRIDGE_MAX_EVENTS = int(os.environ.get("BRACHYBOT_UI_BRIDGE_MAX_EVENTS", "500"))
+_MONITOR_MAX_EVENTS = max(1, int(os.environ.get("BRACHYBOT_MONITOR_MAX_EVENTS", "1000")))
 _UI_BRIDGE: Dict[str, Dict[str, Any]] = {}
+_UI_BRIDGE_STALE_HANDLER = None
 _MONITOR_STALE_SECONDS = max(
     60.0,
     float(os.environ.get("BRACHYBOT_MONITOR_STALE_SECONDS", "1800")),
@@ -369,8 +373,9 @@ def _ui_session_id(session_id: Optional[str] = None) -> str:
 
 def _ui_bucket(session_id: Optional[str] = None) -> Dict[str, Any]:
     sid = _ui_session_id(session_id)
+    stale_closed = False
     with _UI_BRIDGE_LOCK:
-        return _UI_BRIDGE.setdefault(sid, {
+        bucket = _UI_BRIDGE.setdefault(sid, {
             "state": {},
             "events": [],
             "training": {
@@ -383,15 +388,30 @@ def _ui_bucket(session_id: Optional[str] = None) -> Dict[str, Any]:
                 "feedback": [],
             },
         })
+        if _training_is_stale(bucket.get("training")):
+            bucket["training"] = _close_stale_training_snapshot(bucket["training"], reason="monitor_timeout")
+            bucket["updated_at"] = time.time()
+            stale_closed = True
+    if stale_closed and callable(_UI_BRIDGE_STALE_HANDLER) and has_request_context():
+        try:
+            _UI_BRIDGE_STALE_HANDLER(sid, bucket)
+        except Exception:
+            logger.warning("Unable to checkpoint stale monitor close for %s", sid, exc_info=True)
+    return bucket
+
+
+def _set_ui_bridge_stale_handler(handler) -> None:
+    """Install the authenticated checkpoint hook used by read-time expiry."""
+    global _UI_BRIDGE_STALE_HANDLER
+    _UI_BRIDGE_STALE_HANDLER = handler
 
 
 def select_case_bridge(snapshot_bridge: Any, sidecar_bridge: Any) -> Dict[str, Any]:
     """Prefer the newest persisted UI bridge between snapshot and sidecar.
 
-    ``saved_at`` is a flush stamp written after the event is durable, so a
-    sidecar stamp strictly newer than the snapshot bridge's ``updated_at``
-    wins. Ties prefer the snapshot, and any future snapshot-bridge writer
-    must keep ``updated_at`` event-time semantics for this rule to hold.
+    Compare event timestamps, not the later sidecar disk-flush timestamp.
+    Legacy sidecars without updated_at fall back to saved_at. Ties prefer
+    the snapshot.
     """
     snapshot = snapshot_bridge if isinstance(snapshot_bridge, Mapping) else {}
     sidecar = sidecar_bridge if isinstance(sidecar_bridge, Mapping) else {}
@@ -402,7 +422,8 @@ def select_case_bridge(snapshot_bridge: Any, sidecar_bridge: Any) -> Dict[str, A
         except (TypeError, ValueError):
             return 0.0
 
-    if _stamp(sidecar, "saved_at") > _stamp(snapshot, "updated_at"):
+    sidecar_stamp = _stamp(sidecar, "updated_at") or _stamp(sidecar, "saved_at")
+    if sidecar_stamp > _stamp(snapshot, "updated_at"):
         return dict(sidecar)
     return dict(snapshot)
 
@@ -433,6 +454,22 @@ def _close_stale_training_snapshot(
     snapshot["closed_reason"] = reason
     snapshot["auto_closed"] = True
     snapshot["last_activity_at"] = now
+    events = list(snapshot.get("events") or [])
+    counts = dict(snapshot.get("event_counts") or {})
+    if not counts:
+        for event in events:
+            key = str(event.get("type") or "ui.event")
+            counts[key] = counts.get(key, 0) + 1
+    language = _monitor_language(snapshot.get("language"))
+    snapshot["last_summary"] = {
+        "message_id": f"assistant-monitor-{old_run_id or 'latest'}-summary",
+        "request_id": f"monitor-{old_run_id or 'latest'}",
+        "message_kind": "monitor_summary",
+        "content": _format_training_summary(events, counts, {}, language),
+        "language": language,
+        "completed_at": snapshot["stopped_at"],
+        "closed_reason": reason,
+    }
     return snapshot
 
 
@@ -445,7 +482,7 @@ def _training_is_stale(training: Optional[Dict[str, Any]], now: Optional[float] 
         age = (time.time() if now is None else float(now)) - float(timestamp)
     except (TypeError, ValueError):
         return False
-    return age > _MONITOR_STALE_SECONDS
+    return age >= _MONITOR_STALE_SECONDS
 
 
 def _ui_bridge_snapshot(session_id: Optional[str] = None) -> Dict[str, Any]:
@@ -455,7 +492,7 @@ def _ui_bridge_snapshot(session_id: Optional[str] = None) -> Dict[str, Any]:
         return {
             "state": dict(bucket.get("state") or {}),
             "events": list(bucket.get("events") or []),
-            "training": dict(bucket.get("training") or {}),
+            "training": copy.deepcopy(bucket.get("training") or {}),
             "updated_at": bucket.get("updated_at"),
         }
 
@@ -471,16 +508,22 @@ def _close_live_training_snapshots(
     hydration still applies the same rule for an ungraceful crash.
     """
     closed: list[tuple[str, str]] = []
+    snapshots = []
     now = time.time()
     with _UI_BRIDGE_LOCK:
         for session_id, bucket in _UI_BRIDGE.items():
             training = bucket.get("training") or {}
             if not training.get("active"):
+                snapshots.append((str(session_id), copy.deepcopy(bucket)))
                 continue
             run_id = str(training.get("run_id") or training.get("runId") or "").strip()
             bucket["training"] = _close_stale_training_snapshot(training, reason=reason)
             bucket["updated_at"] = now
             closed.append((str(session_id), run_id))
+            snapshots.append((str(session_id), copy.deepcopy(bucket)))
+    from web.routes.planning_routes import _persist_closed_ui_bridge
+    for session_id, bridge in snapshots:
+        _persist_closed_ui_bridge(session_id, bridge)
     return closed
 
 
@@ -488,7 +531,14 @@ def _drop_ui_bucket(session_id: Optional[str]) -> None:
     """Remove UI/training state when the owning agent session is deleted."""
     sid = _ui_session_id(session_id)
     with _UI_BRIDGE_LOCK:
-        _UI_BRIDGE.pop(sid, None)
+        bucket = _UI_BRIDGE.pop(sid, None)
+        if bucket is not None:
+            bucket["training"] = _close_stale_training_snapshot(bucket.get("training"), reason="cache_eviction")
+            bucket["updated_at"] = time.time()
+            bucket = copy.deepcopy(bucket)
+    if bucket is not None:
+        from web.routes.planning_routes import _persist_closed_ui_bridge
+        _persist_closed_ui_bridge(sid, bucket)
 
 
 def _append_ui_event(
@@ -496,12 +546,19 @@ def _append_ui_event(
     event: Dict[str, Any],
     *,
     include_in_training: bool = True,
+    monitor_run_id: Optional[str] = None,
+    authoritative: bool = True,
 ) -> Dict[str, Any]:
     bucket = _ui_bucket(session_id)
     item = dict(event or {})
     item.setdefault("type", "ui.event")
     item.setdefault("label", "")
     item.setdefault("detail", {})
+    item["detail"] = dict(item["detail"]) if isinstance(item["detail"], dict) else {}
+    item["event_id"] = uuid4().hex
+    if str(item["type"]).startswith("manual."):
+        # Only a mutation endpoint may attest that geometry was committed.
+        item["detail"]["commit_status"] = "committed" if authoritative else "unverified"
     item["ts"] = time.time()
     with _UI_BRIDGE_LOCK:
         events = bucket.setdefault("events", [])
@@ -509,9 +566,26 @@ def _append_ui_event(
         if len(events) > _UI_BRIDGE_MAX_EVENTS:
             del events[: len(events) - _UI_BRIDGE_MAX_EVENTS]
         training = bucket.setdefault("training", {})
-        if training.get("active") and include_in_training:
+        if _training_is_stale(training, now=item["ts"]):
+            training = bucket["training"] = _close_stale_training_snapshot(training, reason="monitor_timeout")
+        active_run = str(training.get("run_id") or "")
+        event_run = str(monitor_run_id if monitor_run_id is not None else active_run if authoritative else "")
+        item["monitor_run_id"] = event_run or None
+        if training.get("active") and include_in_training and event_run == active_run and (authoritative or bool(event_run)):
+            counts = training.setdefault("event_counts", {})
+            if not counts:
+                for previous in training.get("events", []):
+                    key = str(previous.get("type") or "ui.event")
+                    counts[key] = counts.get(key, 0) + 1
+            key = str(item["type"])
+            counts[key] = counts.get(key, 0) + 1
             training.setdefault("events", []).append(item)
+            excess = max(0, len(training["events"]) - _MONITOR_MAX_EVENTS)
+            if excess:
+                del training["events"][:excess]
+                training["dropped_event_count"] = int(training.get("dropped_event_count", 0)) + excess
             training["last_activity_at"] = item["ts"]
+        bucket["updated_at"] = item["ts"]
     return item
 
 
@@ -1194,6 +1268,7 @@ def _build_plan_advice(
     session_id: Optional[str] = None,
     *,
     fast: bool = False,
+    events: Optional[list] = None,
 ) -> Dict[str, Any]:
     """Create deterministic planning advice from current metrics and UI events."""
     if agent is None or not hasattr(agent, "memory"):
@@ -1220,7 +1295,11 @@ def _build_plan_advice(
     if fast:
         snapshot["geometry_validation"] = "deferred"
     metrics = snapshot.get("metrics", {}) or {}
-    events = list((_ui_bucket(session_id).get("events") or [])[-80:])
+    if events is None:
+        bucket = _ui_bucket(session_id)
+        training = bucket.get("training") or {}
+        events = training.get("events", []) if training.get("active") else bucket.get("events", [])
+    events = list(events)[-80:]
     advice: list = []
     issues: list = []
     strengths: list = []
@@ -1451,126 +1530,6 @@ def _monitor_step_key(event: Dict[str, Any]) -> str:
     return raw or "unknown"
 
 
-def _monitor_step_label(key: str, language: str = "en") -> str:
-    labels = {
-        "ctv": ("CTV 分割", "CTV segmentation"),
-        "oar": ("OAR 分割", "OAR segmentation"),
-        "trajectory_init": ("轨迹初始化", "Trajectory initialization"),
-        "trajectory_refine": ("轨迹优化", "Trajectory refinement"),
-        "seed_planning": ("粒子布源", "Seed planning"),
-        "dose_calc": ("剂量计算", "Dose calculation"),
-        "dose_eval": ("剂量评估", "Dose evaluation"),
-        "full": ("完整规划流程", "Full planning pipeline"),
-    }
-    pair = labels.get(key, (key or "步骤", key or "step"))
-    return pair[0] if language == "zh" else pair[1]
-
-
-def _localize_monitor_text(text: Any, language: str = "en") -> str:
-    """Translate deterministic monitor prose without translating clinical names."""
-    raw = str(text or "")
-    if language != "zh" or not raw:
-        return raw
-    exact = {
-        "Run dose evaluation to make V100/D90 advice available.": "请先执行剂量评估，以生成 V100/D90 建议。",
-        "Inspect cold CTV regions against the intended prescription coverage, then recompute dose and DVH after edits.": "请检查 CTV 的低剂量区域，并在编辑后重新计算剂量和 DVH。",
-        "Compare D90 with the source-backed prescription convention for this tumor site before labeling coverage adequate or inadequate.": "在判断覆盖是否充分前，请将 D90 与该部位有来源依据的处方规范进行比较。",
-        "If the hot spot is clinically undesirable for this site, spread central seeds along the needle track or reduce local seed density.": "如果该部位不适合当前热点分布，请沿针道分散中心粒子或降低局部粒子密度。",
-        "Compare OAR doses against applicable site-specific guidance or the confirmed case protocol before classifying safety.": "在判断安全性前，请依据适用的部位特异性指南或已确认的病例方案比较 OAR 剂量。",
-        "Review whether the current seed count and spacing are sufficient for the requested coverage after applying source-backed criteria.": "依据有来源依据的标准，检查当前粒子数量和间距是否足以达到目标覆盖。",
-        "Recent manual edits were detected; recompute dose after each seed or needle adjustment to keep DVH current.": "检测到近期手动编辑；每次调整粒子或针道后请重新计算剂量，以保持 DVH 最新。",
-        "No seeds are present. Add a needle and place seeds through the CTV before dose evaluation.": "当前没有粒子。请先添加针道并在 CTV 内布置粒子，再进行剂量评估。",
-        "Dose preview updated. Open Analysis to inspect DVH and OAR dose.": "剂量预览已更新。请打开分析面板检查 DVH 和 OAR 剂量。",
-        "Seed geometry was not available for the monitor; verify seed spacing directly in the 3D viewer.": "监测器未获得粒子几何信息；请直接在 3D viewer 中核对粒子间距。",
-        "Regenerate the Surgical Guide from the current needle geometry before export or clinical review.": "请基于当前针道几何重新生成手术导板，再进行导出或临床审核。",
-        "Recompute dose and DVH, then refresh the report before final review.": "请重新计算剂量和 DVH，并刷新报告后再进行最终审核。",
-    }
-    if raw in exact:
-        return exact[raw]
-    if raw.startswith("Case resources are still loading;"):
-        return "病例资源仍在后台加载；加载完成后将提供详细规划指标。"
-    match = re.fullmatch(r"CTV V100 is ([0-9.]+)%; compare it with the applicable site-specific guidance or confirmed case protocol target\.", raw)
-    if match:
-        return f"CTV V100 为 {match.group(1)}%；请与适用的部位特异性指南或已确认的病例方案目标比较。"
-    match = re.fullmatch(r"CTV D90 is ([0-9.]+) Gy(?:; current dose reference is ([0-9.]+) Gy)?\.", raw)
-    if match:
-        suffix = f"；当前剂量参考为 {match.group(2)} Gy" if match.group(2) else ""
-        return f"CTV D90 为 {match.group(1)} Gy{suffix}。"
-    match = re.fullmatch(r"CTV V200 is ([0-9.]+)%; inspect the corresponding hot-spot location in 2D/3D\.", raw)
-    if match:
-        return f"CTV V200 为 {match.group(1)}%；请在 2D/3D viewer 中检查对应的热点位置。"
-    match = re.fullmatch(r"CTV V150 is ([0-9.]+)%; interpret uniformity with the current site-specific criteria\.", raw)
-    if match:
-        return f"CTV V150 为 {match.group(1)}%；请依据当前部位特异性标准判读均匀性。"
-    match = re.fullmatch(r"Dose preview updated: V100=([0-9.]+)%, D90=([0-9.]+) Gy\. Review hot spots and OAR dose before adding seeds\.", raw)
-    if match:
-        return f"剂量预览已更新：V100={match.group(1)}%，D90={match.group(2)} Gy。添加粒子前请检查热点和 OAR 剂量。"
-    match = re.fullmatch(r"Seed edit recorded\. ([0-9]+) close seed pair\(s\) are below ([0-9.]+) mm; inspect them before continuing\.", raw)
-    if match:
-        return f"已记录粒子编辑：有 {match.group(1)} 对粒子间距小于 {match.group(2)} mm；继续前请检查这些粒子。"
-    match = re.fullmatch(r"Seed edit recorded\. Current V100 is ([0-9.]+)%; inspect cold CTV regions after recompute\.", raw)
-    if match:
-        return f"已记录粒子编辑：当前 V100 为 {match.group(1)}%；重新计算后请检查 CTV 低剂量区域。"
-    if raw.startswith("Top OAR doses: "):
-        return "OAR 最高剂量结构：" + raw[len("Top OAR doses: "):]
-    if raw.startswith("No seed-center pair is closer than "):
-        return "当前预览中没有粒子中心间距小于 " + raw[len("No seed-center pair is closer than "):].replace(" in the current preview.", "。")
-    if raw.startswith("Needle edit recorded."):
-        return "已记录针道编辑。请确认针道经过安全组织，并与不可穿刺 OAR 保持距离。"
-    match = re.fullmatch(
-        r"Needles intersecting current Data Tree non-traversable structures: (.+)\.",
-        raw,
-    )
-    if match:
-        return f"针道 {match.group(1)} 与当前不可穿刺结构相交。"
-    match = re.fullmatch(
-        r"(.+) and (.+) are ([0-9.]+) mm apart \(minimum ([0-9.]+) mm; (.+)\)\.",
-        raw,
-    )
-    if match:
-        return (
-            f"针道 {match.group(1)} 与 {match.group(2)} 的最短距离为 {match.group(3)} mm；"
-            f"当前配置的最小距离为 {match.group(4)} mm。"
-        )
-    match = re.fullmatch(
-        r"(.+) \((.*)\) and (.+) \((.*)\): center distance ([0-9.]+) mm, "
-        r"surface clearance ([0-9.-]+) mm \[(.+)\]\.",
-        raw,
-    )
-    if match:
-        return (
-            f"粒子 {match.group(1)}（{match.group(2)}）与 {match.group(3)}（{match.group(4)}）"
-            f"的中心距离为 {match.group(5)} mm，表面间隙为 {match.group(6)} mm"
-            f"（{match.group(7)}）。"
-        )
-    match = re.fullmatch(r"Outdated dependent results: (.+)\.", raw)
-    if match:
-        return f"手动几何编辑后，规划产物 {match.group(1)} 已过期。"
-    if raw == "No Surgical Guide has been generated for the current needle plan.":
-        return "当前针道规划尚未生成手术导板。"
-    if raw == "The Surgical Guide does not match the current planning version.":
-        return "手术导板与当前针道规划不一致，已标记为过期。"
-    if raw.startswith("Move or remove every obstacle-intersecting needle"):
-        return "请在剂量审核或生成手术导板前，移动或删除所有与不可穿刺结构相交的针道。"
-    if raw.startswith("Review the highlighted needle pairs"):
-        return "请检查高亮的针道组合是否发生物理碰撞，并确认导向套筒可制造。"
-    if raw.startswith("Recompute the outdated dose/DVH"):
-        return "请重新计算已过期的剂量和 DVH，并重新生成手术导板后再完成规划。"
-    if raw.startswith("Inspect the highlighted seed pairs"):
-        return "请在 3D viewer 中检查高亮粒子组合，修正轴向间距并重新计算剂量。"
-    if raw.startswith("Seed edit recorded."):
-        return "已记录粒子编辑。请重新计算剂量并核对 DVH，再放置下一枚粒子。"
-    match = re.fullmatch(
-        r"Plan score is ([0-9.]+)/100; use it as an advisory ranking signal, not approval\."
-        , raw,
-    )
-    if match:
-        return f"规划评分为 {match.group(1)}/100；该分数仅用于辅助排序，不代表临床批准。"
-    if raw.startswith("Plan score is "):
-        return raw.replace("; use it as an advisory ranking signal, not approval.", "；该分数仅用于辅助排序，不代表临床批准。")
-    return raw
-
-
 def _localize_plan_advice(advice: Dict[str, Any], language: str = "en") -> Dict[str, Any]:
     result = dict(advice or {})
     for key in ("strengths", "issues", "advice"):
@@ -1579,61 +1538,6 @@ def _localize_plan_advice(advice: Dict[str, Any], language: str = "en") -> Dict[
             result[key] = [_localize_monitor_text(value, language) for value in values]
     result["language"] = language
     return result
-
-
-def _monitor_activity_label(key: str, language: str = "en") -> str:
-    """Render event counters as user-facing labels, not internal event IDs."""
-    labels = {
-        "planning.step": ("规划步骤", "Planning steps"),
-        "segmentation.step": ("分割步骤", "Segmentation steps"),
-        "manual.needle.drag": ("手动针道拖拽", "Manual needle drags"),
-        "manual.needle.position_only": ("手动针道位置调整", "Manual needle position updates"),
-        "manual.seed.drag": ("手动粒子拖拽", "Manual seed drags"),
-        "manual.seed.add": ("手动添加粒子", "Manual seed additions"),
-        "manual.seed.delete": ("手动删除粒子", "Manual seed deletions"),
-        "manual.dose": ("手动剂量重算", "Manual dose updates"),
-        "ui.panel": ("面板操作", "Panel interactions"),
-        "ui.click": ("点击操作", "Click interactions"),
-        "ui.change": ("控件修改", "Control changes"),
-        "ui.slider": ("滑块调整", "Slider changes"),
-        "training.start": ("监测启动", "Monitor starts"),
-        "training.stop": ("监测结束", "Monitor stops"),
-    }
-    pair = labels.get(key)
-    if pair:
-        return pair[0] if language == "zh" else pair[1]
-    return key.replace(".", " ").strip().title() or ("其他事件" if language == "zh" else "Other events")
-
-
-def _format_training_summary(events: list, counts: Dict[str, int], advice: Dict[str, Any], language: str = "en") -> str:
-    """Return a readable, localized monitor report instead of a raw paragraph."""
-    if language == "zh":
-        lines = ["## 规划监测总结", f"本次监测记录了 {len(events)} 个 UI/规划事件。"]
-        section_labels = ("活动概览", "当前优势", "需要关注", "建议")
-    else:
-        lines = ["## Planning monitoring summary", f"Recorded {len(events)} UI/planning events."]
-        section_labels = ("Activity", "Strengths", "Issues", "Recommendations")
-    if counts:
-        lines.extend(["", f"### {section_labels[0]}"])
-        for key, value in sorted(counts.items(), key=lambda item: item[1], reverse=True)[:8]:
-            lines.append(f"- {_monitor_activity_label(key, language)}: {value}")
-    localized = _localize_plan_advice(advice, language)
-    for heading, key in zip(section_labels[1:], ("strengths", "issues", "advice")):
-        values = localized.get(key) or []
-        if values:
-            lines.extend(["", f"### {heading}"])
-            lines.extend(f"- {value}" for value in values)
-    return "\n".join(lines)
-
-
-def _readiness_item(key: str, label: str, passed: bool, detail: str, action: str = "") -> Dict[str, Any]:
-    return {
-        "key": key,
-        "label": label,
-        "passed": bool(passed),
-        "detail": detail,
-        "action": action,
-    }
 
 
 def _build_system_readiness(agent, session_id: Optional[str] = None) -> Dict[str, Any]:
@@ -1702,8 +1606,8 @@ def _build_system_readiness(agent, session_id: Optional[str] = None) -> Dict[str
         "shell_executor_enabled": os.environ.get("BRACHYBOT_ENABLE_SHELL_EXECUTOR", "").lower() in TRUE_VALUES,
         "shell_mode": "argv_allowlist_no_shell",
     }
-    ready_for_review = all(item["passed"] for item in checks[:6])
     blockers = [item for item in checks if not item["passed"]]
+    ready_for_review = not blockers
 
     return {
         "success": True,
@@ -1723,170 +1627,6 @@ def _build_system_readiness(agent, session_id: Optional[str] = None) -> Dict[str
         },
         "generated_at": datetime.utcnow().isoformat() + "Z",
     }
-
-
-def _training_feedback_for_event(agent, session_id: Optional[str], event: Dict[str, Any]) -> Optional[str]:
-    etype = str(event.get("type", ""))
-    label = str(event.get("label", ""))
-    detail = _monitor_event_detail(event)
-    language = _monitor_language(event.get("language") or detail.get("language"))
-    snapshot = _latest_plan_snapshot(agent)
-    metrics = snapshot.get("metrics", {}) or {}
-    v100 = _volume_metric_as_fraction(metrics, "v100")
-    d90 = _extract_metric_value(metrics, "d90")
-    target_context = _source_backed_target_context(agent)
-    target_criteria = target_context.get("criteria", {})
-    v100_min = _metric_as_fraction(_extract_metric_value(target_criteria, "v100_min"))
-
-    if etype.startswith("manual.seed"):
-        interference = snapshot.get("seed_interference") or {}
-        if interference.get("status") == "attention":
-            message = (
-                f"Seed edit recorded. {len(interference.get('close_pairs') or [])} close seed pair(s) "
-                f"are below {float(interference.get('threshold_mm') or 0.8):.1f} mm; inspect them before continuing."
-            )
-            return _localize_monitor_text(message, language)
-        if v100 is not None and v100_min is not None and v100 < v100_min:
-            return _localize_monitor_text(
-                f"Seed edit recorded. Current V100 is {v100 * 100:.1f}%; inspect cold CTV regions after recompute.",
-                language,
-            )
-        return _localize_monitor_text("Seed edit recorded. Recompute dose and verify DVH before placing the next seed.", language)
-    if etype.startswith("manual.needle"):
-        message = "Needle edit recorded. Check that the path traverses safe tissue and keeps distance from non-traversable OARs."
-        return _localize_monitor_text(message, language)
-    if etype in {"planning.step", "segmentation.step"}:
-        key = _monitor_step_key(event)
-        stage = _monitor_step_label(key, language)
-        status = _monitor_event_status(event)
-        if language == "zh":
-            if status == "running":
-                return f"{stage}正在执行；完成后我会检查 Data Tree 和 viewer 输出。"
-            if status == "done":
-                return f"{stage}已完成；请检查 Data Tree 和 viewer 输出，再继续下一步。"
-            if status == "error":
-                return f"{stage}执行失败；请查看错误详情并确认输入数据。"
-            return f"{stage}事件已记录；请检查 Data Tree 输出。"
-        if status == "running":
-            return f"{stage} is running; I will verify the Data Tree and viewer output when it finishes."
-        if status == "done":
-            return f"{stage} completed; verify the Data Tree and viewer output before the next prerequisite step."
-        if status == "error":
-            return f"{stage} failed; inspect the error details and confirm the input data."
-        return f"{stage} event recorded; verify its Data Tree output."
-    if etype == "manual.dose":
-        if v100 is not None and d90 is not None:
-            return _localize_monitor_text(
-                f"Dose preview updated: V100={v100 * 100:.1f}%, D90={d90:.1f} Gy. Review hot spots and OAR dose before adding seeds.",
-                language,
-            )
-        return _localize_monitor_text("Dose preview updated. Open Analysis to inspect DVH and OAR dose.", language)
-    return None
-
-
-def _training_screenshot_for_event(agent, session_id: Optional[str], event: Dict[str, Any], feedback: Optional[str]) -> Optional[Dict[str, Any]]:
-    """Suggest a screenshot target for high-value training checkpoints."""
-    if not feedback:
-        return None
-    etype = str(event.get("type", ""))
-    language = _monitor_language(event.get("language") or _monitor_event_detail(event).get("language"))
-    status = _monitor_event_status(event)
-    if etype in {"planning.step", "segmentation.step"} and status != "done":
-        # A screenshot taken while a stage is merely starting is usually the
-        # previous stage's image. Only completed checkpoints are evidence.
-        return None
-    snapshot = _latest_plan_snapshot(agent)
-    metrics = snapshot.get("metrics", {}) or {}
-    v100 = _volume_metric_as_fraction(metrics, "v100")
-    v200 = _volume_metric_as_fraction(metrics, "v200")
-    target_criteria = _source_backed_target_context(agent).get("criteria", {})
-    v100_min = _metric_as_fraction(_extract_metric_value(target_criteria, "v100_min"))
-    v200_max = _metric_as_fraction(_extract_metric_value(target_criteria, "v200_max"))
-
-    def _focus_seed_ids() -> list[str]:
-        ids = []
-        for pair in (snapshot.get("seed_interference", {}) or {}).get("close_pairs", [])[:4]:
-            for key in ("first_id", "second_id"):
-                seed_id = str(pair.get(key) or "").strip()
-                if seed_id and seed_id not in ids:
-                    ids.append(seed_id)
-        return ids
-
-    if etype == "manual.dose":
-        source_backed_concern = (
-            v100 is not None and v100_min is not None and v100 < v100_min
-        ) or (
-            v200 is not None and v200_max is not None and v200 > v200_max
-        )
-        if source_backed_concern:
-            result = {
-                "target": "dose-overview",
-                "question": "Training monitor snapshot: show current CT, masks, dose heatmap, seeds/needles, and DVH after manual dose recomputation.",
-            }
-            focus_seed_ids = _focus_seed_ids()
-            if focus_seed_ids:
-                result["focus_seed_ids"] = focus_seed_ids
-            return result
-        return {
-            "target": "dvh",
-            "question": "Training monitor snapshot: show the updated DVH after manual dose recomputation.",
-        }
-
-    if etype.startswith("segmentation."):
-        return {
-            "target": "viewer-3d",
-            "question": (
-                "监测截图：显示 3D viewer 和 Data Tree 中刚加载的 CTV/OAR 结构。"
-                if language == "zh"
-                else "Training monitor snapshot: show the newly loaded CTV/OAR structures in the 3D viewer and Data Tree."
-            ),
-        }
-
-    if etype == "planning.step":
-        key = _monitor_step_key(event)
-        if key in {"trajectory_init", "trajectory_refine", "seed_planning"}:
-            question = (
-                f"监测截图：显示 {_monitor_step_label(key, 'zh')} 完成后的 3D viewer、针道/粒子和 Data Tree。"
-                if language == "zh"
-                else f"Training monitor snapshot: show the 3D viewer, needle/seed output, and Data Tree after {_monitor_step_label(key)}."
-            )
-            return {"target": "viewer-3d", "question": question}
-        if key not in {"dose_calc", "dose_eval", "full"}:
-            return None
-        return {
-            "target": "dose-overview",
-            "question": (
-                "监测截图：显示完成后的剂量分布和 DVH。"
-                if language == "zh"
-                else "Training monitor snapshot: show the completed plan dose distribution and DVH for review."
-            ),
-        }
-
-    if etype.startswith("manual.needle"):
-        return {
-            "target": "viewer-3d",
-            "question": (
-                "监测截图：显示当前 3D 针道和邻近解剖结构。"
-                if language == "zh"
-                else "Training monitor snapshot: show the current 3D needle path and nearby anatomy."
-            ),
-        }
-
-    if etype.startswith("manual.seed"):
-        result = {
-            "target": "viewer-3d",
-            "question": (
-                "监测截图：显示被编辑的粒子及其邻近粒子，以便检查间距。"
-                if language == "zh"
-                else "Training monitor snapshot: show the edited seed and nearby seeds so spacing can be checked."
-            ),
-        }
-        focus_seed_ids = _focus_seed_ids()
-        if focus_seed_ids:
-            result["focus_seed_ids"] = focus_seed_ids
-        return result
-
-    return None
 
 
 def _safe_float_list(values: Any, length: int = 3, default: Optional[list] = None) -> list:
@@ -3704,975 +3444,14 @@ def rate_limit(f):
     return decorated
 
 
-# The monitor helpers above predate the unified UTF-8 message path.  Keep their
-# compatibility entry points, but bind the public runtime names to this clean
-# implementation so persisted events from older sessions are rendered without
-# mojibake and without exposing internal English status prose in Chinese UI.
-def _monitor_step_label_clean(key: str, language: str = "en") -> str:
-    labels = {
-        "ctv": ("CTV 分割", "CTV segmentation"),
-        "oar": ("OAR 分割", "OAR segmentation"),
-        "trajectory_init": ("轨迹初始化", "Trajectory initialization"),
-        "trajectory_refine": ("轨迹优化", "Trajectory refinement"),
-        "seed_planning": ("粒子布源", "Seed planning"),
-        "dose_calc": ("剂量计算", "Dose calculation"),
-        "dose_eval": ("剂量评估", "Dose evaluation"),
-        "full": ("完整规划流程", "Full planning pipeline"),
-    }
-    pair = labels.get(key, (key or "步骤", key or "step"))
-    return pair[0] if language == "zh" else pair[1]
-
-
-def _localize_monitor_text_clean(text: Any, language: str = "en") -> str:
-    raw = str(text or "")
-    if language != "zh" or not raw:
-        return raw
-    exact = {
-        "Run dose evaluation to make V100/D90 advice available.": "请先执行剂量评估，以生成 V100/D90 建议。",
-        "Inspect cold CTV regions against the intended prescription coverage, then recompute dose and DVH after edits.": "请检查 CTV 的低剂量区域，并在编辑后重新计算剂量和 DVH。",
-        "Compare D90 with the source-backed prescription convention for this tumor site before labeling coverage adequate or inadequate.": "在判断覆盖是否充分前，请将 D90 与该部位有来源依据的处方规范进行比较。",
-        "If the hot spot is clinically undesirable for this site, spread central seeds along the needle track or reduce local seed density.": "如果该部位不适合当前热点分布，请沿针道分散中心粒子或降低局部粒子密度。",
-        "Compare OAR doses against applicable site-specific guidance or the confirmed case protocol before classifying safety.": "在判断安全性前，请依据适用的部位特异性指南或已确认的病例方案比较 OAR 剂量。",
-        "Review whether the current seed count and spacing are sufficient for the requested coverage after applying source-backed criteria.": "依据有来源依据的标准，检查当前粒子数量和间距是否足以达到目标覆盖。",
-        "Recent manual edits were detected; recompute dose after each seed or needle adjustment to keep DVH current.": "检测到近期手动编辑；每次调整粒子或针道后请重新计算剂量，以保持 DVH 最新。",
-        "No seeds are present. Add a needle and place seeds through the CTV before dose evaluation.": "当前没有粒子。请先添加针道并在 CTV 内布置粒子，再进行剂量评估。",
-        "Dose preview updated. Open Analysis to inspect DVH and OAR dose.": "剂量预览已更新。请打开分析面板检查 DVH 和 OAR 剂量。",
-        "Seed geometry was not available for the monitor; verify seed spacing directly in the 3D viewer.": "监测器未获得粒子几何信息；请直接在 3D viewer 中核对粒子间距。",
-    }
-    if raw in exact:
-        return exact[raw]
-    patterns = (
-        (r"CTV V100 is ([0-9.]+)%; compare it with the applicable site-specific guidance or confirmed case protocol target\.",
-         lambda m: f"CTV V100 为 {m.group(1)}%；请与适用的部位特异性指南或已确认的病例方案目标比较。"),
-        (r"CTV D90 is ([0-9.]+) Gy(?:; current dose reference is ([0-9.]+) Gy)?\.",
-         lambda m: f"CTV D90 为 {m.group(1)} Gy" + (f"；当前剂量参考为 {m.group(2)} Gy" if m.group(2) else "") + "。"),
-        (r"CTV V200 is ([0-9.]+)%; inspect the corresponding hot-spot location in 2D/3D\.",
-         lambda m: f"CTV V200 为 {m.group(1)}%；请在 2D/3D viewer 中检查对应的热点位置。"),
-        (r"CTV V150 is ([0-9.]+)%; interpret uniformity with the current site-specific criteria\.",
-         lambda m: f"CTV V150 为 {m.group(1)}%；请依据当前部位特异性标准判断均匀性。"),
-        (r"Dose preview updated: V100=([0-9.]+)%, D90=([0-9.]+) Gy\. Review hot spots and OAR dose before adding seeds\.",
-         lambda m: f"剂量预览已更新：V100={m.group(1)}%，D90={m.group(2)} Gy。添加粒子前请检查热点和 OAR 剂量。"),
-        (r"Seed edit recorded\. ([0-9]+) close seed pair\(s\) are below ([0-9.]+) mm; inspect them before continuing\.",
-         lambda m: f"已记录粒子编辑：有 {m.group(1)} 对粒子间距小于 {m.group(2)} mm；继续前请检查这些粒子。"),
-        (r"Seed edit recorded\. Current V100 is ([0-9.]+)%; inspect cold CTV regions after recompute\.",
-         lambda m: f"已记录粒子编辑：当前 V100 为 {m.group(1)}%；重新计算后请检查 CTV 低剂量区域。"),
-        (r"Plan score is ([0-9.]+)/100; use it as an advisory ranking signal, not approval\.",
-         lambda m: f"规划评分为 {m.group(1)}/100；该分数仅用于辅助排序，不代表临床批准。"),
-    )
-    for pattern, formatter in patterns:
-        match = re.fullmatch(pattern, raw)
-        if match:
-            return formatter(match)
-    if raw.startswith("Top OAR doses: "):
-        return "OAR 最高剂量结构：" + raw[len("Top OAR doses: "):]
-    if raw.startswith("No seed-center pair is closer than "):
-        return "当前预览中没有粒子中心间距小于 " + raw[len("No seed-center pair is closer than "):].replace(" in the current preview.", "。")
-    if raw.startswith("Needle edit recorded."):
-        return "已记录针道编辑。请确认针道经过安全组织，并与不可穿刺 OAR 保持距离。"
-    if raw.startswith("Seed edit recorded."):
-        return "已记录粒子编辑。请重新计算剂量并核对 DVH，再放置下一枚粒子。"
-    if raw.startswith("Plan score is "):
-        return raw.replace("; use it as an advisory ranking signal, not approval.", "；该分数仅用于辅助排序，不代表临床批准。")
-    return raw
-
-
-def _monitor_activity_label_clean(key: str, language: str = "en") -> str:
-    labels = {
-        "planning.step": ("规划步骤", "Planning steps"),
-        "segmentation.step": ("分割步骤", "Segmentation steps"),
-        "manual.needle.drag": ("手动针道拖拽", "Manual needle drags"),
-        "manual.needle.position_only": ("手动针道位置调整", "Manual needle position updates"),
-        "manual.seed.drag": ("手动粒子拖拽", "Manual seed drags"),
-        "manual.seed.add": ("手动添加粒子", "Manual seed additions"),
-        "manual.seed.delete": ("手动删除粒子", "Manual seed deletions"),
-        "manual.dose": ("手动剂量重算", "Manual dose updates"),
-        "ui.panel": ("面板操作", "Panel interactions"),
-        "ui.click": ("点击操作", "Click interactions"),
-        "ui.change": ("控件修改", "Control changes"),
-        "ui.slider": ("滑块调整", "Slider changes"),
-        "training.start": ("监测启动", "Monitor starts"),
-        "training.stop": ("监测结束", "Monitor stops"),
-    }
-    pair = labels.get(key)
-    if pair:
-        return pair[0] if language == "zh" else pair[1]
-    return key.replace(".", " ").strip().title() or ("其他事件" if language == "zh" else "Other events")
-
-
-def _format_training_summary_clean(events: list, counts: Dict[str, int], advice: Dict[str, Any], language: str = "en") -> str:
-    if language == "zh":
-        lines = ["## 规划监测总结", f"本次监测记录了 {len(events)} 个 UI/规划事件。"]
-        section_labels = ("活动概览", "当前优势", "需要关注", "建议")
-    else:
-        lines = ["## Planning monitoring summary", f"Recorded {len(events)} UI/planning events."]
-        section_labels = ("Activity", "Strengths", "Issues", "Recommendations")
-    if counts:
-        lines.extend(["", f"### {section_labels[0]}"])
-        for key, value in sorted(counts.items(), key=lambda item: item[1], reverse=True)[:8]:
-            lines.append(f"- {_monitor_activity_label_clean(key, language)}: {value}")
-    localized = _localize_plan_advice(advice, language)
-    for heading, key in zip(section_labels[1:], ("strengths", "issues", "advice")):
-        values = localized.get(key) or []
-        if values:
-            lines.extend(["", f"### {heading}"])
-            lines.extend(f"- {value}" for value in values)
-    return "\n".join(lines)
-
-
-def _training_feedback_for_event_clean(agent, session_id: Optional[str], event: Dict[str, Any]) -> Optional[str]:
-    etype = str(event.get("type", ""))
-    detail = _monitor_event_detail(event)
-    language = _monitor_language(event.get("language") or detail.get("language"))
-    snapshot = _latest_plan_snapshot(agent)
-    metrics = snapshot.get("metrics", {}) or {}
-    v100 = _volume_metric_as_fraction(metrics, "v100")
-    d90 = _extract_metric_value(metrics, "d90")
-    target_criteria = _source_backed_target_context(agent).get("criteria", {})
-    v100_min = _metric_as_fraction(_extract_metric_value(target_criteria, "v100_min"))
-    if etype.startswith("manual.seed"):
-        interference = snapshot.get("seed_interference") or {}
-        if interference.get("status") == "attention":
-            return _localize_monitor_text_clean(
-                f"Seed edit recorded. {len(interference.get('close_pairs') or [])} close seed pair(s) are below {float(interference.get('threshold_mm') or 0.8):.1f} mm; inspect them before continuing.",
-                language,
-            )
-        if v100 is not None and v100_min is not None and v100 < v100_min:
-            return _localize_monitor_text_clean(
-                f"Seed edit recorded. Current V100 is {v100 * 100:.1f}%; inspect cold CTV regions after recompute.",
-                language,
-            )
-        return _localize_monitor_text_clean("Seed edit recorded. Recompute dose and verify DVH before placing the next seed.", language)
-    if etype.startswith("manual.needle"):
-        return _localize_monitor_text_clean("Needle edit recorded. Check that the path traverses safe tissue and keeps distance from non-traversable OARs.", language)
-    if etype in {"planning.step", "segmentation.step"}:
-        key = _monitor_step_key(event)
-        stage = _monitor_step_label_clean(key, language)
-        status = _monitor_event_status(event)
-        if language == "zh":
-            messages = {
-                "running": f"{stage}正在执行；完成后我会检查 Data Tree 和 viewer 输出。",
-                "done": f"{stage}已完成；请检查 Data Tree 和 viewer 输出，再继续下一步。",
-                "error": f"{stage}执行失败；请查看错误详情并确认输入数据。",
-                "event": f"{stage}事件已记录；请检查 Data Tree 输出。",
-            }
-            return messages[status]
-        if status == "running":
-            return f"{stage} is running; I will verify the Data Tree and viewer output when it finishes."
-        if status == "done":
-            return f"{stage} completed; verify the Data Tree and viewer output before the next prerequisite step."
-        if status == "error":
-            return f"{stage} failed; inspect the error details and confirm the input data."
-        return f"{stage} event recorded; verify its Data Tree output."
-    if etype == "manual.dose":
-        if v100 is not None and d90 is not None:
-            return _localize_monitor_text_clean(
-                f"Dose preview updated: V100={v100 * 100:.1f}%, D90={d90:.1f} Gy. Review hot spots and OAR dose before adding seeds.",
-                language,
-            )
-        return _localize_monitor_text_clean("Dose preview updated. Open Analysis to inspect DVH and OAR dose.", language)
-    return None
-
-
-def _training_screenshot_for_event_clean(agent, session_id: Optional[str], event: Dict[str, Any], feedback: Optional[str]) -> Optional[Dict[str, Any]]:
-    if not feedback:
-        return None
-    etype = str(event.get("type", ""))
-    language = _monitor_language(event.get("language") or _monitor_event_detail(event).get("language"))
-    status = _monitor_event_status(event)
-    if etype in {"planning.step", "segmentation.step"} and status != "done":
-        return None
-    snapshot = _latest_plan_snapshot(agent)
-    metrics = snapshot.get("metrics", {}) or {}
-    v100 = _volume_metric_as_fraction(metrics, "v100")
-    v200 = _volume_metric_as_fraction(metrics, "v200")
-    target_criteria = _source_backed_target_context(agent).get("criteria", {})
-    v100_min = _metric_as_fraction(_extract_metric_value(target_criteria, "v100_min"))
-    v200_max = _metric_as_fraction(_extract_metric_value(target_criteria, "v200_max"))
-    focus_ids = []
-    for pair in (snapshot.get("seed_interference", {}) or {}).get("close_pairs", [])[:4]:
-        for key in ("first_id", "second_id"):
-            seed_id = str(pair.get(key) or "").strip()
-            if seed_id and seed_id not in focus_ids:
-                focus_ids.append(seed_id)
-    def question(zh: str, en: str) -> str:
-        return zh if language == "zh" else en
-    if etype == "manual.dose":
-        concern = (v100 is not None and v100_min is not None and v100 < v100_min) or (v200 is not None and v200_max is not None and v200 > v200_max)
-        result = {
-            "target": "dose-overview" if concern else "dvh",
-            "question": question(
-                "监测截图：显示手动剂量重算后的 CT、掩膜、剂量热图、粒子/针道和 DVH。" if concern else "监测截图：显示手动剂量重算后的 DVH。",
-                "Training monitor snapshot: show the CT, masks, dose heatmap, seeds/needles, and DVH after manual dose recomputation." if concern else "Training monitor snapshot: show the updated DVH after manual dose recomputation.",
-            ),
-        }
-        if focus_ids:
-            result["focus_seed_ids"] = focus_ids
-        return result
-    if etype == "segmentation.step":
-        return {"target": "viewer-3d", "question": question("监测截图：显示刚加载的 CTV/OAR 结构、3D viewer 和 Data Tree。", "Training monitor snapshot: show the newly loaded CTV/OAR structures in the 3D viewer and Data Tree.")}
-    if etype == "planning.step":
-        key = _monitor_step_key(event)
-        if key in {"trajectory_init", "trajectory_refine", "seed_planning"}:
-            stage = _monitor_step_label_clean(key, language)
-            return {"target": "viewer-3d", "question": question(f"监测截图：显示{stage}完成后的 3D viewer、针道、粒子和 Data Tree。", f"Training monitor snapshot: show the 3D viewer, needle/seed output, and Data Tree after {_monitor_step_label_clean(key)}.")}
-        if key in {"dose_calc", "dose_eval", "full"}:
-            return {"target": "dose-overview", "question": question("监测截图：显示完成后的剂量分布和 DVH。", "Training monitor snapshot: show the completed plan dose distribution and DVH for review.")}
-        return None
-    if etype.startswith("manual.needle"):
-        return {"target": "viewer-3d", "question": question("监测截图：显示当前 3D 针道和邻近解剖结构。", "Training monitor snapshot: show the current 3D needle path and nearby anatomy.")}
-    if etype.startswith("manual.seed"):
-        result = {"target": "viewer-3d", "question": question("监测截图：显示被编辑的粒子及其邻近粒子，以检查间距。", "Training monitor snapshot: show the edited seed and nearby seeds so spacing can be checked.")}
-        if focus_ids:
-            result["focus_seed_ids"] = focus_ids
-        return result
-    return None
-
-
-def _monitor_step_label_utf8(key: str, language: str = "en") -> str:
-    labels = {
-        "ctv": ("CTV 分割", "CTV segmentation"),
-        "oar": ("OAR 分割", "OAR segmentation"),
-        "trajectory_init": ("轨迹初始化", "Trajectory initialization"),
-        "trajectory_refine": ("轨迹优化", "Trajectory refinement"),
-        "seed_planning": ("粒子布源", "Seed planning"),
-        "dose_calc": ("剂量计算", "Dose calculation"),
-        "dose_eval": ("剂量评估", "Dose evaluation"),
-        "full": ("完整规划流程", "Full planning pipeline"),
-    }
-    pair = labels.get(key, (key or "步骤", key or "step"))
-    return pair[0] if language == "zh" else pair[1]
-
-
-def _localize_monitor_text_utf8(text: Any, language: str = "en") -> str:
-    """Translate deterministic monitor prose without leaking internal English."""
-    raw = str(text or "")
-    if language != "zh" or not raw:
-        return raw
-    exact = {
-        "Run dose evaluation to make V100/D90 advice available.": "请先执行剂量评估，以生成 V100/D90 建议。",
-        "Inspect cold CTV regions against the intended prescription coverage, then recompute dose and DVH after edits.": "请检查 CTV 的低剂量区域，编辑后重新计算剂量和 DVH。",
-        "Compare D90 with the source-backed prescription convention for this tumor site before labeling coverage adequate or inadequate.": "请将 D90 与该部位有来源依据的处方规范比较后，再判断覆盖是否充分。",
-        "If the hot spot is clinically undesirable for this site, spread central seeds along the needle track or reduce local seed density.": "如果该部位不适合当前热点分布，请沿针道分散中心粒子或降低局部粒子密度。",
-        "Compare OAR doses against applicable site-specific guidance or the confirmed case protocol before classifying safety.": "判断安全性前，请依据适用的部位特异性指南或已确认的病例方案比较 OAR 剂量。",
-        "Review whether the current seed count and spacing are sufficient for the requested coverage after applying source-backed criteria.": "依据有来源的标准，检查当前粒子数量和间距是否足以达到目标覆盖。",
-        "Recent manual edits were detected; recompute dose after each seed or needle adjustment to keep DVH current.": "检测到近期手动编辑；每次调整粒子或针道后请重新计算剂量，以保持 DVH 为最新结果。",
-        "No seeds are present. Add a needle and place seeds through the CTV before dose evaluation.": "当前没有粒子。请先添加针道并在 CTV 内布置粒子，再进行剂量评估。",
-        "Dose preview updated. Open Analysis to inspect DVH and OAR dose.": "剂量预览已更新，请打开分析面板检查 DVH 和 OAR 剂量。",
-        "Seed geometry was not available for the monitor; verify seed spacing directly in the 3D viewer.": "监测器未获得粒子几何信息，请直接在 3D 查看器中核对粒子间距。",
-    }
-    if raw in exact:
-        return exact[raw]
-    patterns = (
-        (r"CTV V100 is ([0-9.]+)%; compare it with the applicable site-specific guidance or confirmed case protocol target\.",
-         lambda m: f"CTV V100 为 {m.group(1)}%，请与适用的部位特异性指南或已确认病例方案目标比较。"),
-        (r"CTV D90 is ([0-9.]+) Gy(?:; current dose reference is ([0-9.]+) Gy)?\.",
-         lambda m: f"CTV D90 为 {m.group(1)} Gy" + (f"，当前剂量参考为 {m.group(2)} Gy" if m.group(2) else "") + "。"),
-        (r"CTV V200 is ([0-9.]+)%; inspect the corresponding hot-spot location in 2D/3D\.",
-         lambda m: f"CTV V200 为 {m.group(1)}%，请在 2D/3D 查看器中检查对应的热点位置。"),
-        (r"CTV V150 is ([0-9.]+)%; interpret uniformity with the current site-specific criteria\.",
-         lambda m: f"CTV V150 为 {m.group(1)}%，请依据当前部位特异性标准判断均匀性。"),
-        (r"Dose preview updated: V100=([0-9.]+)%, D90=([0-9.]+) Gy\. Review hot spots and OAR dose before adding seeds\.",
-         lambda m: f"剂量预览已更新：V100={m.group(1)}%，D90={m.group(2)} Gy。添加粒子前请检查热点和 OAR 剂量。"),
-        (r"Seed edit recorded\. ([0-9]+) close seed pair\(s\) are below ([0-9.]+) mm; inspect them before continuing\.",
-         lambda m: f"已记录粒子编辑：有 {m.group(1)} 对粒子间距小于 {m.group(2)} mm；继续前请检查这些粒子。"),
-        (r"Seed edit recorded\. Current V100 is ([0-9.]+)%; inspect cold CTV regions after recompute\.",
-         lambda m: f"已记录粒子编辑：当前 V100 为 {m.group(1)}%；重新计算后请检查 CTV 低剂量区域。"),
-        (r"Plan score is ([0-9.]+)/100; use it as an advisory ranking signal, not approval\.",
-         lambda m: f"规划评分为 {m.group(1)}/100；该分数仅用于辅助排序，不代表临床批准。"),
-    )
-    for pattern, formatter in patterns:
-        match = re.fullmatch(pattern, raw)
-        if match:
-            return formatter(match)
-    if raw.startswith("Top OAR doses: "):
-        return "OAR 最高剂量结构：" + raw[len("Top OAR doses: "):]
-    if raw.startswith("No seed-center pair is closer than "):
-        return "当前预览中没有粒子中心间距小于 " + raw[len("No seed-center pair is closer than "):].replace(" in the current preview.", "。")
-    if raw.startswith("Needle edit recorded."):
-        return "已记录针道编辑。请确认针道经过安全组织，并与不可穿刺 OAR 保持距离。"
-    if raw.startswith("Seed edit recorded."):
-        return "已记录粒子编辑。请重新计算剂量并核对 DVH，再放置下一枚粒子。"
-    if raw.startswith("Plan score is "):
-        return raw.replace("; use it as an advisory ranking signal, not approval.", "；该分数仅用于辅助排序，不代表临床批准。")
-    return raw
-
-
-def _monitor_activity_label_utf8(key: str, language: str = "en") -> str:
-    labels = {
-        "planning.step": ("规划步骤", "Planning steps"),
-        "segmentation.step": ("分割步骤", "Segmentation steps"),
-        "manual.needle.drag": ("手动针道拖拽", "Manual needle drags"),
-        "manual.needle.position_only": ("手动针道位置调整", "Manual needle position updates"),
-        "manual.seed.drag": ("手动粒子拖拽", "Manual seed drags"),
-        "manual.seed.add": ("手动添加粒子", "Manual seed additions"),
-        "manual.seed.delete": ("手动删除粒子", "Manual seed deletions"),
-        "manual.dose": ("手动剂量重算", "Manual dose updates"),
-        "ui.panel": ("面板操作", "Panel interactions"),
-        "ui.click": ("点击操作", "Click interactions"),
-        "ui.change": ("控件修改", "Control changes"),
-        "ui.slider": ("滑块调整", "Slider changes"),
-        "training.start": ("监测启动", "Monitor starts"),
-        "training.stop": ("监测结束", "Monitor stops"),
-    }
-    pair = labels.get(key)
-    if pair:
-        return pair[0] if language == "zh" else pair[1]
-    return key.replace(".", " ").strip().title() or ("其他事件" if language == "zh" else "Other events")
-
-
-def _format_training_summary_utf8(events: list, counts: Dict[str, int], advice: Dict[str, Any], language: str = "en") -> str:
-    if language == "zh":
-        lines = ["## 规划监测总结", f"本次监测记录了 {len(events)} 个界面/规划事件。"]
-        section_labels = ("活动概览", "当前优势", "需要关注", "建议")
-    else:
-        lines = ["## Planning monitoring summary", f"Recorded {len(events)} UI/planning events."]
-        section_labels = ("Activity", "Strengths", "Issues", "Recommendations")
-    if counts:
-        lines.extend(["", f"### {section_labels[0]}"])
-        for key, value in sorted(counts.items(), key=lambda item: item[1], reverse=True)[:8]:
-            lines.append(f"- {_monitor_activity_label_utf8(key, language)}: {value}")
-    localized = _localize_plan_advice(advice, language)
-    for heading, key in zip(section_labels[1:], ("strengths", "issues", "advice")):
-        values = localized.get(key) or []
-        if values:
-            lines.extend(["", f"### {heading}"])
-            lines.extend(f"- {value}" for value in values)
-    return "\n".join(lines)
-
-
-def _training_feedback_for_event_utf8(agent, session_id: Optional[str], event: Dict[str, Any]) -> Optional[str]:
-    etype = str(event.get("type", ""))
-    detail = _monitor_event_detail(event)
-    language = _monitor_language(event.get("language") or detail.get("language"))
-    snapshot = _latest_plan_snapshot(agent)
-    metrics = snapshot.get("metrics", {}) or {}
-    v100 = _volume_metric_as_fraction(metrics, "v100")
-    d90 = _extract_metric_value(metrics, "d90")
-    target_criteria = _source_backed_target_context(agent).get("criteria", {})
-    v100_min = _metric_as_fraction(_extract_metric_value(target_criteria, "v100_min"))
-    if etype.startswith("manual.seed"):
-        interference = snapshot.get("seed_interference") or {}
-        if interference.get("status") == "attention":
-            return _localize_monitor_text_utf8(
-                f"Seed edit recorded. {len(interference.get('close_pairs') or [])} close seed pair(s) are below {float(interference.get('threshold_mm') or 0.8):.1f} mm; inspect them before continuing.",
-                language,
-            )
-        if v100 is not None and v100_min is not None and v100 < v100_min:
-            return _localize_monitor_text_utf8(
-                f"Seed edit recorded. Current V100 is {v100 * 100:.1f}%; inspect cold CTV regions after recompute.",
-                language,
-            )
-        return _localize_monitor_text_utf8("Seed edit recorded. Recompute dose and verify DVH before placing the next seed.", language)
-    if etype.startswith("manual.needle"):
-        return _localize_monitor_text_utf8("Needle edit recorded. Check that the path traverses safe tissue and keeps distance from non-traversable OARs.", language)
-    if etype in {"planning.step", "segmentation.step"}:
-        stage = _monitor_step_label_utf8(_monitor_step_key(event), language)
-        status = _monitor_event_status(event)
-        if language == "zh":
-            messages = {
-                "running": f"{stage}正在执行；完成后我会检查数据树和查看器输出。",
-                "done": f"{stage}已完成；请检查数据树和查看器输出，再继续下一步。",
-                "error": f"{stage}执行失败；请查看错误详情并确认输入数据。",
-                "event": f"{stage}事件已记录；请检查数据树输出。",
-            }
-            return messages[status]
-        if status == "running":
-            return f"{stage} is running; I will verify the Data Tree and viewer output when it finishes."
-        if status == "done":
-            return f"{stage} completed; verify the Data Tree and viewer output before the next prerequisite step."
-        if status == "error":
-            return f"{stage} failed; inspect the error details and confirm the input data."
-        return f"{stage} event recorded; verify its Data Tree output."
-    if etype == "manual.dose":
-        if v100 is not None and d90 is not None:
-            return _localize_monitor_text_utf8(
-                f"Dose preview updated: V100={v100 * 100:.1f}%, D90={d90:.1f} Gy. Review hot spots and OAR dose before adding seeds.",
-                language,
-            )
-        return _localize_monitor_text_utf8("Dose preview updated. Open Analysis to inspect DVH and OAR dose.", language)
-    return None
-
-
-def _training_screenshot_for_event_utf8(agent, session_id: Optional[str], event: Dict[str, Any], feedback: Optional[str]) -> Optional[Dict[str, Any]]:
-    if not feedback:
-        return None
-    etype = str(event.get("type", ""))
-    language = _monitor_language(event.get("language") or _monitor_event_detail(event).get("language"))
-    status = _monitor_event_status(event)
-    if etype in {"planning.step", "segmentation.step"} and status != "done":
-        return None
-    snapshot = _latest_plan_snapshot(agent)
-    metrics = snapshot.get("metrics", {}) or {}
-    v100 = _volume_metric_as_fraction(metrics, "v100")
-    v200 = _volume_metric_as_fraction(metrics, "v200")
-    target_criteria = _source_backed_target_context(agent).get("criteria", {})
-    v100_min = _metric_as_fraction(_extract_metric_value(target_criteria, "v100_min"))
-    v200_max = _metric_as_fraction(_extract_metric_value(target_criteria, "v200_max"))
-    focus_ids = []
-    for pair in (snapshot.get("seed_interference", {}) or {}).get("close_pairs", [])[:4]:
-        for key in ("first_id", "second_id"):
-            seed_id = str(pair.get(key) or "").strip()
-            if seed_id and seed_id not in focus_ids:
-                focus_ids.append(seed_id)
-    def q(zh: str, en: str) -> str:
-        return zh if language == "zh" else en
-    if etype == "manual.dose":
-        concern = (v100 is not None and v100_min is not None and v100 < v100_min) or (v200 is not None and v200_max is not None and v200 > v200_max)
-        result = {
-            "target": "dose-overview" if concern else "dvh",
-            "question": q(
-                "监测截图：显示手动剂量重算后的 CT、掩膜、剂量热图、粒子、针道和 DVH。" if concern else "监测截图：显示手动剂量重算后的 DVH。",
-                "Training monitor snapshot: show the CT, masks, dose heatmap, seeds/needles, and DVH after manual dose recomputation." if concern else "Training monitor snapshot: show the updated DVH after manual dose recomputation.",
-            ),
-        }
-        if focus_ids:
-            result["focus_seed_ids"] = focus_ids
-        return result
-    if etype == "segmentation.step":
-        return {"target": "viewer-3d", "question": q("监测截图：显示刚加载的 CTV/OAR 结构、3D 查看器和数据树。", "Training monitor snapshot: show the newly loaded CTV/OAR structures in the 3D viewer and Data Tree.")}
-    if etype == "planning.step":
-        key = _monitor_step_key(event)
-        if key in {"trajectory_init", "trajectory_refine", "seed_planning"}:
-            stage = _monitor_step_label_utf8(key, language)
-            return {"target": "viewer-3d", "question": q(f"监测截图：显示{stage}完成后的 3D 查看器、针道、粒子和数据树。", f"Training monitor snapshot: show the 3D viewer, needle/seed output, and Data Tree after {_monitor_step_label_utf8(key)}.")}
-        if key in {"dose_calc", "dose_eval", "full"}:
-            return {"target": "dose-overview", "question": q("监测截图：显示规划完成后的剂量分布和 DVH。", "Training monitor snapshot: show the completed plan dose distribution and DVH for review.")}
-        return None
-    if etype.startswith("manual.needle"):
-        return {"target": "viewer-3d", "question": q("监测截图：显示当前 3D 针道和附近解剖结构。", "Training monitor snapshot: show the current 3D needle path and nearby anatomy.")}
-    if etype.startswith("manual.seed"):
-        result = {"target": "viewer-3d", "question": q("监测截图：显示被编辑的粒子及其邻近粒子，用于检查间距。", "Training monitor snapshot: show the edited seed and nearby seeds so spacing can be checked.")}
-        if focus_ids:
-            result["focus_seed_ids"] = focus_ids
-        return result
-    return None
-
-
-_monitor_step_label = _monitor_step_label_utf8
-_localize_monitor_text = _localize_monitor_text_utf8
-_monitor_activity_label = _monitor_activity_label_utf8
-_format_training_summary = _format_training_summary_utf8
-_training_feedback_for_event = _training_feedback_for_event_utf8
-_training_screenshot_for_event = _training_screenshot_for_event_utf8
-
-
-# Final monitor localization boundary.  Older compatibility shims above are
-# intentionally left in place for imports from archived deployments, but they
-# are not allowed to own the public helper names: a previous deployment had
-# mojibake literals in that shim and leaked them into the web chat.
-def _monitor_step_label_final(key: str, language: str = "en") -> str:
-    labels = {
-        "ctv": ("CTV 分割", "CTV segmentation"),
-        "oar": ("OAR 分割", "OAR segmentation"),
-        "trajectory_init": ("轨迹初始化", "Trajectory initialization"),
-        "trajectory_refine": ("轨迹优化", "Trajectory refinement"),
-        "seed_planning": ("粒子布源", "Seed planning"),
-        "dose_calc": ("剂量计算", "Dose calculation"),
-        "dose_eval": ("剂量评估", "Dose evaluation"),
-        "full": ("完整规划流程", "Full planning pipeline"),
-    }
-    pair = labels.get(key, (key or "步骤", key or "step"))
-    return pair[0] if language == "zh" else pair[1]
-
-
-def _localize_monitor_text_final(text: Any, language: str = "en") -> str:
-    raw = str(text or "")
-    if language != "zh" or not raw:
-        return raw
-    exact = {
-        "Run dose evaluation to make V100/D90 advice available.": "请先执行剂量评估，以生成 V100/D90 建议。",
-        "Inspect cold CTV regions against the intended prescription coverage, then recompute dose and DVH after edits.": "请检查 CTV 的低剂量区域；编辑后重新计算剂量和 DVH。",
-        "Compare D90 with the source-backed prescription convention for this tumor site before labeling coverage adequate or inadequate.": "在判断覆盖是否充分前，请将 D90 与该部位有来源依据的处方规范进行比较。",
-        "If the hot spot is clinically undesirable for this site, spread central seeds along the needle track or reduce local seed density.": "如果该部位不适合当前热点分布，请沿针道分散中心粒子或降低局部粒子密度。",
-        "Compare OAR doses against applicable site-specific guidance or the confirmed case protocol before classifying safety.": "判断安全性前，请依据适用的部位特异性指南或已确认的病例方案比较 OAR 剂量。",
-        "Review whether the current seed count and spacing are sufficient for the requested coverage after applying source-backed criteria.": "依据有来源的标准，检查当前粒子数量和间距是否足以达到目标覆盖。",
-        "Recent manual edits were detected; recompute dose after each seed or needle adjustment to keep DVH current.": "检测到近期手动编辑；每次调整粒子或针道后请重新计算剂量，以保持 DVH 为最新结果。",
-        "No seeds are present. Add a needle and place seeds through the CTV before dose evaluation.": "当前没有粒子。请先添加针道并在 CTV 内布置粒子，再进行剂量评估。",
-        "Dose preview updated. Open Analysis to inspect DVH and OAR dose.": "剂量预览已更新，请打开分析面板检查 DVH 和 OAR 剂量。",
-        "Seed geometry was not available for the monitor; verify seed spacing directly in the 3D viewer.": "监测器未获得粒子几何信息，请直接在 3D 查看器中核对粒子间距。",
-    }
-    if raw in exact:
-        return exact[raw]
-    patterns = (
-        (r"CTV V100 is ([0-9.]+)%; compare it with the applicable site-specific guidance or confirmed case protocol target\.",
-         lambda m: f"CTV V100 为 {m.group(1)}%，请与适用的部位特异性指南或已确认的病例方案目标比较。"),
-        (r"CTV D90 is ([0-9.]+) Gy(?:; current dose reference is ([0-9.]+) Gy)?\.",
-         lambda m: f"CTV D90 为 {m.group(1)} Gy" + (f"，当前剂量参考为 {m.group(2)} Gy" if m.group(2) else "") + "。"),
-        (r"CTV V200 is ([0-9.]+)%; inspect the corresponding hot-spot location in 2D/3D\.",
-         lambda m: f"CTV V200 为 {m.group(1)}%，请在 2D/3D 查看器中检查对应的热点位置。"),
-        (r"CTV V150 is ([0-9.]+)%; interpret uniformity with the current site-specific criteria\.",
-         lambda m: f"CTV V150 为 {m.group(1)}%，请依据当前部位特异性标准判断均匀性。"),
-        (r"Dose preview updated: V100=([0-9.]+)%, D90=([0-9.]+) Gy\. Review hot spots and OAR dose before adding seeds\.",
-         lambda m: f"剂量预览已更新：V100={m.group(1)}%，D90={m.group(2)} Gy。添加粒子前请检查热点和 OAR 剂量。"),
-        (r"Seed edit recorded\. ([0-9]+) close seed pair\(s\) are below ([0-9.]+) mm; inspect them before continuing\.",
-         lambda m: f"已记录粒子编辑：有 {m.group(1)} 对粒子间距小于 {m.group(2)} mm；继续前请检查这些粒子。"),
-        (r"Seed edit recorded\. Current V100 is ([0-9.]+)%; inspect cold CTV regions after recompute\.",
-         lambda m: f"已记录粒子编辑：当前 V100 为 {m.group(1)}%；重新计算后请检查 CTV 低剂量区域。"),
-        (r"Plan score is ([0-9.]+)/100; use it as an advisory ranking signal, not approval\.",
-         lambda m: f"规划评分为 {m.group(1)}/100；该分数仅用于辅助排序，不代表临床批准。"),
-    )
-    for pattern, formatter in patterns:
-        match = re.fullmatch(pattern, raw)
-        if match:
-            return formatter(match)
-    if raw.startswith("Top OAR doses: "):
-        return "OAR 最高剂量结构：" + raw[len("Top OAR doses: "):]
-    if raw.startswith("No seed-center pair is closer than "):
-        return "当前预览中没有粒子中心间距小于 " + raw[len("No seed-center pair is closer than "):].replace(" in the current preview.", "。")
-    if raw.startswith("Needle edit recorded."):
-        return "已记录针道编辑。请确认针道经过安全组织，并与不可穿刺 OAR 保持距离。"
-    if raw.startswith("Seed edit recorded."):
-        return "已记录粒子编辑。请重新计算剂量并核对 DVH，再放置下一枚粒子。"
-    return raw
-
-
-def _monitor_activity_label_final(key: str, language: str = "en") -> str:
-    labels = {
-        "planning.step": ("规划步骤", "Planning steps"),
-        "segmentation.step": ("分割步骤", "Segmentation steps"),
-        "manual.needle.drag": ("手动针道拖拽", "Manual needle drags"),
-        "manual.needle.position_only": ("手动针道位置调整", "Manual needle position updates"),
-        "manual.seed.drag": ("手动粒子拖拽", "Manual seed drags"),
-        "manual.seed.add": ("手动添加粒子", "Manual seed additions"),
-        "manual.seed.delete": ("手动删除粒子", "Manual seed deletions"),
-        "manual.dose": ("手动剂量重算", "Manual dose updates"),
-        "ui.panel": ("面板操作", "Panel interactions"),
-        "ui.click": ("点击操作", "Click interactions"),
-        "ui.change": ("控件修改", "Control changes"),
-        "ui.slider": ("滑块调整", "Slider changes"),
-        "training.start": ("监测启动", "Monitor starts"),
-        "training.stop": ("监测结束", "Monitor stops"),
-    }
-    pair = labels.get(key, (key.replace(".", " ").strip().title() or "其他事件", key.replace(".", " ").strip().title() or "Other events"))
-    return pair[0] if language == "zh" else pair[1]
-
-
-def _format_training_summary_final(events: list, counts: Dict[str, int], advice: Dict[str, Any], language: str = "en") -> str:
-    if language == "zh":
-        lines = ["## 规划监测总结", f"本次监测记录了 {len(events)} 个界面或规划事件。"]
-        section_labels = ("活动概览", "当前优势", "需要关注", "建议")
-    else:
-        lines = ["## Planning monitoring summary", f"Recorded {len(events)} UI/planning events."]
-        section_labels = ("Activity", "Strengths", "Issues", "Recommendations")
-    if counts:
-        lines.extend(["", f"### {section_labels[0]}"])
-        for key, value in sorted(counts.items(), key=lambda item: item[1], reverse=True)[:8]:
-            lines.append(f"- {_monitor_activity_label_final(key, language)}: {value}")
-    localized = _localize_plan_advice(advice, language)
-    for heading, key in zip(section_labels[1:], ("strengths", "issues", "advice")):
-        values = localized.get(key) or []
-        if values:
-            lines.extend(["", f"### {heading}"])
-            lines.extend(f"- {value}" for value in values)
-    return "\n".join(lines)
-
-
-def _training_feedback_for_event_final(agent, session_id: Optional[str], event: Dict[str, Any]) -> Optional[str]:
-    etype = str(event.get("type", ""))
-    detail = _monitor_event_detail(event)
-    language = _monitor_language(event.get("language") or detail.get("language"))
-    snapshot = _latest_plan_snapshot(agent)
-    metrics = snapshot.get("metrics", {}) or {}
-    v100 = _volume_metric_as_fraction(metrics, "v100")
-    d90 = _extract_metric_value(metrics, "d90")
-    target = _source_backed_target_context(agent).get("criteria", {})
-    v100_min = _metric_as_fraction(_extract_metric_value(target, "v100_min"))
-    if etype.startswith("manual.seed"):
-        interference = snapshot.get("seed_interference") or {}
-        if interference.get("status") == "attention":
-            message = f"Seed edit recorded. {len(interference.get('close_pairs') or [])} close seed pair(s) are below {float(interference.get('threshold_mm') or 0.8):.1f} mm; inspect them before continuing."
-            return _localize_monitor_text_final(message, language)
-        if v100 is not None and v100_min is not None and v100 < v100_min:
-            return _localize_monitor_text_final(f"Seed edit recorded. Current V100 is {v100 * 100:.1f}%; inspect cold CTV regions after recompute.", language)
-        return _localize_monitor_text_final("Seed edit recorded. Recompute dose and verify DVH before placing the next seed.", language)
-    if etype.startswith("manual.needle"):
-        return _localize_monitor_text_final("Needle edit recorded. Check that the path traverses safe tissue and keeps distance from non-traversable OARs.", language)
-    if etype in {"planning.step", "segmentation.step"}:
-        stage = _monitor_step_label_final(_monitor_step_key(event), language)
-        status = _monitor_event_status(event)
-        messages = {
-            "running": f"{stage} 正在执行；完成后我会核对 Data Tree 和 viewer 输出。" if language == "zh" else f"{stage} is running; I will verify the Data Tree and viewer output when it finishes.",
-            "done": f"{stage} 已完成；请先核对 Data Tree 和 viewer 输出，再继续下一步。" if language == "zh" else f"{stage} completed; verify the Data Tree and viewer output before the next prerequisite step.",
-            "error": f"{stage} 执行失败；请检查错误详情并确认输入数据。" if language == "zh" else f"{stage} failed; inspect the error details and confirm the input data.",
-            "event": f"已记录 {stage} 事件；请核对 Data Tree 输出。" if language == "zh" else f"{stage} event recorded; verify its Data Tree output.",
-        }
-        return messages.get(status, messages["event"])
-    if etype == "manual.dose":
-        if v100 is not None and d90 is not None:
-            return _localize_monitor_text_final(f"Dose preview updated: V100={v100 * 100:.1f}%, D90={d90:.1f} Gy. Review hot spots and OAR dose before adding seeds.", language)
-        return _localize_monitor_text_final("Dose preview updated. Open Analysis to inspect DVH and OAR dose.", language)
-    return None
-
-
-def _training_screenshot_for_event_final(agent, session_id: Optional[str], event: Dict[str, Any], feedback: Optional[str]) -> Optional[Dict[str, Any]]:
-    if not feedback:
-        return None
-    etype = str(event.get("type", ""))
-    detail = _monitor_event_detail(event)
-    language = _monitor_language(event.get("language") or detail.get("language"))
-    status = _monitor_event_status(event)
-    if etype in {"planning.step", "segmentation.step"} and status != "done":
-        return None
-    snapshot = _latest_plan_snapshot(agent)
-    metrics = snapshot.get("metrics", {}) or {}
-    v100 = _volume_metric_as_fraction(metrics, "v100")
-    v200 = _volume_metric_as_fraction(metrics, "v200")
-    criteria = _source_backed_target_context(agent).get("criteria", {})
-    v100_min = _metric_as_fraction(_extract_metric_value(criteria, "v100_min"))
-    v200_max = _metric_as_fraction(_extract_metric_value(criteria, "v200_max"))
-    focus_ids = []
-    for pair in (snapshot.get("seed_interference", {}) or {}).get("close_pairs", [])[:4]:
-        for key in ("first_id", "second_id"):
-            seed_id = str(pair.get(key) or "").strip()
-            if seed_id and seed_id not in focus_ids:
-                focus_ids.append(seed_id)
-    def question(zh: str, en: str) -> str:
-        return zh if language == "zh" else en
-    if etype == "manual.dose":
-        concern = (v100 is not None and v100_min is not None and v100 < v100_min) or (v200 is not None and v200_max is not None and v200 > v200_max)
-        result = {
-            "target": "dose-overview" if concern else "dvh",
-            "question": question(
-                "监测截图：显示手动剂量重算后的 CT、掩膜、剂量热图、粒子、针道和 DVH。" if concern else "监测截图：显示手动剂量重算后的 DVH。",
-                "Training monitor snapshot: show the CT, masks, dose heatmap, seeds/needles, and DVH after manual dose recomputation." if concern else "Training monitor snapshot: show the updated DVH after manual dose recomputation.",
-            ),
-        }
-        if focus_ids:
-            result["focus_seed_ids"] = focus_ids
-        return result
-    if etype == "segmentation.step":
-        return {"target": "viewer-3d", "question": question("监测截图：显示刚加载的 CTV/OAR 结构、3D 查看器和 Data Tree。", "Training monitor snapshot: show the newly loaded CTV/OAR structures in the 3D viewer and Data Tree.")}
-    if etype == "planning.step":
-        key = _monitor_step_key(event)
-        if key in {"trajectory_init", "trajectory_refine", "seed_planning"}:
-            stage = _monitor_step_label_final(key, language)
-            return {"target": "viewer-3d", "question": question(f"监测截图：显示 {stage} 完成后的 3D 查看器、针道、粒子和 Data Tree。", f"Training monitor snapshot: show the 3D viewer, needle/seed output, and Data Tree after {_monitor_step_label_final(key)}.")}
-        if key in {"dose_calc", "dose_eval", "full"}:
-            return {"target": "dose-overview", "question": question("监测截图：显示规划完成后的剂量分布和 DVH。", "Training monitor snapshot: show the completed plan dose distribution and DVH for review.")}
-        return None
-    if etype.startswith("manual.needle"):
-        return {"target": "viewer-3d", "question": question("监测截图：显示当前 3D 针道和附近的解剖结构。", "Training monitor snapshot: show the current 3D needle path and nearby anatomy.")}
-    if etype.startswith("manual.seed"):
-        result = {"target": "viewer-3d", "question": question("监测截图：显示被编辑的粒子及其邻近粒子，用于检查间距。", "Training monitor snapshot: show the edited seed and nearby seeds so spacing can be checked.")}
-        if focus_ids:
-            result["focus_seed_ids"] = focus_ids
-        return result
-    return None
-
-
-_monitor_step_label = _monitor_step_label_final
-_localize_monitor_text = _localize_monitor_text_final
-_monitor_activity_label = _monitor_activity_label_final
-_format_training_summary = _format_training_summary_final
-_training_feedback_for_event = _training_feedback_for_event_final
-_training_screenshot_for_event = _training_screenshot_for_event_final
-
-
-# The historical compatibility block above contains mojibake literals from an
-# old source-encoding conversion.  Keep it import-compatible, but make the
-# public monitor helpers resolve to this ASCII-source implementation so the
-# runtime always emits real UTF-8 text for Chinese users.
-def _monitor_step_label_clean(key: str, language: str = "en") -> str:
-    labels = {
-        "ctv": ("CTV \u5206\u5272", "CTV segmentation"),
-        "oar": ("OAR \u5206\u5272", "OAR segmentation"),
-        "trajectory_init": ("\u8f68\u8ff9\u521d\u59cb\u5316", "Trajectory initialization"),
-        "trajectory_refine": ("\u8f68\u8ff9\u4f18\u5316", "Trajectory refinement"),
-        "seed_planning": ("\u7c92\u5b50\u5e03\u6e90", "Seed planning"),
-        "dose_calc": ("\u5242\u91cf\u8ba1\u7b97", "Dose calculation"),
-        "dose_eval": ("\u5242\u91cf\u8bc4\u4f30", "Dose evaluation"),
-        "full": ("\u5b8c\u6574\u89c4\u5212\u6d41\u7a0b", "Full planning pipeline"),
-    }
-    pair = labels.get(key, (key or "\u6b65\u9aa4", key or "step"))
-    return pair[0] if language == "zh" else pair[1]
-
-
-def _localize_monitor_text_clean(value: Any, language: str = "en") -> str:
-    raw = str(value or "")
-    if language != "zh" or not raw:
-        return raw
-    exact = {
-        "Run dose evaluation to make V100/D90 advice available.":
-            "\u8bf7\u5148\u6267\u884c\u5242\u91cf\u8bc4\u4f30\uff0c\u4ee5\u4fbf\u751f\u6210 V100/D90 \u5efa\u8bae\u3002",
-        "Inspect cold CTV regions against the intended prescription coverage, then recompute dose and DVH after edits.":
-            "\u8bf7\u68c0\u67e5 CTV \u7684\u4f4e\u5242\u91cf\u533a\u57df\uff0c\u7f16\u8f91\u540e\u91cd\u65b0\u8ba1\u7b97\u5242\u91cf\u548c DVH\u3002",
-        "Compare D90 with the source-backed prescription convention for this tumor site before labeling coverage adequate or inadequate.":
-            "\u5224\u65ad\u8986\u76d6\u662f\u5426\u5145\u5206\u524d\uff0c\u8bf7\u5c06 D90 \u4e0e\u8be5\u90e8\u4f4d\u6709\u6765\u6e90\u4f9d\u636e\u7684\u5904\u65b9\u89c4\u8303\u8fdb\u884c\u6bd4\u8f83\u3002",
-        "Compare OAR doses against applicable site-specific guidance or the confirmed case protocol before classifying safety.":
-            "\u5224\u65ad\u5b89\u5168\u6027\u524d\uff0c\u8bf7\u4f9d\u636e\u9002\u7528\u7684\u90e8\u4f4d\u7279\u5f02\u6027\u6307\u5357\u6216\u5df2\u786e\u8ba4\u7684\u75c5\u4f8b\u65b9\u6848\u6bd4\u8f83 OAR \u5242\u91cf\u3002",
-        "Review whether the current seed count and spacing are sufficient for the requested coverage after applying source-backed criteria.":
-            "\u6839\u636e\u6709\u6765\u6e90\u7684\u6807\u51c6\uff0c\u68c0\u67e5\u5f53\u524d\u7c92\u5b50\u6570\u91cf\u548c\u95f4\u8ddd\u662f\u5426\u8db3\u4ee5\u8fbe\u5230\u76ee\u6807\u8986\u76d6\u3002",
-        "Recent manual edits were detected; recompute dose after each seed or needle adjustment to keep DVH current.":
-            "\u68c0\u6d4b\u5230\u8fd1\u671f\u624b\u52a8\u7f16\u8f91\uff1b\u6bcf\u6b21\u8c03\u6574\u7c92\u5b50\u6216\u9488\u9053\u540e\u8bf7\u91cd\u65b0\u8ba1\u7b97\u5242\u91cf\uff0c\u4ee5\u4fdd\u6301 DVH \u4e3a\u6700\u65b0\u7ed3\u679c\u3002",
-        "No seeds are present. Add a needle and place seeds through the CTV before dose evaluation.":
-            "\u5f53\u524d\u6ca1\u6709\u7c92\u5b50\u3002\u8bf7\u5148\u6dfb\u52a0\u9488\u9053\u5e76\u5728 CTV \u5185\u5e03\u7f6e\u7c92\u5b50\uff0c\u518d\u8fdb\u884c\u5242\u91cf\u8bc4\u4f30\u3002",
-        "Dose preview updated. Open Analysis to inspect DVH and OAR dose.":
-            "\u5242\u91cf\u9884\u89c8\u5df2\u66f4\u65b0\u3002\u8bf7\u6253\u5f00\u5206\u6790\u9762\u677f\u67e5\u770b DVH \u548c OAR \u5242\u91cf\u3002",
-        "Seed geometry was not available for the monitor; verify seed spacing directly in the 3D viewer.":
-            "\u76d1\u6d4b\u5668\u672a\u83b7\u53d6\u7c92\u5b50\u51e0\u4f55\u4fe1\u606f\uff0c\u8bf7\u76f4\u63a5\u5728 3D \u67e5\u770b\u5668\u4e2d\u6838\u5bf9\u7c92\u5b50\u95f4\u8ddd\u3002",
-        "Inspect the highlighted seed pairs in the 3D viewer, correct their axial spacing, and recompute dose before final review.":
-            "\u8bf7\u5728 3D viewer \u4e2d\u68c0\u67e5\u9ad8\u4eae\u7c92\u5b50\u7ec4\u5408\uff0c\u4fee\u6b63\u8f74\u5411\u95f4\u8ddd\u5e76\u91cd\u65b0\u8ba1\u7b97\u5242\u91cf\u3002",
-        "Move or remove every obstacle-intersecting needle before dose review or Surgical Guide generation.":
-            "\u8bf7\u5728\u5242\u91cf\u5ba1\u6838\u6216\u751f\u6210\u624b\u672f\u5bfc\u677f\u524d\uff0c\u79fb\u52a8\u6216\u5220\u9664\u6240\u6709\u4e0e\u4e0d\u53ef\u7a7f\u523a\u7ed3\u6784\u76f8\u4ea4\u7684\u9488\u9053\u3002",
-        "Review the highlighted needle pairs for physical collision and guide-sleeve manufacturability.":
-            "\u8bf7\u68c0\u67e5\u9ad8\u4eae\u9488\u9053\u7ec4\u5408\u662f\u5426\u53d1\u751f\u7269\u7406\u78b0\u649e\uff0c\u5e76\u786e\u8ba4\u5bfc\u5411\u5957\u7b52\u53ef\u5236\u9020\u3002",
-        "Recompute the outdated dose/DVH and regenerate the Surgical Guide before finalizing the plan.":
-            "\u8bf7\u91cd\u65b0\u8ba1\u7b97\u5df2\u8fc7\u671f\u7684\u5242\u91cf\u548c DVH\uff0c\u5e76\u91cd\u65b0\u751f\u6210\u624b\u672f\u5bfc\u677f\u540e\u518d\u5b8c\u6210\u89c4\u5212\u3002",
-        "No Surgical Guide has been generated for the current needle plan.":
-            "\u5f53\u524d\u9488\u9053\u89c4\u5212\u5c1a\u672a\u751f\u6210\u624b\u672f\u5bfc\u677f\u3002",
-        "The Surgical Guide does not match the current planning version.":
-            "\u624b\u672f\u5bfc\u677f\u4e0e\u5f53\u524d\u9488\u9053\u89c4\u5212\u4e0d\u4e00\u81f4\uff0c\u5df2\u6807\u8bb0\u4e3a\u8fc7\u671f\u3002",
-    }
-    if raw in exact:
-        return exact[raw]
-    patterns = (
-        (r"CTV V100 is ([0-9.]+)%; compare it with the applicable site-specific guidance or confirmed case protocol target\.",
-         lambda match: f"CTV V100 \u4e3a {match.group(1)}%\uff0c\u8bf7\u4e0e\u9002\u7528\u7684\u90e8\u4f4d\u7279\u5f02\u6027\u6307\u5357\u6216\u5df2\u786e\u8ba4\u7684\u75c5\u4f8b\u65b9\u6848\u76ee\u6807\u6bd4\u8f83\u3002"),
-        (r"CTV D90 is ([0-9.]+) Gy(?:; current dose reference is ([0-9.]+) Gy)?\.",
-         lambda match: f"CTV D90 \u4e3a {match.group(1)} Gy" + (f"\uff0c\u5f53\u524d\u5242\u91cf\u53c2\u8003\u4e3a {match.group(2)} Gy" if match.group(2) else "") + "\u3002"),
-        (r"CTV V200 is ([0-9.]+)%; inspect the corresponding hot-spot location in 2D/3D\.",
-         lambda match: f"CTV V200 \u4e3a {match.group(1)}%\uff0c\u8bf7\u5728 2D/3D \u67e5\u770b\u5668\u4e2d\u68c0\u67e5\u5bf9\u5e94\u7684\u70ed\u70b9\u4f4d\u7f6e\u3002"),
-        (r"CTV V150 is ([0-9.]+)%; interpret uniformity with the current site-specific criteria\.",
-         lambda match: f"CTV V150 \u4e3a {match.group(1)}%\uff0c\u8bf7\u6309\u5f53\u524d\u90e8\u4f4d\u7279\u5f02\u6027\u6807\u51c6\u5224\u65ad\u5747\u5300\u6027\u3002"),
-        (r"Plan score is ([0-9.]+)/100; use it as an advisory ranking signal, not approval\.",
-         lambda match: f"\u89c4\u5212\u8bc4\u5206\u4e3a {match.group(1)}/100\uff0c\u8be5\u5206\u6570\u4ec5\u7528\u4e8e\u8f85\u52a9\u6392\u5e8f\uff0c\u4e0d\u4ee3\u8868\u4e34\u5e8a\u6279\u51c6\u3002"),
-        (r"No seed pair violates the ([0-9.]+) mm minimum physical surface-clearance rule in the current committed plan\.",
-         lambda match: f"\u5f53\u524d\u5df2\u63d0\u4ea4\u89c4\u5212\u4e2d\u6ca1\u6709\u7c92\u5b50\u5bf9\u8fdd\u53cd {match.group(1)} mm \u7684\u6700\u5c0f\u7269\u7406\u8868\u9762\u95f4\u9699\u8981\u6c42\u3002"),
-        (r"(.+) \((.*)\) and (.+) \((.*)\): center distance ([0-9.]+) mm, surface clearance ([0-9.-]+) mm \[(.+)\]\.",
-         lambda match: (
-             f"\u7c92\u5b50 {match.group(1)}\uff08{match.group(2)}\uff09\u4e0e "
-             f"{match.group(3)}\uff08{match.group(4)}\uff09\u7684\u4e2d\u5fc3\u8ddd\u79bb\u4e3a "
-             f"{match.group(5)} mm\uff0c\u8868\u9762\u95f4\u9699\u4e3a {match.group(6)} mm"
-             f"\uff08{match.group(7)}\uff09\u3002"
-         )),
-        (r"(.+) and (.+) are ([0-9.]+) mm apart \(minimum ([0-9.]+) mm; (.+)\)\.",
-         lambda match: (
-             f"\u9488\u9053 {match.group(1)} \u4e0e {match.group(2)} \u7684\u6700\u77ed\u8ddd\u79bb\u4e3a "
-             f"{match.group(3)} mm\uff1b\u5f53\u524d\u914d\u7f6e\u7684\u6700\u5c0f\u8ddd\u79bb\u4e3a "
-             f"{match.group(4)} mm\u3002"
-         )),
-    )
-    for pattern, formatter in patterns:
-        match = re.fullmatch(pattern, raw)
-        if match:
-            return formatter(match)
-    if raw.startswith("Top OAR doses: "):
-        return "OAR \u6700\u9ad8\u5242\u91cf\u7ed3\u6784\uff1a" + raw[len("Top OAR doses: "):]
-    if raw.startswith("Needles intersecting current Data Tree non-traversable structures: "):
-        names = raw[len("Needles intersecting current Data Tree non-traversable structures: "):].rstrip(".")
-        return f"\u9488\u9053 {names} \u4e0e\u5f53\u524d Data Tree \u4e2d\u7684\u4e0d\u53ef\u7a7f\u523a\u7ed3\u6784\u76f8\u4ea4\u3002"
-    if raw.startswith("Outdated dependent results: "):
-        names = raw[len("Outdated dependent results: "):].rstrip(".")
-        return f"\u624b\u52a8\u51e0\u4f55\u7f16\u8f91\u540e\uff0c\u89c4\u5212\u4ea7\u7269 {names} \u5df2\u8fc7\u671f\u3002"
-    if raw.startswith("Needle edit recorded."):
-        return "\u5df2\u8bb0\u5f55\u9488\u9053\u7f16\u8f91\u3002\u8bf7\u786e\u8ba4\u9488\u9053\u7ecf\u8fc7\u5b89\u5168\u7ec4\u7ec7\uff0c\u5e76\u4e0e\u4e0d\u53ef\u7a7f\u523a OAR \u4fdd\u6301\u8ddd\u79bb\u3002"
-    if raw.startswith("Seed edit recorded."):
-        return "\u5df2\u8bb0\u5f55\u7c92\u5b50\u7f16\u8f91\u3002\u8bf7\u91cd\u65b0\u8ba1\u7b97\u5242\u91cf\u5e76\u6838\u5bf9 DVH\uff0c\u518d\u653e\u7f6e\u4e0b\u4e00\u679a\u7c92\u5b50\u3002"
-    return raw
-
-
-def _monitor_activity_label_clean(key: str, language: str = "en") -> str:
-    labels = {
-        "planning.step": ("\u89c4\u5212\u6b65\u9aa4", "Planning steps"),
-        "segmentation.step": ("\u5206\u5272\u6b65\u9aa4", "Segmentation steps"),
-        "manual.needle.drag": ("\u624b\u52a8\u9488\u9053\u62d6\u62fd", "Manual needle drags"),
-        "manual.needle.position_only": ("\u624b\u52a8\u9488\u9053\u4f4d\u7f6e\u8c03\u6574", "Manual needle position updates"),
-        "manual.needle.add": ("\u624b\u52a8\u6dfb\u52a0\u9488\u9053", "Manual needle additions"),
-        "manual.needle.delete": ("\u624b\u52a8\u5220\u9664\u9488\u9053", "Manual needle deletions"),
-        "manual.seed.drag": ("\u624b\u52a8\u7c92\u5b50\u62d6\u62fd", "Manual seed drags"),
-        "manual.seed.add": ("\u624b\u52a8\u6dfb\u52a0\u7c92\u5b50", "Manual seed additions"),
-        "manual.seed.delete": ("\u624b\u52a8\u5220\u9664\u7c92\u5b50", "Manual seed deletions"),
-        "manual.dose": ("\u624b\u52a8\u5242\u91cf\u91cd\u7b97", "Manual dose updates"),
-        "ui.panel": ("\u9762\u677f\u64cd\u4f5c", "Panel interactions"),
-        "ui.click": ("\u70b9\u51fb\u64cd\u4f5c", "Click interactions"),
-        "ui.change": ("\u63a7\u4ef6\u4fee\u6539", "Control changes"),
-        "ui.slider": ("\u6ed1\u5757\u8c03\u6574", "Slider changes"),
-        "training.start": ("\u76d1\u6d4b\u542f\u52a8", "Monitor starts"),
-        "training.stop": ("\u76d1\u6d4b\u7ed3\u675f", "Monitor stops"),
-    }
-    pair = labels.get(key)
-    if pair:
-        return pair[0] if language == "zh" else pair[1]
-    return (key.replace(".", " ").strip().title() or "\u5176\u4ed6\u4e8b\u4ef6") if language == "zh" else (key.replace(".", " ").strip().title() or "Other events")
-
-
-def _format_training_summary_clean(events: list, counts: Dict[str, int], advice: Dict[str, Any], language: str = "en") -> str:
-    if language == "zh":
-        lines = ["## \u89c4\u5212\u76d1\u6d4b\u603b\u7ed3", f"\u672c\u6b21\u76d1\u6d4b\u8bb0\u5f55\u4e86 {len(events)} \u4e2a\u754c\u9762\u6216\u89c4\u5212\u4e8b\u4ef6\u3002"]
-        headings = ("\u6d3b\u52a8\u6982\u89c8", "\u5f53\u524d\u4f18\u52bf", "\u9700\u8981\u5173\u6ce8", "\u5efa\u8bae")
-    else:
-        lines = ["## Planning monitoring summary", f"Recorded {len(events)} UI/planning events."]
-        headings = ("Activity", "Strengths", "Issues", "Recommendations")
-    high_value_counts = {
-        key: count for key, count in (counts or {}).items()
-        if key not in {"ui.click", "ui.panel", "ui.change", "ui.slider"}
-    }
-    display_counts = high_value_counts or (counts or {})
-    if display_counts:
-        lines.extend(["", f"### {headings[0]}"])
-        for key, count in sorted(display_counts.items(), key=lambda item: item[1], reverse=True)[:8]:
-            lines.append(f"- {_monitor_activity_label_clean(key, language)}: {count}")
-    advice = advice or {}
-    for heading, key in zip(headings[1:], ("strengths", "issues", "advice")):
-        values = advice.get(key) or []
-        if values:
-            lines.extend(["", f"### {heading}"])
-            lines.extend(f"- {_localize_monitor_text_clean(value, language)}" for value in values)
-    return "\n".join(lines)
-
-
-def _training_feedback_for_event_clean(agent, session_id: Optional[str], event: Dict[str, Any]) -> Optional[str]:
-    event_type = str(event.get("type", ""))
-    detail = _monitor_event_detail(event)
-    if event_type.startswith("manual.") and detail.get("commit_status") != "committed":
-        # Manual previews can be rejected and rolled back. Monitor only the
-        # server-owned commit event so its advice, screenshot and final counts
-        # can never describe geometry that was not saved.
-        return None
-    language = _monitor_language(event.get("language") or detail.get("language"))
-    snapshot = _latest_plan_snapshot(agent)
-    metrics = snapshot.get("metrics", {}) or {}
-    v100 = _volume_metric_as_fraction(metrics, "v100")
-    d90 = _extract_metric_value(metrics, "d90")
-    target = _source_backed_target_context(agent).get("criteria", {})
-    v100_min = _metric_as_fraction(_extract_metric_value(target, "v100_min"))
-    if event_type.startswith("manual.seed"):
-        interference = snapshot.get("seed_interference") or {}
-        if interference.get("status") == "attention":
-            pairs = list(interference.get("close_pairs") or [])
-            worst = min(
-                pairs,
-                key=lambda pair: float(pair.get("surface_clearance_mm") or 0.0),
-            )
-            if language == "zh":
-                return (
-                    f"已记录粒子编辑。检测到 {len(pairs)} 组粒子违反物理间距要求；"
-                    f"最严重的是 {worst.get('first_id')} 与 {worst.get('second_id')}，"
-                    f"表面间隙为 {float(worst.get('surface_clearance_mm') or 0.0):.2f} mm。"
-                    "已准备对应的 3D 特写，请先调整间距再继续。"
-                )
-            return (
-                f"Seed edit recorded. {len(pairs)} pair(s) violate the physical spacing rule; "
-                f"the worst pair is {worst.get('first_id')} and {worst.get('second_id')} "
-                f"with {float(worst.get('surface_clearance_mm') or 0.0):.2f} mm surface clearance. "
-                "A focused 3D checkpoint is ready; correct the spacing before continuing."
-            )
-        if v100 is not None and v100_min is not None and v100 < v100_min:
-            return _localize_monitor_text_clean(
-                f"Seed edit recorded. Current V100 is {v100 * 100:.1f}%; inspect cold CTV regions after recompute.",
-                language,
-            )
-        return _localize_monitor_text_clean("Seed edit recorded. Recompute dose and verify DVH before placing the next seed.", language)
-    if event_type.startswith("manual.needle"):
-        needle_geometry = snapshot.get("needle_geometry") or {}
-        obstacle_hits = list(needle_geometry.get("obstacle_hits") or [])
-        if obstacle_hits:
-            names = ", ".join(obstacle_hits[:12])
-            if language == "zh":
-                return f"针道编辑已记录。针道 {names} 与当前 Data Tree 中的不可穿刺结构相交，请先修正路径。"
-            return (
-                f"Needle edit recorded. {names} intersect the current Data Tree "
-                "non-traversable structures; correct these paths before continuing."
-            )
-        close_pairs = list(needle_geometry.get("close_pairs") or [])
-        if close_pairs:
-            worst = min(close_pairs, key=lambda pair: float(pair.get("distance_mm") or 0.0))
-            if language == "zh":
-                return (
-                    f"针道编辑已记录。{worst.get('first_id')} 与 {worst.get('second_id')} "
-                    f"的最短距离为 {float(worst.get('distance_mm') or 0.0):.2f} mm，"
-                    f"低于要求的 {float(worst.get('minimum_distance_mm') or 0.0):.2f} mm。"
-                )
-            return (
-                f"Needle edit recorded. {worst.get('first_id')} and {worst.get('second_id')} "
-                f"are {float(worst.get('distance_mm') or 0.0):.2f} mm apart, below the "
-                f"{float(worst.get('minimum_distance_mm') or 0.0):.2f} mm minimum."
-            )
-        return _localize_monitor_text_clean(
-            "Needle edit recorded. Check that the path traverses safe tissue and keeps distance from non-traversable OARs.",
-            language,
-        )
-    if event_type in {"planning.step", "segmentation.step"}:
-        stage = _monitor_step_label_clean(_monitor_step_key(event), language)
-        status = _monitor_event_status(event)
-        if status == "running":
-            return f"{stage} \u6b63\u5728\u6267\u884c\uff1b\u5b8c\u6210\u540e\u6211\u4f1a\u6838\u5bf9 Data Tree \u548c viewer \u8f93\u51fa\u3002" if language == "zh" else f"{stage} is running; I will verify the Data Tree and viewer output when it finishes."
-        if status == "done":
-            return f"{stage} \u5df2\u5b8c\u6210\uff1b\u8bf7\u5148\u6838\u5bf9 Data Tree \u548c viewer \u8f93\u51fa\uff0c\u518d\u7ee7\u7eed\u4e0b\u4e00\u6b65\u3002" if language == "zh" else f"{stage} completed; verify the Data Tree and viewer output before the next prerequisite step."
-        if status == "error":
-            return f"{stage} \u6267\u884c\u5931\u8d25\uff1b\u8bf7\u68c0\u67e5\u9519\u8bef\u8be6\u60c5\u5e76\u786e\u8ba4\u8f93\u5165\u6570\u636e\u3002" if language == "zh" else f"{stage} failed; inspect the error details and confirm the input data."
-        return f"\u5df2\u8bb0\u5f55 {stage} \u4e8b\u4ef6\uff1b\u8bf7\u6838\u5bf9 Data Tree \u8f93\u51fa\u3002" if language == "zh" else f"{stage} event recorded; verify its Data Tree output."
-    if event_type == "manual.dose":
-        if v100 is not None and d90 is not None:
-            return _localize_monitor_text_clean(
-                f"Dose preview updated: V100={v100 * 100:.1f}%, D90={d90:.1f} Gy. Review hot spots and OAR dose before adding seeds.",
-                language,
-            )
-        return _localize_monitor_text_clean("Dose preview updated. Open Analysis to inspect DVH and OAR dose.", language)
-    return None
-
-
-def _training_screenshot_for_event_clean(agent, session_id: Optional[str], event: Dict[str, Any], feedback: Optional[str]) -> Optional[Dict[str, Any]]:
-    if not feedback:
-        return None
-    event_type = str(event.get("type", ""))
-    detail = _monitor_event_detail(event)
-    language = _monitor_language(event.get("language") or detail.get("language"))
-    if event_type in {"planning.step", "segmentation.step"} and _monitor_event_status(event) != "done":
-        return None
-    snapshot = _latest_plan_snapshot(agent)
-    metrics = snapshot.get("metrics", {}) or {}
-    v100 = _volume_metric_as_fraction(metrics, "v100")
-    v200 = _volume_metric_as_fraction(metrics, "v200")
-    criteria = _source_backed_target_context(agent).get("criteria", {})
-    v100_min = _metric_as_fraction(_extract_metric_value(criteria, "v100_min"))
-    v200_max = _metric_as_fraction(_extract_metric_value(criteria, "v200_max"))
-    focus_ids = []
-    for pair in (snapshot.get("seed_interference", {}) or {}).get("close_pairs", [])[:4]:
-        for key in ("first_id", "second_id"):
-            seed_id = str(pair.get(key) or "").strip()
-            if seed_id and seed_id not in focus_ids:
-                focus_ids.append(seed_id)
-    def question(zh: str, en: str) -> str:
-        return zh if language == "zh" else en
-    if event_type == "manual.dose":
-        concern = (v100 is not None and v100_min is not None and v100 < v100_min) or (v200 is not None and v200_max is not None and v200 > v200_max)
-        result = {
-            "target": "dose-overview" if concern else "dvh",
-            "question": question(
-                "\u76d1\u6d4b\u622a\u56fe\uff1a\u663e\u793a\u624b\u52a8\u5242\u91cf\u91cd\u7b97\u540e\u7684 CT\u3001\u63a9\u819c\u3001\u5242\u91cf\u70ed\u56fe\u3001\u7c92\u5b50\u3001\u9488\u9053\u548c DVH\u3002" if concern else "\u76d1\u6d4b\u622a\u56fe\uff1a\u663e\u793a\u624b\u52a8\u5242\u91cf\u91cd\u7b97\u540e\u7684 DVH\u3002",
-                "Training monitor snapshot: show the CT, masks, dose heatmap, seeds/needles, and DVH after manual dose recomputation." if concern else "Training monitor snapshot: show the updated DVH after manual dose recomputation.",
-            ),
-        }
-        if focus_ids:
-            result["focus_seed_ids"] = focus_ids
-        return result
-    if event_type == "segmentation.step":
-        return {"target": "viewer-3d", "question": question("\u76d1\u6d4b\u622a\u56fe\uff1a\u663e\u793a\u65b0\u52a0\u8f7d\u7684 CTV/OAR \u7ed3\u6784\u3001 3D \u67e5\u770b\u5668\u548c Data Tree\u3002", "Training monitor snapshot: show the newly loaded CTV/OAR structures in the 3D viewer and Data Tree.")}
-    if event_type == "planning.step":
-        key = _monitor_step_key(event)
-        if key in {"trajectory_init", "trajectory_refine", "seed_planning"}:
-            stage = _monitor_step_label_clean(key, language)
-            return {"target": "viewer-3d", "question": question(f"\u76d1\u6d4b\u622a\u56fe\uff1a\u663e\u793a {stage} \u5b8c\u6210\u540e\u7684 3D \u67e5\u770b\u5668\u3001\u9488\u9053\u3001\u7c92\u5b50\u548c Data Tree\u3002", f"Training monitor snapshot: show the 3D viewer, needle/seed output, and Data Tree after {_monitor_step_label_clean(key)}.")}
-        if key in {"dose_calc", "dose_eval", "full"}:
-            return {"target": "dose-overview", "question": question("\u76d1\u6d4b\u622a\u56fe\uff1a\u663e\u793a\u89c4\u5212\u5b8c\u6210\u540e\u7684\u5242\u91cf\u5206\u5e03\u548c DVH\u3002", "Training monitor snapshot: show the completed plan dose distribution and DVH for review.")}
-        return None
-    if event_type.startswith("manual.needle"):
-        return {"target": "viewer-3d", "question": question("\u76d1\u6d4b\u622a\u56fe\uff1a\u663e\u793a\u5f53\u524d 3D \u9488\u9053\u548c\u9644\u8fd1\u7684\u89e3\u5256\u7ed3\u6784\u3002", "Training monitor snapshot: show the current 3D needle path and nearby anatomy.")}
-    if event_type.startswith("manual.seed"):
-        result = {"target": "viewer-3d", "question": question("\u76d1\u6d4b\u622a\u56fe\uff1a\u663e\u793a\u88ab\u7f16\u8f91\u7684\u7c92\u5b50\u53ca\u5176\u90bb\u8fd1\u7c92\u5b50\uff0c\u7528\u4e8e\u68c0\u67e5\u95f4\u8ddd\u3002", "Training monitor snapshot: show the edited seed and nearby seeds so spacing can be checked.")}
-        if focus_ids:
-            result["focus_seed_ids"] = focus_ids
-        return result
-    return None
-
-
-_monitor_step_label = _monitor_step_label_clean
-_localize_monitor_text = _localize_monitor_text_clean
-_monitor_activity_label = _monitor_activity_label_clean
-_format_training_summary = _format_training_summary_clean
-_training_feedback_for_event = _training_feedback_for_event_clean
-_training_screenshot_for_event = _training_screenshot_for_event_clean
+from web.monitor_engine import (
+    _monitor_step_label,
+    _localize_monitor_text,
+    _monitor_activity_label,
+    _format_training_summary,
+    _training_feedback_for_event,
+    _training_screenshot_for_event,
+)
 
 
 # Public support surface. Route modules import private helpers explicitly via

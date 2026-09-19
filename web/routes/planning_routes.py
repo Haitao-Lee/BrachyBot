@@ -1026,9 +1026,41 @@ def _validate_screenshot_annotation_marks(
 _UI_BRIDGE_CHECKPOINT_LOCK = threading.Lock()
 _UI_BRIDGE_CHECKPOINT_PENDING: Dict[tuple, tuple] = {}
 _UI_BRIDGE_CHECKPOINT_TIMERS: Dict[tuple, threading.Timer] = {}
+_UI_BRIDGE_CHECKPOINT_OWNERS: Dict[str, tuple] = {}
+_UI_BRIDGE_WRITE_LOCK = threading.RLock()
 
 
 def _flush_ui_bridge_checkpoint(key: tuple) -> None:
+    with _UI_BRIDGE_WRITE_LOCK:
+        _write_ui_bridge_checkpoint(key)
+
+
+def _persist_closed_ui_bridge(session_id: str, bridge: dict) -> None:
+    """Flush a detached/closed bridge using the authenticated owner already recorded."""
+    with _UI_BRIDGE_WRITE_LOCK:
+        with _UI_BRIDGE_LOCK:
+            live = _server_support._UI_BRIDGE.get(session_id)
+            if live:
+                live_updated = float(live.get("updated_at") or 0)
+                detached_updated = float(bridge.get("updated_at") or 0)
+                if live_updated > detached_updated or (
+                    live_updated == detached_updated and live != bridge
+                ):
+                    return  # Preserve a newer or same-clock-but-different live snapshot.
+        with _UI_BRIDGE_CHECKPOINT_LOCK:
+            owner = _UI_BRIDGE_CHECKPOINT_OWNERS.pop(session_id, None)
+            if owner is None:
+                return
+            store, user_id, selected = owner
+            key = (str(user_id), str(selected))
+            timer = _UI_BRIDGE_CHECKPOINT_TIMERS.pop(key, None)
+            if timer:
+                timer.cancel()
+            _UI_BRIDGE_CHECKPOINT_PENDING[key] = (store, user_id, selected, bridge, "training.closed")
+        _write_ui_bridge_checkpoint(key)
+
+
+def _write_ui_bridge_checkpoint(key: tuple) -> None:
     with _UI_BRIDGE_CHECKPOINT_LOCK:
         item = _UI_BRIDGE_CHECKPOINT_PENDING.pop(key, None)
         _UI_BRIDGE_CHECKPOINT_TIMERS.pop(key, None)
@@ -2728,6 +2760,47 @@ def register_planning_routes(
             return _ui_session_id("web")
         return _ui_session_id(session_id)
 
+    def public_training_status(training: Any) -> Dict[str, Any]:
+        """Return monitor status without event bodies or internal replay IDs."""
+        record = training if isinstance(training, dict) else {}
+        events = record.get("events")
+        events = events if isinstance(events, list) else []
+        feedback_items = record.get("feedback")
+        feedback_items = feedback_items if isinstance(feedback_items, list) else []
+        counts = record.get("event_counts")
+        if isinstance(counts, dict):
+            normalized_counts = {}
+            for key, value in list(counts.items())[:128]:
+                try:
+                    normalized_counts[str(key)] = max(0, int(value))
+                except (TypeError, ValueError, OverflowError):
+                    continue
+            counts = normalized_counts
+        else:
+            counts = {}
+            for event in events:
+                key = str(event.get("type") or "ui.event") if isinstance(event, dict) else "ui.event"
+                counts[key] = counts.get(key, 0) + 1
+        try:
+            dropped_event_count = max(0, int(record.get("dropped_event_count") or 0))
+        except (TypeError, ValueError, OverflowError):
+            dropped_event_count = 0
+        return {
+            "active": bool(record.get("active")),
+            "phase": record.get("phase") or ("active" if record.get("active") else "inactive"),
+            "run_id": record.get("run_id"),
+            "goal": record.get("goal") or "",
+            "language": record.get("language") or "en",
+            "started_at": record.get("started_at"),
+            "last_activity_at": record.get("last_activity_at"),
+            "stopped_at": record.get("stopped_at"),
+            "event_count": sum(counts.values()),
+            "event_counts": dict(counts),
+            "retained_event_count": len(record.get("events") or []),
+            "dropped_event_count": dropped_event_count,
+            "feedback_count": len(feedback_items),
+        }
+
     def serialize_manual_dose_request(view):
         """Serialize expensive manual dose edits per selected case.
 
@@ -2775,11 +2848,12 @@ def register_planning_routes(
             bridge = {
                 "state": dict(bucket.get("state") or {}),
                 "events": list(bucket.get("events") or []),
-                "training": dict(bucket.get("training") or {}),
+                "training": copy.deepcopy(bucket.get("training") or {}),
                 "updated_at": bucket.get("updated_at"),
             }
         key = (str(user["id"]), str(selected))
         with _UI_BRIDGE_CHECKPOINT_LOCK:
+            _UI_BRIDGE_CHECKPOINT_OWNERS[str(session_id)] = (store, user["id"], selected)
             _UI_BRIDGE_CHECKPOINT_PENDING[key] = (
                 store,
                 user["id"],
@@ -2792,6 +2866,19 @@ def register_planning_routes(
                 timer.daemon = True
                 _UI_BRIDGE_CHECKPOINT_TIMERS[key] = timer
                 timer.start()
+
+    def record_read_time_monitor_expiry(session_id: str, bucket: dict) -> None:
+        training = bucket.get("training") or {}
+        run_id = training.get("last_run_id")
+        _server_support._append_ui_event(session_id, {
+            "type": "training.stop",
+            "label": "Monitor expired" if training.get("closed_reason") == "monitor_timeout" else "Monitor closed",
+            "detail": {"run_id": run_id, "reason": training.get("closed_reason")},
+            "language": training.get("language") or "en",
+        }, include_in_training=False, monitor_run_id=run_id)
+        checkpoint_ui_bridge(session_id, "training.stale_closed")
+
+    _server_support._set_ui_bridge_stale_handler(record_read_time_monitor_expiry)
 
     @app.route("/api/planning/clear", methods=["POST"])
     @require_api_key
@@ -4874,6 +4961,9 @@ def register_planning_routes(
                 "retrospective_advice": True,
                 "final_report_on_stop": True,
                 "screenshot_targets": ["dose-overview", "dvh", "viewer-3d"],
+                "timeline_endpoint": "/api/training/timeline",
+                "timeline_format": "application/json",
+                "retained_event_limit": _server_support._MONITOR_MAX_EVENTS,
             },
             "execution_tools": execution_tools,
         })
@@ -4911,7 +5001,7 @@ def register_planning_routes(
             or training_state.get("language")
             or (bucket.get("state") or {}).get("language")
         )
-        if isinstance(state_payload, dict):
+        if isinstance(state_payload, dict) and (not request_run_id or monitor_run_matches):
             with _UI_BRIDGE_LOCK:
                 bucket["state"] = state_payload
                 bucket["updated_at"] = time.time()
@@ -4930,47 +5020,74 @@ def register_planning_routes(
             # commit boundary.  Reuse that exact record for live feedback;
             # appending it again here doubled monitor counts/screenshots and
             # made failed optimistic previews look like successful edits.
-            event = dict(committed_event)
-            event.setdefault("type", data.get("type", "ui.event"))
-            event.setdefault("label", data.get("label", ""))
-            event.setdefault("detail", data.get("detail", {}))
-            event.setdefault("language", language)
+            with _UI_BRIDGE_LOCK:
+                event = next((dict(saved) for saved in reversed(bucket.get("events", []))
+                    if (committed_event.get("event_id") and saved.get("event_id") == committed_event.get("event_id"))
+                    or (not committed_event.get("event_id") and committed_event.get("ts")
+                        and saved.get("ts") == committed_event.get("ts")
+                        and saved.get("type") == committed_event.get("type"))), None)
+            if event is None:
+                return jsonify({"success": False, "error": "Committed event was not found in this case."}), 400
+            event["language"] = language
+            monitor_run_matches = monitor_run_matches and event.get("monitor_run_id") == request_run_id
         else:
             event = _append_ui_event(session_id, {
                 "type": data.get("type", "ui.event"),
                 "label": data.get("label", ""),
                 "detail": data.get("detail", {}),
                 "language": language,
-            })
+            }, monitor_run_id=request_run_id, authoritative=False,
+                include_in_training=monitor_run_matches and not str(data.get("type", "")).startswith("manual."))
         # The deterministic monitor checks are intentionally allowed to run
         # without a cached Agent.  A cold session must not make Monitor look
         # dead, and these helpers already degrade to event-focused guidance
         # when a clinical snapshot is unavailable.  Do not call get_agent here:
         # this request path must remain non-blocking during CT hydration.
-        feedback = (
-            _training_feedback_for_event(agent, session_id, event)
+        event_type = str(event.get("type") or "")
+        snapshot = (
+            _server_support._latest_plan_snapshot(agent, validate_obstacles=False)
+            if monitor_run_matches and event_type.startswith("manual.") else {}
+        )
+        monitor_run_matches = bool(monitor_run_matches and bucket.get("training", {}).get("active")
+            and bucket.get("training", {}).get("run_id") == request_run_id)
+        if already_recorded and monitor_run_matches:
+            with _UI_BRIDGE_LOCK:
+                seen = bucket["training"].setdefault("feedback_event_ids", [])
+                event_id = event.get("event_id") or str(event.get("ts"))
+                if event_id in seen:
+                    monitor_run_matches = False
+                else:
+                    seen.append(event_id)
+                    del seen[:-1000]
+        feedback_pair = (
+            _training_feedback_for_event(agent, session_id, event, snapshot=snapshot, return_pair=True)
             if monitor_run_matches else None
         )
+        feedback = feedback_pair.get("localized") if feedback_pair else None
         suggested_screenshot = (
-            _training_screenshot_for_event(agent, session_id, event, feedback)
+            _training_screenshot_for_event(agent, session_id, event, feedback, snapshot=snapshot)
             if monitor_run_matches else None
         )
         if feedback:
             with _UI_BRIDGE_LOCK:
                 training = bucket.setdefault("training", {})
-                if training.get("active"):
+                if training.get("active") and training.get("run_id") == request_run_id:
                     training.setdefault("feedback", []).append({"ts": time.time(), "message": feedback})
                     training["feedback"] = training["feedback"][-100:]
         checkpoint_ui_bridge(
             session_id,
             "ui.event_feedback" if already_recorded else "ui.event_saved",
         )
+        live_training = bucket.get("training") or {}
+        if not live_training.get("active") or live_training.get("run_id") != request_run_id:
+            feedback = None
+            suggested_screenshot = None
         return jsonify({
             "success": True,
             "event": event,
-            "training": bucket.get("training", {}),
+            "training": public_training_status(bucket.get("training")),
             "feedback": feedback if bucket.get("training", {}).get("active") else None,
-            "feedback_raw": feedback if bucket.get("training", {}).get("active") else None,
+            "feedback_raw": feedback_pair.get("raw") if feedback_pair and bucket.get("training", {}).get("active") else None,
             "feedback_localized": feedback if bucket.get("training", {}).get("active") else None,
             "suggested_screenshot": suggested_screenshot if bucket.get("training", {}).get("active") else None,
             "language": language,
@@ -4986,10 +5103,12 @@ def register_planning_routes(
         session_id = request_ui_session_id(data)
         goal = str(data.get("goal") or "Monitor my planning workflow").strip()
         bucket = _ui_bucket(session_id)
-        run_id = str(data.get("monitor_run_id") or uuid4().hex).strip()
+        run_id = str(data.get("monitor_run_id") or "").strip() or uuid4().hex
+        if len(run_id) > 128 or any(ord(c) < 32 for c in run_id):
+            return jsonify({"success": False, "error": "Invalid monitor_run_id"}), 400
         language = _monitor_language(
             data.get("language")
-            or (data.get("ui_state") or {}).get("language")
+            or (data.get("ui_state", {}).get("language") if isinstance(data.get("ui_state"), dict) else None)
             or (bucket.get("state") or {}).get("language")
         )
         with _UI_BRIDGE_LOCK:
@@ -5032,6 +5151,9 @@ def register_planning_routes(
                 "stopped_at": None,
                 "events": [],
                 "feedback": [],
+                "schema_version": 2,
+                "event_counts": {},
+                "dropped_event_count": 0,
             }
         _append_ui_event(
             session_id,
@@ -5074,7 +5196,7 @@ def register_planning_routes(
             active = bool(training.get("active"))
             language = _monitor_language(
                 data.get("language")
-                or (data.get("ui_state") or {}).get("language")
+                or (data.get("ui_state", {}).get("language") if isinstance(data.get("ui_state"), dict) else None)
                 or training.get("language")
                 or (bucket.get("state") or {}).get("language")
             )
@@ -5098,15 +5220,15 @@ def register_planning_routes(
                     "success": True,
                     "already_stopped": True,
                     "run_mismatch": True,
-                    "no_active_run": True,
+                    "no_active_run": False,
                     "session_id": session_id,
-                    "monitor_run_id": active_run_id,
-                    "training": training,
+                    "monitor_run_id": request_run_id,
+                    "matched": False,
                     "language": language,
                 })
-            training["active"] = False
-            training["stopped_at"] = time.time()
-            training["last_activity_at"] = training["stopped_at"]
+            training = bucket["training"] = _server_support._close_stale_training_snapshot(
+                training, reason=str(data.get("reason") or "user").strip(),
+            )
             training["closed_reason"] = str(data.get("reason") or "user").strip()
             training["auto_closed"] = auto_close
             # ``events`` is initialized for every training run. Do not use a
@@ -5128,11 +5250,12 @@ def register_planning_routes(
         for event in events:
             etype = str(event.get("type", "ui.event"))
             counts[etype] = counts.get(etype, 0) + 1
+        counts = dict(training.get("event_counts") or counts)
         # Finish Monitoring must return promptly.  Seed/needle spacing and
         # artifact-state checks are deterministic and cheap; CT/OAR needle
         # intersection validation is intentionally deferred to the full
         # advice/quality-check path so a large volume cannot block the UI.
-        advice = {} if auto_close else _build_plan_advice(agent, session_id, fast=True)
+        advice = {} if auto_close else _build_plan_advice(agent, session_id, fast=True, events=events)
         logger.info(
             "[monitor_stop] advice built session=%s elapsed_ms=%.1f",
             session_id, (time.perf_counter() - stop_started) * 1000.0,
@@ -5152,6 +5275,9 @@ def register_planning_routes(
         # so hydration can restore it instead of losing the close-out message.
         with _UI_BRIDGE_LOCK:
             training["last_summary"] = summary_message
+        _append_ui_event(session_id, {"type": "training.stop", "detail": {
+            "run_id": active_run_id, "reason": training["closed_reason"],
+        }}, include_in_training=False, monitor_run_id=active_run_id)
         checkpoint_ui_bridge(session_id, "training.stopped")
         logger.info(
             "[monitor_stop] response ready session=%s elapsed_ms=%.1f",
@@ -5179,11 +5305,9 @@ def register_planning_routes(
         data = request.get_json(silent=True) or {}
         session_id = request_ui_session_id(data)
         agent = monitor_control_agent(session_id)
-        if agent is None:
-            return jsonify({"error": "Agent not available"}), 500
         language = _monitor_language(
             data.get("language")
-            or (data.get("ui_state") or {}).get("language")
+            or (data.get("ui_state", {}).get("language") if isinstance(data.get("ui_state"), dict) else None)
             or ((_ui_bucket(session_id).get("state") or {}).get("language"))
         )
         advice = _build_plan_advice(agent, session_id)
@@ -5208,6 +5332,31 @@ def register_planning_routes(
                 except Exception as exc:
                     logger.warning("Grounded planning advice response failed: %s", exc)
         return jsonify(response)
+
+    @app.route("/api/training/timeline", methods=["GET"])
+    @require_api_key
+    @rate_limit
+    def api_training_timeline():
+        """Export the current case's bounded monitor history, with honest totals."""
+        session_id = request_ui_session_id()
+        bridge = _server_support._ui_bridge_snapshot(session_id)
+        training = bridge.get("training") or {}
+        events = list(training.get("events") or [])
+        counts = dict(training.get("event_counts") or {})
+        if not counts:
+            for event in events:
+                key = str(event.get("type") or "ui.event")
+                counts[key] = counts.get(key, 0) + 1
+        response = jsonify({
+            "schema_version": 2, "session_id": session_id,
+            "monitor_run_id": training.get("run_id") or training.get("last_run_id"),
+            "active": bool(training.get("active")), "events": events,
+            "event_counts": counts, "retained_event_count": len(events),
+            "dropped_event_count": training.get("dropped_event_count", 0),
+            "summary_message": training.get("last_summary"),
+        })
+        response.headers["Content-Disposition"] = 'attachment; filename="monitor-timeline.json"'
+        return response
 
     @app.route("/api/readiness", methods=["GET", "POST"])
     @require_api_key
@@ -6411,6 +6560,35 @@ def register_planning_routes(
                 response["rejected_needle_ids"] = getattr(exc, "rejected_needle_ids", [])
             return jsonify(response), 422 if error_code == "manual_needle_intersects_obstacle" else 500
 
+    @app.route("/api/healthz", methods=["GET"])
+    @require_api_key
+    def api_healthz():
+        """Return process liveness without touching case/workspace state.
+
+        ``/api/status?lightweight=1`` is intentionally a workspace read. It
+        loads and normalizes the selected snapshot, so it can be delayed by a
+        large checkpoint or a busy filesystem. Using that route as a heartbeat
+        made a healthy long-running planner appear offline. This endpoint is
+        deliberately limited to process-local values and is therefore safe to
+        poll while clinical work is running.
+        """
+        started = current_app.config.get("BRACHYBOT_SERVER_STARTED_MONOTONIC")
+        try:
+            uptime_s = max(0.0, time.monotonic() - float(started))
+        except (TypeError, ValueError):
+            uptime_s = None
+        response = jsonify({
+            "ok": True,
+            "status": "ok",
+            "pid": os.getpid(),
+            "server_instance_id": str(
+                current_app.config.get("BRACHYBOT_SERVER_INSTANCE_ID") or ""
+            ),
+            "uptime_s": round(uptime_s, 3) if uptime_s is not None else None,
+        })
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
     @app.route("/api/status", methods=["GET"])
     @require_api_key
     @rate_limit
@@ -7482,9 +7660,10 @@ def register_planning_routes(
                 stream_with_context(generate_task(task)),
                 mimetype='text/event-stream',
                 headers={
-                    'Cache-Control': 'no-cache',
+                    'Cache-Control': 'no-cache, no-transform',
                     'X-Accel-Buffering': 'no',
                     'Connection': 'keep-alive',
+                    'Keep-Alive': 'timeout=300',
                 }
             )
             resp.direct_passthrough = True
@@ -7644,9 +7823,10 @@ def register_planning_routes(
             stream_with_context(generate()),
             mimetype="text/event-stream",
             headers={
-                "Cache-Control": "no-cache",
+                "Cache-Control": "no-cache, no-transform",
                 "X-Accel-Buffering": "no",
                 "Connection": "keep-alive",
+                "Keep-Alive": "timeout=300",
             },
         )
 

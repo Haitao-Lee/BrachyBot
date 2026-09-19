@@ -2752,7 +2752,16 @@ class WorkspaceStore:
                 (_now(), recovery_status, session_id, user_id),
             )
         self._audit(user_id, session_id, reason, {"keys": sorted(patch.keys())})
-        return self.load_snapshot(user_id, session_id)
+        # We already own the merged, sanitized snapshot under _case_guard.
+        # Reloading here deep-copied all prior plans/meshes merely to refresh
+        # two metadata fields. Refresh those from the committed DB revision.
+        committed = self.get_session(user_id, session_id)
+        snapshot["session"] = committed.public_dict()
+        snapshot["workspace"] = {
+            "inputs_root": str(root / "inputs"),
+            "revision": committed.revision,
+        }
+        return snapshot
 
     def _checkpoint_work_lock(self, user_id: str, session_id: str) -> threading.Lock:
         key = (str(user_id), str(session_id))
@@ -5317,7 +5326,10 @@ class WorkspaceStore:
         # JS text can contain an unpaired UTF-16 surrogate (e.g. an emoji
         # truncated between its code units). Preserve it as a JSON escape;
         # replacing/dropping text would corrupt the saved conversation.
-        payload = json.dumps(snapshot, ensure_ascii=False, indent=2, allow_nan=False).encode("utf-8", errors="backslashreplace")
+        # Whitespace is not workspace state. Compact encoding uses the C
+        # encoder and avoids millions of indentation writes for mesh/history
+        # lists while preserving every value and the atomic/quota contract.
+        payload = json.dumps(snapshot, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8", errors="backslashreplace")
         self._ensure_replacement_capacity(user_id, path, len(payload))
         _atomic_bytes(path, payload)
         self._invalidate_storage_usage(user_id)

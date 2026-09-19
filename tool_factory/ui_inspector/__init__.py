@@ -752,9 +752,10 @@ selected row, a previous-turn object, or a semantically neighboring object."""
                 "evaluation": False,
             },
             "viewer": {
-                "layout": "vertical",
-                "window_preset": "soft_tissue",
-                "overlays": {"ctv": False, "oar": False, "dose": False},
+                "layout": None,
+                "window_preset": None,
+                "overlays": {},
+                "available": False,
             },
             "planning_inputs": {
                 "reference_direction": None,
@@ -786,6 +787,15 @@ selected row, a previous-turn object, or a semantically neighboring object."""
             # Live UI inputs from the frontend snapshot (POST /api/ui/state).
             ui_state = memory.get_ui_state() if hasattr(memory, 'get_ui_state') else None
             if isinstance(ui_state, dict):
+                live_viewer = ui_state.get("viewer")
+                if isinstance(live_viewer, dict):
+                    state["viewer"].update(live_viewer)
+                    state["viewer"]["available"] = True
+                overlays = ui_state.get("overlays")
+                if isinstance(overlays, dict):
+                    state["viewer"]["overlays"] = dict(overlays)
+                    if "dose_visible" in overlays:
+                        state["viewer"]["overlays"]["dose"] = overlays["dose_visible"]
                 catalog = ui_state.get("visual_target_catalog")
                 if isinstance(catalog, list):
                     state["visual_targets"] = [

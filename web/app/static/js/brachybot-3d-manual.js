@@ -2215,6 +2215,7 @@ function clearTrainingMonitorLocal(ownerSessionId = null, ownerRunId = null) {
     trainingMonitorState.screenshotGalleryContext = null;
     trainingMonitorState.lastFeedbackAt = 0;
     trainingMonitorState.lastScreenshotAt = 0;
+    trainingMonitorState.captureFailures = 0;
     if (typeof window.setTrainingMonitorPhase === 'function') window.setTrainingMonitorPhase('inactive');
     else if (typeof window.setMonitorPresentation === 'function') window.setMonitorPresentation('inactive');
     else document.body.classList.remove('monitor-active');
@@ -2296,6 +2297,7 @@ async function startTrainingMode(goal = 'Monitor planning workflow') {
     // stop/start cycles.
     trainingMonitorState.lastFeedbackAt = 0;
     trainingMonitorState.lastScreenshotAt = 0;
+    trainingMonitorState.captureFailures = 0;
     if (typeof _clearMonitorFeedbackTimer === 'function') _clearMonitorFeedbackTimer();
     trainingMonitorState.pendingFeedback = [];
     trainingMonitorState.goal = goal;

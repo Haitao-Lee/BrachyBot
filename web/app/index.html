@@ -64,7 +64,7 @@
     <link rel="stylesheet" href="static/css/brachybot-theme-layout.css?v=13">
     <link rel="stylesheet" href="static/css/brachybot-chat-status.css?v=19">
     <link rel="stylesheet" href="static/css/brachybot-panels-viewers.css?v=16">
-    <link rel="stylesheet" href="static/css/brachybot-report-controls.css?v=28">
+    <link rel="stylesheet" href="static/css/brachybot-report-controls.css?v=29">
     <link rel="stylesheet" href="static/css/brachybot-responsive.css?v=4">
     <link rel="stylesheet" href="static/css/brachybot-auth.css?v=9">
     <link rel="stylesheet" href="static/css/brachybot-data-export.css?v=3">
@@ -479,6 +479,11 @@
              sub-steps the dock can be scrolled (we wrap the inner
              list in a .chat-todo-scroll if needed in the future). -->
         <div id="chatTodoDock" style="display:none;flex-shrink:0;max-height:40vh;overflow-y:auto;overflow-x:hidden;background:linear-gradient(180deg, var(--bg-1) 0%, var(--bg-sunken) 100%);border-top:1px solid var(--border-hairline);padding:0.4rem 0.5rem 0.3rem;"></div>
+
+        <!-- Queued user turns stay outside the transcript until the active
+             request reaches a terminal state. This keeps the live Trace/todo
+             animation ordered while still showing Codex-like queue feedback. -->
+        <div id="chatQueueDock" class="chat-queue-dock" hidden role="status" aria-live="polite"></div>
 
         <div class="chat-input-area" style="position:relative;">
             <!-- Slash Command Menu -->
@@ -1587,11 +1592,11 @@
   strict mode to isolated files; migrate the bundle to ES modules as one
   versioned change so implicit legacy bindings cannot break selectively.
 -->
-<script src="static/js/brachybot-chat-core.js?v=25"></script>
-<script src="static/js/brachybot-chat-todo.js?v=51"></script>
-<script src="static/js/brachybot-ui-api.js?v=92"></script>
+<script src="static/js/brachybot-chat-core.js?v=29"></script>
+<script src="static/js/brachybot-chat-todo.js?v=55"></script>
+<script src="static/js/brachybot-ui-api.js?v=95"></script>
 <script src="static/js/brachybot-auth.js?v=10"></script>
-<script src="static/js/brachybot-viewer-volume.js?v=72"></script>
+<script src="static/js/brachybot-viewer-volume.js?v=73"></script>
 <script src="static/js/brachybot-viewer-layout.js?v=46"></script>
 <script src="static/js/brachybot-depth-peeling.js?v=2"></script>
 <script src="static/js/brachybot-3d-manual.js?v=103"></script>
@@ -1599,12 +1604,13 @@
 <script src="static/js/brachybot-surgical-guide.js?v=20"></script>
 <script src="static/js/brachybot-visual-annotation.js?v=8"></script>
 <script src="static/js/brachybot-dvh-planning.js?v=40"></script>
-<script src="static/js/brachybot-report-shell.js?v=31"></script>
-<script src="static/js/brachybot-report-editor.js?v=46"></script>
-<script src="static/js/brachybot-workspace.js?v=59"></script>
+<script src="static/js/brachybot-report-shell.js?v=34"></script>
+<script src="static/js/brachybot-report-editor.js?v=48"></script>
+<script src="static/js/brachybot-workspace.js?v=63"></script>
 <script src="static/js/brachybot-session-cache.js?v=2"></script>
 <script src="static/js/brachybot-report-export.js?v=41"></script>
 <script src="static/js/brachybot-data-export.js?v=5"></script>
+<script src="static/js/brachybot-range-stepper.js?v=2"></script>
 <script src="static/js/brachybot-theme.js?v=1"></script>
 </body>
 </html>

@@ -482,11 +482,12 @@ def register_session_routes(
             return jsonify(payload), 409
         except WorkspaceError as exc:
             return jsonify({"error": str(exc)}), 400
-        return jsonify({
-            "success": True,
-            "revision": snapshot["session"]["revision"],
-            "workspace": _snapshot_with_newest_bridge(user["id"], session_id, snapshot),
-        })
+        result = {"success": True, "revision": snapshot["session"]["revision"]}
+        # Modern save callers consume only the acknowledgement. Keep the
+        # complete response for old clients; never change the durable save.
+        if data.get("response_mode") != "ack":
+            result["workspace"] = _snapshot_with_newest_bridge(user["id"], session_id, snapshot)
+        return jsonify(result)
 
     @app.route("/api/workspace/checkpoint", methods=["POST"])
     @require_api_key

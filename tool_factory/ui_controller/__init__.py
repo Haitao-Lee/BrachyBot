@@ -1454,6 +1454,22 @@ class UIControllerTool(BaseTool):
                 "en": f"Applied: {en_action}{subject_en}.",
             }
 
+        if target == "training.mode":
+            labels = {"start": "已请求启动规划监测。", "stop": "已请求结束规划监测。",
+                      "advice": "已请求详细规划建议。", "status": "已请求当前监测状态。"}
+            return {"zh": labels.get(command, "已请求规划监测操作。"),
+                    "en": UIControllerTool._describe_action(target, command, value)}
+        manual_labels = {
+            "manual.needle.create": "已请求创建可编辑针道。",
+            "manual.needle.endpoint": "已请求调整针道端点。",
+            "manual.seed.add": "已请求添加粒子并更新剂量预览。",
+            "manual.seed.position": "已请求调整粒子位置。",
+            "manual.dose.recompute": "已请求重新计算剂量和 DVH。",
+            "manual.plan.replan": "已请求重新规划手动几何。",
+            "manual.plan.finish": "已请求检查手动规划。",
+        }
+        if target in manual_labels:
+            return {"zh": manual_labels[target], "en": UIControllerTool._describe_action(target, command, value)}
         return {
             "zh": f"已执行界面操作：{target}（{command}{f'，值为 {raw}' if raw else ''}）。",
             "en": UIControllerTool._describe_action(target, command, value),

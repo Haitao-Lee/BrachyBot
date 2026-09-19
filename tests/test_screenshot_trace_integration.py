@@ -379,7 +379,7 @@ def test_existing_guide_location_question_is_read_only_grounded_screenshot():
     assert calls and len(calls) == 1
     assert calls[0]["tool"] == "ui_screenshot"
     params = calls[0]["params"]
-    assert params["views"] == ["viewer-3d", "data-tree"]
+    assert params["views"] == ["data-tree", "viewer-3d"]
     assert params["target_refs"] == ["surgical_guide:active"]
     assert params["object_ids"] == ["surgical_guide:active"]
     assert params["data_tree_node_ids"] == ["surgical_guide:active"]
@@ -526,7 +526,10 @@ def test_execution_trace_waits_for_the_mounted_final_reply_before_collapsing():
     assert "setTimeout(_collapse, 0)" not in finalize
     assert "setTimeout(_collapse, 300)" not in finalize
     assert "setTimeout(_collapse, 800)" not in finalize
-    assert "if ((turnFailed || turnCancelled)" in todo
+    # Failure is not user cancellation: preserve error status, not 'Stopped'.
+    assert "if ((turnFailed || turnCancelled)" not in todo
+    assert "if (turnCancelled\n" in todo
+    assert "finalizeThinkingChain(chainEl, headerEl, steps)" in todo
     assert "cancelThinkingChain(chainEl, headerEl)" in todo
 
 
@@ -570,7 +573,28 @@ def test_current_tumor_target_cannot_inherit_previous_guide():
     assert classify_local_turn(message, conversation=conversation).intent == "session_visual_location_query"
 
 
-def test_arbitrary_live_catalog_target_uses_exact_stable_identity():
+def test_tumor_location_with_screenshot_tail_uses_canonical_3d_route():
+    message = "\u80bf\u7624\u5728\u54ea\u91cc\uff0c\u622a\u56fe\u544a\u77e5"
+
+    policy = classify_local_turn(message)
+    assert policy.intent == "session_visual_location_query"
+    assert policy.direct_execution is True
+    assert policy.execution_grants == frozenset({"ui_screenshot"})
+
+    request = resolve_session_visual_location_request(message)
+    assert request["semantic_targets"] == ["ctv"]
+    assert request["target_refs"] == ["structure:ctv:active"]
+
+    calls = ResponseToolMixin()._detect_tool_request(message)
+    assert calls and len(calls) == 1
+    assert calls[0]["tool"] == "ui_screenshot"
+    params = calls[0]["params"]
+    assert params["views"] == ["data-tree", "viewer-3d"]
+    assert params["target_refs"] == ["structure:ctv:active"]
+    assert params["annotation_policy"] == "required"
+    assert params["analysis_required"] is True
+
+
     message = "请圈出 custom vessel branch B 在哪里"
     ui_state = {
         "viewer": {"ct_loaded": True},
@@ -1358,7 +1382,8 @@ def test_report_generation_executes_and_persists_the_full_report_transaction():
     assert "result?.success === false" in chat
     assert "result?.stale === true" in chat
     assert "await window.awaitWorkspaceVisualReady(reportSessionId" in ui_api
-    assert "await prepareReportSceneRead(reportSessionId)" in ui_api
+    assert "async function prepareReportSceneReadWithRetry" in ui_api
+    assert "last = await prepareReportSceneRead(sessionId)" in ui_api
     assert "String(run.status).toLowerCase() !== 'completed'" in ui_api
     assert "captureFigures: true" in ui_api
     assert "allowTerminalPlanning: true" in ui_api
@@ -1396,7 +1421,7 @@ def test_report_regeneration_uses_current_plan_and_durable_dvh_without_a_race():
         "if (target === 'report.export')", 1
     )[0]
     assert "refreshPlanningUI(" not in report_action
-    assert "prepareReportSceneRead(reportSessionId)" in report_action
+    assert "prepareReportSceneReadWithRetry(reportSessionId," in report_action
     assert "options.suppressReportFigureCapture !== true" in dvh
 
     # DVH capture must work from durable state when the Analysis panel is

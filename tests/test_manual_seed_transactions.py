@@ -803,6 +803,7 @@ def test_manual_monitor_events_are_reported_only_after_authoritative_commit():
     assert "commit_status: 'committed'" in manual
     assert "already_recorded: options.alreadyRecorded === true" in ui_api
     assert "if already_recorded:" in routes
-    assert "event = dict(committed_event)" in routes
+    assert 'saved.get("event_id") == committed_event.get("event_id")' in routes
+    assert "Committed event was not found in this case." in routes
     assert "_cancelStaleManualDoseWork(`manual_seed_${reason}_rejected`)" in manual
     assert "queuedJob.cancelled = true" in manual
