@@ -10,6 +10,19 @@
 //   4. Boots after the legacy module has initialized.
 // =============================================================================
 
+function reportCaptureFailureMessage(result, language = 'en') {
+    const names = {
+        report_fig1_global: 'Fig 1(a)', report_fig1_closeup: 'Fig 1(b)',
+        report_fig2_axial: 'Fig 2(a)', report_fig2_sagittal: 'Fig 2(b)',
+        report_fig2_coronal: 'Fig 2(c)', report_fig2_dose_surface: 'Fig 2(d)',
+        report_fig2_dvh: 'Fig 2(e)',
+    };
+    const missing = (result?.missing || []).map(axis => names[axis]).filter(Boolean).join(', ');
+    return String(language).startsWith('zh')
+        ? `报告截图未完成${missing ? '，缺少：' + missing : ''}。原有报告图片已保留，本次没有生成完整的新图件。`
+        : `Report capture is incomplete${missing ? '; missing: ' + missing : ''}. Previous figures were retained; a complete new figure set was not generated.`;
+}
+
 function _oarVolumePercent(value, units) {
     const n = Number(value);
     if (!Number.isFinite(n)) return null;
@@ -594,8 +607,78 @@ window.Report = (function () {
         return '__unassigned__';
     }
 
+    function _reportCaptureRetryAllowed(value) {
+        const reason = String(value?.reason || value?.code || '').toLowerCase();
+        return !/planning_changed|planning_in_progress|planning_not_completed|session_changed|case_changed/.test(reason);
+    }
+
+    // Viewer capture is a multi-canvas transaction. A restore or paint event
+    // can finish between the scene-read barrier and the first capture attempt.
+    // Retry one time after the transaction has restored the original scene;
+    // autoCaptureReportFigures publishes atomically, so a failed first attempt
+    // cannot replace the previous complete figure set.
+    async function _captureReportFiguresWithRetry(options = {}) {
+        let lastResult = null;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+            try {
+                lastResult = await autoCaptureReportFigures(options);
+                const incomplete = lastResult?.blocked
+                    || lastResult?.stale
+                    || lastResult?.success === false;
+                if (!incomplete || attempt === 1 || !_reportCaptureRetryAllowed(lastResult)) {
+                    return lastResult;
+                }
+            } catch (error) {
+                if (attempt === 1 || !_reportCaptureRetryAllowed(error)) throw error;
+                await new Promise(resolve => setTimeout(resolve, 650));
+                continue;
+            }
+            await new Promise(resolve => setTimeout(resolve, 650));
+        }
+        return lastResult;
+    }
+
+    function _reportCaptureErrorMessage(error, language = 'en') {
+        const message = String(error?.message || '').toLowerCase();
+        const chinese = String(language).startsWith('zh');
+        if (message.includes('viewer panel is unavailable')) {
+            return chinese
+                ? '报告截图未生成：报告 Viewer 面板当前不可用，原有报告图片已保留。请打开 Viewer 后重试。'
+                : 'Report screenshots were not generated because the report Viewer panel is unavailable. Previous figures were retained; open the Viewer and retry.';
+        }
+        if (message.includes('report is not initialized')) {
+            return chinese
+                ? '报告截图未生成：报告编辑器尚未初始化，原有报告图片已保留。请先打开报告面板后重试。'
+                : 'Report screenshots were not generated because the report editor is not initialized. Previous figures were retained; open the report panel and retry.';
+        }
+        if (message.includes('requested dose slices did not finish rendering')) {
+            return chinese
+                ? '报告截图未完成：剂量切片尚未完成渲染，原有报告图片已保留；请等待 Viewer 完成渲染后重试。'
+                : 'Report screenshots were not completed because the requested dose slices did not finish rendering. Previous figures were retained; retry after the Viewer finishes rendering.';
+        }
+        if (message.includes('viewer restoration failed')) {
+            return chinese
+                ? '报告截图未完成：截图后的 Viewer 状态恢复失败，原有报告图片已保留；请检查当前病例后重试。'
+                : 'Report screenshots were not completed because the Viewer could not be restored after capture. Previous figures were retained; check the current case and retry.';
+        }
+        if (message.includes('could not be saved to this session')) {
+            return chinese
+                ? '报告截图已生成但未能保存到当前 Session，原有报告图片已保留；请保持当前病例不变后重试。'
+                : 'Report screenshots were generated but could not be saved to the current Session. Previous figures were retained; keep the case selected and retry.';
+        }
+        if (message.includes('timed out')) {
+            return chinese
+                ? '报告截图超时，原有报告图片已保留；请等待 Viewer 完成加载后重试。'
+                : 'Report screenshot capture timed out. Previous figures were retained; retry after the Viewer finishes loading.';
+        }
+        return chinese
+            ? '报告截图暂未生成：Viewer 证据还没有完成准备，原有报告图片已保留。请等待 Viewer 加载完成后重试。'
+            : 'Report screenshots were not generated because Viewer evidence is not ready yet. Previous figures were retained; retry after the Viewer finishes loading.';
+    }
+
     const autoFill = {
         async fromAll(opts = {}) {
+            const actionLanguage = String(opts.language || window._i18nLang || 'en');
             const onlyKey = opts.onlyKey || null;
             const f = window.reportForm;
             if (!f) {
@@ -664,6 +747,7 @@ window.Report = (function () {
             // version only triggered on panel-open, but users who
             // hit "Auto-fill" expected everything to land together.
             let figureCaptureWarning = '';
+            let figureCaptureFailure = null;
             try {
                 if (opts.captureFigures !== false && typeof autoCaptureReportFigures === 'function') {
                     // A report-generation command is complete only after its
@@ -671,18 +755,24 @@ window.Report = (function () {
                     // the text and tables. Awaiting capture also prevents the
                     // chat reply from claiming completion while only old image
                     // attachments have been persisted.
-                    const captureResult = await autoCaptureReportFigures({
+                    const captureResult = await _captureReportFiguresWithRetry({
+                        language: actionLanguage,
                         sessionId: expectedSessionId,
                         planningId: expectedPlanningId,
                         allowTerminalPlanning: opts.allowTerminalPlanning === true,
+                        // The report command owns the single durable save
+                        // below.  Saving once here and once again after
+                        // autofill made the screenshot uploads race the
+                        // report checkpoint and could leave the UI action
+                        // pending for minutes.
+                        persistAfterCapture: false,
                     });
                     if (captureResult?.blocked || captureResult?.stale || captureResult?.success === false) {
                         const reason = String(captureResult?.reason || '').trim();
                         const missing = Array.isArray(captureResult?.missing)
                             ? captureResult.missing.map(value => String(value || '')).filter(Boolean)
                             : [];
-                        const language = (typeof window._i18nLang === 'string')
-                            ? window._i18nLang : (f.language || 'en');
+                        const language = actionLanguage;
                         const detail = reason === 'planning_changed'
                             ? {
                                 zh: '当前规划在生成过程中发生了切换',
@@ -705,7 +795,7 @@ window.Report = (function () {
                                             : 'the Viewer evidence is incomplete',
                                     };
                         const error = new Error(
-                            language === 'zh'
+                            missing.length ? reportCaptureFailureMessage(captureResult, language) : language === 'zh'
                                 ? `报告截图未完成：${detail.zh}。请等待 Viewer 加载完成后重试。`
                                 : `Report figure capture was not completed because ${detail.en}. Please wait for the Viewer to finish loading and retry.`,
                         );
@@ -718,6 +808,7 @@ window.Report = (function () {
                 }
             } catch (e) {
                 console.warn('Report figure capture failed during auto-fill:', e);
+                figureCaptureFailure = e.captureResult || { reason: e.code || 'capture_failed' };
                 // Never surface a low-level capture/Plotly/Canvas exception
                 // as the assistant's final message. The user needs the
                 // recoverable state and next action, while the raw exception
@@ -725,11 +816,7 @@ window.Report = (function () {
                 if (e?.code === 'report_figures_not_ready' && e?.message) {
                     figureCaptureWarning = e.message;
                 } else {
-                    const language = (typeof window._i18nLang === 'string')
-                        ? window._i18nLang : (f.language || 'en');
-                    figureCaptureWarning = language === 'zh'
-                        ? '报告截图暂未生成：Viewer 证据还没有完成准备。请等待 Viewer 加载完成后重试。'
-                        : 'Report screenshots were not generated because Viewer evidence is not ready yet. Please wait for the Viewer to finish loading and retry.';
+                    figureCaptureWarning = _reportCaptureErrorMessage(e, actionLanguage);
                 }
             }
             if (!isCurrent()) return { stale: true, applied: 0 };
@@ -738,6 +825,11 @@ window.Report = (function () {
             // A chat command must not claim that the report was regenerated
             // while its text/table state is still only held by the browser.
             persist.flush();
+            // persist.flush() schedules the generic workspace timer.  The
+            // report command immediately performs its own report-only save;
+            // cancel the generic follow-up so it cannot serialize the same
+            // large chat/UI payload a second time while the action is closing.
+            window.cancelScheduledWorkspaceSave?.();
             let persisted = true;
             if (typeof window.persistWorkspace === 'function') {
                 // A report command may finish while the last cold-restore
@@ -750,13 +842,19 @@ window.Report = (function () {
                     allowDuringRestore: true,
                     waitUntilReady: true,
                     waitTimeoutMs: 15000,
+                    skipChat: true,
+                    skipUiState: true,
+                    ignoreRevision: true,
                 });
             }
             if (!isCurrent()) return { stale: true, applied: 0 };
             audit.log('autoFill.fromAll', '*', null, 'filled');
-            _setReportStatus(serverApplied > 0
+            _setReportStatus((!persisted
+                ? (actionLanguage === 'zh' ? '报告未能保存到当前 Session' : 'Report was not saved to the current Session')
+                : figureCaptureWarning) || (serverApplied > 0
                 ? `Auto-filled with ${serverApplied} source-backed server field(s)`
-                : 'Auto-filled from local NIfTI + planning data', 'ok');
+                : 'Auto-filled from local NIfTI + planning data'),
+                figureCaptureWarning || !persisted ? 'error' : 'ok');
             if (!persisted) {
                 return {
                     success: false,
@@ -772,6 +870,9 @@ window.Report = (function () {
                 stale: false,
                 applied: serverApplied,
                 warning: figureCaptureWarning,
+                stage: figureCaptureWarning ? 'report_capture' : 'completed',
+                captureFailure: figureCaptureFailure,
+                persisted: true,
             };
         },
         fromDicom(tags, onlyKey = null) {

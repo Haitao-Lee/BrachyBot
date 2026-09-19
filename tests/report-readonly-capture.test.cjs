@@ -73,14 +73,33 @@ async function main() {
     assert.equal(context.scene3D.meshes.ctv, mesh);
 
     // Execute the same restoration transaction after a simulated capture error.
+    vm.runInContext(extract(editor, 'hideReportUploadMasks'), context);
+    const upload = {kind: 'uploaded_mask_label', visible: true, visible2D: false};
+    const promoted = {kind: 'uploaded_mask_label', classification: 'ctv', visible: true};
+    const group = {visible: true};
+    context.state.maskLabels = {upload, promoted};
+    context.dataTreeState.uploadMasks = [group];
+    const uploadMesh = {visible: true, traverse(fn) { fn(this); }};
+    context.scene3D.meshes.upload = uploadMesh;
     vm.runInContext(extract(editor, 'snapshotReportViewerPresentation'), context);
     const restore = vm.runInContext('snapshotReportViewerPresentation()', context);
+    vm.runInContext('hideReportUploadMasks()', context);
+    assert.equal(upload.visible, false);
+    assert.equal(upload.visible3D, false);
+    assert.equal(uploadMesh.visible, false);
+    assert.equal(group.visible, false);
+    assert.equal(promoted.visible, true);
     mesh.visible = false;
     material.opacity = 0;
     context.state.slices.axial = 19;
     context.state.doseOverlay.visible = true;
     context.state.doseTexture.enabled = false;
     await restore();
+    assert.equal(upload.visible, true);
+    assert.equal(upload.visible2D, false);
+    assert.equal(Object.hasOwn(upload, 'visible3D'), false);
+    assert.equal(uploadMesh.visible, true);
+    assert.equal(group.visible, true);
     assert.equal(mesh.visible, true);
     assert.equal(material.opacity, 0.4);
     assert.equal(context.state.slices.axial, 8);
@@ -98,7 +117,11 @@ async function main() {
         _reportCapturePromise: null, _reportCaptureGeneration: 1,
         reportCaptureAllowed: () => ({allowed: true}),
         _reportCaptureUiFinish() {}, uiDebugLog() {},
+        prepareReportCaptureLayout: () => () => {},
+        _reportDvhWaitForPaint: async () => {},
         _autoCaptureReportFiguresImpl: async () => {
+            assert.equal(upload.visible, false);
+            assert.equal(uploadMesh.visible, false);
             mesh.visible = false;
             material.opacity = 0;
             context.state.slices.axial = 19;
@@ -115,6 +138,8 @@ async function main() {
     assert.equal(context.window.__reportCaptureActive, false);
     assert.equal(context._reportCapturePromise, null);
     assert.equal(context.window.reportForm.figures[0].axis, 'previous');
+    assert.equal(upload.visible, true, 'capture failure restores Upload Mask');
+    assert.equal(uploadMesh.visible, true);
 
     // Background tree and health repairs must not overwrite a capture profile.
     context.window.__reportCaptureActive = true;
@@ -128,7 +153,8 @@ async function main() {
     const action = api.slice(api.indexOf("if (target === 'report.autofill')"),
         api.indexOf("if (target === 'report.export')"));
     assert(!action.includes('refreshPlanningUI('), 'report cannot rebuild live scene');
-    assert(action.includes('prepareReportSceneRead(reportSessionId)'));
+    assert(action.includes('prepareReportSceneReadWithRetry(reportSessionId,'));
+    assert(api.includes('last = await prepareReportSceneRead(sessionId)'));
     assert(editor.includes('doseSlicesReady.some(ready => ready !== true)'));
     const commit = editor.indexOf('window.reportForm.figures = (window.reportForm.figures');
     assert(editor.indexOf('if (missingAxes.length)') < commit);

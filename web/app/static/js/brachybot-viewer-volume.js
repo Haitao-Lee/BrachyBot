@@ -5549,11 +5549,21 @@ function renderTreeItem(id, itemState, info) {
                 <output data-ct-window-output="summary">W${_formatWindowLevelValue(windowWidth)} L${_formatWindowLevelValue(windowLevel)}</output>
                 <output data-ct-window-output="high">${_formatWindowLevelValue(windowBounds.high)}</output>
             </span>
-            <span class="ct-window-range-track">
-                <span class="ct-window-range-base"></span>
-                <span class="ct-window-range-fill"></span>
-                <input id="dataTreeWindowLow" data-ct-window-level="low" type="range" min="${windowDomain.min}" max="${windowDomain.max}" step="0.5" value="${windowBounds.low}" aria-label="${escHtml(lowTitle)}" aria-valuetext="${_formatWindowLevelValue(windowBounds.low)} HU" ${disabledAttr} onpointerdown="event.stopPropagation();this.classList.add('is-active')" onpointerup="event.stopPropagation();this.classList.remove('is-active')" onpointercancel="this.classList.remove('is-active')" onblur="this.classList.remove('is-active')" oninput="event.stopPropagation();applyDataTreeWindowRange('low', false)" onchange="event.stopPropagation();applyDataTreeWindowRange('low', true)">
-                <input id="dataTreeWindowHigh" data-ct-window-level="high" type="range" min="${windowDomain.min}" max="${windowDomain.max}" step="0.5" value="${windowBounds.high}" aria-label="${escHtml(highTitle)}" aria-valuetext="${_formatWindowLevelValue(windowBounds.high)} HU" ${disabledAttr} onpointerdown="event.stopPropagation();this.classList.add('is-active')" onpointerup="event.stopPropagation();this.classList.remove('is-active')" onpointercancel="this.classList.remove('is-active')" onblur="this.classList.remove('is-active')" oninput="event.stopPropagation();applyDataTreeWindowRange('high', false)" onchange="event.stopPropagation();applyDataTreeWindowRange('high', true)">
+            <span class="ct-window-range-stepper-row">
+                <span class="ct-window-range-stepper-group" aria-label="${escHtml(lowTitle)}">
+                    <button type="button" class="range-stepper-btn range-stepper-btn--decrease" data-range-step-target="dataTreeWindowLow" data-range-step="-1" aria-label="${escHtml(lowTitle)} decrease" title="${escHtml(lowTitle)} decrease"></button>
+                    <button type="button" class="range-stepper-btn range-stepper-btn--increase" data-range-step-target="dataTreeWindowLow" data-range-step="1" aria-label="${escHtml(lowTitle)} increase" title="${escHtml(lowTitle)} increase"></button>
+                </span>
+                <span class="ct-window-range-track">
+                    <span class="ct-window-range-base"></span>
+                    <span class="ct-window-range-fill"></span>
+                    <input id="dataTreeWindowLow" data-ct-window-level="low" type="range" min="${windowDomain.min}" max="${windowDomain.max}" step="0.5" value="${windowBounds.low}" aria-label="${escHtml(lowTitle)}" aria-valuetext="${_formatWindowLevelValue(windowBounds.low)} HU" ${disabledAttr} onpointerdown="event.stopPropagation();this.classList.add('is-active')" onpointerup="event.stopPropagation();this.classList.remove('is-active')" onpointercancel="event.stopPropagation();this.classList.remove('is-active')" onblur="this.classList.remove('is-active')" oninput="event.stopPropagation();applyDataTreeWindowRange('low', false)" onchange="event.stopPropagation();applyDataTreeWindowRange('low', true)">
+                    <input id="dataTreeWindowHigh" data-ct-window-level="high" type="range" min="${windowDomain.min}" max="${windowDomain.max}" step="0.5" value="${windowBounds.high}" aria-label="${escHtml(highTitle)}" aria-valuetext="${_formatWindowLevelValue(windowBounds.high)} HU" ${disabledAttr} onpointerdown="event.stopPropagation();this.classList.add('is-active')" onpointerup="event.stopPropagation();this.classList.remove('is-active')" onpointercancel="this.classList.remove('is-active')" onblur="this.classList.remove('is-active')" oninput="event.stopPropagation();applyDataTreeWindowRange('high', false)" onchange="event.stopPropagation();applyDataTreeWindowRange('high', true)">
+                </span>
+                <span class="ct-window-range-stepper-group" aria-label="${escHtml(highTitle)}">
+                    <button type="button" class="range-stepper-btn range-stepper-btn--decrease" data-range-step-target="dataTreeWindowHigh" data-range-step="-1" aria-label="${escHtml(highTitle)} decrease" title="${escHtml(highTitle)} decrease"></button>
+                    <button type="button" class="range-stepper-btn range-stepper-btn--increase" data-range-step-target="dataTreeWindowHigh" data-range-step="1" aria-label="${escHtml(highTitle)} increase" title="${escHtml(highTitle)} increase"></button>
+                </span>
             </span>
         </span>`
         : '';

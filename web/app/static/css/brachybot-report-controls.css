@@ -519,6 +519,29 @@
     width: 100%;
     height: 14px;
 }
+.tree-item .ct-window-range-stepper-row {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    width: 100%;
+    min-width: 0;
+}
+.tree-item .ct-window-range-stepper-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+    flex: 0 0 auto;
+}
+.tree-item .ct-window-range-stepper-row > .ct-window-range-track {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.tree-item .ct-window-range-stepper-row .range-stepper-btn {
+    width: 10px;
+    min-width: 10px;
+    height: 14px;
+    flex-basis: 10px;
+}
 .tree-item .ct-window-range-base,
 .tree-item .ct-window-range-fill {
     position: absolute;
@@ -1872,4 +1895,78 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
     display: none !important;
     visibility: hidden !important;
     pointer-events: none !important;
+}
+
+/* Native range controls keep their drag behaviour, while these small
+   triangle buttons make single-step adjustments practical on touchpads and
+   narrow Data Tree rows. */
+.range-stepper {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    min-width: 0;
+    vertical-align: middle;
+}
+.range-stepper--fill {
+    flex: 1 1 0;
+    min-width: 60px;
+}
+.range-stepper--fill > input[type="range"] {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.range-stepper-btn {
+    position: relative;
+    width: 12px;
+    min-width: 12px;
+    height: 18px;
+    padding: 0;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 12px;
+    transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease), opacity var(--t-fast) var(--ease);
+}
+.range-stepper-btn::before {
+    content: "";
+    display: block;
+    width: 0;
+    height: 0;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+}
+.range-stepper-btn--decrease::before {
+    border-right: 5px solid currentColor;
+}
+.range-stepper-btn--increase::before {
+    border-left: 5px solid currentColor;
+}
+.range-stepper-btn:hover:not(:disabled) {
+    color: var(--primary);
+    background: var(--primary-soft);
+}
+.range-stepper-btn:focus-visible {
+    outline: none;
+    color: var(--primary);
+    box-shadow: 0 0 0 2px var(--primary-soft);
+}
+.range-stepper-btn:disabled {
+    opacity: 0.24;
+    cursor: default;
+}
+.tree-item .range-stepper,
+.tree-group-header .range-stepper {
+    flex-shrink: 0;
+}
+.tree-item .range-stepper-btn,
+.tree-group-header .range-stepper-btn {
+    height: 20px;
+}
+.viewer-card-ctrl .range-stepper {
+    min-width: 0;
 }

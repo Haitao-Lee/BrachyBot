@@ -407,7 +407,7 @@ async function clearCurrentChatHistory(options = {}) {
     sessions[activeSessionId].messages = [];
     sessions[activeSessionId].pending = false;
     saveSessions();
-    loadSessionChat(activeSessionId);
+    loadSessionChat(activeSessionId, { preserveDraft: false });
     try {
         await fetch(API + '/chat', {
             method: 'POST',
@@ -821,7 +821,34 @@ function findSessionMessageByIdentity(sessionId, messageId, requestId, type = nu
 }
 window.findSessionMessageByIdentity = findSessionMessageByIdentity;
 
-function loadSessionChat(id) {
+// The composer is intentionally not part of the durable chat transcript.
+// Keep a tiny ownership marker in the DOM so a background workspace repaint
+// can distinguish an unsent draft for the selected Session from text left
+// over from a real Session switch.  This is also needed during cold startup:
+// the user can type before the first resource snapshot has painted and before
+// historySession has been initialized.
+function markChatInputDraft(input = document.getElementById('chatInput')) {
+    if (!input) return;
+    const value = String(input.value || '');
+    const owner = String(window.activeSessionId || activeSessionId || '');
+    if (value && owner) {
+        input.dataset.draftSession = owner;
+        input.dataset.draftDirty = '1';
+    } else if (!value) {
+        delete input.dataset.draftSession;
+        delete input.dataset.draftDirty;
+    }
+}
+window.markChatInputDraft = markChatInputDraft;
+
+function clearChatInputDraft(input = document.getElementById('chatInput')) {
+    if (!input) return;
+    delete input.dataset.draftSession;
+    delete input.dataset.draftDirty;
+}
+window.clearChatInputDraft = clearChatInputDraft;
+
+function loadSessionChat(id, options = {}) {
     const session = sessions[id];
     if (!session) return;
     session.messages = normalizeSessionMessageIdentities(id, session.messages);
@@ -833,12 +860,43 @@ function loadSessionChat(id) {
     }
     const input = document.getElementById('chatInput');
     if (input) {
-        // The composer belongs to the selected case. Clearing it on every
-        // case render prevents a stale draft or command from another case
-        // being mistaken for this case's most recent prompt.
-        input.value = '';
+        const targetSessionId = String(id || '');
+        const inputSessionId = String(input.dataset.historySession || '');
+        const draftSessionId = String(input.dataset.draftSession || '');
+        const draftOwner = draftSessionId || inputSessionId;
+        const isSelectedSession = String(window.activeSessionId || activeSessionId || '') === targetSessionId;
+        // A same-session repaint must never erase a non-empty composer.  An
+        // empty owner is expected during cold startup, when the user may type
+        // before the first loadSessionChat() call.  Once typing is observed,
+        // draftSession records ownership so a real case switch still clears
+        // the old case's text.
+        const preserveDraft = options.preserveDraft !== false
+            && isSelectedSession
+            && (!input.value || !draftOwner || draftOwner === targetSessionId);
+        // Resource hydration and workspace snapshot refreshes redraw the
+        // transcript without changing the selected case. They must not
+        // destroy text that the user has typed but has not sent yet. A real
+        // session switch still clears the old case's composer so a draft
+        // cannot leak into another case.
+        if (!preserveDraft) {
+            input.value = '';
+            clearChatInputDraft(input);
+        }
         window.resizeChatInput?.(input);
-        input.dataset.historySession = String(id);
+        input.dataset.historySession = targetSessionId;
+        if (preserveDraft && input.value) input.dataset.draftSession = targetSessionId;
+    }
+    // The queue is case-scoped and lives beside the composer, not inside the
+    // durable transcript. Refresh it whenever a case is painted so switching
+    // cases cannot leave another case's pending prompt visible.
+    window.renderQueuedChatTurns?.(id);
+    // If the active turn finished while another Session was selected, the
+    // terminal callback could not flush this case's queue. Resume it when the
+    // user returns, but only while this case is idle; this keeps queued turns
+    // case-local and prevents cross-Session dispatch.
+    if (String(activeSessionId || '') === String(id || '')
+        && !window._chatTurnActive && !window._chatStreaming) {
+        setTimeout(() => { try { window.flushQueuedChatTurns?.(); } catch (_) {} }, 0);
     }
     const lastUserMessage = [...(session.messages || [])]
         .reverse()
@@ -2102,6 +2160,7 @@ function _stripLeadingEmoji(s) {
 // variants so the icon matches the way the LLM naturally phrases things.
 const _INLINE_ICON_RULES = [
     { re: /^(建议|小贴士|Tip|Advice|Recommendation|经验上|一般来说|通常情况下|Pro tip)/u, icon: '💡' },
+    { re: /(未完成|未能|未确认|没有确认|失败|不成功|不符合|\bnot (?:completed|confirmed|saved|successful)\b|\bincomplete\b|\bfailed\b)/iu, icon: '⚠️' },
     { re: /(成功|已完成|已经完成|规划完成|计算完成|执行完毕|\bDone\b|\bCompleted\b|\bFinished\b|\bSucceeded\b|\bPassed\b|达标|符合|满足要求)/u, icon: '✅' },
     { re: /^(注意|警告|⚠|风险|不符合|异常|失败|\bWarning\b|\bFailed\b|\bError\b|\bCaution\b|\bRisk\b)/u, icon: '⚠️' },
     { re: /^(数据来源|来源|source|from|根据|引用)/iu, icon: '📊' },

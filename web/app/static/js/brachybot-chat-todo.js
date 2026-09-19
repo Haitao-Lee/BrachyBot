@@ -665,15 +665,45 @@ function _todoCreate() {
         // Use AbortController so we can cancel the in-flight request
         // when markDone fires.
         item._gpuAbort = new AbortController();
+        item._gpuRequestAbort = null;
+        let gpuStatusFailures = 0;
         const fetchOnce = async () => {
+            // A delayed device query must not accumulate behind the next
+            // 2-second poll while the server is busy with planning/I/O.
+            if (item._gpuRequestAbort) {
+                try { item._gpuRequestAbort.abort(); } catch (_) {}
+            }
+            const requestAbort = new AbortController();
+            item._gpuRequestAbort = requestAbort;
+            const timeout = setTimeout(() => {
+                try { requestAbort.abort(); } catch (_) {}
+            }, 3500);
+            const cancelWithItem = () => {
+                try { requestAbort.abort(); } catch (_) {}
+            };
+            item._gpuAbort.signal.addEventListener('abort', cancelWithItem, { once: true });
             try {
-                const r = await fetch('/api/device/status', { signal: item._gpuAbort.signal });
-                if (!r.ok) return;
+                const r = await fetch('/api/device/status', { signal: requestAbort.signal });
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
                 const s = await r.json();
+                gpuStatusFailures = 0;
                 render(s);
             } catch (e) {
-                if (e.name !== 'AbortError') {
-                    badge.textContent = '🎮 ?';
+                if (e.name !== 'AbortError' && !item._gpuAbort.signal.aborted) {
+                    gpuStatusFailures += 1;
+                    // One delayed status response is expected during a long
+                    // planner checkpoint. Only show '?' after consecutive
+                    // failures so the device badge does not amplify a
+                    // transient control-plane stall into a false fault.
+                    if (gpuStatusFailures >= 3) {
+                        badge.textContent = '🎮 ?';
+                    }
+                }
+            } finally {
+                clearTimeout(timeout);
+                item._gpuAbort.signal.removeEventListener('abort', cancelWithItem);
+                if (item._gpuRequestAbort === requestAbort) {
+                    item._gpuRequestAbort = null;
                 }
             }
         };
@@ -683,6 +713,7 @@ function _todoCreate() {
     function _todoStopGpuBadge(item) {
         if (item._gpuTimer) { clearInterval(item._gpuTimer); item._gpuTimer = null; }
         if (item._gpuAbort) { try { item._gpuAbort.abort(); } catch (_) {} item._gpuAbort = null; }
+        if (item._gpuRequestAbort) { try { item._gpuRequestAbort.abort(); } catch (_) {} item._gpuRequestAbort = null; }
         const badge = item.node && item.node.querySelector && item.node.querySelector('.chat-todo-gpu');
         if (badge) {
             // Don't remove the DOM node — just clear its text. The
@@ -1167,7 +1198,9 @@ function handleChatKeypress(ev) {
 // Handle every user edit (typing, paste, IME composition commit, and newline
 // insertion) through the same sizing path.
 function handleChatInput(el) {
-    resizeChatInput(el || document.getElementById('chatInput'));
+    const input = el || document.getElementById('chatInput');
+    resizeChatInput(input);
+    window.markChatInputDraft?.(input);
 }
 
 // `sendChat` is the user → /api/chat entry point. Previous versions of
@@ -1212,6 +1245,10 @@ async function _awaitChatUIActions(tasks, signal) {
     }
 }
 const CHAT_IDLE_TIMEOUT_MS = 90000;
+// A known server-owned task is replayable and receives protocol heartbeats.
+// Keep a long transport budget while the server still owns the task; a brief
+// UI-state gap must not turn a live long-running tool into a false disconnect.
+const CHAT_TASK_IDLE_TIMEOUT_MS = 1800000; // 30 min
 const CHAT_PLANNING_IDLE_TIMEOUT_MS = 900000; // 15 min — medical planning tools can run 5-10 min
 const CHAT_ABORT_TIMEOUT_MS = 4000;
 
@@ -1230,6 +1267,7 @@ window._explicitChatStopSessions = window._explicitChatStopSessions || {};
 // acknowledgement per case so a new user turn cannot inherit an old aborted
 // controller while its cleanup is still in flight.
 window._sessionChatStopPromises = window._sessionChatStopPromises || {};
+window._sessionChatRecoveryTimers = window._sessionChatRecoveryTimers || {};
 window._sessionChatRecoveryNotices = window._sessionChatRecoveryNotices || {};
 window._chatTurnGeneration = Number(window._chatTurnGeneration || 0);
 window._activeChatTurnGeneration = Number(window._activeChatTurnGeneration || 0);
@@ -1521,11 +1559,15 @@ function _visualResponseHasGroundedLocationClaim(value, evidence = []) {
 // deployment returns plain text).  This is deliberately derived from the
 // capture manifest and the server state carried by each attachment; it is not
 // a list of recognized user phrases or a guessed pixel location.
-function _visualEvidenceFallbackResponse(evidence, sessionId, responseLanguage = '', userText = '') {
+function _visualEvidenceFallbackResponse(evidence, sessionId, responseLanguage = '', userText = '', preliminaryResponse = '') {
     const language = String(
         responseLanguage || _chatLanguageForSession(sessionId) || window._responseLanguage || ''
     ).toLowerCase();
     const zh = language.startsWith('zh');
+    const appendPreliminary = answer => {
+        const preliminary = String(preliminaryResponse || '').trim();
+        return preliminary ? `${preliminary}\n\n${answer}` : answer;
+    };
     const items = (Array.isArray(evidence) ? evidence : [])
         .filter(item => item && item.url)
         .slice(0, 4);
@@ -1596,6 +1638,13 @@ function _visualEvidenceFallbackResponse(evidence, sessionId, responseLanguage =
             rows.push(zh
                 ? `${view}：已在截图中的${label || '目标对象'}位置加框/箭头标注${state ? `（${state}）` : ''}。`
                 : `${view}: the ${label || 'target object'} is marked with a box/arrow in the screenshot${state ? ` (${state})` : ''}.`);
+        } else if (attachmentTarget.toLowerCase() === 'data-tree'
+            && target?.visible === true
+            && (target?.in_view === true || target?.inView === true)
+            && target?.annotatable === true) {
+            rows.push(zh
+                ? `${view}：已核验到 Data Tree 节点“${label || '目标'}”。`
+                : `${view}: verified Data Tree row ${label || 'target'}.`);
         } else if (target && target.annotatable === false) {
             const reason = String(target.reason || '').toLowerCase();
             const unavailable = /hidden|not_loaded|unresolved|outside|unavailable|loading/.test(reason)
@@ -1608,15 +1657,52 @@ function _visualEvidenceFallbackResponse(evidence, sessionId, responseLanguage =
                 ? `${view}：截图已生成，但没有足够的稳定目标信息可以安全标注。`
                 : `${view}: the screenshot was captured, but it did not contain a stable target that could be marked safely.`);
         }
-        if (attachmentTarget === 'data-tree' && target?.scene_visible === false) {
-            rows.push(zh ? '该节点在 Data Tree 截图时的三维显示处于隐藏状态。'
-                : 'This node was hidden in 3D when the Data Tree was captured.');
+        if (attachmentTarget.toLowerCase() === 'data-tree' && target?.scene_visible === false) {
+            const visibilityKnown = target?.scene_visibility_known === true
+                || target?.sceneVisibilityKnown === true;
+            rows.push(visibilityKnown
+                ? (zh ? '该节点在 Data Tree 截图时的三维显示处于隐藏状态。'
+                    : 'This node was hidden in 3D when the Data Tree was captured.')
+                : (zh ? '仅凭 Data Tree 截图无法核验该节点的三维显示状态。'
+                    : 'The Data Tree capture alone could not verify this node’s 3D visibility.'));
         }
         if (metadata.temporary_reveal === true) {
             rows.push(zh ? '为定位目标，截图过程中临时调整了显示与取景；截图结束后已恢复原显示设置。'
                 : 'Visibility and framing were temporarily adjusted for this capture; the original display settings were restored afterwards.');
         }
     });
+    const viewerVerifiedRefs = new Set(items
+        .filter(attachment => ['viewer-3d', 'viewer'].includes(String(
+            attachment.target || attachment.view_metadata?.target || attachment.viewMetadata?.target || ''
+        ).toLowerCase()))
+        .flatMap(attachment => {
+            const metadata = attachment.view_metadata || attachment.viewMetadata || {};
+            const manifest = metadata.grounding_manifest || metadata.groundingManifest
+                || attachment.grounding_manifest || attachment.groundingManifest || {};
+            return Array.isArray(manifest.targets) ? manifest.targets : [];
+        })
+        .filter(target => target?.visible === true && target?.scene_visible === true
+            && target?.data_tree_visible === true && target?.loaded !== false
+            && target?.in_view === true && target?.annotatable === true)
+        .map(target => String(target.target_ref || target.targetRef || '').trim())
+        .filter(Boolean));
+    const dataTreeTargets = items
+        .filter(attachment => String(attachment.target || attachment.view_metadata?.target
+            || attachment.viewMetadata?.target || '').toLowerCase() === 'data-tree')
+        .flatMap(attachment => {
+            const metadata = attachment.view_metadata || attachment.viewMetadata || {};
+            const manifest = metadata.grounding_manifest || metadata.groundingManifest
+                || attachment.grounding_manifest || attachment.groundingManifest || {};
+            return Array.isArray(manifest.targets) ? manifest.targets : [];
+        });
+    if (dataTreeTargets.some(target => {
+        const ref = String(target?.target_ref || target?.targetRef || '').trim();
+        return !ref || !viewerVerifiedRefs.has(ref);
+    })) {
+        rows.push(zh
+            ? '3D Viewer 未核验到与该 Data Tree 节点相同的对象，因此不描述其三维位置。'
+            : 'The same object was not verified in the 3D Viewer, so no 3D location is claimed.');
+    }
     const isLocate = items.some(item => String(
         item.visual_purpose || item.visualPurpose
         || item.view_metadata?.visual_purpose || item.viewMetadata?.visualPurpose || ''
@@ -1634,19 +1720,19 @@ function _visualEvidenceFallbackResponse(evidence, sessionId, responseLanguage =
         const subject = locatedLabels.length
             ? locatedLabels.join(zh ? '、' : ', ')
             : (zh ? '所请求的对象' : 'the requested object');
-        return (zh
+        return appendPreliminary((zh
             ? `已在当前实际界面中定位到${subject}。标记直接锚定到经过核验的 Viewer 对象或真实 Data Tree 行：`
             : `I located ${subject} in the currently displayed interface. Each mark is anchored to a verified Viewer object or live Data Tree row:`)
             + `\n\n${rows.map(row => `- ${row}`).join('\n')}`
             + (requestedCount > markedCount
                 ? `\n\n${zh ? '对不可见或未加载目标没有强行标注，避免把错误位置当成事实。' : 'Hidden or unloaded targets were not marked, so an incorrect location is not presented as fact.'}`
-                : '');
+                : ''));
     }
     const requestHint = String(userText || '').trim();
-    return (zh
+    return appendPreliminary((zh
         ? `我已截取${requestHint ? '与您问题对应的' : '当前'}界面，并保留了原始显示状态。`
         : `I captured the ${requestHint ? 'interface relevant to your question' : 'current interface'} and preserved its original display state.`)
-        + `\n\n${rows.map(row => `- ${row}`).join('\n')}`;
+        + `\n\n${rows.map(row => `- ${row}`).join('\n')}`);
 }
 
 function _visualResponseNeedsGroundedFallback(value, evidence = []) {
@@ -1755,6 +1841,72 @@ async function _presentJsonSessionContent(steps, sessionId, turnIdentity) {
     };
 }
 
+async function _captureJsonScreenshotSteps(steps, question, turnIdentity, sessionId) {
+    const commands = (Array.isArray(steps) ? steps : [])
+        .filter(step => step && step.tool === 'ui_screenshot'
+            && _isTerminalToolStatus(step.status))
+        .map(step => {
+            const metadata = step.metadata || step.data?.metadata || {};
+            const command = metadata.screenshot_command || metadata;
+            const plan = metadata.screenshot_plan || command.plan || null;
+            return { step, command, plan };
+        })
+        .filter(item => item.plan || item.command);
+    if (!commands.length) return { attachments: [], userMessage: '' };
+
+    const gallery = {
+        sessionId: String(sessionId || ''),
+        requestId: String(turnIdentity?.requestId || ''),
+        messageId: String(turnIdentity?.messageId || ''),
+        responseLanguage: String(turnIdentity?.responseLanguage || _chatLanguageForSession(sessionId)),
+        mode: 'chat',
+        layout: 'auto',
+        items: [],
+        keys: new Set(),
+    };
+    const attachments = [];
+    const messages = [];
+    const seen = new Set();
+    for (const item of commands) {
+        const plan = item.plan || {};
+        const command = item.command || {};
+        const requestText = String(plan.question || command.question || question || '');
+        const target = String(
+            plan.views?.[0]?.target
+            || command.target
+            || _normalizeScreenshotRequestTarget('full', requestText)
+        );
+        const key = String(item.step.id || JSON.stringify([target, requestText, plan.views || []]));
+        if (seen.has(key)) continue;
+        seen.add(key);
+        try {
+            const result = await _interceptScreenshot(
+                target,
+                requestText,
+                gallery,
+                {
+                    sessionId,
+                    requestId: gallery.requestId,
+                    messageId: gallery.messageId,
+                    responseLanguage: gallery.responseLanguage,
+                    mode: plan.mode || 'chat',
+                    plan: Object.assign({ mode: 'chat', question: requestText }, plan),
+                },
+            );
+            if (Array.isArray(result?.attachments)) attachments.push(...result.attachments);
+            else if (result?.success && result?.url) attachments.push(result);
+            if (result?.userMessage) messages.push(String(result.userMessage));
+        } catch (error) {
+            console.warn('[chat] JSON screenshot capture failed', error);
+            messages.push(_chatUserVisibleFailure(sessionId, 'screenshot'));
+        }
+    }
+    return {
+        attachments,
+        userMessage: messages.filter(Boolean).slice(-1)[0] || '',
+    };
+}
+
 async function _executeJsonUIActions(steps, sessionId) {
     const actionGroups = (Array.isArray(steps) ? steps : [])
         .filter(step => step && step.tool === 'ui_controller' && _isTerminalToolStatus(step.status))
@@ -1784,8 +1936,28 @@ function _hasReportGenerationAction(steps) {
     });
 }
 
-function _reportGenerationFailureMessage(sessionId) {
-    return _chatLanguageForSession(sessionId) === 'zh'
+function _reportGenerationFailureMessage(sessionId, failure = null) {
+    const chinese = _chatLanguageForSession(sessionId) === 'zh';
+    const stage = String(failure?.stage || '').trim();
+    if (stage === 'report_scene_not_ready'
+        || stage === 'report_catalog_not_ready'
+        || stage === 'workspace_visual_restore_incomplete'
+        || stage === 'report_validation_failed') {
+        return chinese
+            ? '报告截图未完成：当前病例的 Viewer 或剂量证据尚未准备好，原有报告图片已保留；请确认规划、剂量和 DVH 加载完成后重试。'
+            : 'Report screenshots were not completed because the current Viewer or dose evidence is not ready. Previous report figures were retained; retry after planning, dose, and DVH finish loading.';
+    }
+    if (stage === 'report_planning_in_progress') {
+        return chinese
+            ? '报告未重新生成：当前规划仍在计算，系统没有开始截图，原有报告图片已保留；请等待规划完成后重试。'
+            : 'Report regeneration did not start because the active Planning is still running. Previous report figures were retained; retry after planning finishes.';
+    }
+    if (stage === 'report_planning_changed') {
+        return chinese
+            ? '报告未重新生成：操作期间当前规划版本发生变化，原有报告图片已保留；请保持当前病例和规划不变后重试。'
+            : 'Report regeneration was stopped because the active Planning changed during the operation. Previous report figures were retained; keep the case and Planning unchanged and retry.';
+    }
+    return chinese
         ? '报告重新生成未完成。浏览器中的报告内容可能已经更新，但系统没有确认它已保存到当前 Session，因此不能把本次操作报告为成功。当前病例显示内容已保留；请保持该病例不变，确认规划、剂量和 DVH 已加载后重试。'
         : 'Report regeneration was not confirmed. The report may have been updated in the browser, but it was not confirmed as saved to the current Session, so this operation cannot be reported as successful. The visible case was preserved; keep it selected and retry after planning, dose, and DVH are loaded.';
 }
@@ -2014,14 +2186,62 @@ function _waitForFinalReplyPaint() {
 function _sessionChatQueue(sessionId) {
     const key = String(sessionId || '');
     if (!key) return [];
+    window._sessionChatQueues = window._sessionChatQueues || {};
     if (!Array.isArray(window._sessionChatQueues[key])) window._sessionChatQueues[key] = [];
     return window._sessionChatQueues[key];
 }
 
+// Queued turns are a transport/UI state, not yet part of the conversation.
+// Keep them in their own bottom dock until the active turn reaches a terminal
+// event.  Rendering a queued prompt into #chatMessages used to insert a new
+// user bubble in front of the live trace, overwrite _lastUserMessage, and
+// make the progress animation appear to jump backwards.
+function _renderQueuedChatTurns(sessionId = activeSessionId) {
+    if (typeof document === 'undefined') return;
+    const dock = document.getElementById('chatQueueDock');
+    if (!dock) return;
+    const owner = String(sessionId || '');
+    const selected = owner && owner === String(activeSessionId || '');
+    const queue = selected ? _sessionChatQueue(owner) : [];
+    if (!queue.length) {
+        dock.hidden = true;
+        dock.style.display = 'none';
+        dock.replaceChildren?.();
+        return;
+    }
+    const zh = String(window._i18nLang || '').toLowerCase().startsWith('zh');
+    const escape = value => typeof escHtml === 'function'
+        ? escHtml(value)
+        : String(value || '').replace(/[&<>"']/g, ch => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+        }[ch]));
+    const countLabel = zh ? `排队中 · ${queue.length}` : `Queued · ${queue.length}`;
+    const waitLabel = zh ? '等待当前请求完成' : 'Waiting for the current request to finish';
+    const rows = queue.map((item, index) => {
+        const text = String(item?.text || '');
+        const ordinal = index + 1;
+        return `<div class="chat-queue-item" data-queue-id="${escape(item?.id || '')}">
+            <span class="chat-queue-spinner" aria-hidden="true"></span>
+            <span class="chat-queue-index">${ordinal}</span>
+            <span class="chat-queue-text" title="${escape(text)}">${escape(text)}</span>
+            <span class="chat-queue-state">${escape(waitLabel)}</span>
+        </div>`;
+    }).join('');
+    dock.hidden = false;
+    dock.style.display = '';
+    dock.innerHTML = `<div class="chat-queue-header"><span>${escape(countLabel)}</span><span class="chat-queue-hint">${escape(zh ? '发送顺序保持不变' : 'Order is preserved')}</span></div>${rows}`;
+}
+window.renderQueuedChatTurns = _renderQueuedChatTurns;
+
 function _queueChatTurn(sessionId, message) {
     const text = String(message || '').trim();
     if (!sessionId || !text) return false;
-    _sessionChatQueue(sessionId).push({ text, queuedAt: Date.now() });
+    _sessionChatQueue(sessionId).push({
+        id: `queued-${String(sessionId)}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        text,
+        queuedAt: Date.now(),
+    });
+    _renderQueuedChatTurns(sessionId);
     if (typeof window.scheduleWorkspaceSave === 'function') window.scheduleWorkspaceSave('chat.turn_queued');
     return true;
 }
@@ -2033,12 +2253,19 @@ async function _flushQueuedChatTurns() {
     const queue = _sessionChatQueue(sessionId);
     if (!queue.length) return;
     const next = queue.shift();
+    // A session switch can happen between the idle check and this dispatch.
+    // Never send a queued prompt into the newly selected case; put it back and
+    // let the session painter render that case's own queue.
+    if (String(activeSessionId || '') !== String(sessionId)) {
+        queue.unshift(next);
+        _renderQueuedChatTurns(activeSessionId);
+        return;
+    }
+    _renderQueuedChatTurns(sessionId);
     if (typeof window.scheduleWorkspaceSave === 'function') window.scheduleWorkspaceSave('chat.turn_dequeued');
     _queuedChatFlushRunning = true;
     try {
         await sendChat(next.text, {
-            hiddenUserMessage: true,
-            preserveLastUserMessage: true,
             queuedTurn: true,
         });
     } finally {
@@ -2259,7 +2486,14 @@ window._cancelVisualFollowups = _cancelVisualFollowups;
 // analyzed.  The URLs are resolved and converted to image blocks by the
 // server-side LLM runtime, while this browser layer keeps the follow-up hidden
 // from the ordinary chat stream and preserves the owning reply identity.
-function _visualEvidenceDescriptor(item, index = 0, includeAll = false) {
+function _visualTurnRequiresExplanation(responseContract) {
+    if (!responseContract || responseContract.text_required !== true) return false;
+    const act = String(responseContract.act || '').trim().toLowerCase();
+    return act === 'question' || act === 'mixed'
+        || responseContract.evidence_supplemental === true;
+}
+
+function _visualEvidenceDescriptor(item, index = 0, includeAll = false, forceAnalysis = false) {
     if (!item || !item.url) return null;
     const metadata = item.view_metadata || item.viewMetadata || {};
     const annotationPolicy = String(
@@ -2273,6 +2507,7 @@ function _visualEvidenceDescriptor(item, index = 0, includeAll = false) {
     const explicitAnalysis = item.analysis_required ?? item.analysisRequired
         ?? metadata.analysis_required ?? metadata.analysisRequired;
     const analysisRequired = explicitAnalysis === true
+        || forceAnalysis === true
         || (explicitAnalysis !== false && (item.visual_analysis === true || includeAll))
         // Required locate evidence has a user-facing state explanation and a
         // deterministic annotation fallback even if it came from an older
@@ -2338,7 +2573,9 @@ function _visualAttachmentRequiresAnalysis(item) {
 
 function _queueVisualAnalysisFollowUp(attachments, userText, turnIdentity, options = {}) {
     const candidates = (Array.isArray(attachments) ? attachments : [])
-        .map((item, index) => _visualEvidenceDescriptor(item, index, options.includeAll === true))
+        .map((item, index) => _visualEvidenceDescriptor(
+            item, index, options.includeAll === true, options.forceAnalysis === true,
+        ))
         .filter(Boolean);
     const byUrl = new Map();
     candidates.forEach(candidate => {
@@ -2401,6 +2638,7 @@ function _queueVisualAnalysisFollowUp(attachments, userText, turnIdentity, optio
         evidence: selectedEvidence.map(({ source, index, score, ...descriptor }) => descriptor),
         evidence_urls: uniqueUrls,
         parent_request: String(userText || '').trim(),
+        preliminary_response: String(options.preliminaryResponse || '').trim().slice(0, 8000),
         attachment_labels: visualAttachmentLabels,
         omitted_count: Math.max(0, byUrl.size - selectedEvidence.length),
     };
@@ -2426,6 +2664,7 @@ function _queueVisualAnalysisFollowUp(attachments, userText, turnIdentity, optio
             followupKey,
             responseLanguage: turnIdentity?.responseLanguage || '',
             screenshotMode: options.screenshotMode || 'chat',
+            multiIntentQuery: options.multiIntentQuery === true,
             visualAttachmentLabels,
             visualEvidence,
             visualContext,
@@ -2569,10 +2808,10 @@ async function sendChat(prefill, options) {
     }
     const isBusy = !!window._chatTurnActive || !!window._chatStreaming;
 
-    // Enter is a submit action, not a cancellation action.  Preserve the
-    // current task and queue the new turn under the selected case.  The
-    // queued user bubble is rendered immediately; the request itself is sent
-    // only after the active task reaches a terminal SSE event.
+    // Enter is a submit action, not a cancellation action. Preserve the
+    // current task and queue the new turn under the selected case. The prompt
+    // is rendered only in the dedicated bottom queue dock; it enters the main
+    // transcript when it is actually dispatched after the active task ends.
     if (isBusy && opts.queueIfBusy) {
         const queuedText = (prefill != null ? prefill : (input ? input.value : '')).trim();
         if (!queuedText || !activeSessionId) return false;
@@ -2580,13 +2819,11 @@ async function sendChat(prefill, options) {
             input.value = '';
             resizeChatInput(input);
         }
-        if (typeof addChat === 'function') addChat('user', queuedText, true, Date.now(), false, activeSessionId);
-        window._lastUserMessage = queuedText;
         _queueChatTurn(activeSessionId, queuedText);
         // A hidden screenshot-analysis child is subordinate to the previous
-        // reply. A new explicit user message supersedes it immediately, so it
-        // must not occupy the case task slot or leak its prompt into the next
-        // turn.
+        // reply. A new explicit user message supersedes it immediately, so
+        // cancel that child without putting the queued prompt into the main
+        // transcript before its turn is actually dispatched.
         const replacingInternalFollowup = window._activeChatInternalFollowup
             && !opts.hiddenUserMessage
             && !opts.internalFollowup;
@@ -2594,11 +2831,6 @@ async function sendChat(prefill, options) {
             await sendChat(undefined, { suppressStopNotice: true });
             if (String(activeSessionId || '') === String(window._activeChatTaskSessionId || activeSessionId)) {
                 setTimeout(() => { try { _flushQueuedChatTurns(); } catch (_) {} }, 0);
-            }
-        }
-        if (typeof addChat === 'function') {
-            if (!replacingInternalFollowup) {
-                addChat('system', 'Queued for this case; the current task will finish first.', true, Date.now(), false, activeSessionId);
             }
         }
         return true;
@@ -3442,26 +3674,47 @@ async function sendChat(prefill, options) {
                 window.updateBrainStatusIndicator?.(data.brain_available, 'chat-response');
             }
             const presentation = await _presentJsonSessionContent(data?.steps, turnSessionId, turnIdentity);
+            const screenshotPresentation = await _captureJsonScreenshotSteps(
+                data?.steps, text, turnIdentity, turnSessionId,
+            );
+            const presentedAttachments = [
+                ...(presentation.attachments || []),
+                ...(screenshotPresentation.attachments || []),
+            ];
             const uiActions = await _executeJsonUIActions(data?.steps, turnSessionId);
             const uiFailure = uiActions.failed
                 ? (_hasReportGenerationAction(data?.steps)
                     ? _reportGenerationFailureMessage(turnSessionId)
                     : _chatUserVisibleFailure(turnSessionId, 'request'))
                 : '';
-            const visualAttachments = (presentation.attachments || []).filter(item =>
-                item && item.url && _visualAttachmentRequiresAnalysis(item)
+            const responseContract = data?.llm_meta?.response_contract || null;
+            const forceVisualAnalysis = _visualTurnRequiresExplanation(responseContract);
+            const visualAttachments = presentedAttachments.filter(item =>
+                item && item.url && (
+                    _visualAttachmentRequiresAnalysis(item) || forceVisualAnalysis
+                )
             );
             const visualAnalysisContinuation = !isInternalFollowup && visualAttachments.length > 0;
+            const responseBody = String(data?.response || data?.reply || data?.content || '');
+            const screenshotFailure = String(screenshotPresentation.userMessage || '').trim();
+            const failureAndReadResults = screenshotFailure
+                ? [
+                    screenshotFailure,
+                    data?.llm_meta?.multi_intent_query ? responseBody : '',
+                ].filter(Boolean).join('\n\n')
+                : '';
             const reply = uiFailure
+                || failureAndReadResults
                 || (visualAnalysisContinuation ? '' : presentation.userMessage)
-                || (data && (data.response || data.reply || data.content))
+                || (visualAnalysisContinuation && !data?.llm_meta?.multi_intent_query
+                    ? '' : responseBody)
                 || (visualAnalysisContinuation ? '' : _chatUserVisibleFailure(turnSessionId, 'response'));
             if (reply && typeof addChat === 'function') {
                 addChat('bot-response', reply, true, Date.now(), false, turnSessionId, Object.assign(
                     {},
                     turnIdentity,
                     {
-                        attachments: presentation.attachments,
+                        attachments: presentedAttachments,
                         screenshotLayout: 'auto',
                     },
                 ));
@@ -3475,6 +3728,11 @@ async function sendChat(prefill, options) {
                         sessionId: turnSessionId,
                         screenshotMode: 'chat',
                         includeAll: true,
+                        forceAnalysis: forceVisualAnalysis,
+                        preliminaryResponse: [
+                            data?.llm_meta?.multi_intent_query ? responseBody : '',
+                            screenshotPresentation.userMessage || '',
+                        ].filter(Boolean).join('\n\n'),
                     },
                 );
             }
@@ -3510,17 +3768,27 @@ async function sendChat(prefill, options) {
         // successful planning turn later looked like a timeout/error.
         readLoop: while (true) {
             // LLM thinking phases (without tool calls) can exceed the default
-            // 90 s idle window.  Extend the read timeout to the planning-level
-            // 15 min whenever any step or todo item is still in-flight.
-            const hasActiveWork = (todo && todo.items && todo.items.some(
+            // 90 s idle window.  A server-owned task is replayable and emits
+            // protocol heartbeats, so trust the task journal even if the
+            // optimistic todo/trace state has not caught up with a tool call.
+            const hasKnownServerTask = Boolean(
+                turnTaskId
+                || window._sessionChatTaskIds?.[turnSessionId]
+                || window._detachedChatTasks?.[turnSessionId]
+                || window._sessionChatTaskStatuses?.[turnSessionId] === 'running'
+            );
+            const hasActiveWork = hasKnownServerTask || ((todo && todo.items && todo.items.some(
                 i => i.status === 'active' || i.status === 'pending',
-            )) || steps.some(s => _isInFlightToolStatus(s.status));
+            )) || steps.some(s => _isInFlightToolStatus(s.status)));
             const onReadTimeout = () => {
                 try { turnAbortController.abort(); } catch (_) {}
             };
-            const { done, value } = hasActiveWork
-                ? await readChatChunk(reader, CHAT_PLANNING_IDLE_TIMEOUT_MS, onReadTimeout)
-                : await readChatChunk(reader, CHAT_IDLE_TIMEOUT_MS, onReadTimeout);
+            const readTimeoutMs = hasKnownServerTask
+                ? CHAT_TASK_IDLE_TIMEOUT_MS
+                : hasActiveWork
+                    ? CHAT_PLANNING_IDLE_TIMEOUT_MS
+                    : CHAT_IDLE_TIMEOUT_MS;
+            const { done, value } = await readChatChunk(reader, readTimeoutMs, onReadTimeout);
             if (done) break;
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
@@ -3542,6 +3810,11 @@ async function sendChat(prefill, options) {
                     if (!dataStr) continue;
                     let data = null;
                     try { data = JSON.parse(dataStr); } catch (_) { continue; }
+
+                    // Heartbeats are transport liveness only. They must reset
+                    // the reader timeout but never become a trace step,
+                    // planning event, or visible assistant content.
+                    if (currentEvent === 'heartbeat') continue;
 
                     if (currentEvent === 'planning_preview' && data) {
                         // Preview frames are a separate, read-only Viewer
@@ -3905,12 +4178,13 @@ async function sendChat(prefill, options) {
                                             plan: _ssPlan,
                                         })
                                     ).then(result => {
-                                        if (result && result.success) {
-                                            if (Array.isArray(result.attachments)) {
-                                                screenshotResults.push(...result.attachments);
-                                            } else if (result.url) {
-                                                screenshotResults.push(result);
-                                            }
+                                        if (Array.isArray(result?.attachments)) {
+                                            // Preserve a verified Data Tree screenshot if a later Viewer
+                                            // capture fails. Its partial-evidence status is explained by
+                                            // the linked child; it is never upgraded into a Viewer claim.
+                                            screenshotResults.push(...result.attachments);
+                                        } else if (result?.success && result.url) {
+                                            screenshotResults.push(result);
                                         }
                                         if (result?.userMessage) {
                                             presentationMessages.push(String(result.userMessage));
@@ -4371,7 +4645,11 @@ async function sendChat(prefill, options) {
                         || result?.stale === true));
             if (reportActionFailed) {
                 turnFailed = true;
-                responseText = _reportGenerationFailureMessage(turnSessionId);
+                const failedAction = uiActionResults.find(result => result?.success === false);
+                responseText = failedAction?.stage === 'report_capture'
+                    && typeof reportCaptureFailureMessage === 'function'
+                    ? reportCaptureFailureMessage(failedAction.captureFailure, turnIdentity.responseLanguage)
+                    : _reportGenerationFailureMessage(turnSessionId, failedAction);
                 finalResponseReceived = true;
             } else {
                 responseText = turnIdentity.responseLanguage === 'zh'
@@ -4418,8 +4696,12 @@ async function sendChat(prefill, options) {
             presentationSemanticKeys.add(semanticKey);
             presentationAttachments.push(item);
         });
+        const responseContract = window._lastLLMMeta?.response_contract || null;
+        const forceVisualAnalysis = _visualTurnRequiresExplanation(responseContract);
         const visualContentResults = sessionContentResults.filter(item =>
-            item && item.url && _visualAttachmentRequiresAnalysis(item)
+            item && item.url && (
+                _visualAttachmentRequiresAnalysis(item) || forceVisualAnalysis
+            )
         );
 
         // A screenshot requested for explanation is visual context, not the
@@ -4433,7 +4715,9 @@ async function sendChat(prefill, options) {
         // whitelist in the user's text: the same question can be phrased in
         // any language, and an imperative capture can explicitly opt out.
         const shouldAnalyzeVisualEvidence = !isInternalFollowup
-            && allVisualEvidence.some(_visualAttachmentRequiresAnalysis);
+            && allVisualEvidence.some(item => item && item.url && (
+                _visualAttachmentRequiresAnalysis(item) || forceVisualAnalysis
+            ));
         const visualAnalysisQueued = shouldAnalyzeVisualEvidence && _queueVisualAnalysisFollowUp(
             allVisualEvidence,
             text,
@@ -4442,6 +4726,12 @@ async function sendChat(prefill, options) {
                 sessionId: turnSessionId,
                 screenshotMode: screenshotGallery.mode || 'chat',
                 includeAll: true,
+                forceAnalysis: forceVisualAnalysis,
+                preliminaryResponse: [
+                    window._lastLLMMeta?.multi_intent_query ? responseText : '',
+                    presentationMessages.filter(Boolean).slice(-1)[0] || '',
+                ].filter(Boolean).join('\n\n'),
+                multiIntentQuery: window._lastLLMMeta?.multi_intent_query === true,
             },
         );
         // The parent presentation turn owns the images, while the linked
@@ -4508,50 +4798,29 @@ async function sendChat(prefill, options) {
         // capture phase; keep the chat clean and show the later multimodal
         // answer instead. For a pure screenshot request the gallery itself is
         // the answer, matching the existing UI behavior.
-        const responseContract = window._lastLLMMeta?.response_contract || null;
-        const suppressScreenshotAck = visualAnalysisContinuation || _isScreenshotAckResponse(
-            renderedFinalText,
-            steps,
-            visualContentResults,
-            responseContract,
-            text,
+        const hasScreenshotEvidence = screenshotResults.length + visualContentResults.length > 0;
+        const suppressScreenshotAck = visualAnalysisContinuation || (
+            hasScreenshotEvidence && _isScreenshotAckResponse(
+                renderedFinalText,
+                steps,
+                visualContentResults,
+                responseContract,
+                text,
+            )
         );
-        if (!suppressScreenshotAck) {
-            // The browser is authoritative for persisted Session content. Its
-            // result replaces only an empty/internal acknowledgement, never a
-            // substantive analysis written by the model.
-            if (presentationMessage && (
-                !renderedFinalText.trim()
-                || genericFinalResponse.test(renderedFinalText.trim())
-            )) {
+        const screenshotCaptureUnavailableForQuestion =
+            _visualTurnRequiresExplanation(responseContract)
+            && presentationTools.some(step => step.tool === 'ui_screenshot')
+            && !hasScreenshotEvidence;
+        if (!visualAnalysisContinuation && presentationMessage
+            && (isPresentationOnlyTurn || window._lastLLMMeta?.multi_intent_query
+                || screenshotCaptureUnavailableForQuestion)) {
+            if (window._lastLLMMeta?.multi_intent_query && renderedFinalText.trim()) {
+                renderedFinalText = renderedFinalText.trim() + '\n\n' + presentationMessage;
+            } else {
                 renderedFinalText = presentationMessage;
-                finalResponseReceived = true;
             }
-            // A tool-only turn can legitimately finish without a model-written
-            // sentence (for example, a dose inspection request whose tool only
-            // returned structured metrics). Do not show the internal generic
-            // acknowledgement; turn the real current-case metrics into a small,
-            // language-matched answer instead.
-            if (!renderedFinalText.trim() || genericFinalResponse.test(renderedFinalText.trim())) {
-                if (isInternalFollowup) {
-                    renderedFinalText = _visualAnalysisUnavailableMessage(
-                        turnSessionId,
-                        turnIdentity.responseLanguage,
-                    );
-                } else {
-                    const doseFallback = await _buildDoseResultsFallback(text, turnSessionId);
-                    if (doseFallback) {
-                        renderedFinalText = doseFallback;
-                    }
-                }
-                finalResponseReceived = true;
-            }
-            if (!renderedFinalText.trim() || genericFinalResponse.test(renderedFinalText.trim())) {
-                renderedFinalText = isInternalFollowup
-                    ? _visualAnalysisUnavailableMessage(turnSessionId, turnIdentity.responseLanguage)
-                    : _chatUserVisibleFailure(turnSessionId, 'response');
-                finalResponseReceived = true;
-            }
+            finalResponseReceived = true;
         }
         if (suppressScreenshotAck && responseEl) {
             try {
@@ -4597,11 +4866,14 @@ async function sendChat(prefill, options) {
             );
             let usedGroundedFallback = false;
             if (_visualResponseNeedsGroundedFallback(renderedFinalText, opts.visualEvidence || [])) {
+                const multiTurnContext = opts.multiIntentQuery === true
+                    ? String(opts.visualContext?.preliminary_response || '').trim() : '';
                 renderedFinalText = _visualEvidenceFallbackResponse(
                     opts.visualEvidence || [],
                     turnSessionId,
                     turnIdentity.responseLanguage,
                     text,
+                    multiTurnContext,
                 );
                 usedGroundedFallback = true;
             }
@@ -4812,7 +5084,7 @@ async function sendChat(prefill, options) {
                 const traceTerminal = !reconnectNeeded
                     && (turnCompleted || turnFailed || turnCancelled);
                 if (traceTerminal && chainEl) {
-                    if ((turnFailed || turnCancelled)
+                    if (turnCancelled
                         && typeof cancelThinkingChain === 'function') {
                         cancelThinkingChain(chainEl, headerEl);
                     } else if (typeof finalizeThinkingChain === 'function') {
@@ -4838,7 +5110,7 @@ async function sendChat(prefill, options) {
             window._chatStreaming = false;
             setStreamingState(false);
             setTimeout(() => { try { _flushHiddenChatQueue(); } catch (_) {} }, 0);
-            if (turnCompleted) {
+            if (turnCompleted || turnFailed || turnCancelled) {
                 setTimeout(() => { try { _flushQueuedChatTurns(); } catch (_) {} }, 0);
             }
         }

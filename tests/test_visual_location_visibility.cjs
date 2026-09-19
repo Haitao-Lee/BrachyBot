@@ -26,6 +26,19 @@ const ctx = {
     applyDataTreeViewVisibility: () => refreshed++, renderDataTree: () => {},
 };
 vm.createContext(ctx);
+vm.runInContext(extract('brachybot-chat-todo.js', '_visualTurnRequiresExplanation'), ctx);
+vm.runInContext(extract('brachybot-chat-todo.js', '_visualEvidenceDescriptor'), ctx);
+assert.equal(ctx._visualTurnRequiresExplanation({ text_required: true, act: 'question' }), true);
+assert.equal(ctx._visualTurnRequiresExplanation({ text_required: true, act: 'mixed' }), true);
+assert.equal(ctx._visualTurnRequiresExplanation({
+    text_required: true, act: 'command', evidence_supplemental: false,
+}), false);
+assert.equal(ctx._visualTurnRequiresExplanation(null), false);
+const optedOutScreenshot = { url: '/shot.png', target: 'viewer-3d', analysis_required: false };
+assert.equal(ctx._visualEvidenceDescriptor(optedOutScreenshot), null);
+const forcedEvidence = ctx._visualEvidenceDescriptor(optedOutScreenshot, 0, false, true);
+assert.equal(forcedEvidence.analysis_required, true);
+assert.equal(forcedEvidence.url, '/shot.png');
 for (const name of ['_revealScreenshotNodes', '_orderLocateCaptureViews']) {
     vm.runInContext(extract('brachybot-ui-api.js', name), ctx);
 }
@@ -45,16 +58,48 @@ assert.equal(JSON.stringify(ctx._orderLocateCaptureViews(plan, [{ target: 'viewe
 assert.equal(ctx._orderLocateCaptureViews({ ...plan, mode: 'report' }, [{ target: 'viewer-3d' }]).length, 1);
 assert.equal(ctx._orderLocateCaptureViews(plan, [{ target: 'data-tree' }]).length, 1);
 vm.runInContext(extract('brachybot-chat-todo.js', '_visualResponseNeedsGroundedFallback'), ctx);
+vm.runInContext(extract('brachybot-chat-todo.js', '_visualEvidenceFallbackResponse'), ctx);
 assert.equal(ctx._visualResponseNeedsGroundedFallback('The brown mesh is the guide.', [
     { visual_purpose: 'locate' },
 ]), true);
 assert.equal(ctx._visualResponseNeedsGroundedFallback('The brown mesh is the guide.', [
     { view_metadata: { grounding_manifest: { targets: [{ visible: false }] } } },
 ]), true);
+
+const treeOnlyAttachment = {
+    url: '/tree.png', target: 'data-tree', visual_purpose: 'locate',
+    view_metadata: { grounding_manifest: { targets: [{
+        target_ref: 'guide', label: 'Puncture guide v2', kind: 'data-tree-row',
+        visible: true, in_view: true, annotatable: true,
+        scene_visible: false, scene_visibility_known: true,
+    }] } },
+};
+const treeFallback = ctx._visualEvidenceFallbackResponse(
+    [treeOnlyAttachment], 'session-a', 'zh', 'locate',
+    'Planning_2 completed; Code help is available.',
+);
+assert.match(treeFallback, /Planning_2 completed/);
+assert.match(treeFallback, /Code help is available/);
+assert.match(treeFallback, /Data Tree.*Puncture guide v2/);
+assert.match(treeFallback, /3D Viewer.*\u672a\u6838\u9a8c\u5230/);
+assert.match(treeFallback, /\u9690\u85cf\u72b6\u6001/);
+const unknownTreeFallback = ctx._visualEvidenceFallbackResponse([{
+    ...treeOnlyAttachment,
+    view_metadata: { grounding_manifest: { targets: [{
+        ...treeOnlyAttachment.view_metadata.grounding_manifest.targets[0],
+        scene_visibility_known: false,
+    }] } },
+}], 'session-a', 'zh', 'locate');
+assert.doesNotMatch(unknownTreeFallback, /\u9690\u85cf\u72b6\u6001/);
+assert.match(unknownTreeFallback, /\u65e0\u6cd5\u6838\u9a8c.*\u4e09\u7ef4\u663e\u793a\u72b6\u6001/);
+console.log('PASS: browser fallback keeps compound answers, verifies Data Tree row, and does not overstate unknown visibility');
+
 console.log('PASS: reveal/restore, parent scope, sibling isolation, capture order, report isolation, prose guard');
 
 // Exercise the actual async orchestrator, including upload failure cleanup.
 let failUpload = false;
+let invalidViewer = false;
+let unresolvedTree = false;
 let captures = [];
 let activeSession = 'session-a';
 let switchDuringCapture = false;
@@ -65,12 +110,34 @@ Object.assign(ctx, {
     _normalizeStructuredScreenshotPlan: (target, question, options) => options.plan,
     _snapshotScreenshotViewerState: () => ({}),
     _prepareScreenshotTarget: async () => ({}),
-    _applyStructuredScreenshotPlan: async () => ({ restoreFocus: () => {} }),
+    _applyStructuredScreenshotPlan: async (_spec, target) => ({
+        restoreFocus: () => {},
+        focusResult: target === 'data-tree'
+            ? { status: unresolvedTree ? 'unverified' : 'resolved' }
+            : { status: 'resolved' },
+    }),
     _waitScreenshotFrames: async () => {},
     _captureScreenshotEvidenceBundle: async target => {
         captures.push([target, guide.visible]);
         if (switchDuringCapture && target === 'viewer-3d') activeSession = 'session-b';
-        return { dataUrl: 'data:image/png;base64,fixture', groundingManifest: { targets: [] } };
+        const viewerValid = target !== 'viewer-3d' || !invalidViewer;
+        return {
+            dataUrl: 'data:image/png;base64,fixture',
+            groundingManifest: { targets: [{
+                target_ref: 'guide',
+                label: 'Puncture guide v2',
+                kind: target === 'data-tree' ? 'data-tree-row' : 'scene-object',
+                visible: true,
+                loaded: true,
+                status: 'ready',
+                scene_visible: target === 'viewer-3d' ? (viewerValid && guide.visible3D) : false,
+                scene_visibility_known: true,
+                data_tree_visible: true,
+                in_view: true,
+                annotatable: viewerValid,
+                normalized_bounds: [0.2, 0.2, 0.4, 0.4],
+            }] },
+        };
     },
     _validateScreenshotDataUrl: async () => true,
     _localizedScreenshotTargetLabel: target => target,
@@ -102,7 +169,38 @@ vm.runInContext(extract('brachybot-ui-api.js', '_interceptScreenshot'), ctx);
         assert.equal(result.success, !fail);
     }
     console.log('PASS: async capture captures hidden row first, reveals before viewer/annotation, restores on success and failure');
+
     failUpload = false;
+    invalidViewer = true;
+    captures = [];
+    uploads = 0;
+    const ungrounded = await ctx._interceptScreenshot('viewer-3d', 'locate', {}, {
+        sessionId: 'session-a',
+        plan: { ...plan, annotation_policy: 'required', views: [{ target: 'viewer-3d' }] },
+    });
+    assert.equal(ungrounded.success, false);
+    assert.equal(ungrounded.error, 'target_not_verified_visible_in_viewer');
+    assert.deepEqual(Array.from(ungrounded.attachments, item => item.target), ['data-tree']);
+    assert.equal(uploads, 1, 'only the independently verified Data Tree evidence is uploaded');
+    assert.equal(JSON.stringify([guide, parent, sibling]), before);
+    console.log('PASS: unverified Viewer is rejected while the verified Data Tree row is retained');
+
+    invalidViewer = false;
+    unresolvedTree = true;
+    captures = [];
+    uploads = 0;
+    const unresolved = await ctx._interceptScreenshot('viewer-3d', 'locate', {}, {
+        sessionId: 'session-a',
+        plan: { ...plan, annotation_policy: 'required', views: [{ target: 'viewer-3d' }] },
+    });
+    assert.equal(unresolved.success, false);
+    assert.match(unresolved.error, /target_row_not_verified_in_live_data_tree/);
+    assert.deepEqual(captures, [], 'do not capture any surface before live target-row verification');
+    assert.equal(uploads, 0);
+    assert.equal(JSON.stringify([guide, parent, sibling]), before);
+    console.log('PASS: unresolved Data Tree focus aborts all capture');
+
+    unresolvedTree = false;
     switchDuringCapture = true;
     captures = [];
     uploads = 0;

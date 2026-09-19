@@ -88,10 +88,50 @@ def test_tree_row_visibility_is_distinct_from_mesh_visibility():
     answer = grounded_location_answer({"evidence": [{
         "visual_purpose": "locate", "target": "data-tree",
         "grounding_manifest": {"targets": [{
+            "target_ref": "surgical_guide:active",
             "label": "Puncture guide v2", "kind": "data-tree-row",
             "visible": True, "in_view": True, "annotatable": True,
-            "scene_visible": False,
+            "scene_visible": False, "scene_visibility_known": True,
         }]},
     }]}, "zh")
     assert "截图已核验" in answer and "隐藏状态" in answer
     assert grounded_location_answer({"evidence": [{"visual_purpose": "explain"}]}, "zh") is None
+
+
+
+def test_tree_only_evidence_retains_other_subanswers_without_claiming_viewer_location():
+    answer = grounded_location_answer({
+        "preliminary_response": (
+            "Planning_2 is completed with 13 trajectories. "
+            "Code help is available; no code was run."
+        ),
+        "evidence": [{
+            "visual_purpose": "locate", "target": "data-tree",
+            "grounding_manifest": {"targets": [{
+                "target_ref": "surgical_guide:active",
+                "label": "Puncture guide v2", "kind": "data-tree-row",
+                "visible": True, "in_view": True, "annotatable": True,
+                "scene_visible": False, "scene_visibility_known": True,
+                "status": "ready",
+            }]},
+        }],
+    }, "zh")
+    assert "Planning_2" in answer and "Code help is available" in answer
+    assert "Puncture guide v2" in answer
+    assert "Viewer" in answer and "\u4e09\u7ef4\u622a\u56fe" in answer
+    assert "\\n" not in answer
+    assert "\u9888\u90e8" not in answer and "\u9752\u8272" not in answer
+
+
+def test_tree_row_with_unknown_scene_visibility_is_not_called_hidden():
+    answer = grounded_location_answer({"evidence": [{
+        "visual_purpose": "locate", "target": "data-tree",
+        "grounding_manifest": {"targets": [{
+            "target_ref": "surgical_guide:active",
+            "label": "Puncture guide v2", "kind": "data-tree-row",
+            "visible": True, "in_view": True, "annotatable": True,
+            "scene_visible": False, "scene_visibility_known": False,
+        }]},
+    }]}, "zh")
+    assert "\u9690\u85cf\u72b6\u6001" not in answer
+    assert "\u65e0\u6cd5\u6838\u9a8c" in answer

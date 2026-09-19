@@ -42,10 +42,16 @@
     let workspaceServerRecoveryInFlight = null;
     let workspaceServerRecoveryPending = false;
     let workspaceServerAvailable = null;
+    // A health probe is a liveness signal, not a proof that the server has
+    // restarted. During a long planner step the Python process can briefly
+    // miss one request because CPU/I/O is busy. Do not flash the global
+    // server indicator red (or start recovery UI) on that single miss.
+    let workspaceServerHealthFailures = 0;
     let workspaceServerInstanceId = '';
     let loadSessionsInFlight = null;
     const WORKSPACE_SERVER_HEALTH_INTERVAL_MS = 5000;
     const WORKSPACE_SERVER_HEALTH_TIMEOUT_MS = 5000;
+    const WORKSPACE_SERVER_HEALTH_FAILURE_THRESHOLD = 3;
     // Dose controls are persisted in physical Gy. Legacy snapshots that
     // explicitly used model units are converted with their saved calibration.
     const GY_VALUE_IDS = new Set(['inLowestEnergy', 'outHighestEnergy']);
@@ -194,7 +200,13 @@
         workspaceServerHealthInFlight = (async () => {
             try {
                 const response = await workspaceFetch(
-                    '/api/status?lightweight=1',
+                    // /api/status?lightweight=1 is a workspace read: it must
+                    // load and normalize the selected case snapshot. It is
+                    // therefore not a liveness endpoint and can legitimately
+                    // take several seconds while a planner checkpoints large
+                    // arrays. Use the process-local health route here so a
+                    // slow workspace never masquerades as an offline server.
+                    '/api/healthz',
                     { cache: 'no-store', credentials: 'same-origin' },
                     WORKSPACE_SERVER_HEALTH_TIMEOUT_MS,
                 );
@@ -231,6 +243,7 @@
                 );
                 if (serverInstanceId) workspaceServerInstanceId = serverInstanceId;
                 const recovered = workspaceServerAvailable === false;
+                workspaceServerHealthFailures = 0;
                 workspaceServerAvailable = true;
                 setWorkspaceServerConnectionStatus(true);
                 if (restarted) {
@@ -246,10 +259,26 @@
                 }
                 return { available: true, recovered, restarted };
             } catch (error) {
-                if (workspaceServerAvailable === true) workspaceServerRecoveryPending = true;
-                workspaceServerAvailable = false;
-                setWorkspaceServerConnectionStatus(false);
-                return { available: false, error };
+                workspaceServerHealthFailures += 1;
+                const serverLikelyUnavailable = (
+                    workspaceServerHealthFailures
+                    >= WORKSPACE_SERVER_HEALTH_FAILURE_THRESHOLD
+                );
+                // Preserve the last known-good state through isolated probe
+                // misses. A real outage becomes visible after consecutive
+                // failures, while a busy long-running planning request no
+                // longer causes an offline flash every five seconds.
+                if (serverLikelyUnavailable) {
+                    if (workspaceServerAvailable === true) workspaceServerRecoveryPending = true;
+                    workspaceServerAvailable = false;
+                    setWorkspaceServerConnectionStatus(false);
+                }
+                return {
+                    available: !serverLikelyUnavailable,
+                    degraded: !serverLikelyUnavailable,
+                    failures: workspaceServerHealthFailures,
+                    error,
+                };
             } finally {
                 workspaceServerHealthInFlight = null;
                 scheduleWorkspaceServerHealthCheck();
@@ -4284,11 +4313,15 @@
     function workspaceSavePayload(ownerSessionId, reason, options = {}) {
         const payload = {
             session_id: ownerSessionId,
-            revision: sessionRevisions[ownerSessionId] ?? revision,
+            revision: options.ignoreRevision === true
+                ? null
+                : (sessionRevisions[ownerSessionId] ?? revision),
             report: reportState(ownerSessionId),
-            chat: chatState(ownerSessionId),
             reason,
         };
+        if (options.skipChat !== true) {
+            payload.chat = chatState(ownerSessionId);
+        }
         // Chat and report remain durable while a restore is incomplete, but the
         // partial ui.state is not published over the saved presentation.
         if (options.skipUiState !== true) {
@@ -4304,7 +4337,7 @@
                 'Content-Type': 'application/json',
                 'X-BrachyBot-Session': ownerSessionId,
             },
-            body: JSON.stringify(payload),
+            body: JSON.stringify({ ...payload, response_mode: 'ack' }),
         });
         return {
             response,
@@ -4347,7 +4380,7 @@
             for (let attempt = 0; attempt < 2; attempt += 1) {
                 const payload = attempt === 0
                     ? initialPayload
-                    : Object.assign({}, initialPayload, {
+                    : Object.assign({}, initialPayload, options.ignoreRevision === true ? {} : {
                         revision: sessionRevisions[ownerSessionId] ?? initialPayload.revision,
                     });
                 const { response, data } = await postWorkspaceSave(ownerSessionId, payload);
@@ -4408,15 +4441,21 @@
                 return typeof window.workspaceHasSavedPresentation === 'function'
                     && window.workspaceHasSavedPresentation(workspace);
             })();
-        const skipUiState = !options.allowDuringRestore
-            && ((typeof isWorkspacePresentationWriteLocked === 'function'
-                && isWorkspacePresentationWriteLocked(ownerSessionId))
-                || presentationPendingRestore);
+        const skipUiState = options.skipUiState === true
+            || (!options.allowDuringRestore
+                && ((typeof isWorkspacePresentationWriteLocked === 'function'
+                    && isWorkspacePresentationWriteLocked(ownerSessionId))
+                    || presentationPendingRestore));
         const prior = workspaceSaveInFlight[ownerSessionId];
+        const writeOptions = {
+            skipUiState,
+            skipChat: options.skipChat === true,
+            ignoreRevision: options.ignoreRevision === true,
+        };
         const save = prior
             ? Promise.resolve(prior).catch(() => false)
-                .then(() => _writeWorkspaceSnapshot(ownerSessionId, reason, { skipUiState }))
-            : _writeWorkspaceSnapshot(ownerSessionId, reason, { skipUiState });
+                .then(() => _writeWorkspaceSnapshot(ownerSessionId, reason, writeOptions))
+            : _writeWorkspaceSnapshot(ownerSessionId, reason, writeOptions);
         workspaceSaveInFlight[ownerSessionId] = save;
         try {
             return await save;

@@ -520,6 +520,7 @@ function removeReportFigure(idx) {
 //          peak dose voxel, arranged in a row
 //   Bottom: DVH curve (CTV + OARs)
 let _reportCapturePromise = null;
+let _reportCapturePromiseKey = '';
 let _reportCaptureGeneration = 0;
 const REPORT_CAPTURE_STEP_TOTAL = 7;
 const _reportCaptureUiState = {
@@ -1195,9 +1196,55 @@ if (!window.__brachybotReportPlanningLifecycleBound) {
 // Serialize report captures. A planning refresh can be triggered by several
 // SSE events; overlapping captures otherwise race over mesh visibility and
 // leave the 3D renderer in the partially hidden state used for Figure 1.
+function prepareReportCaptureLayout() {
+    const panel = document.getElementById('panelViewers');
+    if (!panel) throw new Error('Report capture viewer panel is unavailable');
+    const saved = [];
+    const save = element => {
+        saved.push([element, element.getAttribute('style')]);
+        return element.style;
+    };
+    // Hidden tabs have no layout box. Render the existing viewer offscreen
+    // without switching tabs (switchPanel starts unrelated loads/captures).
+    const rect = panel.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2 || getComputedStyle(panel).display === 'none') {
+        const style = save(panel);
+        style.setProperty('display', 'flex', 'important');
+        style.setProperty('flex-direction', 'column', 'important');
+        style.setProperty('position', 'fixed', 'important');
+        style.setProperty('left', '-16000px', 'important');
+        style.setProperty('top', '0', 'important');
+        style.setProperty('width', '1280px', 'important');
+        style.setProperty('height', '1000px', 'important');
+        style.setProperty('opacity', '0', 'important');
+        style.setProperty('pointer-events', 'none', 'important');
+    }
+    // Fullscreen/single-view layouts can hide the other required planes.
+    panel.querySelectorAll('.viewer-card').forEach(card => {
+        if (getComputedStyle(card).display !== 'none') return;
+        const style = save(card);
+        style.setProperty('display', 'flex', 'important');
+        style.setProperty('min-width', '400px', 'important');
+        style.setProperty('min-height', '320px', 'important');
+    });
+    return () => {
+        for (const [element, css] of saved.slice().reverse()) {
+            if (css === null) element.removeAttribute('style');
+            else element.setAttribute('style', css);
+        }
+        try {
+            scene3D.resize?.();
+            scene3D.requestRender?.(2);
+        } catch (error) {
+            console.warn('[Report] Viewer resize after layout restoration failed:', error);
+        }
+    };
+}
+
 async function autoCaptureReportFigures(options = {}) {
     const requestedSessionId = String(options.sessionId || _currentReportCaptureSessionId());
     const requestedPlanningId = String(options.planningId || _currentReportCapturePlanningId());
+    const requestedCaptureKey = `${requestedSessionId}\u0000${requestedPlanningId}`;
     const captureGate = reportCaptureAllowed({
         planningId: requestedPlanningId,
         allowTerminalPlanning: options.allowTerminalPlanning === true,
@@ -1215,7 +1262,16 @@ async function autoCaptureReportFigures(options = {}) {
         return { stale: false, blocked: true, reason: captureGate.reason };
     }
     if (_reportCapturePromise) {
-        await _reportCapturePromise;
+        // Capture is a case/planning-scoped transaction.  A second caller
+        // arriving while the first transaction is restoring the Viewer must
+        // join that transaction, not recursively start a second seven-image
+        // capture after the shared promise resolves.  The old recursion was
+        // the source of duplicate screenshots and left report.autofill
+        // waiting on a second full capture.
+        const activeCapturePromise = _reportCapturePromise;
+        const activeCaptureKey = _reportCapturePromiseKey;
+        const activeCaptureResult = await activeCapturePromise;
+        if (activeCaptureKey === requestedCaptureKey) return activeCaptureResult;
         if (requestedSessionId !== _currentReportCaptureSessionId()
             || requestedPlanningId !== _currentReportCapturePlanningId()) return { stale: true };
         return autoCaptureReportFigures(options);
@@ -1246,8 +1302,10 @@ async function autoCaptureReportFigures(options = {}) {
         captureFinished: false,
         captureCancelled: false,
         captureWatchdog: null,
+        persistAfterCapture: options.persistAfterCapture !== false,
     };
     let restoreViewer;
+    let restoreCaptureLayout = () => {};
     try {
         restoreViewer = snapshotReportViewerPresentation();
     } catch (error) {
@@ -1269,6 +1327,7 @@ async function autoCaptureReportFigures(options = {}) {
             } catch (error) {
                 restoreError = error;
             } finally {
+                restoreCaptureLayout();
                 window.__reportCaptureActive = false;
                 if (presentationToken !== null) window.unlockWorkspacePresentationWrites?.(presentationToken);
                 try {
@@ -1318,8 +1377,26 @@ async function autoCaptureReportFigures(options = {}) {
         rejectCaptureTimeout(new Error('Report capture timed out; previous figures retained.'));
     }, REPORT_CAPTURE_TOTAL_TIMEOUT_MS);
     window.__reportCaptureActive = true;
-    const promise = Promise.race([_autoCaptureReportFiguresImpl(context), captureTimeout]);
-    _reportCapturePromise = promise;
+    const captureWork = (async () => {
+        hideReportUploadMasks();
+        restoreCaptureLayout = prepareReportCaptureLayout();
+        await _reportCaptureAwait(() => _reportDvhWaitForPaint(), 'Report viewer layout');
+        if (context.captureCancelled) return { stale: true };
+        scene3D.resize?.();
+        return _autoCaptureReportFiguresImpl(context);
+    })();
+    const promise = Promise.race([captureWork, captureTimeout]);
+    let resolveSharedCapture;
+    let rejectSharedCapture;
+    const sharedCapturePromise = new Promise((resolve, reject) => {
+        resolveSharedCapture = resolve;
+        rejectSharedCapture = reject;
+    });
+    // A rejected shared promise may legitimately have no joiner.  Mark it as
+    // handled while still preserving rejection for concurrent callers.
+    void sharedCapturePromise.catch(() => {});
+    _reportCapturePromise = sharedCapturePromise;
+    _reportCapturePromiseKey = requestedCaptureKey;
     let captureResult = null;
     let captureError = null;
     try {
@@ -1329,7 +1406,7 @@ async function autoCaptureReportFigures(options = {}) {
         captureError = error;
         throw error;
     } finally {
-        if (_reportCapturePromise === promise) {
+        if (_reportCapturePromise === sharedCapturePromise) {
             let restoreError = null;
             try {
                 if (context.captureReadyPromise) await context.captureReadyPromise;
@@ -1350,6 +1427,10 @@ async function autoCaptureReportFigures(options = {}) {
                 captured: context.reportCaptureUiCaptured,
             });
             _reportCapturePromise = null;
+            _reportCapturePromiseKey = '';
+            const sharedError = restoreError || captureError;
+            if (sharedError) rejectSharedCapture(sharedError);
+            else resolveSharedCapture(captureResult);
             if (restoreError) throw restoreError;
         }
     }
@@ -1368,6 +1449,39 @@ function _setReportNormalSurface(mesh) {
     });
 }
 
+// Upload Mask is staging data, not report anatomy. Only change presentation
+// inside the report transaction; promoted CTV/OAR structures remain available.
+function hideReportUploadMasks() {
+    const labels = state.maskLabels || {};
+    const isUpload = mask => {
+        if (!mask) return false;
+        const promoted = [mask.classification, mask.movedTo, mask.moved_to]
+            .some(value => ['ctv', 'oar'].includes(String(value || '').toLowerCase()));
+        return !promoted && (mask.kind === 'uploaded_mask_label'
+            || mask.source === 'uploaded_mask' || mask.upload_mask_id || mask.uploadMaskId);
+    };
+    const hiddenIds = new Set();
+    for (const [id, mask] of Object.entries(labels)) {
+        if (!isUpload(mask)) continue;
+        [id, mask.id, mask.mask_id, mask.objectId, mask.nodeId]
+            .filter(Boolean).forEach(ref => hiddenIds.add(String(ref)));
+        mask.visible = mask.visible2D = mask.visible3D = false;
+    }
+    for (const upload of dataTreeState.uploadMasks || []) {
+        if (!upload) continue;
+        upload.visible = upload.visible2D = upload.visible3D = false;
+    }
+    for (const [id, mesh] of Object.entries(scene3D.meshes || {})) {
+        if (!mesh) continue;
+        const meta = mesh.userData || {};
+        const refs = [id, meta.maskId, meta.mask_id, meta.objectId, meta.nodeId];
+        if (isUpload(meta) || refs.some(ref => hiddenIds.has(String(ref)))) {
+            mesh.visible = false;
+            mesh.traverse?.(object => { object.visible = false; });
+        }
+    }
+}
+
 function snapshotReportViewerPresentation() {
     const sessionId = _currentReportCaptureSessionId();
     const planningId = _currentReportCapturePlanningId();
@@ -1380,6 +1494,13 @@ function snapshotReportViewerPresentation() {
         restorePending: state.doseTexture.restorePending,
     } : null;
     const objects = [];
+    const maskPresentation = [...Object.values(state.maskLabels || {}),
+        ...(dataTreeState.uploadMasks || [])].filter(Boolean).map(mask => ({
+        mask,
+        fields: ['visible', 'visible2D', 'visible3D'].map(key => ({
+            key, present: Object.prototype.hasOwnProperty.call(mask, key), value: mask[key],
+        })),
+    }));
     const materials = new Map();
     for (const mesh of Object.values(scene3D.meshes || {})) {
         mesh?.traverse?.(object => {
@@ -1408,6 +1529,10 @@ function snapshotReportViewerPresentation() {
             if (sessionId !== _currentReportCaptureSessionId()
                 || planningId !== _currentReportCapturePlanningId()) return;
             if (textureIntent && state.doseTexture) Object.assign(state.doseTexture, textureIntent);
+            maskPresentation.forEach(({ mask, fields }) => fields.forEach(({ key, present, value }) => {
+                if (present) mask[key] = value;
+                else delete mask[key];
+            }));
             objects.forEach(({ object, visible, renderOrder }) => {
                 object.visible = visible;
                 object.renderOrder = renderOrder;
@@ -1459,6 +1584,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
     // Stage screenshots off-form. Cancellation/failure must never clear the
     // last saved evidence; only publish images owned by this completed plan.
     const stagedFigures = [];
+    const captureFailures = [];
     uiDebugLog('[Report] Starting capture, 3D meshes:', Object.keys(scene3D.meshes).length,
         'doseOverlay:', !!state.doseOverlay, 'dvhData:', !!state.dvhData);
 
@@ -2267,7 +2393,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
     // both the preview and exported PDF.
     const REPORT_FIGURE_LONG_EDGE = 2400;
 
-    async function _waitForReportDoseSlice(axis, sliceIndex, timeoutMs = 12000) {
+    async function _waitForReportDoseSlice(axis, sliceIndex, timeoutMs = 60000) {
         const cap = axis.charAt(0).toUpperCase() + axis.slice(1);
         const expected = String(sliceIndex);
         const startedAt = performance.now();
@@ -2278,8 +2404,12 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 && doseCanvas?.dataset?.renderedSlice === expected
                 && doseCanvas?.dataset?.dosePending !== 'true';
             const contourReady = contourCanvas?.dataset?.renderedAxis === axis
-                && contourCanvas?.dataset?.renderedSlice === expected;
-            if (doseReady && contourReady && Number(state.slices?.[axis]) === Number(sliceIndex)) {
+                && contourCanvas?.dataset?.renderedSlice === expected
+                && contourCanvas?.dataset?.contourPending !== 'true';
+            const baseCanvas = document.getElementById(`sliceCanvas${cap}`);
+            const baseReady = baseCanvas?.dataset?.renderedAxis === axis
+                && baseCanvas?.dataset?.renderedSlice === expected;
+            if (baseReady && doseReady && contourReady && Number(state.slices?.[axis]) === Number(sliceIndex)) {
                 return true;
             }
             await _waitFrames(1);
@@ -2614,6 +2744,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             // Helper: render and capture 3D canvas
             async function _capture3D(label, maxOutputEdge = REPORT_FIGURE_LONG_EDGE, focusBox = null, focusOptions = {}) {
                 if (!isCurrentCapture()) return null;
+                hideReportUploadMasks();
                 await _waitFrames(3);
                 if (!isCurrentCapture()) return null;
                 const renderer = scene3D.renderer;
@@ -3016,7 +3147,10 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 renderer: !!scene3D.renderer, meshes: _meshCount
             });
         }
-    } catch (e) { console.warn('[Report] Figure 1 (3D seed plan) capture failed:', e); }
+    } catch (e) {
+        captureFailures.push({ stage: 'figure1', reason: String(e?.message || e) });
+        console.warn('[Report] Figure 1 (3D seed plan) capture failed:', e);
+    }
     finally {
         // A blank WebGL capture, canvas error, or image decode failure must
         // never leave OAR meshes hidden. This was the cause of the post-report
@@ -3286,6 +3420,8 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     // pixels so Figure 2 never embeds an apparent black panel.
                     async function captureDoseSurface3D(label) {
                         if (!isCurrentCapture()) return null;
+                        hideReportUploadMasks();
+                        if (!isCurrentCapture()) return null;
                         const evidence = _reportDoseSurfaceEvidence();
                         if (!evidence.ready) {
                             console.warn(
@@ -3356,6 +3492,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 if (isCurrentCapture()) await restoreDoseSurfaceState();
                 await _waitFrames(2);
             } catch (e) {
+                captureFailures.push({ stage: 'figure2_dose_surface', reason: String(e?.message || e) });
                 console.warn('[Report] dose surface close-up capture failed:', e);
                 reportCaptureStep(6, '三维剂量面验证失败，未保存 Fig 2d', 'Dose-surface validation failed; Fig 2(d) was not saved', 'warning');
             } finally {
@@ -3438,7 +3575,10 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 hasData: !!(state.doseOverlay && state.doseOverlay.data),
             });
         }
-    } catch (e) { console.warn('[Report] Figure 2 (dose+DVH) capture failed:', e); }
+    } catch (e) {
+        captureFailures.push({ stage: 'figure2', reason: String(e?.message || e) });
+        console.warn('[Report] Figure 2 (dose+DVH) capture failed:', e);
+    }
 
     // Re-render editor + preview
     if (!isCurrentCapture()) return { stale: true };
@@ -3447,7 +3587,8 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
     const missingAxes = Object.keys(REPORT_FIGURE_CAPTURE_CONTRACTS)
         .filter(axis => !stagedFigures.some(figure => figure.axis === axis));
     if (missingAxes.length) {
-        return { success: false, captured: 0, missing: missingAxes,
+        return { success: false, captured: stagedFigures.length, missing: missingAxes,
+            reason: 'report_figures_incomplete', failures: captureFailures,
             error: '标准报告截图未全部完成，原报告图片及当前显示已保留。缺少：' + missingAxes.join(', ') };
     }
     if (stagedFigures.length > 0) {
@@ -3474,7 +3615,8 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 throw new Error('Report captured but viewer restoration failed', { cause: error });
             }
         }
-        if (typeof window.persistWorkspace === 'function') {
+        if (captureContext.persistAfterCapture !== false
+            && typeof window.persistWorkspace === 'function') {
             const persisted = await _reportCaptureAwait(
                 () => window.persistWorkspace('report.figures.captured'),
                 'Report image persistence',

@@ -80,6 +80,8 @@ async function main() {
         _currentReportCaptureSessionId:()=> 's',_currentReportCapturePlanningId:()=> 'p',
         reportCaptureAllowed:()=>({allowed:true}),_reportCaptureUiStart:()=>1,
         _reportCaptureUiFinish(){},uiDebugLog(){},
+        prepareReportCaptureLayout:()=>()=>{}, _reportDvhWaitForPaint:async()=>{},
+        scene3D:{},
         snapshotReportViewerPresentation:()=>async()=>{restored++;},
         _reportCaptureAwait:async fn=>fn(),
         _autoCaptureReportFiguresImpl:()=>new Promise(()=>{}),

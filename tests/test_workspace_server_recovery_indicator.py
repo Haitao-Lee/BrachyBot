@@ -41,7 +41,28 @@ def test_server_restart_recovery_keeps_a_visible_resource_loading_boundary():
 
     # Force the browser to fetch the updated workspace bridge after a server
     # restart instead of retaining the prior cached script.
-    assert 'static/js/brachybot-workspace.js?v=59' in index
+    assert 'static/js/brachybot-workspace.js?v=63' in index
+
+
+def test_health_probe_is_process_local_and_transient_misses_do_not_flash_offline():
+    workspace = _source("web/app/static/js/brachybot-workspace.js")
+    routes = _source("web/routes/planning_routes.py")
+    server = _source("web/server.py")
+
+    assert "'/api/healthz'" in workspace
+    assert "WORKSPACE_SERVER_HEALTH_FAILURE_THRESHOLD = 3" in workspace
+    assert "workspaceServerHealthFailures += 1" in workspace
+    assert '"/api/healthz"' in routes
+    assert "BRACHYBOT_SERVER_STARTED_MONOTONIC" in routes
+    assert "app.config[\"BRACHYBOT_SERVER_STARTED_MONOTONIC\"]" in server
+
+
+def test_chat_stream_uses_an_explicit_keepalive_event():
+    chat_tasks = _source("web/chat_tasks.py")
+    chat_todo = _source("web/app/static/js/brachybot-chat-todo.js")
+    assert "CHAT_TASK_HEARTBEAT_SECONDS" in chat_tasks
+    assert 'encode_event("heartbeat"' in chat_tasks
+    assert "currentEvent === 'heartbeat'" in chat_todo
 
 
 def test_restart_recovery_notice_is_not_a_second_loading_spinner():
