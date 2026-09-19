@@ -60,8 +60,14 @@ def site_model_availability(model_type):
     runtime = _runtime_probe(runtime_python())
     if runtime.get('error'):
         missing.append(runtime['error'])
-    elif runtime.get('user') != 'brachybot':
-        missing.append('Inference must run as brachybot (dependencies are in the brachybot user site).')
+    elif (
+        os.environ.get('BRACHYBOT_INFERENCE_USER')
+        and runtime.get('user') != os.environ['BRACHYBOT_INFERENCE_USER']
+    ):
+        missing.append(
+            'Inference must run as the configured BRACHYBOT_INFERENCE_USER '
+            '(the dependencies live in that user site).'
+        )
     if model_type == 'vista3d_lung_tumor' and runtime.get('versions', {}).get('transformers') != '4.46.3':
         missing.append('VISTA-3D requires installed transformers==4.46.3; do not upgrade.')
     return dict(available=not missing, missing=missing, python=runtime_python(),
