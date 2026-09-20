@@ -425,7 +425,8 @@ def test_dose_contours_are_session_scoped_retried_and_redrawn_at_zoom_resolution
     assert "_syncLayerToSliceCanvas(axis, canvas, 7, { vector: true })" in contour
     assert "function _viewerVectorPixelRatio" in annotation
     assert "window.devicePixelRatio" in annotation
-    assert "request2DViewerResolutionRefresh();" in annotation
+    assert "const _viewerResolutionRefreshAxes = new Set();" in annotation
+    assert "request2DViewerResolutionRefresh(refreshAxes);" in annotation
     assert "const layerIds = [" in report_export
     assert "ctx.drawImage(layer, 0, 0, out.width, out.height)" in report_export
     assert "parent.querySelectorAll('canvas')" not in report_export
@@ -643,7 +644,7 @@ def test_needle_render_scheduler_survives_mixed_static_asset_revisions():
     # index.html. A stale assertion here falsely reports a deployment bug and
     # hides whether the endpoint interaction bundle is really versioned.
     assert "brachybot-viewer-layout.js?v=46" in index
-    assert "brachybot-3d-manual.js?v=103" in index
+    assert "brachybot-3d-manual.js?v=104" in index
     assert "scene3D.requestRender(1)" in layout
     assert "scene3D.requestRender(2)" in layout
     assert "window.requestRender = requestRender;" in manual
@@ -733,7 +734,7 @@ def test_dose_overlay_opacity_is_invariant_during_slice_scrubbing():
     assert "_composite2DViewerCanvas(cfg.ax, { doseOpacity: 0.75 })" in dvh_planning
     assert "_composite2DViewerCanvas(a.ax, { doseOpacity: 0.7 })" in ui_api
     assert "brachybot-viewer-volume.js?v=73" in index
-    assert "brachybot-3d-manual.js?v=103" in index
+    assert "brachybot-3d-manual.js?v=104" in index
     assert "brachybot-manual-annotation.js?v=26" in index
 
 

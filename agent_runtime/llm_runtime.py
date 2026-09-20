@@ -3015,7 +3015,7 @@ class LLMRuntimeMixin:
 
                 # Skip duplicate ui_screenshot calls
                 if tool_name == "ui_screenshot":
-                    if tool_name in _screenshot_called_this_turn:
+                    if _tool_key in _screenshot_called_this_turn:
                         logger.warning(f"Skipping duplicate ui_screenshot call")
                         step_id_ref[0] += 1
                         skip_step = {
@@ -3034,7 +3034,7 @@ class LLMRuntimeMixin:
                         steps.append(skip_step)
                         yield yield_event("step", skip_step)
                         continue
-                    _screenshot_called_this_turn.add(tool_name)
+                    _screenshot_called_this_turn.add(_tool_key)
                 tool_id = tc.get("id", f"tool_{step_id_ref[0]}")
 
                 # Tool call step

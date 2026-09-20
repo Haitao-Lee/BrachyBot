@@ -27,10 +27,23 @@ def explicit_segmentation_request(message):
         return False
     anatomy = r"(?:肝脏?|胰腺|肺|肾脏?|前列腺|头颈)"
     upload = r"(?:你好[,，])?我上传了(?:一名)?" + anatomy + r"(?:肿瘤|癌)患者(?:的)?ct[,，]"
+    explicit_site = (
+        r"(?:pancreatic|pancreas|hepatic|liver|renal|kidney|pulmonary|lung|"
+        r"colorectal|colon|prostate|head\s*(?:and|&)\s*neck|head[-\s]+neck|"
+        r"nasopharynx|nasopharyngeal)"
+    )
+    explicit_site_ctv = (
+        EP + r"segment\s+(?:(?:the\s+)?(?:ctv|gtv)\s+(?:for|of)\s+)?"
+        + r"(?:(?:a|the)\s+)?" + explicit_site
+        + r"(?:\s+(?:cancer|tumou?r|lesion))?"
+        + r"(?:\s+(?:ctv|gtv))?"
+        + r"(?:\s+(?:on\s+)?(?:ncct|cect|non[-\s]?contrast|"
+        + r"contrast[-\s]?enhanced)(?:\s+ct)?)?"
+    )
     return full(P + r"(?:再|重新)?(?:执行|启动)(?:一次)?\s*(?:ctv|oar)\s*分割", text) or full(
         r"(?:" + upload + r")?" + P + r"分割" + anatomy + r"和肿瘤", text
     ) or full(upload + P + r"分析肿瘤在哪[,，]有多大", text) or full(
-        EP + r"segment\s+(?:ctv for (?:pancreatic|liver|lung|prostate) cancer|a head and neck tumor ctv)", text
+        explicit_site_ctv, text
     )
 
 
@@ -61,18 +74,30 @@ def shortcut_supported(message, policy, *, pending_tumor_site=False, ui_state=No
     if policy.action_plan is not None:
         return planning_command(text)
     if intent == 'multi_intent_query':
-        subtask_intents = {
-            str(item[0])
-            for item in (getattr(policy, "parsed_subtasks", ()) or ())
-            if isinstance(item, (list, tuple)) and item
-        }
+        parsed_subtasks = tuple(getattr(policy, "parsed_subtasks", ()) or ())
         safe_reads = {
             "planning_provenance_query", "planning_assessment_query",
             "case_state_question", "case_dose_query", "image_metadata_query",
             "current_oar_query", "session_visual_location_query",
             "surgical_guide_status_query", "code_capability_query",
+            "ambiguous_visual_target_query", "unresolved_visual_target_query",
         }
-        return 2 <= len(subtask_intents) <= 6 and subtask_intents.issubset(safe_reads)
+        # Count subtasks, not distinct intent names: two independently
+        # grounded visual-location questions are both read-only and must stay
+        # separate so each can receive its own target-scoped screenshot.
+        return (
+            1 <= len(parsed_subtasks) <= 6
+            and all(
+                isinstance(item, (list, tuple))
+                and len(item) >= 2
+                and str(item[0]) in safe_reads
+                for item in parsed_subtasks
+            )
+        )
+    if intent == 'ambiguous_visual_target_query':
+        # The live catalog proved that this label belongs to multiple objects.
+        # Ask deterministically instead of letting a model guess an identity.
+        return True
     if intent == 'surgical_guide_status_query':
         # This contract only reaches the read-only status action, never generate.
         return True

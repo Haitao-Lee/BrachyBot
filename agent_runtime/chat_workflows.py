@@ -31,6 +31,7 @@ from agent_runtime.turn_policy import (
     is_current_oar_count_query,
     resolve_session_content_presentation,
     resolve_session_content_target,
+    resolve_session_visual_location_request,
     visual_analysis_policy,
 )
 from agent_runtime.response_contract import (
@@ -477,6 +478,48 @@ class ChatWorkflowMixin:
             + " No code was run for this capability question."
         )
 
+    def _visual_target_clarification_response(
+        self, message: str, lang: Optional[str] = None, visual: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Explain why a visual target was not captured without guessing."""
+        response_lang = self._response_language(lang)
+        state = self._ui_state_snapshot()
+        if visual is None:
+            visual = resolve_session_visual_location_request(
+                message,
+                conversation=getattr(getattr(self, "memory", None), "conversation", None),
+                ui_state=state,
+            )
+        ambiguous = bool(isinstance(visual, Mapping) and visual.get("ambiguous"))
+        labels = list(visual.get("ambiguous_labels") or []) if isinstance(visual, Mapping) else []
+        label = "、".join(f"“{str(value)}”" for value in labels[:4])
+        requested = str((visual or {}).get("target_query") or message or "").strip()
+        if response_lang == "zh":
+            if ambiguous:
+                target = f"（匹配名称：{label}）" if label else ""
+                return (
+                    f"当前界面目录中有多个不同对象符合该名称{target}，无法安全确定你指的是哪一个。"
+                    "本轮没有截取或标注这些歧义对象，也没有推测其位置；请补充 Data Tree 父级路径，"
+                    "或明确指定 Viewer 中的对象。"
+                )
+            return (
+                f"当前界面目录暂时无法将“{requested[:160]}”唯一对应到已加载对象。"
+                "本轮没有把其他对象当作目标截图，也没有推测位置；请确认目标已加载，"
+                "并提供 Data Tree 中显示的完整名称或父级路径。"
+            )
+        if ambiguous:
+            target = f" (matching labels: {label})" if label else ""
+            return (
+                f"Multiple distinct live objects match this name{target}, so I cannot safely choose one. "
+                "I did not capture or annotate an ambiguous object or infer its location. Please provide "
+                "its Data Tree parent path or identify the object in the Viewer."
+            )
+        return (
+            f"The current UI catalog cannot uniquely match “{requested[:160]}” to a loaded object. "
+            "I did not substitute another object or infer a location. Please confirm the target is loaded "
+            "and provide its exact Data Tree name or parent path."
+        )
+
     def _build_multi_intent_response(self, message: str, steps: List, policy=None) -> str:
         """Build bounded, localized context for recognized read-only subquestions."""
         policy = policy or getattr(self, "_active_turn_policy", None)
@@ -492,6 +535,8 @@ class ChatWorkflowMixin:
             "current_oar_query": "OAR 状态",
             "surgical_guide_status_query": "导板状态",
             "session_visual_location_query": "对象截图/位置",
+            "ambiguous_visual_target_query": "对象截图/位置",
+            "unresolved_visual_target_query": "对象截图/位置",
             "code_capability_query": "代码能力",
         }
         builders = {
@@ -504,6 +549,43 @@ class ChatWorkflowMixin:
         }
         sections = []
         visual_pending = False
+        ui_state = self._ui_state_snapshot()
+        conversation = getattr(getattr(self, "memory", None), "conversation", None)
+
+        def matching_screenshot_step(visual_request):
+            expected_refs = {
+                str(ref or "").strip()
+                for ref in (visual_request.get("target_refs") or [])
+                if str(ref or "").strip()
+            }
+            expected_query = re.sub(
+                r"\s+", " ",
+                str(visual_request.get("target_query") or "").strip(),
+            ).casefold()
+            for item in reversed(steps or []):
+                if item.get("tool") != "ui_screenshot":
+                    continue
+                params = item.get("params") if isinstance(item.get("params"), Mapping) else {}
+                actual_refs = {
+                    str(ref or "").strip()
+                    for key in ("target_refs", "object_ids", "data_tree_node_ids")
+                    for ref in (
+                        params.get(key) if isinstance(params.get(key), (list, tuple))
+                        else [params.get(key)]
+                    )
+                    if str(ref or "").strip()
+                }
+                actual_query = re.sub(
+                    r"\s+", " ",
+                    str(params.get("target_query") or params.get("question") or "").strip(),
+                ).casefold()
+                if (
+                    expected_refs and actual_refs == expected_refs
+                    and expected_query and actual_query == expected_query
+                ):
+                    return item
+            return None
+
         for intent, clause in subtasks:
             if intent == "code_capability_query":
                 body = self._code_capability_response(lang)
@@ -535,11 +617,48 @@ class ChatWorkflowMixin:
                         if is_zh else
                         "The guide-status tool returned no result, so guide generation cannot be determined."
                     )
-            elif intent == "session_visual_location_query":
-                # The browser-owned child returns the actual location evidence.
-                # Do not let a pending screenshot acknowledgement survive as a final claim.
-                visual_pending = True
-                continue
+            elif intent in {
+                "session_visual_location_query",
+                "ambiguous_visual_target_query",
+                "unresolved_visual_target_query",
+            }:
+                visual = resolve_session_visual_location_request(
+                    clause, conversation=conversation, ui_state=ui_state,
+                )
+                if (
+                    intent in {"ambiguous_visual_target_query", "unresolved_visual_target_query"}
+                    or not visual
+                    or visual.get("requires_discovery")
+                    or visual.get("ambiguous")
+                ):
+                    body = self._visual_target_clarification_response(
+                        clause, lang, visual,
+                    )
+                else:
+                    capture_step = matching_screenshot_step(visual)
+                    if capture_step and capture_step.get("status") == "done":
+                        # The browser-owned child returns the actual location
+                        # evidence after capture; the plan acknowledgement is
+                        # never treated as evidence itself.
+                        visual_pending = True
+                        continue
+                    if capture_step:
+                        detail = str(
+                            capture_step.get("result") or capture_step.get("content") or ""
+                        ).strip()
+                        body = (
+                            "对应截图任务执行失败，未据此判断目标位置。"
+                            + (f"原因：{detail[:500]}" if detail else "")
+                            if is_zh else
+                            "The target-specific screenshot task failed; no location was inferred from it."
+                            + (f" Reason: {detail[:500]}" if detail else "")
+                        )
+                    else:
+                        body = (
+                            "没有建立与该目标对应的截图任务，因此不对位置作判断。"
+                            if is_zh else
+                            "No screenshot task was established for this target, so its location is not stated."
+                        )
             else:
                 body = (
                     "这一子问题未能可靠解析，本轮未对它采取操作。"
@@ -2179,8 +2298,20 @@ class ChatWorkflowMixin:
         text = str(text or "").strip()
         if not text:
             return False
-        has_cjk = bool(re.search(r"[\u3400-\u4dbf\u4e00-\u9fff]", text))
-        return has_cjk if str(lang or "").lower().startswith("zh") else not has_cjk
+        cjk_count = len(re.findall(r"[\u3400-\u4dbf\u4e00-\u9fff]", text))
+        latin_count = len(re.findall(r"[a-z]", text, flags=re.IGNORECASE))
+        if str(lang or "").lower().startswith("zh"):
+            # Technical tokens such as CT/CTV are common in Chinese replies;
+            # tolerate them, but do not accept a mostly-English answer merely
+            # because it contains one Chinese character.
+            return cjk_count > 0 and (
+                latin_count == 0 or cjk_count * 100 >= max(200, latin_count * 22)
+            )
+        # English may contain incidental Chinese names, but the answer must
+        # still have a clear English majority rather than a single Latin token.
+        return latin_count >= 2 and (
+            cjk_count == 0 or latin_count >= max(4, cjk_count * 3)
+        )
 
     @staticmethod
     def _local_query_answer_uses_known_planning_refs(
@@ -3219,6 +3350,7 @@ class ChatWorkflowMixin:
         # and guide status can never fall through to the mutating default action.
         local_direct_intents = {
             "session_visual_location_query",
+            "ambiguous_visual_target_query",
             "surgical_guide_status_query",
             "multi_intent_query",
         }
@@ -3246,6 +3378,10 @@ class ChatWorkflowMixin:
             elif local_policy.intent == "multi_intent_query":
                 response = self._build_multi_intent_response(
                     message, steps, local_policy,
+                )
+            elif local_policy.intent == "ambiguous_visual_target_query":
+                response = self._visual_target_clarification_response(
+                    message, "zh" if trace_zh else "en",
                 )
             else:
                 response = (
@@ -3610,9 +3746,8 @@ class ChatWorkflowMixin:
                 logger.info(f"[WORKFLOW-ENFORCER] Planning requested but incomplete. CTV={has_ctv}, OAR={has_oar}, Planning={has_planning}")
                 ct_path = self.memory.retrieve("ct_path")
                 if ct_path:
-                    detected_tumor_type = (
-                        self.memory.retrieve("tumor_type_used")
-                        or self._detect_tumor_type_from_message(message)
+                    detected_tumor_type = self._detect_tumor_type_from_message(
+                        message, image_path=ct_path
                     )
                     # Auto-execute missing steps
                     if not has_ctv:
@@ -5402,9 +5537,8 @@ class ChatWorkflowMixin:
                 logger.info(f"[WORKFLOW-ENFORCER-STREAM] Planning requested but incomplete. CTV={has_ctv}, OAR={has_oar}, Planning={has_planning}")
                 ct_path = self.memory.retrieve("ct_path")
                 if ct_path:
-                    detected_tumor_type = (
-                        self.memory.retrieve("tumor_type_used")
-                        or self._detect_tumor_type_from_message(message)
+                    detected_tumor_type = self._detect_tumor_type_from_message(
+                        message, image_path=ct_path
                     )
                     # Auto-execute missing steps with proper SSE events
                     if not has_ctv:
@@ -6030,10 +6164,12 @@ class ChatWorkflowMixin:
             _cvm3 = result.metadata.get("ctv_volume_mm3")
             if _cvm3:
                 self.memory.store("ctv_volume_mm3", _cvm3)
-            if params.get("tumor_type"):
-                self.memory.store("tumor_type_used", params["tumor_type"])
-            elif result.metadata.get("tumor_type_used"):
-                self.memory.store("tumor_type_used", result.metadata["tumor_type_used"])
+            used_tumor_type = params.get("tumor_type") or result.metadata.get("tumor_type_used")
+            if used_tumor_type:
+                self._store_tumor_type_binding(
+                    used_tumor_type,
+                    image_path=str(params.get("image_path") or ""),
+                )
             if result.metadata.get("ctv_source"):
                 self.memory.store("ctv_source", result.metadata["ctv_source"])
             self.memory.store("label_grid_orientation", result.metadata.get("label_grid_orientation") or "LPI")

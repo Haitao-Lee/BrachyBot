@@ -7,6 +7,7 @@ API remains compatible while the monolithic implementation is easier to review.
 import json
 import logging
 import math
+import os
 import re
 from typing import Any, Dict, List, Mapping, Optional
 
@@ -36,6 +37,29 @@ from agent_runtime import request_parse as _request_parse
 from agent_runtime.execution_authorization import MUTATING_TOOLS
 
 logger = logging.getLogger(__name__)
+
+
+def _canonical_ui_action_value(value: Any) -> str:
+    """Stable value comparison for provider-vs-user UI action authorization."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        raw = value.strip()
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            return re.sub(r"\s+", " ", raw).strip().casefold()
+        return json.dumps(parsed, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def _ui_action_signature(action: Mapping[str, Any]) -> tuple:
+    """Compare only executable identity and payload, not provider diagnostics."""
+    return (
+        str(action.get("target") or "").strip().casefold(),
+        str(action.get("command") or "set").strip().casefold(),
+        _canonical_ui_action_value(action.get("value")),
+    )
 
 
 class ResponseToolMixin:
@@ -291,67 +315,107 @@ class ResponseToolMixin:
             ))
         )
 
-    def _normalize_ctv_tool_params(self, params: Dict, message: str = "") -> Dict:
-        """Normalize every CTV call alias before tool contract validation.
+    @staticmethod
+    def _normalize_case_path(path: Any) -> str:
+        raw = str(path or "").strip()
+        if not raw:
+            return ""
+        return os.path.normcase(os.path.realpath(os.path.expanduser(raw)))
 
-        Catalog-driven model calls historically used ``model``/``organ``
-        while the unified CTV tool uses ``tumor_type``. Resolve both forms
-        here and keep a second fallback to the current user turn so a model
-        omission cannot erase a site that the user already supplied.
+    def _active_ct_path_for_site(self) -> str:
+        memory = getattr(self, "memory", None)
+        retrieve = getattr(memory, "retrieve", None)
+        path = retrieve("ct_path") if callable(retrieve) else None
+        if path:
+            return str(path)
+        getter = getattr(memory, "get_ui_state", None)
+        state = getter() if callable(getter) else {}
+        return str(state.get("ct_path") or "") if isinstance(state, Mapping) else ""
+
+    def _active_case_tumor_type(self, image_path: str = "") -> Optional[str]:
+        """Use a saved site only when it is bound to the active CT geometry."""
+        memory = getattr(self, "memory", None)
+        retrieve = getattr(memory, "retrieve", None)
+        if not callable(retrieve):
+            return None
+        current_path = image_path or self._active_ct_path_for_site()
+        bound_path = retrieve("tumor_type_used_ct_path")
+        if not current_path or not bound_path:
+            return None
+        if self._normalize_case_path(current_path) != self._normalize_case_path(bound_path):
+            return None
+        stored = retrieve("tumor_type_used")
+        mapped = self._map_tumor_type(str(stored)) if stored else None
+        return mapped if mapped in self._SUPPORTED_AUTOMATIC_CTV_TYPES else None
+
+    def _store_tumor_type_binding(self, tumor_type: str, image_path: str = "") -> None:
+        """Persist an explicitly used site together with its owning CT path."""
+        memory = getattr(self, "memory", None)
+        store = getattr(memory, "store", None)
+        if not callable(store):
+            return
+        mapped = self._map_tumor_type(tumor_type)
+        if not mapped:
+            return
+        ct_path = image_path or self._active_ct_path_for_site()
+        store("tumor_type_used", mapped)
+        # Empty is deliberate: it invalidates a previous case binding rather
+        # than allowing a site to leak when the current image path is unknown.
+        store("tumor_type_used_ct_path", str(ct_path or ""))
+
+    def _normalize_ctv_tool_params(self, params: Dict, message: str = "") -> Dict:
+        """Normalize CTV aliases without trusting a model-selected site.
+
+        For provider calls, only a site stated in this user turn or a site
+        already bound to the active CT can select an automatic model. Internal
+        execution calls with no message may preserve an already-normalized
+        server-selected route.
         """
         normalized = dict(params or {})
         if not normalized.get("image_path"):
             image_alias = normalized.get("ct_image_path") or normalized.get("ct_path")
             if image_alias:
                 normalized["image_path"] = image_alias
-        fallback_tumor_type = None
-        for alias in (
-            "tumor_type",
-            "model",
-            "tumor_site",
-            "site",
-            "organ",
-            "organ_type",
-        ):
+        # The active Session owns the input image. Never let a provider's stale
+        # image_path select a previous case or steer a site binding.
+        active_image_path = self._active_ct_path_for_site()
+        if message and active_image_path:
+            normalized["image_path"] = active_image_path
+
+        supplied = []
+        for alias in ("tumor_type", "model", "tumor_site", "site", "organ", "organ_type"):
             value = normalized.get(alias)
             if value is None or not str(value).strip():
                 continue
             mapped = self._map_tumor_type(str(value))
-            if not mapped:
-                continue
-            if mapped in self._SUPPORTED_AUTOMATIC_CTV_TYPES:
-                normalized["tumor_type"] = mapped
-                break
-            if fallback_tumor_type is None:
-                fallback_tumor_type = mapped
+            if mapped in self._SUPPORTED_AUTOMATIC_CTV_TYPES and mapped not in supplied:
+                supplied.append(mapped)
         for alias in ("model", "tumor_site", "site", "organ", "organ_type", "ct_image_path", "ct_path"):
             normalized.pop(alias, None)
-        if not normalized.get("tumor_type"):
-            inferred = None
-            if message:
-                try:
-                    inferred = self._detect_tumor_type_from_message(message)
-                except Exception:
-                    inferred = None
-            if not inferred:
-                try:
-                    inferred = self._detect_tumor_type_from_message("")
-                except Exception:
-                    inferred = None
-            mapped = self._map_tumor_type(str(inferred)) if inferred else None
-            if mapped:
-                normalized["tumor_type"] = mapped
-        if not normalized.get("tumor_type"):
-            retrieve = getattr(self.memory, "retrieve", None)
-            stored = retrieve("tumor_type_used") if callable(retrieve) else None
-            mapped = self._map_tumor_type(str(stored)) if stored else None
-            if mapped in self._SUPPORTED_AUTOMATIC_CTV_TYPES:
-                normalized["tumor_type"] = mapped
-        if not normalized.get("tumor_type") and fallback_tumor_type:
-            # Preserve an unsupported value for the normal clarification/error
-            # path, but only after current-message and persisted Session
-            # context had a chance to resolve a valid route.
-            normalized["tumor_type"] = fallback_tumor_type
+
+        selected = None
+        if message:
+            explicit = self._explicit_tumor_types_from_message(message)
+            if len(explicit) == 1:
+                selected = explicit[0]
+            elif len(explicit) == 0:
+                # Reuse a site only when it is bound to the server-owned
+                # active CT, never to an image path supplied by the model.
+                selected = self._active_case_tumor_type()
+            # Conflicting explicit sites deliberately suppress both model
+            # arguments and case-memory fallback; the CTV tool will ask.
+        else:
+            # This branch is for the in-process executor after the provider
+            # boundary has already checked the current user request.
+            if len(supplied) == 1:
+                selected = supplied[0]
+            elif not supplied:
+                selected = self._active_case_tumor_type()
+
+        if selected in self._SUPPORTED_AUTOMATIC_CTV_TYPES:
+            normalized["tumor_type"] = selected
+        else:
+            normalized.pop("tumor_type", None)
         return normalized
 
     @staticmethod
@@ -651,8 +715,43 @@ print(json.dumps(result))
             conversation=getattr(memory, "conversation", None), ui_state=ui_state,
         )
         inherited_repeat = explicit_repeat(message) and callable(retrieve) and retrieve("last_segmentation_target") in {"ctv", "oar"}
+        # An explicit, unambiguous "3D reconstruct <group>" command is a browser
+        # mutation fully determined by the message; it must not be dropped by
+        # the semantic direct-execution gate. Only a resolved *reconstruct*
+        # operation qualifies, so explanatory or scope-constrained UI
+        # candidates ("explain hiding OAR", "set OAR translucent but keep CTV")
+        # remain non-permission and stay out of the deterministic path.
+        reconstruct_operation = None
+        contract_rejected = (
+            str(getattr(policy, "routing_reason", "") or "")
+            == "whole_request_contract_not_satisfied"
+        )
+        if (
+            not contract_rejected
+            and policy.intent not in {"multi_intent_query", "surgical_guide_status_query"}
+        ):
+            candidate_operation = resolve_ui_operation_request(message, ui_state=ui_state)
+            if isinstance(candidate_operation, dict) and not candidate_operation.get("ambiguous"):
+                if float(candidate_operation.get("confidence") or 0.0) >= 0.75:
+                    candidate_actions = candidate_operation.get("actions")
+                    if isinstance(candidate_actions, list) and candidate_actions:
+                        targets = {
+                            action.get("target")
+                            for action in candidate_actions
+                            if isinstance(action, dict)
+                        }
+                        if targets and targets <= {
+                            "tree.group.reconstruct3d",
+                            "viewer.reconstruct3d",
+                        }:
+                            reconstruct_operation = candidate_operation
         if not (policy.direct_execution or policy.action_plan or inherited_repeat
-                or explicit_segmentation_request(message)):
+                or explicit_segmentation_request(message)
+                or reconstruct_operation is not None):
+            return None
+        # Ambiguous live labels are a clarification state, never permission to
+        # continue into the legacy keyword materializer below.
+        if policy.intent == "ambiguous_visual_target_query":
             return None
         active_intent = getattr(getattr(self, "_active_turn_policy", None), "intent", None)
 
@@ -675,8 +774,10 @@ print(json.dumps(result))
                         conversation=getattr(memory, "conversation", None),
                         ui_state=ui_state,
                     )
-                    if not visual or visual.get("requires_discovery"):
-                        return None
+                    if not visual or visual.get("requires_discovery") or visual.get("ambiguous"):
+                        # One unresolved target must not cancel independently
+                        # resolved siblings in the same read-only request.
+                        continue
                     params = self._session_visual_location_screenshot_params(clause, visual)
                     params["question"] = message
                     calls.append({
@@ -753,9 +854,13 @@ print(json.dumps(result))
         ui_operation = getattr(active_policy, "ui_operation", None)
         active_intent = getattr(active_policy, "intent", None)
         if not isinstance(ui_operation, dict) and (
-            active_policy is None or active_intent in {"ui_operation", "ui_control"}
+            active_policy is None
+            or active_intent in {"ui_operation", "ui_control"}
+            or reconstruct_operation is not None
         ):
-            ui_operation = resolve_ui_operation_request(message, ui_state=ui_state)
+            ui_operation = reconstruct_operation or resolve_ui_operation_request(
+                message, ui_state=ui_state
+            )
         ui_actions = ui_operation.get("actions") if isinstance(ui_operation, dict) else None
         ui_confidence = float((ui_operation or {}).get("confidence") or 0.0) if isinstance(ui_operation, dict) else 0.0
         if (
@@ -788,9 +893,11 @@ print(json.dumps(result))
         ct_path = self.memory.retrieve("ct_path") or ""
         if not ct_path:
             ct_path = (self.memory.get_ui_state() or {}).get("ct_path", "")
+        explicit_sites = self._explicit_tumor_types_from_message(message)
         requested_tumor_type = (
-            self._detect_tumor_type_from_message(message)
-            or self.memory.retrieve("tumor_type_used")
+            explicit_sites[0] if len(explicit_sites) == 1
+            else None if len(explicit_sites) > 1
+            else self._active_case_tumor_type(ct_path)
         )
         tumor_type = (
             self._map_tumor_type(requested_tumor_type)
@@ -1332,7 +1439,10 @@ print(json.dumps(result))
             # as preliminary context. If a screenshot was requested, the child
             # remains responsible for the final answer after capture evidence
             # and annotation have completed.
-            if "ui_screenshot" in direct_tool_names:
+            if any(
+                step.get("tool") == "ui_screenshot" and step.get("status") == "done"
+                for step in steps
+            ):
                 self._visual_analysis_pending = True
             response = self._build_multi_intent_response(
                 user_msg, steps, getattr(self, "_active_turn_policy", None),
@@ -1346,15 +1456,25 @@ print(json.dumps(result))
             # the capture and will launch one hidden multimodal child for the
             # actual user-facing explanation; do not let the parent response
             # be mistaken for that explanation by streaming or replay code.
-            self._visual_analysis_pending = True
-            # Keep the visible parent response useful without invoking a
-            # second text-only synthesis call. The browser owns the grounded
-            # screenshot and the hidden multimodal child owns the explanation.
-            response = presentation_fallback_message(
-                _lang,
-                user_msg,
-                ("ui_screenshot",),
+            screenshot_ready = any(
+                step.get("tool") == "ui_screenshot" and step.get("status") == "done"
+                for step in steps
             )
+            if screenshot_ready:
+                self._visual_analysis_pending = True
+                # Keep the visible parent response useful without invoking a
+                # second text-only synthesis call. The browser owns the grounded
+                # screenshot and the hidden multimodal child owns the explanation.
+                response = presentation_fallback_message(
+                    _lang,
+                    user_msg,
+                    ("ui_screenshot",),
+                )
+            else:
+                # A failed capture plan is not a pending visual turn. Preserve
+                # the localized tool failure instead of asking the browser to
+                # analyze evidence that will never arrive.
+                response = raw_results
         else:
             response = self._synthesize_with_llm(raw_results, steps, _lang, user_msg, query_type)
 
@@ -2321,14 +2441,18 @@ Output (JSON array of strings):"""
     })
 
     def _map_tumor_type(self, tumor_type: Optional[str]) -> Optional[str]:
-        """Map a user, catalog, or legacy spelling to one CTV route."""
+        """Map an exact explicit site/model alias; never infer by substring."""
         if tumor_type is None:
             return None
         raw = str(tumor_type).strip()
         if not raw:
             return None
-        # The CTV package owns public aliases so direct planning, LLM calls,
-        # restored Sessions, and the model catalog cannot drift apart.
+        compact = re.sub(r"[\s_/-]+", "", raw.casefold())
+        if compact in {
+            "tumor", "tumour", "cancer", "lesion", "ctv", "target",
+            "肿瘤", "肿瘤分割", "病灶", "癌症", "癌", "ctv分割", "automatic", "auto", "default",
+        }:
+            return None
         try:
             from tool_factory.CTV_seg import normalize_tumor_type
             canonical = normalize_tumor_type(raw)
@@ -2336,27 +2460,17 @@ Output (JSON array of strings):"""
             canonical = raw
         if canonical in self._SUPPORTED_AUTOMATIC_CTV_TYPES:
             return canonical
-        # Look up in mapping
-        mapped = self._TUMOR_TYPE_MAP.get(raw.lower())
+        mapped = self._TUMOR_TYPE_MAP.get(raw.casefold())
         if mapped:
             try:
                 from tool_factory.CTV_seg import normalize_tumor_type
                 return normalize_tumor_type(mapped)
             except Exception:
                 return mapped
-        # Partial match for Chinese
-        for key, val in self._TUMOR_TYPE_MAP.items():
-            if key in raw or raw in key:
-                try:
-                    from tool_factory.CTV_seg import normalize_tumor_type
-                    return normalize_tumor_type(val)
-                except Exception:
-                    return val
-        # Keep explicit unknown sites unsupported. The unified CTV tool will
-        # fail closed with the model catalog instead of silently running a
-        # pancreatic model on another disease site.
-        logger.warning(f"Unknown tumor_type '{raw}', leaving it unsupported")
-        return canonical
+        # Unsupported explicit sites stay unsupported so the unified tool can
+        # ask for a verified model; fuzzy substring matches are unsafe.
+        logger.warning("Unknown tumor_type '%s'; no automatic route selected", raw)
+        return canonical if canonical in self._SUPPORTED_AUTOMATIC_CTV_TYPES else None
 
     @staticmethod
     def _message_text(value) -> str:
@@ -2377,66 +2491,82 @@ Output (JSON array of strings):"""
             )
         return str(value or "")
 
-    def _detect_tumor_type_from_message(self, message: str) -> Optional[str]:
-        """Detect a site from the current or recent user messages.
+    def _explicit_tumor_types_from_message(self, message: str) -> List[str]:
+        """Return distinct positive, non-quoted sites from this turn only.
 
-        Follow-up commands often omit the site (for example, ``再分割 CTV``).
-        Only user-authored history is considered so assistant prose and tool
-        output cannot accidentally change the active tumor model.
+        Site names in negated, conditional, or attributed clauses cannot steer
+        the model route. This uses the shared clause parser so site scope stays
+        aligned with the authorization parser.
         """
-        messages = [self._message_text(message)]
-        for item in reversed(getattr(self.memory, "conversation", []) or []):
-            if not isinstance(item, dict) or str(item.get("role", "")).lower() != "user":
+        raw_message = self._message_text(message)
+        if not raw_message:
+            return []
+        parsed = _request_parse.parse_request(raw_message)
+        fragments = []
+        for task in parsed.subtasks:
+            if task.negated or task.conditional or task.attributed:
                 continue
-            text = self._message_text(item.get("content", ""))
-            if text.lstrip().startswith(("[Tool result:", "[Called ")):
-                continue
-            if text and text not in messages:
-                messages.append(text)
-        # Current input wins; the rest are newest-to-oldest user context.
-        # These aliases are deliberately kept separate from the legacy
-        # transcript map above: they are real Unicode user input, not the
-        # mojibake spellings found in older persisted prompts.
-        unicode_aliases = (
-            ("nasopharynx", "nasopharynx"),
-            ("nasopharyngeal", "nasopharynx"),
-            ("鼻咽", "nasopharynx"),
-            ("\u80f0\u817a\u764c", "nnunet_pancreatic"),
-            ("\u80f0\u817a\u80bf\u7624", "nnunet_pancreatic"),
-            ("\u80f0\u817a", "nnunet_pancreatic"),
-            ("\u809d\u764c", "nnunet_liver_tumor"),
-            ("\u809d\u810f", "nnunet_liver_tumor"),
-            ("\u80be\u764c", "nnunet_kidney_tumor"),
-            ("\u80be", "nnunet_kidney_tumor"),
-            ("\u80ba\u764c", "biomedparse_lung_lesion"),
-            ("\u80ba", "biomedparse_lung_lesion"),
-            ("\u7ed3\u80a0\u764c", "biomedparse_colon_primary"),
-            ("\u7ed3\u80a0", "biomedparse_colon_primary"),
-            ("\u5934\u9888", "biomedparse_head_neck_cancer"),
-            ("\u524d\u5217\u817a", "biomedparse_prostate_lesion"),
-            ("pancreatic cancer", "nnunet_pancreatic"),
-            ("pancreatic tumor", "nnunet_pancreatic"),
-            ("liver cancer", "nnunet_liver_tumor"),
-            ("liver tumor", "nnunet_liver_tumor"),
-            ("kidney cancer", "nnunet_kidney_tumor"),
-            ("kidney tumor", "nnunet_kidney_tumor"),
-            ("lung cancer", "biomedparse_lung_lesion"),
-            ("lung tumor", "biomedparse_lung_lesion"),
-            ("colon cancer", "biomedparse_colon_primary"),
-            ("colon tumor", "biomedparse_colon_primary"),
-            ("head and neck", "biomedparse_head_neck_cancer"),
-            ("prostate cancer", "biomedparse_prostate_lesion"),
-            ("prostate tumor", "biomedparse_prostate_lesion"),
+            fragment = _request_parse._mask_quoted_content(task.raw)
+            if fragment.strip():
+                fragments.append(fragment)
+        if not fragments:
+            return []
+        text = " ".join(fragments).casefold()
+        aliases = (
+            ("鼻咽癌平扫", "nnunet_nasopharynx_ncct"),
+            ("鼻咽平扫", "nnunet_nasopharynx_ncct"),
+            ("鼻咽癌增强", "nnunet_nasopharynx_cect"),
+            ("鼻咽增强", "nnunet_nasopharynx_cect"),
+            ("胰腺肿瘤", "nnunet_pancreatic"), ("胰腺癌", "nnunet_pancreatic"), ("胰腺", "nnunet_pancreatic"),
+            ("肝脏肿瘤", "nnunet_liver_tumor"), ("肝肿瘤", "nnunet_liver_tumor"), ("肝癌", "nnunet_liver_tumor"), ("肝脏", "nnunet_liver_tumor"), ("肝", "nnunet_liver_tumor"),
+            ("肾脏肿瘤", "nnunet_kidney_tumor"), ("肾肿瘤", "nnunet_kidney_tumor"), ("肾癌", "nnunet_kidney_tumor"), ("肾脏", "nnunet_kidney_tumor"), ("肾", "nnunet_kidney_tumor"),
+            ("肺部肿瘤", "vista3d_lung_tumor"), ("肺肿瘤", "vista3d_lung_tumor"), ("肺癌", "vista3d_lung_tumor"), ("肺部", "vista3d_lung_tumor"), ("肺", "vista3d_lung_tumor"),
+            ("结直肠癌", "biomedparse_colon_primary"), ("结肠肿瘤", "biomedparse_colon_primary"), ("结肠癌", "biomedparse_colon_primary"), ("结肠", "biomedparse_colon_primary"),
+            ("头颈部肿瘤", "nnunet_head_neck_gtv"), ("头颈部", "nnunet_head_neck_gtv"), ("头颈肿瘤", "nnunet_head_neck_gtv"), ("头颈", "nnunet_head_neck_gtv"),
+            ("前列腺癌", "biomedparse_prostate_lesion"), ("前列腺肿瘤", "biomedparse_prostate_lesion"), ("前列腺", "biomedparse_prostate_lesion"),
         )
-        for text in messages:
-            msg = text.lower()
-            for keyword, tool_name in unicode_aliases:
-                if keyword in msg:
-                    return self._map_tumor_type(tool_name)
-            for keyword, tool_name in self._TUMOR_TYPE_MAP.items():
-                if keyword in msg:
-                    return tool_name
-        return None
+        found = []
+        for alias, route in aliases:
+            if alias in text:
+                mapped = self._map_tumor_type(route)
+                if mapped and mapped not in found:
+                    found.append(mapped)
+        english_aliases = (
+            (r"(?<![a-z0-9_])(?:pancreas|pancreatic)(?![a-z0-9_])", "nnunet_pancreatic"),
+            (r"(?<![a-z0-9_])(?:liver|hepatic)(?![a-z0-9_])", "nnunet_liver_tumor"),
+            (r"(?<![a-z0-9_])(?:kidney|renal)(?![a-z0-9_])", "nnunet_kidney_tumor"),
+            (r"(?<![a-z0-9_])(?:lung|pulmonary)(?![a-z0-9_])", "vista3d_lung_tumor"),
+            (r"(?<![a-z0-9_])(?:colon|colorectal)(?![a-z0-9_])", "biomedparse_colon_primary"),
+            (r"(?<![a-z0-9_])(?:head\s*(?:and|&)\s*neck|head[-\s]+neck)(?![a-z0-9_])", "nnunet_head_neck_gtv"),
+            (r"(?<![a-z0-9_])(?:prostate)(?![a-z0-9_])", "biomedparse_prostate_lesion"),
+        )
+        for pattern, route in english_aliases:
+            if re.search(pattern, text, re.IGNORECASE):
+                mapped = self._map_tumor_type(route)
+                if mapped and mapped not in found:
+                    found.append(mapped)
+        if re.search(r"(?<![a-z0-9_])(?:nasopharynx|nasopharyngeal)(?![a-z0-9_])", text, re.IGNORECASE) or "鼻咽" in text:
+            ncct = bool(re.search(r"ncct|non[-\s]?contrast|平扫", text, re.IGNORECASE))
+            cect = bool(re.search(r"cect|contrast[-\s]?enhanced|增强", text, re.IGNORECASE))
+            if ncct != cect:
+                route = "nnunet_nasopharynx_ncct" if ncct else "nnunet_nasopharynx_cect"
+            else:
+                route = "nasopharynx"
+            mapped = self._map_tumor_type(route)
+            if mapped and mapped not in found:
+                found.append(mapped)
+        return found
+
+    def _detect_tumor_type_from_message(
+        self, message: str, *, include_context: bool = True, image_path: str = "",
+    ) -> Optional[str]:
+        """Resolve only this turn's explicit site, then optional case-bound site."""
+        explicit = self._explicit_tumor_types_from_message(message)
+        if len(explicit) == 1:
+            return explicit[0]
+        if len(explicit) > 1:
+            return None
+        return self._active_case_tumor_type(image_path) if include_context else None
 
     def _detect_realtime_query(self, message: str) -> Optional[str]:
         """Detect if the message requires a real-time web search.
@@ -2584,6 +2714,19 @@ Output (JSON array of strings):"""
         active_policy = getattr(self, "_active_turn_policy", None)
         get_action_plan = getattr(self, "_current_action_plan", None)
         action_plan = get_action_plan() if callable(get_action_plan) else None
+        guard_memory = getattr(self, "memory", None)
+        guard_question = ""
+        for item in reversed(getattr(guard_memory, "conversation", []) or []):
+            if isinstance(item, dict) and str(item.get("role", "")).lower() == "user":
+                candidate = self._message_text(item.get("content", ""))
+                if candidate and not _request_parse.is_internal_tool_result_message(candidate):
+                    guard_question = candidate
+                    break
+        if getattr(active_policy, "intent", None) == "ambiguous_visual_target_query":
+            # Ambiguity is a clarification response, not a discovery request.
+            # Do not let provider-selected captures bypass that decision.
+            logger.warning("Dropping provider calls for an ambiguous visual target")
+            return []
         if getattr(active_policy, "intent", None) == "session_visual_location_query":
             # This turn has a typed read-only visual contract. Even if a
             # provider unexpectedly emits extra function calls, do not let a
@@ -2613,16 +2756,17 @@ Output (JSON array of strings):"""
             ]
             ui_state = self.memory.get_ui_state() if hasattr(self.memory, "get_ui_state") else {}
             catalog = ui_state.get("visual_target_catalog") if isinstance(ui_state, dict) else []
-            catalog_refs = {
-                str(ref or "").strip()
-                for item in (catalog if isinstance(catalog, list) else [])
-                if isinstance(item, dict)
-                for ref in (
-                    item.get("target_refs")
-                    if isinstance(item.get("target_refs"), list) else []
-                )
-                if str(ref or "").strip()
-            }
+            catalog_refs = set()
+            for item in catalog if isinstance(catalog, list) else []:
+                if not isinstance(item, dict):
+                    continue
+                refs = item.get("target_refs", item.get("targetRefs", item.get("identities", [])))
+                if isinstance(refs, str):
+                    refs = [refs]
+                if isinstance(refs, (list, tuple)):
+                    catalog_refs.update(
+                        str(ref or "").strip() for ref in refs if str(ref or "").strip()
+                    )
             filtered_calls = []
             def _list_param(params: Dict, key: str) -> List[Any]:
                 value = params.get(key)
@@ -2635,6 +2779,28 @@ Output (JSON array of strings):"""
                     filtered_calls.append(call)
                     continue
                 params = call.get("params") if isinstance(call.get("params"), dict) else {}
+                requested_question = str(
+                    guard_question or params.get("question") or ""
+                ).strip()
+                location = resolve_session_visual_location_request(
+                    requested_question,
+                    conversation=getattr(self.memory, "conversation", None),
+                    ui_state=ui_state,
+                )
+                if (
+                    not location
+                    or location.get("requires_discovery")
+                    or location.get("ambiguous")
+                ):
+                    logger.warning(
+                        "Dropping discovery screenshot: current request has no unique live target"
+                    )
+                    continue
+                expected_refs = {
+                    str(ref or "").strip()
+                    for ref in (location.get("target_refs") or [])
+                    if str(ref or "").strip()
+                }
                 refs = [
                     str(ref or "").strip()
                     for ref in [
@@ -2644,21 +2810,24 @@ Output (JSON array of strings):"""
                     ]
                     if str(ref or "").strip()
                 ]
-                verified_refs = [ref for ref in refs if ref in catalog_refs]
-                if not verified_refs:
+                provided_refs = set(refs)
+                if (
+                    not expected_refs
+                    or not provided_refs
+                    or not provided_refs.issubset(expected_refs)
+                    or not expected_refs.issubset(catalog_refs)
+                ):
                     logger.warning(
-                        "Dropping discovery screenshot without a live catalog target"
+                        "Dropping discovery screenshot: provider refs do not match "
+                        "the unique target resolved from the current request"
                     )
                     continue
-                params["target_refs"] = list(dict.fromkeys(verified_refs))[:32]
-                params["object_ids"] = list(params["target_refs"])
-                params["data_tree_node_ids"] = list(params["target_refs"])
-                params["visual_purpose"] = "locate"
-                params["annotation_policy"] = "required"
-                params["analysis_required"] = True
+                grounded = self._session_visual_location_screenshot_params(
+                    requested_question, location
+                )
+                params.update(grounded)
+                params["question"] = requested_question
                 params["request_intent"] = "session_visual_discovery_query"
-                params["semantic_target"] = "dynamic"
-                params["semantic_targets"] = ["dynamic"]
                 call["params"] = params
                 filtered_calls.append(call)
             tool_calls = filtered_calls
@@ -2707,13 +2876,6 @@ Output (JSON array of strings):"""
         # Negation/compound wording is excluded by the predicate itself, so
         # only the wrong-object call is corrected and every other planned
         # action is preserved.
-        guard_memory = getattr(self, "memory", None)
-        guard_question = ""
-        for item in reversed(getattr(guard_memory, "conversation", []) or []):
-            if isinstance(item, dict) and str(item.get("role", "")).lower() == "user":
-                guard_question = self._message_text(item.get("content", ""))
-                if guard_question:
-                    break
         if guard_question and unambiguous_report_generation_request(guard_question):
             guard_params = {"actions": [{"target": "report.autofill", "command": "run"}]}
             guarded: List[Dict] = []
@@ -2822,17 +2984,17 @@ Output (JSON array of strings):"""
             if p is None:
                 continue  # Skip this tool call entirely
             if tn in {"ui_screenshot", "ui_content"}:
-                question = str(p.get("question") or "").strip()
-                if not question:
-                    memory = getattr(self, "memory", None)
-                    for item in reversed(getattr(memory, "conversation", []) or []):
-                        if isinstance(item, dict) and str(item.get("role", "")).lower() == "user":
-                            question = self._message_text(item.get("content", ""))
-                            if question:
-                                break
+                # Provider-supplied tool arguments are not the user's request.
+                # Bind this typed conversion to the server's current user turn,
+                # which is also the text used for local intent authorization.
                 if (
-                    getattr(active_policy, "direct_execution", False)
-                    and resolve_report_request_action(question) == "regenerate"
+                    getattr(active_policy, "intent", None) == "report_generation"
+                    and getattr(active_policy, "direct_execution", False)
+                    and guard_question
+                    and resolve_report_request_action(guard_question) == "regenerate"
+                    and _request_parse.mutating_execution_authorized(
+                        guard_question, "report_auto_fill"
+                    )
                 ):
                     # The model selected a read-only presentation tool for a
                     # canonical fast-path report request. Semantic turns keep
@@ -2861,11 +3023,16 @@ Output (JSON array of strings):"""
                 if not p.get("code", "").strip():
                     continue
             elif tn == "ctv_segmentation":
+                if not guard_question:
+                    logger.warning(
+                        "Dropping provider CTV call without a current user request"
+                    )
+                    continue
                 # LLM calls can contain a friendly site name, an old saved
                 # VoCo alias, or a BiomedParse catalog id. Normalize before
                 # the tool schema is checked so all entry points use the same
                 # canonical model route.
-                p = self._normalize_ctv_tool_params(p)
+                p = self._normalize_ctv_tool_params(p, message=guard_question)
                 tc["params"] = p
             elif tn == "ui_controller":
                 # Normalize: LLM may pass target/command at top level instead of inside actions
@@ -2885,6 +3052,54 @@ Output (JSON array of strings):"""
                 # an explicit command in the current user turn instead of an
                 # inferred one.
                 current_turn = guard_question or ""
+                memory = getattr(self, "memory", None)
+                get_ui_state = getattr(memory, "get_ui_state", None)
+                current_ui_state = get_ui_state() if callable(get_ui_state) else {}
+                expected_actions = []
+                policy_ui = getattr(active_policy, "ui_operation", None)
+                if isinstance(policy_ui, dict) and not policy_ui.get("ambiguous"):
+                    expected_actions.extend(
+                        item for item in policy_ui.get("actions", [])
+                        if isinstance(item, Mapping)
+                    )
+                if current_turn:
+                    resolved_ui = resolve_ui_operation_request(
+                        current_turn, ui_state=current_ui_state
+                    )
+                    if isinstance(resolved_ui, dict) and not resolved_ui.get("ambiguous"):
+                        expected_actions.extend(
+                            item for item in resolved_ui.get("actions", [])
+                            if isinstance(item, Mapping)
+                        )
+                    # Report autofill has a server-owned typed UI action. It
+                    # is granted only by the same target/action parser used
+                    # for clinical mutations, not by the provider's choice.
+                    if (
+                        resolve_report_request_action(current_turn) == "regenerate"
+                        and _request_parse.mutating_execution_authorized(
+                            current_turn, "report_auto_fill"
+                        )
+                    ):
+                        expected_actions.append({
+                            "target": "report.autofill",
+                            "command": "run",
+                        })
+                    # Destructive UI controls must be materialized from the
+                    # same positive, clause-local request that authorizes
+                    # them. The provider's chosen target alone is never a grant.
+                    for destructive_target in sorted(
+                        _request_parse.DESTRUCTIVE_UI_TARGETS
+                    ):
+                        if _request_parse.ui_action_explicitly_authorized(
+                            current_turn, destructive_target
+                        ):
+                            expected_actions.append({
+                                "target": destructive_target,
+                                "command": "run",
+                            })
+                allowed_ui_signatures = {
+                    _ui_action_signature(item) for item in expected_actions
+                }
                 safe_actions = []
                 for action in p.get("actions") or []:
                     if not isinstance(action, dict):
@@ -2896,7 +3111,14 @@ Output (JSON array of strings):"""
                             target,
                         )
                         continue
-                    if current_turn and not _request_parse.ui_action_explicitly_authorized(
+                    if not current_turn or _ui_action_signature(action) not in allowed_ui_signatures:
+                        logger.warning(
+                            "Blocking ui_controller action %r: it does not match a "
+                            "positive current-turn UI subtask",
+                            target,
+                        )
+                        continue
+                    if not _request_parse.ui_action_explicitly_authorized(
                         current_turn, target
                     ):
                         logger.warning(
@@ -2937,20 +3159,96 @@ Output (JSON array of strings):"""
                 # and bind location evidence to the whole-request resolver.
                 # This also carries a deictic Data Tree follow-up's subject;
                 # never infer its subject from whichever rows are on screen.
-                p["question"] = question or str(p.get("question") or "")
+                question = guard_question or str(p.get("question") or "").strip()
+                p["question"] = question
                 memory = getattr(self, "memory", None)
-                for item in reversed(getattr(memory, "conversation", []) or []):
-                    if isinstance(item, dict) and str(item.get("role", "")).lower() == "user":
-                        original_question = self._message_text(item.get("content", ""))
-                        if original_question:
-                            p["question"] = original_question
-                        break
                 getter = getattr(memory, "get_ui_state", None)
-                location = resolve_session_visual_location_request(
-                    p["question"],
-                    conversation=getattr(memory, "conversation", None),
-                    ui_state=getter() if callable(getter) else {},
-                )
+                conversation = getattr(memory, "conversation", None)
+                ui_state = getter() if callable(getter) else {}
+                location = None
+                if getattr(active_policy, "intent", None) == "multi_intent_query":
+                    # A multi-target turn has one full user question but
+                    # several independently resolved screenshot plans. Match
+                    # this call back to exactly one canonical visual subtask;
+                    # never re-resolve the whole sentence here, since that
+                    # would replace a guide/CTV plan with a composite target.
+                    requested_refs = {
+                        str(ref or "").strip()
+                        for key in ("target_refs", "object_ids", "data_tree_node_ids")
+                        for ref in (
+                            p.get(key) if isinstance(p.get(key), (list, tuple))
+                            else [p.get(key)]
+                        )
+                        if str(ref or "").strip()
+                    }
+                    requested_semantic = str(
+                        p.get("semantic_target") or p.get("semanticTarget") or ""
+                    ).strip().lower()
+                    requested_query = re.sub(
+                        r"\s+", " ",
+                        str(p.get("target_query") or p.get("targetQuery") or "").strip(),
+                    ).casefold()
+                    for sub_intent, clause in (
+                        getattr(active_policy, "parsed_subtasks", ()) or ()
+                    ):
+                        if sub_intent != "session_visual_location_query":
+                            continue
+                        candidate = resolve_session_visual_location_request(
+                            clause,
+                            conversation=conversation,
+                            ui_state=ui_state,
+                        )
+                        if not candidate or candidate.get("requires_discovery"):
+                            continue
+                        expected = self._session_visual_location_screenshot_params(
+                            clause, candidate
+                        )
+                        expected_refs = {
+                            str(ref or "").strip()
+                            for ref in expected.get("target_refs", [])
+                            if str(ref or "").strip()
+                        }
+                        expected_query = re.sub(
+                            r"\s+", " ",
+                            str(candidate.get("target_query") or clause).strip(),
+                        ).casefold()
+                        if (
+                            requested_refs
+                            and requested_refs == expected_refs
+                            and requested_semantic == str(
+                                expected.get("semantic_target") or ""
+                            ).strip().lower()
+                            and requested_query
+                            and requested_query == expected_query
+                        ):
+                            location = candidate
+                            break
+                    if location is None:
+                        logger.warning(
+                            "Dropping multi-intent screenshot not bound to a "
+                            "resolved visual subtask"
+                        )
+                        continue
+                else:
+                    location = resolve_session_visual_location_request(
+                        p["question"],
+                        conversation=conversation,
+                        ui_state=ui_state,
+                    )
+                if (
+                    p.get("mode", "chat") == "chat"
+                    and getattr(active_policy, "intent", None) == "session_visual_location_query"
+                    and (
+                        not location
+                        or location.get("requires_discovery")
+                        or location.get("ambiguous")
+                    )
+                ):
+                    logger.warning(
+                        "Dropping screenshot because the current visual target "
+                        "no longer resolves uniquely"
+                    )
+                    continue
                 if (p.get("mode", "chat") == "chat"
                         and location and not location.get("requires_discovery")):
                     grounded = self._session_visual_location_screenshot_params(p["question"], location)

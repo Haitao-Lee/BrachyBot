@@ -548,7 +548,16 @@ def _visual_targets_from_text(message: str) -> Tuple[str, ...]:
     )
     found: List[str] = []
     for capability, aliases in visual_objects:
-        if any(alias in text for alias in aliases) and capability not in found:
+        def alias_matches(alias: str) -> bool:
+            if re.search(r"[a-z0-9_]", alias):
+                return bool(re.search(
+                    rf"(?<![a-z0-9_]){re.escape(alias)}(?![a-z0-9_])",
+                    text,
+                    re.IGNORECASE,
+                ))
+            return alias in text
+
+        if any(alias_matches(alias) for alias in aliases) and capability not in found:
             found.append(capability)
 
     if found:
@@ -615,6 +624,8 @@ def _recent_user_visual_target(conversation: Optional[Iterable[object]], *, skip
                 if isinstance(part, dict) else str(part or "")
                 for part in content
             )
+        if _request_parse.is_internal_tool_result_message(content):
+            continue
         candidate = _visual_target_from_text(str(content or ""))
         if candidate and not (skip_surface and candidate == "data_tree"):
             return candidate
@@ -1118,24 +1129,15 @@ def resolve_report_request_action(message: str) -> Optional[str]:
         flags=re.IGNORECASE,
     )
 
-    english_mutation = bool(re.search(
-        r"\b(?:generate|regenerate|re-generate|rebuild|create|update|refresh|"
-        r"rewrite|refill|auto-fill|autofill|fill|complete)\b",
-        text,
-    ))
-    chinese_mutation = _contains_any(text, (
-        "\u751f\u6210", "\u66f4\u65b0", "\u5237\u65b0", "\u91cd\u505a", "\u91cd\u5efa",
-        "\u5236\u4f5c", "\u521b\u5efa", "\u586b\u5145", "\u8865\u5168", "\u5b8c\u5584",
-        "\u5199", "\u64b0\u5199",
-    ))
-    incomplete_report = bool(re.search(
-        r"(?:\u6b63\u6587|\u6587\u5b57|\u8868\u683c|reference|status|content|text|table)"
-        r"[^,\uff0c;\uff1b.!\u3002]{0,20}(?:\u7a7a|\u6ca1\u6709|\u6ca1\u586b|\u672a\u586b|\u7f3a\u5931|"
-        r"empty|missing|not filled|unfilled|incomplete)",
-        text,
-        flags=re.IGNORECASE,
-    ))
-    if english_mutation or chinese_mutation or incomplete_report:
+    parsed = _request_parse.parse_request(message)
+    explicit_report_write = any(
+        task.target == "report"
+        and task.action == "generate"
+        and task.unconditional_command
+        and not task.attributed
+        for task in parsed.subtasks
+    )
+    if explicit_report_write:
         return "regenerate"
 
     figure_terms = (
@@ -1363,7 +1365,10 @@ def resolve_session_content_target(message: str) -> Optional[str]:
         return "dose"
     if any(term in text for term in ("planning", "needles", "seeds", "\u89c4\u5212", "\u7a7f\u523a\u9488", "\u7c92\u5b50")):
         return "planning"
-    if any(term in text for term in ("ct", "image", "scan", "\u5f71\u50cf", "\u56fe\u50cf")):
+    if (
+        re.search(r"(?<![a-z0-9_])ct(?![a-z0-9_])", text)
+        or any(term in text for term in ("image", "scan", "\u5f71\u50cf", "\u56fe\u50cf"))
+    ):
         return "ct"
     if any(term in text for term in ("session", "case", "workspace", "\u672c\u75c5\u4f8b", "\u5f53\u524d\u4f1a\u8bdd", "\u5f53\u524d\u6848\u4f8b", "\u5168\u90e8\u5185\u5bb9")):
         return "session_summary"
@@ -1466,7 +1471,8 @@ def _catalog_target_matches(
                 flags=re.IGNORECASE,
             ))
 
-        if not any(label_matches(label) for label in normalized_labels):
+        matched_labels = [label for label in normalized_labels if label_matches(label)]
+        if not matched_labels:
             continue
         seen.add(ref)
         matches.append({
@@ -1474,6 +1480,7 @@ def _catalog_target_matches(
             "target_refs": normalized_refs,
             "family": str(item.get("family") or item.get("kind") or "dynamic").strip().lower(),
             "label": next((label for label in normalized_labels if label), ref),
+            "matched_labels": matched_labels,
             "surfaces": [
                 str(value or "").strip().lower()
                 for value in (
@@ -1485,6 +1492,28 @@ def _catalog_target_matches(
         })
         if len(matches) >= 32:
             break
+
+    # The same display label can occur on a segmentation row and a generated
+    # scene object, or on two historical/current nodes. Never turn that into a
+    # composite target by concatenating both identities: the user must choose
+    # which live object they mean. Several refs published by one catalog item
+    # remain one logical target and are not ambiguous.
+    label_owners: Dict[str, set] = {}
+    for item in matches:
+        for label in item.get("matched_labels", []):
+            label_owners.setdefault(label, set()).add(item["target_ref"])
+    for item in matches:
+        ambiguous_labels = [
+            label for label in item.get("matched_labels", [])
+            if len(label_owners.get(label, ())) > 1
+        ]
+        item["ambiguous_labels"] = ambiguous_labels
+        item["ambiguous"] = bool(ambiguous_labels)
+        item["candidate_target_refs"] = sorted({
+            ref
+            for label in ambiguous_labels
+            for ref in label_owners.get(label, ())
+        })
     return matches
 
 
@@ -1520,8 +1549,33 @@ def resolve_session_visual_location_request(
     ui_state: Optional[Mapping[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Resolve a location turn into a current-target integrity contract."""
-    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
-    if not text or not (_is_location_question(text) or _has_visual_annotation_request(text)):
+    raw_text = str(message or "").strip()
+    if not raw_text:
+        return None
+
+    # Resolve only positive, unconditioned, non-attributed parts of the
+    # current request. Quoted instructions and neighboring negated clauses
+    # must not supply a screenshot target to a real request.
+    parsed = _request_parse.parse_request(raw_text)
+    active_fragments = []
+    for task in parsed.subtasks:
+        if task.negated or task.conditional or task.attributed:
+            continue
+        if _request_parse.is_quoted(task.raw):
+            continue
+        fragment = str(task.raw or "").strip()
+        if fragment:
+            active_fragments.append(fragment)
+    if parsed.subtasks and not active_fragments:
+        return None
+    scoped_text = " ".join(active_fragments) if active_fragments else raw_text
+    unquoted_scope = _request_parse._mask_quoted_content(scoped_text)
+    text = re.sub(r"\s+", " ", scoped_text.strip().lower())
+    intent_text = re.sub(r"\s+", " ", unquoted_scope.strip().lower())
+    if not text or not (
+        _is_location_question(intent_text)
+        or _has_visual_annotation_request(intent_text)
+    ):
         return None
     if _is_image_tumor_measurement_request(text):
         return None
@@ -1554,6 +1608,33 @@ def resolve_session_visual_location_request(
         current_targets = [control_target]
 
     catalog_matches = _catalog_target_matches(text, ui_state)
+    ambiguous_matches = [item for item in catalog_matches if item.get("ambiguous")]
+    if ambiguous_matches:
+        labels = list(dict.fromkeys(
+            label
+            for item in ambiguous_matches
+            for label in item.get("ambiguous_labels", [])
+        ))
+        candidate_refs = list(dict.fromkeys(
+            ref
+            for item in ambiguous_matches
+            for ref in item.get("candidate_target_refs", [])
+        ))
+        return {
+            "semantic_targets": [],
+            "target_refs": [],
+            "target_query": text,
+            "target_source": "ambiguous_live_catalog",
+            "target_surfaces": list(dict.fromkeys(
+                surface
+                for item in ambiguous_matches
+                for surface in item.get("surfaces", [])
+            )),
+            "requires_discovery": True,
+            "ambiguous": True,
+            "ambiguous_labels": labels[:16],
+            "candidate_target_refs": candidate_refs[:32],
+        }
     target_refs: List[str] = []
     semantic_targets: List[str] = []
     source = "canonical"
@@ -1701,7 +1782,7 @@ def _split_compound_query_clauses(message: str) -> List[str]:
     if not text or len(text) > 8000:
         return []
     parts = re.split(
-        r"[?？!！;；\n]+|[,，]+|(?:此外|另外|同时|顺便|而且|并且|另外还|此外还)|"
+        r"[?？!！;；\n]+|[,，]+|(?:此外|另外|同时|顺便|而且|并且|另外还|此外还|还有)|"
         r"\b(?:additionally|besides|in addition|also)\b",
         text,
         flags=re.IGNORECASE,
@@ -1716,6 +1797,50 @@ def _split_compound_query_clauses(message: str) -> List[str]:
         )
         if clause:
             clauses.append(clause)
+    # Coordinated complete read-questions are independent subtasks, while
+    # ordinary noun coordination (“dose and report”) stays intact. A connector
+    # splits only if both sides resolve to known read intents.
+    expanded = []
+    connector = re.compile(
+        r"\s+(?:and then|and|then)\s+|(?:以及|和|与|及|并(?=[\u4e00-\u9fff]))",
+        re.IGNORECASE,
+    )
+    for clause in clauses:
+        split_at = None
+        for match in connector.finditer(clause):
+            left = clause[:match.start()].strip()
+            right = clause[match.end():].strip()
+            if not left or not right:
+                continue
+            if (
+                _read_query_subtask_intent(left, None, None)
+                and _read_query_subtask_intent(right, None, None)
+            ):
+                split_at = match
+                break
+        if split_at is None:
+            expanded.append(clause)
+        else:
+            expanded.extend((clause[:split_at.start()].strip(), clause[split_at.end():].strip()))
+    clauses = [clause for clause in expanded if clause]
+
+    # A trailing presentation instruction is a modifier of the preceding
+    # question, not an independent subtask. Without this fold, a request such
+    # as "guide where? tumor where, screenshot separately" ends with a clause
+    # that has no object and the conservative compound resolver rejects the
+    # whole request. Keep this narrow: only capture/show/mark tails are folded.
+    presentation_tail = re.compile(
+        r"^(?:(?:请|麻烦)\s*)?(?:(?:分别|各自|逐一|依次)\s*)?"
+        r"(?:截图|截屏|拍照|截取图像)"
+        r"(?:(?:并|然后)?(?:告知|说明|告诉我|给我看(?:看)?|展示|标注|指出))?"
+        r"(?:一下|即可|就行)?$|"
+        r"^(?:(?:please\s*)?(?:(?:separately|individually|one by one)\s*)?)?"
+        r"(?:take\s+)?(?:screenshots?|captures?)(?:\s+(?:and\s+)?(?:show|tell me|explain|mark|annotate))?$",
+        flags=re.IGNORECASE,
+    )
+    if len(clauses) >= 2 and presentation_tail.fullmatch(clauses[-1]):
+        clauses[-2] = f"{clauses[-2]}，{clauses[-1]}"
+        clauses.pop()
     return clauses if 2 <= len(clauses) <= 6 else []
 
 
@@ -1743,7 +1868,11 @@ def _read_query_subtask_intent(
     visual = resolve_session_visual_location_request(
         clause, conversation=conversation, ui_state=ui_state,
     )
-    if visual and not visual.get("requires_discovery"):
+    if visual and visual.get("ambiguous"):
+        return "ambiguous_visual_target_query"
+    if visual and visual.get("requires_discovery"):
+        return "unresolved_visual_target_query"
+    if visual:
         return "session_visual_location_query"
     return None
 
@@ -1760,20 +1889,31 @@ def resolve_compound_query_intents(
     charge. Returned pairs are the read intent and original clause.
     """
     text = str(message or "").strip()
-    if not text or _request_parse.is_negated(text) or _request_parse.is_conditional(text) or _request_parse.is_quoted(text):
+    if not text:
         return ()
-    if _request_parse.parse_request(text).compound_write:
+    parsed = _request_parse.parse_request(text)
+    if parsed.compound_write:
         return ()
     clauses = _split_compound_query_clauses(text)
     if not clauses:
         return ()
     resolved = []
     for clause in clauses:
+        local = _request_parse.parse_request(clause)
+        # A prohibited, quoted, attributed, or conditional clause contributes
+        # no executable/read task, but does not cancel a separate positive
+        # read request in the same turn.
+        if any(
+            task.negated or task.conditional or task.attributed
+            or (task.quoted and task.action)
+            for task in local.subtasks
+        ):
+            continue
         intent = _read_query_subtask_intent(clause, conversation, ui_state)
         if not intent:
             return ()
         resolved.append((intent, clause))
-    return tuple(resolved) if len(resolved) >= 2 else ()
+    return tuple(resolved) if resolved else ()
 
 
 def _classify_local_candidate(
@@ -2023,6 +2163,16 @@ def _classify_local_candidate(
         conversation=conversation,
         ui_state=ui_state,
     )
+    if visual_location_request and visual_location_request.get("ambiguous"):
+        return LocalTurnPolicy(
+            "ambiguous_visual_target_query",
+            "low",
+            False,
+            False,
+            False,
+            frozenset(),
+            direct_execution=True,
+        )
     if visual_location_request and not visual_location_request.get("requires_discovery"):
         return LocalTurnPolicy(
             "session_visual_location_query",

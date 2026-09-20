@@ -284,17 +284,32 @@ def _property_from_entry(entry: Mapping[str, Any]) -> Optional[str]:
     return None
 
 
-def _group_from_text(text: str) -> Optional[str]:
-    matches: List[Tuple[int, str]] = []
+def _groups_from_text(text: str) -> List[str]:
+    """Resolve non-overlapping explicit group mentions in source order.
+
+    Longer aliases win over nested aliases such as uploaded masks vs masks or
+    planning seeds vs planning. Distinct groups remain independent targets.
+    """
+    matches: List[Tuple[int, int, str]] = []
     for group, pattern in _GROUP_ALIASES:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            matches.append((match.start(), group))
-    if not matches:
-        return None
-    # Prefer the most specific/longest match when a phrase contains both a
-    # broad family and a subgroup; position breaks ties deterministically.
-    return sorted(matches, key=lambda item: (item[0], -len(item[1])))[0][1]
+        for match in re.finditer(pattern, text, re.IGNORECASE):
+            matches.append((match.start(), match.end(), group))
+    selected: List[Tuple[int, int, str]] = []
+    for candidate in sorted(matches, key=lambda item: (-(item[1] - item[0]), item[0], item[2])):
+        start, end, group = candidate
+        if any(start < other_end and other_start < end for other_start, other_end, _ in selected):
+            continue
+        if any(existing == group for _, _, existing in selected):
+            continue
+        selected.append(candidate)
+    return [
+        group for _, _, group in sorted(selected, key=lambda item: (item[0], item[1]))
+    ]
+
+
+def _group_from_text(text: str) -> Optional[str]:
+    groups = _groups_from_text(text)
+    return groups[0] if groups else None
 
 
 def _group_from_entry(entry: Mapping[str, Any]) -> Optional[str]:
@@ -1121,7 +1136,7 @@ def _typed_fallback(text: str, property_name: Optional[str], command: Optional[s
     return None
 
 
-def resolve_ui_operation_request(
+def _resolve_ui_operation_request_single(
     message: str,
     ui_state: Optional[Mapping[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
@@ -1138,7 +1153,43 @@ def resolve_ui_operation_request(
     property_name = _property_from_text(text)
     command = _command_from_text(text, property_name)
     value = _value_from_text(text, property_name)
-    group = _group_from_text(text)
+    groups = _groups_from_text(text)
+    group = groups[0] if groups else None
+    if property_name in {"visibility", "opacity"} and len(groups) > 1:
+        # A shared property/value over several explicitly named groups is one
+        # operation with a typed action per target, not a first-match action.
+        actions = []
+        for target_group in groups:
+            fallback = _typed_fallback(text, property_name, command, value, target_group)
+            if not fallback:
+                return {
+                    "actions": [],
+                    "confidence": 0.0,
+                    "source": "typed_multi_group_ambiguous",
+                    "ambiguous": True,
+                    "candidates": [],
+                    "property": property_name,
+                    "target_group": groups,
+                    "language": "zh" if _has_cjk(text) else "en",
+                }
+            actions.extend(fallback.get("actions") or [])
+        unique = []
+        seen = set()
+        for action in actions:
+            key = json.dumps(action, ensure_ascii=False, sort_keys=True, default=str)
+            if key not in seen:
+                seen.add(key)
+                unique.append(action)
+        return {
+            "actions": unique,
+            "confidence": 0.86,
+            "source": "typed_multi_group_fallback",
+            "ambiguous": False,
+            "candidates": list(unique),
+            "property": property_name,
+            "target_group": groups,
+            "language": "zh" if _has_cjk(text) else "en",
+        }
     catalog = _flatten_action_entries(ui_state)
     candidates: List[Tuple[float, Dict[str, Any], Dict[str, Any]]] = []
 
@@ -1274,7 +1325,10 @@ def resolve_ui_operation_request(
         best_score = candidates[0][0]
         tied = [item for item in candidates if best_score - item[0] < 0.08]
         distinct = {json.dumps(item[1], sort_keys=True, ensure_ascii=False) for item in tied}
-        if len(distinct) > 1 and best_score < 0.92:
+        if len(distinct) > 1:
+            # High lexical confidence does not resolve identity: two live
+            # controls with the same label remain ambiguous even at an exact
+            # score. The stable DOM ref, not the score, distinguishes them.
             return {
                 "actions": [],
                 "confidence": round(best_score, 3),
@@ -1328,6 +1382,93 @@ def resolve_ui_operation_request(
             "language": "zh" if _has_cjk(text) else "en",
         }
     return None
+
+
+def resolve_ui_operation_request(
+    message: str,
+    ui_state: Optional[Mapping[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    """Resolve each independently scoped UI action without crossing clauses."""
+    from agent_runtime.request_parse import parse_request
+
+    text = _text(message)
+    parsed = parse_request(message)
+    ui_tasks = []
+    for task in parsed.subtasks:
+        prop = _property_from_text(task.raw)
+        if "ui_change" in task.actions or (
+            task.action == "display" and prop == "visibility"
+        ):
+            ui_tasks.append(task)
+
+    if ui_tasks:
+        eligible = [
+            task for task in ui_tasks
+            if not (
+                task.negated or task.conditional or task.interrogative
+                or task.quoted or task.attributed or task.ambiguous
+            )
+        ]
+        if not eligible:
+            return {
+                "actions": [],
+                "confidence": 0.0,
+                "source": "rejected_unsafe_clause",
+                "ambiguous": True,
+                "candidates": [],
+                "property": None,
+                "target_group": None,
+                "language": "zh" if _has_cjk(text) else "en",
+            }
+        clauses = list(dict.fromkeys(task.raw for task in eligible))
+        if len(clauses) > 1:
+            actions = []
+            unresolved = []
+            confidences = []
+            for clause in clauses:
+                contract = _resolve_ui_operation_request_single(clause, ui_state)
+                if not contract or contract.get("ambiguous"):
+                    unresolved.append(clause)
+                    continue
+                confidences.append(float(contract.get("confidence") or 0.0))
+                actions.extend(
+                    action for action in contract.get("actions", [])
+                    if isinstance(action, Mapping)
+                )
+            unique = []
+            seen = set()
+            for action in actions:
+                key = json.dumps(dict(action), ensure_ascii=False, sort_keys=True, default=str)
+                if key not in seen:
+                    seen.add(key)
+                    unique.append(dict(action))
+            if not unique:
+                return {
+                    "actions": [],
+                    "confidence": 0.0,
+                    "source": "compound_ui_unresolved",
+                    "ambiguous": True,
+                    "candidates": [],
+                    "property": None,
+                    "target_group": None,
+                    "language": "zh" if _has_cjk(text) else "en",
+                    "unresolved_subtasks": unresolved,
+                }
+            return {
+                "actions": unique,
+                "confidence": min(confidences) if confidences else 0.0,
+                "source": "compound_ui_subtasks",
+                "ambiguous": False,
+                "candidates": list(unique),
+                "property": None,
+                "target_group": None,
+                "language": "zh" if _has_cjk(text) else "en",
+                "partial": bool(unresolved),
+                "unresolved_subtasks": unresolved,
+            }
+        return _resolve_ui_operation_request_single(clauses[0], ui_state)
+
+    return _resolve_ui_operation_request_single(message, ui_state)
 
 
 __all__ = ["resolve_ui_operation_request"]

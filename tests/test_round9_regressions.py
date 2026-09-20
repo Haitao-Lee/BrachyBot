@@ -148,6 +148,8 @@ class Round9RegressionTests(unittest.TestCase):
         self.assertIn("_visualAttachmentRequiresAnalysis", chat)
         self.assertIn("visual_screenshot_analysis", workflow)
         self.assertIn("_screenshot_called_this_turn = set()", runtime)
+        self.assertIn("_tool_key in _screenshot_called_this_turn", runtime)
+        self.assertIn("_screenshot_called_this_turn.add(_tool_key)", runtime)
         self.assertIn('all(tc.get("tool") in {"ui_screenshot", "ui_content"}', runtime)
 
     def test_invalid_screenshot_calls_are_filtered_before_tool_execution(self):

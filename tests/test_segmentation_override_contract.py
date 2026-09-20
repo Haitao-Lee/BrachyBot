@@ -1,5 +1,7 @@
 """Regression tests for explicit segmentation reruns and truthful tool status."""
 
+import pytest
+
 from agent_runtime.response_tools import ResponseToolMixin
 from tool_factory import ToolResult
 
@@ -27,6 +29,11 @@ class _DirectHarness(ResponseToolMixin):
         "nnunet_pancreatic",
         "nnunet_liver_tumor",
         "nnunet_kidney_tumor",
+        "nnunet_head_neck_gtv",
+        "nnunet_nasopharynx_ncct",
+        "nnunet_nasopharynx_cect",
+        "nasopharynx",
+        "vista3d_lung_tumor",
         "biomedparse_lung_lesion",
         "biomedparse_colon_primary",
         "biomedparse_head_neck_cancer",
@@ -192,7 +199,7 @@ def test_failed_planning_never_runs_the_dependent_surgical_guide():
     assert all(step.get("tool") != "surgical_guide" for step in steps)
 
 
-def test_ctv_followup_inherits_site_from_recent_user_message():
+def test_ctv_followup_does_not_inherit_unbound_site_from_old_user_message():
     memory = _Memory({"ct_path": "/tmp/case.nii.gz"})
     memory.conversation = [
         {"role": "user", "content": "我上传的是胰腺肿瘤患者的CT"},
@@ -202,14 +209,16 @@ def test_ctv_followup_inherits_site_from_recent_user_message():
 
     routed = harness._detect_tool_request("请再执行一次CTV分割")
 
-    assert routed[0]["tool"] == "ctv_segmentation"
-    assert routed[0]["params"]["tumor_type"] == "nnunet_pancreatic"
+    # A recent chat mention is not proof that its site belongs to the active CT.
+    # Reuse is allowed only after the server has bound that site to this case.
+    assert routed is None
 
 
 def test_ctv_normalization_uses_persisted_site_for_llm_tool_call():
     memory = _Memory({
         "ct_path": "/tmp/case.nii.gz",
         "tumor_type_used": "nnunet_pancreatic",
+        "tumor_type_used_ct_path": "/tmp/case.nii.gz",
     })
     harness = _DirectHarness(memory)
 
@@ -228,12 +237,22 @@ def test_ctv_normalization_recovers_catalog_model_and_organ_aliases():
     assert normalized["tumor_type"] == "nnunet_liver_tumor"
     assert all(key not in normalized for key in ("model", "organ", "ct_image_path"))
 
-    calls = harness._normalize_tool_params([{
+    provider_memory = _Memory({"ct_path": "/tmp/case.nii.gz"})
+    provider_memory.conversation = [{
+        "role": "user", "content": "\u8bf7\u5206\u5272\u809d\u80bf\u7624",
+    }]
+    provider_harness = _DirectHarness(provider_memory)
+    calls = provider_harness._normalize_tool_params([{
         "tool": "ctv_segmentation",
-        "params": {"model": "nnunet_liver_tumor", "organ": "liver"},
+        "params": {
+            "model": "nnunet_pancreatic",
+            "organ": "pancreas",
+            "image_path": "/tmp/stale-case.nii.gz",
+        },
     }])
     assert calls[0]["params"]["tumor_type"] == "nnunet_liver_tumor"
-    assert "model" not in calls[0]["params"]
+    assert calls[0]["params"]["image_path"] == "/tmp/case.nii.gz"
+    assert all(key not in calls[0]["params"] for key in ("model", "organ"))
 
 
 def test_ctv_normalization_prefers_a_valid_site_over_an_unknown_model_alias():
@@ -260,6 +279,63 @@ def test_ctv_normalization_does_not_let_an_unknown_model_hide_user_context():
     )
 
     assert normalized["tumor_type"] == "nnunet_liver_tumor"
+
+
+def test_generic_tumor_request_never_uses_provider_selected_pancreas():
+    memory = _Memory({"ct_path": "/case/current.nii.gz"})
+    memory.conversation = [{"role": "user", "content": "\u8bf7\u5206\u5272\u80bf\u7624"}]
+    harness = _DirectHarness(memory)
+
+    calls = harness._normalize_tool_params([{
+        "tool": "ctv_segmentation",
+        "params": {
+            "model": "nnunet_pancreatic",
+            "image_path": "/case/old.nii.gz",
+        },
+    }])
+
+    assert len(calls) == 1
+    assert "tumor_type" not in calls[0]["params"]
+    assert calls[0]["params"]["image_path"] == "/case/current.nii.gz"
+
+
+def test_bound_site_reuse_requires_same_server_owned_ct_after_case_switch():
+    memory = _Memory({
+        "ct_path": "/case/new/ct.nii.gz",
+        "tumor_type_used": "nnunet_liver_tumor",
+        "tumor_type_used_ct_path": "/case/old/ct.nii.gz",
+    })
+    memory.conversation = [{"role": "user", "content": "\u8bf7\u5206\u5272\u80bf\u7624"}]
+    harness = _DirectHarness(memory)
+
+    calls = harness._normalize_tool_params([{
+        "tool": "ctv_segmentation",
+        "params": {
+            "model": "nnunet_pancreatic",
+            "image_path": "/case/old/ct.nii.gz",
+        },
+    }])
+
+    assert len(calls) == 1
+    assert "tumor_type" not in calls[0]["params"]
+    assert calls[0]["params"]["image_path"] == "/case/new/ct.nii.gz"
+
+
+def test_conflicting_explicit_sites_do_not_select_either_model():
+    memory = _Memory({"ct_path": "/case/current.nii.gz"})
+    memory.conversation = [{
+        "role": "user",
+        "content": "\u8bf7\u5206\u5272\u809d\u810f\u548c\u80be\u810f\u80bf\u7624",
+    }]
+    harness = _DirectHarness(memory)
+
+    calls = harness._normalize_tool_params([{
+        "tool": "ctv_segmentation",
+        "params": {"model": "nnunet_pancreatic"},
+    }])
+
+    assert len(calls) == 1
+    assert "tumor_type" not in calls[0]["params"]
 
 
 def test_ctv_tool_boundary_prefers_a_valid_organ_over_a_stale_model_id():
@@ -292,9 +368,27 @@ def test_ctv_normalization_recovers_site_from_current_user_message():
     }]
     harness = _DirectHarness(memory)
 
-    normalized = harness._normalize_ctv_tool_params({"image_path": "/tmp/case.nii.gz"})
+    normalized = harness._normalize_ctv_tool_params(
+        {"image_path": "/tmp/case.nii.gz"},
+        message="你好，我上传了一名肝脏肿瘤患者CT，请帮我分析肿瘤在哪，有多大",
+    )
 
     assert normalized["tumor_type"] == "nnunet_liver_tumor"
+
+
+@pytest.mark.parametrize(("message", "expected_site"), [
+    ("segment a head and neck tumor CTV", "nnunet_head_neck_gtv"),
+    ("segment nasopharyngeal CTV on non-contrast CT", "nnunet_nasopharynx_ncct"),
+    ("segment nasopharyngeal CTV on contrast-enhanced CT", "nnunet_nasopharynx_cect"),
+])
+def test_english_site_and_modality_aliases_select_the_matching_ctv_model(message, expected_site):
+    harness = _DirectHarness(_Memory({"ct_path": "/tmp/case.nii.gz"}))
+
+    calls = harness._detect_tool_request(message)
+
+    assert calls and len(calls) == 1
+    assert calls[0]["tool"] == "ctv_segmentation"
+    assert calls[0]["params"]["tumor_type"] == expected_site
 
 
 def test_liver_aliases_use_the_biomedparse_route_before_ctv_validation():
@@ -493,6 +587,7 @@ def test_explicit_seed_implant_plan_runs_complete_local_delivery_chain():
     harness = _DirectHarness(_Memory({
         "ct_path": "/tmp/case.nii.gz",
         "tumor_type_used": "nnunet_pancreatic",
+        "tumor_type_used_ct_path": "/tmp/case.nii.gz",
     }))
 
     calls = harness._detect_tool_request(

@@ -366,6 +366,36 @@ def normalize_visual_evidence_context(
     }
 
 
+_UNVERIFIED_SPATIAL_CLAIM = re.compile(
+    r"(?:在哪里|哪儿|位于|位置(?:是|在|为|：|:)|"
+    r"(?:左|右|上|下)(?:侧|方|边)|附近|表面|延伸|穿过|覆盖|可见|显示在|"
+    r"图中|画面中|截图(?:中|里)?(?:显示|可见)|"
+    r"\b(?:where|located|location|position(?:ed)?|left|right|above|below|"
+    r"near|surface|visible|appears?|shown|extends?|passes?\s+through|covers?)\b)",
+    re.IGNORECASE,
+)
+
+
+def _nonspatial_preliminary_context(value: Any) -> str:
+    """Retain independent same-turn facts, never unverified location claims."""
+    text = _bounded_text(value, 8000)
+    if not text:
+        return ""
+    # Split at clause boundaries so an unrelated fact after a location claim
+    # survives (e.g. "the guide is on the left, Planning_2 is complete").
+    clauses = re.split(
+        r"(?<=[。！？!?;；\n])|(?<!\d)\.(?!\d)|[,，]",
+        text,
+    )
+    kept = []
+    for clause in clauses:
+        item = clause.strip(" \t\r\n -*•#")
+        if not item or _UNVERIFIED_SPATIAL_CLAIM.search(item):
+            continue
+        kept.append(item)
+    return "\n".join(kept)
+
+
 def grounded_location_answer(context: Dict[str, Any], response_language: str = '') -> Optional[str]:
     """Build durable location prose only from the captured target manifests."""
     evidence = [item for item in context.get("evidence", []) if isinstance(item, Mapping)]
@@ -421,10 +451,16 @@ def grounded_location_answer(context: Dict[str, Any], response_language: str = '
     if unverified_tree_refs and not viewer_capture_present:
         lines.append("Viewer：没有取得同一对象的可核验三维截图，因此不能说明它在三维视图中的位置。" if zh
                      else "Viewer: no verifiable 3D capture of the same object was available, so its 3D location cannot be stated.")
-    preliminary = _bounded_text(context.get("preliminary_response"), 8000)
+    preliminary = _nonspatial_preliminary_context(
+        context.get("preliminary_response")
+    )
     sections = []
     if preliminary:
-        sections.append(preliminary)
+        sections.append(
+            ("### 其他同轮只读信息（非截图位置证据）\n" if zh
+             else "### Other same-turn read-only information (not screenshot evidence)\n")
+            + preliminary
+        )
     sections.append(("### 对象截图/位置\n" if zh else "### Object screenshot/location\n") + "\n\n".join(lines))
     return "\n\n".join(sections)
 

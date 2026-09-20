@@ -31,8 +31,10 @@ from typing import Iterable, List, Mapping, Optional, Tuple
 
 __all__ = [
     "ParsedRequest",
+    "RequestSubtask",
     "parse_request",
     "normalize_text",
+    "is_internal_tool_result_message",
     "is_interrogative",
     "is_negated",
     "is_conditional",
@@ -79,6 +81,11 @@ def _clean(text: str) -> str:
     return text.strip(" \u3002.!！?？,，;；:：、" + "\"'")
 
 
+def is_internal_tool_result_message(message: object) -> bool:
+    """Identify synthetic user-role records used only for tool continuity."""
+    return normalize_text(message).lstrip().casefold().startswith("[tool result:")
+
+
 # ---------------------------------------------------------------------------
 # Structural detectors
 # ---------------------------------------------------------------------------
@@ -116,7 +123,7 @@ def is_interrogative(message: object) -> bool:
 
 
 _NEGATION_MARKERS = (
-    "不要", "别", "不用", "不需要", "无需", "不必", "不能", "不可", "不可以",
+    "不要", "不用", "不需要", "无需", "不必", "不能", "不可", "不可以",
     "没有", "取消", "切勿", "禁止", "不允许", "不执行", "不生成", "不重新",
     "别生成", "除了", "除外", "并非", "不是", "没生成", "未生成", "不需要",
     "do not", "don't", "dont", "without", "except", "exclude", "never",
@@ -129,7 +136,22 @@ def is_negated(message: object) -> bool:
     text = _clean(message)
     if not text:
         return False
-    return any(marker in text for marker in _NEGATION_MARKERS)
+    if any(marker in text for marker in _NEGATION_MARKERS):
+        return True
+    # ``别`` is a negation only in an imperative such as ``别生成``. A raw
+    # substring check also matches ordinary words like ``分别``/``识别`` and
+    # can incorrectly veto an otherwise valid read-only request. Ignore the
+    # common lexical compounds on either side while preserving ``请别…`` and
+    # ``别再…`` safety guards.
+    lexical_prefixes = frozenset("分识类别特个告诀辞")
+    lexical_suffixes = frozenset("名的处墅扭针称")
+    for match in re.finditer("别", text):
+        previous = text[match.start() - 1] if match.start() else ""
+        following = text[match.end()] if match.end() < len(text) else ""
+        if previous in lexical_prefixes or following in lexical_suffixes:
+            continue
+        return True
+    return False
 
 
 _CONDITIONAL_MARKERS = (
@@ -271,9 +293,21 @@ _ACTION_ALIASES: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
         "perform", "replan", "rerun",
     )),
     ("display", (
+        "\u622a\u56fe", "\u622a\u5c4f", "\u62cd\u7167", "\u622a\u53d6", "screenshot", "capture",
         "\u67e5\u770b", "\u770b\u770b", "\u770b\u4e00\u4e0b", "\u663e\u793a",
         "\u5c55\u793a", "\u5448\u73b0", "\u6253\u5f00", "\u67e5\u9605", "show",
         "view", "display", "present", "load", "open", "see",
+    )),
+    # General UI interaction verbs are structurally distinct from clinical
+    # writes. They let the shared clause parser bind separate UI actions
+    # without granting a clinical tool capability.
+    ("ui_change", (
+        "hide", "hidden", "toggle", "set", "setting", "change", "adjust", "turn",
+        "switch", "expand", "collapse", "increase", "decrease", "click",
+        "right-click", "double-click", "select", "input", "scroll", "wheel", "drag",
+        "隐藏", "关闭", "禁用", "切换", "设置", "设为", "设成", "调整", "改变", "修改",
+        "展开", "收起", "增加", "减少", "调高", "调低", "点击", "右键", "双击",
+        "选择", "输入", "滚动", "拖动",
     )),
     ("annotate", (
         "\u5708\u51fa", "\u6807\u51fa", "\u6807\u6ce8", "\u9ad8\u4eae", "circle",
@@ -328,100 +362,385 @@ _DESTRUCTIVE_VERBS = (
 # Detection helpers
 # ---------------------------------------------------------------------------
 
+def _alias_matches(text: str, alias: str) -> bool:
+    """Match CJK phrases by substring and ASCII aliases by token boundary."""
+    if not text or not alias:
+        return False
+    if re.search(r"[a-z0-9]", alias, re.IGNORECASE):
+        pattern = rf"(?<![a-z0-9_]){re.escape(alias)}(?![a-z0-9_])"
+        return bool(re.search(pattern, text, re.IGNORECASE))
+    return alias in text
+
+
 def _find_targets(text: str) -> List[str]:
-    found: List[str] = []
+    matched: Dict[str, List[str]] = {}
     for target, aliases in TARGET_ALIASES:
-        if any(alias in text for alias in aliases):
-            if target not in found:
-                found.append(target)
-    return found
+        hits = [alias for alias in aliases if _alias_matches(text, alias)]
+        if hits:
+            matched[target] = hits
+    # In a verb phrase such as “CTV 分割”, 分割 is the action, not a second
+    # target family called structure. Keep structure when its noun aliases are
+    # explicitly present (e.g. “segment the structure”).
+    if "structure" in matched and not any(
+        alias not in {"分割", "segmentation"}
+        for alias in matched["structure"]
+    ) and len(matched) > 1:
+        matched.pop("structure", None)
+    # “dose report” and “planning report” are report qualifiers, not two
+    # independently requested objects. Explicit conjunctions remain compound.
+    if "report" in matched:
+        compact = re.sub(r"\s+", " ", text.casefold())
+        coordinated = re.search(r"(?:和|与|及|以及|并且|(?<![a-z0-9_])and(?![a-z0-9_])|&)", compact)
+        if "dose" in matched and re.search(r"剂量\s*报告|(?<![a-z0-9_])dose\s+report(?![a-z0-9_])", compact) and not coordinated:
+            matched.pop("dose", None)
+        if "planning" in matched and re.search(r"(?:计划|规划)\s*报告|(?<![a-z0-9_])(?:(?:treatment )?plan|planning)\s+report(?![a-z0-9_])", compact) and not coordinated:
+            matched.pop("planning", None)
+    # “截图/ screenshot” names an action, not an additional business object
+    # when a concrete target such as a guide or CTV is also present.
+    if "screenshot" in matched and len(matched) > 1:
+        matched.pop("screenshot", None)
+    return [target for target, _aliases in TARGET_ALIASES if target in matched]
 
 
 def _find_actions(text: str) -> List[str]:
     found: List[str] = []
     for action, aliases in _ACTION_ALIASES:
-        if any(alias in text for alias in aliases):
+        if any(_alias_matches(text, alias) for alias in aliases):
             found.append(action)
     return found
 
 
 def _first_object_by_position(text: str) -> str:
-    """Return the target noun that appears earliest in the utterance."""
-    best = ""
-    best_index = len(text) + 1
+    """Return the earliest, most specific target noun in the utterance."""
+    matches = []
+    allowed_targets = set(_find_targets(text))
     for target, aliases in TARGET_ALIASES:
+        if target not in allowed_targets:
+            continue
         for alias in aliases:
-            index = text.find(alias)
-            if index >= 0 and index < best_index:
-                best_index = index
-                best = target
-    return best
+            if re.search(r"[a-z0-9]", alias, re.IGNORECASE):
+                pattern = rf"(?<![a-z0-9_]){re.escape(alias)}(?![a-z0-9_])"
+                found = re.search(pattern, text, re.IGNORECASE)
+            else:
+                found = re.search(re.escape(alias), text)
+            if found:
+                matches.append((found.start(), -len(alias), target))
+    return min(matches)[2] if matches else ""
 
 
 def _primary_action(text: str, actions: List[str]) -> str:
-    """Pick the command-position action rather than any mentioned verb."""
+    """Pick the highest-priority explicit action using token-safe aliases."""
     if not actions:
         return ""
     command_verbs = (
-        "\u751f\u6210", "\u91cd\u65b0\u751f\u6210", "\u518d\u751f\u6210", "\u91cd\u5efa",
-        "\u91cd\u505a", "\u5236\u4f5c", "\u521b\u5efa", "\u66f4\u65b0", "\u5237\u65b0",
-        "\u586b\u5145", "\u8865\u5168", "\u5b8c\u5584", "\u6e05\u7a7a", "\u6e05\u9664",
-        "\u5220\u9664", "\u5220\u6389", "\u5bfc\u51fa", "\u5206\u5272", "\u52fe\u753b",
-        "\u6267\u884c", "\u5f00\u59cb", "\u8fdb\u884c", "\u91cd\u7f6e", "\u5199", "\u64b0\u5199",
-        "generate", "regenerate", "rebuild", "create", "update", "refresh",
-        "clear", "delete", "remove", "export", "segment", "plan", "run",
-        "execute", "start", "reset",
+        "生成", "重新生成", "再生成", "重建", "重做", "制作", "创建", "更新", "刷新",
+        "填充", "补全", "完善", "清空", "清除", "删除", "删掉", "导出", "分割",
+        "勾画", "执行", "开始", "进行", "重置", "写", "撰写", "generate",
+        "regenerate", "re-generate", "rebuild", "create", "update", "refresh",
+        "clear", "delete", "remove", "export", "segment", "plan", "run", "execute",
+        "start", "reset", "重新计算", "重算",
     )
     for action, aliases in _ACTION_ALIASES:
         if action not in actions:
             continue
         for alias in aliases:
-            if alias not in command_verbs:
-                continue
-            if alias in text:
+            if alias in command_verbs and _alias_matches(text, alias):
                 return action
     return actions[0]
 
 
-def _clauses(text: str) -> List[str]:
-    return [part for part in re.split(r"[,;\uff0c\uff1b\u3002]|(?:\s+(?:and then|then)\s+)", text) if part.strip()]
+def _target_mentions(text: str) -> List[Tuple[int, int, str]]:
+    mentions = []
+    allowed = set(_find_targets(text))
+    for target, aliases in TARGET_ALIASES:
+        if target not in allowed:
+            continue
+        for alias in aliases:
+            if re.search(r"[a-z0-9]", alias, re.IGNORECASE):
+                pattern = rf"(?<![a-z0-9_]){re.escape(alias)}(?![a-z0-9_])"
+                matches = re.finditer(pattern, text, re.IGNORECASE)
+            else:
+                matches = re.finditer(re.escape(alias), text)
+            for match in matches:
+                mentions.append((match.start(), match.end(), target))
+    mentions.sort(key=lambda item: (item[0], -(item[1] - item[0])))
+    # Prefer the longest alias at a shared start offset, then one mention per
+    # semantic target; duplicated synonyms must not look like two objects.
+    selected = []
+    seen_targets = set()
+    last_start = None
+    for mention in mentions:
+        start, end, target = mention
+        if target in seen_targets:
+            continue
+        if last_start == start and selected and (end - start) < (selected[-1][1] - selected[-1][0]):
+            continue
+        selected.append(mention)
+        seen_targets.add(target)
+        last_start = start
+    return sorted(selected, key=lambda item: item[0])
+
+
+def _action_position(text: str, action: str) -> Optional[int]:
+    aliases = dict(_ACTION_ALIASES).get(action, ())
+    positions = []
+    for alias in aliases:
+        if re.search(r"[a-z0-9]", alias, re.IGNORECASE):
+            pattern = rf"(?<![a-z0-9_]){re.escape(alias)}(?![a-z0-9_])"
+            match = re.search(pattern, text, re.IGNORECASE)
+        else:
+            match = re.search(re.escape(alias), text)
+        if match:
+            positions.append(match.start())
+    return min(positions) if positions else None
+
+
+def _targets_explicitly_coordinated(text: str, targets: List[str]) -> bool:
+    if len(targets) < 2:
+        return False
+    mentions = _target_mentions(text)
+    by_target = {}
+    for start, end, target in mentions:
+        by_target.setdefault(target, (start, end))
+    ordered = sorted((by_target[target] for target in targets if target in by_target))
+    if len(ordered) != len(targets):
+        return False
+    return all(
+        re.search(r"(?:和|与|及|以及|(?<![a-z0-9_])and(?![a-z0-9_])|&)", text[left[1]:right[0]], re.IGNORECASE)
+        for left, right in zip(ordered, ordered[1:])
+    )
+
+
+def _mask_quoted_content(text: str) -> str:
+    """Mask quote contents while preserving offsets for lexical authorization."""
+    chars = list(text)
+    for start, end in _quoted_spans(text):
+        for index in range(max(0, start), min(len(chars), end)):
+            chars[index] = " "
+    return "".join(chars)
+
+
+def _attribution_frame(text: str) -> bool:
+    return bool(re.search(
+        r"(?:日志|记录|原文|对话|邮件|消息|引用|转述|他说|她说|用户说|用户要求|医生说|"
+        r"上面写着|文中写着|内容提到|提到有人说|"
+        r"\b(?:the log|the record|the quote|quoted text|according to|"
+        r"(?:he|she|they|the user|the doctor) said|the message says)\b)",
+        text,
+        re.IGNORECASE,
+    ))
+
+
+def _is_conditional_prefix(text: str) -> bool:
+    return bool(re.match(
+        r"\s*(?:如果|假如|假设|若是?|要是|除非|万一|一旦|"
+        r"if\b|unless\b|suppose\b|assuming\b|in case\b)",
+        text,
+        re.IGNORECASE,
+    ))
+
+
+def _subtask_clause_spans(text: str) -> List[Tuple[int, int, bool]]:
+    """Split independent clauses, but keep noun coordination intact.
+
+    A conjunction is a boundary only when both sides independently contain an
+    object and an action. Thus “generate guide and report” remains one shared
+    command, while “view the guide and generate the report” splits safely.
+    The boolean marks a consequent inherited from a preceding condition.
+    """
+    if not text:
+        return []
+    hard = re.compile(r"[,，;；。.!！?？\n]+")
+    soft = re.compile(
+        r"\s+(?:and then|then|however|but|also|additionally|besides|in addition|and)\s+|"
+        r"(?:此外还|另外还|此外|另外|同时|顺便|而且|并且|但是|不过|然而|然后|接着|"
+        r"以及|和|与|及|并(?=[\u4e00-\u9fff]))",
+        re.IGNORECASE,
+    )
+
+    def trim_span(start: int, end: int) -> Optional[Tuple[int, int]]:
+        while start < end and text[start].isspace():
+            start += 1
+        while end > start and text[end - 1].isspace():
+            end -= 1
+        return (start, end) if start < end else None
+
+    def complete(start: int, end: int) -> bool:
+        fragment = text[start:end]
+        return bool(_find_targets(fragment) and _find_actions(_mask_quoted_content(fragment)))
+
+    def split_soft(start: int, end: int, inherited: bool) -> List[Tuple[int, int, bool]]:
+        for match in soft.finditer(text, start, end):
+            left = trim_span(start, match.start())
+            right = trim_span(match.end(), end)
+            if not left or not right or not complete(*left) or not complete(*right):
+                continue
+            connector = match.group(0).strip().lower()
+            left_text = text[left[0]:left[1]]
+            conditional_right = inherited or (
+                connector in {"then", "and then", "然后", "那么", "则"}
+                and is_conditional(_mask_quoted_content(left_text))
+            )
+            return split_soft(*left, inherited) + split_soft(*right, conditional_right)
+        return [(start, end, inherited)]
+
+    spans: List[Tuple[int, int, bool]] = []
+    pending_condition = False
+    cursor = 0
+    for boundary in hard.finditer(text):
+        trimmed = trim_span(cursor, boundary.start())
+        if trimmed:
+            segment = text[trimmed[0]:trimmed[1]]
+            spans.extend(split_soft(*trimmed, pending_condition))
+            # A condition can contain action-looking words in a factual
+            # predicate ("if the report has not been generated"). Its
+            # consequence remains conditional even though the lexicon sees
+            # that verb. Carry the condition only across clause separators,
+            # never across a sentence-ending boundary.
+            continues_sentence = not re.search(r"[.!！?？\n]", boundary.group(0))
+            pending_condition = _is_conditional_prefix(segment) and continues_sentence
+        cursor = boundary.end()
+    trimmed = trim_span(cursor, len(text))
+    if trimmed:
+        spans.extend(split_soft(*trimmed, pending_condition))
+    return spans
+
+
+def _parse_subtasks(text: str) -> Tuple["RequestSubtask", ...]:
+    tasks = []
+    source = normalize_text(text)
+    for start, end, inherited_condition in _subtask_clause_spans(source):
+        clause = source[start:end].strip()
+        if not clause:
+            continue
+        leading = len(source[start:end]) - len(source[start:end].lstrip())
+        task_start = start + leading
+        task_end = task_start + len(clause)
+        unquoted = _mask_quoted_content(clause)
+        targets = _find_targets(clause)
+        actions = _find_actions(unquoted)
+        if "generate" in actions and (
+            _ATTRIBUTIVE_REPORT.search(clause) or _ATTRIBUTIVE_GUIDE.search(clause)
+        ) and not (canonical_report_mutation(clause) or canonical_guide_generation(clause)):
+            actions = [action for action in actions if action != "generate"]
+        mentions = _target_mentions(clause)
+        ordered_targets = []
+        for _start, _end, target in mentions:
+            if target not in ordered_targets:
+                ordered_targets.append(target)
+        action = _primary_action(unquoted, actions)
+        # One verb can govern a coordinated noun phrase (“generate guide and
+        # report”), but must not leak onto an unrelated object later in the
+        # clause (“generate report and screenshot the guide”).
+        matched_targets = list(ordered_targets)
+        ambiguous_pairing = False
+        if action and len(matched_targets) > 1:
+            if len(actions) > 1:
+                ambiguous_pairing = True
+            elif not _targets_explicitly_coordinated(clause, matched_targets):
+                action_pos = _action_position(unquoted, action)
+                if action_pos is None:
+                    ambiguous_pairing = True
+                else:
+                    distances = []
+                    for start_pos, end_pos, target in mentions:
+                        distance = min(abs(action_pos - start_pos), abs(action_pos - end_pos))
+                        distances.append((distance, target))
+                    distances.sort()
+                    if len(distances) > 1 and distances[0][0] == distances[1][0]:
+                        ambiguous_pairing = True
+                    else:
+                        matched_targets = [distances[0][1]]
+        quote_spans = _quoted_spans(clause)
+        # Quoting only an object label (e.g. clear the "Report" section) does
+        # not quote the command. Treat a clause as quoted when the whole clause
+        # is quoted or the quoted span itself contains a target/action command.
+        quoted = is_quoted(clause) or any(
+            bool(_find_actions(clause[quote_start:quote_end]))
+            and bool(_find_targets(clause[quote_start:quote_end]))
+            for quote_start, quote_end in quote_spans
+        )
+        common = {
+            "raw": clause,
+            "start": task_start,
+            "end": task_end,
+            "actions": tuple(actions),
+            "negated": is_negated(unquoted),
+            "conditional": inherited_condition or is_conditional(unquoted),
+            "interrogative": is_interrogative(clause) or bool(
+                re.match(r"\s*[?？]", source[task_end:])
+            ),
+            "quoted": quoted,
+            "attributed": _attribution_frame(clause),
+            "ambiguous": ambiguous_pairing or (len(actions) > 1 and len(ordered_targets) > 1),
+            "source": "deterministic_lexicon",
+        }
+        if action and matched_targets:
+            for target in matched_targets:
+                tasks.append(RequestSubtask(
+                    **common, target=target, action=action, targets=(target,),
+                ))
+        else:
+            tasks.append(RequestSubtask(
+                **common,
+                target=ordered_targets[0] if ordered_targets else "",
+                action=action,
+                targets=tuple(ordered_targets),
+            ))
+    return tuple(tasks)
 
 
 def _ordered_goals(text: str, objects: List[str], actions: List[str]) -> List[Tuple[str, str]]:
-    """Return the ordered (target, action) goals named by the turn."""
-    goals: List[Tuple[str, str]] = []
-    for clause in _clauses(text):
-        clause_targets = [t for t in _find_targets(clause) if t in objects] or _find_targets(clause)
-        clause_targets = sorted(
-            clause_targets,
-            key=lambda target: min(
-                (clause.find(alias) for alias in dict(TARGET_ALIASES).get(target, ()) if clause.find(alias) >= 0),
-                default=len(clause),
-            ),
-        )
-        clause_actions = _find_actions(clause)
-        if not clause_targets or not clause_actions:
-            continue
-        action = _primary_action(clause, clause_actions)
-        for target in clause_targets:
-            pair = (target, action)
+    """Compatibility projection of locally parsed target/action goals."""
+    goals = []
+    for task in _parse_subtasks(text):
+        if task.target and task.action and not task.ambiguous:
+            pair = (task.target, task.action)
             if pair not in goals:
                 goals.append(pair)
-    if not goals and objects and actions:
-        goals.append((_primary_object(text, objects), _primary_action(text, actions)))
     return goals
 
 
-def _primary_object(text: str, objects: List[str]) -> str:
-    positioned = _first_object_by_position(text)
-    if positioned and positioned in objects:
-        return positioned
-    return objects[0] if objects else ""
+def _clauses(text: str) -> List[str]:
+    return [text[start:end] for start, end, _ in _subtask_clause_spans(text)]
 
 
 # ---------------------------------------------------------------------------
 # Parsed record
 # ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class RequestSubtask:
+    """One locally scoped task extracted from a normalized user turn."""
+
+    raw: str
+    start: int
+    end: int
+    target: str = ""
+    action: str = ""
+    targets: Tuple[str, ...] = ()
+    actions: Tuple[str, ...] = ()
+    negated: bool = False
+    conditional: bool = False
+    interrogative: bool = False
+    quoted: bool = False
+    attributed: bool = False
+    ambiguous: bool = False
+    source: str = "deterministic_lexicon"
+
+    @property
+    def affirmative_command(self) -> bool:
+        return (
+            bool(self.target)
+            and self.action in _WRITE_ACTIONS
+            and not (self.negated or self.interrogative or self.conditional
+                     or self.quoted or self.attributed or self.ambiguous)
+        )
+
+    @property
+    def unconditional_command(self) -> bool:
+        return self.affirmative_command and not self.conditional
+
 
 @dataclass(frozen=True)
 class ParsedRequest:
@@ -440,52 +759,36 @@ class ParsedRequest:
     objects: Tuple[str, ...] = ()
     actions: Tuple[str, ...] = ()
     goals: Tuple[Tuple[str, str], ...] = ()
+    subtasks: Tuple[RequestSubtask, ...] = ()
     reason: str = ""
 
     @property
     def has_write_intent(self) -> bool:
-        if self.action in _WRITE_ACTIONS and self.target:
-            return True
-        if self.action == "plan" and self.target in _WRITABLE_TARGETS:
-            return True
-        return any(action in _WRITE_ACTIONS and target for target, action in self.goals)
+        return any(task.target and task.action in _WRITE_ACTIONS for task in self.subtasks)
 
     @property
     def affirmative_command(self) -> bool:
-        """A positive command; negation/questions/quotes never authorize."""
-        return self.has_write_intent and not (
-            self.negated or self.interrogative or self.quoted
-        )
+        """True when at least one locally scoped positive write was requested."""
+        return any(task.affirmative_command for task in self.subtasks)
 
     @property
     def unconditional_command(self) -> bool:
-        return self.affirmative_command and not self.conditional
+        return any(task.unconditional_command for task in self.subtasks)
 
     @property
     def compound_write(self) -> bool:
-        """True when two or more distinct write goals are requested.
-
-        Two object nouns inside one noun phrase (``剂量报告``) are one goal;
-        two clauses, or a conjunction joining two writable objects
-        (``导板和报告``), are a compound request.
-        """
-        write_clauses = 0
-        for clause in _clauses(self.text):
-            has_target = any(
-                target in _WRITABLE_TARGETS for target in _find_targets(clause)
-            )
-            has_action = any(action in _WRITE_ACTIONS for action in _find_actions(clause))
-            if has_target and has_action:
-                write_clauses += 1
-        if write_clauses >= 2:
-            return True
-        if re.search(r"[\u548c\u4e0e\u53ca]", self.text):
-            targets = [
-                target for target in self.objects if target in _WRITABLE_TARGETS
-            ]
-            if len(targets) >= 2:
-                return True
-        return False
+        """True when the utterance contains multiple distinct write goals."""
+        write_goals = {
+            (task.target, task.action)
+            for task in self.subtasks
+            if task.target in _WRITABLE_TARGETS
+            and task.action in _WRITE_ACTIONS
+            and not task.negated
+            and not task.interrogative
+            and not task.attributed
+            and not task.quoted
+        }
+        return len(write_goals) >= 2
 
     @property
     def primary_goal(self) -> Optional[Tuple[str, str]]:
@@ -508,6 +811,26 @@ class ParsedRequest:
             "objects": list(self.objects),
             "actions": list(self.actions),
             "goals": [list(goal) for goal in self.goals],
+            "subtasks": [
+                {
+                    "raw": task.raw,
+                    "start": task.start,
+                    "end": task.end,
+                    "target": task.target,
+                    "action": task.action,
+                    "targets": list(task.targets),
+                    "actions": list(task.actions),
+                    "negated": task.negated,
+                    "conditional": task.conditional,
+                    "interrogative": task.interrogative,
+                    "quoted": task.quoted,
+                    "attributed": task.attributed,
+                    "ambiguous": task.ambiguous,
+                    "source": task.source,
+                    "affirmative": task.affirmative_command,
+                }
+                for task in self.subtasks
+            ],
             "affirmative": self.affirmative_command,
             "unconditional": self.unconditional_command,
         }
@@ -520,20 +843,18 @@ def parse_request(message: object) -> ParsedRequest:
     if not text:
         return ParsedRequest(raw=raw, text="", reason="empty")
 
+    source = normalize_text(raw)
+    subtasks = _parse_subtasks(source)
     objects = _find_targets(text)
-    actions = _find_actions(text)
+    actions = _find_actions(_mask_quoted_content(text))
     target = _first_object_by_position(text) or (objects[0] if objects else "")
-    action = _primary_action(text, actions)
-    goals = _ordered_goals(text, objects, actions)
-    # A generation verb used attributively (``重新生成的报告``) describes an
-    # existing artifact rather than commanding a new one.
-    if action == "generate" and (
-        _ATTRIBUTIVE_REPORT.search(text) or _ATTRIBUTIVE_GUIDE.search(text)
-    ):
-        if not (canonical_report_mutation(text) or canonical_guide_generation(text)):
-            action = ""
-            actions = [item for item in actions if item != "generate"]
-            goals = [goal for goal in goals if goal[1] != "generate"]
+    action = _primary_action(_mask_quoted_content(text), actions)
+    goals = []
+    for task in subtasks:
+        if task.target and task.action and not task.ambiguous:
+            pair = (task.target, task.action)
+            if pair not in goals:
+                goals.append(pair)
     references = tuple(
         marker for marker in _REFERENCE_MARKERS if marker in text
     )
@@ -543,14 +864,15 @@ def parse_request(message: object) -> ParsedRequest:
         target=target,
         action=action,
         scope="compound" if len(goals) > 1 else "single",
-        negated=is_negated(text),
-        conditional=is_conditional(text),
-        interrogative=is_interrogative(raw),
-        quoted=is_quoted(raw),
+        negated=any(task.negated for task in subtasks),
+        conditional=any(task.conditional for task in subtasks),
+        interrogative=any(task.interrogative for task in subtasks),
+        quoted=any(task.quoted for task in subtasks) or is_quoted(raw),
         references=references,
         objects=tuple(objects),
         actions=tuple(actions),
         goals=tuple(goals),
+        subtasks=subtasks,
     )
 
 
@@ -728,25 +1050,32 @@ def mutating_execution_authorized(message: object, tool_name: str) -> bool:
     if goal is None:
         return True
     parsed = parse_request(message)
-    if parsed.negated or parsed.interrogative or parsed.quoted:
-        return False
-    if parsed.conditional and not parsed.unconditional_command:
-        return False
     expected_target, expected_action = goal
-    if expected_target not in parsed.objects and parsed.target != expected_target:
-        # A planning command may legitimately imply its segmentation inputs.
-        if not (
-            expected_target in {"ctv", "oar", "structure"}
-            and parsed.target == "planning"
+    allowed_actions = {
+        "generate": {"generate"},
+        "plan": {"plan"},
+        "segment": {"segment", "plan", "generate"},
+    }.get(expected_action, {expected_action})
+    for task in parsed.subtasks:
+        if (
+            task.ambiguous or task.negated or task.interrogative
+            or task.conditional or task.quoted or task.attributed
         ):
-            return False
-    if expected_action == "generate":
-        return parsed.action in {"generate", "create", "update"} or "generate" in parsed.actions
-    if expected_action == "plan":
-        return parsed.action in {"plan", "generate"} or "plan" in parsed.actions
-    if expected_action == "segment":
-        return parsed.action in {"segment", "plan", "generate"} or "segment" in parsed.actions
-    return True
+            continue
+        if task.target == expected_target and task.action in allowed_actions:
+            return True
+        # A positive planning pipeline may implicitly load its segmentation
+        # inputs, but only when planning itself is the same local task.
+        if (
+            expected_target in {"ctv", "oar", "structure"}
+            and task.target == "planning"
+            and task.action == "plan"
+            and not task.negated
+            and not task.conditional
+            and not task.attributed
+        ):
+            return True
+    return False
 
 
 def ui_action_is_destructive(target: object) -> bool:
@@ -754,18 +1083,65 @@ def ui_action_is_destructive(target: object) -> bool:
 
 
 def ui_action_explicitly_authorized(message: object, target: object) -> bool:
-    """Destructive UI targets require an explicit clear/delete command."""
+    """Authorize a destructive UI action only from its own positive clause."""
     target = str(target or "")
     if not ui_action_is_destructive(target):
         return True
-    parsed = parse_request(message)
-    if parsed.negated or parsed.interrogative or parsed.quoted:
-        return False
-    if parsed.action == "clear":
-        return True
-    if "clear" in parsed.actions:
-        return True
-    return any(verb in parsed.text for verb in _DESTRUCTIVE_VERBS)
+
+    clear_verb = re.compile(r"(?:清空|清除|\bclear\b|\bwipe\b)", re.IGNORECASE)
+    delete_verb = re.compile(r"(?:删除|删掉|移除|\bdelete\b|\bremove\b)", re.IGNORECASE)
+    reset_verb = re.compile(r"(?:重置|\breset\b)", re.IGNORECASE)
+    session_scope = re.compile(
+        r"(?:\b(?:session|case)\b|当前\s*(?:病例|session)|"
+        r"本(?:次)?(?:病例|session)|会话)",
+        re.IGNORECASE,
+    )
+    browser_cache_scope = re.compile(
+        r"(?:\bbrowser\s+cache\b|\bcache\b|浏览器\s*缓存|浏览器缓存)",
+        re.IGNORECASE,
+    )
+    manual_scope = re.compile(
+        r"(?:\bmanual\b|\bmanual\s+planning\b|手动)",
+        re.IGNORECASE,
+    )
+
+    for task in parse_request(message).subtasks:
+        # Keep negation, quotation, condition, question, and attribution local:
+        # a bad sibling clause cannot authorize or cancel this action.
+        if (
+            task.negated or task.interrogative or task.conditional
+            or task.quoted or task.attributed or task.ambiguous
+        ):
+            continue
+        clause = _mask_quoted_content(task.raw).casefold()
+        if task.action != "clear":
+            continue
+
+        if target == "report.clear":
+            if task.target == "report" and (clear_verb.search(clause) or delete_verb.search(clause)):
+                return True
+        elif target == "plan.reset":
+            if (
+                task.target == "planning" and reset_verb.search(clause)
+                and not manual_scope.search(clause)
+            ):
+                return True
+        elif target == "manual.plan.reset":
+            if (
+                task.target == "planning" and reset_verb.search(clause)
+                and manual_scope.search(clause)
+            ):
+                return True
+        elif target == "session.delete":
+            if session_scope.search(clause) and delete_verb.search(clause):
+                return True
+        elif target == "session.clear_all":
+            if session_scope.search(clause) and clear_verb.search(clause):
+                return True
+        elif target == "browser_cache.clear":
+            if browser_cache_scope.search(clause) and clear_verb.search(clause):
+                return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -791,7 +1167,10 @@ def _last_user_text(conversation: Optional[Iterable[object]]) -> str:
                 if isinstance(part, Mapping) else str(part or "")
                 for part in content
             )
-        return _clean(content)
+        cleaned = _clean(content)
+        if is_internal_tool_result_message(cleaned):
+            continue
+        return cleaned
     return ""
 
 

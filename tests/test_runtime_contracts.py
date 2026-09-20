@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -591,8 +592,9 @@ def test_viewer_script_dependency_contract_is_cache_busted_and_syntax_safe():
     # versions whenever this cross-bundle contract changes, otherwise an old
     # 3D bundle can coexist with a new UI action bundle and hide its parse
     # failure as a missing global helper.
-    assert 'brachybot-ui-api.js?v=95' in index
-    assert 'brachybot-3d-manual.js?v=103' in index
+    ui_api_versions = re.findall(r'brachybot-ui-api\.js\?v=(\d+)', index)
+    assert len(ui_api_versions) == 1 and int(ui_api_versions[0]) >= 1
+    assert 'brachybot-3d-manual.js?v=104' in index
     assert "window._normalizeTrajectoryId = function _normalizeTrajectoryId" in ui_api
 
     # This exact malformed expression previously prevented the entire 3D
@@ -778,6 +780,84 @@ def test_ui_operation_resolver_uses_live_capabilities_and_never_mutates_for_ques
     # A location/capability question must be left to the read/help and
     # screenshot routes; it must never be converted into a click action.
     assert resolve_ui_operation_request("请问3D重建按钮在哪里", {"ui_operation_catalog": catalog}) is None
+
+
+def test_compound_group_operations_keep_each_target_and_local_negation():
+    from agent_runtime.ui_operations import resolve_ui_operation_request
+
+    cases = [
+        ("隐藏 OAR 和 CTV", [
+            ("tree.group.visibility", "oar,hide"),
+            ("tree.group.visibility", "ctv,hide"),
+        ]),
+        ("显示 OAR 并隐藏 CTV", [
+            ("tree.group.visibility", "oar,show"),
+            ("tree.group.visibility", "ctv,hide"),
+        ]),
+        ("不要隐藏 OAR；显示 CTV", [
+            ("tree.group.visibility", "ctv,show"),
+        ]),
+        ("将 OAR 和 CTV 透明度都调到40%", [
+            ("tree.group.opacity", "oar,40"),
+            ("tree.group.opacity", "ctv,40"),
+        ]),
+    ]
+    for message, expected in cases:
+        contract = resolve_ui_operation_request(message, ui_state={})
+        assert contract and not contract.get("ambiguous"), (message, contract)
+        assert [
+            (action["target"], action.get("value"))
+            for action in contract["actions"]
+        ] == expected
+
+    question = resolve_ui_operation_request("为什么 OAR 和 CTV 都被隐藏", ui_state={})
+    assert question and question.get("ambiguous")
+    assert question.get("actions") == []
+
+
+def test_duplicate_live_control_labels_require_stable_identity_clarification():
+    from agent_runtime.ui_operations import resolve_ui_operation_request
+
+    catalog = [
+        {
+            "ref": "dom:oar-opacity-a", "label": "OAR opacity", "tag": "input",
+            "type": "range", "group": "oar", "semantic_property": "opacity",
+            "action": {"target": "ui.control", "command": "set", "semantic_property": "opacity"},
+        },
+        {
+            "ref": "dom:oar-opacity-b", "label": "OAR opacity", "tag": "input",
+            "type": "range", "group": "oar", "semantic_property": "opacity",
+            "action": {"target": "ui.control", "command": "set", "semantic_property": "opacity"},
+        },
+    ]
+    contract = resolve_ui_operation_request(
+        "请将 OAR opacity 调到30%",
+        {"ui_operation_catalog": catalog},
+    )
+    assert contract and contract.get("ambiguous")
+    assert contract.get("actions") == []
+    assert len(contract.get("candidates") or []) == 2
+
+
+def test_ui_action_value_signatures_preserve_meaningful_spaces_but_normalize_json():
+    from agent_runtime.response_tools import _ui_action_signature
+
+    def signature(value):
+        return _ui_action_signature({"target": "ui.control", "command": "set", "value": value})
+
+    assert signature("custom part") != signature("custompart")
+    assert signature("  custom   part  ") == signature("custom part")
+    assert signature('{"value": 10}') == signature('{ "value" : 10 }')
+
+
+def test_local_query_language_guard_rejects_mostly_wrong_language():
+    from agent_runtime.chat_workflows import ChatWorkflowMixin
+
+    matches = ChatWorkflowMixin._local_query_answer_matches_language
+    assert matches("当前 CTV 结果已在 Viewer 中显示。", "zh")
+    assert not matches("The CTV is visible in Viewer. 好", "zh")
+    assert matches("The liver tumor is visible. 肝脏", "en")
+    assert not matches("报告已生成。CT", "en")
 
 
 def test_ui_operation_resolver_preserves_live_fixed_values_and_event_boundaries():

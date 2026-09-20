@@ -38,6 +38,7 @@ def test_provider_screenshot_inherits_actual_followup_subject_and_question():
         {"role": "user", "content": "截图给我看看当前导板在哪里"},
         {"role": "assistant", "content": "导板已生成。Trajectories (22), Needles (22)"},
         {"role": "user", "content": "在data tree的哪里呢"},
+        {"role": "user", "content": "[Tool result: 肿瘤在左侧]"},
     ], get_ui_state=lambda: {})
     result = agent._normalize_tool_params([{
         "tool": "ui_screenshot",
@@ -121,6 +122,30 @@ def test_tree_only_evidence_retains_other_subanswers_without_claiming_viewer_loc
     assert "Viewer" in answer and "\u4e09\u7ef4\u622a\u56fe" in answer
     assert "\\n" not in answer
     assert "\u9888\u90e8" not in answer and "\u9752\u8272" not in answer
+
+
+def test_spatial_preliminary_claims_are_not_reused_as_screenshot_evidence():
+    answer = grounded_location_answer({
+        "preliminary_response": (
+            "\u5bfc\u677f\u4f4d\u4e8e\u60a3\u8005\u9888\u90e8\u5de6\u4fa7\u3002"
+            "Planning_2 \u5df2\u5b8c\u6210 13 \u6761\u8f68\u8ff9\uff1b"
+            "Code help is available."
+        ),
+        "evidence": [{
+            "visual_purpose": "locate", "target": "data-tree",
+            "grounding_manifest": {"targets": [{
+                "target_ref": "surgical_guide:active",
+                "label": "Puncture guide v2", "kind": "data-tree-row",
+                "visible": True, "in_view": True, "annotatable": True,
+                "scene_visible": False, "scene_visibility_known": True,
+                "status": "ready",
+            }]},
+        }],
+    }, "zh")
+    assert "Planning_2" in answer and "Code help is available" in answer
+    assert "\u9888\u90e8" not in answer and "\u5de6\u4fa7" not in answer
+    assert "Puncture guide v2" in answer
+    assert "截图已核验" in answer
 
 
 def test_tree_row_with_unknown_scene_visibility_is_not_called_hidden():

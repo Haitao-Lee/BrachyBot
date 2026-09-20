@@ -54,7 +54,13 @@ def test_explicit_generation_stays_fast(message):
 def test_clear_tool_normalization_preserves_operation_and_confirmation():
     from agent_runtime.response_tools import ResponseToolMixin
     from tool_factory.ui_controller import UIControllerTool
-    calls = ResponseToolMixin()._normalize_tool_params([{
+
+    class Memory:
+        conversation = [{"role": "user", "content": "请清空当前报告"}]
+
+    normalizer = ResponseToolMixin()
+    normalizer.memory = Memory()
+    calls = normalizer._normalize_tool_params([{
         'tool': 'ui_controller',
         'params': {'actions': [{'target': 'report.clear', 'command': 'run'}]},
     }])
@@ -64,3 +70,10 @@ def test_clear_tool_normalization_preserves_operation_and_confirmation():
     assert result.success
     assert result.metadata['actions'][0]['requires_confirm'] is True
     assert result.metadata['has_destructive'] is True
+
+    # Without a current user turn the provider cannot authorize a destructive
+    # operation merely by choosing its registered tool target.
+    assert ResponseToolMixin()._normalize_tool_params([{
+        'tool': 'ui_controller',
+        'params': {'actions': [{'target': 'report.clear', 'command': 'run'}]},
+    }]) == []

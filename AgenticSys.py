@@ -1214,9 +1214,8 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             # the provider initially emitted only the downstream guide call.
             replan_requested = True
         ct_path = self._current_ct_path(tool_calls)
-        tumor_type = (
-            self.memory.retrieve("tumor_type_used")
-            or self._detect_tumor_type_from_message(message)
+        tumor_type = self._detect_tumor_type_from_message(
+            message, image_path=ct_path
         )
 
         def clone_call(tc):
@@ -1646,7 +1645,10 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 params["tumor_type"] = self._map_tumor_type(params["tumor_type"])
                 # Store tumor type so planning pipeline can use organ-specific reference direction
                 if params["tumor_type"]:
-                    self.memory.store("tumor_type_used", params["tumor_type"])
+                    self._store_tumor_type_binding(
+                        params["tumor_type"],
+                        image_path=str(params.get("image_path") or ""),
+                    )
         elif tool_name == "oar_segmentation":
             # Normalize the public OAR subset contract at the final execution
             # boundary. Calls arriving from the LLM, deterministic fast path,
@@ -1950,7 +1952,10 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 if _cvm3:
                     self.memory.store("ctv_volume_mm3", _cvm3)
                 if params.get("tumor_type"):
-                    self.memory.store("tumor_type_used", params["tumor_type"])
+                    self._store_tumor_type_binding(
+                        params["tumor_type"],
+                        image_path=str(params.get("image_path") or ""),
+                    )
                 # BUG FIX 2026-06-16 (CTV/OAR label priority): for
                 # pancreatic patients, CTV segmentation produces a
                 # `pancreas` label (and sometimes other anatomically
@@ -2619,7 +2624,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 self.memory.store("ctv_volume_mm3", _cvm3)
             tumor_type_used = meta.get("tumor_type_used") or meta.get("tumor_type")
             if tumor_type_used:
-                self.memory.store("tumor_type_used", tumor_type_used)
+                self._store_tumor_type_binding(tumor_type_used)
             if meta.get("ctv_source"):
                 self.memory.store("ctv_source", meta["ctv_source"])
             for provenance_key in (
