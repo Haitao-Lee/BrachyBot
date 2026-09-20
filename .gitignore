@@ -66,6 +66,8 @@ screenshots/
 test_screenshots/
 tests/depth-peeling-test.png
 .runtime/
+# Repo-local runtime/archive data (patient/workspace archives); never commit.
+runtime/
 
 # Documentation generated for this project is tracked.
 brain/knowledge/
