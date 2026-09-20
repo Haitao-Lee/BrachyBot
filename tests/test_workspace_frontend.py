@@ -888,7 +888,9 @@ def test_task_replay_is_deduplicated_and_bound_to_the_original_case():
     assert "const resumeSessionId = sessionId;" in workspace
     assert "String(activeSessionId || '') !== resumeSessionId" in workspace
     assert "_sessionChatResumePromises" in chat_todo
-    assert "if (activeSessionId !== sessionId) return false;" in chat_todo
+    assert "const probeIsCurrent = () => activeSessionId === sessionId" in chat_todo
+    assert "Number(window._chatTurnGeneration || 0) === probeGeneration" in chat_todo
+    assert "if (!probeIsCurrent()) return false;" in chat_todo
     assert "Two snapshot applications can race" in chat_todo
     assert "skipChat: options.background === true" in ui_api
 

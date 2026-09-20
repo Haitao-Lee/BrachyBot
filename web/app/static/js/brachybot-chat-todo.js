@@ -2215,14 +2215,56 @@ function _scheduleCaseSurgicalGuideRefresh(sessionId, delay = 0) {
 
 function _waitForFinalReplyPaint() {
     return new Promise(resolve => {
-        if (typeof requestAnimationFrame === 'function') {
-            // Let the browser paint the final response bubble first. The
-            // following task then folds the execution trace after the user
-            // has actually seen the answer, rather than merely after the
-            // protocol emitted its Final Response step.
-            requestAnimationFrame(() => setTimeout(resolve, 0));
-        } else {
-            setTimeout(resolve, 0);
+        let settled = false;
+        let fallbackTimer = null;
+        let visibilityHandler = null;
+        const finish = () => {
+            if (settled) return;
+            settled = true;
+            if (fallbackTimer !== null) clearTimeout(fallbackTimer);
+            if (visibilityHandler && typeof document !== 'undefined'
+                && typeof document.removeEventListener === 'function') {
+                document.removeEventListener('visibilitychange', visibilityHandler);
+            }
+            resolve();
+        };
+
+        // requestAnimationFrame can be suspended indefinitely in a hidden or
+        // throttled tab. Painting is only a presentation hint, never part of
+        // the turn's completion contract, so release the lifecycle immediately
+        // when the page is hidden.
+        if (typeof document !== 'undefined') {
+            if (document.visibilityState === 'hidden') {
+                finish();
+                return;
+            }
+            if (typeof document.addEventListener === 'function') {
+                visibilityHandler = () => {
+                    if (document.visibilityState === 'hidden') finish();
+                };
+                document.addEventListener('visibilitychange', visibilityHandler);
+            }
+        }
+        if (typeof requestAnimationFrame !== 'function') {
+            finish();
+            return;
+        }
+
+        // A missed animation frame must not keep the send button, turn lock,
+        // or Final Response trace pending forever. Keep the normal paint path
+        // when available, with a short hard deadline as a safety boundary.
+        fallbackTimer = setTimeout(finish, 750);
+        try {
+            requestAnimationFrame(() => {
+                if (typeof document !== 'undefined'
+                    && document.visibilityState === 'hidden') {
+                    finish();
+                    return;
+                }
+                setTimeout(finish, 0);
+            });
+        } catch (_) {
+            finish();
         }
     });
 }
@@ -3494,7 +3536,10 @@ async function sendChat(prefill, options) {
         // the existing block; the server id is recorded separately so later
         // re-emissions of the same logical step resolve to this row.
         const placeholder = steps[index];
-        const merged = Object.assign({}, placeholder, step, {
+        // Deferred final delivery and the live trace hold this same object.
+        // Replacing it leaves the deferred list pointing at an obsolete row.
+        const previousTitle = placeholder.title;
+        const merged = Object.assign(placeholder, step, {
             id: optimisticId || placeholder.id,
             _serverId: (step.id != null) ? step.id : placeholder._serverId,
         });
@@ -3502,7 +3547,7 @@ async function sendChat(prefill, options) {
         // from the server. This keeps the routing row label stable whether
         // the server emitted a multi-agent-router or the local-intent
         // short-circuit step.
-        if (step.type !== 'user' && placeholder.title) merged.title = placeholder.title;
+        if (step.type !== 'user' && previousTitle) merged.title = previousTitle;
         steps[index] = merged;
         if (step.type !== 'user') _optimisticRouterConsumed = true;
         return { step: merged, index };
@@ -3916,6 +3961,7 @@ async function sendChat(prefill, options) {
         if (handshakeFailure) throw handshakeFailure;
 
         if (!resp.ok) {
+            turnFailed = true;
             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
             let serverError = '';
             let serverCode = '';
@@ -3946,7 +3992,6 @@ async function sendChat(prefill, options) {
                         turnIdentity,
                     );
                 }
-                setStreamingState(false);
                 return false;
             }
             if (typeof addChat === 'function') {
@@ -3967,7 +4012,6 @@ async function sendChat(prefill, options) {
                     turnIdentity,
                 );
             }
-            setStreamingState(false);
             // Resume callers must be able to distinguish an HTTP failure
             // from a successfully opened stream. A bare return is
             // indistinguishable from success to resumeSessionChatTask().
@@ -4050,12 +4094,16 @@ async function sendChat(prefill, options) {
                     },
                 );
             }
-            setStreamingState(false);
+            turnCompleted = true;
+            turnFailed = uiActions.failed || !data;
+            finalResponseReceived = true;
+            responseText = reply;
             return;
         }
 
         // Real SSE — read stream
         if (!resp.body || !resp.body.getReader) {
+            turnFailed = true;
             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
             const txt = await resp.text();
             console.warn('[chat] SSE response body was unavailable', {
@@ -4066,7 +4114,6 @@ async function sendChat(prefill, options) {
                 addChat('bot-response', _chatUserVisibleFailure(turnSessionId, 'response'), true,
                     Date.now(), false, turnSessionId, turnIdentity);
             }
-            setStreamingState(false);
             return;
         }
         window._chatStreaming = true;
@@ -5462,6 +5509,9 @@ async function sendChat(prefill, options) {
             }
         }
     } finally {
+        // Presentation callbacks must not prevent the owning turn releasing
+        // its transport and send control, even if a renderer fails.
+        try {
         if (isInternalFollowup) {
             const visualParentRequestId = parentRequestId || turnIdentity.requestId;
             const finalStatus = turnCancelled
@@ -5539,7 +5589,6 @@ async function sendChat(prefill, options) {
                     turnSessionId,
                 );
                 if (finalStatus === 'done'
-                    && (suppressScreenshotAck || !String(renderedFinalText || '').trim())
                     && typeof window.notifyAssistantFinalResponseMounted === 'function') {
                     window.notifyAssistantFinalResponseMounted(turnRequestId, turnAssistantMessageId);
                 }
@@ -5551,6 +5600,9 @@ async function sendChat(prefill, options) {
                     try { todo.fold(); } catch (_) {}
                 }
             }
+        }
+        } catch (finalizationError) {
+            console.warn('[chat] final response presentation failed:', finalizationError);
         }
         const isCurrentTurn = window._chatTurnCancelUi === cancelTurnUi;
         if (isCurrentTurn) {
@@ -5576,6 +5628,7 @@ async function sendChat(prefill, options) {
             } catch (_) {}
         }
         if (isCurrentTurn) {
+            try {
             if (!isInternalFollowup) {
                 // Safety net: if the server never emitted a routing/local-intent
                 // step that reconcileOptimisticTraceStep could merge into, the
@@ -5620,11 +5673,13 @@ async function sendChat(prefill, options) {
                     });
                 } catch (_) {}
             }
+            } finally {
             window._chatStreaming = false;
             setStreamingState(false);
             setTimeout(() => { try { _flushHiddenChatQueue(); } catch (_) {} }, 0);
             if (turnCompleted || turnFailed || turnCancelled) {
                 setTimeout(() => { try { _flushQueuedChatTurns(); } catch (_) {} }, 0);
+            }
             }
         }
         if (reconnectNeeded && activeSessionId === turnSessionId) {
@@ -5751,6 +5806,12 @@ async function _buildDoseResultsFallback(userText, sessionId) {
 
 window.resumeSessionChatTask = async function resumeSessionChatTask(options = {}) {
     const sessionId = activeSessionId;
+    // This status probe is a snapshot, not the owner of a later user turn.
+    // Validate after every asynchronous boundary before applying its result.
+    const probeGeneration = Number(window._chatTurnGeneration || 0);
+    const probeIsCurrent = () => activeSessionId === sessionId
+        && Number(window._chatTurnGeneration || 0) === probeGeneration
+        && !window._chatTurnActive && !window._chatStreaming;
     window._lastChatTaskResumeState = window._lastChatTaskResumeState || {};
     const setResumeState = (status, details = {}) => {
         if (!sessionId) return;
@@ -5775,6 +5836,7 @@ window.resumeSessionChatTask = async function resumeSessionChatTask(options = {}
             cache: 'no-store',
             headers: { 'X-BrachyBot-Session': sessionId },
         });
+        if (!probeIsCurrent()) return false;
         if (!response.ok) {
             const staleTaskId = window._sessionChatTaskIds?.[sessionId]
                 || window._detachedChatTasks?.[sessionId]
@@ -5795,7 +5857,7 @@ window.resumeSessionChatTask = async function resumeSessionChatTask(options = {}
         const payload = await response.json();
         // A newer switch can happen while the task status request is in
         // flight. Do not attach this replay to another case's chat shell.
-        if (activeSessionId !== sessionId) return false;
+        if (!probeIsCurrent()) return false;
         const task = payload?.task;
         if (task && Object.prototype.hasOwnProperty.call(task, 'brain_available')) {
             window.updateBrainStatusIndicator?.(task.brain_available, 'task-resume');
@@ -5831,6 +5893,7 @@ window.resumeSessionChatTask = async function resumeSessionChatTask(options = {}
                 } catch (error) {
                     console.warn('[chat] completed case refresh deferred:', error);
                 }
+                if (!probeIsCurrent()) return false;
             }
             window.hideWorkspaceRecoveryNotice?.({ sessionId, persist: true, reason: 'task_terminal' });
             window._lastChatTaskResumeState = window._lastChatTaskResumeState || {};
@@ -5898,6 +5961,7 @@ window.resumeSessionChatTask = async function resumeSessionChatTask(options = {}
         }
         return true;
     } catch (error) {
+        if (!probeIsCurrent()) return false;
         console.warn('[chat] task resume deferred:', error);
         window.hideWorkspaceRecoveryNotice?.({ sessionId, reason: 'resume_status_unavailable' });
         setResumeState('unavailable', { reason: 'status_request_failed' });

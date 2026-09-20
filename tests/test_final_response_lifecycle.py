@@ -68,3 +68,16 @@ def test_visual_child_waits_for_response_paint_before_settling():
     assert child_finally.index("await _waitForFinalReplyPaint()") < child_finally.index(
         "_settlePendingVisualFinalResponse("
     )
+
+
+def test_final_reply_paint_wait_cannot_block_when_frames_are_throttled():
+    source = _read("web/app/static/js/brachybot-chat-todo.js")
+    start = source.index("function _waitForFinalReplyPaint()")
+    end = source.index("function _sessionChatQueue", start)
+    helper = source[start:end]
+
+    assert "let settled = false;" in helper
+    assert "document.visibilityState === 'hidden'" in helper
+    assert "document.addEventListener('visibilitychange', visibilityHandler)" in helper
+    assert "fallbackTimer = setTimeout(finish, 750);" in helper
+    assert "if (settled) return;" in helper
