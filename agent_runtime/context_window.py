@@ -295,6 +295,11 @@ class CompressionMeta:
     def as_dict(self) -> Dict[str, Any]:
         return {
             "window": self.window,
+            # The indicator reads used_tokens/ratio.  Omitting them made a
+            # compressed context render as 0/&lt;window&gt; even though the
+            # conversation was non-empty; report the post-compression size.
+            "used_tokens": self.after_tokens,
+            "ratio": round(self.ratio_after, 4),
             "target_tokens": self.target_tokens,
             "trigger_ratio": self.trigger_ratio,
             "before_tokens": self.before_tokens,

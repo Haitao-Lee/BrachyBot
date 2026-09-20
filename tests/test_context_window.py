@@ -245,3 +245,199 @@ def test_context_pack_budget_tracks_model_window():
 
     obj = LLMRuntimeMixin()
     assert obj._context_pack_budget() > 12_000
+
+
+def test_compression_meta_reports_used_tokens_and_ratio():
+    """A compressed snapshot must still describe the current context size.
+
+    Regression: ``as_dict`` omitted ``used_tokens``/``ratio``, so the indicator
+    fell back to 0/<window> immediately after an automatic compression.
+    """
+    from agent_runtime.context_window import CompressionMeta
+
+    meta = CompressionMeta(
+        window=1_000,
+        target_tokens=800,
+        trigger_ratio=0.85,
+        before_tokens=2_000,
+        after_tokens=700,
+        ratio_before=2.0,
+        ratio_after=0.7,
+        compressed=True,
+    )
+    as_dict = meta.as_dict()
+    assert as_dict["used_tokens"] == 700
+    assert as_dict["ratio"] == 0.7
+
+
+def test_context_status_is_never_empty_for_a_nonempty_session():
+    """The indicator must not read 0/<window> before the first snapshot.
+
+    Regression: ``context_status`` returned only window/target/trigger whenever
+    ``_ctx_last_meta`` was unset (before a turn, after a direct-tool turn, or on
+    a freshly resolved case agent), which the UI rendered as 0/1048576.
+    """
+    from agent_runtime.llm_runtime import LLMRuntimeMixin
+
+    obj = LLMRuntimeMixin()
+    manager = ContextWindowManager(window=1_048_576)
+    obj._context_window_manager = lambda: manager
+
+    class Memory:
+        conversation = [{"role": "user", "content": "x" * 400} for _ in range(10)]
+        context_summary = ""
+
+        def retrieve(self, *args, **kwargs):
+            return None
+
+    obj.memory = Memory()
+    obj._begin_context_turn()
+
+    status = obj.context_status()
+    assert status["window"] == 1_048_576
+    assert status["used_tokens"] > 0
+    assert status["ratio"] > 0
+
+
+def test_context_status_prefers_measured_provider_usage():
+    """The last real provider prompt_tokens is the most accurate context size."""
+    from agent_runtime.llm_runtime import LLMRuntimeMixin
+
+    obj = LLMRuntimeMixin()
+    manager = ContextWindowManager(window=1_048_576)
+    obj._context_window_manager = lambda: manager
+
+    class Memory:
+        conversation = []
+        context_summary = ""
+
+        def retrieve(self, *args, **kwargs):
+            return None
+
+    obj.memory = Memory()
+    obj._begin_context_turn()
+    obj._record_context_usage({"prompt_tokens": 4_321})
+
+    status = obj.context_status()
+    assert status["used_tokens"] == 4_321
+    assert status["ratio"] > 0
+
+
+def test_context_indicator_uses_durable_context_not_tool_peak():
+    """The ring must not report a transient tool-result peak as the context.
+
+    A turn's later provider calls append tool results, so their prompt_tokens
+    can be far larger than the durable conversation. Reporting the peak made
+    the next turn look smaller once the transient results were gone.
+    """
+    from agent_runtime.llm_runtime import LLMRuntimeMixin
+
+    obj = LLMRuntimeMixin()
+    manager = ContextWindowManager(window=1_048_576)
+    obj._context_window_manager = lambda: manager
+
+    class Memory:
+        conversation = []
+        context_summary = ""
+
+        def retrieve(self, *args, **kwargs):
+            return None
+
+    obj.memory = Memory()
+    obj._begin_context_turn()
+    obj._record_context_usage({"prompt_tokens": 30_000})  # first call: durable
+    obj._record_context_usage({"prompt_tokens": 39_166})  # later call: tool peak
+    assert obj.context_status()["used_tokens"] == 30_000
+
+
+def test_context_indicator_grows_monotonically_across_turns():
+    """A growing conversation must never make the ring shrink."""
+    from agent_runtime.llm_runtime import LLMRuntimeMixin
+
+    obj = LLMRuntimeMixin()
+    manager = ContextWindowManager(window=1_048_576)
+    obj._context_window_manager = lambda: manager
+
+    class Memory:
+        conversation = []
+        context_summary = ""
+
+        def retrieve(self, *args, **kwargs):
+            return None
+
+    obj.memory = Memory()
+
+    obj._begin_context_turn()
+    obj._record_context_usage({"prompt_tokens": 30_000})
+    obj._record_context_usage({"prompt_tokens": 39_166})
+    first = obj.context_status()["used_tokens"]
+
+    obj._begin_context_turn()
+    obj._record_context_usage({"prompt_tokens": 33_000})
+    obj._record_context_usage({"prompt_tokens": 45_000})
+    second = obj.context_status()["used_tokens"]
+
+    assert first == 30_000
+    assert second == 33_000
+    assert second > first
+
+
+def test_context_status_exposes_scope_and_turn_totals():
+    """The status must label both quantities so the UI can distinguish them.
+
+    ``used_tokens`` is the current context (next request's prompt); the turn
+    totals are the cumulative usage across every model call in the turn.
+    """
+    from agent_runtime.llm_runtime import LLMRuntimeMixin
+
+    obj = LLMRuntimeMixin()
+    manager = ContextWindowManager(window=1_048_576)
+    obj._context_window_manager = lambda: manager
+
+    class Memory:
+        conversation = []
+        context_summary = ""
+
+        def retrieve(self, *args, **kwargs):
+            return None
+
+    obj.memory = Memory()
+    obj._begin_context_turn()
+    obj._record_context_usage(
+        {"prompt_tokens": 1_000, "completion_tokens": 100, "total_tokens": 1_100}
+    )
+    obj._record_context_usage(
+        {"prompt_tokens": 3_000, "completion_tokens": 200, "total_tokens": 3_200}
+    )
+
+    status = obj.context_status()
+    assert status["scope"] == "current_context"
+    assert status["used_tokens"] == 1_000  # durable first call
+    assert status["turn_input_tokens"] == 4_000
+    assert status["turn_output_tokens"] == 300
+    assert status["turn_total_tokens"] == 4_300
+    assert status["llm_calls"] == 2
+    assert status["measured"] is True
+    assert status["estimated"] is False
+
+
+
+
+def test_context_status_drops_stale_usage_after_manual_compression():
+    """Manual compression must not keep reporting the pre-compression size."""
+    from agent_runtime.core import AgentMemory
+    from agent_runtime.llm_runtime import LLMRuntimeMixin
+
+    obj = LLMRuntimeMixin()
+    manager = ContextWindowManager(window=1_048_576)
+    obj._context_window_manager = lambda: manager
+    memory = AgentMemory("ctx-status-compress")
+    for i in range(12):
+        memory.add_message("user", f"turn {i} " + "y" * 200)
+    obj.memory = memory
+    obj._ctx_last_prompt_tokens = 999_999
+
+    obj.compress_context_now()
+
+    status = obj.context_status()
+    assert 0 < status["used_tokens"] < 999_999

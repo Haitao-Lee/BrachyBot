@@ -737,6 +737,12 @@ class LLMRuntimeMixin:
         )
         self._ctx_window_manager_cache = manager
         self._ctx_window_manager_sig = signature
+        logger.info(
+            "Context window resolved: model=%s declared=%s window=%s target=%s "
+            "trigger=%s trigger_ratio=%s reserve=%s",
+            model or "(default)", declared, manager.window, manager.target_tokens,
+            manager.trigger_tokens, manager.trigger_ratio, reserve,
+        )
         return manager
 
     def _begin_context_turn(self) -> None:
@@ -745,6 +751,20 @@ class LLMRuntimeMixin:
         self._ctx_last_meta = None
         self._ctx_last_estimate = 0
         self._ctx_last_components = None
+        self._ctx_call_index = 0
+        self._ctx_turn_prompt_sum = 0
+        self._ctx_turn_completion_sum = 0
+        # Keep the previous turn's durable size so a status query before this
+        # turn's first provider call still shows the last real context instead
+        # of a transient tool-result peak.
+        self._ctx_prev_turn_prompt_tokens = int(
+            getattr(self, "_ctx_turn_prompt_tokens", 0) or 0
+        )
+        # First measured provider prompt of the turn. Unlike the last call
+        # (which also carries transient tool results), this represents the
+        # durable context that will be re-sent on the next request, so it is
+        # the value the context indicator must show.
+        self._ctx_turn_prompt_tokens = 0
 
     def _enforce_context_budget(
         self,
@@ -767,6 +787,14 @@ class LLMRuntimeMixin:
         self._ctx_last_estimate = estimated
         components = estimate_breakdown(messages, tools)
         self._ctx_last_components = components
+        # Remember the fixed provider overhead (system prompt + tool schemas +
+        # runtime context) so a status query without a fresh snapshot can still
+        # report a realistic size from the durable conversation.
+        self._ctx_overhead_tokens = (
+            int(components.get("system", 0))
+            + int(components.get("tools", 0))
+            + int(components.get("runtime_context", 0))
+        )
         if not aggressive and estimated < manager.trigger_tokens:
             self._ctx_last_meta = manager.snapshot(messages, tools)
             return messages
@@ -814,13 +842,114 @@ class LLMRuntimeMixin:
         """Calibrate the token estimator from real provider usage."""
         try:
             prompt_tokens = int((usage or {}).get("prompt_tokens") or 0)
+            completion_tokens = int((usage or {}).get("completion_tokens") or 0)
+            total_tokens = int((usage or {}).get("total_tokens") or 0)
             estimated = int(getattr(self, "_ctx_last_estimate", 0) or 0)
+            self._ctx_call_index = int(getattr(self, "_ctx_call_index", 0) or 0) + 1
+            if prompt_tokens or completion_tokens:
+                self._ctx_turn_prompt_sum = (
+                    int(getattr(self, "_ctx_turn_prompt_sum", 0) or 0) + prompt_tokens
+                )
+                self._ctx_turn_completion_sum = (
+                    int(getattr(self, "_ctx_turn_completion_sum", 0) or 0)
+                    + completion_tokens
+                )
+            if prompt_tokens:
+                # The provider's prompt_tokens is the ground truth for the
+                # context that was actually sent. Keep the last value for
+                # diagnostics and the first value of the turn as the durable
+                # context size shown by the indicator.
+                self._ctx_last_prompt_tokens = prompt_tokens
+                if not int(getattr(self, "_ctx_turn_prompt_tokens", 0) or 0):
+                    self._ctx_turn_prompt_tokens = prompt_tokens
+                    previous = int(
+                        getattr(self, "_ctx_prev_turn_prompt_tokens", 0) or 0
+                    )
+                    if previous and prompt_tokens < previous:
+                        # Make any decrease auditable. It is legitimate only
+                        # when transient content (an image or tool results) was
+                        # not persisted into the durable history; a compression
+                        # would be logged separately.
+                        logger.warning(
+                            "Context indicator decreased without compression: "
+                            "prev=%s now=%s (transient image/tool content not "
+                            "persisted into history)",
+                            previous, prompt_tokens,
+                        )
+                meta = getattr(self, "_ctx_last_meta", None)
+                if isinstance(meta, dict):
+                    try:
+                        window = float(self._context_window_manager().window)
+                    except Exception:
+                        window = 0.0
+                    meta["used_tokens"] = prompt_tokens
+                    meta["measured"] = True
+                    if window > 0:
+                        meta["ratio"] = round(prompt_tokens / window, 4)
             if prompt_tokens and estimated:
                 self._context_window_manager().record_usage(
                     actual_prompt_tokens=prompt_tokens, estimated_tokens=estimated
                 )
+            # Per-call audit trail. It makes the two different quantities
+            # verifiable: this call's input/output, the turn's running sum, and
+            # the durable context the indicator reports.
+            try:
+                window = int(self._context_window_manager().window)
+            except Exception:
+                window = 0
+            logger.info(
+                "Context usage: call=%s prompt=%s completion=%s total=%s | "
+                "turn_prompt_sum=%s turn_completion_sum=%s | "
+                "context_now=%s window=%s basis=%s",
+                self._ctx_call_index, prompt_tokens, completion_tokens,
+                total_tokens or (prompt_tokens + completion_tokens),
+                int(getattr(self, "_ctx_turn_prompt_sum", 0) or 0),
+                int(getattr(self, "_ctx_turn_completion_sum", 0) or 0),
+                self._durable_context_tokens(), window,
+                "measured" if prompt_tokens else "unavailable",
+            )
         except Exception:
             pass
+
+    def _durable_context_tokens(self) -> int:
+        """Best real size of the durable context (system + tools + history)."""
+        for value in (
+            getattr(self, "_ctx_turn_prompt_tokens", 0),
+            getattr(self, "_ctx_prev_turn_prompt_tokens", 0),
+            getattr(self, "_ctx_last_prompt_tokens", 0),
+        ):
+            value = int(value or 0)
+            if value:
+                return value
+        return 0
+
+    def _fallback_context_usage(self, manager: ContextWindowManager) -> int:
+        """Best real context size when no per-turn snapshot is available.
+
+        Prefers the last measured provider ``prompt_tokens``; otherwise
+        estimates the durable conversation plus the known fixed provider
+        overhead.  This prevents the indicator from reading 0 on a non-empty
+        session (the previous behaviour when ``_ctx_last_meta`` was unset).
+        """
+        actual = self._durable_context_tokens()
+        live = 0
+        try:
+            memory = getattr(self, "memory", None)
+            conversation = list(getattr(memory, "conversation", []) or [])
+            summary = str(getattr(memory, "context_summary", "") or "")
+            if conversation or summary:
+                messages: List[Dict[str, Any]] = list(conversation)
+                if summary:
+                    messages.append({"role": "user", "content": summary})
+                facts = build_case_facts(memory)
+                if facts:
+                    messages.append({"role": "user", "content": facts})
+                overhead = int(getattr(self, "_ctx_overhead_tokens", 0) or 0)
+                calibration = float(getattr(manager, "calibration", 1.0) or 1.0)
+                live = int((estimate_messages(messages) + overhead) * calibration)
+        except Exception:
+            live = 0
+        return max(actual, live)
 
     def context_status(self, messages: Optional[List[Dict]] = None) -> Dict[str, Any]:
         """Public snapshot for the context indicator and manual command."""
@@ -837,6 +966,47 @@ class LLMRuntimeMixin:
             status.setdefault("target_tokens", manager.target_tokens)
             status.setdefault("trigger_tokens", manager.trigger_tokens)
             status.setdefault("trigger_ratio", manager.trigger_ratio)
+            # The provider's measured prompt_tokens is authoritative and is the
+            # single basis for the indicator. Using an estimate on some turns
+            # and a measurement on others made the same growing conversation
+            # read differently (and could even appear to shrink).
+            measured = self._durable_context_tokens()
+            if measured:
+                status["used_tokens"] = measured
+                status["ratio"] = round(measured / float(manager.window), 4)
+                status["measured"] = True
+            elif "used_tokens" not in status:
+                used = self._fallback_context_usage(manager)
+                if used:
+                    status["used_tokens"] = used
+                    status["ratio"] = round(used / float(manager.window), 4)
+                    status["estimated"] = True
+        if "used_tokens" in status and "ratio" not in status:
+            status["ratio"] = round(
+                int(status["used_tokens"]) / float(manager.window), 4
+            )
+        # Explicit semantics so the UI never conflates the two quantities:
+        #   scope=current_context -> durable context size (next request's prompt)
+        #   turn_total_tokens     -> this turn's cumulative usage across calls
+        if messages is None:
+            status["scope"] = "current_context"
+            status["model"] = str(
+                getattr(getattr(self, "brain_router", None), "default_provider", "")
+                or ""
+            )
+            status.setdefault("measured", False)
+            status.setdefault("estimated", not bool(status.get("measured")))
+            status["turn_total_tokens"] = (
+                int(getattr(self, "_ctx_turn_prompt_sum", 0) or 0)
+                + int(getattr(self, "_ctx_turn_completion_sum", 0) or 0)
+            )
+            status["turn_input_tokens"] = int(
+                getattr(self, "_ctx_turn_prompt_sum", 0) or 0
+            )
+            status["turn_output_tokens"] = int(
+                getattr(self, "_ctx_turn_completion_sum", 0) or 0
+            )
+            status["llm_calls"] = int(getattr(self, "_ctx_call_index", 0) or 0)
         components = getattr(self, "_ctx_last_components", None)
         if isinstance(components, dict):
             status["components"] = dict(components)
@@ -862,6 +1032,12 @@ class LLMRuntimeMixin:
             getattr(self.memory, "conversation", []) or []
         )
         summary_after = str(getattr(self.memory, "context_summary", "") or "")
+        # The last provider measurement describes the pre-compression context;
+        # drop it (including the stashed previous-turn value) so the status
+        # falls back to a live estimate of what remains.
+        self._ctx_last_prompt_tokens = 0
+        self._ctx_turn_prompt_tokens = 0
+        self._ctx_prev_turn_prompt_tokens = 0
         self._begin_context_turn()
         meta = getattr(self, "_ctx_last_meta", None)
         result = dict(meta) if isinstance(meta, dict) else {}
