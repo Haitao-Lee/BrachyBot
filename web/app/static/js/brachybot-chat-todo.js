@@ -3380,6 +3380,10 @@ async function sendChat(prefill, options) {
     const screenshotTasks = [];
     const screenshotResults = [];
     const screenshotTaskKeys = new Set();
+    // Screenshot plans temporarily change Viewer focus/visibility. Serialize
+    // their browser transactions within this turn so one target is restored
+    // before the next target is framed and captured.
+    let screenshotCaptureQueue = Promise.resolve();
     // Persisted Session content uses the same reply identity as screenshots,
     // but it reads existing artifacts/data instead of capturing a live DOM
     // canvas. Keep its lifecycle separate so capture failures cannot replace
@@ -4180,7 +4184,7 @@ async function sendChat(prefill, options) {
                                     screenshotTaskKeys.add(_ssKey);
                                 uiDebugLog('[SSE-STEP] Intercepting ui_screenshot, target:', _ssTarget);
                                 try {
-                                    screenshotTasks.push(Promise.resolve(
+                                    const captureTask = screenshotCaptureQueue.then(() =>
                                         _interceptScreenshot(_ssTarget, _ssQuestion, screenshotGallery, {
                                             sessionId: turnSessionId,
                                             requestId: turnRequestId,
@@ -4189,7 +4193,12 @@ async function sendChat(prefill, options) {
                                             mode: _ssPlan.mode || screenshotGallery.mode || 'chat',
                                             plan: _ssPlan,
                                         })
-                                    ).then(result => {
+                                    );
+                                    screenshotCaptureQueue = captureTask.then(
+                                        () => undefined,
+                                        () => undefined,
+                                    );
+                                    screenshotTasks.push(captureTask.then(result => {
                                         if (Array.isArray(result?.attachments)) {
                                             // Preserve a verified Data Tree screenshot if a later Viewer
                                             // capture fails. Its partial-evidence status is explained by

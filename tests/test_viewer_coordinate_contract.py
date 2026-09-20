@@ -37,7 +37,10 @@ def test_frontend_uses_one_mapping_for_pointer_navigation_and_annotations():
     assert "function _viewerVolumeZToAxialDisplay" in volume
     assert "function _viewerMprImageToVoxel" in volume
     assert "displayZ: _viewerVolumeZToAxialDisplay(z, zCount)" in volume
-    assert manual.count("_viewerMprImageToVoxel(axis, imgX, imgY") >= 2
+    # Both pointer navigation and annotation placement must use the one shared
+    # mapper: pointer path calls it directly, annotation path through the
+    # ``mapVoxel`` alias (asserted below).
+    assert manual.count("_viewerMprImageToVoxel") >= 2
     assert "updates.axial = voxel.displayZ" in manual
     assert "mapVoxel(axis, coords.x, coords.y" in manual
     assert "volZ = state.slices.axial" not in manual

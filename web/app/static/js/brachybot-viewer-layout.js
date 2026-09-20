@@ -68,6 +68,10 @@ setTimeout(addTooltips, 1000);
 
 function applyZoom(val) {
     state.viewerSettings.zoom = parseInt(val) / 100;
+    _MPR_VIEWER_AXES.forEach(axis => {
+        const viewport = getMprViewTransform(axis);
+        if (viewport) viewport.zoom = state.viewerSettings.zoom;
+    });
     document.getElementById('zoomLabel').textContent = val + '%';
     applyViewerTransform();
     if (typeof window.scheduleWorkspaceSave === 'function') {
@@ -108,6 +112,65 @@ const _resize = { active: false, type: null, card: null, cards: [], startPos: 0,
 // stale or zero-sized container.
 const _viewerGeometrySync = { generation: 0, timer: null };
 
+const _MPR_VIEWER_AXES = ['axial', 'sagittal', 'coronal'];
+
+function _finiteViewerNumber(value, fallback) {
+    if (value === null || value === undefined || value === '') return fallback;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/**
+ * Return the persisted transform for one MPR viewport. Older workspace
+ * snapshots only contain shared zoom/pan fields, so missing viewports inherit
+ * those values once and can then diverge independently.
+ */
+function getMprViewTransform(axis) {
+    if (!_MPR_VIEWER_AXES.includes(axis) || typeof state === 'undefined' || !state) return null;
+    if (!state.viewerSettings || typeof state.viewerSettings !== 'object') state.viewerSettings = {};
+    const settings = state.viewerSettings;
+    const globalZoom = _finiteViewerNumber(settings.zoom, 1);
+    const fallbackZoom = globalZoom > 0 ? globalZoom : 1;
+    const fallbackPanX = _finiteViewerNumber(settings.panX, 0);
+    const fallbackPanY = _finiteViewerNumber(settings.panY, 0);
+    const viewports = settings.mprViewports && typeof settings.mprViewports === 'object'
+        && !Array.isArray(settings.mprViewports)
+        ? settings.mprViewports
+        : {};
+    settings.mprViewports = viewports;
+
+    _MPR_VIEWER_AXES.forEach(viewAxis => {
+        const viewport = viewports[viewAxis] && typeof viewports[viewAxis] === 'object'
+            ? viewports[viewAxis]
+            : {};
+        const candidateZoom = _finiteViewerNumber(viewport.zoom, fallbackZoom);
+        viewport.zoom = candidateZoom > 0 ? candidateZoom : fallbackZoom;
+        viewport.panX = _finiteViewerNumber(viewport.panX, fallbackPanX);
+        viewport.panY = _finiteViewerNumber(viewport.panY, fallbackPanY);
+        viewports[viewAxis] = viewport;
+    });
+    return viewports[axis];
+}
+window.getMprViewTransform = getMprViewTransform;
+
+function resetMprViewTransforms(zoom = 1, panX = 0, panY = 0) {
+    if (typeof state === 'undefined' || !state) return;
+    if (!state.viewerSettings || typeof state.viewerSettings !== 'object') state.viewerSettings = {};
+    const numericZoom = Number(zoom);
+    const safeZoom = Number.isFinite(numericZoom) && numericZoom > 0 ? numericZoom : 1;
+    const safePanX = _finiteViewerNumber(panX, 0);
+    const safePanY = _finiteViewerNumber(panY, 0);
+    state.viewerSettings.mprViewports = {};
+    _MPR_VIEWER_AXES.forEach(axis => {
+        state.viewerSettings.mprViewports[axis] = {
+            zoom: safeZoom,
+            panX: safePanX,
+            panY: safePanY,
+        };
+    });
+}
+window.resetMprViewTransforms = resetMprViewTransforms;
+
 /**
  * Capture pan in image-relative coordinates before a viewer card changes size.
  * Pixel pan values cannot be reused across normal and fullscreen layouts: the
@@ -119,10 +182,12 @@ function captureViewerViewport(axis) {
     const displayW = Number(canvas._displayW || canvas.offsetWidth || 0);
     const displayH = Number(canvas._displayH || canvas.offsetHeight || 0);
     if (displayW < 1 || displayH < 1) return null;
+    const viewport = getMprViewTransform(axis);
+    if (!viewport) return null;
     return {
         axis,
-        panFractionX: Number(state.viewerSettings.panX || 0) / displayW,
-        panFractionY: Number(state.viewerSettings.panY || 0) / displayH,
+        panFractionX: Number(viewport.panX || 0) / displayW,
+        panFractionY: Number(viewport.panY || 0) / displayH,
     };
 }
 window.captureViewerViewport = captureViewerViewport;
@@ -134,9 +199,11 @@ function _restoreViewerViewport(snapshot) {
     const displayW = Number(canvas._displayW || canvas.offsetWidth || 0);
     const displayH = Number(canvas._displayH || canvas.offsetHeight || 0);
     if (displayW < 1 || displayH < 1) return;
-    state.viewerSettings.panX = Number(snapshot.panFractionX || 0) * displayW;
-    state.viewerSettings.panY = Number(snapshot.panFractionY || 0) * displayH;
-    if (typeof applyViewerTransform === 'function') applyViewerTransform();
+    const viewport = getMprViewTransform(snapshot.axis);
+    if (!viewport) return;
+    viewport.panX = Number(snapshot.panFractionX || 0) * displayW;
+    viewport.panY = Number(snapshot.panFractionY || 0) * displayH;
+    if (typeof applyViewerTransform === 'function') applyViewerTransform(snapshot.axis);
 }
 
 function _clearViewerResizeOverrides(panel) {
@@ -551,6 +618,7 @@ function fitView() {
     state.viewerSettings.zoom = 1.0;
     state.viewerSettings.panX = 0;
     state.viewerSettings.panY = 0;
+    resetMprViewTransforms(1, 0, 0);
     state.viewerSettings.flipH = false;
     state.viewerSettings.flipV = false;
     state.viewerSettings.rotation = 0;
@@ -667,10 +735,11 @@ function resetViewer() {
         window: 400, level: 40, threshold: null,
         showCTV: false, showOAR: false, zoom: 1.0,
         userConfigured: false,
-        activeTool: null, panX: 0, panY: 0,
+        activeTool: null, panX: 0, panY: 0, mprViewports: {},
         flipH: false, flipV: false, rotation: 0,
         displayMode: 'ct',
     };
+    resetMprViewTransforms(1, 0, 0);
     state.annotations = [];
     state.annotationUndoStack = [];
     state.annotationRedoStack = [];
@@ -876,7 +945,9 @@ function renderSliceToCanvas(axis, sliceData, sliceIndex = state.slices?.[axis])
     const placeholder = canvas.parentElement.querySelector('.viewer-no-data');
     if (placeholder) placeholder.style.display = 'none';
 
-    if (state.viewerSettings.zoom !== 1.0) {
+    if (typeof applyViewerTransform === 'function') {
+        applyViewerTransform(axis);
+    } else if (state.viewerSettings.zoom !== 1.0) {
         canvas.style.transform = `scale(${state.viewerSettings.zoom})`;
         canvas.style.transformOrigin = 'center center';
     }

@@ -1179,7 +1179,7 @@ function drawLinkedCrosshairs(volX, volY, volZ, sourceAxis) {
         ctx.clearRect(0, 0, w, h);
         ctx.strokeStyle = axis === sourceAxis ? '#ff4444' : '#0ea5e9';
         // Compensate for zoom so line width stays constant
-        const zoom = state.viewerSettings.zoom || 1;
+        const zoom = _viewerZoomForAxis(axis);
         ctx.lineWidth = 1 / zoom;
         ctx.setLineDash([4 / zoom, 4 / zoom]);
 
@@ -1312,8 +1312,22 @@ function invalidateDoseOverlayRenderCache() {
     });
 }
 
-function _viewerTransformString() {
-    const { flipH, flipV, rotation, zoom, panX, panY } = state.viewerSettings;
+function _viewerZoomForAxis(axis) {
+    const viewport = typeof getMprViewTransform === 'function'
+        ? getMprViewTransform(axis)
+        : null;
+    const zoom = Number(viewport?.zoom ?? state.viewerSettings.zoom ?? 1);
+    return Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
+}
+
+function _viewerTransformString(axis) {
+    const { flipH, flipV, rotation } = state.viewerSettings;
+    const viewport = typeof getMprViewTransform === 'function'
+        ? getMprViewTransform(axis)
+        : null;
+    const zoom = _viewerZoomForAxis(axis);
+    const panX = Number(viewport?.panX ?? state.viewerSettings.panX ?? 0);
+    const panY = Number(viewport?.panY ?? state.viewerSettings.panY ?? 0);
     const scaleX = flipH ? -1 : 1;
     const scaleY = flipV ? -1 : 1;
     return `rotate(${rotation}deg) scale(${zoom * scaleX}, ${zoom * scaleY}) translate(${panX}px, ${panY}px)`;
@@ -1329,7 +1343,12 @@ function _viewerVectorPixelRatio(sliceCanvas) {
         1,
     );
     const deviceDensity = Math.max(1, Number(window.devicePixelRatio || 1));
-    const zoomDensity = deviceDensity * Math.max(1, Number(state.viewerSettings.zoom || 1));
+    const axis = ['axial', 'sagittal', 'coronal'].find(viewAxis =>
+        sliceCanvas.id === `sliceCanvas${capitalize(viewAxis)}`);
+    const zoomDensity = deviceDensity * Math.max(
+        1,
+        axis ? _viewerZoomForAxis(axis) : Number(state.viewerSettings.zoom || 1),
+    );
     const desired = Math.max(nativeDensity, zoomDensity);
     // Bound the backing store, not the visual zoom. This keeps large medical
     // volumes responsive while retaining crisp vector contours and labels.
@@ -1351,6 +1370,7 @@ function _sliceCanvasDisplayGeometry(axis) {
     const storedLeft = Number(sliceCanvas._offsetX);
     const storedTop = Number(sliceCanvas._offsetY);
     return {
+        axis,
         sliceCanvas,
         width,
         height,
@@ -1361,7 +1381,7 @@ function _sliceCanvasDisplayGeometry(axis) {
 
 function _applySliceLayerGeometry(geometry, layerCanvas, zIndex) {
     if (!geometry || !layerCanvas) return false;
-    const { sliceCanvas, width, height, left, top } = geometry;
+    const { axis, sliceCanvas, width, height, left, top } = geometry;
     layerCanvas.style.position = 'absolute';
     layerCanvas.style.pointerEvents = 'none';
     if (zIndex !== undefined && zIndex !== null) layerCanvas.style.zIndex = String(zIndex);
@@ -1375,7 +1395,7 @@ function _applySliceLayerGeometry(geometry, layerCanvas, zIndex) {
     // retaining the previous viewport after the CT canvas has been re-fitted.
     layerCanvas.style.transform = transformHost && transformHost.contains?.(layerCanvas)
         ? ''
-        : _viewerTransformString();
+        : _viewerTransformString(axis);
     layerCanvas.style.transformOrigin = 'center center';
     if (layerCanvas.id?.startsWith('doseOverlayCanvas')
         && typeof applyDoseOverlayLayerOpacity === 'function') {
@@ -1411,10 +1431,19 @@ function _syncLayerToSliceCanvas(axis, layerCanvas, zIndex, options = {}) {
 }
 
 let _viewerResolutionRefreshTimer = null;
-function request2DViewerResolutionRefresh() {
+const _viewerResolutionRefreshAxes = new Set();
+function request2DViewerResolutionRefresh(axes = null) {
+    const requestedAxes = axes == null
+        ? ['axial', 'sagittal', 'coronal']
+        : (Array.isArray(axes) ? axes : [axes]);
+    requestedAxes.forEach(axis => {
+        if (['axial', 'sagittal', 'coronal'].includes(axis)) _viewerResolutionRefreshAxes.add(axis);
+    });
     clearTimeout(_viewerResolutionRefreshTimer);
     _viewerResolutionRefreshTimer = setTimeout(() => {
-        ['axial', 'sagittal', 'coronal'].forEach(axis => {
+        const refreshAxes = Array.from(_viewerResolutionRefreshAxes);
+        _viewerResolutionRefreshAxes.clear();
+        refreshAxes.forEach(axis => {
             const sliceIndex = Number(state.slices?.[axis] || 0);
             if (state.doseOverlay?.visible) {
                 renderDoseForCurrentSlice(axis, sliceIndex);
@@ -1426,7 +1455,7 @@ function request2DViewerResolutionRefresh() {
                 renderSeedsOverlay(axis, sliceIndex);
             }
         });
-        ['axial', 'sagittal', 'coronal'].forEach(axis => syncAnnotationCanvasSize(axis));
+        refreshAxes.forEach(axis => syncAnnotationCanvasSize(axis));
         redrawAllAnnotations();
     }, 24);
 }
@@ -3172,12 +3201,18 @@ function viewerRotate() {
     applyViewerTransform();
 }
 
-function applyViewerTransform() {
-    const transform = _viewerTransformString();
-    const zoom = Number(state.viewerSettings.zoom || 1);
+function applyViewerTransform(axis = null) {
+    const axes = ['axial', 'sagittal', 'coronal'].includes(axis)
+        ? [axis]
+        : ['axial', 'sagittal', 'coronal'];
+    const refreshAxes = [];
+    const lastResolutionZoom = applyViewerTransform._lastResolutionZoom
+        || (applyViewerTransform._lastResolutionZoom = {});
 
-    ['axial', 'sagittal', 'coronal'].forEach(axis => {
-        const canvas = getSliceCanvas(axis);
+    axes.forEach(viewAxis => {
+        const transform = _viewerTransformString(viewAxis);
+        const zoom = _viewerZoomForAxis(viewAxis);
+        const canvas = getSliceCanvas(viewAxis);
         // BUG FIX 2026-06-16 (dose map persistence, FINAL): if
         // the slice canvas has been wrapped in a transform-host
         // (because the dose overlay was activated), apply the
@@ -3201,26 +3236,27 @@ function applyViewerTransform() {
             element.style.transform = transform;
             element.style.transformOrigin = 'center center';
         };
-        const annCanvas = getAnnotationCanvas(axis);
+        const annCanvas = getAnnotationCanvas(viewAxis);
         applyOverlayTransform(annCanvas);
-        const crossCanvas = document.getElementById('crosshairCanvas' + capitalize(axis));
+        const crossCanvas = document.getElementById('crosshairCanvas' + capitalize(viewAxis));
         applyOverlayTransform(crossCanvas);
         // Apply same transform to overlay div
-        const overlayDiv = document.getElementById('labelOverlay_' + capitalize(axis));
+        const overlayDiv = document.getElementById('labelOverlay_' + capitalize(viewAxis));
         applyOverlayTransform(overlayDiv);
         // Apply same transform to dose overlay canvas (sibling of
         // slice canvas, NOT inside wrapper — must be explicit).
-        const doseCanvas = document.getElementById('doseOverlayCanvas' + capitalize(axis));
+        const doseCanvas = document.getElementById('doseOverlayCanvas' + capitalize(viewAxis));
         applyOverlayTransform(doseCanvas);
-        const contourCanvas = document.getElementById('contourCanvas' + capitalize(axis));
+        const contourCanvas = document.getElementById('contourCanvas' + capitalize(viewAxis));
         applyOverlayTransform(contourCanvas);
-        const seedsCanvas = document.getElementById('seedsOverlayCanvas' + capitalize(axis));
+        const seedsCanvas = document.getElementById('seedsOverlayCanvas' + capitalize(viewAxis));
         applyOverlayTransform(seedsCanvas);
+        if (lastResolutionZoom[viewAxis] !== zoom) {
+            lastResolutionZoom[viewAxis] = zoom;
+            refreshAxes.push(viewAxis);
+        }
     });
-    if (applyViewerTransform._lastResolutionZoom !== zoom) {
-        applyViewerTransform._lastResolutionZoom = zoom;
-        request2DViewerResolutionRefresh();
-    }
+    if (refreshAxes.length) request2DViewerResolutionRefresh(refreshAxes);
 }
 
 function screenToImageCoords(axis, screenX, screenY) {
@@ -3229,7 +3265,7 @@ function screenToImageCoords(axis, screenX, screenY) {
 
     const rect = sliceCanvas.getBoundingClientRect();
     const displayScale = sliceCanvas._displayScale || 1;
-    const zoom = state.viewerSettings.zoom || 1;
+    const zoom = _viewerZoomForAxis(axis);
 
     // Account for zoom scaling
     const canvasX = (screenX - rect.left) / zoom;
@@ -3540,6 +3576,15 @@ function setupAnnotationTool(axis) {
                 state.viewerSettings.zoom = Math.min(zoomFactor, 10);
                 state.viewerSettings.panX = (containerW / 2 - boxCenterX) * state.viewerSettings.zoom;
                 state.viewerSettings.panY = (containerH / 2 - boxCenterY) * state.viewerSettings.zoom;
+                // The toolbar zoom/box-fit tools remain intentionally global;
+                // copy their shared transform into each MPR viewport.
+                if (typeof resetMprViewTransforms === 'function') {
+                    resetMprViewTransforms(
+                        state.viewerSettings.zoom,
+                        state.viewerSettings.panX,
+                        state.viewerSettings.panY,
+                    );
+                }
                 applyViewerTransform();
                 document.getElementById('viewerZoom').value = Math.round(state.viewerSettings.zoom * 100);
                 document.getElementById('zoomLabel').textContent = Math.round(state.viewerSettings.zoom * 100) + '%';
@@ -3570,6 +3615,50 @@ function setupAnnotationTool(axis) {
     });
 }
 
+function _updateLinkedMprFromEvent(axis, canvas, event, { navigateSlices = false } = {}) {
+    if (!state.ctShape) return null;
+    const rect = canvas.getBoundingClientRect();
+    const displayScale = canvas._displayScale || 1;
+    const zoom = _viewerZoomForAxis(axis);
+    const mouseX = (event.clientX - rect.left) / zoom;
+    const mouseY = (event.clientY - rect.top) / zoom;
+    const imgX = Math.floor(mouseX / displayScale);
+    const imgY = Math.floor(mouseY / displayScale);
+    const spacing = volumeSpacing || state.ctSpacing || [0.68, 0.68, 5.0];
+    const voxel = typeof _viewerMprImageToVoxel === 'function'
+        ? _viewerMprImageToVoxel(axis, imgX, imgY, {
+            shape: state.ctShape,
+            spacing,
+            slices: state.slices,
+        })
+        : null;
+    if (!voxel) return null;
+
+    drawLinkedCrosshairs(voxel.x, voxel.y, voxel.z, axis);
+    fetchHUValue(voxel.x, voxel.y, voxel.z);
+    if (!navigateSlices) return voxel;
+
+    const updates = {};
+    if (axis === 'axial') {
+        updates.sagittal = voxel.x;
+        updates.coronal = voxel.y;
+    } else if (axis === 'sagittal') {
+        updates.axial = voxel.displayZ;
+        updates.coronal = voxel.y;
+    } else {
+        updates.axial = voxel.displayZ;
+        updates.sagittal = voxel.x;
+    }
+    Object.entries(updates).forEach(([view, sliceIdx]) => {
+        const slider = document.getElementById('slider' + capitalize(view));
+        if (!slider) return;
+        sliceIdx = Math.max(0, Math.min(parseInt(slider.max), Math.round(sliceIdx)));
+        slider.value = sliceIdx;
+        updateSlice(view, sliceIdx);
+    });
+    return voxel;
+}
+
 function setupBasicInteractions(axis, canvas) {
     // Mouse wheel: scroll slices
     canvas.addEventListener('wheel', (e) => {
@@ -3577,10 +3666,15 @@ function setupBasicInteractions(axis, canvas) {
         // Ctrl+scroll = zoom in/out
         if (e.ctrlKey || e.metaKey) {
             const delta = e.deltaY > 0 ? -0.1 : 0.1;
-            let newZoom = (state.viewerSettings.zoom || 1) + delta;
+            const viewport = getMprViewTransform(axis);
+            if (!viewport) return;
+            let newZoom = viewport.zoom + delta;
             newZoom = Math.max(0.5, Math.min(3.0, newZoom));
-            state.viewerSettings.zoom = newZoom;
-            applyViewerTransform();
+            viewport.zoom = newZoom;
+            applyViewerTransform(axis);
+            if (typeof window.scheduleWorkspaceSave === 'function') {
+                window.scheduleWorkspaceSave('viewer.viewport.zoom');
+            }
             return;
         }
         // Normal scroll = slice navigation
@@ -3596,6 +3690,8 @@ function setupBasicInteractions(axis, canvas) {
 
     // Mouse drag: window/level or pan
     let isDragging = false;
+    let dragMoved = false;
+    let suppressNextClick = false;
     let dragStart = { x: 0, y: 0 };
     let wlStart = { w: 0, l: 0 };
 
@@ -3604,76 +3700,36 @@ function setupBasicInteractions(axis, canvas) {
         if (tool && tool !== 'crosshair') return; // Let annotation tool handle it
         if (e.button !== 0) return;
         isDragging = true;
+        dragMoved = false;
         dragStart = { x: e.clientX, y: e.clientY };
         wlStart = { w: state.viewerSettings.window, l: state.viewerSettings.level };
         canvas.style.cursor = 'crosshair';
     });
 
     canvas.addEventListener('mousemove', (e) => {
-        const rect = canvas.getBoundingClientRect();
-        const displayScale = canvas._displayScale || 1;
-        const zoom = state.viewerSettings.zoom || 1;
-        // rect.left includes CSS position; account for zoom scaling
-        const mouseX = (e.clientX - rect.left) / zoom;
-        const mouseY = (e.clientY - rect.top) / zoom;
-        const imgX = Math.floor(mouseX / displayScale);
-        const imgY = Math.floor(mouseY / displayScale);
-
-        // Linked MPR crosshairs
-        if (state.ctShape && (!state.viewerSettings.activeTool || state.viewerSettings.activeTool === 'crosshair')) {
-            // Convert through the single MPR coordinate contract.  The result
-            // is in canonical [Z,Y,X] volume coordinates even though the
-            // axial slider has a reversed display order.
-            const spacing = volumeSpacing || state.ctSpacing || [0.68, 0.68, 5.0];
-            const voxel = typeof _viewerMprImageToVoxel === 'function'
-                ? _viewerMprImageToVoxel(axis, imgX, imgY, {
-                    shape: state.ctShape,
-                    spacing,
-                    slices: state.slices,
-                })
-                : null;
-
-            if (voxel) {
-                const { x: volX, y: volY, z: volZ } = voxel;
-                drawLinkedCrosshairs(volX, volY, volZ, axis);
-                fetchHUValue(volX, volY, volZ);
-
-                // Update other viewers' slice positions on click (isDragging is set on mousedown)
-                if (isDragging) {
-                    const updates = {};
-                    if (axis === 'axial') {
-                        updates.sagittal = volX;
-                        updates.coronal = volY;
-                    } else if (axis === 'sagittal') {
-                        updates.axial = voxel.displayZ;
-                        updates.coronal = volY;
-                    } else {
-                        updates.axial = voxel.displayZ;
-                        updates.sagittal = volX;
-                    }
-
-                    Object.entries(updates).forEach(([view, sliceIdx]) => {
-                        const slider = document.getElementById('slider' + capitalize(view));
-                        if (slider) {
-                            sliceIdx = Math.max(0, Math.min(parseInt(slider.max), Math.round(sliceIdx)));
-                            slider.value = sliceIdx;
-                            updateSlice(view, sliceIdx);
-                        }
-                    });
-                }
+        if (!isDragging) {
+            if (state.ctShape && (!state.viewerSettings.activeTool || state.viewerSettings.activeTool === 'crosshair')) {
+                _updateLinkedMprFromEvent(axis, canvas, e);
             }
+            return;
         }
 
-        if (!isDragging) return;
         const dx = e.clientX - dragStart.x;
         const dy = e.clientY - dragStart.y;
 
         if (e.buttons === 1 && !e.shiftKey) {
-            state.viewerSettings.panX += dx;
-            state.viewerSettings.panY += dy;
-            applyViewerTransform();
+            if (dx || dy) {
+                dragMoved = true;
+                const viewport = getMprViewTransform(axis);
+                if (viewport) {
+                    viewport.panX += dx;
+                    viewport.panY += dy;
+                    applyViewerTransform(axis);
+                }
+            }
             dragStart = { x: e.clientX, y: e.clientY };
         } else if (e.buttons === 1 && e.shiftKey) {
+            if (dx || dy) dragMoved = true;
             state.viewerSettings.window = Math.max(1, wlStart.w + dx * 2);
             state.viewerSettings.level = wlStart.l + dy * 2;
             document.getElementById('viewerWindow').value = Math.round(state.viewerSettings.window);
@@ -3691,65 +3747,53 @@ function setupBasicInteractions(axis, canvas) {
     });
 
     canvas.addEventListener('mouseup', () => {
+        const didDrag = dragMoved;
         isDragging = false;
+        dragMoved = false;
+        if (didDrag) {
+            suppressNextClick = true;
+            // Browsers may omit click after a drag. Clear the guard after the
+            // current mouseup/click event sequence so the next real click works.
+            setTimeout(() => { suppressNextClick = false; }, 0);
+            if (typeof window.scheduleWorkspaceSave === 'function') {
+                window.scheduleWorkspaceSave('viewer.viewport.pan');
+            }
+        }
         canvas.style.cursor = '';
     });
     canvas.addEventListener('mouseleave', () => {
+        const didDrag = dragMoved;
         isDragging = false;
+        dragMoved = false;
+        suppressNextClick = false;
         canvas.style.cursor = '';
+        if (didDrag && typeof window.scheduleWorkspaceSave === 'function') {
+            window.scheduleWorkspaceSave('viewer.viewport.pan');
+        }
         clearHUReadout();
         clearLinkedCrosshairs();
     });
 
-    // Double-click: navigate all viewers to clicked position
+    // A click selects a linked MPR location; a drag is reserved for panning
+    // only the active viewport. This preserves click navigation without
+    // changing sibling slices while the user is moving the image.
+    canvas.addEventListener('click', (e) => {
+        if (suppressNextClick) {
+            suppressNextClick = false;
+            return;
+        }
+        if (e.button !== 0) return;
+        // The first click of a double-click has already performed navigation.
+        if (Number(e.detail) > 1) return;
+        const tool = state.viewerSettings.activeTool;
+        if (tool && tool !== 'crosshair') return;
+        _updateLinkedMprFromEvent(axis, canvas, e, { navigateSlices: true });
+    });
+
+    // Keep double-click from selecting browser text; its first click already
+    // performs the linked MPR navigation.
     canvas.addEventListener('dblclick', (e) => {
         e.preventDefault();
-        const rect = canvas.getBoundingClientRect();
-        const displayScale = canvas._displayScale || 1;
-        const zoom = state.viewerSettings.zoom || 1;
-        // Account for zoom scaling
-        const mouseX = (e.clientX - rect.left) / zoom;
-        const mouseY = (e.clientY - rect.top) / zoom;
-        const imgX = Math.floor(mouseX / displayScale);
-        const imgY = Math.floor(mouseY / displayScale);
-
-        if (!state.ctShape) return;
-        const spacing = volumeSpacing || state.ctSpacing || [0.68, 0.68, 5.0];
-        const voxel = typeof _viewerMprImageToVoxel === 'function'
-            ? _viewerMprImageToVoxel(axis, imgX, imgY, {
-                shape: state.ctShape,
-                spacing,
-                slices: state.slices,
-            })
-            : null;
-        if (!voxel) return;
-        const { x: volX, y: volY, z: volZ } = voxel;
-
-        // Draw crosshairs
-        drawLinkedCrosshairs(volX, volY, volZ, axis);
-        fetchHUValue(volX, volY, volZ);
-
-        // Navigate other viewers
-        const updates = {};
-        if (axis === 'axial') {
-            updates.sagittal = volX;
-            updates.coronal = volY;
-        } else if (axis === 'sagittal') {
-            updates.axial = voxel.displayZ;
-            updates.coronal = volY;
-        } else {
-            updates.axial = voxel.displayZ;
-            updates.sagittal = volX;
-        }
-
-        Object.entries(updates).forEach(([view, sliceIdx]) => {
-            const slider = document.getElementById('slider' + capitalize(view));
-            if (slider) {
-                sliceIdx = Math.max(0, Math.min(parseInt(slider.max), Math.round(sliceIdx)));
-                slider.value = sliceIdx;
-                updateSlice(view, sliceIdx);
-            }
-        });
     });
 
     // Mark as having listeners set up

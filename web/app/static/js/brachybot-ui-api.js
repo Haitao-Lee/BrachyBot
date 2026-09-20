@@ -1658,6 +1658,7 @@ const state = {
         zoom: 1.0,
         panX: 0,
         panY: 0,
+        mprViewports: {},
         flipH: false,
         flipV: false,
         rotation: 0,
@@ -3771,6 +3772,7 @@ function resetAllState(options = {}) {
             zoom: 1.0,
             panX: 0,
             panY: 0,
+            mprViewports: {},
             flipH: false,
             flipV: false,
             rotation: 0,
@@ -9127,6 +9129,30 @@ function _screenshotTargetRefs(plan = {}) {
     return constrainedSemantics.map(target => canonical[target]).filter(Boolean).slice(0, 32);
 }
 
+function _screenshotPlanIdentity(plan = {}) {
+    // Stable, non-PII plan identity for attachment keys. A single user turn
+    // may legitimately produce several captures of the same view (for
+    // example, one guide and one tumor), so request + view + index is not
+    // sufficient to prevent server-side attachment replacement.
+    const identity = JSON.stringify({
+        target_refs: _screenshotTargetRefs(plan).slice().sort(),
+        semantic_target: String(plan.semantic_target || plan.semanticTarget || '').toLowerCase(),
+        semantic_targets: [...new Set([
+            ...(Array.isArray(plan.semantic_targets) ? plan.semantic_targets : []),
+            ...(Array.isArray(plan.semanticTargets) ? plan.semanticTargets : []),
+        ].map(value => String(value || '').trim().toLowerCase()).filter(Boolean))].sort(),
+        views: (Array.isArray(plan.views) ? plan.views : [])
+            .map(view => String(typeof view === 'object' ? (view?.target || view?.viewer || '') : view || ''))
+            .filter(Boolean),
+    });
+    let hash = 2166136261;
+    for (let index = 0; index < identity.length; index += 1) {
+        hash ^= identity.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(36);
+}
+
 function _screenshotImageDimensions(dataUrl) {
     return new Promise(resolve => {
         const image = new Image();
@@ -11868,10 +11894,10 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                     },
                 },
             );
-            const attachmentId = String(
-                view.attachment_id
-                || `${context.requestId || 'request'}-${viewTarget}-${index}`
-            );
+            const attachmentBase = String(view.attachment_id || context.requestId || 'request')
+                .replace(/[^A-Za-z0-9_.:-]+/g, '-')
+                .slice(0, 96);
+            const attachmentId = `${attachmentBase || 'request'}-p${_screenshotPlanIdentity(plan)}-${viewTarget}-${index}`;
             const fallbackTitle = _localizedScreenshotTargetLabel(
                 viewTarget,
                 ownerSessionId,

@@ -178,6 +178,36 @@ def test_2d_zoom_applies_each_overlay_transform_once():
     assert "applyOverlayTransform(seedsCanvas)" in annotation
 
 
+def test_2d_mpr_pan_zoom_are_local_and_click_navigation_stays_linked():
+    layout = (ROOT / "web/app/static/js/brachybot-viewer-layout.js").read_text(encoding="utf-8")
+    annotation = (ROOT / "web/app/static/js/brachybot-manual-annotation.js").read_text(encoding="utf-8")
+
+    assert "function getMprViewTransform(axis)" in layout
+    assert "settings.mprViewports = viewports" in layout
+    assert "panFractionX: Number(viewport.panX" in layout
+    assert "panFractionY: Number(viewport.panY" in layout
+    assert "viewport.zoom = state.viewerSettings.zoom" in layout
+    assert "function _viewerTransformString(axis)" in annotation
+    assert "const transform = _viewerTransformString(viewAxis)" in annotation
+
+    interactions = annotation.split("function setupBasicInteractions(axis, canvas)", 1)[1].split(
+        "/******** 3D RENDERING ********/", 1
+    )[0]
+    mouse_move = interactions.split("canvas.addEventListener('mousemove'", 1)[1].split(
+        "canvas.addEventListener('mouseup'", 1
+    )[0]
+    assert "const viewport = getMprViewTransform(axis)" in interactions
+    assert "viewport.zoom = newZoom" in interactions
+    assert "applyViewerTransform(axis)" in interactions
+    assert "viewport.panX += dx" in mouse_move
+    assert "viewport.panY += dy" in mouse_move
+    assert "state.viewerSettings.panX += dx" not in mouse_move
+    assert "_updateLinkedMprFromEvent(axis, canvas, e);" in mouse_move
+    assert "navigateSlices: true" not in mouse_move
+    assert "setTimeout(() => { suppressNextClick = false; }, 0);" in interactions
+    assert "_updateLinkedMprFromEvent(axis, canvas, e, { navigateSlices: true });" in interactions
+
+
 def test_external_report_camera_capture_does_not_resize_live_renderer():
     report = (ROOT / "web/app/static/js/brachybot-report-editor.js").read_text(encoding="utf-8")
     workspace = (ROOT / "web/app/static/js/brachybot-workspace.js").read_text(encoding="utf-8")

@@ -85,6 +85,17 @@ def test_structured_multi_view_call_does_not_require_legacy_target():
     assert calls[0]["params"]["views"] == ["viewer-3d", "viewer-axial"]
 
 
+def test_distinct_visual_screenshot_plans_are_serialized_and_have_unique_keys():
+    chat = _source("web/app/static/js/brachybot-chat-todo.js")
+    ui_api = _source("web/app/static/js/brachybot-ui-api.js")
+
+    assert "let screenshotCaptureQueue = Promise.resolve();" in chat
+    assert "screenshotCaptureQueue.then(() =>" in chat
+    assert "screenshotCaptureQueue = captureTask.then(" in chat
+    assert "function _screenshotPlanIdentity(plan = {})" in ui_api
+    assert "_screenshotPlanIdentity(plan)" in ui_api
+
+
 def test_internal_screenshot_result_never_becomes_fallback_chat_text():
     successes, failures = _collect_tool_fallback_text(
         [
@@ -693,6 +704,71 @@ def test_short_ascii_catalog_label_requires_token_boundaries():
     assert request["target_refs"] == []
 
 
+def test_duplicate_live_visual_labels_require_disambiguation_before_capture():
+    message = "请截图 custom vessel branch B 在哪里"
+    ui_state = {
+        "viewer": {"ct_loaded": True},
+        "visual_target_catalog": [
+            {
+                "family": "plugin_vessel_part",
+                "kind": "scene-object-part",
+                "label": "custom vessel branch B",
+                "target_refs": ["scene-part:branch-b-current"],
+                "surfaces": ["viewer-3d"],
+                "visible": True,
+            },
+            {
+                "family": "plugin_vessel_part",
+                "kind": "scene-object-part",
+                "label": "custom vessel branch B",
+                "target_refs": ["scene-part:branch-b-history"],
+                "surfaces": ["viewer-3d"],
+                "visible": True,
+            },
+        ],
+    }
+    request = resolve_session_visual_location_request(message, ui_state=ui_state)
+    assert request["ambiguous"] is True
+    assert request["target_refs"] == []
+    assert set(request["candidate_target_refs"]) == {
+        "scene-part:branch-b-current", "scene-part:branch-b-history",
+    }
+
+    class Memory:
+        conversation = []
+
+        @staticmethod
+        def get_ui_state():
+            return ui_state
+
+    policy = classify_local_turn(message, ui_state=ui_state)
+    assert policy.intent == "ambiguous_visual_target_query"
+    normalizer = ResponseToolMixin()
+    normalizer.memory = Memory()
+    normalizer._active_turn_policy = policy
+    assert normalizer._detect_tool_request(message) is None
+    assert normalizer._normalize_tool_params([{
+        "tool": "ui_screenshot",
+        "params": {
+            "mode": "chat", "views": ["viewer-3d"], "question": message,
+            "semantic_target": "plugin_vessel_part",
+            "target_refs": ["scene-part:branch-b-current"],
+        },
+    }]) == []
+
+
+def test_negated_or_quoted_visual_clause_cannot_supply_screenshot_target():
+    mixed = "不要截图导板；请截图肿瘤在哪里"
+    calls = ResponseToolMixin()._detect_tool_request(mixed)
+    assert calls and len(calls) == 1
+    assert calls[0]["tool"] == "ui_screenshot"
+    assert calls[0]["params"]["target_refs"] == ["structure:ctv:active"]
+
+    quoted = "日志中写着‘请截图导板在哪里’，我只是在解释这句话"
+    assert resolve_session_visual_location_request(quoted) is None
+    assert ResponseToolMixin()._detect_tool_request(quoted) is None
+
+
 def test_browser_visual_catalog_and_target_integrity_are_cross_layer_contracts():
     ui_api = _source("web/app/static/js/brachybot-ui-api.js")
     scene = _source("web/app/static/js/brachybot-3d-manual.js")
@@ -837,10 +913,13 @@ def test_report_action_resolver_honors_negation_and_keeps_operations_distinct():
 @pytest.mark.parametrize("tool_name", ["ui_content", "ui_screenshot"])
 def test_tool_normalization_cannot_downgrade_report_generation_to_figures(tool_name):
     class Memory:
-        conversation = [{
-            "role": "user",
-            "content": "\u62a5\u544a\u6b63\u6587\u8fd8\u6ca1\u586b\uff0c\u4e0d\u8981\u7ed9\u6211\u62a5\u544a\u622a\u56fe",
-        }]
+        conversation = [
+            {
+                "role": "user",
+                "content": "\u62a5\u544a\u6b63\u6587\u8fd8\u6ca1\u586b\uff0c\u4e0d\u8981\u7ed9\u6211\u62a5\u544a\u622a\u56fe",
+            },
+            {"role": "user", "content": "\u8bf7\u91cd\u65b0\u751f\u6210\u62a5\u544a"},
+        ]
 
         @staticmethod
         def retrieve(_key):
