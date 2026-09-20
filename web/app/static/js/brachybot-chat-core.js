@@ -1343,57 +1343,75 @@ const CHAT_AVATAR_SVGS = {
 const FOOTER_I18N = {
     zh: {
         time:  '耗时',
-        tokens:'Tokens',
+        tokens:'本轮 Tokens',
         input: '输入',
         output:'输出',
         tools: '工具',
         unit_s:'秒',
         unit_times:'次',
+        hint_total: '本回合所有模型调用（含工具调用与多轮）的输入+输出累计，不等于当前上下文占用',
+        hint_input: '本回合所有模型调用的输入（prompt）累计',
+        hint_output:'本回合所有模型调用的输出累计',
     },
     en: {
         time:  'Time',
-        tokens:'Tokens',
+        tokens:'Turn tokens',
         input: 'Input',
         output:'Output',
         tools: 'Tools',
         unit_s:'s',
         unit_times:'×',
+        hint_total: 'Cumulative input+output across every model call this turn (incl. tool rounds); not the current context size',
+        hint_input: 'Cumulative input (prompt) across every model call this turn',
+        hint_output:'Cumulative output across every model call this turn',
     },
     ja: {
         time:  '時間',
-        tokens:'トークン',
+        tokens:'ターン合計',
         input: '入力',
         output:'出力',
         tools: 'ツール',
         unit_s:'秒',
         unit_times:'回',
+        hint_total: 'このターンの全モデル呼び出しの入力+出力合計（ツール呼び出しを含む）。現在のコンテキスト量ではありません',
+        hint_input: 'このターンの全モデル呼び出しの入力合計',
+        hint_output:'このターンの全モデル呼び出しの出力合計',
     },
     ko: {
         time:  '시간',
-        tokens:'토큰',
+        tokens:'턴 합계',
         input: '입력',
         output:'출력',
         tools: '도구',
         unit_s:'초',
         unit_times:'회',
+        hint_total: '이번 턴의 모든 모델 호출 입력+출력 합계(도구 호출 포함). 현재 컨텍스트 크기가 아닙니다',
+        hint_input: '이번 턴의 모든 모델 호출 입력 합계',
+        hint_output:'이번 턴의 모든 모델 호출 출력 합계',
     },
     ru: {
         time:  'Время',
-        tokens:'Токенов',
+        tokens:'За ход',
         input: 'Вход',
         output:'Выход',
         tools: 'Инструментов',
         unit_s:'с',
         unit_times:'раз',
+        hint_total: 'Суммарный вход+выход всех вызовов модели за этот ход (включая инструменты); это не текущий размер контекста',
+        hint_input: 'Суммарный вход (prompt) всех вызовов модели за этот ход',
+        hint_output:'Суммарный выход всех вызовов модели за этот ход',
     },
     ar: {
         time:  'الوقت',
-        tokens:'الرموز',
+        tokens:'رموز الدور',
         input: 'إدخال',
         output:'إخراج',
         tools: 'الأدوات',
         unit_s:'ث',
         unit_times:'مرات',
+        hint_total: 'إجمالي الإدخال+الإخراج لكل نداءات النموذج في هذا الدور (بما فيها الأدوات)؛ وليس حجم السياق الحالي',
+        hint_input: 'إجمالي الإدخال لكل نداءات النموذج في هذا الدور',
+        hint_output:'إجمالي الإخراج لكل نداءات النموذج في هذا الدور',
     },
 };
 function _footerI18n() {
@@ -1440,9 +1458,10 @@ function _buildResponseFooter(llmMeta) {
     // the numbers are the focal point. Numbers use a tabular-nums
     // font-feature so multi-digit counts don't jiggle horizontally
     // as they tick up during streaming.
-    const makeItem = (label, value, unit) => {
+    const makeItem = (label, value, unit, hint) => {
         const item = document.createElement('span');
         item.className = 'usage-item';
+        if (hint) item.title = hint;
         const lbl = document.createElement('span');
         lbl.className = 'usage-label';
         lbl.textContent = label;
@@ -1470,14 +1489,14 @@ function _buildResponseFooter(llmMeta) {
     footer.appendChild(makeItem(t.time, totalSec, t.unit_s));
     footer.appendChild(sep());
     if (totalT > 0) {
-        footer.appendChild(makeItem(t.tokens, totalT.toLocaleString(), ''));
+        footer.appendChild(makeItem(t.tokens, totalT.toLocaleString(), '', t.hint_total));
         footer.appendChild(sep());
         if (promptT > 0) {
-            footer.appendChild(makeItem(t.input, promptT.toLocaleString(), ''));
+            footer.appendChild(makeItem(t.input, promptT.toLocaleString(), '', t.hint_input));
             footer.appendChild(sep());
         }
         if (compT > 0) {
-            footer.appendChild(makeItem(t.output, compT.toLocaleString(), ''));
+            footer.appendChild(makeItem(t.output, compT.toLocaleString(), '', t.hint_output));
             footer.appendChild(sep());
         }
     }

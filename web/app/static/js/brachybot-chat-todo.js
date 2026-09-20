@@ -141,6 +141,13 @@ function _todoLabelForStep(step) {
     if (step.type === 'memory') {
         return step.title || i18n.memory;
     }
+    // Prefer the step's own title for assistant milestones. Every assistant
+    // step used to fall through to the generic ``i18n.assistant`` label, so
+    // "Response Synthesis" and "Final Response" both rendered as "Final
+    // response" and looked like two identical tasks in the Progress dock.
+    if (step.type === 'assistant' && step.title) {
+        return String(step.title);
+    }
     return i18n[step.type] || (step.title || i18n.default_processing);
 }
 
@@ -259,7 +266,18 @@ function _todoCreate() {
             // New step arrives → add a pending entry; mark any currently-
             // active entry as done (or rather: keep it in 'done' state and
             // let the new entry be 'active').
-            const id = (step.id != null) ? String(step.id) : ('s' + (api.items.length + 1));
+            const milestoneKey = _todoStepIdentity(step);
+            // A logical milestone must never be listed twice (client-synth +
+            // server replay + restored snapshot all share one identity).
+            if (milestoneKey) {
+                const existing = api.items.find(i => i.milestoneKey === milestoneKey);
+                if (existing) return existing;
+            }
+            const id = (step.id != null && step.id !== '')
+                ? String(step.id)
+                : (milestoneKey
+                    ? 'milestone-' + milestoneKey.replace(/[^A-Za-z0-9_.:-]/g, '_')
+                    : ('s' + (api.items.length + 1)));
             const label = _todoLabelForStep(step);
             const li = document.createElement('li');
             li.className = 'chat-todo-item pending';
@@ -284,6 +302,7 @@ function _todoCreate() {
                 id,
                 label,
                 toolName: step.tool || null,
+                milestoneKey: milestoneKey || null,
                 status: 'pending',
                 startedAt: operationClock?.startedAt || _todoStepStartedAt(step) || Date.now(),
                 endedAt: null,
@@ -753,6 +772,7 @@ window.clearCaseScopedProgressPresentation = function clearCaseScopedProgressPre
             id: item.id,
             label: item.label,
             toolName: item.toolName || null,
+            milestoneKey: item.milestoneKey || null,
             status: item.status,
             startedAt: item.startedAt,
             endedAt: item.endedAt,
@@ -776,6 +796,24 @@ window.clearCaseScopedProgressPresentation = function clearCaseScopedProgressPre
 // is new) and updates its status (pending → active → done/error).
 // First tries to find a predicted item by tool name; only falls back to
 // creating a new item if no match.
+function _todoStepIdentity(step) {
+    // Stable logical identity for a Progress row. The Execution Trace merges
+    // the final-response milestone by phase/title, but the dock only matched
+    // by server id. A client-synthesised row, a replayed SSE event and a
+    // restored snapshot can carry different ids for the same milestone, which
+    // produced two "Final response" rows. Key milestones by phase instead.
+    if (!step || typeof step !== 'object') return '';
+    if (typeof _isFinalResponseTraceStep === 'function' && _isFinalResponseTraceStep(step)) {
+        return 'phase:final_response';
+    }
+    const phase = String(step.phase || step.metadata?.phase || '')
+        .trim().toLowerCase().replace(/[\s-]+/g, '_');
+    if (phase) return 'phase:' + phase;
+    if (step.tool) return 'tool:' + String(step.tool);
+    if (step.id != null && step.id !== '') return 'id:' + String(step.id);
+    return '';
+}
+
 function _todoUpdateFromStep(todo, step) {
     if (!todo || !step) return;
     // Normalize provider terminal labels before updating the visual todo.
@@ -835,6 +873,17 @@ function _todoUpdateFromStep(todo, step) {
     if (!item && step.id != null) {
         item = todo.items.find(i => i.id === String(step.id));
     }
+    // 2b. Stable milestone identity (scoped to this turn's dock, so different
+    //     requests never merge). The server step, the client-synthesised
+    //     final row, a replayed event and a restored snapshot can carry
+    //     different ids but the same phase; update one row instead of
+    //     appending a duplicate.
+    if (!item && !step.tool) {
+        const milestoneKey = _todoStepIdentity(step);
+        if (milestoneKey) {
+            item = todo.items.find(i => i.milestoneKey === milestoneKey);
+        }
+    }
 
     // 3. DEDUP BY TOOL NAME: if this tool is already represented in
     //    the todo (predicted, active, or done), update it in place.
@@ -879,6 +928,17 @@ function _todoUpdateFromStep(todo, step) {
         item.step = step;
         item.toolName = item.toolName || step.tool;
         item._operationName = item._operationName || _brachyOperationName(step.tool);
+    }
+    if (item && !step.tool) {
+        if (!item.milestoneKey) item.milestoneKey = _todoStepIdentity(step) || null;
+        // Keep the milestone label in sync with the authoritative step (the
+        // server localizes the final-response title after the client row).
+        const nextLabel = _todoLabelForStep(step);
+        if (nextLabel && nextLabel !== item.label && item.node) {
+            item.label = nextLabel;
+            const labelEl = item.node.querySelector && item.node.querySelector('.chat-todo-label');
+            if (labelEl) labelEl.textContent = nextLabel;
+        }
     }
     if (item && stepStatus === 'pending' && item._seededReady) {
         todo.reopenSeeded(item);
@@ -3451,7 +3511,14 @@ async function sendChat(prefill, options) {
                 id: si.id || '',
                 status: si.status,
             };
+            // Restore the same milestone identity so a replayed Final Response
+            // event merges into the saved row instead of adding a second one.
+            const milestoneKey = si.milestoneKey || _todoStepIdentity(stubStep);
+            if (milestoneKey && todo.items.some(i => i.milestoneKey === milestoneKey)) {
+                continue;
+            }
             const item = todo.addPending(stubStep);
+            if (milestoneKey) item.milestoneKey = milestoneKey;
             item.startedAt = si.startedAt;
             item.endedAt = si.endedAt;
             // Restore the fields _todoUpdateFromStep / _todoFindPredicted use.
@@ -5676,6 +5743,9 @@ async function sendChat(prefill, options) {
             } finally {
             window._chatStreaming = false;
             setStreamingState(false);
+            // The turn changed the provider context; refresh the indicator now
+            // instead of waiting for the next polling interval.
+            try { window.refreshContextStatus?.(); } catch (_) {}
             setTimeout(() => { try { _flushHiddenChatQueue(); } catch (_) {} }, 0);
             if (turnCompleted || turnFailed || turnCancelled) {
                 setTimeout(() => { try { _flushQueuedChatTurns(); } catch (_) {} }, 0);

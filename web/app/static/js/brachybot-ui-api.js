@@ -12412,6 +12412,15 @@ window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
         };
     }
 
+    function _contextIndicatorZh() {
+        try {
+            if (typeof effectiveUiLanguage === 'function') {
+                return effectiveUiLanguage() === 'zh';
+            }
+        } catch (_) { /* fall through */ }
+        return window._i18nLang === 'zh';
+    }
+
     function updateContextIndicator(context) {
         const { ring, fg, label } = _ringEls();
         if (!ring || !fg || !label) return;
@@ -12424,15 +12433,56 @@ window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
         }
         ratio = Math.max(0, Math.min(1, ratio));
         fg.style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - ratio));
-        label.textContent = ratio > 0 ? Math.round(ratio * 100) + '%' : '–';
+        const usedTokens = Number(ctx.used_tokens || 0);
+        const windowTokens = Number(ctx.window || 0);
+        if (usedTokens > 0 && ratio < 0.01) {
+            label.textContent = '<1%';
+        } else if (ratio > 0) {
+            label.textContent = Math.round(ratio * 100) + '%';
+        } else {
+            label.textContent = '–';
+        }
         ring.classList.toggle('is-warn', ratio >= 0.6 && ratio < 0.8);
         ring.classList.toggle('is-high', ratio >= 0.8 && ratio < 0.9);
         ring.classList.toggle('is-critical', ratio >= 0.9);
-        const usedTokens = Number(ctx.used_tokens || 0);
-        const windowTokens = Number(ctx.window || 0);
-        ring.title = windowTokens
-            ? `Context: ${Math.round(ratio * 100)}% (${usedTokens.toLocaleString()} / ${windowTokens.toLocaleString()} tokens)`
-            : 'Context usage';
+        // Name the scope explicitly. The ring is the durable context that the
+        // next request will send, NOT this turn's cumulative consumption, so
+        // the two must never look like the same count.
+        const zh = _contextIndicatorZh();
+        const pct = Math.round(ratio * 100);
+        const basis = ctx.measured
+            ? (zh ? '实测' : 'measured')
+            : (ctx.estimated ? (zh ? '估算' : 'estimated') : '');
+        const turnTotal = Number(ctx.turn_total_tokens || 0);
+        let detail;
+        if (windowTokens) {
+            detail = zh
+                ? `当前上下文：${pct}%（${usedTokens.toLocaleString()} / ${windowTokens.toLocaleString()} tokens${basis ? '，' + basis : ''}）`
+                : `Current context: ${pct}% (${usedTokens.toLocaleString()} / ${windowTokens.toLocaleString()} tokens${basis ? ', ' + basis : ''})`;
+        } else {
+            detail = usedTokens > 0
+                ? (zh ? `当前上下文：${usedTokens.toLocaleString()} tokens` : `Current context: ${usedTokens.toLocaleString()} tokens`)
+                : (zh ? '当前上下文用量' : 'Context usage');
+        }
+        if (turnTotal > 0) {
+            detail += zh
+                ? `；本轮累计 ${turnTotal.toLocaleString()} tokens（含工具调用）`
+                : `; this turn total ${turnTotal.toLocaleString()} tokens (incl. tool calls)`;
+        }
+        if (ctx.compressed) {
+            detail += zh ? '；已压缩历史' : '; history compressed';
+        }
+        ring.title = detail;
+        ring.setAttribute('aria-label', detail);
+        // Surface an explicit, verifiable compression indicator instead of
+        // silently letting the context occupancy drop.
+        const badge = document.getElementById('compactionBadge');
+        if (badge) {
+            const folds = Number(ctx.folded_messages || 0);
+            badge.style.display = ctx.compressed ? '' : 'none';
+            const countEl = document.getElementById('compactionCount');
+            if (countEl && folds > 0) countEl.textContent = String(folds);
+        }
     }
     window.updateContextIndicator = updateContextIndicator;
 
@@ -12456,7 +12506,24 @@ window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
         const { ring } = _ringEls();
         if (ring) ring.classList.add('is-busy');
         try {
-            const res = await fetch(API + '/chat/context', { method: 'GET' });
+            // Pin the indicator to the case the chat is actually using. The
+            // global fetch wrapper depends on window.activeSessionId being set;
+            // sending it explicitly prevents the status probe from falling back
+            // to the selected-case cookie and reporting a different case's
+            // (empty) context as 0.
+            const headers = {};
+            let sessionId = '';
+            if (typeof window.activeSessionId === 'string' && window.activeSessionId) {
+                sessionId = window.activeSessionId;
+            } else if (typeof activeSessionId !== 'undefined' && activeSessionId) {
+                sessionId = String(activeSessionId);
+            }
+            if (sessionId) headers['X-BrachyBot-Session'] = sessionId;
+            const res = await fetch(API + '/chat/context', {
+                method: 'GET',
+                headers,
+                cache: 'no-store',
+            });
             const data = await res.json().catch(() => null);
             if (data && data.context) {
                 updateContextIndicator(data.context);

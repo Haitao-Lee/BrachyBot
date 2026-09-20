@@ -2431,3 +2431,75 @@ def test_range_controls_get_single_step_buttons_without_bypassing_native_events(
     assert ".range-stepper-btn--decrease" in controls
     assert ".range-stepper-btn--increase" in controls
     assert "data-ct-window-level" in stepper
+
+
+def test_context_indicator_reports_real_usage_for_the_active_case():
+    """The context ring must query the chat's case and refresh after a turn.
+
+    Regression: the status probe relied on the global fetch wrapper for its
+    session header and only ran on load + a 15s interval, so it could report a
+    different (empty) case as ``0 / <window>`` and never update after a turn.
+    """
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    chat = read("web/app/static/js/brachybot-chat-todo.js")
+
+    status_start = ui_api.index("async function refreshContextStatus()")
+    status_end = ui_api.index("window.refreshContextStatus", status_start)
+    probe = ui_api[status_start:status_end]
+    assert "X-BrachyBot-Session" in probe
+    assert "window.activeSessionId" in probe
+    assert "updateContextIndicator(data.context)" in probe
+
+    # The turn's finally block refreshes the indicator instead of waiting for
+    # the next polling interval.
+    refresh_at = chat.index("window.refreshContextStatus?.();")
+    reset = chat.index("window._chatStreaming = false;", refresh_at - 4000)
+    assert reset < refresh_at < reset + 400
+
+
+def test_progress_dock_merges_final_response_by_stable_identity():
+    """The Progress dock must merge a final-response milestone by phase.
+
+    Regression: every assistant step shared the generic "Final response" label
+    and the dock deduplicated only by server id, so a client-synthesised row, a
+    replayed SSE step and a restored snapshot produced two identical rows.
+    """
+    chat = read("web/app/static/js/brachybot-chat-todo.js")
+
+    assert "function _todoStepIdentity(step)" in chat
+    assert "return 'phase:final_response';" in chat
+    assert "i.milestoneKey === milestoneKey" in chat
+    # addPending is idempotent for a logical milestone.
+    assert "if (existing) return existing;" in chat
+    # assistant milestones keep distinguishable labels.
+    assert "if (step.type === 'assistant' && step.title)" in chat
+    # identity survives the resume snapshot.
+    assert "milestoneKey: item.milestoneKey || null," in chat
+    assert "const milestoneKey = si.milestoneKey || _todoStepIdentity(stubStep);" in chat
+    assert "if (milestoneKey) item.milestoneKey = milestoneKey;" in chat
+
+
+def test_token_metrics_are_labelled_by_scope():
+    """Turn usage and current-context size must not look like one count."""
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    core = read("web/app/static/js/brachybot-chat-core.js")
+
+    # Context ring names its scope and basis, and cross-references the turn total.
+    assert "function _contextIndicatorZh()" in ui_api
+    assert "当前上下文" in ui_api
+    assert "Current context" in ui_api
+    assert "本轮累计" in ui_api
+    assert "this turn total" in ui_api
+    assert "ctx.measured" in ui_api
+    assert "ctx.estimated" in ui_api
+    assert "ctx.compressed" in ui_api
+
+    # Footer labels the token counters as this-turn cumulative and explains them.
+    assert "tokens:'本轮 Tokens'" in core
+    assert "tokens:'Turn tokens'" in core
+    assert "hint_total:" in core
+    assert "const makeItem = (label, value, unit, hint)" in core
+    assert "t.makeItem" not in core  # guard against a stale accessor
+    assert "t.hint_total" in core
+    assert "t.hint_input" in core
+    assert "t.hint_output" in core
