@@ -1565,8 +1565,23 @@ function _visualEvidenceFallbackResponse(evidence, sessionId, responseLanguage =
     ).toLowerCase();
     const zh = language.startsWith('zh');
     const appendPreliminary = answer => {
-        const preliminary = String(preliminaryResponse || '').trim();
-        return preliminary ? `${preliminary}\n\n${answer}` : answer;
+        const raw = String(preliminaryResponse || '').trim();
+        if (!raw) return answer;
+        const visualHeading = /(?:对象截图\s*[\/／]\s*位置|截图位置|对象定位|object screenshot|screenshot location)/i;
+        const placeholder = /(?:没有建立与该目标对应的截图任务|本轮没有取得.*截图|没有取得.*对应截图|no screenshot task|did not receive.*screenshot|could not establish.*screenshot)/i;
+        // Model prose may use Markdown headings, bold headings, or plain paragraphs.
+        // Filter visual-only blocks and stale placeholder sentences independent of style.
+        const blocks = raw.split(/\n\s*\n+/);
+        const retained = [];
+        blocks.forEach(block => {
+            if (visualHeading.test(block)) return;
+            block.split(/(?<=[。！？!?])\s*|(?<=\.)\s+|\r?\n/)
+                .map(sentence => sentence.trim())
+                .filter(sentence => sentence && !placeholder.test(sentence))
+                .forEach(sentence => retained.push(sentence));
+        });
+        const retainedText = retained.join('\n').trim();
+        return retainedText ? retainedText + '\n\n' + answer : answer;
     };
     const items = (Array.isArray(evidence) ? evidence : [])
         .filter(item => item && item.url)
@@ -1576,165 +1591,194 @@ function _visualEvidenceFallbackResponse(evidence, sessionId, responseLanguage =
     const targetLabel = target => {
         const key = String(target || '').toLowerCase();
         return ({
-            'viewer-3d': zh ? '3D 查看器' : '3D Viewer',
-            'viewer-axial': zh ? '轴位查看器' : 'axial viewer',
-            'viewer-sagittal': zh ? '矢状位查看器' : 'sagittal viewer',
-            'viewer-coronal': zh ? '冠状位查看器' : 'coronal viewer',
-            'data-tree': zh ? '真实 Data Tree' : 'the live Data Tree',
-            'overlay-controls': zh ? 'Viewer 工具栏' : 'the Viewer toolbar',
-            'dvh': zh ? 'DVH 查看器' : 'the DVH viewer',
-        }[key] || (zh ? '当前界面' : 'the current interface'));
+            'viewer-3d': zh ? '3D Viewer' : '3D Viewer',
+            'viewer-axial': zh ? '轴位 Viewer' : 'axial Viewer',
+            'viewer-sagittal': zh ? '矢状位 Viewer' : 'sagittal Viewer',
+            'viewer-coronal': zh ? '冠状位 Viewer' : 'coronal Viewer',
+            'data-tree': zh ? 'Data Tree' : 'Data Tree',
+            'overlay-controls': zh ? 'Viewer 工具栏' : 'Viewer toolbar',
+            'dvh': zh ? 'DVH 查看器' : 'DVH viewer',
+        }[key] || (zh ? '当前界面' : 'current interface'));
     };
-    const stateText = (attachment, target) => {
-        const metadata = attachment.view_metadata || attachment.viewMetadata || {};
-        const authoritative = metadata.authoritative_case_state
-            || metadata.authoritativeCaseState
-            || attachment.authoritative_case_state
-            || attachment.authoritativeCaseState
-            || {};
-        const guide = authoritative.surgical_guide || {};
-        const status = String(target?.status || '').toLowerCase();
-        if (status === 'stale' || status === 'expired' || status === 'outdated') {
-            return zh ? '对象已生成，但当前标记显示为过期（stale）' : 'the object is generated, but the captured state is marked stale';
-        }
-        if (guide.state === 'persisted_not_loaded' || guide.state === 'restoring') {
-            return zh ? '对象已保存，当前 Session 仍在恢复资源' : 'the object is persisted while this Session is still restoring its resources';
-        }
-        if (guide.state === 'failed') {
-            return zh ? `生成失败：${String(guide.reason || '原因未返回')}` : `generation failed: ${String(guide.reason || 'no reason returned')}`;
-        }
-        return '';
+    const semanticLabel = value => {
+        const key = String(value || '').toLowerCase();
+        return ({
+            surgical_guide: zh ? '手术导板' : 'surgical guide',
+            ctv: zh ? '肿瘤（CTV）' : 'tumor (CTV)',
+            oar: zh ? '危及器官' : 'OAR',
+            seeds: zh ? '粒子' : 'seeds',
+            needles: zh ? '针道' : 'needles',
+            trajectories: zh ? '针道轨迹' : 'trajectories',
+        }[key] || (zh ? '目标对象' : 'target object'));
     };
-    const rows = [];
-    let markedCount = 0;
-    let requestedCount = 0;
-    items.forEach(attachment => {
+    const groups = new Map();
+    const looseRows = [];
+    items.forEach((attachment, attachmentIndex) => {
         const metadata = attachment.view_metadata || attachment.viewMetadata || {};
         const manifest = metadata.grounding_manifest || metadata.groundingManifest
             || attachment.grounding_manifest || attachment.groundingManifest || {};
         const targets = Array.isArray(manifest.targets) ? manifest.targets : [];
         const annotationRefs = new Set((Array.isArray(attachment.annotation?.marks)
             ? attachment.annotation.marks : [])
-            .map(mark => String(mark?.target_ref || mark?.targetRef || '').trim()));
-        const markedTarget = targets.find(item => annotationRefs.has(String(
-            item?.target_ref || item?.targetRef || '',
-        ).trim()));
-        const target = markedTarget || targets.find(item => item?.annotatable === true
-            && item?.visible === true
-            && (item?.in_view === true || item?.inView === true))
-            || targets[0]
-            || null;
-        const attachmentTarget = String(attachment.target || metadata.target || '');
-        const view = targetLabel(attachmentTarget);
-        const label = String(target?.label || metadata.title || attachment.title || '')
-            .replace(/\s+/g, ' ').trim();
-        const annotated = !!(attachment.annotated_url || attachment.annotatedUrl
-            || attachment.annotation?.count > 0 || annotationRefs.size > 0);
-        const requested = targets.length > 0;
-        if (requested) requestedCount += 1;
-        if (annotated && target) {
-            markedCount += 1;
-            const state = stateText(attachment, target);
-            rows.push(zh
-                ? `${view}：已在截图中的${label || '目标对象'}位置加框/箭头标注${state ? `（${state}）` : ''}。`
-                : `${view}: the ${label || 'target object'} is marked with a box/arrow in the screenshot${state ? ` (${state})` : ''}.`);
-        } else if (attachmentTarget.toLowerCase() === 'data-tree'
-            && target?.visible === true
-            && (target?.in_view === true || target?.inView === true)
-            && target?.annotatable === true) {
-            rows.push(zh
-                ? `${view}：已核验到 Data Tree 节点“${label || '目标'}”。`
-                : `${view}: verified Data Tree row ${label || 'target'}.`);
-        } else if (target && target.annotatable === false) {
-            const reason = String(target.reason || '').toLowerCase();
-            const unavailable = /hidden|not_loaded|unresolved|outside|unavailable|loading/.test(reason)
-                || ['hidden', 'unresolved', 'loading', 'not_generated'].includes(String(target.status || '').toLowerCase());
-            rows.push(zh
-                ? `${view}：已截取当前界面，但${label || '目标'}在这张图中${unavailable ? '当前不可见或尚未加载' : '没有通过可核验的定位条件'}，因此没有盲目标注。`
-                : `${view}: the current interface was captured, but ${label || 'the target'} was ${unavailable ? 'hidden or not loaded' : 'not verifiable'} in this image, so no mark was guessed.`);
-        } else {
-            rows.push(zh
-                ? `${view}：截图已生成，但没有足够的稳定目标信息可以安全标注。`
-                : `${view}: the screenshot was captured, but it did not contain a stable target that could be marked safely.`);
+            .map(mark => String(mark?.target_ref || mark?.targetRef || '').trim())
+            .filter(Boolean));
+        const view = String(attachment.target || metadata.target || '').toLowerCase();
+        const viewName = targetLabel(view);
+        if (!targets.length) {
+            looseRows.push(zh
+                ? viewName + '：截图已附，但当前证据没有解析出可对应的目标对象。'
+                : viewName + ': the screenshot is attached, but its evidence does not identify a matching target.');
+            return;
         }
-        if (attachmentTarget.toLowerCase() === 'data-tree' && target?.scene_visible === false) {
-            const visibilityKnown = target?.scene_visibility_known === true
-                || target?.sceneVisibilityKnown === true;
-            rows.push(visibilityKnown
-                ? (zh ? '该节点在 Data Tree 截图时的三维显示处于隐藏状态。'
-                    : 'This node was hidden in 3D when the Data Tree was captured.')
-                : (zh ? '仅凭 Data Tree 截图无法核验该节点的三维显示状态。'
-                    : 'The Data Tree capture alone could not verify this node’s 3D visibility.'));
+        targets.forEach((target, targetIndex) => {
+            const ref = String(target?.target_ref || target?.targetRef || '').trim();
+            const label = String(target?.label || metadata.title || attachment.title || '')
+                .replace(/\s+/g, ' ').trim()
+                || semanticLabel(metadata.semantic_target || metadata.semanticTarget);
+            const key = ref || ('unbound:' + String(attachment.id || attachmentIndex) + ':' + targetIndex);
+            if (!groups.has(key)) {
+                groups.set(key, {
+                    ref,
+                    label,
+                    views: new Map(),
+                    stale: false,
+                    temporaryReveal: false,
+                    temporaryCamera: false,
+                    appearancePreserved: false,
+                    treeHidden: false,
+                    treeVisibilityUnknown: false,
+                });
+            }
+            const group = groups.get(key);
+            if (!group.label || group.label === '目标对象') group.label = label;
+            const inView = target?.in_view === true || target?.inView === true;
+            const isTree = view === 'data-tree';
+            const is3D = view === 'viewer-3d' || view === 'viewer';
+            const valid = target?.visible === true && inView && target?.annotatable === true
+                && (!is3D || (target?.scene_visible === true
+                    && target?.data_tree_visible === true && target?.loaded !== false));
+            const onlyTarget = targets.length === 1;
+            const annotated = (ref && annotationRefs.has(ref))
+                || (onlyTarget && !!(attachment.annotated_url || attachment.annotatedUrl
+                    || attachment.annotation?.count > 0));
+            const row = {
+                view,
+                viewName,
+                valid: !!valid,
+                annotated: !!annotated,
+                status: String(target?.status || '').toLowerCase(),
+                sceneVisible: target?.scene_visible,
+                sceneVisibilityKnown: target?.scene_visibility_known === true
+                    || target?.sceneVisibilityKnown === true,
+                reason: String(target?.reason || '').toLowerCase(),
+            };
+            const previous = group.views.get(view);
+            if (!previous || (!previous.annotated && row.annotated) || (!previous.valid && row.valid)) {
+                group.views.set(view, row);
+            }
+            if (row.status === 'stale' || row.status === 'expired' || row.status === 'outdated') {
+                group.stale = true;
+            }
+            group.temporaryReveal = group.temporaryReveal || metadata.temporary_reveal === true;
+            group.temporaryCamera = group.temporaryCamera
+                || metadata.temporary_camera_reframe === true;
+            group.appearancePreserved = group.appearancePreserved
+                || metadata.appearance_preserved === true;
+            if (isTree && target?.scene_visible === false) {
+                if (row.sceneVisibilityKnown) group.treeHidden = true;
+                else group.treeVisibilityUnknown = true;
+            }
+        });
+    });
+
+    const rows = [];
+    let markedCount = 0;
+    const labels = [];
+    groups.forEach(group => {
+        const label = group.label || semanticLabel('');
+        if (!labels.includes(label)) labels.push(label);
+        const entries = [...group.views.values()];
+        const viewerEntries = entries.filter(item => item.view.startsWith('viewer'));
+        const treeEntry = group.views.get('data-tree');
+        const annotatedViewer = viewerEntries.some(item => item.valid && item.annotated);
+        if (annotatedViewer) markedCount += 1;
+
+        if (treeEntry) {
+            rows.push(treeEntry.valid
+                ? (zh ? 'Data Tree：已核验到“' + label + '”对应的数据树节点。'
+                    : 'Data Tree: verified the row for “' + label + '”.')
+                : (zh ? 'Data Tree：截图已附，但未能核验“' + label + '”对应的可见节点。'
+                    : 'Data Tree: the screenshot is attached, but the row for “' + label + '” was not verified.'));
         }
-        if (metadata.temporary_reveal === true) {
-            rows.push(zh ? '为定位目标，截图过程中临时调整了显示与取景；截图结束后已恢复原显示设置。'
-                : 'Visibility and framing were temporarily adjusted for this capture; the original display settings were restored afterwards.');
+        if (viewerEntries.length) {
+            viewerEntries.forEach(item => {
+                if (item.valid && item.annotated) {
+                    rows.push(zh
+                        ? item.viewName + '：对应截图已核验，并已标出“' + label + '”的位置。'
+                        : item.viewName + ': the corresponding screenshot verifies and marks “' + label + '”.');
+                } else if (item.valid) {
+                    rows.push(zh
+                        ? item.viewName + '：截图中核验到“' + label + '”，但标注未确认；我不据此猜测具体位置。'
+                        : item.viewName + ': “' + label + '” is verified in the screenshot, but a mark was not confirmed, so I will not guess its exact location.');
+                } else {
+                    rows.push(zh
+                        ? item.viewName + '：本次截图未能核验“' + label + '”的位置，因此不作位置推断。'
+                        : item.viewName + ': this capture did not verify the location of “' + label + '”, so no location is inferred.');
+                }
+            });
+        } else if (treeEntry) {
+            rows.push(zh
+                ? '3D Viewer：本轮没有取得同一对象可核验的截图，不能据此说明三维位置。'
+                : '3D Viewer: no verifiable screenshot of the same object was obtained, so its 3D location cannot be stated.');
+        }
+        if (group.treeHidden) {
+            rows.push(group.temporaryReveal && viewerEntries.some(item => item.valid)
+                ? (zh ? 'Data Tree 截图时该对象原处于隐藏状态；为本次 Viewer 截图临时显示，完成后已恢复。'
+                    : 'The object was hidden in the Data Tree capture, then temporarily shown for the Viewer capture and restored afterwards.')
+                : (zh ? 'Data Tree 截图时该对象的三维显示处于隐藏状态。'
+                    : 'The object’s 3D presentation was hidden when the Data Tree was captured.'));
+        } else if (group.treeVisibilityUnknown && treeEntry) {
+            rows.push(zh
+                ? '仅凭 Data Tree 截图无法核验该对象当时的三维显示状态。'
+                : 'The Data Tree capture alone could not verify the object’s 3D visibility state.');
+        } else if (group.temporaryReveal) {
+            rows.push(zh ? '为本次截图临时显示了目标对象，截图完成后已恢复。'
+                : 'The target was temporarily shown for this capture and restored afterwards.');
+        }
+        if (group.temporaryCamera) {
+            rows.push(zh ? '为使目标完整入镜，临时调整了相机取景，截图后已恢复原视角。'
+                : 'The camera was temporarily reframed to fit the target and restored after capture.');
+        }
+        if (group.stale) {
+            rows.push(zh ? '该对象状态标记为过期（stale）；截图只能证明当前画面中的对象，不能代表最新规划结果。'
+                : 'This object is marked stale; the capture shows the current displayed object, not necessarily the latest plan.');
+        }
+        if (group.appearancePreserved && !group.temporaryReveal && !group.temporaryCamera) {
+            rows.push(zh ? '截图沿用了 Viewer 当时的显示内容和配色，没有为定位单独隐藏周边对象或改色。'
+                : 'The screenshot preserves the Viewer’s displayed scene and colors; surrounding objects were not hidden or recolored for locating.');
         }
     });
-    const viewerVerifiedRefs = new Set(items
-        .filter(attachment => ['viewer-3d', 'viewer'].includes(String(
-            attachment.target || attachment.view_metadata?.target || attachment.viewMetadata?.target || ''
-        ).toLowerCase()))
-        .flatMap(attachment => {
-            const metadata = attachment.view_metadata || attachment.viewMetadata || {};
-            const manifest = metadata.grounding_manifest || metadata.groundingManifest
-                || attachment.grounding_manifest || attachment.groundingManifest || {};
-            return Array.isArray(manifest.targets) ? manifest.targets : [];
-        })
-        .filter(target => target?.visible === true && target?.scene_visible === true
-            && target?.data_tree_visible === true && target?.loaded !== false
-            && target?.in_view === true && target?.annotatable === true)
-        .map(target => String(target.target_ref || target.targetRef || '').trim())
-        .filter(Boolean));
-    const dataTreeTargets = items
-        .filter(attachment => String(attachment.target || attachment.view_metadata?.target
-            || attachment.viewMetadata?.target || '').toLowerCase() === 'data-tree')
-        .flatMap(attachment => {
-            const metadata = attachment.view_metadata || attachment.viewMetadata || {};
-            const manifest = metadata.grounding_manifest || metadata.groundingManifest
-                || attachment.grounding_manifest || attachment.groundingManifest || {};
-            return Array.isArray(manifest.targets) ? manifest.targets : [];
-        });
-    if (dataTreeTargets.some(target => {
-        const ref = String(target?.target_ref || target?.targetRef || '').trim();
-        return !ref || !viewerVerifiedRefs.has(ref);
-    })) {
-        rows.push(zh
-            ? '3D Viewer 未核验到与该 Data Tree 节点相同的对象，因此不描述其三维位置。'
-            : 'The same object was not verified in the 3D Viewer, so no 3D location is claimed.');
-    }
-    const isLocate = items.some(item => String(
+
+    const requestHint = String(userText || '').trim();
+    const subject = labels.length ? labels.join(zh ? '、' : ', ')
+        : (requestHint ? (zh ? '所请求的对象' : 'the requested object') : (zh ? '当前界面' : 'the current interface'));
+    const intro = zh
+        ? '我按你的要求分别核对了' + subject + '，对应截图已附在下方；下面只说明截图中能够核实的内容。'
+        : 'I checked ' + subject + ' separately as requested. The corresponding screenshots are attached below; I only describe what they verify.';
+    const body = intro + (rows.length || looseRows.length
+        ? '\n\n' + [...rows, ...looseRows].map(row => '- ' + row).join('\n')
+        : '');
+    const locate = items.some(item => String(
         item.visual_purpose || item.visualPurpose
         || item.view_metadata?.visual_purpose || item.viewMetadata?.visualPurpose || ''
     ).toLowerCase() === 'locate');
-    if (isLocate && markedCount > 0) {
-        const locatedLabels = [...new Set(items.flatMap(attachment => {
-            const metadata = attachment.view_metadata || attachment.viewMetadata || {};
-            const manifest = metadata.grounding_manifest || metadata.groundingManifest
-                || attachment.grounding_manifest || attachment.groundingManifest || {};
-            return (Array.isArray(manifest.targets) ? manifest.targets : [])
-                .filter(target => target?.visible === true)
-                .map(target => String(target?.label || '').replace(/\s+/g, ' ').trim())
-                .filter(Boolean);
-        }))].slice(0, 4);
-        const subject = locatedLabels.length
-            ? locatedLabels.join(zh ? '、' : ', ')
-            : (zh ? '所请求的对象' : 'the requested object');
-        return appendPreliminary((zh
-            ? `已在当前实际界面中定位到${subject}。标记直接锚定到经过核验的 Viewer 对象或真实 Data Tree 行：`
-            : `I located ${subject} in the currently displayed interface. Each mark is anchored to a verified Viewer object or live Data Tree row:`)
-            + `\n\n${rows.map(row => `- ${row}`).join('\n')}`
-            + (requestedCount > markedCount
-                ? `\n\n${zh ? '对不可见或未加载目标没有强行标注，避免把错误位置当成事实。' : 'Hidden or unloaded targets were not marked, so an incorrect location is not presented as fact.'}`
-                : ''));
-    }
-    const requestHint = String(userText || '').trim();
-    return appendPreliminary((zh
-        ? `我已截取${requestHint ? '与您问题对应的' : '当前'}界面，并保留了原始显示状态。`
-        : `I captured the ${requestHint ? 'interface relevant to your question' : 'current interface'} and preserved its original display state.`)
-        + `\n\n${rows.map(row => `- ${row}`).join('\n')}`);
+    const safeBody = locate && markedCount === 0 && rows.length === 0
+        ? (zh ? '本轮截图没有提供可核验的目标位置，我不会根据不对应的画面作判断。'
+            : 'These captures do not verify the requested location, so I will not infer it from unrelated imagery.')
+            + (looseRows.length ? '\n\n' + looseRows.map(row => '- ' + row).join('\n') : '')
+        : body;
+    return appendPreliminary(safeBody);
 }
-
 function _visualResponseNeedsGroundedFallback(value, evidence = []) {
     // Location is a verifiable identity/state question, not an invitation to
     // improvise anatomy from similarly colored pixels. Use the grounded
@@ -2379,6 +2423,199 @@ function _isInFlightToolStatus(status) {
 window._pendingHiddenChats = window._pendingHiddenChats || [];
 window._hiddenChatFlushRunning = false;
 
+function _isFinalResponseTraceStep(step) {
+    if (!step || typeof step !== 'object') return false;
+    const phase = String(step.phase || step.metadata?.phase || '')
+        .trim().toLowerCase().replace(/[\s-]+/g, '_');
+    if (phase === 'final_response') return true;
+    const title = String(step.title || '').trim().toLowerCase();
+    return title === 'final response'
+        || title === 'final answer'
+        || title === '最终回复'
+        || title === '最终响应';
+}
+
+function _finalResponseTraceContent(status, language = '', supplied = '') {
+    if (supplied) return String(supplied);
+    const zh = String(language || '').toLowerCase().startsWith('zh');
+    if (status === 'pending') {
+        return zh ? '等待最终回复完成' : 'Waiting for the final response to finish';
+    }
+    if (status === 'done') return zh ? '回复已完成' : 'Response delivered';
+    if (status === 'cancelled') return zh ? '最终回复已取消' : 'Final response cancelled';
+    return zh ? '最终回复未能完成' : 'Final response did not complete';
+}
+
+function _setFinalResponseTraceStep(step, status, language = '', content = '') {
+    if (!step || typeof step !== 'object') return false;
+    step.phase = 'final_response';
+    step.status = status;
+    step.content = _finalResponseTraceContent(status, language, content);
+    return true;
+}
+
+function _ensureFinalResponseTraceStep(
+    steps,
+    deferredSteps,
+    requestId,
+    language = '',
+    stepsDiv = null,
+    headerEl = null,
+    reportPending = false,
+) {
+    if (!Array.isArray(steps)) return null;
+    let step = null;
+    for (let index = steps.length - 1; index >= 0; index -= 1) {
+        if (_isFinalResponseTraceStep(steps[index])) {
+            step = steps[index];
+            break;
+        }
+    }
+    if (!step) {
+        step = {
+            id: 'client-final-response-' + String(requestId || Date.now()),
+            type: 'assistant',
+            phase: 'final_response',
+            title: 'Final Response',
+            status: 'pending',
+        };
+        steps.push(step);
+    }
+    if (Array.isArray(deferredSteps)
+        && !deferredSteps.some(item => item === step || (
+            item && step.id && String(item.id) === String(step.id)
+        ))) {
+        deferredSteps.push(step);
+    }
+    const waiting = reportPending
+        ? (String(language || '').toLowerCase().startsWith('zh')
+            ? '等待报告截图、显示恢复和保存完成'
+            : 'Waiting for report capture, viewer restore and save')
+        : '';
+    _setFinalResponseTraceStep(step, 'pending', language, waiting);
+    const index = steps.indexOf(step);
+    if (stepsDiv && typeof appendStepToChain === 'function') {
+        appendStepToChain(stepsDiv, step, Math.max(0, index));
+    }
+    if (headerEl && typeof updateChainHeader === 'function') {
+        updateChainHeader(headerEl, steps);
+    }
+    const liveTrace = window._brachyLiveTrace;
+    if (liveTrace?.steps === steps && typeof liveTrace.getTodo === 'function') {
+        const todo = liveTrace.getTodo();
+        if (todo && typeof _todoUpdateFromStep === 'function') {
+            _todoUpdateFromStep(todo, step);
+        }
+    }
+    return step;
+}
+
+function _pendingVisualFinalResponseMap() {
+    const map = window._pendingVisualFinalResponses;
+    if (!map || typeof map.get !== 'function' || typeof map.set !== 'function') {
+        window._pendingVisualFinalResponses = new Map();
+    }
+    return window._pendingVisualFinalResponses;
+}
+
+function _visualFinalResponseKey(sessionId, requestId) {
+    return JSON.stringify([String(sessionId || ''), String(requestId || '')]);
+}
+
+function _registerPendingVisualFinalResponse(record) {
+    if (!record || !record.sessionId || !record.requestId || !record.step) return false;
+    const key = _visualFinalResponseKey(record.sessionId, record.requestId);
+    _setFinalResponseTraceStep(
+        record.step,
+        'pending',
+        record.responseLanguage,
+        String(record.responseLanguage || '').toLowerCase().startsWith('zh')
+            ? '等待截图分析完成'
+            : 'Waiting for screenshot analysis',
+    );
+    _pendingVisualFinalResponseMap().set(key, Object.assign({}, record, { key }));
+    _refreshFinalResponseTrace(record, false);
+    return true;
+}
+
+function _refreshFinalResponseTrace(record, persist = false) {
+    if (!record || !record.step) return;
+    const steps = Array.isArray(record.steps) ? record.steps : [];
+    const stepIndex = steps.indexOf(record.step);
+    if (String(activeSessionId || '') === String(record.sessionId || '')
+        && record.stepsDiv && stepIndex >= 0
+        && typeof appendStepToChain === 'function') {
+        appendStepToChain(record.stepsDiv, record.step, stepIndex);
+        if (record.headerEl && typeof updateChainHeader === 'function') {
+            updateChainHeader(record.headerEl, steps);
+        }
+    }
+    if (record.todo && typeof _todoUpdateFromStep === 'function') {
+        _todoUpdateFromStep(record.todo, record.step);
+    }
+    if (persist && typeof saveSessionMessage === 'function') {
+        saveSessionMessage('thinking', '', steps, Date.now(), record.sessionId, {
+            requestId: record.requestId,
+            messageId: 'trace-' + record.requestId,
+            messageKind: 'execution_trace',
+            turnSequence: 1,
+            replyToMessageId: record.assistantMessageId,
+            responseLanguage: record.responseLanguage,
+            traceLanguage: record.responseLanguage,
+        });
+    }
+}
+
+function _settlePendingVisualFinalResponse(sessionId, requestId, status, content = '') {
+    const key = _visualFinalResponseKey(sessionId, requestId);
+    const registry = _pendingVisualFinalResponseMap();
+    const record = registry.get(key);
+    if (!record) return false;
+    const terminalStatus = ['done', 'error', 'cancelled'].includes(String(status || ''))
+        ? String(status) : 'error';
+    _setFinalResponseTraceStep(
+        record.step,
+        terminalStatus,
+        record.responseLanguage,
+        content,
+    );
+    _refreshFinalResponseTrace(record, true);
+    registry.delete(key);
+    return true;
+}
+
+function _finishFinalResponseTraceSteps(
+    steps,
+    deferredSteps,
+    status,
+    language,
+    content,
+    stepsDiv = null,
+    headerEl = null,
+    sessionId = '',
+) {
+    const targets = Array.isArray(deferredSteps) ? deferredSteps : [];
+    targets.forEach(step => _setFinalResponseTraceStep(step, status, language, content));
+    const liveTrace = window._brachyLiveTrace;
+    if (liveTrace?.steps === steps && typeof liveTrace.getTodo === 'function') {
+        const todo = liveTrace.getTodo();
+        if (todo && typeof _todoUpdateFromStep === 'function') {
+            targets.forEach(step => _todoUpdateFromStep(todo, step));
+        }
+    }
+    if ((!sessionId || String(activeSessionId || '') === String(sessionId))
+        && stepsDiv && typeof appendStepToChain === 'function') {
+        targets.forEach(step => {
+            const index = Array.isArray(steps) ? steps.indexOf(step) : -1;
+            if (index >= 0) appendStepToChain(stepsDiv, step, index);
+        });
+        if (headerEl && typeof updateChainHeader === 'function') {
+            updateChainHeader(headerEl, steps);
+        }
+    }
+}
+
+
 function _isScreenshotAckResponse(
     text,
     steps,
@@ -2464,6 +2701,7 @@ function _cancelVisualFollowups(sessionId, parentRequestId) {
         if (!sameSession || !sameParent || !item?.followupKey) return true;
         window._cancelledVisualFollowups.add(item.followupKey);
         window._visualFollowupStates.set(item.followupKey, 'cancelled');
+        window._settlePendingVisualFinalResponse?.(item.sessionId || sid, opts.parentRequestId, 'cancelled');
         return false;
     });
     // A running child is stopped by the normal case-scoped /chat/abort path;
@@ -2533,6 +2771,11 @@ function _visualEvidenceDescriptor(item, index = 0, includeAll = false, forceAna
         semanticTarget,
     ].map(value => String(value || '').trim().toLowerCase()).filter(Boolean))].slice(0, 32);
     const manifestTargets = Array.isArray(manifest?.targets) ? manifest.targets : [];
+    const annotation = item.annotation || item.visual_annotation
+        || metadata.annotation || metadata.visual_annotation || {};
+    const annotationTargetRefs = [...new Set((Array.isArray(annotation.marks) ? annotation.marks : [])
+        .map(mark => String(mark?.target_ref || mark?.targetRef || '').trim())
+        .filter(Boolean))].slice(0, 32);
     const annotatableCount = manifestTargets.filter(target => target?.annotatable === true).length;
     const score = (annotationPolicy === 'required' ? 100 : annotationPolicy === 'auto' ? 20 : 0)
         + (visualPurpose === 'locate' ? 60 : visualPurpose === 'explain' ? 35 : 10)
@@ -2553,6 +2796,13 @@ function _visualEvidenceDescriptor(item, index = 0, includeAll = false, forceAna
         planning_id: String(item.planning_id || item.planningId || metadata.planning_id || metadata.planningId || ''),
         data_version: String(item.data_version || item.dataVersion || metadata.data_version || metadata.dataVersion || ''),
         grounding_manifest: manifest,
+        annotation_target_refs: annotationTargetRefs,
+        annotation_present: annotationTargetRefs.length > 0 || !!(item.annotated_url
+            || item.annotatedUrl || annotation.count > 0),
+        temporary_reveal: (item.temporary_reveal ?? metadata.temporary_reveal) === true,
+        temporary_camera_reframe: (item.temporary_camera_reframe
+            ?? metadata.temporary_camera_reframe) === true,
+        appearance_preserved: (item.appearance_preserved ?? metadata.appearance_preserved) === true,
         authoritative_case_state: authoritativeCaseState,
         semantic_target: semanticTarget,
         semantic_targets: semanticTargets,
@@ -2586,7 +2836,17 @@ function _queueVisualAnalysisFollowUp(attachments, userText, turnIdentity, optio
         .sort((left, right) => right.score - left.score || left.index - right.index)
         .slice(0, 4);
     const uniqueUrls = selectedEvidence.map(item => item.url);
-    if (!selectedEvidence.length) return false;
+    const reportFollowupState = (state, followupKey = '', sessionId = '') => {
+        try {
+            if (typeof options.onFollowupState === 'function') {
+                options.onFollowupState(state, { followupKey, sessionId });
+            }
+        } catch (_) {}
+    };
+    if (!selectedEvidence.length) {
+        reportFollowupState('unavailable');
+        return false;
+    }
     const visualEvidence = selectedEvidence.map(item => item.source);
     const visualAttachmentLabels = [...new Set(visualEvidence.flatMap(item => {
         const metadata = item.view_metadata || item.viewMetadata || {};
@@ -2624,6 +2884,7 @@ function _queueVisualAnalysisFollowUp(attachments, userText, turnIdentity, optio
     if (!window._visualFollowupStates) window._visualFollowupStates = new Map();
     const existingState = window._visualFollowupStates.get(followupKey);
     if (existingState === 'queued' || existingState === 'running' || existingState === 'done') {
+        reportFollowupState(existingState, followupKey, ownerSessionId);
         uiDebugLog('[visual-followup] duplicate suppressed:', followupKey);
         return false;
     }
@@ -2671,6 +2932,7 @@ function _queueVisualAnalysisFollowUp(attachments, userText, turnIdentity, optio
             sessionId: ownerSessionId,
         },
     );
+    reportFollowupState('queued', followupKey, ownerSessionId);
     return true;
 }
 
@@ -2708,6 +2970,10 @@ async function _flushHiddenChatQueue() {
     const followupKey = String(next.followupKey || '');
     if (followupKey && window._cancelledVisualFollowups?.has(followupKey)) {
         if (window._visualFollowupStates) window._visualFollowupStates.set(followupKey, 'cancelled');
+        const opts = next.options || {};
+        window._settlePendingVisualFinalResponse?.(
+            next.sessionId || opts.sessionId, opts.parentRequestId, 'cancelled',
+        );
         return _flushHiddenChatQueue();
     }
     if (followupKey && window._visualFollowupStates) {
@@ -2720,10 +2986,27 @@ async function _flushHiddenChatQueue() {
             skipIntentShortcuts: true,
             preserveLastUserMessage: true,
         }, next.options || {}));
+    } catch (error) {
+        const opts = next.options || {};
+        const parentSessionId = next.sessionId || opts.sessionId;
+        if (followupKey && window._visualFollowupStates) {
+            window._visualFollowupStates.set(followupKey, 'error');
+        }
+        window._settlePendingVisualFinalResponse?.(
+            parentSessionId, opts.parentRequestId, 'error',
+        );
+        console.warn('[visual-followup] child turn failed unexpectedly:', error);
     } finally {
         if (followupKey && window._visualFollowupStates) {
             const cancelled = window._cancelledVisualFollowups?.has(followupKey);
-            window._visualFollowupStates.set(followupKey, cancelled ? 'cancelled' : 'done');
+            const opts = next.options || {};
+            const parentSessionId = next.sessionId || opts.sessionId;
+            if (cancelled) {
+                window._visualFollowupStates.set(followupKey, 'cancelled');
+                window._settlePendingVisualFinalResponse?.(
+                    parentSessionId, opts.parentRequestId, 'cancelled',
+                );
+            }
         }
         window._hiddenChatFlushRunning = false;
         if (Array.isArray(window._pendingHiddenChats) && window._pendingHiddenChats.length) {
@@ -3150,6 +3433,12 @@ async function sendChat(prefill, options) {
     // chunks are safe to render progressively in the final answer bubble.
     let finalResponseReceived = false;
     let finalTextStreamStarted = false;
+    let finalReplyCommitted = false;
+    let finalResponsePaintWaited = false;
+    let visualFinalResponsePending = false;
+    let visualFollowupState = '';
+    let visualFollowupKey = '';
+    let finalResponseStep = null;
     let turnCompleted = false;
     let turnCancelled = false;
     let turnFailed = false;
@@ -3395,6 +3684,9 @@ async function sendChat(prefill, options) {
     const uiActionTasks = [];
     const uiActionResults = [];
     const deferredFinalSteps = [];
+    // The final-response trace row is a client-owned delivery boundary: a
+    // server terminal step only means its SSE task finished, not that pending
+    // browser captures/actions or visual analysis have reached the user.
     // Keep an explicit marker in addition to inspecting the reconstructed
     // step list. Some replayed SSE streams expose the UI action metadata only
     // on the tool event; the final response must still be held back until the
@@ -3439,6 +3731,7 @@ async function sendChat(prefill, options) {
     window._chatTurnActive = true;
     let turnAbortController = null;
     let reconnectNeeded = false;
+    let turnDetached = false;
 
     try {
         chatAbortController = (typeof AbortController !== 'undefined') ? new AbortController() : null;
@@ -3734,6 +4027,11 @@ async function sendChat(prefill, options) {
                         screenshotLayout: 'auto',
                     },
                 ));
+                finalReplyCommitted = true;
+            } else if (!visualAnalysisContinuation && presentedAttachments.length) {
+                // The screenshot/content presenter already mounted these
+                // attachment-only results under the assistant reply identity.
+                finalReplyCommitted = true;
             }
             if (visualAttachments.length) {
                 _queueVisualAnalysisFollowUp(
@@ -3943,16 +4241,41 @@ async function sendChat(prefill, options) {
                         const traced = reconcileOptimisticTraceStep(
                             _traceStepForDisplay(data, turnSessionId, turnIdentity.responseLanguage),
                         );
-                        const displayStep = traced.step;
-                        if (reportUiActionRequested && displayStep.type === 'assistant'
-                            && !displayStep.tool && _isTerminalToolStatus(displayStep.status)) {
-                            deferredFinalSteps.push(displayStep);
-                            displayStep.status = 'pending';
-                            displayStep.content = turnIdentity.responseLanguage === 'zh'
-                                ? '等待报告截图、显示恢复和保存完成' : 'Waiting for report capture, viewer restore and save';
+                        let displayStep = traced.step;
+                        let displayStepIndex = traced.index;
+                        // A legacy/replayed stream may omit the explicit
+                        // phase on the first pending event. If we already made
+                        // a client-side final row at the response boundary,
+                        // merge the later server row into that same entry.
+                        if (_isFinalResponseTraceStep(displayStep) && displayStepIndex < 0) {
+                            const existingFinalIndex = steps.findIndex(_isFinalResponseTraceStep);
+                            if (existingFinalIndex >= 0) {
+                                const existingFinalStep = steps[existingFinalIndex];
+                                const retainedId = existingFinalStep.id;
+                                Object.assign(existingFinalStep, displayStep);
+                                if (retainedId) existingFinalStep.id = retainedId;
+                                displayStep = existingFinalStep;
+                                displayStepIndex = existingFinalIndex;
+                            }
                         }
-                        const stepIndex = traced.index >= 0 ? traced.index : steps.length;
-                        if (traced.index < 0) steps.push(displayStep);
+                        if (_isFinalResponseTraceStep(displayStep)) {
+                            if (!deferredFinalSteps.some(step => step === displayStep
+                                || (step?.id && String(step.id) === String(displayStep.id)))) {
+                                deferredFinalSteps.push(displayStep);
+                            }
+                            const reportPending = reportUiActionRequested
+                                || _hasReportGenerationAction(steps);
+                            const waiting = reportPending
+                                ? (turnIdentity.responseLanguage === 'zh'
+                                    ? '等待报告截图、显示恢复和保存完成'
+                                    : 'Waiting for report capture, viewer restore and save')
+                                : '';
+                            _setFinalResponseTraceStep(
+                                displayStep, 'pending', turnIdentity.responseLanguage, waiting,
+                            );
+                        }
+                        const stepIndex = displayStepIndex >= 0 ? displayStepIndex : steps.length;
+                        if (displayStepIndex < 0) steps.push(displayStep);
                         if (data.tool === 'ctv_segmentation' && typeof updateTumorTypeSelector === 'function') {
                             const candidate = data.params?.tumor_type
                                 || data.arguments?.tumor_type
@@ -4029,14 +4352,19 @@ async function sendChat(prefill, options) {
                                 scrollToBottom();
                             }
                             if (todo) {
-                                _todoUpdateFromStep(todo, data);
-                                // `Final Response` is emitted as an assistant
-                                // step before the response bubble is finalized
-                                // in the DOM. It is a protocol milestone, not
-                                // proof that the user can already see the
-                                // answer. Keep both progress surfaces open;
-                                // the fold is performed after the final reply
-                                // and its footer have been committed below.
+                                const todoStep = _isFinalResponseTraceStep(displayStep)
+                                    ? Object.assign({}, data, {
+                                        id: displayStep.id,
+                                        phase: 'final_response',
+                                        status: 'pending',
+                                        content: displayStep.content,
+                                    })
+                                    : data;
+                                _todoUpdateFromStep(todo, todoStep);
+                                // `Final Response` is a protocol milestone,
+                                // not proof that the user can already see the
+                                // answer. Keep its progress row active until
+                                // the final response lifecycle settles it.
                             }
                             // MARK FOR RETRY: just record that a
                             // Quality Review reject happened. We do NOT
@@ -4467,6 +4795,17 @@ async function sendChat(prefill, options) {
                             continue;
                         }
                         responseText = data.response;
+                        if (!isInternalFollowup) {
+                            finalResponseStep = _ensureFinalResponseTraceStep(
+                                steps,
+                                deferredFinalSteps,
+                                turnRequestId,
+                                turnIdentity.responseLanguage,
+                                stepsDiv,
+                                headerEl,
+                                reportUiActionRequested || _hasReportGenerationAction(steps),
+                            );
+                        }
                         const deferUntilUIActionsFinish = reportUiActionRequested
                             || _hasReportGenerationAction(steps);
                         if (!isInternalFollowup && !deferUntilUIActionsFinish
@@ -4680,24 +5019,35 @@ async function sendChat(prefill, options) {
             }
         }
         if (String(activeSessionId || '') !== turnSessionId) return;
+        if (!isInternalFollowup) {
+            finalResponseStep = _ensureFinalResponseTraceStep(
+                steps,
+                deferredFinalSteps,
+                turnRequestId,
+                turnIdentity.responseLanguage,
+                stepsDiv,
+                headerEl,
+                reportUiActionRequested || _hasReportGenerationAction(steps),
+            );
+        }
         if (uiActionTasks.length) {
             _setCaseTaskState(turnSessionId, turnFailed ? 'failed' : 'completed', null);
         }
-        deferredFinalSteps.forEach(step => {
-            step.status = turnFailed ? 'error' : 'done';
-            step.content = turnFailed ? responseText : (turnIdentity.responseLanguage === 'zh' ? '回复已完成' : 'Response delivered');
-            if (stepsDiv) appendStepToChain(stepsDiv, step, steps.indexOf(step));
-        });
         // Screenshot/tool events may be replayed after a reconnect with new
         // event or attachment ids.  Preserve one durable artifact per URL in
         // the assistant reply; otherwise the same image is rendered and
         // persisted repeatedly with identical captions.
         const presentationAttachments = [];
         const presentationAttachmentKeys = new Set();
+        const presentationAttachmentUrls = new Set();
         const presentationSemanticKeys = new Set();
         [...screenshotResults, ...sessionContentResults].forEach(item => {
             if (!item || typeof item !== 'object') return;
-            const key = String(item.url || item.id || '').trim();
+            // Attachment IDs are stable across a replay; URLs can be freshly
+            // minted for the same artifact. Track both without letting a new
+            // URL conceal an already-seen attachment identity.
+            const key = String(item.id || item.attachment_id || item.url || '').trim();
+            const urlKey = String(item.url || '').trim();
             const metadata = item.view_metadata || item.viewMetadata || {};
             const semanticKey = typeof window.chatAttachmentSemanticKey === 'function'
                 ? window.chatAttachmentSemanticKey(item)
@@ -4712,9 +5062,12 @@ async function sendChat(prefill, options) {
                     String(item.request_id || turnIdentity?.requestId || ''),
                     String(item.target || ''),
                 ].join('|');
-            if (!key || presentationAttachmentKeys.has(key) || presentationSemanticKeys.has(semanticKey)) return;
+            if (!key || presentationAttachmentKeys.has(key)
+                || (urlKey && presentationAttachmentUrls.has(urlKey))
+                || (semanticKey && presentationSemanticKeys.has(semanticKey))) return;
             presentationAttachmentKeys.add(key);
-            presentationSemanticKeys.add(semanticKey);
+            if (urlKey) presentationAttachmentUrls.add(urlKey);
+            if (semanticKey) presentationSemanticKeys.add(semanticKey);
             presentationAttachments.push(item);
         });
         const responseContract = window._lastLLMMeta?.response_contract || null;
@@ -4753,6 +5106,10 @@ async function sendChat(prefill, options) {
                     presentationMessages.filter(Boolean).slice(-1)[0] || '',
                 ].filter(Boolean).join('\n\n'),
                 multiIntentQuery: window._lastLLMMeta?.multi_intent_query === true,
+                onFollowupState: (state, info = {}) => {
+                    visualFollowupState = String(state || '');
+                    visualFollowupKey = String(info.followupKey || '');
+                },
             },
         );
         // The parent presentation turn owns the images, while the linked
@@ -4761,6 +5118,38 @@ async function sendChat(prefill, options) {
         // acknowledgement can overwrite the eventual analysis in the same
         // assistant reply.
         const visualAnalysisContinuation = shouldAnalyzeVisualEvidence;
+        visualFinalResponsePending = shouldAnalyzeVisualEvidence
+            && ['queued', 'running'].includes(visualFollowupState);
+        if (!isInternalFollowup) {
+            finalResponseStep = _ensureFinalResponseTraceStep(
+                steps,
+                deferredFinalSteps,
+                turnRequestId,
+                turnIdentity.responseLanguage,
+                stepsDiv,
+                headerEl,
+                reportUiActionRequested || _hasReportGenerationAction(steps),
+            );
+            if (visualFinalResponsePending && finalResponseStep) {
+                visualFinalResponsePending = _registerPendingVisualFinalResponse({
+                    sessionId: turnSessionId,
+                    requestId: turnRequestId,
+                    assistantMessageId: turnAssistantMessageId,
+                    responseLanguage: turnIdentity.responseLanguage,
+                    steps,
+                    step: finalResponseStep,
+                    stepsDiv,
+                    headerEl,
+                    followupKey: visualFollowupKey,
+                    todo,
+                });
+            } else if (visualFollowupState === 'done') {
+                // A replay of an already-completed child should not leave the
+                // parent row spinning when the visible answer is already in
+                // this transcript.
+                finalReplyCommitted = true;
+            }
+        }
         if (visualAnalysisQueued) {
             uiDebugLog('[visual-followup] queued for parent request:', turnIdentity?.requestId || '');
         }
@@ -4913,6 +5302,7 @@ async function sendChat(prefill, options) {
                         screenshotLayout: screenshotGallery.layout || 'auto',
                     },
                 ));
+                finalReplyCommitted = true;
             }
             responseEl = null;
         } else if (!suppressScreenshotAck && responseEl && typeof finalizeStreamingResponse === 'function') {
@@ -4921,6 +5311,8 @@ async function sendChat(prefill, options) {
                 screenshotLayout: screenshotGallery.layout || 'auto',
             }));
             finalizeStreamingResponse(responseEl, renderedFinalText, turnSessionId, meta);
+            finalReplyCommitted = Boolean(String(renderedFinalText || '').trim()
+                || presentationAttachments.length);
         } else if (!suppressScreenshotAck && !responseEl && !window._chatFallbackUsed) {
             window._chatFallbackUsed = true;
             if (typeof addChat === 'function') {
@@ -4936,7 +5328,19 @@ async function sendChat(prefill, options) {
                         screenshotLayout: screenshotGallery.layout || 'auto',
                     },
                 ));
+                finalReplyCommitted = Boolean(String(renderedFinalText || '').trim()
+                    || presentationAttachments.length);
             }
+        }
+
+        // A pure screenshot command is answered by the gallery itself. The
+        // capture helper has already mounted each attachment under this
+        // assistant identity, so it is a committed response when no analysis
+        // continuation is expected.
+        if (!isInternalFollowup && suppressScreenshotAck && hasScreenshotEvidence
+            && !visualFinalResponsePending
+            && (!visualAnalysisContinuation || visualFollowupState === 'done')) {
+            finalReplyCommitted = true;
         }
 
         // Append a usage-bar footer BELOW the response bubble so the
@@ -4961,21 +5365,15 @@ async function sendChat(prefill, options) {
             } catch (_) { /* footer is best-effort */ }
         }
 
-        // The assistant "Final Response" step is emitted before the browser
-        // finishes rendering the answer. Wait for one paint boundary after
-        // the bubble/footer is in the DOM, then fold the trace. This keeps
-        // the execution history open while the answer is still arriving and
-        // avoids the impression that the request ended early.
-        if (todo && typeof todo.fold === 'function' && !reconnectNeeded && turnCompleted) {
-            await _waitForFinalReplyPaint();
-            if (String(activeSessionId || '') === turnSessionId) {
-                try { todo.fold(); } catch (_) {}
-            }
-        }
+        // Leave the final-response row pending through the end of this try
+        // block. The terminal status is committed in finally, alongside the
+        // send-button/turn-state cleanup, so the browser cannot paint a green
+        // final row while this request still owns the active send state.
     } catch (e) {
         const detached = window._chatDetachRequestedFor === turnSessionId
             || String(activeSessionId || '') !== turnSessionId;
         if (detached) {
+            turnDetached = true;
             // The browser abandoned this stream (session switch).  Persist
             // whatever response text and thinking trace arrived so that the
             // transcript is complete when the user opens this case again.
@@ -5008,6 +5406,7 @@ async function sendChat(prefill, options) {
             || /abort|timed out|network|fetch/i.test(String(e?.message || ''));
 
         if (explicitlyStopped) {
+            turnCancelled = true;
             try { window.clearPlanningPreview?.('explicit-stop'); } catch (_) {}
             cancelTurnUi('Stopped');
             _setCaseTaskState(turnSessionId, 'cancelled', null);
@@ -5055,11 +5454,104 @@ async function sendChat(prefill, options) {
                     : _chatUserVisibleFailure(turnSessionId, 'request');
                 addChat(isInternalFollowup ? 'bot-response' : 'error', visualFailure, true,
                     Date.now(), false, turnSessionId, turnIdentity);
+                if (isInternalFollowup && String(visualFailure || '').trim()) {
+                    finalReplyCommitted = true;
+                }
             } else {
                 console.error('sendChat failed and addChat missing:', e);
             }
         }
     } finally {
+        if (isInternalFollowup) {
+            const visualParentRequestId = parentRequestId || turnIdentity.requestId;
+            const finalStatus = turnCancelled
+                ? 'cancelled'
+                : (turnFailed || !finalReplyCommitted ? 'error' : 'done');
+            if (turnDetached || reconnectNeeded) {
+                // The server task is still alive. Keep the parent's final
+                // row pending until the resumed child really mounts an answer.
+                const followupStates = window._visualFollowupStates;
+                if (opts.followupKey && followupStates) {
+                    followupStates.set(String(opts.followupKey), 'running');
+                }
+            } else {
+                if (finalStatus === 'done') await _waitForFinalReplyPaint();
+                const followupStates = window._visualFollowupStates;
+                const followupState = finalStatus === 'done' ? 'done'
+                    : finalStatus === 'cancelled' ? 'cancelled' : 'error';
+                const visualParentKey = _visualFinalResponseKey(
+                    turnSessionId, visualParentRequestId,
+                );
+                const visualParentRecord = _pendingVisualFinalResponseMap().get(visualParentKey);
+                if (opts.followupKey && followupStates) {
+                    followupStates.set(String(opts.followupKey), followupState);
+                } else if (followupStates && visualParentRequestId) {
+                    const prefix = `${turnSessionId}|${visualParentRequestId}|`;
+                    for (const key of followupStates.keys()) {
+                        if (String(key).startsWith(prefix)) followupStates.set(key, followupState);
+                    }
+                }
+                _settlePendingVisualFinalResponse(
+                    turnSessionId,
+                    visualParentRequestId,
+                    finalStatus,
+                );
+                if (finalStatus === 'done'
+                    && String(activeSessionId || '') === turnSessionId
+                    && visualParentRecord?.todo
+                    && typeof visualParentRecord.todo.fold === 'function') {
+                    try { visualParentRecord.todo.fold(); } catch (_) {}
+                }
+            }
+        } else if (!turnDetached && !reconnectNeeded
+            && (turnCompleted || turnFailed || turnCancelled)
+            && (steps.length > 0 || chainEl)) {
+            if (!finalResponseStep) {
+                finalResponseStep = _ensureFinalResponseTraceStep(
+                    steps,
+                    deferredFinalSteps,
+                    turnRequestId,
+                    turnIdentity.responseLanguage,
+                    stepsDiv,
+                    headerEl,
+                    reportUiActionRequested || _hasReportGenerationAction(steps),
+                );
+            }
+            const unresolved = deferredFinalSteps.filter(step =>
+                step && (step.status === 'pending' || step.status === 'active')
+            );
+            if (!visualFinalResponsePending && unresolved.length) {
+                const finalStatus = turnCancelled
+                    ? 'cancelled'
+                    : (turnFailed || !turnCompleted || !finalReplyCommitted ? 'error' : 'done');
+                if (finalStatus === 'done' && !finalResponsePaintWaited) {
+                    await _waitForFinalReplyPaint();
+                    finalResponsePaintWaited = true;
+                }
+                _finishFinalResponseTraceSteps(
+                    steps,
+                    unresolved,
+                    finalStatus,
+                    turnIdentity.responseLanguage,
+                    finalStatus === 'error' ? responseText : '',
+                    stepsDiv,
+                    headerEl,
+                    turnSessionId,
+                );
+                if (finalStatus === 'done'
+                    && (suppressScreenshotAck || !String(renderedFinalText || '').trim())
+                    && typeof window.notifyAssistantFinalResponseMounted === 'function') {
+                    window.notifyAssistantFinalResponseMounted(turnRequestId, turnAssistantMessageId);
+                }
+                // The Progress dock shares the same delivery boundary as the
+                // trace: do not fold it until the final response is terminal.
+                if (finalStatus === 'done' && turnCompleted
+                    && todo && typeof todo.fold === 'function'
+                    && String(activeSessionId || '') === turnSessionId) {
+                    try { todo.fold(); } catch (_) {}
+                }
+            }
+        }
         const isCurrentTurn = window._chatTurnCancelUi === cancelTurnUi;
         if (isCurrentTurn) {
             window._chatTurnActive = false;

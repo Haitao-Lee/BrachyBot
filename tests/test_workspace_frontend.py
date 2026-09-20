@@ -486,8 +486,8 @@ def test_execution_trace_folds_only_after_the_final_reply_is_painted():
     assert chat.index("finalizeStreamingResponse") < chat.index("await _waitForFinalReplyPaint();")
     assert "const traceTerminal = !reconnectNeeded" in chat
 
-    marker_start = chat.index("_todoUpdateFromStep(todo, data);")
-    marker_end = chat.index("// MARK FOR RETRY", marker_start)
+    marker_end = chat.index("// MARK FOR RETRY")
+    marker_start = chat.rindex("_todoUpdateFromStep(todo,", 0, marker_end)
     assistant_marker_block = chat[marker_start:marker_end]
     assert "todo.fold()" not in assistant_marker_block
     assert "querySelector('.thinking-toggle')" not in assistant_marker_block

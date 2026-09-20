@@ -564,6 +564,69 @@ function normalizeChatAttachment(sessionId, value) {
     return attachment;
 }
 
+function chatAttachmentTargetIdentity(attachment) {
+    const item = attachment && typeof attachment === 'object' ? attachment : {};
+    const metadata = item.view_metadata && typeof item.view_metadata === 'object'
+        ? item.view_metadata
+        : (item.viewMetadata && typeof item.viewMetadata === 'object' ? item.viewMetadata : {});
+    const manifest = metadata.grounding_manifest || metadata.groundingManifest
+        || item.grounding_manifest || item.groundingManifest || {};
+    const manifestTargets = Array.isArray(manifest.targets) ? manifest.targets : [];
+    const focus = metadata.focus && typeof metadata.focus === 'object'
+        ? metadata.focus
+        : (item.focus && typeof item.focus === 'object' ? item.focus : {});
+    const values = (...candidates) => {
+        const result = new Set();
+        const append = value => {
+            if (Array.isArray(value)) {
+                value.forEach(append);
+                return;
+            }
+            if (value === undefined || value === null
+                || (typeof value !== 'string' && typeof value !== 'number')) return;
+            const normalized = String(value).trim();
+            if (normalized) result.add(normalized);
+        };
+        candidates.forEach(append);
+        return Array.from(result).sort();
+    };
+    const targetRefs = values(
+        metadata.target_refs, metadata.targetRefs, item.target_refs, item.targetRefs,
+        metadata.target_ref, metadata.targetRef, item.target_ref, item.targetRef,
+        focus.target_refs, focus.targetRefs, focus.target_ref, focus.targetRef,
+        manifestTargets.map(target => target?.target_ref || target?.targetRef || ''),
+    );
+    const semanticTargets = values(
+        metadata.semantic_targets, metadata.semanticTargets,
+        item.semantic_targets, item.semanticTargets,
+        metadata.semantic_target, metadata.semanticTarget,
+        item.semantic_target, item.semanticTarget,
+        manifestTargets.map(target => target?.semantic_target || target?.semanticTarget || ''),
+    ).map(value => value.toLowerCase()).filter(value =>
+        !['composite', 'dynamic', 'all', 'any', 'unknown'].includes(value)
+    );
+    const objectIds = values(
+        metadata.object_ids, metadata.objectIds, item.object_ids, item.objectIds,
+        focus.object_ids, focus.objectIds, focus.object_id, focus.objectId,
+    );
+    const dataTreeIds = values(
+        metadata.data_tree_node_ids, metadata.dataTreeNodeIds,
+        item.data_tree_node_ids, item.dataTreeNodeIds,
+        focus.data_tree_node_ids, focus.dataTreeNodeIds,
+        focus.data_tree_node_id, focus.dataTreeNodeId,
+    );
+    const hasStableTarget = targetRefs.length || semanticTargets.length
+        || objectIds.length || dataTreeIds.length;
+    if (!hasStableTarget) return '';
+    return JSON.stringify({
+        refs: targetRefs,
+        semantics: semanticTargets,
+        objects: objectIds,
+        data_tree: dataTreeIds,
+    });
+}
+window.chatAttachmentTargetIdentity = chatAttachmentTargetIdentity;
+
 function chatAttachmentSemanticKey(attachment) {
     const item = attachment && typeof attachment === 'object' ? attachment : {};
     const metadata = item.view_metadata && typeof item.view_metadata === 'object'
@@ -585,14 +648,22 @@ function chatAttachmentSemanticKey(attachment) {
     const captureRole = read('capture_role', 'captureRole');
     const index = read('index');
     const requestId = read('request_id', 'requestId');
+    const visualPurpose = read('visual_purpose', 'visualPurpose').toLowerCase();
+    const targetIdentity = chatAttachmentTargetIdentity(item);
     if (figureGroup || figureNumber || subfigure) {
         return ['figure', planning, figureGroup, figureNumber, subfigure, captureRole, target].join('|');
     }
-    // A view index is meaningful only inside its parent request.  Keeping the
-    // request identity here prevents a new user-requested capture from being
-    // mistaken for a replay of an earlier capture of the same viewer.
+    // A view index is meaningful only inside its parent request. Include the
+    // stable target identity as well: two sub-tasks can capture the same 3D
+    // Viewer at index 0 while referring to different objects.
     if (captureRole || index) {
-        return ['view', mode, planning, requestId, target, captureRole, index].join('|');
+        // Without a grounded target identity, a locate screenshot is not
+        // semantically safe to collapse into another location screenshot.
+        // Stable attachment IDs and URLs still deduplicate an actual replay.
+        if (visualPurpose === 'locate' && !targetIdentity) return '';
+        return [
+            'view', mode, planning, requestId, target, captureRole, index, targetIdentity,
+        ].join('|');
     }
     return '';
 }

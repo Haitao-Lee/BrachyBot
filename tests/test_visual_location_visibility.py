@@ -148,6 +148,41 @@ def test_spatial_preliminary_claims_are_not_reused_as_screenshot_evidence():
     assert "截图已核验" in answer
 
 
+def test_grounded_location_answer_does_not_repeat_stale_visual_placeholders():
+    answer = grounded_location_answer({
+        "preliminary_response": (
+            "**对象截图/位置**\n"
+            "没有建立与该目标对应的截图任务，因此不对位置作判断。\n"
+            "**对象截图/位置**\n"
+            "没有建立与该目标对应的截图任务，因此不对位置作判断。\n"
+            "Planning_2 已完成。"
+        ),
+        "evidence": [{
+            "attachment_id": "guide-viewer",
+            "visual_purpose": "locate",
+            "target": "viewer-3d",
+            "annotation_target_refs": ["surgical_guide:active"],
+            "appearance_preserved": True,
+            "grounding_manifest": {"targets": [{
+                "target_ref": "surgical_guide:active",
+                "label": "Puncture guide v2",
+                "kind": "scene-object",
+                "visible": True,
+                "scene_visible": True,
+                "data_tree_visible": True,
+                "in_view": True,
+                "annotatable": True,
+                "loaded": True,
+                "status": "ready",
+            }]},
+        }],
+    }, "zh")
+    assert answer.count("### 对象截图/位置") == 1
+    assert "没有建立与该目标对应的截图任务" not in answer
+    assert "Planning_2 已完成" in answer
+    assert "标出了“Puncture guide v2”的位置" in answer
+
+
 def test_tree_row_with_unknown_scene_visibility_is_not_called_hidden():
     answer = grounded_location_answer({"evidence": [{
         "visual_purpose": "locate", "target": "data-tree",

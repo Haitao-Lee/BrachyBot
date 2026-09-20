@@ -310,6 +310,15 @@ def normalize_visual_evidence_context(
                     continue
                 target["annotatable"] = False
                 target["reason"] = "semantic_target_mismatch"
+        raw_annotation_refs = item.get(
+            "annotation_target_refs", item.get("annotationTargetRefs", [])
+        )
+        annotation_target_refs: List[str] = []
+        if isinstance(raw_annotation_refs, (list, tuple)):
+            for raw_ref in raw_annotation_refs[:32]:
+                ref = _bounded_text(raw_ref, 160)
+                if ref and ref not in annotation_target_refs:
+                    annotation_target_refs.append(ref)
         evidence.append({
             "attachment_id": _safe_id(
                 item.get("attachment_id", item.get("attachmentId", item.get("id", f"evidence-{index}")))
@@ -325,6 +334,19 @@ def normalize_visual_evidence_context(
             "planning_id": _safe_id(item.get("planning_id", item.get("planningId")), 180),
             "data_version": _safe_id(item.get("data_version", item.get("dataVersion")), 180),
             "grounding_manifest": normalized_manifest,
+            "annotation_target_refs": annotation_target_refs,
+            "annotation_present": item.get(
+                "annotation_present", item.get("annotationPresent", False)
+            ) is True,
+            "temporary_reveal": item.get(
+                "temporary_reveal", item.get("temporaryReveal", False)
+            ) is True,
+            "temporary_camera_reframe": item.get(
+                "temporary_camera_reframe", item.get("temporaryCameraReframe", False)
+            ) is True,
+            "appearance_preserved": item.get(
+                "appearance_preserved", item.get("appearancePreserved", False)
+            ) is True,
             "semantic_target": semantic_target,
             "semantic_targets": semantic_targets,
             "target_query": _bounded_text(
@@ -374,6 +396,25 @@ _UNVERIFIED_SPATIAL_CLAIM = re.compile(
     r"near|surface|visible|appears?|shown|extends?|passes?\s+through|covers?)\b)",
     re.IGNORECASE,
 )
+_STALE_VISUAL_PLACEHOLDER = re.compile(
+    r"(?:没有建立与该目标对应的截图任务|没有取得.{0,80}对应截图|"
+    r"本轮没有取得.{0,80}(?:截图|图像)|"
+    r"\b(?:no screenshot task|did not receive.{0,40}screenshot|"
+    r"could not establish.{0,40}screenshot)\b)",
+    re.IGNORECASE,
+)
+_VISUAL_SECTION_HEADING = re.compile(
+    r"^(?:对象截图\s*[/／]\s*位置|截图位置|对象定位|"
+    r"object screenshot(?:\s*[/／]\s*location)?|screenshot location)$",
+    re.IGNORECASE,
+)
+_UNGROUNDED_LOCATION_DISCLAIMER = re.compile(
+    r"(?:不对|不能对|无法对|未据此|不据此).{0,12}(?:位置|定位).{0,12}"
+    r"(?:判断|推断|说明|确认)|"
+    r"(?:no|not).{0,20}(?:location|position).{0,12}"
+    r"(?:inferred|stated|judged|determined)",
+    re.IGNORECASE,
+)
 
 
 def _nonspatial_preliminary_context(value: Any) -> str:
@@ -390,70 +431,224 @@ def _nonspatial_preliminary_context(value: Any) -> str:
     kept = []
     for clause in clauses:
         item = clause.strip(" \t\r\n -*•#")
-        if not item or _UNVERIFIED_SPATIAL_CLAIM.search(item):
+        if not item:
+            continue
+        heading = item.strip("*_ ")
+        if (
+            _VISUAL_SECTION_HEADING.fullmatch(heading)
+            or _STALE_VISUAL_PLACEHOLDER.search(item)
+            or _UNGROUNDED_LOCATION_DISCLAIMER.search(item)
+            or _UNVERIFIED_SPATIAL_CLAIM.search(item)
+        ):
             continue
         kept.append(item)
     return "\n".join(kept)
 
 
 def grounded_location_answer(context: Dict[str, Any], response_language: str = '') -> Optional[str]:
-    """Build durable location prose only from the captured target manifests."""
+    """Build concise, target-bound location prose only from captured evidence."""
     evidence = [item for item in context.get("evidence", []) if isinstance(item, Mapping)]
     located = [item for item in evidence if item.get("visual_purpose") == "locate"]
     if not located:
         return None
     zh = str(response_language).lower().startswith("zh")
-    lines = []
-    viewer_capture_present = any(
-        str(item.get("target") or "").lower() in {"viewer-3d", "viewer"}
-        for item in located
-    )
-    verified_scene_refs = set()
-    for item in located:
-        if str(item.get("target") or "").lower() not in {"viewer-3d", "viewer"}:
-            continue
+    grouped: Dict[str, Dict[str, Any]] = {}
+    unverified_views: List[str] = []
+
+    for item_index, item in enumerate(located):
+        view = _bounded_text(item.get("target"), 80).lower()
         targets = item.get("grounding_manifest", {}).get("targets", [])
-        for target in targets if isinstance(targets, list) else []:
-            ref = str(target.get("target_ref") or "").strip()
-            visible = target.get("annotatable") is True and target.get("visible") is True and target.get("in_view") is True
-            if target.get("kind") == "scene-object":
-                visible = visible and target.get("scene_visible") is True and target.get("data_tree_visible") is True and target.get("loaded") is True
-            if ref and visible:
-                verified_scene_refs.add(ref)
-    unverified_tree_refs = set()
-    for item in located:
-        targets = item.get("grounding_manifest", {}).get("targets", [])
-        targets = [target for target in targets if target.get("reason") != "semantic_target_mismatch"] if isinstance(targets, list) else []
-        view = "Data Tree" if item.get("target") == "data-tree" else str(item.get("target") or "Viewer")
+        targets = [
+            target for target in targets
+            if isinstance(target, Mapping)
+            and target.get("reason") != "semantic_target_mismatch"
+        ] if isinstance(targets, list) else []
         if not targets:
-            lines.append(f"{view}：未核验到所请求的目标，不能根据其他物体推断其位置。" if zh
-                         else f"{view}: the requested target was not verified; other objects cannot establish its location.")
-        for target in targets[:8]:
-            ref = str(target.get("target_ref") or "").strip()
+            unverified_views.append(view or ("当前界面" if zh else "current interface"))
+            continue
+        annotation_refs = {
+            _bounded_text(ref, 160)
+            for ref in item.get("annotation_target_refs", [])
+            if _bounded_text(ref, 160)
+        }
+        for target_index, target in enumerate(targets[:8]):
+            ref = _bounded_text(target.get("target_ref"), 160)
             label = _bounded_text(target.get("label") or ref, 160)
-            visible = target.get("annotatable") is True and target.get("visible") is True and target.get("in_view") is True
-            if target.get("kind") == "scene-object":
-                visible = visible and target.get("scene_visible") is True and target.get("data_tree_visible") is True
-            if visible:
-                line = ('{}：截图已核验到“{}”。'.format(view, label) if zh else '{}: {} was verified in this capture.'.format(view, label))
-            else:
-                line = ('{}：未能在截图中核验“{}”的可见位置，不对其外观或位置作推测。'.format(view, label) if zh else '{}: no visible location for {} was verified; its appearance and position cannot be inferred.'.format(view, label))
-            if target.get("kind") == "data-tree-row" and target.get("scene_visible") is not True:
-                if target.get("scene_visibility_known") is True:
-                    line += "该节点在截图时的三维显示处于隐藏状态。" if zh else " Its 3D presentation was hidden when this row was captured."
+            key = ref or "unbound:{}:{}".format(
+                item.get("attachment_id") or item_index, target_index
+            )
+            group = grouped.setdefault(key, {
+                "ref": ref,
+                "label": label or ("目标对象" if zh else "target object"),
+                "views": {},
+                "stale": False,
+                "temporary_reveal": False,
+                "temporary_camera": False,
+                "appearance_preserved": False,
+                "tree_hidden": False,
+                "tree_visibility_unknown": False,
+            })
+            if label and (not group["label"] or group["label"] == "目标对象"):
+                group["label"] = label
+            valid = (
+                target.get("annotatable") is True
+                and target.get("visible") is True
+                and target.get("in_view") is True
+            )
+            if view in {"viewer-3d", "viewer"} and target.get("kind") == "scene-object":
+                valid = (
+                    valid
+                    and target.get("scene_visible") is True
+                    and target.get("data_tree_visible") is True
+                    and target.get("loaded") is not False
+                )
+            annotation_present = (
+                ref in annotation_refs
+                or (
+                    item.get("annotation_present") is True
+                    and len(targets) == 1
+                )
+            )
+            row = {
+                "valid": bool(valid),
+                "annotated": bool(annotation_present),
+                "status": _bounded_text(target.get("status"), 40).lower(),
+                "scene_visible": target.get("scene_visible"),
+                "scene_visibility_known": target.get("scene_visibility_known") is True,
+                "reason": _bounded_text(target.get("reason"), 120).lower(),
+            }
+            old_row = group["views"].get(view)
+            if old_row is None or (not old_row["annotated"] and row["annotated"]) or (
+                not old_row["valid"] and row["valid"]
+            ):
+                group["views"][view] = row
+            if row["status"] in {"stale", "expired", "outdated"}:
+                group["stale"] = True
+            group["temporary_reveal"] = (
+                group["temporary_reveal"] or item.get("temporary_reveal") is True
+            )
+            group["temporary_camera"] = (
+                group["temporary_camera"] or item.get("temporary_camera_reframe") is True
+            )
+            group["appearance_preserved"] = (
+                group["appearance_preserved"] or item.get("appearance_preserved") is True
+            )
+            if view == "data-tree" and target.get("scene_visible") is False:
+                if row["scene_visibility_known"]:
+                    group["tree_hidden"] = True
                 else:
-                    line += "仅凭当前数据树证据无法核验该对象的三维显示状态。" if zh else " The Data Tree evidence alone could not verify its 3D visibility state."
-            if target.get("kind") == "data-tree-row" and ref and ref not in verified_scene_refs:
-                unverified_tree_refs.add(ref)
-            if target.get("status") in {"stale", "expired", "outdated"}:
-                line += "当前状态为过期（stale），不代表最新规划结果。" if zh else " It is marked stale, not a verified current planning result."
-            lines.append(line)
-    if unverified_tree_refs and not viewer_capture_present:
-        lines.append("Viewer：没有取得同一对象的可核验三维截图，因此不能说明它在三维视图中的位置。" if zh
-                     else "Viewer: no verifiable 3D capture of the same object was available, so its 3D location cannot be stated.")
-    preliminary = _nonspatial_preliminary_context(
-        context.get("preliminary_response")
-    )
+                    group["tree_visibility_unknown"] = True
+
+    lines: List[str] = []
+    for group in grouped.values():
+        label = group["label"]
+        views = group["views"]
+        tree = views.get("data-tree")
+        viewer_rows = [
+            (view, row) for view, row in views.items()
+            if view.startswith("viewer")
+        ]
+        verified_viewer = any(row["valid"] for _, row in viewer_rows)
+
+        if tree is not None:
+            if tree["valid"]:
+                lines.append(
+                    'Data Tree：截图已核验到“{}”对应的节点。'.format(label)
+                    if zh else
+                    'Data Tree: the row for “{}” was verified in the capture.'.format(label)
+                )
+            else:
+                lines.append(
+                    'Data Tree：未能在截图中核验“{}”对应的可见节点。'.format(label)
+                    if zh else
+                    'Data Tree: the visible row for “{}” was not verified.'.format(label)
+                )
+
+        if viewer_rows:
+            for view, row in viewer_rows:
+                view_name = "3D Viewer" if view in {"viewer-3d", "viewer"} else view
+                if row["valid"] and row["annotated"]:
+                    lines.append(
+                        '{}：对应截图已核验并标出了“{}”的位置。'.format(view_name, label)
+                        if zh else
+                        '{}: the corresponding screenshot verifies and marks “{}”.'.format(view_name, label)
+                    )
+                elif row["valid"]:
+                    lines.append(
+                        '{}：截图中核验到“{}”，但没有确认标注，因此不能指出精确位置。'.format(view_name, label)
+                        if zh else
+                        '{}: “{}” is verified in the capture, but no mark was confirmed, so its exact location is not stated.'.format(view_name, label)
+                    )
+                else:
+                    lines.append(
+                        '{}：未能在截图中核验“{}”的可见位置，不对其位置作推测。'.format(view_name, label)
+                        if zh else
+                        '{}: no visible location for “{}” was verified, so its location is not inferred.'.format(view_name, label)
+                    )
+        elif tree is not None:
+            lines.append(
+                'Viewer：没有取得同一对象的可核验三维截图，因此不能说明它在三维视图中的位置。'
+                if zh else
+                'Viewer: no verifiable 3D screenshot of the same object was obtained, so its 3D location cannot be stated.'
+            )
+
+        if group["tree_hidden"]:
+            if group["temporary_reveal"] and verified_viewer:
+                lines.append(
+                    'Data Tree 截图时该对象原处于隐藏状态；为本次 Viewer 截图临时显示，完成后已恢复。'
+                    if zh else
+                    'The object was hidden in the Data Tree capture, then temporarily shown for the Viewer capture and restored afterwards.'
+                )
+            else:
+                lines.append(
+                    '该对象在 Data Tree 截图时的三维显示处于隐藏状态。'
+                    if zh else
+                    'The object’s 3D presentation was hidden when the Data Tree was captured.'
+                )
+        elif group["tree_visibility_unknown"] and tree is not None:
+            lines.append(
+                '仅凭当前数据树证据无法核验该对象的三维显示状态。'
+                if zh else
+                'The Data Tree evidence alone could not verify the object’s 3D visibility state.'
+            )
+        elif group["temporary_reveal"]:
+            lines.append(
+                '为本次截图临时显示了目标对象，截图完成后已恢复。'
+                if zh else
+                'The target was temporarily shown for this capture and restored afterwards.'
+            )
+
+        if group["temporary_camera"]:
+            lines.append(
+                '为使目标完整入镜，临时调整了相机取景，截图后已恢复原视角。'
+                if zh else
+                'The camera was temporarily reframed to fit the target and restored after capture.'
+            )
+        elif group["appearance_preserved"] and not group["temporary_reveal"]:
+            lines.append(
+                '截图保留了 Viewer 当时的显示内容和配色，没有为定位单独隐藏周边对象或改色。'
+                if zh else
+                'The screenshot preserves the Viewer’s displayed scene and colors; surrounding objects were not hidden or recolored for locating.'
+            )
+
+        if group["stale"]:
+            lines.append(
+                '该对象状态标记为过期（stale）；截图只能证明当前画面中的对象，不能代表最新规划结果。'
+                if zh else
+                'This object is marked stale; the capture shows the currently displayed object, not necessarily the latest plan.'
+            )
+
+    for view in dict.fromkeys(unverified_views):
+        view_name = "Data Tree" if view == "data-tree" else (
+            "3D Viewer" if view in {"viewer-3d", "viewer"} else view
+        )
+        lines.append(
+            '{}：未核验到所请求的目标，不能根据其他画面推断位置。'.format(view_name)
+            if zh else
+            '{}: the requested target was not verified; another view cannot establish its location.'.format(view_name)
+        )
+
+    preliminary = _nonspatial_preliminary_context(context.get("preliminary_response"))
     sections = []
     if preliminary:
         sections.append(
@@ -461,9 +656,17 @@ def grounded_location_answer(context: Dict[str, Any], response_language: str = '
              else "### Other same-turn read-only information (not screenshot evidence)\n")
             + preliminary
         )
-    sections.append(("### 对象截图/位置\n" if zh else "### Object screenshot/location\n") + "\n\n".join(lines))
+    intro = (
+        "我按你的要求分别核对了各目标，下面按对象说明截图中能够核实的内容。"
+        if zh else
+        "I checked each requested object separately; below is what the screenshots actually verify."
+    )
+    sections.append(
+        ("### 对象截图/位置\n" if zh else "### Object screenshot/location\n")
+        + intro
+        + ("\n\n" + "\n".join("- " + line for line in lines) if lines else "")
+    )
     return "\n\n".join(sections)
-
 def build_visual_evidence_prompt(context: Dict[str, Any], response_language: str = "") -> str:
     """Build one ephemeral multimodal prompt with a strict response envelope."""
     evidence = [item for item in (context.get("evidence") or []) if isinstance(item, Mapping)]

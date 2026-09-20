@@ -352,8 +352,10 @@ def test_browser_annotation_pipeline_is_semantic_state_aware_and_non_mutating():
     focus_block = viewer.split("function focusPlanningObjectsForScreenshot", 1)[1].split(
         "window.focusPlanningObjectsForScreenshot", 1
     )[0]
-    assert "mesh.visible = true" not in focus_block
-    assert "mesh.visible = isTarget && meshState.visible !== false" in focus_block
+    assert "mesh.visible =" not in focus_block
+    assert "material.color" not in focus_block
+    assert "mesh.scale" not in focus_block
+    assert "scene_presentation: 'preserved'" in focus_block
 
     # The derived PNG is additive; the immutable source remains available.
     assert "original_url" in gallery
@@ -405,8 +407,8 @@ def test_screenshot_autoframing_is_target_derived_verified_and_reversible():
     assert "kind: 'viewer-object-2d'" in mpr
     assert "hidden_in_data_tree_or_2d_view" in mpr
 
-    # 3D fits the target against the limiting camera FOV, verifies projected
-    # margins, and still never turns a hidden target on.
+    # 3D reframes only when the live target is clipped or too small; object
+    # colors, opacity, visibility, scale, and surrounding scene remain intact.
     focus_block = viewer.split("function focusPlanningObjectsForScreenshot", 1)[1].split(
         "window.focusPlanningObjectsForScreenshot", 1
     )[0]
@@ -414,8 +416,12 @@ def test_screenshot_autoframing_is_target_derived_verified_and_reversible():
     assert "limitingHalfFov" in focus_block
     assert "edgeSafe" in focus_block
     assert "camera_restored_after_capture: true" in focus_block
-    assert "occlusion_control: options.hideUnrelated ? 'target-isolated' : 'context-preserved'" in focus_block
-    assert "mesh.visible = true" not in focus_block
+    assert "camera_adjusted: cameraAdjusted" in focus_block
+    assert "appearance_preserved: true" in focus_block
+    assert "scene_presentation: 'preserved'" in focus_block
+    assert "mesh.visible =" not in focus_block
+    assert "material.color" not in focus_block
+    assert "mesh.scale" not in focus_block
 
     # Framing runs after the target panel is laid out, once per attachment;
     # every temporary 3D pose is restored even if capture/upload throws.
@@ -426,9 +432,12 @@ def test_screenshot_autoframing_is_target_derived_verified_and_reversible():
     assert "per-view focus restore skipped" in ui_api
     assert "automatic_framing_not_verified" in ui_api
     assert "_wait2DScreenshotSliceStable" in ui_api
-    assert "const isolateTargetForStrictLocate" in ui_api
+    assert "function _screenshotNeeds3DReframe(plan)" in ui_api
+    assert "captureSpec.preserve_current_view = !needsReframe" in ui_api
+    assert "if (plan.visual_purpose !== 'locate') _applyScreenshotOverlayPlan(plan);" in ui_api
+    assert "temporary_reveal: restoreVisibility?.changed === true" in ui_api
+    assert "temporary_camera_reframe:" in ui_api
     assert "plan.visual_purpose === 'locate'" in ui_api
-    assert "plan.annotation_policy === 'required'" in ui_api
 
     # Annotation revalidation checks live identity/visibility/freshness after
     # the temporary slice/camera has been restored; it does not demand that

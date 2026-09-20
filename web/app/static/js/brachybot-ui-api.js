@@ -9130,27 +9130,43 @@ function _screenshotTargetRefs(plan = {}) {
 }
 
 function _screenshotPlanIdentity(plan = {}) {
-    // Stable, non-PII plan identity for attachment keys. A single user turn
-    // may legitimately produce several captures of the same view (for
-    // example, one guide and one tumor), so request + view + index is not
-    // sufficient to prevent server-side attachment replacement.
+    // Stable, non-PII identity for one capture. Use the per-view captureSpec
+    // at the call site so two objects captured from the same Viewer do not
+    // inherit the same parent-plan identity.
     const identity = JSON.stringify({
         target_refs: _screenshotTargetRefs(plan).slice().sort(),
+        object_ids: [...new Set([
+            ...(Array.isArray(plan.object_ids) ? plan.object_ids : []),
+        ].map(value => String(value || '').trim()).filter(Boolean))].sort(),
+        data_tree_node_ids: [...new Set([
+            ...(Array.isArray(plan.data_tree_node_ids) ? plan.data_tree_node_ids : []),
+        ].map(value => String(value || '').trim()).filter(Boolean))].sort(),
+        focus: plan.focus || {},
         semantic_target: String(plan.semantic_target || plan.semanticTarget || '').toLowerCase(),
         semantic_targets: [...new Set([
             ...(Array.isArray(plan.semantic_targets) ? plan.semantic_targets : []),
             ...(Array.isArray(plan.semanticTargets) ? plan.semanticTargets : []),
         ].map(value => String(value || '').trim().toLowerCase()).filter(Boolean))].sort(),
+        target_query: String(plan.target_query || plan.targetQuery || '').trim().toLowerCase(),
+        target: String(plan.target || plan.viewer || ''),
+        capture_role: String(plan.capture_role || plan.captureRole || ''),
+        index: plan.index ?? null,
         views: (Array.isArray(plan.views) ? plan.views : [])
             .map(view => String(typeof view === 'object' ? (view?.target || view?.viewer || '') : view || ''))
             .filter(Boolean),
     });
-    let hash = 2166136261;
+    // Two independent 32-bit hashes make accidental key collision negligible
+    // while keeping attachment IDs short enough for the Session contract.
+    let hashA = 2166136261;
+    let hashB = 2246822519;
     for (let index = 0; index < identity.length; index += 1) {
-        hash ^= identity.charCodeAt(index);
-        hash = Math.imul(hash, 16777619);
+        const code = identity.charCodeAt(index);
+        hashA ^= code;
+        hashA = Math.imul(hashA, 16777619);
+        hashB ^= code + 0x9e3779b9;
+        hashB = Math.imul(hashB, 0x5bd1e995);
     }
-    return (hash >>> 0).toString(36);
+    return (hashA >>> 0).toString(36) + (hashB >>> 0).toString(36);
 }
 
 function _screenshotImageDimensions(dataUrl) {
@@ -11105,11 +11121,26 @@ function _appendScreenshotToGallery(url, target, question, galleryContext, attac
     if (
         context.keys.has(key)
         || context.urlKeys.has(urlKey)
-        || context.semanticKeys.has(semanticKey)
+        || (semanticKey && context.semanticKeys.has(semanticKey))
     ) return null;
     context.keys.add(key);
     context.urlKeys.add(urlKey);
-    context.semanticKeys.add(semanticKey);
+    if (semanticKey) context.semanticKeys.add(semanticKey);
+    const incomingPurpose = String(
+        attachment.visual_purpose || viewMetadata.visual_purpose || '',
+    ).toLowerCase();
+    const hasPriorLocateEvidence = context.items.some(item => String(
+        item?.visual_purpose || item?.view_metadata?.visual_purpose || '',
+    ).toLowerCase() === 'locate');
+    const currentLayout = String(context.layout || 'auto').toLowerCase();
+    if (incomingPurpose === 'locate' && hasPriorLocateEvidence
+        && ['auto', 'grid', 'side-by-side'].includes(currentLayout)) {
+        // Multiple locate captures belong together even if one target lacks a
+        // stable reference. Never let a later plan silently return the gallery
+        // to single-column/auto layout after the pair has been established.
+        context.layout = 'side-by-side';
+        context._multiLocateSideBySide = true;
+    }
     const messageKind = String(
         context.messageKind
         || (attachment.mode === 'monitor' ? 'monitor_evidence' : 'assistant_final')
@@ -11404,7 +11435,8 @@ function _screenshotAutoFrameEnabled(plan, targetRefs) {
 }
 
 async function _applyStructuredScreenshotPlan(plan, viewTarget) {
-    _applyScreenshotOverlayPlan(plan);
+    // Locate captures document the live presentation; never rewrite overlays for them.
+    if (plan.visual_purpose !== 'locate') _applyScreenshotOverlayPlan(plan);
     const targetRefs = _screenshotTargetRefs(plan);
     const autoFrame = _screenshotAutoFrameEnabled(plan, targetRefs);
     if (viewTarget === 'data-tree') {
@@ -11467,16 +11499,9 @@ async function _applyStructuredScreenshotPlan(plan, viewTarget) {
 
     if (viewTarget === 'viewer-3d' && autoFrame && targetRefs.length
         && typeof window.focusPlanningObjectsForScreenshot === 'function') {
-        // A user who explicitly asks us to locate and mark an object needs a
-        // screenshot in which that object cannot be hidden behind another
-        // anatomical surface. Isolate only this strict locate transaction;
-        // overview/explanation captures retain their surrounding context.
-        const isolateTargetForStrictLocate = plan.visual_purpose === 'locate'
-            && plan.annotation_policy === 'required'
-            && plan.preserve_current_view !== true;
+        // The 3D helper may reframe the camera, but never hides surrounding
+        // objects or changes target appearance for a screenshot.
         const restoreFocus = window.focusPlanningObjectsForScreenshot(targetRefs, {
-            hideUnrelated: !!plan.hide_unrelated || isolateTargetForStrictLocate,
-            highlightObjectIds: plan.highlight_object_ids || [],
             padding: Number(plan.focus?.padding || 0.35),
         });
         if (typeof restoreFocus === 'function') {
@@ -11663,6 +11688,7 @@ function _revealScreenshotNodes(plan, ownerStillActive = () => true) {
     };
     const nodes = [];
     const resolvedRefs = new Set();
+    let changed = false;
     refs.forEach(ref => {
         const row = _dataTreeRowForTargetRef(ref);
         const rowNodes = row
@@ -11677,12 +11703,16 @@ function _revealScreenshotNodes(plan, ownerStillActive = () => true) {
         if (rowNodes.length || groupNodes.length) resolvedRefs.add(ref);
     });
     const remember = node => {
-        if (saved.has(node)) return;
-        saved.set(node, Object.fromEntries(['visible', 'visible3D', 'opacity'].map(key =>
-            [key, { present: Object.prototype.hasOwnProperty.call(node, key), value: node[key] }])));
-        node.visible = true;
-        node.visible3D = true;
-        if (Number.isFinite(Number(node.opacity))) node.opacity = 1;
+        const changes = {};
+        ['visible', 'visible3D'].forEach(key => {
+            if (node[key] !== false) return;
+            changes[key] = { present: Object.prototype.hasOwnProperty.call(node, key), value: node[key] };
+            node[key] = true;
+            changed = true;
+        });
+        if (Object.keys(changes).length) {
+            saved.set(node, Object.assign(saved.get(node) || {}, changes));
+        }
     };
     nodes.forEach(node => {
         const seen = new Set();
@@ -11696,17 +11726,55 @@ function _revealScreenshotNodes(plan, ownerStillActive = () => true) {
         if (typeof applyDataTreeViewVisibility === 'function') applyDataTreeViewVisibility();
         if (typeof renderDataTree === 'function') renderDataTree();
     };
-    refresh();
+    if (changed) refresh();
     const restore = () => {
         saved.forEach((values, node) => Object.entries(values).forEach(([key, entry]) => {
             if (entry.present) node[key] = entry.value;
             else delete node[key];
         }));
         // Restore the saved node objects, but never redraw a different case.
-        if (ownerStillActive()) refresh();
+        if (changed && ownerStillActive()) refresh();
     };
+    restore.changed = changed;
     restore.unresolvedTargetRefs = refs.filter(ref => !resolvedRefs.has(ref));
     return restore;
+}
+function _screenshotNeeds3DReframe(plan) {
+    const refs = _screenshotTargetRefs(plan);
+    if (!refs.length || typeof window.get3DScreenshotGroundingManifest !== 'function') return false;
+    let targets;
+    try {
+        const manifest = window.get3DScreenshotGroundingManifest(refs);
+        targets = Array.isArray(manifest?.targets) ? manifest.targets : [];
+    } catch (error) {
+        console.debug('[screenshot] current framing could not be inspected:', error);
+        return false;
+    }
+    const selected = refs.map(ref => targets.find(
+        item => String(item?.target_ref || '') === String(ref),
+    ));
+    // A camera move cannot fix a missing, unloaded, or still-hidden target, so
+    // judge framing only from the locatable targets. Evaluating them together
+    // (rather than rejecting the whole capture) lets one unavailable object
+    // stop suppressing a precise reframe of the objects that are present.
+    const locatable = selected.filter(target => target
+        && target.visible === true
+        && target.scene_visible === true
+        && target.data_tree_visible === true
+        && target.loaded !== false);
+    if (!locatable.length) return false;
+    return locatable.some(target => {
+        const bounds = target.normalized_bounds;
+        if (!Array.isArray(bounds) || bounds.length !== 4
+            || !bounds.every(value => Number.isFinite(Number(value)))) return true;
+        const [left, top, width, height] = bounds.map(Number);
+        if (width <= 0 || height <= 0) return true;
+        const right = left + width;
+        const bottom = top + height;
+        const edgeSafe = left >= 0.012 && top >= 0.012 && right <= 0.988 && bottom <= 0.988;
+        const extent = Math.max(width, height);
+        return !edgeSafe || extent < 0.16 || extent > 0.92 || target.in_view !== true;
+    });
 }
 
 function _orderLocateCaptureViews(plan, views) {
@@ -11736,7 +11804,7 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
     );
     const plan = _normalizeStructuredScreenshotPlan(target, question, options);
     context.mode = plan.mode;
-    context.layout = plan.layout;
+    context.layout = context._multiLocateSideBySide ? 'side-by-side' : plan.layout;
     const ownerStillActive = () => ownerSessionId === String(_activeApiSessionId())
         && (!options.monitorOnly || trainingMonitorState.active);
     if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
@@ -11800,9 +11868,6 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                     if (!restoreVisibility || restoreVisibility.unresolvedTargetRefs?.length) {
                         throw new Error('target_object_not_loaded_in_live_data_tree');
                     }
-                    captureSpec.preserve_current_view = false;
-                    captureSpec.preserveCurrentView = false;
-                    captureSpec.focus = { kind: 'auto', padding: 0.35 };
                     captureSpec.annotation_policy = plan.annotation_policy === 'none' ? 'none' : 'required';
                     await _waitScreenshotFrames(3);
                 }
@@ -11810,6 +11875,16 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                     ? document.body
                     : await _prepareScreenshotTarget(viewTarget, captureSpec);
                 if (!element) throw new Error(`target_not_found:${viewTarget}`);
+                if (plan.mode === 'chat' && plan.visual_purpose === 'locate'
+                    && viewTarget === 'viewer-3d' && _screenshotTargetRefs(plan).length) {
+                    const needsReframe = _screenshotNeeds3DReframe(captureSpec);
+                    captureSpec.preserve_current_view = !needsReframe;
+                    captureSpec.preserveCurrentView = !needsReframe;
+                    captureSpec.focus = needsReframe
+                        ? { kind: 'auto', padding: 0.35 } : { kind: 'current-view' };
+                    captureSpec.hide_unrelated = false;
+                    captureSpec.highlight_object_ids = [];
+                }
                 // Each attachment owns its own temporary view transaction.
                 // A 2D target chooses the best slice for that plane; a 3D
                 // target frames only after its canvas has a real aspect.  The
@@ -11897,7 +11972,8 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
             const attachmentBase = String(view.attachment_id || context.requestId || 'request')
                 .replace(/[^A-Za-z0-9_.:-]+/g, '-')
                 .slice(0, 96);
-            const attachmentId = `${attachmentBase || 'request'}-p${_screenshotPlanIdentity(plan)}-${viewTarget}-${index}`;
+            const attachmentId = String(attachmentBase || 'request') + '-p'
+                + _screenshotPlanIdentity(captureSpec) + '-' + viewTarget + '-' + index;
             const fallbackTitle = _localizedScreenshotTargetLabel(
                 viewTarget,
                 ownerSessionId,
@@ -11932,23 +12008,26 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                     response_language: context.responseLanguage || '',
                     view_metadata: {
                         index,
-                        focus: plan.focus || {},
-                        object_ids: plan.object_ids || [],
-                        data_tree_node_ids: plan.data_tree_node_ids || [],
-                        overlays: plan.overlays || {},
+                        capture_role: view.capture_role || view.captureRole || '',
+                        focus: captureSpec.focus || {},
+                        object_ids: captureSpec.object_ids || [],
+                        data_tree_node_ids: captureSpec.data_tree_node_ids || [],
+                        overlays: captureSpec.overlays || {},
                         target_refs: _screenshotTargetRefs(captureSpec),
-                        visual_purpose: plan.visual_purpose || 'explain',
-                        analysis_required: plan.analysis_required !== false,
-                        annotation_policy: plan.annotation_policy || 'auto',
-                        request_intent: plan.request_intent || plan.requestIntent || '',
-                        semantic_target: plan.semantic_target || plan.semanticTarget || '',
-                        semantic_targets: plan.semantic_targets || plan.semanticTargets || [],
-                        target_query: plan.target_query || plan.targetQuery || plan.question || '',
-                        target_source: plan.target_source || plan.targetSource || '',
-                        preserve_current_view: plan.preserve_current_view === true
-                            || plan.preserveCurrentView === true,
+                        visual_purpose: captureSpec.visual_purpose || plan.visual_purpose || 'explain',
+                        analysis_required: captureSpec.analysis_required !== false,
+                        annotation_policy: captureSpec.annotation_policy || plan.annotation_policy || 'auto',
+                        request_intent: captureSpec.request_intent || captureSpec.requestIntent || plan.request_intent || plan.requestIntent || '',
+                        semantic_target: captureSpec.semantic_target || captureSpec.semanticTarget || plan.semantic_target || plan.semanticTarget || '',
+                        semantic_targets: captureSpec.semantic_targets || captureSpec.semanticTargets || plan.semantic_targets || plan.semanticTargets || [],
+                        target_query: captureSpec.target_query || captureSpec.targetQuery || plan.target_query || plan.targetQuery || plan.question || '',
+                        target_source: captureSpec.target_source || captureSpec.targetSource || plan.target_source || plan.targetSource || '',
+                        preserve_current_view: captureSpec.preserve_current_view === true
+                            || captureSpec.preserveCurrentView === true,
                         focus_result: captureSpec.__focusResult || null,
-                        temporary_reveal: !!restoreVisibility,
+                        temporary_reveal: restoreVisibility?.changed === true,
+                        temporary_camera_reframe: captureSpec.__focusResult?.camera_adjusted === true,
+                        appearance_preserved: viewTarget === 'viewer-3d',
                         grounding_manifest: groundingManifest,
                     },
                 }),
@@ -11978,10 +12057,10 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                         payload.attachment?.view_metadata || {},
                         {
                             index,
-                            focus: plan.focus || {},
-                            object_ids: plan.object_ids || [],
-                            data_tree_node_ids: plan.data_tree_node_ids || [],
-                            overlays: plan.overlays || {},
+                            focus: captureSpec.focus || {},
+                            object_ids: captureSpec.object_ids || [],
+                            data_tree_node_ids: captureSpec.data_tree_node_ids || [],
+                            overlays: captureSpec.overlays || {},
                             slice: view.slice ?? view.slice_index ?? null,
                             capture_role: view.capture_role || view.captureRole || '',
                             mode: plan.mode || 'chat',
@@ -11991,32 +12070,34 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                             data_version: currentDataVersion,
                             request_id: context.requestId || '',
                             target_refs: _screenshotTargetRefs(captureSpec),
-                            visual_purpose: plan.visual_purpose || 'explain',
-                            analysis_required: plan.analysis_required !== false,
-                            annotation_policy: plan.annotation_policy || 'auto',
-                            request_intent: plan.request_intent || plan.requestIntent || '',
-                            semantic_target: plan.semantic_target || plan.semanticTarget || '',
-                            semantic_targets: plan.semantic_targets || plan.semanticTargets || [],
-                            target_query: plan.target_query || plan.targetQuery || plan.question || '',
-                            target_source: plan.target_source || plan.targetSource || '',
-                            preserve_current_view: plan.preserve_current_view === true
-                                || plan.preserveCurrentView === true,
+                            visual_purpose: captureSpec.visual_purpose || plan.visual_purpose || 'explain',
+                            analysis_required: captureSpec.analysis_required !== false,
+                            annotation_policy: captureSpec.annotation_policy || plan.annotation_policy || 'auto',
+                            request_intent: captureSpec.request_intent || captureSpec.requestIntent || plan.request_intent || plan.requestIntent || '',
+                            semantic_target: captureSpec.semantic_target || captureSpec.semanticTarget || plan.semantic_target || plan.semanticTarget || '',
+                            semantic_targets: captureSpec.semantic_targets || captureSpec.semanticTargets || plan.semantic_targets || plan.semanticTargets || [],
+                            target_query: captureSpec.target_query || captureSpec.targetQuery || plan.target_query || plan.targetQuery || plan.question || '',
+                            target_source: captureSpec.target_source || captureSpec.targetSource || plan.target_source || plan.targetSource || '',
+                            preserve_current_view: captureSpec.preserve_current_view === true
+                                || captureSpec.preserveCurrentView === true,
                             focus_result: captureSpec.__focusResult || null,
-                            temporary_reveal: !!restoreVisibility,
+                            temporary_reveal: restoreVisibility?.changed === true,
+                            temporary_camera_reframe: captureSpec.__focusResult?.camera_adjusted === true,
+                            appearance_preserved: viewTarget === 'viewer-3d',
                             grounding_manifest: groundingManifest,
                         },
                     ),
-                    visual_analysis: plan.analysis_required !== false,
-                    analysis_required: plan.analysis_required !== false,
-                    annotation_policy: plan.annotation_policy || 'auto',
-                    visual_purpose: plan.visual_purpose || 'explain',
-                    request_intent: plan.request_intent || plan.requestIntent || '',
-                    semantic_target: plan.semantic_target || plan.semanticTarget || '',
-                    semantic_targets: plan.semantic_targets || plan.semanticTargets || [],
-                    target_query: plan.target_query || plan.targetQuery || plan.question || '',
-                    target_source: plan.target_source || plan.targetSource || '',
-                    preserve_current_view: plan.preserve_current_view === true
-                        || plan.preserveCurrentView === true,
+                    visual_analysis: captureSpec.analysis_required !== false,
+                    analysis_required: captureSpec.analysis_required !== false,
+                    annotation_policy: captureSpec.annotation_policy || plan.annotation_policy || 'auto',
+                    visual_purpose: captureSpec.visual_purpose || plan.visual_purpose || 'explain',
+                    request_intent: captureSpec.request_intent || captureSpec.requestIntent || plan.request_intent || plan.requestIntent || '',
+                    semantic_target: captureSpec.semantic_target || captureSpec.semanticTarget || plan.semantic_target || plan.semanticTarget || '',
+                    semantic_targets: captureSpec.semantic_targets || captureSpec.semanticTargets || plan.semantic_targets || plan.semanticTargets || [],
+                    target_query: captureSpec.target_query || captureSpec.targetQuery || plan.target_query || plan.targetQuery || plan.question || '',
+                    target_source: captureSpec.target_source || captureSpec.targetSource || plan.target_source || plan.targetSource || '',
+                    preserve_current_view: captureSpec.preserve_current_view === true
+                        || captureSpec.preserveCurrentView === true,
                 },
             );
             const displayAttachment = await _annotateRequiredScreenshotBeforeDisplay(

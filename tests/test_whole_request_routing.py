@@ -358,7 +358,7 @@ def test_independent_visual_capture_failure_does_not_cancel_sibling_or_invent_lo
     grounded_response = ResponseStub()._build_multi_intent_response(
         message, evidence_steps, policy,
     )
-    assert "截图任务执行失败" in grounded_response
+    assert "导板的截图未能完成" in grounded_response
     assert "guide capture unavailable" in grounded_response
     assert "左侧" not in grounded_response and "颈部" not in grounded_response
 
@@ -390,7 +390,8 @@ def test_multi_intent_response_keeps_local_answers_and_never_invents_visual_find
     assert '\u5f53\u524d\u89c4\u5212\u7ed3\u679c' in answer
     assert '\u4ee3\u7801\u80fd\u529b' in answer
     assert '\u53ef\u4ee5\u534f\u52a9\u7f16\u5199' in answer
-    assert 'Viewer' not in answer and '\u9888\u90e8' not in answer
+    assert 'Viewer 中的位置' in answer
+    assert '\u9888\u90e8' not in answer and '\u5de6\u4fa7' not in answer
     assert '\\n' not in answer
 
 
@@ -417,5 +418,61 @@ def test_multi_intent_response_uses_status_tool_result_for_guide_status_clause()
         classify_local_turn(message),
     )
     assert status in answer
-    assert "没有建立与该目标对应的截图任务" in answer
+    assert "本轮没有取得导板的对应截图" in answer
     assert "未据此判断目标位置" not in answer
+
+
+def test_multi_intent_response_matches_nested_screenshot_plan_by_stable_ref(monkeypatch):
+    from types import SimpleNamespace
+    import agent_runtime.chat_workflows as workflows
+    from agent_runtime.chat_workflows import ChatWorkflowMixin
+
+    visual_request = {
+        "semantic_targets": ["surgical_guide"],
+        "target_refs": ["surgical_guide:active"],
+        "requires_discovery": False,
+        "ambiguous": False,
+    }
+    monkeypatch.setattr(
+        workflows,
+        "resolve_session_visual_location_request",
+        lambda *_args, **_kwargs: visual_request,
+    )
+
+    class Stub:
+        _response_language = ChatWorkflowMixin._response_language
+        _code_capability_response = ChatWorkflowMixin._code_capability_response
+        _build_multi_intent_response = ChatWorkflowMixin._build_multi_intent_response
+        _ui_state_snapshot = staticmethod(lambda: {"viewer": {"ct_loaded": True}})
+        memory = SimpleNamespace(user_lang="zh", conversation=[])
+        registry = None
+
+    policy = SimpleNamespace(
+        parsed_subtasks=(("session_visual_location_query", "导板在哪里？"),)
+    )
+    matching_step = {
+        "tool": "ui_screenshot",
+        "status": "done",
+        "params": {
+            "screenshot_command": {
+                "plan": {"target_refs": ["surgical_guide:active"]},
+            },
+        },
+    }
+    answer = Stub()._build_multi_intent_response(
+        "导板在哪里？", [matching_step], policy,
+    )
+    assert answer == "", "a completed matching capture is answered by its attached evidence"
+
+    conflicting_step = {
+        "tool": "ui_screenshot",
+        "status": "done",
+        "params": {
+            "target_refs": ["ctv:active"],
+            "semantic_targets": ["surgical_guide"],
+        },
+    }
+    answer = Stub()._build_multi_intent_response(
+        "导板在哪里？", [conflicting_step], policy,
+    )
+    assert "本轮没有取得导板的对应截图" in answer

@@ -93,7 +93,8 @@ def test_distinct_visual_screenshot_plans_are_serialized_and_have_unique_keys():
     assert "screenshotCaptureQueue.then(() =>" in chat
     assert "screenshotCaptureQueue = captureTask.then(" in chat
     assert "function _screenshotPlanIdentity(plan = {})" in ui_api
-    assert "_screenshotPlanIdentity(plan)" in ui_api
+    assert "_screenshotPlanIdentity(captureSpec)" in ui_api
+    assert "target_refs: _screenshotTargetRefs(captureSpec)" in ui_api
 
 
 def test_internal_screenshot_result_never_becomes_fallback_chat_text():

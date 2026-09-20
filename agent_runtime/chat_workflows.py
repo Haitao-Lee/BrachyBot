@@ -553,36 +553,65 @@ class ChatWorkflowMixin:
         conversation = getattr(getattr(self, "memory", None), "conversation", None)
 
         def matching_screenshot_step(visual_request):
+            def values(value):
+                if isinstance(value, (list, tuple, set)):
+                    return value
+                return () if value in (None, "") else (value,)
+
             expected_refs = {
                 str(ref or "").strip()
-                for ref in (visual_request.get("target_refs") or [])
+                for ref in values(visual_request.get("target_refs"))
                 if str(ref or "").strip()
             }
-            expected_query = re.sub(
-                r"\s+", " ",
-                str(visual_request.get("target_query") or "").strip(),
-            ).casefold()
+            expected_semantics = {
+                str(value or "").strip().casefold()
+                for value in values(visual_request.get("semantic_targets"))
+                if str(value or "").strip()
+            }
             for item in reversed(steps or []):
                 if item.get("tool") != "ui_screenshot":
                     continue
                 params = item.get("params") if isinstance(item.get("params"), Mapping) else {}
-                actual_refs = {
-                    str(ref or "").strip()
-                    for key in ("target_refs", "object_ids", "data_tree_node_ids")
-                    for ref in (
-                        params.get(key) if isinstance(params.get(key), (list, tuple))
-                        else [params.get(key)]
-                    )
-                    if str(ref or "").strip()
-                }
-                actual_query = re.sub(
-                    r"\s+", " ",
-                    str(params.get("target_query") or params.get("question") or "").strip(),
-                ).casefold()
-                if (
-                    expected_refs and actual_refs == expected_refs
-                    and expected_query and actual_query == expected_query
-                ):
+                candidates = []
+                pending = [params]
+                seen = set()
+                while pending:
+                    candidate = pending.pop()
+                    if not isinstance(candidate, Mapping) or id(candidate) in seen:
+                        continue
+                    seen.add(id(candidate))
+                    candidates.append(candidate)
+                    for key in (
+                        "screenshot_plan", "screenshotPlan", "plan",
+                        "screenshot_command", "screenshotCommand",
+                    ):
+                        nested = candidate.get(key)
+                        if isinstance(nested, Mapping):
+                            pending.append(nested)
+                actual_refs = set()
+                actual_semantics = set()
+                for candidate in candidates:
+                    for key in (
+                        "target_refs", "targetRefs", "object_ids", "objectIds",
+                        "data_tree_node_ids", "dataTreeNodeIds",
+                    ):
+                        actual_refs.update(
+                            str(ref or "").strip()
+                            for ref in values(candidate.get(key))
+                            if str(ref or "").strip()
+                        )
+                    for key in ("semantic_targets", "semanticTargets", "semantic_target", "semanticTarget"):
+                        actual_semantics.update(
+                            str(value or "").strip().casefold()
+                            for value in values(candidate.get(key))
+                            if str(value or "").strip()
+                        )
+                # Stable target identity survives per-clause screenshot plans.
+                refs_match = bool(expected_refs and expected_refs.issubset(actual_refs))
+                semantics_match = bool(expected_semantics & actual_semantics)
+                # A semantic-only match is acceptable only when the capture
+                # has no concrete identity that could contradict this clause.
+                if refs_match or (not actual_refs and semantics_match):
                     return item
             return None
 
@@ -642,22 +671,31 @@ class ChatWorkflowMixin:
                         # never treated as evidence itself.
                         visual_pending = True
                         continue
+                    semantic = next(iter(visual.get("semantic_targets") or []), "")
+                    target_label = {
+                        "surgical_guide": "导板" if is_zh else "the surgical guide",
+                        "ctv": "肿瘤（CTV）" if is_zh else "the tumor (CTV)",
+                        "oar": "危及器官" if is_zh else "the OAR",
+                        "seeds": "粒子" if is_zh else "the seeds",
+                        "needles": "针道" if is_zh else "the needles",
+                        "trajectories": "针道轨迹" if is_zh else "the trajectories",
+                    }.get(semantic, "这个对象" if is_zh else "this object")
                     if capture_step:
                         detail = str(
                             capture_step.get("result") or capture_step.get("content") or ""
                         ).strip()
                         body = (
-                            "对应截图任务执行失败，未据此判断目标位置。"
+                            f"{target_label}的截图未能完成，因此我不能根据本轮图片确认它的位置。"
                             + (f"原因：{detail[:500]}" if detail else "")
                             if is_zh else
-                            "The target-specific screenshot task failed; no location was inferred from it."
+                            f"The screenshot for {target_label} was not completed, so I cannot confirm its location from this turn's images."
                             + (f" Reason: {detail[:500]}" if detail else "")
                         )
                     else:
                         body = (
-                            "没有建立与该目标对应的截图任务，因此不对位置作判断。"
+                            f"本轮没有取得{target_label}的对应截图，所以我不会猜测它在 Viewer 中的位置。"
                             if is_zh else
-                            "No screenshot task was established for this target, so its location is not stated."
+                            f"I did not receive a matching screenshot of {target_label} in this turn, so I will not guess its Viewer location."
                         )
             else:
                 body = (
@@ -4090,6 +4128,7 @@ class ChatWorkflowMixin:
                 "assistant",
                 "Final Response",
                 "Preparing the reviewed response...",
+                phase="final_response",
                 status="pending",
             )
             yield yield_event("step", final_step)

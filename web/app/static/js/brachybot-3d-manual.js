@@ -5024,20 +5024,13 @@ function focusPlanningObjectsForScreenshot(objectIds, options = {}) {
         return null;
     }
     const wanted = new Set(objectIds.map(String));
-    const highlighted = new Set(
-        (Array.isArray(options.highlightObjectIds) && options.highlightObjectIds.length
-            ? options.highlightObjectIds
-            : objectIds
-        ).map(String)
-    );
     const entries = Object.entries(scene3D.meshes || {});
     const targets = entries.filter(([id, mesh]) =>
         mesh && _screenshot3DIdentityFor(id, mesh).some(identity => wanted.has(identity))
     );
     if (!targets.length) return null;
-    // Framing is allowed to move an offscreen camera, but it must never turn a
-    // hidden or unloaded object back on. Stale is only a freshness warning:
-    // an already-loaded visible mesh remains a truthful location target.
+    // Framing may move the camera, but object visibility, colors, opacity,
+    // scale, and surrounding scene content always remain as the user left them.
     const visibleTargets = targets.filter(([id, mesh]) =>
         _screenshot3DVisibility(id, mesh).locatable
     );
@@ -5053,65 +5046,10 @@ function focusPlanningObjectsForScreenshot(objectIds, options = {}) {
         aspect: scene3D.camera.aspect,
         fov: scene3D.camera.fov,
         zoom: scene3D.camera.zoom,
-        meshes: entries.map(([id, mesh]) => ({
-            id,
-            mesh,
-            visible: mesh?.visible,
-            scale: mesh?.scale?.clone?.() || null,
-            materials: [],
-        })),
     };
-    saved.meshes.forEach(meshState => {
-        const { id, mesh } = meshState;
-        if (!mesh) return;
-        const identities = _screenshot3DIdentityFor(id, mesh);
-        const isTarget = identities.some(identity => wanted.has(identity));
-        const isHighlighted = identities.some(identity => highlighted.has(identity));
-        if (options.hideUnrelated) mesh.visible = isTarget && meshState.visible !== false;
-        if (!isHighlighted || !isTarget || meshState.visible === false) return;
-        mesh.traverse?.(child => {
-            const materials = Array.isArray(child.material) ? child.material : [child.material];
-            materials.filter(Boolean).forEach(material => {
-                meshState.materials.push({
-                    material,
-                    color: material.color?.clone?.() || null,
-                    emissive: material.emissive?.clone?.() || null,
-                    emissiveIntensity: material.emissiveIntensity,
-                });
-                material.color?.set?.('#fff176');
-                material.emissive?.set?.('#ffb300');
-                if ('emissiveIntensity' in material) material.emissiveIntensity = 0.75;
-                material.needsUpdate = true;
-            });
-        });
-        mesh.scale?.multiplyScalar?.(1.2);
-    });
-
-    const restoreMeshPresentation = () => {
-        saved.meshes.forEach(meshState => {
-            const mesh = meshState.mesh;
-            if (!mesh) return;
-            mesh.visible = meshState.visible;
-            if (meshState.scale) mesh.scale.copy(meshState.scale);
-            meshState.materials.forEach(savedMaterial => {
-                if (savedMaterial.color) savedMaterial.material.color?.copy?.(savedMaterial.color);
-                if (savedMaterial.emissive) savedMaterial.material.emissive?.copy?.(savedMaterial.emissive);
-                if (savedMaterial.emissiveIntensity !== undefined) {
-                    savedMaterial.material.emissiveIntensity = savedMaterial.emissiveIntensity;
-                }
-                savedMaterial.material.needsUpdate = true;
-            });
-        });
-    };
-
     const box = new THREE.Box3();
     visibleTargets.forEach(([, mesh]) => box.expandByObject(mesh));
-    if (box.isEmpty()) {
-        // A malformed/empty target must not leave behind the temporary
-        // highlight, scale, or hide-unrelated presentation.
-        restoreMeshPresentation();
-        return null;
-    }
+    if (box.isEmpty()) return null;
     const center = box.getCenter(new THREE.Vector3());
     const viewDirection = scene3D.camera.position.clone().sub(scene3D.controls.target);
     if (viewDirection.lengthSq() < 1e-8) viewDirection.set(0, 0, 1);
@@ -5129,24 +5067,24 @@ function focusPlanningObjectsForScreenshot(objectIds, options = {}) {
         THREE.MathUtils.degToRad(3),
         Math.min(verticalHalfFov, horizontalHalfFov),
     );
-    // Fitting the bounding sphere to the limiting FOV gives a deterministic
-    // first pose even for a long oblique needle or a portrait viewer.  The
-    // old max-dimension multiplier could leave an object tiny or clipped when
-    // the canvas aspect changed between captures.
     let distance = Math.max(
         radius * 1.05,
         (radius / Math.sin(limitingHalfFov)) * (1 + padding * 0.45),
     );
-    const applyPose = () => sync3DCameraPose({
-        position: center.clone().add(viewDirection.clone().multiplyScalar(distance)),
-        target: center,
-        up: saved.up,
-        near: Math.max(0.05, distance / 1000),
-        far: Math.max(saved.far, distance * 20),
-        aspect: saved.aspect,
-        fov: saved.fov,
-        zoom: saved.zoom,
-    });
+    let cameraAdjusted = false;
+    const applyPose = () => {
+        cameraAdjusted = true;
+        sync3DCameraPose({
+            position: center.clone().add(viewDirection.clone().multiplyScalar(distance)),
+            target: center,
+            up: saved.up,
+            near: Math.max(0.05, distance / 1000),
+            far: Math.max(saved.far, distance * 20),
+            aspect: saved.aspect,
+            fov: saved.fov,
+            zoom: saved.zoom,
+        });
+    };
     let bounds = null;
     let verified = false;
     let attempts = 0;
@@ -5178,7 +5116,6 @@ function focusPlanningObjectsForScreenshot(objectIds, options = {}) {
     if (scene3D.requestRender) scene3D.requestRender(3);
 
     const restore = () => {
-        restoreMeshPresentation();
         sync3DCameraPose({
             position: saved.position,
             target: saved.target,
@@ -5190,6 +5127,7 @@ function focusPlanningObjectsForScreenshot(objectIds, options = {}) {
             fov: saved.fov,
             zoom: saved.zoom,
         });
+        if (scene3D.requestRender) scene3D.requestRender(3);
     };
     restore.focusResult = {
         version: 1,
@@ -5200,7 +5138,10 @@ function focusPlanningObjectsForScreenshot(objectIds, options = {}) {
         matched_object_ids: visibleTargets.map(([id]) => String(id)),
         normalized_bounds: bounds,
         attempts: Math.min(attempts + 1, 5),
-        occlusion_control: options.hideUnrelated ? 'target-isolated' : 'context-preserved',
+        scene_presentation: 'preserved',
+        appearance_preserved: true,
+        context_preserved: true,
+        camera_adjusted: cameraAdjusted,
         camera_restored_after_capture: true,
     };
     return restore;
