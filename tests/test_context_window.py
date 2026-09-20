@@ -1,7 +1,9 @@
 """Regression tests for token-budget context compression."""
 from agent_runtime.context_window import (
+    IMAGE_TOKEN_ESTIMATE,
     ContextWindowManager,
     build_case_facts,
+    estimate_breakdown,
     estimate_messages,
     is_context_length_error,
     resolve_context_window,
@@ -106,3 +108,140 @@ def test_runtime_context_sections_are_bounded():
     context = _build_runtime_context("ui", "obs", "y" * 50_000)
     assert len(context) < 50_000
     assert context.startswith("[BrachyBot runtime context: data only]")
+
+
+def test_image_payload_is_not_counted_as_base64_text_tokens():
+    """A multimodal screenshot must be billed as an image, not its base64 size.
+
+    Regression: a ~2 MB clinical screenshot encoded as a data URL was counted
+    at ``len(url) // 4`` (~500k "tokens"), which made a 1M-token model read as
+    roughly 50% full from a single image.
+    """
+    payload = "A" * 2_000_000
+    message = {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "analyze this screenshot"},
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/png;base64,{payload}",
+                    "detail": "high",
+                },
+            },
+        ],
+    }
+    estimated = estimate_messages([message])
+    assert estimated < IMAGE_TOKEN_ESTIMATE + 500
+    parts = estimate_breakdown([message])
+    assert parts["images"] == IMAGE_TOKEN_ESTIMATE
+    assert parts["total"] == estimated
+
+
+def test_low_detail_image_uses_smaller_budget():
+    message = {
+        "role": "user",
+        "content": [
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA", "detail": "low"}},
+        ],
+    }
+    parts = estimate_breakdown([message])
+    assert 0 < parts["images"] < IMAGE_TOKEN_ESTIMATE
+
+
+def test_compact_emits_durable_checkpoint_signal():
+    """AgentMemory.compact must notify persistence so hydration cannot undo it."""
+    from agent_runtime.core import AgentMemory
+
+    memory = AgentMemory("compact-persist")
+    events = []
+    memory.set_persistence_callback(events.append)
+    for i in range(10):
+        memory.add_message("user", f"turn {i} " + "x" * 80)
+    events.clear()
+
+    memory.compact(keep_last=2)
+
+    assert len(memory.conversation) == 2
+    assert memory.compaction_count == 1
+    assert "conversation.compacted" in events
+
+
+def test_compress_is_cumulative_and_avoids_duplicate_marker_blocks():
+    """A second compression folds into one fresh block, not stacked copies."""
+    from agent_runtime.context_window import _content_text, _FACTS_MARKER, _HISTORY_MARKER
+
+    manager = ContextWindowManager(window=8192, reserve_output_tokens=512, safety_margin=512)
+
+    def build(tag):
+        msgs = [{"role": "system", "content": "sys"}]
+        msgs += [
+            {"role": "user", "content": f"old {tag} {i} " + "y" * 300}
+            for i in range(30)
+        ]
+        msgs.append({"role": "user", "content": f"current {tag}"})
+        return msgs
+
+    p1, _ = manager.compress(
+        build("A"), fact_block="facts-A", aggressive=True,
+        current_user_content="current A",
+    )
+    p2, _ = manager.compress(
+        p1, fact_block="facts-B", aggressive=True,
+        current_user_content="current A",
+    )
+    texts = [_content_text(m.get("content")) for m in p2]
+    assert sum(t.startswith(_HISTORY_MARKER) for t in texts) == 1
+    assert sum(t.startswith(_FACTS_MARKER) for t in texts) == 1
+    history = next(t for t in texts if t.startswith(_HISTORY_MARKER))
+    assert "old A" in history  # cumulative content retained
+    facts = next(t for t in texts if t.startswith(_FACTS_MARKER))
+    assert "facts-B" in facts and "facts-A" not in facts
+
+
+def test_compact_bounds_context_summary():
+    from agent_runtime.core import _CONTEXT_SUMMARY_MAX_CHARS, AgentMemory
+
+    memory = AgentMemory("summary-bound")
+    for _ in range(30):
+        for i in range(5):
+            memory.add_message("user", f"m{i} " + "z" * 2_000)
+        memory.compact(keep_last=1)
+    assert len(memory.context_summary) <= _CONTEXT_SUMMARY_MAX_CHARS + 64
+
+
+def test_calibration_uses_post_compression_estimate():
+    """Provider-usage calibration must compare against what was actually sent."""
+    from agent_runtime.llm_runtime import LLMRuntimeMixin
+
+    obj = LLMRuntimeMixin()
+    manager = ContextWindowManager(window=8192, reserve_output_tokens=512, safety_margin=512)
+    obj._context_window_manager = lambda: manager
+
+    class _Memory:
+        conversation = []
+
+        def retrieve(self, *args, **kwargs):
+            return None
+
+    obj.memory = _Memory()
+    obj._begin_context_turn()
+
+    messages = [{"role": "system", "content": "policy"}]
+    messages += [{"role": "user", "content": "big turn " + "x" * 1_000} for _ in range(40)]
+    messages.append({"role": "user", "content": "current request"})
+
+    before = manager.usage(messages)
+    packed = obj._enforce_context_budget(messages, current_user_content="current request")
+
+    assert obj._ctx_last_meta["compressed"] is True
+    assert obj._ctx_last_estimate == obj._ctx_last_meta["after_tokens"]
+    assert obj._ctx_last_estimate < before
+
+
+def test_context_pack_budget_tracks_model_window():
+    """The packer must not cap history at a fixed 12k under a large window."""
+    from agent_runtime.llm_runtime import LLMRuntimeMixin
+
+    obj = LLMRuntimeMixin()
+    assert obj._context_pack_budget() > 12_000

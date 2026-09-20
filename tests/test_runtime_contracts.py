@@ -66,6 +66,24 @@ def test_context_pack_keeps_multimodal_current_turn_and_safe_tool_evidence():
     assert manifest["strategy"] == "portable_structured_budget_v1"
 
 
+def test_context_pack_bills_images_as_images_not_base64_text():
+    """A screenshot must not be counted by its base64 transport length."""
+    from agent_runtime.context_window import IMAGE_TOKEN_ESTIMATE
+
+    builder = ContextPackBuilder(max_tokens=12_000, reserve_output_tokens=2_000)
+    image_message = {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "assess"},
+            {
+                "type": "image_url",
+                "image_url": {"url": "data:image/png;base64," + "A" * 2_000_000},
+            },
+        ],
+    }
+    assert builder._message_tokens(image_message) < IMAGE_TOKEN_ESTIMATE + 100
+
+
 def test_gateway_requires_schema_fields_and_reuses_only_idempotent_read_tool():
     ledger = RunLedger()
     ledger.begin("find evidence")
@@ -594,7 +612,7 @@ def test_viewer_script_dependency_contract_is_cache_busted_and_syntax_safe():
     # failure as a missing global helper.
     ui_api_versions = re.findall(r'brachybot-ui-api\.js\?v=(\d+)', index)
     assert len(ui_api_versions) == 1 and int(ui_api_versions[0]) >= 1
-    assert 'brachybot-3d-manual.js?v=104' in index
+    assert 'brachybot-3d-manual.js?v=105' in index
     assert "window._normalizeTrajectoryId = function _normalizeTrajectoryId" in ui_api
 
     # This exact malformed expression previously prevented the entire 3D

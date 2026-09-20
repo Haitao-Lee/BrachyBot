@@ -7241,7 +7241,7 @@ def register_planning_routes(
         try:
             _store, _owner, session_id = request_case_context()
         except WorkspaceError:
-            return None, None
+            return None, None, None, None
         agent = None
         if callable(get_cached_agent):
             agent = get_cached_agent(session_id)
@@ -7250,14 +7250,14 @@ def register_planning_routes(
                 agent = get_agent(session_id)
             except TypeError:
                 agent = get_agent()
-        return agent, session_id
+        return agent, session_id, _store, _owner
 
     @app.route("/api/chat/context", methods=["GET"])
     @require_api_key
     @rate_limit
     def api_chat_context():
         """Expose the current provider context usage for the context indicator."""
-        agent, session_id = _chat_agent_for_context()
+        agent, session_id, _store, _owner = _chat_agent_for_context()
         status = {}
         status_fn = getattr(agent, "context_status", None) if agent is not None else None
         if callable(status_fn):
@@ -7273,7 +7273,7 @@ def register_planning_routes(
     def api_chat_context_compress():
         """Force a context compression (manual user command / button)."""
         data = request.get_json(silent=True) or {}
-        agent, session_id = _chat_agent_for_context()
+        agent, session_id, _store, _owner = _chat_agent_for_context()
         if agent is None:
             return jsonify({"success": False, "error": "Agent not available"}), 404
         compress_fn = getattr(agent, "compress_context_now", None)
@@ -7284,6 +7284,24 @@ def register_planning_routes(
         except Exception as exc:
             logger.warning("Manual context compression failed: %s", exc, exc_info=True)
             return jsonify({"success": False, "error": "Compression failed"}), 500
+        # Compaction only mutates in-memory conversation/summary.  Flush a
+        # durable checkpoint synchronously so a later hydration or restart
+        # cannot restore the pre-compression conversation.
+        persisted = False
+        try:
+            owner_id = _owner.get("id") if hasattr(_owner, "get") else _owner
+            if _store is not None and owner_id:
+                _store.flush_agent_checkpoint(
+                    owner_id,
+                    session_id,
+                    agent,
+                    reason="context.manual_compress",
+                )
+                persisted = True
+        except Exception:
+            logger.warning(
+                "Manual context compression checkpoint failed", exc_info=True
+            )
         status = {}
         status_fn = getattr(agent, "context_status", None)
         if callable(status_fn):
@@ -7296,6 +7314,7 @@ def register_planning_routes(
             "session_id": session_id,
             "compression": result,
             "context": status,
+            "persisted": persisted,
         })
 
     @app.route("/api/chat", methods=["POST"])

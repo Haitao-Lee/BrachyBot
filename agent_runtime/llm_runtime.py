@@ -33,6 +33,9 @@ from agent_runtime.context_window import (
     DEFAULT_RESERVE_OUTPUT_TOKENS,
     ContextWindowManager,
     build_case_facts,
+    estimate_breakdown,
+    estimate_messages,
+    estimate_text,
     is_context_length_error,
     resolve_context_window,
 )
@@ -643,6 +646,16 @@ class LLMRuntimeMixin:
         ledger = getattr(self, "run_ledger", None)
         if packer is None:
             return messages
+        budget = self._context_pack_budget()
+        if budget > 0:
+            # Size the packer to the model window instead of a fixed small
+            # constant.  A fixed budget silently capped history far below a
+            # large window and left the window manager dormant.
+            try:
+                packer.max_tokens = budget
+                packer.reserve_output_tokens = 0
+            except Exception:
+                logger.debug("Unable to resize context packer", exc_info=True)
         # The current message can be multimodal. Reusing its exact content
         # avoids silently replacing an image-bearing request with plain text.
         current_content = next(
@@ -660,11 +673,34 @@ class LLMRuntimeMixin:
         return packed
 
     # -- context-window management -----------------------------------------
+    def _context_pack_budget(self) -> int:
+        """History budget for the portable packer, derived from the model window.
+
+        The window manager owns the real limit; the packer is a structural
+        safety net (it converts orphaned tool messages and records a manifest).
+        Sizing it to the same usable budget keeps a large model window usable
+        while still bounding pathological prompts.  An explicit
+        ``agent_runtime.max_context_tokens`` still wins for operators who want a
+        tighter cap.
+        """
+        config = getattr(self, "config", {}) or {}
+        runtime_cfg = config.get("agent_runtime", {}) if isinstance(config, dict) else {}
+        explicit = runtime_cfg.get("max_context_tokens")
+        if explicit:
+            try:
+                value = int(explicit)
+                if value > 0:
+                    return value
+            except (TypeError, ValueError):
+                pass
+        try:
+            manager = self._context_window_manager()
+        except Exception:
+            return 0
+        return max(2_000, int(manager.target_tokens))
+
     def _context_window_manager(self) -> ContextWindowManager:
         """Return the per-agent window manager (model window + calibration)."""
-        manager = getattr(self, "_ctx_window_manager_cache", None)
-        if manager is not None:
-            return manager
         declared = 0
         model = ""
         try:
@@ -688,12 +724,19 @@ class LLMRuntimeMixin:
             runtime_cfg.get("reserve_output_tokens", DEFAULT_RESERVE_OUTPUT_TOKENS)
             or DEFAULT_RESERVE_OUTPUT_TOKENS
         )
+        # Rebuild when the resolved model window or tuning changes so a
+        # provider/model switch cannot keep a stale window or trigger ratio.
+        signature = (model, declared, ratio, reserve)
+        manager = getattr(self, "_ctx_window_manager_cache", None)
+        if manager is not None and getattr(self, "_ctx_window_manager_sig", None) == signature:
+            return manager
         manager = ContextWindowManager(
             window=resolve_context_window(model, declared),
             trigger_ratio=ratio,
             reserve_output_tokens=reserve,
         )
         self._ctx_window_manager_cache = manager
+        self._ctx_window_manager_sig = signature
         return manager
 
     def _begin_context_turn(self) -> None:
@@ -701,6 +744,7 @@ class LLMRuntimeMixin:
         self._ctx_retry_used = False
         self._ctx_last_meta = None
         self._ctx_last_estimate = 0
+        self._ctx_last_components = None
 
     def _enforce_context_budget(
         self,
@@ -721,6 +765,8 @@ class LLMRuntimeMixin:
             return messages
         estimated = manager.usage(messages, tools)
         self._ctx_last_estimate = estimated
+        components = estimate_breakdown(messages, tools)
+        self._ctx_last_components = components
         if not aggressive and estimated < manager.trigger_tokens:
             self._ctx_last_meta = manager.snapshot(messages, tools)
             return messages
@@ -733,14 +779,31 @@ class LLMRuntimeMixin:
                 tools=tools,
                 current_user_content=current_user_content,
             )
+            after_components = estimate_breakdown(packed, tools)
+            self._ctx_last_components = after_components
+            # Calibrate against what was actually sent, not the pre-compression
+            # estimate.  Leaving the pre value made the provider-usage EMA read
+            # a large compression as a gross over-estimate and drift low.
+            self._ctx_last_estimate = meta.after_tokens
             logger.warning(
                 "Context window compression: window=%s before=%s after=%s "
-                "ratio_before=%.3f ratio_after=%.3f folds=%s passes=%s reason=%s",
+                "ratio_before=%.3f ratio_after=%.3f folds=%s passes=%s reason=%s "
+                "components_before=%s components_after=%s",
                 meta.window, meta.before_tokens, meta.after_tokens,
                 meta.ratio_before, meta.ratio_after, meta.folded_messages,
                 meta.passes, meta.reason or "",
+                components, after_components,
             )
             self._ctx_last_meta = meta.as_dict()
+            if meta.after_tokens > meta.window:
+                # No further reduction is possible (usually an oversized system
+                # prompt or tool schema).  Surface it loudly instead of sending
+                # a request that the provider will reject.
+                logger.error(
+                    "Context still exceeds the model window after compression: "
+                    "after=%s window=%s components=%s",
+                    meta.after_tokens, meta.window, after_components,
+                )
             return packed
         except Exception:
             logger.warning("Context compression failed; sending original messages", exc_info=True)
@@ -774,21 +837,48 @@ class LLMRuntimeMixin:
             status.setdefault("target_tokens", manager.target_tokens)
             status.setdefault("trigger_tokens", manager.trigger_tokens)
             status.setdefault("trigger_ratio", manager.trigger_ratio)
+        components = getattr(self, "_ctx_last_components", None)
+        if isinstance(components, dict):
+            status["components"] = dict(components)
         return status
 
     def compress_context_now(self, aggressive: bool = True) -> Dict[str, Any]:
-        """Manual/forced compression entry point (never calls the LLM)."""
+        """Manual/forced compression entry point (never calls the LLM).
+
+        This folds older conversation turns into the extractive summary and
+        immediately schedules a durable checkpoint, so a later hydration or
+        server restart cannot resurrect the pre-compression conversation.
+        """
         before = self.context_status()
+        conversation_before = estimate_messages(
+            getattr(self.memory, "conversation", []) or []
+        )
+        summary_before = str(getattr(self.memory, "context_summary", "") or "")
         try:
             self.memory.compact(keep_last=2)
         except Exception:
-            pass
+            logger.warning("Manual context compaction failed", exc_info=True)
+        conversation_after = estimate_messages(
+            getattr(self.memory, "conversation", []) or []
+        )
+        summary_after = str(getattr(self.memory, "context_summary", "") or "")
         self._begin_context_turn()
         meta = getattr(self, "_ctx_last_meta", None)
         result = dict(meta) if isinstance(meta, dict) else {}
         result.setdefault("compressed", True)
         result["previous"] = before
         result["manual"] = True
+        result["conversation_tokens_before"] = conversation_before + estimate_text(summary_before)
+        result["conversation_tokens_after"] = conversation_after + estimate_text(summary_after)
+        logger.warning(
+            "Manual context compression: conversation_tokens %s -> %s "
+            "(messages=%s, summary_chars %s -> %s)",
+            result["conversation_tokens_before"],
+            result["conversation_tokens_after"],
+            len(getattr(self.memory, "conversation", []) or []),
+            len(summary_before),
+            len(summary_after),
+        )
         return result
 
     def _run_llm_function_calling(self, message: str, steps: List[Dict], step_id_ref: List[int]) -> str:

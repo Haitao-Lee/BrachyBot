@@ -14,6 +14,10 @@ from utils.user_errors import format_tool_error, normalize_metadata
 
 logger = logging.getLogger(__name__)
 
+# Cumulative conversation summary cap (characters).  Keeps a long session from
+# growing the folded summary without bound while retaining the newest content.
+_CONTEXT_SUMMARY_MAX_CHARS = 20_000
+
 
 def resolve_reference_direction_input(
     planning_state: Optional[Dict] = None,
@@ -664,6 +668,13 @@ class AgentMemory:
                 self.context_summary += "\n" + "\n".join(summary_parts)
             else:
                 self.context_summary = "Previous conversation summary:\n" + "\n".join(summary_parts)
+            # The summary is cumulative and was previously unbounded, so a long
+            # session could grow it forever.  Keep the most recent tail.
+            if len(self.context_summary) > _CONTEXT_SUMMARY_MAX_CHARS:
+                self.context_summary = (
+                    "[earlier conversation summary truncated]\n"
+                    + self.context_summary[-_CONTEXT_SUMMARY_MAX_CHARS:]
+                )
             self._clean_context_cache_key = None
 
             self.conversation = self.conversation[-keep_last:]
@@ -681,7 +692,13 @@ class AgentMemory:
                         del smart_messages[:-keep_last]
                 except Exception:
                     pass
-            return self.context_summary
+            compacted_summary = self.context_summary
+        # Persist the folded conversation.  Without this the in-memory
+        # compaction is invisible to the workspace checkpoint, so a later
+        # hydration (or restart) reloads the pre-compaction conversation and
+        # the provider prompt is rebuilt at full size on the next turn.
+        self._notify_persistence("conversation.compacted")
+        return compacted_summary
 
     def clear_conversation(self):
         """Clear conversation history and context summary for fresh start."""

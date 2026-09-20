@@ -19,6 +19,7 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from tool_factory import ToolResult
 from utils.cancellation import OperationCancelled
+from agent_runtime.context_window import IMAGE_TOKEN_ESTIMATE
 
 
 class RunStatus(str, Enum):
@@ -227,7 +228,21 @@ class ContextPackBuilder:
     def _message_tokens(message: Mapping[str, Any]) -> int:
         content = message.get("content")
         if isinstance(content, list):
-            return sum(_estimate_tokens(str(item)) for item in content)
+            total = 0
+            for item in content:
+                if isinstance(item, Mapping) and (
+                    item.get("type") == "image_url" or "image_url" in item
+                ):
+                    # Multimodal content is billed as an image by the provider.
+                    # Counting its base64 transport string as text inflated a
+                    # single screenshot to hundreds of thousands of tokens and
+                    # defeated the pack budget; charge a flat image budget.
+                    total += IMAGE_TOKEN_ESTIMATE
+                elif isinstance(item, Mapping):
+                    total += _estimate_tokens(item.get("text", ""))
+                else:
+                    total += _estimate_tokens(item)
+            return total
         return _estimate_tokens(str(content or ""))
 
     @staticmethod

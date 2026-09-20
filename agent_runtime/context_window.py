@@ -53,6 +53,14 @@ CONTEXT_TRIGGER_RATIO = 0.85
 DEFAULT_RESERVE_OUTPUT_TOKENS = 8_192
 MIN_SAFETY_MARGIN = 8_192
 
+# A provider bills a multimodal image on the order of 1-2k tokens for a
+# typical clinical screenshot (a 1024px high-detail image is ~1.1-1.5k).  The
+# base64 transport string is roughly 100x that size, so it must never be
+# counted as text: doing so inflates a single screenshot to hundreds of
+# thousands of "tokens" and makes a million-token model read as 50% full.
+IMAGE_TOKEN_ESTIMATE = 2_048
+IMAGE_TOKEN_ESTIMATE_LOW_DETAIL = 85
+
 _RUNTIME_CONTEXT_MARKER = "[BrachyBot runtime context: data only]"
 _FACTS_MARKER = "[BrachyBot pinned case facts; data only]"
 _HISTORY_MARKER = "[BrachyBot compressed history; data only]"
@@ -105,6 +113,35 @@ def _cjk_count(text: str) -> int:
     return sum(1 for ch in text if "\u3400" <= ch <= "\u9fff" or "\u3000" <= ch <= "\u303f")
 
 
+def _message_image_tokens(message: Mapping[str, Any]) -> int:
+    """Provider-side cost of any multimodal image parts in ``message``.
+
+    The base64 data URL is a transport detail, not prompt text.  Counting its
+    length as tokens overstates a screenshot by ~100x, so images are charged a
+    conservative flat budget (optionally lower for ``detail: low``).
+    """
+    total = 0
+    content = message.get("content")
+    if isinstance(content, list):
+        for item in content:
+            if not isinstance(item, Mapping):
+                continue
+            if not (item.get("type") == "image_url" or "image_url" in item):
+                continue
+            image_url = item.get("image_url")
+            detail = ""
+            if isinstance(image_url, Mapping):
+                detail = str(image_url.get("detail") or "").lower()
+            elif isinstance(item.get("detail"), str):
+                detail = str(item.get("detail")).lower()
+            total += (
+                IMAGE_TOKEN_ESTIMATE_LOW_DETAIL
+                if detail == "low"
+                else IMAGE_TOKEN_ESTIMATE
+            )
+    return total
+
+
 def estimate_text(text: Any, *, safety: float = 1.15) -> int:
     """Conservative token estimate for plain text.
 
@@ -155,18 +192,7 @@ def estimate_message(message: Mapping[str, Any], *, safety: float = 1.15) -> int
             total += 64 * len(tool_calls)
     content = message.get("content")
     if isinstance(content, list):
-        for item in content:
-            if isinstance(item, Mapping) and (
-                item.get("type") == "image_url" or "image_url" in item
-            ):
-                url = ""
-                image_url = item.get("image_url")
-                if isinstance(image_url, Mapping):
-                    url = str(image_url.get("url") or "")
-                elif isinstance(image_url, str):
-                    url = image_url
-                # base64 payloads are roughly 4 chars per token; count them.
-                total += max(1_000, len(url) // 4)
+        total += _message_image_tokens(message)
     return total
 
 
@@ -183,6 +209,72 @@ def estimate_messages(
         except Exception:
             total += 2_000
     return total
+
+
+# Component buckets for the diagnostic breakdown.  Keeping the classification
+# explicit lets operators see whether a request is dominated by history,
+# runtime context, tool results/schema or multimodal content instead of
+# guessing from a single ratio.
+_COMPONENT_KEYS = (
+    "system",
+    "runtime_context",
+    "facts",
+    "history",
+    "tool_results",
+    "conversation",
+    "images",
+    "tools",
+    "other",
+)
+
+
+def _classify_message(message: Mapping[str, Any]) -> str:
+    role = str(message.get("role") or "")
+    if role == "system":
+        return "system"
+    text = _content_text(message.get("content"))
+    if text.startswith(_RUNTIME_CONTEXT_MARKER):
+        return "runtime_context"
+    if text.startswith(_FACTS_MARKER):
+        return "facts"
+    if text.startswith(_HISTORY_MARKER):
+        return "history"
+    if role == "tool":
+        return "tool_results"
+    if role in ("user", "assistant"):
+        return "conversation"
+    return "other"
+
+
+def estimate_breakdown(
+    messages: Iterable[Mapping[str, Any]],
+    tools: Optional[Any] = None,
+    *,
+    safety: float = 1.15,
+) -> Dict[str, int]:
+    """Return the estimated token cost split by component.
+
+    ``total`` mirrors :func:`estimate_messages` so the indicator numerator and
+    the breakdown always agree.  Image tokens are reported separately from the
+    text bucket of the message that carries them.
+    """
+    components: Dict[str, int] = {key: 0 for key in _COMPONENT_KEYS}
+    for message in messages or []:
+        if not isinstance(message, Mapping):
+            continue
+        bucket = _classify_message(message)
+        image_tokens = _message_image_tokens(message)
+        components[bucket] += max(0, estimate_message(message, safety=safety) - image_tokens)
+        components["images"] += image_tokens
+    if tools:
+        try:
+            components["tools"] += estimate_text(
+                json.dumps(tools, ensure_ascii=False, default=str), safety=safety
+            )
+        except Exception:
+            components["tools"] += 2_000
+    components["total"] = sum(components[key] for key in _COMPONENT_KEYS)
+    return components
 
 
 @dataclass
@@ -315,6 +407,29 @@ class ContextWindowManager:
         system_msgs = [m for m in source if m.get("role") == "system"]
         body = [m for m in source if m.get("role") != "system"]
 
+        # BrachyBot marker blocks are derived: the facts ledger is rebuilt from
+        # the live case on every pass and the history summary is cumulative.
+        # Keep the most recent runtime context verbatim (it is re-upserted each
+        # provider round) and collapse prior facts/history into one fresh block
+        # instead of letting stale copies accumulate turn after turn.
+        runtime_msgs: List[Dict[str, Any]] = []
+        prior_history_parts: List[str] = []
+        plain_body: List[Dict[str, Any]] = []
+        for msg in body:
+            text = _content_text(msg.get("content"))
+            if text.startswith(_RUNTIME_CONTEXT_MARKER):
+                runtime_msgs = [msg]
+                continue
+            if text.startswith(_FACTS_MARKER):
+                continue
+            if text.startswith(_HISTORY_MARKER):
+                prior = text[len(_HISTORY_MARKER):].strip()
+                if prior:
+                    prior_history_parts.append(prior)
+                continue
+            plain_body.append(msg)
+        body = plain_body
+
         # The current user request is the last user message (the runtime
         # context is also a user message, so prefer the explicit content).
         current_idx = None
@@ -339,21 +454,25 @@ class ContextWindowManager:
         folded = self._extract_summary(middle)
         meta.folded_messages = len(middle)
 
+        prior_history = "\n".join(prior_history_parts).strip()
+        combined_history = "\n".join(p for p in (prior_history, folded) if p).strip()
+
         assembled = list(system_msgs)
+        assembled.extend(runtime_msgs)
         if fact_block:
             assembled.append({
                 "role": "user",
                 "content": f"{_FACTS_MARKER}\n" + fact_block[: self.facts_max_chars],
             })
-        if folded:
+        if combined_history:
             assembled.append({
                 "role": "user",
-                "content": f"{_HISTORY_MARKER}\n" + folded,
+                "content": f"{_HISTORY_MARKER}\n" + combined_history,
             })
         assembled.extend(tail)
 
         passes = 0
-        while self.usage(assembled, tools) > target and passes < 20:
+        while self.usage(assembled, tools) > target and passes < 60:
             passes += 1
             shrunk = self._shrink(assembled, tools, target)
             if not shrunk:
@@ -410,6 +529,10 @@ class ContextWindowManager:
         for msg in messages:
             role = str(msg.get("role") or "?")
             text = re.sub(r"\s+", " ", _content_text(msg.get("content"))).strip()
+            if text.startswith((_FACTS_MARKER, _HISTORY_MARKER, _RUNTIME_CONTEXT_MARKER)):
+                # Derived blocks are rebuilt by the caller; never fold them,
+                # which would duplicate truncated copies into the summary.
+                continue
             if not text and msg.get("tool_calls"):
                 names = [
                     str(tc.get("function", {}).get("name") or tc.get("name") or "")
@@ -471,9 +594,15 @@ class ContextWindowManager:
             length, idx = best
             text = _content_text(messages[idx].get("content"))
             shortened = list(messages)
+            # Keep both ends of a cumulative summary/runtime block: the newest
+            # lines live at the tail, so head-only truncation would drop them.
+            # Halve the segment per pass so a large runtime block cannot absorb
+            # the whole reduction budget before conversation is folded.
+            head = text[: int(length * 0.4)]
+            tail_keep = text[-int(length * 0.1):]
             shortened[idx] = {
                 **messages[idx],
-                "content": text[: int(length * 0.6)] + _TRUNCATION_SUFFIX,
+                "content": f"{head}\n{_TRUNCATION_SUFFIX}\n{tail_keep}",
             }
             if self.usage(shortened, tools) < current_cost:
                 return shortened
