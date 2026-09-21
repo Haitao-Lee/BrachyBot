@@ -1991,6 +1991,12 @@ class ChatWorkflowMixin:
         packet["artifact_status"] = self._local_fact_scalar(
             artifact_status if isinstance(artifact_status, dict) else {}
         )
+        monitor_edit = self._local_memory_value('monitor_last_edit')
+        if isinstance(monitor_edit, dict):
+            current_id = self._local_memory_value('active_planning_id') or self._local_memory_value('planning_run_id')
+            current_version = self._local_memory_value('manual_plan_version', 0)
+            if monitor_edit.get('planning_id') == current_id and monitor_edit.get('version') == current_version:
+                packet['monitor_edit_evidence'] = self._local_fact_scalar(monitor_edit)
         if intent == "case_state_question":
             history = self._planning_history_fact_rows()
             packet["planning_history"] = history

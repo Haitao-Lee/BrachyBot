@@ -447,6 +447,8 @@ def _close_stale_training_snapshot(
     now = time.time()
     old_run_id = str(snapshot.get("run_id") or snapshot.get("runId") or "").strip()
     snapshot["active"] = False
+    for key in ('pending_restore', 'dose_baseline', 'dose_baseline_expected', 'dose_baseline_edit_count'):
+        snapshot.pop(key, None)
     snapshot["phase"] = "inactive"
     snapshot["run_id"] = None
     snapshot["last_run_id"] = old_run_id or snapshot.get("last_run_id")
@@ -805,7 +807,7 @@ def _manual_canonical_trajectory_id(*values: Any) -> str:
     return ""
 
 
-def _seed_interference_report(agent, seeds, needles) -> Dict[str, Any]:
+def _seed_interference_report(agent, seeds, needles, *, focus_ids=None, max_pairs=50) -> Dict[str, Any]:
     """Check finite seed cylinders for overlap or unsafe surface clearance.
 
     The monitor and the manual-edit transaction must use the same physical
@@ -916,9 +918,12 @@ def _seed_interference_report(agent, seeds, needles) -> Dict[str, Any]:
         })
 
     threshold_mm = 2.0 * seed_radius_mm + seed_clearance_mm
+    focused_ids = set(focus_ids) if focus_ids is not None else None
     close_pairs = []
     for left_index, left in enumerate(entries):
         for right in entries[left_index + 1:]:
+            if focused_ids is not None and not ({left['id'], right['id']} & focused_ids):
+                continue
             axis_distance = _segment_segment_distance(
                 left["start"], left["end"], right["start"], right["end"],
             )
@@ -948,7 +953,9 @@ def _seed_interference_report(agent, seeds, needles) -> Dict[str, Any]:
         "seed_radius_mm": seed_radius_mm,
         "minimum_clearance_mm": seed_clearance_mm,
         "seed_count": len(entries),
-        "close_pairs": close_pairs[:50],
+        "close_pair_count": len(close_pairs),
+        "overlap_count": sum(pair["risk"] == "overlap" for pair in close_pairs),
+        "close_pairs": close_pairs if max_pairs is None else close_pairs[:max_pairs],
     }
 
 
@@ -1062,14 +1069,16 @@ def _latest_plan_snapshot(
     # Prefer the explicit manual/baseline snapshot. It is the same world-mm
     # representation used by the viewer, so monitor QA never compares voxel
     # indices with physical coordinates by accident.
-    seeds = list(agent.memory.retrieve("manual_seeds") or [])
-    needles = list(agent.memory.retrieve("manual_needles") or [])
-    if not seeds and not needles:
+    manual_seeds = agent.memory.retrieve("manual_seeds")
+    manual_needles = agent.memory.retrieve("manual_needles")
+    seeds = list(manual_seeds or [])
+    needles = list(manual_needles or [])
+    if manual_seeds is None and manual_needles is None:
         baseline = agent.memory.retrieve("algorithm_plan_snapshot")
         if isinstance(baseline, dict):
             seeds = list(baseline.get("seeds") or [])
             needles = list(baseline.get("needles") or [])
-    if not seeds:
+    if not seeds and manual_seeds is None:
         serialized = agent.memory.retrieve("seed_plan_serialized") or []
         for entry in serialized:
             if not isinstance(entry, dict):
@@ -1366,9 +1375,10 @@ def _build_plan_advice(
     interference = snapshot.get("seed_interference") or {}
     if interference.get("status") == "attention":
         pairs = list(interference.get("close_pairs") or [])
-        overlap_count = sum(1 for pair in pairs if pair.get("risk") == "overlap")
+        overlap_count = interference.get("overlap_count", sum(1 for pair in pairs if pair.get("risk") == "overlap"))
+        pair_count = interference.get("close_pair_count", len(pairs))
         issues.append(
-            f"{len(pairs)} seed pair(s) violate the physical spacing rule "
+            f"{pair_count} seed pair(s) violate the physical spacing rule "
             f"(seed {float(interference.get('seed_length_mm') or 4.5):.1f} mm x "
             f"{float(interference.get('seed_radius_mm') or 0.4) * 2.0:.1f} mm; "
             f"minimum surface clearance "
@@ -2985,6 +2995,9 @@ def _compute_manual_ai_dose(
         "updated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
     }
     agent.memory.store("manual_artifact_status", artifact_status)
+    # The successfully published dose belongs to the current manual geometry.
+    # Leaving this flag true made post-edit recomputations look permanently stale.
+    agent.memory.store("manual_geometry_only", False)
 
     return {
         "success": True,

@@ -16,7 +16,7 @@ from uuid import uuid4
 
 import numpy as np
 import SimpleITK as sitk
-from flask import Response, current_app, jsonify, request, send_file, session as flask_session, stream_with_context
+from flask import Response, current_app, jsonify, request, send_file, session as flask_session, stream_with_context, g, make_response
 
 from plans.dose_pre.model_loader import (
     DEFAULT_PRESCRIPTION_GY,
@@ -2816,8 +2816,169 @@ def register_planning_routes(
             session_id = request_ui_session_id(data)
             lock = _manual_dose_transaction_lock(session_id)
             with lock:
-                return view(*args, **kwargs)
+                from web import monitor_changes
+                training = _ui_bucket(session_id).get('training') or {}
+                run_id = training.get('run_id') if training.get('active') else None
+                agent = get_cached_agent(session_id) if run_id and callable(get_cached_agent) else None
+                before = None
+                if agent is not None:
+                    try:
+                        before = monitor_changes.capture(agent, _current_planning_snapshot(agent))
+                    except Exception:
+                        logger.exception('Monitor baseline unavailable; edit remains independent')
+                response = make_response(view(*args, **kwargs))
+                payload = response.get_json(silent=True) or {}
+                if before is not None and response.status_code < 300 and payload.get('success'):
+                    try:
+                        after = monitor_changes.capture(agent, _current_planning_snapshot(agent))
+                        if (_ui_bucket(session_id).get('training') is training
+                                and training.get('active') and training.get('run_id') == run_id):
+                            changed = before['geometry_key'] != after['geometry_key']
+                            if training.get('dose_baseline_expected') not in (None, [before['geometry_key'], before['planning_id']]):
+                                training.pop('dose_baseline', None)
+                                training.pop('dose_baseline_edit_count', None)
+                            pending = training.get('dose_baseline')
+                            if changed and not pending and before['metrics_current']:
+                                training['dose_baseline'] = copy.deepcopy(before)
+                                training['dose_baseline_edit_count'] = 0
+                            if changed and training.get('dose_baseline'):
+                                training['dose_baseline_edit_count'] = int(training.get('dose_baseline_edit_count') or 0) + 1
+                            # A dose-only recomputation refers to the whole pending edit
+                            # sequence, never an unrelated value from chat history.
+                            baseline = training.get('dose_baseline') if after['metrics_current'] else None
+                            evidence = monitor_changes.compare(before, after)
+                            latest = training.get('latest_edit') or {}
+                            if not changed and latest.get('geometry_key') == after['geometry_key']:
+                                for key in ('changed_objects', 'changed_object_count', 'changed_kinds',
+                                            'conflicts', 'resolved_conflicts', 'before_version'):
+                                    evidence[key] = copy.deepcopy(latest[key])
+                            evidence['dose'] = monitor_changes.dose_comparison(baseline or before, after)
+                            evidence['dose']['edit_count'] = int(training.get('dose_baseline_edit_count') or (1 if changed else 0))
+                            evidence['dose']['baseline_version'] = (baseline or before)['version']
+                            event = payload.get('event') or {}
+                            evidence['event_id'] = event.get('event_id') or uuid4().hex
+                            evidence['monitor_run_id'] = run_id
+                            # One bounded server-owned inverse. No client supplied
+                            # coordinates, no multi-edit rollback, no safety override.
+                            seed_changed = 'seeds' in evidence['changed_kinds']
+                            needle_changed = 'needles' in evidence['changed_kinds']
+                            if changed:
+                                training.pop('pending_restore', None)
+                                if seed_changed or needle_changed:
+                                    token = uuid4().hex[:12]
+                                    training['pending_restore'] = {
+                                        'token': token, 'run_id': run_id,
+                                        # Only the inverse geometry is needed to
+                                        # undo; keeping the whole snapshot (OAR
+                                        # metrics, config, anatomy ids) made the
+                                        # durable UI bridge needlessly large.
+                                        'before': {'geometry': copy.deepcopy(before['geometry'])},
+                                        'after_key': after['geometry_key'], 'version': after['version'],
+                                        'planning_id': after['planning_id'], 'expires_at': time.time() + 900,
+                                        'kind': 'needle' if needle_changed else 'seed',
+                                    }
+                                    evidence['restore_token'] = token
+                            elif training.get('pending_restore'):
+                                pending_restore = training['pending_restore']
+                                if (pending_restore['after_key'] == after['geometry_key']
+                                        and pending_restore['version'] == after['version']
+                                        and pending_restore['planning_id'] == after['planning_id']):
+                                    evidence['restore_token'] = pending_restore['token']
+                            training['latest_edit'] = evidence
+                            agent.memory.store('monitor_last_edit', monitor_changes.compact_evidence(evidence))
+                            training['dose_baseline_expected'] = [after['geometry_key'], after['planning_id']]
+                            if after['metrics_current']:
+                                training.pop('dose_baseline', None)
+                                training.pop('dose_baseline_edit_count', None)
+                            for saved in payload.get('events') or [event]:
+                                if saved.get('event_id'):
+                                    saved.setdefault('detail', {})['edit_evidence'] = evidence
+                                    recorded_bucket = _ui_bucket(session_id)
+                                    with _UI_BRIDGE_LOCK:
+                                        for recorded in recorded_bucket.get('events', []):
+                                            if recorded.get('event_id') == saved['event_id']:
+                                                recorded.setdefault('detail', {})['edit_evidence'] = evidence
+                            payload['monitor_edit'] = evidence
+                            response.set_data(current_app.json.dumps(payload))
+                            checkpoint_ui_bridge(session_id, 'monitor.edit_evidence')
+                    except Exception:
+                        logger.exception('Monitor evidence unavailable; committed edit preserved')
+                return response
         return wrapped
+
+    def manual_request_data():
+        return getattr(g, 'monitor_restore_payload', None) or request.get_json(silent=True) or {}
+
+    @app.route('/api/training/edit', methods=['GET'])
+    @require_api_key
+    @rate_limit
+    def api_training_edit():
+        from web.monitor_changes import describe
+        session_id = request_ui_session_id({})
+        training = _ui_bucket(session_id).get('training') or {}
+        evidence = training.get('latest_edit') if training.get('active') else None
+        if evidence:
+            evidence = copy.deepcopy(evidence)
+            agent = get_cached_agent(session_id) if callable(get_cached_agent) else None
+            evidence['superseded'] = agent is None or (
+                evidence['after_version'] != int(agent.memory.retrieve('manual_plan_version') or 0)
+                or evidence['planning_id'] != (agent.memory.retrieve('active_planning_id') or agent.memory.retrieve('planning_run_id')))
+            pending = training.get('pending_restore') or {}
+            if evidence['superseded'] or pending.get('token') != evidence.get('restore_token') or time.time() > pending.get('expires_at', 0):
+                evidence.pop('restore_token', None)
+        return jsonify(success=True, evidence=evidence,
+                       message=describe(evidence, _monitor_language(request.args.get('language'))) if evidence else None)
+
+    @app.route('/api/training/restore_edit', methods=['POST'])
+    @require_api_key
+    @rate_limit
+    def api_training_restore_edit():
+        from web.monitor_changes import geometry_key
+        data = request.get_json(silent=True) or {}
+        session_id = request_ui_session_id(data)
+        with _manual_dose_transaction_lock(session_id):
+            training = _ui_bucket(session_id).get('training') or {}
+            pending = training.get('pending_restore') or {}
+            if (not training.get('active') or not pending or data.get('token') != pending.get('token')
+                    or pending.get('run_id') != training.get('run_id') or time.time() > pending['expires_at']):
+                return jsonify(success=False, error='This edit decision expired or belongs to a different monitor run.'), 409
+            if data.get('decision') == 'keep':
+                training.pop('pending_restore', None)
+                checkpoint_ui_bridge(session_id, 'monitor.edit_kept')
+                return jsonify(success=True, kept=True)
+            if data.get('decision') != 'restore':
+                return jsonify(success=False, error='An explicit restore or keep decision is required.'), 400
+            agent = get_agent(session_id)
+            if agent is None:
+                return jsonify(success=False, error='The case is not ready; no geometry was restored.'), 409
+            if (int(agent.memory.retrieve('manual_plan_version') or 0) != pending['version']
+                    or active_planning_id(agent.memory) != pending['planning_id']
+                    or geometry_key(_current_planning_snapshot(agent)) != pending['after_key']):
+                return jsonify(success=False, error='The plan changed after this suggestion; no geometry was restored.'), 409
+            g.monitor_restore_payload = {
+                'session_id': session_id, 'expected_version': pending['version'],
+                'planning_id': pending['planning_id'], 'reason': 'monitor_restore',
+                **copy.deepcopy(pending['before']['geometry']),
+            }
+            try:
+                if pending['kind'] == 'needle':
+                    previous = pending['before']['geometry']
+                    current = _current_planning_snapshot(agent)
+                    _, blocking = _manual_seed_interference_delta(agent, previous['seeds'], previous['needles'],
+                        baseline_seeds=current['seeds'], baseline_needles=current['needles'])
+                    if blocking:
+                        return jsonify(success=False, error='The prior geometry would worsen seed spacing; automatic restore was rejected.'), 422
+                # Reuse normalization, obstacle/spacing checks, versioning,
+                # persistence and stale-artifact handling of ordinary edits.
+                result = (api_manual_planning_update_seeds() if pending['kind'] == 'seed'
+                          else api_manual_planning_update_geometry())
+                response = make_response(result)
+                if response.status_code < 300:
+                    training.pop('pending_restore', None)
+                    checkpoint_ui_bridge(session_id, 'monitor.edit_restored')
+                return response
+            finally:
+                g.pop('monitor_restore_payload', None)
 
     def task_workspace_owner() -> Optional[str]:
         """Return the server-derived owner key for transient progress tasks."""
@@ -4958,6 +5119,10 @@ def register_planning_routes(
             },
             "training_monitor": {
                 "live_monitoring": True,
+                "edit_evidence_endpoint": "/api/training/edit",
+                "edit_decision_endpoint": "/api/training/restore_edit",
+                "commit_scoped_comparison": True,
+                "explicit_versioned_restore": True,
                 "retrospective_advice": True,
                 "final_report_on_stop": True,
                 "screenshot_targets": ["dose-overview", "dvh", "viewer-3d"],
@@ -5046,7 +5211,8 @@ def register_planning_routes(
         event_type = str(event.get("type") or "")
         snapshot = (
             _server_support._latest_plan_snapshot(agent, validate_obstacles=False)
-            if monitor_run_matches and event_type.startswith("manual.") else {}
+            if monitor_run_matches and event_type.startswith("manual.")
+            and not (event.get('detail') or {}).get('edit_evidence') else {}
         )
         monitor_run_matches = bool(monitor_run_matches and bucket.get("training", {}).get("active")
             and bucket.get("training", {}).get("run_id") == request_run_id)
@@ -5667,7 +5833,7 @@ def register_planning_routes(
         This endpoint updates only world-coordinate needle geometry and the
         matching manual snapshot, while reusing the Data Tree obstacle gate.
         """
-        data = request.get_json(silent=True) or {}
+        data = manual_request_data()
         session_id = request_ui_session_id(data)
         agent = get_agent(session_id)
         if agent is None:
@@ -6096,7 +6262,7 @@ def register_planning_routes(
         version. A stale browser callback therefore cannot overwrite a newer
         edit, including the valid empty-list state after deleting the last seed.
         """
-        data = request.get_json(silent=True) or {}
+        data = manual_request_data()
         session_id = request_ui_session_id(data)
         agent = get_agent(session_id)
         if agent is None:

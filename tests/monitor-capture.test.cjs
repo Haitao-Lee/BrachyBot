@@ -1,7 +1,8 @@
 const fs = require('node:fs');
+const path = require('node:path');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
-const source = fs.readFileSync(process.argv[2], 'utf8');
+const source = fs.readFileSync(process.argv[2] || path.resolve(__dirname, '../web/app/static/js/brachybot-ui-api.js'), 'utf8');
 function extract(name) {
     const start = source.indexOf(`function ${name}(`);
     const ends = ['\nfunction ', '\nasync function '].map(s => source.indexOf(s, start + 12)).filter(n => n > 0);

@@ -90,7 +90,7 @@ _FACT_KEYS = (
     "dose_metrics", "metrics", "total_seeds", "num_trajectories",
     "seed_positions", "needles", "plan_config", "prescription_gy",
     "manual_artifact_status", "surgical_guide", "artifact_status",
-    "response_contract",
+    "response_contract", "monitor_last_edit", "manual_plan_version",
 )
 
 
@@ -727,6 +727,14 @@ def build_case_facts(memory: Any) -> str:
         state = guide.get("state") or guide.get("status")
         if state:
             lines.append(f"- Surgical guide: {state}")
+
+    edit = _get('monitor_last_edit')
+    if (isinstance(edit, Mapping)
+            and edit.get('planning_id') == (_get('active_planning_id') or _get('planning_run_id'))
+            and edit.get('version') == (_get('manual_plan_version') or 0)):
+        encoded = json.dumps(edit, ensure_ascii=False, default=str)
+        if len(encoded) <= 6000:
+            lines.append('- Committed edit evidence: ' + encoded)
 
     return "\n".join(lines) if len(lines) > 1 else ""
 

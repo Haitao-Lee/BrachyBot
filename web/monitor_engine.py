@@ -187,7 +187,19 @@ def _format_training_summary(events: list, counts: Dict[str, int], advice: Dict[
         for key, count in sorted(display_counts.items(), key=lambda item: item[1], reverse=True)[:8]:
             lines.append(f"- {_monitor_activity_label(key, language)}: {count}")
     advice = advice or {}
+    edit_entries = {}
+    for event in events:
+        evidence = (event.get('detail') or {}).get('edit_evidence')
+        if evidence:
+            edit_entries[evidence['event_id']] = evidence
+    if edit_entries:
+        from web.monitor_changes import describe
+        lines.extend(['', '### 逐次编辑与影响' if language == 'zh' else '### Edits and measured effects'])
+        for evidence in list(edit_entries.values())[-6:]:
+            lines.append(describe({**evidence, 'restore_token': None}, language))
     for heading, key in zip(headings[1:], ("strengths", "issues", "advice")):
+        if key == 'advice' and edit_entries:
+            continue
         values = advice.get(key) or []
         if values:
             lines.extend(["", f"### {heading}"])
@@ -299,6 +311,11 @@ def _training_feedback_for_event(agent, session_id: Optional[str], event: Dict[s
     from web import server_support as support
     detail = support._monitor_event_detail(event)
     language = support._monitor_language(event.get("language") or detail.get("language"))
+    if detail.get('commit_status') == 'committed' and detail.get('edit_evidence'):
+        from web.monitor_changes import describe
+        evidence = detail['edit_evidence']
+        raw, localized = describe(evidence, 'en'), describe(evidence, language)
+        return {'raw': raw, 'localized': localized} if return_pair else localized
     source_event = dict(event)
     source_event["language"] = "en"
     source_event["detail"] = {**detail, "language": "en"}
@@ -315,6 +332,11 @@ def _training_screenshot_for_event(agent, session_id: Optional[str], event: Dict
         return None
     event_type = str(event.get("type", ""))
     detail = support._monitor_event_detail(event)
+    if detail.get('commit_status') == 'committed' and detail.get('edit_evidence'):
+        from web.monitor_changes import screenshot
+        focused = screenshot(detail['edit_evidence'], event.get('event_id'))
+        if focused:
+            return focused
     language = support._monitor_language(event.get("language") or detail.get("language"))
     if event_type in {"planning.step", "segmentation.step"} and support._monitor_event_status(event) != "done":
         return None
