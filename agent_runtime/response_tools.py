@@ -3351,9 +3351,11 @@ Output (JSON array of strings):"""
         # conditional sentence can never execute a write merely because the
         # provider selected its tool.  ui_controller is governed by the
         # action-level gate above.
+        blocked_mutating: List[str] = []
         if guard_question and getattr(self, "_active_turn_policy", None) is not None and not getattr(
             getattr(self, "_active_turn_policy", None), "direct_execution", False
         ):
+            conversation = getattr(getattr(self, "memory", None), "conversation", None)
             allowed = []
             for call in valid:
                 tool_name = str(call.get("tool") or "")
@@ -3361,7 +3363,7 @@ Output (JSON array of strings):"""
                     tool_name in MUTATING_TOOLS
                     and tool_name != "ui_controller"
                     and not _request_parse.mutating_execution_authorized(
-                        guard_question, tool_name
+                        guard_question, tool_name, conversation
                     )
                 ):
                     logger.warning(
@@ -3369,7 +3371,12 @@ Output (JSON array of strings):"""
                         "command for that operation",
                         tool_name,
                     )
+                    blocked_mutating.append(tool_name)
                     continue
                 allowed.append(call)
             valid = allowed
+        # Surface the dropped operations to the turn so the model can ask for
+        # an explicit confirmation instead of the user seeing a generic
+        # "no verifiable result".  Reset every call so it reflects one turn.
+        self._blocked_mutating_tool_names = blocked_mutating
         return valid

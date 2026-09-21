@@ -195,6 +195,31 @@ def _tool_fallback_message(
     return "The model returned no valid answer and no operation was executed. The case and Planning were not changed; please retry."
 
 
+def _blocked_mutation_message(lang: str, tool_names: List[str]) -> str:
+    """Explain a blocked mutation instead of a generic "no result" fallback.
+
+    The provider selected real operations but the second-line authorization
+    gate dropped them because the current turn did not yet clearly authorize
+    them.  Naming the operations lets the user confirm in one word (which the
+    acknowledgement resolver then honors) instead of the chat silently
+    stalling with "本轮未能完成".
+    """
+    names = ", ".join(dict.fromkeys(str(name) for name in tool_names if name))
+    if str(lang or "").lower().startswith("zh"):
+        return (
+            "为避免误改当前病例，下面这些操作需要你一句明确确认后再执行：\n\n"
+            f"`{names}`\n\n"
+            "回复「执行」我就按依赖顺序运行；若要跳过某一项，请说明（例如「不含导板」）。"
+        )
+    return (
+        "To avoid changing the current case without consent, these operations "
+        "need your explicit confirmation:\n\n"
+        f"`{names}`\n\n"
+        'Reply "go ahead" to run them in dependency order, or name any you want '
+        'to skip (for example "without the guide").'
+    )
+
+
 def _visual_analysis_unavailable_message(lang: str) -> str:
     """Return an honest fallback for a screenshot-analysis child.
 
@@ -2156,6 +2181,11 @@ class LLMRuntimeMixin:
                 # substantive image interpretation for the owning reply.
                 final_response = _visual_analysis_unavailable_message(
                     inherited_language or getattr(self.memory, "user_lang", "en")
+                )
+            elif getattr(self, "_blocked_mutating_tool_names", None):
+                final_response = _blocked_mutation_message(
+                    getattr(self.memory, "user_lang", "en"),
+                    getattr(self, "_blocked_mutating_tool_names", []),
                 )
             elif tools_executed:
                 _fallback_lang = "zh" if str(getattr(self.memory, "user_lang", "en") or "en").lower().startswith("zh") else "en"
@@ -4135,10 +4165,16 @@ class LLMRuntimeMixin:
         # If final_response is still empty, try fallbacks
         if not final_response:
             _fb_lang = "zh" if str(getattr(self.memory, "user_lang", "en") or "en").lower().startswith("zh") else "en"
+            _blocked_tools = [
+                str(name) for name in (getattr(self, "_blocked_mutating_tool_names", None) or [])
+                if str(name)
+            ]
             if internal_followup:
                 final_response = _visual_analysis_unavailable_message(
                     inherited_language or _fb_lang
                 )
+            elif _blocked_tools:
+                final_response = _blocked_mutation_message(_fb_lang, _blocked_tools)
             elif accumulated_text and not tools_executed and _is_safe_accumulated_text(accumulated_text):
                 final_response = accumulated_text
             elif tools_executed:

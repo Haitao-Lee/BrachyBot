@@ -125,9 +125,17 @@ def is_interrogative(message: object) -> bool:
 _NEGATION_MARKERS = (
     "不要", "不用", "不需要", "无需", "不必", "不能", "不可", "不可以",
     "没有", "取消", "切勿", "禁止", "不允许", "不执行", "不生成", "不重新",
-    "别生成", "除了", "除外", "并非", "不是", "没生成", "未生成", "不需要",
-    "do not", "don't", "dont", "without", "except", "exclude", "never",
+    "别生成", "并非", "不是", "没生成", "未生成", "不需要",
+    "do not", "don't", "dont", "never",
     "no need", "cancel", "not ",
+)
+
+# Scope exclusion: the named object is carved out of an otherwise positive
+# command ("全部更新，不含导板" = update everything except the guide).  Unlike
+# negation it does not veto the whole action, so it is tracked per target.
+_EXCLUSION_MARKERS = (
+    "不含", "不包括", "不包含", "除了", "除外", "除外", "之外",
+    "except", "excluding", "with the exception", "without",
 )
 
 
@@ -289,8 +297,11 @@ _ACTION_ALIASES: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     )),
     ("plan", (
         "\u6267\u884c", "\u8fdb\u884c", "\u5f00\u59cb", "\u5236\u5b9a", "\u91cd\u8dd1",
-        "\u91cd\u7b97", "\u91cd\u65b0\u89c4\u5212", "run", "execute", "start",
-        "perform", "replan", "rerun",
+        "\u91cd\u7b97", "\u91cd\u65b0\u89c4\u5212",
+        "\u91cd\u65b0\u8ba1\u7b97", "\u91cd\u65b0\u7b97", "\u518d\u8ba1\u7b97",
+        "\u518d\u7b97", "\u91cd\u65b0\u8bc4\u4f30",
+        "run", "execute", "start", "perform", "replan", "rerun",
+        "recalculate", "recompute", "calculate", "compute",
     )),
     ("display", (
         "\u622a\u56fe", "\u622a\u5c4f", "\u62cd\u7167", "\u622a\u53d6", "screenshot", "capture",
@@ -316,6 +327,42 @@ _ACTION_ALIASES: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
 )
 
 _WRITE_ACTIONS = frozenset({"generate", "clear", "export", "segment", "plan", "annotate"})
+
+# A write whose scope is "all of them" may legitimately omit the target noun
+# because the objects were just enumerated in the preceding reply (an
+# elliptical follow-up such as "那请你全部更新" / "then update everything").
+# Aggregate widening is limited to (re)producing actions: an explicit
+# collection word can never authorize a destructive ``clear``.
+_AGGREGATE_WRITE_ACTIONS = frozenset({"generate", "plan", "segment"})
+
+_AGGREGATE_SCOPE = re.compile(
+    r"(?:全部|全都|全数|全盘|所有|一切|每个|各个|逐一|逐个|统统|通通|一律|"
+    r"整体|整组|整个|"
+    r"\ball\b|\beverything\b|\bboth\b|\bevery\b|\beach\b|"
+    # Bare "都" is an aggregate only when it is followed by an action verb
+    # (都更新 / 都要重算); unrelated compounds such as 都市 or predications
+    # like 每次重建都失败 stay non-aggregate.
+    r"都(?=(?:要|需|得|应|会|能|去|更|重|改|生|刷|做|算|建|修|换|补|填)))",
+    re.IGNORECASE,
+)
+
+
+def _has_aggregate_scope(text: str) -> bool:
+    return bool(_AGGREGATE_SCOPE.search(str(text or "")))
+
+
+# A bare yes/confirm/go-ahead.  Evaluated with ``fullmatch`` against cleaned
+# text, and additionally rejected when the turn carries its own target/action,
+# so "可以生成报告吗" is a question and never a confirmation.
+_ACK_ONLY = re.compile(
+    r"(?:好(?:的|吧|啊|呀)?|行(?:吧|啊)?|可以|同意|确认(?:执行|一下)?|没问题|"
+    r"开始(?:吧|啊|执行)?|执行(?:吧|一下)?|继续(?:吧|执行)?|来吧|搞吧|走起|"
+    r"就(?:按|照)(?:这个|你说的|你说的做|上面|上述|这样)(?:做|执行|来|办)?|"
+    r"按(?:这个|你说的|上述|上面)(?:做|执行|来|办)?|"
+    r"做吧|上吧|都行|随便|yes|yep|yeah|sure|ok(?:ay)?|"
+    r"go\s+ahead|do\s+it|proceed|continue|start|run\s+it|please\s+do)"
+)
+
 
 # Targets that a command-position verb can address with a mutating effect.
 _WRITABLE_TARGETS = frozenset({
@@ -673,6 +720,11 @@ def _parse_subtasks(text: str) -> Tuple["RequestSubtask", ...]:
             "quoted": quoted,
             "attributed": _attribution_frame(clause),
             "ambiguous": ambiguous_pairing or (len(actions) > 1 and len(ordered_targets) > 1),
+            "aggregate": _has_aggregate_scope(unquoted),
+            "excluded": bool(ordered_targets) and (
+                any(marker in unquoted for marker in _EXCLUSION_MARKERS)
+                or is_negated(unquoted)
+            ),
             "source": "deterministic_lexicon",
         }
         if action and matched_targets:
@@ -726,6 +778,8 @@ class RequestSubtask:
     quoted: bool = False
     attributed: bool = False
     ambiguous: bool = False
+    aggregate: bool = False
+    excluded: bool = False
     source: str = "deterministic_lexicon"
 
     @property
@@ -733,6 +787,22 @@ class RequestSubtask:
         return (
             bool(self.target)
             and self.action in _WRITE_ACTIONS
+            and not (self.negated or self.interrogative or self.conditional
+                     or self.quoted or self.attributed or self.ambiguous)
+        )
+
+    @property
+    def aggregate_command(self) -> bool:
+        """True for an explicit "update/regenerate everything" command.
+
+        The target noun is intentionally optional: the aggregate scope word
+        itself widens the write to every non-destructive clinical artifact,
+        so requiring an explicit target here is what previously blocked a
+        valid elliptical follow-up.  Destructive actions are excluded.
+        """
+        return (
+            self.aggregate
+            and self.action in _AGGREGATE_WRITE_ACTIONS
             and not (self.negated or self.interrogative or self.conditional
                      or self.quoted or self.attributed or self.ambiguous)
         )
@@ -759,6 +829,7 @@ class ParsedRequest:
     objects: Tuple[str, ...] = ()
     actions: Tuple[str, ...] = ()
     goals: Tuple[Tuple[str, str], ...] = ()
+    excluded_targets: Tuple[str, ...] = ()
     subtasks: Tuple[RequestSubtask, ...] = ()
     reason: str = ""
 
@@ -770,6 +841,11 @@ class ParsedRequest:
     def affirmative_command(self) -> bool:
         """True when at least one locally scoped positive write was requested."""
         return any(task.affirmative_command for task in self.subtasks)
+
+    @property
+    def aggregate_command(self) -> bool:
+        """True when a positive write is explicitly scoped to "everything"."""
+        return any(task.aggregate_command for task in self.subtasks)
 
     @property
     def unconditional_command(self) -> bool:
@@ -811,6 +887,7 @@ class ParsedRequest:
             "objects": list(self.objects),
             "actions": list(self.actions),
             "goals": [list(goal) for goal in self.goals],
+            "excluded_targets": list(self.excluded_targets),
             "subtasks": [
                 {
                     "raw": task.raw,
@@ -826,13 +903,17 @@ class ParsedRequest:
                     "quoted": task.quoted,
                     "attributed": task.attributed,
                     "ambiguous": task.ambiguous,
+                    "aggregate": task.aggregate,
+                    "excluded": task.excluded,
                     "source": task.source,
                     "affirmative": task.affirmative_command,
+                    "aggregate_command": task.aggregate_command,
                 }
                 for task in self.subtasks
             ],
             "affirmative": self.affirmative_command,
             "unconditional": self.unconditional_command,
+            "aggregate_command": self.aggregate_command,
         }
 
 
@@ -858,6 +939,14 @@ def parse_request(message: object) -> ParsedRequest:
     references = tuple(
         marker for marker in _REFERENCE_MARKERS if marker in text
     )
+    excluded_targets: List[str] = []
+    for task in subtasks:
+        if not task.excluded:
+            continue
+        candidates = task.targets or ((task.target,) if task.target else ())
+        for name in candidates:
+            if name and name not in excluded_targets:
+                excluded_targets.append(name)
     return ParsedRequest(
         raw=raw,
         text=text,
@@ -872,6 +961,7 @@ def parse_request(message: object) -> ParsedRequest:
         objects=tuple(objects),
         actions=tuple(actions),
         goals=tuple(goals),
+        excluded_targets=tuple(excluded_targets),
         subtasks=subtasks,
     )
 
@@ -1038,7 +1128,80 @@ def tool_authorization_target(tool_name: str) -> Optional[Tuple[str, str]]:
     return _TOOL_MUTATION_GOAL.get(str(tool_name or ""))
 
 
-def mutating_execution_authorized(message: object, tool_name: str) -> bool:
+def _conversation_text(value: object) -> str:
+    if isinstance(value, (list, tuple)):
+        return " ".join(
+            str(part.get("text") or part.get("content") or "")
+            if isinstance(part, Mapping) else str(part or "")
+            for part in value
+        )
+    return str(value or "")
+
+
+def is_affirmative_acknowledgement(message: object) -> bool:
+    """True when the turn is only a yes/confirm/go-ahead, with no new request.
+
+    After the assistant proposes an ordered operation and asks the user to
+    confirm, the natural reply is a bare acknowledgement ("开始吧", "执行",
+    "就按你说的做", "go ahead").  Such a turn carries no target or action of its
+    own; it inherits the plan from the preceding assistant message, which is
+    resolved separately in ``mutating_execution_authorized``.
+    """
+    text = _clean(message)
+    if not text or len(text) > 24:
+        return False
+    if not _ACK_ONLY.fullmatch(text):
+        return False
+    parsed = parse_request(message)
+    # A named object makes it a new request ("继续规划"), not a confirmation.
+    # Bare start/execute verbs are allowed because they carry no object.
+    for task in parsed.subtasks:
+        if task.target:
+            return False
+    return True
+
+
+def _previous_assistant_text(conversation: object) -> str:
+    """Return the assistant message that immediately precedes the current turn."""
+    try:
+        items = list(conversation or [])
+    except TypeError:
+        return ""
+    seen_current_user = False
+    for item in reversed(items):
+        if not isinstance(item, Mapping):
+            continue
+        role = str(item.get("role") or "").lower()
+        if role == "user":
+            # The current utterance is the newest user entry; skip it and stop
+            # at the assistant reply before it.
+            if not seen_current_user:
+                seen_current_user = True
+                continue
+            break
+        if role == "assistant" and seen_current_user:
+            return _conversation_text(item.get("content", item.get("message", "")))
+    return ""
+
+
+def _previous_assistant_names_tool(conversation: object, tool_name: str) -> bool:
+    if not tool_name:
+        return False
+    text = _previous_assistant_text(conversation)
+    if not text:
+        return False
+    return bool(re.search(
+        rf"(?<![a-z0-9_]){re.escape(str(tool_name))}(?![a-z0-9_])",
+        text,
+        re.IGNORECASE,
+    ))
+
+
+def mutating_execution_authorized(
+    message: object,
+    tool_name: str,
+    conversation: object = None,
+) -> bool:
     """Second-line check before a provider-selected mutation executes.
 
     The provider only gets a mutating call when the current user utterance is a
@@ -1051,6 +1214,10 @@ def mutating_execution_authorized(message: object, tool_name: str) -> bool:
         return True
     parsed = parse_request(message)
     expected_target, expected_action = goal
+    # A target explicitly carved out of the request ("不含导板") is never
+    # authorized, even when the surrounding write is a positive aggregate.
+    if expected_target in parsed.excluded_targets:
+        return False
     allowed_actions = {
         "generate": {"generate"},
         "plan": {"plan"},
@@ -1075,6 +1242,24 @@ def mutating_execution_authorized(message: object, tool_name: str) -> bool:
             and not task.attributed
         ):
             return True
+    # An aggregate command ("全部更新" / "update everything") widens a write from
+    # one named object to every non-destructive clinical artifact named in the
+    # preceding reply.  The clause carries an action and a scope word but no
+    # target noun, so the per-target loop above cannot match it; treat it as
+    # authorization for any writable target.  Destructive targets are not in
+    # ``_TOOL_MUTATION_GOAL`` and ``clear`` is excluded from the aggregate
+    # action set, so this path can never authorize a destructive operation.
+    if parsed.aggregate_command and expected_target in _WRITABLE_TARGETS:
+        return True
+    # A bare confirmation inherits the plan the assistant proposed in the
+    # immediately preceding reply.  This closes the loop after the agent asked
+    # "shall I run these?", so an acknowledgement is not silently ignored.
+    if (
+        conversation
+        and is_affirmative_acknowledgement(message)
+        and _previous_assistant_names_tool(conversation, tool_name)
+    ):
+        return True
     return False
 
 

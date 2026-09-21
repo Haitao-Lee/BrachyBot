@@ -17,6 +17,7 @@ from agent_runtime.request_parse import (
     is_quoted,
     is_affirmative_command,
     is_unconditional_command,
+    is_affirmative_acknowledgement,
     canonical_report_mutation,
     canonical_guide_generation,
     mutating_execution_authorized,
@@ -358,6 +359,202 @@ def test_written_verb_and_typo_tolerance_for_report_noun():
     # The noun is recognized even with surrounding punctuation/quotes.
     assert canonical_report_mutation("\u8bf7\u91cd\u65b0\u751f\u6210\u62a5\u544a\u3002")
     assert parse_request("\u8bf7\u91cd\u65b0\u751f\u6210\u62a5\u544a\u3002").target == "report"
+
+
+# ---------------------------------------------------------------------------
+# Elliptical aggregate follow-up ("那请你全部更新")
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("message", [
+    "\u90a3\u8bf7\u4f60\u5168\u90e8\u66f4\u65b0",   # then please update everything
+    "\u8bf7\u5168\u90e8\u66f4\u65b0",
+    "\u5168\u90e8\u66f4\u65b0",
+    "\u90fd\u66f4\u65b0\u4e00\u4e0b",
+    "\u6240\u6709\u90fd\u66f4\u65b0\u4e00\u4e0b",
+    "\u8bf7\u5168\u90e8\u91cd\u65b0\u751f\u6210",
+    "\u628a\u62a5\u544a\u548c\u5bfc\u677f\u90fd\u66f4\u65b0",
+    "update everything",
+])
+def test_aggregate_follow_up_authorizes_the_stale_artifacts(message):
+    parsed = parse_request(message)
+    assert parsed.aggregate_command
+    for tool in (
+        "dose_recompute",
+        "dose_evaluation",
+        "report_auto_fill",
+        "report_generator",
+        "surgical_guide",
+    ):
+        assert mutating_execution_authorized(message, tool) is True, tool
+
+
+@pytest.mark.parametrize("message", [
+    "\u62a5\u544a\u751f\u6210\u597d\u4e86\u5417\uff1f",          # question
+    "\u4e0d\u8981\u5168\u90e8\u66f4\u65b0",                    # negation
+    "\u5982\u679c\u5168\u90e8\u66f4\u65b0\u4f1a\u600e\u6837",  # conditional
+    "\u201c\u5168\u90e8\u66f4\u65b0\u201d\u662f\u4ec0\u4e48\u610f\u601d",  # quotation
+    "\u6bcf\u6b21\u91cd\u5efa\u90fd\u5931\u8d25",              # declarative noise
+    "\u5168\u90e8\u6e05\u7a7a\u62a5\u544a",                    # destructive only
+])
+def test_aggregate_scope_does_not_authorize_questions_negations_or_clears(message):
+    assert not parse_request(message).aggregate_command
+    assert not mutating_execution_authorized(message, "dose_recompute")
+    assert not mutating_execution_authorized(message, "report_auto_fill")
+
+
+def test_aggregate_scope_never_authorizes_a_destructive_clear():
+    # "update everything" must not become a destructive reset through the
+    # aggregate path; destructive UI targets have their own explicit gate.
+    assert not ui_action_explicitly_authorized("\u5168\u90e8\u66f4\u65b0", "report.clear")
+    assert not ui_action_explicitly_authorized("\u5168\u90e8\u66f4\u65b0", "plan.reset")
+
+
+@pytest.mark.parametrize("message", [
+    "\u5168\u90e8\u66f4\u65b0\uff0c\u4e0d\u542b\u5bfc\u677f",   # all update, not the guide
+    "\u5168\u90e8\u66f4\u65b0\uff0c\u4e0d\u8981\u5bfc\u677f",
+    "\u9664\u4e86\u5bfc\u677f\u90fd\u66f4\u65b0",             # everything except the guide
+])
+def test_aggregate_scope_respects_an_explicit_exclusion(message):
+    parsed = parse_request(message)
+    assert "surgical_guide" in parsed.excluded_targets
+    assert mutating_execution_authorized(message, "report_auto_fill") is True
+    assert mutating_execution_authorized(message, "dose_evaluation") is True
+    assert mutating_execution_authorized(message, "surgical_guide") is False
+
+
+@pytest.mark.parametrize("message", [
+    "\u5f00\u59cb\u5427", "\u6267\u884c", "\u597d\u7684", "\u53ef\u4ee5",
+    "\u5c31\u6309\u4f60\u8bf4\u7684\u505a", "\u7ee7\u7eed", "go ahead", "do it",
+])
+def test_bare_acknowledgements_are_recognized(message):
+    assert is_affirmative_acknowledgement(message)
+
+
+@pytest.mark.parametrize("message", [
+    "\u7ee7\u7eed\u89c4\u5212", "\u6267\u884c\u5206\u5272", "\u53ef\u4ee5\u751f\u6210\u62a5\u544a\u5417",
+    "\u5168\u90e8\u66f4\u65b0",
+])
+def test_new_requests_are_not_acknowledgements(message):
+    assert not is_affirmative_acknowledgement(message)
+
+
+def test_acknowledgement_inherits_only_the_proposed_tools():
+    conversation = [
+        {"role": "user", "content": "\u5982\u679c\u8981\u5168\u90e8\u66f4\u65b0\u5e94\u8be5\u4f7f\u7528\u54ea\u4e9b\u5de5\u5177"},
+        {"role": "assistant", "content": "\u9700\u8981 dose_recompute\u3001dose_evaluation\u3001"
+                                          "report_auto_fill\u3001surgical_guide\u3002"},
+        {"role": "user", "content": "\u6267\u884c\u5427"},
+    ]
+    for tool in ("dose_recompute", "dose_evaluation", "report_auto_fill", "surgical_guide"):
+        assert mutating_execution_authorized("\u6267\u884c\u5427", tool, conversation) is True
+    # A tool the assistant never proposed is still not authorized.
+    assert mutating_execution_authorized("\u6267\u884c\u5427", "planning_pipeline", conversation) is False
+    # Without the prior assistant proposal, a bare "do it" grants nothing.
+    assert mutating_execution_authorized("\u6267\u884c\u5427", "dose_recompute") is False
+
+
+def test_blocked_mutation_feedback_names_the_operations_for_confirmation():
+    from agent_runtime.llm_runtime import _blocked_mutation_message
+
+    zh = _blocked_mutation_message("zh", ["dose_recompute", "surgical_guide"])
+    assert "dose_recompute" in zh and "surgical_guide" in zh
+    assert "\u6267\u884c" in zh
+    en = _blocked_mutation_message("en", ["dose_recompute"])
+    assert "go ahead" in en
+
+
+
+@pytest.mark.parametrize("message", [
+    "\u91cd\u65b0\u8ba1\u7b97\u5242\u91cf",              # recompute the dose
+    "\u8bf7\u91cd\u65b0\u8ba1\u7b97\u5f53\u524d\u5242\u91cf\u548cdvh",
+    "\u91cd\u7b97\u5242\u91cf",
+    "recompute the dose",
+])
+def test_recompute_synonyms_authorize_dose_recompute(message):
+    assert mutating_execution_authorized(message, "dose_recompute")
+
+
+def _provider_gate_normalizer(message, calls):
+    from agent_runtime.turn_policy import LocalTurnPolicy
+
+    class Memory:
+        conversation = [{"role": "user", "content": message}]
+
+        @staticmethod
+        def retrieve(_key):
+            return None
+
+    normalizer = ResponseToolMixin()
+    normalizer.memory = Memory()
+    normalizer._active_turn_policy = LocalTurnPolicy(
+        "semantic_action", "medium", False, True, True, None,
+        direct_execution=False,
+    )
+    return normalizer._normalize_tool_params(calls)
+
+
+def test_provider_mutations_survive_for_an_aggregate_follow_up():
+    calls = _provider_gate_normalizer("\u90a3\u8bf7\u4f60\u5168\u90e8\u66f4\u65b0", [
+        {"id": "dose", "tool": "dose_recompute", "params": {}},
+        {"id": "report", "tool": "report_auto_fill", "params": {}},
+        {"id": "guide", "tool": "surgical_guide", "params": {"action": "generate"}},
+    ])
+    tools = {call["tool"] for call in calls}
+    assert {"dose_recompute", "report_auto_fill", "surgical_guide"} <= tools
+
+
+@pytest.mark.parametrize("message", ["\u62a5\u544a\u751f\u6210\u597d\u4e86\u5417\uff1f", "\u4e0d\u8981\u5168\u90e8\u66f4\u65b0"])
+def test_provider_mutations_stay_blocked_for_non_commands(message):
+    calls = _provider_gate_normalizer(message, [
+        {"id": "dose", "tool": "dose_recompute", "params": {}},
+        {"id": "report", "tool": "report_auto_fill", "params": {}},
+    ])
+    assert calls == []
+
+
+def test_provider_excludes_a_carved_out_target():
+    calls = _provider_gate_normalizer("\u5168\u90e8\u66f4\u65b0\uff0c\u4e0d\u542b\u5bfc\u677f", [
+        {"id": "report", "tool": "report_auto_fill", "params": {}},
+        {"id": "guide", "tool": "surgical_guide", "params": {"action": "generate"}},
+    ])
+    tools = {call["tool"] for call in calls}
+    assert "report_auto_fill" in tools
+    assert "surgical_guide" not in tools
+
+
+def test_provider_acknowledgement_runs_the_proposed_plan():
+    from agent_runtime.turn_policy import LocalTurnPolicy
+
+    conversation = [
+        {"role": "user", "content": "\u8981\u5168\u90e8\u66f4\u65b0\u8be5\u7528\u54ea\u4e9b\u5de5\u5177"},
+        {"role": "assistant", "content": "dose_recompute, dose_evaluation, "
+                                          "report_auto_fill, surgical_guide"},
+        {"role": "user", "content": "\u6267\u884c\u5427"},
+    ]
+
+    class Memory:
+        def __init__(self):
+            self.conversation = conversation
+
+        @staticmethod
+        def retrieve(_key):
+            return None
+
+    normalizer = ResponseToolMixin()
+    normalizer.memory = Memory()
+    normalizer._active_turn_policy = LocalTurnPolicy(
+        "semantic_action", "medium", False, True, True, None,
+        direct_execution=False,
+    )
+    calls = normalizer._normalize_tool_params([
+        {"id": "dose", "tool": "dose_recompute", "params": {}},
+        {"id": "report", "tool": "report_auto_fill", "params": {}},
+        {"id": "guide", "tool": "surgical_guide", "params": {"action": "generate"}},
+    ])
+    assert {"dose_recompute", "report_auto_fill", "surgical_guide"} <= {c["tool"] for c in calls}
+
+
+
 
 
 # ---------------------------------------------------------------------------
