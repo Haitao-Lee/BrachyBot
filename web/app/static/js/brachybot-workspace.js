@@ -469,6 +469,53 @@
     }
     window.workspaceSnapshotHasClinicalResources = workspaceSnapshotHasClinicalResources;
 
+    // The Data Tree presentation can live in two independent durable copies:
+    // the browser-owned `ui.state.data_tree` and the Agent-owned
+    // `agent.ui_state.data_tree`. After a cold archive restore the browser copy
+    // may be a partial projection (for example, only the OAR rows that were
+    // visible when the case went dormant) while the Agent checkpoint still
+    // holds the complete per-label colours and opacities. Restore must read the
+    // union, with the newer browser copy winning per node, otherwise a
+    // restored case renders every missing label with its palette default.
+    function mergePresentationNode(base, override) {
+        if (override === undefined) return base;
+        if (override === null || base === null || base === undefined) return override;
+        if (Array.isArray(base) && Array.isArray(override)) {
+            const out = base.slice();
+            override.forEach((item, index) => {
+                const key = String(item && item.id != null ? item.id : `#${index}`);
+                const currentIndex = out.findIndex((existing, existingIndex) =>
+                    String(existing && existing.id != null ? existing.id : `#${existingIndex}`) === key);
+                if (currentIndex >= 0) out[currentIndex] = mergePresentationNode(out[currentIndex], item);
+                else out.push(item);
+            });
+            return out;
+        }
+        if (typeof base === 'object' && typeof override === 'object') {
+            const out = Object.assign({}, base);
+            Object.keys(override).forEach(key => {
+                out[key] = mergePresentationNode(base[key], override[key]);
+            });
+            return out;
+        }
+        return override;
+    }
+
+    function workspacePresentationTree(snapshotOrTree) {
+        const source = snapshotOrTree;
+        if (!source || typeof source !== 'object') return {};
+        const isSnapshot = !!(source.ui || source.agent || source.session || source.operation);
+        if (!isSnapshot) return source;
+        const ui = source.ui || {};
+        const uiState = ui.state || ui;
+        const override = uiState.data_tree || source.data_tree || source.dataTree || {};
+        const base = (source.agent && source.agent.ui_state && source.agent.ui_state.data_tree) || {};
+        if (!base || typeof base !== 'object') return override && typeof override === 'object' ? override : {};
+        if (!override || typeof override !== 'object') return base;
+        return mergePresentationNode(base, override);
+    }
+    window.workspacePresentationTree = workspacePresentationTree;
+
     function scheduleBackgroundWorkspaceRestore(workspace, sessionId, restoreOptions = {}) {
         if (String(sessionId || '') !== String(activeSessionId || '')
             || !workspaceSnapshotHasClinicalResources(workspace)) {
@@ -621,9 +668,21 @@
                     && sessionId === activeSessionId
                     && window.Report?.autoFill?.fromAll) {
                     try {
+                        // A dormant case can carry report figures captured under
+                        // an older capture contract. Those rows are deliberately
+                        // hidden by the export validity guard, so a restore that
+                        // never recaptures leaves the report image-less. Ask for
+                        // one canonical recapture only when the saved report does
+                        // not already satisfy the current contract.
+                        const restoredForm = window.reportForm;
+                        const needsCanonicalCapture = typeof window.reportFiguresNeedCapture === 'function'
+                            && window.reportFiguresNeedCapture(
+                                restoredForm,
+                                String(restoredForm?.planningId || restoredForm?.planning_id || ''),
+                            ) === true;
                         const reportRestore = await window.Report.autoFill.fromAll({
                             sessionId: String(sessionId),
-                            captureFigures: false,
+                            captureFigures: needsCanonicalCapture,
                             allowBlankRepair: true,
                             backgroundRestore: true,
                         });
@@ -989,7 +1048,8 @@
         }
         const ui = snapshotOrTree.ui || {};
         const uiState = ui.state || ui;
-        const tree = uiState.data_tree || snapshotOrTree.data_tree || snapshotOrTree.dataTree || {};
+        const tree = workspacePresentationTree(snapshotOrTree)
+            || uiState.data_tree || snapshotOrTree.data_tree || snapshotOrTree.dataTree || {};
         const viewer = uiState.viewer || snapshotOrTree.viewer || {};
         const registry = {
             sessionId: sid,
@@ -2683,7 +2743,8 @@
         const ui = workspace?.ui || {};
         const uiState = ui.state || ui;
         const viewer = uiState.viewer || {};
-        const savedTree = uiState.data_tree
+        const savedTree = workspacePresentationTree(workspace)
+            || uiState.data_tree
             || workspace?.data_tree
             || workspace?.dataTree
             || null;
@@ -3958,9 +4019,12 @@
                     }
                 }
             }
-            if (uiState.data_tree && typeof dataTreeState !== 'undefined') {
-                if (options.preserveClinicalData) applyDataTreePresentation(uiState.data_tree);
-                else applyDataTreeSnapshot(uiState.data_tree);
+            const presentationTree = workspacePresentationTree(snapshot);
+            if (presentationTree && typeof presentationTree === 'object'
+                && Object.keys(presentationTree).length > 0
+                && typeof dataTreeState !== 'undefined') {
+                if (options.preserveClinicalData) applyDataTreePresentation(presentationTree);
+                else applyDataTreeSnapshot(presentationTree);
             }
             if (!options.preserveClinicalData && uiState.manual && typeof _saveManualState === 'function') {
                 _saveManualState(uiState.manual);

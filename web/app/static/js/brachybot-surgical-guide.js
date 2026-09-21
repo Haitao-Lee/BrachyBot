@@ -44,6 +44,12 @@
     const GUIDE_STL_VALIDATION_FILE_ID = 'guideStlValidationFile';
     const GUIDE_STL_VALIDATION_STATUS_ID = 'guideStlValidationStatus';
     let guideLoadGeneration = 0;
+    // A restored case can answer the guide mesh request before the detached
+    // hydration worker has decoded the persisted vertex/face sidecars
+    // (HTTP 200 persisted_not_loaded). That used to end the one-shot restore
+    // with no guide and no retry; keep a small bounded poll instead.
+    let guideTransientRetryTimer = null;
+    let guideTransientRetryCount = 0;
     // Manual needle edits invalidate the active guide before the expensive
     // dose request starts. Remember whether a guide was actually present so
     // the post-replan transaction can regenerate it, while cases that never
@@ -541,9 +547,25 @@
         return payload;
     }
 
+    function _scheduleTransientGuideRetry(sessionId) {
+        if (guideTransientRetryTimer) return;
+        guideTransientRetryCount += 1;
+        if (guideTransientRetryCount > 10) return;
+        const delay = Math.min(15000, 1500 * guideTransientRetryCount);
+        guideTransientRetryTimer = setTimeout(() => {
+            guideTransientRetryTimer = null;
+            if (String(sessionId) !== String(activeSessionId())) {
+                guideTransientRetryCount = 0;
+                return;
+            }
+            void window.loadSurgicalGuideMesh({ sessionId });
+        }, delay);
+    }
+
     window.loadSurgicalGuideMesh = async function loadSurgicalGuideMesh(options = {}) {
         const sessionId = String(options.sessionId || activeSessionId());
         if (!sessionId) return false;
+        if (options.userInitiated) guideTransientRetryCount = 0;
         const generation = ++guideLoadGeneration;
         try {
             const version = Number(options.version);
@@ -557,8 +579,14 @@
                 // backend status contract explicitly distinguishes a
                 // persisted-but-not-loaded mesh from a confirmed absence.
                 applyGuideMetadata(payload, payload.guide || null);
+                // Only the active guide is retried; an explicitly requested
+                // historical version must not be promoted on a timer.
+                if (!(Number.isInteger(version) && version > 0)) {
+                    _scheduleTransientGuideRetry(sessionId);
+                }
                 return false;
             }
+            guideTransientRetryCount = 0;
             if (payload?.skin_surface?.available && typeof window.loadGuideSkinSurface === 'function') {
                 void window.loadGuideSkinSurface({ sessionId });
             }

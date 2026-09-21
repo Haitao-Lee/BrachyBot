@@ -613,6 +613,13 @@ class ExportService:
                         "capture_role": figure.get("captureRole"),
                         "capture_contract": figure.get("captureContract"),
                         "capture_profile": figure.get("captureProfile"),
+                        # The rendering identity is part of the capture
+                        # contract. Without it a restored/catalogued figure is
+                        # reclassified as invalid and dropped from the report.
+                        "display_mode": figure.get("displayMode"),
+                        "render_signature": figure.get("renderSignature"),
+                        "mapped_mesh_count": figure.get("mappedMeshCount"),
+                        "sha256": figure.get("sha256") or figure.get("contentSha256"),
                     },
                 },
             ))

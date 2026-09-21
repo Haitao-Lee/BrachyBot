@@ -1250,9 +1250,16 @@ def _guide_records(agent: Any) -> List[Dict[str, Any]]:
 def _current_guide_record(agent: Any) -> Optional[Dict[str, Any]]:
     """Resolve the guide belonging to the active Planning, if any."""
     active_id = _read_active_planning_id(agent)
+    # A record explicitly marked ``current`` comes from the live alias or the
+    # active run snapshot. Keep it even when its stored ``planning_id`` no
+    # longer equals the resolved active id: hydration-time planning reconcile
+    # may auto-switch the active run, and dropping the authoritative alias here
+    # used to surface a persisted guide as ``not_generated`` after a cold
+    # archive restore, which made the Viewer delete a valid guide.
     candidates = [
         record for record in _guide_records(agent)
-        if _guide_matches_active_planning(record["state"], active_id)
+        if record.get("current")
+        or _guide_matches_active_planning(record["state"], active_id)
     ]
     if active_id:
         # A legacy history entry may lack ``planning_id``. It is safe for

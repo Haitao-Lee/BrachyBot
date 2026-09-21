@@ -1676,7 +1676,7 @@ def test_preserve_clinical_restore_does_not_drop_server_owned_upload_siblings():
     workspace = read("web/app/static/js/brachybot-workspace.js")
     viewer = read("web/app/static/js/brachybot-viewer-volume.js")
     start = workspace.index("// Restore manual/threshold masks")
-    end = workspace.index("if (uiState.data_tree", start)
+    end = workspace.index("const presentationTree = workspacePresentationTree(snapshot)", start)
     restore_block = workspace[start:end]
 
     assert "const preserveClinicalData = options.preserveClinicalData === true" in restore_block
@@ -2420,7 +2420,7 @@ def test_range_controls_get_single_step_buttons_without_bypassing_native_events(
     controls = read("web/app/static/css/brachybot-report-controls.css")
 
     assert "brachybot-report-controls.css?v=29" in index
-    assert "brachybot-viewer-volume.js?v=73" in index
+    assert "brachybot-viewer-volume.js?v=74" in index
     assert "brachybot-range-stepper.js?v=2" in index
     assert "function stepRange(input, direction)" in stepper
     assert "input.dispatchEvent(new Event('input'" in stepper

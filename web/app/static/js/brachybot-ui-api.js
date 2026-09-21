@@ -1786,12 +1786,19 @@ function _flushMonitorFeedback(ownerSessionId, ownerRunId, options = {}) {
         ? trainingMonitorState.pendingFeedback.splice(0)
         : [];
     if (!pending.length) return false;
-    const unique = [...new Map(pending.map(item => [item.message, item])).values()];
+    // Deduplicate by message AND edit identity. Two edits can share identical
+    // feedback text but own different restore evidence; collapsing them by
+    // text alone could offer/attach the wrong decision token.
+    const unique = [...new Map(pending.map(item => [
+        `${item.message}\u0000${item.evidence?.restore_token || item.evidence?.event_id || ''}`,
+        item,
+    ])).values()];
     const title = monitorChatText('阶段监测', 'Stage monitor', ownerSessionId);
     const body = unique.length === 1
         ? unique[0].message
         : unique.map(item => `- ${item.message}`).join('\n');
     const requestId = `monitor-${ownerRunId}`;
+    const messageId = `assistant-${requestId}-feedback-${Date.now()}`;
     addChat(
         'bot-response',
         `**${title}**\n\n${body}`,
@@ -1801,15 +1808,42 @@ function _flushMonitorFeedback(ownerSessionId, ownerRunId, options = {}) {
         ownerSessionId,
         {
             requestId,
-            messageId: `assistant-${requestId}-feedback-${Date.now()}`,
+            messageId,
             messageKind: 'monitor_feedback',
             responseLanguage: monitorConversationLanguage(ownerSessionId),
         },
     );
+    const latest = unique.at(-1)?.evidence;
+    if (typeof _attachMonitorEditChoices === 'function') _attachMonitorEditChoices(messageId, latest, ownerSessionId, ownerRunId);
     return true;
 }
 
-function _queueMonitorFeedback(message, type, label, ownerSessionId, ownerRunId) {
+function _attachMonitorEditChoices(messageId, evidence, sessionId, runId) {
+    const token = evidence?.restore_token;
+    if (!/^[a-f0-9]{12}$/.test(token || '') || typeof document.querySelectorAll !== 'function') return;
+    const row = Array.from(document.querySelectorAll('[data-message-id]')).find(node => node.dataset.messageId === messageId);
+    if (!row || row.querySelector('.monitor-edit-actions')) return;
+    const actions = document.createElement('div');
+    actions.className = 'monitor-edit-actions';
+    actions.style.cssText = 'display:flex;gap:8px;margin-top:10px;flex-wrap:wrap';
+    for (const [command, zh, en] of [['undo', '恢复这次编辑前的位置', 'Restore pre-edit position'], ['keep', '保留这次编辑', 'Keep this edit']]) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'btn btn-sm';
+        button.textContent = monitorChatText(zh, en, sessionId);
+        button.addEventListener('click', () => {
+            if (sessionId !== _activeApiSessionId() || runId !== trainingMonitorState.runId || !trainingMonitorState.active) {
+                button.disabled = true;
+                return;
+            }
+            if (typeof sendChat === 'function') void sendChat(`${command} ${token}`, { queueIfBusy: true });
+        });
+        actions.appendChild(button);
+    }
+    row.appendChild(actions);
+}
+
+function _queueMonitorFeedback(message, type, label, ownerSessionId, ownerRunId, evidence = null) {
     if (!message || !trainingMonitorState.active) return false;
     const immediate = type === 'manual.dose'
         || (/^(planning|segmentation)\.step$/i.test(type)
@@ -1819,6 +1853,7 @@ function _queueMonitorFeedback(message, type, label, ownerSessionId, ownerRunId)
         _flushMonitorFeedback(ownerSessionId, ownerRunId);
         const title = monitorChatText('监测建议', 'Monitor feedback', ownerSessionId);
         const requestId = `monitor-${ownerRunId}`;
+        const messageId = `assistant-${requestId}-feedback-${Date.now()}`;
         addChat(
             'bot-response',
             `**${title}**\n\n${message}`,
@@ -1828,18 +1863,19 @@ function _queueMonitorFeedback(message, type, label, ownerSessionId, ownerRunId)
             ownerSessionId,
             {
                 requestId,
-                messageId: `assistant-${requestId}-feedback-${Date.now()}`,
+                messageId,
                 messageKind: 'monitor_feedback',
                 responseLanguage: monitorConversationLanguage(ownerSessionId),
             },
         );
+        if (typeof _attachMonitorEditChoices === 'function') _attachMonitorEditChoices(messageId, evidence, ownerSessionId, ownerRunId);
         return true;
     }
     if (!aggregate) return false;
     if (!Array.isArray(trainingMonitorState.pendingFeedback)) {
         trainingMonitorState.pendingFeedback = [];
     }
-    trainingMonitorState.pendingFeedback.push({ message, type, label, at: Date.now() });
+    trainingMonitorState.pendingFeedback.push({ message, type, label, evidence, at: Date.now() });
     _clearMonitorFeedbackTimer();
     trainingMonitorState.feedbackTimer = setTimeout(() => {
         _flushMonitorFeedback(ownerSessionId, ownerRunId);
@@ -1945,6 +1981,7 @@ function setTrainingMonitorPhase(phase) {
         : 'inactive';
     trainingMonitorState.phase = normalized;
     trainingMonitorState.active = normalized === 'active';
+    if (normalized !== 'active') trainingMonitorState.captureQueue = [];
     setMonitorPresentation(normalized);
 }
 window.setTrainingMonitorPhase = setTrainingMonitorPhase;
@@ -2059,12 +2096,80 @@ async function syncUIBridgeState(reason = 'snapshot') {
     }
 }
 
+// Explicit edit decisions have a server-issued identifier. Bare "yes" or a
+// quoted/conditional command never authorizes a clinical mutation.
+window.handleMonitorConversation = async function(text) {
+    if (!trainingMonitorState.active) return false;
+    const decision = String(text).trim().match(/^(复位|撤销|保留|undo|restore|keep)\s+([a-f0-9]{12})[。.!！]?$/i);
+    const query = /^(?:请|告诉我|请告诉我)?\s*(?:刚刚|刚才|这次|上一步|本次).{0,18}(?:变好|变坏|改善|劣化|影响|变化|评分|分数|score).{0,12}[?？。]?$|^(?:不是)?可以计算规划的\s*score\s*吗[?？。]?$|^(?:did|how did|was) (?:my |the )?(?:last|latest) edit (?:improve|worsen|affect|change).{0,35}\?$/i.test(text);
+    if (!decision && (!query || /[，,;；“”"「」]|以及|另外|然后|同时|如果|假如|\band\b|\bif\b/i.test(text))) return false;
+    const sessionId = _activeApiSessionId();
+    const runId = trainingMonitorState.runId;
+    const language = monitorConversationLanguage(sessionId);
+    const input = document.getElementById('chatInput');
+    if (input && input.value.trim() === text.trim()) {
+        input.value = '';
+        window.resizeChatInput?.(input);
+    }
+    addChat('user', text, true, Date.now(), false, sessionId);
+    // Participate in the normal turn lifecycle instead of running beside it:
+    // bump the generation, claim the case task, and expose cancellation so
+    // Stop or a newer turn cannot leave streaming state stranded.
+    const generation = Number(window._chatTurnGeneration || 0) + 1;
+    window._chatTurnGeneration = generation;
+    window._activeChatTurnGeneration = generation;
+    window._activeChatTaskSessionId = sessionId;
+    const abort = new AbortController();
+    window._monitorTurnAbort = abort;
+    window._chatTurnCancelUi = () => { try { abort.abort(); } catch (_) {} };
+    const timeout = setTimeout(() => abort.abort(), 30000);
+    window._chatTurnActive = true;
+    if (typeof setStreamingState === 'function') setStreamingState(true);
+    try {
+        const kept = decision && /^(保留|keep)$/i.test(decision[1]);
+        const response = await fetch(API + (decision ? '/training/restore_edit' : `/training/edit?language=${language}`), {
+            signal: abort.signal,
+            method: decision ? 'POST' : 'GET',
+            headers: { 'Content-Type': 'application/json', 'X-BrachyBot-Session': sessionId },
+            ...(decision ? { body: JSON.stringify({ session_id: sessionId, token: decision[2].toLowerCase(), decision: kept ? 'keep' : 'restore' }) } : {}),
+        });
+        const data = await response.json();
+        if (sessionId !== _activeApiSessionId() || runId !== trainingMonitorState.runId) return true;
+        if (!response.ok || !data.success) throw new Error(data.error || `HTTP ${response.status}`);
+        if (decision && !kept) {
+            if (typeof _applyAuthoritativeManualSeeds === 'function') _applyAuthoritativeManualSeeds(data);
+            window.invalidateSurgicalGuidePresentation?.();
+            window.scheduleWorkspaceSave?.('monitor.edit.restored');
+            if (data.event) void reportUIEvent(data.event.type, data.event.label, {}, { alreadyRecorded: true, committedEvent: data.event });
+        }
+        const message = decision
+            ? (kept ? monitorChatText('已保留这次编辑。', 'This edit was kept.', sessionId)
+                : monitorChatText('已恢复本次编辑前的几何。剂量、DVH 和相关产物已标记待更新，请重算后比较。', 'Prior geometry restored. Dose, DVH and dependent artifacts require updating before comparison.', sessionId))
+            : data.message || monitorChatText('这轮监测尚未记录可比较的编辑。完成一次编辑后，我会显示具体对象、几何变化和重算后的指标差值。', 'No comparable edit has been recorded in this run yet. After an edit I can show its objects, geometry changes and recomputed metric deltas.', sessionId);
+        addChat('bot-response', message, true, Date.now(), false, sessionId, { messageKind: 'monitor_feedback' });
+    } catch (error) {
+        addChat('error', monitorChatText('本次监测请求未完成：', 'Monitor request did not complete: ', sessionId) + error.message,
+            true, Date.now(), false, sessionId);
+    } finally {
+        clearTimeout(timeout);
+        if (window._monitorTurnAbort === abort) window._monitorTurnAbort = null;
+        if (generation === Number(window._chatTurnGeneration || 0) && sessionId === _activeApiSessionId()) {
+            window._chatTurnActive = false;
+            window._chatTurnCancelUi = null;
+            if (window._activeChatTaskSessionId === sessionId) window._activeChatTaskSessionId = null;
+            if (typeof setStreamingState === 'function') setStreamingState(false);
+            if (typeof _flushQueuedChatTurns === 'function') _flushQueuedChatTurns();
+        }
+    }
+    return true;
+};
+
 async function reportUIEvent(type, label, detail = {}, options = {}) {
     const ownerSessionId = _activeApiSessionId();
     const language = monitorConversationLanguage(ownerSessionId);
     const ownerRunId = trainingMonitorState.runId;
     try {
-        const res = await fetch(API + '/ui/event', {
+        const res = options.cachedCheckpoint ? null : await fetch(API + '/ui/event', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -2084,16 +2189,17 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                 ui_state: (typeof collectUIState === 'function') ? collectUIState() : {},
             }),
         });
-        const data = await res.json().catch(() => null);
+        const data = options.cachedCheckpoint || await res.json().catch(() => null);
         if (ownerSessionId !== _activeApiSessionId()) return null;
         if (ownerRunId && data?.monitor_run_id && ownerRunId !== data.monitor_run_id) return null;
-        const feedbackText = data && (data.feedback_localized || data.feedback);
+        const feedbackText = !options.cachedCheckpoint && data && (data.feedback_localized || data.feedback);
         const queued = _queueMonitorFeedback(
             feedbackText,
             type,
             label,
             ownerSessionId,
             ownerRunId,
+            data?.event?.detail?.edit_evidence,
         );
         if (!queued && feedbackText && _shouldLogTrainingFeedback(feedbackText, type, label)) {
             const monitorPrefix = monitorChatText('监测建议', 'Monitor feedback', ownerSessionId);
@@ -2116,6 +2222,14 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
         if (data && data.suggested_screenshot && trainingMonitorState.active) {
             const now = Date.now();
             const ss = data.suggested_screenshot;
+            if (trainingMonitorState.screenshotPendingRunId) {
+                const queue = trainingMonitorState.captureQueue ||= [];
+                if (!queue.some(item => item.data.suggested_screenshot?.checkpoint_id === ss.checkpoint_id && ss.checkpoint_id)) {
+                    queue.push({ type, label, data, sessionId: ownerSessionId, runId: ownerRunId });
+                    if (queue.length > 8) queue.shift();
+                }
+                return data;
+            }
             // Dose recomputation is an explicit teaching checkpoint: the
             // monitor must not hide the corresponding screenshot behind the
             // generic 45-second chatter throttle. Other event types remain
@@ -2125,7 +2239,7 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
             const isDoseCheckpoint = type === 'manual.dose'
                 || ss.target === 'dose-overview'
                 || ss.target === 'dvh';
-            if ((isStageCheckpoint || isDoseCheckpoint || now - trainingMonitorState.lastScreenshotAt > 45000)
+            if ((ss.checkpoint_id || isStageCheckpoint || isDoseCheckpoint || now - trainingMonitorState.lastScreenshotAt > 45000)
                 && typeof _interceptScreenshot === 'function'
                 && !document.hidden && !trainingMonitorState.screenshotPendingRunId) {
                 trainingMonitorState.screenshotPendingRunId = ownerRunId;
@@ -2140,18 +2254,18 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                         if (trainingMonitorState.screenshotPendingRunId === ownerRunId) trainingMonitorState.screenshotPendingRunId = null;
                         return;
                     }
-                    if (!trainingMonitorState.screenshotGalleryContext) {
-                        trainingMonitorState.screenshotGalleryContext = {
+                    const checkpointId = ss.checkpoint_id || String(Date.now());
+                    // Every edit owns an immutable evidence message. A later
+                    // seed/needle checkpoint must not replace an earlier image.
+                    const monitorScreenshotContext = {
                             keys: new Set(),
                             items: [],
                             sessionId: ownerSessionId,
                             requestId: `monitor-${ownerRunId || Date.now()}`,
-                            messageId: `assistant-monitor-${ownerRunId || Date.now()}`,
+                            messageId: `assistant-monitor-${ownerRunId}-${checkpointId}`,
                             mode: 'monitor',
                             layout: 'auto',
-                        };
-                    }
-                    const monitorScreenshotContext = trainingMonitorState.screenshotGalleryContext;
+                    };
                     const focusObjectIds = [
                         ...(Array.isArray(ss.focus_seed_ids) ? ss.focus_seed_ids : []),
                         ...(Array.isArray(ss.object_ids) ? ss.object_ids : []),
@@ -2166,6 +2280,10 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                             messageId: monitorScreenshotContext.messageId,
                             mode: 'monitor',
                             monitorOnly: true,
+                            monitorRunId: ownerRunId,
+                            monitorPlanningVersion: ss.planning_version,
+                            monitorPlanningId: ss.planning_id,
+                            monitorEditEvidence: ss.edit_evidence,
                             plan: {
                                 version: 5,
                                 mode: 'monitor',
@@ -2177,7 +2295,9 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                                     : [ss.target || 'dose-overview'],
                                 object_ids: focusObjectIds,
                                 highlight_object_ids: focusObjectIds,
-                                hide_unrelated: !!ss.hide_unrelated || focusObjectIds.length > 0,
+                                visual_purpose: focusObjectIds.length ? 'locate' : 'overview',
+                                annotation_policy: focusObjectIds.length ? 'required' : 'auto',
+                                hide_unrelated: false,
                                 focus: {
                                     kind: focusObjectIds.length ? 'close-up' : 'auto',
                                     padding: Number(ss.padding || 0.35),
@@ -2193,13 +2313,20 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                             || ownerRunId !== trainingMonitorState.runId
                             || ownerSessionId !== _activeApiSessionId()) return;
                         if (!result?.success) {
+                            if (result?.error === 'monitor_checkpoint_superseded') {
+                                addChat('bot-response', monitorChatText(
+                                    '后续编辑已改变规划，本次旧检查点的截图已跳过；文字保留的是当时提交的检查结果。',
+                                    'A newer edit changed the plan, so this older screenshot was skipped. Its text retains the committed findings.', ownerSessionId),
+                                    true, Date.now(), false, ownerSessionId, { messageKind: 'monitor_feedback' });
+                                return;
+                            }
                             _recordMonitorCaptureFailure(ownerSessionId, ownerRunId);
                             return;
                         }
                         const title = monitorChatText('监测证据', 'Monitor evidence', ownerSessionId);
                         const evidenceCaption = monitorChatText(
-                            '已捕获与当前规划检查对应的可视化证据。',
-                            'Captured visual evidence for the current planning checkpoint.',
+                            `本次编辑的对象/间距检查：${focusObjectIds.join('、') || '剂量与 DVH'}。标注用于定位已核实对象；若图中显示紫色箭头，它从当前位置指向编辑前的位置，仅作复位参考，不代表剂量最优方向。取景后恢复原视图。`,
+                            `Objects/spacing for this edit: ${focusObjectIds.join(', ') || 'dose and DVH'}. Marks locate verified objects. Purple arrows, when visible, point from current to pre-edit positions as undo references, not dose-optimal directions. Original view restored.`,
                             ownerSessionId,
                         );
                         const capturedAttachments = Array.isArray(result.attachments) && result.attachments.length
@@ -2236,6 +2363,11 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                         _recordMonitorCaptureFailure(ownerSessionId, ownerRunId);
                     }).finally(() => {
                         if (trainingMonitorState.screenshotPendingRunId === ownerRunId) trainingMonitorState.screenshotPendingRunId = null;
+                        const queue = trainingMonitorState.captureQueue || [];
+                        const next = queue.shift();
+                        if (next && next.runId === trainingMonitorState.runId && next.sessionId === _activeApiSessionId()) {
+                            void reportUIEvent(next.type, next.label, {}, { cachedCheckpoint: next.data });
+                        }
                     });
                 }, 500);
             }
@@ -2243,7 +2375,7 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
         // UI events include viewer, Data Tree, manual-planning and form
         // interactions. Coalesce their workspace checkpoint after the API
         // event succeeds so a reload restores the visible case state.
-        if (typeof window.scheduleWorkspaceSave === 'function') {
+        if (!options.cachedCheckpoint && typeof window.scheduleWorkspaceSave === 'function') {
             window.scheduleWorkspaceSave(`ui.event:${type}`);
         }
         if (options.returnData) return data;
@@ -4670,8 +4802,21 @@ function _workspaceHasSavedPresentation(workspace) {
     const uiState = (workspace.ui && (workspace.ui.state || workspace.ui)) || {};
     const labels = uiState?.viewer?.masks?.labels;
     if (labels && typeof labels === 'object' && Object.keys(labels).length > 0) return true;
-    const tree = uiState.data_tree || workspace.data_tree || workspace.dataTree;
+    const tree = (typeof window.workspacePresentationTree === 'function'
+        ? window.workspacePresentationTree(workspace)
+        : null) || uiState.data_tree || workspace.data_tree || workspace.dataTree;
     if (!tree || typeof tree !== 'object') return false;
+    // Group nodes (ct/ctv/oar/skin/dose/seeds/needles/planning) carry the
+    // saved colour/opacity too; a case whose presentation is group-level only
+    // must still keep the write fence during restore.
+    const hasGroupPresentation = ['ct', 'ctv', 'oar', 'skin', 'dose', 'seeds', 'needles', 'planning']
+        .some(key => {
+            const node = tree[key];
+            if (!node || typeof node !== 'object') return false;
+            return ['color', 'opacity', 'visible', 'visible2D', 'visible3D']
+                .some(prop => node[prop] !== undefined);
+        });
+    if (hasGroupPresentation) return true;
     return ['uploadMasks', 'upload_masks', 'organs', 'ctvLabels', 'ctv_labels']
         .some(key => {
             const value = tree[key];
@@ -5504,9 +5649,13 @@ function restoreActiveSessionWorkspace(options = {}) {
             window.__workspaceHydrationRunId || null,
             { persistDeferred: persistRestoredPresentation },
         );
-        if (persistRestoredPresentation) {
-            window.unlockWorkspacePresentationWrites?.(presentationWriteLockToken);
-        }
+        // Always release the write fence. finalizeWorkspacePresentationRestore
+        // has already deactivated the registry, and the reconciliation above
+        // re-applied the saved presentation, so releasing cannot publish a
+        // cleared tree. A leaked lock silently stopped persisting every later
+        // Data Tree edit for this case (and froze ui.state at a partial
+        // projection while the Agent checkpoint kept the complete tree).
+        window.unlockWorkspacePresentationWrites?.(presentationWriteLockToken);
         if (_workspaceRestoreTransaction === transaction) _workspaceRestoreTransaction = null;
     });
     return transaction.promise;
@@ -6687,10 +6836,15 @@ function _uiActionSessionIsCurrent(sessionId) {
     return !sessionId || String(sessionId) === String(_activeApiSessionId());
 }
 
+// Shares the single heavy report figure capture when the same turn reaches
+// report.autofill from more than one path (e.g. a report_auto_fill tool step
+// and a ui_controller report.autofill action).
+const _reportAutoFillInFlight = new Map();
+
 async function _executeUIAction(a, options = {}) {
     const ownerSessionId = String(options.sessionId || '');
     if (!_uiActionSessionIsCurrent(ownerSessionId)) {
-        return { success: false, stale: true, error: 'The UI action belongs to another case.' };
+        return { success: false, stale: true, target: a?.target || '', command: a?.command || '' };
     }
     const { target, command, value, requires_confirm } = a;
     if (requires_confirm) {
@@ -8022,6 +8176,11 @@ async function _executeUIActionRaw(a, options = {}) {
         // ── Report ──
         if (target === 'report.autofill') {
             const reportSessionId = ownerSessionId || _activeApiSessionId();
+            const autoFillKey = String(reportSessionId || '');
+            const autoFillInFlight = autoFillKey
+                ? _reportAutoFillInFlight.get(autoFillKey) : null;
+            if (autoFillInFlight) return autoFillInFlight;
+            const autoFillTask = (async () => {
             let reportPlanningId = '';
             let visualBarrierResult = null;
             // A report regeneration is a read of the complete saved case. A
@@ -8083,6 +8242,15 @@ async function _executeUIActionRaw(a, options = {}) {
             }
             if (typeof reportAutoFill === 'function') return reportAutoFill();
             return { success: false, error: 'Report auto-fill is unavailable.' };
+            })();
+            if (autoFillKey) _reportAutoFillInFlight.set(autoFillKey, autoFillTask);
+            try {
+                return await autoFillTask;
+            } finally {
+                if (autoFillKey && _reportAutoFillInFlight.get(autoFillKey) === autoFillTask) {
+                    _reportAutoFillInFlight.delete(autoFillKey);
+                }
+            }
         }
         if (target === 'report.export') {
             if (typeof Report !== 'undefined' && Report.export) {
@@ -11434,6 +11602,42 @@ function _screenshotAutoFrameEnabled(plan, targetRefs) {
     );
 }
 
+function _monitorReturnPositionOverlay(evidence) {
+    if (typeof THREE === 'undefined' || typeof scene3D === 'undefined' || !scene3D?.scene) return null;
+    const scene = scene3D.scene;
+    const group = new THREE.Group();
+    const valid = point => Array.isArray(point) && point.length === 3 && point.every(Number.isFinite);
+    for (const obj of evidence?.changed_objects || []) {
+        if (obj.operation !== 'moved') continue;
+        const mesh = scene3D.meshes?.[obj.id];
+        if (!mesh || mesh.visible === false) continue;
+        const pairs = obj.kind === 'seeds' ? [[obj.after, obj.before]]
+            : [[obj.after?.[0], obj.before?.[0]], [obj.after?.at(-1), obj.before?.at(-1)]];
+        for (const [after, before] of pairs) {
+            if (!valid(after) || !valid(before)) continue;
+            const origin = new THREE.Vector3(...after);
+            const delta = new THREE.Vector3(...before).sub(origin);
+            const distance = delta.length();
+            if (distance < 0.05) continue;
+            const arrow = new THREE.ArrowHelper(delta.normalize(), origin, distance, 0xc084fc,
+                Math.min(distance * 0.25, 2), Math.min(distance * 0.12, 1));
+            group.add(arrow);
+        }
+    }
+    scene.add(group);
+    scene3D.requestRender?.(2);
+    return () => {
+        scene.remove(group);
+        group.traverse(child => {
+            // ArrowHelper geometries are shared by Three.js; dispose only
+            // per-instance materials to avoid breaking other scene arrows.
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            materials.filter(Boolean).forEach(material => material.dispose?.());
+        });
+        if (scene3D.scene === scene) scene3D.requestRender?.(2);
+    };
+}
+
 async function _applyStructuredScreenshotPlan(plan, viewTarget) {
     // Locate captures document the live presentation; never rewrite overlays for them.
     if (plan.visual_purpose !== 'locate') _applyScreenshotOverlayPlan(plan);
@@ -11806,8 +12010,15 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
     context.mode = plan.mode;
     context.layout = context._multiLocateSideBySide ? 'side-by-side' : plan.layout;
     const ownerStillActive = () => ownerSessionId === String(_activeApiSessionId())
-        && (!options.monitorOnly || trainingMonitorState.active);
+        && (!options.monitorOnly || (trainingMonitorState.active
+            && (!options.monitorRunId || options.monitorRunId === trainingMonitorState.runId)));
+    const monitorCheckpointCurrent = () => !options.monitorOnly
+        || options.monitorPlanningVersion == null
+        || (typeof manualPlanningState !== 'undefined'
+            && Number(manualPlanningState.planningVersion) === Number(options.monitorPlanningVersion)
+            && (!options.monitorPlanningId || String(manualPlanningState.planningId) === String(options.monitorPlanningId)));
     if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
+    if (!monitorCheckpointCurrent()) return { success: false, error: 'monitor_checkpoint_superseded' };
 
     // The loading notice intentionally remains non-blocking for ordinary UI
     // work, but a screenshot is a serialized evidence read.  Case-backed
@@ -11823,7 +12034,7 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
         ? { ready: true, reason: 'ui_dom_capture' }
         : (typeof window.awaitWorkspaceVisualReady === 'function'
             ? await window.awaitWorkspaceVisualReady(ownerSessionId, {
-                timeoutMs: 300000,
+                timeoutMs: options.monitorOnly ? 10000 : 300000,
                 reason: 'screenshot-capture',
             })
             : { ready: true, legacy: true });
@@ -11859,10 +12070,11 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
         for (let index = 0; index < captureViews.length; index += 1) {
             try {
                 if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
+                if (!monitorCheckpointCurrent()) return { success: false, error: 'monitor_checkpoint_superseded' };
                 const view = captureViews[index];
                 const viewTarget = String(view.target || 'full');
                 const captureSpec = Object.assign({}, plan, view);
-                if (plan.mode === 'chat' && plan.visual_purpose === 'locate'
+                if (['chat', 'monitor'].includes(plan.mode) && plan.visual_purpose === 'locate'
                     && viewTarget === 'viewer-3d' && _screenshotTargetRefs(plan).length) {
                     restoreVisibility = _revealScreenshotNodes(plan, ownerStillActive);
                     if (!restoreVisibility || restoreVisibility.unresolvedTargetRefs?.length) {
@@ -11875,7 +12087,7 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                     ? document.body
                     : await _prepareScreenshotTarget(viewTarget, captureSpec);
                 if (!element) throw new Error(`target_not_found:${viewTarget}`);
-                if (plan.mode === 'chat' && plan.visual_purpose === 'locate'
+                if (['chat', 'monitor'].includes(plan.mode) && plan.visual_purpose === 'locate'
                     && viewTarget === 'viewer-3d' && _screenshotTargetRefs(plan).length) {
                     const needsReframe = _screenshotNeeds3DReframe(captureSpec);
                     captureSpec.preserve_current_view = !needsReframe;
@@ -11893,7 +12105,13 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                 const viewTransaction = await _applyStructuredScreenshotPlan(captureSpec, viewTarget);
                 activeViewRestore = viewTransaction?.restoreFocus || null;
                 captureSpec.__focusResult = viewTransaction?.focusResult || null;
-                if (plan.mode === 'chat'
+                if (options.monitorOnly && viewTarget === 'viewer-3d' && options.monitorEditEvidence) {
+                    const restoreArrows = _monitorReturnPositionOverlay(options.monitorEditEvidence);
+                    const restoreCamera = activeViewRestore;
+                    activeViewRestore = () => { try { restoreArrows?.(); } finally { restoreCamera?.(); } };
+                    await _waitScreenshotFrames(2);
+                }
+                if (['chat', 'monitor'].includes(plan.mode)
                     && plan.visual_purpose === 'locate'
                     && viewTarget === 'data-tree'
                     && _screenshotTargetRefs(plan).length
@@ -11911,7 +12129,8 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                 element,
                 captureSpec,
             );
-            if (plan.mode === 'chat'
+            if (!monitorCheckpointCurrent()) return { success: false, error: 'monitor_checkpoint_superseded' };
+            if (['chat', 'monitor'].includes(plan.mode)
                 && plan.visual_purpose === 'locate'
                 && viewTarget === 'viewer-3d'
                 && _screenshotTargetRefs(plan).length) {
