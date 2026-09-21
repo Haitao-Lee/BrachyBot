@@ -98,6 +98,27 @@ def test_plan_only_touches_stale_artifacts():
     assert [call["tool"] for call in calls] == ["surgical_guide", "ui_controller"]
 
 
+def test_manual_decision_record_wins_over_a_generic_structure_status():
+    # A stale structure status marks everything stale; the manual record that
+    # says the dose is current must win, so no dose recompute is triggered.
+    values = {
+        "dose_metrics": {"D90": 1.0},
+        "artifact_status": {
+            "planning": "stale", "dose": "stale", "dvh": "stale",
+            "evaluation": "stale", "report": "stale", "surgical_guide": "stale",
+        },
+        "manual_artifact_status": {
+            "dose": "ready", "dvh": "ready", "quality_check": "stale",
+            "report": "stale", "surgical_guide": "stale",
+        },
+    }
+    calls = _agent(values)._detect_tool_request("全部更新")
+    tools = [call["tool"] for call in calls]
+    assert tools[0] == "dose_evaluation"
+    assert "dose_recompute" not in tools
+    assert "surgical_guide" in tools
+
+
 def test_plan_abstains_without_a_planning_or_without_stale_work():
     assert _agent({})._detect_tool_request("全部更新") is None
     clean = {

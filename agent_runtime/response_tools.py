@@ -720,13 +720,22 @@ print(json.dumps(result))
             and retrieve("planning_results") is None
         ):
             return None
-        status = retrieve("artifact_status") or retrieve("manual_artifact_status") or {}
+        # Prefer the manual decision record when it exists: it is the
+        # authoritative per-artifact status for a manually-adjusted plan.
+        # A generic structure status (which can mark everything stale) must not
+        # shadow it and trigger an unnecessary dose recompute.
+        manual_status = retrieve("manual_artifact_status")
+        decision_keys = {"dose", "dvh", "report", "quality_check", "surgical_guide"}
+        if isinstance(manual_status, Mapping) and set(manual_status) & decision_keys:
+            status = manual_status
+        else:
+            status = retrieve("artifact_status")
         if not isinstance(status, Mapping):
             status = {}
         stale = {
             str(key)
             for key, value in status.items()
-            if str(value).lower() == "stale"
+            if str(value).lower() in {"stale", "outdated", "expired"}
         }
         excluded = set(parsed.excluded_targets)
         calls: List[Dict] = []
@@ -738,7 +747,7 @@ print(json.dumps(result))
                 "tool": "dose_recompute",
                 "params": {},
             })
-        if stale & {"quality_check", "dose", "dose_metrics"}:
+        if stale & {"quality_check", "qc", "evaluation", "dose", "dose_metrics"}:
             calls.append({
                 "id": "tool_downstream_quality",
                 "tool": "dose_evaluation",

@@ -1171,20 +1171,21 @@ function reportCaptureAllowed(options = {}) {
         || String(artifacts.dvh || '').toLowerCase() === 'ready';
     const lifecycleActive = _reportPlanningLifecycle.active
         || window.__brachybotPlanningRunActive === true;
+    // Only a genuinely running Planning blocks a capture.  A "draft" lifecycle
+    // is normal for a manually-adjusted plan whose dose is already current;
+    // treating it as "still planning" is the false state judgment users hit.
     const terminalOverride = options.allowTerminalPlanning === true
-        && (status === 'completed' || dataComplete)
+        && (status === 'completed' || dataComplete || status !== 'running')
         && (!requestedPlanningId || !activePlanningId || requestedPlanningId === activePlanningId);
-    if (lifecycleActive && !terminalOverride) {
+    if (lifecycleActive && status === 'running' && !terminalOverride) {
         return { allowed: false, reason: 'planning_in_progress', status };
     }
     if (requestedPlanningId && activePlanningId && requestedPlanningId !== activePlanningId) {
         return { allowed: false, reason: 'planning_changed', status };
     }
     if (options.requireCompleted !== false
-        && status
-        && status !== 'completed'
-        && !terminalOverride
-        && !dataComplete) {
+        && status === 'running'
+        && !terminalOverride) {
         return { allowed: false, reason: 'planning_not_completed', status };
     }
     return { allowed: true, reason: '', status };

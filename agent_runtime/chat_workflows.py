@@ -4778,7 +4778,11 @@ class ChatWorkflowMixin:
             if authorization is not None:
                 authorization.grant_tool_calls(_direct_tool_calls, source="local_direct_calls")
             _lang = self.memory.user_lang
-            logger.info(f"Direct tool execution (stream): {len(_direct_tool_calls)} tools")
+            logger.info(
+                "Direct tool execution (stream): %d tools -> %s",
+                len(_direct_tool_calls),
+                [str(call.get("tool") or "") for call in _direct_tool_calls],
+            )
             for tc in _direct_tool_calls:
                 trace_params = ToolResultPipeline.trace_params(tc["tool"], tc["params"])
                 step = add_step("tool", f"Direct: {tc['tool']}", json.dumps(trace_params, default=str)[:200],
@@ -4889,6 +4893,18 @@ class ChatWorkflowMixin:
                                 tc["tool"],
                             )
                             break
+                    else:
+                        # A tool named in the plan that is not in this Agent's
+                        # registry must fail loudly instead of leaving a
+                        # silent pending step that a stale trace can overwrite.
+                        step["status"] = "error"
+                        step["result"] = (
+                            f"工具 {tc['tool']} 当前不可用（未注册），本次未执行。"
+                            if _lang == "zh"
+                            else f"Tool {tc['tool']} is not available (not registered)."
+                        )
+                        yield yield_event("step", step)
+                        logger.error("Direct tool not registered: %s", tc["tool"])
                 except Exception as e:
                     step["status"] = "error"
                     step["result"] = format_tool_error(tc["tool"], str(e), {}, _lang)

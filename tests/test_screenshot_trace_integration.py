@@ -1464,7 +1464,11 @@ def test_report_generation_executes_and_persists_the_full_report_transaction():
     assert "await window.awaitWorkspaceVisualReady(reportSessionId" in ui_api
     assert "async function prepareReportSceneReadWithRetry" in ui_api
     assert "last = await prepareReportSceneRead(sessionId)" in ui_api
-    assert "String(run.status).toLowerCase() !== 'completed'" in ui_api
+    # Readiness is proven by the loaded scene (meshes + dose overlay), not by a
+    # lifecycle word: a manually-adjusted draft with a current dose must remain
+    # capturable instead of being reported as "still planning".
+    assert "!Object.keys(scene3D.meshes || {}).length || !state.doseOverlay?.shape" in ui_api
+    assert "planning_not_completed" in _source("web/app/static/js/brachybot-report-editor.js")
     assert "captureFigures: true" in ui_api
     assert "allowTerminalPlanning: true" in ui_api
     assert "report_planning_changed" in ui_api
