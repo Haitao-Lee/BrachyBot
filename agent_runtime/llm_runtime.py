@@ -44,6 +44,16 @@ logger = logging.getLogger(__name__)
 
 _RUNTIME_CONTEXT_MARKER = "[BrachyBot runtime context: data only]"
 
+# A single message must never dominate a provider prompt.  One runaway
+# tool-call argument or embedded payload previously pushed a single request to
+# ~870k tokens (near the 1M window) while the durable conversation stayed
+# small.  Oversized text/tool-call content is head/tail-truncated before the
+# window manager ever sees it; multimodal images keep their flat budget.
+_CTX_MAX_SINGLE_MESSAGE_TOKENS = 32_000
+# Log the largest messages once a prompt is large enough to be worth auditing.
+_CTX_AUDIT_THRESHOLD_TOKENS = 40_000
+
+
 # Tool results are not interchangeable at the response boundary.  Evidence
 # tools may enrich an LLM synthesis, but their raw payloads are never a safe
 # assistant fallback: web pages contain arbitrary prose, HTML, prompts and
@@ -766,6 +776,93 @@ class LLMRuntimeMixin:
         # the value the context indicator must show.
         self._ctx_turn_prompt_tokens = 0
 
+    def _cap_oversized_messages(self, messages: List[Dict]) -> List[Dict]:
+        """Head/tail-truncate any single message that dominates the prompt.
+
+        A single runaway tool-call argument or embedded payload must not turn a
+        ~30k prompt into ~900k. Multimodal images are billed by the flat
+        multimodal budget, so they are intentionally left intact.
+        """
+        if not isinstance(messages, list):
+            return messages
+        max_chars = int(_CTX_MAX_SINGLE_MESSAGE_TOKENS * 2.8)
+        capped = 0
+        for msg in messages:
+            if not isinstance(msg, dict):
+                continue
+            if estimate_messages([msg]) <= _CTX_MAX_SINGLE_MESSAGE_TOKENS:
+                continue
+            content = msg.get("content")
+            if isinstance(content, str) and len(content) > max_chars:
+                head = content[: int(max_chars * 0.7)]
+                tail = content[-int(max_chars * 0.2):]
+                msg["content"] = (
+                    f"{head}\n[... truncated oversized context message ...]\n{tail}"
+                )
+                capped += 1
+            tool_calls = msg.get("tool_calls")
+            if isinstance(tool_calls, list):
+                for tc in tool_calls:
+                    fn = tc.get("function") if isinstance(tc, dict) else None
+                    args = fn.get("arguments") if isinstance(fn, dict) else None
+                    if isinstance(args, str) and len(args) > max_chars:
+                        fn["arguments"] = args[:max_chars] + "...[truncated]"
+                        capped += 1
+        if capped:
+            logger.warning(
+                "Capped %s oversized context message(s) to <=%s tokens each",
+                capped, _CTX_MAX_SINGLE_MESSAGE_TOKENS,
+            )
+        return messages
+
+    def _log_context_contributors(
+        self, messages: List[Dict], tools: Optional[Any], estimated: int
+    ) -> None:
+        """Log the largest messages so an oversized prompt is diagnosable."""
+        try:
+            rows = []
+            for index, msg in enumerate(messages or []):
+                if not isinstance(msg, dict):
+                    continue
+                content = msg.get("content")
+                content_len = -1
+                preview = ""
+                if isinstance(content, str):
+                    content_len = len(content)
+                    preview = content[:160].replace("\n", " ")
+                elif isinstance(content, list):
+                    content_len = len(content)
+                    preview = f"multimodal_parts={len(content)}"
+                tool_chars = 0
+                if msg.get("tool_calls"):
+                    try:
+                        tool_chars = len(json.dumps(msg["tool_calls"], default=str))
+                    except Exception:
+                        tool_chars = -1
+                rows.append((
+                    estimate_messages([msg]), index, str(msg.get("role")),
+                    type(content).__name__, content_len, tool_chars, preview,
+                ))
+            rows.sort(reverse=True)
+            try:
+                window = int(self._context_window_manager().window)
+            except Exception:
+                window = 0
+            logger.warning(
+                "Context audit: estimated=%s window=%s top_messages=%s",
+                estimated, window,
+                [
+                    {
+                        "tokens": row[0], "index": row[1], "role": row[2],
+                        "content_type": row[3], "content_len": row[4],
+                        "tool_calls_chars": row[5], "preview": row[6],
+                    }
+                    for row in rows[:5]
+                ],
+            )
+        except Exception:
+            logger.debug("Context audit failed", exc_info=True)
+
     def _enforce_context_budget(
         self,
         messages: List[Dict],
@@ -783,10 +880,17 @@ class LLMRuntimeMixin:
             manager = self._context_window_manager()
         except Exception:
             return messages
+        # Bound any single runaway message first. A tool-call argument or a
+        # tool/user message that embedded a multi-megabyte payload used to push
+        # a single provider prompt past 800k tokens (and near the window)
+        # without any per-message bound.
+        messages = self._cap_oversized_messages(messages)
         estimated = manager.usage(messages, tools)
         self._ctx_last_estimate = estimated
         components = estimate_breakdown(messages, tools)
         self._ctx_last_components = components
+        if estimated >= _CTX_AUDIT_THRESHOLD_TOKENS:
+            self._log_context_contributors(messages, tools, estimated)
         # Remember the fixed provider overhead (system prompt + tool schemas +
         # runtime context) so a status query without a fresh snapshot can still
         # report a realistic size from the durable conversation.
@@ -3896,6 +4000,17 @@ class LLMRuntimeMixin:
                 # Store in conversation memory for context persistence
                 self.memory.add_message("assistant", f"[Called {tool_name}]")
                 self.memory.add_message("user", f"[Tool result: {_fc_text[:500]}]")
+                # Running context size after each tool append. This pinpoints
+                # which step inflates the next provider prompt.
+                try:
+                    logger.info(
+                        "[CTX] after tool=%s result_chars=%s messages=%s "
+                        "estimated_tokens=%s",
+                        tool_name, len(_fc_text[:4000]), len(messages),
+                        estimate_messages(messages),
+                    )
+                except Exception:
+                    logger.debug("[CTX] running estimate failed", exc_info=True)
 
             if not _new_tool_call_executed:
                 logger.warning(

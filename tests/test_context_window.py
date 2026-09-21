@@ -441,3 +441,90 @@ def test_context_status_drops_stale_usage_after_manual_compression():
 
     status = obj.context_status()
     assert 0 < status["used_tokens"] < 999_999
+
+
+def _runtime_with_window(window=1_048_576):
+    from agent_runtime.llm_runtime import LLMRuntimeMixin
+
+    obj = LLMRuntimeMixin()
+    manager = ContextWindowManager(window=window)
+    obj._context_window_manager = lambda: manager
+
+    class Memory:
+        conversation = []
+        context_summary = ""
+
+        def retrieve(self, *args, **kwargs):
+            return None
+
+    obj.memory = Memory()
+    return obj, manager
+
+
+def test_runaway_single_message_is_capped_before_the_provider():
+    """One oversized message must not inflate the prompt to ~1M tokens.
+
+    Regression: a turn's first call was ~25k, but its second call sent 874,752
+    prompt tokens because a single message embedded a multi-megabyte payload.
+    """
+    from agent_runtime.llm_runtime import _CTX_MAX_SINGLE_MESSAGE_TOKENS
+
+    obj, manager = _runtime_with_window()
+    obj._begin_context_turn()
+    messages = [{"role": "user", "content": "x" * 3_000_000}]
+
+    obj._cap_oversized_messages(messages)
+
+    assert "truncated oversized context message" in messages[0]["content"]
+    assert manager.usage(messages) < _CTX_MAX_SINGLE_MESSAGE_TOKENS * 2
+
+
+def test_runaway_tool_call_arguments_are_capped():
+    from agent_runtime.llm_runtime import _CTX_MAX_SINGLE_MESSAGE_TOKENS
+
+    obj, _ = _runtime_with_window()
+    messages = [{
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [{
+            "id": "c1",
+            "type": "function",
+            "function": {"name": "ui_controller", "arguments": "y" * 3_000_000},
+        }],
+    }]
+
+    obj._cap_oversized_messages(messages)
+
+    args = messages[0]["tool_calls"][0]["function"]["arguments"]
+    assert len(args) < _CTX_MAX_SINGLE_MESSAGE_TOKENS * 3
+    assert args.endswith("[truncated]")
+
+
+def test_cap_leaves_small_messages_and_images_untouched():
+    obj, _ = _runtime_with_window()
+    small = {"role": "user", "content": "hello"}
+    image = {
+        "role": "user",
+        "content": [{
+            "type": "image_url",
+            "image_url": {"url": "data:image/png;base64," + "A" * 2_000_000},
+        }],
+    }
+
+    obj._cap_oversized_messages([small, image])
+
+    assert small["content"] == "hello"
+    assert image["content"][0]["image_url"]["url"].endswith("A" * 100)
+
+
+def test_enforce_caps_a_runaway_message_instead_of_compressing():
+    from agent_runtime.llm_runtime import _CTX_MAX_SINGLE_MESSAGE_TOKENS
+
+    obj, manager = _runtime_with_window()
+    obj._begin_context_turn()
+    packed = obj._enforce_context_budget(
+        [{"role": "user", "content": "z" * 4_000_000}],
+        current_user_content="question",
+    )
+    assert manager.usage(packed) < manager.window
+    assert manager.usage(packed) < _CTX_MAX_SINGLE_MESSAGE_TOKENS * 2
