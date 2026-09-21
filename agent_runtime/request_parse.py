@@ -337,8 +337,8 @@ _AGGREGATE_WRITE_ACTIONS = frozenset({"generate", "plan", "segment"})
 
 _AGGREGATE_SCOPE = re.compile(
     r"(?:全部|全都|全数|全盘|所有|一切|每个|各个|逐一|逐个|统统|通通|一律|"
-    r"整体|整组|整个|"
-    r"\ball\b|\beverything\b|\bboth\b|\bevery\b|\beach\b|"
+    r"整体|整组|整个|过期|过时|"
+    r"\ball\b|\beverything\b|\bboth\b|\bevery\b|\beach\b|\bstale\b|\boutdated\b|"
     # Bare "都" is an aggregate only when it is followed by an action verb
     # (都更新 / 都要重算); unrelated compounds such as 都市 or predications
     # like 每次重建都失败 stay non-aggregate.

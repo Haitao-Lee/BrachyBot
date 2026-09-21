@@ -730,7 +730,14 @@ print(json.dumps(result))
         }
         excluded = set(parsed.excluded_targets)
         calls: List[Dict] = []
-        # 1. Quality control must be recomputed before anything that consumes it.
+        # 1. Recompute the dose first if the geometry invalidated it, then the
+        #    quality control that depends on it.  Both must precede the report.
+        if "dose" in stale:
+            calls.append({
+                "id": "tool_downstream_dose",
+                "tool": "dose_recompute",
+                "params": {},
+            })
         if stale & {"quality_check", "dose", "dose_metrics"}:
             calls.append({
                 "id": "tool_downstream_quality",

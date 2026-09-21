@@ -42,6 +42,7 @@ def test_aggregate_update_is_a_direct_downstream_plan():
     for message in (
         "那请你全部更新",
         "全部更新，所有后续都更新",
+        "把过期的都更新",
         "update everything",
     ):
         policy = classify_local_turn(message, False, None, None)
@@ -64,6 +65,15 @@ def test_plan_runs_stale_artifacts_in_dependency_order():
     ]
     assert calls[1]["params"]["actions"][0]["target"] == "report.autofill"
     assert calls[3]["params"]["actions"][0]["target"] == "viewer.refresh_planning"
+
+
+def test_stale_dose_is_recomputed_before_quality_control():
+    values = {
+        "dose_metrics": {"D90": 1.0},
+        "artifact_status": {"dose": "stale", "quality_check": "stale"},
+    }
+    calls = _agent(values)._detect_tool_request("全部更新")
+    assert [call["tool"] for call in calls][:2] == ["dose_recompute", "dose_evaluation"]
 
 
 def test_plan_honours_an_explicit_exclusion():
