@@ -56,3 +56,20 @@ def test_missing_input_is_reported_as_loading_not_planning_incomplete():
 def test_genuine_planning_failure_keeps_the_planning_message():
     message = format_tool_error("dose_evaluation", "planner solver diverged", {}, "zh")
     assert "规划没有完成" in message
+
+
+def test_memory_has_planning_result_uses_persisted_data_not_a_lifecycle_flag():
+    from agent_runtime.llm_runtime import _memory_has_planning_result
+
+    class Memory:
+        def __init__(self, values):
+            self.values = values
+
+        def retrieve(self, key, default=None):
+            return self.values.get(key, default)
+
+    # A manual draft still exposes dose/metrics in the workspace.
+    assert _memory_has_planning_result(Memory({"dose_metrics": {"d90": 12.0}})) is True
+    assert _memory_has_planning_result(Memory({"dose_distribution_gy": object()})) is True
+    assert _memory_has_planning_result(Memory({})) is False
+    assert _memory_has_planning_result(None) is False

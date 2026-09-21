@@ -136,6 +136,33 @@ def _is_safe_accumulated_text(text: str) -> bool:
     return bool(normalized) and not any(marker in normalized for marker in _INTERNAL_FALLBACK_MARKERS)
 
 
+def _memory_has_planning_result(memory: Any) -> bool:
+    """Whether the workspace holds a usable planning result.
+
+    ``conversation_state['planning_completed']`` is a lifecycle flag that is
+    cleared for a manually-adjusted plan whose run status is ``draft`` even
+    when the dose and metrics are already current.  Telling the model that
+    planning is not done is exactly the state hallucination users reported, so
+    the persisted result is the authority here.
+    """
+    retrieve = getattr(memory, "retrieve", None)
+    if not callable(retrieve):
+        return False
+    for key in (
+        "dose_metrics",
+        "metrics",
+        "dose_distribution",
+        "dose_distribution_gy",
+        "dose_distribution_physical_gy",
+    ):
+        try:
+            if retrieve(key) is not None:
+                return True
+        except Exception:
+            return False
+    return False
+
+
 def _tool_fallback_message(
     lang: str,
     has_failures: bool = False,
@@ -1390,7 +1417,9 @@ class LLMRuntimeMixin:
                 state_lines.append("- CTV segmentation: completed")
             if cs.get("oar_segmented"):
                 state_lines.append("- OAR segmentation: completed")
-            if cs.get("planning_completed"):
+            if cs.get("planning_completed") or _memory_has_planning_result(
+                getattr(self, "memory", None)
+            ):
                 state_lines.append("- Treatment planning: completed")
             if cs.get("last_tool_calls"):
                 state_lines.append(f"- Recent tools: {', '.join(cs['last_tool_calls'][-5:])}")
@@ -2758,7 +2787,9 @@ class LLMRuntimeMixin:
                 state_lines.append("- CTV segmentation: completed")
             if cs.get("oar_segmented"):
                 state_lines.append("- OAR segmentation: completed")
-            if cs.get("planning_completed"):
+            if cs.get("planning_completed") or _memory_has_planning_result(
+                getattr(self, "memory", None)
+            ):
                 state_lines.append("- Treatment planning: completed")
             if cs.get("last_tool_calls"):
                 state_lines.append(f"- Recent tools: {', '.join(cs['last_tool_calls'][-5:])}")
