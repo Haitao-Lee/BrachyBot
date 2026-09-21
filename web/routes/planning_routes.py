@@ -1785,7 +1785,26 @@ _FULL_WORKSPACE_CHAT_TERMS = (
     "planning", "plan", "规划", "剂量", "dose", "dvh", "needle", "seed",
     "trajectory", "穿刺", "粒子", "针道", "导板", "surgical guide", "手术导板",
     "replan", "重新规划", "重建", "reconstruct", "viewer", "查看器",
+    # Repair/refresh wording that operates on planning artifacts without
+    # naming one.  "请你全部更新" is a downstream repair, not a metadata read.
+    "重算", "重新计算", "质控", "复核", "报告", "report", "guide", "过期",
+    "stale", "recompute", "recalculate", "regenerate",
 )
+
+# Deterministic intents that always read or rebuild clinical arrays.  These are
+# bound to the fully hydrated Agent even when the wording carries no domain
+# noun, because acting on a metadata-only shell makes a completed plan look
+# unfinished.
+_FULL_WORKSPACE_CHAT_INTENTS = frozenset({
+    "downstream_update",
+    "dose_recompute",
+    "planning",
+    "treatment_plan",
+    "clinical_planning",
+    "segmentation",
+    "surgical_guide_generation",
+    "report_generation",
+})
 
 
 def _chat_requires_full_workspace(message: str, image_path: str = "") -> bool:
@@ -1799,6 +1818,18 @@ def _chat_requires_full_workspace(message: str, image_path: str = "") -> bool:
     if image_path:
         return True
     text = str(message or "").strip().lower()
+    try:
+        from agent_runtime.turn_policy import classify_local_turn
+
+        policy = classify_local_turn(message)
+    except Exception:
+        policy = None
+    if policy is not None and (
+        getattr(policy, "direct_execution", False)
+        or getattr(policy, "action_plan", None) is not None
+    ):
+        if str(getattr(policy, "intent", "") or "") in _FULL_WORKSPACE_CHAT_INTENTS:
+            return True
     for term in _FULL_WORKSPACE_CHAT_TERMS:
         if term.isascii():
             if re.search(r"\b" + re.escape(term) + r"\b", text):

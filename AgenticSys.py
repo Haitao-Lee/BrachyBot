@@ -944,16 +944,27 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             return False
 
         metrics = self.memory.retrieve("dose_metrics")
+        if not self._truthy_payload(metrics):
+            metrics = self.memory.retrieve("metrics")
+        # Manual plans persist their geometry under manual_* mirrors and may
+        # not carry the automatic seed_plan/seed_positions aliases.  Ignoring
+        # them made an already-planned, manually-adjusted case look unfinished.
         seed_payload = self.memory.retrieve("seed_plan")
-        if not self._truthy_payload(seed_payload):
-            seed_payload = self.memory.retrieve("seed_plan_serialized")
-        if not self._truthy_payload(seed_payload):
-            seed_payload = self.memory.retrieve("seed_positions")
-        dose_payload = (
-            self.memory.retrieve("dose_distribution")
-            if self.memory.retrieve("dose_distribution") is not None
-            else self.memory.retrieve("dose_distribution_gy")
-        )
+        for key in (
+            "seed_plan_serialized", "seed_positions", "manual_seeds",
+            "manual_plan_serialized",
+        ):
+            if self._truthy_payload(seed_payload):
+                break
+            seed_payload = self.memory.retrieve(key)
+        dose_payload = None
+        for key in (
+            "dose_distribution", "dose_distribution_gy",
+            "dose_distribution_physical_gy",
+        ):
+            dose_payload = self.memory.retrieve(key)
+            if dose_payload is not None:
+                break
         return (
             self._truthy_payload(metrics)
             and self._truthy_payload(seed_payload)

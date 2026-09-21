@@ -318,6 +318,35 @@ def format_tool_error(
             "with a valid image geometry, then rerun OAR segmentation."
         )
     if tool in {"planning_pipeline", "trajectory_planning", "trajectory_init", "trajectory_refine", "seed_planning", "dose_engine", "dose_calc", "dose_recompute", "dose_evaluation"}:
+        # A planning/dose tool can fail because its inputs are not loaded yet —
+        # which is a resource/loading condition, not evidence that the plan is
+        # incomplete.  Claiming "规划没有完成" for a missing array is the exact
+        # hallucination users reported on an already-planned case, so the
+        # missing-input case gets its own honest, retryable message.
+        missing_input = any(
+            marker in lower
+            for marker in (
+                "is required", "required", "must be provided", "no ctv", "no ct",
+                "not available", "not loaded", "has not been loaded", "not hydrated",
+                "missing", "unavailable", "not found", "为空", "尚未加载",
+                "未加载", "不存在", "缺少",
+            )
+        ) and not any(
+            marker in lower
+            for marker in (
+                "not completed", "did not complete", "incomplete",
+                "规划没有完成", "未完成", "失败",
+            )
+        )
+        if missing_input:
+            return (
+                "规划所需的 CT/靶区/剂量数据尚未加载完成，系统没有改动当前规划。"
+                "这通常是病例资源仍在加载；请等待加载完成后重试。"
+                if language == "zh" else
+                "The CT/target/dose data required for this operation is not loaded yet, "
+                "so the current plan was not modified. This is usually case resource loading; "
+                "wait for it to finish and retry."
+            )
         return (
             "放射性粒子规划没有完成。请先确认 CTV/OAR 已成功加载、靶区不是空白，并重新执行规划；"
             "如果仍失败，请保留执行追踪以便检查针道和剂量计算。"

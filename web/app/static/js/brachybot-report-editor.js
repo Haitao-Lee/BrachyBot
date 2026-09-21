@@ -1146,9 +1146,10 @@ function setReportPlanningLifecycle(active, detail = {}) {
     }
     const sameSession = !sessionId || !_reportPlanningLifecycle.sessionId
         || sessionId === _reportPlanningLifecycle.sessionId;
-    const sameRequest = !requestId || !_reportPlanningLifecycle.requestId
-        || requestId === _reportPlanningLifecycle.requestId;
-    if (!sameSession || !sameRequest) return { ..._reportPlanningLifecycle };
+    // A finish event must never leave the flag stuck on merely because its
+    // requestId was coalesced onto a different id.  One planning run per
+    // session is the invariant, so a same-session terminal event clears it.
+    if (!sameSession) return { ..._reportPlanningLifecycle };
     _reportPlanningLifecycle.active = false;
     window.__brachybotPlanningRunActive = false;
     // Terminal captures may already be waiting for mesh hydration. Finishing
@@ -1161,10 +1162,17 @@ function reportCaptureAllowed(options = {}) {
     const status = String(planning?.status || '').trim().toLowerCase();
     const requestedPlanningId = String(options.planningId || '');
     const activePlanningId = String(planning?.activePlanningId || '');
+    // A manually-adjusted plan legitimately stays in a non-"completed"
+    // lifecycle ("draft") while its dose/DVH are already current.  Data
+    // readiness is the authoritative signal, so a lifecycle word alone must
+    // not make an already-planned case look like it is still computing.
+    const artifacts = planning?.artifactStatus || planning?.artifact_status || {};
+    const dataComplete = String(artifacts.dose || '').toLowerCase() === 'ready'
+        || String(artifacts.dvh || '').toLowerCase() === 'ready';
     const lifecycleActive = _reportPlanningLifecycle.active
         || window.__brachybotPlanningRunActive === true;
     const terminalOverride = options.allowTerminalPlanning === true
-        && status === 'completed'
+        && (status === 'completed' || dataComplete)
         && (!requestedPlanningId || !activePlanningId || requestedPlanningId === activePlanningId);
     if (lifecycleActive && !terminalOverride) {
         return { allowed: false, reason: 'planning_in_progress', status };
@@ -1175,7 +1183,8 @@ function reportCaptureAllowed(options = {}) {
     if (options.requireCompleted !== false
         && status
         && status !== 'completed'
-        && !terminalOverride) {
+        && !terminalOverride
+        && !dataComplete) {
         return { allowed: false, reason: 'planning_not_completed', status };
     }
     return { allowed: true, reason: '', status };

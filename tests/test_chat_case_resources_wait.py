@@ -36,6 +36,18 @@ def test_lightweight_and_clinical_messages_are_distinguished():
     assert _chat_requires_full_workspace("hello", "/tmp/screenshot.png") is True
 
 
+def test_aggregate_repair_requires_full_workspace():
+    # "update everything" reads CTV/dose arrays to rebuild downstream results
+    # but contains none of the historical domain keywords.  It must bind to the
+    # hydrated Agent, or a completed plan looks unfinished.
+    for message in (
+        "请你全部更新",
+        "全部更新，所有后续都更新",
+        "把过期的都更新",
+    ):
+        assert _chat_requires_full_workspace(message, "") is True, message
+
+
 def test_wait_reports_phases_until_ready():
     shell = _Shell()
     seen = []

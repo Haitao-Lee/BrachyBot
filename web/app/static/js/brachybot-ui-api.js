@@ -5472,8 +5472,14 @@ async function prepareReportSceneRead(sessionId) {
             || !run || Number(run.data_version || 0) !== version) {
             return fail('report_planning_changed', '当前显示与服务器的规划版本不一致，未改动当前显示或报告。请完成规划版本加载后重试。');
         }
-        if (String(run.status).toLowerCase() !== 'completed'
-            || window.__brachybotPlanningRunActive === true) {
+        // A manually-adjusted plan can sit in a non-"completed" lifecycle
+        // while its dose and metrics are already current.  Judge readiness
+        // from the run's data flags, not only the lifecycle string, so an
+        // already-planned case is never reported as "still planning".
+        const runHasData = (run.has_current_dose === true || run.has_dose === true)
+            && run.has_metrics === true;
+        if ((String(run.status).toLowerCase() !== 'completed' && !runHasData)
+            || (window.__brachybotPlanningRunActive === true && !runHasData)) {
             return fail('report_planning_in_progress', '规划尚未结束，本次不进行报告截图；当前显示已保留。');
         }
         // Do not require meshes to be visible: hidden objects remain valid
