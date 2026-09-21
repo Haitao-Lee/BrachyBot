@@ -3266,6 +3266,12 @@ async function sendChat(prefill, options) {
                 stopTurnAbortController.__brachybotExplicitStop = true;
                 stopTurnAbortController.abort();
             }
+            // A monitor edit decision/query runs outside the SSE stream but
+            // owns the same send lock; Stop must cancel it too.
+            if (window._monitorTurnAbort) {
+                window._monitorTurnAbort.__brachybotExplicitStop = true;
+                window._monitorTurnAbort.abort();
+            }
         } catch (_) {}
         if (chatAbortController === stopTurnAbortController) chatAbortController = null;
         window._chatTurnActive = false;
@@ -3325,6 +3331,9 @@ async function sendChat(prefill, options) {
         ? String(opts.resumeMessage || '')
         : (prefill != null ? prefill : (input ? input.value : '')).trim();
     if (!text && !isResumingTask) return;
+    if (!isResumingTask && !isInternalFollowup && !opts.hiddenUserMessage
+        && typeof window.handleMonitorConversation === 'function'
+        && await window.handleMonitorConversation(text)) return;
 
     // Session creation/switching is a control-plane transaction. Never make
     // an optimistic browser shell a clinical request owner. The first submit
@@ -4564,6 +4573,31 @@ async function sendChat(prefill, options) {
                                         }
                                     }
                                 } catch (e) { console.warn('[SSE-UI] Failed to parse ui_controller result:', e); }
+                            }
+                            // The server-side report_auto_fill tool only produces
+                            // a field patch. The canonical client report action
+                            // owns visual preparation and the standard figure
+                            // capture, so run it here as well. Otherwise a turn
+                            // that generated the report through this tool filled
+                            // the narrative but never re-captured the figures,
+                            // while the ui_controller report.autofill path did.
+                            if (toolCompleted && data.tool === 'report_auto_fill'
+                                && !reportUiActionRequested) {
+                                const autoFillMeta = data.metadata || {};
+                                const autoFillScope = String(autoFillMeta.scope || '').toLowerCase();
+                                if (autoFillScope === 'all'
+                                    && typeof _executeUIActionsWithProgress === 'function') {
+                                    reportUiActionRequested = true;
+                                    uiDebugLog('[SSE-UI] report_auto_fill -> report.autofill capture');
+                                    const autoFillTask = _executeUIActionsWithProgress(
+                                        [{ target: 'report.autofill', command: 'run' }],
+                                        { sessionId: turnSessionId, requestId: turnRequestId },
+                                    );
+                                    uiActionTasks.push(Promise.resolve(autoFillTask).then(group => {
+                                        uiActionResults.push(...(Array.isArray(group) ? group : [group]));
+                                        return group;
+                                    }));
+                                }
                             }
                             // Intercept ui_screenshot: capture the target element,
                             // upload to server, and display in chat.

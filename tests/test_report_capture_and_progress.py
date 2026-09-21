@@ -455,3 +455,28 @@ def test_figure_one_is_always_normal_surface_and_export_never_recaptures():
     assert open_index < first_await, (
         "the print window must open inside the click gesture, before any await"
     )
+
+
+def test_report_auto_fill_tool_reuses_the_canonical_capture_pipeline():
+    """A report generated through the server report_auto_fill tool must also
+    regenerate its standard figures.
+
+    report_auto_fill only produces a field patch. The canonical client report
+    action owns visual preparation and figure capture, so the turn handler must
+    run it too. Otherwise a turn that used report_auto_fill (the LLM's choice
+    when the request mixed a guide regeneration with a report) filled the
+    narrative but never re-captured the figures, while a ui_controller
+    report.autofill turn did.
+    """
+    chat = _read("web/app/static/js/brachybot-chat-todo.js")
+    api = _read("web/app/static/js/brachybot-ui-api.js")
+
+    marker = "data.tool === 'report_auto_fill'"
+    assert marker in chat
+    branch = chat[chat.index(marker):]
+    branch = branch[:branch.index("data.tool === 'ui_screenshot'")]
+    assert "autoFillScope === 'all'" in branch
+    assert "'report.autofill'" in branch
+    assert "_executeUIActionsWithProgress" in branch
+    # One heavy capture per case even when both report paths fire in one turn.
+    assert "_reportAutoFillInFlight" in api
