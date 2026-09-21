@@ -276,17 +276,26 @@ function _deduplicatePlanningRows() {
 
 function _trajectoryContains(item, trajectory) {
     const itemId = item?.trajectory_id ?? item?.trajectoryId;
-    if (itemId === undefined || itemId === null) return false;
-    const normalize = value => {
+    if (itemId === undefined || itemId === null || itemId === '') return false;
+    // Canonicalize BOTH sides to the one shared trajectory identity. The old
+    // implementation built fuzzy sets from `id`, `index` and `index + 1` and
+    // matched on any overlap. Because the server id is already 1-based
+    // (`traj_{index + 1}`), a trajectory's 0-based `index` canonicalizes to the
+    // PREVIOUS trajectory's id, so `traj_23` absorbed every `traj_22` seed.
+    // That is why the Data Tree showed extra/duplicate `Seed 1, Seed 2, …`
+    // rows that the 3D Viewer (which resolves the exact needle geometry) did
+    // not. Compare canonical identities instead of guessing across id/index.
+    const canonical = value => {
+        if (typeof window._normalizeTrajectoryId === 'function') {
+            return window._normalizeTrajectoryId(value);
+        }
         const text = String(value);
-        return new Set([text, text.replace(/^traj_/, ''), `traj_${text.replace(/^traj_/, '')}`]);
+        return /^\d+$/.test(text) ? `traj_${Number(text) + 1}` : text;
     };
-    const itemValues = normalize(itemId);
-    const trajectoryValues = new Set();
-    [trajectory?.id, trajectory?.index, Number(trajectory?.index) + 1]
-        .filter(v => v !== undefined && v !== null && !Number.isNaN(v))
-        .forEach(v => normalize(v).forEach(x => trajectoryValues.add(x)));
-    return [...itemValues].some(value => trajectoryValues.has(value));
+    const itemKey = canonical(itemId);
+    return [trajectory?.id, trajectory?.index]
+        .filter(value => value !== undefined && value !== null && value !== '')
+        .some(value => canonical(value) === itemKey);
 }
 
 function _ctVoxelVolumeCm3() {
