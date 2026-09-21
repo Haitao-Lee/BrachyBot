@@ -6,6 +6,8 @@ module must not inspect quoted instructions or invent actions from nouns.
 """
 import re
 
+from agent_runtime import request_parse as _request_parse
+
 P = r"(?:(?:请|帮我|麻烦|现在|立即)\s*)*"
 EP = r"(?:please\s+)?"
 PLAN = r"(?:放射性粒子植入|粒子植入|手术|治疗)?(?:规划|计划)"
@@ -73,6 +75,10 @@ def shortcut_supported(message, policy, *, pending_tumor_site=False, ui_state=No
     intent = policy.intent
     if policy.action_plan is not None:
         return planning_command(text)
+    if intent == 'downstream_update':
+        # The whole-request aggregate parser owns the decision (affirmative,
+        # unconditional, non-quoted, target-less).  Here we only confirm it.
+        return bool(_request_parse.is_downstream_update_request(message))
     if intent == 'multi_intent_query':
         parsed_subtasks = tuple(getattr(policy, "parsed_subtasks", ()) or ())
         safe_reads = {

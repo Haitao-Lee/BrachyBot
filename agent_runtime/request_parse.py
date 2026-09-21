@@ -1120,6 +1120,24 @@ def is_affirmative_command(message: object) -> bool:
     return parse_request(message).affirmative_command
 
 
+def is_downstream_update_request(message: object) -> bool:
+    """True for a target-less "update everything" (downstream repair) command.
+
+    ``全部更新`` / ``所有后续都更新`` name no object of their own: the objects
+    are the Session's stale artifacts.  A target-specific aggregate such as
+    ``全部重新分割`` or ``全部重新规划`` is a different command and must keep its
+    own handler, so it is deliberately excluded here.
+    """
+    parsed = message if isinstance(message, ParsedRequest) else parse_request(message)
+    if not parsed.aggregate_command:
+        return False
+    excluded = set(parsed.excluded_targets)
+    return any(
+        task.aggregate_command and (not task.target or task.target in excluded)
+        for task in parsed.subtasks
+    )
+
+
 def is_unconditional_command(message: object) -> bool:
     return parse_request(message).unconditional_command
 

@@ -1468,6 +1468,7 @@ class LLMRuntimeMixin:
                         "clinical_planning",
                         "surgical_guide_generation",
                         "dose_recompute",
+                        "downstream_update",
                         "session_visual_location_query",
                         "surgical_guide_status_query",
                         "multi_intent_query",

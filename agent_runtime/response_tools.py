@@ -694,6 +694,77 @@ print(json.dumps(result))
             "preserve_current_view": True,
         }
 
+    def _downstream_update_calls(self, message: str) -> Optional[List[Dict]]:
+        """Ordered repair plan for an aggregate "update everything" command.
+
+        The Session already records which downstream artifacts are stale in
+        ``artifact_status`` (``quality_check`` / ``report`` / ``surgical_guide``).
+        Executing exactly those, in dependency order, is what "全部更新" means;
+        deriving it from the record keeps the turn deterministic and avoids
+        re-running operations that are already current.  Targets explicitly
+        carved out ("不含导板") are skipped.  Returns ``None`` when there is no
+        active planning or nothing is stale, leaving the turn to the model.
+        """
+        parsed = _request_parse.parse_request(message)
+        if not _request_parse.is_downstream_update_request(parsed):
+            return None
+        memory = getattr(self, "memory", None)
+        retrieve = getattr(memory, "retrieve", None)
+        if not callable(retrieve):
+            return None
+        # A downstream repair only makes sense once a planning/dose result
+        # exists.  Use identity checks so numpy-backed values are never
+        # evaluated for truthiness.
+        if (
+            retrieve("dose_metrics") is None
+            and retrieve("planning_results") is None
+        ):
+            return None
+        status = retrieve("artifact_status") or retrieve("manual_artifact_status") or {}
+        if not isinstance(status, Mapping):
+            status = {}
+        stale = {
+            str(key)
+            for key, value in status.items()
+            if str(value).lower() == "stale"
+        }
+        excluded = set(parsed.excluded_targets)
+        calls: List[Dict] = []
+        # 1. Quality control must be recomputed before anything that consumes it.
+        if stale & {"quality_check", "dose", "dose_metrics"}:
+            calls.append({
+                "id": "tool_downstream_quality",
+                "tool": "dose_evaluation",
+                "params": {},
+            })
+        # 2. Report is regenerated from the current dose/geometry.
+        if "report" in stale and "report" not in excluded:
+            calls.append({
+                "id": "tool_downstream_report",
+                "tool": "ui_controller",
+                "params": {
+                    "actions": [{"target": "report.autofill", "command": "run"}],
+                },
+            })
+        # 3. The guide is only rebuilt when its geometry actually changed.
+        if "surgical_guide" in stale and "surgical_guide" not in excluded:
+            calls.append({
+                "id": "tool_downstream_guide",
+                "tool": "surgical_guide",
+                "params": {"action": "generate"},
+            })
+        if not calls:
+            return None
+        # 4. Reload the refreshed results into the Viewer / Data Tree.
+        calls.append({
+            "id": "tool_downstream_refresh",
+            "tool": "ui_controller",
+            "params": {
+                "actions": [{"target": "viewer.refresh_planning", "command": "run"}],
+            },
+        })
+        return calls
+
     def _detect_tool_request(self, message: str) -> Optional[List[Dict]]:
         """Detect explicit tool requests. Returns tool calls in user-specified order, or None.
 
@@ -793,6 +864,12 @@ print(json.dumps(result))
                 "tool": "surgical_guide",
                 "params": {"action": "status"},
             }]
+
+        # An explicit "update everything" command is executed from the
+        # Session's own stale-artifact record, in dependency order, instead of
+        # making the model re-derive which downstream results need repair.
+        if policy.intent == "downstream_update":
+            return self._downstream_update_calls(message)
 
         # This is the only direct clinical call for a current Dose/DVH
         # refresh. Do it before the legacy action-pattern scan so wording such
