@@ -70,9 +70,27 @@ class DoseEvaluationTool(BaseTool):
         return {
             "type": "object",
             "properties": {
-                "dose_array": {"type": "array", "description": "3D NumPy array of dose distribution in Gy"},
-                "ctv_mask": {"type": "array", "description": "CTV binary mask array"},
-                "oar_mask": {"type": "array", "description": "OAR multi-label mask array (optional)"},
+                # These arrays are injected by the server from the active
+                # workspace.  They are intentionally excluded from ordinary
+                # JSON type validation: a NumPy array is not a JSON ``array``,
+                # and validating it here produced the misleading
+                # "Invalid parameter type for dose_array" failure that was then
+                # reported as "planning not completed" on a finished case.
+                "dose_array": {
+                    "type": "array",
+                    "description": "3D NumPy array of dose distribution in Gy",
+                    "x-server-injected": True,
+                },
+                "ctv_mask": {
+                    "type": "array",
+                    "description": "CTV binary mask array",
+                    "x-server-injected": True,
+                },
+                "oar_mask": {
+                    "type": "array",
+                    "description": "OAR multi-label mask array (optional)",
+                    "x-server-injected": True,
+                },
                 "prescribed_dose": {
                     "type": "number",
                     "default": DEFAULT_PRESCRIPTION_GY,

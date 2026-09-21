@@ -330,6 +330,11 @@ def format_tool_error(
                 "not available", "not loaded", "has not been loaded", "not hydrated",
                 "missing", "unavailable", "not found", "为空", "尚未加载",
                 "未加载", "不存在", "缺少",
+                # Server-injected array/object fields are not JSON values; a
+                # type rejection here is an input-plumbing condition, not a
+                # planning computation failure.
+                "invalid parameter type", "not json serializable",
+                "is not json serializable", "serializable",
             )
         ) and not any(
             marker in lower

@@ -53,6 +53,45 @@ def test_missing_input_is_reported_as_loading_not_planning_incomplete():
     assert "规划没有完成" not in message
 
 
+def test_type_rejection_is_reported_as_loading_not_planning_incomplete():
+    message = format_tool_error(
+        "dose_evaluation", "Invalid parameter type for dose_array", {}, "zh"
+    )
+    assert "尚未加载" in message or "仍在加载" in message
+    assert "规划没有完成" not in message
+
+
+def test_dose_evaluation_schema_marks_server_injected_arrays():
+    from tool_factory.dose_eval import DoseEvaluationTool
+
+    properties = DoseEvaluationTool().input_schema["properties"]
+    for field in ("dose_array", "ctv_mask", "oar_mask"):
+        assert properties[field].get("x-server-injected") is True, field
+
+
+def test_gateway_accepts_the_server_injected_numpy_dose_arrays():
+    import numpy as np
+
+    from agent_runtime.contracts import ToolCall, ToolCallGateway
+    from tool_factory.dose_eval import DoseEvaluationTool
+
+    tool = DoseEvaluationTool()
+
+    class Registry:
+        tool_names = {"dose_evaluation"}
+
+        @staticmethod
+        def get(_name):
+            return tool
+
+    gateway = ToolCallGateway.__new__(ToolCallGateway)
+    call = ToolCall.from_payload("dose_evaluation", {
+        "dose_array": np.zeros((2, 2, 2)),
+        "ctv_mask": np.zeros((2, 2, 2), dtype=np.uint8),
+    })
+    assert gateway.validate(Registry(), call) is None
+
+
 def test_genuine_planning_failure_keeps_the_planning_message():
     message = format_tool_error("dose_evaluation", "planner solver diverged", {}, "zh")
     assert "规划没有完成" in message
