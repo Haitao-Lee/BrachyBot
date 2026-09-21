@@ -10166,7 +10166,17 @@ async function deleteNeedle3D(needleId) {
 function showSeedDose(seedId) {
     const seed = dataTreeState.planning.seeds.find(s => s.id === seedId);
     if (!seed) return;
-    addChat('system', `💊 **Seed ${seedId}**\n- Position: [${seed.position.map(v => v.toFixed(1)).join(', ')}]\n- Trajectory: ${seed.trajectory_id}`);
+    const position = Array.isArray(seed.position)
+        ? seed.position
+        : (Array.isArray(seed.pos) ? seed.pos : []);
+    const positionText = position.length
+        ? position.map(value => Number(value).toFixed(1)).join(', ')
+        : '—';
+    const trajectory = String(seed.trajectory_id || '—');
+    addChat('system', _manualText(
+        `**粒子信息**\n\n| 属性 | 值 |\n| --- | --- |\n| ID | \`${seedId}\` |\n| 坐标 (mm) | ${positionText} |\n| 所在针道 | \`${trajectory}\` |`,
+        `**Seed details**\n\n| Field | Value |\n| --- | --- |\n| ID | \`${seedId}\` |\n| Position (mm) | ${positionText} |\n| Trajectory | \`${trajectory}\` |`,
+    ), true, Date.now(), false, undefined, { messageKind: 'inspection_card' });
 }
 
 // Show seeds on a needle
@@ -10176,7 +10186,11 @@ function showNeedleSeeds(needleId) {
     // Find all seeds on this trajectory
     const trajId = needle.trajectory_id;
     const seedsOnNeedle = dataTreeState.planning.seeds.filter(s => _manualOwnersMatch(s, needle));
-    addChat('system', `📍 **Needle ${needleId}**\n- Points: ${needle.points.length}\n- Trajectory: ${trajId}\n- Seeds: ${seedsOnNeedle.length}`);
+    const pointCount = Array.isArray(needle.points) ? needle.points.length : 0;
+    addChat('system', _manualText(
+        `**针道信息**\n\n| 属性 | 值 |\n| --- | --- |\n| ID | \`${needleId}\` |\n| 所在轨迹 | \`${trajId}\` |\n| 端点 | ${pointCount} |\n| 粒子数 | ${seedsOnNeedle.length} |`,
+        `**Needle details**\n\n| Field | Value |\n| --- | --- |\n| ID | \`${needleId}\` |\n| Trajectory | \`${trajId}\` |\n| Points | ${pointCount} |\n| Seeds | ${seedsOnNeedle.length} |`,
+    ), true, Date.now(), false, undefined, { messageKind: 'inspection_card' });
 
     // Highlight all seeds on this needle
     seedsOnNeedle.forEach(s => highlightSeed(s.id));

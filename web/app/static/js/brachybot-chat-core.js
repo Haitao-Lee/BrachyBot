@@ -1939,8 +1939,17 @@ function addChat(type, content, scroll, timestamp, fromSession, sessionId = acti
         if (safeType === 'error' || safeType === 'bot') {
             c = sanitizeChatErrorContent(c, ownerSessionId);
         }
+        // 3D Viewer right-click inspections (seed/needle details) are system
+        // events carrying a short structured report. Render them as a
+        // left-aligned markdown card so the fields form a table instead of a
+        // raw centered line with literal ** and dash characters.
+        const declaredMessageKind = String(
+            safeMeta.messageKind || safeMeta.message_kind || '',
+        );
+        const isInspectionCard = safeType === 'system'
+            && ['inspection_card', 'seed_info', 'needle_info'].includes(declaredMessageKind);
 
-        if (safeType === 'user' || safeType === 'bot') {
+        if (safeType === 'user' || safeType === 'bot' || isInspectionCard) {
             if (safeType === 'bot' && (safeMeta.requestId || safeMeta.request_id || safeMeta.messageId || safeMeta.message_id)) {
                 const requestId = safeMeta.requestId || safeMeta.request_id || '';
                 const messageId = safeMeta.messageId || safeMeta.message_id || `assistant-${requestId}`;
@@ -1969,7 +1978,7 @@ function addChat(type, content, scroll, timestamp, fromSession, sessionId = acti
             }
             // Wrapped layout: .chat-row > [.chat-avatar, .chat-msg-wrapper > .chat-msg, .chat-timestamp]
             const row = document.createElement('div');
-            row.className = 'chat-row ' + safeType;
+            row.className = 'chat-row ' + safeType + (isInspectionCard ? ' inspection' : '');
             row.dataset.requestId = String(safeMeta.requestId || safeMeta.request_id || '');
             row.dataset.messageId = String(safeMeta.messageId || safeMeta.message_id || createChatIdentity(safeType));
             row.dataset.messageKind = String(safeMeta.messageKind || safeMeta.message_kind || safeType);
@@ -1978,8 +1987,13 @@ function addChat(type, content, scroll, timestamp, fromSession, sessionId = acti
             }
 
             const avatar = document.createElement('div');
-            avatar.className = 'chat-avatar ' + (safeType === 'bot' ? 'bot-avatar' : 'user-avatar');
-            avatar.innerHTML = CHAT_AVATAR_SVGS[safeType] || '';
+            if (isInspectionCard) {
+                avatar.className = 'chat-avatar inspection-avatar';
+                avatar.hidden = true;
+            } else {
+                avatar.className = 'chat-avatar ' + (safeType === 'bot' ? 'bot-avatar' : 'user-avatar');
+                avatar.innerHTML = CHAT_AVATAR_SVGS[safeType] || '';
+            }
 
             const wrapper = document.createElement('div');
             wrapper.className = 'chat-msg-wrapper ' + safeType;
@@ -2014,9 +2028,9 @@ function addChat(type, content, scroll, timestamp, fromSession, sessionId = acti
 
             // The message bubble
             const div = document.createElement('div');
-            div.className = 'chat-msg ' + safeType;
+            div.className = 'chat-msg ' + safeType + (isInspectionCard ? ' inspection-card' : '');
             // Render markdown for bot responses (matches upstream), plain escape for user/system
-            if (safeType === 'bot' && typeof renderMarkdown === 'function') {
+            if ((safeType === 'bot' || isInspectionCard) && typeof renderMarkdown === 'function') {
                 div.innerHTML = renderMarkdown(c);
             } else {
                 div.innerHTML = c

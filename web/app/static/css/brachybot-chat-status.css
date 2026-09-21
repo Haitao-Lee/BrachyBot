@@ -270,6 +270,44 @@
     box-shadow: var(--inset-bottom), var(--shadow-xs);
 }
 
+/* 3D Viewer right-click inspections (seed/needle details). They are system
+   events, but carry a short structured report, so present them as a
+   left-aligned markdown card with a proper table instead of the centered
+   status pill that showed literal ** and dash characters. */
+.chat-row.inspection {
+    align-items: flex-start;
+    width: 100%;
+}
+.chat-row.inspection .chat-avatar {
+    display: none;
+}
+.chat-row.inspection .chat-msg-wrapper {
+    width: 100%;
+    max-width: 100%;
+}
+.chat-msg.system.inspection-card {
+    width: 100%;
+    max-width: 100%;
+    align-self: stretch;
+    text-align: left;
+    border-style: solid;
+    background: var(--bg-sunken);
+    padding: 0.5rem 0.7rem;
+    border-radius: var(--radius-md, 8px);
+    font-size: 0.76rem;
+}
+.chat-msg.system.inspection-card .md-table {
+    width: 100%;
+    margin: 0.1rem 0 0.2rem;
+}
+.chat-msg.system.inspection-card .md-table th,
+.chat-msg.system.inspection-card .md-table td {
+    text-align: left;
+}
+.chat-msg.system.inspection-card > :first-child { margin-top: 0; }
+.chat-msg.system.inspection-card > :last-child { margin-bottom: 0; }
+.chat-msg.system.inspection-card p.md-paragraph { margin: 0 0 0.35rem; }
+
 /* Action/status events are a timeline, not assistant bubbles. The layout is
    intentionally full-width and left aligned so repeated drag/recompute events
    remain easy to scan without a column of centered floating pills. */
