@@ -10,7 +10,7 @@ from gymnasium import spaces
 from tqdm import tqdm
 from . import utilizations
 from .dose_pre.inference import DoseInferenceDeadlineExceeded
-from .reward_metrics import normalized_oar_damage
+from .reward_metrics import normalized_oar_damage, plan_objective
 from .rl_status import new_rl_status, set_outcome, update_best
 from .planning_preview import safe_preview
 try:
@@ -19,6 +19,12 @@ except ImportError:
     _reward_core = None
 
 logger = logging.getLogger(__name__)
+
+# Real state features for the low-level policy: relative coverage, OAR burden,
+# budget usage, and remaining free candidates.  The high-level decision is a
+# one-step bandit over a fixed action set (every episode starts from an empty
+# plan), so it keeps a one-dimensional state and learns action preferences.
+POLICY_STATE_DIM = 4
 
 
 def _dvh_oar_jit_fallback(dose_flat, target_idx, non_target_idx,
@@ -149,36 +155,6 @@ except ImportError:
 
 
 
-def percentile_value_in_mask(image: np.ndarray, mask: np.ndarray, ratio: float = 0.1):
-    """
-    Compute the pixel value threshold corresponding to the lowest `ratio` proportion
-    (e.g., bottom 10%) of pixel intensities within a masked region.
-    
-    Args:
-        image (np.ndarray): Grayscale image.
-        mask (np.ndarray): Binary mask (same shape as image).
-        ratio (float): Ratio of lowest values to consider (e.g., 0.1 for 10%).
-    
-    Returns:
-        float: The pixel value at the cutoff (bottom ratio).
-    """
-    # Extract pixel values in the mask region
-    masked_values = image[mask > 0]
-    
-    if masked_values.size == 0:
-        raise ValueError("Mask region is empty.")
-    
-    # Sort values from large to small
-    sorted_values = np.sort(masked_values)[::-1]
-    
-    # Get the index corresponding to the bottom `ratio` of sorted values
-    index = int(len(sorted_values) * (1 - ratio))
-    index = np.clip(index, 0, len(sorted_values) - 1)
-    
-    return sorted_values[index]
-
-
-
 # ----------  Reward class  ----------
 class SeedPlacementReward:
     """
@@ -214,6 +190,8 @@ class SeedPlacementReward:
         self.image_normalize_scale = image_normalize_scale
         self.DVH_rate = DVH_rate
         self.deadline = deadline
+        self.last_coverage = 0.0
+        self.last_out_damage = 0.0
 
         # one-time masks
         self.mask_volume = (radiation_volume == target_value).astype(float)
@@ -235,37 +213,125 @@ class SeedPlacementReward:
         
 
     # ------------------------------------------------------------------
+    @staticmethod
+    def cache_key_for(seed_point, direction):
+        """Cache identity of one seed: voxel position AND its direction.
+
+        A single-seed dose map depends on the seed axis, so a position-only key
+        could hand a crossing needle the wrong (direction-specific) map.
+        """
+        point = np.asarray(seed_point, dtype=np.float64).reshape(-1)
+        axis = np.asarray(direction, dtype=np.float64).reshape(-1)
+        norm = float(np.linalg.norm(axis))
+        if norm > 1e-12:
+            axis = axis / norm
+        return (tuple(np.round(point, 3).tolist()), tuple(np.round(axis, 6).tolist()))
+
+    def _metrics(self, dose_flat):
+        """Return (coverage, out_damage) for one accumulated dose volume."""
+        _fn = _reward_core._dvh_oar_jit if _reward_core is not None else _dvh_oar_jit_fallback
+        return _fn(
+            dose_flat,
+            np.ascontiguousarray(self.target_idx, dtype=np.int32),
+            np.ascontiguousarray(self.non_target_idx, dtype=np.int32),
+            float(self.in_lowest_dose),
+            float(self.out_highest_dose),
+            count_out=True,
+        )
+
+    def _lookup_seed_dose(self, traj, seed_point, direction, key):
+        cached = self.seed_cache.get(key, None)
+        if cached is not None:
+            self.cache_hits += 1
+            return cached
+        point_arr = np.asarray(seed_point, dtype=np.float64).reshape(-1)
+        axis_arr = np.asarray(direction, dtype=np.float64).reshape(-1)
+        axis_norm = float(np.linalg.norm(axis_arr))
+        if axis_norm > 1e-12:
+            axis_arr = axis_arr / axis_norm
+        for cached_seed, cached_dose in zip(traj[2], traj[3]):
+            stored_point = np.asarray(cached_seed[0], dtype=np.float64).reshape(-1)
+            if stored_point.size != 3 or np.linalg.norm(stored_point - point_arr) >= 1e-3:
+                continue
+            stored_axis = np.asarray(cached_seed[1], dtype=np.float64).reshape(-1)
+            stored_norm = float(np.linalg.norm(stored_axis))
+            if stored_norm > 1e-12:
+                stored_axis = stored_axis / stored_norm
+            if float(np.dot(stored_axis, axis_arr)) < 0.999:
+                continue
+            # Dose maps are treated as immutable; share the reference instead
+            # of duplicating full planning-grid volumes in the cache.
+            self.seed_cache[key] = cached_dose
+            self.cache_hits += 1
+            return cached_dose
+        return None
+
+    def prefetch_positions(self, candidates):
+        """Batch-fill the seed-dose cache for one group's candidate positions.
+
+        ``candidates`` is an iterable of ``(seed_point, direction)`` in voxel
+        coordinates.  One batched DoseUNet call replaces the per-step single
+        forward passes the episode loop used to make.
+        """
+        pending = []
+        for seed_point, direction in candidates:
+            key = self.cache_key_for(seed_point, direction)
+            if key in self.seed_cache:
+                self.cache_hits += 1
+                continue
+            pending.append((key, seed_point, direction))
+        if not pending:
+            return 0
+        self.cache_misses += len(pending)
+        inference_started = time.perf_counter()
+        dose_maps = utilizations.batch_seed_dose_calculation_dl(
+            [(np.asarray(point).reshape(-1), np.asarray(axis).reshape(-1))
+             for _, point, axis in pending],
+            self.dose_image,
+            self.dose_cal_model,
+            self.infer_img_size,
+            self.seed_info,
+            self.image_normalize_min,
+            self.target_valueimage_normalize_max,
+            self.image_normalize_scale,
+            deadline=self.deadline,
+        )
+        self.model_inference_seconds += time.perf_counter() - inference_started
+        for (key, _, _), dose_map in zip(pending, dose_maps):
+            self.seed_cache[key] = dose_map
+        return len(pending)
+
+    # ------------------------------------------------------------------
     def forward(self,
                 traj: list,
                 cur_radiation: np.ndarray,
                 direction: np.ndarray,
                 seed_point: np.ndarray,
-                protect_OAR: bool = True):
+                protect_OAR: bool = True,
+                seed_count: int = 1,
+                needle_count: int = 1,
+                is_new_needle: bool = True):
         """
-        Compute reward for placing one seed.
-        Returns: reward, updated_dose, DVH_rate, seed_dose_map
+        Compute the marginal objective gain of placing one seed.
+
+        Returns: reward, updated_dose, DVH_rate, seed_dose_map.
+
+        ``reward`` is ``J(plan + seed) - J(plan)`` with the same
+        :func:`plans.reward_metrics.plan_objective` used for final selection,
+        so the discounted return telescopes to the plan objective and the
+        training signal can never prefer more seeds than the selection signal.
+        A failed dose prediction returns ``(0.0, dose, previous coverage,
+        None)``: the caller must not fabricate a zero-dose seed in the plan.
         """
         try:
-            seed_point_int=np.array(seed_point).astype(int)
-            key = tuple(seed_point_int)
-
-            cur_seed_radiation = self.seed_cache.get(key, None)
-            if cur_seed_radiation is not None:
-                self.cache_hits += 1
-
-            if cur_seed_radiation is None:
-                for cached_seed, cached_dose in zip(traj[2], traj[3]):
-                    if np.linalg.norm(np.asarray(cached_seed[0]).ravel() - seed_point) < 1e-3:
-                        cur_seed_radiation = cached_dose
-                        self.seed_cache[key] = cur_seed_radiation.copy()
-                        self.cache_hits += 1
-                        break
+            key = self.cache_key_for(seed_point, direction)
+            cur_seed_radiation = self._lookup_seed_dose(traj, seed_point, direction, key)
 
             if cur_seed_radiation is None:
                 self.cache_misses += 1
                 inference_started = time.perf_counter()
                 cur_seed_radiation = utilizations.single_seed_dose_calculation_dl(
-                    seed_point_int.reshape(-1),
+                    np.asarray(seed_point).astype(int).reshape(-1),
                     direction,
                     self.dose_image,
                     self.dose_cal_model,
@@ -277,36 +343,37 @@ class SeedPlacementReward:
                     deadline=self.deadline,
                 )
                 self.model_inference_seconds += time.perf_counter() - inference_started
-                self.seed_cache[key] = cur_seed_radiation.copy()
+                self.seed_cache[key] = cur_seed_radiation
 
-        # 4.  accumulate dose (in-place to save memory)
-        # Ensure cur_radiation is float32 to match cur_seed_radiation
             if cur_radiation.dtype != cur_seed_radiation.dtype:
                 cur_radiation = cur_radiation.astype(cur_seed_radiation.dtype)
+
+            previous_flat = np.ascontiguousarray(cur_radiation.ravel(), dtype=np.float64)
+            old_coverage, old_damage = self._metrics(previous_flat)
+
             np.add(cur_radiation, cur_seed_radiation, out=cur_radiation)
 
             dose_flat = np.ascontiguousarray(cur_radiation.ravel(), dtype=np.float64)
-            target_idx_c = np.ascontiguousarray(self.target_idx, dtype=np.int32)
-            non_target_idx_c = np.ascontiguousarray(self.non_target_idx, dtype=np.int32)
+            cur_DVH_rate, out_damage = self._metrics(dose_flat)
 
-            if not protect_OAR:
-                _fn = _reward_core._dvh_oar_jit if _reward_core is not None else _dvh_oar_jit_fallback
-                cur_DVH_rate, out_damage = _fn(
-                    dose_flat, target_idx_c, non_target_idx_c,
-                    float(self.in_lowest_dose), float(self.out_highest_dose),
-                    count_out=False
-                )
-                reward = cur_DVH_rate
-            else:
-                _fn = _reward_core._dvh_oar_jit if _reward_core is not None else _dvh_oar_jit_fallback
-                cur_DVH_rate, out_damage = _fn(
-                    dose_flat, target_idx_c, non_target_idx_c,
-                    float(self.in_lowest_dose), float(self.out_highest_dose),
-                    count_out=True
-                )
-                reward = min(cur_DVH_rate, self.DVH_rate) + \
-                         ((cur_DVH_rate - self.DVH_rate) >= 0) * (1.0 - out_damage)
-
+            old_oar = old_damage if protect_OAR else 0.0
+            new_oar = out_damage if protect_OAR else 0.0
+            prev_needles = int(needle_count) - (1 if is_new_needle else 0)
+            old_objective = plan_objective(
+                old_coverage, old_oar,
+                seed_count=max(0, int(seed_count) - 1),
+                needle_count=max(0, prev_needles),
+                target_coverage=self.DVH_rate,
+            )
+            new_objective = plan_objective(
+                cur_DVH_rate, new_oar,
+                seed_count=int(seed_count),
+                needle_count=int(needle_count),
+                target_coverage=self.DVH_rate,
+            )
+            reward = float(new_objective - old_objective)
+            self.last_coverage = float(cur_DVH_rate)
+            self.last_out_damage = float(out_damage)
             return reward, cur_radiation, cur_DVH_rate, cur_seed_radiation
         except DoseInferenceDeadlineExceeded:
             # The caller owns the episode boundary and will return its best
@@ -314,20 +381,59 @@ class SeedPlacementReward:
             raise
         except Exception as e:
             logger.exception("Seed-placement reward calculation failed: %s", e)
-            # A single-seed dose map has the same full-volume shape as the
-            # cumulative radiation array; a zero map preserves that contract.
-            return 0.0, cur_radiation, 0.0, np.zeros_like(cur_radiation)
+            # Never fabricate a zero-dose map: a failed prediction must leave
+            # the accumulated dose untouched and return no seed map at all.
+            previous_flat = np.ascontiguousarray(cur_radiation.ravel(), dtype=np.float64)
+            old_coverage, _ = self._metrics(previous_flat)
+            return 0.0, cur_radiation, old_coverage, None
+
+    def evaluate_marginal(self, cur_radiation, seed_dose_map,
+                          seed_count=1, needle_count=1, is_new_needle=True,
+                          protect_OAR: bool = True):
+        """Return the objective gain of adding one seed WITHOUT committing it.
+
+        Used by the deterministic greedy warm start to rank candidates.
+        """
+        current = np.ascontiguousarray(cur_radiation, dtype=np.float32)
+        addition = np.ascontiguousarray(seed_dose_map, dtype=np.float32)
+        old_coverage, old_damage = self._metrics(
+            np.ascontiguousarray(current.ravel(), dtype=np.float64))
+        trial = current + addition
+        new_coverage, new_damage = self._metrics(
+            np.ascontiguousarray(trial.ravel(), dtype=np.float64))
+        old_oar = old_damage if protect_OAR else 0.0
+        new_oar = new_damage if protect_OAR else 0.0
+        prev_needles = int(needle_count) - (1 if is_new_needle else 0)
+        old_objective = plan_objective(
+            old_coverage, old_oar,
+            seed_count=max(0, int(seed_count) - 1),
+            needle_count=max(0, prev_needles),
+            target_coverage=self.DVH_rate,
+        )
+        new_objective = plan_objective(
+            new_coverage, new_oar,
+            seed_count=int(seed_count),
+            needle_count=int(needle_count),
+            target_coverage=self.DVH_rate,
+        )
+        return float(new_objective - old_objective)
 
 
 # ==========================================================
 # 2.  Policy Network
 # ==========================================================
 class PolicyNet(nn.Module):
-    """Simple MLP policy for discrete actions."""
-    def __init__(self, n_actions, hidden=128):
+    """MLP policy for discrete actions, conditioned on a real state vector.
+
+    The previous network consumed a constant placeholder state, which collapsed
+    the policy to a static categorical prior.  With a real state dimension the
+    hidden activations - and therefore every action logit - depend on the plan
+    state (coverage, OAR burden, budget usage).
+    """
+    def __init__(self, n_actions, hidden=128, state_dim=1):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(1, hidden), nn.ReLU(),
+            nn.Linear(state_dim, hidden), nn.ReLU(),
             nn.Linear(hidden, hidden), nn.ReLU()
         )
         self.logits = nn.Linear(hidden, n_actions)
@@ -346,9 +452,10 @@ class PolicyNet(nn.Module):
 # 3.  REINFORCE Agent (vectorized loss)
 # ==========================================================
 class REINFORCE:
-    def __init__(self, n_actions, lr=1e-2, gamma=0.99, device="cpu"):
+    def __init__(self, n_actions, lr=1e-2, gamma=0.99, device="cpu", state_dim=1):
         self.device = torch.device(device)
-        self.policy = PolicyNet(n_actions).to(self.device)
+        self.state_dim = int(state_dim)
+        self.policy = PolicyNet(n_actions, state_dim=self.state_dim).to(self.device)
         self.optimizer = optim.Adam(self.policy.parameters(), lr=lr)
         self.gamma = gamma
         self.log_probs = []
@@ -357,8 +464,11 @@ class REINFORCE:
     # ------------------------------------------------------
     def select_action(self, state, mask=None):
         """Return action index (int) and store log_prob."""
-        # state is small (shape (1,)) -- keep as float32
-        state_array = np.array(state, dtype=np.float32)
+        state_array = np.asarray(state, dtype=np.float32).reshape(-1)
+        if state_array.size != self.state_dim:
+            padded = np.zeros(self.state_dim, dtype=np.float32)
+            padded[: min(self.state_dim, state_array.size)] = state_array[: self.state_dim]
+            state_array = padded
         s = torch.from_numpy(state_array).unsqueeze(0).to(self.device)
         logits = self.policy(s)  # shape [1, n_actions]
 
@@ -491,11 +601,17 @@ class HighLevelEnv(gym.Env):
         self.planned_positions = [[] for _ in range(self.level)]
         self.planned_seed_radiations = [[] for _ in range(self.level)]
         self.planned_directions = [np.array([0, 0, 1]) for _ in range(self.level)]
-        self.cur_radiation = np.zeros_like(radiation_volume)
+        self.cur_radiation = np.zeros_like(radiation_volume, dtype=np.float32)
+        self.cur_DVH_rate = 0.0
         self.reward_calculator = reward_calculator
         self.max_actions_per_episode = max_actions_per_episode
         self.deadline = deadline
-        
+        # One low-level policy per trajectory group.  The nested agents used to
+        # be created and thrown away inside every high-level step, so their
+        # Adam updates could never accumulate any learning.
+        self.low_agents = {}
+        self.prefetched_groups = set()
+
         # Precompute candidate positions (img coords and world coords) per group and level
         # Structure:
         # candidate_img_positions[(group_idx, lv)] = np.array([img_pos for length in effective_range])
@@ -543,6 +659,7 @@ class HighLevelEnv(gym.Env):
         self.planned_seed_radiations = [[] for _ in range(self.level)]
         self.planned_directions = [np.array([0, 0, 1]) for _ in range(self.level)]
         self.cur_radiation[:] = 0.0
+        self.cur_DVH_rate = 0.0
         return np.array([0.0], dtype=np.float32)
 
     # ------------------------------------------------------
@@ -610,6 +727,54 @@ class HighLevelEnv(gym.Env):
         return mask
 
     # ------------------------------------------------------
+    def activate_group(self, group_idx, device="cpu"):
+        """Prefetch the group's single-seed dose maps and restore its policy.
+
+        The batched DoseUNet call replaces the per-step single forward passes;
+        the group's REINFORCE agent is created once and kept so its updates
+        accumulate across episodes instead of being discarded.
+        """
+        group_idx = int(group_idx)
+        if group_idx not in self.prefetched_groups:
+            candidates = []
+            for lv in range(self.level):
+                positions = self.candidate_img_positions.get((group_idx, lv))
+                if positions is None or len(positions) == 0:
+                    continue
+                traj = self.target_level_traj[group_idx][lv][1]
+                direction = np.array(traj[1], dtype=np.float64).reshape(-1)
+                direction = direction / np.linalg.norm(direction)
+                for img_position in positions:
+                    candidates.append((img_position, direction))
+            if candidates:
+                self.reward_calculator.prefetch_positions(candidates)
+            self.prefetched_groups.add(group_idx)
+        merged_size = sum(len(self.low_level_ranges[group_idx][lv]) for lv in range(self.level))
+        agent = self.low_agents.get(group_idx)
+        if agent is None:
+            agent = REINFORCE(
+                n_actions=max(1, merged_size),
+                device=device,
+                state_dim=POLICY_STATE_DIM,
+            )
+            self.low_agents[group_idx] = agent
+        return agent
+
+    def policy_state(self, low_env):
+        """Real state for the low-level policy (coverage, damage, budget, freedom)."""
+        remaining = 0.0
+        try:
+            remaining = float(np.count_nonzero(low_env.used_mask)) / max(1, low_env.used_mask.size)
+        except Exception:
+            remaining = 0.0
+        return np.array([
+            min(1.5, float(self.cur_DVH_rate) / max(float(self.DVH_rate), 1e-6)),
+            min(1.0, float(getattr(self.reward_calculator, "last_out_damage", 0.0) or 0.0)),
+            float(low_env.cur_step) / max(1.0, float(low_env.max_steps or 1)),
+            remaining,
+        ], dtype=np.float32)
+
+    # ------------------------------------------------------
     def update_planned_position(self, action, high_level=False):
         """
         Convert action (high or low) to world position, store it, and return incremental reward.
@@ -652,13 +817,24 @@ class HighLevelEnv(gym.Env):
                 img_position = self.candidate_img_positions[(self.group_idx, lv)][idx_in_lv]
                 world_position = self.candidate_world_positions[(self.group_idx, lv)][idx_in_lv]
 
+        is_new_needle = not self.planned_positions[lv]
+        seed_count = 1 + sum(len(entry) for entry in self.planned_positions)
+        needle_count = sum(1 for entry in self.planned_positions if entry) + (1 if is_new_needle else 0)
         reward, self.cur_radiation, cur_DVH_rate, cur_seed_radiation = self.reward_calculator.forward(
             traj=self.target_level_traj[self.group_idx][lv],
-            cur_radiation=self.cur_radiation.copy(),
+            cur_radiation=self.cur_radiation,
             direction=direction,
             seed_point=img_position,
-            protect_OAR=self.protect_OAR
+            protect_OAR=self.protect_OAR,
+            seed_count=seed_count,
+            needle_count=needle_count,
+            is_new_needle=is_new_needle,
         )
+        self.cur_DVH_rate = cur_DVH_rate
+        if cur_seed_radiation is None:
+            # Failed dose prediction: retire the action but never fabricate a
+            # zero-dose seed inside the plan.
+            return 0.0, cur_DVH_rate
 
         self.planned_positions[lv].append(world_position)
         self.planned_seed_radiations[lv].append(cur_seed_radiation)
@@ -690,6 +866,126 @@ class HighLevelEnv(gym.Env):
         return planned_res
 
     # ------------------------------------------------------
+    def _action_geometry(self, action, high_level=False):
+        """Resolve (level, img position, direction, world position) for one action."""
+        if high_level:
+            lv = np.searchsorted(self.cum_sizes, action, side="right") % self.level
+            length = self.high_level_ranges[action]
+        else:
+            lv = np.searchsorted(
+                np.cumsum(self.range_length[self.group_idx * self.level:]),
+                action, side="right") % self.level
+            length = self.low_level_state_space[action]
+        traj = self.target_level_traj[self.group_idx][lv][1]
+        point = np.array(traj[0]).reshape(-1)
+        direction = np.array(traj[1]).reshape(-1)
+        direction = direction / np.linalg.norm(direction)
+        max_idx = np.argmax(np.abs(direction))
+        update_dir = direction / np.abs(direction[max_idx])
+        effective_range = self.low_level_ranges[self.group_idx][lv]
+        try:
+            idx_in_lv = list(effective_range).index(length)
+        except ValueError:
+            img_position = np.array(update_dir * length + point)
+            world_position = utilizations.position_transform(self.dose_image, img_position)[0]
+        else:
+            img_position = self.candidate_img_positions[(self.group_idx, lv)][idx_in_lv]
+            world_position = self.candidate_world_positions[(self.group_idx, lv)][idx_in_lv]
+        return lv, np.asarray(img_position).reshape(-1), direction, world_position
+
+    def evaluate_action_marginal(self, action):
+        """Non-committing objective gain of one low-level action (greedy ranking)."""
+        lv, img_position, direction, _ = self._action_geometry(action, high_level=False)
+        key = SeedPlacementReward.cache_key_for(img_position, direction)
+        dose_map = self.reward_calculator.seed_cache.get(key)
+        if dose_map is None:
+            return -np.inf
+        is_new_needle = not self.planned_positions[lv]
+        seed_count = 1 + sum(len(entry) for entry in self.planned_positions)
+        needle_count = sum(1 for entry in self.planned_positions if entry) + (1 if is_new_needle else 0)
+        return self.reward_calculator.evaluate_marginal(
+            self.cur_radiation,
+            dose_map,
+            seed_count=seed_count,
+            needle_count=needle_count,
+            is_new_needle=is_new_needle,
+            protect_OAR=self.protect_OAR,
+        )
+
+    def run_greedy(self, group_idx, device="cpu", restarts=3):
+        """Deterministic marginal-gain warm start on one trajectory group.
+
+        Repeatedly place the candidate with the highest remaining objective
+        gain and stop when no candidate improves the plan objective (the seed
+        cost then makes 'stop' the optimal move).  Several deterministic
+        restarts (forced first seeds ranked by their one-step gain) recover
+        from the classic greedy myopia of grabbing a whole lobe first, so the
+        incumbent can only improve.  The plan enters the incumbent pool and
+        the returned result is the best restart.
+        """
+        ranked = []
+        for restart in range(max(1, int(restarts))):
+            plan, reward, coverage = self._greedy_pass(group_idx, device, restart=restart)
+            ranked.append((reward, coverage, plan))
+        ranked.sort(key=lambda item: item[0], reverse=True)
+        best_reward, best_coverage, best_plan = ranked[0]
+        return best_plan, best_reward, best_coverage
+
+    def _greedy_pass(self, group_idx, device="cpu", restart=0):
+        """One greedy sweep.  ``restart`` forces the n-th best first seed."""
+        self.reset()
+        self.group_idx = int(group_idx)
+        self.activate_group(self.group_idx, device=device)
+        merged = []
+        for lv in range(self.level):
+            merged.extend(self.low_level_ranges[self.group_idx][lv])
+        self.low_level_state_space = merged
+        n_actions = len(merged)
+        if n_actions == 0:
+            return [], -np.inf, 0.0
+        available = np.ones(n_actions, dtype=bool)
+        budget = n_actions if not self.max_actions_per_episode else min(
+            n_actions, int(self.max_actions_per_episode))
+        total_reward = 0.0
+        cur_DVH_rate = 0.0
+        placed = 0
+        forced = None
+        if restart > 0:
+            first_gains = [(self.evaluate_action_marginal(int(a)), int(a))
+                           for a in range(n_actions)]
+            first_gains.sort(key=lambda item: (-item[0], item[1]))
+            if restart < len(first_gains):
+                forced = first_gains[restart][1]
+        while placed < budget:
+            if self.deadline is not None and time.monotonic() >= self.deadline:
+                break
+            slicer.app.processEvents()
+            mask = self.generate_mask(available)
+            if not mask.any():
+                break
+            best_action, best_gain = None, -np.inf
+            if forced is not None:
+                if not mask[forced]:
+                    forced = None
+                else:
+                    best_action, best_gain = forced, self.evaluate_action_marginal(forced)
+                    forced = None
+            if best_action is None:
+                for candidate in np.flatnonzero(mask):
+                    gain = self.evaluate_action_marginal(int(candidate))
+                    if gain > best_gain:
+                        best_gain, best_action = gain, int(candidate)
+            if best_action is None or best_gain <= 0.0:
+                break
+            reward, cur_DVH_rate = self.update_planned_position(best_action, high_level=False)
+            total_reward += reward
+            available[best_action] = False
+            placed += 1
+            if cur_DVH_rate >= self.DVH_rate:
+                break
+        return self.planned_position2planned_res(), total_reward, cur_DVH_rate
+
+    # ------------------------------------------------------
     def step(self, action, device="cpu"):
         """
         Execute high-level action, then run full low-level episode.
@@ -698,18 +994,18 @@ class HighLevelEnv(gym.Env):
         """
         try:
             self.low_level_state_space = self.generate_low_level_state_space(action)
+            low_agent = self.activate_group(self.group_idx, device=device)
             low_env = LowLevelEnv(
                 self.low_level_state_space,
                 max_steps=self.max_actions_per_episode,
             )
-            low_agent = REINFORCE(n_actions=len(self.low_level_state_space), device=device)
-
-            state = low_env.reset()
+            low_env.reset()
 
             # Keep the initial high-level seed's coverage.  Dropping this
             # value made a one-seed valid plan look like V100=0 whenever the
             # low-level action space was exhausted immediately.
             total_reward, cur_DVH_rate = self.update_planned_position(action, high_level=True)
+            self.cur_DVH_rate = cur_DVH_rate
 
             mask = None
             while not low_env.done:
@@ -720,11 +1016,13 @@ class HighLevelEnv(gym.Env):
                     slicer.app.processEvents()
                     mask = self.generate_mask(low_env.used_mask)
                     if mask.any():
+                        state = self.policy_state(low_env)
                         a = low_agent.select_action(state, mask=mask)
-                        state, _, _ = low_env.step(a)
+                        low_env.step(a)
                         r, cur_DVH_rate = self.update_planned_position(a, high_level=False)
                         low_agent.record_reward(r)
                         total_reward += r
+                        self.cur_DVH_rate = cur_DVH_rate
                         if cur_DVH_rate >= self.DVH_rate:
                             low_env.done = True
                     else:
@@ -742,66 +1040,18 @@ class HighLevelEnv(gym.Env):
         except Exception:
             logger.debug("High-level environment step failed", exc_info=True)
             planned_res = self.planned_position2planned_res() if self.group_idx is not None else []
-            return -np.inf, planned_res, 0.0, None, self.group_idx, self.low_level_state_space if hasattr(self, 'low_level_state_space') else [], LowLevelEnv([]), REINFORCE(1)
+            fallback_agent = self.low_agents.get(self.group_idx) if self.group_idx is not None else None
+            return (
+                -np.inf,
+                planned_res,
+                0.0,
+                None,
+                self.group_idx,
+                self.low_level_state_space if hasattr(self, 'low_level_state_space') else [],
+                LowLevelEnv([]),
+                fallback_agent or REINFORCE(1, state_dim=POLICY_STATE_DIM),
+            )
 
-
-
-def randomly_flip_false(mask: np.ndarray, flip_ratio: float = 0.5, seed: int = None):
-    """
-    Randomly flip a fraction of False values in a boolean mask to True.
-
-    Parameters
-    ----------
-    mask : np.ndarray
-        Boolean array of any shape.
-    flip_ratio : float
-        Fraction of False values to flip to True (0 < flip_ratio <= 1).
-    seed : int, optional
-        Random seed for reproducibility.
-
-    Returns
-    -------
-    np.ndarray
-        New boolean array with the specified fraction of False flipped to True.
-    """
-    if seed is not None:
-        np.random.seed(seed)
-    
-    mask = mask.copy()  # avoid modifying original
-    false_idx = np.where(mask == False)  # get all False indices
-    n_flip = int(len(false_idx[0]) * flip_ratio)
-    
-    if n_flip > 0:
-        flip_idx = np.random.choice(len(false_idx[0]), size=n_flip, replace=False)
-        mask[tuple(idx[flip_idx] for idx in false_idx)] = True
-    
-    return mask
-
-
-def DVH2Rewards(plan_res, radiation_volume, target_value, out_highest_dose, cur_DVH_rate, DVH_rate):
-    """
-    Compute DVH rate and reward for a given plan result.
-    """
-    # Accumulate total radiation from all seeds
-    total_radiation = np.zeros_like(radiation_volume).astype(float)
-    for _, _, single_seed_radiations in plan_res:
-        for single_seed_radiation in single_seed_radiations:
-            total_radiation += single_seed_radiation
-
-    # Compute DVH rate
-    # mask_volume is 0.0/1.0 (float), use == 0 to find non-target voxels
-    mask_volume = (radiation_volume == target_value).astype(float)
-    non_target_idx = np.where(mask_volume == 0)
-    target_idx = np.where(mask_volume == 1)
-
-    non_target_voxels = total_radiation[non_target_idx]
-    exceed_count = np.count_nonzero(non_target_voxels > out_highest_dose)
-
-    out_damage = normalized_oar_damage(exceed_count, len(target_idx[0]))
-
-    reward = min(cur_DVH_rate, DVH_rate) + ((cur_DVH_rate - DVH_rate) >= 0) * (1.0 - out_damage)
-
-    return reward
 
 
 def evaluate_plan_objective(
@@ -845,10 +1095,36 @@ def evaluate_plan_objective(
         int(np.count_nonzero(total_radiation[non_target_mask] > float(out_highest_dose))),
         target_count,
     )
-    objective = min(coverage, float(DVH_rate)) + (
-        (coverage >= float(DVH_rate)) * (1.0 - out_damage)
+    seed_count, needle_count = plan_cost_counts(plan_res)
+    objective = plan_objective(
+        coverage,
+        out_damage,
+        seed_count=seed_count,
+        needle_count=needle_count,
+        target_coverage=float(DVH_rate),
     )
     return float(objective), coverage
+
+
+def plan_cost_counts(plan_res):
+    """Return (seed_count, needle_count) for a planned result.
+
+    A needle counts once when it carries seeds or dose maps; an entry whose
+    seed list is empty falls back to its dose-map count so serialized plans
+    stay comparable with live episode plans.
+    """
+    seeds = 0
+    needles = 0
+    for entry in plan_res or []:
+        if not isinstance(entry, (list, tuple)) or len(entry) < 3:
+            continue
+        entry_seeds = entry[1] if isinstance(entry[1], (list, tuple)) else []
+        entry_maps = entry[2] if isinstance(entry[2], (list, tuple)) else []
+        count = len(entry_seeds) if entry_seeds else len(entry_maps)
+        seeds += int(count)
+        if count:
+            needles += 1
+    return seeds, needles
 
 
 def generate_baseline_state_space(low_level_state_spaces, level, idx):
@@ -863,10 +1139,15 @@ def generate_plan_res(dose_image, elem):
     planned_res = []
     for _, traj, seeds, single_seed_radiations, _ in elem:
         slicer.app.processEvents()
-        direction = utilizations.direction_transform(dose_image, np.array(traj[1]).reshape(-1))
+        direction = np.asarray(
+            utilizations.direction_transform(dose_image, np.array(traj[1]).reshape(-1))[0]
+        ).reshape(-1)
         world_seeds = []
         for _, seed in enumerate(seeds):
-            world_seeds.append([utilizations.position_transform(dose_image, seed[0]), direction])
+            position = np.asarray(
+                utilizations.position_transform(dose_image, seed[0])[0]
+            ).reshape(-1)
+            world_seeds.append([position, direction])
         planned_res.append([traj, world_seeds, single_seed_radiations])
     return planned_res
 
@@ -952,15 +1233,30 @@ def reinforcement_planning(
         rl_status["max_episodes"] = int(rf_params.get("max_episodes", 0) or 0)
         rl_status["max_actions_per_episode"] = int(max_actions_per_episode or 0)
         rl_status["hierarchical_optimization"] = bool(
-            rf_params.get("hierarchical_optimization")
+            rf_params.get("hierarchical_optimization", True)
         )
     try:
         device = next(dose_cal_model.parameters()).device
 
+        # Reproducible search: the same case and the same rf_params must plan
+        # the same seeds.  ``random_seed: null`` restores the old unseeded
+        # exploration for research runs.
+        random_seed = rf_params.get("random_seed", 0)
+        if random_seed is not None:
+            seed_int = int(random_seed)
+            np.random.seed(seed_int)
+            torch.manual_seed(seed_int)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(seed_int)
+
+        protect_oar = bool(rf_params.get("segmented_rewards", True))
+        hierarchical_mode = bool(rf_params.get("hierarchical_optimization", True))
+        max_episodes = int(rf_params.get("max_episodes", 200) or 0)
+
         high_agent = REINFORCE(
             n_actions=len(high_level_state_spaces),
-            lr=rf_params['lr'],
-            gamma=rf_params['gamma'],
+            lr=float(rf_params.get('lr', 1e-3)),
+            gamma=float(rf_params.get('gamma', 0.99)),
             device=device
         )
 
@@ -974,7 +1270,7 @@ def reinforcement_planning(
         env = HighLevelEnv(
             target_level_traj, high_level_state_spaces, low_level_state_spaces,
             range_length, target_level, dose_image, radiation_volume,
-            seed_info, reward_calculator, DVH_rate, rf_params['segmented_rewards'],
+            seed_info, reward_calculator, DVH_rate, protect_oar,
             max_actions_per_episode=max_actions_per_episode,
             deadline=deadline,
         )
@@ -983,6 +1279,7 @@ def reinforcement_planning(
         best_low_level_state_space = None
         best_low_env = None
         best_low_agent = None
+        group_objectives = {}
 
         for idx, elem in enumerate(target_level_traj):
             if deadline is not None and time.monotonic() >= deadline:
@@ -995,23 +1292,26 @@ def reinforcement_planning(
                 slicer.app.processEvents()
                 
                 trajs_radiations = np.zeros_like(radiation_volume, dtype=np.float32)
-                for _, traj, _, _, cur_seeds_radiations in elem:
-                    trajs_radiations += cur_seeds_radiations
-                if rf_params['segmented_rewards']:
-                    target_sum = np.sum(trajs_radiations * reward_calculator.mask_volume > in_lowest_dose)
-                    cur_DVH_rate = target_sum / reward_calculator.target_v
-                    non_target_sum = np.count_nonzero(
-                        (trajs_radiations * reward_calculator.non_target_mask > out_highest_dose)
-                    )
-                    cur_out_damage = normalized_oar_damage(
-                        non_target_sum, reward_calculator.target_v
-                    )
-                    cur_reward = min(cur_DVH_rate, DVH_rate) + (
-                        (cur_DVH_rate >= DVH_rate) * (1.0 - cur_out_damage)
-                    )
-                else:
-                    target_sum = np.sum(trajs_radiations * reward_calculator.mask_volume > in_lowest_dose)
-                    cur_reward = cur_DVH_rate = target_sum / reward_calculator.target_v
+                dense_seed_count = 0
+                for entry in elem:
+                    trajs_radiations += entry[4]
+                    dense_seed_count += len(entry[2] or [])
+                target_sum = np.sum(trajs_radiations * reward_calculator.mask_volume > in_lowest_dose)
+                cur_DVH_rate = target_sum / reward_calculator.target_v
+                non_target_sum = np.count_nonzero(
+                    (trajs_radiations * reward_calculator.non_target_mask > out_highest_dose)
+                )
+                cur_out_damage = normalized_oar_damage(
+                    non_target_sum, reward_calculator.target_v
+                ) if protect_oar else 0.0
+                cur_reward = plan_objective(
+                    cur_DVH_rate,
+                    cur_out_damage,
+                    seed_count=dense_seed_count,
+                    needle_count=len(elem),
+                    target_coverage=DVH_rate,
+                )
+                group_objectives[idx] = float(cur_reward)
 
                 if cur_reward > best_reward:
                     best_reward = cur_reward
@@ -1043,11 +1343,84 @@ def reinforcement_planning(
             best_low_level_state_space,
             max_steps=max_actions_per_episode,
         )
-        best_low_agent = REINFORCE(n_actions=len(best_low_level_state_space), device=device)
-        
-        if rf_params['hierarchical_optimization']:
+        best_low_agent = env.activate_group(best_group_idx, device=device)
+
+        def _greedy_incumbent(group_idx, phase):
+            """Deterministic warm start that can only improve the incumbent pool."""
+            nonlocal best_plan, best_reward
+            if group_idx is None:
+                return
+            try:
+                env.reset()
+                greedy_plan, _greedy_reward, _greedy_coverage = env.run_greedy(group_idx, device=device)
+            except DoseInferenceDeadlineExceeded:
+                logger.warning("[rl] Greedy warm start stopped at the DoseUNet deadline")
+                set_outcome(
+                    rl_status,
+                    execution="interrupted",
+                    stop_reason="dose_inference_deadline",
+                )
+                return
+            except Exception:
+                logger.debug("Greedy warm start failed", exc_info=True)
+                return
+            if not greedy_plan:
+                return
+            greedy_score, greedy_coverage = evaluate_plan_objective(
+                greedy_plan,
+                radiation_volume,
+                target_value,
+                in_lowest_dose,
+                out_highest_dose,
+                DVH_rate,
+            )
+            if greedy_score > best_reward:
+                best_reward = greedy_score
+                best_plan = greedy_plan
+                logger.debug(
+                    "[rl] greedy warm start incumbent: objective=%.4f coverage=%.4f",
+                    greedy_score, greedy_coverage,
+                )
+                _emit_preview(
+                    best_plan, phase, 0,
+                    greedy_coverage, greedy_score,
+                )
+            _record_plan(greedy_coverage, greedy_score)
+
+        greedy_enabled = rf_params.get("greedy_warm_start", True)
+        if isinstance(greedy_enabled, str):
+            greedy_enabled = greedy_enabled.strip().lower() not in {"0", "false", "no", "off"}
+        if greedy_enabled:
+            _greedy_incumbent(best_group_idx, "rl_greedy_warm_start")
+
+        # Baseline-informed initialization for the high-level policy: bias the
+        # (group, anchor) logits toward the groups whose dense evaluation
+        # already scores well, so early episodes explore promising anchors
+        # instead of a uniform prior over hundreds of actions.
+        if group_objectives and len(high_level_state_spaces) > 0:
+            try:
+                scores = np.array(
+                    [group_objectives.get(g, 0.0) for g in range(len(target_level_traj))],
+                    dtype=np.float64,
+                )
+                mean_score = float(scores.mean()) if scores.size else 0.0
+                level = max(1, int(target_level))
+                bias = torch.zeros(len(high_level_state_spaces), device=device)
+                for flat_idx in range(len(high_level_state_spaces)):
+                    group_of = int(np.searchsorted(env.cum_sizes, flat_idx, side="right") // level)
+                    if len(scores):
+                        group_of = min(group_of, len(scores) - 1)
+                    else:
+                        group_of = 0
+                    bias[flat_idx] = 1.5 * (float(scores[group_of]) - mean_score)
+                with torch.no_grad():
+                    high_agent.policy.logits.bias.add_(bias)
+            except Exception:
+                logger.debug("Baseline-informed policy initialization failed", exc_info=True)
+
+        if hierarchical_mode:
             high_loop_completed = True
-            for _ in range(rf_params['max_episodes'] // 2):
+            for _ in range(max_episodes // 2):
                 if deadline is not None and time.monotonic() >= deadline:
                     logger.warning("[rl] Hierarchical RL episode loop reached its wall-clock budget")
                     high_loop_completed = False
@@ -1067,7 +1440,7 @@ def reinforcement_planning(
                     high_agent.record_reward(low_reward)
                     high_agent.finish_episode()
 
-                    plan_objective, plan_coverage = evaluate_plan_objective(
+                    plan_score, plan_coverage = evaluate_plan_objective(
                         plan,
                         radiation_volume,
                         target_value,
@@ -1075,24 +1448,24 @@ def reinforcement_planning(
                         out_highest_dose,
                         DVH_rate,
                     )
-                    if plan_objective > best_reward:
+                    if plan_score > best_reward:
                         best_plan = plan
                         best_group_idx = group_idx
                         best_low_level_state_space = low_level_state_space
                         best_low_env = low_env
                         best_low_agent = low_agent
-                        best_reward = plan_objective
+                        best_reward = plan_score
                         logger.debug(
                             "[rl] improved hierarchical plan: objective=%.4f coverage=%.4f",
-                            plan_objective,
+                            plan_score,
                             plan_coverage,
                         )
                         _emit_preview(
                             best_plan, "rl_trajectory_refinement", _,
-                            plan_coverage, plan_objective,
+                            plan_coverage, plan_score,
                         )
 
-                    _record_plan(plan_coverage, plan_objective)
+                    _record_plan(plan_coverage, plan_score)
                     _status_counter("high_level_episodes")
                     _status_counter("episodes_completed")
                     
@@ -1113,6 +1486,9 @@ def reinforcement_planning(
                     except Exception:
                         pass
                     continue
+
+            if greedy_enabled and best_group_idx is not None:
+                _greedy_incumbent(best_group_idx, "rl_greedy_refinement")
 
             planned_directions = [np.array([0, 0, 1]) for _ in range(target_level)]
             best_cunsum = np.cumsum(range_length[best_group_idx * target_level:])
@@ -1145,7 +1521,7 @@ def reinforcement_planning(
                         pos_cache[(lv, length)] = utilizations.position_transform(dose_image, img_position)[0]
 
             low_loop_completed = True
-            for ep in range(rf_params['max_episodes'] // 2):
+            for ep in range(max_episodes // 2):
                 if deadline is not None and time.monotonic() >= deadline:
                     logger.warning("[rl] Low-level RL episode loop reached its wall-clock budget")
                     low_loop_completed = False
@@ -1159,8 +1535,10 @@ def reinforcement_planning(
                     planned_positions = [[] for _ in range(target_level)]
                     planned_seed_radiations = [[] for _ in range(target_level)]
 
-                    cur_radiation = np.zeros_like(radiation_volume)
-                    state = best_low_env.reset()
+                    cur_radiation = np.zeros_like(radiation_volume, dtype=np.float32)
+                    cur_DVH_rate = 0.0
+                    best_low_env.reset()
+                    state = np.zeros(POLICY_STATE_DIM, dtype=np.float32)
 
                     while not best_low_env.done:
                         try:
@@ -1192,9 +1570,17 @@ def reinforcement_planning(
                                 )
                             mask &= best_low_env.used_mask
                             if np.any(mask):
+                                placed_total = sum(len(entry) for entry in planned_positions)
+                                available_frac = float(np.count_nonzero(mask)) / max(1, mask.size)
+                                state = np.array([
+                                    min(1.5, float(cur_DVH_rate) / max(float(DVH_rate), 1e-6)),
+                                    min(1.0, float(getattr(reward_calculator, "last_out_damage", 0.0) or 0.0)),
+                                    placed_total / max(1.0, float(max_actions_per_episode or 1)),
+                                    available_frac,
+                                ], dtype=np.float32)
                                 a = best_low_agent.select_action(state, mask=mask)
                                 _status_counter("actions_taken")
-                                state, _, _ = best_low_env.step(a)
+                                best_low_env.step(a)
                                 lv = np.searchsorted(best_cunsum, a, side="right") % target_level
                                 traj, point, direction, update_dir, *_ = traj_cache[lv]
 
@@ -1202,15 +1588,21 @@ def reinforcement_planning(
                                 img_position = point + update_dir * length
                                 world_position = pos_cache[(lv, length)]
 
+                                is_new_needle = not planned_positions[lv]
                                 reward, cur_radiation, cur_DVH_rate, cur_seed_radiation = reward_calculator.forward(
                                     traj=traj,
                                     cur_radiation=cur_radiation,
                                     direction=direction,
                                     seed_point=img_position,
-                                    protect_OAR=rf_params['segmented_rewards']
+                                    protect_OAR=protect_oar,
+                                    seed_count=placed_total + 1,
+                                    needle_count=sum(1 for entry in planned_positions if entry) + (1 if is_new_needle else 0),
+                                    is_new_needle=is_new_needle,
                                 )
 
                                 best_low_agent.record_reward(reward)
+                                if cur_seed_radiation is None:
+                                    continue
                                 planned_positions[lv].append(world_position)
                                 planned_seed_radiations[lv].append(cur_seed_radiation)
                                 planned_directions[lv] = np.array(utilizations.direction_transform(dose_image, direction))[0]
@@ -1242,7 +1634,7 @@ def reinforcement_planning(
                         trajectory_def = best_traj[lv][1]
                         planned_res.append([trajectory_def, seeds, single_seed_radiations])
 
-                    plan_objective, plan_coverage = evaluate_plan_objective(
+                    plan_score, plan_coverage = evaluate_plan_objective(
                         planned_res,
                         radiation_volume,
                         target_value,
@@ -1250,20 +1642,20 @@ def reinforcement_planning(
                         out_highest_dose,
                         DVH_rate,
                     )
-                    if plan_objective > best_reward:
-                        best_reward = plan_objective
+                    if plan_score > best_reward:
+                        best_reward = plan_score
                         best_plan = planned_res
                         logger.debug(
                             "[rl] improved low-level plan: objective=%.4f coverage=%.4f",
-                            plan_objective,
+                            plan_score,
                             plan_coverage,
                         )
                         _emit_preview(
                             best_plan, "rl_seed_refinement", ep + 1,
-                            plan_coverage, plan_objective,
+                            plan_coverage, plan_score,
                         )
 
-                    _record_plan(plan_coverage, plan_objective)
+                    _record_plan(plan_coverage, plan_score)
                     _status_counter("low_level_episodes")
                     _status_counter("episodes_completed")
 
@@ -1288,7 +1680,7 @@ def reinforcement_planning(
 
         else:
             flat_loop_completed = True
-            for ep in range(rf_params['max_episodes']):
+            for ep in range(max_episodes):
                 if deadline is not None and time.monotonic() >= deadline:
                     logger.warning("[rl] Flat RL episode loop reached its wall-clock budget")
                     flat_loop_completed = False
@@ -1308,7 +1700,7 @@ def reinforcement_planning(
                     high_agent.record_reward(low_reward)
                     high_agent.finish_episode()
 
-                    plan_objective, plan_coverage = evaluate_plan_objective(
+                    plan_score, plan_coverage = evaluate_plan_objective(
                         plan,
                         radiation_volume,
                         target_value,
@@ -1316,19 +1708,19 @@ def reinforcement_planning(
                         out_highest_dose,
                         DVH_rate,
                     )
-                    if plan_objective > best_reward:
-                        best_reward = plan_objective
+                    if plan_score > best_reward:
+                        best_reward = plan_score
                         best_plan = plan
                         logger.debug(
                             "[rl] improved flat plan: objective=%.4f coverage=%.4f",
-                            plan_objective,
+                            plan_score,
                             plan_coverage,
                         )
                         _emit_preview(
                             best_plan, "rl_plan_refinement", ep + 1,
-                            plan_coverage, plan_objective,
+                            plan_coverage, plan_score,
                         )
-                    _record_plan(plan_coverage, plan_objective)
+                    _record_plan(plan_coverage, plan_score)
                     _status_counter("high_level_episodes")
                     _status_counter("episodes_completed")
                     low_agent.finish_episode()

@@ -4296,6 +4296,39 @@ def generate_hierarchical_state_spaces(
     return hierarchical, n, DVH_sign
 
 
+def select_hierarchy_level(hierarchical, needle_penalty=0.01):
+    """Pick the trajectory-combination level that balances coverage and needles.
+
+    Every level holds combos of a fixed trajectory count.  The deepest level is
+    not automatically best: when a shallower combo already reaches almost the
+    same dense-evaluation coverage, the extra puncture is not worth it.  Score
+    each combo as ``coverage - needle_penalty * needle_count`` and return the
+    level owning the best combo, so the RL candidate pool is uniform in size
+    while still respecting needle economy.
+    """
+    best_level = None
+    best_score = -float("inf")
+    for level in hierarchical or []:
+        for entry in level:
+            if not isinstance(entry, (list, tuple)) or len(entry) < 2:
+                continue
+            combo, coverage = entry[0], entry[1]
+            try:
+                combo_size = len(combo)
+            except TypeError:
+                combo_size = 0
+            try:
+                score = float(coverage) - float(needle_penalty) * combo_size
+            except (TypeError, ValueError):
+                continue
+            if score > best_score:
+                best_score = score
+                best_level = level
+    if best_level is None and hierarchical:
+        return hierarchical[-1]
+    return best_level if best_level is not None else []
+
+
 def hierarchical_planning_rf(
     candidate_trajectories, seed_info, interval_rate, rf_params,
     radiation_volume, dose_image, dose_cal_model, infer_img_size,
@@ -4618,7 +4651,12 @@ def hierarchical_planning_rf(
         # if not DVH_res:
         #    return [], None
     else:
-        hierarchical_available_traj_with_seeds = traj_with_seeds
+        # A single dense trajectory already reaches the coverage target, so the
+        # hierarchy has exactly one level.  Wrap it as a level list: the
+        # consumer indexes ``[-1]`` for "the deepest level", and a bare
+        # ``traj_with_seeds`` would make it iterate one (combo, DVH) tuple as
+        # if it were the level itself (ValueError on unpack, planning aborted).
+        hierarchical_available_traj_with_seeds = [traj_with_seeds]
 
     if (
         not hierarchical_available_traj_with_seeds
@@ -4638,7 +4676,9 @@ def hierarchical_planning_rf(
         )
         return _finish([], -np.inf)
 
-    target_available_traj_seeds = hierarchical_available_traj_with_seeds[- 1]
+    target_available_traj_seeds = select_hierarchy_level(hierarchical_available_traj_with_seeds)
+    if not target_available_traj_seeds:
+        target_available_traj_seeds = hierarchical_available_traj_with_seeds[- 1]
     
     target_level = len(target_available_traj_seeds[0][0])
     
