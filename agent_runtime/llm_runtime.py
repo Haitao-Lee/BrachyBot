@@ -446,6 +446,50 @@ def _collect_tool_fallback_text(
     return successes, failures
 
 
+_PRESENTATION_CAPTURE_TOOLS = frozenset({"ui_screenshot", "ui_content"})
+# Read-only helpers that only prepare a capture (inspecting UI state, adding
+# a mark) must not make a presentation turn look like a failed clinical run.
+_PRESENTATION_HELPER_TOOLS = frozenset(
+    {"ui_screenshot", "ui_content", "ui_inspector", "ui_annotate"}
+)
+
+
+def _presentation_capture_fallback(
+    lang: str,
+    steps: List[Dict],
+    message: str,
+    *,
+    capture_pending: bool = False,
+) -> Optional[str]:
+    """Return the typed acknowledgement for a completed screenshot capture.
+
+    The browser owns the capture and the linked multimodal child owns the
+    explanation.  When the capture plan succeeded, the empty-model fallback
+    must acknowledge that operation instead of claiming "本轮未能完成" — the
+    exact state hallucination users saw after a successful capture.
+    ``capture_pending`` marks the deliberate loop stop after a
+    presentation-only tool batch, where other read-only helpers (ui_inspector)
+    may also appear in the same turn.
+    """
+    tool_steps = [s for s in steps or [] if s.get("type") == "tool"]
+    presentation_steps = [
+        s for s in tool_steps if _fallback_tool_name(s) in _PRESENTATION_CAPTURE_TOOLS
+    ]
+    if not presentation_steps:
+        return None
+    if not all(s.get("status") == "done" for s in presentation_steps):
+        return None
+    if not capture_pending and not all(
+        _fallback_tool_name(s) in _PRESENTATION_HELPER_TOOLS for s in tool_steps
+    ):
+        return None
+    return presentation_fallback_message(
+        lang,
+        message,
+        (_fallback_tool_name(s) for s in presentation_steps),
+    )
+
+
 @lru_cache(maxsize=128)
 def _build_static_system_prompt_cached(message: str, current_date: str) -> str:
     """Render trusted repository policy without embedding runtime data."""
@@ -1625,6 +1669,11 @@ class LLMRuntimeMixin:
         final_response = ""
         tools_executed = False
         _input_missing = False
+        # Set when the loop deliberately stops after a presentation-only tool
+        # batch so the browser can capture and the linked visual child can
+        # explain. The empty-response fallback must acknowledge that capture
+        # instead of reporting the turn as unfinished.
+        _presentation_capture_pending = False
         accumulated_text = ""  # Preserve text across LLM iterations
         _failed_tools = set()  # Track tools that returned 0/empty results
         _direct_read_candidate = None
@@ -2089,6 +2138,7 @@ class LLMRuntimeMixin:
                 and tool_calls
                 and all(tc.get("tool") in {"ui_screenshot", "ui_content"} for tc in tool_calls)
             ):
+                _presentation_capture_pending = True
                 break
 
             # A typed read-only result is already a complete response. Avoid
@@ -2219,22 +2269,16 @@ class LLMRuntimeMixin:
                 )
             elif tools_executed:
                 _fallback_lang = "zh" if str(getattr(self.memory, "user_lang", "en") or "en").lower().startswith("zh") else "en"
-                _presentation_steps = [
-                    s for s in steps
-                    if s.get("type") == "tool"
-                    and _fallback_tool_name(s) in {"ui_screenshot", "ui_content"}
-                ]
-                _tool_steps = [s for s in steps if s.get("type") == "tool"]
-                if (
-                    _presentation_steps
-                    and len(_presentation_steps) == len(_tool_steps)
-                    and all(s.get("status") == "done" for s in _presentation_steps)
-                ):
-                    final_response = presentation_fallback_message(
-                        _fallback_lang,
-                        message,
-                        (_fallback_tool_name(s) for s in _presentation_steps),
-                    )
+                # A successful screenshot capture is a completed operation the
+                # browser still owns; acknowledge it instead of claiming the
+                # turn failed. This must also fire when read-only helpers such
+                # as ui_inspector ran in the same turn.
+                final_response = _presentation_capture_fallback(
+                    _fallback_lang,
+                    steps,
+                    message,
+                    capture_pending=_presentation_capture_pending,
+                )
                 tool_results_text, failure_notes = _collect_tool_fallback_text(
                     steps, messages, _fallback_lang
                 )
@@ -2269,12 +2313,24 @@ class LLMRuntimeMixin:
             "status": "done",
         })
         self.memory.add_message("assistant", final_response)
+        _visual_analysis_pending = bool(
+            _presentation_capture_pending
+            and any(
+                s.get("type") == "tool"
+                and _fallback_tool_name(s) in _PRESENTATION_CAPTURE_TOOLS
+                and s.get("status") == "done"
+                for s in steps
+            )
+        )
+        if _visual_analysis_pending:
+            self._visual_analysis_pending = True
         return final_response, {
             "usage": total_usage,
             "latency_ms": round(total_latency_ms, 1),
             "llm_calls": llm_calls,
             "phase_timings_ms": dict(getattr(self, "_turn_timings", {}) or {}),
             "response_contract": response_contract.as_dict(),
+            "visual_analysis_pending": _visual_analysis_pending,
         }
 
     @staticmethod
@@ -2947,6 +3003,11 @@ class LLMRuntimeMixin:
         final_response = ""
         tools_executed = False
         _input_missing = False
+        # Set when the loop deliberately stops after a presentation-only tool
+        # batch so the browser can capture and the linked visual child can
+        # explain. The empty-response fallback must acknowledge that capture
+        # instead of reporting the turn as unfinished.
+        _presentation_capture_pending = False
         accumulated_text = ""  # Preserve text across LLM iterations
         _failed_tools = set()  # Track tools that returned 0/empty results for longer responses
         _direct_read_candidate = None
@@ -4089,6 +4150,7 @@ class LLMRuntimeMixin:
                 and tool_calls
                 and all(tc.get("tool") in {"ui_screenshot", "ui_content"} for tc in tool_calls)
             ):
+                _presentation_capture_pending = True
                 break
 
             # A typed read-only result is already a complete response. Avoid
@@ -4210,21 +4272,16 @@ class LLMRuntimeMixin:
             elif accumulated_text and not tools_executed and _is_safe_accumulated_text(accumulated_text):
                 final_response = accumulated_text
             elif tools_executed:
-                _tool_steps = [s for s in steps if s.get("type") == "tool"]
-                _presentation_steps = [
-                    s for s in _tool_steps
-                    if _fallback_tool_name(s) in {"ui_screenshot", "ui_content"}
-                ]
-                if (
-                    _presentation_steps
-                    and len(_presentation_steps) == len(_tool_steps)
-                    and all(s.get("status") == "done" for s in _presentation_steps)
-                ):
-                    final_response = presentation_fallback_message(
-                        _fb_lang,
-                        message,
-                        (_fallback_tool_name(s) for s in _presentation_steps),
-                    )
+                # A successful screenshot capture is a completed operation the
+                # browser still owns; acknowledge it instead of claiming the
+                # turn failed. This must also fire when read-only helpers such
+                # as ui_inspector ran in the same turn.
+                final_response = _presentation_capture_fallback(
+                    _fb_lang,
+                    steps,
+                    message,
+                    capture_pending=_presentation_capture_pending,
+                )
                 if final_response:
                     pass
                 else:
@@ -4255,11 +4312,23 @@ class LLMRuntimeMixin:
         # user-visible. Emitting this step early makes the UI look as if
         # the final answer was generated before completeness_checker.
         self.memory.add_message("assistant", final_response)
+        _visual_analysis_pending = bool(
+            _presentation_capture_pending
+            and any(
+                s.get("type") == "tool"
+                and _fallback_tool_name(s) in _PRESENTATION_CAPTURE_TOOLS
+                and s.get("status") == "done"
+                for s in steps
+            )
+        )
+        if _visual_analysis_pending:
+            self._visual_analysis_pending = True
         yield {"type": "_result", "response": final_response, "llm_meta": {
             "usage": total_usage,
             "latency_ms": round(total_latency_ms, 1),
             "llm_calls": llm_calls,
             "phase_timings_ms": dict(getattr(self, "_turn_timings", {}) or {}),
             "response_contract": response_contract.as_dict(),
+            "visual_analysis_pending": _visual_analysis_pending,
         }}
         return

@@ -39,6 +39,62 @@ def test_question_and_mixed_turns_require_text_without_answer_whitelists():
     assert command.presentation_mode == "status_with_evidence"
 
 
+def test_screenshot_and_inform_demands_the_explanation_not_attachment_only():
+    """"截图告知" asks for the content that belongs to the evidence.
+
+    Treating it as a pure capture command let the turn end as an attachment
+    gallery (or a stale fallback) with no explanation of what the images show.
+    """
+    build_response_contract = _response_contract_module().build_response_contract
+
+    inform = build_response_contract("截图告知")
+    assert inform.act == "mixed"
+    assert inform.text_required is True
+    assert inform.evidence_supplemental is True
+    assert inform.presentation_mode == "explain_with_evidence"
+
+    pure_capture = build_response_contract("截图")
+    assert pure_capture.act == "command"
+    assert pure_capture.evidence_supplemental is False
+
+
+def test_successful_capture_fallback_acknowledges_instead_of_failing_the_turn():
+    import importlib
+
+    llm = importlib.import_module("agent_runtime.llm_runtime")
+    fallback = llm._presentation_capture_fallback
+
+    capture_steps = [
+        {"type": "tool", "tool": "ui_inspector", "status": "done", "result": "Getting current UI state"},
+        {
+            "type": "tool",
+            "tool": "ui_screenshot",
+            "status": "done",
+            "result": "已创建截图计划，正在捕获目标视图。",
+            "metadata": {"internal_only": True, "user_visible": False},
+        },
+    ]
+
+    # The deliberate capture stop plus read-only helpers must acknowledge the
+    # capture, never report "本轮未能完成" for a plan that succeeded.
+    pending = fallback("zh", capture_steps, "截图告知", capture_pending=True)
+    assert "本轮已发起截图请求" in pending
+    assert "未能完成" not in pending
+
+    # The same holds when the turn's tools are all presentation helpers.
+    helper_only = fallback("zh", capture_steps, "截图告知")
+    assert "本轮已发起截图请求" in helper_only
+
+    # A failed capture and a mixed clinical turn fall back to the normal
+    # result collection instead of a capture acknowledgement.
+    failed = [{**capture_steps[0]}, {**capture_steps[1], "status": "error"}]
+    assert fallback("zh", failed, "截图告知", capture_pending=True) is None
+    mixed_tools = capture_steps + [
+        {"type": "tool", "tool": "query_metrics", "status": "done", "result": "V100"},
+    ]
+    assert fallback("zh", mixed_tools, "截图告知") is None
+
+
 def test_presentation_fallback_is_typed_and_language_matched():
     presentation_fallback_message = _response_contract_module().presentation_fallback_message
 

@@ -143,18 +143,32 @@ def shortcut_supported(message, policy, *, pending_tumor_site=False, ui_state=No
         labels = [normalized(item.get('label')) for item in catalog
                   if isinstance(item, dict) and item.get('label')] if isinstance(catalog, list) else []
         obj = r"(?:" + OBJECT + r"|3d重建的按钮" + ''.join('|' + re.escape(label) for label in labels) + r")"
-        prefix = r"(?:那\s*)?" + P + r"(?:请问|那)?(?:告诉我|告知我|说一下|说明)?(?:患者的|3d查看器里的)?(?:已生成的|生成的|当前的|当前)?"
+        prefix = (
+            r"(?:那\s*)?" + P
+            + r"(?:请问|那)?(?:告诉我|告知我|说一下|说明)?"
+            # Determiners such as "该患者的" name the same patient object the
+            # location resolver already accepts; they must not demote the turn
+            # to an open semantic workflow that forgets to capture evidence.
+            + r"(?:该|此|这位|这名)?(?:患者的|3d查看器里的)?"
+            + r"(?:已生成的|生成的|当前的|当前)?"
+        )
+        # "位于哪里" and "在哪个位置" are the same location question as
+        # "在哪里"; the contract accepts all of them instead of falling back
+        # to the provider for a purely lexical difference.
+        location_tail = (
+            r"(?:位于|位在)?(?:在)?(?:哪里|哪儿|何处|哪个位置|什么位置|在哪|的位置)(?:呢|呀|啊|吗)?"
+        )
         screenshot_suffix = (
             r"(?:[，,;；]\s*(?:(?:并|然后|再)\s*)?(?:请)?"
             r"(?:截图|截屏)(?:告知|说明|告诉我|给我看(?:看)?|展示|标注)?(?:一下)?)?"
         )
         # Context-dependent forms are accepted only after the candidate
         # resolver has found an unambiguous target from recent user context.
-        return full(prefix + obj + r"(?:在)?(?:哪里|哪儿|在哪|的位置)(?:呢|呀|啊|吗)?" + screenshot_suffix, text) or full(
-            r"(?:那\s*)?" + P + r"(?:截图|截屏)(?:告诉我|标出|标注|指出)" + r"(?:已生成的|生成的|当前的|当前)?" + obj + r"(?:在)?(?:哪里|哪儿|的位置)", text
+        return full(prefix + obj + location_tail + screenshot_suffix, text) or full(
+            r"(?:那\s*)?" + P + r"(?:截图|截屏)(?:告诉我|标出|标注|指出)" + r"(?:已生成的|生成的|当前的|当前)?" + obj + location_tail, text
         ) or full(P + r"(?:圈出|标出|指出)\s*" + obj + r"\s*(?:在哪里)?", text) or full(
             P + r"圈出来哪个是" + obj, text
-        ) or full(r"(?:please )?(?:where is|where are|locate|find)\s+(?:the |current |generated )*" + obj, text) or text == '截图给我在哪里'
+        ) or full(r"(?:please )?(?:where is|where are|locate|find)\s+(?:the |current |generated )*" + obj + r"(?:\s+located)?", text) or text == '截图给我在哪里'
     if intent == 'ui_operation':
         if full(P + r"对(?:所有|全部)oar\s*mask进行3d\s*重建", text):
             return True

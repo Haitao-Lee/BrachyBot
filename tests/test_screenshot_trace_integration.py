@@ -629,6 +629,35 @@ def test_tumor_location_with_screenshot_tail_uses_canonical_3d_route():
     assert classify_local_turn(message, ui_state=ui_state).intent == "session_visual_location_query"
 
 
+def test_patient_prefixed_tumor_location_with_location_tail_uses_the_screenshot_route():
+    """"该患者的肿瘤位于哪里" is the same location question as "肿瘤在哪里".
+
+    A determiner prefix and the "位于" tail used to fail the whole-request
+    contract, demoting the turn to open semantic_action where the model
+    answered from metrics without ever capturing grounded screenshots.
+    """
+    message = "该患者的肿瘤位于哪里"
+
+    policy = classify_local_turn(message)
+    assert policy.intent == "session_visual_location_query"
+    assert policy.direct_execution is True
+    assert policy.execution_grants == frozenset({"ui_screenshot"})
+
+    request = resolve_session_visual_location_request(message)
+    assert request["semantic_targets"] == ["ctv"]
+    assert request["target_refs"] == ["structure:ctv:active"]
+
+    calls = ResponseToolMixin()._detect_tool_request(message)
+    assert calls and len(calls) == 1
+    assert calls[0]["tool"] == "ui_screenshot"
+    params = calls[0]["params"]
+    assert params["semantic_target"] == "ctv"
+    assert params["target_refs"] == ["structure:ctv:active"]
+    assert params["annotation_policy"] == "required"
+    assert params["analysis_required"] is True
+    assert params["visual_purpose"] == "locate"
+
+
 def test_unknown_or_nonexistent_target_never_borrows_previous_object():
     conversation = [{"role": "user", "content": "手术导板在哪里"}]
     ui_state = {"viewer": {"ct_loaded": True}, "visual_target_catalog": []}

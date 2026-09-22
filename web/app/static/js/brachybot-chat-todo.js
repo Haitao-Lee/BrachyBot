@@ -4342,8 +4342,14 @@ async function sendChat(prefill, options) {
                         // display in the usage-bar footer. The footer
                         // is rendered when the response is finalized,
                         // so this is the "click send" baseline.
-                        window._chatTurnStartTime = Date.now();
-                        window._todoTurnToolCount = 0;
+                        // A hidden visual-analysis child is part of its
+                        // parent's visible turn: its start must not reset
+                        // the parent's clock/tool counters or a late footer
+                        // renders "0.0s / 0×" for a turn that used tools.
+                        if (!isInternalFollowup) {
+                            window._chatTurnStartTime = Date.now();
+                            window._todoTurnToolCount = 0;
+                        }
                     }
                     if (currentEvent === 'step' && data) {
                         if (data.code === 'llm_unavailable'
@@ -5444,8 +5450,11 @@ async function sendChat(prefill, options) {
             // child has its own server task/request ID, but no visible user
             // bubble, Trace, footer, or standalone assistant message.
             if (renderedFinalText.trim() && typeof addChat === 'function') {
+                // Persist the owning turn's real usage metadata with the
+                // merged reply so a restored transcript never fabricates a
+                // "0.0s / 0×" footer for a turn that used tools and tokens.
                 addChat('bot-response', renderedFinalText, true, Date.now(), false, turnSessionId, Object.assign(
-                    {},
+                    _buildTurnMeta(turnIdentity),
                     turnIdentity,
                     {
                         attachments: [],

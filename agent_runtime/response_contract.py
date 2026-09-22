@@ -29,6 +29,15 @@ _ACTION_RE = re.compile(
     r"start|stop|create|update)\b)",
     re.IGNORECASE,
 )
+# A command can also demand the content that goes with its evidence:
+# "截图告知" is not a pure capture command — the images must be explained.
+# Without this signal the turn degrades into an attachment-only acknowledgement
+# and the user is never told what the screenshots show.
+_CONTENT_REQUEST_RE = re.compile(
+    r"(?:告知(?:我)?|告诉我|说一下|说明|描述|讲一下|讲一讲|解释|介绍|点评)|"
+    r"\b(?:tell me|describe|explain|inform me|let me know)\b",
+    re.IGNORECASE,
+)
 _CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
 
 
@@ -80,6 +89,11 @@ def build_response_contract(
     question = _has_question_signal(message)
     action = _has_action_signal(message)
     value = re.sub(r"\s+", " ", str(message or "").strip())
+    # "截图告知"/"capture and tell me" demand the content that belongs to the
+    # evidence even without a question mark; treat that as an information
+    # request so the two-stage screenshot flow must explain the images.
+    content_request = bool(value and _CONTENT_REQUEST_RE.search(value))
+    question = question or content_request
     # A noun phrase such as "生成结果在哪里" contains an action-looking
     # word, but is still one information-seeking question. Treat a turn as
     # mixed only when a command clause is explicitly separated from the
@@ -89,7 +103,7 @@ def build_response_contract(
         or re.search(r"[,，;；]\s*(?:请|帮我|麻烦|please|run|show|display|load|refresh|generate|执行|显示|加载|刷新|生成)", value, re.IGNORECASE)
         or re.search(r"^\s*\S+[,，;；].*(?:[?？]|吗|呢|为什么|为何|哪里|怎么|如何)\s*$", value, re.IGNORECASE)
     )
-    if question and action and explicit_command_clause:
+    if question and action and (explicit_command_clause or content_request):
         act = "mixed"
     elif question:
         act = "question"

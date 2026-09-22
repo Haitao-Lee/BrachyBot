@@ -1480,6 +1480,17 @@ function _buildResponseFooter(llmMeta) {
 
     const t = _footerI18n();
 
+    // Never fabricate a footer out of nothing: a message restored without
+    // turn metadata must not display "0.0s / 0×" for a turn that really used
+    // tools and tokens. Callers that have nothing to report get no footer.
+    const hasStats = totalMs > 0 || totalT > 0 || promptT > 0 || compT > 0
+        || toolCalls > 0 || Number(llmMeta?.llm_calls || 0) > 0;
+    if (!hasStats) {
+        window._chatTurnStartTime = null;
+        window._todoTurnToolCount = 0;
+        return null;
+    }
+
     // Build footer items in a fixed order:
     //   Time  Tokens (Input/Output)  Tools
     // The Input/Output breakdown is split into TWO separate
@@ -1510,6 +1521,17 @@ function _buildResponseFooter(llmMeta) {
 
 function _appendRestoredFooter(meta) {
     if (!meta) return;
+    // A message saved without turn statistics has nothing honest to show;
+    // rendering "0.0s / 0×" for it is the misinformation users reported
+    // after the hidden visual-analysis child merged its answer.
+    const restoredUsage = (meta.llmMeta && meta.llmMeta.usage) || {};
+    const restoredTokens = Number(restoredUsage.total_tokens || 0)
+        + Number(restoredUsage.prompt_tokens || 0)
+        + Number(restoredUsage.completion_tokens || 0);
+    const restoredCalls = Number(meta.llmMeta?.llm_calls || 0);
+    if (!meta.elapsedSec && !Number(meta.toolCount || 0) && !restoredTokens && !restoredCalls) {
+        return;
+    }
     const container = document.getElementById('chatMessages');
     if (!container) return;
     // The last chat-row.bot rendered by addChat contains the answer bubble.
