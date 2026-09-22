@@ -3254,55 +3254,26 @@ function appendStepToChain(stepsDiv, step, idx) {
     // so stale "pending" classes get cleared.
     let existingBlock = stepsDiv.querySelector('[data-step-id="' + step.id + '"]');
     if (!existingBlock && step.tool) {
-        // Fallback dedup: match a block with the same (type, tool,
-        // parent_tool) regardless of id. This catches the case
-        // where the server emits the same logical step under
-        // different ids (e.g. CTV's auto-OAR inside ctv_segmentation
-        // emits pending with id=N, planning_pipeline re-emits the
-        // same oar_segmentation with id=M).
-        //
-        // Match priority:
-        //   1. Any 'pending' block for the same (type, tool, parent)
-        //      — promote it to the new status (most common case).
-        //   2. If new step is 'pending' AND existing is also 'pending'
-        //      — drop the new one (duplicate re-emission).
-        //   3. If new step is 'done' AND existing is 'done' (no
-        //      pending anywhere) — update the FIRST occurrence.
+        // Cross-id re-emission only: the server may re-emit one logical step
+        // under a second id (e.g. auto-fired OAR inside ctv_segmentation).
+        // Merge ONLY into a non-terminal block with the exact same
+        // (type, tool, parent_tool).  Completed blocks are never merged: a
+        // second real call of the same tool (e.g. two ui_controller actions in
+        // one downstream-update plan) must keep its own row instead of
+        // overwriting the first call's params and result with the second's.
         const blocks = Array.from(stepsDiv.querySelectorAll('.step-block'));
-        let sameToolDoneBlock = null;
-        let sameToolAnyBlock = null;
         for (const b of blocks) {
             const bTool = b.dataset.stepTool || '';
             const bParent = b.dataset.stepParent || '';
             const bType = b.dataset.stepType || '';
-            const bStatus = b.querySelector('.step-status')?.textContent || '';
-            // PASS 1: exact match (type + tool + parent)
-            if (bType === step.type && bTool === step.tool && bParent === (step.parent_tool || '')) {
-                if (bStatus === 'pending') {
-                    step.id = b.dataset.stepId;
-                    existingBlock = b;
-                    break;
-                }
-                if (step.status === 'pending' && !existingBlock) {
-                    step.id = b.dataset.stepId;
-                    existingBlock = b;
-                }
-                if (!sameToolDoneBlock) sameToolDoneBlock = b;
+            const bStatus = b.dataset.stepStatus || '';
+            if (bType === step.type && bTool === step.tool
+                && bParent === (step.parent_tool || '')
+                && ['pending', 'active', 'running'].includes(bStatus)) {
+                step.id = b.dataset.stepId;
+                existingBlock = b;
+                break;
             }
-            // PASS 2: tool-name-only match (catch auto-fired vs explicit
-            // duplicates where parent differs, e.g. oar_segmentation
-            // auto-fired inside ctv_segmentation vs LLM explicit call)
-            if (bType === step.type && bTool === step.tool && !sameToolAnyBlock) {
-                sameToolAnyBlock = b;
-            }
-        }
-        // If still no match, reuse a same-tool block (ignore parent)
-        if (!existingBlock && sameToolAnyBlock) {
-            step.id = sameToolAnyBlock.dataset.stepId;
-            existingBlock = sameToolAnyBlock;
-        } else if (!existingBlock && sameToolDoneBlock && step.status === 'done') {
-            step.id = sameToolDoneBlock.dataset.stepId;
-            existingBlock = sameToolDoneBlock;
         }
     }
     const icon = STEP_ICONS[step.type] || '&#9679;';
@@ -3336,12 +3307,14 @@ function appendStepToChain(stepsDiv, step, idx) {
 
     if (existingBlock) {
         existingBlock.innerHTML = bodyHtml;
-        // Re-stamp the dedup attributes so subsequent fallback dedup
-        // can still find this block by (type, tool, parent_tool).
+        // Re-stamp the dedup attributes so subsequent re-emissions can still
+        // find this block by (type, tool, parent_tool) and know whether it is
+        // still open for in-place updates.
         existingBlock.dataset.stepId = step.id;
         existingBlock.dataset.stepTool = step.tool || '';
         existingBlock.dataset.stepParent = step.parent_tool || '';
         existingBlock.dataset.stepType = step.type || '';
+        existingBlock.dataset.stepStatus = step.status || '';
         requestChatScrollToBottom();
         return;
     }
@@ -3353,6 +3326,7 @@ function appendStepToChain(stepsDiv, step, idx) {
     block.dataset.stepTool = step.tool || '';
     block.dataset.stepParent = step.parent_tool || '';
     block.dataset.stepType = step.type || '';
+    block.dataset.stepStatus = step.status || '';
     block.innerHTML = bodyHtml;
     stepsDiv.appendChild(block);
     requestChatScrollToBottom();
