@@ -21,6 +21,8 @@ from agent_runtime.action_plan import ActionPlan
 from agent_runtime.answer_coverage import (
     coverage_followup_instruction,
     missing_metric_aspects,
+    required_metric_aspects,
+    uncovered_metric_aspects,
 )
 from agent_runtime.turn_policy import filter_tool_schemas
 from agent_runtime.response_contract import (
@@ -431,20 +433,137 @@ def _steps_have_search_hits(steps: List[Dict]) -> bool:
     return False
 
 
+# Evidence families whose presence turns an absence claim into a denial of
+# returned data.  Matching is exact-string: "针道" in the claim must also be
+# "针道" in the step results, so an honest "源间距本轮没有返回" is never
+# scrubbed just because the steps contain image spacing in English.
+_EVIDENCE_TERMS = (
+    "针道", "穿刺针", "针数", "粒子", "种子", "剂量", "间距", "计划", "规划", "导板",
+    "needle", "seed", "dose", "spacing", "plan",
+)
+
+_ABSENCE_VERBS_RE = re.compile(
+    r"(?:没有返回|没有获得|未能返回|未返回|未获得|没有提供|未能提供|都没出现在|没有出现在|"
+    r"did not return|didn't return|was not returned|were not returned|"
+    r"weren't returned|never returned)"
+)
+
+_DENIED_THIS_TURN_RE = re.compile(r"(?:不是|并非|不属于)本轮工具(?:返回|提供)")
+
+_SENT_SEP_RE = re.compile(r"[，。；、,.!?！？：:\n]")
+
+
+def _sentence_spans(text: str) -> List[tuple]:
+    """Split into sentence spans without breaking decimals or list numbers."""
+    bounds = [0]
+    for i, ch in enumerate(text):
+        if ch in "。！？!?":
+            bounds.append(i + 1)
+        elif ch == "." and (
+            i == 0 or not text[i - 1].isdigit()
+        ) and (i + 1 == len(text) or text[i + 1] in " \n」\"'）)]"):
+            bounds.append(i + 1)
+    bounds.append(len(text))
+    dedup = list(dict.fromkeys(bounds))
+    return [(dedup[i], dedup[i + 1]) for i in range(len(dedup) - 1)]
+
+
+def _adjacent_evidence_terms(text: str, start: int, end: int) -> List[str]:
+    """Evidence terms right next to an absence verb, without crossing a comma."""
+    left = text[max(0, start - 16):start]
+    right = text[end:end + 24]
+    left_seg = _SENT_SEP_RE.split(left)[-1]
+    right_seg = _SENT_SEP_RE.split(right)[0]
+    window = f"{left_seg}{right_seg}".lower()
+    return [t for t in _EVIDENCE_TERMS if t.lower() in window]
+
+
+def _scrub_false_metric_absence_claims(text: str, steps: List[Dict]) -> str:
+    """Drop sentences denying this-turn tool data the steps actually hold.
+
+    A denial is scrubbed only when an evidence term sits right next to the
+    absence wording (no separator in between) and that same term appears in a
+    successful step result.  Honest gap statements ("本轮没有返回，所以无法
+    判断粒子干涉") and真缺失的说明 survive.
+    """
+    evidence = " ".join(
+        str(s.get("result") or "")
+        for s in steps or []
+        if s.get("type") == "tool" and s.get("status") == "done"
+    ).lower()
+    if not evidence:
+        return text
+    kept = []
+    for start, end in _sentence_spans(text):
+        sentence = text[start:end]
+        drop = False
+        for m in _ABSENCE_VERBS_RE.finditer(sentence):
+            terms = _adjacent_evidence_terms(sentence, m.start(), m.end())
+            if any(t.lower() in evidence for t in terms):
+                drop = True
+                break
+        if not drop and _DENIED_THIS_TURN_RE.search(sentence):
+            sent_low = sentence.lower()
+            if any(t.lower() in evidence and t.lower() in sent_low for t in _EVIDENCE_TERMS):
+                drop = True
+        if not drop:
+            kept.append(sentence)
+    return "".join(kept)
+
+
+def same_turn_evidence_digest(evidence: Optional[List], *, limit: int = 1800) -> str:
+    """Compact digest of the facts tools returned during THIS turn.
+
+    Long histories bury fresh tool results thousands of tokens back, and a
+    steering instruction can then make the model deny them (2026-09-22
+    regression).  The digest re-surfaces the turn's authoritative facts in the
+    final instruction so the answer round cannot miss them.
+    """
+    rows = []
+    used = 0
+    for item in evidence or ():
+        if isinstance(item, (tuple, list)):
+            tool_name = str(item[0] if item else "")
+            raw = item[1] if len(item) > 1 else ""
+        else:
+            tool_name, raw = str(item), ""
+        snippet = re.sub(r"\s+", " ", str(raw or "")).strip()
+        if not snippet:
+            continue
+        piece = f"- {tool_name}: {snippet[:360]}"
+        if used + len(piece) > limit:
+            piece = f"- {tool_name}: {snippet[:120]}"
+            if used + len(piece) > limit:
+                break
+        rows.append(piece)
+        used += len(piece) + 1
+    if not rows:
+        return ""
+    return (
+        "\n\n[FACTS RETURNED BY TOOLS THIS TURN — use them to answer]\n"
+        "The rows below are the authoritative data the tools returned during "
+        "THIS turn. Answer from them. Never claim any of them was not returned, "
+        "and do not attribute them to earlier conversation history.\n"
+        + "\n".join(rows)
+    )
+
+
 def _scrub_false_search_absence(text: str, steps: List[Dict]) -> str:
-    """Remove a claim that search returned nothing when search hits exist.
+    """Remove claims that search/tools returned nothing when evidence exists.
 
     Honest claims are preserved when the steps carry no search hits (the
     search really failed), and nuanced statements such as "the search did not
     return 2024 guideline updates" are kept because they do not deny the
     result set as a whole.
     """
-    if not text or not _steps_have_search_hits(steps):
+    if not text:
         return text
     scrubbed = text
-    for pattern in _FALSE_SEARCH_ABSENCE_PATTERNS:
-        scrubbed = pattern.sub("", scrubbed)
-    scrubbed = re.sub(r"[，,、;；]\s*(?=[。！？.!?\n])", "", scrubbed)
+    if _steps_have_search_hits(steps):
+        for pattern in _FALSE_SEARCH_ABSENCE_PATTERNS:
+            scrubbed = pattern.sub("", scrubbed)
+        scrubbed = re.sub(r"[，,、;；]\s*(?=[。！？.!?\n])", "", scrubbed)
+    scrubbed = _scrub_false_metric_absence_claims(scrubbed, steps)
     return scrubbed.strip()
 
 
@@ -1764,10 +1883,13 @@ class LLMRuntimeMixin:
         accumulated_text = ""  # Preserve text across LLM iterations
         _failed_tools = set()  # Track tools that returned 0/empty results
         _direct_read_candidate = None
-        # Data aspects a direct-read metric failed to cover this turn; while
-        # non-empty the runtime keeps the normal answer path and tells the
-        # model which typed read completes the question.
-        _uncovered_metric_aspects = set()
+        # Typed read contracts of this turn.  Coverage gaps must be computed
+        # over the UNION of all reads (see answer_coverage) — a per-tool gap
+        # update poisoned fully-covered turns (2026-09-22 regression).
+        _turn_read_contracts = []
+        # (tool_name, result_text) of successful tools, for the final
+        # same-turn evidence digest.
+        _turn_evidence = []
         _lang = self.memory.user_lang
         total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         total_latency_ms = 0.0
@@ -2137,13 +2259,11 @@ class LLMRuntimeMixin:
                         # A typed read may only replace the normal answer path
                         # when it answers the whole question. "How many needles,
                         # and seeds on each?" is not covered by a seed total.
-                        _missing_aspects = missing_metric_aspects(message, _read_contract)
-                        if _missing_aspects:
-                            _uncovered_metric_aspects.update(_missing_aspects)
+                        _turn_read_contracts.append(_read_contract)
+                        if missing_metric_aspects(message, _read_contract):
                             logger.info(
-                                "[LLM loop] Direct-read metric %s does not cover: %s",
+                                "[LLM loop] Direct-read metric %s only partially covers the question",
                                 tool_name,
-                                sorted(_missing_aspects),
                             )
                         else:
                             _direct_candidate_for_tool = result_text
@@ -2153,6 +2273,7 @@ class LLMRuntimeMixin:
                 steps[-1]["result"] = result_text[:200]
                 if tool_succeeded:
                     _executed_successful_tool_keys.add(_tool_key)
+                    _turn_evidence.append((tool_name, result_text))
 
                 # If a critical prerequisite tool fails, stop executing
                 # remaining tool calls in this batch so the LLM can ask
@@ -2298,9 +2419,16 @@ class LLMRuntimeMixin:
                 if _fail_summary:
                     _present_instruction = _HONEST_FAILURE_PROMPT.format(failures=_fail_summary)
                 _present_instruction += response_presentation_instruction(response_contract)
-                _coverage_instruction = coverage_followup_instruction(_uncovered_metric_aspects)
+                _uncovered_metric_aspects = uncovered_metric_aspects(
+                    message, _turn_read_contracts
+                )
+                _coverage_instruction = coverage_followup_instruction(
+                    _uncovered_metric_aspects,
+                    covered=required_metric_aspects(message) - _uncovered_metric_aspects,
+                )
                 if _coverage_instruction:
                     _present_instruction += _coverage_instruction
+                _present_instruction += same_turn_evidence_digest(_turn_evidence)
                 messages.append({"role": "user", "content": _present_instruction})
 
         # Clean response - no summarization
@@ -2532,8 +2660,18 @@ class LLMRuntimeMixin:
         """
         if not messages or not steps:
             return "", {}
+        digest = same_turn_evidence_digest(
+            [
+                (_fallback_tool_name(s), s.get("result") or "")
+                for s in steps
+                if s.get("type") == "tool" and s.get("status") == "done"
+            ]
+        )
         synthesis_messages = list(messages) + [
-            {"role": "user", "content": _FINAL_SYNTHESIS_INSTRUCTION}
+            {
+                "role": "user",
+                "content": (digest + "\n\n" if digest else "") + _FINAL_SYNTHESIS_INSTRUCTION,
+            }
         ]
         try:
             response = _chat_messages_with_retry(
@@ -3184,9 +3322,10 @@ class LLMRuntimeMixin:
         accumulated_text = ""  # Preserve text across LLM iterations
         _failed_tools = set()  # Track tools that returned 0/empty results for longer responses
         _direct_read_candidate = None
-        # See the non-streaming loop: uncovered direct-read aspects keep the
-        # normal synthesis/review path instead of a truncated fast answer.
-        _uncovered_metric_aspects = set()
+        # See the non-streaming loop: coverage gaps are computed over the
+        # union of the turn's typed reads, never per-tool.
+        _turn_read_contracts = []
+        _turn_evidence = []
         total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         total_latency_ms = 0.0
         llm_calls = 0
@@ -4142,13 +4281,11 @@ class LLMRuntimeMixin:
                         # Keep the full localized result for the direct
                         # response boundary, but only when it answers every
                         # aspect of the current question.
-                        _missing_aspects = missing_metric_aspects(message, _read_contract)
-                        if _missing_aspects:
-                            _uncovered_metric_aspects.update(_missing_aspects)
+                        _turn_read_contracts.append(_read_contract)
+                        if missing_metric_aspects(message, _read_contract):
                             logger.info(
-                                "[LLM loop] Direct-read metric %s does not cover: %s",
+                                "[LLM loop] Direct-read metric %s only partially covers the question",
                                 tool_name,
-                                sorted(_missing_aspects),
                             )
                         else:
                             _direct_read_candidate = result_text
@@ -4161,6 +4298,7 @@ class LLMRuntimeMixin:
                 _metadata = getattr(tool_result, "metadata", {}) or {}
                 if tool_result is not None and tool_result.success:
                     _executed_successful_tool_keys.add(_tool_key)
+                    _turn_evidence.append((tool_name, result_text))
                 if tool_result is not None and not tool_result.success and _metadata.get("clarification_required"):
                     if getattr(self, "run_ledger", None) is not None:
                         from agent_runtime.contracts import RunStatus
@@ -4396,9 +4534,16 @@ class LLMRuntimeMixin:
                 if _fail_summary:
                     _present_instruction = _HONEST_FAILURE_PROMPT.format(failures=_fail_summary)
                 _present_instruction += response_presentation_instruction(response_contract)
-                _coverage_instruction = coverage_followup_instruction(_uncovered_metric_aspects)
+                _uncovered_metric_aspects = uncovered_metric_aspects(
+                    message, _turn_read_contracts
+                )
+                _coverage_instruction = coverage_followup_instruction(
+                    _uncovered_metric_aspects,
+                    covered=required_metric_aspects(message) - _uncovered_metric_aspects,
+                )
                 if _coverage_instruction:
                     _present_instruction += _coverage_instruction
+                _present_instruction += same_turn_evidence_digest(_turn_evidence)
                 messages.append({"role": "user", "content": _present_instruction})
 
         # No summarization - use LLM response directly

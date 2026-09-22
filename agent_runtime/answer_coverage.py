@@ -105,42 +105,84 @@ def contract_covers_turn(message: str, contract: Any) -> bool:
     return not missing_metric_aspects(message, contract)
 
 
+def uncovered_metric_aspects(message: str, contracts: Any) -> FrozenSet[str]:
+    """Return asked aspects that no read result in this turn answered.
+
+    Coverage is computed over the UNION of every contract's ``covers`` set: a
+    per-contract gap is not a turn-level gap (2026-09-22 regression: a spacing
+    read declares only ``["spacing"]``, so its gap poisoned the needle/seed
+    aspects that a ``needle_seed_counts`` read had already answered, and the
+    model then denied the returned needle/seed table).
+
+    Turns without any typed read return an empty set so free-text tool turns
+    never gain coverage claims.
+    """
+    required = required_metric_aspects(message)
+    if not required:
+        return frozenset()
+    covered = set()
+    saw_contract = False
+    for contract in contracts or ():
+        saw_contract = True
+        declared = _declared_covers(contract)
+        if declared is None:
+            # Undeclared contract: treated as covering the whole turn.
+            return frozenset()
+        covered |= set(declared)
+    if not saw_contract:
+        return frozenset()
+    return frozenset(required - covered)
+
+
 def direct_read_decision(message: str, contracts: Any) -> tuple:
     """Resolve (covered, uncovered_aspects) for this turn's read contracts.
 
-    Covered means at least one typed read answered every asked aspect; the
-    uncovered set accumulates aspects that no read answered, so the final
+    Covered means the union of the typed reads answered every asked aspect;
+    the uncovered set names the aspects no read answered, so the final
     completeness check can name exactly what is missing.
     """
-    covered = False
-    uncovered = set()
-    for contract in contracts or ():
-        missing = missing_metric_aspects(message, contract)
-        if missing:
-            uncovered.update(missing)
-        else:
-            covered = True
-    if covered:
-        return True, frozenset()
-    return False, frozenset(uncovered)
+    gaps = uncovered_metric_aspects(message, contracts)
+    if gaps:
+        return False, gaps
+    if not contracts:
+        # No typed read at all: keep the previous (False, empty) contract so
+        # callers do not treat an evidence-synthesis turn as a direct read.
+        return False, frozenset()
+    return True, frozenset()
 
 
-def coverage_followup_instruction(missing: Any) -> str:
+def coverage_followup_instruction(missing: Any, covered: Any = ()) -> str:
     """Build the follow-up instruction that completes an uncovered read.
 
     The metric tool is the data authority; the runtime only tells the model
-    which typed read closes the remaining aspects of the question.
+    which typed read closes the remaining aspects of the question.  Aspects
+    the reads DID answer are named as returned evidence — the instruction
+    must never deny data the tool results contain (2026-09-22 regression).
     """
-    aspects = ", ".join(sorted(str(item) for item in missing or ()))
-    if not aspects:
+    missing = {str(item) for item in missing or ()}
+    if not missing:
         return ""
-    if {ASPECT_NEEDLE_COUNT, ASPECT_SEEDS_PER_NEEDLE} & set(missing or ()):
+    aspects = ", ".join(sorted(missing))
+    if {ASPECT_NEEDLE_COUNT, ASPECT_SEEDS_PER_NEEDLE} & missing:
         metric_hint = "needle_seed_counts"
     else:
         metric_hint = "seed_count"
+    covered_line = ""
+    covered_set = {str(item) for item in covered or ()}
+    if covered_set:
+        covered_list = ", ".join(sorted(covered_set))
+        covered_line = (
+            "\nAlready returned by this turn's metric reads (answer these parts "
+            f"directly from the tool results; never claim they were not "
+            f"returned): {covered_list}."
+        )
     return (
-        "\nIMPORTANT: the direct metric read above did not cover every part of the "
-        f"user's question (still missing: {aspects}). Do NOT answer with that partial "
-        f"result. Call query_metrics again with metric_type=\"{metric_hint}\" and then "
-        "answer the complete question in the user's language."
+        "\nIMPORTANT — coverage of the user's question by this turn's metric reads:"
+        f"{covered_line}\n"
+        f"Still NOT in the tool results: {aspects}.\n"
+        "For the returned parts, answer directly from the tool results above and "
+        "never deny or omit them. For the missing parts only, either call "
+        f"query_metrics with metric_type=\"{metric_hint}\" if another round is "
+        "available, or state plainly that this turn's tool results do not contain "
+        "that specific data. Never invent it."
     )
