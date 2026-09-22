@@ -267,7 +267,12 @@ class SpecializedEngine:
 
     def matches(self, query: str) -> bool:
         q = query.lower()
-        return any(t in q for t in self.triggers)
+        # Word-boundary triggers: a substring test wrongly fires short
+        # triggers like "eur" inside "neuroendocrine" (2026-09-22 regression).
+        for t in self.triggers:
+            if re.search(r"(?<![a-zA-Z0-9])" + re.escape(t), q):
+                return True
+        return False
 
     def optimize_query(self, query: str) -> str:
         """Optimize query for this specific engine. Default: pass through."""
@@ -320,21 +325,32 @@ def _search_weather(query: str, max_results: int = 5) -> List[Dict]:
 
 
 def _search_exchange_rate(query: str, max_results: int = 5) -> List[Dict]:
-    """Exchange rates via exchangerate-api.com."""
-    # Extract currency codes
-    currencies = re.findall(r'(USD|EUR|GBP|JPY|CNY|HKD|KRW|CAD|AUD|CHF)', query.upper())
+    """Exchange rates via exchangerate-api.com.
+
+    Only answers queries that explicitly name a currency. The old fallback
+    defaulted to USD/CNY and returned an exchange-rate "result" for any query
+    that merely false-triggered the engine (for example "neuroendocrine"
+    contains the code fragment "EUR"), polluting every search result set.
+    """
+    # Word-boundary currency codes: "EUR" inside "NEUROENDOCRINE" is not one.
+    currencies = re.findall(
+        r"\b(?:USD|EUR|GBP|JPY|CNY|HKD|KRW|CAD|AUD|CHF)\b", query.upper()
+    )
     if len(currencies) >= 2:
         base, target = currencies[0], currencies[1]
-    elif any(kw in query for kw in ['dollar', 'usd']):
-        base, target = 'USD', 'CNY'
-    elif any(kw in query for kw in ['euro', 'eur']):
-        base, target = 'EUR', 'CNY'
-    elif any(kw in query for kw in ['yen', 'jpy']):
-        base, target = 'JPY', 'CNY'
-    elif any(kw in query for kw in ['pound', 'gbp']):
-        base, target = 'GBP', 'CNY'
     else:
-        base, target = 'USD', 'CNY'
+        base, target = None, None
+        for pattern, b, t in (
+            (r"\b(?:dollars?|usd)\b", "USD", "CNY"),
+            (r"\b(?:euros?|eur)\b", "EUR", "CNY"),
+            (r"\b(?:yens?|jpy)\b", "JPY", "CNY"),
+            (r"\b(?:pounds?|gbp)\b", "GBP", "CNY"),
+        ):
+            if re.search(pattern, query, re.IGNORECASE):
+                base, target = b, t
+                break
+        if base is None:
+            return []
 
     resp = requests.get(f"https://open.er-api.com/v6/latest/{base}", timeout=10)
     if resp.status_code == 200:
@@ -1569,7 +1585,9 @@ class WebSearchTool(BaseTool):
         if quality == "poor":
             response["quality_warning"] = (
                 "Search results may not contain the requested information. "
-                "The LLM should use page_content if available, or honestly say the search failed."
+                "Use page_content if available and state that the results are "
+                "low-relevance; never claim that the search returned nothing "
+                "when results are present."
             )
 
         # Cache the results
@@ -1603,16 +1621,23 @@ class WebSearchTool(BaseTool):
         # Check specialized engines first (direct API access, most reliable)
         specialized_results = []
         for engine in SPECIALIZED_ENGINES:
-            if engine.matches(query):
-                logger.info(f"Trying specialized engine: {engine.name}")
-                results = engine.search(query, max_results)
-                if results:
-                    score = self.validator.score_relevance(query, results)
-                    logger.info(f"Specialized engine {engine.name}: {len(results)} results, score {score:.2f}")
-                    if score >= 0.5:
-                        return results  # Good enough, use directly
-                    specialized_results = results  # Save as fallback
-                break  # Only try the first matching engine
+            if not engine.matches(query):
+                continue
+            logger.info(f"Trying specialized engine: {engine.name}")
+            results = engine.search(query, max_results)
+            if not results:
+                # An empty or false-firing engine must not block later
+                # matching engines (the old unconditional break did).
+                continue
+            score = self.validator.score_relevance(query, results)
+            logger.info(f"Specialized engine {engine.name}: {len(results)} results, score {score:.2f}")
+            if score >= 0.5:
+                return results  # Good enough, use directly
+            if score >= 0.2:
+                specialized_results = results  # Save as fallback
+                break  # Keep at most one specialized fallback set
+            # score < 0.2: irrelevant hits are dropped entirely instead of
+            # being merged into the final result set as junk.
 
         all_results = []
         best_score = 0.0

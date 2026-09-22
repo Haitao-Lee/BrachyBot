@@ -369,8 +369,83 @@ _HONEST_FAILURE_PROMPT = (
     "relevant to their goal (e.g. load a CT, segment CTV/OAR, generate a plan, "
     "adjust planning or guide parameters, generate a puncture guide, answer "
     "clinical questions).\n"
+    "4. If web_search/web_fetch/clinical_kb returned results in this turn, treat "
+    "those results as usable evidence: never claim that the search returned nothing "
+    "or found no usable results, and never deny results the user can see in the "
+    "Execution Trace. Name ONLY the specific failed step (for example one page "
+    "returned HTTP 404); do not generalize one failed fetch to the whole search.\n"
+    "5. Discuss only the user's current request; do not import unrelated topics "
+    "or service labels from earlier turns.\n"
     "Do NOT claim success. Do NOT invent results. Do NOT say 'tool executed'. Keep it brief."
 )
+
+
+# A model reply must never contradict the visible Execution Trace.  When
+# web_search steps actually returned hits, a claim that "the search returned
+# nothing / no usable results" is a false summary (2026-09-22 regression: one
+# legitimately failed web_fetch 404 led the reply to deny three successful
+# searches and to recycle an unrelated "AI 服务" topic label).
+_FALSE_SEARCH_ABSENCE_PATTERNS = (
+    re.compile(
+        r"[，,；;]?\s*(?:联网|网络|线上|在线)(?:检索|搜索|搜寻)"
+        r"(?:也|还|均|都|却)?\s*(?:没有|未能|无法|并未)(?:返回|找到|获得)"
+        r"[^，。；\n]{0,40}?(?:结果|来源|证据)[^，。；\n]*"
+    ),
+    re.compile(
+        r"[，,；;]?\s*搜索(?:引擎)?(?:也|还)?\s*(?:没有|未能)(?:返回|找到)"
+        r"[^，。；\n]{0,40}?(?:结果|来源|证据)[^，。；\n]*"
+    ),
+    re.compile(
+        r"[，,；;]?\s*(?:and\s+)?(?:(?:the|our|this)\s+)?"
+        r"(?:web\s*search(?:es)?|online\s+search(?:es)?)"
+        r"(?:\s+also)?\s+(?:returned|found|produced|yielded|provided|gave)\s+"
+        r"(?:no\b|nothing\b|none\b)[^.,!?\n]*",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"[，,；;]?\s*(?:and\s+)?(?:no|without)\s+"
+        r"(?:usable|relevant|authoritative|useful|any)\s+(?:search\s+|web\s+)?results?\s+"
+        r"(?:were\s+)?(?:returned|found|produced)[^.,!?\n]*",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"[，,；;]?\s*(?:and\s+)?(?:no|without)\s+(?:search|web)\s+results?\s+"
+        r"(?:were\s+)?(?:returned|found|produced)[^.,!?\n]*",
+        re.IGNORECASE,
+    ),
+)
+
+
+def _steps_have_search_hits(steps: List[Dict]) -> bool:
+    """Return True when an evidence-search step produced listed results."""
+    for s in steps or []:
+        if s.get("type") != "tool" or s.get("status") != "done":
+            continue
+        if _fallback_tool_name(s) not in {
+            "web_search", "clinical_kb", "web_access", "web_fetch",
+        }:
+            continue
+        result = str(s.get("result") or "")
+        if result.startswith(("## ", "- **")) or "- **" in result:
+            return True
+    return False
+
+
+def _scrub_false_search_absence(text: str, steps: List[Dict]) -> str:
+    """Remove a claim that search returned nothing when search hits exist.
+
+    Honest claims are preserved when the steps carry no search hits (the
+    search really failed), and nuanced statements such as "the search did not
+    return 2024 guideline updates" are kept because they do not deny the
+    result set as a whole.
+    """
+    if not text or not _steps_have_search_hits(steps):
+        return text
+    scrubbed = text
+    for pattern in _FALSE_SEARCH_ABSENCE_PATTERNS:
+        scrubbed = pattern.sub("", scrubbed)
+    scrubbed = re.sub(r"[，,、;；]\s*(?=[。！？.!?\n])", "", scrubbed)
+    return scrubbed.strip()
 
 
 _FINAL_SYNTHESIS_INSTRUCTION = (
@@ -379,7 +454,8 @@ _FINAL_SYNTHESIS_INSTRUCTION = (
     "present in this conversation. Do NOT call any tools. Do NOT describe which "
     "sources you searched, and do NOT output raw URLs or a source list as the "
     "answer — give the actual answer. If part of the question cannot be supported "
-    "by the gathered evidence, state plainly which part is unsupported. Use the "
+    "by the gathered evidence, state plainly which part is unsupported. Never deny "
+    "or ignore tool results that are present in this conversation. Use the "
     "same language as the user's request."
 )
 
@@ -2231,6 +2307,7 @@ class LLMRuntimeMixin:
         if final_response:
             raw_final = final_response
             final_response = self._clean_response_text(final_response)
+            final_response = _scrub_false_search_absence(final_response, steps)
             # If cleaning stripped everything, it was pure tool_call content
             if not final_response.strip() and raw_final.strip():
                 final_response = ""
@@ -2469,6 +2546,7 @@ class LLMRuntimeMixin:
             logger.warning("[LLM loop] Final tool-free synthesis failed: %s", exc)
             return "", {}
         text = str(self._clean_response_text(getattr(response, "content", "") or "") or "").strip()
+        text = _scrub_false_search_absence(text, steps)
         if not text or _is_placeholder_tool_response(text):
             return "", {}
         if re.search(r"```tool_call|\[TOOL_CALL\]", text):
@@ -4327,6 +4405,7 @@ class LLMRuntimeMixin:
         if final_response:
             raw_final = final_response
             final_response = self._clean_response_text(final_response)
+            final_response = _scrub_false_search_absence(final_response, steps)
             # If cleaning stripped everything, it was pure tool_call content - not user-facing
             # Fall back to accumulated text or tool results
             if not final_response.strip() and raw_final.strip():
