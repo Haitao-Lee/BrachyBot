@@ -73,7 +73,7 @@
     "max_hierarchy_depth": 8,
     "max_actions_per_episode": 40,
     "max_wall_seconds": 300,
-    "fallback_max_wall_seconds": 120,
+    "fallback_max_wall_seconds": 900,
     "coverage_repair_seconds": 60,
     "coverage_repair_extension_seconds": 120,
     "coverage_repair_max_seconds": 180,

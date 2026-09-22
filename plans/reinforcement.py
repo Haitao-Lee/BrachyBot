@@ -266,6 +266,32 @@ class SeedPlacementReward:
             return cached_dose
         return None
 
+    def import_trajectory_dose_maps(self, traj_elem):
+        """Reuse dense-evaluation dose maps instead of re-running the model.
+
+        ``traj_elem`` is the hierarchical inner element
+        ``[idx, traj, seeds, dose_maps, acc_radiation]``.  The dense stage
+        already ran DoseUNet for every stored seed, so importing those maps
+        turns the later group prefetch into pure cache hits.  Dose maps are
+        immutable; the reference is shared instead of copied.
+        """
+        if not isinstance(traj_elem, (list, tuple)) or len(traj_elem) < 4:
+            return 0
+        seeds = traj_elem[2] or []
+        maps = traj_elem[3] or []
+        imported = 0
+        for seed, dose in zip(seeds, maps):
+            if dose is None:
+                continue
+            try:
+                key = self.cache_key_for(seed[0], seed[1])
+            except Exception:
+                continue
+            if key not in self.seed_cache:
+                self.seed_cache[key] = dose
+                imported += 1
+        return imported
+
     def prefetch_positions(self, candidates):
         """Batch-fill the seed-dose cache for one group's candidate positions.
 
@@ -736,6 +762,12 @@ class HighLevelEnv(gym.Env):
         """
         group_idx = int(group_idx)
         if group_idx not in self.prefetched_groups:
+            # The dense stage already inferred these dose maps; importing them
+            # first turns the batched prefetch below into pure cache hits and
+            # removes one redundant DoseUNet sweep per group.
+            for lv in range(self.level):
+                self.reward_calculator.import_trajectory_dose_maps(
+                    self.target_level_traj[group_idx][lv])
             candidates = []
             for lv in range(self.level):
                 positions = self.candidate_img_positions.get((group_idx, lv))
@@ -925,8 +957,12 @@ class HighLevelEnv(gym.Env):
         """
         ranked = []
         for restart in range(max(1, int(restarts))):
+            if self.deadline is not None and time.monotonic() >= self.deadline:
+                break
             plan, reward, coverage = self._greedy_pass(group_idx, device, restart=restart)
             ranked.append((reward, coverage, plan))
+        if not ranked:
+            return [], -np.inf, 0.0
         ranked.sort(key=lambda item: item[0], reverse=True)
         best_reward, best_coverage, best_plan = ranked[0]
         return best_plan, best_reward, best_coverage
@@ -951,8 +987,11 @@ class HighLevelEnv(gym.Env):
         placed = 0
         forced = None
         if restart > 0:
-            first_gains = [(self.evaluate_action_marginal(int(a)), int(a))
-                           for a in range(n_actions)]
+            first_gains = []
+            for a in range(n_actions):
+                if self.deadline is not None and time.monotonic() >= self.deadline:
+                    break
+                first_gains.append((self.evaluate_action_marginal(int(a)), int(a)))
             first_gains.sort(key=lambda item: (-item[0], item[1]))
             if restart < len(first_gains):
                 forced = first_gains[restart][1]
@@ -971,10 +1010,16 @@ class HighLevelEnv(gym.Env):
                     best_action, best_gain = forced, self.evaluate_action_marginal(forced)
                     forced = None
             if best_action is None:
+                scanned = 0
                 for candidate in np.flatnonzero(mask):
+                    scanned += 1
+                    if self.deadline is not None and scanned % 16 == 0 and time.monotonic() >= self.deadline:
+                        break
                     gain = self.evaluate_action_marginal(int(candidate))
                     if gain > best_gain:
                         best_gain, best_action = gain, int(candidate)
+                if self.deadline is not None and time.monotonic() >= self.deadline and best_action is None:
+                    break
             if best_action is None or best_gain <= 0.0:
                 break
             reward, cur_DVH_rate = self.update_planned_position(best_action, high_level=False)
@@ -1127,6 +1172,198 @@ def plan_cost_counts(plan_res):
     return seeds, needles
 
 
+def _trajectory_advance(traj):
+    """Return (point, unit-ish advance vector) used for seed stepping."""
+    point = np.asarray(traj[0], dtype=np.float64).reshape(-1)
+    direction = np.asarray(traj[1], dtype=np.float64).reshape(-1)
+    direction = direction / max(float(np.linalg.norm(direction)), 1e-12)
+    max_index = int(np.argmax(np.abs(direction)))
+    dominant = float(np.abs(direction[max_index]))
+    advance = direction / max(dominant, 1e-12)
+    return point, direction, advance
+
+
+def _slot_positions(traj, steps):
+    point, _, advance = _trajectory_advance(traj)
+    return [np.asarray(point + float(step) * advance, dtype=np.float64).reshape(-1)
+            for step in steps]
+
+
+def construct_plan_over_candidates(
+        reward_calculator,
+        candidate_trajectories,
+        radiation_volume,
+        target_value,
+        dose_image,
+        distance_map,
+        seed_info,
+        *,
+        interval_rate=2.0,
+        deadline=None,
+        protect_OAR=True,
+        parallel_min_distance_mm=None,
+        parallel_angle_tolerance_deg=None,
+        preview_callback=None):
+    """Deterministic sequential construction over the FULL candidate pool.
+
+    The hierarchical combo space can express at most ``max_hierarchy_depth``
+    needles drawn from one trajectory sub-sample, which structurally caps
+    every learning-phase plan far below what large cases need (the 238 cm3
+    regression case needs ~24 needles while combos capped at 8).  This phase
+    builds the plan one spacing-safe needle at a time from the full
+    safety-validated pool and places, on each needle, only the seed slots with
+    positive marginal plan-objective gain (dose inference batched through the
+    shared seed cache).  It stops at target coverage, its deadline, or when no
+    candidate adds objective value, and every accepted step strictly improves
+    the same :func:`plans.reward_metrics.plan_objective` used for selection.
+
+    Returns the plan in the canonical ``[trajectory, world_seeds, dose_maps]``
+    form; an expired deadline returns whatever was built so far (``[]`` when
+    nothing was accepted).
+    """
+    candidates = list(candidate_trajectories or [])
+    if not candidates:
+        return []
+    if deadline is not None and time.monotonic() >= deadline:
+        return []
+
+    def _expired():
+        return deadline is not None and time.monotonic() >= deadline
+
+    base_threshold = 2.0 * float(seed_info.get('radius', 0.4)) * float(interval_rate)
+    in_lowest_dose = float(reward_calculator.in_lowest_dose)
+    target_coverage = float(reward_calculator.DVH_rate)
+
+    # Per-candidate seed slots depend only on the trajectory's own geometry,
+    # so compute them once instead of rescoring from scratch every round.
+    slot_steps = []
+    slot_points = []
+    slot_directions = []
+    capacity_bonus = np.zeros(len(candidates), dtype=np.float64)
+    for index, traj in enumerate(candidates):
+        if _expired():
+            return []
+        steps = list(utilizations.get_available_position(
+            traj, [], seed_info, dose_image, distance_map))
+        _, direction, _ = _trajectory_advance(traj)
+        slot_steps.append(steps)
+        slot_points.append(_slot_positions(traj, steps))
+        slot_directions.append(direction)
+        capacity_bonus[index] = min(1.0, max(0.0, (len(steps) - 1) / 3.0))
+
+    planned = []
+    plan_entries = []
+    used = np.zeros(len(candidates), dtype=bool)
+    cur_radiation = np.zeros_like(radiation_volume, dtype=np.float32)
+    cur_coverage = 0.0
+    total_seeds = 0
+
+    while not _expired() and cur_coverage < target_coverage:
+        best_index, best_score = None, 0.0
+        for index, traj in enumerate(candidates):
+            if used[index] or not slot_steps[index]:
+                continue
+            if planned:
+                safe = utilizations.get_trajectory_spacing_safety_mask(
+                    [traj], planned, dose_image,
+                    base_min_distance_mm=base_threshold,
+                    parallel_min_distance_mm=parallel_min_distance_mm,
+                    parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
+                )[0]
+                if not safe:
+                    used[index] = True
+                    continue
+            deficit = 0.0
+            shape = np.asarray(radiation_volume.shape)
+            for point in slot_points[index]:
+                coords = np.asarray(point).astype(int)
+                if np.any(coords < 0) or np.any(coords >= shape):
+                    continue
+                deficit += max(0.0, 1.0 - float(cur_radiation[tuple(coords)]) / max(in_lowest_dose, 1e-12))
+            score = deficit * (1.0 + 0.12 * float(capacity_bonus[index]))
+            if score > best_score:
+                best_score, best_index = score, index
+        if best_index is None or best_score <= 0.0:
+            break
+
+        traj = candidates[best_index]
+        direction = slot_directions[best_index]
+        steps = list(slot_steps[best_index])
+        points = list(slot_points[best_index])
+        reward_calculator.prefetch_positions(list(zip(points, [direction] * len(points))))
+
+        placed_points = []
+        placed_maps = []
+        world_seeds = []
+        while steps and not _expired():
+            seed_count = total_seeds + 1
+            needle_count = len(planned) + 1
+            is_new_needle = not placed_points
+            best_gain, best_pos = 0.0, None
+            for step, point in zip(list(steps), list(points)):
+                key = SeedPlacementReward.cache_key_for(point, direction)
+                dose_map = reward_calculator.seed_cache.get(key)
+                if dose_map is None:
+                    continue
+                gain = reward_calculator.evaluate_marginal(
+                    cur_radiation, dose_map,
+                    seed_count=seed_count,
+                    needle_count=needle_count,
+                    is_new_needle=is_new_needle,
+                    protect_OAR=protect_OAR,
+                )
+                if gain > best_gain:
+                    best_gain, best_pos = gain, (step, point, dose_map)
+            if best_pos is None or best_gain <= 0.0:
+                break
+            step, point, _ = best_pos
+            reward, cur_radiation, cur_coverage, dose_map = reward_calculator.forward(
+                [best_index, traj, [], [], None],
+                cur_radiation,
+                direction,
+                point,
+                protect_OAR=protect_OAR,
+                seed_count=seed_count,
+                needle_count=needle_count,
+                is_new_needle=is_new_needle,
+            )
+            if dose_map is None:
+                steps = [s for s in steps if s != step]
+                points = _slot_positions(traj, steps)
+                continue
+            placed_points.append(point)
+            placed_maps.append(dose_map)
+            world_position = np.asarray(
+                utilizations.position_transform(dose_image, point)[0]).reshape(-1)
+            world_direction = np.asarray(
+                utilizations.direction_transform(dose_image, direction)[0]).reshape(-1)
+            world_seeds.append([world_position, world_direction])
+            total_seeds += 1
+            steps = list(utilizations.get_available_position(
+                traj, [(p, direction) for p in placed_points],
+                seed_info, dose_image, distance_map))
+            points = _slot_positions(traj, steps)
+            if cur_coverage >= target_coverage:
+                break
+
+        if not placed_points:
+            used[best_index] = True
+            continue
+        used[best_index] = True
+        planned.append(traj)
+        plan_entries.append([traj, world_seeds, placed_maps])
+        safe_preview(preview_callback, {
+            "phase": "rl_plan_construction",
+            "iteration": len(planned),
+            "coverage": cur_coverage,
+            "coordinate_space": "world",
+            "plan": [plan_entries[-1]],
+            "force": False,
+        })
+
+    return plan_entries
+
+
 def generate_baseline_state_space(low_level_state_spaces, level, idx):
     merged = []
     for lv in range(level):
@@ -1178,7 +1415,12 @@ def reinforcement_planning(
         deadline=None,
         max_actions_per_episode=None,
         diagnostics=None,
-        preview_callback=None):
+        preview_callback=None,
+        construction_candidates=None,
+        distance_map=None,
+        interval_rate=2.0,
+        parallel_min_distance_mm=None,
+        parallel_angle_tolerance_deg=None):
     """
     Hierarchical reinforcement learning driver for a single patient case.
     Logic preserved; internal calls use optimized env and caches.
@@ -1387,11 +1629,80 @@ def reinforcement_planning(
                 )
             _record_plan(greedy_coverage, greedy_score)
 
+        def _construction_incumbent():
+            """Full-pool sequential construction: the deterministic success path.
+
+            The hierarchical episode space can express at most one combo of
+            ``target_level`` needles, so it can never build the 20+ needle
+            plans large cases clinically require.  Construction iterates the
+            full safety-validated pool and only loses its incumbent role when
+            a later episode strictly beats its objective.
+            """
+            nonlocal best_plan, best_reward
+            try:
+                constructed = construct_plan_over_candidates(
+                    reward_calculator,
+                    construction_candidates,
+                    radiation_volume,
+                    target_value,
+                    dose_image,
+                    distance_map,
+                    seed_info,
+                    interval_rate=float(interval_rate or 2.0),
+                    deadline=deadline,
+                    protect_OAR=protect_oar,
+                    parallel_min_distance_mm=parallel_min_distance_mm,
+                    parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
+                    preview_callback=preview_callback,
+                )
+            except DoseInferenceDeadlineExceeded:
+                logger.warning("[rl] Plan construction stopped at the DoseUNet deadline")
+                set_outcome(
+                    rl_status,
+                    execution="interrupted",
+                    stop_reason="dose_inference_deadline",
+                )
+                return
+            except Exception:
+                logger.exception("Plan construction failed")
+                return
+            if not constructed:
+                return
+            construction_score, construction_coverage = evaluate_plan_objective(
+                constructed,
+                radiation_volume,
+                target_value,
+                in_lowest_dose,
+                out_highest_dose,
+                DVH_rate,
+            )
+            construction_needles, construction_seeds = plan_cost_counts(constructed)
+            logger.info(
+                "[rl] construction incumbent: objective=%.4f coverage=%.4f needles=%d seeds=%d",
+                construction_score, construction_coverage,
+                construction_needles, construction_seeds,
+            )
+            if rl_status is not None:
+                rl_status["construction_needles"] = int(construction_needles)
+                rl_status["construction_seeds"] = int(construction_seeds)
+                rl_status["construction_coverage"] = float(construction_coverage)
+            if construction_score > best_reward:
+                best_reward = construction_score
+                best_plan = constructed
+                _emit_preview(
+                    best_plan, "rl_plan_construction", 0,
+                    construction_coverage, construction_score,
+                )
+            _record_plan(construction_coverage, construction_score)
+
         greedy_enabled = rf_params.get("greedy_warm_start", True)
         if isinstance(greedy_enabled, str):
             greedy_enabled = greedy_enabled.strip().lower() not in {"0", "false", "no", "off"}
         if greedy_enabled:
-            _greedy_incumbent(best_group_idx, "rl_greedy_warm_start")
+            if construction_candidates and distance_map is not None:
+                _construction_incumbent()
+            else:
+                _greedy_incumbent(best_group_idx, "rl_greedy_warm_start")
 
         # Baseline-informed initialization for the high-level policy: bias the
         # (group, anchor) logits toward the groups whose dense evaluation

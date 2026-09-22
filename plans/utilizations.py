@@ -4296,7 +4296,7 @@ def generate_hierarchical_state_spaces(
     return hierarchical, n, DVH_sign
 
 
-def select_hierarchy_level(hierarchical, needle_penalty=0.01):
+def select_hierarchy_level(hierarchical, needle_penalty=0.01, target_coverage=None):
     """Pick the trajectory-combination level that balances coverage and needles.
 
     Every level holds combos of a fixed trajectory count.  The deepest level is
@@ -4305,6 +4305,12 @@ def select_hierarchy_level(hierarchical, needle_penalty=0.01):
     each combo as ``coverage - needle_penalty * needle_count`` and return the
     level owning the best combo, so the RL candidate pool is uniform in size
     while still respecting needle economy.
+
+    ``target_coverage`` gates the needle penalty: below the target, coverage is
+    the binding clinical requirement, so the penalty must not select a shallow
+    level whose combo size caps the achievable coverage.  Needle economy only
+    decides between levels that already meet the target (or when no target is
+    supplied, preserving the historical behavior).
     """
     best_level = None
     best_score = -float("inf")
@@ -4318,9 +4324,18 @@ def select_hierarchy_level(hierarchical, needle_penalty=0.01):
             except TypeError:
                 combo_size = 0
             try:
-                score = float(coverage) - float(needle_penalty) * combo_size
+                score = float(coverage)
             except (TypeError, ValueError):
                 continue
+            try:
+                below_target = (
+                    target_coverage is not None
+                    and score < float(target_coverage) - 1e-9
+                )
+            except (TypeError, ValueError):
+                below_target = False
+            if not below_target:
+                score -= float(needle_penalty) * combo_size
             if score > best_score:
                 best_score = score
                 best_level = level
@@ -4387,6 +4402,12 @@ def hierarchical_planning_rf(
         Best cumulative return achieved.
     """
     rf_params = dict(rf_params or {})
+    # The full safety-validated pool feeds deterministic plan construction;
+    # only the hierarchical learning stage is budget-capped below.  Confining
+    # both to a capacity-blind sub-sample was the structural cause of the
+    # 2026-09-22 regression (plans capped at a handful of short needles while
+    # the case needed 24).
+    construction_candidates = list(candidate_trajectories)
 
     # ``diagnostics`` is intentionally an in-place, optional argument.  The
     # legacy API returns only ``(plan, reward)`` and offline callers still
@@ -4468,11 +4489,11 @@ def hierarchical_planning_rf(
     if len(candidate_trajectories) > candidate_limit:
         logger.info(
             "[rl] Restricting %d safety-validated trajectories to the top %d "
-            "for interactive RL planning",
-            len(candidate_trajectories), candidate_limit,
+            "for the hierarchical learning subset (plan construction keeps all %d)",
+            len(candidate_trajectories), candidate_limit, len(candidate_trajectories),
         )
-        from .core import sample_spatial_trajectories
-        candidate_trajectories = sample_spatial_trajectories(
+        from .core import sample_anchor_covering_trajectories
+        candidate_trajectories = sample_anchor_covering_trajectories(
             candidate_trajectories, candidate_limit, tuple(reversed(dose_image.GetSpacing()))
         )
     if rl_status is not None:
@@ -4676,7 +4697,8 @@ def hierarchical_planning_rf(
         )
         return _finish([], -np.inf)
 
-    target_available_traj_seeds = select_hierarchy_level(hierarchical_available_traj_with_seeds)
+    target_available_traj_seeds = select_hierarchy_level(
+        hierarchical_available_traj_with_seeds, target_coverage=DVH_rate)
     if not target_available_traj_seeds:
         target_available_traj_seeds = hierarchical_available_traj_with_seeds[- 1]
     
@@ -4738,6 +4760,11 @@ def hierarchical_planning_rf(
         max_actions_per_episode=_positive_int("max_actions_per_episode", 40),
         diagnostics=rl_status,
         preview_callback=preview_callback,
+        construction_candidates=construction_candidates,
+        distance_map=distance_map,
+        interval_rate=interval_rate,
+        parallel_min_distance_mm=parallel_min_distance_mm,
+        parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
     )
 
     if rl_status is not None:
