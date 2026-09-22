@@ -10,6 +10,11 @@ import re
 from typing import Any, Dict, FrozenSet, Iterable, List, Mapping, Optional, Tuple
 
 from agent_runtime.action_plan import ActionPlan
+from agent_runtime.artifact_analysis import (
+    ANALYSIS_READ_TOOLS,
+    is_artifact_analysis_request,
+    resolve_artifact_analysis_target,
+)
 from agent_runtime.ui_operations import resolve_ui_operation_request
 from agent_runtime.shortcut_contract import shortcut_supported
 from agent_runtime.intent_boundary import (
@@ -95,6 +100,10 @@ class LocalTurnPolicy:
     parsed_goals: Tuple[Tuple[str, str], ...] = ()
     parsed_reference: str = ""
     parsed_subtasks: Tuple[Tuple[str, str], ...] = ()
+    # Artifact family behind an analysis request ("surgical_guide", "tumor",
+    # "planning", ...).  Read-only routing metadata used to select the
+    # characteristics fact packet and the analysis answer contract.
+    analysis_target: str = ""
 
 
 def visual_analysis_policy() -> LocalTurnPolicy:
@@ -2017,6 +2026,33 @@ def _classify_local_candidate(
             False,
             False,
             frozenset(),
+        )
+
+    # "分析/评估/解读 <artifact>" is a read-only discourse act over an
+    # already-produced artifact (guide characteristics, tumor situation, dose
+    # shape, ...).  It must never reach the open tool loop where a provider can
+    # mistake it for a regeneration command: the grounded analysis path answers
+    # from the artifact's characteristics facts instead.  Cross-artifact or
+    # standards questions keep the primary LLM but with a read-only tool
+    # surface, so analysis can never restart a workflow.
+    analysis_request = is_artifact_analysis_request(text, conversation=conversation)
+    if analysis_request is not None:
+        if analysis_request["complex"]:
+            return replace(
+                _semantic_action_policy(complexity="high", review=True),
+                allow_tools=ANALYSIS_READ_TOOLS,
+                routing_source="analysis_llm",
+                routing_reason="complex_artifact_analysis",
+                analysis_target=analysis_request["artifact"],
+            )
+        return LocalTurnPolicy(
+            "artifact_analysis_query",
+            "low",
+            False,
+            False,
+            False,
+            frozenset(),
+            analysis_target=analysis_request["artifact"],
         )
 
     # Other questions about persisted case state (for example, why two

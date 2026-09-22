@@ -534,6 +534,7 @@ class ChatWorkflowMixin:
             "image_metadata_query": "CT 元数据",
             "current_oar_query": "OAR 状态",
             "surgical_guide_status_query": "导板状态",
+            "artifact_analysis_query": "制品特征分析",
             "session_visual_location_query": "对象截图/位置",
             "ambiguous_visual_target_query": "对象截图/位置",
             "unresolved_visual_target_query": "对象截图/位置",
@@ -546,6 +547,13 @@ class ChatWorkflowMixin:
             "case_dose_query": lambda clause: self._build_current_dose_response(lang),
             "image_metadata_query": lambda clause: self._build_current_image_metadata_response(lang),
             "current_oar_query": lambda clause: self._build_current_oar_count_response(lang),
+            "artifact_analysis_query": lambda clause: self._build_artifact_analysis_response(
+                lang, clause,
+                self._current_planning_fact_packet(
+                    "artifact_analysis_query",
+                    analysis_target=getattr(policy, "analysis_target", "") or "",
+                ),
+            ),
         }
         sections = []
         visual_pending = False
@@ -1797,7 +1805,7 @@ class ChatWorkflowMixin:
         rows.sort(key=lambda row: int(row.get("sequence") or 0))
         return rows[-20:]
 
-    def _current_planning_fact_packet(self, intent: str) -> Dict[str, Any]:
+    def _current_planning_fact_packet(self, intent: str, analysis_target: str = "") -> Dict[str, Any]:
         """Build the authoritative, compact fact packet for a local query.
 
         Local classification is allowed to choose a safe read boundary, but
@@ -1813,6 +1821,7 @@ class ChatWorkflowMixin:
             "planning_assessment_query",
             "case_dose_query",
             "case_state_question",
+            "artifact_analysis_query",
         }:
             try:
                 from web.planning_runs import current_planning_context
@@ -1991,6 +2000,73 @@ class ChatWorkflowMixin:
         packet["artifact_status"] = self._local_fact_scalar(
             artifact_status if isinstance(artifact_status, dict) else {}
         )
+        if intent == "artifact_analysis_query":
+            analysis_target = str(
+                analysis_target
+                or getattr(getattr(self, "_active_turn_policy", None), "analysis_target", "")
+                or ""
+            )
+            packet["analysis_target"] = analysis_target or "unknown"
+            if analysis_target == "surgical_guide":
+                try:
+                    from web.surgical_guide import guide_status_payload
+                    from agent_runtime.artifact_analysis import (
+                        build_guide_characteristics_facts,
+                    )
+                    status = guide_status_payload(self)
+                    packet["guide"] = build_guide_characteristics_facts(
+                        status.get("guide") if isinstance(status, dict) else {}
+                    )
+                    if isinstance(status, dict):
+                        packet["guide_lifecycle"] = self._local_fact_scalar({
+                            key: status.get(key)
+                            for key in (
+                                "state", "generated", "persisted", "mesh_loaded",
+                                "plan_matches_current", "stale_reason", "reason",
+                            )
+                            if status.get(key) is not None
+                        })
+                except Exception as exc:
+                    logger.debug("Guide characteristics facts unavailable: %s", exc)
+                    packet["guide"] = {"available": False}
+            boundaries = {
+                "surgical_guide": (
+                    "Explain the puncture guide's design and validation characteristics "
+                    "(parameters, needle channels, bore/spacing quality, plate and skin fit). "
+                    "Distinguish measured geometry from design parameters and label anything "
+                    "the facts do not cover as unassessed. Never offer to regenerate the guide "
+                    "unless the user explicitly asks."
+                ),
+                "tumor": (
+                    "Explain the measured tumor/target facts (CTV volume, coverage, adjacent "
+                    "high-dose structures). Anatomical subsite and pathology cannot be "
+                    "determined from tools; state that boundary instead of guessing."
+                ),
+                "dose": (
+                    "Explain the observed dose distribution characteristics only; do not "
+                    "invent clinical limits, and mark judgments needing site guidance as "
+                    "requiring review."
+                ),
+                "planning": (
+                    "Explain the current plan's characteristics and trade-offs from the "
+                    "observed facts; distinguish observations from clinical judgments."
+                ),
+                "segmentation": (
+                    "Explain the segmentation result characteristics (counts, volumes, "
+                    "coverage of structures) from the facts only."
+                ),
+                "seeds_needles": (
+                    "Explain the seed/needle distribution characteristics from the facts only."
+                ),
+                "report": (
+                    "Explain the report content characteristics from the facts only."
+                ),
+            }
+            packet["answer_boundary"] = boundaries.get(analysis_target) or (
+                "Explain the requested artifact's characteristics from these facts only; "
+                "label anything unsupported as unassessed."
+            )
+            return packet
         monitor_edit = self._local_memory_value('monitor_last_edit')
         if isinstance(monitor_edit, dict):
             current_id = self._local_memory_value('active_planning_id') or self._local_memory_value('planning_run_id')
@@ -2252,6 +2328,116 @@ class ChatWorkflowMixin:
         lines.extend(["", f"Conclusion: {conclusion}"])
         return "\n".join(lines)
 
+    def _build_artifact_analysis_response(
+        self, lang: str = "en", message: str = "", facts: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Safe deterministic fallback for an artifact-characteristics analysis."""
+        facts = facts if isinstance(facts, dict) else {}
+        is_zh = self._response_language(lang) == "zh"
+        target = str(facts.get("analysis_target") or "")
+        title = {
+            "surgical_guide": ("手术导板特征", "Puncture Guide Characteristics"),
+            "tumor": ("肿瘤特征", "Tumor Characteristics"),
+            "dose": ("剂量分布特征", "Dose Distribution Characteristics"),
+            "planning": ("当前规划特征", "Current Plan Characteristics"),
+            "segmentation": ("分割结果特征", "Segmentation Characteristics"),
+            "seeds_needles": ("粒子/针道特征", "Seeds & Needles Characteristics"),
+            "report": ("报告内容特征", "Report Characteristics"),
+        }.get(target, ("制品特征分析", "Artifact Characteristics Analysis"))
+        lines = [
+            f"## {title[0 if is_zh else 1]}",
+            "",
+            (
+                "以下是从当前 Session 读取到的可核验特征事实；未评估的判断已单独标出。"
+                if is_zh else
+                "The following verifiable characteristic facts come from the current "
+                "Session; anything not assessable from them is labeled explicitly."
+            ),
+            "",
+        ]
+        guide = facts.get("guide") if isinstance(facts.get("guide"), dict) else {}
+        lifecycle = facts.get("guide_lifecycle") if isinstance(facts.get("guide_lifecycle"), dict) else {}
+        if target == "surgical_guide":
+            if not guide.get("available"):
+                lines.append(
+                    "- 当前没有可核验的手术导板记录。" if is_zh
+                    else "- No verifiable puncture-guide record is present."
+                )
+            else:
+                if guide.get("version") is not None:
+                    lines.append(
+                        f"- 版本：v{guide['version']}，状态：{guide.get('status')}。" if is_zh
+                        else f"- Version: v{guide['version']}, status: {guide.get('status')}."
+                    )
+                if guide.get("needle_count"):
+                    lines.append(
+                        f"- 计划针道：{guide['needle_count']} 条。" if is_zh
+                        else f"- Planned needle paths: {guide['needle_count']}."
+                    )
+                params = guide.get("parameters") or {}
+                if params:
+                    rendered = ", ".join(f"{key}={value}" for key, value in list(params.items())[:12])
+                    lines.append(
+                        f"- 设计参数：{rendered}。" if is_zh else f"- Design parameters: {rendered}."
+                    )
+                validation = guide.get("validation") or {}
+                if validation:
+                    rendered = ", ".join(
+                        f"{key}={value}" for key, value in list(validation.items())[:10]
+                    )
+                    lines.append(
+                        f"- 校验记录：{rendered}。" if is_zh else f"- Validation record: {rendered}."
+                    )
+                holes = guide.get("auxiliary_holes") or {}
+                if holes:
+                    rendered = ", ".join(f"{key}={value}" for key, value in list(holes.items())[:8])
+                    lines.append(
+                        f"- 辅助孔配置：{rendered}。" if is_zh else f"- Auxiliary holes: {rendered}."
+                    )
+            if lifecycle:
+                rendered = ", ".join(f"{key}={value}" for key, value in lifecycle.items())
+                lines.append(
+                    f"- 生命周期：{rendered}。" if is_zh else f"- Lifecycle: {rendered}."
+                )
+        else:
+            planning = facts.get("planning") or {}
+            dose = facts.get("dose") or {}
+            segmentation = facts.get("segmentation") or {}
+            if planning.get("label") or planning.get("planning_id"):
+                lines.append(
+                    f"- 关联规划：{planning.get('label') or planning.get('planning_id')}。"
+                    if is_zh else
+                    f"- Related Planning: {planning.get('label') or planning.get('planning_id')}."
+                )
+            if segmentation:
+                rendered = ", ".join(
+                    f"{key}={value}" for key, value in list(segmentation.items())[:8]
+                )
+                lines.append(
+                    f"- 分割事实：{rendered}。" if is_zh else f"- Segmentation facts: {rendered}."
+                )
+            observed = [
+                (name, dose.get(key))
+                for name, key in (("V100", "v100"), ("V150", "v150"), ("V200", "v200"),
+                                  ("D90", "d90"), ("D95", "d95"), ("Dmean", "dmean"))
+                if dose.get(key) is not None
+            ]
+            if observed:
+                rendered = ", ".join(f"{name}={value}" for name, value in observed)
+                lines.append(
+                    f"- 剂量观察值：{rendered}。" if is_zh else f"- Dose observations: {rendered}."
+                )
+        lines.extend([
+            "",
+            (
+                "以上为可核实事实；需要部位指南阈值或影像诊断支持的判断无法从这些事实得出。"
+                if is_zh else
+                "These are verifiable facts only; judgments needing site-specific "
+                "thresholds or imaging diagnosis cannot be determined from them."
+            ),
+        ])
+        return "\n".join(lines)
+
     def _build_current_planning_assessment_response(self, lang: str = "en") -> str:
         """Safe deterministic fallback for a current-plan assessment query."""
         packet = self._current_planning_fact_packet("planning_assessment_query")
@@ -2454,7 +2640,12 @@ class ChatWorkflowMixin:
         returned instead of a misleading menu.
         """
         intent = str(intent or "")
-        facts = self._current_planning_fact_packet(intent)
+        facts = self._current_planning_fact_packet(
+            intent,
+            analysis_target=str(
+                getattr(getattr(self, "_active_turn_policy", None), "analysis_target", "") or ""
+            ),
+        )
         fallback_builders = {
             "planning_provenance_query": self._build_current_planning_provenance_response,
             "planning_assessment_query": self._build_current_planning_assessment_response,
@@ -2465,6 +2656,9 @@ class ChatWorkflowMixin:
             "image_metadata_query": self._build_current_image_metadata_response,
             "current_oar_query": self._build_current_oar_count_response,
             "oar_count_query": self._build_current_oar_count_response,
+            "artifact_analysis_query": lambda resolved_lang: self._build_artifact_analysis_response(
+                resolved_lang, message, facts
+            ),
         }
         fallback_builder = fallback_builders.get(intent, self._build_current_planning_assessment_response)
         fallback = None
@@ -2507,6 +2701,15 @@ class ChatWorkflowMixin:
                 scope_instruction += (
                     "This is specifically an RL execution-diagnosis question. Inspect rl_status in the relevant historical run and explicitly report execution, stop_reason, target_coverage, best_coverage, and the available counters. Do not answer with only the final dose metrics. "
                 )
+        elif intent == "artifact_analysis_query":
+            scope_instruction = (
+                "This is a read-only artifact analysis. Structure the answer as: "
+                "a one-sentence conclusion, then the verifiable characteristics/facts "
+                "(use the exact values from the facts), then a short interpretation, "
+                "then explicitly what cannot be determined from these facts. "
+                "Never propose or start a regeneration; if the artifact is stale or "
+                "missing, say so as one of the facts. "
+            )
         system_prompt = (
             "You are BrachyBot's grounded answer editor for a clinical planning UI. "
             "Answer the CURRENT USER QUESTION exactly; do not answer a neighboring question "
@@ -2565,6 +2768,12 @@ class ChatWorkflowMixin:
                 "image_metadata_query": ("ct", "image", "metadata", "dimension", "图像", "影像", "元数据", "尺寸"),
                 "current_oar_query": ("oar", "organ", "器官", "危及"),
                 "oar_count_query": ("oar", "organ", "器官", "危及"),
+                "artifact_analysis_query": (
+                    "导板", "guide", "参数", "parameter", "特征", "特点", "characteristic",
+                    "肿瘤", "tumor", "ctv", "靶区", "体积", "volume", "覆盖", "coverage",
+                    "剂量", "dose", "针道", "needle", "粒子", "seed", "分割", "segmentation",
+                    "分析", "判读", "结论", "情况", "质量",
+                ),
             }
             has_topic = any(marker in content.lower() for marker in topic_markers.get(intent, ()))
             matches_scope = self._local_query_answer_matches_scope(message, intent, content)
@@ -3190,6 +3399,7 @@ class ChatWorkflowMixin:
             "case_dose_query",
             "image_metadata_query",
             "current_oar_query",
+            "artifact_analysis_query",
         }:
             response, _local_llm_meta = self._answer_local_read_query(
                 message, local_policy.intent, self.memory.user_lang,
@@ -3458,6 +3668,7 @@ class ChatWorkflowMixin:
             "case_dose_query",
             "image_metadata_query",
             "current_oar_query",
+            "artifact_analysis_query",
         }
         if local_policy.intent in local_read_intents:
             trace_zh = self.memory.user_lang == "zh"
@@ -3468,6 +3679,7 @@ class ChatWorkflowMixin:
                 "case_dose_query": ("当前病例剂量", "Current Case Dose"),
                 "image_metadata_query": ("当前 CT 元数据", "Current CT Metadata"),
                 "current_oar_query": ("当前 OAR 状态", "Current OAR State"),
+                "artifact_analysis_query": ("制品特征分析", "Artifact Characteristics Analysis"),
             }
             read_title = titles[local_policy.intent][0 if trace_zh else 1]
             read_content = (
@@ -4400,6 +4612,7 @@ class ChatWorkflowMixin:
             "case_dose_query",
             "image_metadata_query",
             "current_oar_query",
+            "artifact_analysis_query",
         }
         if local_policy.intent in local_read_intents:
             trace_zh = self.memory.user_lang == "zh"
@@ -4410,6 +4623,7 @@ class ChatWorkflowMixin:
                 "case_dose_query": ("当前病例剂量", "Current Case Dose"),
                 "image_metadata_query": ("当前 CT 元数据", "Current CT Metadata"),
                 "current_oar_query": ("当前 OAR 状态", "Current OAR State"),
+                "artifact_analysis_query": ("制品特征分析", "Artifact Characteristics Analysis"),
             }
             state_step = add_step(
                 "ui",

@@ -40,9 +40,14 @@ class SurgicalGuideTool(BaseTool):
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["generate", "status"],
+                    "enum": ["generate", "status", "analyze"],
                     "default": "generate",
-                    "description": "Generate a new guide or inspect the current guide.",
+                    "description": (
+                        "Generate a new guide, inspect its lifecycle state ('status'), "
+                        "or analyze its design/validation characteristics ('analyze'). "
+                        "'status' and 'analyze' are read-only: never use 'generate' "
+                        "unless the user explicitly asks to create or regenerate the guide."
+                    ),
                 },
                 "needle_ids": {
                     "type": "array",
@@ -140,6 +145,43 @@ class SurgicalGuideTool(BaseTool):
         if agent is None:
             return ToolResult(success=False, error="Case agent is unavailable")
         action = str(kwargs.get("action") or "generate").strip().lower()
+        if action == "analyze":
+            from agent_runtime.artifact_analysis import build_guide_characteristics_facts
+
+            status = guide_status_payload(agent)
+            facts = build_guide_characteristics_facts(
+                status.get("guide") if isinstance(status, dict) else {}
+            )
+            turn_context = getattr(agent, "_active_turn_context", {}) or {}
+            lang = str(
+                getattr(agent.memory, "user_lang", "")
+                or (turn_context.get("response_language", "") if isinstance(turn_context, dict) else "")
+                or "en"
+            ).lower()
+            lang = "zh" if lang.startswith(("zh", "cn")) else "en"
+            if not facts.get("available"):
+                message = (
+                    "当前没有可核验的手术导板特征记录。"
+                    if lang == "zh" else
+                    "No verifiable puncture-guide characteristics record is present."
+                )
+            else:
+                version_text = f"v{facts.get('version')}" if facts.get("version") is not None else ""
+                message = (
+                    f"已读取手术导板 {version_text} 的设计与校验特征，可供分析。"
+                    if lang == "zh" else
+                    f"Read the design and validation characteristics of puncture guide "
+                    f"{version_text or 'current'} for analysis."
+                )
+            return ToolResult(
+                success=True,
+                message=message,
+                metadata={
+                    "guide_characteristics": facts,
+                    "guide_status": status,
+                    "analysis_action": "analyze",
+                },
+            )
         if action == "status":
             status = guide_status_payload(agent)
             guide = status.get("guide")

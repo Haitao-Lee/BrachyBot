@@ -38,6 +38,7 @@ MODULES = {
     "clinical_kb": _load_prompt("clinical_kb.md"),
     "formatting": _load_prompt("formatting.md"),
     "visual_proactive": _load_prompt("visual_proactive.md"),
+    "analysis_response": _load_prompt("analysis_response.md"),
 }
 
 
@@ -99,6 +100,12 @@ _MODULE_TRIGGERS = {
         r"(?:DVH|dose.?volume|histogram|剂量体积|直方图|剂量分布|截图)",
         r"(?:axial|sagittal|coronal|data.tree|overlay|what does.*look)",
         r"(?:轴向|矢状|冠状|数据树|叠加|显示|看看)",
+    ],
+    "analysis_response": [
+        r"(?:\u5206\u6790|\u8bc4\u4f30|\u8bc4\u4ef7|\u89e3\u8bfb|\u603b\u7ed3|\u5bf9\u6bd4|\u6bd4\u8f83|"
+        r"\u7279\u70b9|\u7279\u5f81|\u8d28\u91cf\u5206\u6790|\u6982\u51b5|\u4f18\u7f3a\u70b9)",
+        r"(?:\b(?:analy[sz]e|assess|evaluat|interpret|summariz|compar|characteri[sz]|review)\w*)",
+        r"(?:\bcharacteristics?\b|\bfeatures?\b|\bstrengths?\b.*\bweakness)",
     ],
 }
 

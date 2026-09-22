@@ -35,6 +35,11 @@ from tool_factory.ui_controller import normalize_ui_controller_request, CONTROL_
 from utils.user_errors import format_tool_error, sanitize_user_response
 from agent_runtime import request_parse as _request_parse
 from agent_runtime.execution_authorization import MUTATING_TOOLS
+from agent_runtime.artifact_analysis import (
+    coerce_analysis_tool_call,
+    is_analysis_shaped,
+    is_artifact_analysis_request,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -2820,6 +2825,38 @@ Output (JSON array of strings):"""
             # Do not let provider-selected captures bypass that decision.
             logger.warning("Dropping provider calls for an ambiguous visual target")
             return []
+        # Analysis requests ("分析导板特点") are read-only discourse acts.  The
+        # surgical_guide schema defaults to action="generate" (a mutation), so a
+        # provider trying to "look at" the guide would otherwise be blocked and
+        # the turn would end with "confirm to regenerate" nonsense.  Coerce
+        # guide calls to their read-only analyze action, drop unrelated
+        # mutations entirely (no confirmation text), and keep read evidence
+        # tools so the answer can be grounded in real characteristics.
+        analysis_request = is_artifact_analysis_request(guard_question)
+        if analysis_request is None and is_analysis_shaped(guard_question):
+            # A short follow-up ("分析啊") may carry no artifact noun; the
+            # provider has already resolved the target.  The same read-only
+            # coercion applies.
+            analysis_request = {"artifact": "", "complex": False}
+        if analysis_request is not None and not getattr(active_policy, "direct_execution", False):
+            kept: List[Dict] = []
+            for call in (tool_calls or []):
+                name = str(call.get("tool") or "")
+                params = coerce_analysis_tool_call(
+                    name, call.get("params") or {}, guard_question,
+                )
+                if name in MUTATING_TOOLS and name != "ui_controller":
+                    if name == "surgical_guide":
+                        kept.append({**call, "params": params})
+                    else:
+                        logger.warning(
+                            "Dropping mutating tool %r from an analysis turn", name,
+                        )
+                    continue
+                kept.append({**call, "params": params})
+            tool_calls = kept
+            self._blocked_mutating_tool_names = []
+            return kept
         if getattr(active_policy, "intent", None) == "session_visual_location_query":
             # This turn has a typed read-only visual contract. Even if a
             # provider unexpectedly emits extra function calls, do not let a
@@ -3001,6 +3038,21 @@ Output (JSON array of strings):"""
                 else:
                     guided.append(call)
             tool_calls = guided
+
+        # Make the guide action explicit on a generation command.  The schema
+        # default (``generate``) is only safe when the utterance actually
+        # commands that write; every other turn shape is handled above or by
+        # the mutation gate below.
+        if guard_question and is_surgical_guide_generation_request(guard_question):
+            explicit: List[Dict] = []
+            for call in (tool_calls or []):
+                if str(call.get("tool") or "") == "surgical_guide":
+                    params = dict(call.get("params") or {})
+                    if not str(params.get("action") or "").strip():
+                        params["action"] = "generate"
+                        call = {**call, "params": params}
+                explicit.append(call)
+            tool_calls = explicit
 
         valid = []
         for tc in tool_calls:
@@ -3452,9 +3504,18 @@ Output (JSON array of strings):"""
             allowed = []
             for call in valid:
                 tool_name = str(call.get("tool") or "")
+                call_params = call.get("params") if isinstance(call.get("params"), dict) else {}
                 if (
                     tool_name in MUTATING_TOOLS
                     and tool_name != "ui_controller"
+                    # Read-only guide actions ("status" for a state check,
+                    # "analyze" for characteristics) never write; blocking them
+                    # turned inspection questions into "confirm to regenerate".
+                    and not (
+                        tool_name == "surgical_guide"
+                        and str(call_params.get("action") or "").strip().lower()
+                        in {"status", "analyze"}
+                    )
                     and not _request_parse.mutating_execution_authorized(
                         guard_question, tool_name, conversation
                     )

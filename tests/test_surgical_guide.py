@@ -947,7 +947,7 @@ def test_surgical_guide_defaults_to_generate_when_action_is_omitted():
 
 def test_surgical_guide_has_manual_and_chat_entry_points():
     schema = SurgicalGuideTool().input_schema
-    assert schema["properties"]["action"]["enum"] == ["generate", "status"]
+    assert schema["properties"]["action"]["enum"] == ["generate", "status", "analyze"]
     index = open("web/app/index.html", encoding="utf-8").read()
     script = open("web/app/static/js/brachybot-surgical-guide.js", encoding="utf-8").read()
     prompt = open("config/prompts/system_prompt.md", encoding="utf-8").read()
