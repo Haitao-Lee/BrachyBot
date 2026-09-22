@@ -27,14 +27,20 @@ function check(status, loaded) {
 }
 for (const loaded of [true, false, undefined]) {
     assert.equal(check('completed', loaded).allowed, true);
-    for (const status of ['draft', 'running', 'failed', 'interrupted', 'cancelled']) {
-        assert.equal(check(status, loaded).allowed, false);
+    // A "draft" lifecycle is normal for a manually-adjusted plan whose dose is
+    // already current; terminal states follow data readiness (the scene gate),
+    // not a lifecycle word. Only a genuinely running Planning blocks capture.
+    for (const status of ['draft', 'failed', 'interrupted', 'cancelled']) {
+        assert.equal(check(status, loaded).allowed, true, status);
     }
+    assert.equal(check('running', loaded).allowed, false);
 }
-context.dataTreeState.planning.status = 'completed';
+context.dataTreeState.planning.status = 'running';
 context._reportPlanningLifecycle.active = true;
-assert.equal(vm.runInContext('reportCaptureAllowed({})', context).reason, 'planning_in_progress');
+assert.equal(vm.runInContext("reportCaptureAllowed({planningId: 'plan-test'})", context).reason, 'planning_in_progress');
 context._reportPlanningLifecycle.active = false;
+assert.equal(vm.runInContext("reportCaptureAllowed({planningId: 'plan-test'})", context).reason, 'planning_not_completed');
+context.dataTreeState.planning.status = 'completed';
 assert.equal(vm.runInContext("reportCaptureAllowed({planningId: 'other'})", context).reason, 'planning_changed');
 assert.equal(vm.runInContext("ensureDataTreeNodeMetadata({loaded:true}, 'oar_mask').status", context), 'ready');
-console.log('PASS: tree repaint preserves Planning lifecycle; running, draft and switched plans remain blocked');
+console.log('PASS: tree repaint preserves Planning lifecycle; only running and switched plans remain blocked');
