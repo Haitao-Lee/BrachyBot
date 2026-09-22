@@ -373,6 +373,17 @@ _HONEST_FAILURE_PROMPT = (
 )
 
 
+_FINAL_SYNTHESIS_INSTRUCTION = (
+    "You have finished all tool calls for this turn. Answer the user's CURRENT "
+    "request directly and completely NOW, using only the tool results already "
+    "present in this conversation. Do NOT call any tools. Do NOT describe which "
+    "sources you searched, and do NOT output raw URLs or a source list as the "
+    "answer — give the actual answer. If part of the question cannot be supported "
+    "by the gathered evidence, state plainly which part is unsupported. Use the "
+    "same language as the user's request."
+)
+
+
 def _is_placeholder_tool_response(text: str) -> bool:
     """Identify transport-level placeholders that must never replace real evidence."""
     normalized = re.sub(r"\s+", " ", str(text or "")).strip().lower()
@@ -2270,37 +2281,25 @@ class LLMRuntimeMixin:
             elif tools_executed:
                 _fallback_lang = "zh" if str(getattr(self.memory, "user_lang", "en") or "en").lower().startswith("zh") else "en"
                 # A successful screenshot capture is a completed operation the
-                # browser still owns; acknowledge it instead of claiming the
-                # turn failed. This must also fire when read-only helpers such
-                # as ui_inspector ran in the same turn.
-                final_response = _presentation_capture_fallback(
-                    _fallback_lang,
+                # browser still owns; otherwise give the model one tool-free
+                # round to answer from the gathered evidence instead of shipping
+                # the metadata-only source summary.
+                final_response, _fb_meta = self._resolve_tool_turn_response(
                     steps,
+                    messages,
+                    _fallback_lang,
                     message,
                     capture_pending=_presentation_capture_pending,
+                    accumulated_text=accumulated_text,
                 )
-                tool_results_text, failure_notes = _collect_tool_fallback_text(
-                    steps, messages, _fallback_lang
-                )
-                if final_response:
-                    pass
-                elif tool_results_text:
-                    prefix = "基于当前病例结果：\n\n" if _fallback_lang == "zh" else "Based on the current case results:\n\n"
-                    final_response = prefix + "\n\n".join(tool_results_text)
-                elif accumulated_text and len(accumulated_text) > 10:
-                    # A partial provider stream may contain a tool prompt or a
-                    # web body.  Only accept it when it passes the same
-                    # response-boundary transport check.
-                    if _is_safe_accumulated_text(accumulated_text):
-                        final_response = accumulated_text
-                        logger.info(f"Using accumulated_text as fallback: {len(final_response)} chars")
-                    else:
-                        final_response = _tool_fallback_message(_fallback_lang, bool(failure_notes), failure_notes, message)
-                elif failure_notes:
-                    final_response = _tool_fallback_message(_fallback_lang, True, failure_notes, message)
-                else:
-                    final_response = _tool_fallback_message(_fallback_lang, user_message=message)
-                    logger.warning(f"Tool result fallback: no results found in {len(messages)} messages")
+                _fb_usage = _fb_meta.get("usage") or {}
+                if _fb_usage:
+                    self._record_context_usage(_fb_usage)
+                    total_usage["prompt_tokens"] += _fb_usage.get("prompt_tokens", 0)
+                    total_usage["completion_tokens"] += _fb_usage.get("completion_tokens", 0)
+                    total_usage["total_tokens"] += _fb_usage.get("total_tokens", 0)
+                total_latency_ms += _fb_meta.get("latency_ms", 0) or 0
+                llm_calls += _fb_meta.get("llm_calls", 0) or 0
             else:
                 final_response = "未生成回复。" if _trace_zh else "No response generated."
 
@@ -2436,6 +2435,102 @@ class LLMRuntimeMixin:
 
         logger.info("Built multimodal content with screenshots: %s", loaded_names)
         return content
+
+    def _synthesize_answer_from_tools(
+        self,
+        messages: List[Dict],
+        steps: List[Dict],
+        lang: str,
+        message: str,
+    ) -> Tuple[str, Dict]:
+        """One bounded, tool-free provider round that answers from tool evidence.
+
+        A tool turn can exhaust every provider round as a tool call (for example
+        repeated web_search rounds that never synthesize). The metadata-only
+        evidence summary is a last resort, not an answer, so give the model one
+        final round with tools disabled to convert the gathered evidence into a
+        direct reply. Returns ``(text, meta)``; ``meta`` carries the call's usage
+        and latency so the caller can bill it to the turn. Returns ``("", {})``
+        when the provider is unavailable or returns transport noise.
+        """
+        if not messages or not steps:
+            return "", {}
+        synthesis_messages = list(messages) + [
+            {"role": "user", "content": _FINAL_SYNTHESIS_INSTRUCTION}
+        ]
+        try:
+            response = _chat_messages_with_retry(
+                self.brain_router,
+                messages=synthesis_messages,
+                tools=[],
+                max_retries=0,
+            )
+        except Exception as exc:
+            logger.warning("[LLM loop] Final tool-free synthesis failed: %s", exc)
+            return "", {}
+        text = str(self._clean_response_text(getattr(response, "content", "") or "") or "").strip()
+        if not text or _is_placeholder_tool_response(text):
+            return "", {}
+        if re.search(r"```tool_call|\[TOOL_CALL\]", text):
+            return "", {}
+        usage = getattr(response, "usage", None) or {}
+        return text, {
+            "usage": usage,
+            "latency_ms": getattr(response, "latency_ms", 0) or 0,
+            "llm_calls": 1,
+        }
+
+    def _resolve_tool_turn_response(
+        self,
+        steps: List[Dict],
+        messages: List[Dict],
+        lang: str,
+        message: str,
+        *,
+        capture_pending: bool = False,
+        accumulated_text: str = "",
+    ) -> Tuple[str, Dict]:
+        """Resolve the user-facing answer for a tool turn with no model text.
+
+        Order: capture acknowledgement → synthesized answer → metadata-only
+        evidence summary → safe accumulated text → honest failure/retry note.
+        ``meta`` may carry the synthesis call's usage for turn accounting.
+        """
+        capture = _presentation_capture_fallback(
+            lang, steps, message, capture_pending=capture_pending
+        )
+        if capture:
+            return capture, {}
+        tool_results_text, failure_notes = _collect_tool_fallback_text(
+            steps, messages, lang
+        )
+        if tool_results_text:
+            synthesized, meta = self._synthesize_answer_from_tools(
+                messages, steps, lang, message
+            )
+            if synthesized:
+                return synthesized, meta
+            prefix = (
+                "基于当前病例结果：\n\n"
+                if lang == "zh"
+                else "Based on the current case results:\n\n"
+            )
+            return prefix + "\n\n".join(tool_results_text), {}
+        if (
+            accumulated_text
+            and len(accumulated_text) > 10
+            and _is_safe_accumulated_text(accumulated_text)
+        ):
+            logger.info(
+                "Using accumulated_text as fallback: %s chars", len(accumulated_text)
+            )
+            return accumulated_text, {}
+        if failure_notes:
+            return _tool_fallback_message(lang, True, failure_notes, message), {}
+        logger.warning(
+            "Tool result fallback: no results found in %s messages", len(messages)
+        )
+        return _tool_fallback_message(lang, user_message=message), {}
 
     def _clean_response_text(self, content: str) -> str:
         """Remove tool call blocks from LLM response, keep only user-facing text.
@@ -4273,28 +4368,24 @@ class LLMRuntimeMixin:
                 final_response = accumulated_text
             elif tools_executed:
                 # A successful screenshot capture is a completed operation the
-                # browser still owns; acknowledge it instead of claiming the
-                # turn failed. This must also fire when read-only helpers such
-                # as ui_inspector ran in the same turn.
-                final_response = _presentation_capture_fallback(
-                    _fb_lang,
+                # browser still owns; otherwise give the model one tool-free
+                # round to answer from the gathered evidence instead of shipping
+                # the metadata-only source summary.
+                final_response, _fb_meta = self._resolve_tool_turn_response(
                     steps,
+                    messages,
+                    _fb_lang,
                     message,
                     capture_pending=_presentation_capture_pending,
                 )
-                if final_response:
-                    pass
-                else:
-                    tool_results_text, failure_notes = _collect_tool_fallback_text(
-                        steps, messages, _fb_lang
-                    )
-                    if tool_results_text:
-                        prefix = ("基于当前病例结果：\n\n" if _fb_lang == "zh" else "Based on the current case results:\n\n")
-                        final_response = prefix + "\n\n".join(tool_results_text)
-                    elif failure_notes:
-                        final_response = _tool_fallback_message(_fb_lang, True, failure_notes, message)
-                    else:
-                        final_response = _tool_fallback_message(_fb_lang, user_message=message)
+                _fb_usage = _fb_meta.get("usage") or {}
+                if _fb_usage:
+                    self._record_context_usage(_fb_usage)
+                    total_usage["prompt_tokens"] += _fb_usage.get("prompt_tokens", 0)
+                    total_usage["completion_tokens"] += _fb_usage.get("completion_tokens", 0)
+                    total_usage["total_tokens"] += _fb_usage.get("total_tokens", 0)
+                total_latency_ms += _fb_meta.get("latency_ms", 0) or 0
+                llm_calls += _fb_meta.get("llm_calls", 0) or 0
             else:
                 final_response = _tool_fallback_message(_fb_lang, user_message=message)
 
