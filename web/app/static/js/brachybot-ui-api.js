@@ -6920,10 +6920,16 @@ async function _executeUIActionsWithProgress(actions, options = {}) {
                     metadata: { stage: result?.stage, captureFailure: result?.captureFailure } });
                 break;
             }
+            // The Execution Trace renders this value as plain text.  Passing
+            // the raw result object produced "-> [object Object]".
+            const doneText = (result && typeof result === 'object')
+                ? (result.message || result.display_message
+                    || (result.cancelled ? 'Cancelled' : 'Applied'))
+                : (result || 'Applied');
             _emitUIActionProgress({
                 ...base,
                 status: result && result.cancelled ? 'cancelled' : 'done',
-                result: result || 'Applied',
+                result: doneText,
             });
             if (result && result.cancelled) break;
         } catch (error) {

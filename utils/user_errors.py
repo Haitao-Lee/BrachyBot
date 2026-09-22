@@ -352,6 +352,37 @@ def format_tool_error(
                 "so the current plan was not modified. This is usually case resource loading; "
                 "wait for it to finish and retry."
             )
+        # A dose/mask grid mismatch is a data-consistency condition.  It says
+        # nothing about whether planning completed: the case may be fully
+        # planned while two workspace arrays simply live on different grids.
+        grid_mismatch = any(
+            marker in lower
+            for marker in (
+                "grids do not match", "grid mismatch", "shape must match",
+                "shape mismatch", "must be a 3d", "broadcast", "dimension",
+            )
+        )
+        if grid_mismatch:
+            return (
+                "剂量与靶区/危及器官数据不在同一体格网格上，本次评估无法进行；"
+                "系统没有改动当前规划。请先在当前网格上重算剂量后再试。"
+                if language == "zh" else
+                "The dose and target/OAR data are not on the same spatial grid, so this "
+                "assessment could not run; the current plan was not modified. Recompute "
+                "the dose on the current grid and retry."
+            )
+        if tool == "dose_evaluation":
+            # dose_evaluation is a post-planning quality assessment.  Its
+            # failure is never evidence that planning did not complete.
+            return (
+                "剂量评估未能完成。这是对现有规划的质量评估，与规划是否完成无关；"
+                "系统没有改动当前规划。请查看执行追踪中的失败原因后重试。"
+                if language == "zh" else
+                "Dose evaluation did not complete. This is a quality assessment of the "
+                "existing plan and says nothing about planning completion; the current "
+                "plan was not modified. Check the failure reason in the Execution Trace "
+                "and retry."
+            )
         return (
             "放射性粒子规划没有完成。请先确认 CTV/OAR 已成功加载、靶区不是空白，并重新执行规划；"
             "如果仍失败，请保留执行追踪以便检查针道和剂量计算。"

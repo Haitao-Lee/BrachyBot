@@ -102,7 +102,10 @@ class DoseEvaluationTool(BaseTool):
                 "spacing": {"type": "array", "description": "Dose-grid voxel spacing [x, y, z] in mm"},
                 "tumor_type": {"type": "string", "description": "Explicit tumor site/model for source-backed scoring"},
             },
-            "required": ["dose_array", "ctv_mask"],
+            # dose_array/ctv_mask/oar_mask are server-injected workspace
+            # arrays.  Like ``query_metrics`` they are deliberately not listed
+            # as required: a provider call carries no arrays at all, and the
+            # server injects a grid-consistent tuple at execution time.
         }
 
     @property

@@ -93,8 +93,33 @@ def test_gateway_accepts_the_server_injected_numpy_dose_arrays():
 
 
 def test_genuine_planning_failure_keeps_the_planning_message():
-    message = format_tool_error("dose_evaluation", "planner solver diverged", {}, "zh")
+    message = format_tool_error("dose_engine", "planner solver diverged", {}, "zh")
     assert "规划没有完成" in message
+
+
+def test_dose_evaluation_failure_never_claims_planning_incomplete():
+    message = format_tool_error("dose_evaluation", "planner solver diverged", {}, "zh")
+    assert "规划没有完成" not in message
+    assert "剂量评估" in message
+
+
+def test_grid_mismatch_is_reported_as_data_mismatch_not_planning_incomplete():
+    message = format_tool_error(
+        "dose_evaluation", "ctv_mask shape must match dose_array", {}, "zh"
+    )
+    assert "规划没有完成" not in message
+    assert "网格" in message
+
+
+def test_grid_mismatch_on_planning_tools_is_also_honest():
+    message = format_tool_error(
+        "dose_engine",
+        "[dose_eval] Dose and CTV grids do not match: dose=(64, 128, 128), CTV=(57, 512, 512).",
+        {},
+        "zh",
+    )
+    assert "规划没有完成" not in message
+    assert "网格" in message
 
 
 def test_memory_has_planning_result_uses_persisted_data_not_a_lifecycle_flag():

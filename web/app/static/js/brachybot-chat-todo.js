@@ -2047,9 +2047,11 @@ function _reportGenerationFailureMessage(sessionId, failure = null) {
         || stage === 'report_catalog_not_ready'
         || stage === 'workspace_visual_restore_incomplete'
         || stage === 'report_validation_failed') {
+        // The plan itself is complete and unchanged; only the Viewer scene
+        // evidence (meshes/dose/dvh display) was not ready for the capture.
         return chinese
-            ? '报告截图未完成：当前病例的 Viewer 或剂量证据尚未准备好，原有报告图片已保留；请确认规划、剂量和 DVH 加载完成后重试。'
-            : 'Report screenshots were not completed because the current Viewer or dose evidence is not ready. Previous report figures were retained; retry after planning, dose, and DVH finish loading.';
+            ? '报告截图未完成：当前 Viewer 场景的网格/剂量显示尚未就绪，原有报告图片已保留；规划结果本身完整且未被修改，待场景加载完成后重试即可。'
+            : 'Report screenshots were not completed because the Viewer scene evidence (meshes/dose display) is not ready. Previous report figures were retained; the plan itself is complete and unchanged — retry once the scene finishes loading.';
     }
     if (stage === 'report_planning_in_progress') {
         return chinese
@@ -2062,8 +2064,8 @@ function _reportGenerationFailureMessage(sessionId, failure = null) {
             : 'Report regeneration was stopped because the active Planning changed during the operation. Previous report figures were retained; keep the case and Planning unchanged and retry.';
     }
     return chinese
-        ? '报告重新生成未完成。浏览器中的报告内容可能已经更新，但系统没有确认它已保存到当前 Session，因此不能把本次操作报告为成功。当前病例显示内容已保留；请保持该病例不变，确认规划、剂量和 DVH 已加载后重试。'
-        : 'Report regeneration was not confirmed. The report may have been updated in the browser, but it was not confirmed as saved to the current Session, so this operation cannot be reported as successful. The visible case was preserved; keep it selected and retry after planning, dose, and DVH are loaded.';
+        ? '报告重新生成未完成。浏览器中的报告内容可能已经更新，但系统没有确认它已保存到当前 Session，因此不能把本次操作报告为成功。当前病例显示内容已保留，规划结果未被修改；请保持该病例不变后重试。'
+        : 'Report regeneration was not confirmed. The report may have been updated in the browser, but it was not confirmed as saved to the current Session, so this operation cannot be reported as successful. The visible case and the plan were preserved unchanged; keep the case selected and retry.';
 }
 
 function _addTaskRecoveryNotice(sessionId, taskId, state) {

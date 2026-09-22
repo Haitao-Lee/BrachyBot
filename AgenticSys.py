@@ -1738,12 +1738,30 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             if ct_image is not None and "dose_image" not in params:
                 params["dose_image"] = ct_image
         elif tool_name == "dose_evaluation":
-            if dose_distribution is not None and "dose_array" not in params:
-                params["dose_array"] = dose_distribution
-            if ctv_array is not None and "ctv_mask" not in params:
-                params["ctv_mask"] = ctv_array
-            if oar_array is not None and "oar_mask" not in params:
-                params["oar_mask"] = oar_array
+            # dose_array/ctv_mask/oar_mask are server-owned (x-server-injected).
+            # Pairing the stale planning-grid ``dose_distribution`` alias with
+            # CT-grid masks failed with "ctv_mask shape must match dose_array",
+            # which the chat surface misread as "planning not completed" on an
+            # already-finished case.  Source one grid-consistent Gy tuple the
+            # way the published metrics were computed, and never trust
+            # model-serialized arrays.
+            from plans.dose_pre.evaluation_inputs import resolve_dose_evaluation_inputs
+
+            for injected_key in ("dose_array", "ctv_mask", "oar_mask"):
+                params.pop(injected_key, None)
+            resolved = resolve_dose_evaluation_inputs(self.memory.retrieve)
+            resolution_error = resolved.get("resolution_error")
+            if resolution_error:
+                return ToolResult(success=False, error=resolution_error)
+            injected = dict(resolved.get("params") or {})
+            params["dose_array"] = injected.pop("dose_array")
+            params["ctv_mask"] = injected.pop("ctv_mask")
+            if injected.get("oar_mask") is not None:
+                params["oar_mask"] = injected.pop("oar_mask")
+            else:
+                injected.pop("oar_mask", None)
+            for key, value in injected.items():
+                params.setdefault(key, value)
         elif tool_name == "seed_segmentation" and "image" not in params:
             if ct_image is not None:
                 params["image"] = ct_image
