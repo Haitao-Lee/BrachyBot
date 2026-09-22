@@ -24,7 +24,7 @@ const vm = require('vm');
 
 const stale = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const durable = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
-global.window = {{}};
+global.window = {{ addEventListener() {{}}, removeEventListener() {{}}, dispatchEvent() {{}} }};
 global.document = {{
   body: {{ classList: {{ toggle() {{}}, add() {{}}, remove() {{}} }} }},
   getElementById() {{ return null; }},
@@ -83,7 +83,7 @@ const createGate = new Promise(resolve => {{ releaseCreate = resolve; }});
 let oldCaseFlushStarted = false;
 const bodyClasses = new Set();
 const sidebar = {{ setAttribute() {{}} }};
-global.window = {{ _chatTurnActive: false, _chatStreaming: false }};
+global.window = {{ _chatTurnActive: false, _chatStreaming: false, addEventListener() {{}}, removeEventListener() {{}}, dispatchEvent() {{}} }};
 global.document = {{
   body: {{ classList: {{ toggle(name, active) {{ active ? bodyClasses.add(name) : bodyClasses.delete(name); }}, add(name) {{ bodyClasses.add(name); }}, remove(name) {{ bodyClasses.delete(name); }} }} }},
   getElementById(id) {{ return id === 'sessionSidebar' ? sidebar : null; }},
@@ -179,7 +179,7 @@ const vm = require('vm');
 
 const nativeSetTimeout = global.setTimeout;
 global.setTimeout = (callback, delay) => nativeSetTimeout(callback, Math.min(Number(delay) || 0, 5));
-global.window = {{}};
+global.window = {{ addEventListener() {{}}, removeEventListener() {{}}, dispatchEvent() {{}} }};
 global.document = {{
   body: {{ classList: {{ toggle() {{}} }} }},
   getElementById() {{ return null; }},
@@ -245,7 +245,7 @@ const vm = require('vm');
 let releaseSave;
 const saveGate = new Promise(resolve => {{ releaseSave = resolve; }});
 let captured = null;
-global.window = {{ brachybotAuth: {{ user: {{ id: 'u1' }} }} }};
+global.window = {{ brachybotAuth: {{ user: {{ id: 'u1' }} }}, addEventListener() {{}}, removeEventListener() {{}}, dispatchEvent() {{}} }};
 global.document = {{
   body: {{ classList: {{ toggle() {{}}, add() {{}}, remove() {{}} }} }},
   getElementById() {{ return null; }},
@@ -296,7 +296,7 @@ const fs = require('fs');
 const vm = require('vm');
 
 const requests = [];
-global.window = {{ brachybotAuth: {{ user: {{ id: 'u1' }} }} }};
+global.window = {{ brachybotAuth: {{ user: {{ id: 'u1' }} }}, addEventListener() {{}}, removeEventListener() {{}}, dispatchEvent() {{}} }};
 global.document = {{
   body: {{ classList: {{ toggle() {{}}, add() {{}}, remove() {{}} }} }},
   getElementById() {{ return null; }},
@@ -367,6 +367,8 @@ let errors = 0;
 global.window = {{
   _chatTurnActive: false,
   _chatStreaming: false,
+  addEventListener() {{}},
+  removeEventListener() {{}},
   dispatchEvent() {{}},
 }};
 global.document = {{
@@ -400,6 +402,7 @@ global.renderSessionList = () => {{}};
 global.loadSessionChat = () => {{}};
 global.clearClientWorkspace = () => {{}};
 global.detectConversationLanguage = () => 'zh';
+global.effectiveUiLanguage = () => 'zh';
 global.addChat = type => {{ if (type === 'error') errors += 1; }};
 global.setStreamingState = () => {{}};
 global.fetch = async (url, options = {{}}) => {{
