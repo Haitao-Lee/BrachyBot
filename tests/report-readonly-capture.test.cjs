@@ -54,11 +54,15 @@ async function main() {
     const before = JSON.stringify({state: context.state, tree: context.dataTreeState});
     assert.equal((await prepare()).success, true);
     assert.equal(JSON.stringify({state: context.state, tree: context.dataTreeState}), before);
+    // Readiness is the loaded scene (meshes + dose overlay), not a lifecycle
+    // word or a stale in-flight flag: both must leave a prepared scene
+    // capturable.  The report-editor gate still blocks a genuinely running
+    // Planning, so no lifecycle signal is lost.
     catalog.runs[0].status = 'running';
-    assert.equal((await prepare()).stage, 'report_planning_in_progress');
+    assert.equal((await prepare()).success, true);
     catalog.runs[0].status = 'completed';
     context.window.__brachybotPlanningRunActive = true;
-    assert.equal((await prepare()).success, false);
+    assert.equal((await prepare()).success, true);
     context.window.__brachybotPlanningRunActive = false;
     catalog.runs[0].data_version = 5;
     assert.equal((await prepare()).stage, 'report_planning_changed');
@@ -159,6 +163,6 @@ async function main() {
     const commit = editor.indexOf('window.reportForm.figures = (window.reportForm.figures');
     assert(editor.indexOf('if (missingAxes.length)') < commit);
     assert(editor.includes('preserveDoseTexture: !!state.doseTexture?.enabled'));
-    console.log('PASS: read-only report checks, version/running/pending/offline failures, exact presentation restore, case isolation, capture guards and atomic figure publication');
+    console.log('PASS: read-only report checks, version/pending/offline failures, exact presentation restore, case isolation, capture guards and atomic figure publication');
 }
 main().catch(error => {console.error(error); process.exitCode = 1;});
