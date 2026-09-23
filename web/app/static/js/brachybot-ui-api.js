@@ -12763,10 +12763,29 @@ window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
     window.refreshContextStatus = refreshContextStatus;
 
     async function compressContextNow() {
-        const { ring } = _ringEls();
-        if (ring) ring.classList.add('is-busy');
         const zh = typeof monitorConversationLanguage === 'function'
             ? monitorConversationLanguage() === 'zh' : (window._i18nLang === 'zh');
+        // Fetch current status first so the dialog can show real numbers.
+        let ctx = null;
+        try {
+            const headers = {};
+            let sid = '';
+            if (typeof window.activeSessionId === 'string' && window.activeSessionId) {
+                sid = window.activeSessionId;
+            } else if (typeof activeSessionId !== 'undefined' && activeSessionId) {
+                sid = String(activeSessionId);
+            }
+            if (sid) headers['X-BrachyBot-Session'] = sid;
+            const r = await fetch(API + '/chat/context', { method: 'GET', headers, cache: 'no-store' });
+            const d = await r.json().catch(() => null);
+            if (d && d.context) ctx = d.context;
+        } catch (_) { /* dialog still works with empty data */ }
+
+        const ok = await _showCompressConfirmDialog(ctx, zh);
+        if (!ok) return false;
+
+        const { ring } = _ringEls();
+        if (ring) ring.classList.add('is-busy');
         try {
             const res = await fetch(API + '/chat/context/compress', {
                 method: 'POST',
@@ -12794,6 +12813,67 @@ window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
         }
     }
     window.compressContextNow = compressContextNow;
+
+    function _showCompressConfirmDialog(ctx, zh) {
+        return new Promise(resolve => {
+            const c = ctx || {};
+            const used = Number(c.used_tokens || 0);
+            const win = Number(c.window || 0);
+            const pct = win > 0 ? (used / win * 100).toFixed(1) : '–';
+            const comps = (c.components && typeof c.components === 'object') ? c.components : {};
+            const compLabels = zh
+                ? { system: '系统指令', runtime_context: '运行时上下文', facts: '病例事实', history: '历史对话', tool_results: '工具结果', conversation: '当前对话', images: '图像', tools: '工具定义', other: '其他' }
+                : { system: 'System', runtime_context: 'Runtime context', facts: 'Case facts', history: 'History', tool_results: 'Tool results', conversation: 'Conversation', images: 'Images', tools: 'Tool defs', other: 'Other' };
+            let compRows = '';
+            const compTotal = Object.values(comps).reduce((s, v) => s + Number(v || 0), 0);
+            for (const [k, v] of Object.entries(comps)) {
+                const n = Number(v || 0);
+                if (n <= 0) continue;
+                const label = compLabels[k] || k;
+                const cp = compTotal > 0 ? (n / compTotal * 100).toFixed(1) : '–';
+                compRows += `<div style="display:flex;justify-content:space-between;padding:2px 0;font-size:13px;"><span>${label}</span><span style="font-variant-numeric:tabular-nums;">${n.toLocaleString()} (${cp}%)</span></div>`;
+            }
+            if (!compRows) compRows = `<div style="font-size:13px;opacity:.6;">${zh ? '暂无分布数据' : 'No breakdown data'}</div>`;
+
+            const overlay = document.createElement('div');
+            overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10001;display:flex;align-items:center;justify-content:center;';
+            overlay.setAttribute('role', 'dialog');
+            overlay.setAttribute('aria-modal', 'true');
+            overlay.innerHTML = `
+<div class="rp-modal-dialog" data-rp-modal="1" style="background:var(--bg-panel,#1e1e2e);border:1px solid var(--border,#444);border-radius:12px;max-width:420px;width:92%;box-shadow:0 8px 32px rgba(0,0,0,.4);overflow:hidden;">
+  <div class="rp-modal-header" style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border,#444);">
+    <span class="rp-modal-title" style="font-weight:600;font-size:15px;">${zh ? '压缩上下文' : 'Compress context'}</span>
+    <button class="rp-modal-close" data-act="cancel" style="background:none;border:none;font-size:18px;cursor:pointer;opacity:.6;">✕</button>
+  </div>
+  <div class="rp-modal-body" style="padding:16px 18px;">
+    <div style="margin-bottom:12px;font-size:14px;">
+      <div style="display:flex;justify-content:space-between;padding:3px 0;"><span>${zh ? '当前占用' : 'Current usage'}</span><span style="font-variant-numeric:tabular-nums;font-weight:600;">${used.toLocaleString()} tokens (${pct}%)</span></div>
+      <div style="display:flex;justify-content:space-between;padding:3px 0;opacity:.7;"><span>${zh ? '窗口大小' : 'Window size'}</span><span style="font-variant-numeric:tabular-nums;">${win.toLocaleString()} tokens</span></div>
+    </div>
+    <div style="margin-bottom:12px;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:4px;">${zh ? '占比分布' : 'Distribution'}</div>
+      ${compRows}
+    </div>
+    <div style="font-size:12px;opacity:.7;margin-bottom:14px;">${zh ? '压缩后历史将折叠为摘要，病例数据与关键结果不受影响。' : 'History will be folded into a summary. Case data and key results are preserved.'}</div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button data-act="cancel" style="padding:7px 18px;border-radius:6px;border:1px solid var(--border,#555);background:transparent;cursor:pointer;font-size:13px;">${zh ? '取消' : 'Cancel'}</button>
+      <button data-act="confirm" style="padding:7px 18px;border-radius:6px;border:none;background:var(--accent,#e05555);color:#fff;cursor:pointer;font-size:13px;font-weight:600;">${zh ? '确认压缩' : 'Compress'}</button>
+    </div>
+  </div>
+</div>`;
+            const done = (val) => { overlay.remove(); resolve(val); };
+            overlay.addEventListener('click', (e) => {
+                const act = e.target?.dataset?.act;
+                if (act === 'confirm') done(true);
+                else if (act === 'cancel') done(false);
+                else if (e.target === overlay) done(false);
+            });
+            const onKey = (e) => { if (e.key === 'Escape') { document.removeEventListener('keydown', onKey); done(false); } };
+            document.addEventListener('keydown', onKey);
+            document.body.appendChild(overlay);
+            overlay.querySelector('[data-act="confirm"]')?.focus();
+        });
+    }
 
     function isContextCommand(text) {
         const value = String(text || '').trim().toLowerCase();

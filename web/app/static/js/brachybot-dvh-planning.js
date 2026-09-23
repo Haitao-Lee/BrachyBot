@@ -2685,16 +2685,16 @@ function updateSeeds(seeds) {
     // the Planning group (either under Trajectories or as a flat list).
     if (typeof dataTreeState !== 'undefined' && dataTreeState.planning) {
         const prior = new Map((dataTreeState.planning.seeds || []).map(seed => [
-            String(seed.id || ''), seed,
+            String(seed.id ?? seed._id ?? ''), seed,
         ]));
         dataTreeState.planning.seeds = (state.seeds || []).map(s => ({
             id: s.id || s._id || `seed_${Math.random().toString(36).slice(2, 8)}`,
             position: s.pos || s.position,
             trajectory_id: s.trajectory_id,
             direction: s.direction,
-            visible: prior.get(String(s.id || s._id || ''))?.visible ?? true,
-            opacity: prior.get(String(s.id || s._id || ''))?.opacity ?? 1.0,
-            color: prior.get(String(s.id || s._id || ''))?.color ?? '#ffcc00',
+            visible: prior.get(String(s.id ?? s._id ?? ''))?.visible ?? true,
+            opacity: prior.get(String(s.id ?? s._id ?? ''))?.opacity ?? 1.0,
+            color: prior.get(String(s.id ?? s._id ?? ''))?.color ?? '#ffcc00',
         }));
     }
 }

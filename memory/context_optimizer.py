@@ -60,8 +60,10 @@ class ContextDensityOptimizer:
         self.compression_threshold = 0.7
 
     def estimate_tokens(self, text: str) -> int:
-        rough = len(text) / 4
-        return int(rough)
+        if not text:
+            return 0
+        from agent_runtime.context_window import estimate_text
+        return estimate_text(text)
 
     def build_context(self, system_prompt: str, tool_descriptions: str,
                       memory_context: str, conversation_history: list[str],

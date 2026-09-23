@@ -925,7 +925,10 @@ def test_session_switch_paints_the_selected_shell_before_snapshot_request():
     assert switch_block.index("paintSessionShell(id, { clearWorkspace: false });") < switch_block.index(
         "response = await workspaceFetch("
     )
-    assert "paintSessionShell(previousSessionId," in switch_block
+    # Failure must NOT roll back to the previous shell (the "jump back" bug).
+    assert "paintSessionShell(previousSessionId," not in switch_block
+    assert "切换失败" in switch_block
+    assert "Switch failed" in switch_block
 
 
 def test_case_clear_detaches_webgl_before_deferred_disposal():
@@ -2494,12 +2497,23 @@ def test_token_metrics_are_labelled_by_scope():
     assert "ctx.estimated" in ui_api
     assert "ctx.compressed" in ui_api
 
-    # Footer labels the token counters as this-turn cumulative and explains them.
-    assert "tokens:'本轮 Tokens'" in core
-    assert "tokens:'Turn tokens'" in core
+    # Footer shows dual metrics: current context (same basis as ring) + turn total.
+    assert "context:" in core
+    assert "tokens:'本轮累计'" in core
+    assert "tokens:'Turn total'" in core
+    assert "hint_context:" in core
     assert "hint_total:" in core
     assert "const makeItem = (label, value, unit, hint)" in core
     assert "t.makeItem" not in core  # guard against a stale accessor
+    assert "t.hint_context" in core
     assert "t.hint_total" in core
     assert "t.hint_input" in core
     assert "t.hint_output" in core
+
+    # Footer reads context_status for the durable context metric.
+    assert "llmMeta.context_status" in core or "meta.llmMeta && meta.llmMeta.context_status" in core
+
+    # Compression requires a confirmation dialog, never fires directly.
+    assert "_showCompressConfirmDialog" in ui_api
+    assert "确认压缩" in ui_api
+    assert "Compress" in ui_api

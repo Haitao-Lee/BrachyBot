@@ -206,7 +206,13 @@ class OllamaLLM(LocalLLM):
                     "arguments": tc["function"]["arguments"],
                 })
 
-        usage = {"eval_count": data.get("eval_count", 0)}
+        eval_count = int(data.get("eval_count", 0) or 0)
+        prompt_eval_count = int(data.get("prompt_eval_count", 0) or 0)
+        usage = {
+            "prompt_tokens": prompt_eval_count,
+            "completion_tokens": eval_count,
+            "total_tokens": prompt_eval_count + eval_count,
+        }
 
         return LLMResponse(
             content=content,

@@ -4322,6 +4322,10 @@ class ChatWorkflowMixin:
         self._finish_turn(response)
         llm_meta = dict(llm_meta or {})
         llm_meta.setdefault("response_contract", response_contract)
+        try:
+            llm_meta.setdefault("context_status", self.context_status())
+        except Exception:
+            pass
         return {"response": response, "steps": steps, "llm_meta": llm_meta}
 
     def _snapshot_internal_turn_memory(self) -> Dict[str, Any]:
@@ -4538,6 +4542,10 @@ class ChatWorkflowMixin:
                     ),
                 ).as_dict(),
             )
+            try:
+                normalized_meta.setdefault("context_status", self.context_status())
+            except Exception:
+                pass
             normalized_payload["llm_meta"] = normalized_meta
             raw_answer = str(normalized_payload.get("response") or "").strip()
             error_steps = [

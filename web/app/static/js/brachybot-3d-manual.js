@@ -682,7 +682,13 @@ function _applyAuthoritativeManualSeeds(data) {
     dataTreeState.planning.activePlanningId = manualPlanningState.planningId;
     dataTreeState.planning.status = data.planning_status || 'draft';
     dataTreeState.planning.version = manualPlanningState.planningVersion;
-    dataTreeState.planning.dataVersion = manualPlanningState.planningVersion;
+    // Do not regress dataVersion: manual_plan_version can be 0 while
+    // run.data_version is 1 (publish sets it to manual_plan_version || 1).
+    // A regressed value makes prepareReportSceneRead's version check fail.
+    dataTreeState.planning.dataVersion = Math.max(
+        Number(manualPlanningState.planningVersion || 0),
+        Number(dataTreeState.planning.dataVersion || 0),
+    );
     dataTreeState.planning.artifactStatus = { ...manualPlanningState.artifactStatus };
     if (typeof window.refreshPlanningRunCatalog === 'function') {
         void window.refreshPlanningRunCatalog({ sessionId: _activeApiSessionId(), silent: true });
@@ -2045,7 +2051,11 @@ async function _refreshManualDoseViews(data, wasDoseTextureEnabled, options = {}
     dataTreeState.planning.activePlanningId = manualPlanningState.planningId;
     dataTreeState.planning.status = data?.planning_status || 'completed';
     dataTreeState.planning.version = manualPlanningState.planningVersion;
-    dataTreeState.planning.dataVersion = manualPlanningState.planningVersion;
+    // Do not regress dataVersion — see the sibling guard above.
+    dataTreeState.planning.dataVersion = Math.max(
+        Number(manualPlanningState.planningVersion || 0),
+        Number(dataTreeState.planning.dataVersion || 0),
+    );
     dataTreeState.planning.artifactStatus = { ...manualPlanningState.artifactStatus };
     if (typeof window.refreshPlanningRunCatalog === 'function') {
         void window.refreshPlanningRunCatalog({ sessionId: _activeApiSessionId(), silent: true });
@@ -3994,14 +4004,14 @@ function addMeshToScene(meshData) {
                         : (typeof window.isDataTreeMaskId === 'function'
                             && window.isDataTreeMaskId(id)) ? 'mask'
                             : 'planning_mesh';
-    const restoredMeshPresentation = window.isWorkspacePresentationRestoreActive?.()
-        ? window.getWorkspacePresentationForNode?.({
-            id,
-            objectId: meshData.object_id,
-            nodeId: meshData.data_tree_node_id,
-            family: presentationFamily,
-        })
-        : null;
+    // Always consult the presentation registry (even after finalization)
+    // so late meshes recover saved appearance instead of config defaults.
+    const restoredMeshPresentation = window.getWorkspacePresentationForNode?.({
+        id,
+        objectId: meshData.object_id,
+        nodeId: meshData.data_tree_node_id,
+        family: presentationFamily,
+    }) || null;
 
     // Remove existing mesh with same ID
     if (scene3D.meshes[id]) {
@@ -5261,7 +5271,8 @@ function update3DMeshOpacity(val) {
     const opacity = parseInt(val) / 100;
     Object.values(scene3D.meshes).forEach(mesh => {
         if (!mesh) return;
-        applyMeshOpacity(mesh, opacity, true);
+        // Do not force visible=true — hidden nodes must stay hidden.
+        applyMeshOpacity(mesh, opacity, mesh.visible !== false);
     });
     if (scene3D.requestRender) scene3D.requestRender(2);
     if (typeof window.scheduleWorkspaceSave === 'function') {

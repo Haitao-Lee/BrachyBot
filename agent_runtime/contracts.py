@@ -52,14 +52,16 @@ def _json_safe(value: Any) -> Any:
 
 
 def _estimate_tokens(text: Any) -> int:
-    """Conservative provider-neutral estimate; CJK is costed separately."""
+    """Conservative provider-neutral estimate; delegates to the canonical estimator."""
     if isinstance(text, list):
         # Multimodal provider payloads are kept intact. Count only their
         # serialised descriptors here; image bytes must never enter prompts.
         return sum(_estimate_tokens(item.get("text", "") if isinstance(item, Mapping) else item) for item in text)
     text = str(text or "")
-    cjk = sum(1 for char in text if "\u3400" <= char <= "\u9fff")
-    return max(1, cjk + max(0, len(text) - cjk) // 4) if text else 0
+    if not text:
+        return 0
+    from agent_runtime.context_window import estimate_text
+    return estimate_text(text)
 
 
 @dataclass

@@ -611,8 +611,14 @@
                         const candidate = payload?.workspace;
                         if (workspaceSnapshotSessionId(candidate) === String(sessionId)) {
                             authoritativeWorkspace = candidate;
-                            window._activeWorkspaceSnapshot = candidate;
-                            rememberWorkspaceRevision(candidate);
+                            // Re-check ownership after the await: a session
+                            // switch may have landed while the snapshot was
+                            // in flight.  Publishing a stale snapshot here
+                            // would overwrite the new case's data.
+                            if (generation === backgroundRestoreGeneration && sessionId === activeSessionId) {
+                                window._activeWorkspaceSnapshot = candidate;
+                                rememberWorkspaceRevision(candidate);
+                            }
                         }
                     }
                 } catch (refreshError) {
@@ -620,6 +626,7 @@
                     // for a temporarily unavailable control-plane request.
                     console.debug('[workspace] fresh snapshot deferred:', refreshError);
                 }
+                if (generation !== backgroundRestoreGeneration || sessionId !== activeSessionId) return;
                 if (typeof restoreActiveSessionWorkspace === 'function') {
                     // The clinical restore wrapper transfers this notice to
                     // any remaining 3D viewer promises before returning. The
@@ -1128,7 +1135,10 @@
     function getWorkspacePresentationForNode(criteria = {}) {
         const registry = workspacePresentationRestore
             || window.__pendingWorkspacePresentation;
-        if (!registry?.active) return null;
+        // After finalization the registry stays readable so late loaders
+        // (e.g. the OAR metadata second pass) can still recover saved
+        // appearance instead of falling back to defaults.
+        if (!registry?.active && !registry?.finalized) return null;
         const sid = String(
             criteria.sessionId
             || (typeof activeSessionId !== 'undefined' ? activeSessionId : '')
@@ -1172,7 +1182,7 @@
     function isWorkspacePresentationRestoreActive(sessionId = null) {
         const registry = workspacePresentationRestore
             || window.__pendingWorkspacePresentation;
-        if (!registry?.active) return false;
+        if (!registry?.active && !registry?.finalized) return false;
         const sid = String(sessionId || '').trim();
         return !sid || registry.sessionId === sid;
     }
@@ -1191,10 +1201,9 @@
             : null;
         deferredPresentationSave = null;
         registry.active = false;
-        if (window.__pendingWorkspacePresentation === registry) {
-            delete window.__pendingWorkspacePresentation;
-            delete window.__pendingWorkspacePresentationSessionId;
-        }
+        // Keep the registry object alive for reads so late resource loaders
+        // can still resolve saved appearance after the visual barrier.
+        registry.finalized = true;
         if (window.__pendingOarPresentation) delete window.__pendingOarPresentation;
         if (typeof scene3D !== 'undefined' && scene3D
             && (!sid || String(scene3D._workspaceRestoreSessionId || '') === sid)) {
@@ -1203,7 +1212,9 @@
             scene3D._workspaceRestoreAllowFit = false;
             scene3D._workspaceRestoreSessionId = null;
         }
-        workspacePresentationRestore = null;
+        // Do NOT null workspacePresentationRestore here — the finalized
+        // registry must remain readable for late loaders.  It is replaced on
+        // the next stageWorkspacePresentation or cleared on session switch.
         // The queued writes came from asynchronous resource reconciliation (or
         // a genuine user edit made while the non-blocking restore was visible).
         // Persist only after every registered visual producer has settled, so
@@ -4619,6 +4630,12 @@
     function applySessionList(data) {
         sessions = sessionMapFromPayload(data);
         updateRecycleBinCount(data?.trashed_count);
+        // During an active session transition the sidebar list refresh must
+        // never overwrite the target the user just clicked.  A stale
+        // GET /api/sessions response (cookie still pointing at the old case)
+        // would otherwise reset activeSessionId and cause the visible
+        // "jump back" after 1-2 seconds.
+        if (workspaceTransition) return;
         const requested = String(data.active_session_id || '');
         const available = Object.keys(sessions);
         activeSessionId = requested && sessions[requested]
@@ -4728,8 +4745,12 @@
             throw new Error('No available case session was found.');
         }
         sessions = nextSessions;
-        activeSessionId = resolved;
-        if (typeof state !== 'undefined') state.sessionId = resolved;
+        // Never let a late reconcile response overwrite the active session
+        // during a transition — the user's click target must win.
+        if (!workspaceTransition) {
+            activeSessionId = resolved;
+            if (typeof state !== 'undefined') state.sessionId = resolved;
+        }
         updateRecycleBinCount(data?.trashed_count);
         renderSessionList();
         return resolved;
@@ -5162,8 +5183,20 @@
                 );
             } catch (error) {
                 if (aborter.signal.aborted) return { success: false, replaced: true };
-                paintSessionShell(previousSessionId, { clearWorkspace: !activateArchived });
+                // Stay on the clicked session and surface the error.  Do not
+                // paint the previous shell — the "jump back" was itself the
+                // bug the user reported.  The session list still shows the
+                // target as selected; the user can retry manually.
                 cancelTransitionUi();
+                if (typeof showToast === 'function') {
+                    const zhSwitch = typeof window._i18nLang === 'string' && window._i18nLang === 'zh';
+                    showToast(
+                        zhSwitch
+                            ? `切换失败：${error?.message || '网络超时或服务错误，请重试'}`
+                            : `Switch failed: ${error?.message || 'network timeout or server error, please retry'}`,
+                        'error',
+                    );
+                }
                 throw error;
             }
             let data = await response.json();
@@ -5177,7 +5210,8 @@
                     'Case "' + title + '" is archived. Activate it and restore the data locally?',
                 );
                 if (!confirmed) {
-                    paintSessionShell(previousSessionId, { clearWorkspace: !activateArchived });
+                    // User declined activation — stay on the clicked session
+                    // shell (already painted) and do not jump back.
                     cancelTransitionUi();
                     return { success: false, cancelled: true };
                 }
@@ -5189,8 +5223,18 @@
                 data = await response.json();
             }
             if (!response.ok) {
-                paintSessionShell(previousSessionId, { clearWorkspace: !activateArchived });
+                // Stay on the clicked session and surface the error instead
+                // of silently jumping back to the previous case.
                 cancelTransitionUi();
+                if (typeof showToast === 'function') {
+                    const zhSwitch = typeof window._i18nLang === 'string' && window._i18nLang === 'zh';
+                    showToast(
+                        zhSwitch
+                            ? `切换失败：${data.error || '无法打开病例，请重试'}`
+                            : `Switch failed: ${data.error || 'unable to open case, please retry'}`,
+                        'error',
+                    );
+                }
                 throw new Error(data.error || 'Unable to open case');
             }
             // Server confirmed the switch. Keep the optimistic shell and

@@ -1343,73 +1343,85 @@ const CHAT_AVATAR_SVGS = {
 const FOOTER_I18N = {
     zh: {
         time:  '耗时',
-        tokens:'本轮 Tokens',
+        context: '当前上下文',
+        tokens:'本轮累计',
         input: '输入',
         output:'输出',
         tools: '工具',
         unit_s:'秒',
         unit_times:'次',
-        hint_total: '本回合所有模型调用（含工具调用与多轮）的输入+输出累计，不等于当前上下文占用',
+        hint_context: '当前上下文占用 = 下次请求将发送的上下文大小（与左侧圆环同源）',
+        hint_total: '本回合所有模型调用（含工具调用与多轮）的输入+输出累计，含工具轮重复计共享上下文',
         hint_input: '本回合所有模型调用的输入（prompt）累计',
         hint_output:'本回合所有模型调用的输出累计',
     },
     en: {
         time:  'Time',
-        tokens:'Turn tokens',
+        context: 'Context',
+        tokens:'Turn total',
         input: 'Input',
         output:'Output',
         tools: 'Tools',
         unit_s:'s',
         unit_times:'×',
-        hint_total: 'Cumulative input+output across every model call this turn (incl. tool rounds); not the current context size',
+        hint_context: 'Current context size = what the next request will send (same source as the ring)',
+        hint_total: 'Cumulative input+output across every model call this turn (incl. tool rounds); shared context is re-counted each round',
         hint_input: 'Cumulative input (prompt) across every model call this turn',
         hint_output:'Cumulative output across every model call this turn',
     },
     ja: {
         time:  '時間',
         tokens:'ターン合計',
+        context: 'コンテキスト',
         input: '入力',
         output:'出力',
         tools: 'ツール',
         unit_s:'秒',
         unit_times:'回',
-        hint_total: 'このターンの全モデル呼び出しの入力+出力合計（ツール呼び出しを含む）。現在のコンテキスト量ではありません',
+        hint_total: 'このターンの全モデル呼出しの入力+出力合計（ツール呼出しを含む）。共有コンテキストは各ラウンデ再計上されます',
+        hint_context: '現在のコンテキスト量 = 次のリクエストで送信されるサイズ（リングと同じソース）',
         hint_input: 'このターンの全モデル呼び出しの入力合計',
         hint_output:'このターンの全モデル呼び出しの出力合計',
     },
     ko: {
         time:  '시간',
         tokens:'턴 합계',
+        context: '컨텍스트',
         input: '입력',
         output:'출력',
         tools: '도구',
         unit_s:'초',
         unit_times:'회',
-        hint_total: '이번 턴의 모든 모델 호출 입력+출력 합계(도구 호출 포함). 현재 컨텍스트 크기가 아닙니다',
+        hint_total: '이번 터의 모든 모델 호출 입력+출력 합계(도구 호출 포함). 공유 컨텍스트는 매 라운드마다 재계산됩니다',
+        hint_context: '현재 컨텍스트 크기 = 다음 요청에 전송될 크기(링과 동일 소스)',
         hint_input: '이번 턴의 모든 모델 호출 입력 합계',
         hint_output:'이번 턴의 모든 모델 호출 출력 합계',
     },
     ru: {
         time:  'Время',
+        context: 'Контекст',
         tokens:'За ход',
         input: 'Вход',
         output:'Выход',
         tools: 'Инструментов',
         unit_s:'с',
         unit_times:'раз',
-        hint_total: 'Суммарный вход+выход всех вызовов модели за этот ход (включая инструменты); это не текущий размер контекста',
+        hint_context: 'Текущий размер контекста = что отправит следующий запрос (тот же источник, что и кольцо)',
+        hint_total: 'Суммарный вход+выход всех вызовов модели за этот ход (включая инструменты); общий контекст пересчитывается каждый раунд',
         hint_input: 'Суммарный вход (prompt) всех вызовов модели за этот ход',
         hint_output:'Суммарный выход всех вызовов модели за этот ход',
     },
     ar: {
         time:  'الوقت',
         tokens:'رموز الدور',
+        context: 'السياق',
         input: 'إدخال',
         output:'إخراج',
         tools: 'الأدوات',
         unit_s:'ث',
         unit_times:'مرات',
-        hint_total: 'إجمالي الإدخال+الإخراج لكل نداءات النموذج في هذا الدور (بما فيها الأدوات)؛ وليس حجم السياق الحالي',
+        hint_total: 'إجمالي الإدخال+الإخراج لكل نداؤات النموذج في هذا الدور (بما فيها الأدوات)؛ السياق المشترك يُّعاد حسابه كل جولة',
+        hint_context: 'حجم السياق الحالي = ما سيُّرسله الطلب التالي (نفس مصدر الحلقة)',
         hint_input: 'إجمالي الإدخال لكل نداءات النموذج في هذا الدور',
         hint_output:'إجمالي الإخراج لكل نداءات النموذج في هذا الدور',
     },
@@ -1449,6 +1461,8 @@ function _buildResponseFooter(llmMeta) {
     const promptT = usage.prompt_tokens || 0;
     const compT = usage.completion_tokens || 0;
     const totalT = usage.total_tokens || 0;
+    const ctxStatus = (llmMeta && llmMeta.context_status) || {};
+    const contextT = Number(ctxStatus.used_tokens || 0);
     const toolCalls = (window._todoTurnToolCount !== undefined)
         ? window._todoTurnToolCount
         : ((llmMeta && llmMeta.llm_calls) || 0);
@@ -1492,13 +1506,17 @@ function _buildResponseFooter(llmMeta) {
     }
 
     // Build footer items in a fixed order:
-    //   Time  Tokens (Input/Output)  Tools
-    // The Input/Output breakdown is split into TWO separate
-    // items (e.g. "Input 800" and "Output 434") so the user can
-    // see the breakdown at a glance — the old "↑↓ 800/434" was
-    // visually compact but hard to read.
+    //   Time  Context  Turn-total (Input/Output)  Tools
+    // "Context" and "Turn total" are two distinct metrics sharing one
+    // basis: Context = durable context size (what the next request sends,
+    // same as the ring); Turn total = cumulative input+output across every
+    // model call this turn (shared context re-counted each tool round).
     footer.appendChild(makeItem(t.time, totalSec, t.unit_s));
     footer.appendChild(sep());
+    if (contextT > 0) {
+        footer.appendChild(makeItem(t.context, contextT.toLocaleString(), '', t.hint_context));
+        footer.appendChild(sep());
+    }
     if (totalT > 0) {
         footer.appendChild(makeItem(t.tokens, totalT.toLocaleString(), '', t.hint_total));
         footer.appendChild(sep());
@@ -1526,8 +1544,7 @@ function _appendRestoredFooter(meta) {
     // after the hidden visual-analysis child merged its answer.
     const restoredUsage = (meta.llmMeta && meta.llmMeta.usage) || {};
     const restoredTokens = Number(restoredUsage.total_tokens || 0)
-        + Number(restoredUsage.prompt_tokens || 0)
-        + Number(restoredUsage.completion_tokens || 0);
+        || (Number(restoredUsage.prompt_tokens || 0) + Number(restoredUsage.completion_tokens || 0));
     const restoredCalls = Number(meta.llmMeta?.llm_calls || 0);
     if (!meta.elapsedSec && !Number(meta.toolCount || 0) && !restoredTokens && !restoredCalls) {
         return;

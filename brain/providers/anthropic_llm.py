@@ -432,8 +432,8 @@ class AnthropicLLM(BaseLLM):
                     # Extract usage from message_delta if available
                     if hasattr(event, 'usage') and event.usage:
                         usage_data = {
-                            "input_tokens": getattr(event.usage, 'input_tokens', 0) or 0,
-                            "output_tokens": getattr(event.usage, 'output_tokens', 0) or 0,
+                            "prompt_tokens": getattr(event.usage, 'input_tokens', 0) or 0,
+                            "completion_tokens": getattr(event.usage, 'output_tokens', 0) or 0,
                             "total_tokens": (getattr(event.usage, 'input_tokens', 0) or 0) +
                                            (getattr(event.usage, 'output_tokens', 0) or 0),
                         }

@@ -4363,9 +4363,9 @@ function updateOrganList(organData, source = '', options = {}) {
             || pendingById[id]
             || pendingByLabel[String(labelId)]
             || null;
-        const pending = window.isWorkspacePresentationRestoreActive?.()
-            ? (restorePending || movePending || legacyPending)
-            : (movePending || legacyPending);
+        // Always consult the restore registry first (even after finalization)
+        // so late metadata passes recover saved appearance instead of defaults.
+        const pending = restorePending || movePending || legacyPending;
         const appearance = pending || existing || {};
         const renamed = !sourceChanged && existing?.label
             && !/^OAR\s+\d+$/i.test(String(existing.label).trim())
