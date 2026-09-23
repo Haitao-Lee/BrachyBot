@@ -5,6 +5,7 @@ groups live in smaller modules so each file is easier to audit.
 """
 
 import logging
+import json
 import os
 import re
 import sys
@@ -26,7 +27,23 @@ _SERVER_INSTANCE_ID = uuid4().hex
 from plans.dose_pre.model_loader import DEFAULT_PRESCRIPTION_GY, resolve_prescription_gy
 from tool_factory.report_facts import resolve_report_facts
 from utils.ct_volume import normalize_ct_image
+from utils.display_paths import (
+    DisplayRoots,
+    contains_display_token,
+    relativize_value,
+    resolve_user_path,
+    restore_value_in_place,
+    roots_from_workspace,
+)
 from utils.operation_tracker import get_active_operations as _tracked_operations
+
+# Markers that mean a JSON response could contain a server path worth hiding.
+# Used as a cheap pre-filter before request-scoped root resolution.
+_JSON_PATH_MARKERS = (
+    "/home/", "/workspace/", "/tmp/", "/var/", "/opt/", "/usr/",
+    "/mnt/", "/media/", "/data/", "/root/", "/srv/", "/etc/",
+    "<workspace>", "<runtime>", "<app>", "<path>",
+)
 
 try:
     from web.server_support import (
@@ -471,6 +488,58 @@ def create_app(config: Optional[Dict] = None):
             raise WorkspaceError("Invalid selected case session") from exc
         workspace_store.get_session(user["id"], session_id)
         return user, session_id
+
+    def _request_display_roots() -> DisplayRoots:
+        """Resolve path tokens for the current request without side effects.
+
+        Unlike ``_request_session_context`` this never creates a case; it only
+        reuses a session that already exists (selected cookie, explicit header,
+        body, or query) so response serialization cannot mutate workspace state.
+        """
+        workspace = getattr(g, "brachybot_workspace", None)
+        if not workspace:
+            try:
+                user = current_user(workspace_store)
+            except Exception:
+                user = None
+            candidate = ""
+            if user:
+                try:
+                    candidate = str(request.headers.get("X-BrachyBot-Session") or "").strip()
+                    if not candidate and request.is_json:
+                        body = request.get_json(silent=True)
+                        if isinstance(body, Mapping):
+                            candidate = str(body.get("session_id") or "").strip()
+                    if not candidate:
+                        candidate = str(request.args.get("session_id") or "").strip()
+                    if not candidate:
+                        candidate = str(flask_session.get("bb_session_id") or "").strip()
+                except Exception:
+                    candidate = ""
+            if user and candidate:
+                try:
+                    session_id = _normalize_session_id(candidate)
+                    workspace_store.get_session(user["id"], session_id)
+                    workspace = (user["id"], session_id)
+                except (ValueError, WorkspaceError):
+                    workspace = None
+        if workspace:
+            try:
+                return roots_from_workspace(
+                    str(workspace_store.workspace_root(workspace[0], workspace[1])),
+                    runtime_dir=getattr(_server_support, "RUNTIME_DIR", "") or "",
+                    app_root=getattr(_server_support, "PROJECT_ROOT", "") or "",
+                )
+            except (WorkspaceError, OSError):
+                pass
+        return DisplayRoots(
+            runtime_dir=getattr(_server_support, "RUNTIME_DIR", "") or "",
+            app_root=getattr(_server_support, "PROJECT_ROOT", "") or "",
+        )
+
+    def _restore_display_tokens(value, roots):
+        """Recursively turn browser-facing tokens back into server paths."""
+        return restore_value_in_place(value, roots)
 
     def get_agent(
         session_id: str = None,
@@ -1110,6 +1179,56 @@ def create_app(config: Optional[Dict] = None):
         return response
 
     @app.before_request
+    def _restore_display_tokens_in_request():
+        """Turn browser-facing path tokens back into real server paths.
+
+        The UI is served tokenized paths (``<workspace>/…``); when the browser
+        submits them again they must be resolved before any ownership check so
+        a displayed value round-trips without exposing the filesystem.
+        """
+        if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+            return None
+        if not request.is_json:
+            return None
+        try:
+            body = request.get_json(silent=True)
+        except Exception:
+            return None
+        if not isinstance(body, (dict, list)):
+            return None
+        if not contains_display_token(body):
+            return None
+        _restore_display_tokens(body, _request_display_roots())
+        return None
+
+    @app.after_request
+    def _relativize_json_paths(response):
+        """Hide server-side absolute paths in every JSON API response."""
+        try:
+            if not request.path.startswith("/api/"):
+                return response
+            if response.mimetype != "application/json":
+                return response
+            raw = response.get_data(as_text=True)
+            # Cheap guard: JSON without any absolute-path marker or token never
+            # needs the (request-scoped) root resolution below.
+            if not any(marker in raw for marker in _JSON_PATH_MARKERS):
+                return response
+            payload = response.get_json(silent=True)
+            if not isinstance(payload, (dict, list)):
+                return response
+            response.set_data(json.dumps(
+                relativize_value(payload, _request_display_roots()),
+                ensure_ascii=False,
+                default=str,
+            ))
+        except Exception:
+            logger.debug(
+                "Path relativization skipped for %s", request.path, exc_info=True
+            )
+        return response
+
+    @app.before_request
     def _protect_live_workspace_lease():
         """Keep a second browser read-only while an editor lease is active."""
         if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
@@ -1386,7 +1505,9 @@ def create_app(config: Optional[Dict] = None):
     @rate_limit
     def api_viewer_image():
         """Serve an image file from the server."""
-        image_path = request.args.get("path", "")
+        image_path = resolve_user_path(
+            request.args.get("path", ""), _request_display_roots()
+        )
         if not image_path or not os.path.exists(image_path):
             return jsonify({"error": "Image not found"}), 404
 

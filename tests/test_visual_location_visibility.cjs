@@ -42,6 +42,47 @@ assert.equal(forcedEvidence.url, '/shot.png');
 for (const name of ['_revealScreenshotNodes', '_screenshotNeeds3DReframe', '_orderLocateCaptureViews', '_screenshotPlanIdentity']) {
     vm.runInContext(extract('brachybot-ui-api.js', name), ctx);
 }
+vm.runInContext(extract('brachybot-ui-api.js', '_hideGuideOccludingCtvCapture'), ctx);
+const occludingGuide = { id: 'guide-mesh', source: 'surgical_guide', visible: true, opacity: .37 };
+const untouchedMesh = { id: 'other-mesh', source: 'planning', visible: true, visible3D: true };
+ctx.dataTreeState = { planning: { meshes: [occludingGuide, untouchedMesh] } };
+ctx.window = { get3DScreenshotGroundingManifest: refs => ({ targets: refs.map(ref => ({
+    target_ref: ref,
+    normalized_bounds: ref === 'surgical_guide:active'
+        ? [0.2, 0.2, 0.45, 0.45] : [0.3, 0.3, 0.2, 0.2],
+})) }) };
+const originalGuideState = JSON.stringify(occludingGuide);
+const restoreCtvCapture = ctx._hideGuideOccludingCtvCapture({
+    target_refs: ['structure:ctv:active'],
+});
+assert.equal(occludingGuide.visible3D, false, 'guide is hidden only in the CTV capture');
+assert.equal(occludingGuide.opacity, .37, 'guide appearance is not changed');
+assert.equal(untouchedMesh.visible3D, true);
+assert.deepEqual([...restoreCtvCapture.occluders], ['surgical_guide:active']);
+restoreCtvCapture();
+assert.equal(JSON.stringify(occludingGuide), originalGuideState, 'guide visibility is exactly restored');
+assert.equal(ctx._hideGuideOccludingCtvCapture({ target_refs: ['surgical_guide:active'] }), null);
+ctx.window.get3DScreenshotGroundingManifest = refs => ({ targets: refs.map(ref => ({
+    target_ref: ref,
+    normalized_bounds: ref === 'surgical_guide:active'
+        ? [0.7, 0.7, 0.2, 0.2] : [0.1, 0.1, 0.2, 0.2],
+})) });
+assert.equal(ctx._hideGuideOccludingCtvCapture({ target_refs: ['structure:ctv:active'] }), null,
+    'a guide elsewhere in the current camera should retain its visibility');
+ctx.window.get3DScreenshotGroundingManifest = refs => ({ targets: refs.map(ref => ({
+    target_ref: ref,
+    normalized_bounds: ref === 'surgical_guide:active'
+        ? [0.2, 0.2, 0.45, 0.45] : [0.3, 0.3, 0.2, 0.2],
+})) });
+const refreshVisibility = ctx.applyDataTreeViewVisibility;
+ctx.applyDataTreeViewVisibility = () => { throw new Error('render failed'); };
+assert.throws(() => ctx._hideGuideOccludingCtvCapture({
+    target_refs: ['structure:ctv:active'],
+}), /render failed/);
+assert.equal(JSON.stringify(occludingGuide), originalGuideState,
+    'an early Viewer refresh error must restore guide visibility');
+ctx.applyDataTreeViewVisibility = refreshVisibility;
+refreshed = 0;
 const before = JSON.stringify([guide, parent, sibling]);
 const restore = ctx._revealScreenshotNodes({ target_refs: ['guide'] });
 assert.equal(guide.visible, true);
@@ -146,8 +187,55 @@ const visibleGuideAnswer = ctx._visualEvidenceFallbackResponse([
 assert.equal((visibleGuideAnswer.match(/对象截图\/位置/g) || []).length, 0);
 assert.doesNotMatch(visibleGuideAnswer, /没有建立与该目标对应的截图任务/);
 assert.match(visibleGuideAnswer, /Planning_2 is completed/);
-assert.match(visibleGuideAnswer, /截图沿用了 Viewer 当时的显示内容和配色/);
+assert.doesNotMatch(visibleGuideAnswer, /截图沿用了 Viewer 当时的显示内容和配色/);
 assert.match(visibleGuideAnswer, /对应截图已核验/);
+assert.match(visibleGuideAnswer, /\*\*Puncture guide v2\*\*/);
+assert.doesNotMatch(visibleGuideAnswer, /### /);
+const contradictedGuideAnswer = ctx._visualEvidenceFallbackResponse([
+    {
+        url: '/guide.png', target: 'viewer-3d', visual_purpose: 'locate',
+        annotation: { marks: [{ target_ref: 'guide' }] },
+        view_metadata: { grounding_manifest: { targets: [targetManifest('scene-object')] } },
+    },
+], 'session-a', 'zh', '导板在哪里？',
+'我提交了截图计划，但浏览器端没有把图像回传给我。请重新截图。Planning_2 已完成。');
+assert.doesNotMatch(contradictedGuideAnswer, /没有把图像回传|重新截图/);
+assert.match(contradictedGuideAnswer, /Planning_2 已完成/);
+
+const ctvBehindGuide = ctx._visualEvidenceFallbackResponse([{
+    url: '/ctv-viewer.png', target: 'viewer-3d', visual_purpose: 'locate',
+    annotation: { marks: [{ target_ref: 'structure:ctv:active' }] },
+    view_metadata: {
+        temporary_occluders: ['surgical_guide:active'],
+        grounding_manifest: { targets: [{
+            ...targetManifest('scene-object'), target_ref: 'structure:ctv:active',
+            label: 'Label 2',
+        }] },
+    },
+}], 'session-a', 'zh', '肿瘤在哪里');
+assert.match(ctvBehindGuide, /\*\*Label 2\*\*/);
+assert.match(ctvBehindGuide, /临时隐藏导板/);
+const combinedAnswer = ctx._visualEvidenceFallbackResponse([
+    { url: '/guide-tree.png', target: 'data-tree', visual_purpose: 'locate',
+        view_metadata: { grounding_manifest: { targets: [targetManifest('data-tree-row')] } } },
+    { url: '/guide-viewer.png', target: 'viewer-3d', visual_purpose: 'locate',
+        annotation: { marks: [{ target_ref: 'guide' }] },
+        view_metadata: { grounding_manifest: { targets: [targetManifest('scene-object')] } } },
+    { url: '/ctv-tree.png', target: 'data-tree', visual_purpose: 'locate',
+        view_metadata: { grounding_manifest: { targets: [{
+            ...targetManifest('data-tree-row'), target_ref: 'structure:ctv:active', label: 'Label 2',
+        }] } } },
+    { url: '/ctv-viewer.png', target: 'viewer-3d', visual_purpose: 'locate',
+        annotation: { marks: [{ target_ref: 'structure:ctv:active' }] },
+        view_metadata: { temporary_occluders: ['surgical_guide:active'],
+            grounding_manifest: { targets: [{ ...targetManifest('scene-object'),
+                target_ref: 'structure:ctv:active', label: 'Label 2' }] } } },
+], 'session-a', 'zh', '截图告诉我导板在哪里，肿瘤在哪里',
+'我提交了截图计划，但浏览器端没有把图像回传给我。');
+assert.equal((combinedAnswer.match(/\*\*Puncture guide v2\*\*/g) || []).length, 1);
+assert.equal((combinedAnswer.match(/\*\*Label 2\*\*/g) || []).length, 1);
+assert.doesNotMatch(combinedAnswer, /没有把图像回传/);
+assert.match(combinedAnswer, /临时隐藏导板/);
 
 const temporarilyRevealedGuideAnswer = ctx._visualEvidenceFallbackResponse([
     {
@@ -297,6 +385,65 @@ vm.runInContext(extract('brachybot-ui-api.js', '_interceptScreenshot'), ctx);
     Object.assign(guide, { visible: false, visible3D: false, opacity: 0 });
     Object.assign(parent, { visible: false, visible3D: false });
     assert.equal(JSON.stringify([guide, parent, sibling]), before);
+
+    // A CTV locate turn takes a normal tree screenshot, then removes only a
+    // screen-overlapping guide for the 3D image and restores it on both paths.
+    const ctvNode = { id: 'ctv', visible: true, visible3D: true };
+    const oldRow = ctx._dataTreeRowForTargetRef;
+    const oldFind = ctx._findDataTreeNode;
+    const oldManifest = ctx.window.get3DScreenshotGroundingManifest;
+    const oldCapture = ctx._captureScreenshotEvidenceBundle;
+    const oldAnnotate = ctx._annotateRequiredScreenshotBeforeDisplay;
+    ctx._dataTreeRowForTargetRef = ref => ref === 'structure:ctv:active'
+        ? { dataset: { item: 'ctv' } } : oldRow(ref);
+    ctx._findDataTreeNode = id => id === 'ctv' ? ctvNode : oldFind(id);
+    ctx.window.get3DScreenshotGroundingManifest = refs => ({ targets: refs.map(ref => ({
+        target_ref: ref, visible: true, scene_visible: true, data_tree_visible: true,
+        loaded: true, in_view: true,
+        normalized_bounds: ref === 'surgical_guide:active'
+            ? [0.2, 0.2, 0.45, 0.45] : [0.3, 0.3, 0.2, 0.2],
+    })) });
+    const capturedGuideVisibility = [];
+    ctx._captureScreenshotEvidenceBundle = async target => {
+        captures.push([target, ctvNode.visible]);
+        if (target === 'viewer-3d') capturedGuideVisibility.push(occludingGuide.visible3D);
+        return { dataUrl: 'data:image/png;base64,fixture', groundingManifest: {
+            targets: [{ target_ref: 'structure:ctv:active', label: 'Label 2',
+                kind: target === 'viewer-3d' ? 'scene-object' : 'data-tree-row',
+                visible: true, scene_visible: true, data_tree_visible: true,
+                loaded: true, in_view: true, annotatable: true,
+                normalized_bounds: [0.3, 0.3, 0.2, 0.2] }],
+        } };
+    };
+    ctx._annotateRequiredScreenshotBeforeDisplay = async attachment => attachment;
+    for (const fail of [false, true]) {
+        failUpload = fail;
+        captures = [];
+        uploadPayloads = [];
+        const ctvCapture = await ctx._interceptScreenshot('viewer-3d', 'locate', {}, {
+            sessionId: 'session-a',
+            plan: { mode: 'chat', visual_purpose: 'locate', annotation_policy: 'required',
+                semantic_target: 'ctv', target_refs: ['structure:ctv:active'],
+                views: [{ target: 'viewer-3d' }] },
+        });
+        assert.equal(ctvCapture.success, !fail);
+        assert.equal(capturedGuideVisibility.at(-1), false);
+        assert.equal(JSON.stringify(occludingGuide), originalGuideState);
+        assert.equal(ctvNode.visible3D, true);
+        if (!fail) {
+            const viewerUpload = uploadPayloads.find(item => item.target === 'viewer-3d');
+            assert.deepEqual(viewerUpload.view_metadata.temporary_occluders,
+                ['surgical_guide:active']);
+            assert.equal(viewerUpload.view_metadata.appearance_preserved, false);
+        }
+    }
+    failUpload = false;
+    ctx._dataTreeRowForTargetRef = oldRow;
+    ctx._findDataTreeNode = oldFind;
+    ctx.window.get3DScreenshotGroundingManifest = oldManifest;
+    ctx._captureScreenshotEvidenceBundle = oldCapture;
+    ctx._annotateRequiredScreenshotBeforeDisplay = oldAnnotate;
+    console.log('PASS: CTV capture hides only overlapping guide and restores it after success or upload failure');
 
     // Current visible framing is preserved; clipped/tiny framing is the only
     // condition that authorizes a temporary camera change.

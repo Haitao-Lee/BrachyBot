@@ -183,6 +183,29 @@ def test_grounded_location_answer_does_not_repeat_stale_visual_placeholders():
     assert "标出了“Puncture guide v2”的位置" in answer
 
 
+def test_successful_capture_discards_earlier_image_unavailable_claim():
+    answer = grounded_location_answer({
+        "preliminary_response": (
+            "我提交了截图计划，但浏览器端没有把图像回传给我。"
+            "你可以重新截图。Planning_2 已完成。"
+        ),
+        "evidence": [{
+            "visual_purpose": "locate", "target": "viewer-3d",
+            "annotation_target_refs": ["surgical_guide:active"],
+            "grounding_manifest": {"targets": [{
+                "target_ref": "surgical_guide:active", "label": "Puncture guide v1",
+                "kind": "scene-object", "visible": True, "scene_visible": True,
+                "data_tree_visible": True, "in_view": True, "annotatable": True,
+                "loaded": True,
+            }]},
+        }],
+    }, "zh")
+    assert "Planning_2 已完成" in answer
+    assert "没有把图像回传" not in answer
+    assert "重新截图" not in answer
+    assert "标出了“Puncture guide v1”的位置" in answer
+
+
 def test_tree_row_with_unknown_scene_visibility_is_not_called_hidden():
     answer = grounded_location_answer({"evidence": [{
         "visual_purpose": "locate", "target": "data-tree",
@@ -195,3 +218,20 @@ def test_tree_row_with_unknown_scene_visibility_is_not_called_hidden():
     }]}, "zh")
     assert "\u9690\u85cf\u72b6\u6001" not in answer
     assert "\u65e0\u6cd5\u6838\u9a8c" in answer
+
+
+def test_ctv_capture_reports_temporary_guide_occlusion_change():
+    answer = grounded_location_answer({"evidence": [{
+        "visual_purpose": "locate", "target": "viewer-3d",
+        "annotation_target_refs": ["structure:ctv:active"],
+        "temporary_occluders": ["surgical_guide:active"],
+        "grounding_manifest": {"targets": [{
+            "target_ref": "structure:ctv:active", "label": "Label 2",
+            "kind": "scene-object", "visible": True,
+            "scene_visible": True, "data_tree_visible": True,
+            "in_view": True, "annotatable": True, "loaded": True,
+        }]},
+    }]}, "zh")
+    assert "**Label 2**" in answer
+    assert "临时隐藏导板" in answer
+    assert "已恢复" in answer

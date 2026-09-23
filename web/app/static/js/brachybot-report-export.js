@@ -1110,13 +1110,22 @@ function _reportFigureStableIdentity(figure, index = 0) {
     return `legacy:${axis || figure?.id || figure?._serverUrl || figure?.dataUrl || index}`;
 }
 
-function _reportFigureDisplayText(figure) {
+function _reportFigureDisplayText(figure, language = '') {
+    if (typeof window.reportFigureDisplayText === 'function') {
+        return window.reportFigureDisplayText(
+            figure,
+            language || window.reportForm?.language || window._i18nLang || 'en',
+        );
+    }
     const described = typeof window.describeReportFigure === 'function'
-        ? window.describeReportFigure(figure?.axis)
+        ? window.describeReportFigure(
+            figure,
+            language || window.reportForm?.language || window._i18nLang || 'en',
+        )
         : null;
     return {
-        title: String(figure?.title || described?.title || ''),
-        caption: String(figure?.caption || described?.caption || ''),
+        title: String(described?.title || figure?.title || ''),
+        caption: String(described?.caption || figure?.caption || ''),
     };
 }
 
@@ -2162,7 +2171,11 @@ function exportReportMarkdown() {
     if (f.figures && f.figures.length > 0) {
         lines.push('');
         lines.push('## Figures');
-        f.figures.forEach(fig => { lines.push('![' + (fig.title || 'Report figure') + '](' + (fig.dataUrl || '') + ')'); if (fig.caption) lines.push('*' + fig.caption + '*'); });
+        f.figures.forEach(fig => {
+            const display = _reportFigureDisplayText(fig, f.language);
+            lines.push('![' + (display.title || 'Report figure') + '](' + (fig.dataUrl || '') + ')');
+            if (display.caption) lines.push('*' + display.caption + '*');
+        });
     }
     lines.push('');
     lines.push('---');
@@ -2323,11 +2336,11 @@ function _printableCss() {
         }
         .report-figure-page .hp-subfigure img {
             display: block; flex: 0 1 auto;
-            width: auto !important; max-width: 100% !important; min-width: 0;
-            height: auto !important; max-height: 100% !important;
+            width: 100% !important; max-width: 100% !important; min-width: 0;
+            height: 100% !important; max-height: 100% !important;
             object-fit: contain; object-position: center;
             margin: 0 auto; border: 1px solid #cbd5e1;
-            background: #020617; box-sizing: border-box;
+            background: transparent; box-sizing: border-box;
         }
         .hp-subfigure figcaption { font-size: 9pt; line-height: 1.35; color: #334155; margin-top: 1.5mm; font-style: italic; }
         .hp-references { font-size: 9pt; line-height: 1.55; padding-left: 6mm; }

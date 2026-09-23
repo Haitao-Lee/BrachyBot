@@ -280,6 +280,12 @@ function renderReportEditor() {
     `);
     // Figures
     const figList = (f.figures || []).map((fig, i) => {
+        const localizedFigure = typeof window.reportFigureDisplayText === 'function'
+            ? window.reportFigureDisplayText(fig, _reportLang)
+            : (typeof window.describeReportFigure === 'function'
+                ? window.describeReportFigure(fig, _reportLang) : null);
+        const figureTitle = localizedFigure?.title || fig.title || '(untitled)';
+        const figureCaption = localizedFigure?.caption || fig.caption || '';
         const persistedFigureUrl = typeof window.resolveSessionScreenshotFigureUrl === 'function'
             ? window.resolveSessionScreenshotFigureUrl(
                 fig,
@@ -291,11 +297,11 @@ function renderReportEditor() {
         if (!safeImageUrl) return '';
         return `
         <div class="rp-figure-card">
-            <img data-report-figure-index="${i}" src="${escHtml(safeImageUrl)}" alt="${escHtml(fig.title || '')}"/>
+            <img data-report-figure-index="${i}" src="${escHtml(safeImageUrl)}" alt="${escHtml(figureTitle)}"/>
             <div class="rp-figure-meta">
-                <div style="font-weight:500;">${escHtml(fig.title || '(untitled)')}</div>
+                <div style="font-weight:500;">${escHtml(figureTitle)}</div>
                 <div class="rp-figure-sub">${fig.axis ? `${fig.axis} slice ${fig.sliceIdx ?? '?'}` : ''} · ${fig.capturedAt ? new Date(fig.capturedAt).toLocaleString() : ''}</div>
-                ${fig.caption ? `<div class="rp-figure-sub" style="margin-top:1px;">${escHtml(fig.caption)}</div>` : ''}
+                ${figureCaption ? `<div class="rp-figure-sub" style="margin-top:1px;">${escHtml(figureCaption)}</div>` : ''}
             </div>
             <button onclick="removeReportFigure(${i})" class="btn btn-outline" style="height:22px;padding:0 6px;font-size:0.65rem;color:var(--danger);">✕</button>
         </div>
@@ -1060,8 +1066,8 @@ window.captureReportDvhFigure = captureReportDvhFigure;
 // subfigures allowed an old pair containing two copies of the overview to
 // survive restore because the metadata looked valid even though the pixels
 // were semantically wrong.
-const REPORT_FIGURE_ONE_CAPTURE_CONTRACT = 'figure1-global-overview-v9-normal-surface-only';
-const REPORT_FIGURE_ONE_CLOSEUP_CAPTURE_CONTRACT = 'figure1-target-closeup-v9-normal-surface-only';
+const REPORT_FIGURE_ONE_CAPTURE_CONTRACT = 'figure1-global-overview-v10-framed-hires';
+const REPORT_FIGURE_ONE_CLOSEUP_CAPTURE_CONTRACT = 'figure1-target-closeup-v10-framed-hires';
 window.REPORT_FIGURE_ONE_CAPTURE_CONTRACT = REPORT_FIGURE_ONE_CAPTURE_CONTRACT;
 window.REPORT_FIGURE_ONE_CLOSEUP_CAPTURE_CONTRACT = REPORT_FIGURE_ONE_CLOSEUP_CAPTURE_CONTRACT;
 
@@ -1074,7 +1080,7 @@ const REPORT_FIGURE_CAPTURE_CONTRACTS = Object.freeze({
     report_fig2_axial: 'figure2-peak-dose-axial-v3-dose-only-overlay',
     report_fig2_sagittal: 'figure2-peak-dose-sagittal-v3-dose-only-overlay',
     report_fig2_coronal: 'figure2-peak-dose-coronal-v3-dose-only-overlay',
-    report_fig2_dose_surface: 'figure2-dose-surface-v5-runtime-mapped',
+    report_fig2_dose_surface: 'figure2-dose-surface-v6-framed-hires',
     report_fig2_dvh: REPORT_DVH_CAPTURE_CONTRACT,
 });
 window.REPORT_FIGURE_CAPTURE_CONTRACTS = REPORT_FIGURE_CAPTURE_CONTRACTS;
@@ -2146,6 +2152,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
         padding = 0.12,
         minAspect = 1.25,
         requireFocusCrop = false,
+        rejectClippedSolid = false,
     } = {}) {
         if (!canvas || canvas.width < 1 || canvas.height < 1
             || !(focusBox && !focusBox.isEmpty()) || !scene3D.camera) {
@@ -2240,6 +2247,34 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
             ctx.drawImage(canvas, sx, sy, sw, sh, 0, 0, output.width, output.height);
+            if (rejectClippedSolid) {
+                // A restored mesh may have incomplete semantic bounds. A
+                // solid tumor surface reaching an image edge means the crop
+                // has lost clinical content, even if the projected box fits.
+                const pixels = ctx.getImageData(0, 0, output.width, output.height).data;
+                const lit = (x, y) => {
+                    const offset = (y * output.width + x) * 4;
+                    return pixels[offset + 3] > 40
+                        && pixels[offset] + pixels[offset + 1] + pixels[offset + 2] > 65;
+                };
+                const verticalEdge = x => {
+                    let count = 0;
+                    for (let y = 0; y < output.height; y += 2) if (lit(x, y)) count += 1;
+                    return count / Math.ceil(output.height / 2);
+                };
+                const horizontalEdge = y => {
+                    let count = 0;
+                    for (let x = 0; x < output.width; x += 2) if (lit(x, y)) count += 1;
+                    return count / Math.ceil(output.width / 2);
+                };
+                if (Math.max(
+                    verticalEdge(0), verticalEdge(output.width - 1),
+                    horizontalEdge(0), horizontalEdge(output.height - 1),
+                ) > 0.20) {
+                    console.warn('[Report] Target surface reaches the crop edge; withholding clipped figure');
+                    return null;
+                }
+            }
             return output.toDataURL('image/png');
         } catch (error) {
             console.warn('[Report] Focused 3D crop failed; preserving full capture:', error);
@@ -2393,10 +2428,9 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
     }
 
     const reportReferenceDirection = _reportReferenceViewDirection();
-    // Camera framing uses a stable wide composition, while the capture keeps
-    // the complete source canvas. The page layout performs contain scaling
-    // later, so the image itself is never cropped to this camera aspect.
-    const REPORT_FIGURE_ASPECT = 16 / 9;
+    // All report 3D profiles use the same fixed 4:3 rendering buffer. Frame
+    // each camera for the actual capture aspect rather than the live card.
+    const REPORT_FIGURE_ASPECT = 4 / 3;
     const REPORT_DOSE_SURFACE_ASPECT = REPORT_FIGURE_ASPECT;
     // Native subfigures are placed one per A4 evidence page. Retain enough
     // pixels for seed distribution and needle geometry to remain legible in
@@ -2434,6 +2468,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
     //   (b) Translucent target close-up showing seeds inside
     // ═══════════════════════════════════════════════════════════
     let _restoreFigure1State = null;
+    let renderReport3DFrame = null;
     try {
         // Figure 1 is normal anatomy; only Figure 2(d) opts into the dose
         // surface. Do not trust the persisted flag alone: a restored session
@@ -2706,36 +2741,46 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             }
 
             function _computeGlobalPlanBox({ includeNeedles = true } = {}) {
-                // Figure 1(a) is deliberately global: every visible planning
-                // structure and planned path participates in its framing.
-                // The CT-wide skin envelope, dose surfaces, and interaction
-                // handles are excluded because they are presentation/runtime
-                // objects rather than implant-plan evidence.
-                const box = new THREE.Box3();
-                for (const [id, mesh] of Object.entries(scene3D.meshes)) {
-                    if (!mesh || !mesh.visible) continue;
-                    const key = String(id || '').toLowerCase();
-                    const type = String(mesh?.userData?.type || '').toLowerCase();
-                    const isNeedleHandle = type === 'needle_handle';
-                    const isDose = key.startsWith('dose_iso_') || type === 'dose_isosurface';
-                    const isSkin = key === 'skin' || key === 'skin_surface'
-                        || mesh === scene3D.skinMesh
-                        || ['skin', 'skin_surface', 'guide_skin_surface'].includes(type);
-                    const isNeedle = !isNeedleHandle
-                        && (key.startsWith('needle_') || type === 'needle');
-                    const isStandaloneGenericMask = _isStandaloneGenericReportMask(id, mesh);
-                    if (isStandaloneGenericMask || isNeedleHandle || isDose || isSkin || (!includeNeedles && isNeedle)) continue;
-                    try { box.expandByObject(mesh); } catch (_) {}
-                }
-                if (!(box.min.x < box.max.x)) {
+                // Keep the entire implant (CTV, seeds and needle paths) in the
+                // overview. Whole-organ meshes may span the CT volume even
+                // when only a small part is near the implant. Letting one of
+                // those meshes determine the camera distance made Fig 1(a)
+                // unreadable in the portrait report page.
+                const box = _computeFocusedPlanBox({ includeOars: false, includeNeedles });
+                const targetBox = _computeFocusedPlanBox({ includeOars: false, includeNeedles: false });
+                if (box.isEmpty() || targetBox.isEmpty()) {
                     return _computeFocusedPlanBox({ includeOars: true, includeNeedles });
+                }
+                const targetSize = targetBox.getSize(new THREE.Vector3());
+                const context = targetBox.clone().expandByScalar(
+                    Math.max(24, Math.min(70, targetSize.length() * 0.55)),
+                );
+                for (const [id, mesh] of Object.entries(scene3D.meshes)) {
+                    if (!mesh?.visible || !_isFigureOneOar(id, mesh)
+                        || _isStandaloneGenericReportMask(id, mesh)) continue;
+                    const candidate = new THREE.Box3();
+                    try { candidate.expandByObject(mesh); } catch (_) { continue; }
+                    const size = candidate.getSize(new THREE.Vector3());
+                    const nearby = candidate.intersectsBox(context)
+                        && size.x <= targetSize.x * 2.4 + 45
+                        && size.y <= targetSize.y * 2.4 + 45
+                        && size.z <= targetSize.z * 2.4 + 45;
+                    if (nearby) box.union(candidate);
+                    else applyMeshVisibility(mesh, false, 1);
                 }
                 return box;
             }
 
             function _frameCameraToBox(box, mode) {
+                // Fig 1(a) looks along the needle entry direction. Fig 1(b)
+                // adds a reproducible 35-degree lateral angle so the needle
+                // paths and seeds have depth without losing the CTV center.
+                const lateral = new THREE.Vector3()
+                    .crossVectors(reportReferenceDirection, _reportCameraUp(reportReferenceDirection))
+                    .normalize();
                 const direction = mode === 'detail'
-                    ? new THREE.Vector3(0.55, -0.25, 0.8).normalize()
+                    ? reportReferenceDirection.clone().multiplyScalar(Math.cos(Math.PI * 35 / 180))
+                        .add(lateral.multiplyScalar(Math.sin(Math.PI * 35 / 180))).normalize()
                     : reportReferenceDirection;
                 _frameReportCamera(box, {
                     direction,
@@ -2747,9 +2792,77 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     // capture then removes the remaining transparent canvas
                     // border around this box, so the object occupies the A4
                     // evidence slot instead of appearing distant on the page.
-                    margin: mode === 'detail' ? 1.02 : 1.04,
+                    margin: mode === 'detail' ? 1.10 : 1.08,
                 });
             }
+
+            // Render a report frame independently of the live card's size.
+            // The resize/readback/restore sequence is synchronous, so the
+            // interactive viewer cannot paint an intermediate buffer size.
+            renderReport3DFrame = function (focusBox, cameraMargin, readFrame) {
+                const renderer = scene3D.renderer;
+                const camera = scene3D.camera;
+                if (!renderer?.domElement || !camera || !scene3D.controls) return null;
+                const reportWidth = 1280;
+                const reportHeight = 960;
+                const previousSize = renderer.getSize(new THREE.Vector2());
+                const previousPixelRatio = renderer.getPixelRatio();
+                const previousViewport = renderer.getViewport(new THREE.Vector4());
+                const previousScissor = renderer.getScissor(new THREE.Vector4());
+                const previousScissorTest = renderer.getScissorTest();
+                const previousTarget = renderer.getRenderTarget();
+                const previousAspect = camera.aspect;
+                const direction = camera.position.clone().sub(scene3D.controls.target).normalize();
+                try {
+                    renderer.setPixelRatio(1);
+                    renderer.setSize(reportWidth, reportHeight, false);
+                    renderer.setViewport(0, 0, reportWidth, reportHeight);
+                    renderer.setScissor(0, 0, reportWidth, reportHeight);
+                    renderer.setScissorTest(false);
+                    renderer.setRenderTarget(null);
+                    camera.aspect = reportWidth / reportHeight;
+                    camera.updateProjectionMatrix();
+                    if (focusBox && !_frameReportCamera(focusBox, {
+                        direction,
+                        targetAspect: reportWidth / reportHeight,
+                        margin: cameraMargin,
+                    })) return null;
+                    scene3D.scene?.updateMatrixWorld?.(true);
+                    camera.updateMatrixWorld?.(true);
+                    if (scene3D.depthPeeling?.render) {
+                        scene3D.depthPeeling.render(scene3D.scene, camera, { capture: true });
+                    } else {
+                        renderer.render(scene3D.scene, camera);
+                    }
+                    const gl = renderer.getContext?.();
+                    if (gl) {
+                        const sample = new Uint8Array(4);
+                        let hasLitPixel = false;
+                        for (let gx = 1; gx <= 9 && !hasLitPixel; gx++) {
+                            for (let gy = 1; gy <= 9 && !hasLitPixel; gy++) {
+                                gl.readPixels(
+                                    Math.floor(renderer.domElement.width * gx / 10),
+                                    Math.floor(renderer.domElement.height * gy / 10),
+                                    1, 1, gl.RGBA, gl.UNSIGNED_BYTE, sample,
+                                );
+                                hasLitPixel = sample[0] > 4 || sample[1] > 4 || sample[2] > 4;
+                            }
+                        }
+                        if (!hasLitPixel) return null;
+                    }
+                    return readFrame(renderer.domElement);
+                } finally {
+                    renderer.setPixelRatio(previousPixelRatio);
+                    renderer.setSize(previousSize.x, previousSize.y, false);
+                    renderer.setRenderTarget(previousTarget);
+                    renderer.setViewport(previousViewport);
+                    renderer.setScissor(previousScissor);
+                    renderer.setScissorTest(previousScissorTest);
+                    camera.aspect = previousAspect;
+                    camera.updateProjectionMatrix();
+                    scene3D.requestRender?.(2);
+                }
+            };
 
             // Helper: render and capture 3D canvas
             async function _capture3D(label, maxOutputEdge = REPORT_FIGURE_LONG_EDGE, focusBox = null, focusOptions = {}) {
@@ -2766,49 +2879,32 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     console.warn('[Report] 3D canvas has no drawable size for', label);
                     return null;
                 }
-                // Keep the live renderer buffer and CSS geometry authoritative.
-                // Resizing it to capture dimensions changes the next interactive
-                // frame's aspect/DPR and was a source of zoom distortion.
                 scene3D.resize?.();
                 scene3D.renderNow?.();
                 await _waitFrames(2);
                 if (!isCurrentCapture()) return null;
-                // Render once more after the browser has committed visibility,
-                // material, and camera changes. This avoids intermittent black
-                // captures when the report is generated during reconstruction.
-                // Verify after the last async boundary, immediately before readback.
                 if (state.doseTexture?.enabled || Object.entries(scene3D.meshes).some(([id, mesh]) =>
                     mesh?.visible && (id.startsWith('dose_iso_')
                         || mesh.userData?.doseTextureMapped
                         || getMeshSurface(mesh)?.userData?.doseTextureMapped))) {
                     throw new Error('Implant capture was changed to a dose presentation');
                 }
-                scene3D.renderNow?.();
                 try {
-                    const gl = renderer.getContext?.();
-                    if (gl && renderer.domElement.width > 0 && renderer.domElement.height > 0) {
-                        const sample = new Uint8Array(4);
-                        let hasLitPixel = false;
-                        for (let gx = 1; gx <= 5 && !hasLitPixel; gx++) {
-                            for (let gy = 1; gy <= 5 && !hasLitPixel; gy++) {
-                                gl.readPixels(
-                                    Math.floor(renderer.domElement.width * gx / 6),
-                                    Math.floor(renderer.domElement.height * gy / 6),
-                                    1, 1, gl.RGBA, gl.UNSIGNED_BYTE, sample,
-                                );
-                                hasLitPixel = sample[0] > 4 || sample[1] > 4 || sample[2] > 4;
-                            }
-                        }
-                        if (!hasLitPixel) {
-                            console.warn('[Report] 3D capture contains no lit pixels for', label);
-                            return null;
-                        }
-                    }
-                    const url = focusBox
-                        ? _captureReportCanvasFocus(c, focusBox, maxOutputEdge, focusOptions)
-                        : _captureReportCanvasFit(c, maxOutputEdge);
+                    const url = renderReport3DFrame(
+                        focusBox,
+                        focusOptions.cameraMargin || 1.10,
+                        reportCanvas => focusBox
+                            ? _captureReportCanvasFocus(reportCanvas, focusBox, maxOutputEdge, focusOptions)
+                            : _captureReportCanvasFit(reportCanvas, maxOutputEdge),
+                    );
                     if (!url || url.length < 5000) {
                         console.warn('[Report] 3D capture appears blank for', label);
+                        return null;
+                    }
+                    const dimensions = _pngDataUrlSize(url);
+                    if (!dimensions || Math.max(dimensions.width, dimensions.height) < 900
+                        || Math.min(dimensions.width, dimensions.height) < 500) {
+                        console.warn('[Report] 3D report figure is too small to inspect:', label, dimensions);
                         return null;
                     }
                     uiDebugLog('[Report] 3D capture', label, ':', Math.round(url.length / 1024), 'KB');
@@ -3012,16 +3108,21 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             await _waitFrames(2);
             if (!isCurrentCapture()) return { stale: true };
             let imgA = await _capture3D('View A (front+OARs)', REPORT_FIGURE_LONG_EDGE, overviewBox, {
-                padding: 0.10,
+                padding: 0.14,
                 minAspect: 1.25,
+                requireFocusCrop: true,
+                rejectClippedSolid: true,
             });
             if (!imgA) {
                 forceRender3DViewer();
                 await _waitFrames(4);
                 if (!isCurrentCapture()) return { stale: true };
                 imgA = await _capture3D('View A (front+OARs retry)', REPORT_FIGURE_LONG_EDGE, overviewBox, {
-                    padding: 0.10,
+                    padding: 0.22,
                     minAspect: 1.25,
+                    cameraMargin: 1.22,
+                    requireFocusCrop: true,
+                    rejectClippedSolid: true,
                 });
             }
 
@@ -3088,7 +3189,26 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
 
             // Excluding the full needle shaft keeps the right panel a true
             // target close-up when a needle extends far outside the CTV.
-            const detailBox = _computeFocusedPlanBox({ includeOars: false, includeNeedles: false });
+            const detailBox = new THREE.Box3();
+            // Establish the actual visible target first. Far-away seeds must
+            // not set the scale of a CTV close-up; only seeds in or close to
+            // this target participate in its framing.
+            for (const [id, mesh] of Object.entries(scene3D.meshes)) {
+                if (!mesh?.visible || _isFigureOneNeedle(id, mesh)
+                    || _isFigureOneSeed(id, mesh)
+                    || _isStandaloneGenericReportMask(id, mesh)) continue;
+                try { detailBox.expandByObject(mesh); } catch (_) {}
+            }
+            if (detailBox.isEmpty()) {
+                throw new Error('Figure 1(b) target is not visible; refusing a seed-only close-up');
+            }
+            const detailSeedContext = detailBox.clone().expandByScalar(8);
+            for (const [id, mesh] of Object.entries(scene3D.meshes)) {
+                if (!mesh?.visible || !_isFigureOneSeed(id, mesh)) continue;
+                const seedBox = new THREE.Box3();
+                try { seedBox.expandByObject(mesh); } catch (_) { continue; }
+                if (seedBox.intersectsBox(detailSeedContext)) detailBox.union(seedBox);
+            }
             _frameCameraToBox(detailBox, 'detail');
             await _waitFrames(2);
             if (!isCurrentCapture()) return { stale: true };
@@ -3096,15 +3216,18 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 padding: 0.16,
                 minAspect: 1.25,
                 requireFocusCrop: true,
+                rejectClippedSolid: true,
             });
             if (!imgB) {
                 forceRender3DViewer();
                 await _waitFrames(4);
                 if (!isCurrentCapture()) return { stale: true };
                 imgB = await _capture3D('View B (translucent tumor retry)', REPORT_FIGURE_LONG_EDGE, detailBox, {
-                    padding: 0.16,
+                    padding: 0.24,
                     minAspect: 1.25,
+                    cameraMargin: 1.22,
                     requireFocusCrop: true,
+                    rejectClippedSolid: true,
                 });
             }
 
@@ -3450,39 +3573,27 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                         scene3D.renderNow?.();
                         await _waitFrames(2);
                         if (!isCurrentCapture()) return null;
-                        scene3D.renderNow?.();
                         try {
-                            const gl = renderer.getContext?.();
-                            if (gl && canvas.width > 0 && canvas.height > 0) {
-                                const pixel = new Uint8Array(4);
-                                let hasLitPixel = false;
-                                for (let gx = 1; gx <= 9 && !hasLitPixel; gx++) {
-                                    for (let gy = 1; gy <= 9 && !hasLitPixel; gy++) {
-                                        gl.readPixels(
-                                            Math.floor(canvas.width * gx / 10),
-                                            Math.floor(canvas.height * gy / 10),
-                                            1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel,
+                            const url = renderReport3DFrame?.(
+                                box, 1.10,
+                                reportCanvas => _captureReportCanvasFit(
+                                    reportCanvas,
+                                    REPORT_FIGURE_LONG_EDGE,
+                                    (captureCtx, outputWidth, outputHeight) => {
+                                        _drawReport3DDoseColorbar(
+                                            captureCtx,
+                                            outputWidth,
+                                            outputHeight,
                                         );
-                                        hasLitPixel = pixel[0] > 4 || pixel[1] > 4 || pixel[2] > 4;
-                                    }
-                                }
-                                if (!hasLitPixel) {
-                                    console.warn('[Report] 3D dose-surface capture is black:', label);
-                                    return null;
-                                }
-                            }
-                            const url = _captureReportCanvasFit(
-                                canvas,
-                                REPORT_FIGURE_LONG_EDGE,
-                                (captureCtx, outputWidth, outputHeight) => {
-                                    _drawReport3DDoseColorbar(
-                                        captureCtx,
-                                        outputWidth,
-                                        outputHeight,
-                                    );
-                                },
+                                    },
+                                ),
                             );
                             if (!url || url.length < 5000) return null;
+                            const dimensions = _pngDataUrlSize(url);
+                            if (!dimensions || dimensions.width < 1000 || dimensions.height < 750) {
+                                console.warn('[Report] 3D dose-surface figure is too small:', dimensions);
+                                return null;
+                            }
                             uiDebugLog('[Report] 3D dose-surface capture', label, ':', Math.round(url.length / 1024), 'KB');
                             return url;
                         } catch (captureError) {

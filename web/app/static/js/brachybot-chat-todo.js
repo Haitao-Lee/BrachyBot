@@ -1629,6 +1629,7 @@ function _visualEvidenceFallbackResponse(evidence, sessionId, responseLanguage =
         if (!raw) return answer;
         const visualHeading = /(?:对象截图\s*[\/／]\s*位置|截图位置|对象定位|object screenshot|screenshot location)/i;
         const placeholder = /(?:没有建立与该目标对应的截图任务|本轮没有取得.*截图|没有取得.*对应截图|no screenshot task|did not receive.*screenshot|could not establish.*screenshot)/i;
+        const visualProcess = /(?:截图|截屏|图像|图片|画面|图中|标注|查看器|浏览器端|\b(?:screenshot|capture|image|picture|annotation|viewer|browser)\b)/i;
         // Model prose may use Markdown headings, bold headings, or plain paragraphs.
         // Filter visual-only blocks and stale placeholder sentences independent of style.
         const blocks = raw.split(/\n\s*\n+/);
@@ -1637,7 +1638,8 @@ function _visualEvidenceFallbackResponse(evidence, sessionId, responseLanguage =
             if (visualHeading.test(block)) return;
             block.split(/(?<=[。！？!?])\s*|(?<=\.)\s+|\r?\n/)
                 .map(sentence => sentence.trim())
-                .filter(sentence => sentence && !placeholder.test(sentence))
+                .filter(sentence => sentence && !placeholder.test(sentence)
+                    && !visualProcess.test(sentence))
                 .forEach(sentence => retained.push(sentence));
         });
         const retainedText = retained.join('\n').trim();
@@ -1705,6 +1707,7 @@ function _visualEvidenceFallbackResponse(evidence, sessionId, responseLanguage =
                     temporaryReveal: false,
                     temporaryCamera: false,
                     appearancePreserved: false,
+                    temporaryOccluder: false,
                     treeHidden: false,
                     treeVisibilityUnknown: false,
                 });
@@ -1744,6 +1747,9 @@ function _visualEvidenceFallbackResponse(evidence, sessionId, responseLanguage =
                 || metadata.temporary_camera_reframe === true;
             group.appearancePreserved = group.appearancePreserved
                 || metadata.appearance_preserved === true;
+            group.temporaryOccluder = group.temporaryOccluder
+                || (Array.isArray(metadata.temporary_occluders)
+                    && metadata.temporary_occluders.includes('surgical_guide:active'));
             if (isTree && target?.scene_visible === false) {
                 if (row.sceneVisibilityKnown) group.treeHidden = true;
                 else group.treeVisibilityUnknown = true;
@@ -1754,7 +1760,9 @@ function _visualEvidenceFallbackResponse(evidence, sessionId, responseLanguage =
     const rows = [];
     let markedCount = 0;
     const labels = [];
+    const sections = [];
     groups.forEach(group => {
+        const firstRow = rows.length;
         const label = group.label || semanticLabel('');
         if (!labels.includes(label)) labels.push(label);
         const entries = [...group.views.values()];
@@ -1806,33 +1814,35 @@ function _visualEvidenceFallbackResponse(evidence, sessionId, responseLanguage =
                 : 'The target was temporarily shown for this capture and restored afterwards.');
         }
         if (group.temporaryCamera) {
-            rows.push(zh ? '为使目标完整入镜，临时调整了相机取景，截图后已恢复原视角。'
-                : 'The camera was temporarily reframed to fit the target and restored after capture.');
+            rows.push(zh ? '截图时临时调整了取景，现已恢复。'
+                : 'The camera was temporarily reframed and restored.');
+        }
+        if (group.temporaryOccluder) {
+            rows.push(zh ? '导板与靶区在当前视角重叠；仅为这张 3D 截图临时隐藏导板，截图后已恢复。'
+                : 'The guide was temporarily hidden for this 3D target capture and restored afterwards.');
         }
         if (group.stale) {
             rows.push(zh ? '该对象状态标记为过期（stale）；截图只能证明当前画面中的对象，不能代表最新规划结果。'
                 : 'This object is marked stale; the capture shows the current displayed object, not necessarily the latest plan.');
         }
-        if (group.appearancePreserved && !group.temporaryReveal && !group.temporaryCamera) {
-            rows.push(zh ? '截图沿用了 Viewer 当时的显示内容和配色，没有为定位单独隐藏周边对象或改色。'
-                : 'The screenshot preserves the Viewer’s displayed scene and colors; surrounding objects were not hidden or recolored for locating.');
-        }
+        const details = rows.splice(firstRow);
+        sections.push('**' + label + '**\n\n' + details.map(row => '- ' + row).join('\n'));
     });
 
     const requestHint = String(userText || '').trim();
     const subject = labels.length ? labels.join(zh ? '、' : ', ')
         : (requestHint ? (zh ? '所请求的对象' : 'the requested object') : (zh ? '当前界面' : 'the current interface'));
     const intro = zh
-        ? '我按你的要求分别核对了' + subject + '，对应截图已附在下方；下面只说明截图中能够核实的内容。'
-        : 'I checked ' + subject + ' separately as requested. The corresponding screenshots are attached below; I only describe what they verify.';
-    const body = intro + (rows.length || looseRows.length
-        ? '\n\n' + [...rows, ...looseRows].map(row => '- ' + row).join('\n')
+        ? '已分别截图核对' + subject + '，标注位置见下方图片。'
+        : 'I checked ' + subject + ' separately; the marked captures are attached below.';
+    const body = intro + (sections.length || looseRows.length
+        ? '\n\n' + [...sections, ...looseRows.map(row => '- ' + row)].join('\n\n')
         : '');
     const locate = items.some(item => String(
         item.visual_purpose || item.visualPurpose
         || item.view_metadata?.visual_purpose || item.viewMetadata?.visualPurpose || ''
     ).toLowerCase() === 'locate');
-    const safeBody = locate && markedCount === 0 && rows.length === 0
+    const safeBody = locate && markedCount === 0 && sections.length === 0
         ? (zh ? '本轮截图没有提供可核验的目标位置，我不会根据不对应的画面作判断。'
             : 'These captures do not verify the requested location, so I will not infer it from unrelated imagery.')
             + (looseRows.length ? '\n\n' + looseRows.map(row => '- ' + row).join('\n') : '')
@@ -2754,6 +2764,16 @@ function _isScreenshotAckResponse(
         || (Array.isArray(visualContentResults) && visualContentResults.length > 0);
 }
 
+function _turnHasScreenshotPlan(steps, screenshotTaskKeys) {
+    // A server final_text_chunk/response is final for the model, not for a
+    // browser-owned capture. The screenshot may still be framing, uploading,
+    // or waiting for the evidence-grounded follow-up. Never paint that text
+    // as the answer and then replace it after the capture settles.
+    return Boolean(screenshotTaskKeys?.size)
+        || (Array.isArray(steps) && steps.some(step =>
+            step?.type === 'tool' && step.tool === 'ui_screenshot'));
+}
+
 function _normalizeScreenshotRequestTarget(target, question) {
     const rawTarget = String(target || 'full');
     const text = String(question || '').toLowerCase();
@@ -2906,6 +2926,8 @@ function _visualEvidenceDescriptor(item, index = 0, includeAll = false, forceAna
         temporary_reveal: (item.temporary_reveal ?? metadata.temporary_reveal) === true,
         temporary_camera_reframe: (item.temporary_camera_reframe
             ?? metadata.temporary_camera_reframe) === true,
+        temporary_occluders: Array.isArray(metadata.temporary_occluders)
+            ? metadata.temporary_occluders.filter(ref => ref === 'surgical_guide:active') : [],
         appearance_preserved: (item.appearance_preserved ?? metadata.appearance_preserved) === true,
         authoritative_case_state: authoritativeCaseState,
         semantic_target: semanticTarget,
@@ -4128,17 +4150,11 @@ async function sendChat(prefill, options) {
             const visualAnalysisContinuation = !isInternalFollowup && visualAttachments.length > 0;
             const responseBody = String(data?.response || data?.reply || data?.content || '');
             const screenshotFailure = String(screenshotPresentation.userMessage || '').trim();
-            const failureAndReadResults = screenshotFailure
-                ? [
-                    screenshotFailure,
-                    data?.llm_meta?.multi_intent_query ? responseBody : '',
-                ].filter(Boolean).join('\n\n')
-                : '';
+            const failureAndReadResults = screenshotFailure || '';
             const reply = uiFailure
                 || failureAndReadResults
                 || (visualAnalysisContinuation ? '' : presentation.userMessage)
-                || (visualAnalysisContinuation && !data?.llm_meta?.multi_intent_query
-                    ? '' : responseBody)
+                || (visualAnalysisContinuation ? '' : responseBody)
                 || (visualAnalysisContinuation ? '' : _chatUserVisibleFailure(turnSessionId, 'response'));
             if (reply && typeof addChat === 'function') {
                 addChat('bot-response', reply, true, Date.now(), false, turnSessionId, Object.assign(
@@ -4165,10 +4181,9 @@ async function sendChat(prefill, options) {
                         screenshotMode: 'chat',
                         includeAll: true,
                         forceAnalysis: forceVisualAnalysis,
-                        preliminaryResponse: [
-                            data?.llm_meta?.multi_intent_query ? responseBody : '',
-                            screenshotPresentation.userMessage || '',
-                        ].filter(Boolean).join('\n\n'),
+                        preliminaryResponse: (data?.steps || []).some(step =>
+                            step?.type === 'tool' && !['ui_screenshot', 'ui_content'].includes(step.tool))
+                            ? responseBody : '',
                     },
                 );
             }
@@ -4919,13 +4934,14 @@ async function sendChat(prefill, options) {
                         // an approved user-facing response.
                     } else if (currentEvent === 'final_text_chunk' && data && data.text) {
                         // This event is emitted after all required review work.
-                        // Render it in one stable bubble so the user sees
-                        // genuine incremental progress without duplicate
-                        // assistant messages.
+                        // Browser-owned screenshot evidence can still be in
+                        // flight. Buffer the server text until capture and
+                        // visual analysis decide what is safe to show.
+                        const deferForScreenshot = _turnHasScreenshotPlan(steps, screenshotTaskKeys);
                         if (!finalTextStreamStarted) {
                             finalTextStreamStarted = true;
                             responseText = '';
-                            if (!isInternalFollowup
+                            if (!deferForScreenshot && !isInternalFollowup
                                 && !_hasReportGenerationAction(steps)
                                 && !responseEl && typeof createStreamingResponse === 'function') {
                                 if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
@@ -4933,7 +4949,8 @@ async function sendChat(prefill, options) {
                             }
                         }
                         responseText += String(data.text);
-                        if (!isInternalFollowup && !_hasReportGenerationAction(steps)
+                        if (!deferForScreenshot && !isInternalFollowup
+                            && !_hasReportGenerationAction(steps)
                             && responseEl && typeof updateStreamingResponse === 'function') {
                             responseEl.classList.add('is-streaming');
                             responseEl.setAttribute('aria-busy', 'true');
@@ -4963,7 +4980,8 @@ async function sendChat(prefill, options) {
                             );
                         }
                         const deferUntilUIActionsFinish = reportUiActionRequested
-                            || _hasReportGenerationAction(steps);
+                            || _hasReportGenerationAction(steps)
+                            || _turnHasScreenshotPlan(steps, screenshotTaskKeys);
                         if (!isInternalFollowup && !deferUntilUIActionsFinish
                             && !responseEl && typeof createStreamingResponse === 'function') {
                             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
@@ -5257,10 +5275,9 @@ async function sendChat(prefill, options) {
                 screenshotMode: screenshotGallery.mode || 'chat',
                 includeAll: true,
                 forceAnalysis: forceVisualAnalysis,
-                preliminaryResponse: [
-                    window._lastLLMMeta?.multi_intent_query ? responseText : '',
-                    presentationMessages.filter(Boolean).slice(-1)[0] || '',
-                ].filter(Boolean).join('\n\n'),
+                preliminaryResponse: steps.some(step => step?.type === 'tool'
+                    && !['ui_screenshot', 'ui_content'].includes(step.tool))
+                    ? responseText : '',
                 multiIntentQuery: window._lastLLMMeta?.multi_intent_query === true,
                 onFollowupState: (state, info = {}) => {
                     visualFollowupState = String(state || '');

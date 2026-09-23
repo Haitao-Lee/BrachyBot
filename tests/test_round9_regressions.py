@@ -335,12 +335,12 @@ class Round9RegressionTests(unittest.TestCase):
         # the live viewer canvas remains untouched.
         normalized = re.sub(r"\s+", " ", report)
         self.assertIn(
-            "_captureReportCanvasFit( canvas, REPORT_FIGURE_LONG_EDGE,",
+            "_captureReportCanvasFit( reportCanvas, REPORT_FIGURE_LONG_EDGE,",
             normalized,
         )
         self.assertIn("_drawReport3DDoseColorbar(", report)
         self.assertIn("candidate.clone().intersect(context)", report)
-        self.assertIn("brachybot-report-editor.js?v=50", index)
+        self.assertIn("brachybot-report-editor.js?v=53", index)
 
 
 if __name__ == "__main__":

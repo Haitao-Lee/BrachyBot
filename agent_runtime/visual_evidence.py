@@ -344,6 +344,10 @@ def normalize_visual_evidence_context(
             "temporary_camera_reframe": item.get(
                 "temporary_camera_reframe", item.get("temporaryCameraReframe", False)
             ) is True,
+            "temporary_occluders": [
+                ref for ref in (item.get("temporary_occluders") or [])[:4]
+                if ref == "surgical_guide:active"
+            ] if isinstance(item.get("temporary_occluders"), list) else [],
             "appearance_preserved": item.get(
                 "appearance_preserved", item.get("appearancePreserved", False)
             ) is True,
@@ -415,6 +419,11 @@ _UNGROUNDED_LOCATION_DISCLAIMER = re.compile(
     r"(?:inferred|stated|judged|determined)",
     re.IGNORECASE,
 )
+_PRELIMINARY_VISUAL_PROCESS = re.compile(
+    r"(?:截图|截屏|图像|图片|画面|图中|标注|查看器|浏览器端|"
+    r"\b(?:screenshot|capture|image|picture|annotation|viewer|browser)\b)",
+    re.IGNORECASE,
+)
 
 
 def _nonspatial_preliminary_context(value: Any) -> str:
@@ -439,6 +448,7 @@ def _nonspatial_preliminary_context(value: Any) -> str:
             or _STALE_VISUAL_PLACEHOLDER.search(item)
             or _UNGROUNDED_LOCATION_DISCLAIMER.search(item)
             or _UNVERIFIED_SPATIAL_CLAIM.search(item)
+            or _PRELIMINARY_VISUAL_PROCESS.search(item)
         ):
             continue
         kept.append(item)
@@ -530,6 +540,10 @@ def grounded_location_answer(context: Dict[str, Any], response_language: str = '
             group["temporary_camera"] = (
                 group["temporary_camera"] or item.get("temporary_camera_reframe") is True
             )
+            group["temporary_occluder"] = (
+                group.get("temporary_occluder", False)
+                or "surgical_guide:active" in item.get("temporary_occluders", [])
+            )
             group["appearance_preserved"] = (
                 group["appearance_preserved"] or item.get("appearance_preserved") is True
             )
@@ -540,7 +554,9 @@ def grounded_location_answer(context: Dict[str, Any], response_language: str = '
                     group["tree_visibility_unknown"] = True
 
     lines: List[str] = []
+    target_sections: List[str] = []
     for group in grouped.values():
+        first_line = len(lines)
         label = group["label"]
         views = group["views"]
         tree = views.get("data-tree")
@@ -624,19 +640,23 @@ def grounded_location_answer(context: Dict[str, Any], response_language: str = '
                 if zh else
                 'The camera was temporarily reframed to fit the target and restored after capture.'
             )
-        elif group["appearance_preserved"] and not group["temporary_reveal"]:
+        if group.get("temporary_occluder"):
             lines.append(
-                '截图保留了 Viewer 当时的显示内容和配色，没有为定位单独隐藏周边对象或改色。'
+                '导板与靶区在当前视角重叠；仅在该 3D 截图期间临时隐藏导板，截图后已恢复。'
                 if zh else
-                'The screenshot preserves the Viewer’s displayed scene and colors; surrounding objects were not hidden or recolored for locating.'
+                'The guide was temporarily hidden for this 3D target capture and restored afterwards.'
             )
-
         if group["stale"]:
             lines.append(
                 '该对象状态标记为过期（stale）；截图只能证明当前画面中的对象，不能代表最新规划结果。'
                 if zh else
                 'This object is marked stale; the capture shows the currently displayed object, not necessarily the latest plan.'
             )
+        details = lines[first_line:]
+        del lines[first_line:]
+        target_sections.append(
+            "**{}**\n\n{}".format(label, "\n".join("- " + row for row in details))
+        )
 
     for view in dict.fromkeys(unverified_views):
         view_name = "Data Tree" if view == "data-tree" else (
@@ -664,6 +684,7 @@ def grounded_location_answer(context: Dict[str, Any], response_language: str = '
     sections.append(
         ("### 对象截图/位置\n" if zh else "### Object screenshot/location\n")
         + intro
+        + ("\n\n" + "\n\n".join(target_sections) if target_sections else "")
         + ("\n\n" + "\n".join("- " + line for line in lines) if lines else "")
     )
     return "\n\n".join(sections)
@@ -672,7 +693,9 @@ def build_visual_evidence_prompt(context: Dict[str, Any], response_language: str
     evidence = [item for item in (context.get("evidence") or []) if isinstance(item, Mapping)]
     urls = [str(item.get("url") or "") for item in evidence if str(item.get("url") or "")]
     request_text = str(context.get("parent_request") or "").strip()
-    preliminary_response = str(context.get("preliminary_response") or "").strip()
+    preliminary_response = _nonspatial_preliminary_context(
+        context.get("preliminary_response")
+    )
     language = "Chinese" if str(response_language or "").lower().startswith("zh") else "English"
     captures = "\n".join(f"[Screenshot captured: {url}]" for url in urls)
     preliminary_section = (
@@ -693,6 +716,7 @@ def build_visual_evidence_prompt(context: Dict[str, Any], response_language: str
                 "semantic_targets": item.get("semantic_targets"),
                 "target_query": item.get("target_query"),
                 "target_source": item.get("target_source"),
+                "temporary_occluders": item.get("temporary_occluders"),
                 "grounding_manifest": item.get("grounding_manifest"),
                 "authoritative_case_state": item.get("authoritative_case_state"),
             }

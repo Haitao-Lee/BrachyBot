@@ -2896,22 +2896,15 @@ function renderMarkdown(text) {
         //   1. Update window.reportForm.language
         //   2. Re-interpret the report (so AI-generated text switches
         //      language, but only if the user hasn't edited it)
-        //   3. Re-capture screenshots so figure captions match
-        //   4. Re-render the editor + preview
+        //   3. Re-render standard figure captions from their stable roles in
+        //      the new language. The captured pixels are language-neutral.
+        //   4. Save the language change without discarding evidence images.
         try {
             if (window.reportForm && window.reportForm.language !== lang) {
                 window.reportForm.language = lang;
                 if (!window.reportForm.editedFields.has('interpretation')
                         && typeof _autoFillInterpretation === 'function') {
                     try { _autoFillInterpretation(); } catch (_) {}
-                }
-                // Clear existing auto-captured figures so the next
-                // panel open re-captures with the new language's
-                // captions. User-uploaded figures are kept.
-                if (Array.isArray(window.reportForm.figures)) {
-                    window.reportForm.figures = window.reportForm.figures.filter(
-                        f => f && f.type === 'upload'
-                    );
                 }
                 if (typeof renderReportEditor === 'function') renderReportEditor();
                 if (typeof _updateReportPreview === 'function') _updateReportPreview();

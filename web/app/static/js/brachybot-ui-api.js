@@ -12013,6 +12013,66 @@ function _revealScreenshotNodes(plan, ownerStillActive = () => true) {
     restore.unresolvedTargetRefs = refs.filter(ref => !resolvedRefs.has(ref));
     return restore;
 }
+
+// The guide can lie directly in front of the CTV in the current 3D camera.
+// This is a per-capture presentation change, scoped to the verified guide
+// node; it never changes the saved Data Tree visibility preference.
+function _hideGuideOccludingCtvCapture(plan, ownerStillActive = () => true) {
+    const refs = _screenshotTargetRefs(plan);
+    const ctvRefs = refs.filter(ref => /(?:^|:)structure:ctv:|^ctv[_:-]/i.test(ref));
+    if (!ctvRefs.length
+        || refs.some(ref => /(?:surgical|puncture)[_:-]?guide/i.test(ref))) return null;
+    const meshes = typeof dataTreeState !== 'undefined'
+        ? dataTreeState?.planning?.meshes : null;
+    const guides = (Array.isArray(meshes) ? meshes : []).filter(node =>
+        String(node?.source || '').toLowerCase() === 'surgical_guide'
+        && node.visible !== false && node.visible3D !== false);
+    if (!guides.length) return null;
+    // Projection overlap is the trigger for a clearer target capture. If
+    // the guide is elsewhere on screen, preserve the operator's scene.
+    const manifest = typeof window.get3DScreenshotGroundingManifest === 'function'
+        ? window.get3DScreenshotGroundingManifest([...ctvRefs, 'surgical_guide:active']) : null;
+    const targets = Array.isArray(manifest?.targets) ? manifest.targets : [];
+    const guideBounds = targets.find(target =>
+        target.target_ref === 'surgical_guide:active')?.normalized_bounds;
+    const overlap = bounds => {
+        if (!Array.isArray(bounds) || !Array.isArray(guideBounds)) return false;
+        const [x, y, width, height] = bounds.map(Number);
+        const [gx, gy, gw, gh] = guideBounds.map(Number);
+        if (![x, y, width, height, gx, gy, gw, gh].every(Number.isFinite)
+            || width <= 0 || height <= 0 || gw <= 0 || gh <= 0) return false;
+        const area = Math.max(0, Math.min(x + width, gx + gw) - Math.max(x, gx))
+            * Math.max(0, Math.min(y + height, gy + gh) - Math.max(y, gy));
+        return area / (width * height) >= 0.2;
+    };
+    if (!ctvRefs.some(ref => overlap(targets.find(target =>
+        target.target_ref === ref)?.normalized_bounds))) return null;
+    const originals = guides.map(node => ({
+        node,
+        present: Object.prototype.hasOwnProperty.call(node, 'visible3D'),
+        value: node.visible3D,
+    }));
+    guides.forEach(node => { node.visible3D = false; });
+    const restore = () => {
+        originals.forEach(({ node, present, value }) => {
+            if (present) node.visible3D = value;
+            else delete node.visible3D;
+        });
+        if (ownerStillActive()) {
+            if (typeof applyDataTreeViewVisibility === 'function') applyDataTreeViewVisibility();
+            if (typeof renderDataTree === 'function') renderDataTree();
+        }
+    };
+    restore.occluders = ['surgical_guide:active'];
+    try {
+        if (typeof applyDataTreeViewVisibility === 'function') applyDataTreeViewVisibility();
+        if (typeof renderDataTree === 'function') renderDataTree();
+    } catch (error) {
+        restore();
+        throw error;
+    }
+    return restore;
+}
 function _screenshotNeeds3DReframe(plan) {
     const refs = _screenshotTargetRefs(plan);
     if (!refs.length || typeof window.get3DScreenshotGroundingManifest !== 'function') return false;
@@ -12138,6 +12198,7 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
         ? window.lockWorkspacePresentationWrites(ownerSessionId) : null;
     let activeViewRestore = null;
     let restoreVisibility = null;
+    let restoreOccluders = null;
     const attachments = [];
     try {
         if (reportViews.length) {
@@ -12183,6 +12244,11 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                 const viewTransaction = await _applyStructuredScreenshotPlan(captureSpec, viewTarget);
                 activeViewRestore = viewTransaction?.restoreFocus || null;
                 captureSpec.__focusResult = viewTransaction?.focusResult || null;
+                if (['chat', 'monitor'].includes(plan.mode) && plan.visual_purpose === 'locate'
+                    && viewTarget === 'viewer-3d') {
+                    restoreOccluders = _hideGuideOccludingCtvCapture(captureSpec, ownerStillActive);
+                    if (restoreOccluders) await _waitScreenshotFrames(3);
+                }
                 if (options.monitorOnly && viewTarget === 'viewer-3d' && options.monitorEditEvidence) {
                     const restoreArrows = _monitorReturnPositionOverlay(options.monitorEditEvidence);
                     const restoreCamera = activeViewRestore;
@@ -12324,7 +12390,8 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                         focus_result: captureSpec.__focusResult || null,
                         temporary_reveal: restoreVisibility?.changed === true,
                         temporary_camera_reframe: captureSpec.__focusResult?.camera_adjusted === true,
-                        appearance_preserved: viewTarget === 'viewer-3d',
+                        temporary_occluders: restoreOccluders?.occluders || [],
+                        appearance_preserved: viewTarget === 'viewer-3d' && !restoreOccluders,
                         grounding_manifest: groundingManifest,
                     },
                 }),
@@ -12380,7 +12447,8 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                             focus_result: captureSpec.__focusResult || null,
                             temporary_reveal: restoreVisibility?.changed === true,
                             temporary_camera_reframe: captureSpec.__focusResult?.camera_adjusted === true,
-                            appearance_preserved: viewTarget === 'viewer-3d',
+                            temporary_occluders: restoreOccluders?.occluders || [],
+                            appearance_preserved: viewTarget === 'viewer-3d' && !restoreOccluders,
                             grounding_manifest: groundingManifest,
                         },
                     ),
@@ -12416,9 +12484,12 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                     }
                 }
                 activeViewRestore = null;
-                if (restoreVisibility) {
-                    restoreVisibility();
+                try {
+                    if (restoreVisibility) restoreVisibility();
+                } finally {
                     restoreVisibility = null;
+                    if (restoreOccluders) restoreOccluders();
+                    restoreOccluders = null;
                 }
             }
         }

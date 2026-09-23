@@ -37,7 +37,7 @@ def test_figure_one_detail_view_keeps_the_complete_ctv_in_frame():
     assert "halfDepth + planarDistance" in source
     # Keep a small framing safety border while bringing both report views
     # materially closer to the treatment geometry.
-    assert "margin: mode === 'detail' ? 1.02 : 1.04" in source
+    assert "margin: mode === 'detail' ? 1.10 : 1.08" in source
     assert "targetAspect: REPORT_FIGURE_ASPECT" in source
     assert "function _computeGlobalPlanBox" in source
     assert "const overviewBox = _computeGlobalPlanBox({ includeNeedles: true });" in source
@@ -47,11 +47,12 @@ def test_figure_one_detail_view_keeps_the_complete_ctv_in_frame():
     assert "const cropContainsFocus = sx <= boxLeft + 0.5" in source
     assert "Focused crop would exclude projected plan content" in source
     assert "return _computeFocusedPlanBox({ includeOars: true, includeNeedles });" in source
-    assert "const detailBox = _computeFocusedPlanBox" in source
+    assert "const detailBox = new THREE.Box3();" in source
+    assert "renderReport3DFrame = function (focusBox, cameraMargin, readFrame)" in source
     assert "padding: 0.16" in source
     assert "requireFocusCrop: true" in source
     assert "REPORT_FIGURE_LONG_EDGE = 2400" in source
-    assert "_captureReportCanvasFit(c, maxOutputEdge)" in source
+    assert "_captureReportCanvasFit(reportCanvas, maxOutputEdge)" in source
 
 
 def test_figure_two_dose_surface_capture_embeds_the_3d_dose_colorbar():
@@ -118,8 +119,8 @@ def test_figure_one_capture_contract_survives_report_artifact_round_trip():
     api = _read("web/app/static/js/brachybot-ui-api.js")
     export_service = _read("web/export_service.py")
 
-    assert "REPORT_FIGURE_ONE_CAPTURE_CONTRACT = 'figure1-global-overview-v9-normal-surface-only'" in editor
-    assert "REPORT_FIGURE_ONE_CLOSEUP_CAPTURE_CONTRACT = 'figure1-target-closeup-v9-normal-surface-only'" in editor
+    assert "REPORT_FIGURE_ONE_CAPTURE_CONTRACT = 'figure1-global-overview-v10-framed-hires'" in editor
+    assert "REPORT_FIGURE_ONE_CLOSEUP_CAPTURE_CONTRACT = 'figure1-target-closeup-v10-framed-hires'" in editor
     assert "report_fig1_global: REPORT_FIGURE_ONE_CAPTURE_CONTRACT" in editor
     assert "report_fig1_closeup: REPORT_FIGURE_ONE_CLOSEUP_CAPTURE_CONTRACT" in editor
     assert "const _isFigureOneOar = (id, mesh)" in editor
@@ -137,8 +138,8 @@ def test_figure_one_capture_contract_survives_report_artifact_round_trip():
     assert "capture_profile: String(figure.captureProfile || '')" in api
     assert "viewMetadata: item.metadata?.view_metadata || item.metadata || {}" in viewer
     assert '"capture_contract": figure.get("captureContract")' in export_service
-    assert "captureContract: 'figure1-global-overview-v9-normal-surface-only'" in workspace
-    assert "captureContract: 'figure1-target-closeup-v9-normal-surface-only'" in workspace
+    assert "captureContract: 'figure1-global-overview-v10-framed-hires'" in workspace
+    assert "captureContract: 'figure1-target-closeup-v10-framed-hires'" in workspace
     assert "captureProfile: 'global_overview'" in workspace
     assert "captureProfile: 'target_closeup'" in workspace
 
@@ -200,7 +201,8 @@ def test_native_report_images_use_one_bounded_portrait_a4_page_each():
     assert "data-page-orientation=" in source
     assert "size: A4 portrait" in source
     assert "size: A4 landscape" not in source
-    assert "width: auto" in source
+    assert "width: 100% !important; max-width: 100% !important" in source
+    assert "object-fit: contain" in source
     assert "min-width: 0" in source
     assert "height: 297mm; min-height: 297mm; max-height: 297mm" in source
     assert "width: 297mm" not in source
@@ -292,7 +294,8 @@ def test_figure_two_rejects_black_webgl_capture_and_retries():
     source = _read("web/app/static/js/brachybot-report-editor.js")
 
     assert "async function captureDoseSurface3D(label)" in source
-    assert "3D dose-surface capture is black" in source
+    assert "if (!hasLitPixel) return null;" in source
+    assert "const url = renderReport3DFrame?.(" in source
     assert "doseSurfaceDataUrl = await captureDoseSurface3D('primary');" in source
     assert "doseSurfaceDataUrl = await captureDoseSurface3D('retry');" in source
     assert "_isDoseTexturableMesh(id, mesh)" in source
@@ -389,7 +392,7 @@ def test_figure_two_never_pairs_a_normal_surface_with_a_dose_colorbar():
     layout = _read("web/app/static/js/brachybot-viewer-layout.js")
     workspace = _read("web/app/static/js/brachybot-workspace.js")
 
-    assert "figure2-dose-surface-v5-runtime-mapped" in editor
+    assert "figure2-dose-surface-v6-framed-hires" in editor
     assert "function _reportDoseSurfaceEvidence()" in editor
     assert "doseTextureMapped === true" in editor
     assert "No CTV/OAR mesh with validated dose vertex colors was rendered" in editor
@@ -402,7 +405,7 @@ def test_figure_two_never_pairs_a_normal_surface_with_a_dose_colorbar():
     assert "state.doseTexture.renderSignature = DOSE_TEXTURE_RUNTIME_SIGNATURE" in layout
     assert "return { success: true, enabled: !!state.doseTexture.enabled, mappedMeshIds }" in layout
     assert "return { success: false, enabled: false, error: e?.message || String(e) }" in layout
-    assert "figure2-dose-surface-v5-runtime-mapped" in workspace
+    assert "figure2-dose-surface-v6-framed-hires" in workspace
 
 
 def test_late_dose_readiness_can_repair_missing_report_figures():

@@ -1817,18 +1817,22 @@
         report_fig1_global: {
             figureGroup: 'figure1', figureNumber: 1, subfigure: 'a', sortOrder: 1,
             captureRole: 'planning_overview',
-            captureContract: 'figure1-global-overview-v9-normal-surface-only',
+            captureContract: 'figure1-global-overview-v10-framed-hires',
             captureProfile: 'global_overview',
             title: 'Reference-direction plan overview',
             caption: 'Global view along the needle reference direction, showing the CTV, selected OARs, needle paths, and seeds.',
+            titleZh: '针道参考方向计划总览',
+            captionZh: '沿针道参考方向展示全局计划，包括 CTV、选定的危及器官、针道和粒子。',
         },
         report_fig1_closeup: {
             figureGroup: 'figure1', figureNumber: 1, subfigure: 'b', sortOrder: 2,
             captureRole: 'planning_closeup',
-            captureContract: 'figure1-target-closeup-v9-normal-surface-only',
+            captureContract: 'figure1-target-closeup-v10-framed-hires',
             captureProfile: 'target_closeup',
             title: 'CTV seed-distribution close-up',
             caption: 'Target close-up with the CTV made translucent to show seed distribution and needle paths.',
+            titleZh: 'CTV 粒子分布局部图',
+            captionZh: '靶区局部视图；CTV 以半透明方式显示，便于观察粒子分布和针道。',
         },
         report_fig2_axial: {
             figureGroup: 'figure2', figureNumber: 2, subfigure: 'a', sortOrder: 1,
@@ -1836,6 +1840,8 @@
             captureContract: 'figure2-peak-dose-axial-v3-dose-only-overlay',
             title: 'Peak-dose axial view',
             caption: 'Axial CT slice through the peak-dose location with dose overlay and planning projections.',
+            titleZh: '峰值剂量轴位图',
+            captionZh: '经过峰值剂量位置的轴位 CT，显示剂量叠加和规划投影。',
         },
         report_fig2_sagittal: {
             figureGroup: 'figure2', figureNumber: 2, subfigure: 'b', sortOrder: 2,
@@ -1843,6 +1849,8 @@
             captureContract: 'figure2-peak-dose-sagittal-v3-dose-only-overlay',
             title: 'Peak-dose sagittal view',
             caption: 'Sagittal CT slice through the peak-dose location with dose overlay and planning projections.',
+            titleZh: '峰值剂量矢状位图',
+            captionZh: '经过峰值剂量位置的矢状位 CT，显示剂量叠加和规划投影。',
         },
         report_fig2_coronal: {
             figureGroup: 'figure2', figureNumber: 2, subfigure: 'c', sortOrder: 3,
@@ -1850,13 +1858,17 @@
             captureContract: 'figure2-peak-dose-coronal-v3-dose-only-overlay',
             title: 'Peak-dose coronal view',
             caption: 'Coronal CT slice through the peak-dose location with dose overlay and planning projections.',
+            titleZh: '峰值剂量冠状位图',
+            captionZh: '经过峰值剂量位置的冠状位 CT，显示剂量叠加和规划投影。',
         },
         report_fig2_dose_surface: {
             figureGroup: 'figure2', figureNumber: 2, subfigure: 'd', sortOrder: 4,
             captureRole: 'dose_surface_3d',
-            captureContract: 'figure2-dose-surface-v5-runtime-mapped',
+            captureContract: 'figure2-dose-surface-v6-framed-hires',
             title: 'CTV and dose-isosurface overview',
             caption: 'Three-dimensional view of the CTV and relevant dose isosurfaces.',
+            titleZh: 'CTV 与剂量等值面三维总览',
+            captionZh: 'CTV 及相关剂量等值面的三维视图。',
         },
         report_fig2_dvh: {
             figureGroup: 'figure2', figureNumber: 2, subfigure: 'e', sortOrder: 5,
@@ -1864,6 +1876,8 @@
             captureContract: 'dvh-readable-report-v3',
             title: 'Dose-volume histogram',
             caption: 'Dose-volume curves for the CTV and available OAR structures in the current Planning run.',
+            titleZh: '剂量体积直方图',
+            captionZh: '当前规划运行中 CTV 及可用危及器官结构的剂量体积曲线。',
         },
     });
 
@@ -1901,8 +1915,7 @@
         return /^report\s+(figure|screenshot)\s+\d+$/i.test(String(value || '').trim());
     }
 
-    function normalizeReportFigures(figures, options = {}) {
-        const language = String(options.language || window.reportForm?.language || 'en').toLowerCase();
+    function normalizeReportFigures(figures, _options = {}) {
         const entries = Array.isArray(figures) ? figures : [];
         const selected = new Map();
         const score = figure => {
@@ -1970,10 +1983,10 @@
             || left.index - right.index
         )).map(entry => entry.figure);
 
-        // The definitions are currently English because report evidence is
-        // generated in the report language. Existing localized captions are
-        // preserved; only old catalog entries missing all text use this
-        // medical-English fallback.
+        // Persisted figure records keep their original text for backward
+        // compatibility. Standard figure labels are resolved from the stable
+        // axis by describeReportFigure(axis, language) at render/export time,
+        // so switching UI language never requires recapturing image pixels.
         // A standard report role may never be backed by the same pixels as
         // another standard role. This is the durable counterpart of the
         // capture-time guard: it catches stale snapshots and catalog rows
@@ -2039,14 +2052,42 @@
             const key = sourceKey(figure);
             return !key || !duplicatedSources.has(key);
         });
-        void language;
         return deDuplicated;
     }
 
     window.normalizeReportFigures = normalizeReportFigures;
-    window.describeReportFigure = function describeReportFigure(axis) {
-        const definition = REPORT_FIGURE_DEFINITIONS[String(axis || '')];
-        return definition ? { title: definition.title, caption: definition.caption } : null;
+    window.describeReportFigure = function describeReportFigure(axisOrFigure, language = '') {
+        const axis = axisOrFigure && typeof axisOrFigure === 'object'
+            ? reportFigureAxis(axisOrFigure)
+            : String(axisOrFigure || '');
+        const definition = REPORT_FIGURE_DEFINITIONS[axis];
+        if (!definition) return null;
+        const lang = String(language || window.reportForm?.language || window._i18nLang || 'en')
+            .toLowerCase().startsWith('zh') ? 'zh' : 'en';
+        return {
+            title: lang === 'zh' ? definition.titleZh : definition.title,
+            caption: lang === 'zh' ? definition.captionZh : definition.caption,
+            titleEn: definition.title,
+            captionEn: definition.caption,
+            titleZh: definition.titleZh,
+            captionZh: definition.captionZh,
+        };
+    };
+    window.reportFigureDisplayText = function reportFigureDisplayText(figure, language = '') {
+        const storedTitle = String(figure?.title || '').trim();
+        const storedCaption = String(figure?.caption || '').trim();
+        const described = window.describeReportFigure(figure, language);
+        if (!described) {
+            return { title: storedTitle, caption: storedCaption };
+        }
+        const isCanonicalText = (value, candidates) => !value
+            || candidates.some(candidate => String(candidate || '').trim() === value);
+        return {
+            title: isCanonicalText(storedTitle, [described.titleEn, described.titleZh])
+                ? described.title : storedTitle,
+            caption: isCanonicalText(storedCaption, [described.captionEn, described.captionZh])
+                ? described.caption : storedCaption,
+        };
     };
 
     function reportFigureExpectedCaptureContract(axis) {

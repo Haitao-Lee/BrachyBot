@@ -41,7 +41,7 @@ def test_server_restart_recovery_keeps_a_visible_resource_loading_boundary():
 
     # Force the browser to fetch the updated workspace bridge after a server
     # restart instead of retaining the prior cached script.
-    assert 'static/js/brachybot-workspace.js?v=65' in index
+    assert 'static/js/brachybot-workspace.js?v=67' in index
 
 
 def test_health_probe_is_process_local_and_transient_misses_do_not_flash_offline():

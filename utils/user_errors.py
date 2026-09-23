@@ -14,6 +14,7 @@ import re
 from collections.abc import Mapping
 from typing import Any, Dict
 
+from utils.display_paths import relativize_text
 
 logger = logging.getLogger(__name__)
 
@@ -414,13 +415,26 @@ def format_tool_error(
     return _generic_message(language)
 
 
-def sanitize_user_response(response: Any, *, lang: str = "en", tool_name: str = "") -> str:
-    """Last response-boundary guard against raw exceptions/provider payloads."""
+def sanitize_user_response(
+    response: Any,
+    *,
+    lang: str = "en",
+    tool_name: str = "",
+    roots: Any = None,
+) -> str:
+    """Last response-boundary guard against raw exceptions/provider payloads.
+
+    ``roots`` optionally carries the path tokens for the active case, so a
+    quoted server path is presented as ``<workspace>/…`` instead of the
+    basename-only fallback.
+    """
     text = str(response or "").strip()
     if not text:
         return text
     if is_provider_error(text):
         return format_tool_error(tool_name or "request", text, {}, lang)
+    if roots is not None:
+        text = relativize_text(text, roots)
     redacted = redact_internal_paths(text, lang=lang)
     if is_internal_error(redacted):
         return format_tool_error(tool_name or "request", text, {}, lang)

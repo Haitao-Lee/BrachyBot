@@ -21,6 +21,8 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Callable, Deque, Dict, Iterable, List, Optional, Tuple
 
+from utils.display_paths import DisplayRoots, relativize_value, roots_from_config
+
 # Long or repetitive agent workflows can publish tens of thousands of raw
 # events (tool payloads, text chunks) into one task journal. Retaining every
 # event grows process memory without bound while the task runs, so journals
@@ -197,6 +199,18 @@ class ChatTask:
         self._commit_step_id = f"workspace-commit-{self.task_id}"
         self._worker_done = threading.Event()
         self._skip_finalization = False
+        self._display_roots_cache: Optional[DisplayRoots] = None
+
+    def _display_roots(self) -> DisplayRoots:
+        """Return the tokens used to hide server paths from the browser."""
+        if self._display_roots_cache is None:
+            try:
+                self._display_roots_cache = roots_from_config(
+                    getattr(self.agent, "config", None)
+                )
+            except Exception:
+                self._display_roots_cache = DisplayRoots()
+        return self._display_roots_cache
 
     def commit_step(self, status: str, result: str = "") -> Dict[str, Any]:
         """Return the stable progress step used while durable results commit."""
@@ -245,6 +259,12 @@ class ChatTask:
         ):
             logger.debug("Suppressing internal workspace checkpoint step for task %s", self.task_id)
             return
+        # The browser must never see where the server keeps a case.  Rewrite
+        # absolute paths to reversible tokens before the event is both
+        # journaled (so replay/reload stays clean) and stored as a step.
+        if event_name in {"step", "error", "response"} and isinstance(data, dict):
+            data = relativize_value(data, self._display_roots())
+            text = self.encode_event(event_name, data)
         with self._condition:
             if event_name == "step" and isinstance(data, dict):
                 self.steps.append(dict(data))
