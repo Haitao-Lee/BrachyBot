@@ -308,10 +308,16 @@ def test_independent_visual_capture_failure_does_not_cancel_sibling_or_invent_lo
             self.values[key] = value
 
     class Harness(ResponseToolMixin):
+        # Keyword readers only produce material now; the adjudication layer
+        # is the real mixin method and this harness has no LLM, so the
+        # material is the honest fallback just like production.
+        _answer_with_material = ChatWorkflowMixin._answer_with_material
+
         def __init__(self):
             self.memory = Memory()
             self._active_turn_policy = policy
             self.executed = []
+            self.brain_available = False
 
         def _execute_tool_with_memory(self, tool, params):
             target = params.get("semantic_target")

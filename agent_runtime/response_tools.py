@@ -33,6 +33,7 @@ from agent_runtime.shortcut_contract import planning_command, explicit_repeat, e
 from plans.dose_pre.model_loader import resolve_prescription_gy
 from tool_factory.ui_controller import normalize_ui_controller_request, CONTROL_REGISTRY
 from utils.user_errors import format_tool_error, sanitize_user_response
+from utils.display_paths import roots_from_config
 from agent_runtime import request_parse as _request_parse
 from agent_runtime.execution_authorization import MUTATING_TOOLS
 from agent_runtime.artifact_analysis import (
@@ -1542,8 +1543,12 @@ print(json.dumps(result))
                 for step in steps
             ):
                 self._visual_analysis_pending = True
-            response = self._build_multi_intent_response(
-                user_msg, steps, getattr(self, "_active_turn_policy", None),
+            response = self._answer_with_material(
+                user_msg,
+                self._build_multi_intent_response(
+                    user_msg, steps, getattr(self, "_active_turn_policy", None),
+                ),
+                steps=steps,
             )
         elif (
             getattr(getattr(self, "_active_turn_policy", None), "intent", None)
@@ -1580,7 +1585,11 @@ print(json.dumps(result))
         # if self.multi_agent_wrapper and self.multi_agent_wrapper.enabled:
         #     ...
 
-        return sanitize_user_response(response, lang=_lang)
+        return sanitize_user_response(
+            response,
+            lang=_lang,
+            roots=roots_from_config(getattr(self, "config", None)),
+        )
 
     def _build_direct_response(self, steps: List, lang: str) -> str:
         """Build structured response. Delegates to ToolResultPipeline."""
