@@ -6691,6 +6691,11 @@ async function _refreshAfterDataMutation(
             _purgeDeletedDataTreePresentation(objectIds);
         }
         invalidateViewerDataLoads();
+        // Repaint immediately: the confirmed rows are gone from dataTreeState
+        // and their meshes are disposed.  Do not make the operator wait for the
+        // full label-volume reload below just to see the deletion take effect.
+        try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
+        try { if (typeof syncSceneAppearanceFromDataTree === 'function') syncSceneAppearanceFromDataTree(); } catch (_) {}
     }
 
     if (allCaseData) {
@@ -7470,8 +7475,6 @@ function batchToggleVisibility(visible) {
         }
     });
     renderDataTree();
-    if (state.ctLoaded) reloadOverlays();
-    redrawSeedNeedleOverlays();
     requestViewerVisualRefresh('batch-visibility');
     applyDataTreeViewVisibility();
     _scheduleDataTreeSave('viewer.batch_visibility');
@@ -8457,7 +8460,6 @@ function toggleDataVisibility(id) {
             const mesh = scene3D.meshes[id];
             if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(organ), organ.opacity ?? 0.5);
             renderDataTree();
-            if (state.ctLoaded) reloadOverlays();
             _scheduleDataTreeSave(`viewer.visibility:${id}`);
         }
         return;
@@ -8474,7 +8476,6 @@ function toggleDataVisibility(id) {
             const mesh = scene3D.meshes[id];
             if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(dataTreeState.ctvLabels[id]), dataTreeState.ctvLabels[id].opacity ?? dataTreeState.ctv.opacity ?? 0.7);
         renderDataTree();
-        if (state.ctLoaded) reloadOverlays();
         _scheduleDataTreeSave(`viewer.visibility:${id}`);
         return;
     }
@@ -8487,7 +8488,6 @@ function toggleDataVisibility(id) {
         const mesh = scene3D.meshes.skin_surface;
         if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(dataTreeState.skin), dataTreeState.skin.opacity ?? 0.1);
         renderDataTree();
-        if (state.ctLoaded) reloadOverlays();
         _scheduleDataTreeSave(`viewer.visibility:${id}`);
         return;
     }
@@ -8572,7 +8572,6 @@ function toggleDataVisibility(id) {
             const mesh = scene3D.meshes[rawId];
             if (mesh) applyMeshVisibility(mesh, mask.visible !== false, mask.opacity ?? 0.6);
             renderDataTree();
-            reloadOverlays();
             _scheduleDataTreeSave(`viewer.visibility:${id}`);
         }
         return;
@@ -8613,7 +8612,6 @@ function toggleDataVisibility(id) {
     }
 
     renderDataTree();
-    if (state.ctLoaded) reloadOverlays();
     _scheduleDataTreeSave(`viewer.visibility:${id}`);
 }
 

@@ -424,6 +424,18 @@ def test_data_tree_delete_reconciles_canonical_ids_and_stale_hydration():
     assert "const liveCtvNodeIds = new Set(ctvLabels.map(labelId => `ctv_${labelId}`));" in viewer
     assert "if (!_viewerDataScopeIsCurrent(scope)) return false;" in viewer
     assert "if (!_isOpenGenericMask(nextMask))" in viewer
+    # The confirmed purge must repaint before the heavy label-volume reload, so a
+    # delete never freezes the tree behind a full /viewer/label_volume download.
+    purge_idx = viewer.index("_purgeDeletedDataTreePresentation(objectIds);")
+    paint_idx = viewer.index("try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}", purge_idx)
+    load_idx = viewer.index("await loadLabelVolumes({", purge_idx)
+    assert paint_idx < load_idx, "tree must repaint before the label-volume reload"
+    # A single eye-click must not run two full MPR overlay passes: the rAF'd
+    # applyDataTreeViewVisibility already owns reloadOverlays/redrawSeedNeedleOverlays.
+    toggle_idx = viewer.index("function toggleDataVisibility(id)")
+    toggle_end = viewer.index("function setDataItemVisibility", toggle_idx)
+    toggle_block = viewer[toggle_idx:toggle_end]
+    assert "reloadOverlays();" not in toggle_block, "toggleDataVisibility must not double-render overlays"
 
 
 def test_missing_data_tree_objects_trigger_authoritative_reconciliation():
