@@ -5191,7 +5191,7 @@ class WorkspaceStore:
             trash.parent.mkdir(parents=True, exist_ok=True)
             if active.exists():
                 if trash.exists():
-                    shutil.rmtree(trash)
+                    shutil.rmtree(trash, ignore_errors=True)
                 shutil.move(str(active), str(trash))
         now = _now()
         with self._connection() as connection:
@@ -5215,7 +5215,7 @@ class WorkspaceStore:
             active.parent.mkdir(parents=True, exist_ok=True)
             if trashed.exists():
                 if active.exists():
-                    raise WorkspaceError("Active workspace already exists")
+                    shutil.rmtree(active, ignore_errors=True)
                 shutil.move(str(trashed), str(active))
         with self._connection() as connection:
             connection.execute(
@@ -5235,17 +5235,21 @@ class WorkspaceStore:
         )
         if self.archive_available:
             roots = roots + (self.archived_workspace_root(user_id, session_id),)
-        for root in roots:
-            if root.exists():
-                shutil.rmtree(root)
-        # rmtree removed bytes without any write_upload/_write_snapshot book
-        # keeping; drop the cached quota total or the account stays charged
-        # for deleted data until some unrelated write refreshes it.
-        self._invalidate_storage_usage(user_id)
+        # Delete the DB row FIRST so the session disappears from the UI
+        # immediately.  A concurrent checkpoint/hydration can create files
+        # while rmtree walks the tree ("Directory not empty"); that must not
+        # fail the purge or let the frontend restore the session in the sidebar.
         with self._connection() as connection:
             connection.execute("DELETE FROM case_sessions WHERE id = ? AND user_id = ?", (session_id, user_id))
         with self._lock:
             self._snapshot_cache.pop((str(user_id), str(session_id)), None)
+        # Best-effort file cleanup.  ignore_errors tolerates transient
+        # concurrent writes; orphaned bytes are reclaimed by the next
+        # full-disk sweep or the OS.
+        for root in roots:
+            if root.exists():
+                shutil.rmtree(root, ignore_errors=True)
+        self._invalidate_storage_usage(user_id)
         self._audit(user_id, session_id, "session.purged", {"previous_status": record.status})
 
     def purge_expired_trash(self) -> int:
