@@ -9589,7 +9589,14 @@ function _appendScreenshotToGalleryLegacy(url, target, question, galleryContext)
     context.title.textContent = `${galleryTitle} (${context.items.length})`;
     item.addEventListener('click', () => {
         const index = context.items.findIndex(entry => entry.url === url && entry.label === label);
-        _openScreenshotModal(url, question || target || 'Screenshot', Math.max(0, index), context.items.length);
+        _openScreenshotModal(url, question || target || 'Screenshot', Math.max(0, index), context.items.length, {
+            galleryItems: context.items.map(entry => ({
+                displayUrl: entry.url,
+                originalUrl: entry.url,
+                annotatedUrl: '',
+                label: entry.label,
+            })),
+        });
     });
     scrollToBottom();
 }
@@ -9626,9 +9633,21 @@ function _openScreenshotModal(url, label, index = 0, total = 1, options = {}) {
         _activeApiSessionId(),
         options.responseLanguage || options.response_language || '',
     );
-    const originalUrl = String(options.originalUrl || options.original_url || url || '');
-    const annotatedUrl = String(options.annotatedUrl || options.annotated_url || '');
-    let showingAnnotated = !!annotatedUrl && String(url || '') === annotatedUrl;
+    const fallback = language === 'zh' ? '\u622a\u56fe' : 'Screenshot';
+    const rawItems = Array.isArray(options.galleryItems) ? options.galleryItems : [];
+    let items = rawItems.filter(it => it && (it.displayUrl || it.originalUrl || it.annotatedUrl));
+    if (items.length === 0) {
+        items = [{
+            displayUrl: String(url || ''),
+            originalUrl: String(options.originalUrl || options.original_url || url || ''),
+            annotatedUrl: String(options.annotatedUrl || options.annotated_url || ''),
+            label: String(label || ''),
+        }];
+    }
+    let currentIndex = Math.max(0, Math.min(index, items.length - 1));
+    let showingAnnotated = false;
+    let currentOriginal = '';
+    let currentAnnotated = '';
     const overlay = document.createElement('div');
     overlay.className = 'image-modal-overlay';
     overlay.addEventListener('click', event => {
@@ -9641,40 +9660,85 @@ function _openScreenshotModal(url, label, index = 0, total = 1, options = {}) {
     close.title = language === 'zh' ? '\u5173\u95ed\u56fe\u7247' : 'Close image';
     close.addEventListener('click', () => overlay.remove());
     const image = document.createElement('img');
-    image.src = showingAnnotated ? annotatedUrl : originalUrl;
-    image.alt = label || (language === 'zh' ? '\u622a\u56fe' : 'Screenshot');
+    image.alt = label || fallback;
     image.addEventListener('click', event => event.stopPropagation());
     const info = document.createElement('div');
     info.className = 'image-modal-info';
-    const fallback = language === 'zh' ? '\u622a\u56fe' : 'Screenshot';
-    info.textContent = total > 1
-        ? `${label || fallback} \u00b7 ${index + 1}/${total}`
-        : (label || fallback);
-    overlay.append(close, image, info);
-    if (annotatedUrl && originalUrl) {
-        const toggle = document.createElement('button');
-        toggle.type = 'button';
-        toggle.className = 'image-modal-variant-toggle';
-        const updateToggle = () => {
-            toggle.textContent = showingAnnotated
-                ? (language === 'zh' ? '\u67e5\u770b\u539f\u56fe' : 'View original')
-                : (language === 'zh' ? '\u67e5\u770b\u6807\u6ce8\u56fe' : 'View annotation');
-            toggle.setAttribute('aria-pressed', showingAnnotated ? 'true' : 'false');
-            image.src = showingAnnotated ? annotatedUrl : originalUrl;
-        };
-        toggle.addEventListener('click', event => {
-            event.stopPropagation();
-            showingAnnotated = !showingAnnotated;
-            updateToggle();
-        });
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'image-modal-variant-toggle';
+    toggle.hidden = true;
+    const updateToggle = () => {
+        toggle.textContent = showingAnnotated
+            ? (language === 'zh' ? '\u67e5\u770b\u539f\u56fe' : 'View original')
+            : (language === 'zh' ? '\u67e5\u770b\u6807\u6ce8\u56fe' : 'View annotation');
+        toggle.setAttribute('aria-pressed', showingAnnotated ? 'true' : 'false');
+        image.src = showingAnnotated ? currentAnnotated : currentOriginal;
+    };
+    toggle.addEventListener('click', event => {
+        event.stopPropagation();
+        showingAnnotated = !showingAnnotated;
         updateToggle();
-        overlay.appendChild(toggle);
+    });
+    let prevBtn = null;
+    let nextBtn = null;
+    if (items.length > 1) {
+        prevBtn = document.createElement('button');
+        prevBtn.className = 'image-modal-nav image-modal-nav-prev';
+        prevBtn.type = 'button';
+        prevBtn.textContent = '\u2039';
+        prevBtn.title = language === 'zh' ? '\u4e0a\u4e00\u5f20' : 'Previous image';
+        prevBtn.addEventListener('click', event => {
+            event.stopPropagation();
+            navigate(-1);
+        });
+        nextBtn = document.createElement('button');
+        nextBtn.className = 'image-modal-nav image-modal-nav-next';
+        nextBtn.type = 'button';
+        nextBtn.textContent = '\u203a';
+        nextBtn.title = language === 'zh' ? '\u4e0b\u4e00\u5f20' : 'Next image';
+        nextBtn.addEventListener('click', event => {
+            event.stopPropagation();
+            navigate(1);
+        });
     }
+    const renderSlide = () => {
+        const item = items[currentIndex];
+        currentOriginal = String(item.originalUrl || item.displayUrl || '');
+        currentAnnotated = String(item.annotatedUrl || '');
+        showingAnnotated = !!currentAnnotated && String(item.displayUrl || '') === currentAnnotated;
+        image.src = showingAnnotated ? currentAnnotated : currentOriginal;
+        image.alt = item.label || fallback;
+        const slideLabel = item.label || fallback;
+        info.textContent = items.length > 1
+            ? `${slideLabel} \u00b7 ${currentIndex + 1}/${items.length}`
+            : slideLabel;
+        if (currentAnnotated && currentOriginal && currentAnnotated !== currentOriginal) {
+            toggle.hidden = false;
+            updateToggle();
+        } else {
+            toggle.hidden = true;
+            image.src = currentAnnotated || currentOriginal;
+        }
+    };
+    const navigate = delta => {
+        currentIndex = ((currentIndex + delta) % items.length + items.length) % items.length;
+        renderSlide();
+    };
+    renderSlide();
+    overlay.append(close, image, info, toggle);
+    if (prevBtn) overlay.appendChild(prevBtn);
+    if (nextBtn) overlay.appendChild(nextBtn);
     document.body.appendChild(overlay);
     const onKey = event => {
-        if (event.key !== 'Escape') return;
-        overlay.remove();
-        document.removeEventListener('keydown', onKey);
+        if (event.key === 'Escape') {
+            overlay.remove();
+            document.removeEventListener('keydown', onKey);
+        } else if (event.key === 'ArrowLeft' && items.length > 1) {
+            navigate(-1);
+        } else if (event.key === 'ArrowRight' && items.length > 1) {
+            navigate(1);
+        }
     };
     document.addEventListener('keydown', onKey);
 }

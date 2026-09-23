@@ -913,6 +913,30 @@
     text-align: center;
     box-shadow: var(--shadow-floating);
 }
+.image-modal-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--bg-2);
+    color: var(--text);
+    border: 1px solid var(--border-hairline);
+    border-radius: 50%;
+    width: 44px; height: 44px;
+    font-size: 1.5rem;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all var(--t-base) var(--ease);
+    box-shadow: var(--shadow-floating);
+    z-index: 2;
+    user-select: none;
+    line-height: 1;
+}
+.image-modal-nav:hover {
+    background: rgba(30, 41, 59, 0.98);
+    border-color: #7c9aff;
+}
+.image-modal-nav-prev { left: 16px; }
+.image-modal-nav-next { right: 16px; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
 .chat-msg-actions {

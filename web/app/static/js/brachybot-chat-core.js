@@ -1797,10 +1797,24 @@ function _renderAssistantAttachmentButton(button, attachment, index, total, sess
     else void recoverImage();
     button.onclick = () => {
         if (typeof _openScreenshotModal !== 'function') return;
+        const galleryEl = button.closest('.chat-image-gallery');
+        const galleryItems = [];
+        if (galleryEl) {
+            galleryEl.querySelectorAll('.chat-gallery-item').forEach(el => {
+                const cap = el.querySelector('.chat-image-caption');
+                galleryItems.push({
+                    displayUrl: String(el.dataset.displayUrl || ''),
+                    originalUrl: String(el.dataset.attachmentUrl || ''),
+                    annotatedUrl: String(el.dataset.annotatedUrl || ''),
+                    label: String(cap?.textContent || ''),
+                });
+            });
+        }
         _openScreenshotModal(currentDisplayUrl, title, index, total, {
             originalUrl: canonicalOriginalUrl,
             annotatedUrl: canonicalAnnotatedUrl,
             responseLanguage: attachment.response_language || attachment.responseLanguage || '',
+            galleryItems,
         });
     };
 }
