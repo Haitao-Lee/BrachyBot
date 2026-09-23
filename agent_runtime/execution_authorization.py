@@ -140,6 +140,14 @@ class TurnExecutionAuthorization:
             return True
         if name in self.granted_tools:
             return True
+        # If any planning-derived tool is granted, allow the full dependency
+        # chain.  The confirmation flow may grant only ctv_segmentation and
+        # oar_segmentation (the LLM's first steps) while the workflow enforcer
+        # injects planning_pipeline as a prerequisite.
+        if name in PLANNING_DERIVED_TOOLS and (
+            self.granted_tools & PLANNING_DERIVED_TOOLS
+        ):
+            return True
         return (
             self.workflow_allowed(PLANNING_WORKFLOW)
             and name in PLANNING_DERIVED_TOOLS

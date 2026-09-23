@@ -636,3 +636,69 @@ def test_guide_state_gate_presents_a_ready_guide_instead_of_recomputing():
     forced = Harness(Memory({"surgical_guide": {"status": "ready"}}))
     calls = forced._detect_tool_request("\u91cd\u65b0\u751f\u6210\u624b\u672f\u5bfc\u677f")
     assert calls and calls[0]["tool"] == "surgical_guide"
+
+def test_confirmation_prompt_ack_authorizes_full_planning_chain():
+    """A bare 'execution' after a confirmation prompt must not re-block the chain.
+
+    The LLM re-emits only the first steps (ctv_segmentation, oar_segmentation)
+    instead of the anchor tool named in the prompt.  Those are prerequisites of
+    the confirmed plan and must not trigger a second confirmation loop.
+    """
+    from agent_runtime.request_parse import mutating_execution_authorized
+
+    conversation = [
+        {"role": "user", "content": "\u8bf7\u6267\u884c\u653e\u5c04\u6027\u7c92\u5b50\u690d\u5165\u89c4\u5212"},
+        {
+            "role": "assistant",
+            "content": (
+                "\u4e3a\u907f\u514d\u8bef\u6539\u5f53\u524d\u75c5\u4f8b\uff0c"
+                "\u4e0b\u9762\u8fd9\u4e9b\u64cd\u4f5c\u9700\u8981\u4f60\u4e00\u53e5\u660e\u786e\u786e\u8ba4\u540e\u518d\u6267\u884c\uff1a\n\n"
+                "`planning_pipeline, surgical_guide`\n\n"
+                "\u56de\u590d\u300c\u6267\u884c\u300d\u6211\u5c31\u6309\u4f9d\u8d56\u987a\u5e8f\u8fd0\u884c\uff1b"
+                "\u82e5\u8981\u8df3\u8fc7\u67d0\u4e00\u9879\uff0c\u8bf7\u8bf4\u660e\uff08\u4f8b\u5982\u300c\u4e0d\u542b\u5bfc\u677f\u300d\uff09\u3002"
+            ),
+        },
+        {"role": "user", "content": "\u6267\u884c"},
+    ]
+
+    # The full planning dependency chain is authorized.
+    for tool in ("ctv_segmentation", "oar_segmentation", "planning_pipeline"):
+        assert mutating_execution_authorized("\u6267\u884c", tool, conversation) is True
+
+    # A tool named in the confirmation prompt is also authorized.
+    assert mutating_execution_authorized("\u6267\u884c", "surgical_guide", conversation) is True
+
+    # An unrelated mutation is still blocked.
+    assert mutating_execution_authorized("\u6267\u884c", "dose_recompute", conversation) is False
+
+
+def test_confirmation_prompt_detection_requires_the_prompt_markers():
+    """Only the blocked-mutation prompt text triggers chain-wide authorization."""
+    from agent_runtime.request_parse import mutating_execution_authorized
+
+    # A normal assistant reply that happens to name planning_pipeline does not
+    # unlock the chain for tools it never mentioned.
+    conversation = [
+        {"role": "user", "content": "\u8bf7\u6267\u884c\u653e\u5c04\u6027\u7c92\u5b50\u690d\u5165\u89c4\u5212"},
+        {
+            "role": "assistant",
+            "content": "\u6211\u5efa\u8bae\u5148\u8fd0\u884c planning_pipeline\u3002",
+        },
+        {"role": "user", "content": "\u6267\u884c"},
+    ]
+    assert mutating_execution_authorized("\u6267\u884c", "ctv_segmentation", conversation) is False
+
+
+def test_planning_derived_tool_grant_unlocks_full_chain():
+    """Granting any PLANNING_DERIVED_TOOLS member allows the whole chain."""
+    from agent_runtime.execution_authorization import TurnExecutionAuthorization
+
+    auth = TurnExecutionAuthorization(token=1)
+    auth.grant_tools({"ctv_segmentation", "oar_segmentation"}, source="test")
+
+    # The workflow enforcer injects planning_pipeline as a prerequisite.
+    assert auth.tool_allowed("planning_pipeline") is True
+    # Non-chain mutations remain blocked.
+    assert auth.tool_allowed("surgical_guide") is False
+    assert auth.tool_allowed("dose_recompute") is False
+
