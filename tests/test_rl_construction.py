@@ -34,6 +34,7 @@ try:
     from plans.reinforcement import (
         SeedPlacementReward,
         construct_plan_over_candidates,
+        consolidate_plan_needles,
         evaluate_plan_objective,
     )
     from plans.utilizations import select_hierarchy_level
@@ -248,6 +249,115 @@ class HierarchyLevelPolicyTests(unittest.TestCase):
         chosen = select_hierarchy_level(
             [shallow, deep], needle_penalty=0.01, target_coverage=0.9)
         self.assertIs(chosen, shallow)
+
+
+class ConsolidationTests(unittest.TestCase):
+    """Needle economy under the plan objective.
+
+    Marginal-gain construction reaches the target with a slightly spread
+    layout (the 238 cm3 case: 29 needles x 6.3 seeds vs rule-based 24 x 7.5)
+    because it stops a needle when its fringe slots stop paying and opens a
+    new one instead.  After the target is met one needle costs the objective
+    as much as ~6.7 seeds, so thin needles must be droppable whenever their
+    seeds can ride on surviving needles' free slots.
+    """
+
+    def _calculator(self, image, radiation_volume):
+        return SeedPlacementReward(
+            torch.nn.Linear(1, 1), image, radiation_volume, 1,
+            IN_LOWEST, OUT_HIGHEST, (8, 8, 8), dict(SEED_INFO),
+            -1000.0, 3000.0, 255.0, DVH_TARGET)
+
+    def _single_lobe_case(self):
+        zz, yy, xx = np.meshgrid(
+            np.arange(GRID[0], dtype=np.float32),
+            np.arange(GRID[1], dtype=np.float32),
+            np.arange(GRID[2], dtype=np.float32),
+            indexing="ij",
+        )
+        lobe = (((zz - 8.0) / 5.0) ** 2 + ((yy - 3.0) / 2.5) ** 2 + ((xx - 12.0) / 2.5) ** 2) <= 1.0
+        radiation_volume = np.zeros(GRID, dtype=np.int16)
+        radiation_volume[lobe] = 1
+        image = sitk.GetImageFromArray(np.zeros(GRID, dtype=np.float32))
+        image.SetSpacing((1.0, 1.0, 1.0))
+        image.SetOrigin((0.0, 0.0, 0.0))
+        return image, radiation_volume
+
+    @staticmethod
+    def _world(image, voxel_point):
+        return np.asarray(
+            utilizations.position_transform(image, np.asarray(voxel_point))[0]).reshape(-1)
+
+    def test_consolidation_trades_a_thin_needle_for_a_denser_pack(self):
+        from scipy.ndimage import distance_transform_edt
+        image, radiation_volume = self._single_lobe_case()
+        calculator = self._calculator(image, radiation_volume)
+        distance_map = distance_transform_edt(radiation_volume == 1)
+        axis = np.array([1.0, 0.0, 0.0])
+        # Two thin parallel needles through one lobe, one seed each.  Needle 0
+        # has a free slot at the same depth as needle 1's only seed, so the
+        # second puncture is surplus the objective should trade away.
+        traj_a = (np.array([1.0, 3.0, 12.0]), axis, [14], [0])
+        traj_b = (np.array([1.0, 3.6, 12.0]), axis, [14], [0])
+        seed_a = np.array([5.0, 3.0, 12.0])
+        seed_b = np.array([11.0, 3.0, 12.0])
+        entries = [
+            [traj_a, [[self._world(image, seed_a), axis]], [_blob(seed_a)]],
+            [traj_b, [[self._world(image, seed_b), axis]], [_blob(seed_b)]],
+        ]
+        before_objective, before_coverage = evaluate_plan_objective(
+            entries, radiation_volume, 1, IN_LOWEST, OUT_HIGHEST, DVH_TARGET)
+        self.assertGreaterEqual(before_coverage, DVH_TARGET)
+
+        with patch("plans.utilizations.single_seed_dose_calculation_dl",
+                   side_effect=_fake_single), \
+             patch("plans.utilizations.batch_seed_dose_calculation_dl",
+                   side_effect=_fake_batch):
+            consolidated = consolidate_plan_needles(
+                calculator, entries, image, distance_map, dict(SEED_INFO),
+            )
+
+        after_objective, after_coverage = evaluate_plan_objective(
+            consolidated, radiation_volume, 1, IN_LOWEST, OUT_HIGHEST, DVH_TARGET)
+        self.assertEqual(len(consolidated), 1, "the thin needle must be absorbed")
+        self.assertEqual(sum(len(e[1]) for e in consolidated), 2)
+        self.assertGreaterEqual(after_coverage, before_coverage - 1e-6)
+        self.assertGreater(after_objective, before_objective)
+
+    def test_consolidation_keeps_a_needle_when_replacement_cannot_pay(self):
+        from scipy.ndimage import distance_transform_edt
+        image, radiation_volume, trajectories = _structural_case()
+        calculator = self._calculator(image, radiation_volume)
+        distance_map = distance_transform_edt(radiation_volume == 1)
+        # Two far-apart lobes, one needle each.  The other needle cannot
+        # reach the cold lobe at all, so dropping either one loses coverage
+        # the objective must refuse to trade.
+        traj_a, traj_b = trajectories[0], trajectories[1]
+        axis = np.array([1.0, 0.0, 0.0])
+        seeds_a = [np.array([4.0, 3.0, 12.0]), np.array([8.0, 3.0, 12.0])]
+        seeds_b = [np.array([4.0, 12.0, 12.0]), np.array([8.0, 12.0, 12.0])]
+        entries = [
+            [traj_a, [[self._world(image, p), axis] for p in seeds_a],
+             [_blob(p) for p in seeds_a]],
+            [traj_b, [[self._world(image, p), axis] for p in seeds_b],
+             [_blob(p) for p in seeds_b]],
+        ]
+        before_objective, _ = evaluate_plan_objective(
+            entries, radiation_volume, 1, IN_LOWEST, OUT_HIGHEST, DVH_TARGET)
+
+        with patch("plans.utilizations.single_seed_dose_calculation_dl",
+                   side_effect=_fake_single), \
+             patch("plans.utilizations.batch_seed_dose_calculation_dl",
+                   side_effect=_fake_batch):
+            consolidated = consolidate_plan_needles(
+                calculator, entries, image, distance_map, dict(SEED_INFO),
+            )
+
+        after_objective, after_coverage = evaluate_plan_objective(
+            consolidated, radiation_volume, 1, IN_LOWEST, OUT_HIGHEST, DVH_TARGET)
+        self.assertEqual(len(consolidated), 2, "both load-bearing needles must stay")
+        self.assertGreaterEqual(after_objective, before_objective - 1e-9)
+        self.assertGreaterEqual(after_coverage, 0.2)
 
 
 if __name__ == "__main__":

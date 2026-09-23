@@ -1364,6 +1364,149 @@ def construct_plan_over_candidates(
     return plan_entries
 
 
+def consolidate_plan_needles(
+        reward_calculator,
+        plan_entries,
+        dose_image,
+        distance_map,
+        seed_info,
+        *,
+        deadline=None,
+        protect_OAR=True,
+        max_removals=8,
+        max_passes=2):
+    """Trade surplus needles for denser packing on the surviving needles.
+
+    Marginal-gain construction stops a needle when its fringe slots stop
+    paying for themselves and opens a new needle instead, which reaches the
+    target with a slightly more spread layout than a fill-first packer (the
+    238 cm3 regression case settled at 29 needles x 6.3 seeds versus
+    rule-based 24 x 7.5).  After the target is met one needle costs the plan
+    objective as much as ~6.7 seeds, so this pass repeatedly drops the
+    cheapest needle and re-places only the seeds that still pay for
+    themselves on the surviving needles' free slots.  Acceptance is a strict
+    improvement of the same plan objective used everywhere else, so the pass
+    can never lower the returned plan's rank.
+
+    Public seed coordinates stay patient-world, matching every other plan
+    producer in this module.
+    """
+    entries = [[entry[0], list(entry[1] or []), list(entry[2] or [])]
+               for entry in (plan_entries or [])]
+    entries = [entry for entry in entries if entry[1] and entry[2]]
+    if len(entries) < 2:
+        return entries
+
+    def _expired():
+        return deadline is not None and time.monotonic() >= deadline
+
+    def _objective(plan):
+        return evaluate_plan_objective(
+            plan,
+            reward_calculator.radiation_volume,
+            reward_calculator.target_value,
+            reward_calculator.in_lowest_dose,
+            reward_calculator.out_highest_dose,
+            reward_calculator.DVH_rate,
+        )[0]
+
+    def _voxel_seed_points(entry):
+        points = []
+        for seed in entry[1]:
+            world = np.asarray(seed[0], dtype=np.float64).reshape(-1)
+            index = dose_image.TransformPhysicalPointToContinuousIndex(
+                tuple(float(v) for v in world))
+            points.append(np.asarray(index[::-1], dtype=np.float64).reshape(-1))
+        return points
+
+    def _free_slots(entry):
+        voxel_points = _voxel_seed_points(entry)
+        placed = [(point, np.asarray(entry[1][0][1], dtype=np.float64).reshape(-1))
+                  for point in voxel_points]
+        steps = utilizations.get_available_position(
+            entry[0], placed, seed_info, dose_image, distance_map)
+        base_point, direction, advance = _trajectory_advance(entry[0])
+        return [(np.asarray(base_point + float(step) * advance, dtype=np.float64).reshape(-1),
+                 direction) for step in steps]
+
+    best_objective = _objective(entries)
+    accepted = 0
+    for _ in range(max_passes):
+        if _expired() or accepted >= max_removals:
+            break
+        improved = False
+        order = sorted(range(len(entries)), key=lambda i: (len(entries[i][1]), i))
+        for victim_index in order:
+            if _expired() or accepted >= max_removals:
+                break
+            victim = entries[victim_index]
+            survivors = [entry for i, entry in enumerate(entries) if i != victim_index]
+            survivor_slots = [(index, point, direction)
+                              for index, entry in enumerate(survivors)
+                              for point, direction in _free_slots(entry)]
+            if not survivor_slots:
+                continue
+            reward_calculator.prefetch_positions(
+                [(point, direction) for _, point, direction in survivor_slots])
+
+            trial = [[entry[0], list(entry[1]), list(entry[2])] for entry in survivors]
+            cur_radiation = np.zeros_like(reward_calculator.radiation_volume, dtype=np.float32)
+            for entry in trial:
+                for dose_map in entry[2]:
+                    cur_radiation += np.asarray(dose_map, dtype=np.float32)
+            total_seeds = sum(len(entry[1]) for entry in trial)
+            needle_count = len(trial)
+
+            # Re-place only what still pays for itself.  A dropped needle is
+            # worth ~6.7 seeds, so the greedy re-placement of at most that
+            # many seeds is exactly the trade the objective asks for.
+            budget = max(0, len(victim[1]) + 2)
+            while budget > 0 and not _expired():
+                best = None
+                for index, point, direction in survivor_slots:
+                    key = SeedPlacementReward.cache_key_for(point, direction)
+                    dose_map = reward_calculator.seed_cache.get(key)
+                    if dose_map is None:
+                        continue
+                    gain = reward_calculator.evaluate_marginal(
+                        cur_radiation, dose_map,
+                        seed_count=total_seeds + 1,
+                        needle_count=needle_count,
+                        is_new_needle=False,
+                        protect_OAR=protect_OAR,
+                    )
+                    if best is None or gain > best[0]:
+                        best = (gain, index, point, direction, dose_map)
+                if best is None or best[0] <= 0.0:
+                    break
+                gain, index, point, direction, dose_map = best
+                cur_radiation = cur_radiation + np.asarray(dose_map, dtype=np.float32)
+                world_position = np.asarray(
+                    utilizations.position_transform(dose_image, point)[0]).reshape(-1)
+                world_direction = np.asarray(
+                    utilizations.direction_transform(dose_image, direction)[0]).reshape(-1)
+                trial[index][1].append([world_position, world_direction])
+                trial[index][2].append(dose_map)
+                total_seeds += 1
+                budget -= 1
+                survivor_slots = [(i, p, d)
+                                  for i, entry in enumerate(trial)
+                                  for p, d in _free_slots(entry)]
+                reward_calculator.prefetch_positions(
+                    [(p, d) for _, p, d in survivor_slots])
+
+            trial_objective = _objective(trial)
+            if trial_objective > best_objective + 1e-9:
+                entries = trial
+                best_objective = trial_objective
+                accepted += 1
+                improved = True
+                break
+        if not improved:
+            break
+    return entries
+
+
 def generate_baseline_state_space(low_level_state_spaces, level, idx):
     merged = []
     for lv in range(level):
@@ -1668,6 +1811,21 @@ def reinforcement_planning(
                 return
             if not constructed:
                 return
+            raw_seeds, raw_needles = plan_cost_counts(constructed)
+            try:
+                constructed = consolidate_plan_needles(
+                    reward_calculator,
+                    constructed,
+                    dose_image,
+                    distance_map,
+                    seed_info,
+                    deadline=deadline,
+                    protect_OAR=protect_oar,
+                )
+            except DoseInferenceDeadlineExceeded:
+                logger.warning("[rl] Needle consolidation stopped at the DoseUNet deadline")
+            except Exception:
+                logger.debug("Needle consolidation failed", exc_info=True)
             construction_score, construction_coverage = evaluate_plan_objective(
                 constructed,
                 radiation_volume,
@@ -1676,11 +1834,13 @@ def reinforcement_planning(
                 out_highest_dose,
                 DVH_rate,
             )
-            construction_needles, construction_seeds = plan_cost_counts(constructed)
+            construction_seeds, construction_needles = plan_cost_counts(constructed)
             logger.info(
-                "[rl] construction incumbent: objective=%.4f coverage=%.4f needles=%d seeds=%d",
+                "[rl] construction incumbent: objective=%.4f coverage=%.4f needles=%d seeds=%d "
+                "(pre-consolidation needles=%d seeds=%d)",
                 construction_score, construction_coverage,
                 construction_needles, construction_seeds,
+                raw_needles, raw_seeds,
             )
             if rl_status is not None:
                 rl_status["construction_needles"] = int(construction_needles)
