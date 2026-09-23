@@ -12045,13 +12045,21 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
             })
             : { ready: true, legacy: true });
     if (visualReadiness?.ready === false) {
-        return {
-            success: false,
-            error: 'workspace_visual_restore_incomplete',
-            userMessage: _screenshotFailureMessage(context, 'workspace_visual_restore_incomplete'),
-            attachments: [],
-            plan,
-        };
+        const liveUsable = _workspaceHasLiveVisibleClinicalState(
+            window._activeWorkspaceSnapshot, ownerSessionId);
+        if (!liveUsable) {
+            return {
+                success: false,
+                error: 'workspace_visual_restore_incomplete',
+                userMessage: _screenshotFailureMessage(context, 'workspace_visual_restore_incomplete'),
+                attachments: [],
+                plan,
+            };
+        }
+        console.warn(
+            '[screenshot] visual barrier reports not-ready, but live clinical state is usable; proceeding with capture:',
+            visualReadiness,
+        );
     }
 
     const reportViews = plan.views.filter(view => String(view?.target || '') === 'report');

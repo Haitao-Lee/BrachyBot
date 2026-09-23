@@ -2508,7 +2508,15 @@ function renderMarkdown(text) {
             }
             return _sanitizeHtml(marked.parse(text));
         }
-    } catch (e) { console.warn('renderMarkdown:', e); /* fall through */ }
+    } catch (e) {
+        console.warn('renderMarkdown:', e);
+        renderMarkdown._renderer_installed = false;
+    }
+    try {
+        if (typeof marked !== 'undefined' && marked && marked.parse) {
+            return _sanitizeHtml(marked.parse(text, { renderer: new marked.Renderer() }));
+        }
+    } catch (e2) { console.warn('renderMarkdown fallback:', e2); }
     return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
 }
 
