@@ -24,6 +24,15 @@
     let pendingSwitchSessionId = null;
     let _switchAbortController = null;
     let workspaceTransitionGeneration = 0;
+    // Monotonic counter for /api/sessions requests.  Only the latest
+    // response may replace the session map — a stale response (issued
+    // before a delete/switch) would resurrect deleted sessions or revert
+    // the active case after 1-2 seconds.
+    let _sessionListGeneration = 0;
+    // Tombstone for recently deleted/purged sessions.  A stale
+    // /api/sessions response must never resurrect them even if the
+    // generation guard is bypassed (e.g. by a direct applySessionList call).
+    const _recentlyDeletedSessions = new Set();
     let workspaceRestoreGeneration = 0;
     const workspaceRestoreTimers = new Set();
     let backgroundRestoreGeneration = 0;
@@ -4627,9 +4636,18 @@
         return next;
     }
 
-    function applySessionList(data) {
-        sessions = sessionMapFromPayload(data);
-        updateRecycleBinCount(data?.trashed_count);
+    function applySessionList(data, requestGeneration = null) {
+        // Reject stale responses: a newer request has been issued and this
+        // response must not replace the session map.
+        if (requestGeneration !== null && requestGeneration < _sessionListGeneration) return;
+        // Filter out recently deleted/purged sessions so a stale response
+        // cannot resurrect them in the sidebar.
+        const filtered = {
+            ...data,
+            sessions: (data.sessions || []).filter(entry => !_recentlyDeletedSessions.has(entry.id)),
+        };
+        sessions = sessionMapFromPayload(filtered);
+        updateRecycleBinCount(filtered?.trashed_count);
         // During an active session transition the sidebar list refresh must
         // never overwrite the target the user just clicked.  A stale
         // GET /api/sessions response (cookie still pointing at the old case)
@@ -4721,10 +4739,14 @@
     }
 
     async function loadServerSessions({ commit = true, timeoutMs = WORKSPACE_REQUEST_TIMEOUT_MS } = {}) {
+        const gen = ++_sessionListGeneration;
         const response = await workspaceFetch('/api/sessions', {}, timeoutMs);
         if (!response.ok) throw new Error(`Session list failed: HTTP ${response.status}`);
         const data = await response.json();
-        if (commit) applySessionList(data);
+        // Only the latest request's response may replace the session map.
+        // A stale response (issued before a delete/switch) would otherwise
+        // resurrect deleted sessions or revert the active case.
+        if (commit) applySessionList(data, gen);
         else updateRecycleBinCount(data?.trashed_count);
         if (!data.active_session_id && !Object.keys(sessions).length) {
             cancelBackgroundWorkspaceRestore();
@@ -4822,7 +4844,9 @@
                 sessionId: recoverySessionId,
             });
             if (!isCurrentTransition(generation)) return;
-            applySessionList(sessionData);
+            // Use the generation-guarded applySessionList so a concurrent
+            // loadServerSessions cannot race this recovery commit.
+            applySessionList(sessionData, _sessionListGeneration);
             revision = workspace?.session?.revision ?? null;
             rememberWorkspaceRevision(workspace);
             window._activeWorkspaceSnapshot = workspace;
@@ -5395,6 +5419,10 @@
         // The old active-session path used runWorkspaceTransition which could
         // silently reject (busy) and leave the user with no visible feedback.
         const removedSession = sessions[id];
+        // Tombstone the session so a stale /api/sessions response cannot
+        // resurrect it in the sidebar after the optimistic removal.
+        _recentlyDeletedSessions.add(id);
+        setTimeout(() => _recentlyDeletedSessions.delete(id), 60_000);
         if (typeof window.releaseTrainingMonitorForSession === 'function') {
             void window.releaseTrainingMonitorForSession(id, 'session_deleted', { forceRequest: true });
         }
@@ -5440,6 +5468,8 @@
             void loadServerSessions().then(() => renderSessionList()).catch(error => console.debug('[workspace] session list refresh deferred:', error));
             return { success: true, active_session_id: activeSessionId };
         } catch (error) {
+            // Undo the tombstone — the session is being restored.
+            _recentlyDeletedSessions.delete(id);
             if (removedSession) sessions[id] = removedSession;
             renderSessionList();
             void loadServerSessions().then(() => renderSessionList()).catch(() => {});
@@ -5522,6 +5552,8 @@
     };
 
     window.restoreTrashedSession = async function restoreTrashedSession(id) {
+        // Remove the tombstone — the session is being restored.
+        _recentlyDeletedSessions.delete(id);
         const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/restore`, { method: 'POST' });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Unable to restore case');
@@ -5537,9 +5569,16 @@
             `Permanently delete "${label}"? This cannot be undone.`,
         );
         if (!confirmed) return;
+        // Tombstone before the request so stale list responses cannot
+        // resurrect the session between the request and the refresh.
+        _recentlyDeletedSessions.add(id);
+        setTimeout(() => _recentlyDeletedSessions.delete(id), 60_000);
         const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/purge`, { method: 'DELETE' });
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Unable to permanently delete case');
+        if (!response.ok) {
+            _recentlyDeletedSessions.delete(id);
+            throw new Error(data.error || 'Unable to permanently delete case');
+        }
         await clearDeletedSessionBrowserData(id);
         await loadServerSessions();
         await window.openRecycleBin();

@@ -612,7 +612,7 @@ def test_viewer_script_dependency_contract_is_cache_busted_and_syntax_safe():
     # failure as a missing global helper.
     ui_api_versions = re.findall(r'brachybot-ui-api\.js\?v=(\d+)', index)
     assert len(ui_api_versions) == 1 and int(ui_api_versions[0]) >= 1
-    assert 'brachybot-3d-manual.js?v=106' in index
+    assert 'brachybot-3d-manual.js?v=107' in index
     assert "window._normalizeTrajectoryId = function _normalizeTrajectoryId" in ui_api
 
     # This exact malformed expression previously prevented the entire 3D
