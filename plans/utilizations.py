@@ -4508,7 +4508,72 @@ def hierarchical_planning_rf(
             execution="failed",
             stop_reason="no_valid_dense_trajectory",
         )
-    
+
+    # ---- 0.  Deterministic construction over the full pool (success path) ----
+    # Construction runs BEFORE the dense learning sub-sample so its budget can
+    # never be starved by GPU contention during dense evaluation (the
+    # 2026-09-23 morning run: dense evaluation stretched to 184 s and the
+    # constructor was left with ~110 s).  The shared reward calculator keeps
+    # one dose cache across construction and the learning phase.
+    construction_plan = None
+    shared_reward = None
+    greedy_enabled = rf_params.get("greedy_warm_start", True)
+    if isinstance(greedy_enabled, str):
+        greedy_enabled = greedy_enabled.strip().lower() not in {"0", "false", "no", "off"}
+    if greedy_enabled and reinforcement is not None and construction_candidates:
+        protect_oar = bool(rf_params.get("segmented_rewards", True))
+        try:
+            shared_reward = reinforcement.SeedPlacementReward(
+                dose_cal_model, dose_image, radiation_volume, target_value,
+                in_lowest_dose, out_highest_dose, infer_img_size, seed_info,
+                image_normalize_min, image_normalize_max, image_normalize_scale,
+                DVH_rate, deadline=deadline,
+            )
+            construction_plan = reinforcement.construct_plan_over_candidates(
+                shared_reward,
+                construction_candidates,
+                radiation_volume,
+                target_value,
+                dose_image,
+                distance_map,
+                seed_info,
+                interval_rate=float(interval_rate or 2.0),
+                deadline=deadline,
+                protect_OAR=protect_oar,
+                parallel_min_distance_mm=parallel_min_distance_mm,
+                parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
+                preview_callback=preview_callback,
+            )
+            if construction_plan:
+                construction_plan = reinforcement.consolidate_plan_needles(
+                    shared_reward, construction_plan, dose_image, distance_map,
+                    seed_info, deadline=deadline, protect_OAR=protect_oar,
+                )
+                construction_seeds, construction_needles = reinforcement.plan_cost_counts(
+                    construction_plan)
+                construction_score, construction_coverage = reinforcement.evaluate_plan_objective(
+                    construction_plan, radiation_volume, target_value,
+                    in_lowest_dose, out_highest_dose, DVH_rate,
+                )
+                logger.info(
+                    "[rl] construction-first incumbent: objective=%.4f coverage=%.4f "
+                    "needles=%d seeds=%d",
+                    construction_score, construction_coverage,
+                    construction_needles, construction_seeds,
+                )
+                if rl_status is not None:
+                    rl_status["construction_seeds"] = int(construction_seeds)
+                    rl_status["construction_needles"] = int(construction_needles)
+                    rl_status["construction_coverage"] = float(construction_coverage)
+                    update_best(rl_status, construction_coverage, construction_score)
+        except Exception as exc:
+            from .dose_pre.inference import DoseInferenceDeadlineExceeded
+            if isinstance(exc, DoseInferenceDeadlineExceeded):
+                logger.warning("[rl] Construction-first phase stopped at the DoseUNet deadline")
+            else:
+                logger.debug("Construction-first phase failed", exc_info=True)
+            construction_plan = construction_plan or None
+
 
     # ---- 1.  Dense seed evaluation on every candidate trajectory ----
     traj_with_seeds = []  # [[trajectory_entry, DVH_rate], ...]
@@ -4765,6 +4830,8 @@ def hierarchical_planning_rf(
         interval_rate=interval_rate,
         parallel_min_distance_mm=parallel_min_distance_mm,
         parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
+        reward_calculator=shared_reward,
+        construction_plan=construction_plan,
     )
 
     if rl_status is not None:

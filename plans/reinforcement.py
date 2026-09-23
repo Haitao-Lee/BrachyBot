@@ -1563,7 +1563,9 @@ def reinforcement_planning(
         distance_map=None,
         interval_rate=2.0,
         parallel_min_distance_mm=None,
-        parallel_angle_tolerance_deg=None):
+        parallel_angle_tolerance_deg=None,
+        reward_calculator=None,
+        construction_plan=None):
     """
     Hierarchical reinforcement learning driver for a single patient case.
     Logic preserved; internal calls use optimized env and caches.
@@ -1645,12 +1647,13 @@ def reinforcement_planning(
             device=device
         )
 
-        reward_calculator = SeedPlacementReward(
-            dose_cal_model, dose_image, radiation_volume, target_value,
-            in_lowest_dose, out_highest_dose, infer_img_size, seed_info,
-            image_normalize_min, image_normalize_max,
-            image_normalize_scale, DVH_rate, deadline=deadline
-        )
+        if reward_calculator is None:
+            reward_calculator = SeedPlacementReward(
+                dose_cal_model, dose_image, radiation_volume, target_value,
+                in_lowest_dose, out_highest_dose, infer_img_size, seed_info,
+                image_normalize_min, image_normalize_max,
+                image_normalize_scale, DVH_rate, deadline=deadline
+            )
 
         env = HighLevelEnv(
             target_level_traj, high_level_state_spaces, low_level_state_spaces,
@@ -1772,6 +1775,38 @@ def reinforcement_planning(
                 )
             _record_plan(greedy_coverage, greedy_score)
 
+        def _adopt_constructed(constructed):
+            """Enter a finished construction plan into the incumbent pool."""
+            nonlocal best_plan, best_reward
+            if not constructed:
+                return
+            construction_score, construction_coverage = evaluate_plan_objective(
+                constructed,
+                radiation_volume,
+                target_value,
+                in_lowest_dose,
+                out_highest_dose,
+                DVH_rate,
+            )
+            construction_seeds, construction_needles = plan_cost_counts(constructed)
+            logger.info(
+                "[rl] construction incumbent: objective=%.4f coverage=%.4f needles=%d seeds=%d",
+                construction_score, construction_coverage,
+                construction_needles, construction_seeds,
+            )
+            if rl_status is not None:
+                rl_status["construction_needles"] = int(construction_needles)
+                rl_status["construction_seeds"] = int(construction_seeds)
+                rl_status["construction_coverage"] = float(construction_coverage)
+            if construction_score > best_reward:
+                best_reward = construction_score
+                best_plan = constructed
+                _emit_preview(
+                    best_plan, "rl_plan_construction", 0,
+                    construction_coverage, construction_score,
+                )
+            _record_plan(construction_coverage, construction_score)
+
         def _construction_incumbent():
             """Full-pool sequential construction: the deterministic success path.
 
@@ -1826,40 +1861,20 @@ def reinforcement_planning(
                 logger.warning("[rl] Needle consolidation stopped at the DoseUNet deadline")
             except Exception:
                 logger.debug("Needle consolidation failed", exc_info=True)
-            construction_score, construction_coverage = evaluate_plan_objective(
-                constructed,
-                radiation_volume,
-                target_value,
-                in_lowest_dose,
-                out_highest_dose,
-                DVH_rate,
-            )
             construction_seeds, construction_needles = plan_cost_counts(constructed)
             logger.info(
-                "[rl] construction incumbent: objective=%.4f coverage=%.4f needles=%d seeds=%d "
-                "(pre-consolidation needles=%d seeds=%d)",
-                construction_score, construction_coverage,
-                construction_needles, construction_seeds,
-                raw_needles, raw_seeds,
+                "[rl] consolidation: needles=%d seeds=%d (pre needles=%d seeds=%d)",
+                construction_needles, construction_seeds, raw_needles, raw_seeds,
             )
-            if rl_status is not None:
-                rl_status["construction_needles"] = int(construction_needles)
-                rl_status["construction_seeds"] = int(construction_seeds)
-                rl_status["construction_coverage"] = float(construction_coverage)
-            if construction_score > best_reward:
-                best_reward = construction_score
-                best_plan = constructed
-                _emit_preview(
-                    best_plan, "rl_plan_construction", 0,
-                    construction_coverage, construction_score,
-                )
-            _record_plan(construction_coverage, construction_score)
+            _adopt_constructed(constructed)
 
         greedy_enabled = rf_params.get("greedy_warm_start", True)
         if isinstance(greedy_enabled, str):
             greedy_enabled = greedy_enabled.strip().lower() not in {"0", "false", "no", "off"}
         if greedy_enabled:
-            if construction_candidates and distance_map is not None:
+            if construction_plan:
+                _adopt_constructed(construction_plan)
+            elif construction_candidates and distance_map is not None:
                 _construction_incumbent()
             else:
                 _greedy_incumbent(best_group_idx, "rl_greedy_warm_start")

@@ -360,5 +360,42 @@ class ConsolidationTests(unittest.TestCase):
         self.assertGreaterEqual(after_coverage, 0.2)
 
 
+class PhaseOrderTests(unittest.TestCase):
+    def test_construction_precedes_the_dense_learning_phase(self):
+        """Construction must claim its wall-clock budget before the learning
+        sub-sample's dense evaluation.  The 2026-09-23 morning run showed the
+        failure mode: a contended GPU stretched dense evaluation to 184 s,
+        construction was left ~110 s and reached only 3 needles, and the plan
+        had to be rescued by the deterministic fallback.
+        """
+        order = []
+        import plans.reinforcement as reinforcement_mod
+
+        real_construct = reinforcement_mod.construct_plan_over_candidates
+        real_spaces = utilizations.generate_hierarchical_state_spaces
+
+        def spy_construct(*args, **kwargs):
+            order.append("construct")
+            return real_construct(*args, **kwargs)
+
+        def spy_spaces(*args, **kwargs):
+            order.append("hierarchy")
+            return real_spaces(*args, **kwargs)
+
+        with patch.object(reinforcement_mod, "construct_plan_over_candidates",
+                          spy_construct), \
+             patch.object(utilizations, "generate_hierarchical_state_spaces",
+                          spy_spaces), \
+             patch("plans.utilizations.single_seed_dose_calculation_dl",
+                   side_effect=_fake_single), \
+             patch("plans.utilizations.batch_seed_dose_calculation_dl",
+                   side_effect=_fake_batch):
+            plan = _run_search(dict(STRUCTURAL_PARAMS))
+
+        self.assertTrue(plan, "the case must still plan")
+        self.assertEqual(order[0], "construct",
+                         f"construction must run first, got order={order}")
+
+
 if __name__ == "__main__":
     unittest.main()
