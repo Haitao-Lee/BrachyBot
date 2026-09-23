@@ -93,7 +93,7 @@ def is_internal_tool_result_message(message: object) -> bool:
 _INTERROGATIVE_END = re.compile(r"[?？吗呢]$")
 _INTERROGATIVE_ZH = re.compile(
     r"(?:是不是|有没有|能不能|可不可以|是否|怎么样|如何|怎么|为什么|为何|什么|谁|"
-    r"哪里|哪儿|在哪|哪次|哪个|哪一个|"
+    r"哪里|哪儿|在哪|哪次|哪个|哪一个|哪种|哪一种|"
     r"完成.*[了没]|做了[没吗]|好了[没吗]|生成.*[了没]|分割.*[了没]|规划.*[了没])"
 )
 _INTERROGATIVE_EN = re.compile(
@@ -101,6 +101,16 @@ _INTERROGATIVE_EN = re.compile(
     r"can (?:you|i)|could|would|should|has (?:it|the)|have (?:you|they)|"
     r"did (?:you|it)|does (?:it|the))\b"
 )
+# ``是 A 还是 B`` choice questions often carry no question word or mark:
+# "刚刚完成的这个规划任务是使用的算法是基于RL的还是规则-based的".  A
+# ``无论/不管`` frame ("无论是规则还是RL都可以") is a statement and must
+# not be treated as a question.
+_INTERROGATIVE_CHOICE = re.compile(
+    r"是[^，。？！?!,.]{0,28}还是|"
+    r"\bwhether\b[^.?!]{0,48}\bor\b",
+    re.IGNORECASE,
+)
+_CHOICE_STATEMENT = re.compile(r"^\s*(?:无论|不管|不论)")
 _NEGATED_INSPECTION = re.compile(r"(?:不要|别|不准|不许)")
 
 
@@ -113,6 +123,8 @@ def is_interrogative(message: object) -> bool:
     if _INTERROGATIVE_END.search(text.rstrip("!！")):
         return True
     if _INTERROGATIVE_ZH.search(lower) or _INTERROGATIVE_EN.search(lower):
+        return True
+    if _INTERROGATIVE_CHOICE.search(lower) and not _CHOICE_STATEMENT.match(lower):
         return True
     # Negation + passive inspection = "don't do anything, just check".
     if _NEGATED_INSPECTION.search(lower) and re.search(

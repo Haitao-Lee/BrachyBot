@@ -33,6 +33,7 @@ _METRIC_COVERAGE: Dict[str, tuple] = {
     "all_metrics": (
         "dose", "ctv_volume", "oar_volume", "seed_total", "hu", "spacing",
     ),
+    "planning_method": ("planning_method",),
 }
 
 # The published mirror is updated by both the automatic pipeline and every
@@ -110,7 +111,12 @@ class QueryMetricsTool(BaseTool):
             "'needle_count' for how many needles/trajectories were planned, and "
             "'needle_seed_counts' when the user asks how many needles exist or how "
             "many seeds are on each needle. The agent passes data from memory via kwargs. "
-            "Use when user asks about plan quality, dose coverage, organ doses, etc."
+            "Use when user asks about plan quality, dose coverage, organ doses, etc. "
+            "For questions about which algorithm, mode, method, or planning run "
+            "produced the result (for example RL versus rule-based, fallback "
+            "provenance, why a method was chosen), use metric_type='planning_method' "
+            "and compose the answer from those facts — never answer a method "
+            "question with a dose-metrics table."
         )
 
     @property
@@ -122,7 +128,8 @@ class QueryMetricsTool(BaseTool):
                     "type": "string",
                     "enum": ["dose_metrics", "ctv_volume", "oar_volumes", "seed_count",
                              "needle_count", "needle_seed_counts",
-                             "hu_statistics", "spacing_info", "plan_score", "all_metrics"],
+                             "hu_statistics", "spacing_info", "plan_score",
+                             "planning_method", "all_metrics"],
                     "description": "Type of metric to query"
                 },
                 # These values belong to the active workspace and are
@@ -134,6 +141,11 @@ class QueryMetricsTool(BaseTool):
                 "metrics": {
                     "type": "object",
                     "description": "Dose metrics dict from the active workspace",
+                    "x-server-injected": True,
+                },
+                "planning_method": {
+                    "type": "object",
+                    "description": "Planning mode/algorithm provenance facts from the active workspace",
                     "x-server-injected": True,
                 },
                 "ctv_array": {
@@ -215,6 +227,8 @@ class QueryMetricsTool(BaseTool):
                 return self._get_hu_statistics(kwargs)
             elif metric_type == "spacing_info":
                 return self._get_spacing_info(kwargs)
+            elif metric_type == "planning_method":
+                return self._get_planning_method(kwargs)
             elif metric_type == "all_metrics":
                 return self._get_all_metrics(kwargs)
             else:
@@ -258,6 +272,53 @@ class QueryMetricsTool(BaseTool):
             data=dose,
             message=json.dumps(dose, indent=2),
             metadata=self._read_metadata(dose, "dose_metrics"),
+        )
+
+    def _get_planning_method(self, kw) -> ToolResult:
+        """Report which algorithm/method actually produced the active plan.
+
+        Method questions ("基于RL的还是规则-based的") must be answered from
+        the persisted execution facts — requested mode, effective mode, and
+        the rule-based fallback record — not from a dose-metrics table.
+        """
+        facts = kw.get("planning_method")
+        facts = dict(facts) if isinstance(facts, dict) else {}
+        if not any(facts.get(key) is not None for key in (
+            "requested_mode", "effective_mode", "rl_fallback_used",
+        )):
+            return ToolResult(
+                success=False,
+                error="No planning method facts",
+                message=("No planning-method facts available for the active "
+                         "plan; the planning run did not persist its mode."),
+            )
+        rl_status = facts.get("rl_status")
+        facts["rl_status"] = (
+            dict(rl_status) if isinstance(rl_status, dict) else {}
+        )
+        requested = facts.get("requested_mode") or facts.get("mode") or "unknown"
+        effective = facts.get("effective_mode") or requested
+        lines = [
+            "## Planning method / algorithm of the active plan",
+            "",
+            f"- requested_mode: `{requested}`",
+            f"- effective_mode: `{effective}`",
+        ]
+        if facts.get("rl_fallback_used"):
+            lines.append(
+                "- rule-based fallback: used"
+                + (f" (reason: `{facts.get('rl_fallback_reason')}`)"
+                   if facts.get("rl_fallback_reason") else "")
+            )
+        for key in ("execution", "stop_reason", "best_coverage",
+                    "target_coverage"):
+            if facts["rl_status"].get(key) is not None:
+                lines.append(f"- rl_status.{key}: {facts['rl_status'][key]}")
+        return ToolResult(
+            success=True,
+            data=facts,
+            message="\n".join(lines),
+            metadata=self._read_metadata(facts, "planning_method"),
         )
 
     def _get_ctv_volume(self, kw) -> ToolResult:

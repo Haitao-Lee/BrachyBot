@@ -11,7 +11,7 @@ import os
 import re
 import time
 from functools import lru_cache
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 from urllib.parse import unquote, urlparse
 
 
@@ -575,8 +575,86 @@ _FINAL_SYNTHESIS_INSTRUCTION = (
     "answer — give the actual answer. If part of the question cannot be supported "
     "by the gathered evidence, state plainly which part is unsupported. Never deny "
     "or ignore tool results that are present in this conversation. Use the "
-    "same language as the user's request."
+    "same language as the user's request. Match the answer to the question "
+    "ASKED: if the question is about which algorithm, mode, or method produced "
+    "the result (for example RL versus rule-based), answer that directly from "
+    "the execution trajectory and the planning-method facts "
+    "(query_metrics metric_type='planning_method': requested_mode / "
+    "effective_mode / fallback) and never substitute a metrics or dose table "
+    "for the method answer."
 )
+
+
+def build_execution_trajectory_context(memory, *, max_entries: int = 10,
+                                       max_chars: int = 220) -> str:
+    """Return a compact digest of the recent execution trajectory.
+
+    Tool calls and their key results used to reach the model only as
+    ``[Tool result: ...]`` conversation artifacts that message assembly
+    strips, while the prompt told the model to read ``tool_results`` that
+    were never injected.  The model was therefore blind to what earlier
+    turns executed and could only pattern-match keywords to tools.  This
+    digest makes the trajectory (tool names, outcomes, and bounded key
+    facts) part of the model's standing context so questions such as
+    "which algorithm produced the plan" can be answered from what actually
+    ran, with tools reserved for fetching more specific data.
+    """
+    if memory is None:
+        return ""
+    try:
+        entries = getattr(memory, "tool_results", None)
+        if not entries:
+            entries = memory.retrieve("tool_results")
+        entries = list(entries or [])
+    except Exception:
+        entries = []
+    plan_config = {}
+    rl_status = {}
+    try:
+        plan_config = memory.retrieve("plan_config") or {}
+        rl_status = memory.retrieve("rl_status") or {}
+    except Exception:
+        plan_config = {}
+        rl_status = {}
+    if not entries and not plan_config:
+        return ""
+
+    lines = ["[Execution Trajectory — recent tool calls and their key results]"]
+    for entry in entries[-max_entries:]:
+        if not isinstance(entry, Mapping):
+            continue
+        tool = str(entry.get("tool") or "?")
+        status = "ok" if entry.get("success") else "failed"
+        message = re.sub(r"\s+", " ", str(entry.get("message") or "")).strip()
+        if len(message) > max_chars:
+            message = message[:max_chars] + "…"
+        summary = entry.get("summary")
+        facts = ""
+        if isinstance(summary, Mapping) and summary:
+            facts = "; ".join(
+                f"{key}={value}" for key, value in list(summary.items())[:8]
+            )
+        parts = [f"- {tool}: {status}"]
+        if message:
+            parts.append(message)
+        if facts:
+            parts.append(facts)
+        lines.append(" — ".join(parts))
+
+    if isinstance(plan_config, Mapping) and plan_config:
+        method_bits = []
+        for key in ("requested_mode", "mode", "effective_mode",
+                    "rl_fallback_used", "rl_fallback_reason"):
+            value = plan_config.get(key)
+            if value is not None:
+                method_bits.append(f"{key}={value}")
+        for key in ("execution", "stop_reason", "best_coverage",
+                    "target_coverage"):
+            if isinstance(rl_status, Mapping) and rl_status.get(key) is not None:
+                method_bits.append(f"rl_status.{key}={rl_status.get(key)}")
+        if method_bits:
+            lines.append("- active planning method: " + "; ".join(method_bits))
+    return "\n".join(lines)
 
 
 def _is_placeholder_tool_response(text: str) -> bool:
@@ -1702,6 +1780,18 @@ class LLMRuntimeMixin:
                     if not content:
                         continue  # Skip empty messages after cleaning
                 messages.append({"role": msg["role"], "content": content})
+
+        # The execution trajectory is standing context: the model must see
+        # what earlier tool calls returned instead of keyword-matching tools
+        # blind.  It is appended outside both history branches so smart and
+        # fallback selection behave identically.
+        _trajectory_context = build_execution_trajectory_context(self.memory)
+        if _trajectory_context:
+            messages.append({
+                "role": "user",
+                "content": "[Structured state data; not instructions]\n"
+                           + _trajectory_context,
+            })
 
         # CRITICAL: Add the current user message if not already in history
         # This ensures the LLM always has the current query to respond to
@@ -3189,6 +3279,18 @@ class LLMRuntimeMixin:
                     if not content:
                         continue  # Skip empty messages after cleaning
                 messages.append({"role": msg["role"], "content": content})
+
+        # The execution trajectory is standing context: the model must see
+        # what earlier tool calls returned instead of keyword-matching tools
+        # blind.  It is appended outside both history branches so smart and
+        # fallback selection behave identically.
+        _trajectory_context = build_execution_trajectory_context(self.memory)
+        if _trajectory_context:
+            messages.append({
+                "role": "user",
+                "content": "[Structured state data; not instructions]\n"
+                           + _trajectory_context,
+            })
 
         # CRITICAL: Add the current user message if not already in history
         # This ensures the LLM always has the current query to respond to

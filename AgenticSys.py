@@ -1535,6 +1535,40 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             current_plan = current_planning_context(self.memory)
             raw_metrics = current_plan.get("metrics", {})
             params["metrics"] = raw_metrics if isinstance(raw_metrics, dict) else {}
+            # Method/algorithm provenance: requested vs effective mode and the
+            # rule-based fallback record.  Injected so a method question can be
+            # answered from execution facts (metric_type='planning_method')
+            # instead of a dose table.
+            method_config = current_plan.get("plan_config") or {}
+            if not isinstance(method_config, dict):
+                method_config = {}
+            method_status = _memory_first("rl_status", default=None)
+            if not isinstance(method_status, dict):
+                method_status = method_config.get("rl_status") or {}
+                if not isinstance(method_status, dict):
+                    method_status = {}
+            requested_mode = (
+                method_config.get("requested_mode")
+                or method_config.get("mode")
+                or ""
+            )
+            effective_mode = method_config.get("effective_mode") or ""
+            if method_config.get("rl_fallback_used") and "fallback" not in str(effective_mode):
+                effective_mode = "rule_based_fallback"
+            params["planning_method"] = {
+                "requested_mode": requested_mode,
+                "effective_mode": effective_mode,
+                "rl_fallback_used": method_config.get("rl_fallback_used"),
+                "rl_fallback_reason": method_config.get("rl_fallback_reason"),
+                "rl_target_coverage": method_config.get("rl_target_coverage"),
+                "rl_fallback_coverage": method_config.get("rl_fallback_coverage"),
+                "rl_status": {
+                    key: method_status.get(key)
+                    for key in ("execution", "stop_reason", "best_coverage",
+                                "target_coverage", "episodes_completed")
+                    if method_status.get(key) is not None
+                },
+            }
             # Never trust arrays serialized by the model or by an earlier
             # tool call.  They may be a string representation of a NumPy/
             # SimpleITK object, which fails the object schema even when the

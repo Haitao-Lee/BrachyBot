@@ -524,13 +524,25 @@ class AgentMemory:
 
     def log_tool_call(self, tool_name: str, inputs: Dict, result):
         with self._lock:
-            self.tool_results.append({
+            entry = {
                 "tool": tool_name,
                 "inputs": {k: str(v)[:100] for k, v in inputs.items()},
                 "success": result.success,
                 "message": result.message,
                 "execution_time": result.execution_time,
-            })
+            }
+            # Key-fact summary so the execution trajectory stays visible to
+            # the model on later turns (mode/fallback/count facts).  The raw
+            # result message alone rarely carries them.
+            summary = {}
+            for key, value in (getattr(result, "metadata", None) or {}).items():
+                if key in {"response_contract", "preview", "plan"}:
+                    continue
+                summary[str(key)[:60]] = str(value)[:120]
+                if len(summary) >= 10:
+                    break
+            entry["summary"] = summary
+            self.tool_results.append(entry)
         self._notify_persistence(f"tool:{tool_name}")
 
     def add_message(self, role: str, content: str):

@@ -863,6 +863,13 @@ def is_current_planning_provenance_query(message: str) -> bool:
     has_planning_object = _contains_any(text, (
         "planning", "plan", "treatment plan", "dose plan", "planning result",
         "\u89c4\u5212", "\u8ba1\u5212", "\u65b9\u6848",
+        # Method/algorithm wording is a planning object too: "刚刚用的是
+        # RL还是规则法" names no plan noun but is still a provenance question.
+        "algorithm", "method", "mode", "approach", "optimizer",
+        "\u7b97\u6cd5", "\u6a21\u5f0f", "\u65b9\u5f0f", "\u65b9\u6cd5",
+        "\u6280\u672f\u8def\u7ebf",
+        "reinforcement", "rule-based", "rule based",
+        "\u5f3a\u5316\u5b66\u4e60", "\u89c4\u5219\u6cd5", "\u89c4\u5219\u4f18\u5316",
     ))
     # ``current``/``active`` alone are not provenance questions. They are
     # common in ordinary requests such as "what is wrong with the current
@@ -881,7 +888,25 @@ def is_current_planning_provenance_query(message: str) -> bool:
         text,
         flags=re.IGNORECASE,
     ))
-    if not (has_planning_object and has_provenance_relation):
+    # Method/algorithm provenance: "是使用的算法是基于RL的还是规则-based的",
+    # "用的什么算法", "which method produced this plan".  The ``是…还是…``
+    # choice frame itself is the relation: the user is asking which of two
+    # execution methods produced the result.
+    method_relation = bool(re.search(
+        r"(?:what|which|how)\s+(?:\w+\s+){0,3}"
+        r"(?:method|algorithm|mode|approach|optimizer)|"
+        r"(?:method|algorithm|mode|approach|optimizer).{0,28}"
+        r"\b(?:used|produced|generated|selected|chosen)\b|"
+        r"\b(?:used|produced|generated|selected|chosen)\b.{0,28}"
+        r"(?:method|algorithm|mode|approach|optimizer)|"
+        r"\u7528\u7684|\u4f7f\u7528\u7684|\u91c7\u7528|\u9009\u7528|\u7528\u4e86|"
+        r"\u4ec0\u4e48(?:\u7b97\u6cd5|\u65b9\u6cd5|\u6a21\u5f0f|\u65b9\u5f0f)|"
+        r"\u54ea\u79cd(?:\u7b97\u6cd5|\u65b9\u6cd5|\u6a21\u5f0f|\u65b9\u5f0f|\u4f18\u5316)|"
+        r"\u662f[^,.!?\uff0c\u3002\uff01\uff1f]{0,28}\u8fd8\u662e",
+        text,
+        flags=re.IGNORECASE,
+    ))
+    if not (has_planning_object and (has_provenance_relation or method_relation)):
         return False
 
     # A sentence that explicitly asks the system to execute a new operation

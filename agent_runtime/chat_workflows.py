@@ -51,6 +51,7 @@ from utils.user_errors import (
     normalize_metadata,
     sanitize_user_response,
 )
+from utils.display_paths import roots_from_config
 
 logger = logging.getLogger(__name__)
 
@@ -769,6 +770,7 @@ class ChatWorkflowMixin:
         return sanitize_user_response(
             response,
             lang=self._response_language(),
+            roots=roots_from_config(getattr(self, "config", None)),
         )
 
     @staticmethod
@@ -1526,6 +1528,75 @@ class ChatWorkflowMixin:
             "cancelled": "已取消",
         }.get(status, status)
 
+        # Which algorithm actually produced the plan.  The user's method
+        # question ("基于RL的还是规则-based的") is answered here from the
+        # persisted execution facts, never from conversation guesswork.
+        mode_row: Dict[str, Any] = {}
+        try:
+            history_rows = self._planning_history_fact_rows()
+        except Exception:
+            history_rows = []
+        for row in reversed(history_rows or []):
+            if str(row.get("planning_id") or "") == planning_id:
+                mode_row = row
+                break
+        if not mode_row and history_rows:
+            mode_row = history_rows[-1]
+        requested_mode = str(mode_row.get("requested_mode") or "").strip()
+        effective_mode = str(mode_row.get("effective_mode") or "").strip()
+        algorithm_family = str(mode_row.get("effective_algorithm_family") or "").strip()
+        fallback_used = bool(mode_row.get("rl_fallback_used"))
+        fallback_reason = str(mode_row.get("rl_fallback_reason") or "").strip()
+        rl_status_facts = mode_row.get("rl_status")
+        rl_status_facts = rl_status_facts if isinstance(rl_status_facts, Mapping) else {}
+
+        family_label_zh = {
+            "rl": "RL（强化学习规划）",
+            "rule_based": "规则法优化器（rule-based）",
+        }.get(algorithm_family, algorithm_family or "未持久化")
+        family_label_en = {
+            "rl": "RL (reinforcement-learning planning)",
+            "rule_based": "the rule-based optimizer",
+        }.get(algorithm_family, algorithm_family or "not persisted")
+        if effective_mode in {"rule_based_fallback", "rule_based fallback"} or (
+            fallback_used and algorithm_family == "rule_based"
+        ):
+            family_label_zh = "规则法优化器（RL 兜底：rule_based_fallback）"
+            family_label_en = "the rule-based optimizer (RL fallback: rule_based_fallback)"
+
+        method_lines_zh = []
+        method_lines_en = []
+        if requested_mode or effective_mode:
+            method_lines_zh.append(
+                f"- 规划算法：请求模式 `{requested_mode or effective_mode}`，"
+                f"实际生效 **{family_label_zh}**（effective_mode=`{effective_mode or requested_mode}`）。"
+            )
+            method_lines_en.append(
+                f"- Planning algorithm: requested mode `{requested_mode or effective_mode}`, "
+                f"actually produced by **{family_label_en}** "
+                f"(effective_mode=`{effective_mode or requested_mode}`)."
+            )
+        if fallback_used:
+            best_cov = rl_status_facts.get("best_coverage")
+            target_cov = rl_status_facts.get("target_coverage")
+            stop_reason = str(rl_status_facts.get("stop_reason") or "")
+            detail_zh = "RL 未达到目标覆盖率，系统改用同一组安全候选路径的确定性规则优化兜底"
+            detail_en = "the RL attempt did not reach the target coverage and the deterministic rule-based fallback ran on the same safety-filtered candidate set"
+            if best_cov is not None and target_cov is not None:
+                try:
+                    detail_zh += f"（RL 最佳覆盖率 {float(best_cov):.1%}，目标 {float(target_cov):.1%}）"
+                    detail_en += f" (best RL coverage {float(best_cov):.1%} vs target {float(target_cov):.1%})"
+                except (TypeError, ValueError):
+                    pass
+            if stop_reason:
+                detail_zh += f"；RL 中止原因 `{stop_reason}`"
+                detail_en += f"; RL stop reason `{stop_reason}`"
+            if fallback_reason:
+                detail_zh += f"，兜底判定 `{fallback_reason}`"
+                detail_en += f", fallback decision `{fallback_reason}`"
+            method_lines_zh.append(f"- 兜底说明：{detail_zh}。")
+            method_lines_en.append(f"- Fallback note: {detail_en}.")
+
         if response_lang == "zh":
             lines = [
                 "## 本次剂量/DVH计算的依据",
@@ -1535,6 +1606,7 @@ class ChatWorkflowMixin:
                 f"- 规划几何：{needle_count} 个针道、{seed_count} 个粒子。",
                 f"- 持久化来源：{source_text}。",
             ]
+            lines.extend(method_lines_zh)
             if provenance:
                 lines.extend([
                     "- 计算边界：读取该 Planning 已保存的针道和粒子位置，仅重新计算 Dose/DVH；"
@@ -1555,6 +1627,7 @@ class ChatWorkflowMixin:
             f"- Planning geometry: {needle_count} needles and {seed_count} seeds.",
             f"- Persisted source: {source_text}.",
         ]
+        lines.extend(method_lines_en)
         if provenance:
             lines.append(
                 "- Calculation boundary: the saved Needle/Seed geometry from this Planning was used to recompute Dose/DVH; segmentation, needle selection, and the full Planning pipeline were not rerun."
@@ -4372,6 +4445,7 @@ class ChatWorkflowMixin:
                 raw_answer,
                 lang=self.memory.user_lang,
                 tool_name=error_tool,
+                roots=roots_from_config(getattr(self, "config", None)),
             )
             # If a clinical prerequisite failed and the follow-up LLM call
             # also returned a provider diagnostic, preserve the actionable
@@ -4384,7 +4458,9 @@ class ChatWorkflowMixin:
                     self.memory.user_lang,
                 )
                 provider_message = sanitize_user_response(
-                    raw_answer, lang=self.memory.user_lang
+                    raw_answer,
+                    lang=self.memory.user_lang,
+                    roots=roots_from_config(getattr(self, "config", None)),
                 )
                 if clinical_message and clinical_message != provider_message:
                     answer = f"{clinical_message}\n\n{provider_message}"
