@@ -1993,7 +1993,7 @@ class WorkspaceStore:
                     with self._quota_commit_lock(user_id):
                         try:
                             if root.exists():
-                                shutil.rmtree(root)
+                                shutil.rmtree(root, ignore_errors=True)
                             if had_root and backup_complete and backup.exists():
                                 root.parent.mkdir(parents=True, exist_ok=True)
                                 shutil.move(str(backup), str(root))
