@@ -85,6 +85,17 @@ def capture(agent, geometry):
 
 
 def compare(before, after):
+    def direction_changed(left, right):
+        first, second = left.get('direction') or [], right.get('direction') or []
+        if not isinstance(first, (list, tuple)) or not isinstance(second, (list, tuple)):
+            return first != second
+        if len(first) != len(second):
+            return True
+        try:
+            return any(abs(float(x) - float(y)) > 1e-4 for x, y in zip(first, second))
+        except (TypeError, ValueError):
+            return first != second
+
     changed = []
     for kind in ('seeds', 'needles'):
         old = {str(x['id']): x for x in before['geometry'][kind]}
@@ -92,25 +103,61 @@ def compare(before, after):
         for object_id in sorted(old.keys() | new.keys()):
             a, b = old.get(object_id), new.get(object_id)
             field = 'position' if kind == 'seeds' else 'points'
+            owner_changed = bool(a and b and kind == 'seeds'
+                                 and a.get('trajectory_id') != b.get('trajectory_id'))
             orientation_changed = bool(a and b and kind == 'seeds'
-                                       and (a.get('direction') != b.get('direction')
-                                            or a.get('trajectory_id') != b.get('trajectory_id')))
-            if a and b and a.get(field) == b.get(field) and not orientation_changed:
-                continue
-            entry = {'id': object_id, 'kind': kind,
-                     'operation': 'added' if a is None else 'deleted' if b is None else 'moved'}
-            if orientation_changed:
-                entry['orientation_or_owner_changed'] = True
+                                       and direction_changed(a, b))
+            distance = None
             if a and b:
                 start, end = a.get(field), b.get(field)
+                distance = (math.dist(start, end) if kind == 'seeds' else
+                    max(math.dist(start[0], end[0]), math.dist(start[-1], end[-1])))
+                # Serialization and reprojection can change insignificant
+                # decimal places without moving a physical object. Never
+                # report these as a 0.00 mm drag or offer a zero-vector arrow.
+                if distance < 0.01 and not orientation_changed and not owner_changed:
+                    continue
+            entry = {'id': object_id, 'kind': kind,
+                     'operation': 'added' if a is None else 'deleted' if b is None
+                     else 'moved' if distance >= 0.01 else 'reoriented'}
+            if orientation_changed or owner_changed:
+                entry['orientation_or_owner_changed'] = True
+            if a and b:
                 if kind == 'seeds':
-                    entry.update(before=start, after=end, distance_mm=math.dist(start, end))
-                    entry['return_vector_mm'] = [x-y for x, y in zip(start, end)]
+                    entry.update(before=start, after=end, distance_mm=distance)
+                    if distance >= 0.01:
+                        entry['return_vector_mm'] = [x-y for x, y in zip(start, end)]
                 else:
-                    entry.update(before=start, after=end,
-                                 distance_mm=max(math.dist(start[0], end[0]), math.dist(start[-1], end[-1])))
+                    entry.update(before=start, after=end, distance_mm=distance)
             changed.append(entry)
-    ids = {x['id'] for x in changed}
+    needle_changed = any(item['kind'] == 'needles' for item in changed)
+    moved_tracks = {str(item.get('trajectory_id') or item['id'])
+        for item in after['geometry']['needles']
+        if any(change['kind'] == 'needles' and change['id'] == str(item['id'])
+               for change in changed)}
+    for obj in changed:
+        if obj['kind'] == 'seeds':
+            record = next((seed for seed in after['geometry']['seeds']
+                           if str(seed['id']) == obj['id']), None)
+            obj['dependent_on_needle'] = bool(needle_changed and record
+                and str(record.get('trajectory_id')) in moved_tracks)
+            # Normalizing a saved geometry can refresh directions on every
+            # seed, including seeds on untouched needles. These are not
+            # independent user drags and should not crowd out the needle.
+            obj['derived_from_normalization'] = bool(needle_changed
+                and obj['operation'] == 'reoriented'
+                and not obj['dependent_on_needle'])
+    # Show the edited needle and independent seed edits before dependent
+    # reprojections; lexical seed IDs previously hid the initiating needle.
+    changed.sort(key=lambda item: (bool(item.get('dependent_on_needle')
+                                        or item.get('derived_from_normalization')),
+                                   item['kind'] != 'needles', item['id']))
+    ids = {x['id'] for x in changed if x['operation'] != 'reoriented'}
+    # Reorientation can change finite-cylinder clearance even without moving
+    # its centre. Inspect those pairs too, but do not treat old pairs as newly
+    # caused by an unrelated needle edit.
+    ids.update(x['id'] for x in changed if x['operation'] == 'reoriented'
+               and not x.get('derived_from_normalization'))
     for snapshot in (before, after):
         changed_tracks = {str(n.get('trajectory_id') or n['id']) for n in snapshot['geometry']['needles'] if str(n['id']) in ids}
         ids.update(str(s['id']) for s in snapshot['geometry']['seeds']
@@ -157,6 +204,11 @@ def compare(before, after):
                               'previous_distance_mm': prior.get(distance_key) if prior else None})
     conflicts.sort(key=lambda p: (p['change'] == 'existing', p.get('surface_clearance_mm', p.get('distance_mm', 0))))
     return {'changed_objects': changed[:64], 'changed_object_count': len(changed),
+            'dependent_object_count': sum(bool(obj.get('dependent_on_needle')) for obj in changed),
+            'normalization_object_count': sum(bool(obj.get('derived_from_normalization')) for obj in changed),
+            'existing_conflict_count': sum(p['change'] == 'existing' for p in conflicts),
+            'new_conflict_count': sum(p['change'] == 'new' for p in conflicts),
+            'worsened_conflict_count': sum(p['change'] == 'worsened' for p in conflicts),
             'changed_kinds': sorted({obj['kind'] for obj in changed}),
             'conflicts': conflicts[:12], 'resolved_conflicts': resolved,
             'before_version': before['version'], 'after_version': after['version'],
@@ -192,24 +244,51 @@ def describe(evidence, language='en'):
     if evidence.get('superseded'):
         lines.append('以下是上一条已记录的编辑证据，当前规划已改变或暂不可核对，不能视作当前规划结论。' if zh
                      else 'This is the last recorded edit evidence. The current plan has changed or cannot be verified; these are not current-plan conclusions.')
-    if evidence.get('changed_object_count', 0) > 8:
-        lines.append(f"共 {evidence['changed_object_count']} 个对象变化，下面列出前 8 个。" if zh
-                     else f"{evidence['changed_object_count']} objects changed; the first 8 are listed below.")
-    for obj in evidence.get('changed_objects', [])[:8]:
+    dependent_count = evidence.get('dependent_object_count', 0)
+    if dependent_count:
+        lines.append(f"针道变更后有 {dependent_count} 个关联粒子重新投影或转向；这些不是 {dependent_count} 次独立拖拽。" if zh
+                     else f"{dependent_count} associated seeds were reprojected or reoriented after the needle edit; these were not independent drags.")
+    normalization_count = evidence.get('normalization_object_count', 0)
+    if normalization_count:
+        lines.append(f"另有 {normalization_count} 个其他粒子仅在保存时刷新了方向/归属；不表示用户逐枚拖动。" if zh
+                     else f"Another {normalization_count} seeds had direction/ownership refreshed on save; this does not mean the user dragged each one.")
+    display_objects = [obj for obj in evidence.get('changed_objects', [])
+                       if not obj.get('dependent_on_needle')
+                       and not obj.get('derived_from_normalization')][:4]
+    if not display_objects and evidence.get('changed_objects'):
+        display_objects = evidence['changed_objects'][:2]
+    for obj in display_objects:
         if obj['operation'] == 'moved':
             lines.append(f"{obj['id']}：移动 {obj['distance_mm']:.2f} mm。" if zh
                          else f"{obj['id']}: moved {obj['distance_mm']:.2f} mm.")
+            if obj['kind'] == 'needles' and obj.get('before') and obj.get('after'):
+                for endpoint, (old, new) in enumerate(zip(obj['before'], obj['after']), 1):
+                    vector = [x-y for x, y in zip(old, new)]
+                    if math.sqrt(sum(value * value for value in vector)) < 0.01:
+                        continue
+                    values = ', '.join(f'{value:+.2f}' for value in vector)
+                    lines.append((f"{obj['id']} 端点 {endpoint} 回到编辑前位置的患者坐标位移：[{values}] mm（非屏幕方向，也非剂量最优方向）。"
+                                  if zh else f"{obj['id']} endpoint {endpoint} return displacement in patient coordinates: [{values}] mm (not screen or dose-optimal direction)."))
             if obj.get('orientation_or_owner_changed'):
                 lines.append('该粒子的方向或所属针道也已改变。' if zh else 'Its direction or owning needle also changed.')
+        elif obj['operation'] == 'reoriented':
+            lines.append(f"{obj['id']}：方向或所属针道改变，位置未发生可显示的位移。" if zh
+                         else f"{obj['id']}: orientation or owning needle changed without a reportable displacement.")
         else:
             lines.append(f"{obj['id']}：{'新增' if obj['operation'] == 'added' else '删除'}。" if zh
                          else f"{obj['id']}: {obj['operation']}.")
-    for pair in evidence.get('conflicts', [])[:4]:
+    actionable = [pair for pair in evidence.get('conflicts', [])
+                  if pair['change'] in ('new', 'worsened')]
+    for pair in actionable[:4]:
         value = pair.get('surface_clearance_mm', pair.get('distance_mm'))
         status = {'new': '新增违规', 'worsened': '违规加重', 'improved': '间距改善但仍违规', 'existing': '原有违规仍存在'}[pair['change']]
         label = '表面间隙' if pair['kind'] == 'seed_pairs' else '针道距离'
         lines.append(f"{status}：{pair['first_id']} ↔ {pair['second_id']}，{label} {value:.2f} mm。" if zh
                      else f"{pair['change']}: {pair['first_id']} ↔ {pair['second_id']}, {'surface clearance' if pair['kind'] == 'seed_pairs' else 'needle distance'} {value:.2f} mm.")
+    if evidence.get('existing_conflict_count'):
+        count = evidence['existing_conflict_count']
+        lines.append(f"另有 {count} 组相关间距违规在编辑前已存在，未归因于本次操作。" if zh
+                     else f"{count} related spacing conflicts predated this edit and are not attributed to it.")
     if evidence.get('resolved_conflicts'):
         count = evidence['resolved_conflicts']
         lines.append(f"本次消除了 {count} 组已记录的相关间距违规。" if zh else f"Resolved {count} recorded spacing conflicts.")
@@ -238,11 +317,22 @@ def describe(evidence, language='en'):
     if dose.get('after') and 'plan_score' not in dose['after']:
         lines.append('当前重算结果没有有效评分；不会沿用旧分数或自行补造评分。' if zh
                      else 'The recomputed result has no valid score; an old or invented score is not substituted.')
+    if actionable:
+        pair = actionable[0]
+        lines.append((f"优先复核 {pair['first_id']} 与 {pair['second_id']} 的新发/加重间距问题；若本次移动并非有意，可选择撤销本次编辑。"
+                      if zh else f"Review the new/worsened spacing of {pair['first_id']} and {pair['second_id']} first; if this movement was unintended, consider undoing this edit."))
+    elif dose.get('comparable'):
+        delta = dose.get('delta') or {}
+        oar_rise = next((row for row in dose.get('oar_changes', []) if row['delta'] > 0), None)
+        if oar_rise and (delta.get('v200', 0) > 0 or delta.get('v150', 0) > 0):
+            subject = '这一编辑链' if dose.get('edit_count', 0) > 1 else '本次编辑'
+            lines.append((f"覆盖与热点/OAR 变化可能相互权衡：{oar_rise['organ']} {oar_rise['metric']} 增加 {oar_rise['delta']:.2f} Gy；请核对对应空间位置及适用约束，不能仅凭覆盖改善认定{subject}更优。"
+                          if zh else f"Coverage may trade off against hot spots/OAR dose: {oar_rise['organ']} {oar_rise['metric']} rose {oar_rise['delta']:.2f} Gy. Inspect its location and applicable constraints before calling this edit sequence better."))
     if evidence.get('restore_token'):
         code = evidence['restore_token']
         lines.append(f"是否撤销这次编辑？回复“复位 {code}”恢复本次编辑前的几何，或回复“保留 {code}”。复位后剂量仍需重算；原位置不等于已验证的安全位置。" if zh
                      else f"Undo this edit? Reply 'undo {code}' to restore its prior geometry, or 'keep {code}'. Dose must be recomputed afterward; the prior position is not a verified safe position.")
-        for obj in evidence.get('changed_objects', [])[:2]:
+        for obj in display_objects[:2]:
             if obj.get('return_vector_mm'):
                 vector = ', '.join(f'{v:+.2f}' for v in obj['return_vector_mm'])
                 lines.append(f"{obj['id']} 返回原位的患者坐标位移为 [{vector}] mm（非屏幕左右方向，也不是剂量最优方向）。" if zh
@@ -252,9 +342,14 @@ def describe(evidence, language='en'):
 
 def screenshot(evidence, event_id):
     ids = []
-    for p in evidence.get('conflicts', [])[:2]:
+    for p in (p for p in evidence.get('conflicts', [])
+              if p['change'] in ('new', 'worsened')):
         ids.extend((p['first_id'], p['second_id']))
-    ids.extend(x['id'] for x in evidence.get('changed_objects', []) if x['operation'] != 'deleted')
+        if len(ids) >= 4:
+            break
+    ids.extend(x['id'] for x in evidence.get('changed_objects', [])
+               if x['operation'] not in ('deleted', 'reoriented')
+               and not x.get('dependent_on_needle'))
     ids = list(dict.fromkeys(ids))[:8]
     if not ids:
         return None

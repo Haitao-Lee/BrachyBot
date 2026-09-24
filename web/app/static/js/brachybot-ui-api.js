@@ -1821,10 +1821,18 @@ function _flushMonitorFeedback(ownerSessionId, ownerRunId, options = {}) {
 function _attachMonitorEditChoices(messageId, evidence, sessionId, runId) {
     const token = evidence?.restore_token;
     if (!/^[a-f0-9]{12}$/.test(token || '') || typeof document.querySelectorAll !== 'function') return;
+    // A later committed edit replaces the single-edit inverse on the server.
+    // Do not leave older clickable offers that can only yield a 409.
+    for (const old of document.querySelectorAll('.monitor-edit-actions[data-monitor-token]')) {
+        if (old.dataset.monitorToken !== token) {
+            old.querySelectorAll('button').forEach(button => { button.disabled = true; });
+        }
+    }
     const row = Array.from(document.querySelectorAll('[data-message-id]')).find(node => node.dataset.messageId === messageId);
     if (!row || row.querySelector('.monitor-edit-actions')) return;
     const actions = document.createElement('div');
     actions.className = 'monitor-edit-actions';
+    actions.dataset.monitorToken = token;
     actions.style.cssText = 'display:flex;gap:8px;margin-top:10px;flex-wrap:wrap';
     for (const [command, zh, en] of [['undo', '恢复这次编辑前的位置', 'Restore pre-edit position'], ['keep', '保留这次编辑', 'Keep this edit']]) {
         const button = document.createElement('button');
@@ -2099,10 +2107,15 @@ async function syncUIBridgeState(reason = 'snapshot') {
 // Explicit edit decisions have a server-issued identifier. Bare "yes" or a
 // quoted/conditional command never authorizes a clinical mutation.
 window.handleMonitorConversation = async function(text) {
-    if (!trainingMonitorState.active) return false;
+    const executeAlgorithmRestore = /^(?:请|麻烦|帮我)?\s*(?:恢复|还原|切换回)\s*(?:原始|最初|原来的)\s*(?:算法)?\s*(?:规划|计划|方案)[。.!！]?$/i.test(String(text).trim())
+        && /算法/.test(String(text));
+    const restorePlanQuery = /^(?:请|麻烦|帮我|我想|我要|能否|可以)?\s*(?:恢复|还原|回到|撤销到|restore|revert to).{0,14}(?:原来|原始|最初|之前|上一版|算法|original|previous).{0,10}(?:规划|计划|方案|plan)[。.!！]?$/i.test(String(text).trim());
+    if (!trainingMonitorState.active && !restorePlanQuery && !executeAlgorithmRestore) return false;
     const decision = String(text).trim().match(/^(复位|撤销|保留|undo|restore|keep)\s+([a-f0-9]{12})[。.!！]?$/i);
     const query = /^(?:请|告诉我|请告诉我)?\s*(?:刚刚|刚才|这次|上一步|本次).{0,18}(?:变好|变坏|改善|劣化|影响|变化|评分|分数|score).{0,12}[?？。]?$|^(?:不是)?可以计算规划的\s*score\s*吗[?？。]?$|^(?:did|how did|was) (?:my |the )?(?:last|latest) edit (?:improve|worsen|affect|change).{0,35}\?$/i.test(text);
-    if (!decision && (!query || /[，,;；“”"「」]|以及|另外|然后|同时|如果|假如|\band\b|\bif\b/i.test(text))) return false;
+    const adjustmentQuery = /(?:如何|怎么|应该怎样|how (?:should|do) I).{0,15}(?:调整|调节|拖动|移动|adjust|move).{0,25}(?:针道|穿刺针|粒子|needle|seed)/i.test(text);
+    if (!restorePlanQuery && !executeAlgorithmRestore && !decision && (!(query || adjustmentQuery)
+        || /[，,;；“”"「」]|以及|另外|然后|同时|如果|假如|\band\b|\bif\b/i.test(text))) return false;
     const sessionId = _activeApiSessionId();
     const runId = trainingMonitorState.runId;
     const language = monitorConversationLanguage(sessionId);
@@ -2126,8 +2139,21 @@ window.handleMonitorConversation = async function(text) {
     window._chatTurnActive = true;
     if (typeof setStreamingState === 'function') setStreamingState(true);
     try {
+        if (executeAlgorithmRestore) {
+            const restored = typeof window.restoreAlgorithmPlan === 'function'
+                ? await window.restoreAlgorithmPlan() : null;
+            if (sessionId !== _activeApiSessionId()) return true;
+            addChat(restored?.success ? 'bot-response' : 'error', restored?.success
+                ? monitorChatText(`已切换回原始算法规划 ${restored.planning_id || restored.active_planning_id}；这是已保存版本的恢复，不是重新计算。`,
+                    `Restored saved algorithm plan ${restored.planning_id || restored.active_planning_id} without recomputation.`, sessionId)
+                : monitorChatText('原始算法规划恢复未完成；当前规划是否改变，请以 Data Tree 中的活动规划为准。',
+                    'Algorithm-plan restoration did not complete; check the active plan in Data Tree.', sessionId),
+                true, Date.now(), false, sessionId);
+            return true;
+        }
         const kept = decision && /^(保留|keep)$/i.test(decision[1]);
-        const response = await fetch(API + (decision ? '/training/restore_edit' : `/training/edit?language=${language}`), {
+        const response = await fetch(API + (restorePlanQuery ? '/planning/runs'
+            : decision ? '/training/restore_edit' : `/training/edit?language=${language}`), {
             signal: abort.signal,
             method: decision ? 'POST' : 'GET',
             headers: { 'Content-Type': 'application/json', 'X-BrachyBot-Session': sessionId },
@@ -2142,10 +2168,22 @@ window.handleMonitorConversation = async function(text) {
             window.scheduleWorkspaceSave?.('monitor.edit.restored');
             if (data.event) void reportUIEvent(data.event.type, data.event.label, {}, { alreadyRecorded: true, committedEvent: data.event });
         }
-        const message = decision
+        let message = decision
             ? (kept ? monitorChatText('已保留这次编辑。', 'This edit was kept.', sessionId)
                 : monitorChatText('已恢复本次编辑前的几何。剂量、DVH 和相关产物已标记待更新，请重算后比较。', 'Prior geometry restored. Dose, DVH and dependent artifacts require updating before comparison.', sessionId))
             : data.message || monitorChatText('这轮监测尚未记录可比较的编辑。完成一次编辑后，我会显示具体对象、几何变化和重算后的指标差值。', 'No comparable edit has been recorded in this run yet. After an edit I can show its objects, geometry changes and recomputed metric deltas.', sessionId);
+        if (restorePlanQuery) {
+            const runs = Array.isArray(data.runs) ? data.runs : [];
+            const candidates = runs.filter(run => run.source !== 'manual_edit' && run.status === 'completed')
+                .map(run => run.planning_id).filter(Boolean).slice(-3);
+            message = candidates.length
+                ? monitorChatText(
+                    `当前规划为 ${data.active_planning_id || '未知'}；登记的已完成算法规划候选：${candidates.join('、')}（恢复时还需校验实际快照）。但“原来”也可能指只撤销最近一次编辑。请明确你指哪一种；确认前我不会改动病例。`,
+                    `Active plan: ${data.active_planning_id || 'unknown'}. Registered completed algorithm-plan candidates: ${candidates.join(', ')} (their snapshots still need verification). "Original" could also mean undoing only the latest edit. Please specify which restore you mean; no case data has been changed.`, sessionId)
+                : monitorChatText(
+                    '当前未核实到可恢复的已完成算法规划。若你指最近一次编辑，可使用监测提示中的复位 token；我没有修改病例。',
+                    'No completed algorithm-plan restore candidate was verified. If you mean the latest edit, use its monitor undo token. No case data was changed.', sessionId);
+        }
         addChat('bot-response', message, true, Date.now(), false, sessionId, { messageKind: 'monitor_feedback' });
     } catch (error) {
         addChat('error', monitorChatText('本次监测请求未完成：', 'Monitor request did not complete: ', sessionId) + error.message,
@@ -2230,10 +2268,9 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
             const ss = data.suggested_screenshot;
             if (trainingMonitorState.screenshotPendingRunId) {
                 const queue = trainingMonitorState.captureQueue ||= [];
-                if (!queue.some(item => item.data.suggested_screenshot?.checkpoint_id === ss.checkpoint_id && ss.checkpoint_id)) {
-                    queue.push({ type, label, data, sessionId: ownerSessionId, runId: ownerRunId });
-                    if (queue.length > 8) queue.shift();
-                }
+                // The live Viewer cannot reconstruct a prior pose after the
+                // next edit. Only the newest pending checkpoint is useful.
+                queue.splice(0, queue.length, { type, label, data, sessionId: ownerSessionId, runId: ownerRunId });
                 return data;
             }
             // Dose recomputation is an explicit teaching checkpoint: the
@@ -2258,6 +2295,11 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                         || ownerRunId !== trainingMonitorState.runId
                         || ownerSessionId !== _activeApiSessionId() || document.hidden) {
                         if (trainingMonitorState.screenshotPendingRunId === ownerRunId) trainingMonitorState.screenshotPendingRunId = null;
+                        if (document.hidden && trainingMonitorState.active
+                            && ownerRunId === trainingMonitorState.runId
+                            && ownerSessionId === _activeApiSessionId()) {
+                            _recordMonitorCaptureFailure(ownerSessionId, ownerRunId, 'viewer_tab_hidden');
+                        }
                         return;
                     }
                     const checkpointId = ss.checkpoint_id || String(Date.now());
@@ -2326,27 +2368,39 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                                     true, Date.now(), false, ownerSessionId, { messageKind: 'monitor_feedback' });
                                 return;
                             }
-                            _recordMonitorCaptureFailure(ownerSessionId, ownerRunId);
+                            _recordMonitorCaptureFailure(ownerSessionId, ownerRunId, result?.error || 'capture_failed');
                             return;
                         }
                         const title = monitorChatText('监测证据', 'Monitor evidence', ownerSessionId);
-                        const evidenceCaption = monitorChatText(
-                            `本次编辑的对象/间距检查：${focusObjectIds.join('、') || '剂量与 DVH'}。标注用于定位已核实对象；若图中显示紫色箭头，它从当前位置指向编辑前的位置，仅作复位参考，不代表剂量最优方向。取景后恢复原视图。`,
-                            `Objects/spacing for this edit: ${focusObjectIds.join(', ') || 'dose and DVH'}. Marks locate verified objects. Purple arrows, when visible, point from current to pre-edit positions as undo references, not dose-optimal directions. Original view restored.`,
-                            ownerSessionId,
-                        );
+                        const omittedRefs = Array.isArray(result.omittedTargetRefs)
+                            ? result.omittedTargetRefs : [];
+                        const capturedRefs = focusObjectIds.filter(id => !omittedRefs.includes(id));
                         const capturedAttachments = Array.isArray(result.attachments) && result.attachments.length
                             ? result.attachments
                             : (monitorScreenshotContext.items || []);
                         if (!capturedAttachments.length) {
-                            _recordMonitorCaptureFailure(ownerSessionId, ownerRunId);
+                            _recordMonitorCaptureFailure(ownerSessionId, ownerRunId, 'attachment_not_rendered');
                             return;
                         }
+                        const capturedViews = [...new Set(capturedAttachments.map(item => String(item?.target || ''))
+                            .filter(Boolean))];
+                        const viewNote = result.error
+                            ? monitorChatText('部分视图未完成；仅下方已附图像可作证据。',
+                                'Some views did not complete; only the attached images below are evidence.',
+                                ownerSessionId)
+                            : '';
+                        const evidenceCaption = monitorChatText(
+                            `本次已附图像：${capturedViews.join('、')}；已核验对象：${capturedRefs.join('、') || '无指定对象'}。${omittedRefs.length ? `未能在同一画面核验：${omittedRefs.join('、')}；不据此判断其位置。` : ''}标注仅用于定位已核实对象；若图中显示紫色箭头，它从当前位置指向编辑前的位置，仅作复位参考，不代表剂量最优方向。取景后恢复原视图。`,
+                            `Attached views: ${capturedViews.join(', ')}; verified objects: ${capturedRefs.join(', ') || 'no specified object'}. ${omittedRefs.length ? `Not verified in this frame: ${omittedRefs.join(', ')}; no position is inferred for them. ` : ''}Marks locate verified objects. Purple arrows, when visible, point from current to pre-edit positions as undo references, not dose-optimal directions. Original view restored.`,
+                            ownerSessionId,
+                        );
                         trainingMonitorState.lastScreenshotAt = Date.now();
                         trainingMonitorState.captureFailures = 0;
+                        trainingMonitorState.lastCaptureError = '';
+                        trainingMonitorState.lastCaptureNoticeAt = 0;
                         addChat(
                             'bot-response',
-                            `**${title}**\n\n${evidenceCaption}`,
+                            `**${title}**\n\n${evidenceCaption}${viewNote ? `\n\n${viewNote}` : ''}`,
                             true,
                             Date.now(),
                             false,
@@ -2366,7 +2420,7 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                         );
                     }).catch(error => {
                         console.debug('[monitor] screenshot evidence skipped:', error);
-                        _recordMonitorCaptureFailure(ownerSessionId, ownerRunId);
+                        _recordMonitorCaptureFailure(ownerSessionId, ownerRunId, error?.message || 'capture_failed');
                     }).finally(() => {
                         if (trainingMonitorState.screenshotPendingRunId === ownerRunId) trainingMonitorState.screenshotPendingRunId = null;
                         const queue = trainingMonitorState.captureQueue || [];
@@ -2376,6 +2430,9 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                         }
                     });
                 }, 500);
+            }
+            if (document.hidden && !trainingMonitorState.screenshotPendingRunId) {
+                _recordMonitorCaptureFailure(ownerSessionId, ownerRunId, 'viewer_tab_hidden');
             }
         }
         // UI events include viewer, Data Tree, manual-planning and form
@@ -2392,16 +2449,35 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
     return null;
 }
 
-function _recordMonitorCaptureFailure(sessionId, runId) {
+function _recordMonitorCaptureFailure(sessionId, runId, errorCode = 'capture_failed') {
     if (!trainingMonitorState.active || trainingMonitorState.runId !== runId
         || _activeApiSessionId() !== sessionId) return;
     trainingMonitorState.captureFailures = (trainingMonitorState.captureFailures || 0) + 1;
-    if (trainingMonitorState.captureFailures === 2) {
-        addChat('bot-response', monitorChatText(
-            '监测截图连续失败，请保持 Viewer 页面可见；后续检查点会再次尝试。监测事件仍在记录。',
-            'Monitor capture failed repeatedly. Keep the Viewer tab visible; the next checkpoint will retry. Events are still being recorded.', sessionId),
-            true, Date.now(), false, sessionId, { messageKind: 'monitor_feedback' });
-    }
+    const code = String(errorCode || 'capture_failed').split(':')[0]
+        .replace(/[^a-z0-9_]/gi, '_').slice(0, 64) || 'capture_failed';
+    const now = Date.now();
+    // Report the first failed evidence checkpoint, but coalesce repeated
+    // failures of the same kind so a long edit sequence does not flood chat.
+    if (code === trainingMonitorState.lastCaptureError
+        && now - Number(trainingMonitorState.lastCaptureNoticeAt || 0) < 60000) return;
+    trainingMonitorState.lastCaptureError = code;
+    trainingMonitorState.lastCaptureNoticeAt = now;
+    const reasons = {
+        viewer_tab_hidden: ['Viewer 页面处于后台，浏览器未执行本次监测截图。切回该页面后，后续检查点会重试。',
+            'The Viewer tab was in the background, so this monitor capture did not run. Later checkpoints will retry when the tab is visible.'],
+        monitor_targets_unavailable: ['本次编辑涉及的对象尚未在当前 3D Viewer 中加载或显示，因此没有生成定位截图；文字建议仍基于已提交的事件。',
+            'The edited objects were not loaded or visible in the current 3D Viewer, so no location image was attached. Text feedback still reflects the committed event.'],
+        target_not_verified_visible_in_viewer: ['本次截图中没有可核验的目标，未附加可能误导的 3D 图片；请检查目标是否已加载。',
+            'No target could be verified in this capture; an ungrounded 3D image was not attached. Check whether the target has loaded.'],
+        workspace_visual_restore_incomplete: ['Viewer 资源仍在恢复，本次没有生成可核验截图；后续检查点会重试。',
+            'Viewer resources were still restoring, so this checkpoint has no verified image. Later checkpoints will retry.'],
+        attachment_not_rendered: ['截图已返回，但未能作为附件写入对话历史；本次不把它当作已完成的图像证据。',
+            'The capture returned, but its attachment was not written to chat history; it is not counted as delivered image evidence.'],
+    };
+    const pair = reasons[code] || ['本次监测截图未完成（' + code + '）；没有图像附件，后续检查点会重试。',
+        'This monitor capture did not complete (' + code + '); no image was attached. Later checkpoints will retry.'];
+    addChat('bot-response', monitorChatText(pair[0], pair[1], sessionId),
+        true, now, false, sessionId, { messageKind: 'monitor_feedback' });
 }
 
 function _parseUIControlPayload(value) {
@@ -11990,6 +12066,12 @@ function _revealScreenshotNodes(plan, ownerStillActive = () => true) {
     let changed = false;
     refs.forEach(ref => {
         const row = _dataTreeRowForTargetRef(ref);
+        // A collapsed or virtualized group need not have a rendered row.
+        // Monitor captures are grounded in the live model and 3D scene, not
+        // in whether a particular tree row happens to be mounted in the DOM.
+        const directId = String(ref).replace(/^(?:seed|needle|trajectory):/, '');
+        const directNode = typeof _findDataTreeNode === 'function'
+            ? _findDataTreeNode(directId) : null;
         const rowNodes = row
             ? _dataTreeRowIdentities(row)
                 .map(id => typeof _findDataTreeNode === 'function' ? _findDataTreeNode(id) : null)
@@ -11998,8 +12080,8 @@ function _revealScreenshotNodes(plan, ownerStillActive = () => true) {
         const groupNodes = groups[ref] && typeof _groupViewNodes === 'function'
             ? _groupViewNodes(groups[ref]).filter(Boolean)
             : [];
-        nodes.push(...rowNodes, ...groupNodes);
-        if (rowNodes.length || groupNodes.length) resolvedRefs.add(ref);
+        nodes.push(...(directNode ? [directNode] : []), ...rowNodes, ...groupNodes);
+        if (directNode || rowNodes.length || groupNodes.length) resolvedRefs.add(ref);
     });
     const remember = node => {
         const changes = {};
@@ -12035,8 +12117,41 @@ function _revealScreenshotNodes(plan, ownerStillActive = () => true) {
         if (changed && ownerStillActive()) refresh();
     };
     restore.changed = changed;
+    restore.resolvedTargetRefs = refs.filter(ref => resolvedRefs.has(ref));
     restore.unresolvedTargetRefs = refs.filter(ref => !resolvedRefs.has(ref));
     return restore;
+}
+
+function _monitorLiveCaptureRefs(refs) {
+    if (!Array.isArray(refs) || !refs.length) return [];
+    if (typeof window.get3DScreenshotGroundingManifest !== 'function') return [];
+    const manifest = window.get3DScreenshotGroundingManifest(refs);
+    const targets = Array.isArray(manifest?.targets) ? manifest.targets : [];
+    return refs.filter(ref => {
+        const target = targets.find(item => String(item?.target_ref || '') === ref);
+        // An out-of-frame object can be reframed. A missing/hidden one must
+        // not be claimed as visible evidence or poison every other target.
+        return target?.loaded === true && target.scene_visible === true
+            && target.data_tree_visible === true
+            && !['unresolved', 'missing', 'deleted', 'not_generated', 'loading', 'failed', 'error']
+                .includes(String(target.status || '').toLowerCase());
+    });
+}
+
+function _verifiedScreenshotTargetRefs(targets, refs) {
+    return refs.filter(ref => {
+        const target = Array.isArray(targets)
+            ? targets.find(item => String(item?.target_ref || '') === ref) : null;
+        return target?.visible === true
+            && target.scene_visible === true
+            && target.data_tree_visible === true
+            && target.in_view === true
+            && target.annotatable === true
+            && target.loaded !== false
+            && !['unresolved', 'missing', 'deleted', 'not_generated', 'loading', 'failed', 'error']
+                .includes(String(target.status || '').toLowerCase())
+            && Array.isArray(target.normalized_bounds);
+    });
 }
 
 // The guide can lie directly in front of the CTV in the current 3D camera.
@@ -12225,6 +12340,8 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
     let restoreVisibility = null;
     let restoreOccluders = null;
     const attachments = [];
+    const omittedTargetRefs = new Set();
+    let uploadedCount = 0;
     try {
         if (reportViews.length) {
             const reportAttachments = await _appendPersistedReportFigures(plan, context, ownerSessionId);
@@ -12241,7 +12358,38 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                 if (['chat', 'monitor'].includes(plan.mode) && plan.visual_purpose === 'locate'
                     && viewTarget === 'viewer-3d' && _screenshotTargetRefs(plan).length) {
                     restoreVisibility = _revealScreenshotNodes(plan, ownerStillActive);
-                    if (!restoreVisibility || restoreVisibility.unresolvedTargetRefs?.length) {
+                    if (!restoreVisibility) {
+                        throw new Error('target_object_not_loaded_in_live_data_tree');
+                    }
+                    if (options.monitorOnly) {
+                        const requested = _screenshotTargetRefs(plan);
+                        let liveRefs = _monitorLiveCaptureRefs(
+                            restoreVisibility.resolvedTargetRefs || [],
+                        );
+                        // A committed edit can reach the monitor before its
+                        // mesh is rebuilt. Wait briefly for the first usable
+                        // target; do not delay a valid partial capture just
+                        // because other objects are unavailable.
+                        for (let attempt = 0; !liveRefs.length && attempt < 3; attempt += 1) {
+                            if (!ownerStillActive() || !monitorCheckpointCurrent()) {
+                                throw new Error('monitor_checkpoint_superseded');
+                            }
+                            await _waitScreenshotFrames(3);
+                            await new Promise(resolve => setTimeout(resolve, 250));
+                            liveRefs = _monitorLiveCaptureRefs(
+                                restoreVisibility.resolvedTargetRefs || [],
+                            );
+                        }
+                        requested.filter(ref => !liveRefs.includes(ref))
+                            .forEach(ref => omittedTargetRefs.add(ref));
+                        if (!liveRefs.length) throw new Error('monitor_targets_unavailable');
+                        // Scope focusing, grounding, annotations, and upload
+                        // metadata to the *same* verified subset.
+                        captureSpec.object_ids = liveRefs;
+                        captureSpec.highlight_object_ids = liveRefs;
+                        captureSpec.target_refs = liveRefs;
+                        captureSpec.data_tree_node_ids = [];
+                    } else if (restoreVisibility.unresolvedTargetRefs?.length) {
                         throw new Error('target_object_not_loaded_in_live_data_tree');
                     }
                     captureSpec.annotation_policy = plan.annotation_policy === 'none' ? 'none' : 'required';
@@ -12302,25 +12450,28 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
             if (['chat', 'monitor'].includes(plan.mode)
                 && plan.visual_purpose === 'locate'
                 && viewTarget === 'viewer-3d'
-                && _screenshotTargetRefs(plan).length) {
+                && _screenshotTargetRefs(captureSpec).length) {
                 const targets = evidenceBundle?.groundingManifest?.targets;
-                const unresolved = _screenshotTargetRefs(plan).filter(targetRef => {
-                    const target = Array.isArray(targets)
-                        ? targets.find(item => String(item?.target_ref || '') === targetRef)
-                        : null;
-                    return !target
-                        || target.visible !== true
-                        || target.scene_visible !== true
-                        || target.data_tree_visible !== true
-                        || target.in_view !== true
-                        || target.annotatable !== true
-                        || target.loaded === false
-                        || ['unresolved', 'missing', 'deleted', 'not_generated', 'loading', 'failed', 'error']
-                            .includes(String(target.status || '').toLowerCase())
-                        || !Array.isArray(target.normalized_bounds);
-                });
-                if (unresolved.length) {
+                const requested = _screenshotTargetRefs(captureSpec);
+                const verified = _verifiedScreenshotTargetRefs(targets, requested);
+                if (verified.length !== requested.length && options.monitorOnly) {
+                    requested.filter(ref => !verified.includes(ref))
+                        .forEach(ref => omittedTargetRefs.add(ref));
+                    if (verified.length) {
+                        captureSpec.object_ids = verified;
+                        captureSpec.highlight_object_ids = verified;
+                        captureSpec.target_refs = verified;
+                        captureSpec.data_tree_node_ids = [];
+                        evidenceBundle.groundingManifest.targets = targets.filter(item =>
+                            verified.includes(String(item?.target_ref || '')));
+                    }
+                }
+                if (!verified.length || (!options.monitorOnly && verified.length !== requested.length)) {
                     throw new Error('target_not_verified_visible_in_viewer');
+                }
+                if (options.monitorOnly && Array.isArray(targets)) {
+                    evidenceBundle.groundingManifest.targets = targets.filter(item =>
+                        verified.includes(String(item?.target_ref || '')));
                 }
             }
             const dataUrl = evidenceBundle?.dataUrl || null;
@@ -12427,6 +12578,7 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
             if (!response.ok) throw new Error(payload.error || `upload_failed:${response.status}`);
             const screenshotUrl = payload.url || payload.screenshot_url || payload.path;
             if (!screenshotUrl) throw new Error('missing_screenshot_url');
+            uploadedCount += 1;
             if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
             const uploadedAttachment = Object.assign(
                 {},
@@ -12520,7 +12672,9 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
         }
         return {
             success: attachments.length > 0,
+            error: attachments.length ? '' : (uploadedCount ? 'attachment_not_rendered' : 'capture_failed'),
             attachments,
+            omittedTargetRefs: [...omittedTargetRefs],
             url: attachments[0]?.url || '',
             target: attachments[0]?.target || target,
             plan,
@@ -12530,10 +12684,11 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
         const errorCode = error?.message || String(error);
         console.warn('[screenshot] capture failed for the owning reply:', errorCode);
         return {
-            success: false,
+            success: options.monitorOnly && attachments.length > 0,
             error: errorCode,
             userMessage: _screenshotFailureMessage(context, errorCode),
             attachments,
+            omittedTargetRefs: [...omittedTargetRefs],
             plan,
         };
     } finally {

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from web.monitor_changes import capture, compare, describe, screenshot
 from web.monitor_changes import compact_evidence, geometry_key
 from web.monitor_engine import _training_feedback_for_event, _training_screenshot_for_event
+from web.monitor_engine import _format_training_summary
 from web import server_support as support
 import pytest
 from flask import Flask
@@ -218,6 +219,19 @@ def test_committed_evidence_reaches_general_chat_without_geometry_or_token():
     assert 'server_committed_monitor_edit' not in build_case_facts(agent.memory)
 
 
+def test_case_facts_expose_saved_restore_candidate_without_claiming_it_is_validated():
+    from agent_runtime.context_window import build_case_facts
+    agent, _ = setup()
+    agent.memory.store('planning_runs', [
+        {'planning_id': 'original', 'source': 'algorithm', 'status': 'completed'},
+        {'planning_id': 'draft', 'source': 'manual_edit', 'status': 'draft'},
+    ])
+    facts = build_case_facts(agent.memory)
+    assert 'completed non-manual candidates: original' in facts
+    assert 'activate a verified completed algorithm baseline' in facts
+    assert 'draft' not in facts.split('completed non-manual candidates:')[1].split('\n')[0]
+
+
 def test_oar_changes_are_compared_only_for_matching_metrics():
     agent, geometry = setup()
     agent.memory.values['dose_metrics']['oar_metrics'] = {'spinal_cord': {'dmax': 10, 'd2cc': 4}}
@@ -312,3 +326,64 @@ def test_geometry_key_tolerates_malformed_entries():
 
     empty = geometry_key({'seeds': [], 'needles': []})
     assert isinstance(empty, str) and empty != key
+
+
+def test_rounding_noise_and_orientation_are_not_reported_as_zero_mm_drags():
+    agent, geometry = setup()
+    before = capture(agent, geometry)
+    geometry['seeds'][1]['position'][2] += .004
+    noise = compare(before, capture(agent, geometry))
+    assert noise['changed_object_count'] == 0
+    assert '0.00 mm' not in describe(noise, 'zh')
+    geometry['seeds'][1]['direction'] = [.01, 0, .99995]
+    oriented = compare(before, capture(agent, geometry))
+    assert oriented['changed_objects'][0]['operation'] == 'reoriented'
+    assert '移动 0.00 mm' not in describe(oriented, 'zh')
+
+
+def test_needle_edit_groups_dependent_seeds_and_does_not_blame_old_conflicts():
+    agent, geometry = setup()
+    geometry['seeds'][1]['position'] = [0, 0, 6]
+    before = capture(agent, geometry)
+    geometry['needles'][0]['points'][0] = [1, 0, 0]
+    geometry['needles'][0]['points'][1] = [1, 0, 30]
+    geometry['seeds'][0]['position'][0] = 1
+    geometry['seeds'][1]['position'][0] = 1
+    evidence = compare(before, capture(agent, geometry))
+    assert evidence['changed_objects'][0]['id'] == 'n'
+    assert evidence['dependent_object_count'] == 2
+    text = describe(evidence, 'zh')
+    assert '不是 2 次独立拖拽' in text
+    assert '原有违规仍存在' not in text
+    assert '编辑前已存在' in text
+    assert screenshot(evidence, 'edit')['object_ids'] == ['n']
+
+
+def test_summary_collapses_dose_recompute_of_same_geometry_edit():
+    evidence = {'event_id': 'edit', 'geometry_event_id': 'edit',
+                'changed_objects': [{'id': 'needle_22', 'kind': 'needles',
+                    'operation': 'moved', 'distance_mm': 2.0}],
+                'changed_object_count': 1, 'conflicts': [], 'dose': {}}
+    after_dose = {**evidence, 'event_id': 'dose', 'dose': {'comparable': False}}
+    events = [{'type': 'manual.needle.drag', 'detail': {'edit_evidence': evidence}},
+              {'type': 'manual.dose', 'detail': {'edit_evidence': after_dose}}]
+    summary = _format_training_summary(events, {}, {}, 'zh')
+    assert summary.count('needle_22：移动 2.00 mm') == 1
+
+
+def test_needle_commit_direction_normalization_is_not_many_independent_drags():
+    agent, geometry = setup()
+    for index in range(10):
+        geometry['seeds'].append({'id': f'other_{index}', 'trajectory_id': 'other',
+            'position': [100 + 10 * index, 0, 0], 'direction': [0, 0, 1]})
+    before = capture(agent, geometry)
+    geometry['needles'][0]['points'][0] = [1, 0, 0]
+    for seed in geometry['seeds'][2:]:
+        seed['direction'] = [0, .01, .99995]
+    evidence = compare(before, capture(agent, geometry))
+    assert evidence['normalization_object_count'] == 10
+    assert evidence['changed_objects'][0]['id'] == 'n'
+    assert screenshot(evidence, 'edit')['object_ids'] == ['n']
+    text = describe(evidence, 'zh')
+    assert '不表示用户逐枚拖动' in text
+    assert 'other_0：移动' not in text

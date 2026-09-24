@@ -2881,13 +2881,19 @@ def register_planning_routes(
                             latest = training.get('latest_edit') or {}
                             if not changed and latest.get('geometry_key') == after['geometry_key']:
                                 for key in ('changed_objects', 'changed_object_count', 'changed_kinds',
-                                            'conflicts', 'resolved_conflicts', 'before_version'):
-                                    evidence[key] = copy.deepcopy(latest[key])
+                                            'conflicts', 'resolved_conflicts', 'before_version',
+                                            'dependent_object_count', 'existing_conflict_count',
+                                            'new_conflict_count', 'worsened_conflict_count',
+                                            'normalization_object_count',
+                                            'geometry_event_id'):
+                                    if key in latest:
+                                        evidence[key] = copy.deepcopy(latest[key])
                             evidence['dose'] = monitor_changes.dose_comparison(baseline or before, after)
                             evidence['dose']['edit_count'] = int(training.get('dose_baseline_edit_count') or (1 if changed else 0))
                             evidence['dose']['baseline_version'] = (baseline or before)['version']
                             event = payload.get('event') or {}
                             evidence['event_id'] = event.get('event_id') or uuid4().hex
+                            evidence.setdefault('geometry_event_id', evidence['event_id'])
                             evidence['monitor_run_id'] = run_id
                             # One bounded server-owned inverse. No client supplied
                             # coordinates, no multi-edit rollback, no safety override.
@@ -2970,9 +2976,16 @@ def register_planning_routes(
         with _manual_dose_transaction_lock(session_id):
             training = _ui_bucket(session_id).get('training') or {}
             pending = training.get('pending_restore') or {}
+            zh = _monitor_language(data.get('language') or training.get('language')) == 'zh'
             if (not training.get('active') or not pending or data.get('token') != pending.get('token')
                     or pending.get('run_id') != training.get('run_id') or time.time() > pending['expires_at']):
-                return jsonify(success=False, error='This edit decision expired or belongs to a different monitor run.'), 409
+                reason = (('新的已提交编辑替换了这条撤销建议；本次未改动几何，请查看最新监测检查点。' if zh
+                           else 'A newer committed edit replaced this undo offer. No geometry was changed; inspect the latest monitor checkpoint.')
+                          if pending and training.get('active') and pending.get('run_id') == training.get('run_id')
+                          and data.get('token') != pending.get('token')
+                          else ('这条编辑决策已过期或不属于当前监测轮次；本次未改动几何。' if zh
+                                else 'This edit decision expired or belongs to a different monitor run. No geometry was changed.'))
+                return jsonify(success=False, error=reason, code='monitor_edit_decision_unavailable'), 409
             if data.get('decision') == 'keep':
                 training.pop('pending_restore', None)
                 checkpoint_ui_bridge(session_id, 'monitor.edit_kept')

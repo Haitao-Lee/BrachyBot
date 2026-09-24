@@ -699,6 +699,14 @@ def build_case_facts(memory: Any) -> str:
         planning_id = _get("active_planning_id") or _get("planning_run_id")
         if planning_id:
             lines.append(f"- Active planning id: {planning_id}")
+        runs = _get('planning_runs')
+        if isinstance(runs, list):
+            completed = [str(row.get('planning_id')) for row in runs
+                         if isinstance(row, Mapping) and row.get('planning_id')
+                         and row.get('source') != 'manual_edit'
+                         and row.get('status') == 'completed']
+            lines.append(f"- Saved Planning registry: {len(runs)} runs; completed non-manual candidates: {', '.join(completed[-3:]) or 'none in registry'}")
+            lines.append('- Restore capability: the application can inspect saved Planning runs and activate a verified completed algorithm baseline; the latest monitor edit may have a separate versioned single-edit undo. Do not assert that history or restore is unavailable without checking the relevant candidate and current version.')
     except Exception:
         pass
 

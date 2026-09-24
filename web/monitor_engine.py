@@ -191,7 +191,9 @@ def _format_training_summary(events: list, counts: Dict[str, int], advice: Dict[
     for event in events:
         evidence = (event.get('detail') or {}).get('edit_evidence')
         if evidence:
-            edit_entries[evidence['event_id']] = evidence
+            # A later dose recomputation enriches the same geometry edit;
+            # it must not create a second 100-line account of that movement.
+            edit_entries[evidence.get('geometry_event_id') or evidence['event_id']] = evidence
     if edit_entries:
         from web.monitor_changes import describe
         lines.extend(['', '### 逐次编辑与影响' if language == 'zh' else '### Edits and measured effects'])
@@ -203,7 +205,10 @@ def _format_training_summary(events: list, counts: Dict[str, int], advice: Dict[
         values = advice.get(key) or []
         if values:
             lines.extend(["", f"### {heading}"])
-            lines.extend(f"- {_localize_monitor_text(value, language)}" for value in values)
+            # The edit-by-edit evidence is the main report. Preserve a short
+            # current-state tail without drowning it in generic advice.
+            lines.extend(f"- {_localize_monitor_text(value, language)}"
+                         for value in (values[:3] if edit_entries else values))
     lines[1] = f"本次监测记录了 {total} 个界面或规划事件。" if language == "zh" else f"Recorded {total} UI/planning events."
     if total > len(events):
         lines.append(f"仅保留最近 {len(events)} 条事件明细，活动计数包含完整运行。" if language == "zh" else f"Only the latest {len(events)} event details are retained; counts cover the full run.")

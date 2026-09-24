@@ -35,11 +35,16 @@ const settle = async () => { for (let i=0;i<20;i++) await Promise.resolve(); };
     await ctx.reportUIEvent('manual.needle.drag','move');
     assert.equal(captures.length,1,'captures never overlap');
     assert.equal(ctx.trainingMonitorState.captureQueue.length,1,'later edit is queued, not dropped');
+    event=3;
+    await ctx.reportUIEvent('manual.seed.drag','move');
+    assert.equal(ctx.trainingMonitorState.captureQueue.length,1,'only the newest pending Viewer pose is retained');
+    assert.equal(ctx.trainingMonitorState.captureQueue[0].data.suggested_screenshot.checkpoint_id,'e3');
     finish({success:true,attachments:[{id:'first'}]}); await settle();
     assert.equal(timers.length,1);
     timers.shift()(); await settle();
     assert.equal(captures.length,2);
-    assert.equal(fetchCount,2,'queued captures do not replay backend events');
+    assert.equal(fetchCount,3,'queued captures do not replay backend events');
+    assert.equal(captures[1].options.plan.object_ids[0],'seed3');
     assert.notEqual(captures[0].context.messageId,captures[1].context.messageId);
     assert.equal(captures[1].options.plan.hide_unrelated,false);
     assert.equal(captures[1].options.plan.annotation_policy,'required');
@@ -68,5 +73,16 @@ const settle = async () => { for (let i=0;i<20;i++) await Promise.resolve(); };
     assert.equal(ctx.window._chatTurnGeneration,6,'decision owns a fresh generation');
     assert.equal(ctx.window._monitorTurnAbort,null,'abort handle released');
     assert.equal(ctx.window._chatTurnCancelUi,null,'cancel hook released');
+    ctx.trainingMonitorState.active=false;
+    ctx.fetch=async(url)=>({ok:true,json:async()=>({success:true,active_planning_id:'draft',runs:[
+        {planning_id:'original',source:'algorithm',status:'completed'},
+        {planning_id:'draft',source:'manual_edit',status:'draft'},
+    ]})});
+    assert.equal(await ctx.window.handleMonitorConversation('请恢复原来的规划方案'),true);
+    assert.match(messages.at(-1)[1],/original/);
+    let restored=0;
+    ctx.window.restoreAlgorithmPlan=async()=>{restored++;return {success:true,planning_id:'original'};};
+    assert.equal(await ctx.window.handleMonitorConversation('恢复原始算法规划'),true);
+    assert.equal(restored,1,'only the explicit algorithm restore mutates the plan');
     console.log('Monitor edit interaction: serialized checkpoints, per-edit attachments, explicit decisions, no duplicate telemetry passed.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
