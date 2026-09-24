@@ -80,6 +80,101 @@ def test_current_case_dose_response_reads_saved_metrics_without_web_tools():
     assert "Advertisement" not in response
 
 
+def test_explicit_oar_dose_query_returns_every_active_organ_row():
+    from agent_runtime.chat_workflows import ChatWorkflowMixin
+    from agent_runtime.turn_policy import classify_local_turn
+    from tool_factory.viewer_command.query_metrics import QueryMetricsTool
+    from agent_runtime.core import ToolResultPipeline
+
+    message = "那从每个器官受到的辐射来看呢"
+    policy = classify_local_turn(message)
+    assert policy.intent == "case_dose_query"
+    assert policy.use_router is False
+    for phrasing in (
+        "每个器官的剂量是多少",
+        "各器官受量情况",
+        "What dose did each organ receive?",
+    ):
+        localized_policy = classify_local_turn(phrasing)
+        assert localized_policy.intent == "case_dose_query"
+        assert localized_policy.use_router is False
+
+    metrics = {
+        "metrics": {
+            "CTV": {"D90": 120.2, "V100": 0.901},
+            "GTV": {"type": "target", "Dmax": 500.0, "D2cc": 300.0},
+            "oars": {
+                "spinal_cord": {"Dmax": 20.52, "D0.1cc": 8.77, "D1cc": 8.0, "D2cc": 7.3},
+                "brain": {"Dmax": 6.7, "D1cc": 5.0, "D2cc": 4.77},
+                "esophagus": {"Dmax": 0.0, "D2cc": 0.0},
+            },
+        },
+        "prescription_gy": 120.0,
+    }
+    result = QueryMetricsTool()._execute(metric_type="oar_dose_metrics", metrics=metrics)
+    assert result.success is True
+    assert result.data["organ_count"] == 3
+    assert result.metadata["response_contract"]["covers"] == ["oar_dose"]
+    rendered = ToolResultPipeline.format("query_metrics", result, "zh")
+    assert "各危及器官受照剂量（3 个结构）" in rendered
+    assert "spinal cord" in rendered and "brain" in rendered and "esophagus" in rendered
+    assert "20.52" in rendered and "8.77" in rendered and "4.77" in rendered
+    assert "超限" not in rendered
+
+    class Memory:
+        def retrieve(self, key, default=None):
+            return {
+                "metrics": {
+                    "metrics": metrics["metrics"],
+                    "prescription_gy": 120.0,
+                }
+            }.get(key, default)
+
+    workflow = object.__new__(ChatWorkflowMixin)
+    workflow.memory = Memory()
+    local = workflow._build_current_oar_dose_response("zh")
+    assert all(name in local for name in ("spinal cord", "brain", "esophagus"))
+    local, meta = workflow._answer_local_read_query(
+        message, "case_dose_query", "zh"
+    )
+    assert meta["route"] == "active_session_oar_dose_read"
+    assert meta["llm_calls"] == 0
+    assert all(name in local for name in ("spinal cord", "brain", "esophagus"))
+
+
+def test_aggregate_metrics_render_oar_rows_before_claiming_oar_coverage():
+    from agent_runtime.core import ToolResultPipeline
+    from tool_factory.viewer_command.query_metrics import QueryMetricsTool
+
+    result = QueryMetricsTool()._execute(
+        metric_type="all_metrics",
+        metrics={
+            "v100": 0.901,
+            "d90": 120.2,
+            "oar_metrics": {
+                "spinal_cord": {"dmax": 20.52, "d2cc": 7.30},
+                "brain": {"dmax": 6.70, "d2cc": 4.77},
+            },
+        },
+    )
+    assert result.success is True
+    assert "oar_dose" in result.metadata["response_contract"]["covers"]
+    rendered = ToolResultPipeline.format("query_metrics", result, "zh")
+    assert "spinal cord" in rendered and "brain" in rendered
+    assert "20.52" in rendered and "4.77" in rendered
+
+
+def test_oar_volume_only_payload_is_not_reported_as_oar_dose():
+    from tool_factory.viewer_command.query_metrics import QueryMetricsTool
+
+    result = QueryMetricsTool()._execute(
+        metric_type="oar_dose_metrics",
+        metrics={"oar_volumes": {"spinal_cord": 37.0}},
+    )
+    assert result.success is False
+    assert "OAR structure volumes are not dose measurements" in result.message
+
+
 def test_dose_result_language_is_read_only_but_recalculation_stays_mutating():
     from agent_runtime.turn_policy import _is_current_case_dose_query, classify_local_turn
 

@@ -20,7 +20,11 @@ import SimpleITK as sitk
 
 from agent_runtime.core import PlanningPhase, ToolResultPipeline, resolve_reference_direction_input
 from agent_runtime.contracts import RunStatus
-from agent_runtime.answer_coverage import direct_read_decision
+from agent_runtime.answer_coverage import (
+    ASPECT_OAR_DOSE,
+    direct_read_decision,
+    required_metric_aspects,
+)
 from agent_runtime.execution_authorization import TurnExecutionAuthorization
 from agent_runtime.visual_evidence import (
     LEGACY_VISUAL_EVIDENCE_PROTOCOL_MARKER,
@@ -53,6 +57,11 @@ from utils.user_errors import (
     sanitize_user_response,
 )
 from utils.display_paths import roots_from_config
+from utils.planning_metrics import (
+    format_oar_dose_table,
+    merge_dose_metric_sources,
+    normalize_dose_metrics,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -546,7 +555,11 @@ class ChatWorkflowMixin:
             "planning_assessment_query": lambda clause: self._build_current_planning_assessment_response(lang),
             "planning_provenance_query": lambda clause: self._build_current_planning_provenance_response(lang),
             "case_state_question": lambda clause: self._build_case_state_question_response(lang, clause),
-            "case_dose_query": lambda clause: self._build_current_dose_response(lang),
+            "case_dose_query": lambda clause: (
+                self._build_current_oar_dose_response(lang)
+                if ASPECT_OAR_DOSE in required_metric_aspects(clause)
+                else self._build_current_dose_response(lang)
+            ),
             "image_metadata_query": lambda clause: self._build_current_image_metadata_response(lang),
             "current_oar_query": lambda clause: self._build_current_oar_count_response(lang),
             "artifact_analysis_query": lambda clause: self._build_artifact_analysis_response(
@@ -1270,48 +1283,43 @@ class ChatWorkflowMixin:
         under ``metrics -> CTV``. Normalize those shapes here so a read-only
         question never needs to call the expensive dose tool again.
         """
-        candidates = []
+        active_context = {}
         try:
             from web.planning_runs import current_planning_context
 
             active_context = current_planning_context(self.memory)
-            active_metrics = active_context.get("metrics") if isinstance(active_context, dict) else {}
-            if isinstance(active_metrics, dict) and active_metrics:
-                candidates.append(active_metrics)
         except Exception as exc:
             logger.debug("Active Planning metrics unavailable; using legacy aliases: %s", exc)
-        # These are compatibility fallbacks for snapshots created before the
-        # Planning registry existed. They are deliberately checked only after
-        # the active Planning context so an old alias cannot override a newer
-        # selected Planning.
-        candidates.extend([
-            self.memory.retrieve("metrics") or {},
-            self.memory.retrieve("dose_metrics") or {},
-        ])
-        for raw in candidates:
-            if not isinstance(raw, dict) or not raw:
-                continue
-            data = dict(raw)
-            nested = data.get("metrics")
-            if isinstance(nested, dict):
-                target = nested.get("CTV") or nested.get("ctv")
-                if not isinstance(target, dict):
-                    for value in nested.values():
-                        if isinstance(value, dict) and str(value.get("type", "")).lower() == "target":
-                            target = value
-                            break
-                if isinstance(target, dict):
-                    merged = dict(data)
-                    merged.update(target)
-                    if not merged.get("oar_metrics"):
-                        merged["oar_metrics"] = {
-                            name: value for name, value in nested.items()
-                            if name not in {"CTV", "ctv"} and isinstance(value, dict)
-                        }
-                    data = merged
-            if any(key in data for key in ("v100", "V100", "d90", "D90", "oar_metrics")):
-                return data
-        return {}
+        active_metrics = (
+            active_context.get("metrics")
+            if isinstance(active_context, dict)
+            else {}
+        )
+        if isinstance(active_context, dict) and active_context.get("planning_id"):
+            # A selected Planning is the authority. Never fall through to a
+            # legacy alias from another run when its own dose result is absent.
+            return normalize_dose_metrics(active_metrics)
+        return merge_dose_metric_sources(
+            active_metrics,
+            self.memory.retrieve("metrics"),
+            self.memory.retrieve("dose_metrics"),
+        )
+
+    def _build_current_oar_dose_response(self, lang: str = "en") -> str:
+        """Report every saved per-organ dose row from the active Planning."""
+        metrics = self._current_dose_metrics()
+        table = format_oar_dose_table(metrics.get("oar_metrics"), lang)
+        if table:
+            return table
+        if self._response_language(lang) == "zh":
+            return (
+                "当前活动规划没有可核实的逐器官剂量/DVH 指标。"
+                "我没有用 Data Tree 中的器官体积代替受照剂量；请确认当前规划的剂量评估已保存。"
+            )
+        return (
+            "No verifiable per-organ dose/DVH metrics are saved for the active Planning. "
+            "I did not substitute Data Tree organ volumes for dose; confirm that dose evaluation was saved for this Planning."
+        )
 
     def _build_current_dose_response(self, lang: str = "en") -> str:
         """Answer a current-dose question from the active case only.
@@ -2714,6 +2722,20 @@ class ChatWorkflowMixin:
         returned instead of a misleading menu.
         """
         intent = str(intent or "")
+        if (
+            intent == "case_dose_query"
+            and ASPECT_OAR_DOSE in required_metric_aspects(message)
+        ):
+            # This is a typed read from the active Planning, not a question
+            # that needs model interpretation. Render every saved OAR row
+            # directly, before building the larger general planning packet.
+            return self._build_current_oar_dose_response(lang), {
+                "usage": {},
+                "latency_ms": 0,
+                "llm_calls": 0,
+                "route": "active_session_oar_dose_read",
+                "grounded_intent": intent,
+            }
         facts = self._current_planning_fact_packet(
             intent,
             analysis_target=str(
@@ -2726,7 +2748,11 @@ class ChatWorkflowMixin:
             "case_state_question": lambda resolved_lang: self._build_case_state_question_response(
                 resolved_lang, message
             ),
-            "case_dose_query": self._build_current_dose_response,
+            "case_dose_query": (
+                lambda resolved_lang: self._build_current_oar_dose_response(resolved_lang)
+                if ASPECT_OAR_DOSE in required_metric_aspects(message)
+                else self._build_current_dose_response(resolved_lang)
+            ),
             "image_metadata_query": self._build_current_image_metadata_response,
             "current_oar_query": self._build_current_oar_count_response,
             "oar_count_query": self._build_current_oar_count_response,

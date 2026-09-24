@@ -102,9 +102,14 @@ def test_current_planning_context_never_mixes_active_run_with_foreign_aliases():
         "active_planning_id": active_id,
         "planning_run_id": "planning-foreign",
         "dose_metrics": {"v100": 0.25, "d90": 30.0},
+        "metrics": {"oar_metrics": {"brain": {"dmax": 999.0, "d2cc": 99.0}}},
         "total_seeds": 999,
         f"{PLANNING_RUN_PREFIX}{active_id}": {
-            "dose_metrics": {"v100": 0.903, "d90": 120.59},
+            "dose_metrics": {
+                "v100": 0.903,
+                "d90": 120.59,
+                "oar_metrics": {"spinal_cord": {"dmax": 20.0, "d2cc": 7.0}},
+            },
             "plan_config": {"prescription_gy": 120.0},
             "total_seeds": 35,
             "num_trajectories": 5,
@@ -115,6 +120,7 @@ def test_current_planning_context_never_mixes_active_run_with_foreign_aliases():
 
     assert restored["planning_id"] == active_id
     assert restored["metrics"]["v100"] == 0.903
+    assert set(restored["metrics"]["oar_metrics"]) == {"spinal_cord"}
     assert restored["total_seeds"] == 35
     assert restored["num_trajectories"] == 5
     assert restored["source"] == "active_planning_run"
@@ -123,8 +129,50 @@ def test_current_planning_context_never_mixes_active_run_with_foreign_aliases():
     # newer than the immutable checkpoint and must be visible immediately.
     memory.planning_results["planning_run_id"] = active_id
     memory.planning_results["dose_metrics"] = {"v100": 0.91, "d90": 123.0}
+    memory.planning_results["metrics"] = {"v100": 0.91, "d90": 123.0}
     live = current_planning_context(memory)
     assert live["metrics"]["v100"] == 0.91
+
+
+def test_current_planning_context_merges_nested_ctv_and_oar_metric_aliases():
+    agent = _agent()
+    memory = agent.memory
+    memory.store = lambda key, value: memory.planning_results.__setitem__(key, value)
+    planning_id = "planning-active"
+    memory.planning_results.update({
+        "active_planning_id": planning_id,
+        "planning_run_id": planning_id,
+        "dose_metrics": {
+            "metrics": {
+                "CTV": {"D90": 120.2, "V100": 0.901},
+                "oars": {
+                    "spinal_cord": {"Dmax": 20.52, "D2cc": 7.30},
+                    "brain": {"Dmax": 6.70, "D2cc": 4.77},
+                },
+            },
+            "prescription_gy": 120.0,
+        },
+        "metrics": {
+            "v100": 0.905,
+            "oar_metrics": {
+                "thyroid_gland": {"dmax": 1.28, "d2cc": 0.0},
+                "spinal_cord": {"d1cc": 8.77},
+            },
+        },
+    })
+
+    metrics = current_planning_context(memory)["metrics"]
+
+    assert metrics["D90"] == 120.2
+    assert metrics["v100"] == 0.905
+    assert metrics["prescription_gy"] == 120.0
+    assert metrics["oar_metrics"]["spinal_cord"] == {
+        "Dmax": 20.52,
+        "D2cc": 7.30,
+        "d1cc": 8.77,
+    }
+    assert metrics["oar_metrics"]["brain"]["D2cc"] == 4.77
+    assert metrics["oar_metrics"]["thyroid_gland"]["dmax"] == 1.28
 
 
 def test_stepwise_stages_reuse_running_run_but_completed_replan_forks():
@@ -162,6 +210,17 @@ def test_manual_edit_forks_without_mutating_parent_and_saves_draft_geometry():
     agent = _agent()
     first = begin_planning_run(agent, step="full", force_new=True)
     _publish(agent, first, seed="seed-a")
+    previous_dose = {
+        "d90": 120.0,
+        "oar_metrics": {"spinal_cord": {"dmax": 20.0, "d2cc": 7.0}},
+    }
+    for key, value in (
+        ("algorithm_plan_dose_metrics", previous_dose),
+        ("algorithm_plan_dvh_data", {"spinal_cord": {"dose": [20.0]}}),
+        ("algorithm_plan_dose_distribution", [[[20.0]]]),
+    ):
+        agent.memory.store(key, value)
+    publish_planning_run(agent, None, status="completed")
 
     child = fork_planning_run(agent, reason="seed_drag")
     invalidate_planning_dependents(agent.memory, reason="seed_drag")
@@ -173,6 +232,12 @@ def test_manual_edit_forks_without_mutating_parent_and_saves_draft_geometry():
     assert agent.memory.retrieve("dose_distribution_gy") is None
     assert agent.memory.retrieve(PLANNING_RUN_PREFIX + first)["manual_seeds"][0]["id"] == "seed-a"
     assert agent.memory.retrieve(PLANNING_RUN_PREFIX + child)["manual_seeds"][0]["id"] == "seed-b"
+    assert agent.memory.retrieve(PLANNING_RUN_PREFIX + first)["algorithm_plan_dose_metrics"] == previous_dose
+    child_snapshot = agent.memory.retrieve(PLANNING_RUN_PREFIX + child)
+    assert "algorithm_plan_dose_metrics" not in child_snapshot
+    assert "algorithm_plan_dvh_data" not in child_snapshot
+    assert "algorithm_plan_dose_distribution" not in child_snapshot
+    assert current_planning_context(agent.memory)["metrics"] == {}
     assert list_planning_runs(agent.memory)[-1]["status"] == "draft"
 
 

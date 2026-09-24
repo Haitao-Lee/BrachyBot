@@ -10,6 +10,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
 from utils.user_errors import format_tool_error, normalize_metadata
+from utils.planning_metrics import format_oar_dose_table
 
 
 logger = logging.getLogger(__name__)
@@ -1161,6 +1162,31 @@ class ToolResultPipeline:
             if value is not None and 1.0 < value <= 100.0:
                 value /= 100.0
             return fmt(value * 100 if value is not None else None, 2, "%")
+
+        if metric_type == "oar_dose_metrics":
+            table = format_oar_dose_table(values.get("oar_metrics") or meta.get("oar_metrics"), lang)
+            if table:
+                return table
+            return (
+                "当前活动规划没有可核实的逐器官剂量/DVH 指标；不能用器官体积代替剂量。"
+                if lang == "zh"
+                else "No verifiable per-organ dose/DVH metrics are saved for the active Planning; organ volumes are not dose measurements."
+            )
+
+        if metric_type == "all_metrics":
+            lines = [
+                "## 当前病例结构化指标" if lang == "zh" else "## Current case structured metrics",
+                "",
+            ]
+            for key, value in values.items():
+                if key in {"oar_metrics", "_missing", "metric_type", "response_contract"}:
+                    continue
+                if isinstance(value, (str, int, float, bool)):
+                    lines.append(f"- {key}: {value}")
+            table = format_oar_dose_table(values.get("oar_metrics"), lang)
+            if table:
+                lines.extend(["", table])
+            return "\n".join(lines)
 
         if metric_type == "dose_metrics" or any(
             key in values for key in ("V100", "V150", "V200", "D90", "Dmean")

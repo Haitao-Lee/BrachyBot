@@ -727,6 +727,7 @@ def _is_current_case_dose_query(message: str) -> bool:
     dose_terms = (
         "dose", "dvh", "d90", "d95", "d2", "v100", "v150", "v200",
         "\u5242\u91cf", "\u5242\u91cf\u5206\u5e03", "\u5242\u91cf\u7ed3\u679c",
+        "\u53d7\u7167", "\u53d7\u91cf", "\u8f90\u5c04", "\u7167\u5c04", "radiation", "irradiat",
     )
     standards_terms = (
         "guideline", "standard", "constraint", "limit", "tolerance",
@@ -742,6 +743,9 @@ def _is_current_case_dose_query(message: str) -> bool:
         "how", "what", "\u600e\u4e48\u6837", "\u5982\u4f55", "\u600e\u4e48",
         "\u60c5\u51b5", "\u7ed3\u679c", "\u770b\u770b", "\u600e\u4e48\u4e86",
         "\u591a\u5c11", "\u6307\u6807", "metrics", "values", "key metrics",
+        "\u6765\u770b", "\u600e\u4e48\u770b", "\u53d7\u5230\u7684", "\u53d7\u7167\u60c5\u51b5",
+        "\u6bcf\u4e2a\u5668\u5b98", "\u5404\u5668\u5b98",
+        "received", "receive", "exposure",
     )
 
     # Distinguish a mutating imperative from an attributive description such

@@ -2080,13 +2080,19 @@
         if (!described) {
             return { title: storedTitle, caption: storedCaption };
         }
-        const isCanonicalText = (value, candidates) => !value
-            || candidates.some(candidate => String(candidate || '').trim() === value);
+        // Standard report captions are presentation text, not capture evidence.
+        // The capture routine historically persisted language-specific variants
+        // (for example "Translucent tumor (seed distribution)") into title and
+        // caption. Those strings are not necessarily byte-identical to the
+        // current canonical definitions, so matching only the current English
+        // and Chinese strings accidentally treated old generated labels as user
+        // overrides and left them untranslated after a global language switch.
+        // Stable axis/capture-role identity is authoritative for standard slots;
+        // supplemental figures (which have no standard identity) retain their
+        // own text through the early return above.
         return {
-            title: isCanonicalText(storedTitle, [described.titleEn, described.titleZh])
-                ? described.title : storedTitle,
-            caption: isCanonicalText(storedCaption, [described.captionEn, described.captionZh])
-                ? described.caption : storedCaption,
+            title: String(described.title || storedTitle),
+            caption: String(described.caption || storedCaption),
         };
     };
 

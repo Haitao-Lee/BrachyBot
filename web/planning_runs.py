@@ -20,6 +20,8 @@ from collections.abc import Mapping
 from typing import Any, Dict, Iterable, List, Optional
 from uuid import uuid4
 
+from utils.planning_metrics import merge_dose_metric_sources
+
 try:  # NumPy is already a runtime dependency, but keep imports test-friendly.
     import numpy as np
 except Exception:  # pragma: no cover
@@ -36,11 +38,16 @@ PLANNING_RUN_PREFIX = "planning_run:"
 # geometry only and receives fresh dose/DVH/guide data after recomputation.
 STALE_PLANNING_VALUE_KEYS = (
     "dose_distribution",
+    "algorithm_plan_dose_distribution",
     "dose_distribution_gy",
+    "algorithm_plan_dose_distribution_gy",
     "dose_distribution_physical_gy",
     "dose_metrics",
+    "algorithm_plan_dose_metrics",
     "metrics",
     "dvh_data",
+    "algorithm_plan_dvh_data",
+    "dose_recompute_provenance",
     "surgical_guide",
 )
 
@@ -483,6 +490,11 @@ def fork_planning_run(
         return str(active)
 
     parent_snapshot = _capture_current(memory) if capture_current else {}
+    # The child is a new geometry version. Preserve its rollback parent
+    # separately, but never seed this editable run with dose/DVH products
+    # computed for the parent's geometry.
+    for key in STALE_PLANNING_VALUE_KEYS:
+        parent_snapshot.pop(key, None)
     sequence = max((int(item.get("sequence") or 0) for item in runs), default=-1) + 1
     planning_id = f"planning-{uuid4().hex}"
     now = _now()
@@ -526,6 +538,19 @@ def invalidate_planning_dependents(memory: Any, *, reason: str = "planning geome
     """
     for key in STALE_PLANNING_VALUE_KEYS:
         _memory_delete(memory, key)
+    planning_id = str(
+        memory.retrieve(ACTIVE_PLANNING_ID_KEY)
+        or memory.retrieve(PLANNING_RUN_ID_KEY)
+        or ""
+    )
+    if planning_id:
+        snapshot_key = PLANNING_RUN_PREFIX + planning_id
+        snapshot = memory.retrieve(snapshot_key)
+        if isinstance(snapshot, Mapping):
+            current_snapshot = dict(snapshot)
+            for key in STALE_PLANNING_VALUE_KEYS:
+                current_snapshot.pop(key, None)
+            _memory_put(memory, snapshot_key, current_snapshot)
     status = {
         "dose": "stale",
         "dvh": "stale",
@@ -1121,9 +1146,37 @@ def current_planning_context(memory: Any) -> Dict[str, Any]:
                 return value
         return default
 
-    metrics = read(
-        "dose_metrics", "algorithm_plan_dose_metrics", "metrics", default={}
-    )
+    metric_keys = ("dose_metrics", "algorithm_plan_dose_metrics", "metrics")
+    if prefer_live:
+        live_metrics = []
+        live_metric_state_present = False
+        for key in metric_keys:
+            value = memory.retrieve(key)
+            if value is not None:
+                live_metric_state_present = True
+                if isinstance(value, Mapping) and value:
+                    live_metrics.append(value)
+        # A present-but-empty live metric alias means this run has no current
+        # dose result (for example after invalidation); never resurrect an old
+        # snapshot. When live aliases exist, merge all aliases belonging to
+        # this same active run so the CTV and OAR portions cannot diverge.
+        if live_metric_state_present:
+            metric_sources = live_metrics
+        else:
+            metric_sources = [
+                snapshot[key]
+                for key in metric_keys
+                if isinstance(snapshot.get(key), Mapping) and snapshot.get(key)
+            ]
+    else:
+        # The selected snapshot is authoritative when legacy aliases refer to
+        # another Planning; no live metrics are merged across run boundaries.
+        metric_sources = [
+            snapshot[key]
+            for key in metric_keys
+            if isinstance(snapshot.get(key), Mapping) and snapshot.get(key)
+        ]
+    metrics = merge_dose_metric_sources(*metric_sources)
     plan_config = read("plan_config", default={})
     total_seeds = read("total_seeds", default=0)
     num_trajectories = read("num_trajectories", default=0)

@@ -2186,7 +2186,13 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                 committed_event: options.committedEvent || null,
                 language,
                 monitor_run_id: ownerRunId,
-                ui_state: (typeof collectUIState === 'function') ? collectUIState() : {},
+                // Fine-grained presentation controls (such as Data Tree
+                // opacity) already carry their final control value. Avoid
+                // synchronously serializing the full Viewer/UI catalogs for
+                // these high-frequency, non-clinical events.
+                ui_state: options.omitUiState === true
+                    ? {}
+                    : ((typeof collectUIState === 'function') ? collectUIState() : {}),
             }),
         });
         const data = options.cachedCheckpoint || await res.json().catch(() => null);
@@ -2375,7 +2381,8 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
         // UI events include viewer, Data Tree, manual-planning and form
         // interactions. Coalesce their workspace checkpoint after the API
         // event succeeds so a reload restores the visible case state.
-        if (!options.cachedCheckpoint && typeof window.scheduleWorkspaceSave === 'function') {
+        if (!options.cachedCheckpoint && options.skipWorkspaceSave !== true
+            && typeof window.scheduleWorkspaceSave === 'function') {
             window.scheduleWorkspaceSave(`ui.event:${type}`);
         }
         if (options.returnData) return data;
@@ -2879,26 +2886,44 @@ async function executeGenericUIControl(command, value) {
 function instrumentUIControls() {
     if (window._brachyUiInstrumentationReady) return;
     window._brachyUiInstrumentationReady = true;
-    let rangeTimer = null;
+    const rangeTimers = new WeakMap();
     document.addEventListener('click', (event) => {
         const btn = event.target.closest('button');
         if (!btn || btn.disabled) return;
+        // A range stepper's click is an implementation detail; the associated
+        // range input emits the authoritative value event. Recording both the
+        // arrow click and range change forced two synchronous full UI-state
+        // collections for one opacity adjustment.
+        if (btn.matches?.('.range-stepper-btn')) return;
         const label = (btn.getAttribute('title') || btn.textContent || btn.id || '').trim().replace(/\s+/g, ' ').slice(0, 80);
         reportUIEvent('ui.click', label || 'button', { id: btn.id || null, classes: btn.className || '' });
     }, true);
     document.addEventListener('change', (event) => {
         const el = event.target;
         if (!el || !['INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName)) return;
+        // Opacity is persisted by setDataOpacity and reported once through the
+        // debounced range-input path below. Skip a duplicate full change
+        // snapshot without altering native input/change behavior.
+        if (el.type === 'range' && el.classList?.contains('opacity-slider')) return;
         const value = el.type === 'checkbox' ? !!el.checked : el.value;
         reportUIEvent('ui.change', el.id || el.name || el.tagName.toLowerCase(), { value });
     }, true);
     document.addEventListener('input', (event) => {
         const el = event.target;
         if (!el || el.type !== 'range') return;
-        clearTimeout(rangeTimer);
-        rangeTimer = setTimeout(() => {
-            reportUIEvent('ui.slider', el.id || el.name || 'range', { value: el.value });
+        const priorTimer = rangeTimers.get(el);
+        if (priorTimer !== undefined) clearTimeout(priorTimer);
+        const presentationOpacity = el.classList?.contains('opacity-slider') === true;
+        const timer = setTimeout(() => {
+            rangeTimers.delete(el);
+            reportUIEvent(
+                'ui.slider',
+                el.id || el.name || 'range',
+                { value: el.value },
+                presentationOpacity ? { omitUiState: true, skipWorkspaceSave: true } : {},
+            );
         }, 400);
+        rangeTimers.set(el, timer);
     }, true);
 }
 

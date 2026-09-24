@@ -15,6 +15,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from tool_factory import BaseTool, ToolResult
 from tool_factory.plan_shapes import normalize_plan_entries
+from utils.planning_metrics import (
+    extract_oar_dose_metrics,
+    has_oar_dose_metrics,
+    normalize_dose_metrics,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +28,7 @@ logger = logging.getLogger(__name__)
 # must not silently stand in for a per-needle distribution question.
 _METRIC_COVERAGE: Dict[str, tuple] = {
     "dose_metrics": ("dose",),
+    "oar_dose_metrics": ("oar_dose",),
     "ctv_volume": ("ctv_volume",),
     "oar_volumes": ("oar_volume",),
     "seed_count": ("seed_total",),
@@ -66,7 +72,13 @@ class QueryMetricsTool(BaseTool):
         }
         covers = _METRIC_COVERAGE.get(metric_type)
         if covers:
-            contract["covers"] = list(covers)
+            resolved_covers = list(covers)
+            # An aggregate read covers organ dose only when it actually
+            # contains dose-bearing OAR rows. OAR volumes alone never satisfy
+            # a dose question.
+            if metric_type == "all_metrics" and has_oar_dose_metrics(metadata):
+                resolved_covers.append("oar_dose")
+            contract["covers"] = resolved_covers
         metadata["response_contract"] = contract
         return metadata
 
@@ -107,6 +119,10 @@ class QueryMetricsTool(BaseTool):
         return (
             "Query dose metrics (V100, D90, V150, V200), plan quality, CTV/OAR volumes, "
             "seed count, needle count, per-needle seed counts, HU statistics. "
+            "Use metric_type='oar_dose_metrics' for the actual per-organ dose/DVH "
+            "table (Dmax, D0.1cc, D1cc, D2cc, Dmean, V100/V150 where available); "
+            "do not substitute OAR volumes for dose. Use 'dose_metrics' for CTV "
+            "coverage metrics. "
             "Use metric_type='seed_count' for the total number of seeds, "
             "'needle_count' for how many needles/trajectories were planned, and "
             "'needle_seed_counts' when the user asks how many needles exist or how "
@@ -126,7 +142,7 @@ class QueryMetricsTool(BaseTool):
             "properties": {
                 "metric_type": {
                     "type": "string",
-                    "enum": ["dose_metrics", "ctv_volume", "oar_volumes", "seed_count",
+                    "enum": ["dose_metrics", "oar_dose_metrics", "ctv_volume", "oar_volumes", "seed_count",
                              "needle_count", "needle_seed_counts",
                              "hu_statistics", "spacing_info", "plan_score",
                              "planning_method", "all_metrics"],
@@ -213,6 +229,8 @@ class QueryMetricsTool(BaseTool):
         try:
             if metric_type == "dose_metrics":
                 return self._get_dose_metrics(kwargs)
+            elif metric_type == "oar_dose_metrics":
+                return self._get_oar_dose_metrics(kwargs)
             elif metric_type == "ctv_volume":
                 return self._get_ctv_volume(kwargs)
             elif metric_type == "oar_volumes":
@@ -237,7 +255,7 @@ class QueryMetricsTool(BaseTool):
             return ToolResult(success=False, error=str(e), message=f"Query failed: {e}")
 
     def _get_dose_metrics(self, kw) -> ToolResult:
-        metrics = kw.get("metrics", {})
+        metrics = normalize_dose_metrics(kw.get("metrics", {}))
         if not metrics:
             return ToolResult(success=False, error="No metrics",
                             message="No dose metrics available. Run dose evaluation first.")
@@ -272,6 +290,26 @@ class QueryMetricsTool(BaseTool):
             data=dose,
             message=json.dumps(dose, indent=2),
             metadata=self._read_metadata(dose, "dose_metrics"),
+        )
+
+    def _get_oar_dose_metrics(self, kw) -> ToolResult:
+        metrics = normalize_dose_metrics(kw.get("metrics", {}))
+        oars = extract_oar_dose_metrics(metrics)
+        if not oars:
+            return ToolResult(
+                success=False,
+                error="No active OAR dose metrics",
+                message=(
+                    "No per-organ dose/DVH results are saved for the active Planning. "
+                    "OAR structure volumes are not dose measurements."
+                ),
+            )
+        values = {"oar_metrics": oars, "organ_count": len(oars)}
+        return ToolResult(
+            success=True,
+            data=values,
+            message=f"Read dose/DVH metrics for {len(oars)} OAR structures.",
+            metadata=self._read_metadata(values, "oar_dose_metrics"),
         )
 
     def _get_planning_method(self, kw) -> ToolResult:

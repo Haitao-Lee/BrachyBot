@@ -2,9 +2,8 @@
 
 A direct-read metric may only replace the normal synthesis/review path when
 the returned payload demonstrably answers every data aspect the user asked
-for.  "How many needles, and how many seeds on each needle?" is not answered
-by a total seed count, so the runtime must keep the normal answer path (and
-its final completeness check) instead of returning a truncated table.
+for. For example, a total seed count does not answer a per-needle question,
+and an OAR volume does not answer an OAR dose question.
 """
 
 from __future__ import annotations
@@ -16,6 +15,7 @@ from typing import Any, FrozenSet, Optional
 ASPECT_NEEDLE_COUNT = "needle_count"
 ASPECT_SEED_TOTAL = "seed_total"
 ASPECT_SEEDS_PER_NEEDLE = "seeds_per_needle"
+ASPECT_OAR_DOSE = "oar_dose"
 
 _NEEDLE_TERMS = (
     "穿刺针", "针道", "进针",
@@ -24,6 +24,11 @@ _NEEDLE_TERMS = (
 _SEED_TERMS = (
     "粒子", "放射源",
     "seed", "seeds",
+)
+_OAR_DOSE_TERMS = (
+    "剂量", "受照", "受量", "辐射", "照射", "剂量学", "dmax", "dmean",
+    "d0.1cc", "d1cc", "d2cc", "v100", "v150", "gy", "dose",
+    "radiation", "irradiat", "received dose", "organ dose",
 )
 _COUNT_PATTERN = re.compile(
     r"有多少|共有多少|总数|共计|数量|几个|几颗|几粒|几枚|几根|几支|"
@@ -48,31 +53,36 @@ def _normalized(text: Any) -> str:
 def required_metric_aspects(message: str) -> FrozenSet[str]:
     """Return the metric aspects a question explicitly asks about.
 
-    Only questions that name needles/seeds (and a count or per-item wording)
-    return aspects.  Everything else returns an empty set so existing
-    fast-path behavior is untouched.
+    Needle/seed questions require count or per-item wording. OAR dose
+    questions are modeled independently, so an organ-only request can be
+    recognized without mentioning needles or seeds.
     """
     text = _normalized(message)
     if not text:
         return frozenset()
     has_needle = any(term in text for term in _NEEDLE_TERMS)
     has_seed = any(term in text for term in _SEED_TERMS)
+    has_oar = any(term in text for term in ("危及器官", "器官")) or bool(
+        re.search(r"\b(?:organs?|oars?)\b", text)
+    )
+    asks_oar_dose = any(term in text for term in _OAR_DOSE_TERMS)
+    required = set()
+    if has_oar and asks_oar_dose:
+        required.add(ASPECT_OAR_DOSE)
     if not (has_needle or has_seed):
-        return frozenset()
+        return frozenset(required)
     wants_count = bool(_COUNT_PATTERN.search(text))
     wants_breakdown = any(term in text for term in _BREAKDOWN_TERMS)
     # Only questions about seed counts or seed-per-needle quantities are
     # modeled. A per-seed attribute such as "dose of each seed" must not
     # force the distribution metric.
-    if not (wants_count or (wants_breakdown and has_needle)):
-        return frozenset()
-    required = set()
-    if has_seed:
-        required.add(ASPECT_SEED_TOTAL)
-    if has_needle:
-        required.add(ASPECT_NEEDLE_COUNT)
-    if wants_breakdown and has_seed and has_needle:
-        required.add(ASPECT_SEEDS_PER_NEEDLE)
+    if wants_count or (wants_breakdown and has_needle):
+        if has_seed:
+            required.add(ASPECT_SEED_TOTAL)
+        if has_needle:
+            required.add(ASPECT_NEEDLE_COUNT)
+        if wants_breakdown and has_seed and has_needle:
+            required.add(ASPECT_SEEDS_PER_NEEDLE)
     return frozenset(required)
 
 
@@ -163,7 +173,9 @@ def coverage_followup_instruction(missing: Any, covered: Any = ()) -> str:
     if not missing:
         return ""
     aspects = ", ".join(sorted(missing))
-    if {ASPECT_NEEDLE_COUNT, ASPECT_SEEDS_PER_NEEDLE} & missing:
+    if ASPECT_OAR_DOSE in missing:
+        metric_hint = "oar_dose_metrics"
+    elif {ASPECT_NEEDLE_COUNT, ASPECT_SEEDS_PER_NEEDLE} & missing:
         metric_hint = "needle_seed_counts"
     else:
         metric_hint = "seed_count"

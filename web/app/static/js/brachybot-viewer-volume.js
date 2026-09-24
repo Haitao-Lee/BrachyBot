@@ -8638,8 +8638,34 @@ function setDataItemVisibility(id, visible) {
 }
 
 let _opacityTimer = null;
+let _dataTreeOpacitySeedFrame = null;
+
+function _queueDataTreeOpacityOverlayRefresh(reason) {
+    clearTimeout(_opacityTimer);
+    _opacityTimer = setTimeout(() => {
+        _opacityTimer = null;
+        if (state.ctLoaded) reloadOverlays();
+        requestViewerVisualRefresh(reason || 'data-opacity');
+    }, 80);
+}
+
+function _queueDataTreeOpacitySeedRefresh(reason) {
+    if (_dataTreeOpacitySeedFrame !== null) return;
+    const schedule = typeof requestAnimationFrame === 'function'
+        ? requestAnimationFrame
+        : callback => setTimeout(callback, 0);
+    _dataTreeOpacitySeedFrame = schedule(() => {
+        _dataTreeOpacitySeedFrame = null;
+        redrawSeedNeedleOverlays();
+        requestViewerVisualRefresh(reason || 'data-tree-opacity');
+    });
+}
+
 function setDataOpacity(id, value) {
-    requestAnimationFrame(() => applyDataTreeViewVisibility());
+    // Each branch below updates the affected mesh using its effective
+    // visibility and schedules only the required overlay refresh. Reapplying
+    // visibility to every Data Tree node here caused a full 2D/3D refresh for
+    // each one-step slider click, duplicating the branch-specific work.
     const opacity = parseInt(value) / 100;
     if (id === 'dose_overlay') {
         if (typeof setDoseOverlayOpacity === 'function') {
@@ -8658,7 +8684,7 @@ function setDataOpacity(id, value) {
         if (organ) {
             organ.opacity = opacity;
             // Also update 3D mesh opacity
-            applyMeshOpacity(scene3D.meshes[id], opacity, organ.visible !== false);
+            applyMeshOpacity(scene3D.meshes[id], opacity, isDataTreeNodeVisible3D(organ));
         }
         // Debounce overlay reload
         clearTimeout(_opacityTimer);
@@ -8679,7 +8705,7 @@ function setDataOpacity(id, value) {
             dataTreeState.ctvLabels[id].opacity = opacity;
         }
         // Also update 3D mesh opacity
-        applyMeshOpacity(scene3D.meshes[id], opacity, dataTreeState.ctvLabels[id].visible !== false);
+        applyMeshOpacity(scene3D.meshes[id], opacity, isDataTreeNodeVisible3D(dataTreeState.ctvLabels[id]));
         // Debounce overlay reload
         clearTimeout(_opacityTimer);
         _opacityTimer = setTimeout(() => {
@@ -8705,7 +8731,7 @@ function setDataOpacity(id, value) {
             if (typeof _setNeedleHandlesVisibility === 'function') _setNeedleHandlesVisibility(needle.id, effectiveVisible, opacity);
         });
         renderDataTreeDebounced();
-        redrawSeedNeedleOverlays();
+        _queueDataTreeOpacitySeedRefresh('trajectory-opacity');
         _scheduleDataTreeSave(`viewer.opacity:${id}`);
         return;
     }
@@ -8716,8 +8742,7 @@ function setDataOpacity(id, value) {
         if (seed) {
             seed.opacity = opacity;
             applyMeshOpacity(scene3D.meshes[id], opacity, isDataTreeNodeVisible3D(seed));
-            redrawSeedNeedleOverlays();
-            requestViewerVisualRefresh('seed-opacity');
+            _queueDataTreeOpacitySeedRefresh('seed-opacity');
             _scheduleDataTreeSave(`viewer.opacity:${id}`);
         }
         return;
@@ -8733,8 +8758,7 @@ function setDataOpacity(id, value) {
             if (typeof _setNeedleHandlesVisibility === 'function') {
                 _setNeedleHandlesVisibility(needle.id, effectiveVisible, opacity);
             }
-            redrawSeedNeedleOverlays();
-            requestViewerVisualRefresh('needle-opacity');
+            _queueDataTreeOpacitySeedRefresh('needle-opacity');
             _scheduleDataTreeSave(`viewer.opacity:${id}`);
         }
         return;
@@ -8759,9 +8783,8 @@ function setDataOpacity(id, value) {
         const mask = _maskStateEntry(id);
         if (mask && (!_isGenericSegmentationMask(mask) || _isOpenGenericMask(mask))) {
             mask.opacity = opacity;
-            applyMeshOpacity(scene3D.meshes[rawId], opacity, mask.visible !== false);
-            reloadOverlays();
-            requestViewerVisualRefresh('mask-opacity');
+            applyMeshOpacity(scene3D.meshes[rawId], opacity, isDataTreeNodeVisible3D(mask));
+            _queueDataTreeOpacityOverlayRefresh('mask-opacity');
             _scheduleDataTreeSave(`viewer.opacity:${id}`);
         }
         return;
@@ -8791,7 +8814,7 @@ function setDataOpacity(id, value) {
     const meshEntry = (dataTreeState.planning.meshes || []).find(m => m.id === id);
     if (meshEntry) {
         meshEntry.opacity = opacity;
-        applyMeshOpacity(scene3D.meshes[id], opacity, meshEntry.visible !== false);
+        applyMeshOpacity(scene3D.meshes[id], opacity, isDataTreeNodeVisible3D(meshEntry));
         requestViewerVisualRefresh('planning-mesh-opacity');
         _scheduleDataTreeSave(`viewer.opacity:${id}`);
         return;
@@ -8801,11 +8824,10 @@ function setDataOpacity(id, value) {
     dataTreeState[id].opacity = opacity;
     // Update CTV 3D mesh
     if (id === 'ctv') {
-        applyMeshOpacity(scene3D.meshes['ctv'], opacity, dataTreeState[id].visible !== false);
+        applyMeshOpacity(scene3D.meshes['ctv'], opacity, isDataTreeNodeVisible3D(dataTreeState[id]));
     }
 
-    if (state.ctLoaded) reloadOverlays();
-    requestViewerVisualRefresh('data-opacity');
+    _queueDataTreeOpacityOverlayRefresh('data-opacity');
     _scheduleDataTreeSave(`viewer.opacity:${id}`);
 }
 

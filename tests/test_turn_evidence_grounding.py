@@ -17,6 +17,7 @@ Root causes:
 """
 
 from agent_runtime.answer_coverage import (
+    ASPECT_OAR_DOSE,
     coverage_followup_instruction,
     direct_read_decision,
     required_metric_aspects,
@@ -29,6 +30,7 @@ from agent_runtime.llm_runtime import (
 
 
 _QUESTION = "当前有多少枚穿刺针，每枚针有多少粒子，粒子之间有干涉吗"
+_OAR_QUESTION = "那从每个器官受到的辐射来看呢"
 
 # Mirrors tool_factory/viewer_command/query_metrics._METRIC_COVERAGE.
 _INCIDENT_CONTRACTS = [
@@ -68,6 +70,32 @@ def test_only_partial_reads_leave_the_real_gaps():
 def test_no_typed_reads_make_no_coverage_claims():
     assert uncovered_metric_aspects(_QUESTION, []) == frozenset()
     assert uncovered_metric_aspects(_QUESTION, None) == frozenset()
+
+
+def test_oar_dose_questions_require_dose_not_organ_volume_evidence():
+    assert required_metric_aspects(_OAR_QUESTION) == frozenset({ASPECT_OAR_DOSE})
+    assert required_metric_aspects("What dose did each organ receive?") == frozenset({ASPECT_OAR_DOSE})
+    assert required_metric_aspects(
+        "What dose did each organ receive, and how many seeds are in the plan?"
+    ) == frozenset({ASPECT_OAR_DOSE, "seed_total"})
+    covered, gaps = direct_read_decision(
+        _OAR_QUESTION,
+        [{"covers": ["oar_volume", "dose"]}],
+    )
+    assert covered is False
+    assert gaps == frozenset({ASPECT_OAR_DOSE})
+    assert uncovered_metric_aspects(
+        _OAR_QUESTION,
+        [{"covers": ["oar_dose"]}],
+    ) == frozenset()
+    # Boundary-aware English matching must not treat "board" as "oar".
+    assert required_metric_aspects("What dose is on the planning board?") == frozenset()
+
+
+def test_oar_dose_coverage_gap_requests_the_typed_oar_dose_read():
+    instruction = coverage_followup_instruction({ASPECT_OAR_DOSE})
+    assert 'metric_type="oar_dose_metrics"' in instruction
+    assert "organ volume" not in instruction.lower()
 
 
 def test_coverage_instruction_never_denies_returned_evidence():
