@@ -286,6 +286,35 @@ def test_planning_grant_supplies_only_required_prerequisites():
     assert authorization.tool_allowed("ui_content")
 
 
+def test_partial_clinical_tool_never_grants_a_full_planning_workflow():
+    authorization = TurnExecutionAuthorization(token=1)
+    authorization.grant_tool_calls(
+        [{"tool": "ctv_segmentation"}, {"tool": "trajectory_refine"}],
+        source="provider",
+    )
+    assert authorization.tool_allowed("ctv_segmentation")
+    assert authorization.tool_allowed("trajectory_refine")
+    assert not authorization.workflow_allowed(PLANNING_WORKFLOW)
+    assert not authorization.tool_allowed("planning_pipeline")
+    assert not authorization.tool_allowed("oar_segmentation")
+
+
+def test_partial_tool_call_does_not_activate_planning_enforcer():
+    from AgenticSys import BrachyAgent
+
+    agent = object.__new__(BrachyAgent)
+    agent._active_turn_token = 1
+    agent._turn_execution_authorization = TurnExecutionAuthorization(token=1)
+    assert not agent._planning_requested(
+        "只调整这一条针道",
+        [{"tool": "trajectory_refine", "params": {}}],
+    )
+    agent._turn_execution_authorization.grant_tool_calls(
+        [{"tool": "seed_planning"}], source="provider"
+    )
+    assert not agent._planning_requested("只放置一枚粒子")
+
+
 def test_guide_requires_an_explicit_grant_even_after_planning():
     authorization = TurnExecutionAuthorization(token=8)
     authorization.grant_tool_calls(

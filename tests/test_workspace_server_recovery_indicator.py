@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,7 +42,9 @@ def test_server_restart_recovery_keeps_a_visible_resource_loading_boundary():
 
     # Force the browser to fetch the updated workspace bridge after a server
     # restart instead of retaining the prior cached script.
-    assert 'static/js/brachybot-workspace.js?v=68' in index
+    # The cache-busting revision changes whenever this asset is updated;
+    # pinning an old revision makes an otherwise healthy checkout fail.
+    assert re.search(r'<script\s+src="static/js/brachybot-workspace\.js\?v=\d+"', index)
 
 
 def test_health_probe_is_process_local_and_transient_misses_do_not_flash_offline():

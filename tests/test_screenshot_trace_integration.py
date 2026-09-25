@@ -866,9 +866,12 @@ def test_visual_location_policy_rejects_provider_mutations_at_normalization_boun
 def test_guide_generation_help_is_safe_knowledge_turn():
     policy = classify_local_turn("\u624b\u672f\u5bfc\u677f\u5728\u54ea\u91cc\u751f\u6210")
 
-    assert policy.intent == "knowledge_query"
+    # The primary model decides the explanation, but this is still a pure
+    # question with no guide-generation capability or execution grant.
+    assert policy.intent == "semantic_action"
     assert policy.direct_execution is False
     assert "surgical_guide" not in (policy.allow_tools or frozenset())
+    assert not policy.execution_grants
 
 
 def test_persisted_report_figure_request_uses_session_content_not_live_capture():

@@ -1214,17 +1214,24 @@ def _previous_assistant_text(conversation: object) -> str:
     return ""
 
 
-def _previous_assistant_names_tool(conversation: object, tool_name: str) -> bool:
-    if not tool_name:
-        return False
+def _pending_confirmation_tools(conversation: object) -> frozenset[str]:
+    """Read only the operation list in our explicit confirmation prompt.
+
+    A prior answer explaining which tools *could* be used is not an offer to
+    run them.  In particular, an assistant-authored tool name in prose must
+    never make a later bare acknowledgement an execution grant.
+    """
     text = _previous_assistant_text(conversation)
-    if not text:
-        return False
-    return bool(re.search(
-        rf"(?<![a-z0-9_]){re.escape(str(tool_name))}(?![a-z0-9_])",
-        text,
-        re.IGNORECASE,
-    ))
+    if not text or not any(marker in text for marker in _CONFIRMATION_PROMPT_MARKERS):
+        return frozenset()
+    # _blocked_mutation_message renders the pending operations in exactly one
+    # backticked list.  Do not search the rest of the reply for tool names.
+    match = re.search(r"`([a-z0-9_,\s]+)`", text, re.IGNORECASE)
+    if not match:
+        return frozenset()
+    names = {part.strip() for part in match.group(1).split(",")}
+    names.discard("")
+    return frozenset(name for name in names if name in _TOOL_MUTATION_GOAL)
 
 
 
@@ -1243,14 +1250,6 @@ _CONFIRMATION_PROMPT_MARKERS = (
     "\u4e3a\u907f\u514d\u8bef\u6539\u5f53\u524d\u75c5\u4f8b",
     "To avoid changing the current case without consent",
 )
-
-
-def _previous_assistant_is_confirmation_prompt(conversation: object) -> bool:
-    """True when the immediately preceding assistant reply is a confirmation prompt."""
-    text = _previous_assistant_text(conversation)
-    if not text:
-        return False
-    return any(marker in text for marker in _CONFIRMATION_PROMPT_MARKERS)
 
 
 def mutating_execution_authorized(
@@ -1307,25 +1306,23 @@ def mutating_execution_authorized(
     # action set, so this path can never authorize a destructive operation.
     if parsed.aggregate_command and expected_target in _WRITABLE_TARGETS:
         return True
-    # A bare confirmation inherits the plan the assistant proposed in the
-    # immediately preceding reply.  This closes the loop after the agent asked
-    # "shall I run these?", so an acknowledgement is not silently ignored.
-    if (
-        conversation
-        and is_affirmative_acknowledgement(message)
-        and _previous_assistant_names_tool(conversation, tool_name)
-    ):
+    # A bare acknowledgement is bound to an explicit pending confirmation,
+    # never to an explanatory answer that happened to mention a tool.
+    pending_tools = (
+        _pending_confirmation_tools(conversation)
+        if conversation and is_affirmative_acknowledgement(message)
+        else frozenset()
+    )
+    if tool_name in pending_tools:
         return True
-    # When the previous reply is the blocked-mutation confirmation prompt and
-    # the user confirms, the whole planning dependency chain is authorized.
+    # When the pending operation is a full planning pipeline, its CTV/OAR
+    # prerequisites are authorized as part of the same dependency chain.
     # The LLM may re-emit only the first steps (ctv_segmentation,
     # oar_segmentation) instead of the anchor tool named in the prompt; those
     # are prerequisites of the confirmed plan and must not trigger a second
     # confirmation loop.
     if (
-        conversation
-        and is_affirmative_acknowledgement(message)
-        and _previous_assistant_is_confirmation_prompt(conversation)
+        "planning_pipeline" in pending_tools
         and tool_name in _PLANNING_CHAIN_TOOLS
     ):
         return True

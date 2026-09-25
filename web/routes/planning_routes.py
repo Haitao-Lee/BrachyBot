@@ -5169,6 +5169,7 @@ def register_planning_routes(
                 "explicit_versioned_restore": True,
                 "retrospective_advice": True,
                 "final_report_on_stop": True,
+                "status_endpoint": "/api/training/status",
                 "screenshot_targets": ["dose-overview", "dvh", "viewer-3d"],
                 "timeline_endpoint": "/api/training/timeline",
                 "timeline_format": "application/json",
@@ -5334,6 +5335,13 @@ def register_planning_routes(
                     reason="monitor_timeout",
                 )
                 bucket["training"] = previous
+            if previous.get("closing"):
+                return jsonify({
+                    "success": False,
+                    "error": "监测正在结束，请稍后重试。" if language == "zh" else "Monitor close-out is still in progress.",
+                    "monitor_run_id": str(previous.get("run_id") or "") or None,
+                    "closing": True,
+                }), 409
             if previous.get("active"):
                 previous_run_id = str(previous.get("run_id") or "").strip()
                 if previous_run_id == run_id:
@@ -5353,6 +5361,7 @@ def register_planning_routes(
             now = time.time()
             bucket["training"] = {
                 "active": True,
+                "closing": False,
                 "run_id": run_id,
                 "goal": goal,
                 "language": language,
@@ -5388,6 +5397,27 @@ def register_planning_routes(
             "language": language,
         })
 
+    @app.route("/api/training/status", methods=["GET"])
+    @require_api_key
+    @rate_limit
+    def api_training_status():
+        """Read the case-owned monitor lease after an uncertain stop."""
+        session_id = request_ui_session_id()
+        bucket = _ui_bucket(session_id)
+        with _UI_BRIDGE_LOCK:
+            training = bucket.get("training") or {}
+            active = bool(training.get("active"))
+            result = {
+                "success": True,
+                "session_id": session_id,
+                "active": active,
+                "closing": bool(training.get("closing")),
+                "monitor_run_id": str(training.get("run_id") or "") or None,
+            }
+            if not active:
+                result["summary_message"] = training.get("last_summary")
+        return jsonify(result)
+
     @app.route("/api/training/stop", methods=["POST"])
     @require_api_key
     @rate_limit
@@ -5419,6 +5449,7 @@ def register_planning_routes(
                     "success": True,
                     "already_stopped": True,
                     "no_active_run": True,
+                    "closing": bool(training.get("closing")),
                     "session_id": session_id,
                     "monitor_run_id": active_run_id or request_run_id or None,
                     "summary_message": training.get("last_summary"),
@@ -5433,12 +5464,14 @@ def register_planning_routes(
                     "no_active_run": False,
                     "session_id": session_id,
                     "monitor_run_id": request_run_id,
+                    "active_monitor_run_id": active_run_id,
                     "matched": False,
                     "language": language,
                 })
             training = bucket["training"] = _server_support._close_stale_training_snapshot(
                 training, reason=str(data.get("reason") or "user").strip(),
             )
+            training["closing"] = True
             training["closed_reason"] = str(data.get("reason") or "user").strip()
             training["auto_closed"] = auto_close
             # ``events`` is initialized for every training run. Do not use a
@@ -5455,7 +5488,11 @@ def register_planning_routes(
         # Do not synchronously hydrate CT/planning arrays while a browser is
         # leaving a case. Auto-close only records the event boundary; manual
         # Finish Monitoring may still build the deterministic advice report.
-        agent = None if auto_close else monitor_control_agent(session_id)
+        try:
+            agent = None if auto_close else monitor_control_agent(session_id)
+        except Exception:
+            logger.exception("[monitor_stop] case lookup failed; returning event-only summary")
+            agent = None
         counts: Dict[str, int] = {}
         for event in events:
             etype = str(event.get("type", "ui.event"))
@@ -5465,13 +5502,26 @@ def register_planning_routes(
         # artifact-state checks are deterministic and cheap; CT/OAR needle
         # intersection validation is intentionally deferred to the full
         # advice/quality-check path so a large volume cannot block the UI.
-        advice = {} if auto_close else _build_plan_advice(agent, session_id, fast=True, events=events)
+        try:
+            advice = {} if auto_close else _build_plan_advice(agent, session_id, fast=True, events=events)
+        except Exception:
+            logger.exception("[monitor_stop] advice failed; returning event-only summary")
+            advice = {}
         logger.info(
             "[monitor_stop] advice built session=%s elapsed_ms=%.1f",
             session_id, (time.perf_counter() - stop_started) * 1000.0,
         )
-        localized_advice = _localize_plan_advice(advice, language)
-        summary = _format_training_summary(events, counts, advice, language)
+        try:
+            localized_advice = _localize_plan_advice(advice, language)
+            summary = _format_training_summary(events, counts, advice, language)
+        except Exception:
+            logger.exception("[monitor_stop] summary rendering failed")
+            localized_advice = {}
+            summary = (
+                "监测已结束，但总结生成失败；监测事件仍保存在病例记录中。"
+                if language == "zh" else
+                "Monitoring stopped, but the summary could not be rendered; events remain saved with the case."
+            )
         summary_message = {
             "message_id": f"assistant-monitor-{active_run_id or 'latest'}-summary",
             "request_id": f"monitor-{active_run_id or 'latest'}",
@@ -5485,6 +5535,7 @@ def register_planning_routes(
         # so hydration can restore it instead of losing the close-out message.
         with _UI_BRIDGE_LOCK:
             training["last_summary"] = summary_message
+            training["closing"] = False
         _append_ui_event(session_id, {"type": "training.stop", "detail": {
             "run_id": active_run_id, "reason": training["closed_reason"],
         }}, include_in_training=False, monitor_run_id=active_run_id)
@@ -5779,6 +5830,13 @@ def register_planning_routes(
             result["event"] = event
             result["events"] = [item for item in (mutation_event, event) if item]
             result["advice"] = _build_plan_advice(agent, session_id)
+            monitor_language = _monitor_language(
+                data.get("language")
+                or (_ui_bucket(session_id).get("training") or {}).get("language")
+            )
+            result["localized_advice"] = _localize_plan_advice(
+                result["advice"], monitor_language
+            )
             result["planning_id"] = planning_id
             publish_planning_run(agent, result, status="completed")
             checkpoint_operation(

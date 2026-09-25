@@ -438,7 +438,7 @@ def test_new_requests_are_not_acknowledgements(message):
     assert not is_affirmative_acknowledgement(message)
 
 
-def test_acknowledgement_inherits_only_the_proposed_tools():
+def test_explanatory_tool_list_cannot_authorize_a_later_acknowledgement():
     conversation = [
         {"role": "user", "content": "\u5982\u679c\u8981\u5168\u90e8\u66f4\u65b0\u5e94\u8be5\u4f7f\u7528\u54ea\u4e9b\u5de5\u5177"},
         {"role": "assistant", "content": "\u9700\u8981 dose_recompute\u3001dose_evaluation\u3001"
@@ -446,8 +446,7 @@ def test_acknowledgement_inherits_only_the_proposed_tools():
         {"role": "user", "content": "\u6267\u884c\u5427"},
     ]
     for tool in ("dose_recompute", "dose_evaluation", "report_auto_fill", "surgical_guide"):
-        assert mutating_execution_authorized("\u6267\u884c\u5427", tool, conversation) is True
-    # A tool the assistant never proposed is still not authorized.
+        assert mutating_execution_authorized("\u6267\u884c\u5427", tool, conversation) is False
     assert mutating_execution_authorized("\u6267\u884c\u5427", "planning_pipeline", conversation) is False
     # Without the prior assistant proposal, a bare "do it" grants nothing.
     assert mutating_execution_authorized("\u6267\u884c\u5427", "dose_recompute") is False
@@ -522,7 +521,7 @@ def test_provider_excludes_a_carved_out_target():
     assert "surgical_guide" not in tools
 
 
-def test_provider_acknowledgement_runs_the_proposed_plan():
+def test_provider_acknowledgement_does_not_execute_an_explanatory_tool_list():
     from agent_runtime.turn_policy import LocalTurnPolicy
 
     conversation = [
@@ -551,7 +550,7 @@ def test_provider_acknowledgement_runs_the_proposed_plan():
         {"id": "report", "tool": "report_auto_fill", "params": {}},
         {"id": "guide", "tool": "surgical_guide", "params": {"action": "generate"}},
     ])
-    assert {"dose_recompute", "report_auto_fill", "surgical_guide"} <= {c["tool"] for c in calls}
+    assert calls == []
 
 
 
@@ -672,6 +671,19 @@ def test_confirmation_prompt_ack_authorizes_full_planning_chain():
     assert mutating_execution_authorized("\u6267\u884c", "dose_recompute", conversation) is False
 
 
+def test_confirmation_list_must_be_bounded_and_not_inherited_from_prose():
+    conversation = [
+        {"role": "assistant", "content": (
+            "为避免误改当前病例，下面这些操作需要你一句明确确认后再执行：\n\n"
+            "`dose_recompute, surgical_guide`\n\n回复「执行」我就按依赖顺序运行。"
+        )},
+        {"role": "user", "content": "执行"},
+    ]
+    assert mutating_execution_authorized("执行", "dose_recompute", conversation)
+    assert mutating_execution_authorized("执行", "surgical_guide", conversation)
+    assert not mutating_execution_authorized("执行", "report_auto_fill", conversation)
+
+
 def test_confirmation_prompt_detection_requires_the_prompt_markers():
     """Only the blocked-mutation prompt text triggers chain-wide authorization."""
     from agent_runtime.request_parse import mutating_execution_authorized
@@ -689,16 +701,30 @@ def test_confirmation_prompt_detection_requires_the_prompt_markers():
     assert mutating_execution_authorized("\u6267\u884c", "ctv_segmentation", conversation) is False
 
 
-def test_planning_derived_tool_grant_unlocks_full_chain():
-    """Granting any PLANNING_DERIVED_TOOLS member allows the whole chain."""
+def test_partial_planning_grant_does_not_unlock_full_chain():
+    """CTV/OAR work alone cannot silently authorize treatment planning."""
     from agent_runtime.execution_authorization import TurnExecutionAuthorization
 
     auth = TurnExecutionAuthorization(token=1)
     auth.grant_tools({"ctv_segmentation", "oar_segmentation"}, source="test")
 
-    # The workflow enforcer injects planning_pipeline as a prerequisite.
-    assert auth.tool_allowed("planning_pipeline") is True
+    assert auth.tool_allowed("ctv_segmentation") is True
+    assert auth.tool_allowed("oar_segmentation") is True
+    assert auth.tool_allowed("planning_pipeline") is False
     # Non-chain mutations remain blocked.
     assert auth.tool_allowed("surgical_guide") is False
     assert auth.tool_allowed("dose_recompute") is False
+
+
+def test_explicit_full_planning_grant_unlocks_required_prerequisites():
+    """Only an accepted full-planning operation may derive missing masks."""
+    from agent_runtime.execution_authorization import TurnExecutionAuthorization
+
+    auth = TurnExecutionAuthorization(token=1)
+    auth.grant_tools({"planning_pipeline"}, source="test")
+
+    assert auth.tool_allowed("planning_pipeline") is True
+    assert auth.tool_allowed("ctv_segmentation") is True
+    assert auth.tool_allowed("oar_segmentation") is True
+    assert auth.tool_allowed("surgical_guide") is False
 

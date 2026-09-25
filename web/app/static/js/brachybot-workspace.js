@@ -1165,9 +1165,16 @@
             criteria.node_id,
             criteria.id,
         ].map(value => String(value || '').trim()).filter(Boolean);
+        // A promoted mask may share an object ID with its CTV row. Resolve
+        // all family-scoped aliases before any global alias can shadow it.
+        if (family) {
+            for (const value of values) {
+                const record = registry.byFamilyId[family + ':' + value];
+                if (record) return _presentationClone(record);
+            }
+        }
         for (const value of values) {
-            const record = (family && registry.byFamilyId[family + ':' + value])
-                || registry.byObjectId[value]
+            const record = registry.byObjectId[value]
                 || registry.byNodeId[value]
                 || registry.byId[value];
             if (record) return _presentationClone(record);
@@ -1188,6 +1195,36 @@
             if (record) return _presentationClone(record);
         }
         return null;
+    }
+
+    // The restore index remains readable after finalization for late loaders.
+    // A live edit must update that same record, or a later Data Tree redraw
+    // will reapply the saved appearance over the user's new value.
+    function updateWorkspacePresentationForNode(criteria = {}, changes = {}) {
+        const registry = workspacePresentationRestore
+            || window.__pendingWorkspacePresentation;
+        if (!registry?.active && !registry?.finalized) return false;
+        const sid = String(
+            criteria.sessionId
+            || (typeof activeSessionId !== 'undefined' ? activeSessionId : '')
+            || (typeof state !== 'undefined' ? state?.sessionId : '')
+            || '',
+        ).trim();
+        if (sid && registry.sessionId !== sid) return false;
+        const family = _presentationFamily(criteria.family || criteria.type);
+        const id = String(criteria.id || '').trim();
+        // Never use the global label/ID aliases for writes: a CTV and OAR
+        // can share a numeric label, while family-scoped IDs are unambiguous.
+        const record = family && id && registry.byFamilyId[family + ':' + id];
+        if (!record || !changes || typeof changes !== 'object') return false;
+        let updated = false;
+        WORKSPACE_PRESENTATION_KEYS.forEach(key => {
+            if (Object.prototype.hasOwnProperty.call(changes, key)) {
+                record[key] = _presentationClone(changes[key]);
+                updated = true;
+            }
+        });
+        return updated;
     }
 
     function isWorkspacePresentationRestoreActive(sessionId = null) {
@@ -1295,6 +1332,7 @@
 
     window.stageWorkspacePresentation = stageWorkspacePresentation;
     window.getWorkspacePresentationForNode = getWorkspacePresentationForNode;
+    window.updateWorkspacePresentationForNode = updateWorkspacePresentationForNode;
     window.isWorkspacePresentationRestoreActive = isWorkspacePresentationRestoreActive;
     window.finalizeWorkspacePresentationRestore = finalizeWorkspacePresentationRestore;
     window.clearWorkspacePresentationRestore = clearWorkspacePresentationRestore;
@@ -4101,7 +4139,9 @@
             if (typeof window.restoreManualWorkflowProgress === 'function') {
                 window.restoreManualWorkflowProgress();
             }
-            if (typeof trainingMonitorState !== 'undefined') {
+            if (typeof trainingMonitorState !== 'undefined'
+                && !(trainingMonitorState.sessionId === sessionId
+                    && ['starting', 'active', 'stopping', 'stop_error'].includes(trainingMonitorState.phase))) {
                 // The browser snapshot keeps presentation details while the
                 // server bridge keeps feedback/events emitted by tools.
                 Object.assign(trainingMonitorState, ui.bridge?.training || {}, uiState.training || {});
@@ -4119,20 +4159,18 @@
                     || 'en';
                 const restoredMonitorRunId = trainingMonitorState.runId;
                 const restoredMonitorWasActive = !!trainingMonitorState.active;
-                // A durable snapshot may outlive the browser/server process
-                // that created the run. It is history, not proof of a live
-                // monitor subscription. End it silently and never resurrect
-                // the global monitor presentation during hydration.
+                // A durable snapshot cannot prove that the server lease is
+                // still live. Keep the run ID and a retryable close state
+                // until the idempotent server release is acknowledged.
                 if (restoredMonitorWasActive) {
                     trainingMonitorState.active = false;
-                    trainingMonitorState.phase = 'inactive';
-                    trainingMonitorState.runId = null;
+                    trainingMonitorState.phase = 'stop_error';
                     trainingMonitorState.pendingFeedback = [];
                     trainingMonitorState.screenshotGalleryContext = null;
                     if (typeof window.setTrainingMonitorPhase === 'function') {
-                        window.setTrainingMonitorPhase('inactive');
+                        window.setTrainingMonitorPhase('stop_error');
                     } else if (typeof window.setMonitorPresentation === 'function') {
-                        window.setMonitorPresentation('inactive');
+                        window.setMonitorPresentation('stop_error');
                     } else {
                         document.body.classList.remove('monitor-active');
                     }
@@ -4141,7 +4179,13 @@
                             sessionId,
                             'workspace_restore',
                             { runId: restoredMonitorRunId, skipLocal: true },
-                        );
+                        ).then(result => {
+                            if (result?.success && !result.run_mismatch && !result.closing
+                                && trainingMonitorState.sessionId === sessionId
+                                && trainingMonitorState.runId === restoredMonitorRunId) {
+                                window.clearTrainingMonitorLocal?.(sessionId, restoredMonitorRunId);
+                            }
+                        });
                     }
                 } else if (typeof window.setTrainingMonitorPhase === 'function') {
                     window.setTrainingMonitorPhase('inactive');

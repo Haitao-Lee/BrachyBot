@@ -864,6 +864,22 @@ def is_current_planning_provenance_query(message: str) -> bool:
     if not text or not _is_interrogative(text):
         return False
 
+    # "According to the guideline, interpret this plan" uses a *clinical
+    # standard* as its source.  It is not asking which persisted Planning
+    # produced the result.  The generic source-word/plan-word proximity test
+    # below must not steal such a two-source comparison from evidence tools.
+    external_basis = re.search(
+        r"(?:指南|规范|标准|文献|共识|机构协议|guideline|standard|protocol|literature|evidence)",
+        text, re.IGNORECASE,
+    )
+    explicit_plan_identity = re.search(
+        r"(?:哪次|哪一个|哪个)(?:规划|计划|方案)|"
+        r"(?:which|what)\s+(?:saved\s+|previous\s+)?(?:plan|planning)(?:\s+run)?\b",
+        text, re.IGNORECASE,
+    )
+    if external_basis and not explicit_plan_identity:
+        return False
+
     has_planning_object = _contains_any(text, (
         "planning", "plan", "treatment plan", "dose plan", "planning result",
         "\u89c4\u5212", "\u8ba1\u5212", "\u65b9\u6848",
@@ -2541,6 +2557,44 @@ def classify_local_turn(
     candidate = _classify_local_candidate(
         message, pending_tumor_site, conversation, ui_state,
     )
+    # A local fact packet has exactly one subject.  A lexical detector may
+    # recognize the first question in "plan quality, and is the report stale?"
+    # while silently dropping the second.  Admit a local read only when the
+    # parsed turn has one meaningful, unqualified task; otherwise let the
+    # primary model reconcile all clauses with read-only tools in one call.
+    local_fact_reads = {
+        "planning_provenance_query", "planning_assessment_query",
+        "case_state_question", "case_dose_query", "image_metadata_query",
+        "current_oar_query", "artifact_analysis_query",
+    }
+    if candidate.intent in local_fact_reads:
+        parsed = _request_parse.parse_request(message)
+        # A noun-bearing preamble ("in the computed dose result, ...") is
+        # context for one question, not a second requested task.  Count only
+        # clauses with their own question or action predicate.
+        meaningful = tuple(
+            task for task in parsed.subtasks
+            if task.action or (
+                task.interrogative and (
+                    task.target or _request_parse.is_interrogative(task.raw)
+                )
+            )
+        )
+        if (
+            len(meaningful) > 1
+            or any(
+                task.quoted or task.attributed or task.conditional
+                or task.negated or task.ambiguous
+                for task in parsed.subtasks
+            )
+        ):
+            return replace(
+                _semantic_action_policy(complexity="medium", review=False),
+                allow_tools=ANALYSIS_READ_TOOLS,
+                routing_source="primary_semantic",
+                routing_reason="local_fact_scope_not_complete",
+                candidate_intent=candidate.intent,
+            )
     if candidate.intent == "small_talk" and not re.fullmatch(
         r"(?:你好|您好|嗨|哈喽|早上好|下午好|晚上好|谢谢|感谢|"
         r"hi|hello|hey|good morning|good afternoon|good evening|thanks|thank you|"
@@ -2566,14 +2620,53 @@ def classify_local_turn(
             routing_reason="whole_request_contract_not_satisfied",
             candidate_intent=candidate.intent,
         )
-    # Topic words may guide the prompt but cannot hide unrelated capabilities
-    # from the primary model. No pregrants are added by broadening schemas.
-    if candidate.intent in {"knowledge_query", "clinical_knowledge", "external_project_query", "ui_control"}:
-        return replace(candidate, allow_tools=frozenset(
-                           set(candidate.allow_tools or ()) | set(UI_TOOLS)
-                           | {"case_memory", "plan_comparator"}),
-                       routing_source="primary_semantic", candidate_intent=candidate.intent,
-                       routing_reason="topic_hint_does_not_restrict_capabilities")
+    # A topic detector is not a decision about what evidence or capability a
+    # user needs.  In particular, a question can combine live case facts,
+    # clinical literature and UI inspection even when its first noun looks
+    # like ordinary knowledge.  These candidates receive the same semantic
+    # function-calling turn as unmatched requests.  The provider still cannot
+    # authorize mutations: current-turn authorization and tool validators are
+    # independent of this routing hint.
+    if candidate.intent == "external_project_query":
+        # Public-project discovery has an additional privacy boundary: do not
+        # expose patient/Session tools merely because the same sentence also
+        # mentions a repository. Mixed internal/external requests have already
+        # been moved to the whole-request semantic route above.
+        return replace(candidate, routing_source="primary_semantic",
+                       candidate_intent=candidate.intent,
+                       routing_reason="public_source_only")
+    if candidate.intent == "ui_control":
+        # This candidate already reaches the primary model. Keep its mounted
+        # UI capability surface and registered action validator; a compound
+        # request is sent through the semantic fallback before this point.
+        return replace(candidate, routing_source="primary_semantic",
+                       candidate_intent=candidate.intent,
+                       routing_reason="ui_capability_resolution")
+    if candidate.intent in {"knowledge_query", "clinical_knowledge"}:
+        parsed = _request_parse.parse_request(message)
+        # A pure information request needs the ability to gather evidence,
+        # not the schemas for every clinical writer.  This structural budget
+        # keeps the common question fast without using its topic words as a
+        # capability whitelist.  Unknown imperatives and mixed turns retain
+        # the full semantic palette; backend authorization is unchanged.
+        read_only_turn = parsed.interrogative and not parsed.unconditional_command
+        tools = (
+            frozenset((set(ANALYSIS_READ_TOOLS) - {"surgical_guide"}) | {"ctv_model_catalog"})
+            if read_only_turn else SEMANTIC_TOOLS
+        )
+        return replace(
+            _semantic_action_policy(
+                complexity=candidate.complexity,
+                review=candidate.requires_review,
+            ),
+            allow_tools=tools,
+            routing_source="primary_semantic",
+            candidate_intent=candidate.intent,
+            routing_reason=(
+                "information_request_evidence_palette" if read_only_turn
+                else "topic_is_not_a_tool_or_answer_contract"
+            ),
+        )
     return replace(candidate, routing_source="whole_request_contract" if bypasses_semantics else "local_read_or_semantic",
                    candidate_intent=candidate.intent)
 

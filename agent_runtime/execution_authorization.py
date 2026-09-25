@@ -42,17 +42,7 @@ MUTATING_TOOLS: FrozenSet[str] = frozenset({
     "ui_controller",
 })
 
-PLANNING_ANCHOR_TOOLS: FrozenSet[str] = frozenset({
-    "planning_pipeline",
-    "trajectory_init",
-    "trajectory_refine",
-    "trajectory_planning",
-    "seed_planning",
-    "seed_planning_rule_based",
-    "seed_planning_rl",
-    "dose_engine",
-    "dose_evaluation",
-})
+PLANNING_ANCHOR_TOOLS: FrozenSet[str] = frozenset({"planning_pipeline"})
 
 # Missing masks are deterministic prerequisites of an authorized full planning
 # workflow.  A guide is deliberately absent: it is generated only when the
@@ -94,7 +84,10 @@ class TurnExecutionAuthorization:
         if not names:
             return
         self.granted_tools.update(names)
-        if names.intersection(PLANNING_ANCHOR_TOOLS):
+        # A local needle/seed edit or dose evaluation is not permission to
+        # launch the full planning pipeline. Only the full-pipeline operation
+        # can grant its missing CTV/OAR prerequisites.
+        if "planning_pipeline" in names:
             self.granted_workflows.add(PLANNING_WORKFLOW)
         self.events.append({
             "source": str(source or "unknown"),
@@ -123,6 +116,13 @@ class TurnExecutionAuthorization:
             for item in (getattr(policy, "workflow_grants", frozenset()) or frozenset())
         }
         workflows.discard("")
+        plan = getattr(policy, "action_plan", None)
+        full_plan_granted = (
+            "planning_pipeline" in (getattr(policy, "execution_grants", ()) or ())
+            or (plan is not None and plan.requires_tool("planning_pipeline"))
+        )
+        if PLANNING_WORKFLOW in workflows and not full_plan_granted:
+            workflows.discard(PLANNING_WORKFLOW)
         if workflows:
             self.granted_workflows.update(workflows)
             self.events.append({
@@ -140,14 +140,8 @@ class TurnExecutionAuthorization:
             return True
         if name in self.granted_tools:
             return True
-        # If any planning-derived tool is granted, allow the full dependency
-        # chain.  The confirmation flow may grant only ctv_segmentation and
-        # oar_segmentation (the LLM's first steps) while the workflow enforcer
-        # injects planning_pipeline as a prerequisite.
-        if name in PLANNING_DERIVED_TOOLS and (
-            self.granted_tools & PLANNING_DERIVED_TOOLS
-        ):
-            return True
+        # Only an accepted full planning workflow may derive prerequisites.
+        # Granting CTV/OAR alone must never authorize planning_pipeline.
         return (
             self.workflow_allowed(PLANNING_WORKFLOW)
             and name in PLANNING_DERIVED_TOOLS

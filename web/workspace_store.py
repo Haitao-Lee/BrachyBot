@@ -2389,6 +2389,7 @@ class WorkspaceStore:
     def touch_session(self, user_id: str, session_id: str) -> WorkspaceSession:
         """Reset the cold-storage countdown after a case is selected."""
         record = self.get_session(user_id, session_id)
+        record = self._recover_archived_without_remote(user_id, session_id, record)
         if record.storage_status == "archived":
             raise WorkspaceArchived("This case is archived; activate it before opening it")
         now = _now()
@@ -2400,9 +2401,77 @@ class WorkspaceStore:
             )
         return self.get_session(user_id, session_id)
 
+    def _recover_archived_without_remote(
+        self,
+        user_id: str,
+        session_id: str,
+        record: "WorkspaceSession",
+    ) -> "WorkspaceSession":
+        """Return an archived case to active when its remote copy has vanished.
+
+        A committed archive whose NAS destination later disappears (a stale or
+        unmounted mount point, or external cleanup) used to strand the case
+        permanently: every data route raised ``WorkspaceArchived`` and
+        activation failed because the restore source was missing. When the local
+        workspace still exists it is the only surviving copy, so heal the
+        metadata instead of failing closed. A pending transfer journal is left
+        for the normal reconcile path.
+        """
+        if record.storage_status != "archived":
+            return record
+        try:
+            with self._connection() as connection:
+                pending = connection.execute(
+                    "SELECT 1 FROM session_transfers "
+                    "WHERE user_id = ? AND session_id = ? LIMIT 1",
+                    (str(user_id), str(session_id)),
+                ).fetchone()
+        except Exception:
+            pending = None
+        if pending:
+            return record
+        try:
+            remote = self.archived_workspace_root(user_id, session_id)
+        except WorkspaceError:
+            remote = None
+        if remote is not None and remote.is_dir():
+            return record
+        local = self.workspace_root(user_id, session_id)
+        if not local.is_dir():
+            return record
+        now = _now()
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            result = connection.execute(
+                "UPDATE case_sessions SET storage_status = 'active', "
+                "archived_at = NULL, last_accessed_at = ?, updated_at = ?, "
+                "revision = revision + 1 "
+                "WHERE id = ? AND user_id = ? AND status = 'active' "
+                "AND storage_status = 'archived'",
+                (now, now, str(session_id), str(user_id)),
+            )
+            connection.execute("COMMIT")
+        if result.rowcount != 1:
+            return self.get_session(user_id, session_id)
+        with self._lock:
+            self._snapshot_cache.pop((str(user_id), str(session_id)), None)
+        logger.warning(
+            "Recovered archived case with missing remote copy user=%s session=%s",
+            user_id,
+            session_id,
+        )
+        self._audit(
+            user_id,
+            session_id,
+            "session.archive_recovered",
+            {"reason": "remote_copy_missing_local_present"},
+        )
+        return self.get_session(user_id, session_id)
+
     def require_local_session(self, user_id: str, session_id: str) -> WorkspaceSession:
         """Resolve an owned case whose durable files are available locally."""
         record = self.get_session(user_id, session_id)
+        record = self._recover_archived_without_remote(user_id, session_id, record)
         if record.storage_status == "archived":
             raise WorkspaceArchived(
                 "This case is archived. Activate it before using its data."
@@ -2477,6 +2546,7 @@ class WorkspaceStore:
 
     def load_snapshot(self, user_id: str, session_id: str) -> Dict[str, Any]:
         record = self.get_session(user_id, session_id)
+        record = self._recover_archived_without_remote(user_id, session_id, record)
         if record.storage_status == "archived":
             raise WorkspaceArchived(
                 "This case is archived. Activate it before loading the workspace."
@@ -5001,6 +5071,13 @@ class WorkspaceStore:
         with self._case_guard(user_id, session_id):
             record = self.get_session(user_id, session_id)
             record = self._reconcile_session_transfer_locked(
+                user_id, session_id, record
+            )
+            if record.storage_status != "archived":
+                return self.touch_session(user_id, session_id)
+            # A vanished remote copy with surviving local data cannot be
+            # "restored" from NAS; heal the metadata instead of failing.
+            record = self._recover_archived_without_remote(
                 user_id, session_id, record
             )
             if record.storage_status != "archived":

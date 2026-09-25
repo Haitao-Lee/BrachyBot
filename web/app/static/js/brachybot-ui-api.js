@@ -952,9 +952,17 @@ function _uiOperationVirtualTreeActions(nodes) {
         if (!id) return;
         const label = String(node.label || node.name || id).replace(/\s+/g, ' ').trim().slice(0, 160);
         const parent = String(node.parentId || node.parentGroup || '').trim();
+        const family = _visualCatalogFamily(node);
+        // The object is still an actionable Data Tree row when its eye is
+        // off. Keep the row's availability separate from scene visibility.
+        // Type aliases describe the object, not a natural-language command.
+        const objectAliases = family === 'surgical_guide'
+            ? ['导板', '手术导板', '穿刺导板', 'surgical guide', 'puncture guide']
+            : [];
         const nodeBase = { node_id: id, nodeId: node.nodeId || id, objectId: node.objectId || id,
-            label, aliases: [id, node.type, node.kind, parent].filter(Boolean),
-            panel: 'viewers', kind: 'data-tree-virtual', visible: node.visible !== false,
+            label, aliases: [id, node.type, node.kind, parent, ...objectAliases].filter(Boolean),
+            panel: 'viewers', kind: 'data-tree-virtual', visible: true,
+            object_visible: node.visible !== false,
             scope: 'leaf',
             enabled: node.status !== 'loading' && node.status !== 'restoring',
             available: node.status !== 'loading' && node.status !== 'restoring',
@@ -1844,7 +1852,12 @@ function _attachMonitorEditChoices(messageId, evidence, sessionId, runId) {
                 button.disabled = true;
                 return;
             }
-            if (typeof sendChat === 'function') void sendChat(`${command} ${token}`, { queueIfBusy: true });
+            const localizedCommand = monitorChatText(
+                command === 'undo' ? '复位' : '保留',
+                command,
+                sessionId,
+            );
+            if (typeof sendChat === 'function') void sendChat(`${localizedCommand} ${token}`, { queueIfBusy: true });
         });
         actions.appendChild(button);
     }
@@ -1892,6 +1905,17 @@ function _queueMonitorFeedback(message, type, label, ownerSessionId, ownerRunId,
 }
 
 function monitorConversationLanguage(sessionId = trainingMonitorState.sessionId) {
+    const requestedSessionId = String(sessionId || '');
+    const monitorSessionId = String(trainingMonitorState?.sessionId || '');
+    const monitorPhase = String(trainingMonitorState?.phase || '').toLowerCase();
+    const monitorLanguage = String(trainingMonitorState?.language || '').toLowerCase();
+    // A monitor run keeps the language chosen when it started. Machine-issued
+    // edit commands must not switch later monitor feedback to another locale.
+    if (requestedSessionId && requestedSessionId === monitorSessionId
+        && ['starting', 'active', 'stopping'].includes(monitorPhase)
+        && ['zh', 'en'].includes(monitorLanguage)) {
+        return monitorLanguage;
+    }
     if (typeof window.conversationLanguageForSession === 'function') {
         const conversation = window.conversationLanguageForSession(sessionId);
         if (conversation === 'zh' || conversation === 'en') return conversation;
@@ -1913,6 +1937,7 @@ function setMonitorPresentation(phaseOrActive) {
         ? phaseOrActive
         : (phaseOrActive ? 'active' : 'inactive');
     const enabled = ['starting', 'active', 'stopping'].includes(phase);
+    const unresolvedStop = phase === 'stop_error';
     if (typeof document === 'undefined') return;
     document.body.classList.toggle('monitor-active', enabled);
     document.body.classList.toggle('monitor-starting', phase === 'starting');
@@ -1958,33 +1983,38 @@ function setMonitorPresentation(phaseOrActive) {
     }
     const status = document.getElementById('monitorStatus');
     if (status) {
-        status.hidden = !enabled;
-        status.setAttribute('aria-hidden', enabled ? 'false' : 'true');
+        status.hidden = !enabled && !unresolvedStop;
+        status.setAttribute('aria-hidden', enabled || unresolvedStop ? 'false' : 'true');
         status.setAttribute('aria-live', 'polite');
         const label = status.querySelector('[data-i18n-zh][data-i18n-en]');
         if (label) {
-            label.textContent = phase === 'starting'
-                ? monitorChatText('正在启动监测', 'Starting monitor')
+            const pair = unresolvedStop
+                ? ['结束未确认，请重试', 'Stop not confirmed; retry']
+                : phase === 'starting'
+                ? ['正在启动监测', 'Starting monitor']
                 : phase === 'stopping'
-                    ? monitorChatText('正在整理监测结果', 'Finalizing monitor')
-                    : monitorChatText('持续监测中', 'Monitoring');
+                    ? ['正在整理监测结果', 'Finalizing monitor']
+                    : ['持续监测中', 'Monitoring'];
+            label.dataset.i18nZh = pair[0];
+            label.dataset.i18nEn = pair[1];
+            label.textContent = monitorChatText(pair[0], pair[1]);
         }
     }
     const startButton = document.getElementById('monitorStartButton');
     const stopButton = document.getElementById('monitorStopButton');
     if (startButton) {
-        startButton.disabled = enabled;
+        startButton.disabled = enabled || unresolvedStop;
         startButton.setAttribute('aria-pressed', enabled ? 'true' : 'false');
     }
     if (stopButton) {
-        stopButton.disabled = !enabled || phase === 'starting' || phase === 'stopping';
+        stopButton.disabled = (!enabled && !unresolvedStop) || phase === 'starting' || phase === 'stopping';
         stopButton.setAttribute('aria-pressed', phase === 'stopping' ? 'true' : 'false');
     }
 }
 window.setMonitorPresentation = setMonitorPresentation;
 
 function setTrainingMonitorPhase(phase) {
-    const normalized = ['inactive', 'starting', 'active', 'stopping', 'error'].includes(phase)
+    const normalized = ['inactive', 'starting', 'active', 'stopping', 'stop_error', 'error'].includes(phase)
         ? phase
         : 'inactive';
     trainingMonitorState.phase = normalized;
@@ -1997,25 +2027,38 @@ window.setTrainingMonitorPhase = setTrainingMonitorPhase;
 function restoreTrainingMonitorSnapshot(training, sessionId) {
     const snapshot = training && typeof training === 'object' ? training : {};
     const staleRunId = snapshot.run_id || snapshot.runId || null;
+    if (trainingMonitorState.sessionId === sessionId
+        && trainingMonitorState.phase === 'active') return;
+    if (trainingMonitorState.sessionId === sessionId
+        && trainingMonitorState.phase === 'stop_error'
+        && String(trainingMonitorState.runId || '') === String(staleRunId || '')) {
+        if (!snapshot.active && !snapshot.closing) {
+            window.clearTrainingMonitorLocal?.(sessionId, staleRunId);
+        }
+        return;
+    }
     trainingMonitorState.runId = staleRunId;
     trainingMonitorState.language = snapshot.language || monitorConversationLanguage(sessionId);
     trainingMonitorState.goal = snapshot.goal || '';
     trainingMonitorState.sessionId = sessionId;
     if (snapshot.active) {
-        // Hydration restores history, never a live subscription. The browser
-        // or server may have restarted since this run was recorded.
-        trainingMonitorState.active = false;
-        trainingMonitorState.phase = 'inactive';
-        trainingMonitorState.runId = null;
+        // Hydration cannot prove whether the server still owns this lease.
+        // Keep a visible retry path until its idempotent close is confirmed.
         trainingMonitorState.pendingFeedback = [];
         trainingMonitorState.screenshotGalleryContext = null;
-        setTrainingMonitorPhase('inactive');
+        setTrainingMonitorPhase('stop_error');
         if (typeof window.releaseTrainingMonitorForSession === 'function') {
             void window.releaseTrainingMonitorForSession(
                 sessionId,
                 'ui_state_restore',
                 { runId: staleRunId, skipLocal: true },
-            );
+            ).then(result => {
+                if (result?.success && !result.run_mismatch && !result.closing
+                    && trainingMonitorState.sessionId === sessionId
+                    && trainingMonitorState.runId === staleRunId) {
+                    window.clearTrainingMonitorLocal?.(sessionId, staleRunId);
+                }
+            });
         }
     } else {
         setTrainingMonitorPhase('inactive');
@@ -2186,8 +2229,20 @@ window.handleMonitorConversation = async function(text) {
         }
         addChat('bot-response', message, true, Date.now(), false, sessionId, { messageKind: 'monitor_feedback' });
     } catch (error) {
-        addChat('error', monitorChatText('本次监测请求未完成：', 'Monitor request did not complete: ', sessionId) + error.message,
-            true, Date.now(), false, sessionId);
+        const aborted = error?.name === 'AbortError'
+            || /signal is aborted without reason|aborted/i.test(String(error?.message || ''));
+        const expiredDecision = /edit decision expired|different monitor run/i.test(String(error?.message || ''));
+        const httpStatus = String(error?.message || '').match(/\bHTTP\s+\d{3}\b/i)?.[0] || '';
+        const failureText = monitorConversationLanguage(sessionId) === 'zh'
+            ? (aborted
+                ? '本次监测请求已取消或超时。'
+                : expiredDecision
+                    ? '这条编辑决策已过期或属于其他监测轮次，请使用当前监测提示中的操作按钮。'
+                    : `本次监测请求未完成${httpStatus ? `（${httpStatus}）` : ''}，请稍后重试。`)
+            : (aborted
+                ? 'This monitor request was cancelled or timed out.'
+                : `Monitor request did not complete: ${error?.message || 'Unknown error'}`);
+        addChat('error', failureText, true, Date.now(), false, sessionId);
     } finally {
         clearTimeout(timeout);
         if (window._monitorTurnAbort === abort) window._monitorTurnAbort = null;
@@ -6884,7 +6939,13 @@ function setupMetricsResize() {
 // Confirmation dialog for destructive operations (i18n-aware)
 function _confirmAction(msgZh, msgEn, options = {}) {
     return new Promise(resolve => {
-        const t = window._t || ((zh) => zh);
+        const monitorOwnsLocale = typeof trainingMonitorState !== 'undefined'
+            && String(trainingMonitorState.sessionId || '') === String(_activeApiSessionId() || '')
+            && (trainingMonitorState.active
+                || ['starting', 'active', 'stopping'].includes(String(trainingMonitorState.phase || '').toLowerCase()));
+        const t = monitorOwnsLocale && typeof window.monitorConversationLanguage === 'function'
+            ? ((zh, en) => window.monitorConversationLanguage(trainingMonitorState.sessionId) === 'zh' ? zh : en)
+            : (window._t || ((zh) => zh));
         const yesZh = options.yesZh || '确认';
         const yesEn = options.yesEn || 'Yes';
         const noZh = options.noZh || '取消';
@@ -7874,7 +7935,14 @@ async function _executeUIActionRaw(a, options = {}) {
             const vis = rawVisibility === 'on';
             const ok = typeof setDataItemVisibility === 'function'
                 && setDataItemVisibility(id, vis);
-            return ok ? { success: true, target, command, node_id: id, visible: vis }
+            const guideNode = ok && typeof dataTreeState !== 'undefined'
+                ? (dataTreeState.planning?.meshes || []).find(node => String(node.id) === String(id)
+                    && String(node.source || '').toLowerCase() === 'surgical_guide')
+                : null;
+            const effectiveVisible3D = guideNode && typeof isDataTreeNodeVisible3D === 'function'
+                ? !!isDataTreeNodeVisible3D(guideNode) : null;
+            return ok ? { success: true, target, command, node_id: id, visible: vis,
+                effective_visible_3d: effectiveVisible3D }
                 : { success: false, error: `Data Tree node is unavailable: ${id}` };
         }
         if (target === 'tree.opacity') {

@@ -5614,6 +5614,18 @@ function renderArtifactTreeItem(itemState) {
 }
 
 // Qt-style color dialog
+function syncCtvWorkspaceColor(id, color) {
+    if (!/^ctv_\d+$/.test(String(id || ''))) return;
+    window.updateWorkspacePresentationForNode?.(
+        { id, family: 'ctv' }, { color },
+    );
+    // A promoted upload mask keeps its own pending appearance until the
+    // structure catalogue catches up. Keep that late-loader copy current too.
+    const objectId = dataTreeState.ctvLabels?.[id]?.objectId;
+    const pending = objectId && _pendingStructurePresentation(objectId, 'ctv');
+    if (pending) pending.color = color;
+}
+
 function openColorPicker(id, swatchEl) {
     // Get current color
     let itemState;
@@ -5814,6 +5826,7 @@ function openColorPicker(id, swatchEl) {
 
     function applyColor() {
         itemState.color = pendingColor;
+        syncCtvWorkspaceColor(id, pendingColor);
         if (swatchEl) swatchEl.style.background = pendingColor;
         // Update the typed LUT. CTV and OAR can reuse the same numeric label.
         if (id.startsWith('organ_')) {
@@ -5905,6 +5918,7 @@ function setDataTreeItemColor(id, color) {
     else itemState = dataTreeState.organs.find(o => o.id === id);
     if (!itemState) return false;
     itemState.color = color;
+    syncCtvWorkspaceColor(id, color);
     if (id.startsWith('organ_') || id.startsWith('ctv_')) {
         const labelId = itemState.labelId ?? parseInt(id.replace('ctv_', ''), 10);
         if (Number.isFinite(Number(labelId))) {
@@ -8338,6 +8352,7 @@ function setGroupColor(category, color) {
     }
     entries.forEach(({ id, value }) => {
         value.color = normalized;
+        syncCtvWorkspaceColor(id, normalized);
         const parsedLabelId = Number.isFinite(Number(value.labelId))
             ? Number(value.labelId)
             : (/^ctv_(\d+)$/.test(String(id)) ? Number(String(id).slice(4)) : null);
@@ -8631,7 +8646,15 @@ function setDataItemVisibility(id, visible) {
     else if (id.startsWith('dose_iso_')) {
         const threshold = parseFloat(id.replace('dose_iso_', ''));
         current = _planningItems('doseLevels').find(d => d.threshold === threshold)?.visible;
-    } else if (dataTreeState[id]) current = dataTreeState[id].visible;
+    } else {
+        // Independent planning meshes (including the puncture guide) are
+        // real leaf rows. The controller must read the same owner that the
+        // Data Tree eye toggles; otherwise it reports this valid node as
+        // unavailable while screenshot discovery can still find it.
+        const planningMesh = _planningItems('meshes').find(m => String(m.id) === String(id));
+        if (planningMesh) current = planningMesh.visible !== false;
+        else if (dataTreeState[id]) current = dataTreeState[id].visible;
+    }
     if (current === null || current === undefined) return false;
     if (!!current !== !!visible) toggleDataVisibility(id);
     return true;

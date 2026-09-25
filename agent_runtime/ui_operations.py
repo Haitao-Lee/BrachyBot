@@ -127,7 +127,9 @@ _GROUP_ALIASES: Tuple[Tuple[str, str], ...] = (
     ("planning_seeds", r"seed|seeds|粒子|种子"),
     ("planning_needles", r"needle|needles|穿刺针|针道"),
     ("dose_isosurfaces", r"isodose|iso[-\s]?surface|等剂量面|剂量面"),
-    ("planning_meshes", r"mesh|guide|网格|导板|规划网格"),
+    # A guide is a leaf artifact, not the entire planning-mesh collection.
+    # Treating its name as a group alias silently shows/hides unrelated meshes.
+    ("planning_meshes", r"mesh(?:es)?|网格|规划网格|规划产物|planning\s+artifacts"),
     ("segmentation", r"segmentation|structures?|分割|结构"),
     ("image", r"(?<![a-z0-9_])images?(?![a-z0-9_])|影像|图像|(?<![a-z0-9_])ct(?![a-z0-9_])"),
     ("artifacts", r"artifact(?:s)?|annotation(?:s)?|工件|产物|标注|注释"),
@@ -1266,6 +1268,13 @@ def _resolve_ui_operation_request_single(
         elif has_ui_context:
             score += 0.05
         subject_score = _specific_subject_score(text, entry, group)
+        named_visual_property = property_name in {"visibility", "opacity", "color"}
+        wants_collection = bool(group or _ALL_RE.search(text))
+        if named_visual_property and not wants_collection:
+            # A singular named object must bind to a real leaf ID. A group
+            # alias is not evidence that the user asked to change every child.
+            if scope == "group" or (scope == "leaf" and subject_score < 0.2):
+                continue
         score += subject_score
         # A control's visible/i18n label is an executable identity too. This
         # covers operation-labelled controls such as Save/Reset/导出 when the

@@ -170,6 +170,36 @@ def shortcut_supported(message, policy, *, pending_tumor_site=False, ui_state=No
             P + r"圈出来哪个是" + obj, text
         ) or full(r"(?:please )?(?:where is|where are|locate|find)\s+(?:the |current |generated )*" + obj + r"(?:\s+located)?", text) or text == '截图给我在哪里'
     if intent == 'ui_operation':
+        operation = getattr(policy, 'ui_operation', None) or {}
+        actions = operation.get('actions') or []
+        if operation.get('source') == 'live_ui_catalog' and len(actions) == 1:
+            action = actions[0]
+            if action.get('target') == 'tree.visibility' and action.get('command') == 'set':
+                node_id, sep, visibility = str(action.get('value') or '').partition(',')
+                parsed = _request_parse.parse_request(message)
+                tasks = [task for task in parsed.subtasks if task.action]
+                catalog = (ui_state or {}).get('ui_operation_catalog') or []
+                live_leaf = any(
+                    isinstance(entry, dict)
+                    and str(entry.get('node_id') or '') == node_id
+                    and str((entry.get('action') or {}).get('target') or '') == 'tree.visibility'
+                    and entry.get('available') is not False
+                    for entry in catalog if isinstance(entry, dict)
+                )
+                # The unique live leaf and the parsed positive UI subtask are
+                # the entire shortcut contract. This is capability-driven:
+                # no object-name or sentence whitelist grants a mutation.
+                if (
+                    sep and visibility in {'on', 'off'} and live_leaf
+                    and len(tasks) == 1
+                    and tasks[0].action in {'display', 'ui_change'}
+                    and not any(
+                        task.interrogative or task.negated or task.conditional
+                        or task.quoted or task.attributed or task.ambiguous
+                        for task in parsed.subtasks
+                    )
+                ):
+                    return True
         if full(P + r"对(?:所有|全部)oar\s*mask进行3d\s*重建", text):
             return True
         # Typed, complete group commands. A catalogue score alone is not an

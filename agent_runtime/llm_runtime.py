@@ -46,6 +46,73 @@ logger = logging.getLogger(__name__)
 
 _RUNTIME_CONTEXT_MARKER = "[BrachyBot runtime context: data only]"
 
+# This boundary applies identically to streaming and non-streaming turns.
+# UI inspection and other reads are deliberately absent: missing image input
+# cannot turn an unrelated question into "upload CT first" or hide the tools
+# needed to inspect the current workspace state.
+_CT_DEPENDENT_MUTATIONS = frozenset({
+    "ctv_segmentation", "oar_segmentation", "biomedparse_segmentation",
+    "seed_planning", "seed_segmentation", "trajectory_planning",
+    "planning_pipeline", "dose_engine", "dose_evaluation",
+})
+_NO_CT_CONTEXT_NOTE = (
+    "\n### Workspace image state\n"
+    "No CT image is currently verified as loaded. Do not start an image-dependent "
+    "clinical mutation without its required input. Read-only questions, UI inspection, "
+    "and ordinary conversation remain available. Mention the missing CT only when it "
+    "is relevant to the user's actual request.\n"
+)
+
+
+def _planning_workflow_hint_allowed(policy) -> bool:
+    """A learned workflow may assist an accepted plan, never propose one.
+
+    The pre-task hook is historical material.  Its matching score, or a plan
+    noun in the current question, cannot turn a read/diagnosis request into a
+    planning command.  This gate is shared by streaming and plain chat.
+    """
+    if policy is None:
+        return False
+    plan = getattr(policy, "action_plan", None)
+    if plan is not None and plan.requires_tool("planning_pipeline"):
+        return True
+    return bool(
+        getattr(policy, "direct_execution", False)
+        and "planning_pipeline" in (getattr(policy, "execution_grants", ()) or ())
+    )
+
+
+def _model_round_budget(policy) -> int:
+    """Bound model/tool latency from the accepted turn contract.
+
+    A read-only semantic question can fetch evidence and answer within three
+    model rounds; a compound/action turn keeps the existing five-round cap.
+    No extra classifier request is made to determine this budget.
+    """
+    intent = str(getattr(policy, "intent", "") or "")
+    if intent in {"knowledge_query", "external_project_query", "clinical_knowledge"}:
+        return 3
+    if intent == "semantic_action":
+        return 3 if getattr(policy, "routing_reason", "") == "information_request_evidence_palette" else 5
+    return 6
+
+
+def _planning_followup_instruction(completed: bool) -> str:
+    """Describe only verified workflow state, without a canned final format."""
+    if completed:
+        return (
+            "planning_pipeline completed in this turn. Answer the user's actual request in their "
+            "requested language and level of detail, using verified tool results. Do not claim that "
+            "a guide, report, UI refresh or any other downstream step completed unless its own "
+            "tool step succeeded. Describe independent failures or pending steps separately."
+        )
+    return (
+        "The current turn authorized full planning, but planning_pipeline has not completed. "
+        "Continue only when its CT and segmentation prerequisites are verified and successful. "
+        "Use the registered planning_pipeline schema; never invent a CT path or treat an attempted "
+        "tool call as success. If a prerequisite failed or is missing, report that specific blocker."
+    )
+
 # A single message must never dominate a provider prompt.  One runaway
 # tool-call argument or embedded payload previously pushed a single request to
 # ~870k tokens (near the 1M window) while the durable conversation stayed
@@ -1049,7 +1116,11 @@ class LLMRuntimeMixin:
             "If an essential object or destructive scope is ambiguous, ask a concise clarification. "
             "Retain confirmation and safety checks. Never substitute opening content for clearing "
             "it, or generation for a question about it. Report tool failure, cancellation or "
-            "pending confirmation honestly; do not claim completion without execution evidence."
+            "pending confirmation honestly; do not claim completion without execution evidence. "
+            "Before finishing, account for every independent requested subtask: state its "
+            "verified result, a specific partial failure, or the one missing decision needed "
+            "to proceed. Do not let success on one subtask erase another; do not retry a "
+            "failed operation merely because its tool name was mentioned in prior prose."
         )
         policy = getattr(self, "_active_turn_policy", None)
         parsed_goals = getattr(policy, "parsed_goals", ()) or ()
@@ -1663,67 +1734,38 @@ class LLMRuntimeMixin:
                 "or mention this internal transport.\n"
             )
         if _no_files_loaded and not internal_followup:
-            enhanced_context += "\n### ⚠️ OVERRIDE: NO CT FILES LOADED — DO NOT USE TOOLS\n"
-            enhanced_context += "CRITICAL: No CT image is loaded in this session. You MUST NOT call any planning, segmentation, dose, or analysis tools.\n"
-            enhanced_context += "Instead, respond DIRECTLY to the user in their language with a helpful message explaining that a CT image needs to be uploaded first.\n"
-            enhanced_context += "For example: tell them to upload a CT file using the input panel, or explain what brachytherapy planning requires.\n"
-            enhanced_context += "Provide useful clinical context about the procedure they requested.\n\n"
+            enhanced_context += _NO_CT_CONTEXT_NOTE
         if self.enhanced and not internal_followup:
             try:
                 pre_ctx = self.enhanced.pre_task_hook(message)
                 if pre_ctx.get("reflexion_warnings") and self.memory.retrieve("ct_image") is not None:
                     enhanced_context += "\n### Past Experience Warnings\n" + pre_ctx["reflexion_warnings"]
-                if self._planning_requested(message) and pre_ctx.get("matched_sop") and self.memory.retrieve("ct_image") is not None:
+                _trusted_planning_hint = _planning_workflow_hint_allowed(
+                    getattr(self, "_active_turn_policy", None)
+                )
+                if _trusted_planning_hint and pre_ctx.get("matched_sop") and self.memory.retrieve("ct_image") is not None:
                     sop = pre_ctx["matched_sop"]
                     enhanced_context += f"\n### Matched SOP: {sop['name']} (success: {sop['success_rate']:.0%})\n"
                     enhanced_context += f"Recommended chain: {' -> '.join(sop['steps'])}\n"
                     enhanced_context += "NOTE: Only follow when user's message requests this action.\n"
-                # Don't inject planning skill if planning already completed,
-                # or if user is asking for screenshot/view, or if user is
-                # asking a simple question that doesn't need tools.
+                # Learned skills are advisory only after the current turn has
+                # already accepted a planning execution contract.  A keyword
+                # in a question or quoted log cannot activate them.
                 _planning_done = self.memory.retrieve("dose_metrics") is not None
-                _simple_question = not self._detect_tool_request(message) and not any(
-                    kw in message for kw in ['segment', 'plan', 'dose',
-                                               'screenshot', 'analyze', 'load']
-                )
-                if self._planning_requested(message) and pre_ctx.get("crystallized_skill") and self.memory.retrieve("ct_image") is not None and not _planning_done and not _simple_question:
+                if _trusted_planning_hint and pre_ctx.get("crystallized_skill") and self.memory.retrieve("ct_image") is not None and not _planning_done:
                     sk = pre_ctx["crystallized_skill"]
-                    # Skip skill if it doesn't match what the user actually wants
-                    _direct = self._detect_tool_request(message)
-                    if _direct:
-                        _wanted = {tc["tool"] for tc in _direct}
-                        _skill = set(sk['tool_chain'])
-                        if not _wanted.intersection(_skill):
-                            logger.info(f"Skip skill '{sk['name']}' — user wants {_wanted}, skill has {_skill}")
-                        else:
-                            # Filter out already-completed steps from chain
-                            _filtered = [s for s in sk['tool_chain']
-                                         if not (s == 'ctv_segmentation' and self.memory.retrieve('ctv_array') is not None)
-                                         and not (s == 'oar_segmentation' and self.memory.retrieve('oar_array') is not None and bool(self.memory.retrieve('oar_is_full')))]
-                            enhanced_context += f"\n### Crystallized Skill: {sk['name']} ({sk['success_rate']:.0%})\n"
-                            enhanced_context += f"Chain: {' -> '.join(_filtered)}\n"
-                            if len(_filtered) < len(sk['tool_chain']):
-                                enhanced_context += "NOTE: CTV/OAR already in memory — skipped those steps.\n"
-                            # If planning_pipeline is in the remaining chain,
-                            # remind the LLM to continue with rule_based mode.
-                            if 'planning_pipeline' in _filtered:
-                                enhanced_context += "NOTE: Use mode='rule_based' (NOT 'rl') when calling planning_pipeline.\n"
-                    else:
-                        # Don't inject planning skill when user asks for
-                        # screenshot/view — the LLM would re-run planning
-                        # instead of just capturing the UI.
-                        _is_view_request = any(kw in message for kw in [
-                            'screenshot', 'view', 'display',
-                            'show', 'inspect', 'capture',
-                        ])
-                        if not _is_view_request:
-                            _filtered = [s for s in sk['tool_chain']
-                                         if not (s == 'ctv_segmentation' and self.memory.retrieve('ctv_array') is not None)
-                                         and not (s == 'oar_segmentation' and self.memory.retrieve('oar_array') is not None and bool(self.memory.retrieve('oar_is_full')))]
-                            enhanced_context += f"\n### Crystallized Skill: {sk['name']} ({sk['success_rate']:.0%})\n"
-                            enhanced_context += f"Chain: {' -> '.join(_filtered)}\n"
-                            if len(_filtered) < len(sk['tool_chain']):
-                                enhanced_context += "NOTE: CTV/OAR already in memory — skipped those steps.\n"
+                    plan = getattr(getattr(self, "_active_turn_policy", None), "action_plan", None)
+                    wanted = set(plan.tool_names) if plan is not None else set(
+                        getattr(getattr(self, "_active_turn_policy", None), "execution_grants", ()) or ()
+                    )
+                    if wanted.intersection(sk.get("tool_chain", ())):
+                        _filtered = [s for s in sk['tool_chain']
+                                     if not (s == 'ctv_segmentation' and self.memory.retrieve('ctv_array') is not None)
+                                     and not (s == 'oar_segmentation' and self.memory.retrieve('oar_array') is not None and bool(self.memory.retrieve('oar_is_full')))]
+                        enhanced_context += f"\n### Crystallized Skill: {sk['name']} ({sk['success_rate']:.0%})\n"
+                        enhanced_context += f"Chain: {' -> '.join(_filtered)}\n"
+                        if len(_filtered) < len(sk['tool_chain']):
+                            enhanced_context += "NOTE: CTV/OAR already in memory — skipped those steps.\n"
                 if pre_ctx.get("user_preferences"):
                     prefs = pre_ctx["user_preferences"]
                     if prefs:
@@ -1744,7 +1786,15 @@ class LLMRuntimeMixin:
             'system': '📋 System (read from memory/tool_results)',
         }
         query_strategy = type_labels.get(query_type, type_labels['knowledge'])
-        enhanced_context += f"\n### Query Type: {query_strategy}\n"
+        enhanced_context += f"\n### Query Type (routing hint only): {query_strategy}\n"
+        enhanced_context += (
+            "Source decisions are per requested subtask, not per message. "
+            "Use the active Session and tool results for case facts; use clinical "
+            "sources for guideline questions; use external search only for an "
+            "explicit external/current-information subtask. A turn can require "
+            "more than one source. Do not send unrelated patient or quoted "
+            "material to an external tool. A source hint never grants a write.\n"
+        )
         enhanced_context += (
             "\n### Ambiguity and Typo Policy\n"
             "If the user's request is vague, typo-heavy, internally inconsistent, or missing a required target/action, "
@@ -1755,7 +1805,11 @@ class LLMRuntimeMixin:
         if query_type == 'realtime':
             enhanced_context += "This query requires CURRENT data. You MUST use web_search. Do NOT answer from training data.\n"
         elif query_type == 'system':
-            enhanced_context += "This query is about internal state. Read from conversation history or tool_results. Do NOT search.\n"
+            enhanced_context += (
+                "Read internal case facts from Session/tool results, not web search. "
+                "If a separate subtask requests external evidence, handle that "
+                "subtask with its appropriate source instead.\n"
+            )
 
         enhanced_context += self._ordered_action_plan_context()
         system_prompt = _build_static_system_prompt(message)
@@ -1994,13 +2048,7 @@ class LLMRuntimeMixin:
 
         # See streaming path: cap knowledge/external-project turns at 3 to
         # avoid the 8-round × (LLM + FactChecker) spiral.
-        _turn_policy_intent = getattr(self._active_turn_policy, "intent", None)
-        if _turn_policy_intent in ("knowledge_query", "external_project_query", "clinical_knowledge"):
-            max_iterations = 3
-        elif _turn_policy_intent == "semantic_action":
-            max_iterations = 5
-        else:
-            max_iterations = 6
+        max_iterations = _model_round_budget(getattr(self, "_active_turn_policy", None))
         iteration = 0
         final_response = ""
         tools_executed = False
@@ -2228,11 +2276,8 @@ class LLMRuntimeMixin:
 
             # When CT is not loaded, block CT-dependent tool calls
             if _no_files_loaded and valid_tool_calls:
-                _ct_dependent = {"ctv_segmentation", "oar_segmentation", "biomedparse_segmentation", "seed_planning",
-                                 "seed_segmentation", "trajectory_planning", "dose_engine",
-                                 "dose_evaluation", "ui_inspector", "filesystem_browser"}
                 valid_tool_calls = [tc for tc in valid_tool_calls
-                                    if tc.get("tool", "") not in _ct_dependent]
+                                    if tc.get("tool", "") not in _CT_DEPENDENT_MUTATIONS]
 
             if not valid_tool_calls:
                 # Tool calls were generated but all filtered out (e.g. empty code)
@@ -2499,33 +2544,8 @@ class LLMRuntimeMixin:
                 ]
                 _planning_request_this_turn = self._planning_requested(message, tool_calls)
                 _has_planning = self._has_completed_planning_in_steps(steps)
-                if _planning_request_this_turn and not _has_planning:
-                    # CTV + OAR are done, but planning is not. Force the
-                    # LLM to continue with planning_pipeline. Without
-                    # this the LLM summarizes after just the segmentations
-                    # and never runs the actual planning.
-                    _present_instruction = (
-                        "Segmentation tools finished, but the planning workflow is INCOMPLETE. "
-                        "You MUST call `planning_pipeline` next with `step: \"full\"` to compute the seed plan and dose. "
-                        "Do NOT summarize yet. Do NOT list the steps as a todo list. "
-                        "Just call the tool directly:\n"
-                        "```tool_call\n"
-                        "{\"tool\": \"planning_pipeline\", \"params\": {\"ct_image_path\": \"<the CT path>\", \"step\": \"full\", \"mode\": \"rule_based\"}}\n"
-                        "```\n"
-                        "After planning completes successfully, the system will give you a final-summary instruction."
-                    )
-                elif _planning_request_this_turn and _has_planning:
-                    # Planning has run. Now give the constrained summary
-                    # format so the LLM can't ramble and run out of
-                    # output tokens mid-thought.
-                    _present_instruction = (
-                        "All workflow tools completed. Now produce your FINAL summary in this exact format:\n"
-                        "1. One short paragraph (≤ 3 sentences) describing what was completed.\n"
-                        "2. A markdown table with columns | Metric | Value | for the planning results (seeds, V100, D90, score, etc.).\n"
-                        "3. One final sentence confirming completion.\n\n"
-                        "DO NOT exceed this format. The 3D viewer is rebuilt automatically — do NOT ask the user to do it.\n"
-                        "CRITICAL: Your ENTIRE response must be in the SAME language as the user's original question."
-                    )
+                if _planning_request_this_turn:
+                    _present_instruction = _planning_followup_instruction(_has_planning)
                 else:
                     _present_instruction = (
                         "Use the tool result(s) from this turn to answer the user's CURRENT request directly. "
@@ -3154,67 +3174,38 @@ class LLMRuntimeMixin:
                 "or mention this internal transport.\n"
             )
         if _no_files_loaded and not internal_followup:
-            enhanced_context += "\n### ⚠️ OVERRIDE: NO CT FILES LOADED — DO NOT USE TOOLS\n"
-            enhanced_context += "CRITICAL: No CT image is loaded in this session. You MUST NOT call any planning, segmentation, dose, or analysis tools.\n"
-            enhanced_context += "Instead, respond DIRECTLY to the user in their language with a helpful message explaining that a CT image needs to be uploaded first.\n"
-            enhanced_context += "For example: tell them to upload a CT file using the input panel, or explain what brachytherapy planning requires.\n"
-            enhanced_context += "Provide useful clinical context about the procedure they requested.\n\n"
+            enhanced_context += _NO_CT_CONTEXT_NOTE
         if self.enhanced and not internal_followup:
             try:
                 pre_ctx = self.enhanced.pre_task_hook(message)
                 if pre_ctx.get("reflexion_warnings") and self.memory.retrieve("ct_image") is not None:
                     enhanced_context += "\n### Past Experience Warnings\n" + pre_ctx["reflexion_warnings"]
-                if self._planning_requested(message) and pre_ctx.get("matched_sop") and self.memory.retrieve("ct_image") is not None:
+                _trusted_planning_hint = _planning_workflow_hint_allowed(
+                    getattr(self, "_active_turn_policy", None)
+                )
+                if _trusted_planning_hint and pre_ctx.get("matched_sop") and self.memory.retrieve("ct_image") is not None:
                     sop = pre_ctx["matched_sop"]
                     enhanced_context += f"\n### Matched SOP: {sop['name']} (success: {sop['success_rate']:.0%})\n"
                     enhanced_context += f"Recommended chain: {' -> '.join(sop['steps'])}\n"
                     enhanced_context += "NOTE: Only follow when user's message requests this action.\n"
-                # Don't inject planning skill if planning already completed,
-                # or if user is asking for screenshot/view, or if user is
-                # asking a simple question that doesn't need tools.
+                # Learned skills are advisory only after the current turn has
+                # already accepted a planning execution contract.  A keyword
+                # in a question or quoted log cannot activate them.
                 _planning_done = self.memory.retrieve("dose_metrics") is not None
-                _simple_question = not self._detect_tool_request(message) and not any(
-                    kw in message for kw in ['segment', 'plan', 'dose',
-                                               'screenshot', 'analyze', 'load']
-                )
-                if self._planning_requested(message) and pre_ctx.get("crystallized_skill") and self.memory.retrieve("ct_image") is not None and not _planning_done and not _simple_question:
+                if _trusted_planning_hint and pre_ctx.get("crystallized_skill") and self.memory.retrieve("ct_image") is not None and not _planning_done:
                     sk = pre_ctx["crystallized_skill"]
-                    # Skip skill if it doesn't match what the user actually wants
-                    _direct = self._detect_tool_request(message)
-                    if _direct:
-                        _wanted = {tc["tool"] for tc in _direct}
-                        _skill = set(sk['tool_chain'])
-                        if not _wanted.intersection(_skill):
-                            logger.info(f"Skip skill '{sk['name']}' — user wants {_wanted}, skill has {_skill}")
-                        else:
-                            # Filter out already-completed steps from chain
-                            _filtered = [s for s in sk['tool_chain']
-                                         if not (s == 'ctv_segmentation' and self.memory.retrieve('ctv_array') is not None)
-                                         and not (s == 'oar_segmentation' and self.memory.retrieve('oar_array') is not None and bool(self.memory.retrieve('oar_is_full')))]
-                            enhanced_context += f"\n### Crystallized Skill: {sk['name']} ({sk['success_rate']:.0%})\n"
-                            enhanced_context += f"Chain: {' -> '.join(_filtered)}\n"
-                            if len(_filtered) < len(sk['tool_chain']):
-                                enhanced_context += "NOTE: CTV/OAR already in memory — skipped those steps.\n"
-                            # If planning_pipeline is in the remaining chain,
-                            # remind the LLM to continue with rule_based mode.
-                            if 'planning_pipeline' in _filtered:
-                                enhanced_context += "NOTE: Use mode='rule_based' (NOT 'rl') when calling planning_pipeline.\n"
-                    else:
-                        # Don't inject planning skill when user asks for
-                        # screenshot/view — the LLM would re-run planning
-                        # instead of just capturing the UI.
-                        _is_view_request = any(kw in message for kw in [
-                            'screenshot', 'view', 'display',
-                            'show', 'inspect', 'capture',
-                        ])
-                        if not _is_view_request:
-                            _filtered = [s for s in sk['tool_chain']
-                                         if not (s == 'ctv_segmentation' and self.memory.retrieve('ctv_array') is not None)
-                                         and not (s == 'oar_segmentation' and self.memory.retrieve('oar_array') is not None and bool(self.memory.retrieve('oar_is_full')))]
-                            enhanced_context += f"\n### Crystallized Skill: {sk['name']} ({sk['success_rate']:.0%})\n"
-                            enhanced_context += f"Chain: {' -> '.join(_filtered)}\n"
-                            if len(_filtered) < len(sk['tool_chain']):
-                                enhanced_context += "NOTE: CTV/OAR already in memory — skipped those steps.\n"
+                    plan = getattr(getattr(self, "_active_turn_policy", None), "action_plan", None)
+                    wanted = set(plan.tool_names) if plan is not None else set(
+                        getattr(getattr(self, "_active_turn_policy", None), "execution_grants", ()) or ()
+                    )
+                    if wanted.intersection(sk.get("tool_chain", ())):
+                        _filtered = [s for s in sk['tool_chain']
+                                     if not (s == 'ctv_segmentation' and self.memory.retrieve('ctv_array') is not None)
+                                     and not (s == 'oar_segmentation' and self.memory.retrieve('oar_array') is not None and bool(self.memory.retrieve('oar_is_full')))]
+                        enhanced_context += f"\n### Crystallized Skill: {sk['name']} ({sk['success_rate']:.0%})\n"
+                        enhanced_context += f"Chain: {' -> '.join(_filtered)}\n"
+                        if len(_filtered) < len(sk['tool_chain']):
+                            enhanced_context += "NOTE: CTV/OAR already in memory — skipped those steps.\n"
                 if pre_ctx.get("user_preferences"):
                     prefs = pre_ctx["user_preferences"]
                     if prefs:
@@ -3235,7 +3226,15 @@ class LLMRuntimeMixin:
             'system': '📋 System (read from memory/tool_results)',
         }
         query_strategy = type_labels.get(query_type, type_labels['knowledge'])
-        enhanced_context += f"\n### Query Type: {query_strategy}\n"
+        enhanced_context += f"\n### Query Type (routing hint only): {query_strategy}\n"
+        enhanced_context += (
+            "Source decisions are per requested subtask, not per message. "
+            "Use the active Session and tool results for case facts; use clinical "
+            "sources for guideline questions; use external search only for an "
+            "explicit external/current-information subtask. A turn can require "
+            "more than one source. Do not send unrelated patient or quoted "
+            "material to an external tool. A source hint never grants a write.\n"
+        )
         enhanced_context += (
             "\n### Ambiguity and Typo Policy\n"
             "If the user's request is vague, typo-heavy, internally inconsistent, or missing a required target/action, "
@@ -3246,7 +3245,11 @@ class LLMRuntimeMixin:
         if query_type == 'realtime':
             enhanced_context += "This query requires CURRENT data. You MUST use web_search. Do NOT answer from training data.\n"
         elif query_type == 'system':
-            enhanced_context += "This query is about internal state. Read from conversation history or tool_results. Do NOT search.\n"
+            enhanced_context += (
+                "Read internal case facts from Session/tool results, not web search. "
+                "If a separate subtask requests external evidence, handle that "
+                "subtask with its appropriate source instead.\n"
+            )
 
         enhanced_context += self._ordered_action_plan_context()
         system_prompt = _build_static_system_prompt(message)
@@ -3437,13 +3440,7 @@ class LLMRuntimeMixin:
         # + 1 synthesis round, which is enough to answer most named-project
         # questions while avoiding the 8-round × (LLM + FactChecker) spiral
         # that turned a simple project-lookup query into a ~180 s wait.
-        _turn_policy_intent = getattr(self._active_turn_policy, "intent", None)
-        if _turn_policy_intent in ("knowledge_query", "external_project_query", "clinical_knowledge"):
-            max_iterations = 3
-        elif _turn_policy_intent == "semantic_action":
-            max_iterations = 5
-        else:
-            max_iterations = 6
+        max_iterations = _model_round_budget(getattr(self, "_active_turn_policy", None))
         iteration = 0
         final_response = ""
         tools_executed = False
@@ -3830,11 +3827,8 @@ class LLMRuntimeMixin:
 
             # When CT is not loaded, block CT-dependent tool calls from text-parsed results
             if not ct_loaded and valid_tool_calls:
-                _ct_dependent = {"ctv_segmentation", "oar_segmentation", "biomedparse_segmentation", "seed_planning",
-                                 "seed_segmentation", "trajectory_planning", "dose_engine",
-                                 "dose_evaluation", "ui_inspector", "filesystem_browser"}
                 valid_tool_calls = [tc for tc in valid_tool_calls
-                                    if tc.get("tool", "") not in _ct_dependent]
+                                    if tc.get("tool", "") not in _CT_DEPENDENT_MUTATIONS]
 
             if not valid_tool_calls:
                 # Tool calls were generated but all filtered out (e.g. empty code)
@@ -4622,33 +4616,8 @@ class LLMRuntimeMixin:
                 ]
                 _planning_request_this_turn = self._planning_requested(message, tool_calls)
                 _has_planning = self._has_completed_planning_in_steps(steps)
-                if _planning_request_this_turn and not _has_planning:
-                    # CTV + OAR are done, but planning is not. Force the
-                    # LLM to continue with planning_pipeline. Without
-                    # this the LLM summarizes after just the segmentations
-                    # and never runs the actual planning.
-                    _present_instruction = (
-                        "Segmentation tools finished, but the planning workflow is INCOMPLETE. "
-                        "You MUST call `planning_pipeline` next with `step: \"full\"` to compute the seed plan and dose. "
-                        "Do NOT summarize yet. Do NOT list the steps as a todo list. "
-                        "Just call the tool directly:\n"
-                        "```tool_call\n"
-                        "{\"tool\": \"planning_pipeline\", \"params\": {\"ct_image_path\": \"<the CT path>\", \"step\": \"full\", \"mode\": \"rule_based\"}}\n"
-                        "```\n"
-                        "After planning completes successfully, the system will give you a final-summary instruction."
-                    )
-                elif _planning_request_this_turn and _has_planning:
-                    # Planning has run. Now give the constrained summary
-                    # format so the LLM can't ramble and run out of
-                    # output tokens mid-thought.
-                    _present_instruction = (
-                        "All workflow tools completed. Now produce your FINAL summary in this exact format:\n"
-                        "1. One short paragraph (≤ 3 sentences) describing what was completed.\n"
-                        "2. A markdown table with columns | Metric | Value | for the planning results (seeds, V100, D90, score, etc.).\n"
-                        "3. One final sentence confirming completion.\n\n"
-                        "DO NOT exceed this format. The 3D viewer is rebuilt automatically — do NOT ask the user to do it.\n"
-                        "CRITICAL: Your ENTIRE response must be in the SAME language as the user's original question."
-                    )
+                if _planning_request_this_turn:
+                    _present_instruction = _planning_followup_instruction(_has_planning)
                 else:
                     _present_instruction = (
                         "Use the tool result(s) from this turn to answer the user's CURRENT request directly. "

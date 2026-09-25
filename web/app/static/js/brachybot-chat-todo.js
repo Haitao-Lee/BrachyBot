@@ -2035,9 +2035,50 @@ async function _executeJsonUIActions(steps, sessionId) {
     }
     return {
         executed: results.length,
+        results,
         failed: results.some(result => result === false
             || result?.success === false
             || result?.stale === true),
+    };
+}
+
+function _verifiedTreeVisibilityReply(steps, results, uiState, responseLanguage) {
+    // A server-side ui_controller success only validates an action plan. The
+    // user's confirmation must reflect the browser's actual applied result.
+    const actions = (Array.isArray(steps) ? steps : [])
+        .filter(step => step?.tool === 'ui_controller' && _isTerminalToolStatus(step.status))
+        .flatMap(step => step.metadata?.actions || step.data?.actions || []);
+    if (actions.length !== 1 || actions[0]?.target !== 'tree.visibility') return null;
+    const [id, state] = String(actions[0].value || '').split(',');
+    if (!id || !['on', 'off'].includes(state)) return null;
+    const chinese = String(responseLanguage || '').toLowerCase().startsWith('zh');
+    const catalog = Array.isArray(uiState?.ui_operation_catalog) ? uiState.ui_operation_catalog : [];
+    const entry = catalog.find(item => String(item?.node_id || '') === id
+        && item?.action?.target === 'tree.visibility');
+    const label = String(entry?.label || id).replace(/\s+—\s+Show\s*\/\s*hide$/i, '').trim();
+    const result = (Array.isArray(results) ? results : [])[0];
+    if (!result || result.success === false || result.stale === true
+        || String(result.node_id || '') !== id || result.visible !== (state === 'on')) {
+        return {
+            success: false,
+            text: chinese
+                ? `未能${state === 'on' ? '显示' : '隐藏'}“${label}”：浏览器未确认该 Data Tree 节点的状态已更新。请确认当前病例和节点仍已加载。`
+                : `Could not ${state === 'on' ? 'show' : 'hide'} “${label}”: the browser did not confirm the Data Tree state change. Check that the current case and node are still loaded.`,
+        };
+    }
+    if (state === 'on' && result.effective_visible_3d === false) {
+        return {
+            success: true,
+            text: chinese
+                ? `已将“${label}”的 Data Tree 显示开关打开，但父级规划或 3D 专用开关仍在隐藏，因此它还没有出现在 3D Viewer 中。`
+                : `The Data Tree visibility switch for “${label}” is on, but its Planning parent or 3D-specific switch is still hidden, so it is not yet visible in the 3D Viewer.`,
+        };
+    }
+    return {
+        success: true,
+        text: chinese
+            ? `已将“${label}”${state === 'on' ? '显示' : '隐藏'}；未重新生成导板，也未改变其他规划对象。`
+            : `“${label}” is now ${state === 'on' ? 'shown' : 'hidden'}; no guide was regenerated and no other planning object was changed.`,
     };
 }
 
@@ -2495,14 +2536,20 @@ function _isCurrentTurnSession(turnSessionId) {
     return true;
 }
 
-function _isMonitorStartRequest(text) {
-    return /(?:monitor|training|coach|guide|supervise|watch|observe|培训|训练|监测|监督|指导|教我|带我)/i.test(text || '')
-        && !/(?:stop|finish|end|停止|结束|关闭)/i.test(text || '');
-}
-
-function _isMonitorStopRequest(text) {
-    return /(?:stop|finish|end|summary|停止|结束|关闭|总结|完成监测|停止监测)/i.test(text || '')
-        && /(?:monitor|training|coach|培训|训练|监测|监督|指导)/i.test(text || '');
+// Only an explicit, standalone monitor command may bypass normal intent
+// resolution. Broad keyword presence confused mentions and questions with
+// execution, and omitted "退出", which made "退出监测" start a new run.
+function _monitorControlIntent(text) {
+    let command = String(text || '').trim().replace(/[。.!！\s]+$/u, '');
+    if (!command || /[?？"“”‘’'「」]/u.test(command)) return null;
+    command = command.replace(/^(?:(?:请|请你|麻烦|麻烦你|帮我|请帮我|现在|立刻|马上|我想|我要|please|i want to)\s*)+/iu, '').trim();
+    const object = '(?:监测|检测|监控|monitor(?:ing)?|training(?: mode)?)';
+    const stop = new RegExp(`^(?:退出|停止|结束|关闭|终止|完成|取消|暂停|stop|finish|end|exit|close|cancel|pause)\\s*(?:当前|本次|这次|the\\s+)?\\s*${object}(?:\\s*(?:模式|mode))?(?:吧|了)?$`, 'iu');
+    const stopByNegation = new RegExp(`^(?:不要再|别再|不再)\\s*${object}(?:\\s*(?:模式|mode))?(?:了)?$`, 'iu');
+    const start = new RegExp(`^(?:开始|开启|启动|进入|打开|进行|start|begin|enable|turn on)\\s*(?:当前|本次|这次|the\\s+)?\\s*${object}(?:\\s*(?:模式|mode))?(?:吧)?$`, 'iu');
+    if (stop.test(command) || stopByNegation.test(command)) return 'stop';
+    if (start.test(command)) return 'start';
+    return null;
 }
 
 // Tool providers use both "done" and "completed" for the same terminal
@@ -3485,13 +3532,16 @@ async function sendChat(prefill, options) {
         window._chatDetachRequestedFor = null;
     }
 
-    if (!opts.skipIntentShortcuts && _isMonitorStartRequest(text)) {
-        await startTrainingMode(text);
-        return;
-    }
-    if (!opts.skipIntentShortcuts && _isMonitorStopRequest(text) && trainingMonitorState.active) {
-        await stopTrainingMode();
-        return;
+    if (!opts.skipIntentShortcuts) {
+        const monitorIntent = _monitorControlIntent(text);
+        if (monitorIntent === 'stop') {
+            await stopTrainingMode();
+            return;
+        }
+        if (monitorIntent === 'start') {
+            await startTrainingMode(text);
+            return;
+        }
     }
     // Natural-language planning questions must continue through the normal
     // chat workflow. The server-side local-read classifier already routes
@@ -3837,6 +3887,7 @@ async function sendChat(prefill, options) {
     // on the tool event; the final response must still be held back until the
     // browser reports whether report.autofill actually succeeded.
     let reportUiActionRequested = false;
+    let responseRoute = '';
     // Group screenshots emitted during one assistant turn into one gallery.
     const screenshotGallery = {
         sessionId: turnSessionId,
@@ -4135,8 +4186,13 @@ async function sendChat(prefill, options) {
                 ...(screenshotPresentation.attachments || []),
             ];
             const uiActions = await _executeJsonUIActions(data?.steps, turnSessionId);
+            const uiOutcome = data?.llm_meta?.route === 'direct_ui_operation'
+                ? _verifiedTreeVisibilityReply(
+                    data?.steps, uiActions.results || [], uiState, turnIdentity.responseLanguage,
+                ) : null;
             const uiFailure = uiActions.failed
-                ? (_hasReportGenerationAction(data?.steps)
+                ? (uiOutcome?.success === false ? uiOutcome.text
+                    : _hasReportGenerationAction(data?.steps)
                     ? _reportGenerationFailureMessage(turnSessionId)
                     : _chatUserVisibleFailure(turnSessionId, 'request'))
                 : '';
@@ -4152,6 +4208,7 @@ async function sendChat(prefill, options) {
             const screenshotFailure = String(screenshotPresentation.userMessage || '').trim();
             const failureAndReadResults = screenshotFailure || '';
             const reply = uiFailure
+                || uiOutcome?.text
                 || failureAndReadResults
                 || (visualAnalysisContinuation ? '' : presentation.userMessage)
                 || (visualAnalysisContinuation ? '' : responseBody)
@@ -4981,6 +5038,7 @@ async function sendChat(prefill, options) {
                         }
                         const deferUntilUIActionsFinish = reportUiActionRequested
                             || _hasReportGenerationAction(steps)
+                            || uiActionTasks.length > 0
                             || _turnHasScreenshotPlan(steps, screenshotTaskKeys);
                         if (!isInternalFollowup && !deferUntilUIActionsFinish
                             && !responseEl && typeof createStreamingResponse === 'function') {
@@ -5002,6 +5060,7 @@ async function sendChat(prefill, options) {
                         // event; we just stash it for later rendering.
                         if (data.llm_meta) {
                             window._lastLLMMeta = data.llm_meta;
+                            responseRoute = String(data.llm_meta.route || '');
                             if (Number(data.llm_meta.llm_calls || 0) > 0
                                 && typeof window.updateBrainStatusIndicator === 'function') {
                                 // A real model call succeeded; recover the chip
@@ -5170,6 +5229,16 @@ async function sendChat(prefill, options) {
             const settled = await _awaitChatUIActions(uiActionTasks, turnAbortController?.signal);
             if (settled.some(result => result.status === 'rejected')) {
                 uiActionResults.push({ success: false });
+            }
+        }
+        if (responseRoute === 'direct_ui_operation') {
+            const visibilityOutcome = _verifiedTreeVisibilityReply(
+                steps, uiActionResults, uiState, turnIdentity.responseLanguage,
+            );
+            if (visibilityOutcome) {
+                responseText = visibilityOutcome.text;
+                finalResponseReceived = true;
+                if (!visibilityOutcome.success) turnFailed = true;
             }
         }
         if (reportUiActionRequested || _hasReportGenerationAction(steps)) {

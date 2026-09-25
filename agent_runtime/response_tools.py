@@ -2425,15 +2425,27 @@ Output (JSON array of strings):"""
         """
         msg = message.strip().lower()
 
-        # Check system patterns first (highest priority for internal queries)
+        policy_intent = str(getattr(getattr(self, "_active_turn_policy", None), "intent", "") or "")
+        if policy_intent in {
+            "planning_provenance_query", "planning_assessment_query",
+            "case_state_question", "case_dose_query", "image_metadata_query",
+            "current_oar_query", "artifact_analysis_query",
+            "surgical_guide_status_query", "session_visual_location_query",
+            "multi_intent_query",
+        }:
+            return 'system'
+        if policy_intent == 'clinical_knowledge':
+            return 'knowledge'
+
+        # Real-time is a scoped request for changing external information,
+        # not a substring such as "当前" in "当前规划" or "score" in plan score.
+        if self._detect_realtime_query(message):
+            return 'realtime'
+
+        # Check system patterns for an otherwise unresolved internal query.
         for pattern, _ in self._SYSTEM_PATTERNS:
             if re.search(pattern, msg, re.IGNORECASE):
                 return 'system'
-
-        # Check realtime patterns (must search, can't use training data)
-        for pattern, _ in self._REALTIME_PATTERNS:
-            if re.search(pattern, msg, re.IGNORECASE):
-                return 'realtime'
 
         # Check knowledge patterns (LLM + search verification)
         # BEFORE analysis — because "recommendation" in guideline context is knowledge, not opinion
@@ -2679,14 +2691,24 @@ Output (JSON array of strings):"""
         """Detect if the message requires a real-time web search.
         Returns a search query string if detected, None otherwise.
         The query is optimized for Bing/Baidu (not PubMed)."""
-        msg = message.strip().lower()
+        # Search is a side effect with external data transfer.  A time or
+        # weather word inside a quoted log is evidence to discuss, not a
+        # current user request to query the web.  Evaluate only active
+        # clauses and preserve their local scope in mixed turns.
+        active_clauses = [
+            task.raw for task in _request_parse.parse_request(message).subtasks
+            if not (task.quoted or task.attributed or task.negated or task.conditional)
+        ]
+        if not active_clauses:
+            return None
         # Patterns that require real-time search
         # Weather queries are handled by specialized engine — just detect the intent
         realtime_patterns = [
             (r'(今天|today|明天|tomorrow|昨天|yesterday|本周|this week|当前|now).*(天气|天气|气温|temperature|下雨|rain|晴|sunny)', True),   # weather queries
             (r'(天气|weather|气温|temperature).*(如何|怎么样|how|多少|what|预报|forecast)', True),   # weather queries
             (r'(weather|temperature|forecast)', True),
-            (r'(现在|now|今天|today|几点|time|日期|date)', False),   # time/date
+            (r'(?:现在|今天|今日|明天|昨天|此刻|当前)(?:是|的)?(?:几点|几时|什么时间|日期|几号|星期几|周几)|'
+             r'\b(?:what\s+time|what\s+date|current\s+time|current\s+date|today.s\s+date)\b', False),
             (r'(what time|current time|what date)', False),
             (r'(最新|latest|最近|recent|今日|today).*(新闻|news|消息|headline|头条)', False),   # news
             (r'(news|headline|latest news)', False),
@@ -2696,13 +2718,24 @@ Output (JSON array of strings):"""
             (r'(exchange rate|汇率|dollar|euro|rmb)', False),   # exchange rate
             (r'(pandemic|疫情|covid|case count)', False),   # pandemic
         ]
-        for pattern, is_weather in realtime_patterns:
-            if re.search(pattern, msg, re.IGNORECASE):
-                if is_weather:
-                    # Weather: pass original message, specialized engine extracts city
-                    return message.strip()
-                # Non-weather: generate a search query from the message
-                return message.strip()
+        for clause in active_clauses:
+            asks_for_live_data = (
+                _request_parse.is_interrogative(clause)
+                or bool(re.search(
+                    r"(?:查一下|查询|搜索|查找|帮我查|告诉我|给我看|"
+                    r"\b(?:search|look up|find|show me|tell me)\b|"
+                    r"(?:现在|今天|今日|此刻)(?:是)?(?:几点|几时|几号))",
+                    clause, re.IGNORECASE,
+                ))
+            )
+            if not asks_for_live_data:
+                continue
+            for pattern, _is_weather in realtime_patterns:
+                if re.search(pattern, clause, re.IGNORECASE):
+                    # The matched clause is the only search scope.  Returning
+                    # the whole turn would also transmit a separate quoted
+                    # log or patient note to the external search service.
+                    return clause.strip()
         return None
 
     def _detect_external_project_query(self, message: str) -> Optional[str]:
@@ -2865,7 +2898,10 @@ Output (JSON array of strings):"""
                 kept.append({**call, "params": params})
             tool_calls = kept
             self._blocked_mutating_tool_names = []
-            return kept
+            # Continue through the shared argument and evidence normalizer.
+            # Returning here let provider-supplied ui_content questions and
+            # screenshot targets bypass current-user binding specifically on
+            # analysis turns, the turns that most need grounded evidence.
         if getattr(active_policy, "intent", None) == "session_visual_location_query":
             # This turn has a typed read-only visual contract. Even if a
             # provider unexpectedly emits extra function calls, do not let a
@@ -3479,17 +3515,32 @@ Output (JSON array of strings):"""
                     normalize_session_content_request,
                 )
                 target = str(p.get("target") or "").strip().lower()
-                question = str(p.get("question") or "").strip()
+                # The provider's arguments are a retrieval proposal, not a
+                # new user instruction.  An invented question here could
+                # change deictic scope ("those figures" -> all figures) and
+                # later make unrelated content look responsive to this turn.
+                question = guard_question or str(p.get("question") or "").strip()
                 if target not in SESSION_CONTENT_TARGETS or not question:
                     logger.warning("Dropping ui_content call with unsupported target or no question")
                     continue
+                requested_target = resolve_session_content_target(question)
+                # A uniquely named user object wins over a contradictory
+                # provider target.  A compound question may legitimately
+                # need several different content families, so do not coerce
+                # every call to the first target found in the whole turn.
+                if (
+                    requested_target in SESSION_CONTENT_TARGETS
+                    and len(_request_parse.parse_request(question).objects) <= 1
+                ):
+                    target = requested_target
                 # The primary model chooses ordinary content families. Only a
                 # source-level conversational reference is canonicalized here:
                 # ``last image`` refers to the ordered attachments of the
                 # preceding reply, not to a similarly named global collection.
-                if resolve_session_content_target(question) == "reply_attachments":
+                if requested_target == "reply_attachments":
                     target = "reply_attachments"
                 p["target"] = target
+                p["question"] = question
                 p.update(normalize_session_content_request(
                     question=question,
                     presentation=p.get("presentation"),

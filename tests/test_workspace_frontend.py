@@ -2423,7 +2423,7 @@ def test_range_controls_get_single_step_buttons_without_bypassing_native_events(
     controls = read("web/app/static/css/brachybot-report-controls.css")
 
     assert "brachybot-report-controls.css?v=29" in index
-    assert "brachybot-viewer-volume.js?v=77" in index
+    assert 'src="static/js/brachybot-viewer-volume.js?v=' in index
     assert "brachybot-range-stepper.js?v=2" in index
     assert "function stepRange(input, direction)" in stepper
     assert "input.dispatchEvent(new Event('input'" in stepper

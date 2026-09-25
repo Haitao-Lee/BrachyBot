@@ -36,13 +36,35 @@ def test_start_replay_conflict_and_mismatched_stop(monitor):
     assert post('training/start', {'monitor_run_id': 'a'}).status_code == 200
     assert post('training/start', {'monitor_run_id': 'a'}).status_code == 200
     assert post('training/start', {'monitor_run_id': 'b'}).status_code == 409
+    live_status = post.get('training/status').get_json()
+    assert live_status['monitor_run_id'] == 'a'
+    assert live_status['active'] is True
+    assert 'events' not in live_status and 'feedback' not in live_status
     mismatch = post('training/stop', {'monitor_run_id': 'b'}).get_json()
     assert mismatch['no_active_run'] is False
     assert mismatch['monitor_run_id'] == 'b'
+    assert mismatch['active_monitor_run_id'] == 'a'
     assert support._ui_bucket(sid)['training']['active']
     stopped = post('training/stop', {'monitor_run_id': 'a'}).get_json()
     assert stopped['summary_message']['content']
+    status = post.get('training/status').get_json()
+    assert status['active'] is False and status['closing'] is False
+    assert status['summary_message']['message_id'] == stopped['summary_message']['message_id']
     assert post('training/stop', {'monitor_run_id': 'a'}).get_json()['summary_message'] == stopped['summary_message']
+
+
+def test_close_out_blocks_new_run_until_summary_is_ready(monitor):
+    post, sid, _ = monitor
+    post('training/start', {'monitor_run_id': 'old'})
+    training = support._ui_bucket(sid)['training']
+    training['active'] = False
+    training['closing'] = True
+    status = post.get('training/status').get_json()
+    assert status['active'] is False and status['closing'] is True
+    assert post('training/start', {'monitor_run_id': 'new'}).status_code == 409
+    assert post('training/stop', {'monitor_run_id': 'old'}).get_json()['closing'] is True
+    training['closing'] = False
+    assert post('training/start', {'monitor_run_id': 'new'}).status_code == 200
 
 
 def test_late_event_does_not_keep_new_run_alive(monitor):

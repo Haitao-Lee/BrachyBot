@@ -396,8 +396,38 @@ function _cloneManualNeedles(needles = dataTreeState?.planning?.needles || []) {
 }
 
 function _manualText(zh, en) {
+    const monitor = typeof trainingMonitorState !== 'undefined' ? trainingMonitorState : null;
+    const monitorSessionId = String(monitor?.sessionId || '');
+    const monitorPhase = String(monitor?.phase || '').toLowerCase();
+    const monitorOwnsCurrentSession = monitorSessionId
+        && monitorSessionId === String(_activeApiSessionId() || '')
+        && (monitor.active || ['starting', 'active', 'stopping'].includes(monitorPhase));
+    if (monitorOwnsCurrentSession && typeof window.monitorConversationLanguage === 'function') {
+        return window.monitorConversationLanguage(monitorSessionId) === 'zh' ? zh : en;
+    }
     if (typeof window._t === 'function') return window._t(zh, en);
     return String(window._i18nLang || '').toLowerCase().startsWith('zh') ? zh : en;
+}
+
+function _manualErrorDetail(error, language = null) {
+    const raw = String(error?.message || error || '').trim();
+    const selectedLanguage = language === 'zh' || language === 'en'
+        ? language
+        : (_manualText('zh', 'en') === 'zh' ? 'zh' : 'en');
+    if (selectedLanguage !== 'zh') return raw || 'Unknown error';
+    // Normalize transport exceptions before preserving server validation
+    // text: some wrappers prepend a Chinese label to a raw browser error.
+    if (/AbortError|signal is aborted|aborted|timed out|timeout/i.test(raw)) {
+        return '请求已取消或等待超时。';
+    }
+    if (/Failed to fetch|NetworkError|network request failed|fetch failed/i.test(raw)) {
+        return '网络连接失败，请检查服务连接后重试。';
+    }
+    // Keep already-localized server validation messages.
+    if (/[㐀-鿿]/.test(raw)) return raw;
+    const status = raw.match(/\bHTTP\s+(\d{3})\b/i);
+    if (status) return `服务器返回 HTTP ${status[1]}。`;
+    return raw ? '操作未完成；请查看技术日志中的错误详情。' : '操作未完成。';
 }
 
 function _syncManualSafetyState(data = {}) {
@@ -995,12 +1025,12 @@ async function addManualNeedle() {
         _cancelStaleManualDoseWork('needle_add_rejected');
         _restoreManualPlanningSnapshot(rollback);
         _setManualDoseProgress('error', _manualText(
-            `新增针道失败：${error.message}`,
-            `Needle creation failed: ${error.message}`,
+            `新增针道失败：${_manualErrorDetail(error)}`,
+            `Needle creation failed: ${_manualErrorDetail(error)}`,
         ));
         addChat('error', _manualText(
-            `新增针道失败，已恢复到上一次已保存的规划。${error.message}`,
-            `Needle creation failed; the last saved plan was restored. ${error.message}`,
+            `新增针道失败，已恢复到上一次已保存的规划。${_manualErrorDetail(error)}`,
+            `Needle creation failed; the last saved plan was restored. ${_manualErrorDetail(error)}`,
         ));
         return null;
     } finally {
@@ -1143,12 +1173,12 @@ async function addManualSeed(targetNeedleId = null, options = {}) {
         return savedSeed;
     } catch (error) {
         _setManualDoseProgress('error', _manualText(
-            `新增粒子失败：${error.message}`,
-            `Seed creation failed: ${error.message}`,
+            `新增粒子失败：${_manualErrorDetail(error)}`,
+            `Seed creation failed: ${_manualErrorDetail(error)}`,
         ));
         addChat('error', _manualText(
-            `新增粒子失败，已恢复到上一次已保存的粒子布局。${error.message}`,
-            `Seed creation failed; the last saved seed layout was restored. ${error.message}`,
+            `新增粒子失败，已恢复到上一次已保存的粒子布局。${_manualErrorDetail(error)}`,
+            `Seed creation failed; the last saved seed layout was restored. ${_manualErrorDetail(error)}`,
         ));
         return null;
     } finally {
@@ -1168,7 +1198,6 @@ function _setManualDoseProgress(stateName, text) {
         body.className = 'chat-event-content';
         const title = document.createElement('span');
         title.className = 'manual-dose-progress-title';
-        title.textContent = _manualText('进度', 'Progress');
         const message = document.createElement('span');
         message.className = 'chat-event-text';
         const timestamp = document.createElement('time');
@@ -1186,6 +1215,11 @@ function _setManualDoseProgress(stateName, text) {
         row.appendChild(track);
         container.appendChild(row);
     }
+    // This row is reused across dose runs. Refresh its label each time so a
+    // row first created under the app locale cannot remain in another
+    // language after a monitor run pins its conversation language.
+    const progressTitle = row.querySelector('.manual-dose-progress-title');
+    if (progressTitle) progressTitle.textContent = _manualText('进度', 'Progress');
     const now = Date.now();
     if (!row.dataset.startedAt || stateName === 'running' && row.classList.contains('is-done')) {
         row.dataset.startedAt = String(now);
@@ -1506,9 +1540,10 @@ async function _runManualDoseJob(job) {
             `Manual AI dose updated: ${data.total_seeds} seeds, V100=${v100}, D90=${d90}.`,
         ));
         if (data.advice && data.advice.advice && trainingMonitorState.active) {
+            const localizedAdvice = data.localized_advice?.advice || data.advice.advice;
             addChat('system', _manualText(
-                '监测建议：' + data.advice.advice.slice(0, 2).join(' '),
-                'Monitor advice: ' + data.advice.advice.slice(0, 2).join(' '),
+                '监测建议：' + localizedAdvice.slice(0, 2).join(' '),
+                'Monitor advice: ' + localizedAdvice.slice(0, 2).join(' '),
             ));
         }
         if (requiresPostReplanArtifacts) {
@@ -1616,15 +1651,15 @@ async function _runManualDoseJob(job) {
             _setManualDoseProgress(
                 'error',
                 _manualText(
-                    `重新规划失败：${e.message}${zhDetails}`,
-                    `Replanning failed: ${e.message}${enDetails}`,
+                    `重新规划失败：${_manualErrorDetail(e)}${zhDetails}`,
+                    `Replanning failed: ${_manualErrorDetail(e)}${enDetails}`,
                 ),
             );
             addChat(
                 'error',
                 _manualText(
-                    `手动 AI 剂量计算失败：${e.message}${zhDetails}`,
-                    `Manual AI dose failed: ${e.message}${enDetails}`,
+                    `手动 AI 剂量计算失败：${_manualErrorDetail(e)}${zhDetails}`,
+                    `Manual AI dose failed: ${_manualErrorDetail(e)}${enDetails}`,
                 ),
             );
         }
@@ -1659,6 +1694,9 @@ async function recomputeManualDose(reason = 'manual_update', options = {}) {
     }
     const payload = _manualPayload(doseOptions);
     payload.reason = reason;
+    payload.language = typeof window.monitorConversationLanguage === 'function'
+        ? window.monitorConversationLanguage(_activeApiSessionId())
+        : (window._i18nLang || 'en');
     if (!payload.seeds.length) {
         addChat('error', _manualText('当前没有可用于重算的手动粒子，请先添加至少一颗粒子。', 'No manual seeds available. Add at least one seed before recomputing dose.'));
         return null;
@@ -1731,12 +1769,12 @@ function scheduleManualDoseRecompute(reason = 'manual_update', delayMs = 800) {
                 resolve(await recomputeManualDose(reason));
             } catch (error) {
                 _setManualDoseProgress('error', _manualText(
-                    `剂量更新失败：${error.message}`,
-                    `Dose update failed: ${error.message}`,
+                    `剂量更新失败：${_manualErrorDetail(error)}`,
+                    `Dose update failed: ${_manualErrorDetail(error)}`,
                 ));
                 addChat('error', _manualText(
-                    `剂量更新失败：${error.message}`,
-                    `Dose update failed: ${error.message}`,
+                    `剂量更新失败：${_manualErrorDetail(error)}`,
+                    `Dose update failed: ${_manualErrorDetail(error)}`,
                 ));
                 resolve(null);
             } finally {
@@ -1924,12 +1962,10 @@ async function onManualSeedEdited(seedId, position, rollbackSeeds = null, option
                 preserveGeometryOnFailure: safetyOverride,
             });
         } else {
-            const message = typeof window._t === 'function'
-                ? window._t(
-                    `已保存 ${seedId} 的位置，尚未重新计算剂量。`,
-                    `Saved ${seedId} position. Dose recalculation was not started.`,
-                )
-                : `Saved ${seedId} position. Dose recalculation was not started.`;
+            const message = _manualText(
+                `已保存 ${seedId} 的位置，尚未重新计算剂量。`,
+                `Saved ${seedId} position. Dose recalculation was not started.`,
+            );
             addChat('system', message);
             _setManualDoseProgress('done', message);
         }
@@ -1982,12 +2018,12 @@ async function onManualNeedleHandleEdited(handle, preEditSnapshot = null) {
             ));
         } catch (error) {
             _setManualDoseProgress('error', _manualText(
-                `保存 ${needleId} 失败：${error.message}`,
-                `Could not save ${needleId}: ${error.message}`,
+                `保存 ${needleId} 失败：${_manualErrorDetail(error)}`,
+                `Could not save ${needleId}: ${_manualErrorDetail(error)}`,
             ));
             addChat('error', _manualText(
-                `针道位置保存失败，已恢复上一次规划。${error.message}`,
-                `Needle position was not saved; the previous plan was restored. ${error.message}`,
+                `针道位置保存失败，已恢复上一次规划。${_manualErrorDetail(error)}`,
+                `Needle position was not saved; the previous plan was restored. ${_manualErrorDetail(error)}`,
             ));
         }
         return true;
@@ -2014,9 +2050,10 @@ async function onManualNeedleHandleEdited(handle, preEditSnapshot = null) {
                 points: needle.points,
                 dose_recomputed: false,
             });
-            const kept = typeof window._t === 'function'
-                ? window._t(`已保留 ${needleId} 的当前位置，未触发重新规划。`, `Needle ${needleId} position kept. Replanning skipped.`)
-                : `Needle ${needleId} position kept. Replanning skipped.`;
+            const kept = _manualText(
+                `已保留 ${needleId} 的当前位置，未触发重新规划。`,
+                `Needle ${needleId} position kept. Replanning skipped.`,
+            );
             addChat('system', kept);
             return false;
         }
@@ -2029,9 +2066,10 @@ async function onManualNeedleHandleEdited(handle, preEditSnapshot = null) {
         return true;
     })().catch(error => {
         if (manualPlanningState.needleReplanPrompt === prompt) manualPlanningState.needleReplanPrompt = null;
-        const failed = typeof window._t === 'function'
-            ? window._t(`针道重新规划失败：${error.message}`, `Needle replanning failed: ${error.message}`)
-            : `Needle replanning failed: ${error.message}`;
+        const failed = _manualText(
+            `针道重新规划失败：${_manualErrorDetail(error)}`,
+            `Needle replanning failed: ${_manualErrorDetail(error)}`,
+        );
         addChat('error', failed);
         return false;
     });
@@ -2157,8 +2195,8 @@ async function _refreshManualDoseViews(data, wasDoseTextureEnabled, options = {}
                 if (isRefreshOwner()) {
                     console.warn('[manual dose] background viewer refresh failed:', error);
                     addChat('error', _manualText(
-                        `鍓傞噺宸蹭繚瀛橈紝浣嗘煋鑹插櫒鍒锋柊澶辫触锛?{error.message}`,
-                        `Dose was saved, but the viewer refresh failed: ${error.message}`,
+                        `剂量已保存，但 Viewer 刷新失败：${_manualErrorDetail(error)}`,
+                        `Dose was saved, but the Viewer refresh failed: ${_manualErrorDetail(error)}`,
                     ));
                 }
                 return null;
@@ -2241,6 +2279,39 @@ function _monitorRequestHeaders() {
     return headers;
 }
 
+async function _readTrainingMonitorStatus(timeoutMs = 5000) {
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = setTimeout(() => controller?.abort(), timeoutMs);
+    try {
+        const response = await fetch(API + '/training/status', {
+            method: 'GET',
+            headers: _monitorRequestHeaders(),
+            signal: controller?.signal,
+            cache: 'no-store',
+        });
+        const status = await response.json().catch(() => null);
+        if (!response.ok || !status?.success) throw new Error(status?.error || `HTTP ${response.status}`);
+        return status;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+function _showRecoveredMonitorSummary(status, sessionId, runId, language, screenshotContext) {
+    const summary = status?.summary_message;
+    if (String(status?.monitor_run_id || '') !== String(runId || '')
+        || !summary?.content) return false;
+    addChat('bot-response', summary.content, true, Date.now(), false, sessionId, {
+        requestId: summary.request_id || `monitor-${runId}`,
+        messageId: summary.message_id || `assistant-monitor-${runId}-summary`,
+        messageKind: 'monitor_summary',
+        responseLanguage: language,
+        attachments: screenshotContext?.items || [],
+        layout: screenshotContext?.layout || 'auto',
+    });
+    return true;
+}
+
 // Close a case-owned monitor without creating a chat error. This is used by
 // Session transitions and pagehide, where the browser cannot wait for a final
 // advice report. The backend endpoint is idempotent, so an old run after a
@@ -2273,9 +2344,10 @@ function releaseTrainingMonitorForSession(sessionId, reason = 'session_switch', 
             keepalive: options.keepAlive !== false,
         }).then(async response => {
             const data = await response.json().catch(() => ({}));
-            return response.ok && data?.success !== false
+            return response.ok && data?.success !== false && !data?.run_mismatch && !data?.closing
                 ? data
-                : { success: false, error: data?.error || `HTTP ${response.status}` };
+                : { success: false, run_mismatch: !!data?.run_mismatch,
+                    closing: !!data?.closing, error: data?.error || `HTTP ${response.status}` };
         }).catch(error => ({ success: false, localOnly: true, error: error?.message || 'monitor close deferred' }));
     } catch (error) {
         return Promise.resolve({ success: false, localOnly: true, error: error?.message || 'monitor close deferred' });
@@ -2298,6 +2370,13 @@ if (!window.__brachybotMonitorPageLifecycleHook) {
 async function startTrainingMode(goal = 'Monitor planning workflow') {
     const startSessionId = _activeApiSessionId();
     if (['starting', 'active', 'stopping'].includes(trainingMonitorState.phase)) return null;
+    if (trainingMonitorState.phase === 'stop_error') {
+        addChat('error', _manualText(
+            '上一轮监测的结束尚未确认。请先点击“结束监测”重试，确认后再开始新一轮。',
+            'The previous monitor stop is unconfirmed. Retry Finish Monitor before starting a new run.',
+        ), true, Date.now(), false, startSessionId);
+        return null;
+    }
     if (typeof _inputButtonProgress === 'function') _inputButtonProgress('training_monitor_start', 'running', '\u6b63\u5728\u542f\u52a8\u76d1\u6d4b', 'Starting monitor mode');
     const runId = (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function')
         ? globalThis.crypto.randomUUID()
@@ -2351,11 +2430,31 @@ async function startTrainingMode(goal = 'Monitor planning workflow') {
             }),
         });
         const data = await res.json().catch(() => null);
-        if (!res.ok || !data || !data.success) throw new Error((data && data.error) || `HTTP ${res.status}`);
+        if (res.status === 409 && data?.monitor_run_id) {
+            // The server owns an existing case run. Do not discard its ID or
+            // pretend a new run started; offer an explicit Finish/retry path.
+            trainingMonitorState.runId = data.monitor_run_id;
+            trainingMonitorState.screenshotGalleryContext = null;
+            window.setTrainingMonitorPhase?.('stop_error');
+            if (typeof _inputButtonProgress === 'function') _inputButtonProgress(
+                'training_monitor_start', 'error', '监测模式', 'Monitor mode', data.error,
+            );
+            addChat('error', data.error || _manualText(
+                '该病例已有监测任务；请先结束它，再开始新一轮。',
+                'This case already has a monitor run. Finish it before starting another.',
+            ), true, Date.now(), false, startSessionId);
+            return null;
+        }
+        if (!res.ok || !data || !data.success) {
+            const error = new Error((data && data.error) || `HTTP ${res.status}`);
+            error.httpStatus = res.status;
+            throw error;
+        }
         // A monitor belongs to its case. A late start response must not turn
         // on the global monitor presentation for whichever case is now open.
         if (trainingMonitorState.runId !== runId
             || trainingMonitorState.sessionId !== startSessionId
+            || trainingMonitorState.phase !== 'starting'
             || _activeApiSessionId() !== startSessionId) {
             void releaseTrainingMonitorForSession(startSessionId, 'late_start_after_session_leave', {
                 runId,
@@ -2392,6 +2491,38 @@ async function startTrainingMode(goal = 'Monitor planning workflow') {
         if (typeof _inputButtonProgress === 'function') _inputButtonProgress('training_monitor_start', 'done', '\u76d1\u6d4b\u6a21\u5f0f', 'Monitor mode', _manualText('\u5df2\u542f动', 'Started'));
         return data;
     } catch (e) {
+        const definiteReject = [400, 401, 403, 404, 422, 429].includes(Number(e?.httpStatus));
+        if (!definiteReject && trainingMonitorState.sessionId === startSessionId
+            && trainingMonitorState.runId === runId
+            && _activeApiSessionId() === startSessionId) {
+            let status = null;
+            try { status = await _readTrainingMonitorStatus(); } catch (_) {}
+            if (status?.active && status.monitor_run_id === runId) {
+                window.setTrainingMonitorPhase?.('active');
+                if (typeof _inputButtonProgress === 'function') _inputButtonProgress(
+                    'training_monitor_start', 'done', '监测模式', 'Monitor mode',
+                    _manualText('已启动', 'Started'),
+                );
+                addChat('bot-response', language === 'zh'
+                    ? '监测已在服务器启动，连接已恢复。'
+                    : 'Monitoring started on the server; the connection has recovered.',
+                true, Date.now(), false, startSessionId);
+                return status;
+            }
+            if (!status || status.active || status.closing) {
+                trainingMonitorState.runId = status?.monitor_run_id || runId;
+                window.setTrainingMonitorPhase?.('stop_error');
+                if (typeof _inputButtonProgress === 'function') _inputButtonProgress(
+                    'training_monitor_start', 'error', '监测模式', 'Monitor mode',
+                    _manualText('启动未确认', 'Start unconfirmed'),
+                );
+                addChat('error', language === 'zh'
+                    ? '监测启动状态尚未确认。为避免重复启动，请先点击“结束监测”核实或重试。'
+                    : 'Monitor start is unconfirmed. Use Finish Monitor to reconcile before starting another run.',
+                true, Date.now(), false, startSessionId);
+                return null;
+            }
+        }
         if (trainingMonitorState.sessionId === startSessionId
             && trainingMonitorState.runId === runId
             && _activeApiSessionId() === startSessionId) {
@@ -2408,20 +2539,44 @@ async function startTrainingMode(goal = 'Monitor planning workflow') {
             trainingMonitorState.runId = null;
             trainingMonitorState.screenshotGalleryContext = null;
         }
-        if (typeof _inputButtonProgress === 'function') _inputButtonProgress('training_monitor_start', 'error', '\u76d1\u6d4b\u6a21\u5f0f', 'Monitor mode', e.message || _manualText('\u542f动失败', 'Failed to start'));
+        const errorDetail = _manualErrorDetail(e, language);
+        if (typeof _inputButtonProgress === 'function') _inputButtonProgress('training_monitor_start', 'error', '\u76d1\u6d4b\u6a21\u5f0f', 'Monitor mode', errorDetail || _manualText('\u542f动失败', 'Failed to start'));
         const failed = language === 'zh'
-            ? `监测模式启动失败：${e.message}`
-            : `Monitor mode failed to start: ${e.message}`;
+            ? `监测模式启动失败：${errorDetail}`
+            : `Monitor mode failed to start: ${errorDetail}`;
         addChat('error', failed, true, Date.now(), false, startSessionId);
         return null;
     }
 }
 
 async function stopTrainingMode() {
-    if (!['starting', 'active'].includes(trainingMonitorState.phase)) return null;
-    const stopSessionId = trainingMonitorState.sessionId || _activeApiSessionId();
-    const stopRunId = trainingMonitorState.runId;
+    if (trainingMonitorState.phase === 'stopping') return null;
+    const stopSessionId = ['starting', 'active', 'stop_error'].includes(trainingMonitorState.phase)
+        ? (trainingMonitorState.sessionId || _activeApiSessionId())
+        : _activeApiSessionId();
     if (stopSessionId !== _activeApiSessionId()) return null;
+    if (!trainingMonitorState.runId || trainingMonitorState.phase === 'inactive') {
+        // A failed stop or restored browser may have lost its local run ID.
+        // An explicit Finish command must consult the case-owned server lease.
+        try {
+            const status = await _readTrainingMonitorStatus();
+            if (!status.active && !status.closing) {
+                clearTrainingMonitorLocal(stopSessionId);
+                addChat('bot-response', _manualText('当前没有正在运行的监测任务。', 'No monitor run is active for this case.'),
+                    true, Date.now(), false, stopSessionId);
+                return status;
+            }
+            trainingMonitorState.runId = status.monitor_run_id;
+            trainingMonitorState.sessionId = stopSessionId;
+            window.setTrainingMonitorPhase?.('stop_error');
+        } catch (error) {
+            addChat('error', _manualText('暂时无法核实监测状态，请重试“结束监测”。',
+                'Monitor status could not be verified. Retry Finish Monitor.'),
+                true, Date.now(), false, stopSessionId);
+            return { success: false, error: error?.message || 'status unavailable' };
+        }
+    }
+    const stopRunId = trainingMonitorState.runId;
     if (typeof _inputButtonProgress === 'function') _inputButtonProgress('training_monitor_stop', 'running', '\u6b63\u5728\u7ed3束\u76d1\u6d4b', 'Stopping monitor mode');
     const language = trainingMonitorState.language
         || (typeof window.monitorConversationLanguage === 'function'
@@ -2456,9 +2611,35 @@ async function stopTrainingMode() {
         const serverError = String(data?.error || '').toLowerCase();
         const reportsClosedRun = /no longer active|not active|already stopped|already closed|run not found/.test(serverError);
         const alreadyClosed = !!(data && (
-            data.already_stopped || data.no_active_run || data.run_mismatch || reportsClosedRun
+            data.already_stopped || data.no_active_run || reportsClosedRun
         ))
             && (res.ok || res.status === 404 || res.status === 409);
+        if (data?.run_mismatch && data.no_active_run === false) {
+            if (trainingMonitorState.sessionId === stopSessionId) {
+                trainingMonitorState.runId = data.active_monitor_run_id || stopRunId;
+                window.setTrainingMonitorPhase?.('stop_error');
+            }
+            if (typeof _inputButtonProgress === 'function') _inputButtonProgress(
+                'training_monitor_stop', 'error', '结束监测', 'Stop monitor mode',
+                _manualText('任务已更换，请重试', 'Run changed; retry'),
+            );
+            addChat('error', _manualText(
+                '监测任务已在另一处更换；未结束当前任务。请再次点击“结束监测”确认。',
+                'The monitor run changed elsewhere. The current run was not stopped; retry Finish Monitor.',
+            ), true, Date.now(), false, stopSessionId);
+            return { success: false, run_mismatch: true };
+        }
+        if (data?.closing) {
+            window.setTrainingMonitorPhase?.('stop_error');
+            if (typeof _inputButtonProgress === 'function') _inputButtonProgress(
+                'training_monitor_stop', 'error', '结束监测', 'Stop monitor mode',
+                _manualText('正在生成总结，请重试', 'Summary pending; retry'),
+            );
+            addChat('bot-response', _manualText('监测正在生成结束总结，请稍后重试。',
+                'The monitor is still preparing its final summary. Retry shortly.'),
+                true, Date.now(), false, stopSessionId);
+            return { success: false, closing: true };
+        }
         if ((!res.ok && !alreadyClosed) || !data || (!data.success && !alreadyClosed)) {
             throw new Error((data && data.error) || `HTTP ${res.status}`);
         }
@@ -2467,6 +2648,7 @@ async function stopTrainingMode() {
         const screenshotContext = trainingMonitorState.screenshotGalleryContext;
         if (ownsRun) clearTrainingMonitorLocal(stopSessionId, stopRunId);
         if (alreadyClosed) {
+            _showRecoveredMonitorSummary(data, stopSessionId, stopRunId, language, screenshotContext);
             if (typeof _inputButtonProgress === 'function') _inputButtonProgress('training_monitor_stop', 'done', '\u7ed3束\u76d1测', 'Stop monitor mode', _manualText('\u5df2\u5b8c\u6210', 'Completed'));
             return data;
         }
@@ -2499,34 +2681,41 @@ async function stopTrainingMode() {
         if (typeof _inputButtonProgress === 'function') _inputButtonProgress('training_monitor_stop', 'done', '\u7ed3束\u76d1测', 'Stop monitor mode', _manualText('\u5df2\u5b8c\u6210', 'Completed'));
         return data;
     } catch (e) {
-        if (typeof _inputButtonProgress === 'function') _inputButtonProgress('training_monitor_stop', 'error', '\u7ed3\u675f\u76d1\u6d4b', 'Stop monitor mode', e.message || _manualText('\u7ed3束失败', 'Failed to stop'));
-        // The stop request was not acknowledged. Close the local run so a
-        // transport failure cannot leave a permanent monitor spinner.
+        const errorDetail = _manualErrorDetail(e, language);
+        if (typeof _inputButtonProgress === 'function') _inputButtonProgress('training_monitor_stop', 'error', '\u7ed3\u675f\u76d1\u6d4b', 'Stop monitor mode', errorDetail || _manualText('\u7ed3束失败', 'Failed to stop'));
+        // An aborted response does not prove that the server discarded the
+        // stop. Reconcile against the case lease before changing local state.
+        let status = null;
+        try { status = await _readTrainingMonitorStatus(); } catch (_) {}
         const ownsRun = trainingMonitorState.runId === stopRunId
             && trainingMonitorState.sessionId === stopSessionId
             && _activeApiSessionId() === stopSessionId;
+        if (ownsRun && status && !status.active && !status.closing
+            && (!status.monitor_run_id || status.monitor_run_id === stopRunId)) {
+            const screenshotContext = trainingMonitorState.screenshotGalleryContext;
+            clearTrainingMonitorLocal(stopSessionId, stopRunId);
+            _showRecoveredMonitorSummary(status, stopSessionId, stopRunId, language, screenshotContext);
+            if (typeof _inputButtonProgress === 'function') _inputButtonProgress(
+                'training_monitor_stop', 'done', '结束监测', 'Stop monitor mode',
+                _manualText('已确认结束', 'Stop confirmed'),
+            );
+            return { success: true, recovered: true };
+        }
         if (ownsRun) {
             if (typeof window.setTrainingMonitorPhase === 'function') {
-                window.setTrainingMonitorPhase('inactive');
+                window.setTrainingMonitorPhase('stop_error');
             } else {
                 trainingMonitorState.active = false;
-                window.setMonitorPresentation?.('inactive');
+                trainingMonitorState.phase = 'stop_error';
+                window.setMonitorPresentation?.('stop_error');
             }
-            trainingMonitorState.runId = null;
-            trainingMonitorState.screenshotGalleryContext = null;
-            trainingMonitorState.lastFeedbackAt = 0;
-            trainingMonitorState.lastScreenshotAt = 0;
             if (typeof _clearMonitorFeedbackTimer === 'function') _clearMonitorFeedbackTimer();
             trainingMonitorState.pendingFeedback = [];
         }
         const timedOut = e?.name === 'AbortError';
         const failed = language === 'zh'
-            ? (timedOut
-                ? '监测已在本地结束，但服务器总结请求超时；本轮记录将在下次同步时恢复。'
-                : `监测结束请求未确认，已退出本地监测状态：${e.message}`)
-            : (timedOut
-                ? 'Monitoring ended locally, but the server summary request timed out; the run will be reconciled on the next sync.'
-                : `Monitoring ended locally, but the server did not acknowledge the stop request: ${e.message}`);
+            ? `监测结束尚未得到服务器确认（${errorDetail}）。保留本轮任务，可点击“结束监测”重试；不会误启动新一轮。`
+            : `Monitor stop is not confirmed (${errorDetail}). The run is retained; retry Finish Monitor before starting another.`;
         addChat('error', failed, true, Date.now(), false, stopSessionId, {
             requestId: `monitor-${stopRunId}`,
             messageId: `assistant-monitor-${stopRunId}-stop-error`,
@@ -2612,10 +2801,11 @@ async function requestPlanningAdvice(options = {}) {
         if (typeof _inputButtonProgress === 'function') _inputButtonProgress('planning_advice', 'done', '\u89c4\u5212建议', 'Planning advice', _manualText('\u5df2\u5b8c\u6210', 'Completed'));
         return data;
     } catch (e) {
-        if (typeof _inputButtonProgress === 'function') _inputButtonProgress('planning_advice', 'error', '\u89c4\u5212建议', 'Planning advice', e.message || _manualText('\u751f\u6210失败', 'Failed'));
+        const errorDetail = _manualErrorDetail(e);
+        if (typeof _inputButtonProgress === 'function') _inputButtonProgress('planning_advice', 'error', '\u89c4\u5212建议', 'Planning advice', errorDetail || _manualText('\u751f\u6210失败', 'Failed'));
         const failed = typeof window._t === 'function'
-            ? window._t(`详细建议获取失败：${e.message}`, `Detailed advice failed: ${e.message}`)
-            : `Detailed advice failed: ${e.message}`;
+            ? _manualText(`详细建议获取失败：${errorDetail}`, `Detailed advice failed: ${errorDetail}`)
+            : `详细建议获取失败：${errorDetail}`;
         addChat('error', failed);
         return null;
     }
@@ -2675,10 +2865,11 @@ async function checkSystemReadiness() {
         if (typeof _inputButtonProgress === 'function') _inputButtonProgress('system_readiness', 'done', '\u7cfb\u7edf\u5c31\u7eea\u68c0\u67e5', 'System readiness check', _manualText('\u5df2\u5b8c\u6210', 'Completed'));
         return data;
     } catch (e) {
-        if (typeof _inputButtonProgress === 'function') _inputButtonProgress('system_readiness', 'error', '\u7cfb\u7edf\u5c31绪\u68c0查', 'System readiness check', e.message || _manualText('\u68c0查失败', 'Failed'));
+        const errorDetail = _manualErrorDetail(e);
+        if (typeof _inputButtonProgress === 'function') _inputButtonProgress('system_readiness', 'error', '\u7cfb\u7edf\u5c31绪\u68c0查', 'System readiness check', errorDetail || _manualText('\u68c0查失败', 'Failed'));
         const failed = typeof window._t === 'function'
-            ? window._t(`系统就绪检查失败：${e.message}`, `System readiness check failed: ${e.message}`)
-            : `System readiness check failed: ${e.message}`;
+            ? _manualText(`系统就绪检查失败：${errorDetail}`, `System readiness check failed: ${errorDetail}`)
+            : `系统就绪检查失败：${errorDetail}`;
         addChat('error', failed);
         return null;
     }
@@ -3306,7 +3497,10 @@ function init3DScene() {
         dragPlane.setFromNormalAndCoplanarPoint(cameraDir, pendingSeed.position);
         const intersection = new THREE.Vector3();
         if (raycaster.ray.intersectPlane(dragPlane, intersection)) dragOffset.copy(pendingSeed.position).sub(intersection);
-        addChat('system', `Selected seed ${pendingSeed.userData.id} | Trajectory ${pendingSeed.userData.trajectoryId}`);
+        addChat('system', _manualText(
+            `已选择粒子 ${pendingSeed.userData.id} | 针道 ${pendingSeed.userData.trajectoryId}`,
+            `Selected seed ${pendingSeed.userData.id} | Trajectory ${pendingSeed.userData.trajectoryId}`,
+        ));
         requestRender(2);
     };
 
@@ -3319,7 +3513,10 @@ function init3DScene() {
         dragPlane.setFromNormalAndCoplanarPoint(cameraDir, pendingNeedleHandle.position);
         const intersection = new THREE.Vector3();
         if (raycaster.ray.intersectPlane(dragPlane, intersection)) dragOffset.copy(pendingNeedleHandle.position).sub(intersection);
-        addChat('system', `Selected needle endpoint ${pendingNeedleHandle.userData.pointIndex + 1} | ${pendingNeedleHandle.userData.needleId}`);
+        addChat('system', _manualText(
+            `已选择针道端点 ${pendingNeedleHandle.userData.pointIndex + 1} | ${pendingNeedleHandle.userData.needleId}`,
+            `Selected needle endpoint ${pendingNeedleHandle.userData.pointIndex + 1} | ${pendingNeedleHandle.userData.needleId}`,
+        ));
         requestRender(2);
     };
 
@@ -3548,7 +3745,12 @@ function init3DScene() {
                     : obj.userData.type === 'needle_handle'
                         ? `Needle endpoint ${obj.userData.pointIndex + 1} | ${obj.userData.needleId}`
                         : `Needle ${obj.userData.id} | Trajectory ${obj.userData.trajectoryId}`;
-                addChat('system', `Selected: ${info}`);
+                const infoZh = obj.userData.type === 'seed'
+                    ? `粒子 ${obj.userData.id} | 针道 ${obj.userData.trajectoryId}`
+                    : obj.userData.type === 'needle_handle'
+                        ? `针道端点 ${obj.userData.pointIndex + 1} | ${obj.userData.needleId}`
+                        : `针道 ${obj.userData.id} | 针道 ${obj.userData.trajectoryId}`;
+                addChat('system', _manualText(`已选择：${infoZh}`, `Selected: ${info}`));
             }
         } else {
             // Deselect
@@ -3770,9 +3972,10 @@ function init3DScene() {
                             addChat('error', message);
                             return;
                         }
-                        const message = typeof window._t === 'function'
-                            ? window._t(`\u7C92\u5B50\u79FB\u52A8\u5931\u8D25\uFF1A${error.message}`, `Seed move failed: ${error.message}`)
-                            : `Seed move failed: ${error.message}`;
+                        const message = _manualText(
+                            `粒子移动失败：${_manualErrorDetail(error)}`,
+                            `Seed move failed: ${_manualErrorDetail(error)}`,
+                        );
                         addChat('error', message);
                     }
                 }
@@ -10098,8 +10301,8 @@ async function deleteSeed3D(seedId) {
         return true;
     } catch (error) {
         const message = typeof window._t === 'function'
-            ? window._t(`删除粒子失败：${error.message}`, `Seed deletion failed: ${error.message}`)
-            : `Seed deletion failed: ${error.message}`;
+            ? _manualText(`删除粒子失败：${_manualErrorDetail(error)}`, `Seed deletion failed: ${_manualErrorDetail(error)}`)
+            : `Seed deletion failed: ${_manualErrorDetail(error)}`;
         addChat('error', message);
         return false;
     }
@@ -10167,12 +10370,12 @@ async function deleteNeedle3D(needleId) {
             _restoreManualPlanningSnapshot(rollback);
         }
         _setManualDoseProgress('error', _manualText(
-            `删除针道失败：${error.message}`,
-            `Needle deletion failed: ${error.message}`,
+            `删除针道失败：${_manualErrorDetail(error)}`,
+            `Needle deletion failed: ${_manualErrorDetail(error)}`,
         ));
         addChat('error', _manualText(
-            `删除针道失败，已恢复到上一次已保存的规划。${error.message}`,
-            `Needle deletion failed; the last saved plan was restored. ${error.message}`,
+            `删除针道失败，已恢复到上一次已保存的规划。${_manualErrorDetail(error)}`,
+            `Needle deletion failed; the last saved plan was restored. ${_manualErrorDetail(error)}`,
         ));
         return false;
     } finally {
@@ -10259,7 +10462,7 @@ function setNeedleOpacityFrom3D(needleId, opacity) {
 
 async function restoreNeedleToAlgorithm(needleId) {
     const restoreSessionId = String(_activeApiSessionId() || '');
-    const localize = (zh, en) => typeof window._t === 'function' ? window._t(zh, en) : en;
+    const localize = (zh, en) => _manualText(zh, en);
     _setManualDoseProgress('running', localize(`正在将 ${needleId} 恢复到算法规划位置…`, `Restoring ${needleId} to the algorithm plan...`));
     addChat('system', localize(`正在将 ${needleId} 及其粒子恢复到算法规划结果…`, `Restoring ${needleId} and its seeds to the algorithm plan...`));
     try {
@@ -10299,7 +10502,7 @@ async function restoreNeedleToAlgorithm(needleId) {
         return data;
     } catch (error) {
         if (restoreSessionId !== String(_activeApiSessionId() || '')) return null;
-        const message = localize(`针道恢复失败：${error.message}`, `Needle restore failed: ${error.message}`);
+        const message = localize(`针道恢复失败：${_manualErrorDetail(error)}`, `Needle restore failed: ${_manualErrorDetail(error)}`);
         _setManualDoseProgress('error', message);
         addChat('error', message);
         return null;
@@ -10311,7 +10514,7 @@ async function restoreNeedleToAlgorithm(needleId) {
 // the existing commit path and dose recompute is offered, matching the
 // needle-endpoint restore semantics without a new slow backend round-trip.
 async function restoreAlgorithmPlan() {
-    const localize = (zh, en) => typeof window._t === 'function' ? window._t(zh, en) : en;
+    const localize = (zh, en) => _manualText(zh, en);
     const restoreSessionId = String(_activeApiSessionId() || '');
     const message = localize(
         '正在恢复原始算法规划及其剂量、DVH、导板和报告结果…',
@@ -10365,8 +10568,8 @@ async function restoreAlgorithmPlan() {
     } catch (error) {
         if (restoreSessionId !== String(_activeApiSessionId() || '')) return null;
         const failure = localize(
-            `恢复原始算法规划失败：${error.message}`,
-            `Algorithm planning restore failed: ${error.message}`,
+            `恢复原始算法规划失败：${_manualErrorDetail(error)}`,
+            `Algorithm planning restore failed: ${_manualErrorDetail(error)}`,
         );
         _setManualDoseProgress('error', failure);
         addChat('error', failure);
@@ -10377,7 +10580,7 @@ async function restoreAlgorithmPlan() {
 // Kept as a private compatibility shim for stale inline handlers. New UI
 // actions restore the complete Planning, never one seed plus a recomputation.
 async function _legacyRestoreSeedToOriginalPosition(seedId) {
-    const localize = (zh, en) => typeof window._t === 'function' ? window._t(zh, en) : en;
+    const localize = (zh, en) => _manualText(zh, en);
     const seed = dataTreeState.planning.seeds.find(item => item.id === seedId);
     const original = seed?._originalPosition;
     if (!seed || !original) {
@@ -10401,7 +10604,7 @@ async function _legacyRestoreSeedToOriginalPosition(seedId) {
         }
         return doseResult;
     } catch (error) {
-        const message = localize(`粒子恢复失败：${error.message}`, `Seed restore failed: ${error.message}`);
+        const message = localize(`粒子恢复失败：${_manualErrorDetail(error)}`, `Seed restore failed: ${_manualErrorDetail(error)}`);
         addChat('error', message);
         return null;
     }
