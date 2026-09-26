@@ -460,6 +460,10 @@
             </div>
         </div>
 
+        <details id="monitorDashboard" hidden open aria-label="Monitor workspace">
+            <summary>Monitor</summary>
+            <div class="monitor-dashboard-body"></div>
+        </details>
         <div class="chat-messages" id="chatMessages">
             <div class="chat-msg system"
                  data-i18n-zh="欢迎使用 BrachyBot。请描述你的近距离治疗病例——肿瘤位置、类型、患者情况——我会帮助你生成治疗计划。也可以直接在右侧的输入面板加载 CT 数据。"
@@ -1594,18 +1598,22 @@
 -->
 <script src="static/js/brachybot-chat-core.js?v=38"></script>
 <script src="static/js/brachybot-chat-todo.js?v=72"></script>
-<script src="static/js/brachybot-ui-api.js?v=117"></script>
+<script src="static/js/brachybot-ui-api.js?v=120"></script>
+<link rel="stylesheet" href="static/css/brachybot-monitor-dashboard.css?v=1">
+<script src="static/js/brachybot-monitor-interaction.js?v=2"></script>
+<script src="static/js/brachybot-monitor-dashboard.js?v=1"></script>
 <script src="static/js/brachybot-auth.js?v=10"></script>
-<script src="static/js/brachybot-viewer-volume.js?v=79"></script>
+<script src="static/js/brachybot-viewer-volume.js?v=82"></script>
 <script src="static/js/brachybot-viewer-layout.js?v=46"></script>
 <script src="static/js/brachybot-depth-peeling.js?v=2"></script>
-<script src="static/js/brachybot-3d-manual.js?v=109"></script>
-<script src="static/js/brachybot-manual-annotation.js?v=26"></script>
+<script src="static/js/brachybot-3d-manual.js?v=114"></script>
+<script src="static/js/brachybot-manual-step-results.js?v=2"></script>
+<script src="static/js/brachybot-manual-annotation.js?v=29"></script>
 <script src="static/js/brachybot-surgical-guide.js?v=21"></script>
 <script src="static/js/brachybot-visual-annotation.js?v=8"></script>
-<script src="static/js/brachybot-dvh-planning.js?v=41"></script>
+<script src="static/js/brachybot-dvh-planning.js?v=42"></script>
 <script src="static/js/brachybot-report-shell.js?v=34"></script>
-<script src="static/js/brachybot-report-editor.js?v=53"></script>
+<script src="static/js/brachybot-report-editor.js?v=55"></script>
 <script src="static/js/brachybot-workspace.js?v=70"></script>
 <script src="static/js/brachybot-session-cache.js?v=2"></script>
 <script src="static/js/brachybot-report-export.js?v=43"></script>

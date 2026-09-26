@@ -193,6 +193,78 @@ def test_keep_preserves_geometry_and_consumes_only_its_decision(live_monitor):
     assert post('training/restore_edit', {'token': token, 'decision': 'restore'}).status_code == 409
 
 
+def test_commit_delivers_coaching_without_telemetry_round_trip(live_monitor):
+    agent, geometry, post, sid = live_monitor
+    result = commit_move(agent, geometry, post)
+    checkpoint = result['monitor_checkpoint']
+    assert checkpoint['monitor_run_id'] == 'run'
+    assert checkpoint['interaction']['language'] == 'zh'
+    assert checkpoint['interaction']['priority'] == 'attention'
+    assert '新增' in checkpoint['interaction']['headline']
+    assert not checkpoint['interaction']['dose_current']
+    assert checkpoint['interaction']['metric_rows'] == []
+    assert checkpoint['interaction']['checkpoint_id'] == result['monitor_edit']['geometry_event_id']
+    assert checkpoint['event']['detail']['edit_evidence']['restore_token']
+    assert checkpoint['suggested_screenshot']['checkpoint_id'] == result['event']['event_id']
+
+
+def test_keep_and_restore_never_deliver_a_consumed_undo_button(live_monitor):
+    agent, geometry, post, sid = live_monitor
+    result = commit_move(agent, geometry, post)
+    kept = post('training/restore_edit', {'token': result['monitor_edit']['restore_token'], 'decision': 'keep'}).get_json()
+    assert 'restore_token' not in kept['evidence']
+    assert kept['evidence']['decision'] == 'kept'
+
+
+def test_restore_checkpoint_consumes_nested_inverse(live_monitor):
+    agent, geometry, post, sid = live_monitor
+    result = commit_move(agent, geometry, post)
+    restored = post('training/restore_edit', {'token': result['monitor_edit']['restore_token'], 'decision': 'restore'}).get_json()
+    assert 'restore_token' not in restored['monitor_edit']
+    checkpoint = restored['monitor_checkpoint']
+    assert 'restore_token' not in checkpoint['event']['detail']['edit_evidence']
+
+
+def test_decision_is_retryable_while_dose_holds_transaction(live_monitor):
+    import threading
+    agent, geometry, post, sid = live_monitor
+    result = commit_move(agent, geometry, post)
+    token = result['monitor_edit']['restore_token']
+    entered, release = threading.Event(), threading.Event()
+    def dose_worker():
+        with routes._manual_dose_transaction_lock(sid):
+            entered.set()
+            release.wait(5)
+    worker = threading.Thread(target=dose_worker)
+    worker.start()
+    try:
+        assert entered.wait(2)
+        response = post('training/restore_edit', {'token': token, 'decision': 'keep'})
+        assert response.status_code == 409
+        assert response.get_json()['code'] == 'monitor_plan_busy'
+        assert support._ui_bucket(sid)['training']['pending_restore']['token'] == token
+    finally:
+        release.set()
+        worker.join(2)
+    assert post('training/restore_edit', {'token': token, 'decision': 'keep'}).status_code == 200
+
+
+def test_card_discloses_dose_tradeoffs_without_inventing_optimal_direction():
+    from web.monitor_changes import interaction
+    agent, geometry = setup()
+    before = capture(agent, geometry)
+    agent.memory.store('dose_metrics', {'v100': .91, 'd90': 122,
+        'v200': .31, 'plan_score': 82, 'volume_metric_units': 'fraction'})
+    evidence = compare(before, capture(agent, geometry))
+    evidence['dose']['edit_count'] = 3
+    card = interaction(evidence, 'zh')
+    assert '3 次编辑' in card['dose_note']
+    assert '覆盖率增加' in card['next_step']
+    assert '临床通过' in card['next_step']
+    assert len(card['metric_rows']) == 3
+    assert 'optimum' not in card
+
+
 def test_geometry_signature_ignores_json_numeric_spelling():
     agent, geometry = setup()
     normalized = copy.deepcopy(geometry)

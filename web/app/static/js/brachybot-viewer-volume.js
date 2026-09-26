@@ -54,6 +54,7 @@ function switchPanel(name, el) {
         } catch (_) { /* best-effort */ }
     }
     if (name === 'viewers' && state.ctLoaded) {
+        window.syncManualStepPresentationVisibility?.();
         loadAllSlices();
         // Delayed re-render to fix black screen when container size changes
         setTimeout(() => loadAllSlices(), 100);
@@ -61,7 +62,9 @@ function switchPanel(name, el) {
         // becomes visible. The canvas was 0x0 while the panel was
         // hidden (display:none), so the renderer had nothing to draw
         // into. Now that the panel is visible, re-size and fit camera.
-        if (Object.keys(scene3D.meshes).length > 0) {
+        const hasPlanningPreview = (scene3D.scene?.children || []).some(object =>
+            object.visible !== false && ['planning_preview', 'manual_step_result'].includes(object.userData?.renderRole));
+        if (Object.keys(scene3D.meshes).length > 0 || hasPlanningPreview) {
             setTimeout(() => forceRender3DViewer(), 50);
         }
     }
@@ -188,6 +191,7 @@ function _dataTreeParentNode(node) {
 
 function _dataTreeNodeScopeVisible(node, view = null) {
     if (!node || typeof node !== 'object') return false;
+    if (window.manualStepNodeVisible?.(node) === false) return false;
     const viewKey = view === '2d' ? 'visible2D'
         : view === '3d' ? 'visible3D' : null;
     const visited = new Set();
@@ -5134,6 +5138,8 @@ function renderDataTree() {
     // parent look enabled and leaves the operator no reliable way to reveal
     // the dose layers again.
     const planningMasterVisible = _planningMasterVisible();
+    const manualSeedsVisible = window.manualStepNodeVisible?.({id: 'seeds'}) !== false;
+    const manualDoseVisible = window.manualStepNodeVisible?.({id: 'dose'}) !== false;
     const planningVis = planningMasterVisible
         && (planningEntries.length === 0 || planningEntries.some(item => item.visible !== false));
     const planningOp = planningEntries.length
@@ -5268,11 +5274,42 @@ function renderDataTree() {
             <div class="tree-group-items">`;
     }
 
+    // Every completed stage retains a read-only result node. A single eye
+    // owns the init paths + close points together; later stages control their
+    // canonical product family without rewriting individual preferences.
+    for (const manualStage of window.manualStepPresentations?.() || []) {
+        const label = _dtText(...manualStage.labels);
+        const count = manualStage.step === 'trajectory_init'
+            ? _dtText(
+                `${manualStage.shownTrajectories}/${manualStage.trajectoryCount} 条轨迹 · ${manualStage.closePointCount} 个 Close Points`,
+                `${manualStage.shownTrajectories}/${manualStage.trajectoryCount} paths · ${manualStage.closePointCount} close points`,
+            )
+            : manualStage.step === 'trajectory_refine'
+                ? _dtText(`${manualStage.shownTrajectories}/${manualStage.trajectoryCount} 条轨迹`,
+                    `${manualStage.shownTrajectories}/${manualStage.trajectoryCount} paths`)
+                : manualStage.step === 'seed_planning'
+                    ? _dtText(`${manualStage.seedCount} 枚粒子`, `${manualStage.seedCount} seeds`)
+                    : manualStage.step === 'dose_calc'
+                        ? manualStage.hasDose
+                            ? _dtText('剂量图层', 'Dose layer')
+                            : _dtText('剂量图层尚未载入', 'Dose layer not loaded')
+                        : manualStage.hasDvh
+                            ? _dtText('DVH / 指标', 'DVH / metrics')
+                            : _dtText('DVH 尚未载入', 'DVH not loaded');
+        html += `<div class="tree-item manual-step-result" data-node-id="manual_step:${escHtml(manualStage.step)}"
+            data-node-type="manual_step_preview" data-source="manual_step" data-live-node="false"
+            data-visual-target="false" title="${escHtml(_dtText('手动步骤结果（只读；可重新显示）', 'Manual-step result (read-only; can be shown again)'))}">
+            <button class="eye-btn ${manualStage.visible && planningMasterVisible ? '' : 'hidden'}" onclick="event.stopPropagation();toggleManualStepPresentation('${manualStage.step}')" aria-label="Toggle manual step result">&#128065;</button>
+            <span class="item-label">${escHtml(label)}</span>
+            <span class="item-info">${escHtml(count)}</span>
+        </div>`;
+    }
+
     // Trajectories group (parent of seeds) — only shown when the
     // server returned the new "trajectories" array. Without it, fall
     // back to the flat seeds list below.
     if (planningTrajectories.length > 0) {
-        const trajVis = planningMasterVisible && planningTrajectories.some(t => t.visible);
+        const trajVis = planningMasterVisible && manualSeedsVisible && planningTrajectories.some(t => t.visible);
         const trajOp = planningTrajectories[0]?.opacity ?? 0.8;
         html += `<div class="tree-group" data-group="planning_trajectories">
         <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('planning_trajectories', event)">
@@ -5293,7 +5330,7 @@ function renderDataTree() {
             html += `<div class="tree-group" data-group="${trajId}">
             <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('${trajId}', event)" style="padding-left:1.2rem;">
                     <span class="arrow">&#9660;</span>
-                    <button class="eye-btn ${planningMasterVisible && traj.visible !== false ? '' : 'hidden'}" onclick="event.stopPropagation();toggleDataVisibility('${trajId}')">&#128065;</button>
+                    <button class="eye-btn ${planningMasterVisible && manualSeedsVisible && traj.visible !== false ? '' : 'hidden'}" onclick="event.stopPropagation();toggleDataVisibility('${trajId}')">&#128065;</button>
                     <span style="color:#88ccff;">➤</span>
                     <span>${escHtml(trajLabel)}${childHeader}</span>
                 </div>
@@ -5308,7 +5345,7 @@ function renderDataTree() {
         html += `</div></div>`; // close trajectories group
     } else if (planningSeeds.length > 0) {
         // Fallback: flat seeds list (server didn't return trajectories)
-        const seedsVis = planningMasterVisible && planningSeeds.some(s => s.visible !== false);
+        const seedsVis = planningMasterVisible && manualSeedsVisible && planningSeeds.some(s => s.visible !== false);
         const seedsOp = planningSeeds[0]?.opacity ?? 1.0;
         html += `<div class="tree-group" data-group="planning_seeds">
         <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('planning_seeds', event)">
@@ -5329,7 +5366,7 @@ function renderDataTree() {
 
     // Needles group
     if (planningNeedles.length > 0) {
-        const needlesVis = planningMasterVisible && planningNeedles.some(n => n.visible !== false);
+        const needlesVis = planningMasterVisible && manualSeedsVisible && planningNeedles.some(n => n.visible !== false);
         const needlesOp = planningNeedles[0]?.opacity ?? 0.8;
         html += `<div class="tree-group" data-group="planning_needles">
         <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('planning_needles', event)">
@@ -5350,7 +5387,7 @@ function renderDataTree() {
 
     // Dose isosurfaces group
     if (doseLevels.length > 0) {
-        const doseVis = planningMasterVisible && doseLevels.some(
+        const doseVis = planningMasterVisible && manualDoseVisible && doseLevels.some(
             d => d.loaded === true && d.visible !== false,
         );
         const doseOp = doseLevels[0]?.opacity ?? 0.3;
@@ -7549,6 +7586,7 @@ function _apply3DNodeVisibility(node) {
  * existing all-view compatibility control, while 2D/3D stay independent.
  */
 function applyDataTreeViewVisibility() {
+    window.syncManualStepPresentationVisibility?.();
     _migrateSegmentationMirrorsOutOfPlanning();
     _allDataTreeVisualNodes().forEach(_apply3DNodeVisibility);
     const ct2D = isDataTreeNodeVisible2D(dataTreeState.ct);
@@ -7975,6 +8013,7 @@ function showAllOrgans() {
     // reinterpret the state as an unset/default value.
     dataTreeState.planning.visible = true;
     dataTreeState.planning.visibilityConfigured = true;
+    window.syncManualStepPresentationVisibility?.();
     _planningItems('seeds').forEach(s => { s.visible = true; });
     _planningItems('needles').forEach(n => { n.visible = true; });
     _planningItems('doseLevels').forEach(d => { d.visible = true; });
@@ -8035,6 +8074,9 @@ function _setPlanningDoseProjectionVisibility(visible, options = {}) {
 }
 
 function setGroupVisibility(category, visible) {
+    if (visible && category !== 'planning' && typeof _groupViewNodes === 'function') {
+        window.revealManualStepNodes?.(_groupViewNodes(category).filter(Boolean));
+    }
     if (category === 'image') {
         dataTreeState.ct.visible = !!visible;
     } else if (category === 'segmentation') {
@@ -8055,6 +8097,7 @@ function setGroupVisibility(category, visible) {
         dataTreeState.planning.visible = !!visible;
         dataTreeState.planning.visibilityConfigured = true;
         _setPlanningDoseProjectionVisibility(_planningViewVisible('2d'), { preserveMaster: true });
+        window.syncManualStepPresentationVisibility?.();
     } else if (category === 'planning_trajectories') {
         // This is a collection header whose direct children are trajectories.
         // Their seeds/needles inherit the trajectory constraint through
@@ -8456,6 +8499,15 @@ window.setTreeGroupExpansion = setTreeGroupExpansion;
 window.setAllTreeGroupsExpansion = setAllTreeGroupsExpansion;
 
 function toggleDataVisibility(id) {
+    const stageNode = _findDataTreeNode(id);
+    if (stageNode && window.manualStepNodeVisible?.(stageNode) === false) {
+        window.revealManualStepNodes?.([stageNode]);
+        stageNode.visible = true;
+        applyDataTreeViewVisibility();
+        renderDataTree();
+        _scheduleDataTreeSave('viewer.manual_step_reveal');
+        return;
+    }
     requestAnimationFrame(() => applyDataTreeViewVisibility());
     if (id === 'dose_overlay') {
         const node = dataTreeState.planning?.doseOverlay;

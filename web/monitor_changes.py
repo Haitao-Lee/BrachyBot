@@ -202,7 +202,7 @@ def compare(before, after):
                 else 'improved' if difference > 1e-3 else 'existing')
             conflicts.append({**pair, 'change': status, 'kind': key,
                               'previous_distance_mm': prior.get(distance_key) if prior else None})
-    conflicts.sort(key=lambda p: (p['change'] == 'existing', p.get('surface_clearance_mm', p.get('distance_mm', 0))))
+    conflicts.sort(key=lambda p: (p['change'] not in ('new', 'worsened'), p.get('surface_clearance_mm', p.get('distance_mm', 0))))
     return {'changed_objects': changed[:64], 'changed_object_count': len(changed),
             'dependent_object_count': sum(bool(obj.get('dependent_on_needle')) for obj in changed),
             'normalization_object_count': sum(bool(obj.get('derived_from_normalization')) for obj in changed),
@@ -357,6 +357,170 @@ def screenshot(evidence, event_id):
             'checkpoint_id': event_id, 'planning_id': evidence['planning_id'],
             'planning_version': evidence['after_version'], 'geometry_key': evidence['geometry_key'],
             'visual_purpose': 'locate', 'annotation_policy': 'required',
-            'edit_evidence': {'changed_objects': evidence.get('changed_objects', [])[:8]},
+            'edit_evidence': {'changed_objects': evidence.get('changed_objects', [])[:8],
+                              'conflicts': evidence.get('conflicts', [])[:4]},
             'question': ' / '.join(ids), 'hide_unrelated': False,
             'focus': {'kind': 'auto', 'padding': 0.5}}
+
+
+def interaction(evidence, language='en'):
+    """A revisioned edit card, derived only from committed evidence.
+
+    Geometry and dose are separate assessments. This does not assign clinical
+    pass/fail or fabricate a movement optimum from a scalar score.
+    """
+    zh = language == 'zh'
+    dose = evidence.get('dose') or {}
+    changes = [obj for obj in evidence.get('changed_objects', [])
+               if not obj.get('dependent_on_needle') and not obj.get('derived_from_normalization')]
+    new = int(evidence.get('new_conflict_count', 0))
+    worse = int(evidence.get('worsened_conflict_count', 0))
+    resolved = int(evidence.get('resolved_conflicts', 0))
+    if new or worse:
+        headline = (f'这次编辑新增 {new} 组、加重 {worse} 组间距问题。' if zh
+                    else f'This edit introduced {new} and worsened {worse} spacing conflicts.')
+        priority = 'attention'
+    elif resolved:
+        headline = (f'这次编辑消除了 {resolved} 组已记录的间距问题。' if zh
+                    else f'This edit resolved {resolved} recorded spacing conflicts.')
+        priority = 'review'
+    else:
+        headline = ('本次编辑已保存；相关间距检查未发现新增或加重问题。' if zh
+                    else 'Edit saved; related spacing checks found no new or worsened conflicts.')
+        priority = 'info'
+    if evidence.get('superseded'):
+        headline = ('这次编辑已被后续操作更新，以下保留当时的检查结果。' if zh
+                    else 'Later changes superseded this edit; these are its recorded findings.')
+    rows = []
+    labels = {'plan_score': '评分', 'v100': 'V100', 'd90': 'D90', 'v150': 'V150', 'v200': 'V200'}
+    if dose.get('comparable'):
+        for key in labels:
+            if key in dose.get('delta', {}):
+                rows.append({'metric': labels[key] if zh else key,
+                             'before': dose['before'][key], 'after': dose['after'][key],
+                             'delta': dose['delta'][key], 'unit': ('百分点' if zh else 'pp')
+                             if key.startswith('v') else 'Gy' if key.startswith('d') else ('分' if zh else 'points')})
+        for row in dose.get('oar_changes', []):
+            rows.append({'metric': f"{row['organ']} {row['metric']}",
+                         **{key: row[key] for key in ('before', 'after', 'delta')}, 'unit': 'Gy'})
+    pair = next((p for p in evidence.get('conflicts', []) if p['change'] in ('new', 'worsened')), None)
+    if pair:
+        next_step = (f"先查看 {pair['first_id']} 与 {pair['second_id']} 的间距标注；若移动非预期，可恢复这次编辑前的位置。" if zh
+                     else f"Inspect the marked spacing between {pair['first_id']} and {pair['second_id']}; restore the pre-edit position if this move was unintended.")
+    elif not dose.get('comparable'):
+        next_step = ('几何变化已核对。重算剂量后，在本卡片比较覆盖、热点和器官受量。' if zh
+                     else 'Geometry checked. Recompute dose to compare coverage, hot spots and organ dose in this card.')
+    else:
+        delta = dose.get('delta') or {}
+        findings = []
+        for key, name in [('v100', '覆盖率' if zh else 'coverage'), ('v200', '高剂量体积' if zh else 'high-dose volume')]:
+            value = delta.get(key)
+            if value is not None and abs(value) > 1e-8:
+                findings.append((f"{name}{'增加' if value > 0 else '减少'} {abs(value):.2f} 个百分点" if zh
+                                 else f"{name} {'increased' if value > 0 else 'decreased'} by {abs(value):.2f} pp"))
+        next_step = ('；'.join(findings) + '。' if zh else '; '.join(findings) + '. ') if findings else ''
+        next_step += ('请结合下表的器官受量与评分一起判断取舍；这些差值不代表临床通过。' if zh
+                      else 'Review organ-dose and score differences below together; these changes do not establish clinical acceptance.')
+    count = int(dose.get('edit_count') or 1)
+    dose_note = ((f'剂量对比覆盖自基线以来的 {count} 次编辑。' if zh else f'Dose comparison covers {count} edits since baseline.')
+                 if dose.get('comparable') else
+                 ('剂量尚不可比较：等待与当前几何对应的重算结果或有效基线。' if zh
+                  else 'Dose comparison unavailable: a current recomputation or valid baseline is required.'))
+    return {'schema_version': 2, 'checkpoint_id': evidence.get('geometry_event_id') or evidence.get('event_id'),
+            'revision': evidence.get('after_version'), 'priority': priority, 'headline': headline,
+            'category': 'geometry', 'severity': 'warning' if new or worse else 'info',
+            'spatial_refs': list(dict.fromkeys(
+                [str(p[k]) for p in evidence.get('conflicts', [])
+                 if p['change'] in ('new', 'worsened') for k in ('first_id', 'second_id')]
+                + [str(obj['id']) for obj in changes if obj['operation'] != 'deleted']))[:8],
+            'conflict_counts': {'new': new, 'worsened': worse, 'resolved': resolved,
+                                'existing': evidence.get('existing_conflict_count', 0)},
+            'objects': changes[:4], 'conflicts': [p for p in evidence.get('conflicts', []) if p['change'] != 'existing'][:4],
+            'metric_rows': rows, 'dose_note': dose_note, 'next_step': next_step,
+            'dose_current': bool(dose.get('after')), 'dose_comparable': bool(dose.get('comparable')),
+            'existing_conflict_count': evidence.get('existing_conflict_count', 0),
+            'language': 'zh' if zh else 'en'}
+
+
+def overview(agent):
+    """Bounded, read-only HUD projection; never hydrate arrays or run geometry QA.
+
+    Availability is not clinical approval. Missing/cold state remains unknown,
+    and metrics belonging to stale geometry are never advertised as current.
+    """
+    if agent is None or not hasattr(agent, 'memory'):
+        return {'available': False, 'stages': [], 'metrics': {}}
+    mem = agent.memory.retrieve
+    artifacts = mem('manual_artifact_status') or {}
+    if not isinstance(artifacts, dict):
+        artifacts = {}
+    def present(*keys):
+        return any(mem(key) is not None for key in keys)
+    def status(key, exists):
+        recorded = artifacts.get(key)
+        if isinstance(recorded, dict):
+            recorded = recorded.get('status')
+        if recorded in ('stale', 'running', 'failed'):
+            return recorded
+        if recorded in ('current', 'completed', 'ready'):
+            return 'available'
+        return 'available' if exists else 'unknown'
+    dose_current = (present('dose_distribution', 'dose_distribution_gy')
+                    and not mem('manual_geometry_only')
+                    and status('dose', True) == 'available'
+                    and status('dvh', True) == 'available')
+    metrics = mem('dose_metrics') or mem('metrics') or {}
+    if isinstance(metrics, dict) and isinstance(metrics.get('metrics'), dict):
+        metrics = metrics['metrics']
+    normalized = {}
+    highest_oar = None
+    if dose_current and isinstance(metrics, dict):
+        for key in ('v100', 'd90', 'v200', 'plan_score'):
+            value = metrics.get(key)
+            if isinstance(value, dict):
+                value = value.get('value')
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+                if key.startswith('v'):
+                    from web.server_support import _volume_metric_as_fraction
+                    fraction = _volume_metric_as_fraction(metrics, key)
+                    if fraction is not None:
+                        normalized[key] = fraction * 100
+                else:
+                    normalized[key] = float(value)
+        organs = metrics.get('oar_metrics') or {}
+        for name, row in organs.items() if isinstance(organs, dict) else []:
+            value = row.get('dmax') if isinstance(row, dict) else None
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+                if highest_oar is None or value > highest_oar['dmax']:
+                    highest_oar = {'organ': str(name), 'dmax': float(value)}
+    stages = [
+        ('ct', 'available' if present('ct_image', 'image') or bool(mem('ct_path')) else 'unknown'),
+        ('ctv', 'available' if present('ctv_array', 'ctv_mask', 'ctv_label_data') else 'unknown'),
+        ('oar', 'available' if present('oar_array', 'oar_mask', 'oar_label_data') else 'unknown'),
+        ('geometry', 'available' if (mem('total_seeds') or 0) > 0
+         and (mem('num_trajectories') or 0) > 0 else 'unknown'),
+        ('dose', 'available' if dose_current else 'stale' if present('dose_distribution', 'dose_distribution_gy')
+         else status('dose', False) if status('dose', False) != 'available' else 'unknown'),
+        ('quality_check', status('quality_check', False)),
+        ('surgical_guide', status('surgical_guide', False)),
+        ('report', status('report', bool(mem('report_form')))),
+    ]
+    return {'available': True, 'planning_id': mem('active_planning_id') or mem('planning_run_id'),
+            'planning_version': mem('manual_plan_version'), 'dose_current': bool(dose_current),
+            'metrics': normalized, 'highest_recorded_oar': highest_oar,
+            'stages': [{'key': key, 'state': value} for key, value in stages]}
+
+
+def checkpoint(evidence, event, language='en'):
+    """Deliver an edit without a second network round trip or an LLM call."""
+    event = {**event, 'detail': {**(event.get('detail') or {}), 'edit_evidence': evidence}}
+    image = screenshot(evidence, event.get('event_id'))
+    if ((evidence.get('dose') or {}).get('after') and evidence.get('geometry_event_id')
+            and evidence['geometry_event_id'] != event.get('event_id')):
+        image = {'target': 'dvh', 'views': ['dvh'], 'checkpoint_id': event.get('event_id'),
+                 'planning_id': evidence['planning_id'], 'planning_version': evidence['after_version'],
+                 'question': '本次重算的 DVH' if language == 'zh' else 'DVH from this recomputation'}
+    return {'success': True, 'event': event, 'monitor_run_id': evidence.get('monitor_run_id'),
+            'language': language, 'interaction': interaction(evidence, language),
+            'feedback': describe(evidence, language),
+            'suggested_screenshot': image}

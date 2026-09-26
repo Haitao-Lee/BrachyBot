@@ -39,7 +39,7 @@ assert.equal(ctx._visualEvidenceDescriptor(optedOutScreenshot), null);
 const forcedEvidence = ctx._visualEvidenceDescriptor(optedOutScreenshot, 0, false, true);
 assert.equal(forcedEvidence.analysis_required, true);
 assert.equal(forcedEvidence.url, '/shot.png');
-for (const name of ['_revealScreenshotNodes', '_screenshotNeeds3DReframe', '_orderLocateCaptureViews', '_screenshotPlanIdentity']) {
+for (const name of ['_revealScreenshotNodes', '_screenshotNeeds3DReframe', '_orderLocateCaptureViews', '_screenshotPlanIdentity', '_verifiedScreenshotTargetRefs']) {
     vm.runInContext(extract('brachybot-ui-api.js', name), ctx);
 }
 vm.runInContext(extract('brachybot-ui-api.js', '_hideGuideOccludingCtvCapture'), ctx);
@@ -522,4 +522,40 @@ vm.runInContext(extract('brachybot-ui-api.js', '_interceptScreenshot'), ctx);
     restoreOldCase();
     assert.equal(refreshed, count + 1, 'restoring old node objects must not redraw the new case');
     console.log('PASS: session switch cancels image delivery and avoids cross-case redraw');
+
+    activeSession = 'session-a'; switchDuringCapture = false;
+    ctx.trainingMonitorState = { active:true, runId:'run' };
+    ctx.manualPlanningState = {planningVersion:2, planningId:'plan'};
+    ctx._monitorReturnPositionOverlay = () => () => {};
+    vm.runInContext(extract('brachybot-ui-api.js', '_monitorLiveCaptureRefs'), ctx);
+    const monitorManifest = ctx.window.get3DScreenshotGroundingManifest;
+    ctx.window.get3DScreenshotGroundingManifest = refs => {
+        const manifest = monitorManifest(refs);
+        manifest.targets.forEach(item => {item.status='ready';item.annotatable=true;});
+        return manifest;
+    };
+    let releaseUpload, notifyUpload;
+    const uploadStarted = new Promise(resolve => {notifyUpload=resolve;});
+    ctx.fetch = async (_url, options) => {
+        assert.equal(guide.visible,false,'temporary reveal is restored before upload begins');
+        assert.equal(parent.visible,false,'parent visibility is restored before network latency');
+        const body=JSON.parse(options.body);
+        assert.equal(body.view_metadata.temporary_reveal,true,'evidence records capture-time state after restoration');
+        notifyUpload();
+        await new Promise(resolve => {releaseUpload=resolve;});
+        return {ok:true,text:async()=>JSON.stringify({url:'/monitor.png'})};
+    };
+    ctx._annotateRequiredScreenshotBeforeDisplay = async attachment => {
+        assert.equal(guide.visible,false,'annotation does not hold temporary display state');return attachment;
+    };
+    const pendingCapture = ctx._interceptScreenshot('viewer-3d','edit',{}, {
+        sessionId:'session-a',monitorOnly:true,monitorRunId:'run',monitorPlanningVersion:2,monitorPlanningId:'plan',
+        plan:{...plan,mode:'monitor',annotation_policy:'required',views:[{target:'viewer-3d'}]},
+    });
+    await uploadStarted;
+    await ctx.window._viewerCaptureTail;
+    releaseUpload();
+    assert.equal((await pendingCapture).success,true);
+    assert.equal(guide.visible,false);
+    console.log('PASS: monitor releases camera transaction before network/annotation and preserves capture-time evidence metadata');
 })().catch(error => { console.error(error); process.exitCode = 1; });

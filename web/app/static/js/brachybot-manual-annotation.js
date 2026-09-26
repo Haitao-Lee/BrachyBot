@@ -579,7 +579,9 @@ async function runPlanningStep(step) {
     const ownerSessionId = typeof _activeApiSessionId === 'function'
         ? String(_activeApiSessionId() || '')
         : String(typeof activeSessionId !== 'undefined' ? activeSessionId || '' : '');
-    const isCurrentOwner = () => ownerSessionId === String(
+    let presentationRequest = null;
+    let calculationCommitted = false;
+    const isCurrentOwner = () => (!presentationRequest || isCurrentManualStepRequest(presentationRequest)) && ownerSessionId === String(
         typeof _activeApiSessionId === 'function'
             ? _activeApiSessionId() || ''
             : (typeof activeSessionId !== 'undefined' ? activeSessionId || '' : ''),
@@ -612,10 +614,18 @@ async function runPlanningStep(step) {
         }
         return { success: false, error: `Complete ${prereq.label} before ${info.label}.` };
     }
+    presentationRequest = beginManualStepPresentation(step, ownerSessionId);
+    if (!presentationRequest) {
+        const message = _manualWorkflowLabel('当前步骤仍在执行，请等待完成后再进行下一步。',
+            'A manual step is still running; wait for it to finish before advancing.');
+        if (typeof addChat === 'function') addChat('system', message);
+        return {success: false, error: message};
+    }
     if (typeof addChat === 'function') {
         addChat('system', `▶ Step ${info.num}/5: ${info.label} (${info.i18n_zh})...`);
     }
     _saveManualState({ active_step: step, active_step_started_at: Date.now() });
+    if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
     _manualWorkflowProgress(step, 'running', localizedInfoLabel, info.label);
     // Show a small loading badge next to the clicked button.
     const btn = document.querySelector(`button[onclick="runPlanningStep('${step}')"]`);
@@ -636,6 +646,7 @@ async function runPlanningStep(step) {
         }
         const data = await res.json();
         if (data.success) {
+            calculationCommitted = true;
             // A manual planning step can create or replace OAR, trajectories,
             // seeds, dose, and meshes in one server-side transaction.  Refresh
             // the result view and the OAR metadata in parallel, then render
@@ -656,30 +667,87 @@ async function runPlanningStep(step) {
             if (typeof refreshPlanningUI === 'function') {
                 refreshJobs.push(refreshPlanningUI({
                     sessionId: refreshSessionId,
+                    manualStep: step,
                     preserveViewerState: true,
                     switchToViewers: false,
                     backgroundRestore: true,
+                    preserveReport: true,
+                    suppressReportFigureCapture: true,
                 }));
             }
             if (typeof hydrateOarDataTreeFromServer === 'function') {
                 refreshJobs.push(hydrateOarDataTreeFromServer(undefined, refreshSessionId));
             }
-            if (refreshJobs.length) await Promise.allSettled(refreshJobs);
-            if (typeof renderDataTree === 'function') renderDataTree();
+            const refreshResults = refreshJobs.length
+                ? await Promise.allSettled(refreshJobs) : [];
             // Publish completion only after the authoritative result and its
             // viewer/Data Tree projections are ready. This keeps progress,
             // monitor feedback, screenshots, and chat in the same order as
             // the actual user-visible result.
             if (!isCurrentOwner()) return { success: true, step, detached: true };
+            const planningRefresh = refreshResults[0]?.status === 'fulfilled'
+                ? refreshResults[0].value || {} : {};
+            // A completed calculation is not a completed visual delivery.
+            // Seed geometry is covered by essential restore; wait for the
+            // dose/3D producers for later stages before declaring them ready.
+            const visualCompletion = ['seed_planning', 'dose_calc'].includes(step)
+                && planningRefresh.manualStepCompletion
+                ? await planningRefresh.manualStepCompletion : null;
+            if (!isCurrentOwner()) return {success: true, step, detached: true};
+            const projection = data.metadata?.planning_projection || {};
+            const visualOutcome = {
+                ...planningRefresh,
+                trajectoryCount: data.visualization?.trajectory_count
+                    ?? projection.trajectory_count ?? planningRefresh.trajectoryCount,
+                seedCount: planningRefresh.seedCount ?? projection.seed_count,
+                hasDose: planningRefresh.hasDose === true || projection.has_dose === true,
+            };
+            // The buttons live on Input, while their visual evidence lives in
+            // Viewers or Analysis. Switch only if the operator stayed on Input
+            // during the long calculation; do not undo a deliberate tab move.
+            const activePanel = document.querySelector('.panel-tab.active');
+            let openedViewers = false;
+            if (activePanel?.dataset?.panel === 'input' && typeof switchPanel === 'function') {
+                const resultPanel = step === 'dose_eval' ? 'metrics' : 'viewers';
+                const resultTab = document.querySelector(`.panel-tab[data-panel="${resultPanel}"]`);
+                if (resultTab) {
+                    switchPanel(resultPanel, resultTab);
+                    openedViewers = resultPanel === 'viewers';
+                }
+            }
+            if (openedViewers && typeof requestAnimationFrame === 'function') {
+                await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+                if (!isCurrentOwner()) return { success: true, step, detached: true };
+            }
+            const presented = typeof publishManualStepPresentation === 'function'
+                && publishManualStepPresentation(step, ownerSessionId, data.visualization, visualOutcome, data.manual_step_outputs);
+            if (!presented && typeof renderDataTree === 'function') renderDataTree();
+            if (openedViewers && typeof forceRender3DViewer === 'function') forceRender3DViewer();
             _saveManualState({ [step]: true, last_step: step, active_step: null, active_step_started_at: null });
-            _manualWorkflowProgress(step, 'done', localizedInfoLabel, info.label, _manualWorkflowLabel('已完成', 'Completed'));
+            const displayReady = presented && planningRefresh.success === true
+                && visualCompletion?.success !== false
+                && (!['trajectory_init', 'trajectory_refine'].includes(step)
+                    || data.visualization?.shown_trajectories > 0);
+            _manualWorkflowProgress(step, displayReady ? 'done' : 'error', localizedInfoLabel, info.label,
+                displayReady ? _manualWorkflowLabel('已完成', 'Completed')
+                    : _manualWorkflowLabel('计算已保存，但显示结果未完整载入', 'Calculation saved, but visual delivery is incomplete'));
             reportUIEvent('planning.step', `${info.label} completed`, { step, status: 'done' });
             if (typeof addChat === 'function') {
-                addChat('system', `${_manualWorkflowLabel('已完成', 'Completed')} ${info.num}/5: ${_manualWorkflowLabel(localizedInfoLabel, info.label)}.`);
+                addChat(displayReady ? 'system' : 'error', displayReady
+                    ? `${_manualWorkflowLabel('已完成', 'Completed')} ${info.num}/5: ${_manualWorkflowLabel(localizedInfoLabel, info.label)}.`
+                    : _manualWorkflowLabel('计算结果已保存，但显示加载未完成；请刷新结果，不必重复计算。',
+                        'Calculation saved, but the display did not finish loading. Refresh the results; recalculation is not required.'));
+                if (['trajectory_init', 'trajectory_refine'].includes(step)
+                    && !data.visualization?.shown_trajectories) {
+                    addChat('error', _manualWorkflowLabel(
+                        '计算已完成，但本轮没有可显示的轨迹几何；请检查规划结果加载状态。',
+                        'Calculation completed, but no trajectory geometry was available to display; check planning-result loading.',
+                    ));
+                }
             }
             if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
             if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave('manual.planning.step.completed');
-            return { success: true, step };
+            return { success: displayReady, computationCompleted: true, step };
         } else {
             throw new Error(data.error || 'Unknown error');
         }
@@ -693,7 +761,9 @@ async function runPlanningStep(step) {
         }
         return { success: false, error: e.message };
     } finally {
-        if (btn) { btn.disabled = false; if (oldText) btn.innerHTML = oldText; }
+        finishManualStepPresentation(presentationRequest, calculationCommitted);
+        if (btn && oldText) btn.innerHTML = oldText;
+        if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
     }
 }
 
@@ -1015,6 +1085,9 @@ function _refreshManualStepUI() {
         el.dataset.workflowState = tone;
     };
     const setButton = (id, enabled, number, done, readyZh, readyEn, blockedZh, blockedEn) => {
+        // Only this live transaction owns the button lock. A persisted
+        // active_step from an interrupted tab must not disable it forever.
+        enabled = enabled && window.manualStepRequestPending?.() !== true;
         const el = document.getElementById(id);
         if (!el) return;
         el.disabled = !enabled;

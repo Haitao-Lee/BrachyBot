@@ -472,6 +472,11 @@ function _reportCommittedManualEvent(data, fallbackType, fallbackLabel, detail =
         ? data.event
         : null;
     if (!serverEvent || typeof reportUIEvent !== 'function') return null;
+    // Evidence is computed inside the successful geometry transaction. A
+    // second telemetry round trip must not delay coaching or scene capture.
+    if (data.monitor_checkpoint && typeof window.receiveMonitorCheckpoint === 'function') {
+        return window.receiveMonitorCheckpoint(data.monitor_checkpoint);
+    }
     const committedEvent = {
         ...serverEvent,
         type: serverEvent.type || fallbackType,
@@ -1948,7 +1953,9 @@ async function onManualSeedEdited(seedId, position, rollbackSeeds = null, option
     // is an explicit operator decision, so dragging a seed never silently
     // launches an expensive AI job or changes the visible plan underneath
     // the user.
-    if (options.skipDoseRecompute !== true) {
+    const monitoringEdit = typeof trainingMonitorState !== 'undefined'
+        && trainingMonitorState.active && trainingMonitorState.sessionId === _activeApiSessionId();
+    if (options.skipDoseRecompute !== true && (!monitoringEdit || options.doseRecomputeDecision === 'yes')) {
         const hasPriorDecision = options.doseRecomputeDecision === 'yes'
             || options.doseRecomputeDecision === 'no';
         const shouldReplan = hasPriorDecision
@@ -1995,7 +2002,9 @@ async function onManualNeedleHandleEdited(handle, preEditSnapshot = null) {
     _syncSeedsOverlayFromDataTree();
     renderDataTree();
     const hasSeeds = dataTreeState.planning.seeds.some(s => _manualOwnersMatch(s, needle));
-    if (!hasSeeds) {
+    const monitoringEdit = typeof trainingMonitorState !== 'undefined'
+        && trainingMonitorState.active && trainingMonitorState.sessionId === _activeApiSessionId();
+    if (!hasSeeds || monitoringEdit) {
         try {
             const committed = await _persistNeedleGeometryOnly({
                 reason: 'needle_drag',
@@ -2009,10 +2018,10 @@ async function onManualNeedleHandleEdited(handle, preEditSnapshot = null) {
                 dose_recomputed: false,
             });
             _setManualDoseProgress('done', _manualText(
-                `已保存 ${needleId} 的针道位置；添加粒子后可重新计算剂量。`,
-                `${needleId} position saved; add seeds before recalculating dose.`,
+                `已保存 ${needleId} 的针道位置；${hasSeeds ? '可在监测卡片中查看变化并重算剂量' : '添加粒子后可重新计算剂量'}。`,
+                `${needleId} position saved; ${hasSeeds ? 'review changes and recompute dose in the monitor card' : 'add seeds before recalculating dose'}.`,
             ));
-            addChat('system', _manualText(
+            if (!monitoringEdit) addChat('system', _manualText(
                 `已保存 ${needleId} 的针道位置。当前没有粒子，因此暂不启动剂量重算。`,
                 `${needleId} position saved. Dose recomputation is deferred until seeds are present.`,
             ));
@@ -2471,8 +2480,8 @@ async function startTrainingMode(goal = 'Monitor planning workflow') {
             window.setMonitorPresentation?.('active');
         }
         const startedMessage = language === 'zh'
-            ? '监测模式已启动。我会持续跟踪当前病例的规划操作，并在关键阶段给出建议和可视化证据。'
-            : 'Monitor mode started. I will continuously track this case and provide advice and visual evidence at meaningful checkpoints.';
+            ? '监测已启动。聊天上方的监测工作台会保留当前指标、产物状态和最新编辑反馈。保存粒子或针道编辑后，可点击“定位对象”在 3D 中查看，或恢复编辑前位置；截图与逐次记录仍保存在对话中。默认不自动重算，可打开“自动重算并比较”合并连续编辑后的剂量计算，或点击“立即重算比较”。多次编辑后的差值按整个编辑序列说明，不归因于单次拖动。'
+            : 'Monitoring started. The workspace above chat keeps current metrics, artifact states and the latest edit feedback visible. After saving a seed or needle edit, use Locate objects in 3D or restore its pre-edit position; images and edit history remain in chat. Automatic dose comparison is off by default: enable Auto compare to coalesce edits, or choose Compare now. Multi-edit dose changes describe the sequence, not a single drag.';
         addChat(
             'bot-response',
             startedMessage,
@@ -2631,12 +2640,13 @@ async function stopTrainingMode() {
         }
         if (data?.closing) {
             window.setTrainingMonitorPhase?.('stop_error');
+            window.queueMonitorStopRecovery?.(stopSessionId, stopRunId);
             if (typeof _inputButtonProgress === 'function') _inputButtonProgress(
                 'training_monitor_stop', 'error', '结束监测', 'Stop monitor mode',
                 _manualText('正在生成总结，请重试', 'Summary pending; retry'),
             );
-            addChat('bot-response', _manualText('监测正在生成结束总结，请稍后重试。',
-                'The monitor is still preparing its final summary. Retry shortly.'),
+            addChat('bot-response', _manualText('监测正在生成结束总结，正在自动核实状态。',
+                'The monitor is preparing its final summary; its status is being rechecked.'),
                 true, Date.now(), false, stopSessionId);
             return { success: false, closing: true };
         }
@@ -2711,6 +2721,7 @@ async function stopTrainingMode() {
             }
             if (typeof _clearMonitorFeedbackTimer === 'function') _clearMonitorFeedbackTimer();
             trainingMonitorState.pendingFeedback = [];
+            window.queueMonitorStopRecovery?.(stopSessionId, stopRunId);
         }
         const timedOut = e?.name === 'AbortError';
         const failed = language === 'zh'
@@ -2756,6 +2767,18 @@ function _formatAdviceReport(advice, prefix = '', language = null) {
 }
 
 async function requestPlanningAdvice(options = {}) {
+    const adviceEpoch = window._planningAdviceEpoch = Number(window._planningAdviceEpoch || 0) + 1;
+    const adviceSessionId = _activeApiSessionId();
+    const adviceRunId = trainingMonitorState.runId;
+    const adviceVersion = manualPlanningState.planningVersion;
+    const advicePlanId = manualPlanningState.planningId;
+    const stillCurrent = () => adviceSessionId === _activeApiSessionId()
+        && adviceEpoch === window._planningAdviceEpoch
+        && adviceRunId === trainingMonitorState.runId
+        && adviceVersion === manualPlanningState.planningVersion
+        && advicePlanId === manualPlanningState.planningId;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 45000);
     const requestOptions = typeof options === 'string' ? { question: options } : (options || {});
     const question = String(requestOptions.question || '').trim();
     const detectedLanguage = question && typeof detectConversationLanguage === 'function'
@@ -2769,18 +2792,22 @@ async function requestPlanningAdvice(options = {}) {
         const payload = {
             session_id: _activeApiSessionId(),
             language,
-            ui_state: collectUIState(),
+            // This read endpoint uses authoritative Session facts; its only
+            // consumed UI field is language. Do not serialize the whole scene.
+            ui_state: { language },
         };
         if (question) {
             payload.question = question;
             payload.natural_language = true;
         }
         const res = await fetch(API + '/training/advice', {
+            signal: controller.signal,
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
         });
         const data = await res.json().catch(() => null);
+        if (!stillCurrent()) return null;
         if (!res.ok || !data || !data.success) throw new Error((data && data.error) || `HTTP ${res.status}`);
         const naturalResponse = String(data.natural_response || '').trim();
         if (naturalResponse) {
@@ -2801,6 +2828,7 @@ async function requestPlanningAdvice(options = {}) {
         if (typeof _inputButtonProgress === 'function') _inputButtonProgress('planning_advice', 'done', '\u89c4\u5212建议', 'Planning advice', _manualText('\u5df2\u5b8c\u6210', 'Completed'));
         return data;
     } catch (e) {
+        if (!stillCurrent()) return null;
         const errorDetail = _manualErrorDetail(e);
         if (typeof _inputButtonProgress === 'function') _inputButtonProgress('planning_advice', 'error', '\u89c4\u5212建议', 'Planning advice', errorDetail || _manualText('\u751f\u6210失败', 'Failed'));
         const failed = typeof window._t === 'function'
@@ -2808,6 +2836,14 @@ async function requestPlanningAdvice(options = {}) {
             : `详细建议获取失败：${errorDetail}`;
         addChat('error', failed);
         return null;
+    } finally {
+        clearTimeout(timeout);
+        if (!stillCurrent() && adviceSessionId === _activeApiSessionId()
+            && adviceEpoch === window._planningAdviceEpoch
+            && typeof _inputButtonProgress === 'function') {
+            _inputButtonProgress('planning_advice', 'done', '规划建议', 'Planning advice',
+                _manualText('规划已改变，旧建议已跳过', 'Plan changed; older advice skipped'));
+        }
     }
 }
 
@@ -3490,7 +3526,10 @@ function init3DScene() {
 
     const armSeedDrag = () => {
         if (!pendingSeed || isDragging) return;
+        window.clearMonitorFocus?.();
         isDragging = true;
+        manualPlanningState.monitorInteractionActive = true;
+        manualPlanningState.monitorInteractionEpoch = Number(manualPlanningState.monitorInteractionEpoch || 0) + 1;
         seedDragMoved = false;
         const cameraDir = new THREE.Vector3();
         scene3D.camera.getWorldDirection(cameraDir);
@@ -3506,7 +3545,10 @@ function init3DScene() {
 
     const armNeedleHandleDrag = () => {
         if (!pendingNeedleHandle || isDragging) return;
+        window.clearMonitorFocus?.();
         isDragging = true;
+        manualPlanningState.monitorInteractionActive = true;
+        manualPlanningState.monitorInteractionEpoch = Number(manualPlanningState.monitorInteractionEpoch || 0) + 1;
         needleDragMoved = false;
         const cameraDir = new THREE.Vector3();
         scene3D.camera.getWorldDirection(cameraDir);
@@ -3910,6 +3952,7 @@ function init3DScene() {
                 try { interactionCanvas.releasePointerCapture(event.pointerId); } catch (_) {}
             }
             isDragging = false;
+            manualPlanningState.monitorInteractionActive = false;
             scene3D.controls.enabled = true;
             interactionCanvas.style.cursor = 'grab';
             const finishedObject = selectedObject;
@@ -5270,10 +5313,40 @@ function focusPlanningObjectsForScreenshot(objectIds, options = {}) {
     const box = new THREE.Box3();
     visibleTargets.forEach(([, mesh]) => box.expandByObject(mesh));
     if (box.isEmpty()) return null;
+    const validPoint = point => Array.isArray(point) && point.length === 3 && point.every(Number.isFinite);
+    const movements = [];
+    const returnPoints = [];
+    // Include both endpoints of a return arrow in the framing bounds. Only
+    // accept server evidence for a stable object actually matched above.
+    for (const obj of options.editEvidence?.changed_objects || []) {
+        if (obj.operation !== 'moved' || !visibleTargets.some(([id, mesh]) =>
+            _screenshot3DIdentityFor(id, mesh).includes(String(obj.id)))) continue;
+        const pairs = obj.kind === 'seeds' ? [[obj.before, obj.after]]
+            : [[obj.before?.[0], obj.after?.[0]], [obj.before?.at(-1), obj.after?.at(-1)]];
+        for (const [before, after] of pairs) {
+            if (!validPoint(before) || !validPoint(after)) continue;
+            box.expandByPoint(new THREE.Vector3(...before));
+            returnPoints.push(new THREE.Vector3(...before));
+            const movement = new THREE.Vector3(...after).sub(new THREE.Vector3(...before));
+            if (movement.lengthSq() > 0.01) movements.push(movement);
+        }
+    }
     const center = box.getCenter(new THREE.Vector3());
     const viewDirection = scene3D.camera.position.clone().sub(scene3D.controls.target);
     if (viewDirection.lengthSq() < 1e-8) viewDirection.set(0, 0, 1);
     viewDirection.normalize();
+    // A camera looking along a drag vector hides its displacement. Project
+    // the current viewing direction onto a side view of the largest move.
+    movements.sort((a, b) => b.lengthSq() - a.lengthSq());
+    if (movements.length) {
+        const axis = movements[0].clone().normalize();
+        if (Math.abs(viewDirection.dot(axis)) > 0.8) {
+            viewDirection.addScaledVector(axis, -viewDirection.dot(axis));
+            if (viewDirection.lengthSq() < 0.01) viewDirection.crossVectors(axis,
+                Math.abs(axis.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0));
+            viewDirection.normalize();
+        }
+    }
     const padding = Math.max(0.1, Number(options.padding || 0.35));
     const sphere = box.getBoundingSphere(new THREE.Sphere());
     const radius = Math.max(Number(sphere.radius || 0), 0.5);
@@ -5311,7 +5384,11 @@ function focusPlanningObjectsForScreenshot(objectIds, options = {}) {
     for (; attempts < 5; attempts += 1) {
         applyPose();
         bounds = _unionNormalizedBounds(
-            visibleTargets.map(([, mesh]) => _project3DObjectBounds(mesh)),
+            [...visibleTargets.map(([, mesh]) => _project3DObjectBounds(mesh)),
+                ...returnPoints.map(point => {
+                    const ndc = point.clone().project(scene3D.camera);
+                    return [(ndc.x + 1) / 2 - 0.015, (1 - ndc.y) / 2 - 0.015, 0.03, 0.03];
+                })],
         );
         if (!bounds) {
             distance *= 1.35;
@@ -5456,14 +5533,17 @@ function forceRender3DViewer() {
             if (scene3D.contextLost) return;
             _repair3DSceneVisibility();
             scene3D.resize?.();
+            const hasPlanningPreview = (scene3D.scene?.children || []).some(object =>
+                object.visible !== false && ['planning_preview', 'manual_step_result'].includes(object.userData?.renderRole));
             // Re-hide the "No data" placeholder if meshes are present
             const placeholder = canvas.querySelector('.viewer-no-data');
-            if (placeholder && Object.keys(scene3D.meshes).length > 0) {
+            if (placeholder && (Object.keys(scene3D.meshes).length > 0 || hasPlanningPreview)) {
                 placeholder.style.display = 'none';
             }
             // If canvas was still 0×0 (panel not yet visible), retry
             // once more after a short delay to catch late layout.
-            if ((canvas.clientWidth || 0) < 10 && Object.keys(scene3D.meshes).length > 0) {
+            if ((canvas.clientWidth || 0) < 10
+                && (Object.keys(scene3D.meshes).length > 0 || hasPlanningPreview)) {
                 setTimeout(() => {
                     const w2 = canvas.clientWidth || 400;
                     const h2 = canvas.clientHeight || 300;
@@ -7877,6 +7957,7 @@ const _planningPreviewState = {
     latestEvent: null,
 };
 
+
 function _planningPreviewCurrentSession() {
     return String(
         (typeof activeSessionId !== 'undefined' && activeSessionId)
@@ -8167,6 +8248,9 @@ function handlePlanningPreviewEvent(event) {
     const sequence = Number(event.sequence);
 
     if (action === 'start') {
+        // The chat optimizer and a completed manual button share the
+        // read-only rendering primitive, but never the same stage identity.
+        // A new streamed run must retire a previous manual-stage row first.
         if (_planningPreviewState.runId && _planningPreviewState.runId !== runId) {
             clearPlanningPreview('new-run');
         }
@@ -8341,6 +8425,7 @@ if (!window.__brachybotPlanningDoseEventsBound) {
     window.__brachybotPlanningDoseEventsBound = true;
     window.addEventListener('brachybot:planning-run-started', event => {
         clearPlanningPreview('planning-run-started');
+        window.clearManualStepPresentation?.('planning-run-started');
         _invalidateDoseForPlanningRun(event.detail || {});
     });
     window.addEventListener('brachybot:dose-result-updated', event => {
@@ -10178,6 +10263,9 @@ function removeSeed3D(seedId) {
 }
 
 function clearPlanningVisualization() {
+    if (typeof clearManualStepPresentation === 'function') {
+        clearManualStepPresentation('planning-visualization-cleared');
+    }
     if (typeof clearDoseOverlayRuntime === 'function') {
         clearDoseOverlayRuntime();
     }

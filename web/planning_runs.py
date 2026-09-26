@@ -54,6 +54,7 @@ STALE_PLANNING_VALUE_KEYS = (
 # These are plan-owned values.  CT and segmentation inputs remain shared by a
 # session and are intentionally not copied into every planning run.
 PLANNING_VALUE_KEYS = (
+    "manual_step_outputs",
     "trajectories",
     "refined_trajectories",
     "seed_plan",
@@ -179,7 +180,7 @@ def _write_runs(memory: Any, runs: Iterable[Mapping[str, Any]], *, reason: str) 
 def _has_current_plan(memory: Any) -> bool:
     return any(memory.retrieve(key) is not None for key in PLANNING_VALUE_KEYS if key not in {
         "manual_plan_active", "manual_geometry_only", "artifact_status",
-        "dose_recompute_provenance", "rl_status",
+        "dose_recompute_provenance", "rl_status", "manual_step_outputs",
     })
 
 

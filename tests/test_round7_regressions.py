@@ -735,7 +735,7 @@ def test_dose_overlay_opacity_is_invariant_during_slice_scrubbing():
     assert "_composite2DViewerCanvas(a.ax, { doseOpacity: 0.7 })" in ui_api
     assert 'src="static/js/brachybot-viewer-volume.js?v=' in index
     assert 'src="static/js/brachybot-3d-manual.js?v=' in index
-    assert "brachybot-manual-annotation.js?v=26" in index
+    assert "brachybot-manual-annotation.js?v=29" in index
 
 
 def test_manual_seed_defaults_to_needle_middle_and_is_proximity_selectable():

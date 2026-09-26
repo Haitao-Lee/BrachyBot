@@ -1345,6 +1345,7 @@ async function autoCaptureReportFigures(options = {}) {
             } finally {
                 restoreCaptureLayout();
                 window.__reportCaptureActive = false;
+                window.syncManualStepPresentationVisibility?.();
                 if (presentationToken !== null) window.unlockWorkspacePresentationWrites?.(presentationToken);
                 try {
                     window.syncSceneAppearanceFromDataTree?.({
@@ -1393,6 +1394,8 @@ async function autoCaptureReportFigures(options = {}) {
         rejectCaptureTimeout(new Error('Report capture timed out; previous figures retained.'));
     }, REPORT_CAPTURE_TOTAL_TIMEOUT_MS);
     window.__reportCaptureActive = true;
+    window.clearMonitorFocus?.();
+    window.syncManualStepPresentationVisibility?.();
     const captureWork = (async () => {
         hideReportUploadMasks();
         restoreCaptureLayout = prepareReportCaptureLayout();
@@ -2918,6 +2921,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             // ── View A: Front-facing with all OARs ──
             if (!isCurrentCapture()) return { stale: true };
             window.__reportCaptureActive = true;
+            window.clearMonitorFocus?.();
             // Figure 1(a) is the standard global evidence view and therefore
             // temporarily includes the available anatomy/OAR context. This
             // is a capture-only mutation: _restoreFigure1State and the outer

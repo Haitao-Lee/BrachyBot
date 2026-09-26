@@ -1903,11 +1903,13 @@ def _preview_trajectory_geometry(
     *,
     status="candidate",
     close_points=None,
+    trajectory_limit=64,
+    close_point_limit=256,
 ):
     from plans import utilizations
 
     geometry = []
-    for original_index, trajectory in _sample_preview_items(trajectories, 64):
+    for original_index, trajectory in _sample_preview_items(trajectories, trajectory_limit):
         points = _candidate_world_needle_points(trajectory, planning_image)
         if points is None:
             continue
@@ -1918,7 +1920,7 @@ def _preview_trajectory_geometry(
         })
     preview_close_points = []
     close_point_values = [] if close_points is None else close_points
-    for point_index, point in _sample_preview_items(close_point_values, 256):
+    for point_index, point in _sample_preview_items(close_point_values, close_point_limit):
         try:
             world = np.asarray(
                 utilizations.position_transform(
@@ -3224,6 +3226,10 @@ class PlanningPipelineTool(BaseTool):
                 try:
                     from web.planning_runs import publish_planning_run
 
+                    if kwargs.get("_manual_step_presentation"):
+                        from web.manual_step_outputs import record_manual_step_output
+                        record_manual_step_output(agent, str(step), result, planning_id)
+
                     published_id = publish_planning_run(
                         agent,
                         result,
@@ -3812,6 +3818,10 @@ class PlanningPipelineTool(BaseTool):
             metadata={
                 "step_executed": "trajectory_init",
                 "trajectories": trajectories,
+                # The manual-step endpoint projects these points together with
+                # the completed, safety-filtered trajectories. They are not a
+                # separate clinical artifact or an SSE-only preview frame.
+                "manual_close_points": list(preview_close_points),
                 "num_trajectories": len(trajectories),
                 "max_depth": float(max_depth),
                 "reference_direction_voxel": voxel_direc.tolist(),

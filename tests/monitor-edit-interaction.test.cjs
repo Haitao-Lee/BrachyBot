@@ -59,7 +59,9 @@ const settle = async () => { for (let i=0;i<20;i++) await Promise.resolve(); };
         fetch:async(url,options)=>{calls.push({url,options});return {ok:true,json:async()=>({success:true,kept:true})};},
         setStreamingState:()=>{}, _flushQueuedChatTurns:()=>{},
     });
-    vm.runInContext(source.slice(decisionStart,decisionEnd),ctx);
+    const executorStart=source.indexOf('window.performMonitorEditDecision = async function(');
+    assert(executorStart >= 0 && executorStart < decisionStart, 'buttons and chat share a decision executor');
+    vm.runInContext(source.slice(executorStart,decisionEnd),ctx);
     for(const text of ['是','复位','如果需要就复位 abcdef123456','他说“复位 abcdef123456”','复位 abcdef123456 然后生成报告']) {
         assert.equal(await ctx.window.handleMonitorConversation(text),false,text);
     }

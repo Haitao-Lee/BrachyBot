@@ -46,7 +46,7 @@ def test_frontend_uses_one_mapping_for_pointer_navigation_and_annotations():
     assert "volZ = state.slices.axial" not in manual
     assert "updates.axial = volZ" not in manual
     assert 'src="static/js/brachybot-viewer-volume.js?v=' in index
-    assert "brachybot-manual-annotation.js?v=26" in index
+    assert "brachybot-manual-annotation.js?v=29" in index
 
 
 def test_server_fallback_and_threshold_use_the_same_axial_only_flip():

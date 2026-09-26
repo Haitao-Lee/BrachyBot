@@ -2918,8 +2918,11 @@ def register_planning_routes(
                             elif training.get('pending_restore'):
                                 pending_restore = training['pending_restore']
                                 if (pending_restore['after_key'] == after['geometry_key']
-                                        and pending_restore['version'] == after['version']
                                         and pending_restore['planning_id'] == after['planning_id']):
+                                    # A dose-only publication may advance the plan
+                                    # version without changing geometry. Keep the
+                                    # inverse tied to that same verified geometry.
+                                    pending_restore['version'] = after['version']
                                     evidence['restore_token'] = pending_restore['token']
                             training['latest_edit'] = evidence
                             agent.memory.store('monitor_last_edit', monitor_changes.compact_evidence(evidence))
@@ -2936,6 +2939,9 @@ def register_planning_routes(
                                             if recorded.get('event_id') == saved['event_id']:
                                                 recorded.setdefault('detail', {})['edit_evidence'] = evidence
                             payload['monitor_edit'] = evidence
+                            language = _monitor_language(training.get('language'))
+                            payload['monitor_checkpoint'] = monitor_changes.checkpoint(evidence, event, language)
+                            payload['monitor_checkpoint']['session_id'] = session_id
                             response.set_data(current_app.json.dumps(payload))
                             checkpoint_ui_bridge(session_id, 'monitor.edit_evidence')
                     except Exception:
@@ -2966,9 +2972,26 @@ def register_planning_routes(
         return jsonify(success=True, evidence=evidence,
                        message=describe(evidence, _monitor_language(request.args.get('language'))) if evidence else None)
 
+    def monitor_decision_ready(view):
+        @wraps(view)
+        def wrapped(*args, **kwargs):
+            data = request.get_json(silent=True) or {}
+            session_id = request_ui_session_id(data)
+            lock = _manual_dose_transaction_lock(session_id)
+            # A long dose job must not strand a 30-second browser decision.
+            # Return a retryable state without consuming its token or inverse.
+            if not lock.acquire(blocking=False):
+                return jsonify(success=False, code='monitor_plan_busy', error='Planning update in progress.'), 409
+            try:
+                return view(*args, **kwargs)
+            finally:
+                lock.release()
+        return wrapped
+
     @app.route('/api/training/restore_edit', methods=['POST'])
     @require_api_key
     @rate_limit
+    @monitor_decision_ready
     def api_training_restore_edit():
         from web.monitor_changes import geometry_key
         data = request.get_json(silent=True) or {}
@@ -2988,8 +3011,11 @@ def register_planning_routes(
                 return jsonify(success=False, error=reason, code='monitor_edit_decision_unavailable'), 409
             if data.get('decision') == 'keep':
                 training.pop('pending_restore', None)
+                latest = training.get('latest_edit') or {}
+                latest.pop('restore_token', None)
+                latest['decision'] = 'kept'
                 checkpoint_ui_bridge(session_id, 'monitor.edit_kept')
-                return jsonify(success=True, kept=True)
+                return jsonify(success=True, kept=True, evidence=latest)
             if data.get('decision') != 'restore':
                 return jsonify(success=False, error='An explicit restore or keep decision is required.'), 400
             agent = get_agent(session_id)
@@ -3019,6 +3045,20 @@ def register_planning_routes(
                 response = make_response(result)
                 if response.status_code < 300:
                     training.pop('pending_restore', None)
+                    latest = training.get('latest_edit') or {}
+                    latest.pop('restore_token', None)
+                    latest['decision'] = 'restored'
+                    # The nested ordinary edit generated evidence before its
+                    # inverse was consumed. Do not deliver an unusable undo.
+                    restored = response.get_json(silent=True) or {}
+                    if restored.get('monitor_edit'):
+                        restored['monitor_edit'].pop('restore_token', None)
+                        restored['monitor_edit']['decision'] = 'restored'
+                        from web.monitor_changes import checkpoint
+                        restored['monitor_checkpoint'] = checkpoint(restored['monitor_edit'],
+                            restored.get('event') or {}, 'zh' if zh else 'en')
+                        restored['monitor_checkpoint']['session_id'] = session_id
+                        response.set_data(current_app.json.dumps(restored))
                     checkpoint_ui_bridge(session_id, 'monitor.edit_restored')
                 return response
             finally:
@@ -3327,12 +3367,16 @@ def register_planning_routes(
             skin_payload = agent.memory.retrieve("skin_surface")
             has_dvh = bool(isinstance(dvh_data, dict) and dvh_data)
             has_metrics = bool(isinstance(dose_metrics, dict) and dose_metrics)
+            manual_outputs = agent.memory.retrieve("manual_step_outputs")
+            if not isinstance(manual_outputs, dict) or manual_outputs.get("planning_id") != current_planning_id:
+                manual_outputs = None
             return jsonify({
                 "success": True,
                 "planning_id": current_planning_id,
                 "planning_label": active_run.get("label"),
                 "planning_status": active_run.get("status"),
                 "planning_data_version": active_run.get("data_version"),
+                "manual_step_outputs": manual_outputs,
                 "artifact_status": artifact_status if isinstance(artifact_status, dict) else {},
                 "metrics": dose_metrics,
                 "seeds": seeds,
@@ -4125,11 +4169,17 @@ def register_planning_routes(
                 },
                 ref_direc=live_ref,
                 _agent=agent,
+                _manual_step_presentation=True,
             )
 
             if result.success:
                 # Store results in memory
                 agent._store_tool_result("planning_pipeline", result)
+                # This output was persisted with the successful plan snapshot;
+                # both immediate completion and workspace restore use it.
+                step_outputs = agent.memory.retrieve("manual_step_outputs") or {}
+                step_visualization = next((item for item in step_outputs.get("stages", [])
+                                           if item.get("step") == step), None)
                 # Sanitize metadata for JSON serialization (strip non-scalar fields
                 # like trajectory lists / numpy arrays — callers can read them via
                 # /api/planning/show_step).
@@ -4161,7 +4211,7 @@ def register_planning_routes(
                         "oar_source": agent.memory.retrieve("oar_source"),
                         "planning_projection": {
                             "trajectory_count": len(_planning["trajectories"]) if isinstance(_planning["trajectories"], list) else 0,
-                            "seed_count": len(_planning["seeds"]) if isinstance(_planning["seeds"], list) else 0,
+                            "seed_count": int(agent.memory.retrieve("total_seeds") or 0),
                             "needle_count": len(_planning["needles"]) if isinstance(_planning["needles"], list) else 0,
                             "has_dose": bool(_planning["has_dose"]),
                         },
@@ -4179,6 +4229,8 @@ def register_planning_routes(
                     "step": step,
                     "message": result.message,
                     "metadata": _meta,
+                    "visualization": step_visualization,
+                    "manual_step_outputs": step_outputs,
                 })
             else:
                 checkpoint_operation(
@@ -5293,9 +5345,13 @@ def register_planning_routes(
         if not live_training.get("active") or live_training.get("run_id") != request_run_id:
             feedback = None
             suggested_screenshot = None
+        from web.monitor_changes import interaction
         return jsonify({
             "success": True,
             "event": event,
+            "interaction": interaction(
+                event['detail']['edit_evidence'], language)
+                if feedback and (event.get('detail') or {}).get('edit_evidence') else None,
             "training": public_training_status(bucket.get("training")),
             "feedback": feedback if bucket.get("training", {}).get("active") else None,
             "feedback_raw": feedback_pair.get("raw") if feedback_pair and bucket.get("training", {}).get("active") else None,
@@ -5416,6 +5472,17 @@ def register_planning_routes(
             }
             if not active:
                 result["summary_message"] = training.get("last_summary")
+        if request.args.get('overview') == '1':
+            from web.monitor_changes import overview
+            agent = get_cached_agent(session_id) if callable(get_cached_agent) else None
+            lock = _manual_dose_transaction_lock(session_id)
+            if lock.acquire(blocking=False):
+                try:
+                    result['overview'] = overview(agent)
+                finally:
+                    lock.release()
+            else:
+                result['overview'] = {'available': False, 'stages': [], 'metrics': {}, 'updating': True}
         return jsonify(result)
 
     @app.route("/api/training/stop", methods=["POST"])

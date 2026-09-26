@@ -1324,6 +1324,7 @@ async function refreshPlanningUI(options = {}) {
                     manualPlanningState.artifactStatus = { ...(data.artifact_status || {}) };
                     if (typeof _syncManualSafetyState === 'function') _syncManualSafetyState(data);
                 }
+                window.hydrateManualStepPresentations?.(data.manual_step_outputs, expectedSessionId);
                 // A result request can legitimately observe the new Planning
                 // run while seed optimization or dose evaluation is still
                 // running. It may update the status/Data Tree, but it must not
@@ -1653,9 +1654,10 @@ async function refreshPlanningUI(options = {}) {
         }
 
         const _meshPromises = [];
+        let doseSurfacePromise = Promise.resolve(null);
         // Isodose surfaces
         if (data.has_dose) {
-            _meshPromises.push(_withTimeout(
+            doseSurfacePromise = _withTimeout(
                 // Dose levels are first-class planning objects.  Build their
                 // real 3D surfaces as well as their 2D contours so the data
                 // tree never advertises a planning result that only exists
@@ -1666,7 +1668,8 @@ async function refreshPlanningUI(options = {}) {
                 }),
                 'Isosurface reconstruction',
                 180000,
-            ));
+            );
+            _meshPromises.push(doseSurfacePromise);
         }
         // CTV + OAR meshes
         _meshPromises.push(
@@ -1688,10 +1691,11 @@ async function refreshPlanningUI(options = {}) {
         // /planning/seeds_3d, while /planning/results may omit the flat
         // seeds array. Load geometry whenever the result indicates any
         // trajectories or seeds exist.
+        const candidateStageOnly = ['trajectory_init', 'trajectory_refine'].includes(data.manual_step_outputs?.active_step);
         const shouldLoadSeedGeometry = ((data.seeds || []).length > 0)
             || ((data.total_seeds || 0) > 0)
-            || ((data.num_trajectories || 0) > 0)
-            || ((data.trajectories || []).length > 0);
+            || (!candidateStageOnly && (((data.num_trajectories || 0) > 0)
+                || ((data.trajectories || []).length > 0)));
         let seedGeometryPromise = Promise.resolve(null);
         if (shouldLoadSeedGeometry) {
             seedGeometryPromise = _withTimeout(loadSeeds3D({
@@ -1807,12 +1811,24 @@ async function refreshPlanningUI(options = {}) {
                 currentDoseReady: data.has_current_dose === true,
                 doseStale: data.dose_stale === true,
             };
+            // A manual stage waits only for its own products. Slow unrelated
+            // OAR reconstruction must not hold an already visible seed result.
+            Object.defineProperty(refreshOutcome, 'manualStepCompletion', {
+                value: Promise.all([seedGeometryPromise,
+                    options.manualStep === 'dose_calc' ? doseSurfacePromise : Promise.resolve(null)])
+                    .then(results => {
+                        const failed = _collectViewerMeshFailures(results);
+                        return {success: isCurrentCase() && failed.length === 0, failed};
+                    }),
+                enumerable: false,
+            });
             // Expose the true visual completion boundary to the workspace
             // restore transaction. Essential CT/2D/planning state can return
             // immediately, but the same non-blocking loading notice remains
             // owned until all mesh producers and the restored guide settle.
             const viewerCompletionPromise = backgroundMeshesPromise.then(async completion => {
                 if (!isCurrentCase()) return { stale: true };
+                if (typeof applyDataTreeViewVisibility === 'function') applyDataTreeViewVisibility();
                 try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
                 try { if (typeof forceRender3DViewer === 'function') forceRender3DViewer(); } catch (_) {}
                 if (guideRestorePromise) {
@@ -1826,7 +1842,7 @@ async function refreshPlanningUI(options = {}) {
                 // pose captured with the previous canvas aspect ratio. Correct
                 // only genuinely clipped scenes; preserve normal user views.
                 try {
-                    window.ensureCameraFitsVisibleScene?.({
+                    if (!options.manualStep) window.ensureCameraFitsVisibleScene?.({
                         forceCenter: scene3D?._workspaceRestoreActive === true
                             && scene3D?._cameraUserInteracted !== true,
                         reason: 'planning-mesh-hydration-complete',
@@ -2358,6 +2374,9 @@ async function refreshPlanningUI(options = {}) {
                 };
                 if (e && e.name !== 'AbortError') console.warn('refreshPlanningUI failed:', e);
             } finally {
+                try {
+                    if (isCurrentCase() && typeof applyDataTreeViewVisibility === 'function') applyDataTreeViewVisibility();
+                } catch (error) { console.warn('[refreshPlanningUI] visibility sync:', error); }
                 resolve(refreshOutcome);
             }
         }, 80);  // 80ms debounce: enough to coalesce 5-10 SSE step events into one fetch

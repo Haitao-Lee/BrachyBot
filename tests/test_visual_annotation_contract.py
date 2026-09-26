@@ -435,7 +435,7 @@ def test_screenshot_autoframing_is_target_derived_verified_and_reversible():
     assert "function _screenshotNeeds3DReframe(plan)" in ui_api
     assert "captureSpec.preserve_current_view = !needsReframe" in ui_api
     assert "if (plan.visual_purpose !== 'locate') _applyScreenshotOverlayPlan(plan);" in ui_api
-    assert "temporary_reveal: restoreVisibility?.changed === true" in ui_api
+    assert "temporary_reveal: presentationEvidence.revealed" in ui_api
     assert "temporary_camera_reframe:" in ui_api
     assert "plan.visual_purpose === 'locate'" in ui_api
 
