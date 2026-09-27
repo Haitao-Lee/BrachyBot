@@ -7238,10 +7238,27 @@ async function _executeUIActionsWithProgress(actions, options = {}) {
     const ownerSessionId = String(options.sessionId || '');
     const ownerRequestId = String(options.requestId || window._brachyLiveTrace?.requestId || '');
     const results = [];
+    // Step identity lets one action name another as a prerequisite.
+    // Without it a single failure stopped every later action in the batch,
+    // including independent ones (audit defect F12).  An action may carry
+    // `key` and `depends_on`/`dependsOn`; unnamed steps fall back to a
+    // positional id so repeated tools never share one identity.
+    const stepKeyAt = (index) => {
+        const named = String((actions[index] && actions[index].key) || '').trim();
+        return named || `step-${index + 1}`;
+    };
+    const dependencyKeys = (action) => {
+        const raw = action && (action.depends_on !== undefined ? action.depends_on : action.dependsOn);
+        if (raw === undefined || raw === null) return [];
+        const items = typeof raw === 'string' ? [raw] : Array.from(raw);
+        return items.map(item => String(item || '').trim()).filter(Boolean);
+    };
+    const failedSteps = new Set();
     for (let i = 0; i < actions.length; i += 1) {
         if (!_uiActionSessionIsCurrent(ownerSessionId)) break;
         const action = actions[i] || {};
         const id = `ui-action-${Date.now()}-${i}`;
+        const stepKey = stepKeyAt(i);
         const target = String(action.target || 'ui.control');
         const command = String(action.command || 'run');
         const base = {
@@ -7256,6 +7273,27 @@ async function _executeUIActionsWithProgress(actions, options = {}) {
             session_id: ownerSessionId || _activeApiSessionId(),
             request_id: ownerRequestId,
         };
+        // A step whose prerequisites failed is skipped and accounted for,
+        // never silently dropped and never run anyway.  The trace says
+        // exactly which step blocked it.
+        const blockedBy = dependencyKeys(action).filter(dep => failedSteps.has(dep));
+        if (blockedBy.length) {
+            const blocked = {
+                success: false,
+                skipped: true,
+                blocked_by_dependency: blockedBy,
+                error: `Skipped: prerequisite step(s) failed: ${blockedBy.join(', ')}`,
+            };
+            results.push(blocked);
+            failedSteps.add(stepKey);
+            _emitUIActionProgress({
+                ...base,
+                status: 'error',
+                result: blocked.error,
+                metadata: { blockedByDependency: blockedBy },
+            });
+            continue;
+        }
         _emitUIActionProgress({ ...base, status: 'pending', content: 'Applying UI action' });
         // Yield once so the live Execution Trace can paint its breathing state
         // before a synchronous control handler starts doing work.
@@ -7263,6 +7301,8 @@ async function _executeUIActionsWithProgress(actions, options = {}) {
         try {
             const result = await _executeUIAction(action, { sessionId: ownerSessionId });
             if (!_uiActionSessionIsCurrent(ownerSessionId)) {
+                // A case switch is a global abort, not a local failure: stop,
+                // because the remaining actions no longer have an owner.
                 const stale = { success: false, stale: true, error: 'Session changed; UI action completion cannot be confirmed.' };
                 results.push(stale);
                 _emitUIActionProgress({ ...base, status: 'cancelled', result: stale.error });
@@ -7272,10 +7312,13 @@ async function _executeUIActionsWithProgress(actions, options = {}) {
             const failed = result === false
                 || (result && (result.success === false || result.stale === true));
             if (failed) {
+                failedSteps.add(stepKey);
                 const message = (result && result.error) || 'The browser could not apply this UI action.';
                 _emitUIActionProgress({ ...base, status: 'error', result: message,
                     metadata: { stage: result?.stage, captureFailure: result?.captureFailure } });
-                break;
+                // A failure blocks only its dependants.  Independent actions
+                // in the same batch must still run.
+                continue;
             }
             // The Execution Trace renders this value as plain text.  Passing
             // the raw result object produced "-> [object Object]".
@@ -7292,13 +7335,42 @@ async function _executeUIActionsWithProgress(actions, options = {}) {
         } catch (error) {
             const failure = { success: false, error: String(error) };
             results.push(failure);
+            failedSteps.add(stepKey);
             _emitUIActionProgress({ ...base, status: 'error', result: failure.error });
-            break;
+            continue;
         }
     }
     return results;
 }
 window._executeUIActionsWithProgress = _executeUIActionsWithProgress;
+
+// UI-action batches of one owner session must not interleave: a report
+// capture and a screenshot can touch the same Viewer and the same
+// workspace save (audit defect F12).  Chain each batch behind the
+// previous one for its session; different sessions stay independent.
+// The tail tracks scheduling only — the caller still receives the
+// per-action receipts from the batch itself.  There is deliberately no
+// self-timeout here: a pending report capture is owned by the report
+// UI, and turning an unfinished wait into "done" is exactly the fake
+// completion this executor must not produce.  The bound is the turn's
+// abort signal and the case switch.
+window._uiActionBatchTails = window._uiActionBatchTails || new Map();
+async function _queueUIActionBatch(actions, options = {}) {
+    const ownerSessionId = String(options.sessionId || _activeApiSessionId() || '');
+    const tails = window._uiActionBatchTails;
+    const previous = tails.get(ownerSessionId) || Promise.resolve();
+    const run = previous
+        .catch(() => undefined)
+        .then(() => _executeUIActionsWithProgress(actions, options));
+    const tail = run.then(() => undefined, () => undefined);
+    tails.set(ownerSessionId, tail);
+    const release = () => {
+        if (tails.get(ownerSessionId) === tail) tails.delete(ownerSessionId);
+    };
+    tail.then(release, release);
+    return run;
+}
+window._queueUIActionBatch = _queueUIActionBatch;
 
 async function navigateToDosePeakSlices() {
     const peak = state?.doseOverlay?.peakVoxel;

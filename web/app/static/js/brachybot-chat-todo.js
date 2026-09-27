@@ -1286,9 +1286,14 @@ function handleChatInput(el) {
 const CHAT_CONNECT_TIMEOUT_MS = 30000;
 // A report regeneration keeps capturing figures and flushing its durable save
 // after the report itself is already on screen. The report UI owns that
-// progress; the chat turn may wait only a bounded window for it before
-// releasing the final reply.
+// progress and its own terminal state; the chat turn only joins it.
 // A server stream ending acknowledges dispatch, not browser-side completion.
+//
+// The wait is bounded by `signal` (turn abort / case switch), not by a
+// self-timeout: an unfinished wait is a real pending operation, and reporting
+// it as settled is exactly the fake completion this helper must not produce.
+// Cross-batch races are prevented upstream by `_queueUIActionBatch`, which
+// serializes batches per owner session.
 async function _awaitChatUIActions(tasks, signal) {
     if (signal?.aborted) throw new DOMException('Stopped', 'AbortError');
     let abort;
@@ -2028,9 +2033,11 @@ async function _executeJsonUIActions(steps, sessionId) {
         .filter(actions => Array.isArray(actions) && actions.length > 0);
     const results = [];
     for (const actions of actionGroups) {
-        const group = typeof _executeUIActionsWithProgress === 'function'
-            ? await _executeUIActionsWithProgress(actions, { sessionId })
-            : await Promise.all(actions.map(action => _executeUIAction(action, { sessionId })));
+        const group = typeof _queueUIActionBatch === 'function'
+            ? await _queueUIActionBatch(actions, { sessionId })
+            : typeof _executeUIActionsWithProgress === 'function'
+                ? await _executeUIActionsWithProgress(actions, { sessionId })
+                : await Promise.all(actions.map(action => _executeUIAction(action, { sessionId })));
         results.push(...(Array.isArray(group) ? group : [group]));
     }
     return {
@@ -4634,10 +4641,18 @@ async function sendChat(prefill, options) {
                                         }
                                         uiDebugLog('[SSE-UI] Executing', actions.length, 'UI actions');
                                         if (typeof _executeUIActionsWithProgress === 'function') {
-                                            const actionTask = _executeUIActionsWithProgress(actions, {
-                                                sessionId: turnSessionId,
-                                                requestId: turnRequestId,
-                                            });
+                                            // Batches of one turn are serialized so a report
+                                            // capture and a screenshot cannot fight over the
+                                            // same Viewer and workspace save.
+                                            const actionTask = (typeof _queueUIActionBatch === 'function')
+                                                ? _queueUIActionBatch(actions, {
+                                                    sessionId: turnSessionId,
+                                                    requestId: turnRequestId,
+                                                })
+                                                : _executeUIActionsWithProgress(actions, {
+                                                    sessionId: turnSessionId,
+                                                    requestId: turnRequestId,
+                                                });
                                             uiActionTasks.push(Promise.resolve(actionTask).then(group => {
                                                 uiActionResults.push(...(Array.isArray(group) ? group : [group]));
                                                 return group;
@@ -4669,10 +4684,15 @@ async function sendChat(prefill, options) {
                                     && typeof _executeUIActionsWithProgress === 'function') {
                                     reportUiActionRequested = true;
                                     uiDebugLog('[SSE-UI] report_auto_fill -> report.autofill capture');
-                                    const autoFillTask = _executeUIActionsWithProgress(
-                                        [{ target: 'report.autofill', command: 'run' }],
-                                        { sessionId: turnSessionId, requestId: turnRequestId },
-                                    );
+                                    const autoFillTask = (typeof _queueUIActionBatch === 'function')
+                                        ? _queueUIActionBatch(
+                                            [{ target: 'report.autofill', command: 'run' }],
+                                            { sessionId: turnSessionId, requestId: turnRequestId },
+                                        )
+                                        : _executeUIActionsWithProgress(
+                                            [{ target: 'report.autofill', command: 'run' }],
+                                            { sessionId: turnSessionId, requestId: turnRequestId },
+                                        );
                                     uiActionTasks.push(Promise.resolve(autoFillTask).then(group => {
                                         uiActionResults.push(...(Array.isArray(group) ? group : [group]));
                                         return group;
