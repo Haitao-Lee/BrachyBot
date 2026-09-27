@@ -75,6 +75,28 @@ class ActionPlan:
             ))
         return cls(tuple(steps), source=source)
 
+    @staticmethod
+    def _dependency_keys(call: Mapping[str, Any]) -> Tuple[str, ...]:
+        """Read the step ids a provider call depends on.
+
+        Both ``depends_on`` and ``dependsOn`` are accepted so a gateway that
+        camel-cases tool arguments cannot silently drop a dependency.  A bare
+        string is treated as a single dependency rather than a sequence of
+        characters.
+        """
+        raw = call.get("depends_on")
+        if raw is None:
+            raw = call.get("dependsOn")
+        if raw is None:
+            return ()
+        if isinstance(raw, str):
+            raw = (raw,)
+        try:
+            items = list(raw)
+        except TypeError:
+            return ()
+        return tuple(str(dep).strip() for dep in items if str(dep).strip())
+
     @classmethod
     def from_tool_calls(
         cls,
@@ -82,9 +104,19 @@ class ActionPlan:
         *,
         source: str = "llm",
     ) -> "ActionPlan":
-        """Capture the provider's ordered tool calls without reinterpreting them."""
+        """Capture the provider's ordered tool calls without reinterpreting them.
+
+        A provider may attach its own ``key`` and ``depends_on`` to a call.
+        Those are the plan's step identity: dropping them is what previously
+        let a consumer run before its producer and turned a real dependency
+        graph into a flat name-ordered list.  A missing key still falls back
+        to the deterministic ``tool`` / ``tool#N`` naming so callers that only
+        name a tool keep working, and a duplicated provider key is never
+        allowed to alias two different steps.
+        """
         steps = []
         counts = {}
+        seen = set()
         for call in tool_calls or ():
             if not isinstance(call, Mapping):
                 continue
@@ -92,10 +124,19 @@ class ActionPlan:
             if not tool:
                 continue
             counts[tool] = int(counts.get(tool, 0)) + 1
-            key = tool if counts[tool] == 1 else f"{tool}#{counts[tool]}"
+            fallback = tool if counts[tool] == 1 else f"{tool}#{counts[tool]}"
+            raw_key = call.get("key")
+            key = str(raw_key).strip() if raw_key is not None else ""
+            if not key or key in seen:
+                key = fallback
+                while key in seen:
+                    counts[tool] = int(counts.get(tool, 0)) + 1
+                    key = f"{tool}#{counts[tool]}"
+            seen.add(key)
             steps.append(ActionStep(
                 key=key,
                 tool=tool,
+                depends_on=cls._dependency_keys(call),
                 params=dict(call.get("params") or {}),
                 source=source,
             ))
@@ -122,26 +163,39 @@ class ActionPlan:
         """Order calls by this plan while preserving duplicate-call order.
 
         Retries, dependency injection, and authorization can rebuild the
-        provider's list. This keeps the planned business order stable without
-        reinterpreting the provider's parameters.
+        provider's list.  Each call is matched onto one planned step: an
+        explicit ``key`` wins, otherwise the n-th call of a tool occupies the
+        n-th planned slot of that tool.  Grouping by tool *name* alone is what
+        previously collapsed a second ``dose_recompute``/``report_generator``
+        into the first occurrence's position and reordered a real dependency
+        chain.  Unmatched tools keep their relative order after the planned
+        steps.  The provider's parameters are never reinterpreted.
         """
         calls = list(tool_calls or ())
         if not calls or not self.steps:
             return tuple(calls)
-        tool_order = {}
-        for index, step in enumerate(self.ordered_steps()):
-            tool_order.setdefault(step.tool, index)
-        fallback = len(tool_order)
-        return tuple(
-            call
-            for _index, call in sorted(
-                enumerate(calls),
-                key=lambda item: (
-                    tool_order.get(str(item[1].get("tool") or ""), fallback),
-                    item[0],
-                ),
-            )
-        )
+        ordered_steps = self.ordered_steps()
+        rank = {step.key: index for index, step in enumerate(ordered_steps)}
+        steps_by_tool: dict = {}
+        for step in ordered_steps:
+            steps_by_tool.setdefault(step.tool, []).append(step.key)
+        tool_occurrence: dict = {}
+        matched = []
+        for position, call in enumerate(calls):
+            tool = str(call.get("tool") or "")
+            raw_key = call.get("key")
+            key = str(raw_key).strip() if raw_key is not None else ""
+            if key not in rank:
+                nth = int(tool_occurrence.get(tool, 0)) + 1
+                tool_occurrence[tool] = nth
+                slots = steps_by_tool.get(tool) or ()
+                key = slots[nth - 1] if len(slots) >= nth else ""
+            if key in rank:
+                matched.append((rank[key], position, call))
+            else:
+                matched.append((len(ordered_steps) + position, position, call))
+        matched.sort(key=lambda item: (item[0], item[1]))
+        return tuple(item[2] for item in matched)
 
     def merge(self, other: "ActionPlan") -> "ActionPlan":
         """Append steps while retaining order and preserving repeated actions.
@@ -216,24 +270,73 @@ class ActionPlan:
             request_id=self.request_id or other.request_id,
         )
 
+    def validate(self) -> Tuple[str, ...]:
+        """Return every structural defect in the plan (empty when it is sound).
+
+        Missing dependencies, duplicate step ids and cycles are execution
+        hazards, not cosmetic issues: a plan that names them must be refused
+        before any tool runs instead of being silently reordered.  Callers
+        that only need a deterministic listing can still use
+        :meth:`ordered_steps`, which never drops a step.
+        """
+        problems = []
+        seen = set()
+        for step in self.steps:
+            if not step.key:
+                problems.append("step with empty id")
+            elif step.key in seen:
+                problems.append(f"duplicate step id: {step.key}")
+            seen.add(step.key)
+        for step in self.steps:
+            for dep in step.depends_on:
+                if dep == step.key:
+                    problems.append(f"step {step.key} depends on itself")
+                elif dep not in seen:
+                    problems.append(
+                        f"unknown dependency {dep!r} referenced by {step.key}"
+                    )
+        if not problems and self._has_cycle():
+            problems.append("cyclic dependency in action plan")
+        return tuple(problems)
+
+    def _has_cycle(self) -> bool:
+        remaining = {step.key for step in self.steps}
+        blockers = {
+            step.key: {dep for dep in step.depends_on if dep in remaining}
+            for step in self.steps
+        }
+        changed = True
+        while changed and remaining:
+            changed = False
+            for key in list(remaining):
+                if not (blockers[key] & remaining):
+                    remaining.discard(key)
+                    changed = True
+        return bool(remaining)
+
+    @property
+    def is_valid(self) -> bool:
+        return not self.validate()
+
     def ordered_steps(self) -> Tuple[ActionStep, ...]:
-        """Return a stable topological order for explicit dependencies."""
+        """Return a stable topological order for explicit dependencies.
+
+        Dependencies are resolved against *step ids* only.  Treating a
+        dependency as satisfied merely because some step with the same tool
+        name has already run is what allowed ``report_generator`` to execute
+        before ``dose_recompute#2``.  A malformed or cyclic plan keeps its
+        original order so it stays observable and deterministic;
+        :meth:`validate` reports why it cannot be executed as scheduled.
+        """
         pending = list(self.steps)
         emitted = set()
-        emitted_tools = set()
         ordered = []
         while pending:
             progress = False
             for index, step in enumerate(pending):
-                if all(
-                    dep in emitted
-                    or dep in emitted_tools
-                    or dep not in self.tool_names
-                    for dep in step.depends_on
-                ):
+                if all(dep in emitted for dep in step.depends_on):
                     ordered.append(step)
                     emitted.add(step.key)
-                    emitted_tools.add(step.tool)
                     pending.pop(index)
                     progress = True
                     break
