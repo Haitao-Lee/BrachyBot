@@ -1,0 +1,265 @@
+﻿line,tag,id,type,title,i18n,events,data_ui
+46,link,,,,,"{""onerror"": ""this.disabled=true; console.warn('Google Fonts CDN unreachable; falling back to system fonts.')""}",{}
+53,script,,,,,"{""onerror"": ""console.error('Failed to load plotly.min.js — check web/app/static/js/')""}",{}
+54,script,,,,,"{""onerror"": ""console.error('Failed to load marked.min.js')""}",{}
+55,link,,,,,"{""onerror"": ""console.error('Failed to load prism-tomorrow.min.css')""}",{}
+56,script,,,,,"{""onerror"": ""console.error('Failed to load prism.min.js')""}",{}
+57,script,,,,,"{""onerror"": ""console.error('Failed to load prism-python.min.js')""}",{}
+58,script,,,,,"{""onerror"": ""console.error('Failed to load prism-javascript.min.js')""}",{}
+59,script,,,,,"{""onerror"": ""console.error('Failed to load prism-bash.min.js')""}",{}
+60,script,,,,,"{""onerror"": ""console.error('Failed to load prism-json.min.js')""}",{}
+61,script,,,,,"{""onerror"": ""console.error('Failed to load three.min.js')""}",{}
+62,script,,,,,"{""onerror"": ""console.error('Failed to load OrbitControls.js')""}",{}
+63,script,,,,,"{""onerror"": ""console.error('Failed to load html2canvas.min.js')""}",{}
+98,button,,button,,,{},{}
+99,button,,button,,,{},{}
+114,form,authForm,,,,{},{}
+117,input,authUsername,text,,,{},{}
+128,input,authPassword,password,,,{},{}
+132,button,authPasswordToggle,button,Show password,,{},{}
+148,input,authRemember,checkbox,,,{},{}
+156,button,authLogin,submit,,,{},{}
+161,button,authRegister,button,,,{},{}
+168,summary,,,,,{},{}
+170,input,authDeploymentKey,password,,,{},{}
+299,form,passwordForm,,,,{},{}
+302,input,currentPassword,password,,,{},{}
+308,input,newPassword,password,,,{},{}
+310,button,newPasswordToggle,button,Show new password,,{},{}
+323,button,passwordSave,submit,,,{},{}
+325,button,passwordCancel,button,,,{},{}
+357,button,,,,,"{""onclick"": ""window.setUiLanguage && window.setUiLanguage('en')""}",{}
+358,button,,,,,"{""onclick"": ""window.setUiLanguage && window.setUiLanguage('zh')""}",{}
+360,button,,button,Switch to light theme,,{},{}
+370,button,importLegacyWorkspace,button,Import legacy browser data,,{},{}
+370,button,accountPassword,button,Change password,,{},{}
+370,button,accountLogout,button,Sign out,,{},{}
+375,button,workspaceLockTakeover,button,,,{},{}
+376,button,workspaceLockDismiss,button,Dismiss,,{},{}
+400,button,,,,,"{""onclick"": ""newChat()""}",{}
+401,button,,button,Close chat history,,"{""onclick"": ""closeSessionSidebar()""}",{}
+410,button,,,,,"{""onclick"": ""toggleContextPanel()""}",{}
+415,button,,,Show / hide the context summary panel,,"{""onclick"": ""toggleContextPanel()""}",{}
+419,button,,,Clear only browser display preferences. Case data is retained in the secure workspace.,,"{""onclick"": ""clearLocalChatData()""}",{}
+435,button,,,Toggle chat history,,"{""onclick"": ""toggleSessionSidebar()""}",{}
+464,summary,,,,,{},{}
+495,div,,,,,"{""onclick"": ""insertSlashCommand('/help')""}",{}
+498,div,,,,,"{""onclick"": ""insertSlashCommand('/plan')""}",{}
+501,div,,,,,"{""onclick"": ""insertSlashCommand('/segment')""}",{}
+504,div,,,,,"{""onclick"": ""insertSlashCommand('/evaluate')""}",{}
+507,div,,,,,"{""onclick"": ""insertSlashCommand('/export')""}",{}
+510,div,,,,,"{""onclick"": ""insertSlashCommand('/viewer')""}",{}
+513,div,,,,,"{""onclick"": ""insertSlashCommand('/clear')""}",{}
+519,textarea,chatInput,,,,"{""onkeydown"": ""handleChatKeypress(event)"", ""oninput"": ""handleChatInput(this)""}",{}
+520,button,chatSendBtn,,,,"{""onclick"": ""sendChat()""}",{}
+529,button,workspaceRecoveryDismiss,button,Dismiss,,{},{}
+542,button,,button,,,"{""onclick"": ""switchPanel('input', this)""}",{}
+545,button,,button,,,"{""onclick"": ""switchPanel('metrics', this)""}",{}
+548,button,,button,,,"{""onclick"": ""switchPanel('viewers', this)""}",{}
+551,button,,button,,,"{""onclick"": ""switchPanel('report', this)""}",{}
+565,input,ctPath,text,,,"{""onkeydown"": ""if(event.key==='Enter'){event.preventDefault();loadCTToViewers(this.value);}""}",{}
+566,button,,,Pick a CT file (.nii/.nii.gz/.mha/.nrrd/.dcm); multi-select DICOM slices together,,"{""onclick"": ""document.getElementById('fileCT').click()""}",{}
+567,button,,,Pick a DICOM folder (supports extensionless DICOM files),,"{""onclick"": ""document.getElementById('fileCTFolder').click()""}",{}
+578,input,fileCT,file,,,"{""onchange"": ""handleFileSelect(this, 'ctPath')""}",{}
+579,input,fileCTFolder,file,,,"{""onchange"": ""handleFileSelect(this, 'ctPath')""}",{}
+586,input,ctvPath,text,,,{},{}
+587,button,,,,,"{""onclick"": ""document.getElementById('fileCTV').click()""}",{}
+597,input,fileCTV,file,,,"{""onchange"": ""handleFileSelect(this, 'ctvPath')""}",{}
+604,select,ctvModelSelect,,,,{},{}
+620,select,ctvImageModality,,,,{},{}
+628,input,ctvVolumeIndex,number,,,{},{}
+642,input,oarPath,text,,,{},{}
+643,button,,,,,"{""onclick"": ""document.getElementById('fileOAR').click()""}",{}
+650,input,fileOAR,file,,,"{""onchange"": ""handleFileSelect(this, 'oarPath')""}",{}
+656,input,dicomRtPath,text,,,{},{}
+660,button,dicomRtImportButton,button,,,"{""onclick"": ""document.getElementById('fileDicomRT').click()""}",{}
+667,input,fileDicomRT,file,,,"{""onchange"": ""handleDicomRTImport(this)""}",{}
+676,div,,,,,"{""onclick"": ""toggleHyperparams()""}","{""data-ui-semantic"": ""expansion""}"
+687,input,devThreshold,number,,,{},{}
+690,input,useRLToggle,checkbox,,,{},{}
+702,input,seedRadius,number,,,{},{}
+703,input,seedLength,number,,,{},{}
+704,input,seedCountMin,number,,,{},{}
+705,input,seedCountMax,number,,,{},{}
+706,input,seedMarginRate,number,,,{},{}
+707,input,seedAvgDose,number,,,{},{}
+715,input,targetValue,number,,,{},{}
+716,input,obstacleValue,number,,,{},{}
+717,input,backgroundValue,number,,,{},{}
+725,input,backlitAngle,number,,,{},{}
+726,input,maxCandiTraj,number,"Maximum valid initial trajectories; default 500, sampled across positions and directions",,{},{}
+730,input,refDirecX,number,,,{},{}
+731,input,refDirecY,number,,,{},{}
+732,input,refDirecZ,number,,,{},{}
+735,input,refDirecAuto,checkbox,,,{},{}
+741,input,direcResCone,number,,,{},{}
+742,input,direcResStep,number,,,{},{}
+743,input,direcResRings,number,,,{},{}
+752,input,inLowestEnergy,number,,,{},{}
+753,input,outHighestEnergy,number,,,{},{}
+754,input,dvhRate,number,,,{},{}
+755,input,maxIter,number,,,{},{}
+763,input,distLowerBound,number,,,{},{}
+764,input,distUpperBound,number,,,{},{}
+765,input,distRate,number,,,{},{}
+766,input,intervalRate,number,,,{},{}
+774,input,iterRate,number,,,{},{}
+775,input,replanRate,number,,,{},{}
+783,input,dlLR,number,,,{},{}
+784,input,dlLRDecay,number,,,{},{}
+785,input,dlEpochs,number,,,{},{}
+786,input,dlPatience,number,,,{},{}
+787,input,dlSearchRegion,number,,,{},{}
+788,input,dlDVHMargin,number,,,{},{}
+792,input,inferSizeX,number,,,{},{}
+793,input,inferSizeY,number,,,{},{}
+794,input,inferSizeZ,number,,,{},{}
+803,input,rfMaxEpisodes,number,,,{},{}
+804,input,rfBandwidth,number,,,{},{}
+807,button,,,,,"{""onclick"": ""applyHyperparams()""}",{}
+814,button,,,,,"{""onclick"": ""runPlanning()""}",{}
+817,button,,,,,"{""onclick"": ""runIntra()""}",{}
+820,button,,,,,"{""onclick"": ""resetSession()""}",{}
+825,div,,,,,"{""onclick"": ""toggleStepButtons()""}","{""data-ui-semantic"": ""expansion""}"
+857,button,stepBtn_ctv_segmentation,,,,"{""onclick"": ""runSegmentationStep('ctv_segmentation')""}",{}
+860,button,stepBtn_oar_segmentation,,,,"{""onclick"": ""runSegmentationStep('oar_segmentation')""}",{}
+867,button,stepBtn_trajectory_init,,,,"{""onclick"": ""runPlanningStep('trajectory_init')""}",{}
+870,button,stepBtn_trajectory_refine,,,,"{""onclick"": ""runPlanningStep('trajectory_refine')""}",{}
+877,button,stepBtn_seed_planning,,,,"{""onclick"": ""runPlanningStep('seed_planning')""}",{}
+880,button,stepBtn_dose_calc,,,,"{""onclick"": ""runPlanningStep('dose_calc')""}",{}
+887,button,stepBtn_dose_eval,,,,"{""onclick"": ""runPlanningStep('dose_eval')""}",{}
+890,button,,,,,"{""onclick"": ""showStepResults('all')""}",{}
+898,button,,,,,"{""onclick"": ""showStepResults('trajectories')""}",{}
+899,button,,,,,"{""onclick"": ""showStepResults('seeds')""}",{}
+900,button,,,,,"{""onclick"": ""showStepResults('dose')""}",{}
+901,button,,,,,"{""onclick"": ""showStepResults('dvh')""}",{}
+902,button,,,,,"{""onclick"": ""showStepResults('metrics')""}",{}
+908,button,,,,,"{""onclick"": ""exportDicomRT()""}",{}
+909,button,,,,,"{""onclick"": ""exportSTL()""}",{}
+910,button,,,,,"{""onclick"": ""exportReport()""}",{}
+916,button,monitorStartButton,,,,"{""onclick"": ""startTrainingMode('Monitor manual/automatic planning')""}",{}
+917,button,monitorStopButton,,,,"{""onclick"": ""stopTrainingMode()""}",{}
+918,button,,,,,"{""onclick"": ""addManualNeedle()""}",{}
+919,button,,,,,"{""onclick"": ""addManualSeed()""}",{}
+920,button,,,,,"{""onclick"": ""recomputeManualDose('manual_button')""}",{}
+921,button,,,,,"{""onclick"": ""replanManualPlan()""}",{}
+922,button,generateSurgicalGuideButton,,,,"{""onclick"": ""generateSurgicalGuide()""}",{}
+923,button,,,,,"{""onclick"": ""exportSurgicalGuideSTL()""}",{}
+924,button,,,,,"{""onclick"": ""requestPlanningAdvice()""}",{}
+925,button,,,,,"{""onclick"": ""checkSystemReadiness()""}",{}
+928,summary,,,,,{},{}
+930,input,guideSkinThreshold,number,,,{},{}
+931,input,guideSkinClearance,number,,,{},{}
+932,input,guidePlateThickness,number,,,{},{}
+933,input,guidePatchMargin,number,,,{},{}
+934,input,guideChannelDiameter,number,,,{},{}
+935,input,guideSleeveOuterDiameter,number,,,{},{}
+936,input,guideSleeveOutward,number,,,{},{}
+937,input,guideSleeveInward,number,,,{},{}
+938,input,guideGeometryResolution,number,,,{},{}
+942,input,guideAuxiliaryHolesEnabled,checkbox,,,{},{}
+943,input,guideAuxiliaryHoleDiameter,number,Derived from the primary channel diameter,,{},{}
+944,input,guideAuxiliaryHoleRingCount,number,,,{},{}
+945,input,guideAuxiliaryHolesPerRing,number,,,{},{}
+946,input,guideAuxiliaryHoleFirstOffset,number,,,{},{}
+947,input,guideAuxiliaryHoleRingSpacing,number,,,{},{}
+951,select,guideNeedleSelection,,,,{},{}
+952,select,guideVersionSelect,,,,{},{}
+952,button,,button,,,"{""onclick"": ""loadSelectedSurgicalGuideVersion()""}",{}
+953,select,surgicalGuidePlanningSelect,,,,{},{}
+956,input,guideStlValidationFile,file,,,{},{}
+957,button,,button,,,"{""onclick"": ""document.getElementById('guideStlValidationFile').click()""}",{}
+960,button,,button,,,"{""onclick"": ""resetSurgicalGuideControls()""}",{}
+1022,canvas,dvhCanvas,,,,{},{}
+1081,button,,,,,"{""onclick"": ""Report.autoFill.fromAll()""}",{}
+1084,button,,,,,"{""onclick"": ""Report.preview.refreshContent({persist: true})""}",{}
+1089,select,reportTemplateSelect,,,,"{""onchange"": ""applyReportTemplate(this.value)""}",{}
+1104,button,,,,,"{""onclick"": ""Report.export.pdf()""}",{}
+1108,button,,,,,"{""onclick"": ""Report._toggleExportMenu()""}",{}
+1112,div,,,,,"{""onclick"": ""Report.export.pdf();Report._hideExportMenu()""}",{}
+1113,div,,,,,"{""onclick"": ""Report.export.html();Report._hideExportMenu()""}",{}
+1114,div,,,,,"{""onclick"": ""Report.export.markdown();Report._hideExportMenu()""}",{}
+1115,div,,,,,"{""onclick"": ""Report.export.json();Report._hideExportMenu()""}",{}
+1116,div,,,,,"{""onclick"": ""Report.persist.importJSON();Report._hideExportMenu()""}",{}
+1123,button,,,,,"{""onclick"": ""Report.snapshots.save()""}",{}
+1126,button,,,,,"{""onclick"": ""Report.snapshots.openModal()""}",{}
+1129,button,,,,,"{""onclick"": ""Report.audit.openModal()""}",{}
+1132,button,,,,,"{""onclick"": ""Report.review.openModal()""}",{}
+1137,button,,,,,"{""onclick"": ""Report.validation.openModal()""}",{}
+1144,button,,,,,"{""onclick"": ""Report.preview.zoomOut()""}",{}
+1147,span,rpZoomIndicator,,,,"{""onclick"": ""Report.preview.zoomReset()""}",{}
+1150,button,,,,,"{""onclick"": ""Report.preview.zoomIn()""}",{}
+1157,input,,checkbox,,,"{""onchange"": ""Report.panels.layout2col(this.checked)""}",{}
+1160,button,,,,,"{""onclick"": ""Report.persist.clear()""}",{}
+1222,select,windowPreset,,,,"{""onchange"": ""applyWindowPreset()""}",{}
+1232,input,viewerWindow,number,,,"{""onchange"": ""applyViewerSettings()""}",{}
+1236,input,viewerLevel,number,,,"{""onchange"": ""applyViewerSettings()""}",{}
+1242,input,viewerZoom,range,,,"{""oninput"": ""applyZoom(this.value)""}","{""data-ui-target"": ""viewer.zoom"", ""data-ui-command"": ""set"", ""data-ui-intents"": ""viewer zoom,zoom in,zoom out,缩放,放大图像,缩小图像""}"
+1251,input,viewerThreshold,number,,,{},{}
+1253,button,viewerThresholdApply,,,,"{""onclick"": ""applyThreshold()""}",{}
+1261,select,displayMode,,,,"{""onchange"": ""setDisplayMode()""}",{}
+1270,input,overlayCTV,checkbox,,,"{""onchange"": ""toggleOverlay()""}",{}
+1273,input,overlayOAR,checkbox,,,"{""onchange"": ""toggleOverlay()""}",{}
+1279,input,doseOverlayOpacity,range,,,"{""oninput"": ""setDoseOverlayOpacity(this.value)""}",{}
+1284,button,doseTextureToggle,,Map dose intensity onto CTV/OAR 3D surfaces,,"{""onclick"": ""toggleDoseTextureMode()""}",{}
+1285,button,doseColorbarButton,,Adjust dose colorbar ranges and palette,,"{""onclick"": ""toggleDoseColorbarPanel()""}",{}
+1287,button,,button,Close,,"{""onclick"": ""closeDoseColorbarPanel();""}",{}
+1290,select,doseColorbarScope,,,,"{""onchange"": ""syncDoseColorbarControls()""}",{}
+1294,input,doseColorbarMinInput,number,,,{},{}
+1296,input,doseColorbarMaxInput,number,,,{},{}
+1298,select,doseColorbarPalette,,,,{},{}
+1303,button,,,,,"{""onclick"": ""resetDoseColorbarSettings()""}",{}
+1304,button,,,,,"{""onclick"": ""applyDoseColorbarSettings()""}",{}
+1309,button,toolCrosshair,,,,"{""onclick"": ""setViewerTool('crosshair')""}",{}
+1310,button,toolMeasure,,,,"{""onclick"": ""setViewerTool('measure')""}",{}
+1311,button,toolAngle,,,,"{""onclick"": ""setViewerTool('angle')""}",{}
+1312,button,toolRect,,,,"{""onclick"": ""setViewerTool('rect')""}",{}
+1313,button,toolZoombox,,,,"{""onclick"": ""setViewerTool('zoombox')""}",{}
+1314,button,toolAnnotate,,,,"{""onclick"": ""setViewerTool('annotate')""}",{}
+1315,button,toolEraser,,,,"{""onclick"": ""setViewerTool('eraser')""}",{}
+1316,button,toolSat3dPositive,,SAT3D positive point,,"{""onclick"": ""setViewerTool('sat3d_positive')""}",{}
+1317,button,toolSat3dNegative,,SAT3D negative point,,"{""onclick"": ""setViewerTool('sat3d_negative')""}",{}
+1318,button,toolSat3dClear,,Clear SAT3D points,,"{""onclick"": ""clearSat3dPromptPoints()""}",{}
+1320,button,,,,,"{""onclick"": ""viewerFlipH()""}",{}
+1321,button,,,,,"{""onclick"": ""viewerFlipV()""}",{}
+1322,button,,,,,"{""onclick"": ""viewerRotate()""}",{}
+1323,button,,,,,"{""onclick"": ""viewerUndo()""}",{}
+1324,button,,,,,"{""onclick"": ""viewerRedo()""}",{}
+1325,button,,,,,"{""onclick"": ""fitView()""}",{}
+1326,button,,,,,"{""onclick"": ""resetViewer()""}",{}
+1328,button,reconstruct3DButton,,3D reconstruction from current CT and planning data,,"{""onclick"": ""reconstruct3D()""}","{""data-ui-target"": ""viewer.reconstruct3d"", ""data-ui-command"": ""run"", ""data-ui-intents"": ""3D reconstruction,3D reconstruct,reconstruct 3D,3D重建,三维重建,重建""}"
+1342,button,,,1 column,,"{""onclick"": ""setViewerLayout('vertical')""}",{}
+1343,button,,,1 row,,"{""onclick"": ""setViewerLayout('horizontal')""}",{}
+1344,button,,,2x2 Grid,,"{""onclick"": ""setViewerLayout('grid')""}",{}
+1345,button,,,3D top + 3 viewers (default),,"{""onclick"": ""setViewerLayout('3d-top')""}",{}
+1346,button,,,3 viewers + 3D,,"{""onclick"": ""setViewerLayout('3d-bottom')""}",{}
+1371,button,,,Fullscreen,,"{""onclick"": ""toggleViewerFullscreen('axial')""}","{""data-ui-target"": ""viewer.fullscreen"", ""data-ui-command"": ""toggle"", ""data-ui-value"": ""axial"", ""data-ui-intents"": ""maximize viewer,fullscreen,expand viewer,放大查看器,全屏""}"
+1381,canvas,sliceCanvasAxial,,,,{},{}
+1382,canvas,crosshairCanvasAxial,,,,{},{}
+1383,canvas,annotationCanvasAxial,,,,{},{}
+1384,canvas,labelOverlay_Axial,,,,{},{}
+1389,canvas,,,,,{},{}
+1406,input,sliderAxial,range,,,"{""oninput"": ""updateSlice('axial', this.value)""}",{}
+1415,button,,,Fullscreen,,"{""onclick"": ""toggleViewerFullscreen('sagittal')""}","{""data-ui-target"": ""viewer.fullscreen"", ""data-ui-command"": ""toggle"", ""data-ui-value"": ""sagittal"", ""data-ui-intents"": ""maximize viewer,fullscreen,expand viewer,放大查看器,全屏""}"
+1425,canvas,sliceCanvasSagittal,,,,{},{}
+1426,canvas,crosshairCanvasSagittal,,,,{},{}
+1427,canvas,annotationCanvasSagittal,,,,{},{}
+1428,canvas,labelOverlay_Sagittal,,,,{},{}
+1433,canvas,,,,,{},{}
+1450,input,sliderSagittal,range,,,"{""oninput"": ""updateSlice('sagittal', this.value)""}",{}
+1459,button,,,Fullscreen,,"{""onclick"": ""toggleViewerFullscreen('coronal')""}","{""data-ui-target"": ""viewer.fullscreen"", ""data-ui-command"": ""toggle"", ""data-ui-value"": ""coronal"", ""data-ui-intents"": ""maximize viewer,fullscreen,expand viewer,放大查看器,全屏""}"
+1469,canvas,sliceCanvasCoronal,,,,{},{}
+1470,canvas,crosshairCanvasCoronal,,,,{},{}
+1471,canvas,annotationCanvasCoronal,,,,{},{}
+1472,canvas,labelOverlay_Coronal,,,,{},{}
+1477,canvas,,,,,{},{}
+1494,input,sliderCoronal,range,,,"{""oninput"": ""updateSlice('coronal', this.value)""}",{}
+1503,button,,,Fullscreen,,"{""onclick"": ""toggleViewerFullscreen('3d')""}","{""data-ui-target"": ""viewer.fullscreen"", ""data-ui-command"": ""toggle"", ""data-ui-value"": ""3d"", ""data-ui-intents"": ""maximize viewer,fullscreen,expand viewer,放大三维查看器,三维全屏""}"
+1520,canvas,,,,,{},{}
+1536,button,,,Reset camera,,"{""onclick"": ""reset3DView()""}",{}
+1539,input,meshOpacity3D,range,,,"{""oninput"": ""update3DMeshOpacity(this.value)""}",{}
+1542,input,wireframe3D,checkbox,,,"{""onchange"": ""toggle3DWireframe(this.checked)""}",{}
+1547,input,skinToggle3D,checkbox,,,"{""onchange"": ""toggle3DSkin(this.checked)""}",{}
+1552,input,doseOpacity,range,,,"{""oninput"": ""updateDoseOpacity(this.value)""}",{}
+1555,input,labelShow3d,checkbox,,,"{""onchange"": ""updateLabelImage('3d')""}",{}
+1559,input,labelOp3d,range,,,"{""oninput"": ""updateLabelImage('3d')""}",{}

@@ -1,0 +1,238 @@
+[
+  {
+    "name": "simple_async_failure_is_discarded",
+    "result": {
+      "success": true,
+      "ref": "test",
+      "id": "test",
+      "label": "simple_async_failure_is_discarded",
+      "command": "click",
+      "applied": null,
+      "checked": null,
+      "value": "",
+      "aria_expanded": null,
+      "visible": true
+    },
+    "events": []
+  },
+  {
+    "name": "numeric_without_bounds_clamped_to_zero",
+    "result": {
+      "success": true,
+      "ref": "test",
+      "id": "test",
+      "label": "numeric_without_bounds_clamped_to_zero",
+      "command": "set",
+      "applied": "0",
+      "checked": null,
+      "value": "0",
+      "aria_expanded": null,
+      "visible": true
+    },
+    "events": [
+      {
+        "type": "input",
+        "bubbles": true
+      },
+      {
+        "type": "change",
+        "bubbles": true
+      }
+    ]
+  },
+  {
+    "name": "ctrl_wheel_loses_modifier",
+    "result": {
+      "success": true,
+      "ref": "test",
+      "id": "test",
+      "label": "ctrl_wheel_loses_modifier",
+      "command": "scroll",
+      "applied": {
+        "deltaX": 0,
+        "deltaY": -120
+      },
+      "checked": null,
+      "value": "",
+      "aria_expanded": null,
+      "visible": true
+    },
+    "events": [
+      {
+        "type": "wheel",
+        "bubbles": true,
+        "cancelable": true,
+        "view": {},
+        "clientX": 50,
+        "clientY": 50,
+        "deltaX": 0,
+        "deltaY": -120,
+        "deltaMode": 0
+      }
+    ]
+  },
+  {
+    "name": "drag_only_pointer_events",
+    "result": {
+      "success": true,
+      "ref": "test",
+      "id": "test",
+      "label": "drag_only_pointer_events",
+      "command": "drag",
+      "applied": {
+        "from": {
+          "x": 10,
+          "y": 10
+        },
+        "to": {
+          "x": 40,
+          "y": 40
+        }
+      },
+      "checked": null,
+      "value": "",
+      "aria_expanded": null,
+      "visible": true
+    },
+    "events": [
+      {
+        "type": "pointerdown",
+        "bubbles": true,
+        "cancelable": true,
+        "view": {},
+        "clientX": 10,
+        "clientY": 10,
+        "button": 0,
+        "buttons": 1,
+        "pointerId": 1,
+        "pointerType": "mouse"
+      },
+      {
+        "type": "pointermove",
+        "bubbles": true,
+        "cancelable": true,
+        "view": {},
+        "clientX": 40,
+        "clientY": 40,
+        "button": 0,
+        "buttons": 1,
+        "pointerId": 1,
+        "pointerType": "mouse"
+      },
+      {
+        "type": "pointerup",
+        "bubbles": true,
+        "cancelable": true,
+        "view": {},
+        "clientX": 40,
+        "clientY": 40,
+        "button": 0,
+        "buttons": 0,
+        "pointerId": 1,
+        "pointerType": "mouse"
+      }
+    ]
+  },
+  {
+    "name": "checkbox_string_false_becomes_true",
+    "result": {
+      "success": true,
+      "ref": "test",
+      "id": "test",
+      "label": "checkbox_string_false_becomes_true",
+      "command": "set",
+      "applied": true,
+      "checked": true,
+      "value": "",
+      "aria_expanded": null,
+      "visible": true
+    },
+    "events": [
+      {
+        "type": "input",
+        "bubbles": true
+      },
+      {
+        "type": "change",
+        "bubbles": true
+      }
+    ]
+  },
+  {
+    "name": "argument_handler_not_awaited",
+    "result": {
+      "success": true,
+      "ref": "test",
+      "id": "test",
+      "label": "argument_handler_not_awaited",
+      "command": "click",
+      "applied": null,
+      "checked": null,
+      "value": "",
+      "aria_expanded": null,
+      "visible": true
+    },
+    "events": [],
+    "pendingAfterSuccess": true
+  },
+  {
+    "name": "independent_batch_stops_after_failure",
+    "executed": [
+      "first"
+    ],
+    "outcome": [
+      {
+        "success": false,
+        "error": "test_failure"
+      }
+    ]
+  },
+  {
+    "name": "relative_opacity_is_absolute",
+    "target": "overlay.ctv.opacity",
+    "result": {
+      "success": true,
+      "target": "overlay.ctv.opacity",
+      "command": "increase",
+      "opacity": 10
+    },
+    "applied": [
+      "ctv",
+      10
+    ]
+  },
+  {
+    "name": "relative_opacity_is_absolute",
+    "target": "overlay.oar.opacity",
+    "result": {
+      "success": true,
+      "target": "overlay.oar.opacity",
+      "command": "increase",
+      "opacity": 10
+    },
+    "applied": [
+      "oar",
+      10
+    ]
+  },
+  {
+    "name": "relative_opacity_is_absolute",
+    "target": "overlay.dose.opacity",
+    "result": {
+      "success": true,
+      "target": "overlay.dose.opacity",
+      "command": "increase",
+      "opacity": 10
+    },
+    "applied": [
+      10
+    ]
+  },
+  {
+    "name": "virtual_catalog_capacity",
+    "nodes": 258,
+    "virtual_entries": 4464,
+    "cap": 4096,
+    "note": "excludes DOM, scene actions, guide, dose, manual steps and other artifacts"
+  }
+]

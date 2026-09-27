@@ -347,3 +347,148 @@ Monitor HUD 需要一个**趋势面板**：
 4. **更强调自动剂量对比**：现有路线图未把"自动剂量重算"列为优先项，但这是用户最关心的反馈。
 
 **结论**：Monitor 的确定性引擎和生命周期管理已经相当健壮（Phase A/B 基本完成），但**交互体验层（Phase C）是当前的瓶颈**。建议把 Phase C 的核心项（HUD、空间标注、结构化反馈）提前，作为下一轮开发的重点。
+
+---
+
+# 实施状态复审（2026-09-26 第二轮）
+
+**触发**：整改实施后，对照本报告 10 个根本问题逐项验证落地情况。
+
+**总体评价**：P0 三项（HUD、空间标注、结构化反馈）均有实质进展但**均未完整达标**。P1 三项中状态机简化和证据链已达标，自动剂量和交互通道精简未达标。P2 三项均为部分实现。
+
+---
+
+## A. 逐项对照（10 个根本问题）
+
+### 问题 1：Chat-as-Dashboard — **部分实现（约 55%）**
+
+**已落地**：新增常驻 `#monitorDashboard` 面板（`brachybot-monitor-dashboard.js`），含指标网格（V100/D90/V200 + OAR Dmax 文本）、工作流徽章行、finding 卡片（severity 边框+冲突+next_step）、操作按钮组、折叠式编辑历史。数据流为 push（checkpoint publish）+ pull（`/api/training/status?overview=1`，250ms debounce）。
+
+**未达标**：
+- 指标卡**无趋势箭头**，OAR Dmax 不是卡片而是一行文本，**plan_score 未展示**
+- 工作流是**扁平徽章行**（数据可用性状态），不是清单式进度（无"当前步骤"高亮、无完成勾选、无每步下一步建议）
+- 事件时间线只有**编辑历史**（8 条），非全量监控事件；**无 severity 色标**；blocking 级不存在
+- 待处理操作只有最新卡片的按钮，**无未查看截图指示**，无跨卡片聚合队列
+
+### 问题 2：空间反馈断链 — **部分实现（约 50%）**
+
+**已落地**：`focusMonitorCheckpoint()` 用 `Box3Helper` 描边高亮冲突/编辑对象（橙色，不改材质），配相机聚焦（`focusPlanningObjectsForScreenshot`，可恢复位姿）；紫色返回箭头（`_monitorReturnPositionOverlay`，ArrowHelper）。
+
+**未达标**：
+- **3D 距离标注线完全未实现**——冲突间距仍只以文本呈现（"seed-123 ↔ seed-456：1.20 mm"），3D 中没有连接两个对象的测量线/标签
+- 对象 ID **不可点击**——无法点击反馈中的单个 ID 跳到单个对象；只能按钮级"定位全部编辑对象"
+- 高亮用 Box3Helper 线框，不是"红色脉冲"式视觉显著标注
+
+### 问题 3：纯文本反馈 — **已实现（约 85%）**
+
+**已落地**：`monitor_changes.py interaction()` 返回 `schema_version:2` 结构化 dict（priority/severity/category/spatial_refs/conflicts/metric_rows/dose_note/next_step/dose_current/dose_comparable），前端按字段逐项渲染卡片，文本仅作回退。
+
+**未达标**：
+- severity 只有 `info`/`warning` 两级，**无 blocking 级**（`monitor_changes.py:429-431`）
+- CSS 只有 `[data-severity=warning]` 一个样式（`monitor-dashboard.css:16`），info 无样式差异
+- 反馈仍是**文字为主**，无数值可视化（V100 没有仪表盘/进度条/色带）
+
+### 问题 4：工作流不可见 — **部分实现（约 40%）**
+
+**已落地**：8 阶段徽章行（CT/CTV/OAR/针粒子/剂量/QA/导板/报告），状态标签（已有数据/待更新/运行中/失败/未核实），带免责声明"数据可用不代表临床通过"。
+
+**未达标**：
+- 无 checklist 式进度（无复选框、无步骤排序、无"当前进行到哪一步"高亮）
+- 状态本质是**数据可用性**，不是**步骤完成度**
+- 无每步的下一步建议
+
+### 问题 5：证据链脆弱 — **已实现（约 85%）**
+
+**已落地**：截图瞬态失败自动重试（≤2 次，1.5s/3s 退避）；后台标签页 deferred + visibilitychange 自动补拍；新编辑取消旧重试；文本证据在图片失败时保留；失败文案按错误类别诚实区分。
+
+**未达标**：
+- 卡片仍显示 5 种错误文案（虽已合并为有界重试+自动恢复，但用户仍会看到 "viewer_tab_hidden" 等系统术语级别的错误码描述）
+- 永久性错误（superseded/monitor_stopped）不重试是合理设计，但 UI 未区分"临时失败"和"永久失败"的视觉权重
+
+### 问题 6：交互通道过多 — **未实现（约 20%）**
+
+**已落地**：卡片按钮和 HUD 按钮统一走 `runMonitorCheckpointAction` 执行器；keep/restore 直接调 `performMonitorEditDecision`（不注入 token）。
+
+**未达标**：
+- **token 聊天命令完整保留**（`handleMonitorConversation` 仍解析 `复位 abc123def456`）
+- `_attachMonitorEditChoices` 仍在批量反馈消息下注入 undo/keep 按钮
+- `monitor_changes.py:331-334` describe() 文本仍输出 "Reply 'undo {code}' or 'keep {code}'"
+- 三条通道（卡片按钮、批量反馈按钮、token 命令）**并存**，未收敛
+
+### 问题 7：剂量对比手动触发 — **部分实现（约 60%）**
+
+**已落地**：HUD 有"自动重算并比较"复选框（`setMonitorAutoCompare`，1800ms 防抖合并连续编辑）；卡片有"重算剂量并比较"手动按钮；拖动/GPU 忙时自动避让。
+
+**未达标**：
+- **默认关闭**——用户必须手动勾选才能获得自动剂量对比，审计报告的核心诉求是"最有价值的反馈应默认可得"
+- 监测模式下拖动种子仍**跳过自动重算**（`3d-manual.js:1952-1958` 的门条件是 `!monitoringEdit || options.doseRecomputeDecision === 'yes'`），注释说"Recompute is an explicit operator decision"
+
+### 问题 8：LLM 被边缘化 — **部分实现（约 30%）**
+
+**已落地**：HUD 有"解释这些变化"按钮 → `requestPlanningAdvice` → `agent._answer_local_read_query`（LLM grounded 解释），45s 超时+重复点击保护。
+
+**未达标**：
+- **无自动临床解释**——反馈本身仍是纯规则文本，不自动附带 LLM 的"为什么这很重要"
+- **无模式识别**——LLM 不观察编辑序列、不识别规划模式
+- **无个性化**——不根据用户行为调整反馈详细程度
+- 修复文档明确声明"No automatic personalized clinical coaching has been enabled"——这是有意边界，但与审计报告的"教练"愿景有差距
+
+### 问题 9：状态机泄漏 — **已实现（约 80%）**
+
+**已落地**：stop_error 有界自动重试（≤2 次，2s/4s 延迟）；页面恢复时自动核对关闭；run_mismatch 按设计终止自动恢复（合理）。
+
+**未达标**：
+- run_mismatch 仍要求用户手动点"结束监测"（设计决策，但用户体验上仍是系统术语）
+- stop_error 期间禁止启动新 run（合理但文案仍是系统术语"上一轮监测的结束尚未确认"）
+
+### 问题 10：没有累积视角 — **部分实现（约 35%）**
+
+**已落地**：折叠式编辑历史（最近 8 次，V100/D90 前后差值）；单卡片内的指标/器官差值表；"本页保留 N 次编辑"计数。
+
+**未达标**：
+- **无图形化趋势**（sparkline/chart/canvas 在 dashboard 中零命中）——趋势是纯文本行
+- 无全运行累计指标（"已编辑 N 次 | V100 趋势: +2.3% | 间距违规: 2 个"）
+- `/api/training/timeline` 导出端点未接入 HUD
+- 无"距离目标还有多远"的进度条
+
+---
+
+## B. 剩余问题优先级
+
+### 高优先级（体验仍不达标的根因）
+
+| # | 问题 | 差距 | 建议 |
+|---|---|---|---|
+| 1 | **3D 距离标注线** | 冲突间距无空间可视化 | 在 `focusMonitorCheckpoint` 中添加 `Line2` + `CSS2DRenderer` 距离标签 |
+| 2 | **工作流清单式进度** | 徽章行≠进度清单 | 把 `stages` 渲染为 checkbox 列表 + "当前步骤"高亮 |
+| 3 | **交互通道收敛** | token 命令仍暴露给用户 | 移除 `handleMonitorConversation` token 路径和 `_attachMonitorEditChoices` |
+| 4 | **趋势图形化** | 纯文本行≠趋势 | 添加 sparkline（V100/D90 时间序列） |
+| 5 | **自动剂量默认开** | 核心反馈需手动触发 | 监测模式下默认启用 auto-compare |
+
+### 中优先级（体验可改善）
+
+| # | 问题 | 差距 | 建议 |
+|---|---|---|---|
+| 6 | severity blocking 级 | 只有 2 级 | 添加 blocking 级 + CSS 样式 |
+| 7 | OAR Dmax 卡片化 | 一行文本≠卡片 | 展示各器官 Dmax 列表 |
+| 8 | plan_score 展示 | 未展示 | 加入指标网格 |
+| 9 | 未查看截图指示 | 完全没有 | HUD 加 pending 截图计数 |
+| 10 | 对象 ID 可点击 | 只能按钮级定位 | ID 渲染为可点击链接 |
+
+### 低优先级（需产品决策）
+
+| # | 问题 | 差距 | 建议 |
+|---|---|---|---|
+| 11 | 自动 LLM 临床解释 | 仅按需"解释"按钮 | 需产品决策：是否每次检查点自动附带 LLM 解释 |
+| 12 | 编辑模式识别 | 无 | 需产品决策：LLM 是否观察编辑序列并给出模式反馈 |
+| 13 | 个性化反馈 | 无 | 需产品决策：是否根据用户行为调整详细程度 |
+
+---
+
+## C. 结论
+
+**本轮整改的亮点**：结构化 schema（问题 3）、证据链自动重试（问题 5）、状态机自动恢复（问题 9）已基本达标；Monitor HUD 从零到有是质的飞跃。
+
+**核心差距**：空间可视化（距离标注线）、工作流清单化、交互通道收敛、趋势图形化——这四项是"从可用到好用"的关键，目前均未达标。
+
+**愿景-实现距离**：审计报告描述的"安静、持续、可信赖的陪练教练"体验，当前实现约 **50%**。确定性引擎和生命周期管理已达生产质量（Phase A/B 完成），但交互体验层（Phase C）仍有显著缺口，尤其是空间反馈和工作流指导两个维度。

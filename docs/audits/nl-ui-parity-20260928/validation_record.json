@@ -1,0 +1,41 @@
+{
+  "date": "2026-09-28",
+  "baseline": "a3aa976844526195756a36beebc2828b165e9c33",
+  "remote_source_sha256_comparison": {"files": 505, "mismatches": 0},
+  "remote_pytest": {
+    "environment": "/home/lht/.conda/envs/brachytherapy/bin/python",
+    "flags": "PYTHONDONTWRITEBYTECODE=1 -m pytest -q -p no:cacheprovider",
+    "passed": 139,
+    "warnings": 3,
+    "warning_type": "SWIG DeprecationWarning",
+    "initial_seconds": 7.49,
+    "repeat_run": {"passed": 139, "warnings": 3, "seconds": 5.79},
+    "files": [
+      "tests/test_ui_control_snapshot_contract.py",
+      "tests/test_guide_visibility_contract.py",
+      "tests/test_intent_decision_contract.py",
+      "tests/test_intent_shortcut_boundary.py",
+      "tests/test_semantic_execution_authorization.py",
+      "tests/test_semantic_decision_budget.py",
+      "tests/test_answer_coverage.py",
+      "tests/test_agent_workspace_state.py",
+      "tests/test_downstream_update.py",
+      "tests/test_case_question_orchestration.py",
+      "tests/test_ui_bridge_sidecar.py"
+    ]
+  },
+  "node_vm_regressions_passed": [
+    "tests/guide-visibility-browser.test.cjs",
+    "tests/chat_turn_lifecycle.cjs"
+  ],
+  "browser_tests_not_executed": {
+    "reason": "Local MODULE_NOT_FOUND: playwright at module load; not a product assertion failure",
+    "files": [
+      "tests/manual-step-viewer-browser.test.cjs",
+      "tests/monitor-dashboard-browser.test.cjs",
+      "tests/monitor-coaching-browser.test.cjs"
+    ]
+  },
+  "custom_probes": "Observed baseline defects in pure functions and production JS functions with inert mocks; see result JSONs. No live clinical mutation.",
+  "not_verified": ["full test suite", "authenticated real patient browser E2E", "GPU planning", "clinical efficacy or safety", "all dynamic UI capabilities"]
+}

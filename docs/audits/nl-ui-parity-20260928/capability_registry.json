@@ -1,0 +1,1039 @@
+{
+  "panel": {
+    "commands": [
+      "switch"
+    ],
+    "values": [
+      "input",
+      "metrics",
+      "viewers",
+      "report"
+    ],
+    "description": "Switch between UI panels/tabs (input, metrics, viewers, report)"
+  },
+  "viewer.window": {
+    "commands": [
+      "set",
+      "increase",
+      "decrease"
+    ],
+    "value_type": "int",
+    "range": [
+      1,
+      2000
+    ],
+    "description": "CT window width (contrast range). Higher = more contrast."
+  },
+  "viewer.level": {
+    "commands": [
+      "set",
+      "increase",
+      "decrease"
+    ],
+    "value_type": "int",
+    "range": [
+      -1000,
+      1000
+    ],
+    "description": "CT window level (center HU). Lower = darker, higher = brighter."
+  },
+  "viewer.zoom": {
+    "commands": [
+      "set",
+      "increase",
+      "decrease",
+      "fit"
+    ],
+    "value_type": "int",
+    "range": [
+      50,
+      300
+    ],
+    "value_ranges": {
+      "set": [
+        50,
+        300
+      ],
+      "increase": [
+        1,
+        250
+      ],
+      "decrease": [
+        1,
+        250
+      ]
+    },
+    "default_step": 20,
+    "description": "Viewer zoom level in percent. Use set with an absolute value between 50 and 300; use increase/decrease with a positive delta between 1 and 250; fit only resets the camera/view to fit. This changes image magnification, not the viewer panel size."
+  },
+  "viewer.threshold": {
+    "commands": [
+      "set"
+    ],
+    "value_type": "int",
+    "range": [
+      -1000,
+      1000
+    ],
+    "description": "HU threshold for segmentation overlay"
+  },
+  "viewer.fullscreen": {
+    "commands": [
+      "toggle"
+    ],
+    "values": [
+      "axial",
+      "sagittal",
+      "coronal",
+      "3d"
+    ],
+    "description": "Click the viewer card expand/maximize button and toggle that card to fill the Viewers panel. Use value=3d for 'enlarge/maximize the 3D viewer' or '全屏放大三维查看器'. This changes panel layout, not camera fit or numeric zoom."
+  },
+  "viewer.reset": {
+    "commands": [
+      "run"
+    ],
+    "description": "Reset all viewer settings (window/level/zoom/pan) to defaults"
+  },
+  "viewer.fit_all": {
+    "commands": [
+      "run"
+    ],
+    "description": "Fit all 2D viewers to show the full image"
+  },
+  "viewer.refresh_planning": {
+    "commands": [
+      "run"
+    ],
+    "description": "Reload the active Session's saved planning result into the Viewer and Data Tree, including available seeds, needles, dose overlay, isodose surfaces, DVH, and surgical guide. This is a display-only refresh; it does not rerun planning or recompute dose."
+  },
+  "viewer.reconstruct3d": {
+    "commands": [
+      "run"
+    ],
+    "description": "Run the global 3D reconstruction action from the Viewer toolbar using the currently loaded CT and planning data. This is the toolbar action, not the per-organ Data Tree reconstruction command."
+  },
+  "viewer.preset": {
+    "commands": [
+      "set"
+    ],
+    "values": [
+      "soft",
+      "bone",
+      "lung",
+      "brain",
+      "custom"
+    ],
+    "description": "Apply window/level preset"
+  },
+  "viewer.transform": {
+    "commands": [
+      "flip_h",
+      "flip_v",
+      "rotate",
+      "undo",
+      "redo",
+      "fit",
+      "reset"
+    ],
+    "description": "Apply a 2D viewer transform or history action without changing the image coordinate chain"
+  },
+  "viewer.tool": {
+    "commands": [
+      "set"
+    ],
+    "values": [
+      "crosshair",
+      "measure",
+      "angle",
+      "rect",
+      "zoombox",
+      "annotate",
+      "eraser",
+      "sat3d_positive",
+      "sat3d_negative"
+    ],
+    "description": "Activate a 2D viewer interaction tool"
+  },
+  "mask.create": {
+    "commands": [
+      "run"
+    ],
+    "description": "Start a new manual mask and enter the Draw tool. Paint on the 2D slices; the mask appears under Segmentation > Masks in the Data Tree."
+  },
+  "mask.finalize": {
+    "commands": [
+      "run"
+    ],
+    "description": "Finalise the currently active manual mask (same as clicking the Draw tool again)."
+  },
+  "mask.threshold": {
+    "commands": [
+      "set"
+    ],
+    "value_type": "int",
+    "range": [
+      -1000,
+      1000
+    ],
+    "description": "Create/replace a threshold mask in the Data Tree from HU > value (display-only, never used for dose)."
+  },
+  "mask.rename": {
+    "commands": [
+      "set"
+    ],
+    "value_type": "string",
+    "description": "Rename a mask by id (e.g. mask_1). Value is JSON {\"id\":\"mask_1\",\"name\":\"My Mask\"}."
+  },
+  "mask.move": {
+    "commands": [
+      "set"
+    ],
+    "values": [
+      "ctv",
+      "oar"
+    ],
+    "structured_value": true,
+    "description": "Reclassify a mask as display CTV or OAR (presentation only). Value is JSON {\"id\":\"mask_1\"}."
+  },
+  "mask.delete": {
+    "commands": [
+      "run"
+    ],
+    "value_type": "string",
+    "description": "Delete a mask by id (value: mask_1)."
+  },
+  "viewer.colorbar": {
+    "commands": [
+      "set",
+      "reset"
+    ],
+    "value_type": "string",
+    "description": "Set or reset the dose colorbar. Value is JSON such as {\"scope\":\"twoD\",\"min\":0,\"max\":600,\"palette\":\"hot\"}."
+  },
+  "viewer.dose_scale": {
+    "commands": [
+      "set"
+    ],
+    "value_type": "string",
+    "description": "Set dose display scale and palette using the viewer.colorbar JSON format"
+  },
+  "overlay.ctv": {
+    "commands": [
+      "show",
+      "hide",
+      "toggle"
+    ],
+    "description": "CTV segmentation overlay visibility"
+  },
+  "overlay.oar": {
+    "commands": [
+      "show",
+      "hide",
+      "toggle"
+    ],
+    "description": "OAR segmentation overlay visibility"
+  },
+  "overlay.ctv.opacity": {
+    "commands": [
+      "set",
+      "increase",
+      "decrease"
+    ],
+    "value_type": "int",
+    "range": [
+      0,
+      100
+    ],
+    "description": "CTV overlay opacity (0=transparent, 100=opaque)"
+  },
+  "overlay.oar.opacity": {
+    "commands": [
+      "set",
+      "increase",
+      "decrease"
+    ],
+    "value_type": "int",
+    "range": [
+      0,
+      100
+    ],
+    "description": "OAR overlay opacity (0=transparent, 100=opaque)"
+  },
+  "overlay.dose.opacity": {
+    "commands": [
+      "set",
+      "increase",
+      "decrease"
+    ],
+    "value_type": "int",
+    "range": [
+      0,
+      100
+    ],
+    "description": "Dose overlay opacity (0=transparent, 100=opaque)"
+  },
+  "overlay.display_mode": {
+    "commands": [
+      "set"
+    ],
+    "values": [
+      "ct",
+      "overlay",
+      "label"
+    ],
+    "description": "Display mode: ct=CT only, overlay=CT+label, label=label only"
+  },
+  "slice.axial": {
+    "commands": [
+      "set",
+      "next",
+      "prev",
+      "first",
+      "last"
+    ],
+    "value_type": "int",
+    "description": "Navigate axial slice. Value is slice index."
+  },
+  "slice.sagittal": {
+    "commands": [
+      "set",
+      "next",
+      "prev",
+      "first",
+      "last"
+    ],
+    "value_type": "int",
+    "description": "Navigate sagittal slice"
+  },
+  "slice.coronal": {
+    "commands": [
+      "set",
+      "next",
+      "prev",
+      "first",
+      "last"
+    ],
+    "value_type": "int",
+    "description": "Navigate coronal slice"
+  },
+  "viewer.dose_peak": {
+    "commands": [
+      "run"
+    ],
+    "description": "Move all three 2D viewers to the axial, sagittal, and coronal slices containing the maximum dose voxel. Requires a loaded dose overlay."
+  },
+  "layout": {
+    "commands": [
+      "set"
+    ],
+    "values": [
+      "vertical",
+      "horizontal",
+      "grid",
+      "3d-top",
+      "3d-bottom"
+    ],
+    "description": "Viewer layout arrangement"
+  },
+  "data_tree": {
+    "commands": [
+      "expand",
+      "collapse",
+      "toggle",
+      "expand_all",
+      "collapse_all"
+    ],
+    "values": [
+      "image",
+      "segmentation",
+      "ctv",
+      "oar",
+      "non_traversable",
+      "traversable",
+      "masks",
+      "upload_masks",
+      "generic_masks",
+      "planning",
+      "planning_trajectories",
+      "planning_seeds",
+      "planning_needles",
+      "dose_isosurfaces",
+      "planning_meshes",
+      "artifacts"
+    ],
+    "description": "Expand, collapse, or toggle any mounted Data Tree group. expand_all/collapse_all affects all groups."
+  },
+  "tree.visibility": {
+    "commands": [
+      "set"
+    ],
+    "value_type": "string",
+    "description": "Toggle organ visibility. Value: 'organ_id,on' or 'organ_id,off' (e.g. 'ctv_1,on', 'organ_52,off')"
+  },
+  "tree.opacity": {
+    "commands": [
+      "set"
+    ],
+    "value_type": "string",
+    "description": "Set organ opacity. Value: 'organ_id,0-100' (e.g. 'ctv_1,80')"
+  },
+  "tree.reconstruct3d": {
+    "commands": [
+      "run"
+    ],
+    "value_type": "string",
+    "description": "3D reconstruct an organ node. Value: organ_id (e.g. 'ctv_1', 'organ_52')"
+  },
+  "tree.group.visibility": {
+    "commands": [
+      "set",
+      "toggle"
+    ],
+    "value_type": "string",
+    "description": "Toggle visibility for an entire data-tree group. Value is 'group_name,show' or 'group_name,hide'. Valid groups include ctv, oar, non_traversable, traversable, masks, planning_trajectories, planning_seeds, planning_needles, planning_meshes, planning_artifacts."
+  },
+  "tree.group.opacity": {
+    "commands": [
+      "set"
+    ],
+    "value_type": "string",
+    "description": "Set opacity for an entire group. Value: 'group_name,0-100'"
+  },
+  "tree.group.reconstruct3d": {
+    "commands": [
+      "run"
+    ],
+    "value_type": "string",
+    "description": "3D reconstruct all organs in a group. Value: group name (e.g. 'oar', 'non_traversable')"
+  },
+  "tree.dose.visibility": {
+    "commands": [
+      "toggle"
+    ],
+    "values": [
+      "on",
+      "off"
+    ],
+    "description": "Toggle dose overlay visibility in data tree"
+  },
+  "tree.trajectories.visibility": {
+    "commands": [
+      "toggle"
+    ],
+    "values": [
+      "on",
+      "off"
+    ],
+    "description": "Toggle trajectory lines visibility"
+  },
+  "tree.seeds.visibility": {
+    "commands": [
+      "toggle"
+    ],
+    "values": [
+      "on",
+      "off"
+    ],
+    "description": "Toggle seed points visibility"
+  },
+  "tree.needles.visibility": {
+    "commands": [
+      "toggle"
+    ],
+    "values": [
+      "on",
+      "off"
+    ],
+    "description": "Toggle needle lines visibility"
+  },
+  "tree.isosurfaces.visibility": {
+    "commands": [
+      "toggle"
+    ],
+    "values": [
+      "on",
+      "off"
+    ],
+    "description": "Toggle dose isosurface visibility"
+  },
+  "session.new": {
+    "commands": [
+      "run"
+    ],
+    "description": "Create a new chat session"
+  },
+  "session.switch": {
+    "commands": [
+      "run"
+    ],
+    "value_type": "string",
+    "description": "Switch to an existing session by ID"
+  },
+  "session.rename": {
+    "commands": [
+      "set"
+    ],
+    "value_type": "string",
+    "description": "Rename the current session. Value: new title"
+  },
+  "session.delete": {
+    "commands": [
+      "run"
+    ],
+    "value_type": "string",
+    "destructive": true,
+    "description": "Delete a session by ID. REQUIRES user confirmation."
+  },
+  "session.clear_all": {
+    "commands": [
+      "run"
+    ],
+    "destructive": true,
+    "description": "Clear legacy browser display caches only; durable server cases are retained. REQUIRES user confirmation."
+  },
+  "browser_cache.clear": {
+    "commands": [
+      "run"
+    ],
+    "destructive": true,
+    "description": "Clear legacy browser display caches only; durable server cases are retained. REQUIRES user confirmation."
+  },
+  "input.ct.browse": {
+    "commands": [
+      "run"
+    ],
+    "description": "Open the CT image or DICOM-series file picker"
+  },
+  "input.ctv.browse": {
+    "commands": [
+      "run"
+    ],
+    "description": "Open the optional user-provided CTV mask file picker"
+  },
+  "input.oar.browse": {
+    "commands": [
+      "run"
+    ],
+    "description": "Open the optional user-provided OAR mask file picker"
+  },
+  "input.dicom_rt.browse": {
+    "commands": [
+      "run"
+    ],
+    "description": "Open the current case DICOM-RT (RTSTRUCT or RTDOSE) file picker"
+  },
+  "plan.run": {
+    "commands": [
+      "run"
+    ],
+    "description": "Run the full planning pipeline"
+  },
+  "plan.run_manual_step": {
+    "commands": [
+      "run"
+    ],
+    "values": [
+      "ctv_segmentation",
+      "oar_segmentation",
+      "trajectory_init",
+      "trajectory_refine",
+      "seed_planning",
+      "dose_calc",
+      "dose_eval"
+    ],
+    "description": "Run one manual workflow step without relying on the LLM planner"
+  },
+  "plan.reset": {
+    "commands": [
+      "run"
+    ],
+    "destructive": true,
+    "description": "Reset the current planning session. REQUIRES user confirmation."
+  },
+  "ui.state": {
+    "commands": [
+      "sync",
+      "inspect"
+    ],
+    "description": "Synchronize or inspect the current frontend UI state snapshot"
+  },
+  "ui.catalog": {
+    "commands": [
+      "inspect"
+    ],
+    "description": "Inspect the declarative UI command catalog before choosing a control action"
+  },
+  "ui.control": {
+    "commands": [
+      "click",
+      "set",
+      "toggle",
+      "increase",
+      "decrease",
+      "increment",
+      "decrement",
+      "select",
+      "contextmenu",
+      "focus",
+      "blur",
+      "keypress",
+      "keydown",
+      "keyup",
+      "submit",
+      "scroll",
+      "wheel",
+      "doubleclick",
+      "dblclick",
+      "rightclick",
+      "hover",
+      "drag",
+      "pointerdown",
+      "pointermove",
+      "pointerup",
+      "mousedown",
+      "mousemove",
+      "pointerover",
+      "pointerout",
+      "pointercancel",
+      "pointerenter",
+      "pointerleave",
+      "mouseup",
+      "mouseover",
+      "mouseout",
+      "mouseenter",
+      "mouseleave",
+      "click_once",
+      "input",
+      "change",
+      "run",
+      "reset",
+      "expand",
+      "collapse",
+      "next",
+      "prev",
+      "first",
+      "last"
+    ],
+    "value_type": "string",
+    "description": "Generic safe DOM control by a live stable ref or id. Value is normally JSON like {\"ref\":\"dom:viewerWindow\",\"value\":450}. Use contextmenu to open the actual menu on a Data Tree/Viewer element; use increment/decrement or next/prev/first/last for numeric controls, and select for a select element. expand/collapse operates disclosure controls through their published aria-expanded state. The live UI operation catalog is authoritative; do not guess a selector."
+  },
+  "ui.context_action": {
+    "commands": [
+      "run"
+    ],
+    "value_type": "string",
+    "description": "Execute a capability exposed by a live Data Tree or 3D scene object. Value is JSON containing the stable ref plus action_id, object_ids, category, view, or other arguments published by ui_inspector. This is the safe bridge for context-menu actions; never invent action_id or object identifiers."
+  },
+  "tree.group.view_visibility": {
+    "commands": [
+      "set",
+      "toggle"
+    ],
+    "value_type": "string",
+    "description": "Set one Data Tree group's independent 2D or 3D visibility. Value is group,view,show|hide, for example oar,3d,hide."
+  },
+  "training.mode": {
+    "commands": [
+      "start",
+      "stop",
+      "status",
+      "advice"
+    ],
+    "value_type": "string",
+    "description": "Start/stop live planning monitor, check status, or request detailed planning advice"
+  },
+  "manual.needle.create": {
+    "commands": [
+      "run"
+    ],
+    "description": "Create an editable manual needle in the 3D viewer near the current planning target"
+  },
+  "manual.needle.endpoint": {
+    "commands": [
+      "set"
+    ],
+    "value_type": "string",
+    "description": "Move a manual needle endpoint through the existing edit/recompute path. Value is JSON such as {\"needle_id\":\"needle_0\",\"point_index\":1,\"position\":[x,y,z]}"
+  },
+  "manual.seed.add": {
+    "commands": [
+      "run"
+    ],
+    "description": "Add a manual seed on the selected/current manual needle and refresh dose preview"
+  },
+  "manual.seed.position": {
+    "commands": [
+      "set"
+    ],
+    "value_type": "string",
+    "description": "Move a manual seed through the existing edit/recompute path. Value is JSON such as {\"seed_id\":\"seed_0\",\"position\":[x,y,z]}"
+  },
+  "manual.dose.recompute": {
+    "commands": [
+      "run"
+    ],
+    "value_type": "string",
+    "description": "Recompute manual dose/DVH with the trained dose_unet_spacing1mm AI dose model"
+  },
+  "manual.plan.replan": {
+    "commands": [
+      "run"
+    ],
+    "description": "Replan the current manually edited needle/seed geometry with dose_unet_spacing1mm"
+  },
+  "manual.plan.finish": {
+    "commands": [
+      "run"
+    ],
+    "description": "Finish/review a manual plan and provide current planning advice"
+  },
+  "system.readiness": {
+    "commands": [
+      "check"
+    ],
+    "description": "Run a deterministic readiness checklist for the current case and surface missing workflow items"
+  },
+  "report.autofill": {
+    "commands": [
+      "run"
+    ],
+    "description": "Auto-fill the report form from planning data"
+  },
+  "report.export": {
+    "commands": [
+      "run"
+    ],
+    "values": [
+      "pdf",
+      "html",
+      "markdown",
+      "json"
+    ],
+    "description": "Export the report in the specified format"
+  },
+  "report.import": {
+    "commands": [
+      "run"
+    ],
+    "description": "Open the browser file picker and import a report JSON file"
+  },
+  "report.snapshot.save": {
+    "commands": [
+      "run"
+    ],
+    "description": "Save a snapshot of the current report"
+  },
+  "report.snapshot.open": {
+    "commands": [
+      "run"
+    ],
+    "description": "Open the snapshots manager"
+  },
+  "report.audit.open": {
+    "commands": [
+      "run"
+    ],
+    "description": "Open the audit trail"
+  },
+  "report.review.open": {
+    "commands": [
+      "run"
+    ],
+    "description": "Open case-scoped multidisciplinary review comments"
+  },
+  "report.validation.open": {
+    "commands": [
+      "run"
+    ],
+    "description": "Open the validation checklist"
+  },
+  "report.preview.zoom": {
+    "commands": [
+      "set",
+      "increase",
+      "decrease",
+      "reset"
+    ],
+    "value_type": "int",
+    "range": [
+      50,
+      200
+    ],
+    "description": "Report preview zoom level"
+  },
+  "report.layout": {
+    "commands": [
+      "set"
+    ],
+    "values": [
+      "2col",
+      "1col"
+    ],
+    "description": "Report editor layout: 2col=side-by-side, 1col=stacked"
+  },
+  "report.section.toggle": {
+    "commands": [
+      "run"
+    ],
+    "value_type": "string",
+    "description": "Toggle a report section open/closed. Value: section key"
+  },
+  "report.reference.add": {
+    "commands": [
+      "set"
+    ],
+    "value_type": "string",
+    "description": "Add a reference citation. Value: catalog key"
+  },
+  "report.reference.remove": {
+    "commands": [
+      "set"
+    ],
+    "value_type": "int",
+    "description": "Remove a reference by index (0-based)"
+  },
+  "report.clear": {
+    "commands": [
+      "run"
+    ],
+    "destructive": true,
+    "description": "Clear all report data. REQUIRES user confirmation."
+  },
+  "3d.reconstruct": {
+    "commands": [
+      "run"
+    ],
+    "value_type": "string",
+    "description": "3D reconstruct an organ by ID (e.g., 'ctv_1', 'organ_52')"
+  },
+  "3d.wireframe": {
+    "commands": [
+      "toggle"
+    ],
+    "values": [
+      "on",
+      "off"
+    ],
+    "description": "Toggle wireframe mode on 3D meshes"
+  },
+  "3d.skin": {
+    "commands": [
+      "toggle"
+    ],
+    "values": [
+      "on",
+      "off"
+    ],
+    "description": "Toggle CT skin surface visibility"
+  },
+  "3d.dose_opacity": {
+    "commands": [
+      "set"
+    ],
+    "value_type": "int",
+    "range": [
+      0,
+      100
+    ],
+    "description": "3D dose mesh opacity"
+  },
+  "3d.mesh_opacity": {
+    "commands": [
+      "set",
+      "increase",
+      "decrease"
+    ],
+    "value_type": "int",
+    "range": [
+      0,
+      100
+    ],
+    "description": "Opacity of reconstructed 3D organ meshes"
+  },
+  "3d.labels": {
+    "commands": [
+      "toggle"
+    ],
+    "values": [
+      "on",
+      "off"
+    ],
+    "description": "Toggle 3D anatomical labels"
+  },
+  "3d.label_opacity": {
+    "commands": [
+      "set",
+      "increase",
+      "decrease"
+    ],
+    "value_type": "int",
+    "range": [
+      0,
+      100
+    ],
+    "description": "Opacity of 3D anatomical labels"
+  },
+  "3d.dose_surface": {
+    "commands": [
+      "toggle"
+    ],
+    "values": [
+      "on",
+      "off"
+    ],
+    "description": "Toggle dose-textured CTV/OAR surface mode in the 3D viewer"
+  },
+  "3d.fit": {
+    "commands": [
+      "run"
+    ],
+    "description": "Fit the 3D camera to the visible meshes only. This is the camera Fit command; it does not enlarge or fullscreen the viewer card. Use viewer.fullscreen(value=3d) for the expand/maximize button."
+  },
+  "3d.reset": {
+    "commands": [
+      "run"
+    ],
+    "description": "Reset 3D camera to default position and zoom"
+  },
+  "3d.show_all": {
+    "commands": [
+      "run"
+    ],
+    "description": "Show all 3D meshes"
+  },
+  "3d.hide_all": {
+    "commands": [
+      "run"
+    ],
+    "description": "Hide all 3D meshes"
+  },
+  "chat.language": {
+    "commands": [
+      "set"
+    ],
+    "values": [
+      "zh",
+      "en"
+    ],
+    "description": "Set the UI and LLM response language"
+  },
+  "chat.theme": {
+    "commands": [
+      "set",
+      "toggle"
+    ],
+    "values": [
+      "dark",
+      "light"
+    ],
+    "description": "Set or toggle the global UI theme"
+  },
+  "chat.clear_history": {
+    "commands": [
+      "run"
+    ],
+    "destructive": true,
+    "description": "Clear the current chat history. REQUIRES user confirmation."
+  },
+  "chat.sidebar.toggle": {
+    "commands": [
+      "run"
+    ],
+    "description": "Toggle the session sidebar visibility"
+  },
+  "screenshot": {
+    "commands": [
+      "run"
+    ],
+    "values": [
+      "axial",
+      "sagittal",
+      "coronal",
+      "3d",
+      "dvh",
+      "dose-overview",
+      "full"
+    ],
+    "description": "Capture a screenshot of the specified view"
+  },
+  "tool": {
+    "commands": [
+      "set"
+    ],
+    "values": [
+      "crosshair",
+      "measure",
+      "angle",
+      "rect",
+      "zoombox",
+      "annotate",
+      "eraser",
+      "sat3d_positive",
+      "sat3d_negative"
+    ],
+    "description": "Active annotation/measurement tool"
+  },
+  "planning.parameter": {
+    "commands": [
+      "set"
+    ],
+    "value_type": "string",
+    "description": "Set a named planning input control. Value is JSON such as {\"id\":\"refDirecY\",\"value\":1}; use only controls present in the current UI state."
+  },
+  "parameter.catalog": {
+    "commands": [
+      "inspect"
+    ],
+    "description": "Inspect the full dynamic schema of every editable UI parameter (id, label, group, type, bounds, options, current value). Groups include hyperparams, surgical_guide, viewer, colorbar, report and other."
+  },
+  "parameter.set": {
+    "commands": [
+      "set"
+    ],
+    "value_type": "string",
+    "description": "Set any editable UI parameter by id. Value is JSON {\"id\":\"seedRadius\",\"value\":0.5}, or an array of such entries. Consult parameter.catalog first. Setting a hyperparameter automatically applies it to the planner; setting a surgical_guide parameter persists it for the next guide generation."
+  },
+  "planning.hyperparams.set": {
+    "commands": [
+      "set"
+    ],
+    "value_type": "string",
+    "description": "Set one or more planning hyperparameters and apply them immediately. Value is a JSON object mapping control ids to values, e.g. {\"seedRadius\":0.4,\"seedLength\":4.5,\"maxIter\":6}. These are the same controls shown in Input > Hyperparameters (seed geometry, volume labels, reference direction, dose limits, distance filters, iteration rates, deep-learning and RL parameters)."
+  },
+  "surgical_guide.parameters.set": {
+    "commands": [
+      "set"
+    ],
+    "value_type": "string",
+    "description": "Set puncture-guide manufacturing parameters shown in Input > Manual Fine Planning > Puncture guide parameters. Value is a JSON object using the service-side names, e.g. {\"skin_threshold_hu\":-300,\"plate_thickness_mm\":3,\"channel_diameter_mm\":2.2,\"sleeve_outward_mm\":8}. Radius fields (channel_radius_mm, sleeve_outer_radius_mm) are accepted and converted to the diameter the UI displays. Values take effect on the next guide generation."
+  },
+  "tree.color": {
+    "commands": [
+      "set"
+    ],
+    "value_type": "string",
+    "description": "Set the display color of a data-tree node (CTV/OAR/mask/seed/needle/dose iso-surface). Value is JSON {\"id\":\"organ_52\",\"color\":\"#ff0000\"}."
+  },
+  "report.field.set": {
+    "commands": [
+      "set"
+    ],
+    "value_type": "string",
+    "description": "Set a single report form field. Value is JSON {\"key\":\"planning.prescriptionGy\",\"value\":120} where key matches the report data path (hospital.*, patient.*, study.*, case.*, planning.*, metrics.*, signature.*, interpretation, safety, qaNotes)."
+  },
+  "report.template.set": {
+    "commands": [
+      "set"
+    ],
+    "values": [
+      "",
+      "pancreas",
+      "prostate",
+      "head_neck",
+      "gynecology",
+      "liver"
+    ],
+    "description": "Apply a report template by name (pancreas, prostate, head_neck, gynecology, liver, or empty for default)."
+  }
+}

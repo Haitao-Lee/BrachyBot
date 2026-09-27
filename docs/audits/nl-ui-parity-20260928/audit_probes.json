@@ -1,0 +1,571 @@
+{
+  "ui_requests": [
+    {
+      "request": "请显示导板",
+      "resolution": {
+        "actions": [
+          {
+            "target": "tree.visibility",
+            "command": "set",
+            "value": "guide_mesh_v1,on"
+          }
+        ],
+        "confidence": 0.93,
+        "source": "live_ui_catalog",
+        "ambiguous": false,
+        "candidates": [
+          {
+            "target": "tree.visibility",
+            "command": "set",
+            "value": "guide_mesh_v1,on"
+          }
+        ],
+        "property": "visibility",
+        "target_group": null,
+        "language": "zh"
+      },
+      "subtasks": [
+        {
+          "raw": "请显示导板",
+          "start": 0,
+          "end": 5,
+          "target": "surgical_guide",
+          "action": "display",
+          "targets": [
+            "surgical_guide"
+          ],
+          "actions": [
+            "display"
+          ],
+          "negated": false,
+          "conditional": false,
+          "interrogative": false,
+          "quoted": false,
+          "attributed": false,
+          "ambiguous": false,
+          "aggregate": false,
+          "excluded": false,
+          "source": "deterministic_lexicon"
+        }
+      ]
+    },
+    {
+      "request": "能帮我把导板显示出来吗？",
+      "resolution": {
+        "actions": [],
+        "confidence": 0.0,
+        "source": "rejected_unsafe_clause",
+        "ambiguous": true,
+        "candidates": [],
+        "property": null,
+        "target_group": null,
+        "language": "zh"
+      },
+      "subtasks": [
+        {
+          "raw": "能帮我把导板显示出来吗",
+          "start": 0,
+          "end": 11,
+          "target": "surgical_guide",
+          "action": "display",
+          "targets": [
+            "surgical_guide"
+          ],
+          "actions": [
+            "display"
+          ],
+          "negated": false,
+          "conditional": false,
+          "interrogative": true,
+          "quoted": false,
+          "attributed": false,
+          "ambiguous": false,
+          "aggregate": false,
+          "excluded": false,
+          "source": "deterministic_lexicon"
+        }
+      ]
+    },
+    {
+      "request": "Could you show the surgical guide?",
+      "resolution": {
+        "actions": [],
+        "confidence": 0.0,
+        "source": "rejected_unsafe_clause",
+        "ambiguous": true,
+        "candidates": [],
+        "property": null,
+        "target_group": null,
+        "language": "en"
+      },
+      "subtasks": [
+        {
+          "raw": "Could you show the surgical guide",
+          "start": 0,
+          "end": 33,
+          "target": "surgical_guide",
+          "action": "display",
+          "targets": [
+            "surgical_guide"
+          ],
+          "actions": [
+            "display"
+          ],
+          "negated": false,
+          "conditional": false,
+          "interrogative": true,
+          "quoted": false,
+          "attributed": false,
+          "ambiguous": false,
+          "aggregate": false,
+          "excluded": false,
+          "source": "deterministic_lexicon"
+        }
+      ]
+    },
+    {
+      "request": "把刚才藏起来的导板恢复一下",
+      "resolution": null,
+      "subtasks": [
+        {
+          "raw": "把刚才藏起来的导板恢复一下",
+          "start": 0,
+          "end": 13,
+          "target": "surgical_guide",
+          "action": "",
+          "targets": [
+            "surgical_guide"
+          ],
+          "actions": [],
+          "negated": false,
+          "conditional": false,
+          "interrogative": false,
+          "quoted": false,
+          "attributed": false,
+          "ambiguous": false,
+          "aggregate": false,
+          "excluded": false,
+          "source": "deterministic_lexicon"
+        }
+      ]
+    },
+    {
+      "request": "让导板重新出现在画面里",
+      "resolution": null,
+      "subtasks": [
+        {
+          "raw": "让导板重新出现在画面里",
+          "start": 0,
+          "end": 11,
+          "target": "surgical_guide",
+          "action": "",
+          "targets": [
+            "surgical_guide"
+          ],
+          "actions": [],
+          "negated": false,
+          "conditional": false,
+          "interrogative": false,
+          "quoted": false,
+          "attributed": false,
+          "ambiguous": false,
+          "aggregate": false,
+          "excluded": false,
+          "source": "deterministic_lexicon"
+        }
+      ]
+    },
+    {
+      "request": "请把导板显示出来，肿瘤透明度设为40%",
+      "resolution": {
+        "actions": [
+          {
+            "target": "tree.visibility",
+            "command": "set",
+            "value": "guide_mesh_v1,on"
+          },
+          {
+            "target": "tree.group.opacity",
+            "command": "set",
+            "value": "ctv,40"
+          }
+        ],
+        "confidence": 0.86,
+        "source": "compound_ui_subtasks",
+        "ambiguous": false,
+        "candidates": [
+          {
+            "target": "tree.visibility",
+            "command": "set",
+            "value": "guide_mesh_v1,on"
+          },
+          {
+            "target": "tree.group.opacity",
+            "command": "set",
+            "value": "ctv,40"
+          }
+        ],
+        "property": null,
+        "target_group": null,
+        "language": "zh",
+        "partial": false,
+        "unresolved_subtasks": []
+      },
+      "subtasks": [
+        {
+          "raw": "请把导板显示出来",
+          "start": 0,
+          "end": 8,
+          "target": "surgical_guide",
+          "action": "display",
+          "targets": [
+            "surgical_guide"
+          ],
+          "actions": [
+            "display"
+          ],
+          "negated": false,
+          "conditional": false,
+          "interrogative": false,
+          "quoted": false,
+          "attributed": false,
+          "ambiguous": false,
+          "aggregate": false,
+          "excluded": false,
+          "source": "deterministic_lexicon"
+        },
+        {
+          "raw": "肿瘤透明度设为40%",
+          "start": 9,
+          "end": 19,
+          "target": "ctv",
+          "action": "ui_change",
+          "targets": [
+            "ctv"
+          ],
+          "actions": [
+            "ui_change"
+          ],
+          "negated": false,
+          "conditional": false,
+          "interrogative": false,
+          "quoted": false,
+          "attributed": false,
+          "ambiguous": false,
+          "aggregate": false,
+          "excluded": false,
+          "source": "deterministic_lexicon"
+        }
+      ]
+    },
+    {
+      "request": "请把CTV和OAR分别设为30%和70%的透明度",
+      "resolution": {
+        "actions": [
+          {
+            "target": "tree.group.opacity",
+            "command": "set",
+            "value": "ctv,30"
+          },
+          {
+            "target": "tree.group.opacity",
+            "command": "set",
+            "value": "oar,30"
+          }
+        ],
+        "confidence": 0.86,
+        "source": "typed_multi_group_fallback",
+        "ambiguous": false,
+        "candidates": [
+          {
+            "target": "tree.group.opacity",
+            "command": "set",
+            "value": "ctv,30"
+          },
+          {
+            "target": "tree.group.opacity",
+            "command": "set",
+            "value": "oar,30"
+          }
+        ],
+        "property": "opacity",
+        "target_group": [
+          "ctv",
+          "oar"
+        ],
+        "language": "zh"
+      },
+      "subtasks": [
+        {
+          "raw": "请把CTV和OAR分别设为30%和70%的透明度",
+          "start": 0,
+          "end": 24,
+          "target": "ctv",
+          "action": "ui_change",
+          "targets": [
+            "ctv"
+          ],
+          "actions": [
+            "ui_change"
+          ],
+          "negated": false,
+          "conditional": false,
+          "interrogative": false,
+          "quoted": false,
+          "attributed": false,
+          "ambiguous": false,
+          "aggregate": false,
+          "excluded": false,
+          "source": "deterministic_lexicon"
+        },
+        {
+          "raw": "请把CTV和OAR分别设为30%和70%的透明度",
+          "start": 0,
+          "end": 24,
+          "target": "oar",
+          "action": "ui_change",
+          "targets": [
+            "oar"
+          ],
+          "actions": [
+            "ui_change"
+          ],
+          "negated": false,
+          "conditional": false,
+          "interrogative": false,
+          "quoted": false,
+          "attributed": false,
+          "ambiguous": false,
+          "aggregate": false,
+          "excluded": false,
+          "source": "deterministic_lexicon"
+        }
+      ]
+    },
+    {
+      "request": "请不要显示导板",
+      "resolution": {
+        "actions": [],
+        "confidence": 0.0,
+        "source": "rejected_unsafe_clause",
+        "ambiguous": true,
+        "candidates": [],
+        "property": null,
+        "target_group": null,
+        "language": "zh"
+      },
+      "subtasks": [
+        {
+          "raw": "请不要显示导板",
+          "start": 0,
+          "end": 7,
+          "target": "surgical_guide",
+          "action": "display",
+          "targets": [
+            "surgical_guide"
+          ],
+          "actions": [
+            "display"
+          ],
+          "negated": true,
+          "conditional": false,
+          "interrogative": false,
+          "quoted": false,
+          "attributed": false,
+          "ambiguous": false,
+          "aggregate": false,
+          "excluded": true,
+          "source": "deterministic_lexicon"
+        }
+      ]
+    },
+    {
+      "request": "退出检测",
+      "resolution": null,
+      "subtasks": [
+        {
+          "raw": "退出检测",
+          "start": 0,
+          "end": 4,
+          "target": "",
+          "action": "",
+          "targets": [],
+          "actions": [],
+          "negated": false,
+          "conditional": false,
+          "interrogative": false,
+          "quoted": false,
+          "attributed": false,
+          "ambiguous": false,
+          "aggregate": false,
+          "excluded": false,
+          "source": "deterministic_lexicon"
+        }
+      ]
+    },
+    {
+      "request": "如果导板隐藏了就显示出来",
+      "resolution": {
+        "actions": [],
+        "confidence": 0.0,
+        "source": "rejected_unsafe_clause",
+        "ambiguous": true,
+        "candidates": [],
+        "property": null,
+        "target_group": null,
+        "language": "zh"
+      },
+      "subtasks": [
+        {
+          "raw": "如果导板隐藏了就显示出来",
+          "start": 0,
+          "end": 12,
+          "target": "surgical_guide",
+          "action": "display",
+          "targets": [
+            "surgical_guide"
+          ],
+          "actions": [
+            "display",
+            "ui_change"
+          ],
+          "negated": false,
+          "conditional": true,
+          "interrogative": false,
+          "quoted": false,
+          "attributed": false,
+          "ambiguous": false,
+          "aggregate": false,
+          "excluded": false,
+          "source": "deterministic_lexicon"
+        }
+      ]
+    },
+    {
+      "request": "请把轴位放大到150%，其他窗口不动",
+      "resolution": {
+        "actions": [],
+        "confidence": 0.35,
+        "source": "unresolved_ui_request",
+        "ambiguous": true,
+        "candidates": [],
+        "property": "zoom",
+        "target_group": null,
+        "language": "zh"
+      },
+      "subtasks": [
+        {
+          "raw": "请把轴位放大到150%",
+          "start": 0,
+          "end": 11,
+          "target": "",
+          "action": "",
+          "targets": [],
+          "actions": [],
+          "negated": false,
+          "conditional": false,
+          "interrogative": false,
+          "quoted": false,
+          "attributed": false,
+          "ambiguous": false,
+          "aggregate": false,
+          "excluded": false,
+          "source": "deterministic_lexicon"
+        },
+        {
+          "raw": "其他窗口不动",
+          "start": 12,
+          "end": 18,
+          "target": "",
+          "action": "",
+          "targets": [],
+          "actions": [],
+          "negated": false,
+          "conditional": false,
+          "interrogative": false,
+          "quoted": false,
+          "attributed": false,
+          "ambiguous": false,
+          "aggregate": false,
+          "excluded": false,
+          "source": "deterministic_lexicon"
+        }
+      ]
+    }
+  ],
+  "aggregate_authorization": {
+    "全部更新": {
+      "ctv_segmentation": true,
+      "oar_segmentation": true,
+      "planning_pipeline": true,
+      "surgical_guide": true,
+      "report_auto_fill": true
+    },
+    "那请你全部更新": {
+      "ctv_segmentation": true,
+      "oar_segmentation": true,
+      "planning_pipeline": true,
+      "surgical_guide": true,
+      "report_auto_fill": true
+    },
+    "全部更新，不含导板": {
+      "ctv_segmentation": true,
+      "oar_segmentation": true,
+      "planning_pipeline": true,
+      "surgical_guide": false,
+      "report_auto_fill": true
+    }
+  },
+  "dependency_order": [
+    "consumer",
+    "dose_recompute#2"
+  ],
+  "provider_dependencies": {
+    "source": "llm",
+    "request_id": null,
+    "steps": [
+      {
+        "key": "ui_controller",
+        "tool": "ui_controller",
+        "depends_on": [],
+        "params": {
+          "actions": []
+        },
+        "source": "llm"
+      },
+      {
+        "key": "ui_screenshot",
+        "tool": "ui_screenshot",
+        "depends_on": [],
+        "params": {},
+        "source": "llm"
+      }
+    ]
+  },
+  "coverage": [
+    {
+      "request": "各个器官受照剂量是多少",
+      "required": [
+        "oar_dose"
+      ],
+      "decision": "(False, frozenset({'oar_dose'}))"
+    },
+    {
+      "request": "脊髓受到多少辐射",
+      "required": [],
+      "decision": "(True, frozenset())"
+    },
+    {
+      "request": "导板在哪里，肿瘤在哪里，分别截图",
+      "required": [],
+      "decision": "(True, frozenset())"
+    },
+    {
+      "request": "每根针有多少粒子",
+      "required": [
+        "seed_total"
+      ],
+      "decision": "(False, frozenset({'seed_total'}))"
+    }
+  ]
+}
