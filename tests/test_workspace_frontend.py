@@ -470,9 +470,18 @@ def test_guide_progress_uses_one_clock_and_hides_background_auto_generation():
     assert "reconcileManualWorkflowProgress" in manual
     assert "authoritativeDone" in manual
     assert "maxWaitMs: 900000" in guide
-    assert "const invokeSimpleAsyncHandler = async () =>" in ui_api
+    # The mounted business handler is awaited and its receipt propagated, so
+    # a guide click cannot report success while the generation is still
+    # running (audit defect F02).  The executor claims `completed` only from a
+    # handler receipt; a bare DOM dispatch is reported as `dispatched` only.
+    assert "const invokeMountedHandler = async () =>" in ui_api
     assert "async function executeGenericUIControl" in ui_api
-    assert "invokeSimpleAsyncHandler" in ui_api
+    assert "invokeMountedHandler" in ui_api
+    assert "const clickControl = async () =>" in ui_api
+    assert "dispatched: true," in ui_api
+    assert "completed: handlerCompleted," in ui_api
+    assert "receipt: handlerReceipt || { dispatched: true, completed: false }," in ui_api
+    assert "invokeSimpleAsyncHandler" not in ui_api
     assert re.search(r"brachybot-chat-todo\.js\?v=\d+", index)
     assert re.search(r"brachybot-surgical-guide\.js\?v=\d+", index)
 

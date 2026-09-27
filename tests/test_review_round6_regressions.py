@@ -823,8 +823,11 @@ def test_ui_controller_uses_the_same_working_controls_as_manual_ui():
     expected_calls = [
         "document.getElementById('slider' + capitalize(axis))",
         "setViewerLayout(value)",
-        "setDoseOverlayOpacity(value)",
-        "setGroupOpacity(axis, value)",
+        # Relative opacity resolves against the effective current percentage
+        # before the same manual-UI setter is called (audit defect F10).
+        "setDoseOverlayOpacity(resolvedOpacity.percent)",
+        "setGroupOpacity(axis, resolvedOpacity.percent)",
+        "_resolveOverlayOpacityPercent(target, command, value)",
         "setDisplayMode()",
         "setDataItemVisibility(id, vis)",
         "setDataOpacity(id, op)",

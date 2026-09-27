@@ -2724,23 +2724,130 @@ async function executeGenericUIControl(command, value) {
     // used by the mounted application controls, invoke the same global
     // function directly and await its result.  Complex handlers still use the
     // native click path, so custom event/default-action semantics are kept.
-    const invokeSimpleAsyncHandler = async () => {
+    // A mounted inline handler is the control's business executor.  It must be
+    // awaited and its receipt propagated: `el.click()` cannot return the
+    // Promise of an async handler, which is how a failed guide generation used
+    // to be reported as success.  Handlers that take literal arguments
+    // (`generateGuide('v1')`) are invoked with those parsed arguments instead
+    // of falling back to a blind click that loses the operation entirely.
+    // Only literal string/number/boolean arguments are accepted: the inline
+    // source is never evaluated, so a control cannot smuggle arbitrary code.
+    const parseInlineHandlerArgs = (raw) => {
+        const text = String(raw || '').trim();
+        if (!text) return { values: [] };
+        const values = [];
+        for (const part of text.split(',').map(item => item.trim()).filter(Boolean)) {
+            const quoted = part.match(/^(['"])([\s\S]*)\1$/);
+            if (quoted) {
+                values.push(quoted[2]);
+                continue;
+            }
+            if (/^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(part)) {
+                values.push(Number(part));
+                continue;
+            }
+            if (part === 'true' || part === 'false') {
+                values.push(part === 'true');
+                continue;
+            }
+            return {
+                values: [],
+                error: 'Inline control handlers may only take literal arguments.',
+            };
+        }
+        return { values };
+    };
+    let handlerReceipt = null;
+    let handlerCompleted = false;
+    const invokeMountedHandler = async () => {
         const source = String(el.getAttribute('onclick') || '').trim();
-        const match = source.match(/^(?:return\s+)?([A-Za-z_$][\w$]*)\s*\(\s*\)\s*;?$/);
+        const match = source.match(
+            /^(?:return\s+|window\.)?([A-Za-z_$][\w$]*)\s*\(([^()]*)\)\s*;?$/,
+        );
         if (!match) return { handled: false, result: undefined };
         const handler = window[match[1]];
         if (typeof handler !== 'function') return { handled: false, result: undefined };
-        return { handled: true, result: await Promise.resolve(handler()) };
+        const args = parseInlineHandlerArgs(match[2]);
+        if (args.error) {
+            return { handled: true, failure: { success: false, error: args.error } };
+        }
+        let result;
+        try {
+            result = await Promise.resolve(handler(...args.values));
+        } catch (error) {
+            return {
+                handled: true,
+                failure: {
+                    success: false,
+                    error: String((error && error.message) || error),
+                },
+            };
+        }
+        if (result === false) {
+            return {
+                handled: true,
+                failure: { success: false, error: 'The control handler reported failure.' },
+            };
+        }
+        if (result && typeof result === 'object') {
+            if (result.success === false) {
+                return {
+                    handled: true,
+                    failure: {
+                        success: false,
+                        error: result.error || 'The control handler reported failure.',
+                        receipt: result,
+                    },
+                };
+            }
+            handlerReceipt = result;
+            handlerCompleted = result.success === true
+                || result.completed === true
+                || result.receipt != null
+                || result.job_id != null;
+        }
+        return { handled: true, result };
+    };
+    // A command-button click goes through the mounted business handler first.
+    // `dispatched` is the only claim a plain DOM click can make.
+    const clickControl = async () => {
+        const invoked = await invokeMountedHandler();
+        if (invoked.failure) return invoked.failure;
+        if (!invoked.handled) el.click();
+        return null;
     };
     const numericControl = ['range', 'number'].includes(String(el.type || '').toLowerCase());
+    // `Number('')` is 0, so a blank min/max used to clamp every unbounded
+    // numeric control to 0.  A bound exists only when the attribute holds an
+    // explicit finite number; anything else leaves that side unbounded.
+    const asNumericBound = raw => {
+        const text = String(raw ?? '').trim();
+        return text === '' ? NaN : Number(text);
+    };
     const currentNumeric = Number(el.value);
     const requestedNumeric = Number(payload.value ?? value);
-    const min = Number(el.min);
-    const max = Number(el.max);
+    const min = asNumericBound(el.min);
+    const max = asNumericBound(el.max);
     const clamp = next => Math.max(
         Number.isFinite(min) ? min : -Infinity,
         Math.min(Number.isFinite(max) ? max : Infinity, next),
     );
+    // Booleans accept real booleans or explicit normalizations. A raw
+    // `!!value` coerced the string 'false' to true.
+    const coerceControlBoolean = raw => {
+        if (typeof raw === 'boolean') return raw;
+        if (raw === undefined || raw === null) return false;
+        const text = String(raw).trim().toLowerCase();
+        if (text === '' || text === 'false' || text === '0' || text === 'no'
+            || text === 'off' || text === '否' || text === '关' || text === '关闭') {
+            return false;
+        }
+        if (text === 'true' || text === '1' || text === 'yes' || text === 'on'
+            || text === '是' || text === '开' || text === '开启') {
+            return true;
+        }
+        return Boolean(raw);
+    };
     let applied = payload.value !== undefined ? payload.value : null;
     if (cmd === 'run') {
         // ``run`` is the generic lifecycle alias used by declarative plug-in
@@ -2750,8 +2857,8 @@ async function executeGenericUIControl(command, value) {
             if (typeof el.requestSubmit === 'function') el.requestSubmit();
             else el.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
         } else {
-            const invoked = await invokeSimpleAsyncHandler();
-            if (!invoked.handled) el.click();
+            const failure = await clickControl();
+            if (failure) return failure;
         }
         applied = 'run';
     } else if (cmd === 'reset') {
@@ -2766,7 +2873,8 @@ async function executeGenericUIControl(command, value) {
             // value-bearing form field.  Treating every reset request as a
             // defaultValue assignment used to make these controls report
             // failure even though a human can click them.
-            el.click();
+            const failure = await clickControl();
+            if (failure) return failure;
             applied = 'reset';
         } else if ('value' in el && el.defaultValue !== undefined) {
             el.value = el.defaultValue;
@@ -2784,7 +2892,10 @@ async function executeGenericUIControl(command, value) {
         const desired = cmd === 'expand';
         // With an explicit aria-expanded state, avoid a second click when the
         // requested state is already present. This makes retries idempotent.
-        if (currentExpanded === null || currentExpanded !== desired) el.click();
+        if (currentExpanded === null || currentExpanded !== desired) {
+            const failure = await clickControl();
+            if (failure) return failure;
+        }
         applied = el.getAttribute('aria-expanded') || desired;
     } else if (cmd === 'next' || cmd === 'prev' || cmd === 'first' || cmd === 'last') {
         const tagName = String(el.tagName || '').toLowerCase();
@@ -2817,7 +2928,8 @@ async function executeGenericUIControl(command, value) {
             // whose semantic operation is exposed as next/prev/first/last.
             // The live element remains the source of truth; clicking it is
             // exactly the browser operation available to the user.
-            el.click();
+            const failure = await clickControl();
+            if (failure) return failure;
             applied = cmd;
         } else {
             const error = typeof window._t === 'function'
@@ -2833,25 +2945,42 @@ async function executeGenericUIControl(command, value) {
             || payload.x !== undefined || payload.clientX !== undefined) {
             dispatchMouse('click', { detail: 1 });
         } else {
-            const invoked = await invokeSimpleAsyncHandler();
-            if (!invoked.handled) el.click();
+            const failure = await clickControl();
+            if (failure) return failure;
         }
     } else if (cmd === 'toggle') {
         if ('checked' in el) {
-            el.checked = payload.checked !== undefined ? !!payload.checked : !el.checked;
+            el.checked = payload.checked !== undefined
+                ? coerceControlBoolean(payload.checked)
+                : !el.checked;
             applied = !!el.checked;
             dispatchValueEvents();
         } else {
-            el.click();
+            const failure = await clickControl();
+            if (failure) return failure;
         }
     } else if (cmd === 'set') {
         const nextValue = payload.value !== undefined ? payload.value : payload.text;
         if ('checked' in el && (el.type === 'checkbox' || el.type === 'radio')) {
-            el.checked = !!nextValue;
+            // `!!'false'` is true. Accept booleans and explicit normalizations
+            // only, so a serialized false cannot open a gate by accident.
+            el.checked = coerceControlBoolean(nextValue);
             applied = !!el.checked;
         } else if ('value' in el) {
-            let normalized = nextValue === undefined ? '' : nextValue;
-            if (numericControl && Number.isFinite(Number(normalized))) normalized = clamp(Number(normalized));
+            let normalized = nextValue === undefined || nextValue === null ? '' : nextValue;
+            if (numericControl) {
+                const parsed = Number(normalized);
+                if (normalized === '') {
+                    normalized = '';
+                } else if (!Number.isFinite(parsed)) {
+                    const error = typeof window._t === 'function'
+                        ? window._t('数值控件需要一个有效数值。', 'A numeric control requires a finite number.')
+                        : 'A numeric control requires a finite number.';
+                    return { success: false, error, requested: nextValue };
+                } else {
+                    normalized = clamp(parsed);
+                }
+            }
             el.value = String(normalized);
             applied = el.value;
         } else if (nextValue !== undefined) {
@@ -3068,6 +3197,13 @@ async function executeGenericUIControl(command, value) {
             ? String(el.value ?? '') : null,
         aria_expanded: el.getAttribute('aria-expanded'),
         visible: _uiOperationVisible(el),
+        // Dispatch is proven by the event having been sent. Business
+        // completion is proven only by a mounted handler receipt; upgrading
+        // a bare click to "completed" is how report/guide/segmentation
+        // failures used to read as success in the chat turn.
+        dispatched: true,
+        completed: handlerCompleted,
+        receipt: handlerReceipt || { dispatched: true, completed: false },
     };
 }
 
@@ -7633,6 +7769,69 @@ async function executeUIContextAction(value, options = {}) {
 }
 window.executeUIContextAction = executeUIContextAction;
 
+// Overlay opacity commands accept an absolute value (set) and a signed
+// step (increase/decrease).  A relative command must read the effective
+// current percentage first: forwarding `increase: 10` to a setter that
+// only understands absolute percentages changed 50% into 10%.  The
+// reader takes the value the same setter writes, so a manual slider
+// adjustment and a spoken command share one source of truth.
+function _overlayOpacityFraction(target) {
+    const asFraction = raw => {
+        const n = Number(raw);
+        return Number.isFinite(n) ? n : null;
+    };
+    const scope = typeof state !== 'undefined' && state ? state : null;
+    if (String(target) === 'overlay.dose.opacity') {
+        const overlay = (scope && scope.doseOverlay) || null;
+        const fromOverlay = asFraction(overlay && overlay.opacity);
+        return fromOverlay !== null ? fromOverlay : asFraction(scope && scope.doseOpacity);
+    }
+    if (typeof dataTreeState === 'undefined' || !dataTreeState) return null;
+    if (String(target).includes('ctv')) {
+        return asFraction(dataTreeState.ctv && dataTreeState.ctv.opacity);
+    }
+    // The OAR group stores its opacity per organ rather than on the group
+    // object, so read the first organ that carries one.
+    const organs = dataTreeState.organs || [];
+    for (const organ of organs) {
+        const value = asFraction(organ && organ.opacity);
+        if (value !== null) return value;
+    }
+    return asFraction(dataTreeState.oar && dataTreeState.oar.opacity);
+}
+
+function _resolveOverlayOpacityPercent(target, command, value) {
+    const requested = Number(value);
+    const clampPercent = next => Math.max(0, Math.min(100, Math.round(next)));
+    const mode = String(command || 'set').trim().toLowerCase();
+    if (mode === 'set') {
+        if (!Number.isFinite(requested)) {
+            return { error: 'Absolute opacity requires a numeric percentage.' };
+        }
+        return { percent: clampPercent(requested), requested: value };
+    }
+    if (mode === 'increase' || mode === 'increment'
+        || mode === 'decrease' || mode === 'decrement') {
+        const step = Number.isFinite(requested) ? Math.abs(requested) : NaN;
+        if (!Number.isFinite(step)) {
+            return { error: 'Relative opacity requires a numeric step.' };
+        }
+        const currentFraction = _overlayOpacityFraction(target);
+        if (currentFraction === null) {
+            return {
+                error: 'The current overlay opacity is unknown; use an absolute value.',
+            };
+        }
+        const current = currentFraction * 100;
+        const rising = mode === 'increase' || mode === 'increment';
+        return {
+            percent: clampPercent(current + (rising ? step : -step)),
+            requested: value,
+            base: clampPercent(current),
+        };
+    }
+    return { error: `Unsupported opacity command: ${mode}` };
+}
 async function _executeUIActionRaw(a, options = {}) {
     const ownerSessionId = String(options.sessionId || _activeApiSessionId());
     const { target, command, value } = a;
@@ -7807,14 +8006,32 @@ async function _executeUIActionRaw(a, options = {}) {
         }
         if (target === 'overlay.dose.opacity') {
             if (typeof setDoseOverlayOpacity !== 'function') return { success: false, error: 'Dose overlay opacity is unavailable.' };
-            await Promise.resolve(setDoseOverlayOpacity(value));
-            return { success: true, target, command, opacity: value };
+            const resolvedOpacity = _resolveOverlayOpacityPercent(target, command, value);
+            if (resolvedOpacity.error) return { success: false, error: resolvedOpacity.error };
+            await Promise.resolve(setDoseOverlayOpacity(resolvedOpacity.percent));
+            return {
+                success: true,
+                target,
+                command,
+                requested: value,
+                applied: resolvedOpacity.percent,
+                opacity: resolvedOpacity.percent,
+            };
         }
         if (target === 'overlay.ctv.opacity' || target === 'overlay.oar.opacity') {
             const axis = target.includes('ctv') ? 'ctv' : 'oar';
             if (typeof setGroupOpacity !== 'function') return { success: false, error: 'Overlay opacity is unavailable.' };
-            await Promise.resolve(setGroupOpacity(axis, value));
-            return { success: true, target, command, opacity: value };
+            const resolvedOpacity = _resolveOverlayOpacityPercent(target, command, value);
+            if (resolvedOpacity.error) return { success: false, error: resolvedOpacity.error };
+            await Promise.resolve(setGroupOpacity(axis, resolvedOpacity.percent));
+            return {
+                success: true,
+                target,
+                command,
+                requested: value,
+                applied: resolvedOpacity.percent,
+                opacity: resolvedOpacity.percent,
+            };
         }
         if (target === 'overlay.display_mode') {
             const dm = document.getElementById('displayMode');
