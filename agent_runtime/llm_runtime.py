@@ -1084,11 +1084,29 @@ class LLMRuntimeMixin:
         )
 
     def _order_tool_calls_by_action_plan(self, tool_calls):
-        """Apply the merged turn plan after filtering and dependency injection."""
+        """Apply the merged turn plan after filtering and dependency injection.
+
+        This is the *execution* path, so it is strict where
+        :meth:`ActionPlan.ordered_steps` is deliberately tolerant: an
+        unsound graph — a dangling dependency, a reused step id, a cycle —
+        schedules nothing at all (audit defect R03).  ``ordered_steps`` keeps
+        a malformed plan visible for diagnosis; that is not permission to run
+        it.  Both call sites treat an empty return as "no tools this round",
+        so refusing here ends the tool loop instead of running a mis-wired
+        order.
+        """
         get_action_plan = getattr(self, "_current_action_plan", None)
         plan = get_action_plan() if callable(get_action_plan) else None
         if plan is None or not plan.steps:
             return tool_calls
+        problems = plan.validate()
+        if problems:
+            logger.warning(
+                "action plan refused for execution (%s): %s",
+                len(problems),
+                "; ".join(problems),
+            )
+            return []
         return list(plan.order_tool_calls(tool_calls or ()))
 
     def _pack_context_for_provider(self, messages: List[Dict], user_message: str) -> List[Dict]:

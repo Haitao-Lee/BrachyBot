@@ -1490,7 +1490,11 @@ def test_report_generation_executes_and_persists_the_full_report_transaction():
     assert "_reportGenerationFailureMessage" in chat
 
     # Session switches make a report action fail instead of silently succeeding.
-    assert "result.success === false || result.stale === true" in ui_api
+    # The predicate moved into `_uiActionResultState` when R02 stopped a JobRef
+    # counting as completion; `stale` is still a failure, and the behavioural
+    # equivalent is asserted in tests/ui-action-terminal-state.test.cjs.
+    assert "state === 'failed' || state === 'stale'" in ui_api
+    assert "function _uiActionResultState" in ui_api
     assert "result?.success === false" in chat
     assert "result?.stale === true" in chat
     assert "await window.awaitWorkspaceVisualReady(reportSessionId" in ui_api

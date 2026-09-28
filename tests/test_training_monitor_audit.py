@@ -307,7 +307,7 @@ def test_monitor_maps_manual_stages_to_their_own_viewer_checkpoint():
         if "seed_a (needle_1)" in item
     )
     assert "seed_b (needle_2)" in pair_issue
-    assert "surface clearance" in pair_issue
+    assert "finite surface gap" in pair_issue
     localized = _localize_plan_advice(geometry_advice, "zh")
     assert any("表面间隙" in item for item in localized["issues"])
 

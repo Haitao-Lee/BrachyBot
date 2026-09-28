@@ -21,6 +21,12 @@ const genericSrc = src.slice(
     src.indexOf('\nfunction instrumentUIControls('),
 );
 assert.ok(genericSrc.includes('async function executeGenericUIControl('));
+// The receipt reads the shared terminal-state classifier (audit R02).
+const classifiersSrc = src.slice(
+    src.indexOf('const _UI_ACTION_RUNNING_STATES'),
+    src.indexOf('function _emitUIActionProgress'),
+);
+assert.ok(classifiersSrc.includes('_uiActionResultState'));
 
 const rawStart = src.indexOf('function _overlayOpacityFraction(');
 const rawEnd = src.indexOf('\n// Screenshot capture', rawStart);
@@ -71,7 +77,7 @@ async function probe(name, element, command, payload, extra = {}) {
     Object.assign(sandbox, extra);
     if (extra.window) Object.assign(sandbox.window, extra.window);
     vm.createContext(sandbox);
-    vm.runInContext(genericSrc, sandbox);
+    vm.runInContext(`${classifiersSrc}\n${genericSrc}\n`, sandbox);
     const result = await sandbox.executeGenericUIControl(command, payload);
     return { result, events };
 }
@@ -177,8 +183,32 @@ async function main() {
         assert.equal(result.success, true);
         assert.equal(pending, false, 'the handler promise must be awaited before success is reported');
         assert.equal(seenArgs, 'v1');
-        assert.equal(result.completed, true, 'a positive handler receipt proves completion');
+        // A job id is a JobRef: it proves the work was accepted, not that it
+        // finished.  This assertion previously read `completed === true`, which
+        // *was* audit defect R02 — a queued guide read as a generated one
+        // (tightened for R02, see NL_UI_PARITY_IMPLEMENTATION_STATUS).
+        assert.equal(result.completed, false, 'a JobRef is acceptance, not business completion');
+        assert.equal(result.status, 'running');
+        assert.equal(result.dispatched, true);
         assert.equal(result.receipt.job_id, 'guide-1');
+    }
+
+    {
+        // An explicit terminal claim from the mounted handler is still a
+        // completion: only the bare JobRef is downgraded.
+        const { result } = await probe(
+            'argument_handler_terminal_receipt',
+            { getAttribute: k => (k === 'onclick' ? "generateGuide('v2')" : null) },
+            'click',
+            {},
+            {
+                window: {
+                    generateGuide: async version => ({ success: true, completed: true, version }),
+                },
+            },
+        );
+        assert.equal(result.completed, true, 'an explicit terminal receipt proves completion');
+        assert.equal(result.status, 'completed');
     }
 
     {

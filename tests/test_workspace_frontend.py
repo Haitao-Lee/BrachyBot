@@ -480,7 +480,9 @@ def test_guide_progress_uses_one_clock_and_hides_background_auto_generation():
     assert "const clickControl = async () =>" in ui_api
     assert "dispatched: true," in ui_api
     assert "completed: handlerCompleted," in ui_api
-    assert "receipt: handlerReceipt || { dispatched: true, completed: false }," in ui_api
+    # A dispatched-only receipt may carry extra status metadata; the guard is
+    # that a DOM dispatch never masquerades as a completed business action.
+    assert "receipt: handlerReceipt || { dispatched: true, completed: false" in ui_api
     assert "invokeSimpleAsyncHandler" not in ui_api
     assert re.search(r"brachybot-chat-todo\.js\?v=\d+", index)
     assert re.search(r"brachybot-surgical-guide\.js\?v=\d+", index)

@@ -1,0 +1,38 @@
+{
+  "incomplete_receipt": [
+    "pending",
+    "done"
+  ],
+  "cross_batch_failed_dependency": [
+    "producer",
+    "consumer"
+  ],
+  "missing_dependency_and_aborted_request": [
+    "consumer"
+  ],
+  "queued_job_receipt": {
+    "success": true,
+    "ref": "fixture",
+    "id": "fixture",
+    "label": "fixture",
+    "command": "click",
+    "applied": null,
+    "checked": null,
+    "value": null,
+    "aria_expanded": null,
+    "visible": true,
+    "dispatched": true,
+    "completed": true,
+    "receipt": {
+      "success": true,
+      "completed": false,
+      "status": "running",
+      "job_id": "job-1"
+    }
+  },
+  "relative_dose_opacity_without_overlay_object": {
+    "percent": 10,
+    "requested": 10,
+    "base": 0
+  }
+}

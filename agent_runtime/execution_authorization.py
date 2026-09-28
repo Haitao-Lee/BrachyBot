@@ -66,16 +66,26 @@ class TurnExecutionAuthorization:
     action_plan: ActionPlan = field(default_factory=ActionPlan)
 
     def set_action_plan(self, plan: ActionPlan, *, source: str = "llm") -> None:
-        """Record the ordered action plan for this isolated turn."""
+        """Record the ordered action plan for this isolated turn.
+
+        A merge that cannot be remapped unambiguously leaves the previous plan
+        in place; say so in the event trail rather than letting a dropped step
+        look like a silent success (audit defect R03).  Structural problems on
+        the resulting plan are recorded too: the execution entry consults
+        :meth:`ActionPlan.validate` and will refuse to run them.
+        """
         if not isinstance(plan, ActionPlan):
             return
         plan = plan.with_request_id(f"turn_{self.token}")
-        self.action_plan = self.action_plan.merge(plan).with_request_id(
-            f"turn_{self.token}"
-        )
+        merged = self.action_plan.merge(plan).with_request_id(f"turn_{self.token}")
+        refused = merged.steps == self.action_plan.steps and bool(plan.steps)
+        self.action_plan = merged
+        problems = self.action_plan.validate()
         self.events.append({
             "source": str(source or "llm"),
             "action_plan": self.action_plan.to_dict(),
+            "merge_refused": refused,
+            "plan_problems": list(problems),
         })
 
     def grant_tools(self, tools: Iterable[str], *, source: str) -> None:

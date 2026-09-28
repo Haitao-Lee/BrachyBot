@@ -2,10 +2,275 @@
 
 日期：2026-09-28  
 审计对象：`/home/lht/snap/brachyplan/BrachyBot` 当前 LAN 工作树  
-基线：`a3aa976844526195756a36beebc2828b165e9c33`  
+初审基线：`a3aa976844526195756a36beebc2828b165e9c33`
+
+修复后复审：2026-09-28，HEAD `a0aaa2cb4467a7762b37620f53749bf700b360c7`，包含当前9个已跟踪 Monitor 工作区修改。
+
 交付性质：代码审计、隔离探针、实施设计与验收计划；**本次不修改业务代码，不重启服务，不执行临床规划或修改患者数据。**
 
-## 0. 给实施 agent 的结论
+## 0A. 修复后复审——当前实施状态以本节为准
+
+**已有有效修复，但“7项已修复、WP1完成”不能等同于七类底层契约已经闭环。原始样例多数已通过；新增探针仍复现授权放宽、假完成、错误依赖、错误参数绑定和状态回退。**
+
+本次对照 `NL_UI_PARITY_IMPLEMENTATION_STATUS_2026-09-28.md`、修复提交和最新工作树核验。下文 §0–§11 保留初审证据及设计依据，**原始复现和旧行号不代表当前状态**；本节覆盖旧结论。已有修复和测试应保留，不能因发现残留缺口而推倒重来。此次仅更新报告和审计附件，不修改业务代码、不重启8080、不运行规划或修改患者数据，也不触及 public-release。
+
+### 0A.1 逐项销账表
+
+| 编号 | 当前判断 | 已验证改进 / 仍需完成 |
+|---|---|---|
+| F01 | **部分修复，仍有P0授权缺口** | 裸“全部更新”不再放行CTV/OAR/新规划；混合条件/引用/问句仍可放行CTV。无来源时仍默认剂量、报告、导板。见R01。 |
+| F02 | **部分修复，仍有P0假完成** | 同步/异步失败及简单字面参数handler已正确处理；JobRef及明确completed:false仍被升级为完成，外层进度也未接通终态。见R02。 |
+| F03 | **部分修复，仍有P0依赖缺口** | 原始step key、重复工具和provider依赖测试通过；图合并前向引用可能绑错生产者，validate未成为执行前强制门。见R03。 |
+| F04 | **未闭环** | 本地解析与expected action签名仍限制语义动作；礼貌请求/指代问题不能靠增白名单解决。 |
+| F05 | **部分修复** | 分别30%/70%等数值绑定通过；文字值次序和重复值仍错误。见R04。 |
+| F06 | **未修复目录契约** | catalog 4096截断仍存在，未完成对象索引、能力schema及可发现分页；初审258节点规模证据保留，不冒称本次读取真实病例。 |
+| F07 | **部分修复，端到端状态不一致** | AgentMemory replace/patch/tombstone、同browser序列和HTTP失败检查通过；冷会话乱序、bucket删除标记、规划版本和持久化仍有缺口。见R05。 |
+| F08 | **未修复查询语义** | component仍查源码组件，不是当前导板/mesh资源解析器；state分支已有实时内容，不应说整个工具都没有状态。 |
+| F09 | **未完成手势对等** | 通用wheel/drag与真实MPR仍是不同路径，viewport/坐标/修饰键未统一进入业务command。 |
+| F10 | **原始三例已修复，边界未闭环** | 空min/max、字符串false、正常当前值的相对opacity通过；缺overlay对象时null→0遮蔽有效fallback。见R06。 |
+| F11 | **未闭环权限和消歧** | 执行仍有ID/selector fallback；采集过滤不等于执行时唯一性、时效和权限验证。未进行敏感控件攻击测试。 |
+| F12 | **部分修复** | 同批独立失败隔离、同批失败前置阻断、同会话批次串行通过；跨批依赖、未知前置、取消仍有缺口。见R07。 |
+| F13 | **未闭环证据契约** | 活动规划和OAR数据能力已存在；D2/D2cc fallback、版本/新鲜度、required outputs仍不能销账。不是“只能查询器官体积”。 |
+| F14 | **未闭环持久化回执** | 参数/报告字段DOM applied与workspace persisted仍不同，缺全域保存后置条件。 |
+| F15 | **未完成显式能力目录** | Element listener扫描是补漏，不能覆盖全部委托事件和业务语义；本次未做heap profile。 |
+| F16 | **浏览器验证扩大，真实病例E2E待验证** | 本次5个Chrome/Playwright脚本全部通过；fixture/WebGL成功不等于自然语言→真实业务→保存→重载已经全产品通过。 |
+
+“部分修复”以原缺陷的完整契约为范围，不表示对应提交无效。应保留 `ffbf741a1 / ec0437906 / 18936f44d / 9799e92f3 / 9c281a2b9 / 8e189cae0` 中已经正确工作的部分。
+
+### 0A.2 新增复现、根因和合理修复边界
+
+S＝最新源码核验；P＝隔离生产函数/Flask test client探针。P不是在线患者病例操作，不推断用户曾实际遭遇全部边界。
+
+#### R01｜P0｜aggregate绕过条件/引用/问句属性（F01，S/P）
+
+位置：`agent_runtime/request_parse.py:1299` 的 `aggregate_scope_targets`、`:1416` 的最终aggregate授权分支。
+
+无历史上下文调用 `mutating_execution_authorized(message, 'ctv_segmentation')`：
+
+| 请求 | 实际结果 | 正确边界 |
+|---|---|---|
+| 全部更新 | false | 原始裸聚合误授权已修复 |
+| 全部更新；如果以后需要，重新分割CTV。 | **true** | 条件性的将来分割不能授权 |
+| 全部更新；他说“重新分割CTV”。 | **true** | 引用不能授权 |
+| 全部更新，CTV分割了吗？ | **true** | 状态询问不能授权 |
+
+普通授权循环过滤conditional/quoted/attributed/interrogative/ambiguous，但aggregate scope只排除excluded/negated，从其他子句收集target后再次授权，绕过普通循环。此证据证明底层防线有漏洞，**没有证明真实上层请求必然启动分割**。
+
+S级附加缺口：无来源时fallback到dose/report/surgical_guide；计数指代按目标类别切片，未验证足够数量的真实待办，也未绑定结构化offer的case/plan revision。不能把默认产物家族称为有来源scope。
+
+修复方向：scope只能来自肯定可执行子任务、有效待办或当前明确过期产物集合；来源、排除项、风险校验在同一授权契约完成。无明确来源先只读解析/澄清，禁止从条件或引用中借目标；不是一刀切禁用aggregate。
+
+#### R02｜P0｜JobRef/派发成功仍被当作业务完成（F02，S/P）
+
+位置：`brachybot-ui-api.js:2869` 的handlerCompleted、`:7302` 的 `_executeUIActionsWithProgress`；`tool_factory/ui_controller/__init__.py:1195`。
+
+- handler返回 `{success:true,completed:false,status:'running',job_id:'job-1'}`，外层结果却是 **completed:true**，内层receipt仍false。
+- 进度执行器收到 `{success:true,completed:false,dispatched:true}`，仍发出 **pending→done**。
+- 后端 `executed=len(validated)` 在浏览器执行前赋值；“已执行”不构成业务证据。
+
+根因：`success===true || receipt!=null || job_id!=null` 被用作完成判断；外层主要检查success/stale，不理解真实终态。新增receipt字段不等于回执链已经接通。
+
+修复方向：统一accepted/dispatched/running/waiting_user/completed/failed/cancelled；JobRef只证明接收，完成依赖业务终态及必要的persisted revision。进度、依赖、最终回答消费同一账本，不靠改文案或固定等待秒数掩盖假完成。
+
+#### R03｜P0｜合并前向依赖映射错误，验证未接入执行门（F03，S/P）
+
+位置：`agent_runtime/action_plan.py:200` 的merge、`:274` 的validate；`agent_runtime/llm_runtime.py:1086` 的排序入口。
+
+已有旧生产者A；新图先列消费者C（依赖新A），再列新生产者A。合并把新A改名为dose_recompute#2，却留下C→旧A；排序为 **旧A→C→新A**，validate仍为空。单遍边处理边建立key_map不能正确重映射前向引用。
+
+S级核验：ActionPlan的validate/is_valid尚未成为LLM排序/执行入口的强制检查；ordered_steps为列举保留异常图步骤，不等于允许执行异常图。新增验证单测不能替代生产调用。
+
+修复方向：先为整个子图分配唯一ID，再重写全部依赖边（含placeholder）；不明确重名拒绝。生成、合并、恢复和执行前均验证；消费者等待精确生产者的成功receipt与匹配版本。列举容错API和执行API分开。
+
+#### R04｜P1｜文字值按pattern顺序绑定，重复值丢失（F05，S/P）
+
+位置：`agent_runtime/ui_operations.py:111` 的values_from_text。
+
+- “CTV和OAR分别设为不透明和半透明”实际产生ctv,50和oar,100，应为100和50。
+- “CTV和OAR分别设为半透明和半透明”只提取[50]，返回ambiguous、无action。
+
+原因：每种pattern只做一次re.search，丢失原文位置及重复出现；数字分支按文本顺序的修复有效。
+
+修复方向：数字/文字/颜色统一提取为带source span的typed value，保留重复出现，再按子任务和分别关系绑定。补中英逆序、重复值、混合类型、局部否定及同组多个leaf的保留集，不逐词补丁。
+
+#### R05｜P1｜冷会话无序列保护，bucket与内存删除语义分裂（F07，S/P）
+
+位置：`agent_runtime/core.py:616` 的set_ui_state；`planning_routes.py` 的 `/api/ui/state` POST及checkpoint_ui_bridge；`brachybot-ui-api.js:2157`。
+
+隔离Flask route、内存store和空timer复现：
+
+1. 冷Agent：同browser先写seq9，再写seq4，两次均200/accepted，最后变成旧值。序列验证依赖cached Agent，bucket未独立校验。
+2. 热Agent：patch+tombstones删除deleted字段，返回200；AgentMemory已删除，bucket和state_keys仍保留deleted:'old'，读出/落盘事实与Agent不同。
+3. 同browser从(seq1,plan_revision2)更新到(seq2,plan_revision1)被接受，旧规划状态覆盖新规划。plan_revision只是记录字段，未成为有效围栏。
+
+S级附加缺口：checkpoint只保存state/events/training/updated_at，不保存browser序列围栏；前端读取state.planningRevision，但当前静态JS中未发现其写入，手动规划有效版本来自manualPlanningState.planningVersion。不能因为请求有这个字段就宣称生产版本校验有效。没有进行真实双标签页/进程重启注入。
+
+修复方向：owner/case控制面原子接收器不依赖Agent加载；同一已接受的规范化状态供bucket、Agent和checkpoint使用；持久化/恢复序列，明确规划revision权威、跨tab冲突及前端ack归属。不能为了UI校验启动昂贵的病例hydration。
+
+#### R06｜P1｜相对opacity的null被当有效0（F10，S/P）
+
+位置：`brachybot-ui-api.js:7915` 的_overlayOpacityFraction。
+
+state={doseOpacity:0.6}且缺doseOverlay对象时，increase10实际解析为base0、percent10，应使用有效fallback得到70。Number(null)===0遮蔽了fallback。这是确定的有效fallback误读，不是建议未知值时猜默认值。
+
+修复方向：null/undefined/空白先判missing再转数字；没有有效当前值不得执行相对操作。组内不同当前值应明确统一设定还是逐对象增加，不用第一项无声代替全组。
+
+#### R07｜P1｜串行批次不等于跨批依赖与取消系统（F12，S/P）
+
+位置：`brachybot-ui-api.js:7302` 的_executeUIActionsWithProgress及_queueUIActionBatch。
+
+- 第一批producer失败；第二批consumer显式依赖producer仍执行，因为failedSteps仅在本次调用内。
+- 未知前置不在failedSteps就执行，没有要求它已经成功。
+- 隔离调用传入已aborted的signal仍执行；此函数只检查session。该证据不意味着所有上层取消入口都会放行，但证明执行器自身无取消门。
+- R02的pending receipt也会过早放行依赖。
+
+修复方向：owner/request/step账本跨批保留结果；未知/未完成前置等待或验证失败，不默认成功。入队、出队和业务写入前检查取消及归属；Viewer/workspace用effect锁。保留已实现串行队列，但不把它称为完整DAG和可恢复事务。
+
+### 0A.3 本次实际测试与证据边界
+
+| 层级 | 本次结果 | 不得扩大解释 |
+|---|---|---|
+| 15个相关Python文件 | **209 passed**，3个SWIG警告 | 原139项＋新增70项，不是全仓库 |
+| 3个新增Node契约脚本 | **全部通过** | ui-control-receipt、ui-state-sync、ui-action-dependency；未覆盖上述反例 |
+| 5个Playwright/Chrome脚本 | **5/5通过** | manual-step-viewer、monitor-dashboard、monitor-coaching、depth-peeling、report-hidden-viewer；真实浏览器/WebGL＋隔离fixture，不是患者病例E2E |
+| 新增反例探针 | **复现R01–R07缺口** | 观察脚本退出0只是成功采集，不是缺陷验收通过 |
+| 两个既有Node失败项 | **仍复现** | chat_screenshot_delivery的sandbox缺uiActionTasks；test-report-lifecycle期望captureAllowed=false却为true。未改断言，不能直接据此认定真实截图故障 |
+| 全仓库pytest、真实病例、在线LLM | **本次未执行** | 实施记录1971 passed/8 skipped/2 failed属于历史运行，不是此次重新认证 |
+
+环境结论更新：旧“缺Playwright，五个浏览器脚本未能执行”是当时的环境结论；本次使用bundled Node依赖和本机Chrome已经执行并通过五项。不应继续标这五项未运行，也不能据此宣布全产品E2E完成。
+
+### 0A.4 后续实施顺序和工作包状态
+
+1. 先R01授权，再R02/R03终态及依赖身份；不要先扩可执行自然语言范围。
+2. 并行完善R05控制面接收器和R07跨批账本，保持冷会话轻量；不增加逐子任务LLM调用、不以固定长等待判断成功。
+3. 修R04/R06并扩值类型保留集，再做F04语义fallback。模型理解复杂语言，确定性层校验有来源的权限、参数和版本，而非用本地漏识别永久否决。
+4. 继续F06/F08/F11/F15资源能力索引和F13/F14证据持久化；保留已有OAR、活动规划、截图事务和Monitor权威执行器。
+5. **WP1应标“部分完成，待闭环”**；WP0测试基础有效；WP2/3/4/5仍有销账表缺口；WP6五项fixture浏览器测试现已通过，真实病例端到端、性能及重启恢复仍待验证。
+
+关闭条件：原回归保持通过；R01–R07改为正确行为断言并通过；生产调用链实际使用新契约；需保存/渲染的动作有真实后置条件；独立失败、依赖等待、取消、断线/冷加载/重载有证据。新增helper、字段或“已修复”文档不能代替集成验收。
+
+### 0A.5 本次附件
+
+`docs/audits/nl-ui-parity-review-20260928/`：
+
+- review_probes.py / review_results.json：解析、授权、图合并、参数绑定、内存版本和隔离Flask冷/热状态。
+- review_browser_probes.cjs / review_browser_results.json：真实执行函数的inert VM探针，覆盖receipt、跨批依赖、取消、opacity fallback。
+- verification.md：测试命令、范围和工作区保护说明。
+
+Python在项目根目录设置PYTHONPATH=.并用项目环境运行；Node脚本自动定位仓库。JSON为本次观察基线，不能只改JSON假装修复，应在正常测试中加入正确行为断言。
+
+## 0B. R01–R07 独立复核与整改（第三轮）
+
+日期：2026-09-28。本节由实施方独立复核后写入，**不是对 §0A 的转述**：每条给出复核方式、根因认定、改动位置与可复跑证据。§0A 的 R01–R07 **七条全部属实**，本轮已按其修复方向实施；下文同时记录 §0A 中两处无法照单全收的边界判断。
+
+### 0B.1 复核结论（逐条）
+
+复核方法：直接运行 §0A.5 的两个探针脚本，再对照源码定位根因。两个探针的 JSON 输出与 `review_results.json` / `review_browser_results.json` **逐字一致**——观察可复现，不是转录错误。
+
+| 编号 | 复核判断 | 独立复核方式 |
+|---|---|---|
+| R01 | **属实** | 三句 `mutating_execution_authorized(..., 'ctv_segmentation')` 实测均返回 `True`。根因是两套过滤器：普通授权循环跳过 ambiguous/negated/interrogative/conditional/quoted/attributed，`aggregate_scope_targets` 只跳过 excluded/negated，再拿弱过滤的集合二次授权。 |
+| R02 | **属实** | `handlerCompleted = success===true \|\| completed===true \|\| receipt!=null \|\| job_id!=null` 实测把 `{success:true,completed:false,status:'running',job_id}` 升级为完成；`_executeUIActionsWithProgress` 对 `{success:true,completed:false,dispatched:true}` 发出 `pending→done`。 |
+| R03 | **属实** | 单遍 `merge` 里 `dependencies = tuple(key_map.get(d, d) ...)` 与建 `key_map` 同遍执行：C 先入图时新 A 尚未改名，`key_map.get('A','A')` 落到旧 A。实测顺序 `A→C→dose_recompute#2`。`_order_tool_calls_by_action_plan` 未调用 `validate()` 属实。 |
+| R04 | **属实** | `OPACITY_WORD_PATTERNS` 逐 pattern `re.search` 一次，按 pattern 声明顺序而非原文位置出值：「不透明和半透明」得 `[50,100]`（应 `[100,50]`）；「半透明和半透明」得 `[50]`（应 `[50,50]`）。 |
+| R05 | **属实** | 隔离 Flask 实测：冷会话 seq9→seq4 双 200，终值为旧值；tombstone 后 memory 已删、bucket 仍有 `deleted:'old'` 且 `state_keys` 仍含该键；(seq1,plan2)→(seq2,plan1) 被接受。根因是版本围栏只存在于 `AgentMemory._ui_state_last_seq`（冷会话无 agent 即无围栏），bucket 写入另行 `dict.update` 不走 tombstone，`plan_revision` 只记录不比较。 |
+| R06 | **属实** | `asFraction = raw => Number(raw)`：`Number(null)===0` 且有限，直接短路掉 `state.doseOpacity` 回退。实测 `state={doseOpacity:0.6}` 且无 overlay 时 `increase 10` 得 base 0 / percent 10。 |
+| R07 | **属实** | `failedSteps` 是单次调用内的 `Set`；`blockedBy` 只查 `failedSteps.has(dep)`，故未知前置视为已满足；`signal.aborted` 全函数未检查。实测三条反例均放行。 |
+
+### 0B.2 实施的修复（根因 → 改动位置）
+
+不加句子白名单、不放开任意 DOM、不削弱安全检查、不把 cap 调大冒充修复；判据均收敛到**单一权威实现**。
+
+**R01｜单一授权谓词 + 范围来源可查**
+- `agent_runtime/request_parse.py`：新增 `_subtask_can_authorize(task)`，`aggregate_scope_targets` 的 `named` 收集与 `mutating_execution_authorized` 的循环**共用同一谓词**（另加 `excluded`）。条件/引用/转述/问句只在"谈论"对象，不再借目标。
+- 聚合范围解析抽为 `_aggregate_scope_resolution`，公开 `aggregate_scope_provenance()` → `named` / `count_reference` / `elliptical` / `policy_default` / `contested_scope` / `unresolved_count_reference` / `none`。**只有前三种是用户原话给出的授权**；`policy_default` 如实标注为"无来源的策略默认值"而非"有来源 scope"。
+- 新增 `_AGGREGATE_GEOMETRY_TARGETS`：当同句提到几何目标却又不是显式排除（"全部更新，CTV分割了吗？"→ contested）时，**连默认族也不给**，强制澄清。显式排除（"全部更新，CTV不用动。"）不算争议，仍走默认族并扣除排除项。
+
+**R03｜两阶段重映射 + 执行前强制校验**
+- `agent_runtime/action_plan.py` `merge()`：**先为整个子图分配最终 id（phase 1），再统一重写全部依赖边（phase 2）**，前向引用因此绑定到随行到达的生产者。入图 id 重复/为空/自依赖时**整图拒收**（返回 `self`），不猜。
+- `agent_runtime/llm_runtime.py` `_order_tool_calls_by_action_plan()`：执行路径与容错列举分离——`validate()` 非空则**一个工具都不调度**（两处调用点均以空返回结束本轮工具循环）。`ordered_steps()` 仍保留异常图以便诊断，但不构成执行许可。
+- `agent_runtime/execution_authorization.py` `set_action_plan()`：事件轨迹记录 `merge_refused` 与 `plan_problems`，拒收不再静默。
+
+**R02｜终态分类器，JobRef 只证明受理**
+- `web/app/static/js/brachybot-ui-api.js` 新增 `_uiActionResultState(result)`：统一 `completed / failed / cancelled / stale / accepted / dispatched / running / waiting_user / …` 词表。`completed===false`、`job_id`、`dispatched`、非空 `receipt` **都不再等于完成**；嵌套 receipt 递归判定。
+- `invokeMountedHandler` 的 `handlerCompleted` 改为 `state === 'completed'`；返回体新增 `status` 字段。
+- `_executeUIActionsWithProgress` 用同一分类器决定进度终态：非终态发 `running` 而不是 `done`。
+- `tool_factory/ui_controller/__init__.py`：`executed=len(validated)` 改为 `accepted=len(validated)` / `executed=0` / `execution_claim="accepted_pending_browser"`（该计数描述受理量，浏览器尚未执行）。
+- `tool_factory/viewer_command/viewer_command.py`：同型缺陷一并修正（其 message 自称 "queued" 却报 `executed`）。
+
+**R05｜控制面原子接收器 + 双围栏 + tombstone 同源**
+- `agent_runtime/core.py` 抽出 `apply_ui_state_write()`：patch/replace/tombstone/delete-marker 的合并逻辑**只此一处**，bucket、AgentMemory、checkpoint 共用。
+- `AgentMemory.set_ui_state()` 新增 `plan_revision` 围栏（`_ui_state_last_plan`），旧规划快照即使 seq 更新也拒收（`stale_plan_revision`）。
+- `web/routes/planning_routes.py` `/api/ui/state` POST：**围栏移到控制面 bucket**（`bucket["version_fence"]`），冷会话无 agent 也生效；bucket 与 memory 写入同一规范化状态，tombstone 不再分裂。
+- `checkpoint_ui_bridge` 持久化 `version_fence` / `state_seq` / `plan_revision`，恢复路径 `_bridge_view()` 原样带回——重启不重开围栏窗口。
+- 前端 `web/app/static/js/brachybot-ui-api.js` 新增 `_currentPlanRevision()`，权威来源是 `manualPlanningState.planningVersion`（原先只读从未写入的 `state.planningRevision`，`plan_revision` 恒为 null，服务端无从比较）；`_collectUIState()` 的 `manual` 块补 `planning_version`，快照自带归属。
+
+**R04｜按原文位置取值，保留重复**
+- `agent_runtime/ui_operations.py`：`values_from_text` 改为**带 source span 的统一收集**（数字 + 文字 + 颜色），按 `match.start()` 排序，重复出现保留。
+- 文字值合成单一 `_OPACITY_WORD_RE`（命名捕获组）一次 `finditer`，不再逐 pattern 声明顺序出值。
+- `(?!度)` 防止属性名「不透明度」被读成数值 100。
+
+**R06｜missing 不是 0，组内分歧不猜基准**
+- `_overlayOpacityFraction` 的 `asFraction` 先判 `null/undefined/空白` 再 `Number()`，缺失回退真正生效。
+- OAR 组逐器官求值：成员不一致时返回 `null`（拒绝相对操作并要求绝对值），不再无声取第一项代替全组。
+
+**R07｜跨批账本 + 取消门**
+- 新增 `_uiActionStepLedger(ownerKey)`（owner+request 维度，跨批保留）与 `_uiActionDependencySatisfied()`：**前置必须是 `completed`**，未知/未完成/失败/仍在跑一律阻断，不默认成功。R02 的分类器直接决定能否放行依赖。
+- `_executeUIActionsWithProgress` 循环内与业务执行前均检查 `options.signal.aborted`。
+
+### 0B.3 断言改动（2 处，均为收紧）
+
+按 §0A 关闭条件"R01–R07 改为正确行为断言"，新增断言 46 项（Python 31 + Node 15）。同时有两处**既有断言本身编码了缺陷**，必须改：
+
+1. `tests/ui-control-receipt.test.cjs`：`assert.equal(result.completed, true, 'a positive handler receipt proves completion')`——该 handler 返回的是 `{success:true, job_id:'guide-1'}`，即 JobRef。这行**就是 R02 本身**。改为 `completed === false` + `status === 'running'` + `dispatched === true`，并补一条显式终态 `{success:true, completed:true}` → `completed === true` 的正例。
+2. `tests/test_screenshot_trace_integration.py:1493`：断言源码字符串 `"result.success === false || result.stale === true"`。该表达式已并入 `_uiActionResultState`，字符串不复存在。改为断言新等价标记 `state === 'failed' || state === 'stale'` + `function _uiActionResultState`，并在 `tests/ui-action-terminal-state.test.cjs` 补**行为级**断言（会话切换 → `stale` 失败、且不再执行后续动作）。
+
+其余历史断言未改动。
+
+### 0B.4 验证证据
+
+| 层级 | 结果 | 边界 |
+|---|---|---|
+| 全仓库 pytest `--ignore=tests/test_release_access.py` | **2029 passed, 2 skipped, 2 failed** | 2 项失败为既有 `tests/test_brain_system.py`（`test_agent_chat_fallback` / `test_brain_agent_connection`），基线同样失败，本轮未触碰 |
+| 新增 `tests/test_nl_parity_review_regressions.py` | **31 passed** | 覆盖 R01/R03/R04/R05，含隔离 Flask 冷/热会话 |
+| 新增 `tests/ui-action-terminal-state.test.cjs` | **15/15 passed** | 覆盖 R02/R06/R07，加载**生产函数**而非复刻 |
+| 既有 4 个 Node 契约套件 | 全部通过 | ui-control-receipt / ui-state-sync / ui-action-dependency / ui-action-owner（含 5 个需显式 argv 的套件） |
+| §0A.5 原探针 `review_probes.py` | 七条反例**全部转为正确行为** | 见 §0B.5 说明 |
+
+原探针实测对照（左为 §0A 观察，右为本轮后）：
+
+| 反例 | §0A | 本轮后 |
+|---|---|---|
+| `全部更新；如果以后需要，重新分割CTV。` | `ctv_authorized=true` | **false**，scope `[]`，provenance `contested_scope` |
+| `全部更新；他说"重新分割CTV"。` | `ctv_authorized=true` | **false**，scope `[]` |
+| `全部更新，CTV分割了吗？` | `ctv_authorized=true` | **false**，scope `[]` |
+| 前向依赖合并 | `order=[A, C, dose_recompute#2]`，C→旧A | **`order=[A, dose_recompute#2, C]`**，C→`dose_recompute#2` |
+| 「不透明和半透明」 | `[50, 100]` → ctv,50 / oar,100 | **`[100, 50]`** → ctv,100 / oar,50 |
+| 「半透明和半透明」 | `[50]` → ambiguous | **`[50, 50]`** → ctv,50 / oar,50 |
+| 冷会话 seq9→seq4 | 双 200，终值 `{"value":"old"}` | **409 `stale_state_seq`**，终值 `{"value":"new"}` |
+| (seq1,plan2)→(seq2,plan1) | accepted | **`stale_plan_revision` 拒收**，状态仍为 new |
+| tombstone | memory 删 / bucket 留 `deleted:'old'` | **两侧一致 `{"keep":true}`**，`state_keys` 不含 `deleted` |
+| incomplete receipt | `pending→done` | **`pending→running`** |
+| 跨批失败依赖 | `["producer","consumer"]` | **`["producer"]`** |
+| 未知前置 + aborted | `["consumer"]` | **`[]`** |
+| 无 overlay 相对透明度 | base 0 / percent 10 | **base 60 / percent 70** |
+
+### 0B.5 与 §0A 的两处边界判断差异
+
+1. **`policy_default` 的处置**：§0A 修复方向写"无明确来源先只读解析/澄清"。本轮**未一刀切禁用**裸「全部更新」——剂量/报告/导板是可再生产物、重建不破坏几何，且已有正例回归。折衷是：(a) 用 `aggregate_scope_provenance()` 如实暴露 `policy_default` 不是授权来源，上层可据此要求澄清；(b) 一旦同句出现**未被排除的几何目标**，连默认族也收回（`contested_scope`）。这正是 §0A 三条反例的诉求（条件/引用/问句不得授权），同时不把可用路径推倒。
+2. **计数指代与结构化 offer 的绑定**：§0A 的 S 级缺口——`count_scope_targets` 按前文枚举切片，未核验"确实还有那么多真实待办"，也未绑定 offer 的 case/plan revision。**本轮未修**：它需要待办完成态/产物新鲜度的权威存储（`当前明确过期产物集合`），是 §0A 修复方向里的第三类来源。半接一个无权威数据源的校验只会制造假绿。此项在 §0B.6 保留为未闭环。
+
+**探针工具说明**：`docs/audits/nl-ui-parity-review-20260928/review_browser_probes.cjs` 用单函数切片加载 `_executeUIActionsWithProgress`。本轮把终态分类器与账本抽为共享 helper 后，该单切片不再自足（`_uiActionStepLedger is not defined`）——这是探针的加载方式限制，不是产品回归。正式断言已落在 `tests/ui-action-terminal-state.test.cjs`（按 §0A 关闭条件要求的"反例转为正确行为断言"）。`review_probes.py`（Python 侧）无需改动，仍可直接复跑。
+
+### 0B.6 仍未闭环（不因本轮宣称解决）
+
+- §0A 的 F04 / F06 / F08 / F09 / F11 / F13 / F14 / F15 八项原缺陷**未在本轮范围内**，状态不变。
+- §0B.5-2 的计数指代/offer 版本绑定。
+- 真实病例 E2E（工具→浏览器→保存→依赖→回答全链）仍未验证；本轮新增的是隔离契约断言。
+- `tests/chat_screenshot_delivery.cjs`（sandbox 缺 `uiActionTasks`）与 `tests/test-report-lifecycle.cjs`（`reportCaptureAllowed().allowed` 为 true）两项既有 Node 失败原样保留，未改断言掩盖。
+- 本工作树同时含另一条并行的 Monitor 粒子间距精度工作（`clearance_basis` / `finite_parallel_cylinders` 端点假阳性判据），已由同一全量门禁覆盖；其整改记录见 `docs/MONITOR_INTERACTION_AUDIT_REMEDIATION_2026-09-28.md`。
+
+## 0. 初审给实施 agent 的结论（历史基线；最新状态见§0A）
 
 **当前不能确认、更不能宣称：凡是用户在前端能做的操作，都能通过自然对话可靠完成。审计已确认存在阻止该目标成立的通用机制缺陷，不只是几个中文关键词漏识别。**
 
@@ -47,6 +312,8 @@
 - “自然语言可做”需要声明支持范围：例如精确患者坐标定位可支持；仅说“往那边一点”而没有视角/目标引用时不能杜撰坐标。
 
 ## 2. 审计范围、方法和验证强度
+
+> 本节记录初审基线和当时环境，不是本次复审测试清单。最新209项回归、5项浏览器测试及新增反例见§0A.3。
 
 ### 2.1 基线与清单
 
@@ -129,6 +396,8 @@ _executeUIActionsWithProgress → _executeUIActionRaw → 业务函数或通用 
 - 快照中对象不存在、未加载、隐藏、父组隐藏、过期、查询被截断、查询失败，是不同状态，不能统一说“没有”。
 
 ## 4. 已确认的问题与根因（按风险排序）
+
+> 以下F01–F16保留初审原始证据和设计要求。当前是否已修复必须查§0A.1；F01/F02/F03/F05/F07/F10/F12的原始复现部分已修复，剩余边界见R01–R07，不能照搬旧行号或宣称原样例仍全部失败。
 
 ### F01｜P0｜“全部更新”在底层变更授权中缺少作用域绑定（S/P）
 
@@ -475,6 +744,8 @@ UI 的 trace、progress、发送按钮、最终回复状态取同一 turn 状态
 
 ## 8. 实施工作包（给后续 agent）
 
+> 当前进度：WP0测试基础有效；WP1部分完成，未闭环；WP2–WP5按§0A销账；WP6五项fixture浏览器测试已通过，真实病例E2E待验证。以下为完整工作包设计，不代表这些工作尚未开始。
+
 ### WP0：固定基线与建立可回归验收（先做）
 
 - 重新读取远端当前 HEAD/dirty diff，不覆盖其他 agent 修改。
@@ -593,6 +864,8 @@ Data Tree 显示/opacity/color 应同时核验树按钮、2D/3D actor、保存�
 **最终判断：本次审计证明了当前“不完全对等”，并定位了跨语义、授权、状态、执行、证据的可修复根因；没有证明任意自然语言已被完全理解，也没有进行完整真实病例端到端认证。应按本报告建立可持续的能力对等验收体系，而不是宣称一次性“知道所有一切”。**
 
 ## 附件索引
+
+新增复审附件：`docs/audits/nl-ui-parity-review-20260928/`，详见§0A.5。以下原始附件保留其初审基线含义。
 
 - `audits/nl-ui-parity-20260928/README.md`：证据等级、复现方式与文件说明。
 - `source_manifest.csv`：505 个源码文件、行数、SHA-256。

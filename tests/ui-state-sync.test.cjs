@@ -24,6 +24,9 @@ function extract(source, name, isAsync = false) {
 
 const syncSrc = extract(src, 'syncUIBridgeState', true);
 assert.ok(syncSrc.includes('syncUIBridgeState'));
+// The sync resolves the authoritative planning revision (audit R05).
+const planRevisionSrc = extract(src, '_currentPlanRevision');
+assert.ok(planRevisionSrc.includes('_currentPlanRevision'));
 
 // The generic ui.state action must propagate a sync failure instead of
 // reporting success unconditionally.
@@ -45,7 +48,7 @@ function makeSyncContext(fetchImpl) {
         scheduleWorkspaceSave: () => {},
     };
     vm.createContext(context);
-    vm.runInContext(syncSrc, context);
+    vm.runInContext(`${planRevisionSrc}\n${syncSrc}\n`, context);
     return context;
 }
 

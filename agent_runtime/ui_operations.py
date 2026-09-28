@@ -92,20 +92,44 @@ _VALUE_BINDING_MARKER = re.compile(
     re.IGNORECASE,
 )
 
-# Opacity word values.  Plain (non-raw) strings so the \u escapes resolve to
-# the CJK characters the regex must match.
-OPACITY_WORD_PATTERNS = (
+# Opacity word values, collected in one pass so they come back in the order
+# the user wrote them and a repeated word is kept (audit defect R04).  Running
+# one `search` per pattern in declaration order is what turned
+# 「不透明和半透明」 into [50, 100] instead of [100, 50] and dropped the second
+# 「半透明」 of 「半透明和半透明」 entirely.
+#
+# `(?!度)` keeps a *property* name from being read as a value: 「不透明度」 is
+# "opacity", not a request for 100%.
+_OPACITY_WORD_TOKENS: Tuple[Tuple[str, int], ...] = (
     ("\u5b8c\u5168\u900f\u660e|\u900f\u660e\u81f3?\u5e95|"
      "fully\\s*transparent|completely\\s*transparent", 0),
-    ("\u534a\u900f\u660e|semi[-\\s]*transparent|translucent", 50),
-    ("\u4e0d\u900f\u660e|opaque", 100),
+    ("\u534a\u900f\u660e(?!\\u5ea6)|semi[-\\s]*transparent|translucent(?!ness)", 50),
+    ("\u4e0d\u900f\u660e(?!\\u5ea6)|opaque(?!ness)", 100),
 )
+OPACITY_WORD_PATTERNS = _OPACITY_WORD_TOKENS
+_OPACITY_WORD_RE = re.compile(
+    "|".join(
+        f"(?P<w{index}>{pattern})"
+        for index, (pattern, _) in enumerate(_OPACITY_WORD_TOKENS)
+    ),
+    re.IGNORECASE,
+)
+_OPACITY_WORD_VALUES = {
+    f"w{index}": value for index, (_, value) in enumerate(_OPACITY_WORD_TOKENS)
+}
 
 COLOR_NAME_PATTERN = (
     r"\b(?:red|green|blue|yellow|orange|purple|cyan|white|black)\b|"
     "\u7ea2\u8272?|\u7eff\u8272?|\u84dd\u8272?|\u9ec4\u8272?|"
     "\u6a59\u8272?|\u7d2b\u8272?|\u9752\u8272?|\u767d\u8272?|\u9ed1\u8272?"
 )
+_HEX_COLOR_RE = re.compile(r"#[0-9a-f]{3,8}\b", re.IGNORECASE)
+
+
+def _values_in_sentence_order(pairs: List[Tuple[int, Any]]) -> List[Any]:
+    """Sort (span_start, value) hits by where they appear in the sentence."""
+    pairs.sort(key=lambda item: item[0])
+    return [value for _, value in pairs]
 
 
 def values_from_text(text: str, property_name: Optional[str]) -> List[Any]:
@@ -113,24 +137,31 @@ def values_from_text(text: str, property_name: Optional[str]) -> List[Any]:
 
     ``_value_from_text`` answers "what is the value"; this answers "which
     values did the sentence state", which is what per-target binding needs.
+    Numbers, words and colours are gathered with their source spans and sorted
+    together, so a mixed sentence keeps its order and a value stated twice is
+    returned twice (audit defect R04).
     """
+    text = str(text or "")
     if property_name == "opacity":
-        percents = [
-            int(max(0, min(100, round(float(item)))))
-            for item in _PERCENT_RE.findall(text)
+        hits: List[Tuple[int, Any]] = [
+            (
+                match.start(),
+                int(max(0, min(100, round(float(match.group(1)))))),
+            )
+            for match in _PERCENT_RE.finditer(text)
         ]
-        if percents:
-            return percents
-        return [
-            value
-            for pattern, value in OPACITY_WORD_PATTERNS
-            if re.search(pattern, text, re.IGNORECASE)
-        ]
+        hits.extend(
+            (match.start(), _OPACITY_WORD_VALUES[match.lastgroup])
+            for match in _OPACITY_WORD_RE.finditer(text)
+        )
+        return _values_in_sentence_order(hits)
     if property_name == "color":
-        colors = re.findall(r"#[0-9a-f]{3,8}\b", text, re.IGNORECASE)
-        if colors:
-            return colors
-        return re.findall(COLOR_NAME_PATTERN, text, re.IGNORECASE)
+        hits = [(match.start(), match.group(0)) for match in _HEX_COLOR_RE.finditer(text)]
+        hits.extend(
+            (match.start(), match.group(0))
+            for match in re.finditer(COLOR_NAME_PATTERN, text, re.IGNORECASE)
+        )
+        return _values_in_sentence_order(hits)
     single = _value_from_text(text, property_name)
     return [single] if single is not None else []
 

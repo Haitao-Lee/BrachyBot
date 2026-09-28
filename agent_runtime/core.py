@@ -65,6 +65,37 @@ def _split_delete_markers(value: Any) -> Tuple[Dict, List[str]]:
     return kept, deleted
 
 
+def apply_ui_state_write(
+    current: Dict,
+    payload: Any,
+    *,
+    mode: str = "patch",
+    tombstones: Iterable[str] = (),
+) -> Dict:
+    """Return the state after one accepted UI write.
+
+    The control-plane bucket, AgentMemory and the durable checkpoint must all
+    end up with byte-identical state, so the merge itself lives in exactly one
+    place (audit defect R05).  Applying tombstones only to AgentMemory is what
+    let a deleted key survive in the bucket and on disk while the agent had
+    already forgotten it.
+
+    ``mode="patch"`` merges top-level keys; ``mode="replace"`` installs the
+    payload as the whole state.  ``tombstones`` and embedded
+    :data:`UI_STATE_DELETE` markers remove dotted paths outright.
+    """
+    cleaned, marker_deletions = _split_delete_markers(
+        payload if isinstance(payload, dict) else {}
+    )
+    replace = str(mode or "").strip().lower() == "replace"
+    result = dict(cleaned) if replace else dict(current or {})
+    if not replace:
+        result.update(cleaned)
+    for path in tuple(tombstones or ()) + tuple(marker_deletions):
+        _delete_dotted_path(result, str(path))
+    return result
+
+
 
 def resolve_reference_direction_input(
     planning_state: Optional[Dict] = None,
@@ -306,6 +337,12 @@ class AgentMemory:
             "mode": "patch",
         }
         self._ui_state_last_seq: Dict[str, int] = {}
+        # Highest accepted planning revision per browser instance.  A state
+        # snapshot that describes an *older* plan is stale even when its
+        # sequence number is newer (audit defect R05): recording the revision
+        # without comparing it is what let old-plan state overwrite new-plan
+        # state.
+        self._ui_state_last_plan: Dict[str, int] = {}
 
         # The web workspace layer installs a debounced callback here.  Agent
         # memory remains usable without the web server, so persistence is an
@@ -639,22 +676,27 @@ class AgentMemory:
 
         ``state_seq`` is monotonic per ``browser_instance``: an equal or older
         sequence is rejected without touching the state, so a slow older
-        snapshot can no longer overwrite a newer one. Legacy callers that send
-        no sequence are always accepted. ``plan_revision`` is recorded on the
-        accepted write so a reader can tell which planning revision this state
-        describes.
+        snapshot can no longer overwrite a newer one.  ``plan_revision`` is a
+        fence as well as a label: a snapshot describing an *older* planning
+        revision is rejected even when its sequence number is newer (audit
+        defect R05).  Legacy callers that send neither are always accepted.
 
         Returns the accepted/rejected revision record. A caller must not infer
         persistence from the absence of an exception.
         """
         mode_name = "replace" if str(mode or "").strip().lower() == "replace" else "patch"
         instance = str(browser_instance or "").strip() or None
-        sequence: Optional[int] = None
-        if state_seq is not None:
+
+        def _as_int(value: Any) -> Optional[int]:
+            if value is None:
+                return None
             try:
-                sequence = int(state_seq)
+                return int(value)
             except (TypeError, ValueError):
-                sequence = None
+                return None
+
+        sequence = _as_int(state_seq)
+        revision = _as_int(plan_revision)
 
         with self._lock:
             last_seq = self._ui_state_last_seq.get(instance) if instance else None
@@ -667,21 +709,30 @@ class AgentMemory:
                     "browser_instance": instance,
                     "mode": mode_name,
                 }
+            last_plan = self._ui_state_last_plan.get(instance) if instance else None
+            if revision is not None and last_plan is not None and revision < last_plan:
+                return {
+                    "accepted": False,
+                    "reason": "stale_plan_revision",
+                    "state_seq": last_seq,
+                    "plan_revision": last_plan,
+                    "browser_instance": instance,
+                    "mode": mode_name,
+                }
 
-            payload, marker_deletions = _split_delete_markers(
-                state if isinstance(state, dict) else {}
+            self._ui_state = apply_ui_state_write(
+                self._ui_state,
+                state,
+                mode=mode_name,
+                tombstones=tombstones,
             )
-            if mode_name == "replace":
-                self._ui_state = dict(payload)
-            else:
-                self._ui_state.update(payload)
-            for path in tuple(tombstones or ()) + tuple(marker_deletions):
-                _delete_dotted_path(self._ui_state, path)
 
             if sequence is not None and instance:
                 self._ui_state_last_seq[instance] = sequence
-            if plan_revision is not None:
-                self._ui_state_meta["plan_revision"] = plan_revision
+            if revision is not None:
+                if instance:
+                    self._ui_state_last_plan[instance] = revision
+                self._ui_state_meta["plan_revision"] = revision
             elif mode_name == "replace":
                 # A full snapshot without a revision does not describe a new
                 # plan, so the previous attribution is no longer meaningful.
@@ -742,6 +793,7 @@ class AgentMemory:
                 "mode": "patch",
             }
             self._ui_state_last_seq = {}
+            self._ui_state_last_plan = {}
         self._notify_persistence("ui_state")
 
     @staticmethod

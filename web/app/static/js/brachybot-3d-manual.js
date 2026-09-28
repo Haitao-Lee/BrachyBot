@@ -509,7 +509,7 @@ function _seedInterferenceDetails(interference = {}) {
         const clearance = Number(pair.surface_clearance_mm);
         const center = Number(pair.center_distance_mm);
         const measured = Number.isFinite(clearance)
-            ? `surface ${clearance.toFixed(2)} mm`
+            ? `${pair.clearance_basis === 'finite_parallel_cylinders' ? 'finite surface gap' : 'axis-model clearance bound'} ${clearance.toFixed(2)} mm`
             : (Number.isFinite(center) ? `centre ${center.toFixed(2)} mm` : 'unsafe spacing');
         return `${first} / ${second} (${measured})`;
     });

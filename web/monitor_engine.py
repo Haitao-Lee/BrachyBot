@@ -94,6 +94,8 @@ def _localize_monitor_text(value: Any, language: str = "en") -> str:
          lambda m: f"已记录{_monitor_step_zh(m[1])}事件；请核对 Data Tree 输出。"),
         (r"([0-9]+) seed pair\(s\) violate the physical spacing rule \(seed ([0-9.]+) mm x ([0-9.]+) mm; minimum surface clearance ([0-9.]+) mm\)\. ([0-9]+) pair\(s\) geometrically overlap\.",
          lambda m: f"{m[1]} 组粒子违反物理间距要求（粒子 {m[2]} mm × {m[3]} mm，最小表面间隙 {m[4]} mm），其中 {m[5]} 组发生几何重叠。"),
+        (r"([0-9]+) seed pair\(s\) violate the physical spacing rule \(seed ([0-9.]+) mm x ([0-9.]+) mm; minimum surface clearance ([0-9.]+) mm\)\. ([0-9]+) pair\(s\) have verified geometric overlap; ([0-9]+) endpoint pair\(s\) require further solid-contact review\.",
+         lambda m: f"{m[1]} 组粒子需要复核间距（粒子 {m[2]} mm × {m[3]} mm，最小表面间隙 {m[4]} mm）；{m[5]} 组确认发生几何重叠，{m[6]} 组端点接触情况尚未核实。"),
         (r"Dose preview updated: V100=([0-9.]+)%, D90=([0-9.]+) Gy\. Review hot spots and OAR dose before adding seeds\.",
          lambda m: f"剂量预览已更新：V100={m[1]}%，D90={m[2]} Gy。添加粒子前请检查热点和 OAR 剂量。"),
         (r"CTV V100 is ([0-9.]+)%; compare it with the applicable site-specific guidance or confirmed case protocol target\.",
@@ -115,6 +117,9 @@ def _localize_monitor_text(value: Any, language: str = "en") -> str:
              f"{match.group(5)} mm\uff0c\u8868\u9762\u95f4\u9699\u4e3a {match.group(6)} mm"
              f"\uff08{match.group(7)}\uff09\u3002"
          )),
+        (r"(.+) \((.*)\) and (.+) \((.*)\): center distance ([0-9.]+) mm, (finite surface gap|axis-model clearance bound) ([0-9.-]+) mm \[(.+)\]\.",
+         lambda m: (f"粒子 {m[1]}（{m[2]}）与 {m[3]}（{m[4]}）的中心距离为 {m[5]} mm，"
+                    f"{'实体表面间隙' if m[6] == 'finite surface gap' else '轴线模型间隙下界'}为 {m[7]} mm（{m[8]}）。")),
         (r"(.+) and (.+) are ([0-9.]+) mm apart \(minimum ([0-9.]+) mm; (.+)\)\.",
          lambda match: (
              f"\u9488\u9053 {match.group(1)} \u4e0e {match.group(2)} \u7684\u6700\u77ed\u8ddd\u79bb\u4e3a "
@@ -243,17 +248,20 @@ def _training_feedback_for_event_source(agent, session_id: Optional[str], event:
                 pairs,
                 key=lambda pair: float(pair.get("surface_clearance_mm") or 0.0),
             )
+            exact = worst.get('clearance_basis') == 'finite_parallel_cylinders'
+            zh_label = '实体表面间隙' if exact else '轴线模型间隙下界'
+            en_label = 'finite surface gap' if exact else 'axis-model clearance bound'
             if language == "zh":
                 return (
                     f"已记录粒子编辑。检测到 {len(pairs)} 组粒子违反物理间距要求；"
                     f"最严重的是 {worst.get('first_id')} 与 {worst.get('second_id')}，"
-                    f"表面间隙为 {float(worst.get('surface_clearance_mm') or 0.0):.2f} mm。"
+                    f"{zh_label}为 {float(worst.get('surface_clearance_mm') or 0.0):.2f} mm。"
                     "已准备对应的 3D 特写，请先调整间距再继续。"
                 )
             return (
                 f"Seed edit recorded. {len(pairs)} pair(s) violate the physical spacing rule; "
                 f"the worst pair is {worst.get('first_id')} and {worst.get('second_id')} "
-                f"with {float(worst.get('surface_clearance_mm') or 0.0):.2f} mm surface clearance. "
+                f"with {en_label} {float(worst.get('surface_clearance_mm') or 0.0):.2f} mm. "
                 "A focused 3D checkpoint is ready; correct the spacing before continuing."
             )
         if v100 is not None and v100_min is not None and v100 < v100_min:
@@ -275,17 +283,21 @@ def _training_feedback_for_event_source(agent, session_id: Optional[str], event:
             )
         close_pairs = list(needle_geometry.get("close_pairs") or [])
         if close_pairs:
-            worst = min(close_pairs, key=lambda pair: float(pair.get("distance_mm") or 0.0))
+            worst = min(close_pairs, key=lambda pair: float(pair.get("surface_clearance_mm", pair.get("distance_mm")) or 0.0))
+            exact = worst.get("clearance_basis") == "finite_parallel_cylinders"
+            label_zh = "实体表面间隙" if exact else "轴线模型间隙下界"
+            label_en = "finite surface gap" if exact else "axis-model clearance bound"
+            gap = float(worst.get("surface_clearance_mm", worst.get("distance_mm")) or 0.0)
+            minimum = float(worst.get("minimum_clearance_mm", 0.0) or 0.0)
             if language == "zh":
                 return (
                     f"针道编辑已记录。{worst.get('first_id')} 与 {worst.get('second_id')} "
-                    f"的最短距离为 {float(worst.get('distance_mm') or 0.0):.2f} mm，"
-                    f"低于要求的 {float(worst.get('minimum_distance_mm') or 0.0):.2f} mm。"
+                    f"的{label_zh}为 {gap:.2f} mm，低于要求的 {minimum:.2f} mm。"
                 )
             return (
                 f"Needle edit recorded. {worst.get('first_id')} and {worst.get('second_id')} "
-                f"are {float(worst.get('distance_mm') or 0.0):.2f} mm apart, below the "
-                f"{float(worst.get('minimum_distance_mm') or 0.0):.2f} mm minimum."
+                f"have a {label_en} of {gap:.2f} mm, below the "
+                f"{minimum:.2f} mm minimum."
             )
         return _localize_monitor_text(
             "Needle edit recorded. Check that the path traverses safe tissue and keeps distance from non-traversable OARs.",

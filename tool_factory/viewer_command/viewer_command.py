@@ -75,7 +75,15 @@ class ViewerCommandTool(BaseTool):
         return ToolResult(
             success=True,
             message=f"Viewer: {len(actions)} action(s) queued",
-            metadata={"actions": actions, "executed": len(actions)}
+            # "queued" is the claim this tool can make: the browser has not
+            # run the actions yet (audit defect R02).  Counting them as
+            # `executed` contradicted the message on the same line.
+            metadata={
+                "actions": actions,
+                "accepted": len(actions),
+                "executed": 0,
+                "execution_claim": "accepted_pending_browser",
+            }
         )
 
     def _get_preset_actions(self, preset: str) -> List[Dict]:

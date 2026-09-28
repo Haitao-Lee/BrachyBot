@@ -52,8 +52,8 @@
             for (const pair of info.conflicts || []) {
                 const value = pair.surface_clearance_mm ?? pair.distance_mm;
                 lines.push(`- ${safe(pair.first_id)} ↔ ${safe(pair.second_id)}：${text(card,
-                    pair.kind === 'seed_pairs' ? '表面间隙' : '针道距离',
-                    pair.kind === 'seed_pairs' ? 'surface clearance' : 'needle distance')} ${Number(value).toFixed(2)} mm`);
+                    pair.kind === 'seed_pairs' ? (pair.clearance_basis === 'finite_parallel_cylinders' ? '实体表面间隙' : '轴线模型间隙下界') : '针道轴线距离',
+                    pair.kind === 'seed_pairs' ? (pair.clearance_basis === 'finite_parallel_cylinders' ? 'finite surface gap' : 'axis-model clearance bound') : 'needle-axis distance')} ${Number(value).toFixed(2)} mm`);
             }
             lines.push(`**${text(card, '剂量对比', 'Dose comparison')}**`, info.dose_note);
             if (info.metric_rows?.length) {
@@ -104,12 +104,14 @@
         }, card.retryCount * 1500));
     }
 
-    window.runMonitorCheckpointAction = async (id, action) => {
+    window.runMonitorCheckpointAction = async (id, action, options = {}) => {
         const card = cards.get(id);
         if (!card || !latest(card) || card.busy) return false;
         if (action === 'capture') { await capture(card); return true; }
         if (action === 'focus') {
-            const refs = card.data.interaction?.spatial_refs || card.data.suggested_screenshot?.object_ids || [];
+            const allowed = card.data.interaction?.spatial_refs || card.data.suggested_screenshot?.object_ids || [];
+            const refs = options.refs || allowed;
+            if (!Array.isArray(refs) || !refs.length || !refs.every(ref => allowed.includes(ref))) return false;
             const ok = window.focusMonitorCheckpoint?.(refs, card.evidence);
             if (!ok) { card.notice = text(card, '当前可见对象不足以定位；请先检查 Data Tree。',
                 'The visible objects could not be located; check Data Tree first.'); render(card); }
@@ -250,6 +252,11 @@
         if (!result.success) retryCapture(card);
         render(card);
         return true;
+    };
+    window.markMonitorEvidenceViewed = id => {
+        const card = cards.get(id);
+        if (!card || !current(card) || card.captureState !== 'ready') return false;
+        card.viewedCaptureEventId = card.lastEventId; publish(); return true;
     };
     window.resolveMonitorCheckpointDecision = (token, kept) => {
         for (const card of cards.values()) {

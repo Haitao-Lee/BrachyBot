@@ -1188,11 +1188,16 @@ class UIControllerTool(BaseTool):
                 },
             )
 
-        # Return validated actions — frontend will execute them
+        # Return validated actions — frontend will execute them.  Nothing has
+        # run yet at this point, so the count describes *acceptance*, not
+        # business completion (audit defect R02).  Reporting `executed` here
+        # is how a queued job later read as a finished one.
         result_data = {
             "actions": validated,
             "errors": errors,
-            "executed": len(validated),
+            "accepted": len(validated),
+            "executed": 0,
+            "execution_claim": "accepted_pending_browser",
             "has_destructive": any(a.get("requires_confirm") for a in validated),
         }
 

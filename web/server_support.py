@@ -668,13 +668,13 @@ def _volume_metric_as_percent(value: Any, *, units: Optional[str] = None) -> Opt
     return float(percent)
 
 
-def _segment_segment_distance(
+def _segment_segment_closest_points(
     first_start: list,
     first_end: list,
     second_start: list,
     second_end: list,
-) -> float:
-    """Return the shortest Euclidean distance between two finite 3D segments."""
+) -> tuple[list, list]:
+    """Return the same finite-segment witnesses used by spacing validation."""
     u = [first_end[i] - first_start[i] for i in range(3)]
     v = [second_end[i] - second_start[i] for i in range(3)]
     w = [first_start[i] - second_start[i] for i in range(3)]
@@ -683,6 +683,13 @@ def _segment_segment_distance(
     c = sum(value * value for value in v)
     d = sum(u[i] * w[i] for i in range(3))
     e = sum(v[i] * w[i] for i in range(3))
+    # Point-like/imported segments still have a well-defined witness.
+    if a <= 1e-12:
+        t = max(0.0, min(1.0, e / c)) if c > 1e-12 else 0.0
+        return list(first_start), [second_start[i] + t * v[i] for i in range(3)]
+    if c <= 1e-12:
+        s = max(0.0, min(1.0, -d / a))
+        return [first_start[i] + s * u[i] for i in range(3)], list(second_start)
     denominator = a * c - b * b
     small = 1e-9
     s_num, s_den = denominator, denominator
@@ -717,8 +724,134 @@ def _segment_segment_distance(
             s_num, s_den = -d + b, a
     sc = 0.0 if abs(s_num) < small else s_num / max(s_den, small)
     tc = 0.0 if abs(t_num) < small else t_num / max(t_den, small)
-    delta = [w[i] + sc * u[i] - tc * v[i] for i in range(3)]
-    return math.sqrt(sum(value * value for value in delta))
+    return ([first_start[i] + sc * u[i] for i in range(3)],
+            [second_start[i] + tc * v[i] for i in range(3)])
+
+
+def _segment_segment_distance(first_start, first_end, second_start, second_end) -> float:
+    """Shortest distance; witnesses and the safety check share one calculation."""
+    return math.dist(*_segment_segment_closest_points(first_start, first_end, second_start, second_end))
+
+
+def _finite_cylinder_spacing(first_start, first_end, second_start, second_end, radius_sum):
+    """Separate finite, flat-ended cylinder contact from an axis-only bound.
+
+    Parallel cylinders have an exact signed surface gap: the cross section
+    consists of two disks and the axial extent of two closed intervals. For
+    skew axes, interior closest points can prove a sidewall intersection, but
+    a closest point on an end cannot establish end-cap overlap from axis
+    distance alone. Keep that case uncertain rather than declaring a physical
+    collision. All returned distances are in patient-world millimetres.
+    """
+    witnesses = _segment_segment_closest_points(
+        first_start, first_end, second_start, second_end,
+    )
+    axis_distance = math.dist(*witnesses)
+    u = [first_end[i] - first_start[i] for i in range(3)]
+    v = [second_end[i] - second_start[i] for i in range(3)]
+    u_length = math.sqrt(sum(x * x for x in u))
+    v_length = math.sqrt(sum(x * x for x in v))
+    bound = axis_distance - radius_sum
+    result = {
+        "axis_points": witnesses,
+        "axis_distance_mm": axis_distance,
+        "clearance_mm": bound,
+        "clearance_basis": "axis_lower_bound",
+        "physical_overlap": False if bound >= 0 else None,
+    }
+    if u_length <= 1e-9 or v_length <= 1e-9:
+        return result
+    direction = [x / u_length for x in u]
+    other_direction = [x / v_length for x in v]
+    parallel_error = math.sqrt(sum(
+        (direction[(i + 1) % 3] * other_direction[(i + 2) % 3]
+         - direction[(i + 2) % 3] * other_direction[(i + 1) % 3]) ** 2
+        for i in range(3)
+    ))
+    if parallel_error <= 1e-8:
+        offset = [second_start[i] - first_start[i] for i in range(3)]
+        axial_offset = sum(offset[i] * direction[i] for i in range(3))
+        radial_distance = math.sqrt(max(0.0, sum(x * x for x in offset) - axial_offset ** 2))
+        second_interval = sorted((axial_offset, axial_offset + sum(v[i] * direction[i] for i in range(3))))
+        axial_gap = max(second_interval[0] - u_length, -second_interval[1])
+        radial_gap = radial_distance - radius_sum
+        if axial_gap > 0 or radial_gap > 0:
+            clearance = math.hypot(max(0.0, axial_gap), max(0.0, radial_gap))
+        else:
+            clearance = max(axial_gap, radial_gap)
+        result.update(clearance_mm=clearance, clearance_basis="finite_parallel_cylinders",
+                      physical_overlap=clearance < -1e-6)
+        return result
+    # A point of each closest axis lying strictly inside its finite segment
+    # provides a sidewall witness. End points require a different solid-contact
+    # computation and are deliberately not declared overlapping here.
+    first_parameter = sum((witnesses[0][i] - first_start[i]) * u[i] for i in range(3)) / (u_length ** 2)
+    second_parameter = sum((witnesses[1][i] - second_start[i]) * v[i] for i in range(3)) / (v_length ** 2)
+    if bound < 0 and 1e-6 < first_parameter < 1 - 1e-6 and 1e-6 < second_parameter < 1 - 1e-6:
+        result["physical_overlap"] = True
+        result["clearance_basis"] = "interior_axis_witness"
+    return result
+
+
+def _needle_interference_report(needles, config=None, *, focus_ids=None, max_pairs=50):
+    """One finite-needle spacing contract for snapshots and edit comparisons.
+
+    Exact parallel-cylinder gaps are distinguished from conservative axis
+    lower bounds for skew end caps. Only a verified solid intersection may be
+    labelled ``intersecting``; an uncertain negative bound remains reviewable.
+    """
+    config = config if isinstance(config, dict) else {}
+    diameter = max(float(config.get("needle_diameter_mm") or 1.2), 0.1)
+    clearance_required = max(float(config.get("needle_clearance_mm") or 1.0), 0.0)
+    focus = {str(value) for value in focus_ids} if focus_ids is not None else None
+    entries = []
+    for index, needle in enumerate(needles or []):
+        if not isinstance(needle, dict):
+            continue
+        points = needle.get("points") or []
+        if len(points) < 2:
+            continue
+        try:
+            start = [float(value) for value in points[0][:3]]
+            end = [float(value) for value in points[-1][:3]]
+        except (TypeError, ValueError):
+            continue
+        if len(start) != 3 or len(end) != 3:
+            continue
+        entries.append((str(needle.get("id") or needle.get("needle_id") or f"needle_{index}"), start, end))
+    pairs = []
+    for index, (first_id, first_start, first_end) in enumerate(entries):
+        for second_id, second_start, second_end in entries[index + 1:]:
+            if focus is not None and first_id not in focus and second_id not in focus:
+                continue
+            spacing = _finite_cylinder_spacing(
+                first_start, first_end, second_start, second_end, diameter,
+            )
+            gap = spacing["clearance_mm"]
+            if gap >= clearance_required:
+                continue
+            overlap = spacing["physical_overlap"]
+            pairs.append({
+                "first_id": first_id, "second_id": second_id,
+                "distance_mm": spacing["axis_distance_mm"],
+                "minimum_distance_mm": diameter + clearance_required,
+                "surface_clearance_mm": gap,
+                "minimum_clearance_mm": clearance_required,
+                "clearance_basis": spacing["clearance_basis"],
+                "physical_overlap": overlap,
+                "risk": "intersecting" if overlap is True else
+                        "possible_intersection" if overlap is None and gap < 0 else "too_close",
+                "measurement": {
+                    "kind": "needle_axis_distance", "coordinate_system": "patient_world_mm",
+                    "points": spacing["axis_points"], "value_mm": spacing["axis_distance_mm"],
+                },
+            })
+    return {
+        "needle_count": len(entries), "diameter_mm": diameter,
+        "minimum_distance_mm": diameter + clearance_required,
+        "minimum_clearance_mm": clearance_required,
+        "close_pairs": pairs if max_pairs is None else pairs[:max_pairs],
+    }
 
 
 def _manual_geometry_key_order(*values: Any) -> list[str]:
@@ -924,15 +1057,23 @@ def _seed_interference_report(agent, seeds, needles, *, focus_ids=None, max_pair
         for right in entries[left_index + 1:]:
             if focused_ids is not None and not ({left['id'], right['id']} & focused_ids):
                 continue
-            axis_distance = _segment_segment_distance(
+            spacing = _finite_cylinder_spacing(
                 left["start"], left["end"], right["start"], right["end"],
+                2.0 * seed_radius_mm,
             )
+            witnesses = spacing["axis_points"]
+            axis_distance = spacing["axis_distance_mm"]
             center_distance = math.sqrt(sum(
                 (left["position"][axis] - right["position"][axis]) ** 2
                 for axis in range(3)
             ))
-            if axis_distance >= threshold_mm:
+            # The axis-only value is a conservative lower bound for skew
+            # endpoint configurations. For parallel cylinders the finite
+            # surface gap is exact; an axial end-face gap can therefore clear
+            # the safety threshold even when the two axes are very close.
+            if spacing["clearance_mm"] >= seed_clearance_mm:
                 continue
+            physical_overlap = spacing["physical_overlap"]
             close_pairs.append({
                 "first": left["index"],
                 "second": right["index"],
@@ -942,8 +1083,19 @@ def _seed_interference_report(agent, seeds, needles, *, focus_ids=None, max_pair
                 "second_needle_id": right["needle_id"],
                 "center_distance_mm": round(center_distance, 3),
                 "axis_distance_mm": round(axis_distance, 3),
-                "surface_clearance_mm": round(axis_distance - (2.0 * seed_radius_mm), 3),
-                "risk": "overlap" if axis_distance < (2.0 * seed_radius_mm) else "too_close",
+                # This compatibility field is an axis-model lower bound unless
+                # clearance_basis says the finite parallel cylinders were
+                # measured exactly. Consumers must show the basis, not call
+                # every negative value a physical surface intersection.
+                "surface_clearance_mm": round(spacing["clearance_mm"], 3),
+                "clearance_basis": spacing["clearance_basis"],
+                "physical_overlap": physical_overlap,
+                "risk": ("overlap" if physical_overlap is True else
+                         "possible_overlap" if physical_overlap is None else "too_close"),
+                "measurement": {"kind": "axis_distance", "coordinate_system": "patient_world_mm",
+                                "points": witnesses, "value_mm": axis_distance,
+                                "surface_clearance_mm": spacing["clearance_mm"],
+                                "clearance_basis": spacing["clearance_basis"]},
             })
 
     return {
@@ -955,6 +1107,7 @@ def _seed_interference_report(agent, seeds, needles, *, focus_ids=None, max_pair
         "seed_count": len(entries),
         "close_pair_count": len(close_pairs),
         "overlap_count": sum(pair["risk"] == "overlap" for pair in close_pairs),
+        "possible_overlap_count": sum(pair["risk"] == "possible_overlap" for pair in close_pairs),
         "close_pairs": close_pairs if max_pairs is None else close_pairs[:max_pairs],
     }
 
@@ -1012,15 +1165,22 @@ def _manual_seed_interference_delta(
             blocking.append(pair)
             continue
         try:
-            previous_axis = float(previous.get("axis_distance_mm"))
-            candidate_axis = float(pair.get("axis_distance_mm"))
+            comparable_surface = (
+                previous.get("clearance_basis") == "finite_parallel_cylinders"
+                and pair.get("clearance_basis") == "finite_parallel_cylinders"
+            )
+            metric = "surface_clearance_mm" if comparable_surface else "axis_distance_mm"
+            previous_clearance = float(previous.get(metric))
+            candidate_clearance = float(pair.get(metric))
         except (TypeError, ValueError):
             blocking.append(pair)
             continue
-        # A pair that was already unsafe is allowed to remain a warning when
-        # this edit did not make its finite-cylinder clearance worse.  A newly
-        # unsafe or worsened pair still blocks the dose transaction.
-        if candidate_axis + float(tolerance_mm) < previous_axis:
+        # Axis distance can stay zero while coaxial end faces change from
+        # touching to overlapping. Use the exact finite-cylinder gap when
+        # both snapshots support it. A newly verified overlap must never be
+        # hidden by a coincident axis-model bound.
+        if ((pair.get("physical_overlap") is True and previous.get("physical_overlap") is not True)
+                or candidate_clearance + float(tolerance_mm) < previous_clearance):
             blocking.append(pair)
         else:
             preexisting.append(pair)
@@ -1124,26 +1284,10 @@ def _latest_plan_snapshot(
                 "start": start,
                 "end": end,
             })
-    needle_diameter_mm = max(float(plan_config.get("needle_diameter_mm") or 1.2), 0.1)
-    needle_clearance_mm = max(float(plan_config.get("needle_clearance_mm") or 1.0), 0.0)
-    needle_threshold_mm = needle_diameter_mm + needle_clearance_mm
-    needle_close_pairs = []
-    for left in range(len(needle_entries)):
-        for right in range(left + 1, len(needle_entries)):
-            distance = _segment_segment_distance(
-                needle_entries[left]["start"],
-                needle_entries[left]["end"],
-                needle_entries[right]["start"],
-                needle_entries[right]["end"],
-            )
-            if distance < needle_threshold_mm:
-                needle_close_pairs.append({
-                    "first_id": needle_entries[left]["id"],
-                    "second_id": needle_entries[right]["id"],
-                    "distance_mm": round(distance, 3),
-                    "minimum_distance_mm": round(needle_threshold_mm, 3),
-                    "risk": "intersecting" if distance < needle_diameter_mm else "too_close",
-                })
+    needle_spacing = _needle_interference_report(
+        [{"id": row["id"], "points": [row["start"], row["end"]]} for row in needle_entries],
+        plan_config,
+    )
 
     obstacle_hits = []
     if needle_entries and validate_obstacles:
@@ -1209,10 +1353,7 @@ def _latest_plan_snapshot(
         "seed_positions": seed_positions,
         "seed_interference": seed_interference,
         "needle_geometry": {
-            "needle_count": len(needle_entries),
-            "diameter_mm": needle_diameter_mm,
-            "minimum_distance_mm": needle_threshold_mm,
-            "close_pairs": needle_close_pairs[:50],
+            **needle_spacing,
             "obstacle_hits": obstacle_hits,
         },
         "artifact_status": artifact_status if isinstance(artifact_status, dict) else {},
@@ -1375,7 +1516,8 @@ def _build_plan_advice(
     interference = snapshot.get("seed_interference") or {}
     if interference.get("status") == "attention":
         pairs = list(interference.get("close_pairs") or [])
-        overlap_count = interference.get("overlap_count", sum(1 for pair in pairs if pair.get("risk") == "overlap"))
+        overlap_count = interference.get("overlap_count", sum(1 for pair in pairs if pair.get("physical_overlap") is True))
+        possible_count = interference.get("possible_overlap_count", sum(1 for pair in pairs if pair.get("physical_overlap") is None))
         pair_count = interference.get("close_pair_count", len(pairs))
         issues.append(
             f"{pair_count} seed pair(s) violate the physical spacing rule "
@@ -1383,14 +1525,16 @@ def _build_plan_advice(
             f"{float(interference.get('seed_radius_mm') or 0.4) * 2.0:.1f} mm; "
             f"minimum surface clearance "
             f"{float(interference.get('minimum_clearance_mm') or 0.5):.1f} mm). "
-            f"{overlap_count} pair(s) geometrically overlap."
+            f"{overlap_count} pair(s) have verified geometric overlap; "
+            f"{possible_count} endpoint pair(s) require further solid-contact review."
         )
         for pair in pairs[:8]:
             issues.append(
                 f"{pair.get('first_id')} ({pair.get('first_needle_id') or 'unassigned'}) and "
                 f"{pair.get('second_id')} ({pair.get('second_needle_id') or 'unassigned'}): "
                 f"center distance {float(pair.get('center_distance_mm') or 0.0):.2f} mm, "
-                f"surface clearance {float(pair.get('surface_clearance_mm') or 0.0):.2f} mm "
+                f"{'finite surface gap' if pair.get('clearance_basis') == 'finite_parallel_cylinders' else 'axis-model clearance bound'} "
+                f"{float(pair.get('surface_clearance_mm') or 0.0):.2f} mm "
                 f"[{pair.get('risk') or 'too_close'}]."
             )
         advice.append(
@@ -1420,10 +1564,12 @@ def _build_plan_advice(
     needle_pairs = list(needle_geometry.get("close_pairs") or [])
     if needle_pairs:
         for pair in needle_pairs[:8]:
+            exact = pair.get("clearance_basis") == "finite_parallel_cylinders"
+            label = "finite surface gap" if exact else "axis-model clearance bound"
             issues.append(
-                f"{pair.get('first_id')} and {pair.get('second_id')} are "
-                f"{float(pair.get('distance_mm') or 0.0):.2f} mm apart "
-                f"(minimum {float(pair.get('minimum_distance_mm') or 0.0):.2f} mm; "
+                f"{pair.get('first_id')} and {pair.get('second_id')} have a {label} of "
+                f"{float(pair.get('surface_clearance_mm', pair.get('distance_mm')) or 0.0):.2f} mm "
+                f"(minimum {float(pair.get('minimum_clearance_mm') or 0.0):.2f} mm; "
                 f"{pair.get('risk') or 'too_close'})."
             )
         advice.append(

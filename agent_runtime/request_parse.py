@@ -45,6 +45,7 @@ __all__ = [
     "canonical_report_mutation",
     "canonical_guide_generation",
     "aggregate_scope_targets",
+    "aggregate_scope_provenance",
     "mutating_execution_authorized",
     "tool_authorization_target",
     "ui_action_is_destructive",
@@ -388,7 +389,40 @@ _WRITABLE_TARGETS = frozenset({
 # already owns and can reproduce.  Creating new geometry (segmentation, a
 # fresh planning run) is a different command and is never implied by a
 # word that names no object (audit defect F01).
+#
+# This set is a *policy default*, not a source: nothing in the utterance
+# named these objects, so a caller that requires a positive grant must read
+# :func:`aggregate_scope_provenance` and treat ``"policy_default"`` as a
+# request to clarify rather than as authorization.  It is kept non-empty
+# only because regenerating a derived artifact never destroys geometry.
 _AGGREGATE_ARTIFACT_TARGETS = frozenset({"dose", "report", "surgical_guide"})
+
+# Geometry-producing targets.  These need their own positive clause and can
+# never be borrowed from a condition, a quotation or a question.
+_AGGREGATE_GEOMETRY_TARGETS = frozenset({"ctv", "oar", "structure", "planning"})
+
+
+def _subtask_can_authorize(task: Any) -> bool:
+    """True only for a positive, unambiguous, executable clause.
+
+    This is the single authorization predicate.  Both the per-tool grant and
+    the aggregate scope resolver must use it, because two filters that
+    disagree are exactly what let "全部更新；如果以后需要，重新分割CTV。"
+    authorize a segmentation the user only mentioned as a future
+    possibility (audit defect R01).  A clause that is negated, conditional,
+    quoted, attributed to someone else, interrogative, ambiguous or
+    explicitly excluded names what must be left alone; it may never widen a
+    write.
+    """
+    return not (
+        task.negated
+        or task.conditional
+        or task.interrogative
+        or task.quoted
+        or task.attributed
+        or task.ambiguous
+        or task.excluded
+    )
 
 # An explicit count turns the aggregate into a bounded reference to that
 # many items of the preceding enumeration:
@@ -1296,45 +1330,43 @@ _CONFIRMATION_PROMPT_MARKERS = (
 )
 
 
-def aggregate_scope_targets(
+def _aggregate_scope_resolution(
     message: object,
     conversation: object = None,
-) -> FrozenSet[str]:
-    """Resolve "everything" to the finite, sourced set of targets it covers.
+) -> Tuple[str, FrozenSet[str]]:
+    """Resolve an aggregate to ``(provenance, scope)``.
 
-    An aggregate names no object of its own; its scope is whatever the user is
-    pointing at.  Exactly three sources are accepted, and nothing else:
-
-    1. the targets named in the same utterance ("导板和报告全部更新");
-    2. an explicit count reference bound to that many items of the preceding
-       enumeration ("把刚才三项全部更新").  When that enumeration cannot be
-       resolved, the set is empty and the caller must clarify rather than
-       widen to everything;
-    3. an elliptical follow-up pointing at whatever the immediately preceding
-       assistant reply enumerated ("那就全部更新").
-
-    With no source at all, the scope is the reproducible artifact family
-    (dose / report / surgical_guide).  It still never covers segmentation or a
-    new planning run: those create geometry and require their own positive
-    clause.  Targets carved out of the request ("不含导板") are removed from
-    every source.
+    Provenance is one of ``named`` / ``count_reference`` / ``elliptical`` /
+    ``policy_default`` / ``contested_scope`` / ``unresolved_count_reference``
+    / ``none``.  Only the first three are positive grants taken from the
+    user's own words; ``policy_default`` is a safe-but-unsourced guess and the
+    rest require clarification.
     """
     parsed = message if isinstance(message, ParsedRequest) else parse_request(message)
     if not parsed.aggregate_command:
-        return frozenset()
+        return "none", frozenset()
     excluded = set(parsed.excluded_targets)
 
-    named = set()
+    named: set = set()
+    contested_geometry = False
     for task in parsed.subtasks:
-        # An excluded or negated clause names what must be left alone; it
-        # must never widen the scope ("全部更新，不含导板").
-        if task.excluded or task.negated:
-            continue
-        named.update(target for target in task.targets if target)
+        mentioned = {target for target in task.targets if target}
         if task.target:
-            named.add(task.target)
+            mentioned.add(task.target)
+        # A geometry word that is not an explicit carve-out leaves
+        # "everything" contested: the user has that object in mind, so a
+        # silent default may not stand in for a scope they did not state.
+        if mentioned & _AGGREGATE_GEOMETRY_TARGETS and not (task.excluded or task.negated):
+            contested_geometry = True
+        # One authorization predicate for every path (audit defect R01).  A
+        # conditional, quoted, attributed or interrogative clause talks
+        # *about* an object; it never widens a write.
+        if not _subtask_can_authorize(task):
+            continue
+        named.update(mentioned)
     named.discard("")
 
+    provenance = "named" if named else "none"
     count = _aggregate_count_reference(parsed.raw)
     # A preceding reply can only ever contribute reproducible artifacts.
     # Mentioning CTV as "still usable" is not an offer to re-segment it, and
@@ -1347,18 +1379,69 @@ def aggregate_scope_targets(
         if not prior_targets:
             # "just those N" with nothing prior to point at is a request for
             # clarification, not a grant to run everything.
-            return frozenset()
+            return "unresolved_count_reference", frozenset()
         named.update(prior_targets[:count])
+        provenance = "count_reference"
     elif not named and prior_targets:
         named.update(prior_targets)
+        provenance = "elliptical"
 
     if named:
-        scope = named & _WRITABLE_TARGETS
-    else:
-        # A bare aggregate with no source reproduces existing artifacts only.
-        # It never widens into creating new geometry.
-        scope = set(_AGGREGATE_ARTIFACT_TARGETS)
-    return frozenset(scope - excluded)
+        return provenance, frozenset((named & _WRITABLE_TARGETS) - excluded)
+
+    # With no source at all the scope is the reproducible artifact family,
+    # never segmentation or a new planning run.  If the utterance raised a
+    # geometry target without carving it out, even that default is withheld:
+    # "全部更新；如果以后需要，重新分割CTV。" must not decide for the user
+    # which of the two they meant (audit defect R01).
+    if contested_geometry:
+        return "contested_scope", frozenset()
+    return "policy_default", frozenset(_AGGREGATE_ARTIFACT_TARGETS - excluded)
+
+
+def aggregate_scope_targets(
+    message: object,
+    conversation: object = None,
+) -> FrozenSet[str]:
+    """Resolve "everything" to the finite, sourced set of targets it covers.
+
+    An aggregate names no object of its own; its scope is whatever the user is
+    pointing at.  Exactly three sources authorize it:
+
+    1. the *executable* targets named in the same utterance ("导板和报告全部更新").
+       A conditional, quoted, attributed or interrogative clause is not one:
+       "如果以后需要，重新分割CTV" and "CTV分割了吗？" name CTV only to talk
+       about it;
+    2. an explicit count reference bound to that many items of the preceding
+       enumeration ("把刚才三项全部更新").  When that enumeration cannot be
+       resolved, the set is empty and the caller must clarify rather than
+       widen to everything;
+    3. an elliptical follow-up pointing at whatever the immediately preceding
+       assistant reply enumerated ("那就全部更新").
+
+    With no source at all, the scope is the reproducible artifact family
+    (dose / report / surgical_guide) — a policy default, not a grant, and
+    never segmentation or a fresh planning run.  When the utterance raised a
+    geometry target without carving it out, even that default is withheld and
+    the set is empty.  Targets carved out of the request ("不含导板") are
+    removed from every source.  Use :func:`aggregate_scope_provenance` to tell
+    a real source from the default.
+    """
+    return _aggregate_scope_resolution(message, conversation)[1]
+
+
+def aggregate_scope_provenance(
+    message: object,
+    conversation: object = None,
+) -> Tuple[str, FrozenSet[str]]:
+    """Return ``(provenance, scope)`` so a caller can demand a real source.
+
+    ``policy_default`` means the utterance sourced nothing and the scope is
+    the reproducible artifact family.  A caller that requires positive
+    authorization must treat it — like ``contested_scope`` and
+    ``unresolved_count_reference`` — as "clarify", not as a grant.
+    """
+    return _aggregate_scope_resolution(message, conversation)
 
 
 def mutating_execution_authorized(
@@ -1388,10 +1471,10 @@ def mutating_execution_authorized(
         "segment": {"segment", "plan", "generate"},
     }.get(expected_action, {expected_action})
     for task in parsed.subtasks:
-        if (
-            task.ambiguous or task.negated or task.interrogative
-            or task.conditional or task.quoted or task.attributed
-        ):
+        # The same predicate the aggregate scope resolver uses: one
+        # authorization contract, so no second path can grant what this one
+        # refuses (audit defect R01).
+        if not _subtask_can_authorize(task):
             continue
         if task.target == expected_target and task.action in allowed_actions:
             return True
@@ -1401,9 +1484,6 @@ def mutating_execution_authorized(
             expected_target in {"ctv", "oar", "structure"}
             and task.target == "planning"
             and task.action == "plan"
-            and not task.negated
-            and not task.conditional
-            and not task.attributed
         ):
             return True
     # An aggregate command ("全部更新" / "update everything") widens a write from

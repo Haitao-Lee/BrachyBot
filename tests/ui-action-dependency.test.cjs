@@ -21,6 +21,13 @@ function extract(source, name, isAsync = false) {
     return source.slice(start, source.indexOf('\n}', start) + 2);
 }
 
+// The executor reads the shared terminal-state classifier and owner ledger
+// (audit R02/R07); load them into the same script scope it runs in.
+const classifiersSrc = src.slice(
+    src.indexOf('const _UI_ACTION_RUNNING_STATES'),
+    src.indexOf('function _emitUIActionProgress'),
+);
+assert.ok(classifiersSrc.includes('_uiActionResultState'));
 const progressSrc = extract(src, '_executeUIActionsWithProgress', true);
 const queueSrc = extract(src, '_queueUIActionBatch', true);
 
@@ -38,7 +45,7 @@ function makeContext(executeImpl) {
         _executeUIAction: executeImpl,
     };
     vm.createContext(context);
-    vm.runInContext(progressSrc, context);
+    vm.runInContext(`${classifiersSrc}\n${progressSrc}\n`, context);
     return { context, events };
 }
 
@@ -254,7 +261,7 @@ async function main() {
             _executeUIAction: action => handlers[action.target](),
         };
         vm.createContext(context);
-        vm.runInContext(progressSrc, context);
+        vm.runInContext(`${classifiersSrc}\n${progressSrc}\n`, context);
         vm.runInContext(queueSrc, context);
 
         const batchOne = context._queueUIActionBatch(
@@ -304,7 +311,7 @@ async function main() {
             _executeUIAction: action => handlers[action.target](),
         };
         vm.createContext(context);
-        vm.runInContext(progressSrc, context);
+        vm.runInContext(`${classifiersSrc}\n${progressSrc}\n`, context);
         vm.runInContext(queueSrc, context);
 
         const batchA = context._queueUIActionBatch(

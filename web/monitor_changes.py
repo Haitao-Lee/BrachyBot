@@ -172,24 +172,16 @@ def compare(before, after):
         snapshot['seed_pairs'] = support._seed_interference_report(agent,
             snapshot['geometry']['seeds'], snapshot['geometry']['needles'],
             focus_ids=ids, max_pairs=None)['close_pairs']
-        snapshot['needle_pairs'] = []
-        needles = snapshot['geometry']['needles']
-        minimum = float(config.get('needle_diameter_mm') or 1.2) + float(config.get('needle_clearance_mm') or 1.0)
-        for i, left in enumerate(needles):
-            for right in needles[i+1:]:
-                if not ids.intersection((str(left['id']), str(right['id']))):
-                    continue
-                distance = support._segment_segment_distance(left['points'][0], left['points'][-1], right['points'][0], right['points'][-1])
-                if distance < minimum:
-                    snapshot['needle_pairs'].append({'first_id': left['id'], 'second_id': right['id'],
-                        'distance_mm': distance, 'minimum_distance_mm': minimum})
+        snapshot['needle_pairs'] = support._needle_interference_report(
+            snapshot['geometry']['needles'], config, focus_ids=ids, max_pairs=None,
+        )['close_pairs']
         if side == 0:
             before = snapshot
         else:
             after = snapshot
     conflicts = []
     resolved = 0
-    for key, distance_key in (('seed_pairs', 'surface_clearance_mm'), ('needle_pairs', 'distance_mm')):
+    for key, distance_key in (('seed_pairs', 'surface_clearance_mm'), ('needle_pairs', 'surface_clearance_mm')):
         def pairs(snapshot):
             return {tuple(sorted((str(p['first_id']), str(p['second_id'])))): p
                     for p in snapshot[key] if ids.intersection((str(p['first_id']), str(p['second_id'])))}
@@ -230,7 +222,11 @@ def dose_comparison(before, after):
                     organ_changes.append({'organ': organ, 'metric': key, 'before': value,
                                           'after': current, 'delta': current - value})
         organ_changes.sort(key=lambda row: abs(row['delta']), reverse=True)
-    return {'comparable': comparable, 'before': before['metrics'] if before['metrics_current'] else {},
+    series_key = (hashlib.sha256(json.dumps([after.get('planning_id'), after.get('anatomy_key'), after.get('config')],
+                                sort_keys=True, default=str).encode()).hexdigest()[:20]
+                  if after.get('anatomy_key') is not None else None)
+    return {'comparable': comparable, 'series_key': series_key,
+            'before': before['metrics'] if before['metrics_current'] else {},
             'after': after['metrics'] if after['metrics_current'] else {},
             'score_status': after.get('score_status'),
             'oar_changes': organ_changes[:4], 'oar_metric_comparison_count': len(organ_changes),
@@ -282,9 +278,16 @@ def describe(evidence, language='en'):
     for pair in actionable[:4]:
         value = pair.get('surface_clearance_mm', pair.get('distance_mm'))
         status = {'new': '新增违规', 'worsened': '违规加重', 'improved': '间距改善但仍违规', 'existing': '原有违规仍存在'}[pair['change']]
-        label = '表面间隙' if pair['kind'] == 'seed_pairs' else '针道距离'
+        if pair['kind'] == 'seed_pairs':
+            exact = pair.get('clearance_basis') == 'finite_parallel_cylinders'
+            label = ('实体表面间隙' if exact else '轴线模型间隙下界') if zh else (
+                'finite surface gap' if exact else 'axis-model clearance bound')
+        else:
+            exact = pair.get('clearance_basis') == 'finite_parallel_cylinders'
+            label = ('针道实体表面间隙' if exact else '针道轴线模型间隙下界') if zh else (
+                'finite needle surface gap' if exact else 'needle-axis clearance bound')
         lines.append(f"{status}：{pair['first_id']} ↔ {pair['second_id']}，{label} {value:.2f} mm。" if zh
-                     else f"{pair['change']}: {pair['first_id']} ↔ {pair['second_id']}, {'surface clearance' if pair['kind'] == 'seed_pairs' else 'needle distance'} {value:.2f} mm.")
+                     else f"{pair['change']}: {pair['first_id']} ↔ {pair['second_id']}, {label} {value:.2f} mm.")
     if evidence.get('existing_conflict_count'):
         count = evidence['existing_conflict_count']
         lines.append(f"另有 {count} 组相关间距违规在编辑前已存在，未归因于本次操作。" if zh
@@ -329,9 +332,8 @@ def describe(evidence, language='en'):
             lines.append((f"覆盖与热点/OAR 变化可能相互权衡：{oar_rise['organ']} {oar_rise['metric']} 增加 {oar_rise['delta']:.2f} Gy；请核对对应空间位置及适用约束，不能仅凭覆盖改善认定{subject}更优。"
                           if zh else f"Coverage may trade off against hot spots/OAR dose: {oar_rise['organ']} {oar_rise['metric']} rose {oar_rise['delta']:.2f} Gy. Inspect its location and applicable constraints before calling this edit sequence better."))
     if evidence.get('restore_token'):
-        code = evidence['restore_token']
-        lines.append(f"是否撤销这次编辑？回复“复位 {code}”恢复本次编辑前的几何，或回复“保留 {code}”。复位后剂量仍需重算；原位置不等于已验证的安全位置。" if zh
-                     else f"Undo this edit? Reply 'undo {code}' to restore its prior geometry, or 'keep {code}'. Dose must be recomputed afterward; the prior position is not a verified safe position.")
+        lines.append("可在本次编辑卡片上选择“恢复编辑前位置”或“保留编辑”。复位后剂量仍需重算；原位置不等于已验证的安全位置。" if zh
+                     else "Choose Restore pre-edit position or Keep edit on this edit card. Recompute dose after restoring; the prior position is not a verified safe position.")
         for obj in display_objects[:2]:
             if obj.get('return_vector_mm'):
                 vector = ', '.join(f'{v:+.2f}' for v in obj['return_vector_mm'])
@@ -396,12 +398,12 @@ def interaction(evidence, language='en'):
     if dose.get('comparable'):
         for key in labels:
             if key in dose.get('delta', {}):
-                rows.append({'metric': labels[key] if zh else key,
+                rows.append({'key': key, 'metric': labels[key] if zh else key,
                              'before': dose['before'][key], 'after': dose['after'][key],
                              'delta': dose['delta'][key], 'unit': ('百分点' if zh else 'pp')
                              if key.startswith('v') else 'Gy' if key.startswith('d') else ('分' if zh else 'points')})
         for row in dose.get('oar_changes', []):
-            rows.append({'metric': f"{row['organ']} {row['metric']}",
+            rows.append({'key': f"oar:{row['organ']}:{row['metric']}", 'metric': f"{row['organ']} {row['metric']}",
                          **{key: row[key] for key in ('before', 'after', 'delta')}, 'unit': 'Gy'})
     pair = next((p for p in evidence.get('conflicts', []) if p['change'] in ('new', 'worsened')), None)
     if pair:
@@ -426,15 +428,19 @@ def interaction(evidence, language='en'):
                  if dose.get('comparable') else
                  ('剂量尚不可比较：等待与当前几何对应的重算结果或有效基线。' if zh
                   else 'Dose comparison unavailable: a current recomputation or valid baseline is required.'))
+    blocking = sum(p.get('change') in ('new', 'worsened') and
+                   p.get('physical_overlap') is True
+                   for p in evidence.get('conflicts', []))
     return {'schema_version': 2, 'checkpoint_id': evidence.get('geometry_event_id') or evidence.get('event_id'),
             'revision': evidence.get('after_version'), 'priority': priority, 'headline': headline,
-            'category': 'geometry', 'severity': 'warning' if new or worse else 'info',
+            'category': 'geometry', 'severity': 'blocking' if blocking else 'warning' if new or worse else 'info',
+            'blocking_scope': 'physical_geometry' if blocking else None,
             'spatial_refs': list(dict.fromkeys(
                 [str(p[k]) for p in evidence.get('conflicts', [])
                  if p['change'] in ('new', 'worsened') for k in ('first_id', 'second_id')]
                 + [str(obj['id']) for obj in changes if obj['operation'] != 'deleted']))[:8],
             'conflict_counts': {'new': new, 'worsened': worse, 'resolved': resolved,
-                                'existing': evidence.get('existing_conflict_count', 0)},
+                                'existing': evidence.get('existing_conflict_count', 0), 'blocking': blocking},
             'objects': changes[:4], 'conflicts': [p for p in evidence.get('conflicts', []) if p['change'] != 'existing'][:4],
             'metric_rows': rows, 'dose_note': dose_note, 'next_step': next_step,
             'dose_current': bool(dose.get('after')), 'dose_comparable': bool(dose.get('comparable')),
@@ -474,6 +480,7 @@ def overview(agent):
         metrics = metrics['metrics']
     normalized = {}
     highest_oar = None
+    oar_rows = []
     if dose_current and isinstance(metrics, dict):
         for key in ('v100', 'd90', 'v200', 'plan_score'):
             value = metrics.get(key)
@@ -491,6 +498,7 @@ def overview(agent):
         for name, row in organs.items() if isinstance(organs, dict) else []:
             value = row.get('dmax') if isinstance(row, dict) else None
             if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+                oar_rows.append({'organ': str(name), 'dmax': float(value)})
                 if highest_oar is None or value > highest_oar['dmax']:
                     highest_oar = {'organ': str(name), 'dmax': float(value)}
     stages = [
@@ -505,10 +513,47 @@ def overview(agent):
         ('surgical_guide', status('surgical_guide', False)),
         ('report', status('report', bool(mem('report_form')))),
     ]
+    oar_rows.sort(key=lambda row: row['dmax'], reverse=True)
+    config = mem('plan_config') or {}
+    target = config.get('DVH_rate') if isinstance(config, dict) else None
+    coverage_target = float(target) * 100 if isinstance(target, (int, float)) and not isinstance(target, bool) and 0 < target <= 1 else None
     return {'available': True, 'planning_id': mem('active_planning_id') or mem('planning_run_id'),
             'planning_version': mem('manual_plan_version'), 'dose_current': bool(dose_current),
             'metrics': normalized, 'highest_recorded_oar': highest_oar,
+            'recorded_oars': oar_rows[:5], 'recorded_oar_count': len(oar_rows),
+            'coverage_target_percent': coverage_target, 'coverage_target_source': 'plan_config.DVH_rate' if coverage_target else None,
             'stages': [{'key': key, 'state': value} for key, value in stages]}
+
+
+def timeline_projection(training, limit=40):
+    """Small HUD history; never copy geometry arrays or inverse/restore tokens."""
+    events = training.get('events') or []
+    counts = {}
+    for key, value in (training.get('event_counts') or {}).items():
+        try:
+            counts[str(key)] = max(0, int(value))
+        except (ValueError, TypeError, OverflowError):
+            continue
+    if not counts:
+        for event in events:
+            key = str(event.get('type') or 'ui.event')
+            counts[key] = counts.get(key, 0) + 1
+    rows = []
+    for event in events[-limit:]:
+        detail = event.get('detail') or {}
+        evidence = (detail.get('edit_evidence') or {}) if detail.get('commit_status') == 'committed' else {}
+        info = interaction(evidence) if evidence else {}
+        row = {key: event.get(key) for key in ('event_id', 'ts', 'type', 'monitor_run_id')}
+        row.update(status=detail.get('status'), step=detail.get('step'),
+                   label=str(event.get('label') or '')[:200], severity=info.get('severity', 'warning' if detail.get('status') == 'failed' else 'info'))
+        dose = evidence.get('dose') or {}
+        if dose.get('after'):
+            row['dose_sample'] = {key: dose.get(key) for key in ('series_key', 'comparable', 'before', 'after')}
+            row['dose_sample'].update(planning_id=evidence.get('planning_id'), revision=evidence.get('after_version'))
+        rows.append(row)
+    return {'schema_version': 3, 'events': rows, 'event_counts': counts,
+            'event_count': sum(counts.values()), 'retained_event_count': len(events),
+            'returned_event_count': len(rows), 'dropped_event_count': training.get('dropped_event_count', 0)}
 
 
 def checkpoint(evidence, event, language='en'):

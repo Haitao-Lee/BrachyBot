@@ -1,0 +1,206 @@
+{
+  "全部更新": {
+    "scope": [
+      "dose",
+      "report",
+      "surgical_guide"
+    ],
+    "ctv_authorized": false
+  },
+  "全部更新；如果以后需要，重新分割CTV。": {
+    "scope": [
+      "ctv"
+    ],
+    "ctv_authorized": true
+  },
+  "全部更新；他说“重新分割CTV”。": {
+    "scope": [
+      "ctv"
+    ],
+    "ctv_authorized": true
+  },
+  "全部更新，CTV分割了吗？": {
+    "scope": [
+      "ctv"
+    ],
+    "ctv_authorized": true
+  },
+  "CTV和OAR分别设为不透明和半透明": {
+    "values": [
+      50,
+      100
+    ],
+    "resolution": {
+      "actions": [
+        {
+          "target": "tree.group.opacity",
+          "command": "set",
+          "value": "ctv,50"
+        },
+        {
+          "target": "tree.group.opacity",
+          "command": "set",
+          "value": "oar,100"
+        }
+      ],
+      "confidence": 0.86,
+      "source": "typed_multi_group_fallback",
+      "ambiguous": false,
+      "candidates": [
+        {
+          "target": "tree.group.opacity",
+          "command": "set",
+          "value": "ctv,50"
+        },
+        {
+          "target": "tree.group.opacity",
+          "command": "set",
+          "value": "oar,100"
+        }
+      ],
+      "property": "opacity",
+      "target_group": [
+        "ctv",
+        "oar"
+      ],
+      "language": "zh"
+    }
+  },
+  "CTV和OAR分别设为半透明和半透明": {
+    "values": [
+      50
+    ],
+    "resolution": {
+      "actions": [],
+      "confidence": 0.0,
+      "source": "typed_multi_group_ambiguous",
+      "ambiguous": true,
+      "candidates": [],
+      "property": "opacity",
+      "target_group": [
+        "ctv",
+        "oar"
+      ],
+      "values": [
+        50
+      ],
+      "language": "zh"
+    }
+  },
+  "forward_dependency_merge": {
+    "steps": [
+      {
+        "key": "A",
+        "tool": "dose_recompute",
+        "depends_on": [],
+        "params": {
+          "old": true
+        },
+        "source": "llm"
+      },
+      {
+        "key": "C",
+        "tool": "report_auto_fill",
+        "depends_on": [
+          "A"
+        ],
+        "params": {},
+        "source": "llm"
+      },
+      {
+        "key": "dose_recompute#2",
+        "tool": "dose_recompute",
+        "depends_on": [],
+        "params": {
+          "new": true
+        },
+        "source": "llm"
+      }
+    ],
+    "validation": [],
+    "order": [
+      "A",
+      "C",
+      "dose_recompute#2"
+    ]
+  },
+  "older_plan_newer_sequence": {
+    "accepted": true,
+    "reason": "applied",
+    "state_seq": 2,
+    "plan_revision": 1,
+    "browser_instance": "browser",
+    "mode": "replace"
+  },
+  "state_after_older_plan": {
+    "plan": "old"
+  },
+  "cold_state_first": {
+    "status": 200,
+    "body": {
+      "accepted_revision": {
+        "accepted": true,
+        "browser_instance": "review-browser",
+        "mode": "replace",
+        "plan_revision": null,
+        "reason": "applied",
+        "state_seq": 9
+      },
+      "session_id": "review-case",
+      "state_keys": [
+        "value"
+      ],
+      "success": true,
+      "training": {}
+    }
+  },
+  "cold_state_older": {
+    "status": 200,
+    "body": {
+      "accepted_revision": {
+        "accepted": true,
+        "browser_instance": "review-browser",
+        "mode": "replace",
+        "plan_revision": null,
+        "reason": "applied",
+        "state_seq": 4
+      },
+      "session_id": "review-case",
+      "state_keys": [
+        "value"
+      ],
+      "success": true,
+      "training": {}
+    }
+  },
+  "cold_final_state": {
+    "value": "old"
+  },
+  "warm_tombstone_response": {
+    "status": 200,
+    "body": {
+      "accepted_revision": {
+        "accepted": true,
+        "browser_instance": "review-browser",
+        "mode": "patch",
+        "plan_revision": null,
+        "reason": "applied",
+        "state_seq": 11
+      },
+      "session_id": "review-case",
+      "state_keys": [
+        "deleted",
+        "keep"
+      ],
+      "success": true,
+      "training": {}
+    }
+  },
+  "warm_tombstone_memory": {
+    "keep": true
+  },
+  "warm_tombstone_bucket": {
+    "deleted": "old",
+    "keep": true
+  }
+}

@@ -1574,6 +1574,9 @@ function _collectUIState() {
             seed_counter: manualPlanningState.seedCounter,
             needle_counter: manualPlanningState.needleCounter,
             dose_engine: manualPlanningState.doseEngine || 'dose_unet_spacing1mm',
+            // The snapshot must name the planning revision it describes, so a
+            // restored state can be fenced against newer plans (audit R05).
+            planning_version: Number(manualPlanningState.planningVersion || 0),
         } : {},
         training: (typeof trainingMonitorState !== 'undefined') ? {
             active: !!trainingMonitorState.active,
@@ -2143,6 +2146,27 @@ window._uiStateSyncStatus = window._uiStateSyncStatus || {
     error: null,
     updatedAt: 0,
 };
+
+// Authority for "which planning revision does this UI state describe".
+// `manualPlanningState.planningVersion` is the value the planning engine
+// actually advances; `state.planningRevision` is only a mirror and used to
+// read back a value a caller supplied.  Reading the mirror alone left
+// `plan_revision` permanently null on the wire, so the server recorded a
+// revision it could never compare (audit defect R05).
+function _currentPlanRevision() {
+    const candidates = [
+        (typeof state !== 'undefined' && state) ? state.planningRevision : null,
+        (typeof manualPlanningState !== 'undefined' && manualPlanningState)
+            ? manualPlanningState.planningVersion : null,
+        (typeof dataTreeState !== 'undefined' && dataTreeState && dataTreeState.planning)
+            ? dataTreeState.planning.version : null,
+    ];
+    for (const candidate of candidates) {
+        const n = Number(candidate);
+        if (Number.isFinite(n)) return n;
+    }
+    return null;
+}
 window._uiStateSeq = Number(window._uiStateSeq || 0);
 window._uiBrowserInstanceId = window._uiBrowserInstanceId || (() => {
     // Stable per tab so two browsers on one case do not share a sequence.
@@ -2180,9 +2204,7 @@ async function syncUIBridgeState(reason = 'snapshot') {
                 mode: 'replace',
                 state_seq: stateSeq,
                 browser_instance: browserInstance,
-                plan_revision: (typeof state !== 'undefined' && state
-                    && Number.isFinite(Number(state.planningRevision)))
-                    ? Number(state.planningRevision) : null,
+                plan_revision: _currentPlanRevision(),
                 state: (typeof collectUIState === 'function') ? collectUIState() : {},
             }),
         });
@@ -2325,8 +2347,8 @@ window.handleMonitorConversation = async function(text) {
                     `当前规划为 ${data.active_planning_id || '未知'}；登记的已完成算法规划候选：${candidates.join('、')}（恢复时还需校验实际快照）。但“原来”也可能指只撤销最近一次编辑。请明确你指哪一种；确认前我不会改动病例。`,
                     `Active plan: ${data.active_planning_id || 'unknown'}. Registered completed algorithm-plan candidates: ${candidates.join(', ')} (their snapshots still need verification). "Original" could also mean undoing only the latest edit. Please specify which restore you mean; no case data has been changed.`, sessionId)
                 : monitorChatText(
-                    '当前未核实到可恢复的已完成算法规划。若你指最近一次编辑，可使用监测提示中的复位 token；我没有修改病例。',
-                    'No completed algorithm-plan restore candidate was verified. If you mean the latest edit, use its monitor undo token. No case data was changed.', sessionId);
+                    '当前未核实到可恢复的已完成算法规划。若你指最近一次编辑，可在对应监测卡片选择“恢复编辑前位置”；我没有修改病例。',
+                    'No completed algorithm-plan restore candidate was verified. If you mean the latest edit, use “Restore pre-edit position” on its monitor card. No case data was changed.', sessionId);
         }
         addChat('bot-response', message, true, Date.now(), false, sessionId, { messageKind: 'monitor_feedback' });
     } catch (error) {
@@ -2824,6 +2846,7 @@ async function executeGenericUIControl(command, value) {
     };
     let handlerReceipt = null;
     let handlerCompleted = false;
+    let handlerState = 'dispatched';
     const invokeMountedHandler = async () => {
         const source = String(el.getAttribute('onclick') || '').trim();
         const match = source.match(
@@ -2866,10 +2889,11 @@ async function executeGenericUIControl(command, value) {
                 };
             }
             handlerReceipt = result;
-            handlerCompleted = result.success === true
-                || result.completed === true
-                || result.receipt != null
-                || result.job_id != null;
+            // A receipt is evidence of *acceptance* unless it reaches a
+            // terminal success.  `success`, a job id or a nested receipt must
+            // not be read as completion (audit defect R02).
+            handlerState = _uiActionResultState(result);
+            handlerCompleted = handlerState === 'completed';
         }
         return { handled: true, result };
     };
@@ -3268,7 +3292,8 @@ async function executeGenericUIControl(command, value) {
         // failures used to read as success in the chat turn.
         dispatched: true,
         completed: handlerCompleted,
-        receipt: handlerReceipt || { dispatched: true, completed: false },
+        status: handlerState,
+        receipt: handlerReceipt || { dispatched: true, completed: false, status: 'dispatched' },
     };
 }
 
@@ -7293,6 +7318,66 @@ async function _executeUIAction(a, options = {}) {
     return Promise.resolve(_executeUIActionRaw(a, options));
 }
 
+// Business completion is a terminal state, not a dispatch claim (audit defect
+// R02).  A JobRef (`job_id`), a `dispatched` flag or a non-null `receipt` only
+// proves the work was accepted somewhere; treating any of them as "done" is
+// what let a queued job read as completed while it was still running.  The
+// control receipt, the progress ledger, dependency gating and the final answer
+// all consume this one classifier so no layer can upgrade a claim on its own.
+const _UI_ACTION_RUNNING_STATES = new Set([
+    'accepted', 'dispatched', 'queued', 'running', 'pending',
+    'waiting', 'waiting_user', 'in_progress', 'processing', 'started',
+]);
+function _uiActionResultState(result) {
+    if (result === false || result === null || result === undefined) return 'failed';
+    if (typeof result !== 'object') return 'completed';
+    if (result.stale === true) return 'stale';
+    if (result.cancelled === true) return 'cancelled';
+    if (result.success === false) return 'failed';
+    const status = String(result.status || '').trim().toLowerCase();
+    const running = _UI_ACTION_RUNNING_STATES.has(status) ? status : '';
+    if (result.completed === true) return 'completed';
+    if (result.completed === false) {
+        if (running) return running;
+        if (result.job_id != null || result.job_ref != null) return 'running';
+        return result.dispatched === true ? 'dispatched' : 'running';
+    }
+    if (running) return running;
+    if (result.job_id != null || result.job_ref != null) return 'running';
+    if (result.receipt != null && typeof result.receipt === 'object') {
+        const inner = _uiActionResultState(result.receipt);
+        return inner === 'unknown' ? 'running' : inner;
+    }
+    if (result.dispatched === true) return 'dispatched';
+    return result.success === true ? 'completed' : 'unknown';
+}
+// Only a terminal success satisfies a `depends_on`.  Anything else — failed,
+// still running, dispatched, cancelled, or simply never recorded — leaves the
+// prerequisite unmet.
+function _uiActionDependencySatisfied(ledger, depKey) {
+    return ledger.get(String(depKey)) === 'completed';
+}
+// Step outcomes are recorded per owner+request and survive across batches, so
+// a producer that failed in an earlier call still blocks its consumer here
+// (audit defect R07).  A Map keyed by owner also outlives a page's single
+// call stack, which a local `failedSteps` set never could.
+function _uiActionStepLedger(ownerKey) {
+    if (!window._uiActionStepLedgers) window._uiActionStepLedgers = new Map();
+    const store = window._uiActionStepLedgers;
+    if (store.size > 64) {
+        for (const key of store.keys()) {
+            store.delete(key);
+            if (store.size <= 32) break;
+        }
+    }
+    let ledger = store.get(ownerKey);
+    if (!ledger) {
+        ledger = new Map();
+        store.set(ownerKey, ledger);
+    }
+    return ledger;
+}
+
 function _emitUIActionProgress(step) {
     try {
         document.dispatchEvent(new CustomEvent('brachy:ui-action-progress', { detail: step }));
@@ -7318,8 +7403,16 @@ async function _executeUIActionsWithProgress(actions, options = {}) {
         const items = typeof raw === 'string' ? [raw] : Array.from(raw);
         return items.map(item => String(item || '').trim()).filter(Boolean);
     };
-    const failedSteps = new Set();
+    // Step outcomes are kept per owner+request across every batch of the
+    // turn, so a producer that failed or is still running in an earlier call
+    // still blocks its consumer here (audit defect R07).  A prerequisite that
+    // was never recorded is *unmet*, never assumed successful.
+    const ledger = _uiActionStepLedger(`${ownerSessionId}|${ownerRequestId}`);
+    const cancelled = () => !!(options.signal && options.signal.aborted);
     for (let i = 0; i < actions.length; i += 1) {
+        // Cancellation and ownership are gates, not hints: an aborted request
+        // must not reach the business layer (audit defect R07).
+        if (cancelled()) break;
         if (!_uiActionSessionIsCurrent(ownerSessionId)) break;
         const action = actions[i] || {};
         const id = `ui-action-${Date.now()}-${i}`;
@@ -7338,24 +7431,24 @@ async function _executeUIActionsWithProgress(actions, options = {}) {
             session_id: ownerSessionId || _activeApiSessionId(),
             request_id: ownerRequestId,
         };
-        // A step whose prerequisites failed is skipped and accounted for,
-        // never silently dropped and never run anyway.  The trace says
-        // exactly which step blocked it.
-        const blockedBy = dependencyKeys(action).filter(dep => failedSteps.has(dep));
-        if (blockedBy.length) {
+        // A step whose prerequisites are not a confirmed success is skipped
+        // and accounted for, never silently dropped and never run anyway.
+        const deps = dependencyKeys(action);
+        const unmet = deps.filter(dep => !_uiActionDependencySatisfied(ledger, dep));
+        if (unmet.length) {
             const blocked = {
                 success: false,
                 skipped: true,
-                blocked_by_dependency: blockedBy,
-                error: `Skipped: prerequisite step(s) failed: ${blockedBy.join(', ')}`,
+                blocked_by_dependency: unmet,
+                error: `Skipped: prerequisite step(s) not completed: ${unmet.join(', ')}`,
             };
             results.push(blocked);
-            failedSteps.add(stepKey);
+            ledger.set(stepKey, 'failed');
             _emitUIActionProgress({
                 ...base,
                 status: 'error',
                 result: blocked.error,
-                metadata: { blockedByDependency: blockedBy },
+                metadata: { blockedByDependency: unmet },
             });
             continue;
         }
@@ -7363,6 +7456,13 @@ async function _executeUIActionsWithProgress(actions, options = {}) {
         // Yield once so the live Execution Trace can paint its breathing state
         // before a synchronous control handler starts doing work.
         await new Promise(resolve => setTimeout(resolve, 0));
+        if (cancelled()) {
+            const aborted = { success: false, cancelled: true, error: 'The request was cancelled before this UI action ran.' };
+            results.push(aborted);
+            ledger.set(stepKey, 'cancelled');
+            _emitUIActionProgress({ ...base, status: 'cancelled', result: aborted.error });
+            break;
+        }
         try {
             const result = await _executeUIAction(action, { sessionId: ownerSessionId });
             if (!_uiActionSessionIsCurrent(ownerSessionId)) {
@@ -7370,14 +7470,17 @@ async function _executeUIActionsWithProgress(actions, options = {}) {
                 // because the remaining actions no longer have an owner.
                 const stale = { success: false, stale: true, error: 'Session changed; UI action completion cannot be confirmed.' };
                 results.push(stale);
+                ledger.set(stepKey, 'stale');
                 _emitUIActionProgress({ ...base, status: 'cancelled', result: stale.error });
                 break;
             }
             results.push(result);
-            const failed = result === false
-                || (result && (result.success === false || result.stale === true));
-            if (failed) {
-                failedSteps.add(stepKey);
+            // One classifier decides what "done" means, so a dispatched job
+            // cannot release its dependants or read as completion in the
+            // final answer (audit defect R02).
+            const state = _uiActionResultState(result);
+            ledger.set(stepKey, state);
+            if (state === 'failed' || state === 'stale') {
                 const message = (result && result.error) || 'The browser could not apply this UI action.';
                 _emitUIActionProgress({ ...base, status: 'error', result: message,
                     metadata: { stage: result?.stage, captureFailure: result?.captureFailure } });
@@ -7385,22 +7488,29 @@ async function _executeUIActionsWithProgress(actions, options = {}) {
                 // in the same batch must still run.
                 continue;
             }
+            if (state === 'cancelled') {
+                _emitUIActionProgress({ ...base, status: 'cancelled', result: 'Cancelled' });
+                break;
+            }
             // The Execution Trace renders this value as plain text.  Passing
             // the raw result object produced "-> [object Object]".
             const doneText = (result && typeof result === 'object')
                 ? (result.message || result.display_message
-                    || (result.cancelled ? 'Cancelled' : 'Applied'))
+                    || (state === 'completed' ? 'Applied' : `Accepted (${state})`))
                 : (result || 'Applied');
+            // Only a terminal success is "done".  An accepted/dispatched/
+            // running result stays in flight: the row must not read as
+            // finished, and its dependants must not run.
             _emitUIActionProgress({
                 ...base,
-                status: result && result.cancelled ? 'cancelled' : 'done',
+                status: state === 'completed' ? 'done' : 'running',
                 result: doneText,
+                metadata: { executionState: state },
             });
-            if (result && result.cancelled) break;
         } catch (error) {
             const failure = { success: false, error: String(error) };
             results.push(failure);
-            failedSteps.add(stepKey);
+            ledger.set(stepKey, 'failed');
             _emitUIActionProgress({ ...base, status: 'error', result: failure.error });
             continue;
         }
@@ -7913,7 +8023,14 @@ window.executeUIContextAction = executeUIContextAction;
 // reader takes the value the same setter writes, so a manual slider
 // adjustment and a spoken command share one source of truth.
 function _overlayOpacityFraction(target) {
+    // `Number(null)` is 0 and `Number('')` is 0, so a missing value used to
+    // read as a real 0% base and silently swallow the effective fallback
+    // (audit defect R06): `state.doseOpacity = 0.6` with no overlay object
+    // turned "increase 10" into 10% instead of 70%.  Missing must stay
+    // missing until the caller decides what to do about it.
     const asFraction = raw => {
+        if (raw === null || raw === undefined) return null;
+        if (typeof raw === 'string' && raw.trim() === '') return null;
         const n = Number(raw);
         return Number.isFinite(n) ? n : null;
     };
@@ -7928,13 +8045,19 @@ function _overlayOpacityFraction(target) {
         return asFraction(dataTreeState.ctv && dataTreeState.ctv.opacity);
     }
     // The OAR group stores its opacity per organ rather than on the group
-    // object, so read the first organ that carries one.
+    // object.  When the organs disagree there is no single "current" value,
+    // and silently using the first one applied one organ's setting to the
+    // whole group.  Report it as unknown so a relative command asks for an
+    // absolute value instead of guessing a base.
     const organs = dataTreeState.organs || [];
+    let found = null;
     for (const organ of organs) {
         const value = asFraction(organ && organ.opacity);
-        if (value !== null) return value;
+        if (value === null) continue;
+        if (found !== null && Math.abs(found - value) > 1e-9) return null;
+        found = value;
     }
-    return asFraction(dataTreeState.oar && dataTreeState.oar.opacity);
+    return found !== null ? found : asFraction(dataTreeState.oar && dataTreeState.oar.opacity);
 }
 
 function _resolveOverlayOpacityPercent(target, command, value) {
@@ -7956,7 +8079,7 @@ function _resolveOverlayOpacityPercent(target, command, value) {
         const currentFraction = _overlayOpacityFraction(target);
         if (currentFraction === null) {
             return {
-                error: 'The current overlay opacity is unknown; use an absolute value.',
+                error: 'The current overlay opacity is unknown or differs across the group; use an absolute value.',
             };
         }
         const current = currentFraction * 100;

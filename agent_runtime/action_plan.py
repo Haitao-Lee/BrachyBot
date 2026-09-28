@@ -203,12 +203,31 @@ class ActionPlan:
         A provider may emit one action per model round.  A plain set-based
         merge would treat the second ``report_generator`` (or any other
         repeated operation) as the first one and silently discard it.  Keep
-        every planned action and assign deterministic ``#2``/``#3`` keys;
-        dependencies that refer to keys from the incoming plan are remapped at
-        the same time.
+        every planned action and assign deterministic ``#2``/``#3`` keys.
+
+        Dependency remapping is deliberately two-phase (audit defect R03):
+        every incoming step receives its final id *first*, and only then are
+        all dependency edges rewritten through the completed map.  Remapping
+        while the map is still being built is what left "C depends on the new
+        A" pointing at the *old* producer of the same name and scheduled
+        ``old A -> C -> new A``.
+
+        An incoming graph that cannot be remapped unambiguously — a reused or
+        empty step id, a self-dependency — is refused and ``self`` is returned
+        unchanged.  A silently mis-wired edge is worse than a missing step;
+        :meth:`validate` remains the gate a caller must consult before
+        executing anything.
         """
         if not isinstance(other, ActionPlan) or not other.steps:
             return self
+        incoming_ids = [step.key for step in other.steps]
+        if (
+            any(not key for key in incoming_ids)
+            or len(set(incoming_ids)) != len(incoming_ids)
+            or any(dep == step.key for step in other.steps for dep in step.depends_on)
+        ):
+            return self
+
         steps = list(self.steps)
         seen = {step.key for step in steps}
         counts = {}
@@ -219,13 +238,17 @@ class ActionPlan:
             except (TypeError, ValueError):
                 ordinal = 1
             counts[step.tool] = max(int(counts.get(step.tool, 0)), ordinal)
-        key_map = {}
+
+        # Phase 1 — assign each incoming step its final id and record the
+        # translation, without touching any dependency edge yet.
+        key_map: Dict[str, str] = {}
+        assignments: List[Tuple[Optional[int], ActionStep]] = []
         for step in other.steps:
             original_key = step.key
             # A local dependency guard deliberately creates empty placeholder
             # steps before the model selects concrete parameters. Match one
-            # such placeholder exactly once, retaining its dependency key and
-            # avoiding a false second execution in the trace.
+            # such placeholder exactly once, filling it in place rather than
+            # producing a false second execution in the trace.
             placeholder_index = next(
                 (
                     index
@@ -238,15 +261,8 @@ class ActionPlan:
                 None,
             )
             if placeholder_index is not None:
-                existing = steps[placeholder_index]
-                key_map[original_key] = existing.key
-                steps[placeholder_index] = ActionStep(
-                    key=existing.key,
-                    tool=step.tool,
-                    depends_on=existing.depends_on or step.depends_on,
-                    params=step.params,
-                    source=step.source,
-                )
+                key_map[original_key] = steps[placeholder_index].key
+                assignments.append((placeholder_index, step))
                 continue
             count = int(counts.get(step.tool, 0)) + 1
             candidate = original_key if original_key not in seen else f"{step.tool}#{count}"
@@ -255,15 +271,30 @@ class ActionPlan:
                 candidate = f"{step.tool}#{count}"
             counts[step.tool] = count
             key_map[original_key] = candidate
+            seen.add(candidate)
+            assignments.append((None, step))
+
+        # Phase 2 — rewrite every edge through the completed map, so a
+        # dependency listed before its producer still reaches that producer.
+        for placeholder_index, step in assignments:
             dependencies = tuple(key_map.get(dep, dep) for dep in step.depends_on)
+            if placeholder_index is not None:
+                existing = steps[placeholder_index]
+                steps[placeholder_index] = ActionStep(
+                    key=existing.key,
+                    tool=step.tool,
+                    depends_on=existing.depends_on or dependencies,
+                    params=step.params,
+                    source=step.source,
+                )
+                continue
             steps.append(ActionStep(
-                key=candidate,
+                key=key_map[step.key],
                 tool=step.tool,
                 depends_on=dependencies,
                 params=step.params,
                 source=step.source,
             ))
-            seen.add(candidate)
         return ActionPlan(
             steps=tuple(steps),
             source=self.source if self.steps else other.source,

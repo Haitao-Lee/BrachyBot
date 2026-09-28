@@ -35,7 +35,7 @@ from web.viewer_cache import (
     schedule_viewer_cache_write,
     viewer_cache_key,
 )
-from agent_runtime.core import resolve_reference_direction_input
+from agent_runtime.core import apply_ui_state_write, resolve_reference_direction_input
 from agent_runtime.visual_evidence import (
     build_visual_evidence_prompt,
     grounded_location_answer,
@@ -3095,6 +3095,12 @@ def register_planning_routes(
                 "events": list(bucket.get("events") or []),
                 "training": copy.deepcopy(bucket.get("training") or {}),
                 "updated_at": bucket.get("updated_at"),
+                # The version fence is part of the durable bridge: a restart
+                # must not reopen the window a stale browser write was
+                # already locked out of (audit defect R05).
+                "version_fence": copy.deepcopy(bucket.get("version_fence") or {}),
+                "state_seq": bucket.get("state_seq"),
+                "plan_revision": bucket.get("plan_revision"),
             }
         key = (str(user["id"]), str(selected))
         with _UI_BRIDGE_CHECKPOINT_LOCK:
@@ -5067,13 +5073,24 @@ def register_planning_routes(
             fast asynchronous write path without making a small control-plane
             state disappear at an agent-cache boundary.
             """
-            with _UI_BRIDGE_LOCK:
-                live = {
-                    "state": dict(bucket.get("state") or {}),
-                    "events": list(bucket.get("events") or []),
-                    "training": dict(bucket.get("training") or {}),
-                    "updated_at": bucket.get("updated_at"),
+            def _bridge_view(source: Mapping[str, Any], training: Any = None) -> Dict[str, Any]:
+                # The version fence travels with the state it guards, so a
+                # restored bridge is still fenced (audit defect R05).
+                return {
+                    "state": dict(source.get("state") or {}),
+                    "events": list(source.get("events") or []),
+                    "training": dict(
+                        training if training is not None
+                        else source.get("training") or {}
+                    ),
+                    "updated_at": source.get("updated_at"),
+                    "version_fence": copy.deepcopy(source.get("version_fence") or {}),
+                    "state_seq": source.get("state_seq"),
+                    "plan_revision": source.get("plan_revision"),
                 }
+
+            with _UI_BRIDGE_LOCK:
+                live = _bridge_view(bucket)
             if live["state"] or live["events"] or live["training"].get("active"):
                 return live
 
@@ -5090,15 +5107,13 @@ def register_planning_routes(
                 if pending is not None:
                     bridge = pending[3]
                     if isinstance(bridge, dict):
-                        return {
-                            "state": dict(bridge.get("state") or {}),
-                            "events": list(bridge.get("events") or []),
-                            "training": _server_support._close_stale_training_snapshot(
+                        return _bridge_view(
+                            bridge,
+                            _server_support._close_stale_training_snapshot(
                                 bridge.get("training") or {},
                                 reason="server_restart_or_pending_restore",
                             ),
-                            "updated_at": bridge.get("updated_at"),
-                        }
+                        )
 
             if store is not None and user is not None and selected:
                 try:
@@ -5108,15 +5123,13 @@ def register_planning_routes(
                         store.load_ui_bridge(user["id"], selected),
                     )
                     if isinstance(bridge, dict):
-                        return {
-                            "state": dict(bridge.get("state") or {}),
-                            "events": list(bridge.get("events") or []),
-                            "training": _server_support._close_stale_training_snapshot(
+                        return _bridge_view(
+                            bridge,
+                            _server_support._close_stale_training_snapshot(
                                 bridge.get("training") or {},
                                 reason="server_restart_or_durable_restore",
                             ),
-                            "updated_at": bridge.get("updated_at"),
-                        }
+                        )
                 except WorkspaceError:
                     pass
             return live
@@ -5139,28 +5152,79 @@ def register_planning_routes(
             tombstones = (
                 raw_tombstones if isinstance(raw_tombstones, (list, tuple)) else ()
             )
-            accepted = {
-                "accepted": True,
-                "reason": "applied",
-                "state_seq": data.get("state_seq"),
-                "plan_revision": data.get("plan_revision"),
-                "browser_instance": data.get("browser_instance"),
-                "mode": write_mode,
-            }
-            if agent is not None and hasattr(agent, "memory"):
+
+            def _as_int(value: Any) -> Optional[int]:
+                if value is None:
+                    return None
                 try:
-                    memory_revision = agent.memory.set_ui_state(
-                        state_payload if isinstance(state_payload, dict) else {},
+                    return int(value)
+                except (TypeError, ValueError):
+                    return None
+
+            sequence = _as_int(data.get("state_seq"))
+            revision = _as_int(data.get("plan_revision"))
+            instance = str(data.get("browser_instance") or "").strip()
+
+            # The control plane is the single fenced receiver, and it does not
+            # depend on an agent being loaded (audit defect R05).  A fence that
+            # only exists inside AgentMemory is no fence at all for a cold
+            # case, which is exactly how seq 9 followed by seq 4 both landed.
+            # One normalized state is then handed to the bucket, AgentMemory
+            # and the checkpoint so the three can never disagree about a
+            # tombstone.
+            with _UI_BRIDGE_LOCK:
+                fence = bucket.setdefault("version_fence", {})
+                record = dict(fence.get(instance) or {})
+                last_seq = record.get("state_seq")
+                last_plan = record.get("plan_revision")
+                accepted = {
+                    "accepted": True,
+                    "reason": "applied",
+                    "state_seq": sequence if sequence is not None else bucket.get("state_seq"),
+                    "plan_revision": revision if revision is not None else bucket.get("plan_revision"),
+                    "browser_instance": instance or None,
+                    "mode": write_mode,
+                }
+                if sequence is not None and last_seq is not None and sequence <= last_seq:
+                    accepted = {
+                        "accepted": False,
+                        "reason": "stale_state_seq",
+                        "state_seq": last_seq,
+                        "plan_revision": last_plan,
+                        "browser_instance": instance or None,
+                        "mode": write_mode,
+                    }
+                elif revision is not None and last_plan is not None and revision < last_plan:
+                    # A snapshot describing an older planning revision is
+                    # stale even when its sequence number is newer: recording
+                    # the revision without comparing it let old-plan state
+                    # overwrite new-plan state.
+                    accepted = {
+                        "accepted": False,
+                        "reason": "stale_plan_revision",
+                        "state_seq": last_seq,
+                        "plan_revision": last_plan,
+                        "browser_instance": instance or None,
+                        "mode": write_mode,
+                    }
+                merged_state = None
+                if accepted.get("accepted") is not False:
+                    merged_state = apply_ui_state_write(
+                        bucket.get("state") or {},
+                        state_payload,
                         mode=write_mode,
                         tombstones=tombstones,
-                        state_seq=data.get("state_seq"),
-                        browser_instance=data.get("browser_instance"),
-                        plan_revision=data.get("plan_revision"),
                     )
-                    if isinstance(memory_revision, dict):
-                        accepted = memory_revision
-                except Exception as e:
-                    logger.debug(f"ui_state memory update failed: {e}")
+                    if sequence is not None:
+                        record["state_seq"] = sequence
+                    if revision is not None:
+                        record["plan_revision"] = revision
+                    fence[instance] = record
+                    bucket["state"] = merged_state
+                    bucket["updated_at"] = time.time()
+                    bucket["state_seq"] = accepted.get("state_seq")
+                    bucket["plan_revision"] = accepted.get("plan_revision")
+
             if accepted.get("accepted") is False:
                 # The write was rejected as stale.  Say so: a caller must
                 # not treat an unapplied snapshot as persisted.
@@ -5170,18 +5234,21 @@ def register_planning_routes(
                     "session_id": session_id,
                     "accepted_revision": accepted,
                 }), 409
-            with _UI_BRIDGE_LOCK:
-                if write_mode == "replace":
-                    bucket["state"] = (
-                        state_payload if isinstance(state_payload, dict) else {}
+
+            # Install the identical normalized state in AgentMemory so the
+            # agent and the durable bucket cannot diverge over a tombstone.
+            if agent is not None and hasattr(agent, "memory") and merged_state is not None:
+                try:
+                    agent.memory.set_ui_state(
+                        merged_state,
+                        mode="replace",
+                        state_seq=sequence,
+                        browser_instance=instance or None,
+                        plan_revision=accepted.get("plan_revision"),
                     )
-                else:
-                    merged = dict(bucket.get("state") or {})
-                    merged.update(state_payload if isinstance(state_payload, dict) else {})
-                    bucket["state"] = merged
-                bucket["updated_at"] = time.time()
-                bucket["state_seq"] = accepted.get("state_seq")
-                bucket["plan_revision"] = accepted.get("plan_revision")
+                except Exception as e:
+                    logger.debug(f"ui_state memory update failed: {e}")
+
             checkpoint_ui_bridge(session_id, "ui.state_saved")
             return jsonify({
                 "success": True,
@@ -5730,6 +5797,21 @@ def register_planning_routes(
     def api_training_timeline():
         """Export the current case's bounded monitor history, with honest totals."""
         session_id = request_ui_session_id()
+        if request.args.get('compact') == '1':
+            from web.monitor_changes import timeline_projection
+            bucket = _ui_bucket(session_id)
+            with _UI_BRIDGE_LOCK:
+                training = bucket.get('training') or {}
+                run_id = training.get('run_id') or training.get('last_run_id')
+                if request.args.get('monitor_run_id') and request.args['monitor_run_id'] != run_id:
+                    return jsonify({'success': False, 'code': 'monitor_run_mismatch'}), 409
+                try:
+                    limit = max(1, min(80, int(request.args.get('limit', 40))))
+                except (ValueError, TypeError):
+                    return jsonify({'success': False, 'code': 'invalid_timeline_limit'}), 400
+                result = timeline_projection(training, limit)
+                result.update(success=True, session_id=session_id, monitor_run_id=run_id, active=bool(training.get('active')))
+            return jsonify(result)
         bridge = _server_support._ui_bridge_snapshot(session_id)
         training = bridge.get("training") or {}
         events = list(training.get("events") or [])

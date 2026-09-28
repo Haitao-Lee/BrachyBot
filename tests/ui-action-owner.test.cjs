@@ -36,7 +36,8 @@ async function main(){
  Object.assign(c,{setTimeout,Promise,_uiActionSessionIsCurrent:()=>current,
  _activeApiSessionId:()=> 's',_emitUIActionProgress:step=>events.push(step),
  _executeUIAction:async()=>{current=false;return {success:true};}});
- vm.runInContext(extract(read('brachybot-ui-api.js'),'_executeUIActionsWithProgress',true),c);
+ const uiApi=read('brachybot-ui-api.js');
+ vm.runInContext(uiApi.slice(uiApi.indexOf('const _UI_ACTION_RUNNING_STATES'),uiApi.indexOf('function _emitUIActionProgress'))+'\n'+extract(uiApi,'_executeUIActionsWithProgress',true),c);
  const results=await c._executeUIActionsWithProgress([{target:'report.autofill'}],{sessionId:'s',requestId:'r1'});
  assert.equal(events.length,2);assert.equal(events[1].status,'cancelled');assert.equal(events[1].request_id,'r1');
  assert.equal(results[0].stale,true);
