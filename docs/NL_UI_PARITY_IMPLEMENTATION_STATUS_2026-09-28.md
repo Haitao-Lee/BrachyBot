@@ -16,7 +16,7 @@
 
 | # | 缺陷 | 状态 | 提交 | 测试证据 |
 |---|---|---|---|---|
-| F01 | 全部更新授权缺作用域绑定 | **已修复** | `ffbf741a1` | `tests/test_aggregate_scope_authorization.py`（22 项） |
+| F01 | 全部更新授权缺作用域绑定 | **已修复** | `ffbf741a1` | `tests/test_aggregate_scope_authorization.py`（13 个用例函数 / 22 项收集） |
 | F02 | 通用 UI 控件假成功 | **已修复** | `18936f44d` | `tests/ui-control-receipt.test.cjs`（25 断言） |
 | F03 | 任务依赖 step 身份错误 | **已修复** | `ec0437906` | `tests/test_action_plan_step_identity.py`（17 项） |
 | F04 | 语义正确动作被本地解析器否决 | **未完成** | — | 见 §4.1 |
@@ -158,7 +158,7 @@ required 为空）。
 |---|---|---|
 | 定向 139 项（审计基线） | 139 passed | 139 passed（每轮复跑） |
 | 全量 `pytest --ignore=test_release_access` | 1901 passed / 8 skipped / 2 failed | **1971 passed / 8 skipped / 2 failed** |
-| 新增 Python 测试 | — | **+70**（17 F03 + 16 F07 + 22 F01 + 15 F05） |
+| 新增 Python 测试 | — | **+70 收集项**（17 F03 + 16 F07 + 22 F01 + 15 F05） |
 | 新增 Node 测试 | — | **+3 文件**（25 F02/F10 断言 + 8 F07 场景 + 10 F12 场景） |
 | 既有失败 | 2 × `test_brain_system.py` | 同 2 项，未触碰 |
 | JS 语法 | — | 全部 `web/app/static/js/*.js` 通过 `node --check` |
