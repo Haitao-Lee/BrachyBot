@@ -372,7 +372,6 @@ def test_written_verb_and_typo_tolerance_for_report_noun():
     "\u90fd\u66f4\u65b0\u4e00\u4e0b",
     "\u6240\u6709\u90fd\u66f4\u65b0\u4e00\u4e0b",
     "\u8bf7\u5168\u90e8\u91cd\u65b0\u751f\u6210",
-    "\u628a\u62a5\u544a\u548c\u5bfc\u677f\u90fd\u66f4\u65b0",
     "update everything",
 ])
 def test_aggregate_follow_up_authorizes_the_stale_artifacts(message):
@@ -386,6 +385,22 @@ def test_aggregate_follow_up_authorizes_the_stale_artifacts(message):
         "surgical_guide",
     ):
         assert mutating_execution_authorized(message, tool) is True, tool
+
+
+def test_a_named_target_aggregate_only_authorizes_what_it_names():
+    """Naming objects bounds the aggregate; it does not widen to everything.
+
+    "update the report and the guide" must not also authorize an expensive dose
+    recompute the user never asked for (audit defect F01: bind the aggregate to
+    a finite, sourced set).
+    """
+    message = "\u628a\u62a5\u544a\u548c\u5bfc\u677f\u90fd\u66f4\u65b0"
+    assert parse_request(message).aggregate_command
+    assert mutating_execution_authorized(message, "report_auto_fill") is True
+    assert mutating_execution_authorized(message, "surgical_guide") is True
+    assert mutating_execution_authorized(message, "dose_recompute") is False
+    assert mutating_execution_authorized(message, "dose_evaluation") is False
+    assert mutating_execution_authorized(message, "ctv_segmentation") is False
 
 
 @pytest.mark.parametrize("message", [

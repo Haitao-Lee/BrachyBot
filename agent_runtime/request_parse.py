@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Iterable, List, Mapping, Optional, Tuple
+from typing import FrozenSet, Iterable, List, Mapping, Optional, Tuple
 
 __all__ = [
     "ParsedRequest",
@@ -44,6 +44,7 @@ __all__ = [
     "is_unconditional_command",
     "canonical_report_mutation",
     "canonical_guide_generation",
+    "aggregate_scope_targets",
     "mutating_execution_authorized",
     "tool_authorization_target",
     "ui_action_is_destructive",
@@ -380,6 +381,49 @@ _ACK_ONLY = re.compile(
 _WRITABLE_TARGETS = frozenset({
     "report", "surgical_guide", "planning", "ctv", "oar", "dose", "structure",
 })
+
+# What a target-less aggregate (
+#     「全部更新」 / "update everything")
+# can mean on its own.  These are the downstream artifacts a Session
+# already owns and can reproduce.  Creating new geometry (segmentation, a
+# fresh planning run) is a different command and is never implied by a
+# word that names no object (audit defect F01).
+_AGGREGATE_ARTIFACT_TARGETS = frozenset({"dose", "report", "surgical_guide"})
+
+# An explicit count turns the aggregate into a bounded reference to that
+# many items of the preceding enumeration:
+#     「刚才三项」 / "the first two"
+_AGGREGATE_COUNT_REFERENCE = re.compile(
+    "(?:\u521a\u624d|\u521a\u624d\u90a3|\u4e0a\u4e00\u6761|\u4e0a\u9762|"
+    "\u4e0a\u8ff0|\u524d\u9762|\u5c31\u662f\u8fd9|\u8fd9|\u90a3)"
+    "\\s*([\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u4e24\u51e0]|[0-9]+)"
+    "\\s*(?:\u4e2a|\u9879|\u6761|\u4ef6|\u6b21|\u6837|"
+    "items?|things?|artifacts?|ones?)?"
+    "(?![0-9])",
+    re.IGNORECASE,
+)
+
+_AGGREGATE_COUNT_DIGITS = {
+    "一": 1, "1": 1,
+    "二": 2, "两": 2, "兩": 2, "2": 2,
+    "三": 3, "3": 3,
+    "四": 4, "4": 4,
+    "五": 5, "5": 5,
+    "六": 6, "6": 6,
+    "七": 7, "7": 7,
+    "八": 8, "8": 8,
+    "九": 9, "9": 9,
+    "十": 10, "10": 10,
+    "几": None,
+}
+
+
+def _aggregate_count_reference(text: object) -> Optional[int]:
+    """Return the explicit item count an aggregate refers back to, if any."""
+    match = _AGGREGATE_COUNT_REFERENCE.search(_clean(text))
+    if not match:
+        return None
+    return _AGGREGATE_COUNT_DIGITS.get(match.group(1))
 
 # Tool name -> (target family, action family) for provider authorization.
 _TOOL_MUTATION_GOAL = {
@@ -1252,6 +1296,71 @@ _CONFIRMATION_PROMPT_MARKERS = (
 )
 
 
+def aggregate_scope_targets(
+    message: object,
+    conversation: object = None,
+) -> FrozenSet[str]:
+    """Resolve "everything" to the finite, sourced set of targets it covers.
+
+    An aggregate names no object of its own; its scope is whatever the user is
+    pointing at.  Exactly three sources are accepted, and nothing else:
+
+    1. the targets named in the same utterance ("导板和报告全部更新");
+    2. an explicit count reference bound to that many items of the preceding
+       enumeration ("把刚才三项全部更新").  When that enumeration cannot be
+       resolved, the set is empty and the caller must clarify rather than
+       widen to everything;
+    3. an elliptical follow-up pointing at whatever the immediately preceding
+       assistant reply enumerated ("那就全部更新").
+
+    With no source at all, the scope is the reproducible artifact family
+    (dose / report / surgical_guide).  It still never covers segmentation or a
+    new planning run: those create geometry and require their own positive
+    clause.  Targets carved out of the request ("不含导板") are removed from
+    every source.
+    """
+    parsed = message if isinstance(message, ParsedRequest) else parse_request(message)
+    if not parsed.aggregate_command:
+        return frozenset()
+    excluded = set(parsed.excluded_targets)
+
+    named = set()
+    for task in parsed.subtasks:
+        # An excluded or negated clause names what must be left alone; it
+        # must never widen the scope ("全部更新，不含导板").
+        if task.excluded or task.negated:
+            continue
+        named.update(target for target in task.targets if target)
+        if task.target:
+            named.add(task.target)
+    named.discard("")
+
+    count = _aggregate_count_reference(parsed.raw)
+    # A preceding reply can only ever contribute reproducible artifacts.
+    # Mentioning CTV as "still usable" is not an offer to re-segment it, and
+    # prose must never widen an aggregate into creating new geometry.
+    prior_targets = [
+        target for target in _find_targets(_previous_assistant_text(conversation))
+        if target in _AGGREGATE_ARTIFACT_TARGETS
+    ]
+    if count is not None:
+        if not prior_targets:
+            # "just those N" with nothing prior to point at is a request for
+            # clarification, not a grant to run everything.
+            return frozenset()
+        named.update(prior_targets[:count])
+    elif not named and prior_targets:
+        named.update(prior_targets)
+
+    if named:
+        scope = named & _WRITABLE_TARGETS
+    else:
+        # A bare aggregate with no source reproduces existing artifacts only.
+        # It never widens into creating new geometry.
+        scope = set(_AGGREGATE_ARTIFACT_TARGETS)
+    return frozenset(scope - excluded)
+
+
 def mutating_execution_authorized(
     message: object,
     tool_name: str,
@@ -1298,13 +1407,15 @@ def mutating_execution_authorized(
         ):
             return True
     # An aggregate command ("全部更新" / "update everything") widens a write from
-    # one named object to every non-destructive clinical artifact named in the
-    # preceding reply.  The clause carries an action and a scope word but no
-    # target noun, so the per-target loop above cannot match it; treat it as
-    # authorization for any writable target.  Destructive targets are not in
-    # ``_TOOL_MUTATION_GOAL`` and ``clear`` is excluded from the aggregate
-    # action set, so this path can never authorize a destructive operation.
-    if parsed.aggregate_command and expected_target in _WRITABLE_TARGETS:
+    # one named object to a *finite, sourced* set of artifacts.  It is not a
+    # blanket grant for every writable target: a word that names no object can
+    # never mean "re-run segmentation" (audit defect F01).  Destructive targets
+    # are not in ``_TOOL_MUTATION_GOAL`` and ``clear`` is excluded from the
+    # aggregate action set, so this path can never authorize a destructive
+    # operation.
+    if parsed.aggregate_command and expected_target in aggregate_scope_targets(
+        parsed, conversation
+    ):
         return True
     # A bare acknowledgement is bound to an explicit pending confirmation,
     # never to an explanatory answer that happened to mention a tool.
