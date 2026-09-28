@@ -83,6 +83,76 @@ _ALL_RE = re.compile(
 
 _PERCENT_RE = re.compile(r"(?<![\d.])(\d{1,3}(?:\.\d+)?)\s*%")
 
+# A binding marker means the listed values align with the listed targets in
+# order.  Without one, several values over several targets do not say which is
+# which and must be clarified rather than guessed (audit defect F05).
+_VALUE_BINDING_MARKER = re.compile(
+    "\u5206\u522b|\u4f9d\u6b21|\u5404\u81ea|\u6309\u987a\u5e8f|"
+    "respectively|in\\s+order|one\\s+each|separately",
+    re.IGNORECASE,
+)
+
+# Opacity word values.  Plain (non-raw) strings so the \u escapes resolve to
+# the CJK characters the regex must match.
+OPACITY_WORD_PATTERNS = (
+    ("\u5b8c\u5168\u900f\u660e|\u900f\u660e\u81f3?\u5e95|"
+     "fully\\s*transparent|completely\\s*transparent", 0),
+    ("\u534a\u900f\u660e|semi[-\\s]*transparent|translucent", 50),
+    ("\u4e0d\u900f\u660e|opaque", 100),
+)
+
+COLOR_NAME_PATTERN = (
+    r"\b(?:red|green|blue|yellow|orange|purple|cyan|white|black)\b|"
+    "\u7ea2\u8272?|\u7eff\u8272?|\u84dd\u8272?|\u9ec4\u8272?|"
+    "\u6a59\u8272?|\u7d2b\u8272?|\u9752\u8272?|\u767d\u8272?|\u9ed1\u8272?"
+)
+
+
+def values_from_text(text: str, property_name: Optional[str]) -> List[Any]:
+    """Return every value the sentence states, in source order.
+
+    ``_value_from_text`` answers "what is the value"; this answers "which
+    values did the sentence state", which is what per-target binding needs.
+    """
+    if property_name == "opacity":
+        percents = [
+            int(max(0, min(100, round(float(item)))))
+            for item in _PERCENT_RE.findall(text)
+        ]
+        if percents:
+            return percents
+        return [
+            value
+            for pattern, value in OPACITY_WORD_PATTERNS
+            if re.search(pattern, text, re.IGNORECASE)
+        ]
+    if property_name == "color":
+        colors = re.findall(r"#[0-9a-f]{3,8}\b", text, re.IGNORECASE)
+        if colors:
+            return colors
+        return re.findall(COLOR_NAME_PATTERN, text, re.IGNORECASE)
+    single = _value_from_text(text, property_name)
+    return [single] if single is not None else []
+
+
+def aligned_group_values(
+    text: str,
+    property_name: Optional[str],
+    groups: List[str],
+) -> Optional[Dict[str, Any]]:
+    """Bind each group to one value when the sentence says "respectively".
+
+    Alignment is validated by length: a mismatch is a request for
+    clarification, not a licence to reuse one number everywhere.
+    """
+    if not groups or not _VALUE_BINDING_MARKER.search(text):
+        return None
+    values = values_from_text(text, property_name)
+    if len(values) != len(groups):
+        return None
+    return dict(zip(groups, values))
+
+
 # These are semantic facets, not complete vocabulary lists.  They let the
 # resolver classify a property while labels/aliases in the live catalog do the
 # object matching.  Adding a new control therefore does not require adding a
@@ -1160,9 +1230,32 @@ def _resolve_ui_operation_request_single(
     if property_name in {"visibility", "opacity"} and len(groups) > 1:
         # A shared property/value over several explicitly named groups is one
         # operation with a typed action per target, not a first-match action.
+        #
+        # Each assignment carries its own value.  A "respectively" request
+        # aligns the listed values with the listed targets, one shared value is
+        # legitimately broadcast, and anything in between is ambiguous and must
+        # be clarified instead of reusing one number everywhere (audit F05).
+        aligned = aligned_group_values(text, property_name, groups)
+        shared_values = values_from_text(text, property_name)
+        if aligned is None and (
+            len(shared_values) > 1
+            or (_VALUE_BINDING_MARKER.search(text) and shared_values)
+        ):
+            return {
+                "actions": [],
+                "confidence": 0.0,
+                "source": "typed_multi_group_ambiguous",
+                "ambiguous": True,
+                "candidates": [],
+                "property": property_name,
+                "target_group": groups,
+                "values": shared_values,
+                "language": "zh" if _has_cjk(text) else "en",
+            }
         actions = []
         for target_group in groups:
-            fallback = _typed_fallback(text, property_name, command, value, target_group)
+            target_value = aligned[target_group] if aligned else value
+            fallback = _typed_fallback(text, property_name, command, target_value, target_group)
             if not fallback:
                 return {
                     "actions": [],
@@ -1480,4 +1573,8 @@ def resolve_ui_operation_request(
     return _resolve_ui_operation_request_single(message, ui_state)
 
 
-__all__ = ["resolve_ui_operation_request"]
+__all__ = [
+    "resolve_ui_operation_request",
+    "aligned_group_values",
+    "values_from_text",
+]
