@@ -2134,20 +2134,85 @@ function _shouldLogTrainingFeedback(message, type = '', label = '') {
     return true;
 }
 
+// Version record for the UI state this tab has written. A write is only
+// 'synchronized' when the server accepted it, so downstream work must not
+// assume persistence from the absence of a thrown error (audit defect F07).
+window._uiStateSyncStatus = window._uiStateSyncStatus || {
+    synced: true,
+    revision: null,
+    error: null,
+    updatedAt: 0,
+};
+window._uiStateSeq = Number(window._uiStateSeq || 0);
+window._uiBrowserInstanceId = window._uiBrowserInstanceId || (() => {
+    // Stable per tab so two browsers on one case do not share a sequence.
+    window._uiBrowserInstanceIdValue = window._uiBrowserInstanceIdValue
+        || `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    return window._uiBrowserInstanceIdValue;
+});
+function _nextUiStateSeq() {
+    window._uiStateSeq = Number(window._uiStateSeq || 0) + 1;
+    return window._uiStateSeq;
+}
 async function syncUIBridgeState(reason = 'snapshot') {
+    // Self-contained: the version record is created lazily so this function
+    // cannot depend on load order and can be exercised in isolation.
+    const windowRef = (typeof window !== 'undefined' && window) ? window : globalThis;
+    const status = windowRef._uiStateSyncStatus = windowRef._uiStateSyncStatus
+        || { synced: true, revision: null, error: null, updatedAt: 0 };
+    windowRef._uiStateSeq = Number(windowRef._uiStateSeq || 0) + 1;
+    const stateSeq = windowRef._uiStateSeq;
+    // Stable per tab so two browsers on one case do not share a sequence.
+    windowRef._uiBrowserInstanceIdValue = windowRef._uiBrowserInstanceIdValue
+        || `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const browserInstance = windowRef._uiBrowserInstanceIdValue;
+    windowRef._uiBrowserInstanceId = windowRef._uiBrowserInstanceId
+        || (() => windowRef._uiBrowserInstanceIdValue);
     try {
-        await fetch(API + '/ui/state', {
+        const response = await fetch(API + '/ui/state', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 session_id: _activeApiSessionId(),
                 reason,
+                // A full collectUIState() snapshot is authoritative: a key the
+                // tab no longer reports is gone, not merely unmentioned.
+                mode: 'replace',
+                state_seq: stateSeq,
+                browser_instance: browserInstance,
+                plan_revision: (typeof state !== 'undefined' && state
+                    && Number.isFinite(Number(state.planningRevision)))
+                    ? Number(state.planningRevision) : null,
                 state: (typeof collectUIState === 'function') ? collectUIState() : {},
             }),
         });
+        const payload = await response.json().catch(() => null);
+        // A non-2xx response is a failed sync even when the body parses, and a
+        // 2xx that does not acknowledge the write is one too. Reporting
+        // success here is how a failed save still produced 'UI state
+        // synchronized' in the chat.
+        if (!response.ok || !payload || payload.success !== true) {
+            const error = (payload && payload.error) || `HTTP ${response.status}`;
+            status.synced = false;
+            status.revision = (payload && payload.accepted_revision) || status.revision;
+            status.error = error;
+            status.updatedAt = Date.now();
+            return { success: false, error, unsynced: true, accepted_revision: status.revision };
+        }
+        status.synced = true;
+        status.error = null;
+        status.revision = payload.accepted_revision || null;
+        status.updatedAt = Date.now();
         if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave(reason);
+        return { success: true, accepted_revision: status.revision };
     } catch (e) {
-        console.debug('[ui-state] sync skipped:', e);
+        // A network failure leaves the state unsynced. Later operations must
+        // not assume this write reached durable storage.
+        status.synced = false;
+        status.error = String((e && e.message) || e);
+        status.updatedAt = Date.now();
+        console.debug('[ui-state] sync failed:', e);
+        return { success: false, error: status.error, unsynced: true };
     }
 }
 
@@ -8509,11 +8574,20 @@ async function _executeUIActionRaw(a, options = {}) {
             return resetSession();
         }
         if (target === 'ui.state') {
-            return Promise.resolve(syncUIBridgeState(command || 'ui_controller')).then(() => {
+            return Promise.resolve(syncUIBridgeState(command || 'ui_controller')).then(sync => {
+                // A failed sync must not be announced as synchronized: the
+                // caller needs to know the state is still unsynced (F07).
+                if (!sync || sync.success !== true) {
+                    return {
+                        success: false,
+                        unsynced: true,
+                        error: (sync && sync.error) || 'UI state could not be synchronized.',
+                    };
+                }
                 if (typeof addChat === 'function') {
                     addChat('system', monitorChatText('界面状态已同步。', 'UI state synchronized.'));
                 }
-                return { success: true };
+                return { success: true, accepted_revision: sync.accepted_revision || null };
             });
         }
         if (target === 'ui.catalog') {

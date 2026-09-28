@@ -5130,21 +5130,65 @@ def register_planning_routes(
                     bucket.update(durable_bridge)
 
         if request.method == "POST":
+            # A browser snapshot is a full replace unless it explicitly asks
+            # for a patch.  state_seq is monotonic per browser instance so a
+            # slower older write cannot overwrite a newer one (audit F07).
             state_payload = data.get("state") or data.get("ui_state") or {}
-            with _UI_BRIDGE_LOCK:
-                bucket["state"] = state_payload if isinstance(state_payload, dict) else {}
-                bucket["updated_at"] = time.time()
+            write_mode = str(data.get("mode") or "replace").strip().lower()
+            raw_tombstones = data.get("tombstones") or ()
+            tombstones = (
+                raw_tombstones if isinstance(raw_tombstones, (list, tuple)) else ()
+            )
+            accepted = {
+                "accepted": True,
+                "reason": "applied",
+                "state_seq": data.get("state_seq"),
+                "plan_revision": data.get("plan_revision"),
+                "browser_instance": data.get("browser_instance"),
+                "mode": write_mode,
+            }
             if agent is not None and hasattr(agent, "memory"):
                 try:
-                    agent.memory.set_ui_state(bucket["state"])
+                    memory_revision = agent.memory.set_ui_state(
+                        state_payload if isinstance(state_payload, dict) else {},
+                        mode=write_mode,
+                        tombstones=tombstones,
+                        state_seq=data.get("state_seq"),
+                        browser_instance=data.get("browser_instance"),
+                        plan_revision=data.get("plan_revision"),
+                    )
+                    if isinstance(memory_revision, dict):
+                        accepted = memory_revision
                 except Exception as e:
                     logger.debug(f"ui_state memory update failed: {e}")
+            if accepted.get("accepted") is False:
+                # The write was rejected as stale.  Say so: a caller must
+                # not treat an unapplied snapshot as persisted.
+                return jsonify({
+                    "success": False,
+                    "error": str(accepted.get("reason") or "rejected"),
+                    "session_id": session_id,
+                    "accepted_revision": accepted,
+                }), 409
+            with _UI_BRIDGE_LOCK:
+                if write_mode == "replace":
+                    bucket["state"] = (
+                        state_payload if isinstance(state_payload, dict) else {}
+                    )
+                else:
+                    merged = dict(bucket.get("state") or {})
+                    merged.update(state_payload if isinstance(state_payload, dict) else {})
+                    bucket["state"] = merged
+                bucket["updated_at"] = time.time()
+                bucket["state_seq"] = accepted.get("state_seq")
+                bucket["plan_revision"] = accepted.get("plan_revision")
             checkpoint_ui_bridge(session_id, "ui.state_saved")
             return jsonify({
                 "success": True,
                 "session_id": session_id,
                 "state_keys": list((bucket.get("state") or {}).keys()),
                 "training": bucket.get("training", {}),
+                "accepted_revision": accepted,
             })
 
         with _UI_BRIDGE_LOCK:
@@ -5264,14 +5308,33 @@ def register_planning_routes(
             or (bucket.get("state") or {}).get("language")
         )
         if isinstance(state_payload, dict) and (not request_run_id or monitor_run_matches):
-            with _UI_BRIDGE_LOCK:
-                bucket["state"] = state_payload
-                bucket["updated_at"] = time.time()
+            # A telemetry event carries a full snapshot too.  Keep the same
+            # sequence rule so a delayed event cannot resurrect deleted state.
+            event_accepted = {"accepted": True}
             if agent is not None and hasattr(agent, "memory"):
                 try:
-                    agent.memory.set_ui_state(state_payload)
+                    raw_event_tombs = data.get("tombstones") or ()
+                    event_accepted = agent.memory.set_ui_state(
+                        state_payload,
+                        mode=str(data.get("mode") or "replace").strip().lower(),
+                        tombstones=(
+                            raw_event_tombs
+                            if isinstance(raw_event_tombs, (list, tuple))
+                            else ()
+                        ),
+                        state_seq=data.get("state_seq"),
+                        browser_instance=data.get("browser_instance"),
+                        plan_revision=data.get("plan_revision"),
+                    ) or {"accepted": True}
                 except Exception as exc:
                     logger.warning("Failed to persist UI state to agent memory: %s", exc)
+            if event_accepted.get("accepted") is False:
+                # Stale snapshot: keep the newer state already stored.
+                state_payload = None
+            else:
+                with _UI_BRIDGE_LOCK:
+                    bucket["state"] = state_payload
+                    bucket["updated_at"] = time.time()
 
         committed_event = data.get("committed_event")
         already_recorded = bool(data.get("already_recorded")) and isinstance(

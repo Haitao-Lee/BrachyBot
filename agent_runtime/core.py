@@ -1,5 +1,6 @@
 """Core state, registry, and formatting primitives for BrachyAgent."""
 
+import copy
 import json
 import logging
 import os
@@ -7,7 +8,7 @@ import re
 import threading
 from collections.abc import Mapping
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from utils.user_errors import format_tool_error, normalize_metadata
 from utils.planning_metrics import format_oar_dose_table
@@ -18,6 +19,51 @@ logger = logging.getLogger(__name__)
 # Cumulative conversation summary cap (characters).  Keeps a long session from
 # growing the folded summary without bound while retaining the newest content.
 _CONTEXT_SUMMARY_MAX_CHARS = 20_000
+
+# Marker a browser sends as a value to mean "this key is gone", not "this
+# key is now null".  A deleted object must disappear from the state, not
+# linger as a hidden or stale entry that a later turn can still resolve.
+UI_STATE_DELETE = "__ui_state_delete__"
+
+
+def _delete_dotted_path(state: Dict, path: str) -> None:
+    """Remove one dotted path from a nested mapping (missing is a no-op)."""
+    parts = [part for part in str(path or "").split(".") if part]
+    if not parts:
+        return
+    cursor: Any = state
+    for part in parts[:-1]:
+        if not isinstance(cursor, dict):
+            return
+        cursor = cursor.get(part)
+    if isinstance(cursor, dict):
+        cursor.pop(parts[-1], None)
+
+
+def _split_delete_markers(value: Any) -> Tuple[Dict, List[str]]:
+    """Separate delete-marked keys from real values.
+
+    A delete marker means "this key is gone", not "do not include this key
+    in the merge": leaving it out of a patch would let the previous value
+    survive as a stale entry.  Returns the remaining payload and the dotted
+    paths that must be removed from the stored state.
+    """
+    if not isinstance(value, dict):
+        return {}, []
+    kept: Dict = {}
+    deleted: List[str] = []
+    for key, item in value.items():
+        if item is UI_STATE_DELETE or item == UI_STATE_DELETE:
+            deleted.append(str(key))
+            continue
+        if isinstance(item, dict):
+            nested, nested_deleted = _split_delete_markers(item)
+            kept[str(key)] = nested
+            deleted.extend(f"{key}.{path}" for path in nested_deleted)
+        else:
+            kept[str(key)] = item
+    return kept, deleted
+
 
 
 def resolve_reference_direction_input(
@@ -250,6 +296,17 @@ class AgentMemory:
         self.current_phase: PlanningPhase = PlanningPhase.IDLE
         self.deviation_threshold_mm: float = 2.0
         self._ui_state: Dict = {}
+        # Version record for the UI state.  A browser snapshot is only
+        # accepted when it is the newest one for its browser instance, so a
+        # slower older write can no longer overwrite a newer one.
+        self._ui_state_meta: Dict[str, Any] = {
+            "state_seq": None,
+            "plan_revision": None,
+            "browser_instance": None,
+            "mode": "patch",
+        }
+        self._ui_state_last_seq: Dict[str, int] = {}
+
         # The web workspace layer installs a debounced callback here.  Agent
         # memory remains usable without the web server, so persistence is an
         # optional observer rather than a hard dependency of core state.
@@ -556,15 +613,136 @@ class AgentMemory:
             self.smart_context.add_message(role, content)
         self._notify_persistence(f"message:{role}")
 
-    def set_ui_state(self, state: Dict):
-        """Update UI state from frontend (selected files, etc)."""
+    def set_ui_state(
+        self,
+        state: Optional[Dict],
+        *,
+        mode: str = "patch",
+        tombstones: Iterable[str] = (),
+        state_seq: Optional[int] = None,
+        browser_instance: Optional[str] = None,
+        plan_revision: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Update UI state from the frontend under an explicit write kind.
+
+        Three write kinds are deliberately distinct (audit defect F07):
+
+        * ``mode="patch"`` (default) merges the supplied top-level keys. This
+          keeps every existing single-key caller (for example
+          ``{"ct_path": ...}``) working.
+        * ``mode="replace"`` installs the payload as the *whole* state, so a
+          key the browser no longer reports cannot survive as a stale value.
+          A full ``collectUIState()`` snapshot is a replace.
+        * ``tombstones`` name dotted paths to remove explicitly. Deleting an
+          object must make it disappear, not merely hide it. A key whose
+          value is :data:`UI_STATE_DELETE` is removed as well.
+
+        ``state_seq`` is monotonic per ``browser_instance``: an equal or older
+        sequence is rejected without touching the state, so a slow older
+        snapshot can no longer overwrite a newer one. Legacy callers that send
+        no sequence are always accepted. ``plan_revision`` is recorded on the
+        accepted write so a reader can tell which planning revision this state
+        describes.
+
+        Returns the accepted/rejected revision record. A caller must not infer
+        persistence from the absence of an exception.
+        """
+        mode_name = "replace" if str(mode or "").strip().lower() == "replace" else "patch"
+        instance = str(browser_instance or "").strip() or None
+        sequence: Optional[int] = None
+        if state_seq is not None:
+            try:
+                sequence = int(state_seq)
+            except (TypeError, ValueError):
+                sequence = None
+
         with self._lock:
-            self._ui_state.update(state)
+            last_seq = self._ui_state_last_seq.get(instance) if instance else None
+            if sequence is not None and last_seq is not None and sequence <= last_seq:
+                return {
+                    "accepted": False,
+                    "reason": "stale_state_seq",
+                    "state_seq": last_seq,
+                    "plan_revision": self._ui_state_meta.get("plan_revision"),
+                    "browser_instance": instance,
+                    "mode": mode_name,
+                }
+
+            payload, marker_deletions = _split_delete_markers(
+                state if isinstance(state, dict) else {}
+            )
+            if mode_name == "replace":
+                self._ui_state = dict(payload)
+            else:
+                self._ui_state.update(payload)
+            for path in tuple(tombstones or ()) + tuple(marker_deletions):
+                _delete_dotted_path(self._ui_state, path)
+
+            if sequence is not None and instance:
+                self._ui_state_last_seq[instance] = sequence
+            if plan_revision is not None:
+                self._ui_state_meta["plan_revision"] = plan_revision
+            elif mode_name == "replace":
+                # A full snapshot without a revision does not describe a new
+                # plan, so the previous attribution is no longer meaningful.
+                self._ui_state_meta["plan_revision"] = None
+            self._ui_state_meta.update({
+                "state_seq": (
+                    sequence if sequence is not None
+                    else self._ui_state_meta.get("state_seq")
+                ),
+                "browser_instance": (
+                    instance or self._ui_state_meta.get("browser_instance")
+                ),
+                "mode": mode_name,
+            })
+            accepted = {
+                "accepted": True,
+                "reason": "applied",
+                "state_seq": self._ui_state_meta.get("state_seq"),
+                "plan_revision": self._ui_state_meta.get("plan_revision"),
+                "browser_instance": self._ui_state_meta.get("browser_instance"),
+                "mode": mode_name,
+            }
         self._notify_persistence("ui_state")
+        return accepted
 
     def get_ui_state(self) -> Dict:
+        """Return a deep copy so a caller cannot mutate the stored state."""
         with self._lock:
-            return dict(self._ui_state)
+            try:
+                return copy.deepcopy(self._ui_state)
+            except Exception:
+                return dict(self._ui_state)
+
+    def get_ui_state_revision(self) -> Dict[str, Any]:
+        """Return the version record of the last accepted UI state write."""
+        with self._lock:
+            return {
+                "state_seq": self._ui_state_meta.get("state_seq"),
+                "plan_revision": self._ui_state_meta.get("plan_revision"),
+                "browser_instance": self._ui_state_meta.get("browser_instance"),
+                "mode": self._ui_state_meta.get("mode"),
+                "session_id": self.session_id,
+            }
+
+    def reset_ui_state_for_case_switch(self) -> None:
+        """Drop UI state and its version history at a case boundary.
+
+        An object id, coordinate or approval from the previous case must not
+        resolve in the new one.  The sequence counters restart so a new
+        browser snapshot is never mistaken for a stale write of the old case.
+        """
+        with self._lock:
+            self._ui_state = {}
+            self._ui_state_meta = {
+                "state_seq": None,
+                "plan_revision": None,
+                "browser_instance": None,
+                "mode": "patch",
+            }
+            self._ui_state_last_seq = {}
+        self._notify_persistence("ui_state")
 
     @staticmethod
     def is_ct_loaded(ui_state: Optional[Dict]) -> bool:
