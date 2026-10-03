@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "streaming_sse",
+  "expectation": null,
+  "facet": "streaming_sse",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Segment the CTV",
+  "source_refs": [
+    "INT-6b6f27617612",
+    "INT-e1d8c61a6cdd"
+  ],
+  "template_id": "TPL-19bd094ad5"
+}

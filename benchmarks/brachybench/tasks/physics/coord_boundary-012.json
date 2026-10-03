@@ -1,0 +1,86 @@
+{
+  "anti_gaming": {
+    "behavioral_probes": [],
+    "canary_class": null,
+    "contrast_family_id": "physics/coord_boundary",
+    "generation_seed": 20260929,
+    "hidden": false,
+    "paraphrase_group": "PHYS-coord_boundary-012"
+  },
+  "clinical_intent": "coord_boundary physics-boundary probe coord_boundary-012: Verify that image coordinates round-trip through the stored geometry (origin/spacing/direction) and report whether the residual stays within 1e-6 mm.",
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "physics_boundary.coord_boundary",
+  "cost_class": "state_only",
+  "fixture": {
+    "case_family": "synth/physics/coord_boundary/coord_boundary-012",
+    "initial_state_hash": "sha256:5e1ea3b518acefab965ba6cf2cb716eb5abd3a9e79270fcbaf215566b045e92a",
+    "setup_script": "fixtures/physics/coord_boundary-012.json"
+  },
+  "id": "A-COORDBOUNDARY-012",
+  "layers": [
+    "L3"
+  ],
+  "oracle": {
+    "assist_only": false,
+    "check": "coord_boundary",
+    "config": {
+      "mechanism": "coord/rotated"
+    },
+    "constraint_class": "none",
+    "evidence_keys": [],
+    "expect": {
+      "codes": [],
+      "verdict": "pass"
+    },
+    "gold": null,
+    "independent_check": true,
+    "kind": "program",
+    "tolerance": null
+  },
+  "power_role": "exploratory",
+  "protocol": {
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "budget": {
+      "tool_calls": 2,
+      "turns": 1,
+      "wall_clock_s": 20
+    },
+    "mode": "single_turn",
+    "n_runs": 3,
+    "turns": [
+      {
+        "lang": "en",
+        "role": "user",
+        "text": "Verify that image coordinates round-trip through the stored geometry (origin/spacing/direction) and report whether the residual stays within 1e-6 mm."
+      }
+    ],
+    "ui_counterpart": null
+  },
+  "provenance": {
+    "authored_on": "2026-09-30",
+    "deprecated": null,
+    "derived_from": "tools/gen_physics_fixtures.py (analytic oracle)",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto-verifier"
+    ],
+    "source": "generated"
+  },
+  "schema_version": "1.0",
+  "scoring": {
+    "difficulty_target": "easy",
+    "gate_refs": [],
+    "primary_metric": "oracle_verdict_match",
+    "weight": 1.0
+  },
+  "track": "A",
+  "unit": {
+    "contrast_family_id": "physics/coord_boundary",
+    "group_type": "G-CT",
+    "kind": "task_scenario"
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "max": 1,
+      "operation": "set",
+      "path": "objects.guide-A.opacity"
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 2,
+  "requested_language": "zh",
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "state",
+      "statement": "Final opacity0.35, not0.175; guide remains hidden."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "effects",
+      "statement": "Retry reconciles same logical relative adjustment instead of reapplying to changed baseline."
+    },
+    {
+      "id": "criterion-2",
+      "kind": "response",
+      "statement": "Confirm actual opacity/state only after observation."
+    }
+  ],
+  "rules": [
+    {
+      "op": "equals",
+      "path": "objects.guide-A.opacity",
+      "value": 0.35
+    },
+    {
+      "op": "equals",
+      "path": "objects.guide-A.visible",
+      "value": false
+    }
+  ],
+  "scenario_id": "RUR-39-001",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "state",
+      "statement": "Final opacity0.35, not0.175; guide remains hidden."
+    },
+    {
+      "kind": "effects",
+      "statement": "Retry reconciles same logical relative adjustment instead of reapplying to changed baseline."
+    },
+    {
+      "kind": "response",
+      "statement": "Confirm actual opacity/state only after observation."
+    }
+  ]
+}

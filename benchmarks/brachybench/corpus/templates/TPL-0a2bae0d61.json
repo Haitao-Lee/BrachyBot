@@ -1,0 +1,17 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "treatment_planning",
+  "expectation": null,
+  "facet": "treatment_planning",
+  "gold_status": "draft",
+  "n_source_intents": 5,
+  "representative_text": "Adjuvant interstitial plan for 55-year-old man with 2.5 cm recurrent hypopharyngeal cancer (partial pharyngectomy, positive margins) after prior IMRT 70 Gy. Re-irradiation dose, carotid constraint, and swallowing rehabilitation.",
+  "source_refs": [
+    "INT-188a326c863c",
+    "INT-3e368b9fc77a",
+    "INT-6b454f802316",
+    "INT-8b951ed85ea9",
+    "INT-ea7e1d5b79a9"
+  ],
+  "template_id": "TPL-0a2bae0d61"
+}

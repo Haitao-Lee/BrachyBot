@@ -1,0 +1,68 @@
+benchmark: AMEGA
+ext_id: EXT-13
+tier: specialty
+grade_R: R0
+grade_C: C2
+panels: [P5]
+
+acquisition:
+  source_url: https://github.com/DATEXIS/AMEGA-benchmark
+  source_commit: 16fd048a15818cc1e6f513647beec2f94f6a5ff7
+  source_tag: null
+  dataset_name: "AMEGA in-repo rubric data (cases/questions/sections/criteria csv)"
+  dataset_revision: 16fd048a15818cc1e6f513647beec2f94f6a5ff7
+  dataset_sha256: f1d4635443fcb21f7741bd0c25c01299ec5ceed9ba070ad34755a5762a24f31f
+  dataset_size_bytes: 267622
+  retrieval_command: |
+    git clone https://github.com/DATEXIS/AMEGA-benchmark vendor/EXT-13
+    git -C vendor/EXT-13 checkout 16fd048a15818cc1e6f513647beec2f94f6a5ff7
+    cp vendor/EXT-13/data/{cases,questions,sections,criteria}.csv data/EXT-13/
+    # dataset_sha256 above = directory digest of data/EXT-13 (4 files).
+  retrieval_date: 2026-10-01
+  license_upstream: Apache-2.0
+  license_file: LICENSE
+  license_verified_by: "brachybench-auto (GitHub API 2026-10-01)"
+  activity_verified:
+    last_commit_date: 2026-09-26
+    last_release_date: null
+    open_issues: null
+
+runner:
+  official_runner: main.py
+  evaluator: amega/models/evaluator.py (LLM judge per criterion) + amega/experiment.py (deterministic weighted aggregation)
+  container: null
+  python_requires: ">=3.10"
+  native_deps: []
+  paid_apis: []
+  judge_note: "criterion True/False comes from an LLM evaluator (OpenAI/OpenRouter/Vertex); the weighted aggregation is deterministic and exposed upstream."
+
+adapter:
+  kind: ext_adapter
+  shim_used: false
+  spec_ref: "DESIGN §25.5"
+
+run:
+  smoke_size: 5
+  sample_size: 0
+  sampling_seed: 42
+  n_runs: 1
+  budget: {wall_clock_s: 600, turns: 20, tool_calls: 0}
+
+isolation:
+  sandbox: required
+  network: denied
+  write_paths: ["benchmarks/external/EXT-13/results/"]
+  forbidden_write_roots:
+    - BrachyBot/session/
+    - BrachyBot/case/
+    - BrachyBot/runtime/
+    - BrachyBot/report/
+
+contamination:
+  public_samples_allowed_for_dev_only: true
+  seen_task_ids: []
+  behavioral_probes: [B1, B2, B3, B4, B5, B6, B7]
+
+status: active
+block_reason: null
+reinclude_condition: null

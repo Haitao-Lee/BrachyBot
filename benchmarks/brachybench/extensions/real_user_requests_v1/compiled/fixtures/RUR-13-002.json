@@ -1,0 +1,112 @@
+{
+  "artifact_records": {},
+  "artifacts": {
+    "dose": "absent",
+    "dvh": "absent",
+    "guide": "absent",
+    "quality": "absent",
+    "report": "absent"
+  },
+  "attachments": [],
+  "available_captures": [],
+  "available_downloads": [],
+  "case_B_camera": {
+    "height": 160,
+    "name": "case-B-default",
+    "position_mm": [
+      0,
+      0,
+      100
+    ],
+    "projection": "orthographic",
+    "target_mm": [
+      0,
+      0,
+      0
+    ],
+    "up": [
+      0,
+      1,
+      0
+    ],
+    "vertical_span_mm": 60,
+    "width": 160
+  },
+  "case_id": "case-B",
+  "ct_loaded": true,
+  "downloads": [],
+  "edit_log": [],
+  "geometry_revision": 0,
+  "history": [
+    {
+      "case_id": "case-A",
+      "site": "pancreas"
+    }
+  ],
+  "jobs": [],
+  "language": "zh",
+  "metrics": {},
+  "monitor": {
+    "active": false,
+    "auto_compare": false,
+    "run_id": null
+  },
+  "objects": {},
+  "patient_crosshair_mm": [
+    0,
+    0,
+    0
+  ],
+  "planning_id": null,
+  "planning_version": 0,
+  "prescription_Gy": 120.0,
+  "protocol_receipts": [],
+  "provider_records": [],
+  "render_state": {},
+  "report": {
+    "body_language": "zh",
+    "body_text": "合成计划报告（非临床计划）",
+    "captions": [
+      "全局粒子植入计划",
+      "靶区粒子分布近景"
+    ],
+    "captions_language": "zh"
+  },
+  "request": {
+    "final_count": 0,
+    "send_enabled": true,
+    "status": "idle"
+  },
+  "saved_state": {},
+  "selection": null,
+  "session_id": "session-B",
+  "site": null,
+  "synthetic": true,
+  "tenant_id": "tenant-A",
+  "tree_state": {},
+  "viewer": {
+    "camera": {
+      "height": 160,
+      "name": "camera-original",
+      "position_mm": [
+        0,
+        0,
+        100
+      ],
+      "projection": "orthographic",
+      "target_mm": [
+        0,
+        0,
+        0
+      ],
+      "up": [
+        0,
+        1,
+        0
+      ],
+      "vertical_span_mm": 60,
+      "width": 160
+    },
+    "dragging": false
+  }
+}

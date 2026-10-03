@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "case_memory",
+  "expectation": null,
+  "facet": "case_memory",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Find me similar prostate cancer cases from the past",
+  "source_refs": [
+    "INT-a2e3ac85f8dd",
+    "INT-d103b348ea99"
+  ],
+  "template_id": "TPL-0847393221"
+}

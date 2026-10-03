@@ -1240,6 +1240,74 @@ def test_server_workspace_serializes_case_transitions():
     assert "body.workspace-transitioning #sessionList" in layout
 
 
+def test_archived_case_activation_outlives_the_control_plane_deadline():
+    """Cold-storage restore must not be aborted by the 15 s session deadline.
+
+    Restoring an archived case copies and checksum-verifies the whole case tree
+    from NAS, which routinely exceeds the normal request timeout. The old code
+    used ``WORKSPACE_REQUEST_TIMEOUT_MS`` for the activate POST, so the browser
+    tore down the loading notice at 15 s and the case looked un-activated even
+    though the server finished the restore. Both activation call sites need the
+    dedicated long deadline and their own abort-aware error handling.
+    """
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+
+    assert "WORKSPACE_ACTIVATION_TIMEOUT_MS = 30 * 60 * 1000" in workspace
+    # The unconditional select and the archived activation both route through
+    # one switch handler; the activation branch must upgrade the deadline.
+    assert "activateArchived ? WORKSPACE_ACTIVATION_TIMEOUT_MS : WORKSPACE_REQUEST_TIMEOUT_MS" in workspace
+    # The stale-sidebar fallback performs its own activate POST and must pass
+    # the same long deadline, with an abort-aware catch instead of bubbling a
+    # raw timeout into the transition recovery path.
+    fallback = workspace.split("if (!response.ok && data.code === 'session_archived'", 1)[1].split(
+        "if (!response.ok) {", 1
+    )[0]
+    assert "WORKSPACE_ACTIVATION_TIMEOUT_MS" in fallback
+    assert "if (aborter.signal.aborted) return { success: false, replaced: true };" in fallback
+    assert "Activation failed:" in fallback
+
+
+def test_archived_case_activation_reports_progress_and_localizes_failures():
+    """A long cold restore must look intentional, not frozen.
+
+    The activation path shows the case title plus an elapsed-time ticker on the
+    shared loading pill, and turns the known "missing from NAS" backend error
+    into an actionable, localized message instead of raw server prose.
+    """
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    css = read("web/app/static/css/brachybot-auth.css")
+    index = read("web/app/index.html")
+
+    assert "window.showCaseActivationLoading = function showCaseActivationLoading" in workspace
+    assert "window.stopCaseActivationLoading = function stopCaseActivationLoading" in workspace
+    assert "function _caseActivationMessageText(title)" in workspace
+    assert "function _updateCaseActivationElapsed()" in workspace
+    assert "caseActivationTimer = setInterval(_updateCaseActivationElapsed, 1000)" in workspace
+    # The message is bilingual and names the case.
+    assert "请保持本页面打开" in workspace
+    assert "from cold storage" in workspace
+    # Hiding the shared pill must also stop the ticker and clear the clock.
+    assert "clearInterval(caseActivationTimer)" in workspace
+    # The elapsed clock is its own aria-hidden node so a per-second tick does
+    # not flood the aria-live region with screen-reader announcements.
+    assert 'id="workspaceHydrationElapsed"' in index
+    assert 'class="workspace-notice-elapsed" aria-hidden="true" hidden' in index
+    # The archived branch of the switch uses the explicit activation notice.
+    assert "window.showCaseActivationLoading?.({ sessionId: id, title: sessions[id]?.title || id })" in workspace
+    # The missing-data failure is localized.
+    assert "function activationFailureMessage(data)" in workspace
+    assert "missing from NAS" in workspace
+    assert "冷存储中找不到该病例的恢复数据" in workspace
+    # The activation card gets dedicated styling.
+    assert '.workspace-hydration-notice[data-activation="1"]' in css
+    assert ".workspace-notice-elapsed" in css
+    # Re-clicking a case whose restore is already running must not re-prompt
+    # and abort/restart the restore the user just approved.
+    assert "const activatingSessionIds = new Set();" in workspace
+    assert "activatingSessionIds.has(id)" in workspace
+    assert "activatingSessionIds.delete(caseActivationSessionId);" in workspace
+
+
 def test_workspace_network_failures_cannot_leave_case_controls_stuck():
     """Session requests need deadlines and bounded recovery after a restart."""
     workspace = read("web/app/static/js/brachybot-workspace.js")
@@ -2414,6 +2482,58 @@ def test_uploaded_mask_presentation_survives_a_restore_without_defaults():
     assert "window.unlockWorkspacePresentationWrites?.(presentationWriteLockToken)" in ui_api
     assert "_workspaceHasSavedPresentation(workspace)" in ui_api
     assert "allowDuringRestore: true" in workspace
+
+
+def test_live_data_tree_appearance_edits_update_the_presentation_registry():
+    """A live colour/opacity edit must not be reverted by a later viewer pass.
+
+    The session presentation registry stays readable (finalized) for the whole
+    case so late loaders and the 3D appearance reconciler can recover saved
+    styles.  ``syncSceneAppearanceFromDataTree`` therefore re-applies whatever
+    the registry holds on every viewer-mode change, including the Dose Surface
+    toggle.  A live edit that only mutated the in-memory node was silently
+    reverted on that pass; every live appearance edit must now mirror itself
+    into the matching registry record (the contract documented on
+    ``updateWorkspacePresentationForNode``).
+    """
+    volume = read("web/app/static/js/brachybot-viewer-volume.js")
+    manual = read("web/app/static/js/brachybot-3d-manual.js")
+
+    # One resolver maps every Data Tree node id to the registry family/id used
+    # when the snapshot was staged, and one writer mirrors the live fields.
+    assert "function _dataTreePresentationRef(id)" in volume
+    assert "return { family: 'mask', id: _maskSceneMeshId(value) };" in volume
+    assert "function _recordDataTreePresentation(id, changes = null)" in volume
+    assert "function _syncAllDataTreePresentation()" in volume
+    assert "getSelectableIds().forEach(id => {" in volume
+
+    # The single save hook owns the mirror so every existing setter is covered
+    # without a second, independent persistence path.
+    assert "function _scheduleDataTreeSave(reason, presentationId = null)" in volume
+    assert "if (presentationId === '*') _syncAllDataTreePresentation();" in volume
+    assert "else if (presentationId) _recordDataTreePresentation(presentationId);" in volume
+
+    # Individual colour/opacity/visibility setters pass their node id.
+    assert "_scheduleDataTreeSave(`viewer.color:${id}`, id);" in volume
+    assert "_scheduleDataTreeSave(`viewer.opacity:${id}`, id);" in volume
+    assert "_scheduleDataTreeSave(`viewer.visibility:${id}`, id);" in volume
+    assert "_scheduleDataTreeSave('viewer.opacity:skin_surface', 'skin_surface');" in volume
+    assert "_scheduleDataTreeSave('viewer.visibility:dose_overlay', 'dose_overlay');" in volume
+
+    # Group/batch edits touch many leaves and resync them together.
+    assert "_scheduleDataTreeSave('viewer.group_visibility:${category}', '*');" not in volume
+    assert "_scheduleDataTreeSave(`viewer.group_visibility:${category}`, '*');" in volume
+    assert "_scheduleDataTreeSave(`viewer.group_opacity:${category}`, '*');" in volume
+    assert "_scheduleDataTreeSave(`viewer.group_color:${category}`, '*');" in volume
+    assert "_scheduleDataTreeSave('viewer.batch_visibility', '*');" in volume
+    assert "_scheduleDataTreeSave('viewer.batch-opacity', '*');" in volume
+
+    # The dose overlay opacity slider lives in the 3D toolbar module.
+    assert "_scheduleDataTreeSave('viewer.opacity:dose_overlay', 'dose_overlay');" in manual
+
+    # Restore-time preference is unchanged: while the registry is authoritative
+    # the saved record still wins over a freshly reconstructed default node.
+    assert "if (window.isWorkspacePresentationRestoreActive?.() && restoredPresentation) {" in volume
 
 
 def test_report_turn_waits_for_actual_browser_completion():

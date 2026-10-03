@@ -1,0 +1,26 @@
+{
+  "config": {
+    "binding": {
+      "bound_metric": "V100",
+      "bound_target": "bladder",
+      "metric": "V100",
+      "target": "bladder",
+      "unit": "Gy",
+      "value": 45.0,
+      "value_gy": null
+    },
+    "mechanism": "binding/broken_Gy"
+  },
+  "expected": {
+    "evidence_gap_codes": [],
+    "score": 0.0,
+    "verdict": "fail",
+    "violation_codes": [
+      "unit_conversion_error"
+    ]
+  },
+  "family": "unit_binding",
+  "id": "unit_binding-019",
+  "initial_state_hash": "sha256:3c9978ae667d8fab4c468c246e79047e3a07892c0bc354402f24f1119c2a4b57",
+  "seed": 20260929
+}

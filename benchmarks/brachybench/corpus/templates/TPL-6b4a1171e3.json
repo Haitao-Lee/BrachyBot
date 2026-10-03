@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "medium_complexity",
+  "expectation": null,
+  "facet": "medium_complexity",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Address wife's radiation safety concerns for husband's prostate seed implant: bed sharing, pets, grandchildren, overall safety. Reassuring, evidence-based.",
+  "source_refs": [
+    "INT-0274681001bc",
+    "INT-60ba50837f78"
+  ],
+  "template_id": "TPL-6b4a1171e3"
+}

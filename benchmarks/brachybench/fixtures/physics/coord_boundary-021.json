@@ -1,0 +1,46 @@
+{
+  "config": {
+    "direction": [
+      -1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1
+    ],
+    "kind": "reflected",
+    "mechanism": "coord/reflected",
+    "origin": [
+      91.55303394270578,
+      -16.00074504615914,
+      57.59640222762323
+    ],
+    "samples": [
+      [
+        -7.00235933837879,
+        -3.1654905421424804,
+        6.839111358362439
+      ]
+    ],
+    "spacing": [
+      3.6339162953710584,
+      1.3172902726353235,
+      1.6657691383134505
+    ]
+  },
+  "expected": {
+    "evidence_gap_codes": [],
+    "score": 0.0,
+    "verdict": "fail",
+    "violation_codes": [
+      "direction_reflection"
+    ]
+  },
+  "family": "coord_boundary",
+  "id": "coord_boundary-021",
+  "initial_state_hash": "sha256:6a372d8e6068d479f9708ddee6ee952a93b34e9918681ed45b39da95a4bb51f4",
+  "seed": 20260929
+}

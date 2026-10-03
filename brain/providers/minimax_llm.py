@@ -64,7 +64,7 @@ class MiniMaxLLM(BaseLLM):
                 # openai imported inside try: if missing, ImportError propagates
                 # to the outer except Exception (line 108). The except
                 # openai.RateLimitError (line 99) is safe because openai is in
-                # requirements.txt 鈥?if somehow missing, the ImportError hits
+                # requirements.txt — if somehow missing, the ImportError hits
                 # first and we never reach the RateLimitError handler.
                 import openai
                 client = openai.OpenAI(

@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "ct_analysis",
+  "expectation": null,
+  "facet": "ct_analysis",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Please analyze this CT scan of a pediatric patient with a bladder rhabdomyosarcoma. The patient is 4 years old. Evaluate the tumor extent, assess bladder wall invasion, evaluate for hydronephrosis, and determine if brachytherapy boost is indicated alongside external beam.",
+  "source_refs": [
+    "INT-505b5d8450bd",
+    "INT-f91c791e1afe"
+  ],
+  "template_id": "TPL-58a4a99bb2"
+}

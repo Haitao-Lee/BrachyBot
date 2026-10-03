@@ -1,0 +1,78 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "hide": [],
+      "max": 4,
+      "operation": "capture",
+      "targets": [
+        "needle-A",
+        "needle-B"
+      ]
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 0,
+  "requested_language": "zh",
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "artifact",
+      "statement": "Visible chat attachment labels actual conflicting pair, version8, same run; screenshot in returned data alone is insufficient."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "response",
+      "statement": "Specific edit consequence and optional owned restore/keep path; no generic ungrounded direction."
+    },
+    {
+      "id": "criterion-2",
+      "kind": "state",
+      "statement": "Camera restored and auto_compare remains false."
+    }
+  ],
+  "rules": [
+    {
+      "op": "attachments",
+      "targets": [
+        "needle-A",
+        "needle-B"
+      ],
+      "views": [
+        "viewer-3d"
+      ]
+    },
+    {
+      "op": "preserve",
+      "path": "viewer"
+    },
+    {
+      "op": "equals",
+      "path": "monitor.auto_compare",
+      "value": false
+    }
+  ],
+  "scenario_id": "RUR-28-001",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "artifact",
+      "statement": "Visible chat attachment labels actual conflicting pair, version8, same run; screenshot in returned data alone is insufficient."
+    },
+    {
+      "kind": "response",
+      "statement": "Specific edit consequence and optional owned restore/keep path; no generic ungrounded direction."
+    },
+    {
+      "kind": "state",
+      "statement": "Camera restored and auto_compare remains false."
+    }
+  ]
+}

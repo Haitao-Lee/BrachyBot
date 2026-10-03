@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "error_recovery",
+  "expectation": null,
+  "facet": "error_recovery",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Calculate dose without seed plan",
+  "source_refs": [
+    "INT-16d1e98aa948",
+    "INT-cee10ce124ec"
+  ],
+  "template_id": "TPL-c6ac09ac93"
+}

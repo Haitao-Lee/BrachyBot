@@ -1,0 +1,75 @@
+{
+  "anti_gaming": {
+    "contrast_family_id": "RUR-07",
+    "hidden": false,
+    "paraphrase_group": "RUR-07"
+  },
+  "clinical_intent": "同名无选择只澄清一次",
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "RUR-07",
+  "cost_class": "light_compute",
+  "fixture": {
+    "case_family": "RUR-07",
+    "initial_state_hash": "sha256:f75121cbcb803f7d4b249fc23b474766f93178282c8cf3746be228cfca8410e1",
+    "setup_script": "extensions/real_user_requests_v1/compiled/fixtures/RUR-07-002.json"
+  },
+  "id": "RUR-07-002",
+  "layers": [
+    "L2",
+    "L4"
+  ],
+  "oracle": {
+    "check": "real_user_request",
+    "constraint_class": "none",
+    "expect": null,
+    "gold": "contracts/RUR-07-002.json",
+    "independent_check": true,
+    "kind": "program"
+  },
+  "power_role": "exploratory",
+  "protocol": {
+    "allowed_intermediates": [],
+    "audit_required": true,
+    "budget": {
+      "tool_calls": 96,
+      "turns": 1,
+      "wall_clock_s": 120
+    },
+    "mode": "single_turn",
+    "n_runs": 1,
+    "turns": [
+      {
+        "lang": "zh",
+        "role": "user",
+        "text": "删除导板。"
+      }
+    ],
+    "ui_counterpart": null
+  },
+  "provenance": {
+    "authored_on": "2026-10-03",
+    "deprecated": null,
+    "derived_from": "real_user_requests_v1:RUR-07-002",
+    "guideline_ref": null,
+    "reviewers": [
+      "authoring-only; independent review pending"
+    ],
+    "source": "audit_derived"
+  },
+  "schema_version": "1.0",
+  "scoring": {
+    "difficulty_target": "medium",
+    "gate_refs": [],
+    "primary_metric": "verified_task_goal",
+    "weight": 1.0
+  },
+  "track": "B",
+  "unit": {
+    "contrast_family_id": "RUR-07",
+    "group_type": "G-CTX",
+    "kind": "task_scenario"
+  }
+}

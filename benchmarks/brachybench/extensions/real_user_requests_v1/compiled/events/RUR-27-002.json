@@ -1,0 +1,19 @@
+[
+  {
+    "event": "recompute_completes",
+    "kind": "environment_event",
+    "payload": {
+      "after_revision": 9,
+      "before_revision": 7,
+      "covers_edits": [
+        "edit-A",
+        "edit-B"
+      ],
+      "metrics_delta": {
+        "V100_pp": -0.2,
+        "V200_pp": 3.4
+      }
+    },
+    "trigger": "start"
+  }
+]

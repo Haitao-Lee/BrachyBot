@@ -1,0 +1,71 @@
+benchmark: HealthAgentBench
+ext_id: EXT-8
+tier: conditional
+grade_R: R0-Gated
+grade_C: C2
+panels: [P2]
+
+acquisition:
+  source_url: https://github.com/microsoft/HealthAgentBench
+  source_commit: bcbb8085fd549469e2dc7455f4bfd68a1b98895a
+  source_tag: null
+  dataset_name: "HealthAgentBench task definitions (in-repo, 54 tasks) + gated EHRSHOT/CT-RATE/MIMIC-CXR"
+  dataset_revision: gated-ehrshot-53gc-8rhx41kgt
+  dataset_sha256: gated-ehrshot-ctrate-mimic
+  dataset_size_bytes: 0
+  retrieval_command: |
+    git clone https://github.com/microsoft/HealthAgentBench vendor/EXT-8
+    git -C vendor/EXT-8 checkout bcbb8085fd549469e2dc7455f4bfd68a1b98895a
+    # task definitions (54 tasks) are in vendor/EXT-8/tasks/
+    # gated data (per category):
+    #   EHRSHOT      Redivis 53gc-8rhx41kgt (REDIVIS_API_TOKEN)
+    #   CT-RATE      HF ibrahimhamamci/CT-RATE   (HF_TOKEN, accept agreement)
+    #   MIMIC-CXR    PhysioNet 2.1.0             (PN_USER / PN_PASS)
+    # judge:         CheXprompt (CHEXPROMPT_OPENAI_API_KEY or Azure)
+  retrieval_date: 2026-10-01
+  license_upstream: MIT
+  license_file: LICENSE
+  license_verified_by: "brachybench-auto (GitHub API 2026-10-01)"
+  activity_verified:
+    last_commit_date: 2026-09-25
+    last_release_date: null
+    open_issues: 7
+
+runner:
+  official_runner: harbor (pip harbor==0.8.0) run --path tasks
+  evaluator: per-task tests/ (verify*.py) writing logs/verifier/reward.txt
+  container: per-task Docker images (Harbor)
+  python_requires: ">=3.12"
+  native_deps: [Docker, uv]
+  paid_apis: [CHEXPROMPT_OPENAI_API_KEY]
+
+adapter:
+  kind: ext_adapter
+  shim_used: false
+  spec_ref: "DESIGN §25.5"
+
+run:
+  smoke_size: 5
+  sample_size: 0
+  sampling_seed: 42
+  n_runs: 5
+  budget: {wall_clock_s: 900, turns: 40, tool_calls: 80}
+
+isolation:
+  sandbox: required
+  network: denied
+  write_paths: ["benchmarks/external/EXT-8/results/"]
+  forbidden_write_roots:
+    - BrachyBot/session/
+    - BrachyBot/case/
+    - BrachyBot/runtime/
+    - BrachyBot/report/
+
+contamination:
+  public_samples_allowed_for_dev_only: true
+  seen_task_ids: []
+  behavioral_probes: [B1, B2, B3, B4, B5, B6, B7]
+
+status: blocked
+block_reason: "gated datasets: EHRSHOT (Redivis), CT-RATE (HF), MIMIC-CXR (PhysioNet); CheXprompt judge needs a key"
+reinclude_condition: "obtain Redivis + HF CT-RATE + PhysioNet MIMIC-CXR authorization and a CheXprompt key; task defs already vendored"

@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "input_variations_all",
+  "expectation": null,
+  "facet": "input_variations_all",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Look up DeepRare",
+  "source_refs": [
+    "INT-0c2972da248d",
+    "INT-606c29d6f16a"
+  ],
+  "template_id": "TPL-178cad9b2d"
+}

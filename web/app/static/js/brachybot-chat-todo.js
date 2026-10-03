@@ -1511,6 +1511,10 @@ function _chatUserVisibleFailure(sessionId, kind = 'request', code = '') {
             '病例资源加载被中断（病例可能已切换或更新）。请重试。',
             'Case resource loading was interrupted (the case may have switched or refreshed). Please retry.',
         ],
+        session_archived: [
+            '该病例已归档到冷存储。请先在病例列表中激活（恢复）该病例，再继续对话。',
+            'This case is archived in cold storage. Activate (restore) it from the case list, then continue the conversation.',
+        ],
         commit_failed: [
             '回答已生成，但保存到病例失败。请重试。',
             'The answer was generated but could not be saved to the case. Please retry.',

@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "clinical_oar_constraints",
+  "expectation": null,
+  "facet": "clinical_oar_constraints",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Show me all OAR constraints for prostate brachytherapy",
+  "source_refs": [
+    "INT-9f3bc1c55c6c",
+    "INT-b1569be05bae"
+  ],
+  "template_id": "TPL-a5f622d3fa"
+}

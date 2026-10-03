@@ -1,0 +1,77 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "max": 1,
+      "operation": "set",
+      "path": "objects.guide-A.visible"
+    },
+    {
+      "max": 1,
+      "operation": "set",
+      "path": "objects.ctv-A.visible"
+    },
+    {
+      "max": 1,
+      "operation": "set",
+      "path": "objects.ctv-A.opacity"
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 4,
+  "requested_language": "zh",
+  "response_facts": {
+    "spinal_cord.D2cc_Gy": 7.3
+  },
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "state",
+      "statement": "Guide remains visible from prior authorized turn; CTV visible opacity0.4, no dose/geometry changes."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "response",
+      "statement": "Each turn has its own evidence-backed fulfillment; final one sentence names actual persistent edits plus requested7.3Gy fact without resurrecting superseded goals."
+    }
+  ],
+  "rules": [
+    {
+      "op": "equals",
+      "path": "objects.guide-A.visible",
+      "value": true
+    },
+    {
+      "op": "equals",
+      "path": "objects.ctv-A.visible",
+      "value": true
+    },
+    {
+      "op": "equals",
+      "path": "objects.ctv-A.opacity",
+      "value": 0.4
+    },
+    {
+      "count": 4,
+      "op": "per_turn"
+    }
+  ],
+  "scenario_id": "RUR-36-001",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "state",
+      "statement": "Guide remains visible from prior authorized turn; CTV visible opacity0.4, no dose/geometry changes."
+    },
+    {
+      "kind": "response",
+      "statement": "Each turn has its own evidence-backed fulfillment; final one sentence names actual persistent edits plus requested7.3Gy fact without resurrecting superseded goals."
+    }
+  ]
+}

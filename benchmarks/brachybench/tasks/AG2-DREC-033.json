@@ -1,0 +1,88 @@
+{
+  "schema_version": "1.0",
+  "id": "AG2-DREC-033",
+  "track": "E",
+  "layers": [
+    "L2",
+    "L4"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "dose_recompute_stale_and_compare",
+  "cost_class": "state_only",
+  "power_role": "primary",
+  "clinical_intent": "After recompute, the report/guide must be marked stale, and the before/after metric comparison must report changes.",
+  "fixture": {
+    "case_family": "synth/prostate_s02_full_pipeline",
+    "setup_script": "fixtures/setup/prostate_s02_full_pipeline.py",
+    "initial_state_hash": "sha256:38eabca0a6bcb5062deac0e5645e8bf52d9e5f51cdd0f137f824f4509461ada3"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-CTX",
+    "contrast_family_id": "dose_recompute/stale_compare"
+  },
+  "protocol": {
+    "mode": "multi_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "recompute the current dose",
+        "lang": "en"
+      },
+      {
+        "role": "user",
+        "text": "what changed compared with last time",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 2,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "semantic_equivalence",
+    "constraint_class": "none",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "semantic_equivalence_pass",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "medium"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "AG2-DREC-033-P01",
+    "hidden": false,
+    "generation_seed": 29451,
+    "canary_class": null,
+    "behavioral_probes": [
+      "stale_not_marked"
+    ],
+    "contrast_family_id": "dose_recompute/stale_compare"
+  },
+  "provenance": {
+    "source": "audit_derived",
+    "derived_from": "tool_factory/dose_recompute.py:159-162,340 (dependent artifacts marked stale)",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto"
+    ],
+    "authored_on": "2026-10-01",
+    "deprecated": null
+  }
+}

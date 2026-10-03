@@ -1,11 +1,11 @@
 """Artifact-analysis request resolution and read-only fact packets.
 
-An analysis request ("分析导板特点", "analyze the guide characteristics") is a
-discourse act over an already-produced artifact.  It is read-only: it must
-never restart a workflow, never ask the user to confirm a regeneration, and
-never degrade into a presentation-only reply.  This module resolves which
-artifact is being analyzed (including short follow-ups such as "分析啊" that
-inherit the target from conversation), classifies whether the request is a
+An analysis request ("analyze the guide characteristics") is a discourse act
+over an already-produced artifact.  It is read-only: it must never restart a
+workflow, never ask the user to confirm a regeneration, and never degrade into
+a presentation-only reply.  This module resolves which artifact is being
+analyzed (including short follow-ups such as "analyze that" that inherit the
+target from conversation), classifies whether the request is a
 simple single-artifact analysis (fast grounded answer) or a complex one
 (cross-artifact comparison, standards question -> primary LLM with read-only
 tools), and packages the artifact's characteristics as bounded facts.
@@ -25,7 +25,7 @@ _ANALYSIS_VERBS_RE = re.compile(
     re.IGNORECASE,
 )
 
-# "特点/特征/情况/质量" style aspect nouns strengthen the analysis reading.
+# "characteristic/feature/situation/quality" style aspect nouns strengthen the analysis reading.
 _ASPECT_NOUNS_RE = re.compile(
     r"(?:\u7279\u70b9|\u7279\u5f81|\u60c5\u51b5|\u8d28\u91cf|\u8868\u73b0|\u6982\u51b5|\u7ed3\u679c|"
     r"\u4f18\u7f3a\u70b9|\u95ee\u9898|\u98ce\u9669|\u5339\u914d|"
@@ -67,8 +67,8 @@ _ARTIFACT_FAMILIES = (
     )),
 )
 
-# Feature/how-to questions ("explain how to generate the guide", "解释这个功能
-# 怎么用") are procedural knowledge questions, not artifact analysis.
+# Feature/how-to questions ("explain how to generate the guide", "explain how
+# to use this feature") are procedural knowledge questions, not artifact analysis.
 _PROCEDURAL_RE = re.compile(
     r"(?:\u5982\u4f55|\u600e\u4e48|\u600e\u6837|\u4e3a\u4f55|\u4e3a\u4ec0\u4e48|\u610f\u601d|"
     r"\u529f\u80fd|\u6309\u94ae|\u7528\u6cd5|\u64cd\u4f5c|\u754c\u9762|\u83dc\u5355|\u6b65\u9aa4|\u6d41\u7a0b|"
@@ -126,7 +126,7 @@ _VISUAL_EVIDENCE_RE = re.compile(
 )
 
 # Location/size interrogatives want a find-or-measure answer from the image or
-# segmentation pipeline ("肿瘤在哪，有多大"), not a characteristics discussion.
+# segmentation pipeline ("where is the tumor and how big is it"), not a characteristics discussion.
 _LOCATION_SIZE_RE = re.compile(
     r"(?:\u5728\u54ea|\u5728\u54ea\u91cc|\u4f4d\u4e8e\u54ea|\u4f55\u5904|\u54ea\u4e2a\u4f4d\u7f6e|"
     r"\u591a\u5927|\u591a\u5c0f|\u5c3a\u5bf8|\u591a\u5c11\u6beb\u7c73|"
@@ -190,10 +190,10 @@ def _has_positive_mutation(text: str) -> bool:
     """Return whether the utterance commands a write in its own clause.
 
     The frame requires an imperative-position mutation verb (sentence start or
-    after a sequencing connector).  Bare noun phrases such as ``当前规划`` or
-    ``分割结果`` reuse those words and must stay analysis targets, while
-    ``分析一下导板然后重新生成`` carries a real second clause and becomes a
-    compound action request instead.
+    after a sequencing connector).  Bare noun phrases such as ``current plan``
+    or ``segmentation result`` reuse those words and must stay analysis targets,
+    while ``analyze the guide and then regenerate it`` carries a real second
+    clause and becomes a compound action request instead.
     """
     if re.search(
         r"(?:\u4e0d\u8981|\u522b|\u65e0\u9700|\u4e0d\u7528|\u4e0d\u9700\u8981|"
@@ -257,14 +257,15 @@ def is_artifact_analysis_request(
     if _PROCEDURAL_GENERATION_RE.search(text):
         return None
     if _PROCEDURAL_RE.search(text) and _ASPECT_NOUNS_RE.search(text) is None:
-        # "解释这个功能/怎么用" is procedural knowledge, not artifact analysis.
+        # "explain this feature / how to use it" is procedural knowledge, not artifact analysis.
         return None
     if _VISUAL_EVIDENCE_RE.search(text):
-        # "打开报告截图并详细解读" needs real visual evidence through the
-        # presentation route, not a characteristics fact packet.
+        # "open the report screenshot and interpret it in detail" needs real
+        # visual evidence through the presentation route, not a characteristics
+        # fact packet.
         return None
     if _LOCATION_SIZE_RE.search(text):
-        # "肿瘤在哪，有多大" is a find/measure question for the image and
+        # "where is the tumor and how big is it" is a find/measure question for the image and
         # segmentation pipeline; the semantic path with its completeness
         # review owns it.
         return None
@@ -281,7 +282,7 @@ def is_artifact_analysis_request(
         source = "followup"
 
     if _has_positive_mutation(text):
-        # "分析一下导板然后重新生成" is a compound action request; the
+        # "analyze the guide and then regenerate it" is a compound action request; the
         # semantic action-plan path owns it (and its mutation gate).
         return None
 
@@ -313,7 +314,7 @@ def is_analysis_shaped(message: Any) -> bool:
     """Return whether the utterance asks for interpretation, not new work.
 
     Weaker than :func:`is_artifact_analysis_request`: the artifact may be
-    absent (a short follow-up such as ``分析啊``) or the request may be a
+    absent (a short follow-up such as ``analyze that``) or the request may be a
     general knowledge question.  What matters at the tool-call boundary is
     that no write is commanded, so provider-selected mutations can be
     coerced to their read-only forms.
@@ -345,7 +346,7 @@ def _bounded(value: Any, limit: int = 64) -> Any:
 def build_guide_characteristics_facts(guide_state: Any) -> Dict[str, Any]:
     """Bounded design/validation characteristics of the puncture guide.
 
-    This is the fact packet behind "分析导板特点".  It exposes the manufacturing
+    This is the fact packet behind "analyze the guide characteristics".  It exposes the manufacturing
     parameters and mesh-validation record without vertices/faces or other
     unbounded arrays.
     """

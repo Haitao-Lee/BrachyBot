@@ -37,7 +37,7 @@ const packet = (edit, event, version, comparable=false) => ({
     assert.match(messages.get(first.monitor_card_id),/90.00.*91.00/);
     ctx.window.updateMonitorCheckpointCapture(first,{success:true});
     assert.doesNotMatch(messages.get(first.monitor_card_id),/已核验的图像/,'late image from older revision must not mark new evidence ready');
-    ctx.window.updateMonitorCheckpointCapture(dose,{success:true});
+    ctx.window.updateMonitorCheckpointCapture(dose,{success:true,attachments:[{target:'dvh',url:'/dvh.png'}]});
     assert.match(messages.get(first.monitor_card_id),/已核验的图像/);
     ctx.manualPlanningState.planningVersion=4;
     const next = packet('edit2','e2',4);

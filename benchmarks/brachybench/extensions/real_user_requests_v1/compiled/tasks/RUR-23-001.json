@@ -1,0 +1,75 @@
+{
+  "anti_gaming": {
+    "contrast_family_id": "RUR-23",
+    "hidden": false,
+    "paraphrase_group": "RUR-23"
+  },
+  "clinical_intent": "迟到图像应替换初步无证据叙述",
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "RUR-23",
+  "cost_class": "light_compute",
+  "fixture": {
+    "case_family": "RUR-23",
+    "initial_state_hash": "sha256:5c074734b87a45ce5a053e53b705f27dc8d55ea184678fabdd1e0ebf1c4bda41",
+    "setup_script": "extensions/real_user_requests_v1/compiled/fixtures/RUR-23-001.json"
+  },
+  "id": "RUR-23-001",
+  "layers": [
+    "L2",
+    "L4"
+  ],
+  "oracle": {
+    "check": "real_user_request",
+    "constraint_class": "none",
+    "expect": null,
+    "gold": "contracts/RUR-23-001.json",
+    "independent_check": true,
+    "kind": "program"
+  },
+  "power_role": "exploratory",
+  "protocol": {
+    "allowed_intermediates": [],
+    "audit_required": true,
+    "budget": {
+      "tool_calls": 96,
+      "turns": 1,
+      "wall_clock_s": 120
+    },
+    "mode": "single_turn",
+    "n_runs": 1,
+    "turns": [
+      {
+        "lang": "zh",
+        "role": "user",
+        "text": "分别截图告诉我导板和肿瘤在哪里。"
+      }
+    ],
+    "ui_counterpart": null
+  },
+  "provenance": {
+    "authored_on": "2026-10-03",
+    "deprecated": null,
+    "derived_from": "real_user_requests_v1:RUR-23-001",
+    "guideline_ref": null,
+    "reviewers": [
+      "authoring-only; independent review pending"
+    ],
+    "source": "audit_derived"
+  },
+  "schema_version": "1.0",
+  "scoring": {
+    "difficulty_target": "medium",
+    "gate_refs": [],
+    "primary_metric": "verified_task_goal",
+    "weight": 1.0
+  },
+  "track": "M",
+  "unit": {
+    "contrast_family_id": "RUR-23",
+    "group_type": "G-CTX",
+    "kind": "task_scenario"
+  }
+}

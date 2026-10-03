@@ -48,7 +48,7 @@ class RouterAgent(LLMCapableAgent):
             "requires_review": False,
         },
         "clinical_planning": {
-            # Bilingual: 计划=plan, 规划=planning, 植入=implant, 粒子=seed
+            # Bilingual: Chinese terms for plan, planning, implant, seed.
             "keywords": ["计划", "规划", "plan", "planning", "植入", "implant", "粒子", "seed",
                          "执行", "开始", "运行", "execute", "run", "start"],
             "complexity": "high",
@@ -56,14 +56,14 @@ class RouterAgent(LLMCapableAgent):
             "requires_review": True,
         },
         "segmentation": {
-            # Bilingual: 分割=segment, 器官=organ, 肿瘤=tumor
+            # Bilingual: Chinese terms for segment, organ, tumor.
             "keywords": ["分割", "segment", "ctv", "oar", "器官", "organ", "肿瘤", "tumor"],
             "complexity": "medium",
             "agents": [AgentRole.CLINICAL_EXECUTOR],
             "requires_review": False,
         },
         "dose_evaluation": {
-            # Bilingual: 计算剂量=calculate dose, 评估剂量=evaluate dose
+            # Bilingual: Chinese terms for calculate dose, evaluate dose.
             "keywords": ["计算剂量", "evaluate dose", "dose evaluation", "评估剂量", "剂量评估",
                          "dose calc", "dvh", "dvh analysis", "dose map", "dose_engine", "dose_evaluation"],
             "complexity": "medium",
@@ -71,7 +71,7 @@ class RouterAgent(LLMCapableAgent):
             "requires_review": True,
         },
         "knowledge_query": {
-            # Bilingual: 什么是=what is, 指南=guide, 标准=standard, etc.
+            # Bilingual: Chinese terms for what is, guide, standard, etc.
             "keywords": ["什么是", "解释", "指南", "guide", "标准", "standard", "standards", "what is", "what are", "explain",
                          "查询", "query", "介绍", "introduce", "了解", "learn", "知识", "knowledge",
                          "约束", "constraint", "限制", "limit", "耐受", "tolerance",

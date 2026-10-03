@@ -238,7 +238,7 @@ def test_guide_skin_uses_the_same_data_tree_control_paths_as_other_visual_nodes(
     # stable skin node instead of falling through to a missing top-level key.
     assert "else if (id === 'skin_surface') current = dataTreeState.skin?.visible;" in viewer
     assert "if (id === 'skin_surface') {\n        dataTreeState.skin.opacity = opacity;" in viewer
-    assert "_scheduleDataTreeSave('viewer.opacity:skin_surface')" in viewer
+    assert "_scheduleDataTreeSave('viewer.opacity:skin_surface', 'skin_surface')" in viewer
 
     # The 2D renderer already consumes the persisted skin node state; keep an
     # assertion beside the control checks so the contract remains end-to-end.

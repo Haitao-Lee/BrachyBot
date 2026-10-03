@@ -1,0 +1,72 @@
+benchmark: MedicalAgentsBench
+ext_id: EXT-15
+tier: specialty
+grade_R: R0
+grade_C: C2
+panels: [P1]
+
+acquisition:
+  source_url: https://github.com/gersteinlab/MedicalAgentsBench
+  source_commit: fcb5292720c28f4168992ee37cda944e452cd098
+  source_tag: null
+  dataset_name: "super-dainiu/MedicalAgentsBench (9 MCQ test sets: MedQA, MedMCQA, MedBullets, MMLU-Pro, MedExQA, AfrimedQA, MedXpertQA-R/U, PubMedQA)"
+  dataset_revision: 87e99bf48306788076dced215926e29c835fa892
+  dataset_sha256: 2c3589992f8bb4984f5f3a9a1afb97eedd14e90e75af35d99bb27271385387f1
+  dataset_size_bytes: 5536193
+  retrieval_command: |
+    git clone https://github.com/gersteinlab/MedicalAgentsBench vendor/EXT-15
+    git -C vendor/EXT-15 checkout fcb5292720c28f4168992ee37cda944e452cd098
+    HF_ENDPOINT=https://hf-mirror.com
+    for D in MedQA MedMCQA MedBullets MMLU-Pro MedExQA AfrimedQA MedXpertQA-R MedXpertQA-U PubMedQA; do
+      curl -L -o data/EXT-15/$D.parquet \
+        $HF_ENDPOINT/datasets/super-dainiu/MedicalAgentsBench/resolve/main/$D/test-00000-of-00001.parquet
+    done
+    # dataset_sha256 above = directory digest of data/EXT-15 (9 parquet).
+  retrieval_date: 2026-10-01
+  license_upstream: MIT
+  license_file: LICENSE
+  license_verified_by: "brachybench-auto (GitHub + HF 2026-10-01)"
+  activity_verified:
+    last_commit_date: null
+    last_release_date: null
+    open_issues: null
+
+runner:
+  official_runner: scripts/ (see repo README)
+  evaluator: MCQ accuracy (upstream notebooks; adapter replicates the documented answer_idx match)
+  container: null
+  python_requires: ">=3.9"
+  native_deps: []
+  paid_apis: []
+  judge_note: "deterministic MCQ accuracy (answer_idx match); no LLM judge."
+
+adapter:
+  kind: ext_adapter
+  shim_used: false
+  spec_ref: "DESIGN §25.5"
+
+run:
+  smoke_size: 5
+  sample_size: 0
+  sampling_seed: 42
+  n_runs: 1
+  budget: {wall_clock_s: 300, turns: 1, tool_calls: 0}
+
+isolation:
+  sandbox: required
+  network: denied
+  write_paths: ["benchmarks/external/EXT-15/results/"]
+  forbidden_write_roots:
+    - BrachyBot/session/
+    - BrachyBot/case/
+    - BrachyBot/runtime/
+    - BrachyBot/report/
+
+contamination:
+  public_samples_allowed_for_dev_only: true
+  seen_task_ids: []
+  behavioral_probes: [B1, B2, B3, B4, B5, B6, B7]
+
+status: active
+block_reason: null
+reinclude_condition: null

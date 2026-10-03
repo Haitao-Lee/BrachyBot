@@ -1,0 +1,18 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "input_variations",
+  "expectation": null,
+  "facet": "input_variations",
+  "gold_status": "draft",
+  "n_source_intents": 6,
+  "representative_text": "Adjust window width to 200",
+  "source_refs": [
+    "INT-0ae289a79bcc",
+    "INT-2c99730c689d",
+    "INT-539600ca90e8",
+    "INT-b50600ed5319",
+    "INT-ea20427f4d58",
+    "INT-f78f22817041"
+  ],
+  "template_id": "TPL-42de028b9f"
+}

@@ -1,0 +1,311 @@
+{
+  "schema_version": 1,
+  "checked_at_utc": "2026-10-03T16:41:02.628983+00:00",
+  "source_audit_date": "2026-10-03",
+  "evaluation_mode": "construction_validation_not_sut_evaluation",
+  "sut_runs": 0,
+  "model_calls": 0,
+  "paid_judge_calls": 0,
+  "protocol_fidelity_certified": false,
+  "comparable_sut_result": false,
+  "catalog_sha256": "74c605ad1b24338b58ab4362e41711246213fdfcf13f7829b12ce31493135dc3",
+  "asset_lock_sha256": "0e0787bb4027973bb1a2dee3cdb5d2fc59917545f0a1cd20280d39f6d779e239",
+  "selection_sha256": "5be89f5db326babc7765c057d92298de48c4e28ca7ebf22306bf1e4ea3ff2162",
+  "integrity": {
+    "asset_files": 173,
+    "problems": [],
+    "sut_runs": 0,
+    "evaluation_mode": "collection_integrity_not_sut_evaluation"
+  },
+  "images_archive_crc": "passed",
+  "official_hf_lfs_checksum_crosscheck": {
+    "files": 15,
+    "mismatches": 0
+  },
+  "benchmarks": [
+    {
+      "id": "EXT-16",
+      "name": "When2Call",
+      "eligible_task_units": 3952,
+      "clusters": 1295,
+      "subsets": {
+        "mcq": 3652,
+        "llm_judge": 300
+      },
+      "user_turns": 0,
+      "exclusions": {},
+      "blocked_source_ids": [],
+      "corpus_documents": {},
+      "data_collected": true,
+      "protocol_fidelity_certified": false,
+      "sut_runs": 0,
+      "score_gate": "upstream_runner_and_comparator_configuration_required"
+    },
+    {
+      "id": "EXT-17",
+      "name": "BFCL-v3 (AST/irrelevance/parallel)",
+      "eligible_task_units": 3472,
+      "clusters": 3472,
+      "subsets": {
+        "irrelevance": 240,
+        "live_irrelevance": 882,
+        "live_multiple": 1052,
+        "live_parallel": 16,
+        "live_parallel_multiple": 24,
+        "live_simple": 258,
+        "multiple": 200,
+        "parallel": 200,
+        "parallel_multiple": 200,
+        "simple": 400
+      },
+      "user_turns": 0,
+      "exclusions": {},
+      "blocked_source_ids": [
+        {
+          "subset": "live_multiple",
+          "id": "live_multiple_1052-79-0",
+          "reason": "missing_task_owned_gold"
+        }
+      ],
+      "corpus_documents": {},
+      "data_collected": true,
+      "protocol_fidelity_certified": false,
+      "sut_runs": 0,
+      "score_gate": "upstream_runner_and_comparator_configuration_required"
+    },
+    {
+      "id": "EXT-18",
+      "name": "MedXpertQA",
+      "eligible_task_units": 4450,
+      "clusters": 4450,
+      "subsets": {
+        "Text": 2450,
+        "MM": 2000
+      },
+      "user_turns": 0,
+      "exclusions": {},
+      "blocked_source_ids": [],
+      "corpus_documents": {},
+      "data_collected": true,
+      "protocol_fidelity_certified": false,
+      "sut_runs": 0,
+      "score_gate": "upstream_runner_and_comparator_configuration_required"
+    },
+    {
+      "id": "EXT-19",
+      "name": "CMB-Clin",
+      "eligible_task_units": 74,
+      "clusters": 74,
+      "subsets": {
+        "clin_cases": 74
+      },
+      "user_turns": 208,
+      "exclusions": {},
+      "blocked_source_ids": [],
+      "corpus_documents": {},
+      "data_collected": true,
+      "protocol_fidelity_certified": false,
+      "sut_runs": 0,
+      "score_gate": "upstream_runner_and_comparator_configuration_required"
+    },
+    {
+      "id": "EXT-20",
+      "name": "MEDEC-MS",
+      "eligible_task_units": 597,
+      "clusters": 597,
+      "subsets": {
+        "MS_test": 597
+      },
+      "user_turns": 0,
+      "exclusions": {
+        "upstream_blank_rows": 328
+      },
+      "blocked_source_ids": [],
+      "corpus_documents": {},
+      "data_collected": true,
+      "protocol_fidelity_certified": false,
+      "sut_runs": 0,
+      "score_gate": "upstream_runner_and_comparator_configuration_required"
+    },
+    {
+      "id": "EXT-21",
+      "name": "MedHALT",
+      "eligible_task_units": 41816,
+      "clusters": 15991,
+      "subsets": {
+        "IR_abstract2pubmedlink": 4916,
+        "IR_pmid2title": 4916,
+        "IR_pubmedlink2title": 4916,
+        "IR_title2pubmedlink": 4916,
+        "reasoning_FCT": 11076,
+        "reasoning_nota": 11076
+      },
+      "user_turns": 0,
+      "exclusions": {
+        "IR_abstract2pubmedlink_non_test": 0,
+        "IR_pmid2title_non_test": 0,
+        "IR_pubmedlink2title_non_test": 0,
+        "IR_title2pubmedlink_non_test": 0,
+        "reasoning_FCT_non_test": 7790,
+        "reasoning_fake_non_test": 1858,
+        "reasoning_nota_non_test": 7790
+      },
+      "blocked_source_ids": [],
+      "corpus_documents": {},
+      "data_collected": true,
+      "protocol_fidelity_certified": false,
+      "sut_runs": 0,
+      "score_gate": "upstream_runner_and_comparator_configuration_required"
+    },
+    {
+      "id": "EXT-22",
+      "name": "MedRGB",
+      "eligible_task_units": 3680,
+      "clusters": 3680,
+      "subsets": {
+        "bioasq": 618,
+        "medlfqa": 200,
+        "medqa": 1273,
+        "mmlu": 1089,
+        "pubmedqa": 500
+      },
+      "user_turns": 0,
+      "exclusions": {},
+      "blocked_source_ids": [],
+      "corpus_documents": {},
+      "data_collected": true,
+      "protocol_fidelity_certified": false,
+      "sut_runs": 0,
+      "score_gate": "upstream_runner_and_comparator_configuration_required"
+    },
+    {
+      "id": "EXT-23",
+      "name": "R2MED clinical retrieval",
+      "eligible_task_units": 511,
+      "clusters": 511,
+      "subsets": {
+        "PMC-Treatment": 150,
+        "PMC-Clinical": 114,
+        "IIYi-Clinical": 129,
+        "MedQA-Diag": 118
+      },
+      "user_turns": 0,
+      "exclusions": {
+        "PMC-Treatment_identical_corpus_duplicates": 145,
+        "PMC-Treatment_non_test_queries": 0,
+        "PMC-Clinical_identical_corpus_duplicates": 0,
+        "PMC-Clinical_non_test_queries": 0,
+        "IIYi-Clinical_identical_corpus_duplicates": 0,
+        "IIYi-Clinical_non_test_queries": 0,
+        "MedQA-Diag_identical_corpus_duplicates": 56,
+        "MedQA-Diag_non_test_queries": 0
+      },
+      "blocked_source_ids": [],
+      "corpus_documents": {
+        "PMC-Treatment": 28809,
+        "PMC-Clinical": 60406,
+        "IIYi-Clinical": 10449,
+        "MedQA-Diag": 56194
+      },
+      "data_collected": true,
+      "protocol_fidelity_certified": false,
+      "sut_runs": 0,
+      "score_gate": "upstream_runner_and_comparator_configuration_required"
+    },
+    {
+      "id": "EXT-24",
+      "name": "NFCorpus (BEIR medical retrieval)",
+      "eligible_task_units": 323,
+      "clusters": 323,
+      "subsets": {
+        "nfcorpus": 323
+      },
+      "user_turns": 0,
+      "exclusions": {
+        "nfcorpus_identical_corpus_duplicates": 0,
+        "nfcorpus_non_test_queries": 2914
+      },
+      "blocked_source_ids": [],
+      "corpus_documents": {
+        "nfcorpus": 3633
+      },
+      "data_collected": true,
+      "protocol_fidelity_certified": false,
+      "sut_runs": 0,
+      "score_gate": "upstream_runner_and_comparator_configuration_required"
+    },
+    {
+      "id": "EXT-25",
+      "name": "SciFact (BEIR retrieval)",
+      "eligible_task_units": 300,
+      "clusters": 300,
+      "subsets": {
+        "scifact": 300
+      },
+      "user_turns": 0,
+      "exclusions": {
+        "scifact_identical_corpus_duplicates": 0,
+        "scifact_non_test_queries": 809
+      },
+      "blocked_source_ids": [],
+      "corpus_documents": {
+        "scifact": 5183
+      },
+      "data_collected": true,
+      "protocol_fidelity_certified": false,
+      "sut_runs": 0,
+      "score_gate": "upstream_runner_and_comparator_configuration_required"
+    },
+    {
+      "id": "EXT-26",
+      "name": "LongHealth",
+      "eligible_task_units": 400,
+      "clusters": 20,
+      "subsets": {
+        "task1_base": 400
+      },
+      "user_turns": 0,
+      "exclusions": {},
+      "blocked_source_ids": [],
+      "corpus_documents": {},
+      "data_collected": true,
+      "protocol_fidelity_certified": false,
+      "sut_runs": 0,
+      "score_gate": "upstream_runner_and_comparator_configuration_required"
+    },
+    {
+      "id": "EXT-27",
+      "name": "InjecAgent",
+      "eligible_task_units": 2108,
+      "clusters": 1054,
+      "subsets": {
+        "dh_base": 510,
+        "dh_enhanced": 510,
+        "ds_base": 544,
+        "ds_enhanced": 544
+      },
+      "user_turns": 0,
+      "exclusions": {},
+      "blocked_source_ids": [],
+      "corpus_documents": {},
+      "data_collected": true,
+      "protocol_fidelity_certified": false,
+      "sut_runs": 0,
+      "score_gate": "upstream_runner_and_comparator_configuration_required"
+    }
+  ],
+  "construction_tests": {
+    "executed": true,
+    "command": [
+      "/tmp/public-collection-test-env-20261003/bin/python",
+      "-m",
+      "pytest",
+      "/home/lht/snap/brachyplan/BrachyBot/benchmarks/external/public_collection/tests",
+      "-q",
+      "--tb=short"
+    ],
+    "exit_code": 0,
+    "output": "................................................                         [100%]\n=============================== warnings summary ===============================\nbenchmarks/external/public_collection/tests/test_collection.py::test_when2call_original_prompt_does_not_return_target\nbenchmarks/external/public_collection/tests/test_collection.py::test_when2call_original_prompt_does_not_return_target\nbenchmarks/external/public_collection/tests/test_collection.py::test_when2call_original_prompt_does_not_return_target\n  /tmp/public-collection-test-env-20261003/lib/python3.12/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.\n    obj.co_lnotab,  # for < python 3.10 [not counted in args]\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n48 passed, 3 warnings in 12.41s\n",
+    "purpose": "contract/scorer controls; not measured agent outputs"
+  }
+}

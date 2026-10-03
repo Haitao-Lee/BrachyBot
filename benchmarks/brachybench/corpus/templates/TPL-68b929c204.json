@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "tool_calling",
+  "expectation": null,
+  "facet": "tool_calling",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "What is the tumor volume of this CT?",
+  "source_refs": [
+    "INT-4c7c48781da2",
+    "INT-f3f3cac3efa9"
+  ],
+  "template_id": "TPL-68b929c204"
+}

@@ -362,7 +362,7 @@ def test_written_verb_and_typo_tolerance_for_report_noun():
 
 
 # ---------------------------------------------------------------------------
-# Elliptical aggregate follow-up ("那请你全部更新")
+# Elliptical aggregate follow-up ("then please update everything")
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("message", [

@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "treatment_planning",
+  "expectation": null,
+  "facet": "treatment_planning",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Salvage HDR for 68-year-old man with recurrent Gleason 4+5=9 prostate cancer post-prostatectomy and EBRT 66 Gy. PSMA PET shows prostate bed + SV bed recurrence. Interstitial needles, re-irradiation dose, and cumulative EQD2.",
+  "source_refs": [
+    "INT-48d5286496e6",
+    "INT-e2df2e635ee9"
+  ],
+  "template_id": "TPL-4487f3b136"
+}

@@ -1,0 +1,2178 @@
+{
+  "n_capabilities": 146,
+  "total_cells": 707,
+  "covered_cells": 707,
+  "coverage": 1.0,
+  "n_capabilities_with_gaps": 0,
+  "rows": [
+    {
+      "id": "dose_engine",
+      "domain": "dose",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "dose_eval",
+      "domain": "dose",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "R"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "dose_pre:dose_unet",
+      "domain": "dose",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "I"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "dose_pre:evaluation_inputs",
+      "domain": "dose",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "I"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "dose_pre:inference",
+      "domain": "dose",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "I"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "dose_pre:model_loader",
+      "domain": "dose",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "I"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "surgical_guide",
+      "domain": "guide",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "image_processing",
+      "domain": "imaging",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "R"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "doc_reader",
+      "domain": "io",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "R"
+      ],
+      "missing": [],
+      "covered": 4,
+      "n": 4
+    },
+    {
+      "id": "filesystem_browser",
+      "domain": "io",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "R"
+      ],
+      "missing": [],
+      "covered": 4,
+      "n": 4
+    },
+    {
+      "id": "input",
+      "domain": "io",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A",
+        "I"
+      ],
+      "missing": [],
+      "covered": 7,
+      "n": 7
+    },
+    {
+      "id": "case_memory",
+      "domain": "knowledge",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "R"
+      ],
+      "missing": [],
+      "covered": 4,
+      "n": 4
+    },
+    {
+      "id": "clinical_kb",
+      "domain": "knowledge",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "R"
+      ],
+      "missing": [],
+      "covered": 4,
+      "n": 4
+    },
+    {
+      "id": "performance_tracker",
+      "domain": "knowledge",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "R"
+      ],
+      "missing": [],
+      "covered": 4,
+      "n": 4
+    },
+    {
+      "id": "safety_validator",
+      "domain": "knowledge",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "R"
+      ],
+      "missing": [],
+      "covered": 4,
+      "n": 4
+    },
+    {
+      "id": "memory:context_optimizer",
+      "domain": "memory",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "memory:experience_memory",
+      "domain": "memory",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "memory:interaction_memory",
+      "domain": "memory",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "memory:language",
+      "domain": "memory",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "memory:layered_memory",
+      "domain": "memory",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "memory:preference_store",
+      "domain": "memory",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "memory:reflexion_engine",
+      "domain": "memory",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "memory:self_evolution",
+      "domain": "memory",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "memory:skill_crystallizer",
+      "domain": "memory",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "memory:skill_learner",
+      "domain": "memory",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "memory:smart_context",
+      "domain": "memory",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "memory:user_profile",
+      "domain": "memory",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "plan_comparator",
+      "domain": "planning",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "plan_quality",
+      "domain": "planning",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "seed_plan",
+      "domain": "planning",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "R"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "traj_plan",
+      "domain": "planning",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "R"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "report_generator",
+      "domain": "report",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "output",
+      "domain": "report",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A",
+        "I"
+      ],
+      "missing": [],
+      "covered": 7,
+      "n": 7
+    },
+    {
+      "id": "web_access",
+      "domain": "retrieval",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "R"
+      ],
+      "missing": [],
+      "covered": 4,
+      "n": 4
+    },
+    {
+      "id": "web_fetch",
+      "domain": "retrieval",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "R"
+      ],
+      "missing": [],
+      "covered": 4,
+      "n": 4
+    },
+    {
+      "id": "web_search",
+      "domain": "retrieval",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "R"
+      ],
+      "missing": [],
+      "covered": 4,
+      "n": 4
+    },
+    {
+      "id": "runtime:action_plan",
+      "domain": "runtime",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "runtime:answer_coverage",
+      "domain": "runtime",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "runtime:artifact_analysis",
+      "domain": "runtime",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "runtime:chat_workflows",
+      "domain": "runtime",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "runtime:context_window",
+      "domain": "runtime",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "runtime:contracts",
+      "domain": "runtime",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "runtime:core",
+      "domain": "runtime",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "runtime:execution_authorization",
+      "domain": "runtime",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "runtime:intent_boundary",
+      "domain": "runtime",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "runtime:llm_runtime",
+      "domain": "runtime",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "runtime:request_parse",
+      "domain": "runtime",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "runtime:response_contract",
+      "domain": "runtime",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "runtime:response_tools",
+      "domain": "runtime",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "runtime:shortcut_contract",
+      "domain": "runtime",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "runtime:step_execution",
+      "domain": "runtime",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "runtime:turn_policy",
+      "domain": "runtime",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "runtime:ui_operations",
+      "domain": "runtime",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "runtime:visual_evidence",
+      "domain": "runtime",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "safety:authorization",
+      "domain": "safety",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "safety:tenant_isolation",
+      "domain": "safety",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "safety:session_isolation",
+      "domain": "safety",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "safety:path_traversal",
+      "domain": "safety",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "safety:ssrf",
+      "domain": "safety",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "safety:prompt_injection",
+      "domain": "safety",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "safety:exec_boundary",
+      "domain": "safety",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "safety:codegen_escape",
+      "domain": "safety",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "CTV_seg",
+      "domain": "segmentation",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "OAR_seg",
+      "domain": "segmentation",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "seed_seg",
+      "domain": "segmentation",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "code_executor",
+      "domain": "tools_exec",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "env_manager",
+      "domain": "tools_exec",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "shell_executor",
+      "domain": "tools_exec",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "tool_creator",
+      "domain": "tools_exec",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "ui_annotate",
+      "domain": "ui",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "ui_content",
+      "domain": "ui",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "R"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "ui_controller",
+      "domain": "ui",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "ui_inspector",
+      "domain": "ui",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "R"
+      ],
+      "missing": [],
+      "covered": 4,
+      "n": 4
+    },
+    {
+      "id": "ui_screenshot",
+      "domain": "ui",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "R"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "viewer_command",
+      "domain": "ui",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "R"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "web:auth",
+      "domain": "web_service",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "web:chat_tasks",
+      "domain": "web_service",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "web:export_service",
+      "domain": "web_service",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "web:guide_generation_runtime",
+      "domain": "web_service",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "web:manual_step_outputs",
+      "domain": "web_service",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "web:monitor_changes",
+      "domain": "web_service",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "web:monitor_engine",
+      "domain": "web_service",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "web:planning_runs",
+      "domain": "web_service",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "web:public_server",
+      "domain": "web_service",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "web:server",
+      "domain": "web_service",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "web:server_support",
+      "domain": "web_service",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "web:structure_service",
+      "domain": "web_service",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "web:surgical_guide",
+      "domain": "web_service",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "web:ui_detailed_capture",
+      "domain": "web_service",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "web:ui_screenshot_audit",
+      "domain": "web_service",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "web:ui_screenshot_audit2",
+      "domain": "web_service",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "web:uploaded_mask_service",
+      "domain": "web_service",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "web:viewer_cache",
+      "domain": "web_service",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "web:workspace_store",
+      "domain": "web_service",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "route:data_routes",
+      "domain": "web_service",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "route:planning_routes",
+      "domain": "web_service",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "route:session_routes",
+      "domain": "web_service",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "route:surgical_guide_routes",
+      "domain": "web_service",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "route:viewer_routes",
+      "domain": "web_service",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "skills:registry",
+      "domain": "skills",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 5,
+      "n": 5
+    },
+    {
+      "id": "skills:markdown_loader",
+      "domain": "skills",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "I"
+      ],
+      "missing": [],
+      "covered": 4,
+      "n": 4
+    },
+    {
+      "id": "skills:templates",
+      "domain": "skills",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "P"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "utils:ct_volume",
+      "domain": "utils",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "I"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "utils:display_paths",
+      "domain": "utils",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "S",
+        "I"
+      ],
+      "missing": [],
+      "covered": 4,
+      "n": 4
+    },
+    {
+      "id": "utils:planning_metrics",
+      "domain": "utils",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "I"
+      ],
+      "missing": [],
+      "covered": 4,
+      "n": 4
+    },
+    {
+      "id": "utils:user_errors",
+      "domain": "utils",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "R",
+        "S"
+      ],
+      "missing": [],
+      "covered": 5,
+      "n": 5
+    },
+    {
+      "id": "utils:cancellation",
+      "domain": "utils",
+      "mutates": false,
+      "required": [
+        "F",
+        "R"
+      ],
+      "missing": [],
+      "covered": 2,
+      "n": 2
+    },
+    {
+      "id": "plans:core",
+      "domain": "plans",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "R"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "plans:utilizations",
+      "domain": "plans",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "I"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "plans:geometry",
+      "domain": "plans",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "S"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "plans:reinforcement",
+      "domain": "plans",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "R"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "plans:coverage_repair",
+      "domain": "plans",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "R"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "plans:brachy_plan",
+      "domain": "plans",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "R"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "plans:device_manager",
+      "domain": "plans",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 4,
+      "n": 4
+    },
+    {
+      "id": "plans:planning_preview",
+      "domain": "plans",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 4,
+      "n": 4
+    },
+    {
+      "id": "plans:reward_metrics",
+      "domain": "plans",
+      "mutates": false,
+      "required": [
+        "F",
+        "E"
+      ],
+      "missing": [],
+      "covered": 2,
+      "n": 2
+    },
+    {
+      "id": "plans:rl_status",
+      "domain": "plans",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "A"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "plans:guide_geometry",
+      "domain": "plans",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "S"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "plans:performance",
+      "domain": "plans",
+      "mutates": false,
+      "required": [
+        "F",
+        "A"
+      ],
+      "missing": [],
+      "covered": 2,
+      "n": 2
+    },
+    {
+      "id": "brain:router",
+      "domain": "brain",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 4,
+      "n": 4
+    },
+    {
+      "id": "brain:providers",
+      "domain": "brain",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "R",
+        "I"
+      ],
+      "missing": [],
+      "covered": 4,
+      "n": 4
+    },
+    {
+      "id": "brain:knowledge_rag",
+      "domain": "brain",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "I"
+      ],
+      "missing": [],
+      "covered": 4,
+      "n": 4
+    },
+    {
+      "id": "brain:multi_agent_critic",
+      "domain": "brain",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "S",
+        "A"
+      ],
+      "missing": [],
+      "covered": 4,
+      "n": 4
+    },
+    {
+      "id": "brain:deciders",
+      "domain": "brain",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S"
+      ],
+      "missing": [],
+      "covered": 4,
+      "n": 4
+    },
+    {
+      "id": "brain:execution",
+      "domain": "brain",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "R"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "brain:integration",
+      "domain": "brain",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 4,
+      "n": 4
+    },
+    {
+      "id": "brain:tool_registry",
+      "domain": "brain",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "I"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "brain:tool_code_writer",
+      "domain": "brain",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "S",
+        "R"
+      ],
+      "missing": [],
+      "covered": 4,
+      "n": 4
+    },
+    {
+      "id": "agents:router",
+      "domain": "agents",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "P"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "agents:plan_reviewer",
+      "domain": "agents",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "S",
+        "P"
+      ],
+      "missing": [],
+      "covered": 4,
+      "n": 4
+    },
+    {
+      "id": "agents:safety_guardian",
+      "domain": "agents",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "S"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "agents:fact_checker",
+      "domain": "agents",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "S"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "agents:completeness_checker",
+      "domain": "agents",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "P"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "agents:clinical_metrics",
+      "domain": "agents",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "I"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "agents:orchestrator",
+      "domain": "agents",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "S",
+        "A"
+      ],
+      "missing": [],
+      "covered": 4,
+      "n": 4
+    },
+    {
+      "id": "quality:gate",
+      "domain": "quality",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "S",
+        "A"
+      ],
+      "missing": [],
+      "covered": 4,
+      "n": 4
+    },
+    {
+      "id": "dose_recompute",
+      "domain": "tools_misc",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "tool_factory:plan_shapes",
+      "domain": "tools_misc",
+      "mutates": false,
+      "required": [
+        "F",
+        "E"
+      ],
+      "missing": [],
+      "covered": 2,
+      "n": 2
+    },
+    {
+      "id": "imaging:segmentation_alignment",
+      "domain": "tools_misc",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "I"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "report:facts",
+      "domain": "tools_misc",
+      "mutates": false,
+      "required": [
+        "F",
+        "E"
+      ],
+      "missing": [],
+      "covered": 2,
+      "n": 2
+    },
+    {
+      "id": "report:context",
+      "domain": "tools_misc",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "P"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "planning:pipeline",
+      "domain": "tools_misc",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "R"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "config:prompt_modules",
+      "domain": "tools_misc",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "S"
+      ],
+      "missing": [],
+      "covered": 3,
+      "n": 3
+    },
+    {
+      "id": "agent:facade",
+      "domain": "tools_misc",
+      "mutates": true,
+      "required": [
+        "F",
+        "E",
+        "S",
+        "A"
+      ],
+      "missing": [],
+      "covered": 4,
+      "n": 4
+    },
+    {
+      "id": "runtime:degenerate_input_robustness",
+      "domain": "runtime_boundary",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "R",
+        "A"
+      ],
+      "missing": [],
+      "covered": 6,
+      "n": 6
+    },
+    {
+      "id": "runtime:tool_invocation_boundary",
+      "domain": "runtime_boundary",
+      "mutates": false,
+      "required": [
+        "F",
+        "E",
+        "P",
+        "S",
+        "A"
+      ],
+      "missing": [],
+      "covered": 5,
+      "n": 5
+    }
+  ],
+  "bad_capability_refs": [],
+  "bad_evidence_refs": []
+}

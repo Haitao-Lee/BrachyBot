@@ -1,0 +1,47 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "zh",
+  "response_facts": {
+    "dose_current": false
+  },
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "effects",
+      "statement": "No GPU recompute; current explicit no-recompute and current run opt-in=false prevail."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "response",
+      "statement": "Report geometry-only evidence and dose stale/unknown, no invented improvement."
+    }
+  ],
+  "rules": [
+    {
+      "op": "equals",
+      "path": "geometry_revision",
+      "value": 8
+    }
+  ],
+  "scenario_id": "RUR-38-002",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "effects",
+      "statement": "No GPU recompute; current explicit no-recompute and current run opt-in=false prevail."
+    },
+    {
+      "kind": "response",
+      "statement": "Report geometry-only evidence and dose stale/unknown, no invented improvement."
+    }
+  ]
+}

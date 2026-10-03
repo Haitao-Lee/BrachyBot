@@ -1,0 +1,10 @@
+[
+  {
+    "event": "dose_failed",
+    "kind": "environment_event",
+    "payload": {
+      "code": "MODEL_UNAVAILABLE"
+    },
+    "trigger": "dose.accepted"
+  }
+]

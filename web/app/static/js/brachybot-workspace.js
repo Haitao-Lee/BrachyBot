@@ -43,6 +43,15 @@
     const backgroundRestoreRetryCounts = Object.create(null);
     let backgroundRestoreNoticeTimer = null;
     let hydrationHideTimer = null;
+    // Cold-storage activation can run for minutes. A dedicated elapsed-time
+    // ticker keeps the loading pill reassuring instead of looking frozen.
+    let caseActivationTimer = null;
+    let caseActivationStartedAt = 0;
+    let caseActivationSessionId = '';
+    // Cases whose cold-storage restore is already in flight. A second click on
+    // the same row must not re-open the confirm dialog and abort/restart the
+    // restore the user just approved.
+    const activatingSessionIds = new Set();
     let recoveryNoticeAutoHideTimer = null;
     // The server can be restarted while the browser tab remains open. In
     // that situation there is no page navigation to start the normal case
@@ -68,6 +77,14 @@
     const GY_VALUE_IDS = new Set(['inLowestEnergy', 'outHighestEnergy']);
     const WORKSPACE_REQUEST_TIMEOUT_MS = 15000;
     const WORKSPACE_RECOVERY_TIMEOUT_MS = 5000;
+    // Activating an archived case is a cold-storage restore: the server copies
+    // and checksum-verifies the case tree from NAS before it can answer, which
+    // routinely takes longer than the normal control-plane deadline. Aborting
+    // at 15 s tore down the loading notice and left the case looking
+    // un-activated even though the restore finished in the background. Cold
+    // activation therefore gets its own generous deadline that still honours an
+    // explicit transition abort (the user clicking another case).
+    const WORKSPACE_ACTIVATION_TIMEOUT_MS = 30 * 60 * 1000;
     let recoveryNoticeDismissKey = '';
 
     function workspaceNow() {
@@ -362,6 +379,20 @@
         const scopedSession = String(scope?.sessionId || '');
         const scopedRun = String(scope?.runId || '');
         const immediate = scope?.immediate === true;
+        // Any update other than the activation ticker clears the elapsed clock;
+        // showCaseActivationLoading re-enables it right after this returns.
+        const elapsedNode = document.getElementById('workspaceHydrationElapsed');
+        if (elapsedNode && !elapsedNode.hidden) {
+            elapsedNode.hidden = true;
+            elapsedNode.textContent = '';
+        }
+        // Any call that hides the shared pill ends an activation display; the
+        // elapsed-time ticker must stop with it or it would rewrite the message
+        // after the notice is gone.
+        if (!active && caseActivationTimer) {
+            clearInterval(caseActivationTimer);
+            caseActivationTimer = null;
+        }
         if (active && scopedSession
             && String(window.__workspaceRestoreCompletedSessionId || '') === scopedSession
             && scope?.allowAfterCompleted !== true) {
@@ -438,6 +469,84 @@
         );
         return true;
     };
+
+    function _activationElapsedLabel() {
+        const elapsed = Math.max(0, Math.round((Date.now() - caseActivationStartedAt) / 1000));
+        const minutes = Math.floor(elapsed / 60);
+        const seconds = String(elapsed % 60).padStart(2, '0');
+        return `${minutes}:${seconds}`;
+    }
+
+    function _caseActivationMessageText(title) {
+        const label = String(title || '').trim()
+            || (typeof window._t === 'function' ? window._t('该病例', 'this case') : 'this case');
+        return typeof window._t === 'function'
+            ? window._t(
+                `正在从低速存储恢复病例“${label}”，可能需要几分钟，请保持本页面打开…`,
+                `Restoring case "${label}" from cold storage. This can take a few minutes, so please keep this page open…`,
+            )
+            : `Restoring case "${label}" from cold storage. This can take a few minutes, so please keep this page open…`;
+    }
+
+    // The elapsed clock lives in its own `aria-hidden` node: it ticks every
+    // second, and re-writing the `aria-live` message text that often would
+    // flood a screen reader with announcements.
+    function _updateCaseActivationElapsed() {
+        const elapsed = document.getElementById('workspaceHydrationElapsed');
+        if (!elapsed) return;
+        elapsed.hidden = false;
+        elapsed.textContent = `(${_activationElapsedLabel()})`;
+    }
+
+    // Cold-storage activation is the one case transition that may legitimately
+    // block on multi-gigabyte NAS I/O. Reuse the non-blocking loading pill but
+    // state what is happening and tick an elapsed clock so the wait is legible.
+    window.showCaseActivationLoading = function showCaseActivationLoading(scope = null) {
+        const sessionId = String(scope?.sessionId || activeSessionId || '');
+        const title = String(scope?.title || sessions?.[sessionId]?.title || sessionId || '');
+        if (sessionId) activatingSessionIds.add(sessionId);
+        caseActivationSessionId = sessionId;
+        caseActivationStartedAt = Date.now();
+        if (caseActivationTimer) clearInterval(caseActivationTimer);
+        window.setWorkspaceHydrationState?.(true, _caseActivationMessageText(title), { sessionId, allowAfterCompleted: true });
+        const notice = document.getElementById('workspaceHydrationNotice');
+        if (notice) notice.dataset.activation = '1';
+        _updateCaseActivationElapsed();
+        caseActivationTimer = setInterval(_updateCaseActivationElapsed, 1000);
+        return true;
+    };
+
+    window.stopCaseActivationLoading = function stopCaseActivationLoading() {
+        if (caseActivationTimer) {
+            clearInterval(caseActivationTimer);
+            caseActivationTimer = null;
+        }
+        if (caseActivationSessionId) {
+            activatingSessionIds.delete(caseActivationSessionId);
+            caseActivationSessionId = '';
+        }
+        const notice = document.getElementById('workspaceHydrationNotice');
+        if (notice) delete notice.dataset.activation;
+        const elapsed = document.getElementById('workspaceHydrationElapsed');
+        if (elapsed) {
+            elapsed.hidden = true;
+            elapsed.textContent = '';
+        }
+    };
+
+    // Turn known server-side activation failures into a clear, actionable
+    // message instead of surfacing the raw backend string to a clinician.
+    function activationFailureMessage(data) {
+        const raw = String(data?.error || '').trim();
+        const zh = typeof window._i18nLang === 'string' && window._i18nLang === 'zh';
+        if (/missing from NAS|cold.storage|archive[^.]*missing/i.test(raw)) {
+            return zh
+                ? '冷存储中找不到该病例的恢复数据，无法激活。请联系管理员。'
+                : 'The archived data for this case could not be found in cold storage, so it cannot be activated. Please contact an administrator.';
+        }
+        if (raw) return raw;
+        return zh ? '无法激活该病例，请重试。' : 'Unable to activate this case, please retry.';
+    }
 
     function workspaceSnapshotHasClinicalResources(snapshot) {
         if (!snapshot || typeof snapshot !== 'object') return false;
@@ -5214,7 +5323,8 @@
 
     window.switchSession = async function switchSession(id) {
         document.getElementById('sessionSidebar')?.classList.remove('mobile-open');
-        if (id === activeSessionId && sessions[id]?.storageStatus !== 'archived') {
+        if (id === activeSessionId
+            && (sessions[id]?.storageStatus !== 'archived' || activatingSessionIds.has(id))) {
             return { success: true, session_id: id, unchanged: true };
         }
         if (!sessions[id]) return { success: false, error: 'The requested case does not exist.' };
@@ -5247,7 +5357,14 @@
             // The spinner is always the lower-right case-resource notice;
             // keep the immediate switch feedback and cold-start feedback
             // visually indistinguishable.
-            window.showCaseResourceLoading?.({ sessionId: id });
+            if (activateArchived) {
+                // A cold restore is the one transition that can block on NAS
+                // I/O for minutes, so name it and show elapsed time instead of
+                // the generic spinner.
+                window.showCaseActivationLoading?.({ sessionId: id, title: sessions[id]?.title || id });
+            } else {
+                window.showCaseResourceLoading?.({ sessionId: id });
+            }
             document.body.classList.add('workspace-hydrating');
             if (!(await prepareSessionChange())) {
                 cancelTransitionUi();
@@ -5297,6 +5414,7 @@
                 response = await workspaceFetch(
                     '/api/sessions/' + encodeURIComponent(id) + '/' + action,
                     { method: 'POST', signal: aborter.signal },
+                    activateArchived ? WORKSPACE_ACTIVATION_TIMEOUT_MS : WORKSPACE_REQUEST_TIMEOUT_MS,
                 );
             } catch (error) {
                 if (aborter.signal.aborted) return { success: false, replaced: true };
@@ -5304,6 +5422,7 @@
                 // paint the previous shell — the "jump back" was itself the
                 // bug the user reported.  The session list still shows the
                 // target as selected; the user can retry manually.
+                window.stopCaseActivationLoading?.();
                 cancelTransitionUi();
                 if (typeof showToast === 'function') {
                     const zhSwitch = typeof window._i18nLang === 'string' && window._i18nLang === 'zh';
@@ -5333,29 +5452,54 @@
                     return { success: false, cancelled: true };
                 }
                 activateArchived = true;
-                response = await workspaceFetch(
-                    '/api/sessions/' + encodeURIComponent(id) + '/activate',
-                    { method: 'POST', signal: aborter.signal },
-                );
-                data = await response.json();
+                window.showCaseActivationLoading?.({ sessionId: id, title: sessions[id]?.title || id });
+                try {
+                    response = await workspaceFetch(
+                        '/api/sessions/' + encodeURIComponent(id) + '/activate',
+                        { method: 'POST', signal: aborter.signal },
+                        WORKSPACE_ACTIVATION_TIMEOUT_MS,
+                    );
+                    data = await response.json();
+                } catch (error) {
+                    if (aborter.signal.aborted) return { success: false, replaced: true };
+                    window.stopCaseActivationLoading?.();
+                    cancelTransitionUi();
+                    if (typeof showToast === 'function') {
+                        const zhSwitch = typeof window._i18nLang === 'string' && window._i18nLang === 'zh';
+                        showToast(
+                            zhSwitch
+                                ? `激活失败：${error?.message || '冷存储恢复超时或服务错误，请重试'}`
+                                : `Activation failed: ${error?.message || 'cold-storage restore timed out or the server failed, please retry'}`,
+                            'error',
+                        );
+                    }
+                    throw error;
+                }
             }
             if (!response.ok) {
                 // Stay on the clicked session and surface the error instead
                 // of silently jumping back to the previous case.
+                window.stopCaseActivationLoading?.();
                 cancelTransitionUi();
                 if (typeof showToast === 'function') {
                     const zhSwitch = typeof window._i18nLang === 'string' && window._i18nLang === 'zh';
+                    const failure = activateArchived
+                        ? activationFailureMessage(data)
+                        : (data.error || (zhSwitch ? '无法打开病例，请重试' : 'unable to open case, please retry'));
                     showToast(
                         zhSwitch
-                            ? `切换失败：${data.error || '无法打开病例，请重试'}`
-                            : `Switch failed: ${data.error || 'unable to open case, please retry'}`,
+                            ? `${activateArchived ? '激活失败' : '切换失败'}：${failure}`
+                            : `${activateArchived ? 'Activation failed' : 'Switch failed'}: ${failure}`,
                         'error',
                     );
                 }
                 throw new Error(data.error || 'Unable to open case');
             }
-            // Server confirmed the switch. Keep the optimistic shell and
-            // replace it with the authoritative snapshot below.
+            // Server confirmed the switch. Stop this case's activation ticker
+            // before the standard restore notice takes over the shared pill.
+            window.stopCaseActivationLoading?.();
+            // Keep the optimistic shell and replace it with the authoritative
+            // snapshot below.
             activeSessionId = data.active_session_id;
             if (data.session && sessions[id]) {
                 const fresh = sessionStateFromPayload(data.session);

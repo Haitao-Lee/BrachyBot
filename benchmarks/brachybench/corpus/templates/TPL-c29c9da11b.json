@@ -1,0 +1,15 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "oar_segmentation",
+  "expectation": null,
+  "facet": "oar_segmentation",
+  "gold_status": "draft",
+  "n_source_intents": 3,
+  "representative_text": "Please segment the OARs for a patient with head and neck cancer receiving interstitial brachytherapy of the buccal mucosa. The tumor is in the right cheek. Segment the parotid glands (bilateral), mandible, spinal cord, and the muscles of mastication on the left side.",
+  "source_refs": [
+    "INT-2917adb66d55",
+    "INT-67498b4e7d26",
+    "INT-a1fb2bf6b182"
+  ],
+  "template_id": "TPL-c29c9da11b"
+}

@@ -9568,7 +9568,7 @@ function setDoseOverlayOpacity(val) {
     const treeSlider = document.querySelector('[data-item="dose_overlay"] .opacity-slider');
     if (treeSlider) treeSlider.value = val;
     if (typeof _scheduleDataTreeSave === 'function') {
-        _scheduleDataTreeSave('viewer.opacity:dose_overlay');
+        _scheduleDataTreeSave('viewer.opacity:dose_overlay', 'dose_overlay');
     }
 }
 

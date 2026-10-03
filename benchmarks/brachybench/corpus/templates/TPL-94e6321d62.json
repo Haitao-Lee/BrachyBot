@@ -1,0 +1,18 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "input_variations_all",
+  "expectation": null,
+  "facet": "input_variations_all",
+  "gold_status": "draft",
+  "n_source_intents": 6,
+  "representative_text": "Tell me the I-125 prescription dose",
+  "source_refs": [
+    "INT-30aa7ba08344",
+    "INT-5d51ba4c8dc6",
+    "INT-7a2453aa4ec9",
+    "INT-8219dd97e3ab",
+    "INT-cd7bb7683425",
+    "INT-eec08ac4c806"
+  ],
+  "template_id": "TPL-94e6321d62"
+}

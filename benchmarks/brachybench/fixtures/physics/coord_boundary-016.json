@@ -1,0 +1,49 @@
+{
+  "config": {
+    "direction": [
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1
+    ],
+    "kind": "identity",
+    "mechanism": "coord/identity",
+    "origin": [
+      -54.42448615416592,
+      82.87628357108849,
+      -98.33784917243231
+    ],
+    "samples": [
+      [
+        5.931048342233813,
+        5.543595436359929,
+        3.742856304116204
+      ],
+      [
+        6.24319472132199,
+        -0.3907492113871047,
+        -4.391251220201282
+      ]
+    ],
+    "spacing": [
+      1.6082610883070259,
+      4.637815429325047,
+      3.5509348682274
+    ]
+  },
+  "expected": {
+    "evidence_gap_codes": [],
+    "score": 1.0,
+    "verdict": "pass",
+    "violation_codes": []
+  },
+  "family": "coord_boundary",
+  "id": "coord_boundary-016",
+  "initial_state_hash": "sha256:f468c9967fdd45514d2f2b039bf788f4ee8f753d1f14463ac2d2eaf117a2ebdc",
+  "seed": 20260929
+}

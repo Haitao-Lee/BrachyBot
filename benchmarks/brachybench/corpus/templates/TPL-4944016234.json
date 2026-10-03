@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "error_recovery",
+  "expectation": null,
+  "facet": "error_recovery",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Evaluate dose without dose distribution",
+  "source_refs": [
+    "INT-af718ef6ccdc",
+    "INT-c752463b200e"
+  ],
+  "template_id": "TPL-4944016234"
+}

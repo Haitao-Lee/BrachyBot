@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "dose_evaluation",
+  "expectation": null,
+  "facet": "dose_evaluation",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "For a vaginal cuff brachytherapy plan using a tandem applicator for a patient with vaginal melanoma, evaluate the dose distribution. The prescription is 3.5 Gy x 10 fractions. The vaginal mucosal Dmax is 5.2 Gy per fraction. The bladder D2cc is 3.0 Gy per fraction and rectum D2cc is 2.8 Gy per fraction. Assess plan quality for this radiosensitive tumor.",
+  "source_refs": [
+    "INT-35e945f71e8e",
+    "INT-f3734c1f6903"
+  ],
+  "template_id": "TPL-c94eb23fc3"
+}

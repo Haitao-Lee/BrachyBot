@@ -1,0 +1,157 @@
+{
+  "files": [
+    {
+      "migrated": "fixtures/physics_contract_v2/dose_quantisation-000.json",
+      "migrated_sha256": "d605493fe3f72c257fe12a59e1ef26d03fc0a8391286789b849bcaad8da8cd4a",
+      "source": "fixtures/physics/dose_quantisation-000.json",
+      "source_sha256": "0fdf313e121f9bb63352a664439155137ba9eee1c91e6d38d8c57ab722db7548"
+    },
+    {
+      "migrated": "fixtures/physics_contract_v2/dose_quantisation-001.json",
+      "migrated_sha256": "75474e3d2edf0069f1c045a4e4fdc66d8fa1066635cd2a09a7f1bdf9d2047caa",
+      "source": "fixtures/physics/dose_quantisation-001.json",
+      "source_sha256": "1187dfc48a7b19a2c97a0a8430c0d3b4e9405dd9d91b779dfed8ce50f60b619a"
+    },
+    {
+      "migrated": "fixtures/physics_contract_v2/dose_quantisation-002.json",
+      "migrated_sha256": "223de31cf124d147274c65670b670e127ebe0728177668c3d5df1e2b56fc58c6",
+      "source": "fixtures/physics/dose_quantisation-002.json",
+      "source_sha256": "5f4657541f9c7122908cee75ee62c6a8bc4f1529f8027f3617cff6d611b2be20"
+    },
+    {
+      "migrated": "fixtures/physics_contract_v2/dose_quantisation-003.json",
+      "migrated_sha256": "14d19a06e9397c01229166e707085c4ac380f27aaf62c3302456ec64b73375e7",
+      "source": "fixtures/physics/dose_quantisation-003.json",
+      "source_sha256": "024bf2e979a1cd49946514c0511c6760ec48141cd2ef8ec2adc96cb91f803d19"
+    },
+    {
+      "migrated": "fixtures/physics_contract_v2/dose_quantisation-004.json",
+      "migrated_sha256": "58f91a8fba6cf478c38cfaa6fc86c106bcaf09fb788ddba2f68faaa1d9514d69",
+      "source": "fixtures/physics/dose_quantisation-004.json",
+      "source_sha256": "e8a242804ac07bbf55ff4096d235508e1b182a41af6a74de6a5f1b860fe496e5"
+    },
+    {
+      "migrated": "fixtures/physics_contract_v2/dose_quantisation-005.json",
+      "migrated_sha256": "5e809993f929f627816f6a80c9f05fdd87494c38ad403fa4d181efe9e3a7eaee",
+      "source": "fixtures/physics/dose_quantisation-005.json",
+      "source_sha256": "1462748a28d98b6202a6b7d1acb703c4e6b626860932f8391b5a817c77cb5499"
+    },
+    {
+      "migrated": "fixtures/physics_contract_v2/dose_quantisation-006.json",
+      "migrated_sha256": "a490b6e5a7a1824c00d506ac2c8b689d4b8c40ad2300af0f1560ad6a9767bcd9",
+      "source": "fixtures/physics/dose_quantisation-006.json",
+      "source_sha256": "9d960e310ecbaae0246be13098b491a27b80b3fb2ebfd1a595077783fe6d5414"
+    },
+    {
+      "migrated": "fixtures/physics_contract_v2/dose_quantisation-007.json",
+      "migrated_sha256": "04e6058df45b9701cd21904185a2aeb32a9c8c05bbf730e3d2dcd2f5f360b727",
+      "source": "fixtures/physics/dose_quantisation-007.json",
+      "source_sha256": "4a61728e07fdeea7a737a97d8c4c0288ce64d43bbdf7007759b912baf62536a0"
+    },
+    {
+      "migrated": "fixtures/physics_contract_v2/dose_quantisation-008.json",
+      "migrated_sha256": "3a77c76240fe60899e9412dcb1e1969a101fdaf64a81147c5b9db9e848fad30a",
+      "source": "fixtures/physics/dose_quantisation-008.json",
+      "source_sha256": "136e6534fa75620dd6ba21ecea400c57670bacf7cde6f7e5807f334da616e9a5"
+    },
+    {
+      "migrated": "fixtures/physics_contract_v2/dose_quantisation-009.json",
+      "migrated_sha256": "70aa4c7d017644557a8efd39a1baba081b327d2d9dd1391279c33a2a90fb307c",
+      "source": "fixtures/physics/dose_quantisation-009.json",
+      "source_sha256": "43eff1b79d9e75fdd624e0f6d63ff41ff7b012def577372329094fa27f5fffad"
+    },
+    {
+      "migrated": "fixtures/physics_contract_v2/dose_quantisation-010.json",
+      "migrated_sha256": "6809a6274e410750542bc719ee65f0f364a3224a56402e6ebac08b2759b6fb98",
+      "source": "fixtures/physics/dose_quantisation-010.json",
+      "source_sha256": "374fa9929c1b5d8e1bd3f7e23a488e2ee8c9b4d79607eead3e1316849bceed64"
+    },
+    {
+      "migrated": "fixtures/physics_contract_v2/dose_quantisation-011.json",
+      "migrated_sha256": "91779bf087631848d683d72bc5db0e218c2131c8de90bc0ec13457f83efa570e",
+      "source": "fixtures/physics/dose_quantisation-011.json",
+      "source_sha256": "40be81f770c952a39d9508cd2676093ec683afefbf4541db4e9597b889059b54"
+    },
+    {
+      "migrated": "fixtures/physics_contract_v2/dose_quantisation-012.json",
+      "migrated_sha256": "a47bf310376a203750fcd8026c1081192b4cc6f65a8cd568144c340684dff776",
+      "source": "fixtures/physics/dose_quantisation-012.json",
+      "source_sha256": "ae88c0792d75d352bb47937be90f944ec8f327331e2e423abca4ec48a74b9518"
+    },
+    {
+      "migrated": "fixtures/physics_contract_v2/dose_quantisation-013.json",
+      "migrated_sha256": "5fa1797c8dea365fb1b083deb200f56798d297932af5196aec06f2e2313c4d39",
+      "source": "fixtures/physics/dose_quantisation-013.json",
+      "source_sha256": "80f0ed2b12eaa5ced65600b667db115158e5ab4f0cfc20518b2548c30981605c"
+    },
+    {
+      "migrated": "fixtures/physics_contract_v2/dose_quantisation-014.json",
+      "migrated_sha256": "a8ea926af0ee529a304901ee0f95f2d3f4f8efa2915e22c67fd2360234479409",
+      "source": "fixtures/physics/dose_quantisation-014.json",
+      "source_sha256": "6727af4b65f7dc16280432cf52584445b8e676ea0f3199dd0a8d31a91d364dc7"
+    },
+    {
+      "migrated": "fixtures/physics_contract_v2/dose_quantisation-015.json",
+      "migrated_sha256": "dd5fd3fad3e0b86b54be8dd7f7ee92a1589906f733415923b78375f4ae88bb0e",
+      "source": "fixtures/physics/dose_quantisation-015.json",
+      "source_sha256": "a69d46b93dc823e629f1ef65a6d32489b9338037ad6996f80eae21589e290cc0"
+    },
+    {
+      "migrated": "fixtures/physics_contract_v2/dose_quantisation-016.json",
+      "migrated_sha256": "b5fe6cc573b2b16726bb1bc2b10792917d43cd533bbf2dc69a28972c3da380ba",
+      "source": "fixtures/physics/dose_quantisation-016.json",
+      "source_sha256": "3d47c7735c5f4f83f527307b797a8fab2079cd180af708fd7d4c5bae197698ff"
+    },
+    {
+      "migrated": "fixtures/physics_contract_v2/dose_quantisation-017.json",
+      "migrated_sha256": "9113c5d323f4778ce2654355115e3b9f8942de58a5f186d755889dffb87206a2",
+      "source": "fixtures/physics/dose_quantisation-017.json",
+      "source_sha256": "59049f5489c8c9159ca93652b91b3b52c74cd357fa1f1e0f8d2888b4463540da"
+    },
+    {
+      "migrated": "fixtures/physics_contract_v2/dose_quantisation-018.json",
+      "migrated_sha256": "4141af0594c6916686888c4a74173f2ba1ec6705bdffc12510e1d4db44f0639b",
+      "source": "fixtures/physics/dose_quantisation-018.json",
+      "source_sha256": "f62b06d4d15d2fc688e957beb83143194aff33ce7d37ad2a47457784d9d0b1e5"
+    },
+    {
+      "migrated": "fixtures/physics_contract_v2/dose_quantisation-019.json",
+      "migrated_sha256": "a21f64f091d5c7d28522a4e3af7ac0fbdd8a229996a0226cc48f66b408a7a3b0",
+      "source": "fixtures/physics/dose_quantisation-019.json",
+      "source_sha256": "959f9254a263afab5c49086fe9c4045e2012e88ad00fc6e400bb1fc38d8a4d0b"
+    },
+    {
+      "migrated": "fixtures/physics_contract_v2/dose_quantisation-020.json",
+      "migrated_sha256": "ab219909fb517747336ee0804afa82512c2988fce00bc75e3e27b2ffb0c15905",
+      "source": "fixtures/physics/dose_quantisation-020.json",
+      "source_sha256": "ed51fea82c633a69cf7f4b607c4fac934b817baa47702cc30aa2ff2e69caceae"
+    },
+    {
+      "migrated": "fixtures/physics_contract_v2/dose_quantisation-021.json",
+      "migrated_sha256": "2c26ad79f42d853d3121e788ecc806d3226dea8f418453743e484bd273fb4648",
+      "source": "fixtures/physics/dose_quantisation-021.json",
+      "source_sha256": "658d97164362ddc5bb6b4167e2fb561559cc8c11f4603d3fbf1679394d5241a3"
+    },
+    {
+      "migrated": "fixtures/physics_contract_v2/dose_quantisation-022.json",
+      "migrated_sha256": "85c46f33a4e96432fe47ea52bb12518c514ecd410a39529d52b9d0289dbd9a19",
+      "source": "fixtures/physics/dose_quantisation-022.json",
+      "source_sha256": "3434d8b46b9d739c42b2dfb276951ffd5ed745364728314c7b347538614aa94a"
+    },
+    {
+      "migrated": "fixtures/physics_contract_v2/dose_quantisation-023.json",
+      "migrated_sha256": "b9b9ef2577ed49eb7acd01e3989c42616d6c7f0fa5382e689bf705d8bc9ab34c",
+      "source": "fixtures/physics/dose_quantisation-023.json",
+      "source_sha256": "58574f12cb0da0f8734a41a33be61cc31efb8cc92318842040946156cef7fe0e"
+    },
+    {
+      "migrated": "fixtures/physics_contract_v2/dose_quantisation-024.json",
+      "migrated_sha256": "12059d8c6a84e1a23af416800b5e0239c64a24edd67305d6d3ed8ddba4d81d38",
+      "source": "fixtures/physics/dose_quantisation-024.json",
+      "source_sha256": "381bda702de7e81895a9dfd9cef285a1446f5c59f44a0cd2a8451069caf1fd81"
+    }
+  ],
+  "labels_regenerated_from_checker": false,
+  "schema_version": 2,
+  "scope": "synthetic_component_only"
+}

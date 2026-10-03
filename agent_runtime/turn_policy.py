@@ -226,11 +226,12 @@ def is_planning_reexecution_request(message: str) -> bool:
         return False
     explicit = bool(re.search(
         # Keep the planning verb adjacent to the re-execution verb. A loose
-        # gap here misclassified "重新计算当前规划方案的 DVH" as re-planning
-        # simply because the noun "规划方案" appeared later in the sentence.
-        # A single qualifier may sit before the plan noun ("重新执行手术规划",
-        # "重做治疗计划"); without it the phrase fell through to the open
-        # semantic router, where the word "手术" steered the model into
+        # gap here misclassified "recompute the DVH of the current plan" as
+        # re-planning simply because the noun "plan" appeared later in the
+        # sentence.  A single qualifier may sit before the plan noun
+        # ("re-execute the surgical plan", "redo the treatment plan");
+        # without it the phrase fell through to the open semantic router,
+        # where the word "surgical" steered the model into
         # surgical_guide instead of the planning pipeline.
         r"(?:\u91cd\u65b0|\u518d\u6b21|\u518d|\u91cd\u505a|\u91cd\u8dd1)"
         r"(?:\u6267\u884c|\u8fdb\u884c|\u5f00\u59cb|\u505a)?\s*"
@@ -381,9 +382,9 @@ def _is_canonical_execution_command(message: str, *, operation: str) -> bool:
         return True
 
     if operation == "segmentation":
-        # A bare imperative such as "segment the liver" or "分割肝脏" is
-        # itself explicit. Noun phrases such as "CTV segmentation method"
-        # do not match these command-position forms.
+        # A bare imperative such as "segment the liver" or its Chinese
+        # equivalent is itself explicit. Noun phrases such as "CTV
+        # segmentation method" do not match these command-position forms.
         return bool(
             re.match(r"^(?:please\s+)?(?:segment|delineate|outline|extract)\b", text)
             or re.match(r"^(?:\u8bf7|\u5e2e\u6211|\u73b0\u5728)?(?:\u5206\u5272|\u52fe\u753b|\u52fe\u52d2|\u63d0\u53d6)", text)
@@ -427,9 +428,10 @@ def _is_location_question(message: str) -> bool:
         text,
         flags=re.IGNORECASE,
     ))
-    # ``位置``/``定位`` alone can describe an edit (for example, "调整针道
-    # 位置"). Treat them as a question only when the sentence is explicitly
-    # interrogative; direct where/find forms above are already unambiguous.
+    # ``position``/``locate`` alone can describe an edit (for example,
+    # "adjust the needle position"). Treat them as a question only when the
+    # sentence is explicitly interrogative; direct where/find forms above are
+    # already unambiguous.
     positional_question = bool(re.search(
         r"(?:位置|定位)", text,
     )) and bool(re.search(
@@ -479,7 +481,7 @@ def is_ui_control_location_question(message: str) -> bool:
         "data tree", "数据树", "3d", "3-d", "三维", "2d", "2-d", "二维",
         "reconstruct", "reconstruction", "重建", "放大", "缩放", "全屏",
     ))
-    # ``哪个按钮/which button`` is already an interface-location request
+    # ``which button`` is already an interface-location request
     # even when the user has not named a panel or viewer yet.  Let the real
     # inspector discover the control instead of guessing one from prose.
     generic_button_question = _contains_any(text, (
@@ -600,10 +602,10 @@ def _visual_target_from_text(message: str) -> Optional[str]:
     """Find a live visual resource family from target words alone.
 
     ``resolve_session_content_target`` intentionally requires presentation
-    wording and therefore returns ``None`` for a phrase such as ``圈出哪个是
-    导板``.  Annotation requests need the same stable target resolution while
-    retaining the content resolver's conservative behaviour for ordinary
-    conversation.
+    wording and therefore returns ``None`` for a phrase such as "circle which
+    one is the guide".  Annotation requests need the same stable target
+    resolution while retaining the content resolver's conservative behaviour
+    for ordinary conversation.
     """
     targets = _visual_targets_from_text(message)
     return targets[0] if targets else None
@@ -612,8 +614,8 @@ def _visual_target_from_text(message: str) -> Optional[str]:
 def _recent_user_visual_target(conversation: Optional[Iterable[object]], *, skip_surface: bool = False) -> Optional[str]:
     """Resolve the nearest explicit visual target from recent user turns.
 
-    A short, user-only context window lets ``截图给我在哪里`` follow a
-    previous ``导板`` question without allowing an assistant fallback, tool
+    A short, user-only context window lets "screenshot where it is" follow a
+    previous "guide" question without allowing an assistant fallback, tool
     output, or an old unrelated case to steer the new request.  This is
     context resolution, not a canned answer.
     """
@@ -644,9 +646,10 @@ def _recent_user_visual_target(conversation: Optional[Iterable[object]], *, skip
 def _has_explicit_guide_generation_command(message: str) -> bool:
     """Return whether guide generation is explicitly requested as an action.
 
-    The negative lookahead after the Chinese verb is important: ``生成的手术
-    导板在哪里`` describes an already generated object and must not be
-    rewritten as a generation command merely because it contains ``生成``.
+    The negative lookahead after the Chinese verb is important: "where is the
+    generated surgical guide" describes an already generated object and must
+    not be rewritten as a generation command merely because it contains the
+    word "generate".
     """
     text = re.sub(r"\s+", " ", str(message or "").strip().lower())
     if not text:
@@ -671,10 +674,11 @@ def _has_explicit_guide_generation_command(message: str) -> bool:
 def _is_guide_generation_help_query(message: str) -> bool:
     """Return whether a guide location phrase asks where to create one.
 
-    This prevents ``手术导板在哪里生成`` from becoming either a screenshot
-    of a nonexistent object or an unintended clinical mutation.  A phrase
-    that explicitly refers to a completed result (``已生成的手术导板在哪里``)
-    remains a location query and is handled by the visual evidence route.
+    This prevents "where can a surgical guide be generated" from becoming
+    either a screenshot of a nonexistent object or an unintended clinical
+    mutation.  A phrase that explicitly refers to a completed result ("where
+    is the already generated surgical guide") remains a location query and is
+    handled by the visual evidence route.
     """
     text = re.sub(r"\s+", " ", str(message or "").strip().lower())
     if not text or not _is_location_question(text):
@@ -697,7 +701,7 @@ def _is_guide_generation_help_query(message: str) -> bool:
     )):
         return False
     # The location-to-generation ordering is the decisive signal for a help
-    # question ("where can I generate..." / "在哪里生成..."). Check it
+    # question ("where can I generate a guide..."). Check it
     # before the generic imperative matcher below, because the same sentence
     # necessarily contains the words "generate ... guide".
     if re.search(
@@ -749,11 +753,11 @@ def _is_current_case_dose_query(message: str) -> bool:
     )
 
     # Distinguish a mutating imperative from an attributive description such
-    # as "当前计算的剂量结果".  Substring matching on "计算" incorrectly
-    # turned a read into a re-calculation and sent it through the expensive
-    # tool/LLM/review chain.  The mutation grammar requires an action frame
-    # (request/command verb + dose object); calculated/computed result nouns
-    # remain read-only.
+    # as "the currently computed dose result".  Substring matching on
+    # "compute" incorrectly turned a read into a re-calculation and sent it
+    # through the expensive tool/LLM/review chain.  The mutation grammar
+    # requires an action frame (request/command verb + dose object);
+    # calculated/computed result nouns remain read-only.
     calculated_result_noun = bool(re.search(
         r"(?:计算|评估|计算得到|评估得到)(?:的|出来的|得到的)"
         r"(?:剂量|剂量分布|剂量结果|剂量指标|dose|dvh)",
@@ -813,8 +817,8 @@ def is_current_case_dose_recompute_request(message: str) -> bool:
         return False
 
     # A second mutating operation belongs to semantic planning. Verification
-    # wording in the same clause ("重算并核对") is allowed because the dose
-    # tool reports a before/after consistency result itself.
+    # wording in the same clause ("recompute and verify") is allowed because
+    # the dose tool reports a before/after consistency result itself.
     if _looks_like_compound_action(text) and not _contains_any(text, (
         "验证", "校验", "核对", "核验", "一致", "compare", "verify", "consistent",
     )):
@@ -834,8 +838,8 @@ def is_current_case_dose_recompute_request(message: str) -> bool:
         return False
 
     # A computed-result noun is a read, not a recalculation. This protects
-    # "现在计算的剂量结果是多少" from becoming a mutation merely because
-    # it contains the verb "计算".
+    # "what is the currently computed dose result" from becoming a mutation
+    # merely because it contains the verb "compute".
     if _is_current_case_dose_query(text):
         return False
 
@@ -853,12 +857,13 @@ def is_current_case_dose_recompute_request(message: str) -> bool:
 def is_current_planning_provenance_query(message: str) -> bool:
     """Identify a read-only question about which Planning produced a result.
 
-    A follow-up such as ``\u672c\u6b21\u8ba1\u7b97\u662f\u4ee5\u54ea\u6b21\u89c4\u5212\u7ed3\u679c\u4e3a\u4f9d\u636e\u7684\u5462`` is neither a
-    new planning command nor a generic clinical-knowledge question. It asks
-    for provenance of an already completed operation and must be answered from
-    the active Session's persisted Planning metadata. Keeping this predicate
-    separate from the dose read/recompute predicates prevents the word
-    ``\u89c4\u5212`` or ``\u8ba1\u7b97`` from accidentally starting an expensive workflow.
+    A follow-up such as "which planning result was this calculation based
+    on?" is neither a new planning command nor a generic clinical-knowledge
+    question. It asks for provenance of an already completed operation and must
+    be answered from the active Session's persisted Planning metadata. Keeping
+    this predicate separate from the dose read/recompute predicates prevents
+    the word "planning" or "calculation" from accidentally starting an
+    expensive workflow.
     """
     text = re.sub(r"\s+", " ", str(message or "").strip().lower())
     if not text or not _is_interrogative(text):
@@ -883,8 +888,9 @@ def is_current_planning_provenance_query(message: str) -> bool:
     has_planning_object = _contains_any(text, (
         "planning", "plan", "treatment plan", "dose plan", "planning result",
         "\u89c4\u5212", "\u8ba1\u5212", "\u65b9\u6848",
-        # Method/algorithm wording is a planning object too: "刚刚用的是
-        # RL还是规则法" names no plan noun but is still a provenance question.
+        # Method/algorithm wording is a planning object too: "was the method
+        # just used RL or rule-based?" names no plan noun but is still a
+        # provenance question.
         "algorithm", "method", "mode", "approach", "optimizer",
         "\u7b97\u6cd5", "\u6a21\u5f0f", "\u65b9\u5f0f", "\u65b9\u6cd5",
         "\u6280\u672f\u8def\u7ebf",
@@ -908,10 +914,10 @@ def is_current_planning_provenance_query(message: str) -> bool:
         text,
         flags=re.IGNORECASE,
     ))
-    # Method/algorithm provenance: "是使用的算法是基于RL的还是规则-based的",
-    # "用的什么算法", "which method produced this plan".  The ``是…还是…``
-    # choice frame itself is the relation: the user is asking which of two
-    # execution methods produced the result.
+    # Method/algorithm provenance: "is the algorithm based on RL or
+    # rule-based?", "which algorithm was used", "which method produced this
+    # plan".  The A-or-B choice frame itself is the relation: the user is
+    # asking which of two execution methods produced the result.
     method_relation = bool(re.search(
         r"(?:what|which|how)\s+(?:\w+\s+){0,3}"
         r"(?:method|algorithm|mode|approach|optimizer)|"
@@ -955,7 +961,7 @@ def is_current_planning_assessment_query(message: str) -> bool:
     text = re.sub(r"\s+", " ", str(message or "").strip().lower())
     if not text:
         return False
-    # Polite requests such as "评价一下当前规划结果" are read-only
+    # Polite requests such as "evaluate the current planning result" are read-only
     # assessment turns even without a question mark. Keep them on the same
     # grounded local-read path as explicit questions instead of treating them
     # as a planning command.
@@ -1026,7 +1032,7 @@ def is_case_state_question(message: str) -> bool:
         return False
     # The generic planning-action detector intentionally accepts noun phrases
     # (for dependency enforcement), so it is too broad for this read boundary:
-    # ``为什么规划结果...`` contains two planning terms but is not a command.
+    # "why is the planning result..." contains two planning terms but is not a command.
     # Only an unambiguous command-position form is excluded here; less clear
     # cases remain semantic questions and are answered from persisted facts.
     if _is_canonical_execution_command(text, operation="planning"):
@@ -1213,7 +1219,8 @@ def unambiguous_report_generation_request(message: str) -> bool:
 
     A report noun with a generation/update verb names the report as the
     protected object, even when that noun carries a domain qualifier such as
-    ``手术报告``, ``剂量报告`` or ``分析报告``.  The structural protection is
+    "surgical report", "dose report" or "analysis report".  The structural
+    protection is
     "the report is the object of the command verb": qualifier content does not
     change the requested action.  Negation, correction, conditions, questions,
     quoted text and compound goals are not unambiguous and must stay on the
@@ -1260,7 +1267,8 @@ def is_surgical_guide_generation_request(message: str) -> bool:
         return False
 
     # A location question is a read-only request.  In particular, the noun
-    # phrase ``生成的手术导板在哪里`` contains the character ``生成`` but asks
+    # phrase "where is the generated surgical guide" contains the word
+    # "generate" but asks
     # for the already persisted artifact, so it must never authorize a new
     # guide operation.  Generation-help questions are also non-mutating; the
     # primary LLM can explain the UI/workflow without starting a run.
@@ -1754,8 +1762,9 @@ def resolve_session_visual_location_target(
 
     This is deliberately separate from ``resolve_session_content_target``:
     persisted report figures/attachments are read directly, while a question
-    such as ``请问手术导板在哪里`` requires fresh, grounded Viewer/Data Tree
-    evidence.  The returned value is a resource capability, not a canned
+    such as "where is the surgical guide?" requires fresh, grounded
+    Viewer/Data Tree evidence.  The returned value is a resource capability,
+    not a canned
     answer; the browser validates the stable identity, visibility, freshness,
     and current Session before capturing or annotating anything.
     """
@@ -1998,8 +2007,9 @@ def _classify_local_candidate(
     # plan is built from artifact_status instead of asking the model to
     # re-derive it.  Only an affirmative, unconditional aggregate write
     # qualifies; questions/negations/conditions never reach this point.  It is
-    # resolved before the object-specific fast paths so "全部更新，不含导板"
-    # is a scoped aggregate, not a bare guide-generation command.
+    # resolved before the object-specific fast paths so "update everything,
+    # excluding the guide" is a scoped aggregate, not a bare guide-generation
+    # command.
     if _request_parse.is_downstream_update_request(text):
         return LocalTurnPolicy(
             "downstream_update",
@@ -2035,8 +2045,9 @@ def _classify_local_candidate(
         )
 
     # This is a read-only provenance lookup. Resolve it before re-plan and
-    # compound-action detection so historical wording such as "这次重新计算
-    # 是基于哪次规划" cannot be interpreted as permission to run planning.
+    # compound-action detection so historical wording such as "which planning
+    # was this recalculation based on" cannot be interpreted as permission to
+    # run planning.
     if is_current_planning_provenance_query(text):
         return LocalTurnPolicy(
             "planning_provenance_query",
@@ -2073,7 +2084,7 @@ def _classify_local_candidate(
             frozenset(),
         )
 
-    # "分析/评估/解读 <artifact>" is a read-only discourse act over an
+    # "analyze/assess/interpret <artifact>" is a read-only discourse act over an
     # already-produced artifact (guide characteristics, tumor situation, dose
     # shape, ...).  It must never reach the open tool loop where a provider can
     # mistake it for a regeneration command: the grounded analysis path answers
@@ -2166,8 +2177,9 @@ def _classify_local_candidate(
 
     # Object + action priority: a report noun is the protected object of a
     # generation/update command. Resolve it before the guide, Viewer, and
-    # dose shortcuts so a domain qualifier such as "手术" cannot be read as
-    # "手术导板" and so "剂量报告" is a report, not a dose recalculation.
+    # dose shortcuts so a domain qualifier such as "surgical" cannot be read
+    # as "surgical guide" and so "dose report" is a report, not a dose
+    # recalculation.
     # Negation, correction and compound goals were already delegated above,
     # so reaching here means the whole turn is a positive report command.
     if is_report_generation_request(text):
@@ -2217,7 +2229,7 @@ def _classify_local_candidate(
 
     # Recomputing current Dose/DVH is a focused stateful operation. Resolve
     # it before the interrogative branch because users often append a
-    # consistency check ("...是否一致"), which otherwise looks like a
+    # consistency check ("...is consistent"), which otherwise looks like a
     # knowledge question. The grant is scoped to the high-level tool only.
     if is_current_case_dose_recompute_request(text):
         return LocalTurnPolicy(
@@ -2254,7 +2266,7 @@ def _classify_local_candidate(
     # screenshot plan; the browser will resolve the current stable identity
     # and the hidden multimodal child will explain only what is actually
     # visible. This branch precedes guide generation and generic interrogative
-    # handling so ``手术导板在哪里`` cannot become
+    # handling so "where is the surgical guide" cannot become
     # ``surgical_guide(action=generate)`` while image-grounded tumor
     # measurement questions above retain their analytical route.
     visual_location_request = resolve_session_visual_location_request(
@@ -2381,8 +2393,9 @@ def _classify_local_candidate(
     # Imperative UI mutations are resolved against the live capability
     # catalogue after domain-specific clinical/report actions have had the
     # first opportunity to claim their own workflow.  This ordering is
-    # intentional: ``重新生成报告`` remains report generation, while
-    # ``点击报告模板`` or ``将 OAR 设为半透明`` is handled by the generic
+    # intentional: "regenerate the report" remains report generation, while
+    # "click the report template" or "set OAR to translucent" is handled by
+    # the generic
     # capability-driven UI route.  The resolver uses mounted control/action
     # metadata and semantic properties, not a sentence whitelist.
     ui_operation = resolve_ui_operation_request(text, ui_state=ui_state)
@@ -2500,7 +2513,7 @@ def _classify_local_candidate(
         "select", "slider", "tab", "按钮", "控件", "菜单", "表单", "输入框", "选择器", "滑块", "标签页",
         # Monitor/training-mode control is a UI command (start/stop live
         # planning monitoring), not a clinical execution or knowledge query.
-        # Without these keywords a request like "请停止monitor" fell through
+        # Without these keywords a request like "please stop monitor" fell through
         # to the generic knowledge_query intent, whose tool set excludes
         # ui_controller, so the LLM answered "no monitor is running" instead
         # of actually stopping it.
@@ -2590,7 +2603,7 @@ def classify_local_turn(
         ):
             return replace(
                 _semantic_action_policy(complexity="medium", review=False),
-                allow_tools=ANALYSIS_READ_TOOLS,
+                allow_tools=SEMANTIC_TOOLS if parsed.unconditional_command else ANALYSIS_READ_TOOLS,
                 routing_source="primary_semantic",
                 routing_reason="local_fact_scope_not_complete",
                 candidate_intent=candidate.intent,

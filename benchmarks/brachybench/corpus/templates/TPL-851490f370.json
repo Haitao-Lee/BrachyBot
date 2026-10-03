@@ -1,0 +1,20 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "input_variations",
+  "expectation": null,
+  "facet": "input_variations",
+  "gold_status": "draft",
+  "n_source_intents": 8,
+  "representative_text": "Turn on CTV overlay",
+  "source_refs": [
+    "INT-05ca02377e37",
+    "INT-42b04548a4da",
+    "INT-8de502c7d3a7",
+    "INT-9c7c2efdd75d",
+    "INT-b840c4485b58",
+    "INT-cc9e3dcd258e",
+    "INT-cf2b609cfc40",
+    "INT-da67ef329cd5"
+  ],
+  "template_id": "TPL-851490f370"
+}

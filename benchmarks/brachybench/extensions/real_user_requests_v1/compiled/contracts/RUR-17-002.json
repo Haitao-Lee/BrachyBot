@@ -1,0 +1,70 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "kind": "report",
+      "max": 1,
+      "operation": "submit"
+    },
+    {
+      "kind": "guide",
+      "max": 1,
+      "operation": "submit"
+    },
+    {
+      "kind": "report",
+      "max": 1,
+      "operation": "cancel"
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 2,
+  "requested_language": "en",
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "effects",
+      "statement": "Guide continues, report does not newly commit; per-task cancellation ownership preserved."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "response",
+      "statement": "State each subtask outcome separately."
+    }
+  ],
+  "rules": [
+    {
+      "kind": "guide",
+      "op": "artifact",
+      "status": "completed"
+    },
+    {
+      "kind": "report",
+      "op": "job_status",
+      "status": "cancelled"
+    },
+    {
+      "op": "preserve",
+      "path": "artifact_records.report"
+    }
+  ],
+  "scenario_id": "RUR-17-002",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "effects",
+      "statement": "Guide continues, report does not newly commit; per-task cancellation ownership preserved."
+    },
+    {
+      "kind": "response",
+      "statement": "State each subtask outcome separately."
+    }
+  ]
+}

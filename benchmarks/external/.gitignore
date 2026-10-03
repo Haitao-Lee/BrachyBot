@@ -1,0 +1,6 @@
+# Upstream repositories and datasets are re-fetched by acquisition scripts and
+# pinned by commit + sha256 in acquisition/<ext_id>.yaml.  They are large and
+# must not be committed; run external/fetch_all.sh to materialise them.
+EXT-*/vendor/
+EXT-*/data/
+EXT-*/results/

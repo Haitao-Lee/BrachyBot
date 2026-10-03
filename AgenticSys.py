@@ -1230,11 +1230,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         )
 
         def clone_call(tc):
-            return {
-                "id": tc.get("id"),
-                "tool": tc.get("tool"),
-                "params": dict(tc.get("params") or {}),
-            }
+            return {**tc, "params": dict(tc.get("params") or {})}
 
         by_tool = {}
         guide_call = None
@@ -1386,6 +1382,18 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 "[workflow-normalizer] normalized clinical tool order: %s",
                 " -> ".join(call.get("tool", "") for call in ordered),
             )
+        # Injected prerequisites must carry execution dependencies, not just
+        # list order. This also keeps the action-plan sorter from moving an
+        # auto-inserted segmentation behind its consumer.
+        from agent_runtime.action_plan import ActionPlan
+        previous = None
+        for call in ordered:
+            call.setdefault("key", call.get("id") or call["tool"])
+            dependencies = list(ActionPlan._dependency_keys(call))
+            if previous and previous not in dependencies:
+                dependencies.append(previous)
+            call["depends_on"] = dependencies
+            previous = call["key"]
         return ordered + rest
 
     def _current_planning_obstacle_context(self):

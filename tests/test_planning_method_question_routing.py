@@ -1,8 +1,9 @@
 """Routing contracts for method/provenance questions about the active plan.
 
-The 2026-09-23 conversation regression: "刚刚完成的这个规划任务是使用的
-算法是基于RL的还是规则-based的" fell through every read boundary because
-``is_interrogative`` cannot see a ``是…还是…`` choice question, landed in the
+The 2026-09-23 conversation regression: "which algorithm did this
+just-completed planning task use — RL-based or rule-based?" fell through
+every read boundary because
+``is_interrogative`` cannot see an "either…or…" choice question, landed in the
 broad ``semantic_action`` tool loop, and the provider answered with a
 ``query_metrics(all_metrics)`` dose table instead of the requested algorithm
 provenance.  These contracts pin: choice questions are questions; method

@@ -1,0 +1,564 @@
+{
+  "adapter_requirements": [
+    "isolated_synthetic_fixture",
+    "independent_effect_and_state_collector",
+    "calibrated_response_verifier"
+  ],
+  "allowed_effects": [
+    {
+      "max": 1,
+      "operation": "restore",
+      "token": "edit-2"
+    }
+  ],
+  "facts": {},
+  "family_title": "时序指代与撤销粒度",
+  "goals": [
+    {
+      "op": "equals",
+      "path": "objects.seed-A.position_mm",
+      "value": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "op": "equals",
+      "path": "objects.needle-A.position_mm",
+      "value": [
+        4,
+        0,
+        0
+      ]
+    },
+    {
+      "op": "greater",
+      "path": "planning_version",
+      "value": 9
+    },
+    {
+      "op": "equals",
+      "path": "artifacts.dose",
+      "value": "stale"
+    }
+  ],
+  "id": "RUR-06-001",
+  "initial_state": {
+    "artifact_records": {
+      "dose": {
+        "case_id": "case-A",
+        "id": "initial-dose-case-A",
+        "planning_id": "plan-A",
+        "revision": 9,
+        "source": "fixture",
+        "status": "current",
+        "synthetic": true
+      },
+      "dvh": {
+        "case_id": "case-A",
+        "id": "initial-dvh-case-A",
+        "planning_id": "plan-A",
+        "revision": 9,
+        "source": "fixture",
+        "status": "current",
+        "synthetic": true
+      },
+      "guide": {
+        "case_id": "case-A",
+        "id": "initial-guide-case-A",
+        "planning_id": "plan-A",
+        "revision": 9,
+        "source": "fixture",
+        "status": "current",
+        "synthetic": true
+      },
+      "quality": {
+        "case_id": "case-A",
+        "id": "initial-quality-case-A",
+        "planning_id": "plan-A",
+        "revision": 9,
+        "source": "fixture",
+        "status": "current",
+        "synthetic": true
+      },
+      "report": {
+        "case_id": "case-A",
+        "id": "initial-report-case-A",
+        "planning_id": "plan-A",
+        "revision": 9,
+        "source": "fixture",
+        "status": "current",
+        "synthetic": true
+      }
+    },
+    "artifacts": {
+      "dose": "current",
+      "dvh": "current",
+      "guide": "current",
+      "quality": "current",
+      "report": "current"
+    },
+    "attachments": [],
+    "available_captures": [],
+    "available_downloads": [],
+    "case_B_camera": {
+      "height": 160,
+      "name": "case-B-default",
+      "position_mm": [
+        0,
+        0,
+        100
+      ],
+      "projection": "orthographic",
+      "target_mm": [
+        0,
+        0,
+        0
+      ],
+      "up": [
+        0,
+        1,
+        0
+      ],
+      "vertical_span_mm": 60,
+      "width": 160
+    },
+    "case_id": "case-A",
+    "ct_loaded": true,
+    "downloads": [],
+    "edit_log": [
+      {
+        "before_position_mm": [
+          0,
+          0,
+          0
+        ],
+        "case_id": "case-A",
+        "consumed": false,
+        "from": 7,
+        "id": "edit-1",
+        "planning_id": "plan-A",
+        "session_id": "session-A",
+        "target": "needle-A",
+        "to": 8
+      },
+      {
+        "before_position_mm": [
+          0,
+          0,
+          0
+        ],
+        "case_id": "case-A",
+        "consumed": false,
+        "from": 8,
+        "id": "edit-2",
+        "planning_id": "plan-A",
+        "session_id": "session-A",
+        "target": "seed-A",
+        "to": 9
+      }
+    ],
+    "geometry_revision": 9,
+    "history": [],
+    "jobs": [],
+    "language": "zh",
+    "metrics": {
+      "CTV": {
+        "D90_Gy": 120.2,
+        "V100_percent": 90.1
+      },
+      "OAR": {
+        "brain": {
+          "D2cc_Gy": 4.8,
+          "valid_for_revision": 9
+        },
+        "spinal_cord": {
+          "D2cc_Gy": 7.3,
+          "valid_for_revision": 9
+        }
+      }
+    },
+    "monitor": {
+      "active": false,
+      "auto_compare": false,
+      "run_id": null
+    },
+    "objects": {
+      "ctv-A": {
+        "color": "red",
+        "label": "Label 2",
+        "opacity": 0.5,
+        "position_mm": [
+          0,
+          0,
+          0
+        ],
+        "radius_mm": 12,
+        "type": "CTV",
+        "visible": true
+      },
+      "guide-A": {
+        "color": "cyan",
+        "half_size_mm": [
+          16,
+          16
+        ],
+        "label": "Puncture guide v1",
+        "opacity": 0.7,
+        "position_mm": [
+          0,
+          0,
+          20
+        ],
+        "radius_mm": 3,
+        "shape": "plate",
+        "type": "guide",
+        "version": 1,
+        "visible": false
+      },
+      "needle-A": {
+        "color": "cyan",
+        "endpoints_mm": [
+          [
+            -11,
+            -8,
+            -5
+          ],
+          [
+            19,
+            8,
+            5
+          ]
+        ],
+        "label": "Needle 23",
+        "opacity": 1.0,
+        "position_mm": [
+          4,
+          0,
+          0
+        ],
+        "radius_mm": 0.4,
+        "type": "needle",
+        "visible": true
+      },
+      "seed-A": {
+        "color": "cyan",
+        "label": "Seed 19_3",
+        "opacity": 1.0,
+        "position_mm": [
+          5,
+          0,
+          0
+        ],
+        "radius_mm": 0.4,
+        "type": "seed",
+        "visible": true
+      }
+    },
+    "patient_crosshair_mm": [
+      0,
+      0,
+      0
+    ],
+    "planning_id": "plan-A",
+    "planning_version": 9,
+    "prescription_Gy": 120.0,
+    "protocol_receipts": [],
+    "provider_records": [],
+    "render_state": {
+      "ctv-A": {
+        "color": "red",
+        "label": "Label 2",
+        "opacity": 0.5,
+        "position_mm": [
+          0,
+          0,
+          0
+        ],
+        "radius_mm": 12,
+        "type": "CTV",
+        "visible": true
+      },
+      "guide-A": {
+        "color": "cyan",
+        "half_size_mm": [
+          16,
+          16
+        ],
+        "label": "Puncture guide v1",
+        "opacity": 0.7,
+        "position_mm": [
+          0,
+          0,
+          20
+        ],
+        "radius_mm": 3,
+        "shape": "plate",
+        "type": "guide",
+        "version": 1,
+        "visible": false
+      },
+      "needle-A": {
+        "color": "cyan",
+        "endpoints_mm": [
+          [
+            -11,
+            -8,
+            -5
+          ],
+          [
+            19,
+            8,
+            5
+          ]
+        ],
+        "label": "Needle 23",
+        "opacity": 1.0,
+        "position_mm": [
+          4,
+          0,
+          0
+        ],
+        "radius_mm": 0.4,
+        "type": "needle",
+        "visible": true
+      },
+      "seed-A": {
+        "color": "cyan",
+        "label": "Seed 19_3",
+        "opacity": 1.0,
+        "position_mm": [
+          5,
+          0,
+          0
+        ],
+        "radius_mm": 0.4,
+        "type": "seed",
+        "visible": true
+      }
+    },
+    "report": {
+      "body_language": "zh",
+      "body_text": "合成计划报告（非临床计划）",
+      "captions": [
+        "全局粒子植入计划",
+        "靶区粒子分布近景"
+      ],
+      "captions_language": "zh"
+    },
+    "request": {
+      "final_count": 0,
+      "send_enabled": true,
+      "status": "idle"
+    },
+    "saved_state": {
+      "ctv-A": {
+        "color": "red",
+        "label": "Label 2",
+        "opacity": 0.5,
+        "position_mm": [
+          0,
+          0,
+          0
+        ],
+        "radius_mm": 12,
+        "type": "CTV",
+        "visible": true
+      },
+      "guide-A": {
+        "color": "cyan",
+        "half_size_mm": [
+          16,
+          16
+        ],
+        "label": "Puncture guide v1",
+        "opacity": 0.7,
+        "position_mm": [
+          0,
+          0,
+          20
+        ],
+        "radius_mm": 3,
+        "shape": "plate",
+        "type": "guide",
+        "version": 1,
+        "visible": false
+      },
+      "needle-A": {
+        "color": "cyan",
+        "endpoints_mm": [
+          [
+            -11,
+            -8,
+            -5
+          ],
+          [
+            19,
+            8,
+            5
+          ]
+        ],
+        "label": "Needle 23",
+        "opacity": 1.0,
+        "position_mm": [
+          4,
+          0,
+          0
+        ],
+        "radius_mm": 0.4,
+        "type": "needle",
+        "visible": true
+      },
+      "seed-A": {
+        "color": "cyan",
+        "label": "Seed 19_3",
+        "opacity": 1.0,
+        "position_mm": [
+          5,
+          0,
+          0
+        ],
+        "radius_mm": 0.4,
+        "type": "seed",
+        "visible": true
+      }
+    },
+    "selection": "guide-A",
+    "session_id": "session-A",
+    "site": "head_neck",
+    "synthetic": true,
+    "tenant_id": "tenant-A",
+    "tree_state": {
+      "ctv-A": {
+        "color": "red",
+        "label": "Label 2",
+        "opacity": 0.5,
+        "position_mm": [
+          0,
+          0,
+          0
+        ],
+        "radius_mm": 12,
+        "type": "CTV",
+        "visible": true
+      },
+      "guide-A": {
+        "color": "cyan",
+        "half_size_mm": [
+          16,
+          16
+        ],
+        "label": "Puncture guide v1",
+        "opacity": 0.7,
+        "position_mm": [
+          0,
+          0,
+          20
+        ],
+        "radius_mm": 3,
+        "shape": "plate",
+        "type": "guide",
+        "version": 1,
+        "visible": false
+      },
+      "needle-A": {
+        "color": "cyan",
+        "endpoints_mm": [
+          [
+            -11,
+            -8,
+            -5
+          ],
+          [
+            19,
+            8,
+            5
+          ]
+        ],
+        "label": "Needle 23",
+        "opacity": 1.0,
+        "position_mm": [
+          4,
+          0,
+          0
+        ],
+        "radius_mm": 0.4,
+        "type": "needle",
+        "visible": true
+      },
+      "seed-A": {
+        "color": "cyan",
+        "label": "Seed 19_3",
+        "opacity": 1.0,
+        "position_mm": [
+          5,
+          0,
+          0
+        ],
+        "radius_mm": 0.4,
+        "type": "seed",
+        "visible": true
+      }
+    },
+    "viewer": {
+      "camera": {
+        "height": 160,
+        "name": "camera-original",
+        "position_mm": [
+          0,
+          0,
+          100
+        ],
+        "projection": "orthographic",
+        "target_mm": [
+          0,
+          0,
+          0
+        ],
+        "up": [
+          0,
+          1,
+          0
+        ],
+        "vertical_span_mm": 60,
+        "width": 160
+      },
+      "dragging": false
+    }
+  },
+  "meaning": "撤销要绑定已提交编辑及版本，不能靠最近字符串或视觉对象猜测。",
+  "negative_control_specs": [
+    "Undo edit-1.",
+    "Restore whole original plan.",
+    "Reuse old version number or claim old position is safe."
+  ],
+  "priority": "P1",
+  "questions": [
+    "Does the context support the gold without guessing?",
+    "Is each requirement relevant to BrachyBot?",
+    "Are legitimate alternate tool paths allowed?",
+    "Do the controls genuinely contradict this criterion?",
+    "What wording/clinical ambiguity needs adjudication?"
+  ],
+  "review_status": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "state",
+      "statement": "Seed restored to revision-8 position, needle edit-1 retained; new revision minted, not rewind version counter."
+    },
+    {
+      "kind": "response",
+      "statement": "Dose remains stale until verified recomputation."
+    }
+  ],
+  "split": "development",
+  "title": "撤销最后一次而非两次",
+  "user_protocol": [
+    {
+      "kind": "user",
+      "language": "zh",
+      "text": "撤销刚刚最后一次粒子移动，前面的针道调整保留。"
+    }
+  ]
+}

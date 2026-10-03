@@ -1,8 +1,9 @@
 """The final reply must stay grounded in the tool evidence of the same turn.
 
 Regression (2026-09-22): query_metrics(needle_seed_counts) returned "24
-needles / 181 seeds" in the same turn, yet the final reply claimed "本轮没有
-返回针道计数" and attributed the numbers to earlier conversation history.
+needles / 181 seeds" in the same turn, yet the final reply claimed "this turn
+returned no needle counts" and attributed the numbers to earlier conversation
+history.
 
 Root causes:
 1. The tool loop summed each read's per-contract coverage gaps into a

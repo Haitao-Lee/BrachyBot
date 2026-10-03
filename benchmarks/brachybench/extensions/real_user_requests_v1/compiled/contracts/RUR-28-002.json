@@ -1,0 +1,62 @@
+{
+  "acceptable_outcomes": [
+    "PARTIAL",
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "hide": [],
+      "max": 2,
+      "operation": "capture",
+      "targets": [
+        "seed-A"
+      ]
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "en",
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "response",
+      "statement": "Explain actual deferred cause and retained text evidence; no claim image delivered."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "event_sequence",
+      "statement": "Visible retry path; superseded version aborts retry, not recaptured at new geometry."
+    },
+    {
+      "id": "criterion-2",
+      "kind": "effects",
+      "statement": "No hidden heavy recompute or repeated model loop."
+    }
+  ],
+  "rules": [
+    {
+      "op": "capture_deferred_visible"
+    }
+  ],
+  "scenario_id": "RUR-28-002",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "response",
+      "statement": "Explain actual deferred cause and retained text evidence; no claim image delivered."
+    },
+    {
+      "kind": "event_sequence",
+      "statement": "Visible retry path; superseded version aborts retry, not recaptured at new geometry."
+    },
+    {
+      "kind": "effects",
+      "statement": "No hidden heavy recompute or repeated model loop."
+    }
+  ]
+}

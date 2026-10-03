@@ -1,0 +1,75 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [
+    [
+      "report",
+      "dose"
+    ]
+  ],
+  "effects": [
+    {
+      "kind": "dose",
+      "max": 1,
+      "operation": "submit"
+    },
+    {
+      "kind": "report",
+      "max": 1,
+      "operation": "submit"
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "en",
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "dependency",
+      "statement": "Report request/effect occurs after verified dose.completed, not after accepted/running."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "artifact",
+      "statement": "Report dose source equals resulting dose artifact ID, not prior dose."
+    },
+    {
+      "id": "criterion-2",
+      "kind": "response",
+      "statement": "Per-output completion matches actual job receipts."
+    }
+  ],
+  "rules": [
+    {
+      "kind": "dose",
+      "op": "artifact",
+      "status": "completed"
+    },
+    {
+      "kind": "report",
+      "op": "artifact",
+      "status": "completed"
+    }
+  ],
+  "scenario_id": "RUR-14-002",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "dependency",
+      "statement": "Report request/effect occurs after verified dose.completed, not after accepted/running."
+    },
+    {
+      "kind": "artifact",
+      "statement": "Report dose source equals resulting dose artifact ID, not prior dose."
+    },
+    {
+      "kind": "response",
+      "statement": "Per-output completion matches actual job receipts."
+    }
+  ]
+}

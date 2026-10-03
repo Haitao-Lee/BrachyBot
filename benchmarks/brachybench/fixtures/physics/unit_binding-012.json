@@ -1,0 +1,26 @@
+{
+  "config": {
+    "binding": {
+      "bound_metric": "V100",
+      "bound_target": "ctv",
+      "metric": "V100",
+      "target": "ctv",
+      "unit": "Gy",
+      "value": 90.0,
+      "value_gy": null
+    },
+    "mechanism": "binding/broken_Gy"
+  },
+  "expected": {
+    "evidence_gap_codes": [],
+    "score": 0.0,
+    "verdict": "fail",
+    "violation_codes": [
+      "unit_conversion_error"
+    ]
+  },
+  "family": "unit_binding",
+  "id": "unit_binding-012",
+  "initial_state_hash": "sha256:3304f3a8fbbccfb231e3cc06f28a974691df83996c28329b37f639fa3b9d75cd",
+  "seed": 20260929
+}

@@ -1,0 +1,15 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "smoke",
+  "expectation": null,
+  "facet": "smoke",
+  "gold_status": "draft",
+  "n_source_intents": 3,
+  "representative_text": "Calculate dose without seed plan",
+  "source_refs": [
+    "INT-248ebd880ef3",
+    "INT-4f7ce82a1459",
+    "INT-a04054751ccf"
+  ],
+  "template_id": "TPL-c6d0da8681"
+}

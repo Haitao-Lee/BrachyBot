@@ -1,0 +1,70 @@
+benchmark: MedCalc-Bench
+ext_id: EXT-11
+tier: specialty
+grade_R: R0
+grade_C: C2
+panels: [P2]
+
+acquisition:
+  source_url: https://github.com/ncbi-nlp/MedCalc-Bench
+  source_commit: 20b10f9d66a8c3b0356ae3138533f5ec91666b6a
+  source_tag: null
+  dataset_name: "ncbi/MedCalc-Bench test split (test_data_11_18_final.csv)"
+  dataset_revision: 83a1a56d6b53f8d4c0e03f0ba9699becf524a595
+  dataset_sha256: 840b1ba6f4c44d7138ecdff5ee121bf9bf60453e61a944c86cc0880318e52a9d
+  dataset_size_bytes: 5350557
+  retrieval_command: |
+    git clone https://github.com/ncbi-nlp/MedCalc-Bench vendor/EXT-11
+    git -C vendor/EXT-11 checkout 20b10f9d66a8c3b0356ae3138533f5ec91666b6a
+    HF_ENDPOINT=https://hf-mirror.com
+    curl -L -o data/EXT-11/test_data_11_18_final.csv \
+      $HF_ENDPOINT/datasets/ncbi/MedCalc-Bench/resolve/main/test_data_11_18_final.csv
+    # dataset_sha256 above = directory digest of data/EXT-11 (1 file).
+  retrieval_date: 2026-10-01
+  license_upstream: "CC-BY-SA-4.0 (data); code license unspecified"
+  license_file: LICENSE.UPSTREAM
+  license_verified_by: "brachybench-auto (GitHub + HF API 2026-10-01)"
+  activity_verified:
+    last_commit_date: 2025-12-18
+    last_release_date: null
+    open_issues: null
+
+runner:
+  official_runner: evaluation/run.py
+  evaluator: evaluation/evaluate.py (check_correctness; deterministic date/integer/decimal tolerance)
+  container: null
+  python_requires: ">=3.9"
+  native_deps: []
+  paid_apis: []
+  judge_note: "fully deterministic numeric evaluator; no LLM judge needed for scoring."
+
+adapter:
+  kind: ext_adapter
+  shim_used: false
+  spec_ref: "DESIGN §25.5"
+
+run:
+  smoke_size: 5
+  sample_size: 0
+  sampling_seed: 42
+  n_runs: 1
+  budget: {wall_clock_s: 300, turns: 1, tool_calls: 0}
+
+isolation:
+  sandbox: required
+  network: denied
+  write_paths: ["benchmarks/external/EXT-11/results/"]
+  forbidden_write_roots:
+    - BrachyBot/session/
+    - BrachyBot/case/
+    - BrachyBot/runtime/
+    - BrachyBot/report/
+
+contamination:
+  public_samples_allowed_for_dev_only: true
+  seen_task_ids: []
+  behavioral_probes: [B1, B2, B3, B4, B5, B6, B7]
+
+status: active
+block_reason: null
+reinclude_condition: null

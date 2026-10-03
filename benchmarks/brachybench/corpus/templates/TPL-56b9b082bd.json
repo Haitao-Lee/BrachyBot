@@ -1,0 +1,17 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "treatment_planning",
+  "expectation": null,
+  "facet": "treatment_planning",
+  "gold_status": "draft",
+  "n_source_intents": 5,
+  "representative_text": "For a patient with a penile cancer (2cm lesion on glans), please plan an interstitial HDR brachytherapy treatment. Using 6 needles in a single plane, plan 3 fractions of 6 Gy each. The plan must maintain the urethral dose below the prescription dose and cover the visible tumor with at least 95% of the prescription isodose.",
+  "source_refs": [
+    "INT-110b81295358",
+    "INT-3059e71bd1cb",
+    "INT-7cf96398da2e",
+    "INT-9b22067a192d",
+    "INT-cf8876a1e918"
+  ],
+  "template_id": "TPL-56b9b082bd"
+}

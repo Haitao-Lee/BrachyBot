@@ -179,18 +179,17 @@ class ActionPlan:
         steps_by_tool: dict = {}
         for step in ordered_steps:
             steps_by_tool.setdefault(step.tool, []).append(step.key)
-        tool_occurrence: dict = {}
+        consumed = set()
         matched = []
         for position, call in enumerate(calls):
             tool = str(call.get("tool") or "")
             raw_key = call.get("key")
             key = str(raw_key).strip() if raw_key is not None else ""
             if key not in rank:
-                nth = int(tool_occurrence.get(tool, 0)) + 1
-                tool_occurrence[tool] = nth
                 slots = steps_by_tool.get(tool) or ()
-                key = slots[nth - 1] if len(slots) >= nth else ""
+                key = next((slot for slot in slots if slot not in consumed), "")
             if key in rank:
+                consumed.add(key)
                 matched.append((rank[key], position, call))
             else:
                 matched.append((len(ordered_steps) + position, position, call))

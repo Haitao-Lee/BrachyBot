@@ -1,0 +1,43 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "zh",
+  "response_facts": {
+    "current.V100_percent": 90.1,
+    "previous.V100_percent": 95,
+    "previous.revision": 6
+  },
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "response",
+      "statement": "Explain old rev6 versus current rev7 90.1%, cite their scopes; no automatic rollback."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "effects",
+      "statement": "Only read both versioned sources."
+    }
+  ],
+  "rules": [],
+  "scenario_id": "RUR-12-001",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "response",
+      "statement": "Explain old rev6 versus current rev7 90.1%, cite their scopes; no automatic rollback."
+    },
+    {
+      "kind": "effects",
+      "statement": "Only read both versioned sources."
+    }
+  ]
+}

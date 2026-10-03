@@ -1,0 +1,25 @@
+{
+  "purpose": "DESIGN §20 migration source of record -- legacy clinical intents, preserved before deleting benchmarks/v1 and benchmarks/v2",
+  "contains": "case id / input / setup / expected fields / _comment only; NO scorers (all legacy scorers deprecated, DESIGN §20.2)",
+  "counts": {
+    "v1": 1149,
+    "v2_top_level": 475,
+    "v2_smoke": 64,
+    "v2_legacy": 77,
+    "total": 1765
+  },
+  "sha256": "b0bf5f2f1b20b6d643af85886585055238c042d2ce70b63aa84a2a16c0742afb",
+  "recovered_from": "git HEAD (files removed by git rm before this archive was rebuilt)",
+  "deleted_from": [
+    "benchmarks/v1/",
+    "benchmarks/v2/",
+    "benchmarks/archive/",
+    "benchmarks/aligned_benchmark.py",
+    "benchmarks/auto_monitor.py",
+    "benchmarks/generate_final_report.py",
+    "benchmarks/run_aligned_agents.sh"
+  ],
+  "git_recoverable": true,
+  "skipped": [],
+  "note": "recursive capture: includes v2/smoke (64) and v2/_legacy (77); the earlier 1,624 figure was the non-recursive top-level count"
+}

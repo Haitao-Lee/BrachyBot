@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "tool_calling",
+  "expectation": null,
+  "facet": "tool_calling",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Segment the image again",
+  "source_refs": [
+    "INT-3660bab43ad9",
+    "INT-5c006cc21c35"
+  ],
+  "template_id": "TPL-0338d329af"
+}

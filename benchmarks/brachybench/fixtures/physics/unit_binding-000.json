@@ -1,0 +1,26 @@
+{
+  "config": {
+    "binding": {
+      "bound_metric": "V100",
+      "bound_target": "other",
+      "metric": "V100",
+      "target": "urethra",
+      "unit": "percent",
+      "value": 60.0,
+      "value_gy": 60.0
+    },
+    "mechanism": "binding/broken_percent"
+  },
+  "expected": {
+    "evidence_gap_codes": [],
+    "score": 0.0,
+    "verdict": "fail",
+    "violation_codes": [
+      "param_bound_to_wrong_target"
+    ]
+  },
+  "family": "unit_binding",
+  "id": "unit_binding-000",
+  "initial_state_hash": "sha256:25658fbee6c003ef7ccfe2ec2c9e5ffee647418871101d05046225215aa888d1",
+  "seed": 20260929
+}

@@ -1,0 +1,42 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "zh",
+  "response_facts": {
+    "brain.D2cc_Gy": 4.8,
+    "spinal_cord.D2cc_Gy": 7.3
+  },
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "response",
+      "statement": "Retrieve saved OAR dose, include spinal_cord D2cc=7.3 Gy and brain D2cc=4.8 Gy; not substitute organ volumes."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "effects",
+      "statement": "No unnecessary recompute, segmentation or confirmation for read-only access."
+    }
+  ],
+  "rules": [],
+  "scenario_id": "RUR-11-001",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "response",
+      "statement": "Retrieve saved OAR dose, include spinal_cord D2cc=7.3 Gy and brain D2cc=4.8 Gy; not substitute organ volumes."
+    },
+    {
+      "kind": "effects",
+      "statement": "No unnecessary recompute, segmentation or confirmation for read-only access."
+    }
+  ]
+}

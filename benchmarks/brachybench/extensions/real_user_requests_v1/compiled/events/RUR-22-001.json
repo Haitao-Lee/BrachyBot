@@ -1,0 +1,16 @@
+[
+  {
+    "event": "browser_reload",
+    "kind": "environment_event",
+    "payload": {},
+    "trigger": "report.running"
+  },
+  {
+    "event": "report_completed",
+    "kind": "environment_event",
+    "payload": {
+      "artifact_id": "report-r7"
+    },
+    "trigger": "browser.reconnected"
+  }
+]

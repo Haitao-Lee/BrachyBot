@@ -1,0 +1,75 @@
+{
+  "anti_gaming": {
+    "contrast_family_id": "RUR-33",
+    "hidden": false,
+    "paraphrase_group": "RUR-33"
+  },
+  "clinical_intent": "报告导出需当前内容可独立解析",
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "RUR-33",
+  "cost_class": "light_compute",
+  "fixture": {
+    "case_family": "RUR-33",
+    "initial_state_hash": "sha256:5c074734b87a45ce5a053e53b705f27dc8d55ea184678fabdd1e0ebf1c4bda41",
+    "setup_script": "extensions/real_user_requests_v1/compiled/fixtures/RUR-33-001.json"
+  },
+  "id": "RUR-33-001",
+  "layers": [
+    "L2",
+    "L4"
+  ],
+  "oracle": {
+    "check": "real_user_request",
+    "constraint_class": "none",
+    "expect": null,
+    "gold": "contracts/RUR-33-001.json",
+    "independent_check": true,
+    "kind": "program"
+  },
+  "power_role": "exploratory",
+  "protocol": {
+    "allowed_intermediates": [],
+    "audit_required": true,
+    "budget": {
+      "tool_calls": 96,
+      "turns": 1,
+      "wall_clock_s": 120
+    },
+    "mode": "single_turn",
+    "n_runs": 1,
+    "turns": [
+      {
+        "lang": "zh",
+        "role": "user",
+        "text": "导出当前报告PDF。"
+      }
+    ],
+    "ui_counterpart": null
+  },
+  "provenance": {
+    "authored_on": "2026-10-03",
+    "deprecated": null,
+    "derived_from": "real_user_requests_v1:RUR-33-001",
+    "guideline_ref": null,
+    "reviewers": [
+      "authoring-only; independent review pending"
+    ],
+    "source": "audit_derived"
+  },
+  "schema_version": "1.0",
+  "scoring": {
+    "difficulty_target": "medium",
+    "gate_refs": [],
+    "primary_metric": "verified_task_goal",
+    "weight": 1.0
+  },
+  "track": "L",
+  "unit": {
+    "contrast_family_id": "RUR-33",
+    "group_type": "G-CTX",
+    "kind": "task_scenario"
+  }
+}

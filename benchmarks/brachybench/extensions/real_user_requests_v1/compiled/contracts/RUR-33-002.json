@@ -1,0 +1,73 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "max": 1,
+      "operation": "language",
+      "value": "zh"
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "en",
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "state",
+      "statement": "Body/captions language Chinese in rendered report and after save/reload; measurement values, scope and artifact evidence unchanged."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "effects",
+      "statement": "No report-generation job/dose recompute merely for language switch."
+    },
+    {
+      "id": "criterion-2",
+      "kind": "response",
+      "statement": "Confirm text/caption language change only after rendered report state is verified."
+    }
+  ],
+  "rules": [
+    {
+      "op": "equals",
+      "path": "language",
+      "value": "zh"
+    },
+    {
+      "op": "equals",
+      "path": "report.body_language",
+      "value": "zh"
+    },
+    {
+      "op": "equals",
+      "path": "report.captions_language",
+      "value": "zh"
+    },
+    {
+      "op": "report_locale"
+    }
+  ],
+  "scenario_id": "RUR-33-002",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "state",
+      "statement": "Body/captions language Chinese in rendered report and after save/reload; measurement values, scope and artifact evidence unchanged."
+    },
+    {
+      "kind": "effects",
+      "statement": "No report-generation job/dose recompute merely for language switch."
+    },
+    {
+      "kind": "response",
+      "statement": "Confirm text/caption language change only after rendered report state is verified."
+    }
+  ]
+}

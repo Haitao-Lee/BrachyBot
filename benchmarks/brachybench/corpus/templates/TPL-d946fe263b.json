@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "language",
+  "expectation": null,
+  "facet": "language",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Hello",
+  "source_refs": [
+    "INT-8c6820818ddc",
+    "INT-c907aaf341d3"
+  ],
+  "template_id": "TPL-d946fe263b"
+}

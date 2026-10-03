@@ -1,0 +1,91 @@
+{
+  "schema_version": "1.0",
+  "id": "PLAN2-RLST-013",
+  "track": "A",
+  "layers": [
+    "L3",
+    "L4"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "rl_diagnostics_turns",
+  "cost_class": "state_only",
+  "power_role": "primary",
+  "clinical_intent": "Was the last one interrupted by timeout? Explain the stop reason clearly too.",
+  "fixture": {
+    "case_family": "synth/prostate_s02_full_pipeline",
+    "setup_script": "fixtures/setup/prostate_s02_full_pipeline.py",
+    "initial_state_hash": "sha256:38eabca0a6bcb5062deac0e5645e8bf52d9e5f51cdd0f137f824f4509461ada3"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-CTX",
+    "contrast_family_id": "plans:rl_status/rl_diagnostics_turns"
+  },
+  "protocol": {
+    "mode": "multi_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "Run RL planning and tell me the execution status.",
+        "lang": "en"
+      },
+      {
+        "role": "assistant",
+        "text": "Noted, continuing.",
+        "lang": "en"
+      },
+      {
+        "role": "user",
+        "text": "Was the last one interrupted by timeout? Explain the stop reason clearly too.",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 3,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "semantic_equivalence",
+    "constraint_class": "none",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "semantic_equivalence_pass",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "medium"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "PLAN2-RLST-013-P01",
+    "hidden": false,
+    "generation_seed": 3062,
+    "canary_class": null,
+    "behavioral_probes": [],
+    "contrast_family_id": "plans:rl_status/rl_diagnostics_turns"
+  },
+  "provenance": {
+    "source": "audit_derived",
+    "derived_from": "plans/rl_status.py:86-137 set_outcome/finish_rl_status; oracles/artifacts.py:349-382",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto"
+    ],
+    "authored_on": "2026-10-01",
+    "deprecated": null
+  }
+}

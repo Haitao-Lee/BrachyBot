@@ -1,0 +1,32 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "compliance",
+  "expectation": null,
+  "facet": "compliance",
+  "gold_status": "draft",
+  "n_source_intents": 20,
+  "representative_text": "I need to develop a protocol for protocol for brachytherapy in patients with dementia at our institution. Please provide a comprehensive draft covering all relevant aspects with evidence-based recommendations and practical implementation steps.",
+  "source_refs": [
+    "INT-0fd6ddedc1c3",
+    "INT-1202118c8334",
+    "INT-25242bddb203",
+    "INT-2aa9884f1afc",
+    "INT-35d714af67c0",
+    "INT-40908642ca1f",
+    "INT-4859fc27a083",
+    "INT-488edaa9e97d",
+    "INT-5afe798fa3cb",
+    "INT-71ecb9379863",
+    "INT-7b53710b0c8e",
+    "INT-8d40f7e405c1",
+    "INT-9b6813096465",
+    "INT-a8492e0b61e0",
+    "INT-af8b380c37c2",
+    "INT-c1c0a20a69b7",
+    "INT-c78dfb6669a5",
+    "INT-e3775c8db4f6",
+    "INT-e903086ed446",
+    "INT-f200b3f48d67"
+  ],
+  "template_id": "TPL-943185ae24"
+}

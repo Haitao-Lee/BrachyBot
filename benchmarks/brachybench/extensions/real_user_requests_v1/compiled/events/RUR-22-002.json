@@ -1,0 +1,8 @@
+[
+  {
+    "event": "restore_saved_session",
+    "kind": "environment_event",
+    "payload": {},
+    "trigger": "start"
+  }
+]

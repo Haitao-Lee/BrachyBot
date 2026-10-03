@@ -1,0 +1,81 @@
+{
+  "schema_version": "1.0",
+  "id": "SKILLS-REG-045",
+  "track": "K",
+  "layers": [
+    "L3",
+    "L4"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "skill_registry_error_envelope",
+  "cost_class": "state_only",
+  "power_role": "secondary",
+  "clinical_intent": "Registry error EVOLVE_PATTERN_EMPTY must return a stable error envelope, with retryable consistent with the error code.",
+  "fixture": {
+    "case_family": "synth/recovery_case",
+    "setup_script": "fixtures/setup/recovery_case.py",
+    "initial_state_hash": "sha256:bd6e1fce6a65ef8e94a4268a2c20b2f74ae3cba8841f10d288701221f8ae4a73"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-CT",
+    "contrast_family_id": "K/skill_registry/error/EVOLVE_PATTERN_EMPTY"
+  },
+  "protocol": {
+    "mode": "single_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "Encountering EVOLVE_PATTERN_EMPTY in the registry operation should return a decidable error structure.",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 1,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "error_contract",
+    "constraint_class": "postcondition",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "error_contract_pass",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "easy"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "SKILLS-REG-045-P01",
+    "hidden": false,
+    "generation_seed": 9173,
+    "canary_class": null,
+    "behavioral_probes": [],
+    "contrast_family_id": "K/skill_registry/error/EVOLVE_PATTERN_EMPTY"
+  },
+  "provenance": {
+    "source": "audit_derived",
+    "derived_from": "skills/skill_base.py:191-202 (_load_skills swallows JSONDecodeError/KeyError -> {})",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto"
+    ],
+    "authored_on": "2026-10-01",
+    "deprecated": null
+  }
+}

@@ -1,0 +1,88 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [
+    [
+      "report",
+      "quality"
+    ]
+  ],
+  "effects": [
+    {
+      "kind": "quality",
+      "max": 1,
+      "operation": "submit"
+    },
+    {
+      "kind": "report",
+      "max": 1,
+      "operation": "submit"
+    },
+    {
+      "kind": "guide",
+      "max": 1,
+      "operation": "submit"
+    },
+    {
+      "operation": "refresh"
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "zh",
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "effects",
+      "statement": "Refresh all three named stale outputs, not dose or segmentation; do not request the same blanket permission again."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "dependency",
+      "statement": "Report uses verified current quality; every output binds to revision 7."
+    },
+    {
+      "id": "criterion-2",
+      "kind": "response",
+      "statement": "Distinguish completed, pending and failed outputs using actual receipts."
+    }
+  ],
+  "rules": [
+    {
+      "kind": "quality",
+      "op": "artifact",
+      "status": "completed"
+    },
+    {
+      "kind": "report",
+      "op": "artifact",
+      "status": "completed"
+    },
+    {
+      "kind": "guide",
+      "op": "artifact",
+      "status": "completed"
+    }
+  ],
+  "scenario_id": "RUR-01-001",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "effects",
+      "statement": "Refresh all three named stale outputs, not dose or segmentation; do not request the same blanket permission again."
+    },
+    {
+      "kind": "dependency",
+      "statement": "Report uses verified current quality; every output binds to revision 7."
+    },
+    {
+      "kind": "response",
+      "statement": "Distinguish completed, pending and failed outputs using actual receipts."
+    }
+  ]
+}

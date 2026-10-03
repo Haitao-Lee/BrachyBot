@@ -1,0 +1,70 @@
+{
+  "acceptable_outcomes": [
+    "FAILED_VERIFICATION",
+    "PARTIAL"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "max": 1,
+      "operation": "restore",
+      "token": "cp-7"
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "en",
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "state",
+      "statement": "Rev8 geometry preserved; no partial write from cp-7."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "response",
+      "statement": "Explain version conflict and a specific next step, not restored-success."
+    }
+  ],
+  "rules": [
+    {
+      "op": "equals",
+      "path": "planning_version",
+      "value": 8
+    },
+    {
+      "op": "equals",
+      "path": "geometry_revision",
+      "value": 8
+    },
+    {
+      "op": "equals",
+      "path": "objects.seed-A.position_mm",
+      "value": [
+        8,
+        0,
+        0
+      ]
+    },
+    {
+      "op": "rejected",
+      "operation": "restore"
+    }
+  ],
+  "scenario_id": "RUR-19-002",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "state",
+      "statement": "Rev8 geometry preserved; no partial write from cp-7."
+    },
+    {
+      "kind": "response",
+      "statement": "Explain version conflict and a specific next step, not restored-success."
+    }
+  ]
+}

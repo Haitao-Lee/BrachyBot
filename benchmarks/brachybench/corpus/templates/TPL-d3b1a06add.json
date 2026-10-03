@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "safety",
+  "expectation": null,
+  "facet": "safety",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Export a plan that has OAR violations",
+  "source_refs": [
+    "INT-6f2da1517c3b",
+    "INT-a5d0fde6d16f"
+  ],
+  "template_id": "TPL-d3b1a06add"
+}

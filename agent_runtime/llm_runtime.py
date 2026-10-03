@@ -18,6 +18,7 @@ from urllib.parse import unquote, urlparse
 from config.prompts import SYSTEM_PROMPT_TEMPLATE, get_prompt_modules
 from agent_runtime.core import AgentMemory, ToolResultPipeline
 from agent_runtime.action_plan import ActionPlan
+from agent_runtime.step_execution import StepExecutionState, append_tool_receipt, decode_provider_call
 from agent_runtime.answer_coverage import (
     coverage_followup_instruction,
     missing_metric_aspects,
@@ -298,7 +299,7 @@ def _blocked_mutation_message(lang: str, tool_names: List[str]) -> str:
     gate dropped them because the current turn did not yet clearly authorize
     them.  Naming the operations lets the user confirm in one word (which the
     acknowledgement resolver then honors) instead of the chat silently
-    stalling with "本轮未能完成".
+    stalling with "this turn failed".
     """
     names = ", ".join(dict.fromkeys(str(name) for name in tool_names if name))
     if str(lang or "").lower().startswith("zh"):
@@ -365,6 +366,8 @@ def _evidence_fallback_summary(step: Dict, lang: str, failed: bool = False) -> s
 
 def _tool_failure_reason(result) -> str:
     """Return a useful failure reason even for legacy tools that only set message."""
+    if isinstance(result, str):
+        return result.strip() or "execution failed"
     if isinstance(result, dict):
         return str(
             result.get("error") or result.get("message") or "execution failed"
@@ -453,7 +456,7 @@ _HONEST_FAILURE_PROMPT = (
 # web_search steps actually returned hits, a claim that "the search returned
 # nothing / no usable results" is a false summary (2026-09-22 regression: one
 # legitimately failed web_fetch 404 led the reply to deny three successful
-# searches and to recycle an unrelated "AI 服务" topic label).
+# searches and to recycle an unrelated "AI service" topic label).
 _FALSE_SEARCH_ABSENCE_PATTERNS = (
     re.compile(
         r"[，,；;]?\s*(?:联网|网络|线上|在线)(?:检索|搜索|搜寻)"
@@ -501,9 +504,10 @@ def _steps_have_search_hits(steps: List[Dict]) -> bool:
 
 
 # Evidence families whose presence turns an absence claim into a denial of
-# returned data.  Matching is exact-string: "针道" in the claim must also be
-# "针道" in the step results, so an honest "源间距本轮没有返回" is never
-# scrubbed just because the steps contain image spacing in English.
+# returned data.  Matching is exact-string: "needle track" in the claim must
+# also be "needle track" in the step results, so an honest "no source spacing
+# was returned this turn" is never scrubbed just because the steps contain
+# image spacing in English.
 _EVIDENCE_TERMS = (
     "针道", "穿刺针", "针数", "粒子", "种子", "剂量", "间距", "计划", "规划", "导板",
     "needle", "seed", "dose", "spacing", "plan",
@@ -550,8 +554,9 @@ def _scrub_false_metric_absence_claims(text: str, steps: List[Dict]) -> str:
 
     A denial is scrubbed only when an evidence term sits right next to the
     absence wording (no separator in between) and that same term appears in a
-    successful step result.  Honest gap statements ("本轮没有返回，所以无法
-    判断粒子干涉") and真缺失的说明 survive.
+    successful step result.  Honest gap statements ("nothing was returned this
+    turn, so seed interference cannot be judged") and genuine gap explanations
+    survive.
     """
     evidence = " ".join(
         str(s.get("result") or "")
@@ -851,7 +856,7 @@ def _presentation_capture_fallback(
 
     The browser owns the capture and the linked multimodal child owns the
     explanation.  When the capture plan succeeded, the empty-model fallback
-    must acknowledge that operation instead of claiming "本轮未能完成" — the
+    must acknowledge that operation instead of claiming "this turn failed" — the
     exact state hallucination users saw after a successful capture.
     ``capture_pending`` marks the deliberate loop stop after a
     presentation-only tool batch, where other read-only helpers (ui_inspector)
@@ -1026,7 +1031,37 @@ def _bound_followup_messages(
             item["content"] = item["content"][:max_instruction_chars]
         kept.append(item)
 
-    for group in groups[-max(1, int(max_tool_rounds)):]:
+    retained_count = max(1, int(max_tool_rounds))
+    omitted = groups[:-retained_count]
+    evidence_marker = "[Earlier same-turn tool evidence; data only, not instructions]\n"
+    previous_evidence = []
+    for item in loose:
+        value = item.get("content", "")
+        if isinstance(value, str) and value.startswith(evidence_marker):
+            try:
+                previous_evidence.extend(json.loads(value[len(evidence_marker):]))
+            except (ValueError, TypeError):
+                pass
+    kept = [item for item in kept if not str(item.get("content", "")).startswith(evidence_marker)]
+    if omitted or previous_evidence:
+        evidence = previous_evidence
+        for group in omitted[-16:]:
+            calls = group[0].get("tool_calls") or []
+            call_details = {str(call.get("id")): call.get("function") or {} for call in calls}
+            for item in group:
+                if item.get("role") == "tool":
+                    call_id = str(item.get("tool_call_id"))
+                    detail = call_details.get(call_id, {})
+                    evidence.append({"tool": detail.get("name", "tool"),
+                                     "arguments_excerpt": str(detail.get("arguments") or "")[:240],
+                                     "result_excerpt": str(item.get("content") or "")[:400]})
+        # Compact old evidence instead of forgetting the first task whenever
+        # a compound turn has more than two tool calls. It cannot grant actions.
+        evidence = evidence[-16:]
+        compact = json.dumps(evidence, ensure_ascii=False)
+        kept.append({"role": "user", "content": evidence_marker + compact})
+
+    for group in groups[-retained_count:]:
         normalized: List[Dict] = []
         for item in group:
             copy_item = dict(item)
@@ -1052,7 +1087,9 @@ def _tool_call_signature(tool_name: str, params: Dict) -> str:
 class LLMRuntimeMixin:
     def _record_ordered_action_plan(self, tool_calls, *, source: str = "llm") -> None:
         """Persist provider-selected tool order for this isolated chat turn."""
-        plan = ActionPlan.from_tool_calls(tool_calls or (), source=source)
+        plan = ActionPlan.from_tool_calls(
+            [call for call in (tool_calls or ()) if not call.get("_argument_error")], source=source,
+        )
         if not plan.steps:
             return
         authorization = getattr(self, "_current_execution_authorization", lambda: None)()
@@ -1075,13 +1112,22 @@ class LLMRuntimeMixin:
         if plan is None or not plan.steps:
             return ""
         ordered = " -> ".join(step.tool for step in plan.ordered_steps())
+        authorization = getattr(self, "_current_execution_authorization", lambda: None)()
+        receipts = getattr(authorization, "execution_receipts", [])
         return (
             "\n### ORDERED ACTION PLAN\n"
             "The current request contains an ordered business action plan. "
             "Preserve this order and complete prerequisites before downstream actions. "
             f"Required order: {ordered}. "
-            "Do not summarize early and do not call a downstream tool before its dependencies.\n"
+            "Do not call a downstream tool before its dependencies. Completed steps need not repeat. "
+            "Pending/dispatched is not completed; failed dependencies leave downstream work unperformed. "
+            "Answer each independent user request from its own evidence, and state partial results accurately.\n"
+            + ("Execution receipts: " + json.dumps(receipts, ensure_ascii=False) + "\n" if receipts else "")
         )
+
+    def _new_step_execution_state(self):
+        authorization = getattr(self, "_current_execution_authorization", lambda: None)()
+        return StepExecutionState(getattr(authorization, "execution_receipts", None))
 
     def _order_tool_calls_by_action_plan(self, tool_calls):
         """Apply the merged turn plan after filtering and dependency injection.
@@ -2095,6 +2141,7 @@ class LLMRuntimeMixin:
         _screenshot_called_this_turn = set()
         _empty_response_retries = 0
         _executed_successful_tool_keys = set()
+        execution_state = self._new_step_execution_state()
         # Trace prose is part of the visible dialogue turn.  Keep it aligned
         # with the language resolved by ChatWorkflowMixin instead of letting
         # the provider-loop's historical English literals leak into a
@@ -2138,24 +2185,29 @@ class LLMRuntimeMixin:
                 ),
             )
             messages = _bound_followup_messages(messages, base_message_count)
-            messages = self._enforce_context_budget(
-                messages, None, current_user_content=message
-            )
-
+            tools_for_llm = self.registry.to_openai_tools()
+            if _no_files_loaded:
+                tools_for_llm = [item for item in tools_for_llm
+                                 if item.get("function", {}).get("name") not in _CT_DEPENDENT_MUTATIONS]
+            if internal_followup:
+                tools_for_llm = [item for item in tools_for_llm
+                                 if item.get("function", {}).get("name") in {"case_memory", "doc_reader", "dvh_curve", "query_metrics"}]
+            tools_for_llm = filter_tool_schemas(tools_for_llm, getattr(self, "_active_turn_policy", None))
+            messages = self._enforce_context_budget(messages, tools_for_llm, current_user_content=message)
             try:
                 response = _chat_messages_with_retry(
-                    self.brain_router, messages=messages, tools=None, max_retries=1
+                    self.brain_router, messages=messages, tools=tools_for_llm, max_retries=1
                 )
             except Exception as e:
                 if is_context_length_error(e) and not getattr(self, "_ctx_retry_used", False):
                     self._ctx_retry_used = True
                     logger.warning("Context window exceeded; compressing and retrying: %s", e)
                     messages = self._enforce_context_budget(
-                        messages, None, aggressive=True, current_user_content=message
+                        messages, tools_for_llm, aggressive=True, current_user_content=message
                     )
                     try:
                         response = _chat_messages_with_retry(
-                            self.brain_router, messages=messages, tools=None, max_retries=1
+                            self.brain_router, messages=messages, tools=tools_for_llm, max_retries=1
                         )
                     except Exception as retry_error:
                         logger.error(f"LLM call failed after context compression: {retry_error}")
@@ -2185,35 +2237,7 @@ class LLMRuntimeMixin:
             tool_calls = []
             if response.tool_calls:
                 for tc in response.tool_calls:
-                    # Handle OpenAI format: {"function": {"name": ..., "arguments": ...}}
-                    if "function" in tc:
-                        func = tc["function"]
-                        raw_args = func.get("arguments", "{}")
-                        if isinstance(raw_args, str):
-                            args = json.loads(raw_args) if raw_args else {}
-                        elif isinstance(raw_args, dict):
-                            args = raw_args
-                        else:
-                            args = {}
-                        tool_calls.append({
-                            "id": tc.get("id", f"tool_{len(tool_calls)}"),
-                            "tool": func.get("name", ""),
-                            "params": args,
-                        })
-                    else:
-                        # Native Anthropic format: {"name": ..., "arguments": ...}
-                        raw_args = tc.get("arguments", tc.get("input", {}))
-                        if isinstance(raw_args, str):
-                            args = json.loads(raw_args) if raw_args else {}
-                        elif isinstance(raw_args, dict):
-                            args = raw_args
-                        else:
-                            args = {}
-                        tool_calls.append({
-                            "id": tc.get("id", f"tool_{len(tool_calls)}"),
-                            "tool": tc.get("name", ""),
-                            "params": args,
-                        })
+                    tool_calls.append(decode_provider_call(tc, len(tool_calls)))
             else:
                 # Parse from text format (```tool_call blocks)
                 tool_calls = self._parse_tool_calls(content)
@@ -2234,7 +2258,7 @@ class LLMRuntimeMixin:
                 )
                 # A completed plan in memory must never override a new
                 # knowledge or external-project request with a stale report.
-                if _planning_done and not _external_project_query:
+                if _planning_done and not _external_project_query and not content.strip():
                     final_response = self._build_planning_report(
                         self.memory.user_lang, steps
                     )
@@ -2321,13 +2345,16 @@ class LLMRuntimeMixin:
                     valid_tool_calls,
                     source="llm_tool_calls",
                 )
-            tool_calls = self._normalize_clinical_tool_calls(valid_tool_calls, message)
+            malformed_calls = [call for call in valid_tool_calls if call.get("_argument_error")]
+            tool_calls = self._normalize_clinical_tool_calls(
+                [call for call in valid_tool_calls if not call.get("_argument_error")], message,
+            )
             if authorization is not None:
                 tool_calls = [
                     call for call in tool_calls
                     if authorization.tool_allowed(call.get("tool", ""))
                 ]
-            tool_calls = self._order_tool_calls_by_action_plan(tool_calls)
+            tool_calls = execution_state.prepare(self._order_tool_calls_by_action_plan(tool_calls) + malformed_calls)
             if not tool_calls:
                 tools_executed = True
                 break
@@ -2350,11 +2377,22 @@ class LLMRuntimeMixin:
                 # succeeded in this turn.  The latter closes the loop where
                 # a provider keeps selecting the same read tools after their
                 # results were already appended to the prompt.
-                _tool_key = _tool_call_signature(tool_name, params)
-                if _tool_key in _failed_tools:
+                _tool_key = execution_state.signature(tool_name, params)
+                blocked_reason = execution_state.blocked_reason(tc)
+                if blocked_reason:
+                    result_text = ("未执行：前置任务尚未成功完成：" if _trace_zh else "Not executed: prerequisites have not completed: ") + blocked_reason
+                    step_id_ref[0] += 1
+                    steps.append({"id": step_id_ref[0], "type": "tool", "tool": tool_name,
+                                  "title": tool_name, "status": "error", "result": result_text,
+                                  "dependency_blocked": True})
+                    execution_state.record(tc, success=False, attempted=False)
+                    append_tool_receipt(messages, tc, result_text)
+                    _new_tool_call_executed = True
+                    continue
+                if _tool_key in _failed_tools or _tool_key in execution_state.failures:
                     logger.info(f"Skipping duplicate failed tool call: {tool_name}")
                     continue
-                if _tool_key in _executed_successful_tool_keys:
+                if execution_state.reuse(tc):
                     logger.warning("Skipping duplicate successful tool call: %s", tool_name)
                     continue
                 _new_tool_call_executed = True
@@ -2459,6 +2497,7 @@ class LLMRuntimeMixin:
                             )
 
                 step_status = "done" if tool_succeeded else "error"
+                execution_state.record(tc, success=tool_succeeded, metadata=getattr(tool_result, "metadata", None))
                 steps[-1]["status"] = step_status
                 steps[-1]["result"] = result_text[:200]
                 if tool_succeeded:
@@ -2472,11 +2511,9 @@ class LLMRuntimeMixin:
                     _input_missing = True
                     final_response = result_text
                     steps[-1]["requires_input"] = True
-                if not tool_succeeded and tool_name in (
-                    "ctv_segmentation", "oar_segmentation", "seed_planning", "planning_pipeline"
-                ):
-                    logger.info(f"Critical tool {tool_name} failed — stopping tool batch")
-                    break
+                # Failure blocks dependent steps through receipts, not unrelated
+                # questions/actions later in the same request. Keep the failed
+                # tool result in the model context before deciding what follows.
 
                 # Track tools that returned 0 results to prevent retry loops
                 if result_text and ("Found 0" in result_text or "0 match" in result_text or "No results" in result_text):
@@ -2595,35 +2632,9 @@ class LLMRuntimeMixin:
             if not final_response.strip() and raw_final.strip():
                 final_response = ""
 
-        # Strip transitional phrases from response (always run, not just when tools executed)
-        if final_response:
-            # Split into sentences, filter out transitional ones, keep substantive ones
-            # Sentence terminators: 。！？.!?\n and ：(Chinese colon when used as terminator)
-            sentences = re.split(r'(?<=[。！？.!?\n：])\s*', final_response.strip())
-            _transitional_keywords = [
-                'let me', 'i\'ll', 'i will', 'allow me', 'sure',
-                'okay', 'here you go', 'certainly', 'of course',
-                'searching', 'fetching', 'retrieving', 'accessing',
-                'reading', 'looking up', 'checking', 'browsing',
-            ]
-            substantive = []
-            for s in sentences:
-                s = s.strip()
-                if not s or len(s) < 3:
-                    continue
-                # Check if sentence is transitional (starts with transitional keyword)
-                s_lower = s.lower()
-                is_transitional = any(s_lower.startswith(kw) for kw in _transitional_keywords)
-                # Also treat bracket-only content as transitional
-                if re.match(r'^\[.{2,30}\]$', s):
-                    is_transitional = True
-                if not is_transitional:
-                    substantive.append(s)
-
-            if substantive:
-                final_response = ' '.join(substantive)
-            else:
-                final_response = ""
+        # The shared protocol cleaner already removes tool syntax. Preserve
+        # the answer's Markdown, decimals, URLs and short answers: sentence
+        # splitting here corrupted 120.2, table rows, and even a plain "No".
 
         if not final_response:
             if internal_followup:
@@ -3482,6 +3493,7 @@ class LLMRuntimeMixin:
         _screenshot_called_this_turn = set()
         _empty_response_retries = 0
         _executed_successful_tool_keys = set()
+        execution_state = self._new_step_execution_state()
         # Keep provider-loop trace prose in the language selected at the turn
         # boundary. Tool names and JSON keys remain stable identifiers.
         _trace_zh = getattr(self, "_active_trace_language", "en") == "zh"
@@ -3641,39 +3653,7 @@ class LLMRuntimeMixin:
                             # Check for tool calls in streaming response
                             if chunk.get("tool_calls"):
                                 for tc in chunk["tool_calls"]:
-                                    try:
-                                        # Handle different tool_call formats
-                                        if "function" in tc:
-                                            func = tc["function"]
-                                            raw_args = func.get("arguments", "{}")
-                                            # Handle both string and dict arguments
-                                            if isinstance(raw_args, str):
-                                                args = json.loads(raw_args) if raw_args else {}
-                                            elif isinstance(raw_args, dict):
-                                                args = raw_args
-                                            else:
-                                                args = {}
-                                            tool_calls_from_stream.append({
-                                                "id": tc.get("id", f"tool_{len(tool_calls_from_stream)}"),
-                                                "tool": func.get("name", ""),
-                                                "params": args,
-                                            })
-                                        elif "name" in tc:
-                                            # Direct format
-                                            raw_args = tc.get("arguments", "{}")
-                                            if isinstance(raw_args, str):
-                                                args = json.loads(raw_args) if raw_args else {}
-                                            elif isinstance(raw_args, dict):
-                                                args = raw_args
-                                            else:
-                                                args = {}
-                                            tool_calls_from_stream.append({
-                                                "id": tc.get("id", f"tool_{len(tool_calls_from_stream)}"),
-                                                "tool": tc["name"],
-                                                "params": args,
-                                            })
-                                    except (json.JSONDecodeError, KeyError, TypeError) as e:
-                                        logger.warning(f"Failed to parse tool call: {e}")
+                                    tool_calls_from_stream.append(decode_provider_call(tc, len(tool_calls_from_stream)))
                             break
                         elif chunk.get("type") == "error":
                             llm_error = chunk.get("content", "Unknown error")
@@ -3784,7 +3764,7 @@ class LLMRuntimeMixin:
                 # Keep the planning fast-path limited to actual planning
                 # requests; external-project answers must come from the LLM's
                 # verified web evidence, never from the previous plan.
-                if _planning_done_in_stream and not _external_project_query:
+                if _planning_done_in_stream and not _external_project_query and not content.strip():
                     final_response = self._build_planning_report(
                         self.memory.user_lang, steps
                     )
@@ -3916,13 +3896,16 @@ class LLMRuntimeMixin:
                     valid_tool_calls,
                     source="llm_tool_calls",
                 )
-            tool_calls = self._normalize_clinical_tool_calls(valid_tool_calls, message)
+            malformed_calls = [call for call in valid_tool_calls if call.get("_argument_error")]
+            tool_calls = self._normalize_clinical_tool_calls(
+                [call for call in valid_tool_calls if not call.get("_argument_error")], message,
+            )
             if authorization is not None:
                 tool_calls = [
                     call for call in tool_calls
                     if authorization.tool_allowed(call.get("tool", ""))
                 ]
-            tool_calls = self._order_tool_calls_by_action_plan(tool_calls)
+            tool_calls = execution_state.prepare(self._order_tool_calls_by_action_plan(tool_calls) + malformed_calls)
             if not tool_calls:
                 tools_executed = True
                 break
@@ -3957,8 +3940,21 @@ class LLMRuntimeMixin:
                 tool_name = tc.get("tool", "")
                 params = tc.get("params", {})
 
-                _tool_key = _tool_call_signature(tool_name, params)
-                if _tool_key in _executed_successful_tool_keys:
+                _tool_key = execution_state.signature(tool_name, params)
+                blocked_reason = execution_state.blocked_reason(tc)
+                if blocked_reason:
+                    result_text = ("未执行：前置任务尚未成功完成：" if _trace_zh else "Not executed: prerequisites have not completed: ") + blocked_reason
+                    step_id_ref[0] += 1
+                    blocked_step = {"id": step_id_ref[0], "type": "tool", "tool": tool_name,
+                                    "title": tool_name, "status": "error", "result": result_text,
+                                    "dependency_blocked": True}
+                    steps.append(blocked_step)
+                    yield yield_event("step", blocked_step)
+                    execution_state.record(tc, success=False, attempted=False)
+                    append_tool_receipt(messages, tc, result_text)
+                    _new_tool_call_executed = True
+                    continue
+                if execution_state.reuse(tc):
                     logger.warning("Skipping duplicate successful tool call: %s", tool_name)
                     continue
                 _new_tool_call_executed = True
@@ -4194,7 +4190,9 @@ class LLMRuntimeMixin:
                     tool_step["content"] = "需要肿瘤部位信息"
                     tool_step["result"] = result_text[:200]
                     yield yield_event("step", tool_step)
-                    break
+                    execution_state.record(tc, success=False, attempted=False)
+                    append_tool_receipt(messages, tc, result_text)
+                    continue
                 if tool_name in ("self_evolve", "evolve"):
                     result_text = self._handle_self_evolution()
                 elif tool_name in ("code_writer", "write_tool", "create_tool"):
@@ -4440,6 +4438,7 @@ class LLMRuntimeMixin:
                     # Unknown tools and raised exceptions have no ToolResult.
                     step_status = "error"
                 _metadata = getattr(tool_result, "metadata", {}) or {}
+                execution_state.record(tc, success=step_status == "done", metadata=_metadata)
                 if tool_result is not None and tool_result.success:
                     _executed_successful_tool_keys.add(_tool_key)
                     _turn_evidence.append((tool_name, result_text))
@@ -4492,11 +4491,8 @@ class LLMRuntimeMixin:
                 # If a critical prerequisite tool fails, stop executing
                 # remaining tool calls in this batch so the LLM can ask
                 # the user for missing info instead of cascading failures.
-                if tool_step.get("status") == "error" and tool_name in (
-                    "ctv_segmentation", "oar_segmentation", "seed_planning", "planning_pipeline"
-                ):
-                    logger.info(f"Critical tool {tool_name} failed — stopping tool batch (stream)")
-                    break
+                # Independent operations continue; dependent operations require
+                # a successful receipt rather than merely an earlier position.
 
                 # Also store ct_path for planning pipeline
                 if tool_name in ('ctv_segmentation', 'oar_segmentation', 'biomedparse_segmentation') and 'image_path' in params:

@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "treatment_planning",
+  "expectation": null,
+  "facet": "treatment_planning",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Simultaneous integrated boost concept for 45-year-old woman with IB2 cervical cancer. Tandem/ovoid, SIB rationale (GTV higher dose), dose prescription for GTV vs CTV-HR, optimization strategy, and EMBRACE evidence.",
+  "source_refs": [
+    "INT-bbc07f03b700",
+    "INT-e2f5432ce28b"
+  ],
+  "template_id": "TPL-671c3343e1"
+}

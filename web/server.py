@@ -245,6 +245,33 @@ def _case_has_running_chat_task(task_manager: Any, user_id: str, session_id: str
         return True
 
 
+def _case_access_persist_due(
+    previous: Optional[float], now: float, interval: float
+) -> bool:
+    """Throttle durable access-time writes to at most once per interval."""
+    return previous is None or (now - previous) >= interval
+
+
+def _case_agent_recently_active(
+    cached_agent: Any,
+    last_seen: Optional[float],
+    now: float,
+    active_window: float,
+) -> bool:
+    """Return whether a cached Agent was touched inside the active window.
+
+    ``last_accessed_at`` only advances on an explicit case selection, so the
+    idle-archive sweep must also consult the in-memory timestamp (refreshed on
+    every Agent access). A case whose Agent is still cached and was recently
+    used is in active use and must never be moved to cold storage.
+    """
+    return (
+        cached_agent is not None
+        and last_seen is not None
+        and (now - last_seen) < active_window
+    )
+
+
 def _persist_agent_change(
     workspace_store: Any,
     owner_id: str,
@@ -441,6 +468,39 @@ def create_app(config: Optional[Dict] = None):
     _sessions_lock = threading.RLock()
     _max_sessions = 50  # Maximum number of concurrent sessions
     _session_timeout = 3600  # Session timeout in seconds (1 hour)
+    # The idle-archive sweep runs at most once an hour, so refreshing the
+    # durable access timestamp every few minutes is ample. Throttling keeps the
+    # request path free of a workspace write on every call.
+    _CASE_ACCESS_PERSIST_SECONDS = 300.0
+    _last_persisted_access: Dict[tuple, float] = {}
+
+    def _persist_case_access(user_id: str, session_id: str) -> None:
+        """Refresh the durable access time for an actively used case.
+
+        ``last_accessed_at`` used to advance only on an explicit case
+        selection, so a case left open in a browser drifted past the archive
+        window and could be swept to cold storage mid-session. This records
+        real access, throttled, and never lets a bookkeeping failure change the
+        outcome of the request that triggered it.
+        """
+        try:
+            owner_key = str(user_id)
+            case_key = str(session_id)
+            cache_key = (owner_key, case_key)
+            now = time.time()
+            with _sessions_lock:
+                previous = _last_persisted_access.get(cache_key)
+                if not _case_access_persist_due(
+                    previous, now, _CASE_ACCESS_PERSIST_SECONDS
+                ):
+                    return
+                _last_persisted_access[cache_key] = now
+            workspace_store.touch_session(owner_key, case_key)
+        except Exception:
+            logger.debug(
+                "Could not refresh case access time user=%s session=%s",
+                user_id, session_id, exc_info=True,
+            )
 
     def _agent_has_running_task(cache_key: tuple) -> bool:
         """Keep the sole in-memory agent for an active case task authoritative."""
@@ -569,6 +629,7 @@ def create_app(config: Optional[Dict] = None):
             return None
         cache_key = (user["id"], resolved_session_id)
 
+        cache_hit = False
         with _sessions_lock:
             # Clean up old sessions periodically.
             _cleanup_old_sessions()
@@ -578,13 +639,17 @@ def create_app(config: Optional[Dict] = None):
                 if has_request_context():
                     g.brachybot_agent = cached
                     g.brachybot_workspace = (user["id"], resolved_session_id)
-                return cached
-            initializer = _session_initializers.get(cache_key)
-            is_initializer = initializer is None
-            if is_initializer:
-                initializer = threading.Event()
-                _session_initializers[cache_key] = initializer
-                hydration_generation = _session_generations.get(cache_key, 0)
+                cache_hit = True
+            else:
+                initializer = _session_initializers.get(cache_key)
+                is_initializer = initializer is None
+                if is_initializer:
+                    initializer = threading.Event()
+                    _session_initializers[cache_key] = initializer
+                    hydration_generation = _session_generations.get(cache_key, 0)
+        if cache_hit:
+            _persist_case_access(user["id"], resolved_session_id)
+            return cached
 
         # A label and a planning request can arrive together after a case
         # switch.  Lightweight requests must not wait behind a large CT/NPY
@@ -728,6 +793,10 @@ def create_app(config: Optional[Dict] = None):
                     return None
                 _sessions[cache_key] = agent
                 _session_timestamps[cache_key] = time.time()
+            # Opening a case is real access even when the browser had it
+            # selected before this server process started; persist it so the
+            # idle-archive sweep cannot move an in-use case to cold storage.
+            _persist_case_access(user["id"], resolved_session_id)
             def _complete_workspace_hydration(
                     current_agent=agent,
                     owner_id=user["id"],
@@ -1048,7 +1117,8 @@ def create_app(config: Optional[Dict] = None):
                 "Workspace transfer recovery scan failed; sources are retained",
                 exc_info=True,
             )
-        cutoff = time.time() - (
+        now = time.time()
+        cutoff = now - (
             int(os.environ.get("BRACHYBOT_SESSION_ARCHIVE_AFTER_DAYS", "7"))
             * 24
             * 60
@@ -1068,6 +1138,23 @@ def create_app(config: Optional[Dict] = None):
                 with _sessions_lock:
                     if cache_key in _session_initializers:
                         continue
+                    cached_agent = _sessions.get(cache_key)
+                    last_seen = _session_timestamps.get(cache_key)
+                if _case_agent_recently_active(
+                    cached_agent, last_seen, now, _session_timeout
+                ):
+                    # ``last_accessed_at`` only advances on an explicit case
+                    # selection, so a case left open in a browser drifts past
+                    # the archive window and gets moved to cold storage while
+                    # the user is still working in it. The in-memory timestamp
+                    # is refreshed on every Agent access; treat a recently used
+                    # Agent as an active case and refresh its durable timestamp
+                    # instead of archiving it out from under the user.
+                    try:
+                        workspace_store.touch_session(owner_id, entry.id)
+                    except WorkspaceError:
+                        pass
+                    continue
                 _drop_cached_agent_for_owner(owner_id, entry.id, flush=False)
                 try:
                     archived = workspace_store.archive_session(owner_id, entry.id)
@@ -1090,6 +1177,16 @@ def create_app(config: Optional[Dict] = None):
                         entry.id,
                         exc_info=True,
                     )
+
+    if config.get("expose_internal_seams"):
+        # Deterministic hooks for the archive sweep regression tests. They are
+        # opt-in so production callers never expose cache internals.
+        app.extensions["brachybot_agent_cache"] = (
+            _sessions,
+            _session_timestamps,
+            _sessions_lock,
+        )
+        app.extensions["brachybot_archive_scan"] = _archive_inactive_sessions_once
 
     if config.get("workspace_maintenance", True):
         archive_interval = max(
@@ -1731,7 +1828,7 @@ def create_app(config: Optional[Dict] = None):
         if "study_date" in tags and len(tags["study_date"]) == 8 and tags["study_date"].isdigit():
             d = tags["study_date"]
             tags["study_date"] = f"{d[:4]}-{d[4:6]}-{d[6:8]}"
-        # Map patient_sex to UI gender vocabulary (男/女 vs M/F)
+        # Map patient_sex to UI gender vocabulary (Male/Female vs M/F)
         if "patient_sex" in tags:
             sx = tags["patient_sex"].upper()
             if sx.startswith("M"):

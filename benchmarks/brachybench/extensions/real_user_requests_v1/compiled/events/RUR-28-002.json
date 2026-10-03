@@ -1,0 +1,19 @@
+[
+  {
+    "event": "commit_seed_edit",
+    "kind": "environment_event",
+    "payload": {
+      "revision": 8,
+      "target": "seed-A"
+    },
+    "trigger": "start"
+  },
+  {
+    "event": "capture_deferred",
+    "kind": "environment_event",
+    "payload": {
+      "reason": "target_not_loaded"
+    },
+    "trigger": "capture.attempted"
+  }
+]

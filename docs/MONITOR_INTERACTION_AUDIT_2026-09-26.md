@@ -1,494 +1,494 @@
-# Monitor 交互体验深度审计报告
+# Monitor Interaction Experience In-Depth Audit Report
 
-**日期**：2026-09-26
-**范围**：Monitor 全链路交互体验——前端 UI、后端引擎、agent 集成、数据流
-**性质**：交互范式层面的根本性问题诊断与系统改进方向
-
----
-
-## 0. 愿景回顾
-
-> 用户让 BrachyBot **监督**手动/自动计划过程，在关键交互后**收到实时反馈**，在高价值检查点**自动截图留证**，**随时请求详细建议**，停止时**生成最终工作流报告**。
-
-核心词：**实时**、**反馈**、**监督**、**辅导**。
-
-这五个词指向的产品体验是：**一个安静、持续、可信赖的陪练教练**——它在旁边看着你做计划，偶尔提醒你"这两颗种子太近了"或"这次编辑让 V100 提升了 2%"，而不是一个把所有观察结果倒进聊天窗口的日志系统。
+**Date**: 2026-09-26
+**Scope**: End-to-end Monitor interaction experience—frontend UI, backend engine, agent integration, data flow
+**Nature**: Diagnosis of fundamental problems at the interaction-paradigm level and directions for systemic improvement
 
 ---
 
-## 1. 根本问题一：Chat-as-Dashboard 的范式错误
+## 0. Vision Recap
 
-### 1.1 现状
+> The user lets BrachyBot **supervise** the manual/automatic planning process, **receives real-time feedback** after key interactions, **automatically captures screenshots as evidence** at high-value checkpoints, **can request detailed advice at any time**, and **generates a final workflow report** on stop.
 
-Monitor 的**所有输出**——启动确认、间距违规警告、剂量对比、编辑证据卡、截图、停止总结——全部渲染在**聊天消息流**中。前端没有独立的监控面板、HUD 或仪表盘。
+Core words: **real-time**, **feedback**, **supervision**, **coaching**.
 
-**代码证据**：
-- `brachybot-monitor-interaction.js:67`：检查点卡片通过 `addChat('bot-response', ...)` 注入聊天流
-- `brachybot-ui-api.js:1777-1827`（`_flushMonitorFeedback`）：批量反馈合并为"阶段监测"聊天消息
-- `brachybot-ui-api.js:1875-1908`（`_queueMonitorFeedback`）：即时/聚合反馈最终都是 `addChat`
-- `brachybot-3d-manual.js:2485-2498`：启动引导消息也是 `addChat`
-- `brachybot-3d-manual.js:2664-2681`：停止总结（含截图附件）也是 `addChat`
+These five words point to a product experience: **a quiet, continuous, trustworthy practice coach**—it watches you plan from the side, occasionally reminding you "these two seeds are too close" or "this edit improved V100 by 2%", rather than a logging system that dumps all observations into a chat window.
 
-### 1.2 为什么这是根本问题
+---
 
-**Chat 是"请求-响应"的对话范式**，不是"持续状态监控"的仪表盘范式：
+## 1. Root Problem One: The Paradigm Error of Chat-as-Dashboard
 
-| 维度 | Chat（对话） | Dashboard（仪表盘） |
+### 1.1 Current State
+
+**All of Monitor's output**—startup confirmation, spacing violation warnings, dose comparisons, edit evidence cards, screenshots, stop summaries—is rendered in the **chat message stream**. The frontend has no independent monitoring panel, HUD, or dashboard.
+
+**Code evidence**:
+- `brachybot-monitor-interaction.js:67`: checkpoint cards are injected into the chat stream via `addChat('bot-response', ...)`
+- `brachybot-ui-api.js:1777-1827` (`_flushMonitorFeedback`): batches of feedback are merged into a "phase monitoring" chat message
+- `brachybot-ui-api.js:1875-1908` (`_queueMonitorFeedback`): immediate/aggregated feedback ultimately all use `addChat`
+- `brachybot-3d-manual.js:2485-2498`: the startup guidance message also uses `addChat`
+- `brachybot-3d-manual.js:2664-2681`: the stop summary (including screenshot attachments) also uses `addChat`
+
+### 1.2 Why This Is a Root Problem
+
+**Chat is a "request-response" conversation paradigm**, not a "continuous state monitoring" dashboard paradigm:
+
+| Dimension | Chat (conversation) | Dashboard |
 |---|---|---|
-| 时间模型 | 离散回合 | 连续流 |
-| 注意力模型 | 用户主动读 | 系统主动推送 |
-| 空间模型 | 垂直滚动，后浪推前浪 | 固定区域，状态驻留 |
-| 信息密度 | 一段文字讲完 | 多维度并列 |
-| 累积性 | 丢失（被推走） | 保留（常驻） |
+| Time model | Discrete turns | Continuous stream |
+| Attention model | User actively reads | System actively pushes |
+| Spatial model | Vertical scrolling, new pushing out old | Fixed regions, state persists |
+| Information density | One block of text at a time | Multiple dimensions side by side |
+| Accumulation | Lost (pushed away) | Retained (persistent) |
 
-Monitor 的本质是**第二种**，但被强行塞进**第一种**的容器。后果：
+Monitor's essence is the **second**, but it is forced into the container of the **first**. Consequences:
 
-1. **反馈被推走**：连续编辑 3 颗种子后，前 2 条反馈已被推到滚动区之外。用户需要向上滚动回看——在 3D 规划的工作流中，这严重打断思路。
-2. **无法一目了然**：用户在 3D 视图里看几何，想知道"现在 V100 多少？间距有没有问题？到哪一步了？"——必须把视线从 3D 移到聊天区、滚动查找。
-3. **截图/卡片互相遮挡**：截图附在聊天消息上，编辑卡也在聊天里，历史消息被挤出视野。
-4. **无法对比**：想看"编辑 1 vs 编辑 2 的剂量差异"，只能在两条聊天消息之间来回切换。
+1. **Feedback gets pushed away**: after three consecutive seed edits, the first two pieces of feedback have already been pushed outside the scroll area. The user must scroll up to review them—in a 3D planning workflow, this severely interrupts their train of thought.
+2. **No at-a-glance view**: while looking at geometry in the 3D view, the user wants to know "what is V100 right now? Are there spacing problems? Which step am I on?"—they must move their gaze from the 3D view to the chat area and scroll to find out.
+3. **Screenshots/cards occlude each other**: screenshots are attached to chat messages, edit cards are also in chat, and historical messages get squeezed out of view.
+4. **No comparison**: to see "the dose difference between edit 1 vs edit 2", the user can only switch back and forth between two chat messages.
 
-### 1.3 系统改进方向
+### 1.3 Directions for Systemic Improvement
 
-**必须引入持久化监控面板（Monitor HUD）**，与聊天流并存而非替代。面板至少包含：
-- **当前计划指标卡**：V100 / D90 / V200 / OAR Dmax，带趋势箭头
-- **工作流进度**：当前阶段、已完成步骤、下一步建议（清单式）
-- **最近事件时间线**：滚动列表，带 severity 色标（info/warn/blocking）
-- **待处理操作**：未决策的编辑（restore/keep）、未查看的截图
+**A persistent monitoring panel (Monitor HUD) must be introduced**, coexisting with—not replacing—the chat stream. The panel should at minimum contain:
+- **Current plan metrics card**: V100 / D90 / V200 / OAR Dmax, with trend arrows
+- **Workflow progress**: current phase, completed steps, next-step suggestions (checklist style)
+- **Recent events timeline**: a scrolling list with severity color coding (info/warn/blocking)
+- **Pending operations**: undecided edits (restore/keep), unviewed screenshots
 
-聊天流保留**对话内容**（启动确认、停止总结、用户主动问答），但**状态性反馈**迁移到 HUD。
+The chat stream retains **conversational content** (startup confirmation, stop summary, user-initiated Q&A), but **stateful feedback** migrates to the HUD.
 
-**这不是"锦上添花"，而是当前体验不可用的根本原因。** 没有 HUD，monitor 的反馈再准确也传达不了。
-
----
-
-## 2. 根本问题二：空间反馈断链——说了位置，不指位置
-
-### 2.1 现状
-
-监控反馈说"seed-123 与 seed-456 表面间隙 1.2mm"，但 **3D Viewer 中不发生任何视觉变化**——不高亮这两颗种子、不闪烁、不聚焦。用户必须手动在 Data Tree 中找到它们，手动旋转视角。
-
-**代码证据**：
-- `monitor_engine.py:246-255`：反馈文本包含 `worst.get('first_id')` 和 `worst.get('second_id')`——纯文本 ID
-- `brachybot-monitor-interaction.js:38-43`：冲突对渲染为 markdown 文字
-- `monitor_changes.py:343-363`（`screenshot()`）：截图指令带 `focus_seed_ids`，但这只影响**截图取景**，不影响交互时的 Viewer 状态
-
-### 2.2 为什么这是根本问题
-
-临床规划是**高度空间化**的工作。用户的心智模型是"这颗种子在这里，那根针在那里，它们之间的距离是……"。监控反馈把空间问题翻译成**文本符号**（ID + 数字），用户必须在脑中反向映射回 3D 空间——增加认知负担，降低反馈的可操作性。
-
-对比体验：
-- **现状**："seed-123 与 seed-456 间距 1.2mm" -> 用户想"哪两颗？在哪儿？" -> 手动找
-- **期望**：3D 视图中 seed-123 和 seed-456 **同时高亮**（红色脉冲），一条**红色连线**标注 1.2mm，相机自动**聚焦到这对冲突对**
-
-### 2.3 系统改进方向
-
-需要一个**空间标注层（Spatial Annotation Layer）**，监听监控反馈中的对象 ID，在 3D Viewer 中：
-- 高亮涉及的对象（颜色 = severity）
-- 绘制对象间的距离标注线
-- 提供一键"跳转到冲突对"按钮（点击反馈文字 -> 相机聚焦到对应对象）
-- 持续显示直到用户确认或下一次编辑覆盖
-
-**这不能只靠截图。** 截图是静态的、滞后的、单次的；用户需要的是**活的 3D 空间标注**。
+**This is not a "nice-to-have" but the root cause of the current experience being unusable.** Without a HUD, no matter how accurate monitor feedback is, it cannot be conveyed.
 
 ---
 
-## 3. 根本问题三：反馈是纯文本，不是结构化决策支持
+## 2. Root Problem Two: Broken Spatial Feedback Chain—Talking About Location Without Pointing to It
 
-### 3.1 现状
+### 2.1 Current State
 
-反馈引擎（`monitor_engine.py:218-311`）输出的是**一段英文/中文句子**，然后经 `_localize_monitor_text` 翻译成中文。前端收到后渲染为 markdown 文字。
+Monitoring feedback says "seed-123 and seed-456 have a surface gap of 1.2mm", but **no visual change occurs in the 3D Viewer**—it does not highlight these two seeds, flash, or focus. The user must manually find them in the Data Tree and manually rotate the view.
 
-**关键缺失**：
-- 没有 severity 分级（info / warn / blocking）——所有反馈看起来一样重要
-- 没有颜色编码——用户无法快速识别严重问题
-- 没有可操作的内联动作——反馈说"请调整间距"但没有"跳转到这对种子"的按钮
-- 没有数值可视化——"V100=92.3%"是文字，不是仪表盘上的指针
+**Code evidence**:
+- `monitor_engine.py:246-255`: the feedback text contains `worst.get('first_id')` and `worst.get('second_id')`—plain-text IDs
+- `brachybot-monitor-interaction.js:38-43`: conflict pairs are rendered as markdown text
+- `monitor_changes.py:343-363` (`screenshot()`): the screenshot instruction carries `focus_seed_ids`, but this only affects **screenshot framing**, not the Viewer state during interaction
 
-**代码证据**：
-- `monitor_engine.py:218-311`：返回 `Optional[str]`——纯字符串
-- `monitor_changes.py:366-435`（`interaction()`）：有 `priority: attention/review/info` 字段，但前端只用它控制标题文字，不控制颜色/图标/布局
-- `brachybot-monitor-interaction.js:31-72`（`render`）：所有内容平铺为 markdown 行，无视觉层次
+### 2.2 Why This Is a Root Problem
 
-### 3.2 系统改进方向
+Clinical planning is a **highly spatial** activity. The user's mental model is "this seed is here, that needle is there, and the distance between them is…". Monitoring feedback translates spatial problems into **text symbols** (ID + number), so the user must reverse-map them back into 3D space in their head—increasing cognitive load and reducing the actionability of the feedback.
 
-反馈需要**结构化 schema**（而非纯文本字符串），至少包含 severity、category、headline、spatial_refs、action。前端根据 severity 控制颜色/图标/位置，根据 spatial_refs 控制 3D 高亮，根据 action 生成按钮。
+Contrast the experiences:
+- **Current**: "seed-123 and seed-456 are 1.2mm apart" -> the user thinks "which two? where?" -> manual search
+- **Desired**: in the 3D view, seed-123 and seed-456 are **highlighted simultaneously** (red pulse), a **red connecting line** labels 1.2mm, and the camera automatically **focuses on this conflicting pair**
 
----
+### 2.3 Directions for Systemic Improvement
 
-## 4. 根本问题四：工作流不可见——用户不知道"到哪了"
+A **Spatial Annotation Layer** is needed, which listens to object IDs in monitoring feedback and, in the 3D Viewer:
+- highlights the objects involved (color = severity)
+- draws distance annotation lines between objects
+- provides a one-click "jump to conflicting pair" button (clicking feedback text -> the camera focuses on the corresponding objects)
+- keeps displaying until the user confirms or the next edit overrides it
 
-### 4.1 现状
-
-Monitor 的启动消息说"你可以选择一枚粒子或针道端点进行微调"，但**不告诉用户当前处于工作流的哪个阶段**。用户不知道：CTV 分割完成了吗？轨迹规划做了几根针？布源做了几颗粒子？剂量算过了吗？现在应该做什么？
-
-**代码证据**：
-- `monitor_engine.py:6-28`（`_monitor_step_label`）：**引擎知道**阶段（ctv/oar/trajectory_init/trajectory_refine/seed_planning/dose_calc/dose_eval/full）
-- `monitor_engine.py:276-284`：`planning.step` 事件的反馈只说"CTV Segmentation is running/completed"——是**事件描述**，不是**工作流进度**
-- 前端没有工作流清单/进度条/步骤指示器
-
-### 4.2 为什么这是根本问题
-
-"监督"的反面是"放任"。如果 monitor 不告诉你"下一步该做什么"，它就只是一个日志记录器，不是一个教练。一个好的教练会说："你已经完成了 CTV 和 OAR 分割，现在应该规划穿刺轨迹——先确定进针点，注意避开这些不可穿刺结构。"
-
-### 4.3 系统改进方向
-
-Monitor HUD 需要一个**工作流清单**（checklist），每步可展开当前状态和下一步建议。引擎已经知道阶段——缺的是把阶段信息渲染成可视化的进度清单。
+**This cannot rely on screenshots alone.** Screenshots are static, lagging, and one-off; what the user needs is **live 3D spatial annotation**.
 
 ---
 
-## 5. 根本问题五：证据链脆弱——用户看到太多错误状态
+## 3. Root Problem Three: Feedback Is Plain Text, Not Structured Decision Support
 
-### 5.1 现状
+### 3.1 Current State
 
-截图/证据的状态机有 `pending -> ready | failed | none` 四态，加上 `superseded`。用户可能看到 5 种不同的错误文案：tab hidden / superseded / monitor stopped / unknown / retry。
+The feedback engine (`monitor_engine.py:218-311`) outputs **a sentence in English/Chinese**, which is then translated into Chinese by `_localize_monitor_text`. After receiving it, the frontend renders it as markdown text.
 
-**代码证据**：
-- `brachybot-monitor-interaction.js:17-29`：5 种错误码的文案
-- `brachybot-ui-api.js:2337-2360`：截图调度的节流/队列/superseded 逻辑
-- `brachybot-ui-api.js:2535-2564`：5 类错误通知
+**Key gaps**:
+- No severity grading (info / warn / blocking)—all feedback looks equally important
+- No color coding—users cannot quickly identify serious problems
+- No actionable inline actions—feedback says "please adjust the spacing" but gives no "jump to this seed pair" button
+- No numerical visualization—"V100=92.3%" is text, not a needle on a gauge
 
-### 5.2 为什么这是根本问题
+**Code evidence**:
+- `monitor_engine.py:218-311`: returns `Optional[str]`—a plain string
+- `monitor_changes.py:366-435` (`interaction()`): has a `priority: attention/review/info` field, but the frontend only uses it to control the title text, not color/icon/layout
+- `brachybot-monitor-interaction.js:31-72` (`render`): all content is flattened into markdown lines, with no visual hierarchy
 
-一个"实时监控"体验中，**失败状态不应该成为常态**。浏览器在后台 -> 截图失败；快速连续编辑 -> 旧截图被 superseded；监测停止 -> pending 截图标为失败；网络抖动 -> 截图上传失败。用户需要**点击"重试截图"**——这是一个不应该出现的手动操作。
+### 3.2 Directions for Systemic Improvement
 
-### 5.3 系统改进方向
-
-1. **自动重试**：截图失败后自动重试（指数退避），不要求用户点击
-2. **优雅降级**：截图失败时卡片仍然完整显示文字反馈，截图区域显示"暂不可用"而非错误详情
-3. **后台排队**：tab hidden 时截图入队，页面可见时自动补拍
-4. **合并展示**：同一编辑的截图状态只显示最终态，不显示中间过程
-
----
-
-## 6. 根本问题六：交互通道过多——用户不知道该用哪个
-
-### 6.1 现状
-
-用户可以通过**至少 5 种方式**与 monitor 交互：卡片按钮（monitor-interaction.js:74-119）、聊天编辑按钮（ui-api.js:1829-1865）、聊天 token 命令（ui-api.js:2153-2269）、UI 按钮（index.html:909-913）、Agent 工具（ui_controller:413-417）。
-
-问题：
-- **恢复/保留**有两个入口（卡片按钮 vs 聊天按钮），语义相同但外观不同
-- **停止监测**有三个入口，行为微妙不同
-- 卡片按钮在卡片 `superseded` 后变灰但**不解释为什么**
-- 聊天命令需要 12 位 hex token——用户不可能手打，只能靠按钮触发
-
-### 6.2 系统改进方向
-
-**统一为两种交互模式**：
-1. **面板/卡片操作**（鼠标）：HUD 和卡片上的按钮，是主要交互方式
-2. **自然语言对话**（键盘）：对 BrachyBot 说"帮我恢复刚才的编辑"，由 LLM 路由
-
-**去掉中间态**：不要暴露 token-based 聊天命令给用户。按钮点击直接调用 API，不经过聊天文本。
+Feedback needs a **structured schema** (rather than a plain-text string), containing at minimum severity, category, headline, spatial_refs, and action. The frontend controls color/icon/position based on severity, controls 3D highlighting based on spatial_refs, and generates buttons based on action.
 
 ---
 
-## 7. 根本问题七：剂量对比需要手动触发——最有价值的反馈被埋没
+## 4. Root Problem Four: The Workflow Is Invisible—Users Don't Know "Where They Are"
 
-### 7.1 现状
+### 4.1 Current State
 
-每次编辑后，卡片显示几何变化，但**剂量对比需要用户点击"重算剂量并比较"按钮**。
+Monitor's startup message says "you can select a seed or a needle endpoint to fine-tune", but **does not tell the user which stage of the workflow they are currently in**. The user doesn't know: is CTV segmentation done? How many needles did trajectory planning produce? How many seeds did seed placement produce? Has the dose been computed? What should be done now?
 
-**代码证据**：
-- `monitor-interaction.js:98-109`：`if (!card.data.interaction?.dose_current) add('Recompute and compare', ...)`
-- `3d-manual.js:1956-1958`：监测期间**不自动重算剂量**
+**Code evidence**:
+- `monitor_engine.py:6-28` (`_monitor_step_label`): **the engine knows** the stage (ctv/oar/trajectory_init/trajectory_refine/seed_planning/dose_calc/dose_eval/full)
+- `monitor_engine.py:276-284`: feedback for the `planning.step` event only says "CTV Segmentation is running/completed"—it is an **event description**, not **workflow progress**
+- The frontend has no workflow checklist/progress bar/step indicator
 
-### 7.2 为什么这是根本问题
+### 4.2 Why This Is a Root Problem
 
-剂量覆盖率（V100/D90）是放射治疗计划最核心的质量指标。用户最关心的就是"这次编辑让计划变好了还是变坏了"。把这个反馈**藏在按钮后面**，等于把最重要的信息藏起来了。
+The opposite of "supervision" is "letting things drift". If monitor doesn't tell you "what to do next", it is just a logger, not a coach. A good coach would say: "You have completed CTV and OAR segmentation; now you should plan the puncture trajectory—first determine the entry point, and be careful to avoid these non-puncturable structures."
 
-对比体验：
-- **现状**：编辑 -> 卡片显示"移动了 3.2mm" -> 用户想知道 V100 变化 -> 手动点击 -> 等 10-30 秒 -> 看到结果
-- **期望**：编辑 -> 卡片立即显示几何变化 + 自动触发剂量重算 -> 完成后卡片就地更新剂量对比
+### 4.3 Directions for Systemic Improvement
 
-### 7.3 系统改进方向
-
-监测模式下，成功的几何编辑应**自动触发剂量重算**，完成后就地更新卡片的剂量对比表。至少应该提供一个显眼的"自动对比"开关。
+The Monitor HUD needs a **workflow checklist**, where each step can expand to show its current status and next-step suggestions. The engine already knows the stage—what's missing is rendering the stage information as a visual progress checklist.
 
 ---
 
-## 8. 根本问题八：LLM 被边缘化——教练没有脑子
+## 5. Root Problem Five: A Fragile Evidence Chain—Users See Too Many Error States
 
-### 8.1 现状
+### 5.1 Current State
 
-LLM 在 monitor 中只做三件事：
-1. 路由聊天命令（"停止监测" -> `ui_control` intent）
-2. 读取证据包（`monitor_edit_evidence` 注入上下文）
-3. 回答"详细建议"（`/training/advice` -> `agent._answer_local_read_query`）
+The screenshot/evidence state machine has four states, `pending -> ready | failed | none`, plus `superseded`. Users may see 5 different error messages: tab hidden / superseded / monitor stopped / unknown / retry.
 
-**LLM 不参与**：
-- 反馈生成（纯规则引擎）
-- 工作流指导（无）
-- 临床解释（无）
-- 个性化（无）
+**Code evidence**:
+- `brachybot-monitor-interaction.js:17-29`: text for 5 error codes
+- `brachybot-ui-api.js:2337-2360`: throttling/queueing/superseded logic for screenshot scheduling
+- `brachybot-ui-api.js:2535-2564`: 5 categories of error notifications
 
-**代码证据**：
-- `monitor_engine.py`：全文无 LLM 调用
-- `monitor_changes.py:2`："No model inference or dose prediction"
-- `planning_routes.py:5662-5670`：advice 的自然语言部分走 `agent._answer_local_read_query`，但这是**回顾式**的，不是实时的
+### 5.2 Why This Is a Root Problem
 
-### 8.2 为什么这是根本问题
+In a "real-time monitoring" experience, **failure states should not become the norm**. Browser in the background -> screenshot fails; rapid consecutive edits -> old screenshots are superseded; monitoring stops -> pending screenshots are marked failed; network jitter -> screenshot upload fails. The user must **click "retry screenshot"**—a manual action that should not exist.
 
-一个"教练"如果只会背检查清单，不会解释"为什么这很重要"、"临床上这意味着什么"、"你的规划风格有什么特点"，那它就只是一个**规则报警器**，不是教练。
+### 5.3 Directions for Systemic Improvement
 
-愿景中"实时训练/监控"的"训练"二字意味着**教学**——解释临床原理、指出规划模式、推荐改进方向。这需要 LLM 的理解和表达能力。
-
-### 8.3 系统改进方向
-
-在确定性引擎之上，增加 **LLM 辅导层**：
-- **事后解释**：每次检查点后，LLM 基于证据包生成一段简短的临床解释（为什么间距重要、V100 低于目标的临床后果）
-- **模式识别**：LLM 观察编辑序列，识别用户的规划模式（如"你倾向于把种子集中在中心，可能导致边缘剂量不足"）
-- **个性化建议**：基于用户的历史行为调整反馈的详细程度
-
-**注意**：LLM 层应该是**增强**而非替代——确定性引擎保证安全底线，LLM 提供教学价值。这符合设计文档"Augment, don't replace"原则。
+1. **Automatic retry**: automatically retry after a screenshot failure (exponential backoff), without requiring a user click
+2. **Graceful degradation**: when a screenshot fails, the card still fully displays the text feedback, and the screenshot area shows "temporarily unavailable" rather than error details
+3. **Background queueing**: when the tab is hidden, screenshots are queued and automatically recaptured when the page becomes visible
+4. **Merged display**: only the final state of a screenshot for the same edit is shown, not intermediate states
 
 ---
 
-## 9. 根本问题九：状态机过于复杂，边界情况泄漏到 UX
+## 6. Root Problem Six: Too Many Interaction Channels—Users Don't Know Which to Use
 
-### 9.1 现状
+### 6.1 Current State
 
-Monitor 的前端状态机有 6 个相位（`inactive/starting/active/stopping/stop_error/error`），加上卡片的 `pending/ready/failed/none/superseded`、截图的 `monitor_stopped/checkpoint_superseded/viewer_tab_hidden` 等。这些状态的组合产生了大量边界情况，直接影响用户体验。
+Users can interact with monitor in **at least 5 ways**: card buttons (monitor-interaction.js:74-119), chat edit buttons (ui-api.js:1829-1865), chat token commands (ui-api.js:2153-2269), UI buttons (index.html:909-913), Agent tools (ui_controller:413-417).
 
-**用户可能看到的状态**：
-- "上一轮监测的结束尚未确认。请先点击结束监测重试"（stop_error）
-- "该病例已有监测任务；请先结束它"（409）
-- "Stop not confirmed; retry"（stop_error 英文）
-- "run_mismatch"（任务在别处被换）
-- "closing"（总结生成中）
-- "already_closed"（服务器已结束）
+Problems:
+- **Restore/keep** has two entry points (card buttons vs chat buttons), with identical semantics but different appearances
+- **Stop monitoring** has three entry points with subtly different behaviors
+- Card buttons gray out after the card is `superseded` but **do not explain why**
+- Chat commands require a 12-digit hex token—users cannot possibly type it by hand and can only trigger it via buttons
 
-**代码证据**：
-- `3d-manual.js:2382-2388`：stop_error 时拒绝启动
-- `3d-manual.js:2442-2456`：409 时显示错误
-- `3d-manual.js:2626-2651`：run_mismatch 和 closing 的处理
-- `monitor-stop-presentation.test.cjs`、`monitor-stop-recovery.test.cjs`：大量测试覆盖这些边界
+### 6.2 Directions for Systemic Improvement
 
-### 9.2 为什么这是根本问题
+**Unify into two interaction modes**:
+1. **Panel/card operations** (mouse): buttons on the HUD and cards, the primary interaction method
+2. **Natural-language conversation** (keyboard): telling BrachyBot "help me restore the previous edit", routed by the LLM
 
-用户不应该关心"run_mismatch"或"stop_error"。这些是**系统内部状态**，不是用户概念。一个好的 UX 应该把这些翻译成用户能理解的语言：
-
-- "上一轮监测的结束尚未确认" -> "正在结束上一轮监测…（点击重试）"
-- "run_mismatch" -> "监测任务已切换，请刷新页面"
-- "stop_error" -> "正在结束监测…（如果持续，请点击重试）"
-
-### 9.3 系统改进方向
-
-1. **自动恢复**：stop_error 应该自动重试，而不是要求用户手动点击
-2. **隐藏内部状态**：run_mismatch、closing 等内部状态不应该直接暴露给用户
-3. **统一错误文案**：所有错误信息应该翻译成用户语言，而不是系统术语
+**Eliminate the intermediate state**: do not expose token-based chat commands to users. Button clicks directly call the API, without going through chat text.
 
 ---
 
-## 10. 根本问题十：没有累积视角——用户看不到趋势
+## 7. Root Problem Seven: Dose Comparison Requires Manual Triggering—the Most Valuable Feedback Is Buried
 
-### 10.1 现状
+### 7.1 Current State
 
-Monitor 在**停止时**生成一份总结报告（`monitor_summary`），包含事件计数、优点、问题、建议。但在**监测过程中**，用户看不到：
-- 累计编辑了多少次
-- 剂量趋势（V100 在上升还是下降）
-- 问题趋势（间距违规在增加还是减少）
-- 距离目标还有多远
+After each edit, the card shows geometric changes, but **dose comparison requires the user to click the "Recompute and compare" button**.
 
-### 10.2 为什么这是根本问题
+**Code evidence**:
+- `monitor-interaction.js:98-109`: `if (!card.data.interaction?.dose_current) add('Recompute and compare', ...)`
+- `3d-manual.js:1956-1958`: **does not automatically recompute dose** during monitoring
 
-"监督"意味着**持续评估**，不是**期末考试**。如果用户只能在停止时看到总结，那 monitor 就只是一个日志记录器，不是实时教练。
+### 7.2 Why This Is a Root Problem
 
-对比体验：
-- **现状**：用户连续编辑 20 次，每次看到一条独立反馈，最后停止时才看到"你的计划有 3 个间距违规、V100 低于目标 5%"
-- **期望**：HUD 实时显示"已编辑 20 次 | V100 趋势: +2.3% | 间距违规: 2 个（减少中）| 距离目标: 还差 3%"
+Dose coverage (V100/D90) is the most core quality metric of a radiotherapy plan. What users care about most is "did this edit make the plan better or worse". Hiding this feedback **behind a button** amounts to hiding the most important information.
 
-### 10.3 系统改进方向
+Contrast the experiences:
+- **Current**: edit -> card shows "moved 3.2mm" -> user wants to know the V100 change -> manual click -> wait 10-30 seconds -> see the result
+- **Desired**: edit -> card immediately shows the geometric change + automatically triggers dose recomputation -> when done, the card updates the dose comparison in place
 
-Monitor HUD 需要一个**趋势面板**：
-- 编辑计数和频率
-- 关键指标的时间序列（V100/D90/plan_score）
-- 问题计数和趋势
-- 距离目标的进度条
+### 7.3 Directions for Systemic Improvement
+
+In monitoring mode, a successful geometric edit should **automatically trigger dose recomputation**, and when done, update the card's dose comparison table in place. At minimum, a prominent "auto-compare" toggle should be provided.
 
 ---
 
-## 11. 系统改进优先级总结
+## 8. Root Problem Eight: The LLM Is Marginalized—the Coach Has No Brain
 
-### P0：体验不可用（必须先做）
+### 8.1 Current State
 
-| # | 问题 | 改进 | 影响 |
+The LLM does only three things in monitor:
+1. Routes chat commands ("stop monitoring" -> `ui_control` intent)
+2. Reads the evidence bundle (`monitor_edit_evidence` injected into context)
+3. Answers "detailed advice" (`/training/advice` -> `agent._answer_local_read_query`)
+
+**The LLM does not participate in**:
+- feedback generation (pure rule engine)
+- workflow guidance (none)
+- clinical explanation (none)
+- personalization (none)
+
+**Code evidence**:
+- `monitor_engine.py`: no LLM calls anywhere in the file
+- `monitor_changes.py:2`: "No model inference or dose prediction"
+- `planning_routes.py:5662-5670`: the natural-language part of advice goes through `agent._answer_local_read_query`, but this is **retrospective**, not real-time
+
+### 8.2 Why This Is a Root Problem
+
+If a "coach" can only recite a checklist without explaining "why this matters", "what this means clinically", or "what characterizes your planning style", then it is just a **rule-based alarm**, not a coach.
+
+The word "training" in the vision's "real-time training/monitoring" implies **teaching**—explaining clinical principles, pointing out planning patterns, recommending directions for improvement. This requires the LLM's understanding and expression abilities.
+
+### 8.3 Directions for Systemic Improvement
+
+On top of the deterministic engine, add an **LLM coaching layer**:
+- **Post-hoc explanation**: after each checkpoint, the LLM generates a brief clinical explanation based on the evidence bundle (why spacing matters, the clinical consequences of V100 below target)
+- **Pattern recognition**: the LLM observes the edit sequence and identifies the user's planning patterns (e.g., "you tend to concentrate seeds in the center, which may cause insufficient peripheral dose")
+- **Personalized advice**: adjust the level of detail of feedback based on the user's historical behavior
+
+**Note**: The LLM layer should **augment** rather than replace—the deterministic engine guarantees the safety baseline, and the LLM provides teaching value. This aligns with the design document's "Augment, don't replace" principle.
+
+---
+
+## 9. Root Problem Nine: The State Machine Is Too Complex, and Edge Cases Leak into the UX
+
+### 9.1 Current State
+
+Monitor's frontend state machine has 6 phases (`inactive/starting/active/stopping/stop_error/error`), plus the card's `pending/ready/failed/none/superseded`, the screenshot's `monitor_stopped/checkpoint_superseded/viewer_tab_hidden`, etc. The combinations of these states produce a large number of edge cases that directly affect user experience.
+
+**States the user may see**:
+- "上一轮监测的结束尚未确认。请先点击结束监测重试" (stop_error)
+- "该病例已有监测任务；请先结束它" (409)
+- "Stop not confirmed; retry" (stop_error, in English)
+- "run_mismatch" (task swapped elsewhere)
+- "closing" (summary generating)
+- "already_closed" (already ended on server)
+
+**Code evidence**:
+- `3d-manual.js:2382-2388`: refuses to start on stop_error
+- `3d-manual.js:2442-2456`: displays an error on 409
+- `3d-manual.js:2626-2651`: handling of run_mismatch and closing
+- `monitor-stop-presentation.test.cjs`, `monitor-stop-recovery.test.cjs`: extensive tests covering these edges
+
+### 9.2 Why This Is a Root Problem
+
+Users should not care about "run_mismatch" or "stop_error". These are **system-internal states**, not user concepts. A good UX should translate these into language users can understand:
+
+- "上一轮监测的结束尚未确认" -> "Ending the previous monitoring session… (click retry)"
+- "run_mismatch" -> "The monitoring task has switched; please refresh the page"
+- "stop_error" -> "Ending monitoring… (if it persists, click retry)"
+
+### 9.3 Directions for Systemic Improvement
+
+1. **Automatic recovery**: stop_error should retry automatically rather than requiring a manual user click
+2. **Hide internal states**: internal states such as run_mismatch and closing should not be directly exposed to users
+3. **Unify error copy**: all error messages should be translated into user language rather than system jargon
+
+---
+
+## 10. Root Problem Ten: No Cumulative Perspective—Users Can't See Trends
+
+### 10.1 Current State
+
+Monitor generates a summary report (`monitor_summary`) **on stop**, containing event counts, strengths, problems, and suggestions. But **during monitoring**, users cannot see:
+- how many edits have accumulated
+- the dose trend (is V100 rising or falling)
+- the problem trend (are spacing violations increasing or decreasing)
+- how far there is to go to the target
+
+### 10.2 Why This Is a Root Problem
+
+"Supervision" means **continuous assessment**, not a **final exam**. If users can only see the summary on stop, then monitor is just a logger, not a real-time coach.
+
+Contrast the experiences:
+- **Current**: the user edits 20 times in a row, sees one independent piece of feedback each time, and only on stop sees "your plan has 3 spacing violations, V100 is 5% below target"
+- **Desired**: the HUD displays in real time "edited 20 times | V100 trend: +2.3% | spacing violations: 2 (decreasing) | distance to target: 3% to go"
+
+### 10.3 Directions for Systemic Improvement
+
+The Monitor HUD needs a **trend panel**:
+- edit count and frequency
+- time series of key metrics (V100/D90/plan_score)
+- problem counts and trends
+- a progress bar toward the target
+
+---
+
+## 11. Summary of Systemic Improvement Priorities
+
+### P0: Experience Unusable (must be done first)
+
+| # | Problem | Improvement | Impact |
 |---|---|---|---|
-| 1 | Chat-as-Dashboard | **Monitor HUD 面板** | 所有反馈的传达方式 |
-| 2 | 空间反馈断链 | **3D 空间标注层** | 反馈的可操作性 |
-| 3 | 纯文本反馈 | **结构化 schema + severity** | 反馈的可读性 |
+| 1 | Chat-as-Dashboard | **Monitor HUD panel** | How all feedback is conveyed |
+| 2 | Broken spatial feedback chain | **3D spatial annotation layer** | Actionability of feedback |
+| 3 | Plain-text feedback | **Structured schema + severity** | Readability of feedback |
 
-### P1：体验可用但不流畅
+### P1: Experience Usable but Not Smooth
 
-| # | 问题 | 改进 | 影响 |
+| # | Problem | Improvement | Impact |
 |---|---|---|---|
-| 4 | 工作流不可见 | **工作流清单** | 用户的方向感 |
-| 5 | 证据链脆弱 | **自动重试 + 优雅降级** | 减少干扰 |
-| 6 | 交互通道过多 | **统一为面板+对话** | 降低认知负担 |
-| 7 | 剂量对比手动 | **自动剂量重算** | 核心反馈的时效性 |
+| 4 | Workflow invisible | **Workflow checklist** | User's sense of direction |
+| 5 | Fragile evidence chain | **Automatic retry + graceful degradation** | Reduce distractions |
+| 6 | Too many interaction channels | **Unify into panel + conversation** | Reduce cognitive load |
+| 7 | Manual dose comparison | **Automatic dose recomputation** | Timeliness of core feedback |
 
-### P2：体验流畅但不够智能
+### P2: Experience Smooth but Not Smart Enough
 
-| # | 问题 | 改进 | 影响 |
+| # | Problem | Improvement | Impact |
 |---|---|---|---|
-| 8 | LLM 被边缘化 | **LLM 辅导层** | 教学价值 |
-| 9 | 状态机泄漏 | **自动恢复 + 隐藏内部状态** | 减少困惑 |
-| 10 | 没有累积视角 | **趋势面板** | 持续评估感 |
+| 8 | LLM marginalized | **LLM coaching layer** | Teaching value |
+| 9 | State machine leaks | **Automatic recovery + hide internal states** | Reduce confusion |
+| 10 | No cumulative perspective | **Trend panel** | Sense of continuous assessment |
 
 ---
 
-## 12. 与现有路线图的关系
+## 12. Relationship to the Existing Roadmap
 
-本文档的发现与 `TRAINING_MONITOR_ANALYSIS_2026-09-19.md` §8 Phase C 高度一致（HUD 面板、结构化反馈卡片、辅导模式），但：
+The findings in this document are highly consistent with `TRAINING_MONITOR_ANALYSIS_2026-09-19.md` §8 Phase C (HUD panel, structured feedback cards, coaching mode), but:
 
-1. **优先级更高**：Phase C 被列为"从被动辉光到可操作辅导"的增强，但本文档认为**没有 HUD，当前体验根本不可用**——应该从 Phase C 提到 Phase A/B 之前。
-2. **更强调空间反馈**：现有路线图未充分强调 3D 空间标注的重要性。纯文字反馈在空间化工作中是不够的。
-3. **更强调 LLM 的教学价值**：现有路线图把 LLM 定位为"增强"，但未充分挖掘 LLM 在**临床解释和个性化**方面的潜力。
-4. **更强调自动剂量对比**：现有路线图未把"自动剂量重算"列为优先项，但这是用户最关心的反馈。
+1. **Higher priority**: Phase C was listed as an enhancement "from passive glow to actionable coaching", but this document argues that **without a HUD, the current experience is simply unusable**—it should be moved ahead of Phase A/B.
+2. **More emphasis on spatial feedback**: the existing roadmap does not sufficiently emphasize the importance of 3D spatial annotation. Plain-text feedback is insufficient for spatial work.
+3. **More emphasis on the LLM's teaching value**: the existing roadmap positions the LLM as an "enhancement" but does not sufficiently exploit the LLM's potential in **clinical explanation and personalization**.
+4. **More emphasis on automatic dose comparison**: the existing roadmap does not list "automatic dose recomputation" as a priority, but this is the feedback users care about most.
 
-**结论**：Monitor 的确定性引擎和生命周期管理已经相当健壮（Phase A/B 基本完成），但**交互体验层（Phase C）是当前的瓶颈**。建议把 Phase C 的核心项（HUD、空间标注、结构化反馈）提前，作为下一轮开发的重点。
-
----
-
-# 实施状态复审（2026-09-26 第二轮）
-
-**触发**：整改实施后，对照本报告 10 个根本问题逐项验证落地情况。
-
-**总体评价**：P0 三项（HUD、空间标注、结构化反馈）均有实质进展但**均未完整达标**。P1 三项中状态机简化和证据链已达标，自动剂量和交互通道精简未达标。P2 三项均为部分实现。
+**Conclusion**: Monitor's deterministic engine and lifecycle management are already quite robust (Phase A/B essentially complete), but the **interaction experience layer (Phase C) is the current bottleneck**. It is recommended to move forward the core items of Phase C (HUD, spatial annotation, structured feedback) as the focus of the next development round.
 
 ---
 
-## A. 逐项对照（10 个根本问题）
+# Implementation Status Review (2026-09-26, Second Round)
 
-### 问题 1：Chat-as-Dashboard — **部分实现（约 55%）**
+**Trigger**: after remediation implementation, verify item by item against the 10 root problems in this report.
 
-**已落地**：新增常驻 `#monitorDashboard` 面板（`brachybot-monitor-dashboard.js`），含指标网格（V100/D90/V200 + OAR Dmax 文本）、工作流徽章行、finding 卡片（severity 边框+冲突+next_step）、操作按钮组、折叠式编辑历史。数据流为 push（checkpoint publish）+ pull（`/api/training/status?overview=1`，250ms debounce）。
-
-**未达标**：
-- 指标卡**无趋势箭头**，OAR Dmax 不是卡片而是一行文本，**plan_score 未展示**
-- 工作流是**扁平徽章行**（数据可用性状态），不是清单式进度（无"当前步骤"高亮、无完成勾选、无每步下一步建议）
-- 事件时间线只有**编辑历史**（8 条），非全量监控事件；**无 severity 色标**；blocking 级不存在
-- 待处理操作只有最新卡片的按钮，**无未查看截图指示**，无跨卡片聚合队列
-
-### 问题 2：空间反馈断链 — **部分实现（约 50%）**
-
-**已落地**：`focusMonitorCheckpoint()` 用 `Box3Helper` 描边高亮冲突/编辑对象（橙色，不改材质），配相机聚焦（`focusPlanningObjectsForScreenshot`，可恢复位姿）；紫色返回箭头（`_monitorReturnPositionOverlay`，ArrowHelper）。
-
-**未达标**：
-- **3D 距离标注线完全未实现**——冲突间距仍只以文本呈现（"seed-123 ↔ seed-456：1.20 mm"），3D 中没有连接两个对象的测量线/标签
-- 对象 ID **不可点击**——无法点击反馈中的单个 ID 跳到单个对象；只能按钮级"定位全部编辑对象"
-- 高亮用 Box3Helper 线框，不是"红色脉冲"式视觉显著标注
-
-### 问题 3：纯文本反馈 — **已实现（约 85%）**
-
-**已落地**：`monitor_changes.py interaction()` 返回 `schema_version:2` 结构化 dict（priority/severity/category/spatial_refs/conflicts/metric_rows/dose_note/next_step/dose_current/dose_comparable），前端按字段逐项渲染卡片，文本仅作回退。
-
-**未达标**：
-- severity 只有 `info`/`warning` 两级，**无 blocking 级**（`monitor_changes.py:429-431`）
-- CSS 只有 `[data-severity=warning]` 一个样式（`monitor-dashboard.css:16`），info 无样式差异
-- 反馈仍是**文字为主**，无数值可视化（V100 没有仪表盘/进度条/色带）
-
-### 问题 4：工作流不可见 — **部分实现（约 40%）**
-
-**已落地**：8 阶段徽章行（CT/CTV/OAR/针粒子/剂量/QA/导板/报告），状态标签（已有数据/待更新/运行中/失败/未核实），带免责声明"数据可用不代表临床通过"。
-
-**未达标**：
-- 无 checklist 式进度（无复选框、无步骤排序、无"当前进行到哪一步"高亮）
-- 状态本质是**数据可用性**，不是**步骤完成度**
-- 无每步的下一步建议
-
-### 问题 5：证据链脆弱 — **已实现（约 85%）**
-
-**已落地**：截图瞬态失败自动重试（≤2 次，1.5s/3s 退避）；后台标签页 deferred + visibilitychange 自动补拍；新编辑取消旧重试；文本证据在图片失败时保留；失败文案按错误类别诚实区分。
-
-**未达标**：
-- 卡片仍显示 5 种错误文案（虽已合并为有界重试+自动恢复，但用户仍会看到 "viewer_tab_hidden" 等系统术语级别的错误码描述）
-- 永久性错误（superseded/monitor_stopped）不重试是合理设计，但 UI 未区分"临时失败"和"永久失败"的视觉权重
-
-### 问题 6：交互通道过多 — **未实现（约 20%）**
-
-**已落地**：卡片按钮和 HUD 按钮统一走 `runMonitorCheckpointAction` 执行器；keep/restore 直接调 `performMonitorEditDecision`（不注入 token）。
-
-**未达标**：
-- **token 聊天命令完整保留**（`handleMonitorConversation` 仍解析 `复位 abc123def456`）
-- `_attachMonitorEditChoices` 仍在批量反馈消息下注入 undo/keep 按钮
-- `monitor_changes.py:331-334` describe() 文本仍输出 "Reply 'undo {code}' or 'keep {code}'"
-- 三条通道（卡片按钮、批量反馈按钮、token 命令）**并存**，未收敛
-
-### 问题 7：剂量对比手动触发 — **部分实现（约 60%）**
-
-**已落地**：HUD 有"自动重算并比较"复选框（`setMonitorAutoCompare`，1800ms 防抖合并连续编辑）；卡片有"重算剂量并比较"手动按钮；拖动/GPU 忙时自动避让。
-
-**未达标**：
-- **默认关闭**——用户必须手动勾选才能获得自动剂量对比，审计报告的核心诉求是"最有价值的反馈应默认可得"
-- 监测模式下拖动种子仍**跳过自动重算**（`3d-manual.js:1952-1958` 的门条件是 `!monitoringEdit || options.doseRecomputeDecision === 'yes'`），注释说"Recompute is an explicit operator decision"
-
-### 问题 8：LLM 被边缘化 — **部分实现（约 30%）**
-
-**已落地**：HUD 有"解释这些变化"按钮 → `requestPlanningAdvice` → `agent._answer_local_read_query`（LLM grounded 解释），45s 超时+重复点击保护。
-
-**未达标**：
-- **无自动临床解释**——反馈本身仍是纯规则文本，不自动附带 LLM 的"为什么这很重要"
-- **无模式识别**——LLM 不观察编辑序列、不识别规划模式
-- **无个性化**——不根据用户行为调整反馈详细程度
-- 修复文档明确声明"No automatic personalized clinical coaching has been enabled"——这是有意边界，但与审计报告的"教练"愿景有差距
-
-### 问题 9：状态机泄漏 — **已实现（约 80%）**
-
-**已落地**：stop_error 有界自动重试（≤2 次，2s/4s 延迟）；页面恢复时自动核对关闭；run_mismatch 按设计终止自动恢复（合理）。
-
-**未达标**：
-- run_mismatch 仍要求用户手动点"结束监测"（设计决策，但用户体验上仍是系统术语）
-- stop_error 期间禁止启动新 run（合理但文案仍是系统术语"上一轮监测的结束尚未确认"）
-
-### 问题 10：没有累积视角 — **部分实现（约 35%）**
-
-**已落地**：折叠式编辑历史（最近 8 次，V100/D90 前后差值）；单卡片内的指标/器官差值表；"本页保留 N 次编辑"计数。
-
-**未达标**：
-- **无图形化趋势**（sparkline/chart/canvas 在 dashboard 中零命中）——趋势是纯文本行
-- 无全运行累计指标（"已编辑 N 次 | V100 趋势: +2.3% | 间距违规: 2 个"）
-- `/api/training/timeline` 导出端点未接入 HUD
-- 无"距离目标还有多远"的进度条
+**Overall assessment**: All three P0 items (HUD, spatial annotation, structured feedback) have made substantial progress but **none fully meet the bar**. Among the three P1 items, state machine simplification and the evidence chain meet the bar; automatic dose and interaction channel streamlining do not. All three P2 items are partially implemented.
 
 ---
 
-## B. 剩余问题优先级
+## A. Item-by-Item Comparison (10 Root Problems)
 
-### 高优先级（体验仍不达标的根因）
+### Problem 1: Chat-as-Dashboard — **Partially Implemented (~55%)**
 
-| # | 问题 | 差距 | 建议 |
+**Delivered**: a new persistent `#monitorDashboard` panel (`brachybot-monitor-dashboard.js`), containing a metrics grid (V100/D90/V200 + OAR Dmax text), a workflow badge row, finding cards (severity border + conflicts + next_step), an action button group, and a collapsible edit history. The data flow is push (checkpoint publish) + pull (`/api/training/status?overview=1`, 250ms debounce).
+
+**Not meeting the bar**:
+- The metrics card has **no trend arrows**, OAR Dmax is a line of text rather than a card, and **plan_score is not displayed**
+- The workflow is a **flat badge row** (data availability status), not a checklist-style progress (no "current step" highlight, no completion checkmarks, no per-step next-step suggestions)
+- The event timeline only has **edit history** (8 entries), not the full set of monitoring events; **no severity color coding**; no blocking level exists
+- Pending operations only have buttons for the latest card, **no unviewed-screenshot indicator**, and no cross-card aggregated queue
+
+### Problem 2: Broken Spatial Feedback Chain — **Partially Implemented (~50%)**
+
+**Delivered**: `focusMonitorCheckpoint()` uses `Box3Helper` to outline-highlight conflict/edit objects (orange, without changing materials), paired with camera focus (`focusPlanningObjectsForScreenshot`, with restorable pose); a purple return arrow (`_monitorReturnPositionOverlay`, ArrowHelper).
+
+**Not meeting the bar**:
+- **3D distance annotation lines are completely unimplemented**—conflict spacing is still presented only as text ("seed-123 ↔ seed-456: 1.20 mm"), with no measurement line/label connecting the two objects in 3D
+- Object IDs are **not clickable**—you cannot click a single ID in the feedback to jump to a single object; only button-level "locate all edited objects" is possible
+- Highlighting uses a Box3Helper wireframe, not a "red pulse"-style visually prominent annotation
+
+### Problem 3: Plain-Text Feedback — **Implemented (~85%)**
+
+**Delivered**: `monitor_changes.py interaction()` returns a `schema_version:2` structured dict (priority/severity/category/spatial_refs/conflicts/metric_rows/dose_note/next_step/dose_current/dose_comparable), and the frontend renders the card field by field, with text only as a fallback.
+
+**Not meeting the bar**:
+- severity has only two levels, `info`/`warning`, with **no blocking level** (`monitor_changes.py:429-431`)
+- CSS has only one style, `[data-severity=warning]` (`monitor-dashboard.css:16`), with no style difference for info
+- Feedback is still **text-centric**, with no numerical visualization (V100 has no gauge/progress bar/color band)
+
+### Problem 4: Workflow Invisible — **Partially Implemented (~40%)**
+
+**Delivered**: an 8-stage badge row (CT/CTV/OAR/needle-seed/dose/QA/guide/report), status labels (data available/needs updating/running/failed/unverified), with the disclaimer "数据可用不代表临床通过".
+
+**Not meeting the bar**:
+- No checklist-style progress (no checkboxes, no step ordering, no "which step we're currently on" highlight)
+- The status is essentially **data availability**, not **step completion**
+- No next-step suggestion for each step
+
+### Problem 5: Fragile Evidence Chain — **Implemented (~85%)**
+
+**Delivered**: transient screenshot failures are automatically retried (≤2 times, 1.5s/3s backoff); background tabs are deferred + automatically recaptured on visibilitychange; new edits cancel old retries; text evidence is retained when images fail; failure copy is honestly differentiated by error category.
+
+**Not meeting the bar**:
+- Cards still display 5 kinds of error copy (although merged into bounded retries + automatic recovery, users still see error-code descriptions at the level of system jargon such as "viewer_tab_hidden")
+- Not retrying permanent errors (superseded/monitor_stopped) is a reasonable design, but the UI does not distinguish the visual weight of "temporary failure" and "permanent failure"
+
+### Problem 6: Too Many Interaction Channels — **Not Implemented (~20%)**
+
+**Delivered**: card buttons and HUD buttons are unified through the `runMonitorCheckpointAction` executor; keep/restore directly call `performMonitorEditDecision` (without injecting a token).
+
+**Not meeting the bar**:
+- **Token chat commands are fully retained** (`handleMonitorConversation` still parses `复位 abc123def456`)
+- `_attachMonitorEditChoices` still injects undo/keep buttons under batch feedback messages
+- `monitor_changes.py:331-334` describe() text still outputs "Reply 'undo {code}' or 'keep {code}'"
+- The three channels (card buttons, batch feedback buttons, token commands) **coexist** and have not converged
+
+### Problem 7: Manual Dose Comparison Triggering — **Partially Implemented (~60%)**
+
+**Delivered**: the HUD has an "auto-recompute and compare" checkbox (`setMonitorAutoCompare`, 1800ms debounce merging consecutive edits); cards have a manual "Recompute and compare" button; automatic avoidance when dragging/GPU is busy.
+
+**Not meeting the bar**:
+- **Off by default**—users must manually check it to get automatic dose comparison, whereas the audit report's core demand is that "the most valuable feedback should be available by default"
+- In monitoring mode, dragging a seed still **skips automatic recomputation** (the gate condition at `3d-manual.js:1952-1958` is `!monitoringEdit || options.doseRecomputeDecision === 'yes'`); the comment says "Recompute is an explicit operator decision"
+
+### Problem 8: LLM Marginalized — **Partially Implemented (~30%)**
+
+**Delivered**: the HUD has an "Explain these changes" button -> `requestPlanningAdvice` -> `agent._answer_local_read_query` (LLM-grounded explanation), with a 45s timeout + repeated-click protection.
+
+**Not meeting the bar**:
+- **No automatic clinical explanation**—the feedback itself is still pure rule text, with no automatic LLM "why this matters" attached
+- **No pattern recognition**—the LLM does not observe the edit sequence or identify planning patterns
+- **No personalization**—it does not adjust the level of detail of feedback based on user behavior
+- The remediation document explicitly states "No automatic personalized clinical coaching has been enabled"—this is an intentional boundary, but it falls short of the audit report's "coach" vision
+
+### Problem 9: State Machine Leaks — **Implemented (~80%)**
+
+**Delivered**: stop_error has bounded automatic retries (≤2 times, 2s/4s delay); automatic close reconciliation on page recovery; run_mismatch terminates automatic recovery by design (reasonable).
+
+**Not meeting the bar**:
+- run_mismatch still requires the user to manually click "end monitoring" (a design decision, but from a UX standpoint it is still system jargon)
+- Starting a new run is prohibited during stop_error (reasonable, but the copy is still system jargon: "上一轮监测的结束尚未确认")
+
+### Problem 10: No Cumulative Perspective — **Partially Implemented (~35%)**
+
+**Delivered**: collapsible edit history (most recent 8, with V100/D90 before-after deltas); metric/organ delta tables within a single card; an "N edits retained on this page" count.
+
+**Not meeting the bar**:
+- **No graphical trends** (sparkline/chart/canvas have zero hits in the dashboard)—trends are plain-text lines
+- No full-run cumulative metrics ("edited N times | V100 trend: +2.3% | spacing violations: 2")
+- The `/api/training/timeline` export endpoint is not wired into the HUD
+- No progress bar for "how far to the target"
+
+---
+
+## B. Remaining Problem Priorities
+
+### High Priority (root causes of the experience still not meeting the bar)
+
+| # | Problem | Gap | Suggestion |
 |---|---|---|---|
-| 1 | **3D 距离标注线** | 冲突间距无空间可视化 | 在 `focusMonitorCheckpoint` 中添加 `Line2` + `CSS2DRenderer` 距离标签 |
-| 2 | **工作流清单式进度** | 徽章行≠进度清单 | 把 `stages` 渲染为 checkbox 列表 + "当前步骤"高亮 |
-| 3 | **交互通道收敛** | token 命令仍暴露给用户 | 移除 `handleMonitorConversation` token 路径和 `_attachMonitorEditChoices` |
-| 4 | **趋势图形化** | 纯文本行≠趋势 | 添加 sparkline（V100/D90 时间序列） |
-| 5 | **自动剂量默认开** | 核心反馈需手动触发 | 监测模式下默认启用 auto-compare |
+| 1 | **3D distance annotation lines** | conflict spacing has no spatial visualization | add `Line2` + `CSS2DRenderer` distance labels in `focusMonitorCheckpoint` |
+| 2 | **Checklist-style workflow progress** | badge row ≠ progress checklist | render `stages` as a checkbox list + "current step" highlight |
+| 3 | **Interaction channel convergence** | token commands are still exposed to users | remove the `handleMonitorConversation` token path and `_attachMonitorEditChoices` |
+| 4 | **Graphical trends** | plain-text lines ≠ trends | add sparklines (V100/D90 time series) |
+| 5 | **Auto dose on by default** | core feedback requires manual triggering | enable auto-compare by default in monitoring mode |
 
-### 中优先级（体验可改善）
+### Medium Priority (experience can be improved)
 
-| # | 问题 | 差距 | 建议 |
+| # | Problem | Gap | Suggestion |
 |---|---|---|---|
-| 6 | severity blocking 级 | 只有 2 级 | 添加 blocking 级 + CSS 样式 |
-| 7 | OAR Dmax 卡片化 | 一行文本≠卡片 | 展示各器官 Dmax 列表 |
-| 8 | plan_score 展示 | 未展示 | 加入指标网格 |
-| 9 | 未查看截图指示 | 完全没有 | HUD 加 pending 截图计数 |
-| 10 | 对象 ID 可点击 | 只能按钮级定位 | ID 渲染为可点击链接 |
+| 6 | severity blocking level | only 2 levels | add a blocking level + CSS styling |
+| 7 | OAR Dmax as a card | one line of text ≠ a card | display a list of Dmax per organ |
+| 8 | plan_score display | not displayed | add to the metrics grid |
+| 9 | Unviewed-screenshot indicator | entirely absent | add a pending-screenshot count to the HUD |
+| 10 | Clickable object IDs | only button-level locating | render IDs as clickable links |
 
-### 低优先级（需产品决策）
+### Low Priority (requires product decisions)
 
-| # | 问题 | 差距 | 建议 |
+| # | Problem | Gap | Suggestion |
 |---|---|---|---|
-| 11 | 自动 LLM 临床解释 | 仅按需"解释"按钮 | 需产品决策：是否每次检查点自动附带 LLM 解释 |
-| 12 | 编辑模式识别 | 无 | 需产品决策：LLM 是否观察编辑序列并给出模式反馈 |
-| 13 | 个性化反馈 | 无 | 需产品决策：是否根据用户行为调整详细程度 |
+| 11 | Automatic LLM clinical explanation | only an on-demand "Explain" button | requires product decision: whether to automatically attach an LLM explanation at each checkpoint |
+| 12 | Edit pattern recognition | none | requires product decision: whether the LLM should observe the edit sequence and give pattern feedback |
+| 13 | Personalized feedback | none | requires product decision: whether to adjust the level of detail based on user behavior |
 
 ---
 
-## C. 结论
+## C. Conclusion
 
-**本轮整改的亮点**：结构化 schema（问题 3）、证据链自动重试（问题 5）、状态机自动恢复（问题 9）已基本达标；Monitor HUD 从零到有是质的飞跃。
+**Highlights of this remediation round**: the structured schema (Problem 3), evidence chain automatic retry (Problem 5), and state machine automatic recovery (Problem 9) essentially meet the bar; the Monitor HUD going from nothing to something is a qualitative leap.
 
-**核心差距**：空间可视化（距离标注线）、工作流清单化、交互通道收敛、趋势图形化——这四项是"从可用到好用"的关键，目前均未达标。
+**Core gaps**: spatial visualization (distance annotation lines), checklist-style workflow, interaction channel convergence, and graphical trends—these four are the key to going "from usable to good" and currently none meet the bar.
 
-**愿景-实现距离**：审计报告描述的"安静、持续、可信赖的陪练教练"体验，当前实现约 **50%**。确定性引擎和生命周期管理已达生产质量（Phase A/B 完成），但交互体验层（Phase C）仍有显著缺口，尤其是空间反馈和工作流指导两个维度。
+**Vision-to-implementation distance**: the "quiet, continuous, trustworthy practice coach" experience described in the audit report is currently about **50%** implemented. The deterministic engine and lifecycle management have reached production quality (Phase A/B complete), but the interaction experience layer (Phase C) still has significant gaps, especially in the two dimensions of spatial feedback and workflow guidance.

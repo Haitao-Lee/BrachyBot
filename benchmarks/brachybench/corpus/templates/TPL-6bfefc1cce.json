@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "clinical_workflow",
+  "expectation": null,
+  "facet": "clinical_workflow",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Analyze CT, segment CTV and OAR, then generate treatment plan",
+  "source_refs": [
+    "INT-617728bbd926",
+    "INT-d33e91f64209"
+  ],
+  "template_id": "TPL-6bfefc1cce"
+}

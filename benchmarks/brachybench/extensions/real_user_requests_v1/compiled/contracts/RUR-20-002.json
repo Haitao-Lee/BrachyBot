@@ -1,0 +1,43 @@
+{
+  "acceptable_outcomes": [
+    "PARTIAL"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "en",
+  "response_facts": {
+    "brain.D2cc_Gy": 4.8,
+    "spinal_cord.D2cc_Gy": 7.3,
+    "viewer_available": false
+  },
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "outcome",
+      "statement": "Display blocked honestly; stored OAR query succeeds."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "response",
+      "statement": "Report known doses and Viewer-specific failure, not generic whole-request retry."
+    }
+  ],
+  "rules": [],
+  "scenario_id": "RUR-20-002",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "outcome",
+      "statement": "Display blocked honestly; stored OAR query succeeds."
+    },
+    {
+      "kind": "response",
+      "statement": "Report known doses and Viewer-specific failure, not generic whole-request retry."
+    }
+  ]
+}

@@ -1,46 +1,46 @@
-# BrachyBot Web UI 设计审计报告
+# BrachyBot Web UI Design Audit Report
 
-**审计日期:** 2026-05-31
-**审计范围:** Web UI 整体布局、用户体验、交互设计、响应式布局
-**截图目录:** `screenshots/`
-**代码文件:** `web/app/index.html`
+**Audit Date:** 2026-05-31
+**Audit Scope:** Web UI overall layout, user experience, interaction design, responsive layout
+**Screenshot Directory:** `screenshots/`
+**Code File:** `web/app/index.html`
 
 ---
 
-## 一、总体评价
+## 1. Overall Assessment
 
-| 维度 | 评分 | 说明 |
+| Dimension | Score | Notes |
 |------|------|------|
-| **视觉设计** | 8/10 | 现代化深色主题，色彩统一 |
-| **信息架构** | 7/10 | 三栏布局清晰，Tab 切换合理 |
-| **交互设计** | 7/10 | 基本交互流畅，部分细节需改进 |
-| **用户体验** | 7/10 | 功能完整，学习成本适中 |
-| **可访问性** | 5/10 | 缺乏键盘导航，无 ARIA 标签 |
+| **Visual Design** | 8/10 | Modern dark theme, consistent color palette |
+| **Information Architecture** | 7/10 | Clear three-column layout, sensible Tab switching |
+| **Interaction Design** | 7/10 | Basic interactions are smooth, some details need improvement |
+| **User Experience** | 7/10 | Feature-complete, moderate learning curve |
+| **Accessibility** | 5/10 | Lacks keyboard navigation, no ARIA labels |
 
-**综合评分: 7/10**
-
----
-
-## 二、全局视图
-
-### 2.1 完整页面布局
-
-![完整页面布局](screenshots/design_01_full_page.png)
-
-**布局分析:**
-- **三栏布局**: 左侧会话列表 (260px) → 中间聊天区 (flex) → 右侧面板 (500px)
-- **Header**: 48px 高度，包含 Logo、标题、状态指示器
-- **深色主题**: `#0f172a` 主背景，符合医学影像工具惯例
+**Overall Score: 7/10**
 
 ---
 
-## 三、Header 区域
+## 2. Global View
 
-**截图:** `screenshots/design_12_header.png`
+### 2.1 Full Page Layout
 
-![Header区域](screenshots/design_12_header.png)
+![Full Page Layout](screenshots/design_01_full_page.png)
 
-**代码位置:** `index.html:1426-1443`
+**Layout Analysis:**
+- **Three-column layout**: left session list (260px) → center chat area (flex) → right panel (500px)
+- **Header**: 48px in height, containing Logo, title, status indicator
+- **Dark theme**: `#0f172a` main background, consistent with medical imaging tool conventions
+
+---
+
+## 3. Header Area
+
+**Screenshots:** `screenshots/design_12_header.png`
+
+![Header Area](screenshots/design_12_header.png)
+
+**Code Location:** `index.html:1426-1443`
 
 ```html
 <header class="header">
@@ -51,20 +51,20 @@
 </header>
 ```
 
-### 问题与建议
+### Issues and Recommendations
 
-| 问题 | 严重程度 | 建议 |
+| Issue | Severity | Recommendation |
 |------|---------|------|
-| Logo 文字 "AI" 不够专业 | 低 | 使用 SVG 图标替代 |
-| 标题字号 0.9rem 偏小 | 低 | 调整为 1.1rem |
-| 状态指示器 dot 偏小 (6px) | 低 | 可保持，因已有颜色和阴影增强 |
+| Logo text "AI" is not professional enough | Low | Replace with an SVG icon |
+| Title font size 0.9rem is too small | Low | Change to 1.1rem |
+| Status indicator dot is too small (6px) | Low | Can keep, since color and shadow already enhance it |
 
-**建议代码:**
+**Suggested Code:**
 ```css
 .header-logo {
     width: 32px;
     height: 32px;
-    /* 使用 SVG 背景图替代纯文字 */
+    /* Use SVG background image instead of plain text */
     background: linear-gradient(135deg, var(--primary), var(--accent));
     border-radius: 8px;
 }
@@ -77,25 +77,25 @@
 
 ---
 
-## 四、左侧边栏 (会话列表)
+## 4. Left Sidebar (Session List)
 
-**截图:** `screenshots/design_02_sidebar.png`, `screenshots/detail_13_sidebar_hover.png`
+**Screenshots:** `screenshots/design_02_sidebar.png`, `screenshots/detail_13_sidebar_hover.png`
 
-![会话列表](screenshots/design_02_sidebar.png)
+![Session List](screenshots/design_02_sidebar.png)
 
 ![Sidebar Hover](screenshots/detail_13_sidebar_hover.png)
 
-**代码位置:** `index.html:90-207`, CSS `89-218`
+**Code Location:** `index.html:90-207`, CSS `89-218`
 
-### 问题与建议
+### Issues and Recommendations
 
-| 问题 | 严重程度 | 描述 | 建议 |
+| Issue | Severity | Description | Recommendation |
 |------|---------|------|------|
-| 会话名称不描述性 | 中 | "Item 1/2/3" 无法帮助定位 | 显示首条消息摘要或时间 |
-| 新建按钮不够突出 | 低 | 与背景融为一体 | 使用渐变背景色 |
-| 激活状态区分不明显 | 低 | 当前选中项无明确指示 | 添加左侧边框高亮 |
+| Session names are not descriptive | Medium | "Item 1/2/3" does not help locate sessions | Show a summary of the first message or a timestamp |
+| New button is not prominent enough | Low | Blends into the background | Use a gradient background color |
+| Active state is not clearly distinguished | Low | No clear indication of the currently selected item | Add a left border highlight |
 
-**建议代码:**
+**Suggested Code:**
 ```css
 .session-item.active {
     background: rgba(14, 165, 233, 0.12);
@@ -117,48 +117,48 @@
 
 ---
 
-## 五、聊天区域
+## 5. Chat Area
 
-### 5.1 消息响应排版
+### 5.1 Message Response Typography
 
-**截图:** `screenshots/detail_01_chat_response.png`, `screenshots/detail_04_code_block.png`, `screenshots/design_14_chat_response.png`
+**Screenshots:** `screenshots/detail_01_chat_response.png`, `screenshots/detail_04_code_block.png`, `screenshots/design_14_chat_response.png`
 
-![聊天响应](screenshots/detail_01_chat_response.png)
+![Chat Response](screenshots/detail_01_chat_response.png)
 
-![代码块响应](screenshots/detail_04_code_block.png)
+![Code Block Response](screenshots/detail_04_code_block.png)
 
-![长响应](screenshots/design_14_chat_response.png)
+![Long Response](screenshots/design_14_chat_response.png)
 
-**代码位置:** `index.html:326-526`, CSS `326-539`
+**Code Location:** `index.html:326-526`, CSS `326-539`
 
-### 问题与建议
+### Issues and Recommendations
 
-| 问题 | 严重程度 | 描述 | 建议 |
+| Issue | Severity | Description | Recommendation |
 |------|---------|------|------|
-| Bot 消息宽度 85% < 用户消息 88% | 低 | 视觉不平衡 | 统一为 85% 或 80% |
-| 代码块无复制按钮 | 中 | 用户需手动选择 | 添加 📋 图标按钮 |
-| 消息无时间戳 | 中 | 无法判断对话顺序 | 添加 HH:MM 时间戳 |
-| 头像 26px 偏小 | 低 | 高分辨率屏幕不够清晰 | 调整为 32px |
+| Bot message width 85% < user message 88% | Low | Visually unbalanced | Unify to 85% or 80% |
+| Code blocks have no copy button | Medium | Users must select manually | Add a 📋 icon button |
+| Messages have no timestamp | Medium | Cannot determine conversation order | Add an HH:MM timestamp |
+| Avatar 26px is too small | Low | Not clear enough on high-resolution screens | Change to 32px |
 
-**建议代码:**
+**Suggested Code:**
 ```css
-/* 统一消息宽度 */
+/* Unify message width */
 .chat-row {
     max-width: 85%;
 }
 
 .chat-msg.bot {
-    max-width: 85%;  /* 与用户消息一致 */
+    max-width: 85%;  /* Consistent with user messages */
 }
 
-/* 增大头像 */
+/* Enlarge avatar */
 .chat-avatar {
     width: 32px;
     height: 32px;
     font-size: 0.75rem;
 }
 
-/* 代码块添加复制按钮 */
+/* Add copy button to code blocks */
 .md-code-block {
     position: relative;
     padding-right: 2.5rem;
@@ -184,7 +184,7 @@
     color: white;
 }
 
-/* 消息添加时间戳 */
+/* Add timestamp to messages */
 .chat-msg .timestamp {
     font-size: 0.6rem;
     color: var(--text-dim);
@@ -193,22 +193,22 @@
 }
 ```
 
-### 5.2 消息操作按钮
+### 5.2 Message Action Buttons
 
-**截图:** `screenshots/detail_11_msg_hover.png`
+**Screenshot:** `screenshots/detail_11_msg_hover.png`
 
-![消息Hover](screenshots/detail_11_msg_hover.png)
+![Message Hover](screenshots/detail_11_msg_hover.png)
 
-**代码位置:** `index.html:454-477`
+**Code Location:** `index.html:454-477`
 
-### 问题与建议
+### Issues and Recommendations
 
-| 问题 | 严重程度 | 描述 | 建议 |
+| Issue | Severity | Description | Recommendation |
 |------|---------|------|------|
-| Hover 时操作按钮位置偏移 | 低 | 按钮在消息外侧 | 保持在消息右上角内 |
-| 按钮样式不直观 | 低 | 仅图标无文字 | 添加 tooltip |
+| Action button position shifts on hover | Low | Button is outside the message | Keep it inside the top-right corner of the message |
+| Button styles are not intuitive | Low | Icon only, no text | Add tooltips |
 
-**建议代码:**
+**Suggested Code:**
 ```css
 .chat-msg-actions {
     top: 0;
@@ -234,23 +234,23 @@
 
 ---
 
-## 六、输入区域
+## 6. Input Area
 
-**截图:** `screenshots/design_05_input_area.png`
+**Screenshot:** `screenshots/design_05_input_area.png`
 
-![输入区域](screenshots/design_05_input_area.png)
+![Input Area](screenshots/design_05_input_area.png)
 
-**代码位置:** `index.html:751-818`, CSS `751-818`
+**Code Location:** `index.html:751-818`, CSS `751-818`
 
-### 问题与建议
+### Issues and Recommendations
 
-| 问题 | 严重程度 | 描述 | 建议 |
+| Issue | Severity | Description | Recommendation |
 |------|---------|------|------|
-| 发送按钮 40px 偏小 | 低 | 触控区域不足 | 调整为 44px (最小触控标准) |
-| 缺少快捷命令提示 | 中 | 新用户不知道可用命令 | 添加 💡 提示文字 |
-| Placeholder 不够引导 | 低 | "Type a message..." 无具体示例 | 提供具体示例 |
+| Send button 40px is too small | Low | Touch target too small | Change to 44px (minimum touch standard) |
+| Missing shortcut command hints | Medium | New users do not know the available commands | Add 💡 hint text |
+| Placeholder is not guiding enough | Low | "Type a message..." has no concrete example | Provide a concrete example |
 
-**建议代码:**
+**Suggested Code:**
 ```css
 .chat-send {
     width: 44px;
@@ -282,26 +282,26 @@
 
 ---
 
-## 七、右侧面板
+## 7. Right Panel
 
-### 7.1 面板切换 Tab
+### 7.1 Panel Switching Tabs
 
-**截图:** `screenshots/design_06_right_panel.png`, `screenshots/design_07_panel_tabs.png`
+**Screenshots:** `screenshots/design_06_right_panel.png`, `screenshots/design_07_panel_tabs.png`
 
-![右侧面板](screenshots/design_06_right_panel.png)
+![Right Panel](screenshots/design_06_right_panel.png)
 
-![Tab切换](screenshots/design_07_panel_tabs.png)
+![Tab Switching](screenshots/design_07_panel_tabs.png)
 
-**代码位置:** `index.html:848-867`
+**Code Location:** `index.html:848-867`
 
-### 问题与建议
+### Issues and Recommendations
 
-| 问题 | 严重程度 | 描述 | 建议 |
+| Issue | Severity | Description | Recommendation |
 |------|---------|------|------|
-| Tab 无图标 | 中 | 纯文字扫描效率低 | 添加简洁图标 |
-| 点击区域偏小 | 低 | padding 仅 0.6rem | 适当增加 |
+| Tabs have no icons | Medium | Text-only is slow to scan | Add simple icons |
+| Click target is too small | Low | padding is only 0.6rem | Increase appropriately |
 
-**建议代码:**
+**Suggested Code:**
 ```css
 .panel-tab {
     padding: 0.75rem 0.5rem;
@@ -321,25 +321,25 @@
 }
 ```
 
-### 7.2 Input 表单
+### 7.2 Input Form
 
-**截图:** `screenshots/design_08_input_form.png`, `screenshots/detail_10_input_form_full.png`
+**Screenshots:** `screenshots/design_08_input_form.png`, `screenshots/detail_10_input_form_full.png`
 
-![Input表单](screenshots/design_08_input_form.png)
+![Input Form](screenshots/design_08_input_form.png)
 
-![完整表单](screenshots/detail_10_input_form_full.png)
+![Full Form](screenshots/detail_10_input_form_full.png)
 
-**代码位置:** `index.html:869-926`
+**Code Location:** `index.html:869-926`
 
-### 问题与建议
+### Issues and Recommendations
 
-| 问题 | 严重程度 | 描述 | 建议 |
+| Issue | Severity | Description | Recommendation |
 |------|---------|------|------|
-| 文件选择按钮不够突出 | 低 | dashed border 可更明显 | 增加边框宽度和背景色 |
-| Section 分隔线过细 | 低 | 分组不够明显 | 使用渐变分隔线 |
-| 缺少必填标识 | 低 | 不清楚字段重要性 | 添加 * 标识 |
+| File selection button is not prominent enough | Low | dashed border could be more obvious | Increase border width and background color |
+| Section divider is too thin | Low | Grouping is not obvious enough | Use a gradient divider |
+| Missing required-field indicators | Low | Field importance is unclear | Add a * indicator |
 
-**建议代码:**
+**Suggested Code:**
 ```css
 .file-btn {
     border: 2px dashed var(--primary);
@@ -368,22 +368,22 @@
 }
 ```
 
-### 7.3 Analysis 面板
+### 7.3 Analysis Panel
 
-**截图:** `screenshots/design_09_analysis_tab.png`
+**Screenshot:** `screenshots/design_09_analysis_tab.png`
 
-![Analysis面板](screenshots/design_09_analysis_tab.png)
+![Analysis Panel](screenshots/design_09_analysis_tab.png)
 
-**代码位置:** `index.html:928-986`
+**Code Location:** `index.html:928-986`
 
-### 问题与建议
+### Issues and Recommendations
 
-| 问题 | 严重程度 | 描述 | 建议 |
+| Issue | Severity | Description | Recommendation |
 |------|---------|------|------|
-| OAR 表格无滚动 | 低 | 数据多时超出容器 | 添加 max-height + overflow-y: auto |
-| 缺少数据导出 | 中 | 无法下载报告 | 添加导出按钮 |
+| OAR table does not scroll | Low | Overflows the container when there is a lot of data | Add max-height + overflow-y: auto |
+| Missing data export | Medium | Cannot download the report | Add an export button |
 
-**建议代码:**
+**Suggested Code:**
 ```css
 .oar-table-wrapper {
     max-height: 180px;
@@ -415,22 +415,22 @@
 }
 ```
 
-### 7.4 Seeds 面板
+### 7.4 Seeds Panel
 
-**截图:** `screenshots/design_10_seeds_tab.png`
+**Screenshot:** `screenshots/design_10_seeds_tab.png`
 
-![Seeds面板](screenshots/design_10_seeds_tab.png)
+![Seeds Panel](screenshots/design_10_seeds_tab.png)
 
-**代码位置:** `index.html:1007-1027`
+**Code Location:** `index.html:1007-1027`
 
-### 问题与建议
+### Issues and Recommendations
 
-| 问题 | 严重程度 | 描述 | 建议 |
+| Issue | Severity | Description | Recommendation |
 |------|---------|------|------|
-| Empty state 缺少操作引导 | 中 | 用户不知下一步 | 添加步骤指引和快捷按钮 |
-| 种子卡片布局固定 | 低 | 无法调整大小 | 可保持，因种子数量通常有限 |
+| Empty state lacks action guidance | Medium | Users do not know the next step | Add step-by-step guidance and shortcut buttons |
+| Seed card layout is fixed | Low | Cannot be resized | Can keep, since the number of seeds is usually limited |
 
-**建议代码:**
+**Suggested Code:**
 ```html
 <div class="empty-state">
     <div class="empty-state-icon">🎯</div>
@@ -449,40 +449,40 @@
 
 ---
 
-## 八、Viewer 面板
+## 8. Viewer Panel
 
-### 8.1 布局模式对比
+### 8.1 Layout Mode Comparison
 
-**截图:**
-- `screenshots/detail_05_viewer_vertical.png` - 垂直布局
-- `screenshots/detail_06_viewer_grid.png` - 2x2 网格
-- `screenshots/detail_07_viewer_horizontal.png` - 水平布局
-- `screenshots/detail_08_viewer_3d_top.png` - 3D 顶部
-- `screenshots/detail_09_viewer_3d_bottom.png` - 3D 底部
+**Screenshots:**
+- `screenshots/detail_05_viewer_vertical.png` - Vertical layout
+- `screenshots/detail_06_viewer_grid.png` - 2x2 grid
+- `screenshots/detail_07_viewer_horizontal.png` - Horizontal layout
+- `screenshots/detail_08_viewer_3d_top.png` - 3D top
+- `screenshots/detail_09_viewer_3d_bottom.png` - 3D bottom
 
-| 布局 | 截图 | 优点 | 问题 |
+| Layout | Screenshot | Pros | Cons |
 |------|------|------|------|
-| 垂直 (默认) | detail_05 | 切片对比清晰 | 占用空间大 |
-| 网格 2x2 | detail_06 | 同时查看4个 | 3D 被压缩 |
-| 水平 | detail_07 | 适合宽屏 | 需横向滚动 |
-| 3D 顶部 | detail_08 | 3D 突出 | 2D 宽度固定 |
-| 3D 底部 | detail_09 | 2D 优先 | 3D 位置不便 |
+| Vertical (default) | detail_05 | Clear slice comparison | Takes up a lot of space |
+| Grid 2x2 | detail_06 | View 4 at once | 3D is compressed |
+| Horizontal | detail_07 | Suited to wide screens | Requires horizontal scrolling |
+| 3D top | detail_08 | 3D stands out | 2D width is fixed |
+| 3D bottom | detail_09 | 2D takes priority | 3D position is inconvenient |
 
-![垂直布局](screenshots/detail_05_viewer_vertical.png)
+![Vertical Layout](screenshots/detail_05_viewer_vertical.png)
 
-![网格布局](screenshots/detail_06_viewer_grid.png)
+![Grid Layout](screenshots/detail_06_viewer_grid.png)
 
-![水平布局](screenshots/detail_07_viewer_horizontal.png)
+![Horizontal Layout](screenshots/detail_07_viewer_horizontal.png)
 
-![3D顶部](screenshots/detail_08_viewer_3d_top.png)
+![3D Top](screenshots/detail_08_viewer_3d_top.png)
 
-![3D底部](screenshots/detail_09_viewer_3d_bottom.png)
+![3D Bottom](screenshots/detail_09_viewer_3d_bottom.png)
 
-**代码位置:** `index.html:1103-1285`
+**Code Location:** `index.html:1103-1285`
 
-### 8.2 网格布局 2x2 详细分析
+### 8.2 Grid Layout 2x2 Detailed Analysis
 
-**当前 CSS (问题代码):**
+**Current CSS (Problematic Code):**
 ```css
 /* Grid: 2x2 with fixed row heights */
 .viewers-panel.layout-grid {
@@ -496,58 +496,58 @@
     min-height: 0;
 }
 
-/* ⚠️ 问题: 存在孤立的 CSS 片段 */
-height: auto;      /* 未在任何选择器内 */
-min-height: 120px;  /* 第1193-1194行，CSS语法错误 */
+/* ⚠️ Issue: orphaned CSS fragment */
+height: auto;      /* not inside any selector */
+min-height: 120px;  /* lines 1193-1194, CSS syntax error */
 ```
 
-**问题分析:**
+**Issue Analysis:**
 
-| 问题 | 严重程度 | 代码位置 | 描述 |
+| Issue | Severity | Code Location | Description |
 |------|---------|---------|------|
-| **孤立 CSS 片段** | 高 | `index.html:1193-1194` | `height: auto; min-height: 120px;` 未包裹在选择器内，属语法错误 |
-| 2x2 网格等分空间 | 中 | `index.html:1126-1127` | 4个Viewer(Axial/Sagittal/Coronal/3D)等分，但3D通常需要更大空间 |
-| gap 0.5rem 偏小 | 低 | `index.html:1128` | 医学影像对比需要更大间距，建议 0.75rem |
-| 3D viewer 在网格中被压缩 | 中 | `index.html:1130-1133` | `height: auto` 导致3D卡片可能显示过小 |
-| 卡片高度自动 | 低 | `index.html:1131` | `height: auto` 依赖内容高度，可能不一致 |
+| **Orphaned CSS fragment** | High | `index.html:1193-1194` | `height: auto; min-height: 120px;` is not wrapped in a selector, a syntax error |
+| 2x2 grid divides space equally | Medium | `index.html:1126-1127` | 4 Viewers (Axial/Sagittal/Coronal/3D) share space equally, but 3D usually needs more space |
+| gap 0.5rem is too small | Low | `index.html:1128` | Medical image comparison needs more spacing, 0.75rem recommended |
+| 3D viewer is compressed in the grid | Medium | `index.html:1130-1133` | `height: auto` may cause the 3D card to display too small |
+| Card height is automatic | Low | `index.html:1131` | `height: auto` depends on content height, may be inconsistent |
 
-**截图分析:**
+**Screenshot Analysis:**
 
-从 `detail_06_viewer_grid.png` 可见:
-- 4个Viewer均匀分布在2x2网格中
-- 每个卡片高度相同，但3D视图通常需要更多垂直空间
-- Axial/Sagittal/Coronal 适合正方形或4:3比例
-- 3D重建视图更适合16:9或更大比例
+As seen in `detail_06_viewer_grid.png`:
+- 4 Viewers are evenly distributed in a 2x2 grid
+- Each card has the same height, but the 3D view usually needs more vertical space
+- Axial/Sagittal/Coronal are suited to a square or 4:3 ratio
+- The 3D reconstruction view is better suited to 16:9 or a larger ratio
 
-**建议修复:**
+**Suggested Fix:**
 ```css
-/* 修复孤立的 CSS 片段 - 删除第1193-1194行 */
+/* Fix the orphaned CSS fragment - delete lines 1193-1194 */
 
-/* 改进网格布局 */
+/* Improve grid layout */
 .viewers-panel.layout-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
     grid-template-rows: minmax(180px, 1fr) minmax(180px, 1fr);
-    gap: 0.75rem;  /* 从 0.5rem 增加到 0.75rem */
+    gap: 0.75rem;  /* increase from 0.5rem to 0.75rem */
 }
 
 .viewers-panel.layout-grid > .viewer-card {
     height: auto;
     min-height: 0;
-    /* 确保3D卡片视觉上更突出 */
+    /* Make the 3D card visually stand out more */
     border: 2px solid transparent;
     transition: border-color 0.2s;
 }
 
 .viewers-panel.layout-grid > .viewer-card.viewer-card-3d {
-    border-color: var(--accent);  /* 3D卡片用紫色边框区分 */
+    border-color: var(--accent);  /* Distinguish the 3D card with a purple border */
 }
 
-/* 或者：考虑非等分布局，3D占更大空间 */
+/* Alternatively: consider a non-equal layout where 3D takes more space */
 .viewers-panel.layout-grid-3d-large {
     grid-template-columns: 1fr 1fr;
     grid-template-rows: 1fr 1fr;
-    /* 使用 grid-template-areas 更好地分配空间 */
+    /* Use grid-template-areas to allocate space better */
     grid-template-areas:
         "axial sagittal"
         "coronal 3d";
@@ -559,52 +559,52 @@ min-height: 120px;  /* 第1193-1194行，CSS语法错误 */
 .viewers-panel.layout-grid-3d-large > .viewer-card:nth-child(4) { grid-area: 3d; }
 ```
 
-### 8.3 3D 顶部/底部布局分析
+### 8.3 3D Top/Bottom Layout Analysis
 
-**当前 CSS:**
+**Current CSS:**
 ```css
-/* 3D-top: 3D 顶部，2D 切片在底部 */
+/* 3D-top: 3D on top, 2D slices at the bottom */
 .viewers-panel.layout-3d-top > .viewer-card-3d {
     height: 300px;
 }
 
 .viewers-panel.layout-3d-top .viewers-row > .viewer-card {
-    width: 320px;   /* 固定宽度，可能不适合所有屏幕 */
+    width: 320px;   /* fixed width, may not fit all screens */
     height: 260px;
 }
 
-/* 3D-bottom: 3D 底部，2D 切片在顶部 */
+/* 3D-bottom: 3D at the bottom, 2D slices on top */
 .viewers-panel.layout-3d-bottom .viewers-row > .viewer-card {
-    width: 320px;   /* 同样问题 */
+    width: 320px;   /* same problem */
     height: 260px;
 }
 ```
 
-**问题分析:**
+**Issue Analysis:**
 
-| 问题 | 严重程度 | 代码位置 | 描述 |
+| Issue | Severity | Code Location | Description |
 |------|---------|---------|------|
-| 2D 切片固定宽度 320px | 中 | `index.html:1166, 1184` | 大屏幕浪费空间，小屏幕放不下 |
-| 3D 高度固定 300px | 低 | `index.html:1156, 1190` | 无法根据内容调整 |
-| 水平布局不支持比例调整 | 中 | `index.html:1135-1146` | flex: 1 但 min-width 限制 |
+| 2D slices have a fixed width of 320px | Medium | `index.html:1166, 1184` | Wastes space on large screens, does not fit on small screens |
+| 3D height is fixed at 300px | Low | `index.html:1156, 1190` | Cannot adjust based on content |
+| Horizontal layout does not support ratio adjustment | Medium | `index.html:1135-1146` | flex: 1 but limited by min-width |
 
-**截图分析:**
+**Screenshot Analysis:**
 
-从 `detail_08_viewer_3d_top.png` 和 `detail_09_viewer_3d_bottom.png` 可见:
-- 3D 卡片固定在顶部或底部
-- 三个2D切片并排显示，但宽度固定320px
-- 在1920px屏幕上，两侧有大量空白
+As seen in `detail_08_viewer_3d_top.png` and `detail_09_viewer_3d_bottom.png`:
+- The 3D card is fixed at the top or bottom
+- Three 2D slices are displayed side by side, but with a fixed width of 320px
+- On a 1920px screen, there is a lot of empty space on both sides
 
-**建议修复:**
+**Suggested Fix:**
 ```css
-/* 3D 顶部布局改进 */
+/* 3D top layout improvements */
 .viewers-panel.layout-3d-top {
     gap: 0.75rem;
 }
 
 .viewers-panel.layout-3d-top > .viewer-card-3d {
     flex: none;
-    height: 280px;  /* 可调整 */
+    height: 280px;  /* adjustable */
 }
 
 .viewers-panel.layout-3d-top .viewers-row {
@@ -615,12 +615,12 @@ min-height: 120px;  /* 第1193-1194行，CSS语法错误 */
 }
 
 .viewers-panel.layout-3d-top .viewers-row > .viewer-card {
-    flex: 1;           /* 平均分配宽度 */
-    min-width: 0;      /* 允许收缩 */
+    flex: 1;           /* distribute width evenly */
+    min-width: 0;      /* allow shrinking */
     height: auto;
 }
 
-/* 响应式考虑 */
+/* Responsive considerations */
 @media (max-width: 1400px) {
     .viewers-panel.layout-3d-top .viewers-row {
         flex-wrap: wrap;
@@ -632,18 +632,18 @@ min-height: 120px;  /* 第1193-1194行，CSS语法错误 */
 }
 ```
 
-### 8.4 通用 Viewer 问题
+### 8.4 General Viewer Issues
 
-| 问题 | 严重程度 | 描述 | 建议 |
+| Issue | Severity | Description | Recommendation |
 |------|---------|------|------|
-| 布局按钮过小难点击 | 低 | 按钮样式可增大 | 使用按钮组样式 |
-| 无切片快捷键 | 中 | 无法键盘导航 | 添加方向键支持 |
-| 3D 加载无进度反馈 | 低 | 用户等待焦虑 | 添加进度条 |
-| 缺少切片同步滚动 | 中 | 医学影像常用同步显示 | 添加 Sync Scroll 开关 |
+| Layout buttons are too small and hard to click | Low | Button style can be enlarged | Use a button group style |
+| No slice keyboard shortcuts | Medium | No keyboard navigation | Add arrow key support |
+| No progress feedback when 3D loads | Low | Users feel anxious while waiting | Add a progress bar |
+| Missing synchronized slice scrolling | Medium | Synchronized display is common in medical imaging | Add a Sync Scroll toggle |
 
-**建议代码:**
+**Suggested Code:**
 ```css
-/* 布局按钮组 */
+/* Layout button group */
 .layout-btn-group {
     display: inline-flex;
     gap: 2px;
@@ -674,7 +674,7 @@ min-height: 120px;  /* 第1193-1194行，CSS语法错误 */
     color: white;
 }
 
-/* 加载进度条 */
+/* Loading progress bar */
 .loading-progress {
     position: absolute;
     bottom: 0;
@@ -690,7 +690,7 @@ min-height: 120px;  /* 第1193-1194行，CSS语法错误 */
     transition: width 0.3s;
 }
 
-/* 切片同步滚动开关 */
+/* Slice sync scroll toggle */
 .sync-scroll-toggle {
     display: flex;
     align-items: center;
@@ -707,22 +707,22 @@ min-height: 120px;  /* 第1193-1194行，CSS语法错误 */
 
 ---
 
-## 九、Data Tree
+## 9. Data Tree
 
-**截图:** `screenshots/design_12_data_tree.png`
+**Screenshot:** `screenshots/design_12_data_tree.png`
 
 ![Data Tree](screenshots/design_12_data_tree.png)
 
-**代码位置:** `index.html:1028-1099`
+**Code Location:** `index.html:1028-1099`
 
-### 问题与建议
+### Issues and Recommendations
 
-| 问题 | 严重程度 | 描述 | 建议 |
+| Issue | Severity | Description | Recommendation |
 |------|---------|------|------|
-| 滚动条 4px 偏窄 | 低 | 操作困难 | 调整为 6px |
-| 缺少拖拽排序 | 中 | 无法自定义顺序 | 可保持，优先级不高 |
+| Scrollbar 4px is too narrow | Low | Difficult to operate | Change to 6px |
+| Missing drag-and-drop reordering | Medium | Cannot customize the order | Can keep, not a high priority |
 
-**建议代码:**
+**Suggested Code:**
 ```css
 ::-webkit-scrollbar {
     width: 6px;
@@ -745,25 +745,25 @@ min-height: 120px;  /* 第1193-1194行，CSS语法错误 */
 
 ---
 
-## 十、Context 面板
+## 10. Context Panel
 
-**截图:** `screenshots/design_13_context_panel.png`, `screenshots/detail_12_context_expanded.png`
+**Screenshots:** `screenshots/design_13_context_panel.png`, `screenshots/detail_12_context_expanded.png`
 
-![Context面板](screenshots/design_13_context_panel.png)
+![Context Panel](screenshots/design_13_context_panel.png)
 
-![Context展开](screenshots/detail_12_context_expanded.png)
+![Context Expanded](screenshots/detail_12_context_expanded.png)
 
-**代码位置:** `index.html:242-280`
+**Code Location:** `index.html:242-280`
 
-### 问题与建议
+### Issues and Recommendations
 
-| 问题 | 严重程度 | 描述 | 建议 |
+| Issue | Severity | Description | Recommendation |
 |------|---------|------|------|
-| 字号 0.62rem 太小 | 中 | 难以阅读 | 调整为 0.72rem |
-| 无内容分组 | 低 | 信息无层次 | 按类型分组显示 |
-| 折叠动画缺失 | 低 | 生硬 | 添加 transition |
+| Font size 0.62rem is too small | Medium | Hard to read | Change to 0.72rem |
+| No content grouping | Low | Information has no hierarchy | Display grouped by type |
+| Missing collapse animation | Low | Abrupt | Add a transition |
 
-**建议代码:**
+**Suggested Code:**
 ```css
 .context-panel-body {
     font-size: 0.72rem;
@@ -801,140 +801,140 @@ min-height: 120px;  /* 第1193-1194行，CSS语法错误 */
 
 ---
 
-## 十一、滚动状态
+## 11. Scrolling State
 
-**截图:** `screenshots/design_15_scrolled_chat.png`
+**Screenshot:** `screenshots/design_15_scrolled_chat.png`
 
-![滚动状态](screenshots/design_15_scrolled_chat.png)
+![Scrolling State](screenshots/design_15_scrolled_chat.png)
 
-### 分析
+### Analysis
 
-滚动功能正常工作，消息列表和面板都可以滚动。
+Scrolling works normally; both the message list and the panels can scroll.
 
 ---
 
-## 十二、可访问性
+## 12. Accessibility
 
-### 12.1 颜色对比度
+### 12.1 Color Contrast
 
-| 元素 | 当前颜色 | 对比度 | WCAG AA 要求 | 状态 |
+| Element | Current Color | Contrast Ratio | WCAG AA Requirement | Status |
 |------|---------|--------|-------------|------|
-| 主要文本 | `#f1f5f9` on `#0f172a` | 15.3:1 | 4.5:1 | ✅ |
-| 次要文本 | `#94a3b8` on `#0f172a` | 7.2:1 | 4.5:1 | ✅ |
-| 暗淡文本 | `#64748b` on `#0f172a` | 3.2:1 | 4.5:1 | ❌ |
+| Primary text | `#f1f5f9` on `#0f172a` | 15.3:1 | 4.5:1 | ✅ |
+| Secondary text | `#94a3b8` on `#0f172a` | 7.2:1 | 4.5:1 | ✅ |
+| Dim text | `#64748b` on `#0f172a` | 3.2:1 | 4.5:1 | ❌ |
 
-**问题:** `--text-dim: #64748b` 不满足 WCAG AA
+**Issue:** `--text-dim: #64748b` does not meet WCAG AA
 
-**修复:**
+**Fix:**
 ```css
 :root {
-    --text-dim: #8b95a5;  /* 调整为约 4.5:1 对比度 */
+    --text-dim: #8b95a5;  /* Adjust to roughly 4.5:1 contrast ratio */
 }
 ```
 
-### 12.2 ARIA 标签建议
+### 12.2 ARIA Label Recommendations
 
 ```html
-<!-- 输入框 -->
+<!-- Input box -->
 <input
     id="chatInput"
-    aria-label="输入聊天消息"
+    aria-label="Enter chat message"
     role="textbox"
     aria-multiline="false"
     aria-describedby="chatHint"
 />
 
-<!-- Tab 列表 -->
-<div class="panel-tabs" role="tablist" aria-label="内容面板">
+<!-- Tab list -->
+<div class="panel-tabs" role="tablist" aria-label="Content panel">
     <div class="panel-tab active" role="tab" aria-selected="true" tabindex="0">
         <span>Input</span>
     </div>
     <!-- ... -->
 </div>
 
-<!-- 消息 -->
-<div class="chat-msg bot" role="log" aria-label="助手回复">
+<!-- Message -->
+<div class="chat-msg bot" role="log" aria-label="Assistant reply">
 ```
 
-### 12.3 键盘快捷键建议
+### 12.3 Keyboard Shortcut Recommendations
 
-| 快捷键 | 功能 |
+| Shortcut | Function |
 |--------|------|
-| `Enter` | 发送消息 |
-| `Shift + Enter` | 换行 |
-| `↑ / ↓` | 切换切片 / 历史消息 |
-| `Ctrl + N` | 新建对话 |
-| `Esc` | 关闭全屏 / 取消 |
+| `Enter` | Send message |
+| `Shift + Enter` | New line |
+| `↑ / ↓` | Switch slices / history messages |
+| `Ctrl + N` | New conversation |
+| `Esc` | Close fullscreen / cancel |
 
 ---
 
-## 十三、优先级改进清单
+## 13. Prioritized Improvement List
 
-### P0 - 立即修复
+### P0 - Fix Immediately
 
-| 问题 | 工作量 | 原因 |
+| Issue | Effort | Reason |
 |------|--------|------|
-| 颜色对比度不达标 | 0.5h | 可访问性合规 |
-| **CSS 孤立片段 (index.html:1193-1194)** | 0.25h | 语法错误需清理 |
+| Color contrast does not meet requirements | 0.5h | Accessibility compliance |
+| **Orphaned CSS fragment (index.html:1193-1194)** | 0.25h | Syntax error needs cleanup |
 
-### P1 - 本周完成
+### P1 - Complete This Week
 
-| 问题 | 工作量 | 收益 |
+| Issue | Effort | Benefit |
 |------|--------|------|
-| Tab 添加图标 | 1h | 提升扫描效率 |
-| 消息时间戳 | 1.5h | 对话清晰度 |
-| 代码块复制按钮 | 1h | 功能完整性 |
-| Seeds Empty state 引导 | 0.5h | 降低学习成本 |
-| Context 面板字号 | 0.5h | 可读性提升 |
+| Add icons to Tabs | 1h | Improve scanning efficiency |
+| Message timestamps | 1.5h | Conversation clarity |
+| Code block copy button | 1h | Feature completeness |
+| Seeds Empty state guidance | 0.5h | Lower learning cost |
+| Context panel font size | 0.5h | Improved readability |
 
-### P2 - 下周完成
+### P2 - Complete Next Week
 
-| 问题 | 工作量 | 收益 |
+| Issue | Effort | Benefit |
 |------|--------|------|
-| 布局按钮组样式 | 1h | 视觉一致性 |
-| OAR 表格滚动 | 1h | 大量数据支持 |
-| 键盘快捷键 | 2h | 可访问性 + 效率 |
-| 滚动条样式 | 0.5h | 视觉细节 |
+| Layout button group style | 1h | Visual consistency |
+| OAR table scrolling | 1h | Support for large data |
+| Keyboard shortcuts | 2h | Accessibility + efficiency |
+| Scrollbar style | 0.5h | Visual detail |
 
-### Viewer 专项修复
+### Viewer-Specific Fixes
 
-| 问题 | 工作量 | 优先级 | 描述 |
+| Issue | Effort | Priority | Description |
 |------|--------|--------|------|
-| CSS 孤立片段 | 0.25h | **P0** | 第1193-1194行语法错误 |
-| 2D切片同步滚动 | 2h | P1 | 医学影像常用功能 |
-| 3D网格布局优化 | 1.5h | P1 | 3D在网格中被压缩 |
-| 非等分网格布局 | 2h | P2 | 支持grid-template-areas |
-| Viewer加载进度条 | 1h | P2 | 降低等待焦虑 |
+| Orphaned CSS fragment | 0.25h | **P0** | Syntax error on lines 1193-1194 |
+| 2D slice synchronized scrolling | 2h | P1 | Common feature in medical imaging |
+| 3D grid layout optimization | 1.5h | P1 | 3D is compressed in the grid |
+| Non-equal grid layout | 2h | P2 | Support grid-template-areas |
+| Viewer loading progress bar | 1h | P2 | Reduce waiting anxiety |
 
 ---
 
-## 十四、总结
+## 14. Summary
 
-### 设计优点
-- ✅ 深色主题符合医学影像工具惯例
-- ✅ 三栏布局信息架构清晰
-- ✅ 5 种 Viewer 布局模式覆盖不同工作流
-- ✅ 指标卡片颜色状态标识直观
-- ✅ 消息气泡样式统一
+### Design Strengths
+- ✅ Dark theme fits medical imaging tool conventions
+- ✅ Clear three-column information architecture
+- ✅ 5 Viewer layout modes cover different workflows
+- ✅ Intuitive color-coded status indicators on metric cards
+- ✅ Consistent message bubble styling
 
-### 主要问题
-1. **可访问性**: 部分颜色对比度不达标 (P0)
-2. **用户引导**: Empty state 缺少操作指引
-3. **功能完整性**: 代码块无复制、消息无时间戳
-4. **Viewer布局**: CSS语法错误(孤立片段)、2x2网格3D被压缩、同步滚动缺失
-5. **视觉细节**: Tab 无图标、滚动条偏窄
+### Main Issues
+1. **Accessibility**: Some color contrasts do not meet requirements (P0)
+2. **User guidance**: Empty state lacks action guidance
+3. **Feature completeness**: No copy for code blocks, no timestamps for messages
+4. **Viewer layout**: CSS syntax error (orphaned fragment), 3D compressed in the 2x2 grid, missing synchronized scrolling
+5. **Visual details**: Tabs have no icons, scrollbar is too narrow
 
-### 改进目标
+### Improvement Goals
 
-| 阶段 | 评分 | 达成 |
+| Stage | Score | Achievement |
 |------|------|------|
-| 当前 | 7.0/10 | - |
-| P0 修复后 | 7.2/10 | 可访问性达标 |
-| P1 完成后 | 8.0/10 | 用户体验显著提升 |
-| P2 完成后 | 8.5/10 | 专业级产品 |
+| Current | 7.0/10 | - |
+| After P0 fixes | 7.2/10 | Accessibility compliant |
+| After P1 | 8.0/10 | Significantly improved user experience |
+| After P2 | 8.5/10 | Professional-grade product |
 
 ---
 
-**报告生成时间:** 2026-05-31
-**截图数量:** 26 张
-**代码审计:** `web/app/index.html` (1425 行)
+**Report Generated:** 2026-05-31
+**Screenshot Count:** 26
+**Code Audited:** `web/app/index.html` (1425 lines)

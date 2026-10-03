@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "ui_viewer",
+  "expectation": null,
+  "facet": "ui_viewer",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Is the dose overlay visible on the current slice?",
+  "source_refs": [
+    "INT-8e602fb0eec0",
+    "INT-aad917c31bdb"
+  ],
+  "template_id": "TPL-97d1f79169"
+}

@@ -1,0 +1,16 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "input_variations",
+  "expectation": null,
+  "facet": "input_variations",
+  "gold_status": "draft",
+  "n_source_intents": 4,
+  "representative_text": "What is the tumor volume?",
+  "source_refs": [
+    "INT-53ad11a51250",
+    "INT-671b1d6b5b9c",
+    "INT-926acb3c8877",
+    "INT-b4045ae2bdfc"
+  ],
+  "template_id": "TPL-cea8ef8aec"
+}

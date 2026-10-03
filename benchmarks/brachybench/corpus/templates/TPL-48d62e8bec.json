@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "error_recovery",
+  "expectation": null,
+  "facet": "error_recovery",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Change the CT dimensions to 1024x1024",
+  "source_refs": [
+    "INT-5d04f40037ba",
+    "INT-95702d19f2f4"
+  ],
+  "template_id": "TPL-48d62e8bec"
+}

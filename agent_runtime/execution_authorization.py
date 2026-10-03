@@ -64,6 +64,7 @@ class TurnExecutionAuthorization:
     granted_workflows: Set[str] = field(default_factory=set)
     events: List[Dict[str, object]] = field(default_factory=list)
     action_plan: ActionPlan = field(default_factory=ActionPlan)
+    execution_receipts: List[Dict[str, object]] = field(default_factory=list)
 
     def set_action_plan(self, plan: ActionPlan, *, source: str = "llm") -> None:
         """Record the ordered action plan for this isolated turn.
@@ -84,6 +85,7 @@ class TurnExecutionAuthorization:
         self.events.append({
             "source": str(source or "llm"),
             "action_plan": self.action_plan.to_dict(),
+            "execution_receipts": list(self.execution_receipts),
             "merge_refused": refused,
             "plan_problems": list(problems),
         })
@@ -112,7 +114,7 @@ class TurnExecutionAuthorization:
         source: str,
     ) -> None:
         self.grant_tools(
-            (str(call.get("tool") or "") for call in calls if isinstance(call, Mapping)),
+            (str(call.get("tool") or "") for call in calls if isinstance(call, Mapping) and not call.get("_argument_error")),
             source=source,
         )
 

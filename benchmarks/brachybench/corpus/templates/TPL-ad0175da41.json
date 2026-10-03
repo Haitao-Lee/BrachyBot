@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "smoke",
+  "expectation": null,
+  "facet": "smoke",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Segment the CTV",
+  "source_refs": [
+    "INT-9e98d6d1c154",
+    "INT-b14d608e920e"
+  ],
+  "template_id": "TPL-ad0175da41"
+}

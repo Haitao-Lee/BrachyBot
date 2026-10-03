@@ -1,0 +1,84 @@
+{
+  "schema_version": "1.0",
+  "id": "SG-RVIEW-035",
+  "track": "E",
+  "layers": [
+    "L2",
+    "L4",
+    "L5"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "rview_idempotent_volume",
+  "cost_class": "state_only",
+  "power_role": "primary",
+  "clinical_intent": "Repeated viewer volume builds must be idempotent and must not produce different meshes.",
+  "fixture": {
+    "case_family": "synth/recovery_case",
+    "setup_script": "fixtures/setup/recovery_case.py",
+    "initial_state_hash": "sha256:bd6e1fce6a65ef8e94a4268a2c20b2f74ae3cba8841f10d288701221f8ae4a73"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-CT",
+    "contrast_family_id": "rview/idempotency/volume"
+  },
+  "protocol": {
+    "mode": "single_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "Repeatedly build the viewer volume",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 1,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "idempotency",
+    "constraint_class": "postcondition",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "idempotency_pass",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "medium"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "SG-RVIEW-035-P01",
+    "hidden": false,
+    "generation_seed": 1,
+    "canary_class": null,
+    "behavioral_probes": [
+      "non_idempotent"
+    ],
+    "contrast_family_id": "rview/idempotency/volume"
+  },
+  "provenance": {
+    "source": "audit_derived",
+    "derived_from": "oracles/recovery.py:181 (Idempotency)",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto"
+    ],
+    "authored_on": "2026-10-01",
+    "deprecated": null
+  }
+}

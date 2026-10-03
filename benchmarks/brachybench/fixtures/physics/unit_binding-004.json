@@ -1,0 +1,24 @@
+{
+  "config": {
+    "binding": {
+      "bound_metric": "D2cc",
+      "bound_target": "bladder",
+      "metric": "D2cc",
+      "target": "bladder",
+      "unit": "cGy",
+      "value": 45.0,
+      "value_gy": 0.45
+    },
+    "mechanism": "binding/ok_cGy"
+  },
+  "expected": {
+    "evidence_gap_codes": [],
+    "score": 1.0,
+    "verdict": "pass",
+    "violation_codes": []
+  },
+  "family": "unit_binding",
+  "id": "unit_binding-004",
+  "initial_state_hash": "sha256:937ac24affdaa4d80669d92e6c012d8731109eb48c0fc6a631f57537325abbdd",
+  "seed": 20260929
+}

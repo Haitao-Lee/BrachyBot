@@ -1,0 +1,81 @@
+{
+  "schema_version": "1.0",
+  "id": "DOSEPRE-INF-104",
+  "track": "E",
+  "layers": [
+    "L3",
+    "L4"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "inference.preprocessing_error_contract",
+  "cost_class": "state_only",
+  "power_role": "safety_gate",
+  "clinical_intent": "Inference preprocessing edge failures must return the stable error code PATCH_SIZE_INVALID, with timeout/memory-retryable cases labeled correctly.",
+  "fixture": {
+    "case_family": "synth/prostate_s02",
+    "setup_script": "fixtures/setup/prostate_s02_full_pipeline.py",
+    "initial_state_hash": "sha256:38eabca0a6bcb5062deac0e5645e8bf52d9e5f51cdd0f137f824f4509461ada3"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-CT",
+    "contrast_family_id": "dose_pre/inference/error_contract"
+  },
+  "protocol": {
+    "mode": "single_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "Inference preprocessing edge failures must return the stable error code PATCH_SIZE_INVALID, with timeout/memory-retryable cases labeled correctly.",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 1,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "error_contract",
+    "constraint_class": "none",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "error_contract_pass",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "easy"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "DOSEPRE-INF-104-P01",
+    "hidden": false,
+    "generation_seed": 7147,
+    "canary_class": null,
+    "behavioral_probes": [],
+    "contrast_family_id": "dose_pre/inference/error_contract"
+  },
+  "provenance": {
+    "source": "audit_derived",
+    "derived_from": "plans/dose_pre/inference.py:42-47,215-216,297-299,339-342,521-522 / oracles/recovery.py:19-65",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto"
+    ],
+    "authored_on": "2026-10-01",
+    "deprecated": null
+  }
+}

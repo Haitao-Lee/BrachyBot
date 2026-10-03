@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "effective_date": "2026-10-04",
+  "scope": "all_future_BrachyBot_formal_benchmark_evaluations_PRV_and_EXT",
+  "formal_entry_mode": "browser_user_chat",
+  "input_action": "fill_chatInput_click_chatSendBtn",
+  "input": "task_public_user_turn_only_without_gold_or_future_dialogue",
+  "direct_model_or_agent_invocation_is_formal": false,
+  "api_only_invocation_is_browser_parity": false,
+  "synthetic_replay_is_formal": false,
+  "component_self_tests_allowed": true,
+  "independent_evaluator_required": true,
+  "isolated_workspace_required": true,
+  "browser_owned_actions_must_settle_before_scoring": true,
+  "source_protocol_changes_require_adapted_label": true,
+  "unsupported_protocol": "BLOCKED_NOT_SILENTLY_DOWNGRADED",
+  "sut_runs_authorized_by_policy_change": 0,
+  "contract": "../docs/BENCHMARK_USER_CHAT_EXECUTION_CONTRACT_2026-10-04.md"
+}

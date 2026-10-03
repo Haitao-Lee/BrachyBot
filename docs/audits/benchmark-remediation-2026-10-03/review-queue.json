@@ -1,0 +1,2731 @@
+{
+  "legacy_failure_count": 215,
+  "categories": {
+    "requires_contract_or_unit_test_review": 11,
+    "independent_revalidation_required": 204
+  },
+  "rows": [
+    {
+      "assertion": "benchmarks/brachybench/tests/test_checker_family.py::test_pdf_parseability",
+      "status": "requires_contract_or_unit_test_review"
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_checker_family.py::test_roundtrip_fidelity_n11_semantics",
+      "status": "requires_contract_or_unit_test_review"
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_checker_family.py::test_error_contract_and_state_invariant",
+      "status": "requires_contract_or_unit_test_review"
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[A6-INTERF-001]",
+      "task_id": "A6-INTERF-001",
+      "replay_role": "negative",
+      "source_task_sha256": "83d6c33e3288039a3eab939e7763af8264e26816bb62f1e61da507f736a5f30f",
+      "current_verdict": "Meets",
+      "violation_codes": [],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[PLAN2-GEO-006]",
+      "task_id": "PLAN2-GEO-006",
+      "replay_role": "negative",
+      "source_task_sha256": "7f36cccebeb9e21244ad02f0652ee1b05d509ea66246c86ece20817e95430e4d",
+      "current_verdict": "Meets",
+      "violation_codes": [],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[PLAN2-GEO-007]",
+      "task_id": "PLAN2-GEO-007",
+      "replay_role": "negative",
+      "source_task_sha256": "54fd2cf58ca7e21d81cb67ecfea24c58f95bb4fc276d0a895abd2999e3c339e2",
+      "current_verdict": "Meets",
+      "violation_codes": [],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[PLAN2-GEO-008]",
+      "task_id": "PLAN2-GEO-008",
+      "replay_role": "negative",
+      "source_task_sha256": "a24ceee11c4ecd276bfc0abaafe06d8ac18ee72445de2ff1f810a6b361a24242",
+      "current_verdict": "Meets",
+      "violation_codes": [],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[PLAN2-GEO-009]",
+      "task_id": "PLAN2-GEO-009",
+      "replay_role": "negative",
+      "source_task_sha256": "fde3f2be745ac79c24b63cb6e07657947aa4c1d9f41e3dbe98e94b79c8231ff7",
+      "current_verdict": "Meets",
+      "violation_codes": [],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[PLAN2-GEO-010]",
+      "task_id": "PLAN2-GEO-010",
+      "replay_role": "negative",
+      "source_task_sha256": "d781fb0ccafea370aa2deb3adb0a20ef19c06940285acc4e84a4b6a8535897af",
+      "current_verdict": "Meets",
+      "violation_codes": [],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[PLAN2-GEO-011]",
+      "task_id": "PLAN2-GEO-011",
+      "replay_role": "negative",
+      "source_task_sha256": "bc654a400da9de29fd9c9ff620887ba01e252cacb833123d0c82706f8f049931",
+      "current_verdict": "Meets",
+      "violation_codes": [],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[PLAN2-GEO-041]",
+      "task_id": "PLAN2-GEO-041",
+      "replay_role": "negative",
+      "source_task_sha256": "e896b0be9ebc8bac8405d08e4cd2e388cef67577d2ddfaf25cc2a211366b55f5",
+      "current_verdict": "Meets",
+      "violation_codes": [],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[PLAN2-GEO-042]",
+      "task_id": "PLAN2-GEO-042",
+      "replay_role": "negative",
+      "source_task_sha256": "37ae61480f28fae169542cc19c3f5c8276c09c9b9af0c8a4be91e3c0d8654f9e",
+      "current_verdict": "Meets",
+      "violation_codes": [],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[PLAN2-GEO-043]",
+      "task_id": "PLAN2-GEO-043",
+      "replay_role": "negative",
+      "source_task_sha256": "d566738b40b9e45af085770f8958052c51fc026addce3bd2ab780788315378bb",
+      "current_verdict": "Meets",
+      "violation_codes": [],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[PR-TRAJ-003]",
+      "task_id": "PR-TRAJ-003",
+      "replay_role": "negative",
+      "source_task_sha256": "a7a4de8aa9f78358ba90c71f1277fe73223479f5660621941d43f7ab633d05b3",
+      "current_verdict": "Meets",
+      "violation_codes": [],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[PR-TRAJ-006]",
+      "task_id": "PR-TRAJ-006",
+      "replay_role": "negative",
+      "source_task_sha256": "8534eafe162b2622e1bf5eecfedd3c5c17f1a05516ba479dbf326de720b87af7",
+      "current_verdict": "Meets",
+      "violation_codes": [],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[PR-TRAJ-009]",
+      "task_id": "PR-TRAJ-009",
+      "replay_role": "negative",
+      "source_task_sha256": "db15456d805d14a60dd31dae59adcca48f1f4359dc4f26c2dd9216cf178af73e",
+      "current_verdict": "Meets",
+      "violation_codes": [],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[PR-TRAJ-012]",
+      "task_id": "PR-TRAJ-012",
+      "replay_role": "negative",
+      "source_task_sha256": "786eb05a5f663a030c4a62bec6a79fa1b76640e52e760b3123fd3fb4a5d749a3",
+      "current_verdict": "Meets",
+      "violation_codes": [],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[RTOOL-ENVMGR-006]",
+      "task_id": "RTOOL-ENVMGR-006",
+      "replay_role": "negative",
+      "source_task_sha256": "d968c5a31d65c073f7b0d0636154c2cee096d92807eea8c4a7232b574824e30a",
+      "current_verdict": "Meets",
+      "violation_codes": [],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[RTOOL-TOOLCRE-015]",
+      "task_id": "RTOOL-TOOLCRE-015",
+      "replay_role": "negative",
+      "source_task_sha256": "5fc90bc7900bc093aaee4373b45566827e68ba9594d845f8d977b7c3ea701ac0",
+      "current_verdict": "Meets",
+      "violation_codes": [],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEEDSEG-001]",
+      "task_id": "SEEDSEG-001",
+      "replay_role": "negative",
+      "source_task_sha256": "d8bdad47a3ee235f240f6ceac1f340e6452af6b935dea4d46b3aa3074bbc932e",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEEDSEG-002]",
+      "task_id": "SEEDSEG-002",
+      "replay_role": "negative",
+      "source_task_sha256": "38d31083e4d948c9fe1a7f6cf78241bffbbab8df882ab0b1af9562f9eef8046a",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEEDSEG-003]",
+      "task_id": "SEEDSEG-003",
+      "replay_role": "negative",
+      "source_task_sha256": "b16ef5868a680552351407077ff5508baf62f7eb4819c4216b1da2e736424763",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEEDSEG-010]",
+      "task_id": "SEEDSEG-010",
+      "replay_role": "negative",
+      "source_task_sha256": "b56fba593910b9b352294dccc8c32bdc53cac4649454693df185c29d41556dc2",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEEDSEG-011]",
+      "task_id": "SEEDSEG-011",
+      "replay_role": "negative",
+      "source_task_sha256": "11faaa645900eb2448a105b91876eb58ad37903ee0ffe7fd84e432541532c377",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEEDSEG-012]",
+      "task_id": "SEEDSEG-012",
+      "replay_role": "negative",
+      "source_task_sha256": "e57b25e28a00fc3c326222deb359532d1cc78ecb78b94b4378864bde48934c37",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEEDSEG-013]",
+      "task_id": "SEEDSEG-013",
+      "replay_role": "negative",
+      "source_task_sha256": "3b972488fe4bc4a35e54dd3d530662a6c8d58caa8a970c552f46d739f630118b",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEEDSEG-014]",
+      "task_id": "SEEDSEG-014",
+      "replay_role": "negative",
+      "source_task_sha256": "14b6984038e47e237ffd0c9a807053a8903b0390ddece24bdbd16d7a17e6ecff",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEEDSEG-015]",
+      "task_id": "SEEDSEG-015",
+      "replay_role": "negative",
+      "source_task_sha256": "6bffb44a119098fecf54b3a5b540ea69402592d72fad196b3da89fd6d1956be9",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEEDSEG-016]",
+      "task_id": "SEEDSEG-016",
+      "replay_role": "negative",
+      "source_task_sha256": "660977ce530e1222f9b4ddcbcaaf8003f8c80e97b4b9a0fa1657115417bf427a",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEEDSEG-017]",
+      "task_id": "SEEDSEG-017",
+      "replay_role": "negative",
+      "source_task_sha256": "697d0fb484585ac98d9fa379c0c153922fb0a0e065f333e72cc6e54be181bf2a",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEEDSEG-018]",
+      "task_id": "SEEDSEG-018",
+      "replay_role": "negative",
+      "source_task_sha256": "e56d20b618bb76572b6c669f55b7a96f12d7e0ed5f86c0a566d5e8a6f1f14db0",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEEDSEG-019]",
+      "task_id": "SEEDSEG-019",
+      "replay_role": "negative",
+      "source_task_sha256": "756a0df3dca88329288c9e239b6920456c4560c29b3be1f0d19e9d6c1496c1c1",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEEDSEG-020]",
+      "task_id": "SEEDSEG-020",
+      "replay_role": "negative",
+      "source_task_sha256": "9b8ef1acaee70eb25d182dbbb13a237fea75cfc923c595a4a65140fd79458862",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEEDSEG-021]",
+      "task_id": "SEEDSEG-021",
+      "replay_role": "negative",
+      "source_task_sha256": "368da59706d76c4e7fa321824b187b41063c60f01b33b3486f3eed2a94e28c9e",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEEDSEG-022]",
+      "task_id": "SEEDSEG-022",
+      "replay_role": "negative",
+      "source_task_sha256": "0eb2bcd88e55c64b36482fd69fe90f66a7190601104963608b243483a380eed5",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEEDSEG-025]",
+      "task_id": "SEEDSEG-025",
+      "replay_role": "negative",
+      "source_task_sha256": "3983ea8557ff283204b9127f2733b00d61e2b4329584952d295d90d543bea062",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEEDSEG-026]",
+      "task_id": "SEEDSEG-026",
+      "replay_role": "negative",
+      "source_task_sha256": "81c5df2ecdfddbd35338db103c140e676addb237dcf93a86fdb0924dc7a89cd7",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEEDSEG-027]",
+      "task_id": "SEEDSEG-027",
+      "replay_role": "negative",
+      "source_task_sha256": "9752886c2ba5653694462b9158ef94316dc1308b1cdcb528cc1fdf9c3368e50a",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEGALIGN-001]",
+      "task_id": "SEGALIGN-001",
+      "replay_role": "negative",
+      "source_task_sha256": "374e9fc185b680a206b806e21f6d2d5daa77244956b5af8efedec6e753b89300",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEGALIGN-002]",
+      "task_id": "SEGALIGN-002",
+      "replay_role": "negative",
+      "source_task_sha256": "cff04d23a4a78956e178da7db6df53d4895bfea9230610f24b2579e8d33377b0",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEGALIGN-003]",
+      "task_id": "SEGALIGN-003",
+      "replay_role": "negative",
+      "source_task_sha256": "611bf31093117b75edebb0de97414e752c8433168fca23d4f6550f9a5f316de5",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEGALIGN-004]",
+      "task_id": "SEGALIGN-004",
+      "replay_role": "negative",
+      "source_task_sha256": "8b77ed9a69f506c088629d96701ebe7c2641e522a70e5dcdeb87b949cb7ee4ea",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEGALIGN-005]",
+      "task_id": "SEGALIGN-005",
+      "replay_role": "negative",
+      "source_task_sha256": "d4a9cc84593b49e49bca36316f5c3782a4ee8d13f7abacb1824e01ddafd38acd",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEGALIGN-006]",
+      "task_id": "SEGALIGN-006",
+      "replay_role": "negative",
+      "source_task_sha256": "0e40628cef3fb9e203c6059e4ab0cc1df3f1b9bdc0f3fa8bb6a7d811e0a943d2",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEGALIGN-007]",
+      "task_id": "SEGALIGN-007",
+      "replay_role": "negative",
+      "source_task_sha256": "dfaaf0b5660f2372f3ed22716630bb60c9d6d7a55c17201ca705f2b3deff2750",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEGALIGN-008]",
+      "task_id": "SEGALIGN-008",
+      "replay_role": "negative",
+      "source_task_sha256": "660202a2beaf9790c2951627b4475ae1b9d375cc7345638a80012466b200042f",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEGALIGN-009]",
+      "task_id": "SEGALIGN-009",
+      "replay_role": "negative",
+      "source_task_sha256": "d2e0fdd426706ca6c4150e982657d7e94be22c747510a3e3be7afe7aa8efc033",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEGALIGN-010]",
+      "task_id": "SEGALIGN-010",
+      "replay_role": "negative",
+      "source_task_sha256": "1ca961665b4905109dd976af811a5f304ba68d049b3f97b6d86e415b2dde59e4",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEGALIGN-011]",
+      "task_id": "SEGALIGN-011",
+      "replay_role": "negative",
+      "source_task_sha256": "c8f099bb047f519be221f038e3de13f9dd1b209e3bbdeff81252cc27d0cadf1c",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEGALIGN-012]",
+      "task_id": "SEGALIGN-012",
+      "replay_role": "negative",
+      "source_task_sha256": "b29ea69a3accb964c7386ad74acc954504f3a03709965cf6f0b0e1e7742f69bc",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEGALIGN-013]",
+      "task_id": "SEGALIGN-013",
+      "replay_role": "negative",
+      "source_task_sha256": "35b3ad4c6b3355d6d15691abf525d41ce5039a99e158e1e4b2cb5e9c2cb24be5",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEGALIGN-014]",
+      "task_id": "SEGALIGN-014",
+      "replay_role": "negative",
+      "source_task_sha256": "775d42e52db40145f8cc6538660ab8ee2b343a71feb70d896e0685cd83396200",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEGALIGN-015]",
+      "task_id": "SEGALIGN-015",
+      "replay_role": "negative",
+      "source_task_sha256": "412bb99f425387983d1f662981f7da6a781c2c115702187855d503a2374493e1",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEGALIGN-016]",
+      "task_id": "SEGALIGN-016",
+      "replay_role": "negative",
+      "source_task_sha256": "ff360033173959594ab1d187a90247df2cbfa9e04147a2cf7ab62ed310fa3eda",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEGALIGN-017]",
+      "task_id": "SEGALIGN-017",
+      "replay_role": "negative",
+      "source_task_sha256": "b4cffa022f1b847d53fec38b854ad370f5ac56a6890110e0145a613e434f2cdd",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SEGALIGN-018]",
+      "task_id": "SEGALIGN-018",
+      "replay_role": "negative",
+      "source_task_sha256": "ef5e627b19129c32701feb8abfb06de714133a7daa9a7e7c6764f7c0a5d1b84d",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SG-CTV-020]",
+      "task_id": "SG-CTV-020",
+      "replay_role": "negative",
+      "source_task_sha256": "140121bff9ca93c8bebb4c8d9e2938c329caa140899548fa15a6034e6e5daf8d",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SG-CTV-021]",
+      "task_id": "SG-CTV-021",
+      "replay_role": "negative",
+      "source_task_sha256": "51f1cc41f36f2e70d594e521b14a28eb842338f6a5f42abb509fa115d61e9a97",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SG-CTV-022]",
+      "task_id": "SG-CTV-022",
+      "replay_role": "negative",
+      "source_task_sha256": "364dc4b8197ea6de67e479aeaa7746cd06771b6f1af059a33588eab4c83b39ab",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SG-CTV-023]",
+      "task_id": "SG-CTV-023",
+      "replay_role": "negative",
+      "source_task_sha256": "495403dea602f497d08de9b88e0ca923025566be2212c1ed8c8f42639c3be10f",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SG-CTV-024]",
+      "task_id": "SG-CTV-024",
+      "replay_role": "negative",
+      "source_task_sha256": "b05b2f8b949ab71712ae60b257bac3d01898308e92ab008cb0a53fa22b97832b",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SG-CTV-025]",
+      "task_id": "SG-CTV-025",
+      "replay_role": "negative",
+      "source_task_sha256": "8da5fad47a352ba5d83d48f5260cfa43861909ba1cbb7c5b955862a9448ece56",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SG-CTV-026]",
+      "task_id": "SG-CTV-026",
+      "replay_role": "negative",
+      "source_task_sha256": "f86fe4a6e241e8c0c998166ee1d976ba8df0b3bdb6b35a078fa5f42be67660f8",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SG-OAR-023]",
+      "task_id": "SG-OAR-023",
+      "replay_role": "negative",
+      "source_task_sha256": "208f1ab26ba868b67b8d9cec440d7067ae6c5daa445449b9c189d4ed15075a1c",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SG-OAR-024]",
+      "task_id": "SG-OAR-024",
+      "replay_role": "negative",
+      "source_task_sha256": "f0f8b23008827c790000e54d8217b2a7b06dbbc3813b5439a1984fc92911624c",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SG-OAR-025]",
+      "task_id": "SG-OAR-025",
+      "replay_role": "negative",
+      "source_task_sha256": "da9723847f00a377647585d39cf128a735c6fdafb7d1d717b7b4ccddc0a9d0e3",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SG-OAR-026]",
+      "task_id": "SG-OAR-026",
+      "replay_role": "negative",
+      "source_task_sha256": "1562a29d7e6f0fd55a75ba042b77b22079ea36d1ce3b337adf2c8836a49c7b3a",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SG-OAR-027]",
+      "task_id": "SG-OAR-027",
+      "replay_role": "negative",
+      "source_task_sha256": "e566ac6ecf5e522a84266437941e37c01e1a997fddf418b8034218f29b4a992f",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SG-OAR-028]",
+      "task_id": "SG-OAR-028",
+      "replay_role": "negative",
+      "source_task_sha256": "745161311d6c14f792869badbe523b45396baff99f3bbfbab736ce7bb69542a8",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SG-SEED-028]",
+      "task_id": "SG-SEED-028",
+      "replay_role": "negative",
+      "source_task_sha256": "63fb2ccd2f3088c94fa1c385474555a429d49c3d1f3febdd7bf14641cb43ca34",
+      "current_verdict": "Meets",
+      "violation_codes": [],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SG-SEED-029]",
+      "task_id": "SG-SEED-029",
+      "replay_role": "negative",
+      "source_task_sha256": "38ff9061cf46e45b460361c02819d9ced6242df80f24aa55ae89999b61127126",
+      "current_verdict": "Meets",
+      "violation_codes": [],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SG-SEED-030]",
+      "task_id": "SG-SEED-030",
+      "replay_role": "negative",
+      "source_task_sha256": "ec91b96ef31fe8a48fa71ff125958ea9ecb785a761ecf40d056963ed8fd22604",
+      "current_verdict": "Meets",
+      "violation_codes": [],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_catches_the_unsafe_case[SG-SEED-031]",
+      "task_id": "SG-SEED-031",
+      "replay_role": "negative",
+      "source_task_sha256": "0fbde9b617016a6dd18a47a6dedbe3587ec0e47cee1b4f7826538cc96d87bdf4",
+      "current_verdict": "Meets",
+      "violation_codes": [],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[A6-INTERF-001]",
+      "task_id": "A6-INTERF-001",
+      "replay_role": "positive",
+      "source_task_sha256": "83d6c33e3288039a3eab939e7763af8264e26816bb62f1e61da507f736a5f30f",
+      "current_verdict": "Does not meet",
+      "violation_codes": [
+        "interference_false_negative"
+      ],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-EVAL-211]",
+      "task_id": "DOSEPRE-EVAL-211",
+      "replay_role": "positive",
+      "source_task_sha256": "69ee9837738f316a2f5b320aefe5e74121bbc6c6112a4296c6fbef082c2f3900",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-EVAL-212]",
+      "task_id": "DOSEPRE-EVAL-212",
+      "replay_role": "positive",
+      "source_task_sha256": "1015b76ea36b612ab691d9c159e58d84f29132c8a62f70f833940d704c85361a",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-EVAL-213]",
+      "task_id": "DOSEPRE-EVAL-213",
+      "replay_role": "positive",
+      "source_task_sha256": "e6e67ec244b9c4c9f39384dab715bd948768cfc082f514dc009248d0617df955",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-EVAL-214]",
+      "task_id": "DOSEPRE-EVAL-214",
+      "replay_role": "positive",
+      "source_task_sha256": "c140b86179fc54e3b1b13097a2d3ec70110af5391b9cbaab2d0e154dd55c4c7a",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-EVAL-215]",
+      "task_id": "DOSEPRE-EVAL-215",
+      "replay_role": "positive",
+      "source_task_sha256": "745ed9393bd2a93bb1cbf4892b66252b529f3ac3a4fd809a5a696cb7e52a8c13",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-INF-201]",
+      "task_id": "DOSEPRE-INF-201",
+      "replay_role": "positive",
+      "source_task_sha256": "ae090c7a2b672fb8796eae4ec97bad66ca8e8bf2ec0a310721550175b33740ae",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-INF-202]",
+      "task_id": "DOSEPRE-INF-202",
+      "replay_role": "positive",
+      "source_task_sha256": "481e2ffc27209844d86800606124e8e972bc9234eff2bf10ae04d56eb89e7d85",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-INF-203]",
+      "task_id": "DOSEPRE-INF-203",
+      "replay_role": "positive",
+      "source_task_sha256": "d4cb43fc4a0902467c08f0811cef30eeb314dd022bd6dd2949392eeb3ad9a1d6",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-INF-204]",
+      "task_id": "DOSEPRE-INF-204",
+      "replay_role": "positive",
+      "source_task_sha256": "38c564012d195fb5e203fefb12e17d6bbb73bc8c08d860f712f69779b64df84c",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-INF-205]",
+      "task_id": "DOSEPRE-INF-205",
+      "replay_role": "positive",
+      "source_task_sha256": "7e2e5c22cfe7b14281e13d6af5f163c2ab30e46988f493d8149e0eb2f411e585",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-INF-206]",
+      "task_id": "DOSEPRE-INF-206",
+      "replay_role": "positive",
+      "source_task_sha256": "9bcaf45475d9c163b42d001ea84403389df914952e1a24a8ffdb2f5faf6d5790",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-INF-207]",
+      "task_id": "DOSEPRE-INF-207",
+      "replay_role": "positive",
+      "source_task_sha256": "1a034272d9cfc7eeb36d8137392812aa0554f2781a1787011e667735d4113fb6",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-INF-208]",
+      "task_id": "DOSEPRE-INF-208",
+      "replay_role": "positive",
+      "source_task_sha256": "e28917fc65418101597c7e68f4f7784ab12e9c1c7fe791eeed1d303f0c38ff39",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-INF-209]",
+      "task_id": "DOSEPRE-INF-209",
+      "replay_role": "positive",
+      "source_task_sha256": "d190c7c44131b4d22ad5910dd50ee3af4dfff448b8dcddf048a831225d2ab01c",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-INF-210]",
+      "task_id": "DOSEPRE-INF-210",
+      "replay_role": "positive",
+      "source_task_sha256": "d3e1b49e4446324c5d78f882ee1b29fa786181dda43e5a1e2a62901486d4e1cd",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-LOAD-211]",
+      "task_id": "DOSEPRE-LOAD-211",
+      "replay_role": "positive",
+      "source_task_sha256": "71213c9bbcbff13d162d6e2ae214a23677975afd18e6c3b0ee9f5efc1ba4b5e8",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-LOAD-212]",
+      "task_id": "DOSEPRE-LOAD-212",
+      "replay_role": "positive",
+      "source_task_sha256": "21f24ed9af2fa15024593fc0be9ee3393c8444b79a8edf79039960f4dd7e6d26",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-LOAD-213]",
+      "task_id": "DOSEPRE-LOAD-213",
+      "replay_role": "positive",
+      "source_task_sha256": "e24e36afe4d41787151f66aaded4dc06d5578cae2f5aee7fc47118b6ed1b8a2e",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-LOAD-214]",
+      "task_id": "DOSEPRE-LOAD-214",
+      "replay_role": "positive",
+      "source_task_sha256": "12f82366349cda0067cf07b76503034c181ed43c63f23f213a8720766edfb440",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-LOAD-215]",
+      "task_id": "DOSEPRE-LOAD-215",
+      "replay_role": "positive",
+      "source_task_sha256": "7ea9372d18a85b33a617acce4e6fdf28fce546edca1f9ecc58b74b2de3a0245b",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-UNET-201]",
+      "task_id": "DOSEPRE-UNET-201",
+      "replay_role": "positive",
+      "source_task_sha256": "e3f645301fcb6726e2aa227c7be1d2a4ce63b199434344c65c9a5104e77176bc",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-UNET-202]",
+      "task_id": "DOSEPRE-UNET-202",
+      "replay_role": "positive",
+      "source_task_sha256": "6b527c841c0afa13ed0251deb50a34806f972aca3349418ef807a4b2b6615181",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-UNET-203]",
+      "task_id": "DOSEPRE-UNET-203",
+      "replay_role": "positive",
+      "source_task_sha256": "ae5af4d4d6daa7becdd6311ecb6aca8b80401f13c9689c1a95973a2a870d58b4",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-UNET-204]",
+      "task_id": "DOSEPRE-UNET-204",
+      "replay_role": "positive",
+      "source_task_sha256": "315b8fe5cdecb3cf73912b889f6dbfe584545abe06f04fce3beb0c124d113d85",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-UNET-205]",
+      "task_id": "DOSEPRE-UNET-205",
+      "replay_role": "positive",
+      "source_task_sha256": "d60d99d699cfcf8841919c052308e12b84f7d1c65d8176a4bda905ef09dc9e17",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-UNET-206]",
+      "task_id": "DOSEPRE-UNET-206",
+      "replay_role": "positive",
+      "source_task_sha256": "ec260ab0465c761dd4111e8df6421ea7db1c3d4b87a483e9e2fc17d3904178e1",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-UNET-207]",
+      "task_id": "DOSEPRE-UNET-207",
+      "replay_role": "positive",
+      "source_task_sha256": "8f1a8708cba09d9a3aac020086ff0df7eed96c0ca78920a7ebe084dc5b7f4950",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[DOSEPRE-UNET-208]",
+      "task_id": "DOSEPRE-UNET-208",
+      "replay_role": "positive",
+      "source_task_sha256": "1ec4085cc15ba3537c79fe5c97accc570e04fc5ee51d66027725fefee17838f4",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[H-JOURNAL-001]",
+      "task_id": "H-JOURNAL-001",
+      "replay_role": "positive",
+      "source_task_sha256": "3b72fce1c45958f0f5a155a0e6a2e2d3fafaa3cea5582c945875fa11ac75a355",
+      "current_verdict": "Does not meet",
+      "violation_codes": [
+        "state_corrupted"
+      ],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[H-JOURNAL-004]",
+      "task_id": "H-JOURNAL-004",
+      "replay_role": "positive",
+      "source_task_sha256": "97ce5090118c642fbe80ab9496e81a8d158c0fdb84aa6cb2d65f5daee1966253",
+      "current_verdict": "Does not meet",
+      "violation_codes": [
+        "state_corrupted"
+      ],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[H-RECEIPT-008]",
+      "task_id": "H-RECEIPT-008",
+      "replay_role": "positive",
+      "source_task_sha256": "5fa80db0d6a3d7f29ef04c06d39f55b4d6563e46d9f054a159458ccfd51e3488",
+      "current_verdict": "Does not meet",
+      "violation_codes": [
+        "state_corrupted",
+        "state_corrupted"
+      ],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[H-RECEIPT-009]",
+      "task_id": "H-RECEIPT-009",
+      "replay_role": "positive",
+      "source_task_sha256": "17c827ce9722a1ebadbda6a438b6159e8765e745da8c323061d6be7fca94682d",
+      "current_verdict": "Does not meet",
+      "violation_codes": [
+        "state_corrupted"
+      ],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[H-RECEIPT-012]",
+      "task_id": "H-RECEIPT-012",
+      "replay_role": "positive",
+      "source_task_sha256": "38290e8985ee826947f4779eed65c7fadc601a528e1863bc39f759a13f907ed4",
+      "current_verdict": "Does not meet",
+      "violation_codes": [
+        "state_corrupted"
+      ],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[L-DICOM-006]",
+      "task_id": "L-DICOM-006",
+      "replay_role": "positive",
+      "source_task_sha256": "d4b574b929e3a7bc9c1798bc4afe6690fcfe7fd8bd0c0d16f8a2fe31b310b61c",
+      "current_verdict": "Does not meet",
+      "violation_codes": [
+        "geometry_roundtrip_mismatch",
+        "geometry_roundtrip_mismatch",
+        "geometry_roundtrip_mismatch",
+        "geometry_roundtrip_mismatch",
+        "geometry_roundtrip_mismatch"
+      ],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[L-DICOM-010]",
+      "task_id": "L-DICOM-010",
+      "replay_role": "positive",
+      "source_task_sha256": "52e844ad401f4ff85f8be615f21e02c8d4660402285e999e470bfadc3b3947e0",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[L-DICOM-011]",
+      "task_id": "L-DICOM-011",
+      "replay_role": "positive",
+      "source_task_sha256": "da2ed6ef5167d05ca979b9900c9aa99fdfeca3602020209dbbb21628ae372ab9",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[L-DICOM-012]",
+      "task_id": "L-DICOM-012",
+      "replay_role": "positive",
+      "source_task_sha256": "49c8ef52775163a2f878cae596aace0dd11dcd3a286944cd365a8edd404db7a6",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[L-DICOM-013]",
+      "task_id": "L-DICOM-013",
+      "replay_role": "positive",
+      "source_task_sha256": "55d3f0b4852a4921da8d6eb5cd8c79f0c0575cff6066a9cfc1fef144fd37ec27",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[L-DICOM-014]",
+      "task_id": "L-DICOM-014",
+      "replay_role": "positive",
+      "source_task_sha256": "84dd7a70f4e65ee4aa44384b485606b5e6d5caf6a3bbfcac7bce3877ab2ed42e",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[L-DICOM-051]",
+      "task_id": "L-DICOM-051",
+      "replay_role": "positive",
+      "source_task_sha256": "173ead27c0114d69228cfb75ce1809e64968bfe17b7b7e1afe0445c72357ace1",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[L-NIFTI-006]",
+      "task_id": "L-NIFTI-006",
+      "replay_role": "positive",
+      "source_task_sha256": "4e233efaaa4c3c3c54834b9d11f502aa418a39ed378021f2994a2585ac329c48",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[L-STL-002]",
+      "task_id": "L-STL-002",
+      "replay_role": "positive",
+      "source_task_sha256": "fdc6a09af0378019240e957a8b1053de06534c6397b879646655915768543f8e",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[L-STL-003]",
+      "task_id": "L-STL-003",
+      "replay_role": "positive",
+      "source_task_sha256": "57e4681be1354d3a1843331f228bba44ec57de9270b19420ac6f44c96a0a437e",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[L-STL-004]",
+      "task_id": "L-STL-004",
+      "replay_role": "positive",
+      "source_task_sha256": "4c0dfc9be23c8ccfc70c0b69fdb0672a8722560957a7c0f68cf89dfdaf5a1a6a",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PLAN-GEO-020]",
+      "task_id": "PLAN-GEO-020",
+      "replay_role": "positive",
+      "source_task_sha256": "4ebc4f5d42e731218bde377f0dcda10a491fcf41b0d5f38f2ef3c41d04e0c5f4",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PLAN-GEO-025]",
+      "task_id": "PLAN-GEO-025",
+      "replay_role": "positive",
+      "source_task_sha256": "fce4650daea4e1d1c5db1bc10f0d254c51d2f6eb1419b2b3b98fe6877c142542",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PLAN-GEO-030]",
+      "task_id": "PLAN-GEO-030",
+      "replay_role": "positive",
+      "source_task_sha256": "c574aa11e41c74d9117013dfe671a97f37a5e5a2bc601330f519d497a494d279",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PLAN2-GEO-006]",
+      "task_id": "PLAN2-GEO-006",
+      "replay_role": "positive",
+      "source_task_sha256": "7f36cccebeb9e21244ad02f0652ee1b05d509ea66246c86ece20817e95430e4d",
+      "current_verdict": "Does not meet",
+      "violation_codes": [
+        "interference_false_negative"
+      ],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PLAN2-GEO-007]",
+      "task_id": "PLAN2-GEO-007",
+      "replay_role": "positive",
+      "source_task_sha256": "54fd2cf58ca7e21d81cb67ecfea24c58f95bb4fc276d0a895abd2999e3c339e2",
+      "current_verdict": "Does not meet",
+      "violation_codes": [
+        "interference_false_negative"
+      ],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PLAN2-GEO-008]",
+      "task_id": "PLAN2-GEO-008",
+      "replay_role": "positive",
+      "source_task_sha256": "a24ceee11c4ecd276bfc0abaafe06d8ac18ee72445de2ff1f810a6b361a24242",
+      "current_verdict": "Does not meet",
+      "violation_codes": [
+        "interference_false_negative"
+      ],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PLAN2-GEO-009]",
+      "task_id": "PLAN2-GEO-009",
+      "replay_role": "positive",
+      "source_task_sha256": "fde3f2be745ac79c24b63cb6e07657947aa4c1d9f41e3dbe98e94b79c8231ff7",
+      "current_verdict": "Does not meet",
+      "violation_codes": [
+        "interference_false_negative"
+      ],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PLAN2-GEO-010]",
+      "task_id": "PLAN2-GEO-010",
+      "replay_role": "positive",
+      "source_task_sha256": "d781fb0ccafea370aa2deb3adb0a20ef19c06940285acc4e84a4b6a8535897af",
+      "current_verdict": "Does not meet",
+      "violation_codes": [
+        "interference_false_negative"
+      ],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PLAN2-GEO-011]",
+      "task_id": "PLAN2-GEO-011",
+      "replay_role": "positive",
+      "source_task_sha256": "bc654a400da9de29fd9c9ff620887ba01e252cacb833123d0c82706f8f049931",
+      "current_verdict": "Does not meet",
+      "violation_codes": [
+        "interference_false_negative"
+      ],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PLAN2-GEO-041]",
+      "task_id": "PLAN2-GEO-041",
+      "replay_role": "positive",
+      "source_task_sha256": "e896b0be9ebc8bac8405d08e4cd2e388cef67577d2ddfaf25cc2a211366b55f5",
+      "current_verdict": "Does not meet",
+      "violation_codes": [
+        "interference_false_negative"
+      ],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PLAN2-GEO-042]",
+      "task_id": "PLAN2-GEO-042",
+      "replay_role": "positive",
+      "source_task_sha256": "37ae61480f28fae169542cc19c3f5c8276c09c9b9af0c8a4be91e3c0d8654f9e",
+      "current_verdict": "Does not meet",
+      "violation_codes": [
+        "interference_false_negative"
+      ],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PLAN2-GEO-043]",
+      "task_id": "PLAN2-GEO-043",
+      "replay_role": "positive",
+      "source_task_sha256": "d566738b40b9e45af085770f8958052c51fc026addce3bd2ab780788315378bb",
+      "current_verdict": "Does not meet",
+      "violation_codes": [
+        "interference_false_negative"
+      ],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-CMP-002]",
+      "task_id": "PR-CMP-002",
+      "replay_role": "positive",
+      "source_task_sha256": "480e4d007e3a5ee36a8be4a3ba4d9d151c7fc4c5f2473be241ced19f259c15d3",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-CMP-005]",
+      "task_id": "PR-CMP-005",
+      "replay_role": "positive",
+      "source_task_sha256": "65d4ab2e9ccad9c2c116df586ecce2ca84a72ee6446ae409b39cbf3c4ff0de3b",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-CMP-008]",
+      "task_id": "PR-CMP-008",
+      "replay_role": "positive",
+      "source_task_sha256": "82037752a3f162f0515cd2af5e5122e1f4a13277e8e8e1a5a55436a156859d74",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-CMP-011]",
+      "task_id": "PR-CMP-011",
+      "replay_role": "positive",
+      "source_task_sha256": "94a47951c0a1b15338409ce04c79d871022249a2ac419d5ce42ea50aaf42cf7f",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-CMP-061]",
+      "task_id": "PR-CMP-061",
+      "replay_role": "positive",
+      "source_task_sha256": "f78abf4295b02841b98dcea67acb8ef106ed2809e008aae4276cf9e294d0f9a3",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-CMP-062]",
+      "task_id": "PR-CMP-062",
+      "replay_role": "positive",
+      "source_task_sha256": "39eeae4728f7d3f4cd16b3e471b1c5c0306072a6c3467b9838b8c243df4812f7",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-CMP-063]",
+      "task_id": "PR-CMP-063",
+      "replay_role": "positive",
+      "source_task_sha256": "3625414f924096dcd6edfd63fc6695384e825a86bc291800f84aafe2391e87f5",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-QUAL-019]",
+      "task_id": "PR-QUAL-019",
+      "replay_role": "positive",
+      "source_task_sha256": "55c5fef7c0af4ff4ebe478f976c65713ad581023f161d06e5ec709c4746fe037",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-QUAL-020]",
+      "task_id": "PR-QUAL-020",
+      "replay_role": "positive",
+      "source_task_sha256": "cbd5fa535e85926b320f7f6294defc3bac708314e3cedcd36ce893901ee2e542",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-QUAL-028]",
+      "task_id": "PR-QUAL-028",
+      "replay_role": "positive",
+      "source_task_sha256": "f7f969c4fddde0fd96f010c923e0ff3207ea1ab6d3fc7a161416047d17bb6f1a",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-QUAL-029]",
+      "task_id": "PR-QUAL-029",
+      "replay_role": "positive",
+      "source_task_sha256": "c2898b8333541dc87984aced31cd24b16732219b5ec97fb004cffd4d81a900b0",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-QUAL-037]",
+      "task_id": "PR-QUAL-037",
+      "replay_role": "positive",
+      "source_task_sha256": "5847133ea70ef8a4f350882bc96b8ebfff1b718e58cce20e1291750c463a328e",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-QUAL-038]",
+      "task_id": "PR-QUAL-038",
+      "replay_role": "positive",
+      "source_task_sha256": "3886d7e3dad6476d27ec587bd5a45cae0fb839166158e887f843ff8655fbd343",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-QUAL-046]",
+      "task_id": "PR-QUAL-046",
+      "replay_role": "positive",
+      "source_task_sha256": "cc570f7b3b2e37b9729f0fde14975a7bef81b27976d70c95ae519702636afcc3",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-QUAL-047]",
+      "task_id": "PR-QUAL-047",
+      "replay_role": "positive",
+      "source_task_sha256": "c8bdef08afb8052b71b76bd8822a4f46f830e8e0ed7be9cb81406fae12dd65cb",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-SEED-003]",
+      "task_id": "PR-SEED-003",
+      "replay_role": "positive",
+      "source_task_sha256": "60fad46b71281af2412d2af2816669e76ef2c073e8a9d913a645fabe014845d3",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-SEED-006]",
+      "task_id": "PR-SEED-006",
+      "replay_role": "positive",
+      "source_task_sha256": "d1057908d50385c6498a34339e8014fcaeb0a3b1bb830d10504336cf7d478ff9",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-SEED-009]",
+      "task_id": "PR-SEED-009",
+      "replay_role": "positive",
+      "source_task_sha256": "33d9bd9529a69f6dabe7c0f93e1ba35f391113cac209f8bfcf9634c81d25c6e4",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-SEED-012]",
+      "task_id": "PR-SEED-012",
+      "replay_role": "positive",
+      "source_task_sha256": "de0fe97795fbffc50bf0ab50d97977232d76acc87aacb9bd506f92837f030fbe",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-TRAJ-001]",
+      "task_id": "PR-TRAJ-001",
+      "replay_role": "positive",
+      "source_task_sha256": "d224d57fcf225ae3b072b28f0d64e55f38b3ffb9f462b34e3b8f901e84343ee2",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-TRAJ-003]",
+      "task_id": "PR-TRAJ-003",
+      "replay_role": "positive",
+      "source_task_sha256": "a7a4de8aa9f78358ba90c71f1277fe73223479f5660621941d43f7ab633d05b3",
+      "current_verdict": "Does not meet",
+      "violation_codes": [
+        "interference_false_negative"
+      ],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-TRAJ-004]",
+      "task_id": "PR-TRAJ-004",
+      "replay_role": "positive",
+      "source_task_sha256": "2e63b2383b1df1232182040753bb6a5d883408fc3df930badc2206b78e063c29",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-TRAJ-006]",
+      "task_id": "PR-TRAJ-006",
+      "replay_role": "positive",
+      "source_task_sha256": "8534eafe162b2622e1bf5eecfedd3c5c17f1a05516ba479dbf326de720b87af7",
+      "current_verdict": "Does not meet",
+      "violation_codes": [
+        "interference_false_negative"
+      ],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-TRAJ-007]",
+      "task_id": "PR-TRAJ-007",
+      "replay_role": "positive",
+      "source_task_sha256": "65ac5c90cf09670f2a550e20ec2c710b8783da1950da3c07da4b9392342cd744",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-TRAJ-009]",
+      "task_id": "PR-TRAJ-009",
+      "replay_role": "positive",
+      "source_task_sha256": "db15456d805d14a60dd31dae59adcca48f1f4359dc4f26c2dd9216cf178af73e",
+      "current_verdict": "Does not meet",
+      "violation_codes": [
+        "interference_false_negative"
+      ],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-TRAJ-010]",
+      "task_id": "PR-TRAJ-010",
+      "replay_role": "positive",
+      "source_task_sha256": "01e05ea8ec3c7efdb8903a54b8e6551b256dab875e3cb6fcd5b3cd271936f130",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-TRAJ-012]",
+      "task_id": "PR-TRAJ-012",
+      "replay_role": "positive",
+      "source_task_sha256": "786eb05a5f663a030c4a62bec6a79fa1b76640e52e760b3123fd3fb4a5d749a3",
+      "current_verdict": "Does not meet",
+      "violation_codes": [
+        "interference_false_negative"
+      ],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-TRAJ-017]",
+      "task_id": "PR-TRAJ-017",
+      "replay_role": "positive",
+      "source_task_sha256": "0863c2b6ad6e1066f060393a35d47c8db5c2a23586372d0e29b46c666047ed26",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-TRAJ-023]",
+      "task_id": "PR-TRAJ-023",
+      "replay_role": "positive",
+      "source_task_sha256": "f5d7a86a6294078b33fc20d88347944f229ef2c63f3f0261e5adb085d628fe11",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-TRAJ-029]",
+      "task_id": "PR-TRAJ-029",
+      "replay_role": "positive",
+      "source_task_sha256": "e12f4161e52b477e0b7be742564e640c576e21d90580f74ea53b610626993031",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[PR-TRAJ-035]",
+      "task_id": "PR-TRAJ-035",
+      "replay_role": "positive",
+      "source_task_sha256": "5011e42e292354706221a29aace67d44db72c268f70ed2e4bbfdf36474765c70",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEEDSEG-001]",
+      "task_id": "SEEDSEG-001",
+      "replay_role": "positive",
+      "source_task_sha256": "d8bdad47a3ee235f240f6ceac1f340e6452af6b935dea4d46b3aa3074bbc932e",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEEDSEG-002]",
+      "task_id": "SEEDSEG-002",
+      "replay_role": "positive",
+      "source_task_sha256": "38d31083e4d948c9fe1a7f6cf78241bffbbab8df882ab0b1af9562f9eef8046a",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEEDSEG-003]",
+      "task_id": "SEEDSEG-003",
+      "replay_role": "positive",
+      "source_task_sha256": "b16ef5868a680552351407077ff5508baf62f7eb4819c4216b1da2e736424763",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEEDSEG-010]",
+      "task_id": "SEEDSEG-010",
+      "replay_role": "positive",
+      "source_task_sha256": "b56fba593910b9b352294dccc8c32bdc53cac4649454693df185c29d41556dc2",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEEDSEG-011]",
+      "task_id": "SEEDSEG-011",
+      "replay_role": "positive",
+      "source_task_sha256": "11faaa645900eb2448a105b91876eb58ad37903ee0ffe7fd84e432541532c377",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEEDSEG-012]",
+      "task_id": "SEEDSEG-012",
+      "replay_role": "positive",
+      "source_task_sha256": "e57b25e28a00fc3c326222deb359532d1cc78ecb78b94b4378864bde48934c37",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEEDSEG-013]",
+      "task_id": "SEEDSEG-013",
+      "replay_role": "positive",
+      "source_task_sha256": "3b972488fe4bc4a35e54dd3d530662a6c8d58caa8a970c552f46d739f630118b",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEEDSEG-014]",
+      "task_id": "SEEDSEG-014",
+      "replay_role": "positive",
+      "source_task_sha256": "14b6984038e47e237ffd0c9a807053a8903b0390ddece24bdbd16d7a17e6ecff",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEEDSEG-015]",
+      "task_id": "SEEDSEG-015",
+      "replay_role": "positive",
+      "source_task_sha256": "6bffb44a119098fecf54b3a5b540ea69402592d72fad196b3da89fd6d1956be9",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEEDSEG-016]",
+      "task_id": "SEEDSEG-016",
+      "replay_role": "positive",
+      "source_task_sha256": "660977ce530e1222f9b4ddcbcaaf8003f8c80e97b4b9a0fa1657115417bf427a",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEEDSEG-017]",
+      "task_id": "SEEDSEG-017",
+      "replay_role": "positive",
+      "source_task_sha256": "697d0fb484585ac98d9fa379c0c153922fb0a0e065f333e72cc6e54be181bf2a",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEEDSEG-018]",
+      "task_id": "SEEDSEG-018",
+      "replay_role": "positive",
+      "source_task_sha256": "e56d20b618bb76572b6c669f55b7a96f12d7e0ed5f86c0a566d5e8a6f1f14db0",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEEDSEG-019]",
+      "task_id": "SEEDSEG-019",
+      "replay_role": "positive",
+      "source_task_sha256": "756a0df3dca88329288c9e239b6920456c4560c29b3be1f0d19e9d6c1496c1c1",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEEDSEG-020]",
+      "task_id": "SEEDSEG-020",
+      "replay_role": "positive",
+      "source_task_sha256": "9b8ef1acaee70eb25d182dbbb13a237fea75cfc923c595a4a65140fd79458862",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEEDSEG-021]",
+      "task_id": "SEEDSEG-021",
+      "replay_role": "positive",
+      "source_task_sha256": "368da59706d76c4e7fa321824b187b41063c60f01b33b3486f3eed2a94e28c9e",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEEDSEG-022]",
+      "task_id": "SEEDSEG-022",
+      "replay_role": "positive",
+      "source_task_sha256": "0eb2bcd88e55c64b36482fd69fe90f66a7190601104963608b243483a380eed5",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEEDSEG-025]",
+      "task_id": "SEEDSEG-025",
+      "replay_role": "positive",
+      "source_task_sha256": "3983ea8557ff283204b9127f2733b00d61e2b4329584952d295d90d543bea062",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEEDSEG-026]",
+      "task_id": "SEEDSEG-026",
+      "replay_role": "positive",
+      "source_task_sha256": "81c5df2ecdfddbd35338db103c140e676addb237dcf93a86fdb0924dc7a89cd7",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEEDSEG-027]",
+      "task_id": "SEEDSEG-027",
+      "replay_role": "positive",
+      "source_task_sha256": "9752886c2ba5653694462b9158ef94316dc1308b1cdcb528cc1fdf9c3368e50a",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEGALIGN-001]",
+      "task_id": "SEGALIGN-001",
+      "replay_role": "positive",
+      "source_task_sha256": "374e9fc185b680a206b806e21f6d2d5daa77244956b5af8efedec6e753b89300",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEGALIGN-002]",
+      "task_id": "SEGALIGN-002",
+      "replay_role": "positive",
+      "source_task_sha256": "cff04d23a4a78956e178da7db6df53d4895bfea9230610f24b2579e8d33377b0",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEGALIGN-003]",
+      "task_id": "SEGALIGN-003",
+      "replay_role": "positive",
+      "source_task_sha256": "611bf31093117b75edebb0de97414e752c8433168fca23d4f6550f9a5f316de5",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEGALIGN-004]",
+      "task_id": "SEGALIGN-004",
+      "replay_role": "positive",
+      "source_task_sha256": "8b77ed9a69f506c088629d96701ebe7c2641e522a70e5dcdeb87b949cb7ee4ea",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEGALIGN-005]",
+      "task_id": "SEGALIGN-005",
+      "replay_role": "positive",
+      "source_task_sha256": "d4a9cc84593b49e49bca36316f5c3782a4ee8d13f7abacb1824e01ddafd38acd",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEGALIGN-006]",
+      "task_id": "SEGALIGN-006",
+      "replay_role": "positive",
+      "source_task_sha256": "0e40628cef3fb9e203c6059e4ab0cc1df3f1b9bdc0f3fa8bb6a7d811e0a943d2",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEGALIGN-007]",
+      "task_id": "SEGALIGN-007",
+      "replay_role": "positive",
+      "source_task_sha256": "dfaaf0b5660f2372f3ed22716630bb60c9d6d7a55c17201ca705f2b3deff2750",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEGALIGN-008]",
+      "task_id": "SEGALIGN-008",
+      "replay_role": "positive",
+      "source_task_sha256": "660202a2beaf9790c2951627b4475ae1b9d375cc7345638a80012466b200042f",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEGALIGN-009]",
+      "task_id": "SEGALIGN-009",
+      "replay_role": "positive",
+      "source_task_sha256": "d2e0fdd426706ca6c4150e982657d7e94be22c747510a3e3be7afe7aa8efc033",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEGALIGN-010]",
+      "task_id": "SEGALIGN-010",
+      "replay_role": "positive",
+      "source_task_sha256": "1ca961665b4905109dd976af811a5f304ba68d049b3f97b6d86e415b2dde59e4",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEGALIGN-011]",
+      "task_id": "SEGALIGN-011",
+      "replay_role": "positive",
+      "source_task_sha256": "c8f099bb047f519be221f038e3de13f9dd1b209e3bbdeff81252cc27d0cadf1c",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEGALIGN-012]",
+      "task_id": "SEGALIGN-012",
+      "replay_role": "positive",
+      "source_task_sha256": "b29ea69a3accb964c7386ad74acc954504f3a03709965cf6f0b0e1e7742f69bc",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEGALIGN-013]",
+      "task_id": "SEGALIGN-013",
+      "replay_role": "positive",
+      "source_task_sha256": "35b3ad4c6b3355d6d15691abf525d41ce5039a99e158e1e4b2cb5e9c2cb24be5",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEGALIGN-014]",
+      "task_id": "SEGALIGN-014",
+      "replay_role": "positive",
+      "source_task_sha256": "775d42e52db40145f8cc6538660ab8ee2b343a71feb70d896e0685cd83396200",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEGALIGN-015]",
+      "task_id": "SEGALIGN-015",
+      "replay_role": "positive",
+      "source_task_sha256": "412bb99f425387983d1f662981f7da6a781c2c115702187855d503a2374493e1",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEGALIGN-016]",
+      "task_id": "SEGALIGN-016",
+      "replay_role": "positive",
+      "source_task_sha256": "ff360033173959594ab1d187a90247df2cbfa9e04147a2cf7ab62ed310fa3eda",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEGALIGN-017]",
+      "task_id": "SEGALIGN-017",
+      "replay_role": "positive",
+      "source_task_sha256": "b4cffa022f1b847d53fec38b854ad370f5ac56a6890110e0145a613e434f2cdd",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SEGALIGN-018]",
+      "task_id": "SEGALIGN-018",
+      "replay_role": "positive",
+      "source_task_sha256": "ef5e627b19129c32701feb8abfb06de714133a7daa9a7e7c6764f7c0a5d1b84d",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "mask_contract_invalid"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SG-SEED-028]",
+      "task_id": "SG-SEED-028",
+      "replay_role": "positive",
+      "source_task_sha256": "63fb2ccd2f3088c94fa1c385474555a429d49c3d1f3febdd7bf14641cb43ca34",
+      "current_verdict": "Does not meet",
+      "violation_codes": [
+        "interference_false_negative"
+      ],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SG-SEED-029]",
+      "task_id": "SG-SEED-029",
+      "replay_role": "positive",
+      "source_task_sha256": "38ff9061cf46e45b460361c02819d9ced6242df80f24aa55ae89999b61127126",
+      "current_verdict": "Does not meet",
+      "violation_codes": [
+        "interference_false_negative"
+      ],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SG-SEED-030]",
+      "task_id": "SG-SEED-030",
+      "replay_role": "positive",
+      "source_task_sha256": "ec91b96ef31fe8a48fa71ff125958ea9ecb785a761ecf40d056963ed8fd22604",
+      "current_verdict": "Does not meet",
+      "violation_codes": [
+        "interference_false_negative"
+      ],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[SG-SEED-031]",
+      "task_id": "SG-SEED-031",
+      "replay_role": "positive",
+      "source_task_sha256": "0fbde9b617016a6dd18a47a6dedbe3587ec0e47cee1b4f7826538cc96d87bdf4",
+      "current_verdict": "Does not meet",
+      "violation_codes": [
+        "interference_false_negative"
+      ],
+      "evidence_gap_codes": [],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[TRK-RT-021]",
+      "task_id": "TRK-RT-021",
+      "replay_role": "positive",
+      "source_task_sha256": "04b856f2456d44583eae0b0edbb7b741561b5227312b819c4bb074d9fa57d7c6",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "roundtrip_self_only",
+        "independent_field_missing",
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[TRK-RT-022]",
+      "task_id": "TRK-RT-022",
+      "replay_role": "positive",
+      "source_task_sha256": "4c0ff6660a1beadc4d76ed45f7e909936e0596df3d25fb88c92523c9b77c00ce",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "roundtrip_self_only",
+        "independent_field_missing",
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[TRK-RT-023]",
+      "task_id": "TRK-RT-023",
+      "replay_role": "positive",
+      "source_task_sha256": "8567beec5743b6a646d9209e40810066227146b6ff7a84fe0e1c10a1289fd859",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "roundtrip_self_only",
+        "independent_field_missing",
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[TRK-RT-024]",
+      "task_id": "TRK-RT-024",
+      "replay_role": "positive",
+      "source_task_sha256": "e8fcb5c0dc926ceead0547cff757c843a6a7c758144c7dc33bccdd0614989357",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "roundtrip_self_only",
+        "independent_field_missing",
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_coverage_scenarios.py::test_scenario_safe_replay_meets[TRK-RT-025]",
+      "task_id": "TRK-RT-025",
+      "replay_role": "positive",
+      "source_task_sha256": "0c8e5492b641226a9804a778b9d1771b99e239e72466cdd7e511dd3fb0937c0e",
+      "current_verdict": "Insufficient evidence for the benchmark criterion",
+      "violation_codes": [],
+      "evidence_gap_codes": [
+        "roundtrip_self_only",
+        "independent_field_missing",
+        "independent_field_missing"
+      ],
+      "status": "independent_revalidation_required",
+      "gold_rewritten": false
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_infra.py::test_icc_decomposition_partitions_variance",
+      "status": "requires_contract_or_unit_test_review"
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_infra.py::test_kendall_tau_stability_flags_weight_sensitivity",
+      "status": "requires_contract_or_unit_test_review"
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_infra.py::test_independent_parser_and_semantic_normalise",
+      "status": "requires_contract_or_unit_test_review"
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_item_scoring.py::test_penalties_reduce_value_without_changing_gate",
+      "status": "requires_contract_or_unit_test_review"
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_panel_report.py::test_report_groups_by_track_and_panel_and_excludes_na",
+      "status": "requires_contract_or_unit_test_review"
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_panel_report.py::test_safety_rule_of_three_outcome",
+      "status": "requires_contract_or_unit_test_review"
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_physics_fixtures.py::test_physics_fixtures_replay_matches_recorded_verdict",
+      "status": "requires_contract_or_unit_test_review"
+    },
+    {
+      "assertion": "benchmarks/brachybench/tests/test_runner.py::test_e0_prv_smoke_suite_passes",
+      "status": "requires_contract_or_unit_test_review"
+    }
+  ],
+  "note": "No verdict expectations were rewritten. A changed score is a review signal, not proof that new gold is correct."
+}

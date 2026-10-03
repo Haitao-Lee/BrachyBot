@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "medium_complexity",
+  "expectation": null,
+  "facet": "medium_complexity",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "A medical physicist is mentoring a radiation oncology fellow in brachytherapy for the first time. Create a structured 6-month training plan that progresses from basic concepts through independent clinical practice. Include specific milestones for each month, recommended clinical experiences, simulation exercises, assessment methods, and the criteria for demonstrating competency in brachytherapy treatment planning and delivery.",
+  "source_refs": [
+    "INT-87ad14f0a4ad",
+    "INT-8ea8efa1a436"
+  ],
+  "template_id": "TPL-2ae1761afe"
+}

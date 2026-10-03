@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "precision",
+  "expectation": null,
+  "facet": "precision",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Design vendor management QA: qualification, SLAs, maintenance contracts, emergency service, spare parts management, and performance monitoring.",
+  "source_refs": [
+    "INT-048feec772cf",
+    "INT-ee4927c7d281"
+  ],
+  "template_id": "TPL-aa506b761e"
+}

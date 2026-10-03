@@ -1,0 +1,82 @@
+{
+  "schema_version": "1.0",
+  "id": "MEM2-CASEMEM-022",
+  "track": "K",
+  "layers": [
+    "L3",
+    "L4"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "case_memory_search_and_recommend_postcondition_paraphrase",
+  "cost_class": "state_only",
+  "power_role": "primary",
+  "clinical_intent": "case_memory: the same memory decision must be consistent across zh/en/colloquial phrasings (prostate).",
+  "fixture": {
+    "case_family": "synth/memory_case",
+    "setup_script": "fixtures/setup/memory_case.py",
+    "initial_state_hash": "sha256:b5db22baf264552a1992522773785d1af6a75924b0dafc14fc2aa20a95a3f4ac"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-EQ",
+    "contrast_family_id": "case_memory/case_memory_search_and_recommend_postcondition_paraphrase"
+  },
+  "protocol": {
+    "mode": "single_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "是那个……把当前病例的记忆同步到会话上下文里，别串到别的病例。",
+        "lang": "zh"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 1,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "pred",
+    "constraint_class": "none",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null,
+    "predicate": "plan_is_final"
+  },
+  "scoring": {
+    "primary_metric": "pred_pass",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "easy"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "CASEMEM-PACK",
+    "hidden": false,
+    "generation_seed": 2022,
+    "canary_class": null,
+    "behavioral_probes": [],
+    "contrast_family_id": "case_memory/case_memory_search_and_recommend_postcondition_paraphrase"
+  },
+  "provenance": {
+    "source": "audit_derived",
+    "derived_from": "tool_factory/case_memory/__init__.py:101-228 (DESIGN §6.K)",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto"
+    ],
+    "authored_on": "2026-10-01",
+    "deprecated": null
+  }
+}

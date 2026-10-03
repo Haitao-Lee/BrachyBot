@@ -1,0 +1,81 @@
+{
+  "schema_version": "1.0",
+  "id": "DOSEPRE-ENG-010",
+  "track": "A",
+  "layers": [
+    "L3",
+    "L4"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "dose_engine.multi_seed_additivity",
+  "cost_class": "state_only",
+  "power_role": "primary",
+  "clinical_intent": "Multi-particle cumulative dose must equal the sum of per-particle contributions, with a consistent seed list (internal additivity).",
+  "fixture": {
+    "case_family": "synth/prostate_s02",
+    "setup_script": "fixtures/setup/prostate_s02_full_pipeline.py",
+    "initial_state_hash": "sha256:38eabca0a6bcb5062deac0e5645e8bf52d9e5f51cdd0f137f824f4509461ada3"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-CT",
+    "contrast_family_id": "dose_engine/additivity"
+  },
+  "protocol": {
+    "mode": "single_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "Multi-particle cumulative dose must equal the sum of per-particle contributions, with a consistent seed list (internal additivity).",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 1,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "dose_additivity",
+    "constraint_class": "none",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "dose_additivity_pass",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "easy"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "DOSEPRE-ENG-010-P01",
+    "hidden": false,
+    "generation_seed": 7313,
+    "canary_class": null,
+    "behavioral_probes": [],
+    "contrast_family_id": "dose_engine/additivity"
+  },
+  "provenance": {
+    "source": "audit_derived",
+    "derived_from": "oracles/dose_additivity.py:31-178; tool_factory/dose_engine/cnn_dose_engine.py:166 (np.sum per_seed_doses)",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto"
+    ],
+    "authored_on": "2026-10-01",
+    "deprecated": null
+  }
+}

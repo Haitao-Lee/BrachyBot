@@ -1,0 +1,74 @@
+benchmark: MedMemoryBench
+ext_id: EXT-4
+tier: specialty
+grade_R: R0
+grade_C: C2
+panels: [P6]
+
+acquisition:
+  source_url: https://github.com/AQ-MedAI/MedMemoryBench
+  source_commit: 7227bc105b84a1a9f7a75861eb9e1be3ea502882
+  source_tag: null
+  dataset_name: "MedMemoryBench (HF Cyan27/MedMemoryBench, full zh+en: personas/dialogues/dialogues_with_noise/queries/events/trap_events/clinical_reports[/noise_sessions])"
+  dataset_revision: 1f3140476b20245945a6c52a82038847fe7ef25f
+  dataset_sha256: e266383643a3f489d498e75b9f5d4cf8b99a734ace9d2b1e307ca905054919db
+  dataset_size_bytes: 1296897534
+  retrieval_command: |
+    HF_ENDPOINT=https://hf-mirror.com
+    for lang in zh en; do
+      for f in personas dialogues dialogues_with_noise queries events trap_events clinical_reports; do
+        curl -L -o data/EXT-4/$lang/$f.parquet \
+          $HF_ENDPOINT/datasets/Cyan27/MedMemoryBench/resolve/main/data/$lang/$f.parquet
+      done
+    done
+    curl -L -o data/EXT-4/zh/noise_sessions.parquet \
+      $HF_ENDPOINT/datasets/Cyan27/MedMemoryBench/resolve/main/data/zh/noise_sessions.parquet
+    # dataset_sha256 above = directory digest of the 15 parquet files.
+  retrieval_date: 2026-10-01
+  license_upstream: CC-BY-4.0
+  license_file: LICENSE
+  license_verified_by: "brachybench-auto (HF API 2026-10-01)"
+  activity_verified:
+    last_commit_date: 2026-08-07
+    last_release_date: null
+    open_issues: 5
+
+runner:
+  official_runner: main.py
+  evaluator: metrics/ (MetricsCalculator; string_contain/option_match/locomo_f1 offline, llm_judge needs API)
+  container: null
+  python_requires: ">=3.10"
+  native_deps: []
+  paid_apis: []
+  judge_note: "llm_judge / llm_judge_mcd metrics need JUDGE_API_KEY (OpenAI-compatible); deterministic metrics run offline."
+
+adapter:
+  kind: ext_adapter
+  shim_used: false
+  spec_ref: "DESIGN §25.5"
+
+run:
+  smoke_size: 5
+  sample_size: 0
+  sampling_seed: 42
+  n_runs: 1
+  budget: {wall_clock_s: 600, turns: 20, tool_calls: 40}
+
+isolation:
+  sandbox: required
+  network: denied
+  write_paths: ["benchmarks/external/EXT-4/results/"]
+  forbidden_write_roots:
+    - BrachyBot/session/
+    - BrachyBot/case/
+    - BrachyBot/runtime/
+    - BrachyBot/report/
+
+contamination:
+  public_samples_allowed_for_dev_only: true
+  seen_task_ids: []
+  behavioral_probes: [B1, B2, B3, B4, B5, B6, B7]
+
+status: active
+block_reason: null
+reinclude_condition: null

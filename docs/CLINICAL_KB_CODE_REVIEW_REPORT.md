@@ -1,108 +1,108 @@
-# BrachyBot Clinical KB — Code Review 报告
+# BrachyBot Clinical KB — Code Review Report
 
-**报告日期：** 2026-06-18
-**审查对象：** `clinical_kb/guidelines_brachytherapy.md` (5,690 行, 265 KB, 109 个源文件条目)
-**审查模式：** Extra-high recall（宁可误报不漏报）
-**审查方法：** 9 个独立 finder angles + 1 个 sweep pass，1-vote 验证
-**审查工具：** 8 个并行 sub-agent + 主会话直接验证
+**Report date:** 2026-06-18
+**Review target:** `clinical_kb/guidelines_brachytherapy.md` (5,690 lines, 265 KB, 109 source file entries)
+**Review mode:** Extra-high recall (prefer false positives over false negatives)
+**Review method:** 9 independent finder angles + 1 sweep pass, 1-vote verification
+**Review tooling:** 8 parallel sub-agents + direct verification in the main session
 
 ---
 
-## 0. 摘要 (TL;DR)
+## 0. Summary (TL;DR)
 
-本次审查覆盖了将 KB 从**平铺结构**（2,663 行）改造为**树形结构**（5,690 行）的完整 diff。改造主要目的：让 LLM 能用稳定 ID、topic tags、cross-references 索引相关知识。
+This review covers the complete diff that restructured the KB from a **flat structure** (2,663 lines) into a **tree structure** (5,690 lines). The main goal of the restructuring: enable the LLM to index related knowledge using stable IDs, topic tags, and cross-references.
 
-**结论：改造基本成功，但发现 15 个需要修复的严重问题。**
+**Conclusion: The restructuring is largely successful, but 15 serious issues requiring fixes were found.**
 
-| 等级 | 数量 | 摘要 |
+| Severity | Count | Summary |
 |------|------|------|
-| 🔴 Critical | 2 | Part I 入口链接 2 个 broken（点击跳到顶部） |
-| 🟠 High | 6 | 章节标题错位、Journal 字段错误、文件计数 110 vs 109 不一致、Topic Index 计数 bug |
-| 🟡 Medium | 6 | 复数语法错误、3 个空壳条目、CSCO/CSTRO 内容完全相同、ICRU 错误归类、Topic tag 命名分歧 |
-| 🟢 Low | 1 | "Journal: Various" 占位符 |
+| 🔴 Critical | 2 | 2 broken Part I entry links (clicking jumps to the top) |
+| 🟠 High | 6 | Misplaced section headings, wrong Journal field, file count 110 vs 109 inconsistency, Topic Index count bug |
+| 🟡 Medium | 6 | Plural grammar error, 3 empty-shell entries, identical CSCO/CSTRO content, ICRU misclassification, Topic tag naming divergence |
+| 🟢 Low | 1 | "Journal: Various" placeholder |
 
-**推荐：** 立即修复 Critical + High（8 个），可在 30-60 分钟内通过 Python 脚本批量完成。
+**Recommendation:** Fix Critical + High (8 issues) immediately; can be batch-completed in 30-60 minutes via Python scripts.
 
 ---
 
-## 1. 改造概述
+## 1. Restructuring Overview
 
-### 1.1 改造目标
+### 1.1 Restructuring Goals
 
-用户要求将原本"平铺直叙"的 KB 改造为"树形结构"，让 LLM 能：
-- 按路径精确定位条目（`kb:cat:sub:file-slug`）
-- 按 topic tag 过滤聚类
-- 按 cross-references 探索关联
-- 按 Topic Index 反向查询
+The user requested converting the originally "flat and straightforward" KB into a "tree structure" so the LLM can:
+- Precisely locate entries by path (`kb:cat:sub:file-slug`)
+- Filter and cluster by topic tag
+- Explore related items via cross-references
+- Reverse-lookup via Topic Index
 
-### 1.2 改造前后对比
+### 1.2 Before/After Comparison
 
-| 指标 | 改造前 | 改造后 | 变化 |
+| Metric | Before | After | Change |
 |------|--------|--------|------|
-| 总行数 | 2,663 | 5,690 | +114% |
-| 文件大小 | 145 KB | 265 KB | +83% |
-| 源文件 | 110 | 110 | 0 |
-| 稳定 ID | 0 | 111 | +111 |
+| Total lines | 2,663 | 5,690 | +114% |
+| File size | 145 KB | 265 KB | +83% |
+| Source files | 110 | 110 | 0 |
+| Stable IDs | 0 | 111 | +111 |
 | Topic tags | 0 | 109 | +109 |
-| See also 段 | 0 | 108 | +270 链接 |
-| Topic Index | 0 | 415 topics | 新增 |
-| Cross-cutting tables | 5 | 5 | 保留 |
+| See also sections | 0 | 108 | +270 links |
+| Topic Index | 0 | 415 topics | New |
+| Cross-cutting tables | 5 | 5 | Retained |
 
-### 1.3 改造涉及的具体修改
+### 1.3 Specific Changes Made by the Restructuring
 
-1. **结构重组**：8 章节 → 8 章节 × 5-7 sub-topics
-2. **新增 ID 系统**：每个条目 `<a id="kb:cat:sub:file"></a>` 锚点
-3. **新增 Topic tags**：每条目 `**Topics:** \`tag1\`, \`tag2\`, ...`
-4. **新增 See also 段**：同试验/同疾病/同基础条目间互相引用
-5. **新增 Topic Index**：415 个 topic → 109 个条目 ID 的反向索引
-6. **新增 Part I Foundations**：8 篇 cornerstone paper 入口
-7. **删除冗余**：35 条 "File contains X only" 元描述
-8. **删除 33 个虚假 N/A 链接**
-9. **修正 1 个 broken link**（icru-89: 07_physics → 01_gynecologic）
+1. **Structural reorganization**: 8 sections → 8 sections × 5-7 sub-topics
+2. **New ID system**: an `<a id="kb:cat:sub:file"></a>` anchor for every entry
+3. **New Topic tags**: `**Topics:** \`tag1\`, \`tag2\`, ...` for every entry
+4. **New See also sections**: mutual references among entries of the same trial/disease/foundation
+5. **New Topic Index**: reverse index from 415 topics → 109 entry IDs
+6. **New Part I Foundations**: entry points to 8 cornerstone papers
+7. **Removed redundancy**: 35 "File contains X only" meta-descriptions
+8. **Removed 33 fake N/A links**
+9. **Fixed 1 broken link** (icru-89: 07_physics → 01_gynecologic)
 
 ---
 
-## 2. 详细问题清单（按严重度排序）
+## 2. Detailed Issue List (Sorted by Severity)
 
-### 🔴 Finding #1: Part I Foundations cornerstone 链接 #1 broken
+### 🔴 Finding #1: Part I Foundations cornerstone link #1 broken
 
-**文件：** `clinical_kb/guidelines_brachytherapy.md`
-**行号：** 116
-**等级：** Critical
-**发现者：** Angle C, D, E (交叉验证)
+**File:** `clinical_kb/guidelines_brachytherapy.md`
+**Line:** 116
+**Severity:** Critical
+**Found by:** Angle C, D, E (cross-validated)
 
-**问题描述：**
+**Description:**
 ```markdown
 - [GEC-ESTRO 2005 Haie-Meder (foundation paper)](#kb:gyn:cervix:gec-estro-cervix-2005-haie-meder)
 ```
 
-但实际定义的 anchor 在 line 315：
+But the actually defined anchor is at line 315:
 ```markdown
 <a id="kb:gyn:cervix:gec-estro-cervix-2005-haie"></a>
 ```
 
-**根本原因：** `make_id()` 函数把超过 60 字符的 filename slug 截断了，但 Part I 引用处用了**完整的** filename `gec-estro-cervix-2005-haie-meder`。这是 anchor 定义和引用之间的人为不一致。
+**Root cause:** The `make_id()` function truncated filename slugs longer than 60 characters, but the Part I reference used the **full** filename `gec-estro-cervix-2005-haie-meder`. This is an artificial inconsistency between the anchor definition and the reference.
 
-**失败场景：**
-- 用户从 Part I 点击"GEC-ESTRO 2005 Haie-Meder (foundation paper)"→ 跳到文档顶部
-- RAG 系统基于 Part I 生成引用 → 死链
-- PDF 导出的目录索引失效
+**Failure scenarios:**
+- A user clicks "GEC-ESTRO 2005 Haie-Meder (foundation paper)" from Part I → jumps to the top of the document
+- The RAG system generates a citation based on Part I → dead link
+- The table-of-contents index in PDF export breaks
 
-**修复方案：**
+**Fix:**
 
 ```python
-# 在 KB 文件第 116 行，将：
+# At line 116 of the KB file, change:
 # [GEC-ESTRO 2005 Haie-Meder (foundation paper)](#kb:gyn:cervix:gec-estro-cervix-2005-haie-meder)
-# 改为：
+# to:
 # [GEC-ESTRO 2005 Haie-Meder (foundation paper)](#kb:gyn:cervix:gec-estro-cervix-2005-haie)
 
-# 同样的修复应用到 line 118：
+# Apply the same fix to line 118:
 # [EMBRACE-I (Lancet Oncology 2021)](#kb:gyn:cervix:embrace-i-pivotal-2021-lancet-oncol)
-# 改为：
+# to:
 # [EMBRACE-I (Lancet Oncology 2021)](#kb:gyn:cervix:embrace-i-pivotal-2021-lancet)
 ```
 
-或者，更彻底的修复：让 `make_id()` 函数**不截断**，而是保留完整 slug：
+Or, a more thorough fix: make the `make_id()` function **not truncate**, and instead keep the full slug:
 
 ```python
 def make_id(cat_key, sub_key, fname):
@@ -112,50 +112,50 @@ def make_id(cat_key, sub_key, fname):
     return f"kb:{cat_short}:{sub_key}:{base}"
 ```
 
-**验证方法：**
+**Verification method:**
 ```bash
-# 1. 列出所有 anchor 定义
+# 1. List all anchor definitions
 grep -oE '<a id="(kb:gyn:cervix:gec-estro-cervix-2005-haie[^"]*)"' guidelines_brachytherapy.md | sort -u
-# 2. 列出所有相关引用
+# 2. List all related references
 grep -oE '\[GEC-ESTRO 2005[^]]*\]\(#kb:gyn:cervix:gec-estro-cervix-2005-haie[^)]*\)' guidelines_brachytherapy.md
-# 3. 对比两者必须 1:1 匹配
+# 3. The two must match 1:1
 ```
 
 ---
 
-### 🔴 Finding #2: Part I Foundations cornerstone 链接 #2 broken
+### 🔴 Finding #2: Part I Foundations cornerstone link #2 broken
 
-**文件：** `clinical_kb/guidelines_brachytherapy.md`
-**行号：** 118
-**等级：** Critical
-**发现者：** Angle C, D, E (交叉验证)
+**File:** `clinical_kb/guidelines_brachytherapy.md`
+**Line:** 118
+**Severity:** Critical
+**Found by:** Angle C, D, E (cross-validated)
 
-**问题描述：**
+**Description:**
 ```markdown
 - [EMBRACE-I (Lancet Oncology 2021)](#kb:gyn:cervix:embrace-i-pivotal-2021-lancet-oncol)
 ```
 
-实际 anchor 在 line 257：
+The actual anchor is at line 257:
 ```markdown
 <a id="kb:gyn:cervix:embrace-i-pivotal-2021-lancet"></a>
 ```
 
-**根本原因：** 同 #1，slug 被截断。
+**Root cause:** Same as #1; the slug was truncated.
 
-**失败场景：** 同 #1。
+**Failure scenarios:** Same as #1.
 
-**修复方案：**
+**Fix:**
 
 ```python
-# 在 KB 文件第 118 行直接修改
+# Edit directly at line 118 of the KB file
 # [EMBRACE-I (Lancet Oncology 2021)](#kb:gyn:cervix:embrace-i-pivotal-2021-lancet-oncol)
 # →
 # [EMBRACE-I (Lancet Oncology 2021)](#kb:gyn:cervix:embrace-i-pivotal-2021-lancet)
 ```
 
-或采用 #1 的不截断方案。
+Or adopt the no-truncation approach from #1.
 
-**验证方法：**
+**Verification method:**
 ```bash
 python3 -c "
 import re
@@ -170,19 +170,19 @@ print(f'Match: {defined == referenced}')
 
 ---
 
-### 🟠 Finding #3: 8 个 entry 标题被章节标题覆盖
+### 🟠 Finding #3: 8 entry titles overwritten by section titles
 
-**文件：** `clinical_kb/guidelines_brachytherapy.md`
-**行号：** 142, 1143, 1190, 1891, 2224, 2623, 3001, 3161
-**等级：** High
-**发现者：** Angle A, sweep pass
+**File:** `clinical_kb/guidelines_brachytherapy.md`
+**Line:** 142, 1143, 1190, 1891, 2224, 2623, 3001, 3161
+**Severity:** High
+**Found by:** Angle A, sweep pass
 
-**问题描述：**
-8 个 entry 的 `#### Title` 行不是论文标题，而是父章节的标题。
+**Description:**
+The `#### Title` lines of 8 entries are not paper titles but the titles of their parent section.
 
 ```markdown
-# Line 142: 第一条 entry (abs-cervix-consensus-2012-part1)
-#### 01_gynecologic — Gynecologic Brachytherapy (17 files)   ← BUG：应该是论文标题
+# Line 142: first entry (abs-cervix-consensus-2012-part1)
+#### 01_gynecologic — Gynecologic Brachytherapy (17 files)   ← BUG: should be the paper title
 
 # Line 1141: aapm-tg-137-nath-2009
 #### 02_prostate_gu — Prostate & Genitourinary Brachytherapy (14 files)
@@ -206,19 +206,19 @@ print(f'Match: {defined == referenced}')
 #### 08_frameworks — Frameworks & Society Initiatives (13 files)
 ```
 
-**根本原因：** 在 rebuild 脚本中，可能对每个章节的"第一个 entry"误用了章节标题。这 8 个 entry 各自对应一个分类的第一个文件，恰好章节标题被错误复制。
+**Root cause:** In the rebuild script, the section title was probably mistakenly applied to the "first entry" of each section. These 8 entries each correspond to the first file of a category, and the section title was erroneously copied over.
 
-**失败场景：**
-- 用户按 `#### Title` 导航时看到的是分类标题而非论文标题
-- 影响目录可读性
-- 但 stable ID 和内容都是正确的，所以 RAG 自动检索不受影响
+**Failure scenarios:**
+- When a user navigates by `#### Title`, they see the category title instead of the paper title
+- It hurts table-of-contents readability
+- But the stable IDs and content are correct, so automatic RAG retrieval is unaffected
 
-**修复方案：**
+**Fix:**
 
-这 8 个 entry 的真实 frontmatter title 已经在 source 文件中，可以直接从源文件 frontmatter 提取：
+The real frontmatter title of these 8 entries already exists in the source files and can be extracted directly from the source frontmatter:
 
 ```python
-# 修复脚本
+# Fix script
 import yaml
 import re
 from pathlib import Path
@@ -229,18 +229,18 @@ SRC = ROOT / "sources"
 
 KB_TEXT = KB.read_text(encoding='utf-8')
 
-# 对每个损坏的 entry，找到其 stable ID，从源文件读取正确 title，替换
+# For each corrupted entry, find its stable ID, read the correct title from the source file, and replace
 ENTRIES_TO_FIX = [
     # (stable_id, expected_line_pattern, source_file)
     ("kb:gyn:cervix:abs-cervix-consensus-2012-part1", "01_gynecologic — Gynecologic Brachytherapy", "abs-cervix-consensus-2012-part1.md"),
     ("kb:pros:guidelines:aapm-tg-137-nath-2009", "02_prostate_gu — Prostate & Genitourinary Brachytherapy", "aapm-tg-137-nath-2009.md"),
-    # ... 其他 6 个
+    # ... the other 6
 ]
 
 for entry_id, wrong_title, source_file in ENTRIES_TO_FIX:
-    # 从源文件 frontmatter 读真实 title
+    # Read the real title from the source file frontmatter
     src_path = SRC / entry_id.split(":")[1] / "raw" / source_file
-    # 根据 entry_id 推断 category
+    # Infer the category from entry_id
     cat_map = {"gyn": "01_gynecologic", "pros": "02_prostate_gu", "brst": "03_breast",
                "hns": "04_head_neck_skin", "gi": "05_gi", "oth": "06_other_sites",
                "phys": "07_physics", "frm": "08_frameworks"}
@@ -251,13 +251,13 @@ for entry_id, wrong_title, source_file in ENTRIES_TO_FIX:
     m = re.search(r'^title:\s*"([^"]+)"', src_text, re.MULTILINE)
     real_title = m.group(1) if m else "Unknown"
     
-    # 在 KB 中找到 entry 并替换 #### 行
-    # ... 复杂的字符串处理 ...
+    # Find the entry in the KB and replace the #### line
+    # ... complex string handling ...
 ```
 
-更简单：直接手动修复这 8 行（用 Edit 工具）：
+Simpler: manually fix these 8 lines directly (using the Edit tool):
 
-| Line | 替换 |
+| Line | Replacement |
 |------|------|
 | 142 | `#### 01_gynecologic — Gynecologic Brachytherapy (17 files)` → `#### American Brachytherapy Society consensus guidelines for locally advanced carcinoma of the cervix. Part I: general principles (2012)` |
 | 1141 | `#### 02_prostate_gu — Prostate & Genitourinary Brachytherapy (14 files)` → `#### Erratum: AAPM recommendations on dose prescription and reporting methods for permanent interstitial brachytherapy for prostate cancer: Report of Task Group 137 (2009)` |
@@ -268,192 +268,192 @@ for entry_id, wrong_title, source_file in ENTRIES_TO_FIX:
 | 3001 | `#### 07_physics — Physics & Dosimetry (13 files)` → `#### GEC-ESTRO/ACROP recommendations for quality assurance of ultrasound imaging in brachytherapy (2012)` |
 | 3161 | `#### 08_frameworks — Frameworks & Society Initiatives (13 files)` → `#### AAPM Guidelines and Code of Ethics (2024)` |
 
-**验证方法：**
+**Verification method:**
 ```bash
-# 确认 8 个 entry 标题已修正
+# Confirm that the 8 entry titles have been fixed
 for line in 142 1143 1190 1891 2224 2623 3001 3161; do
     sed -n "${line}p" guidelines_brachytherapy.md
 done
-# 每行应显示论文标题而非章节标题
+# Each line should show a paper title rather than a section title
 ```
 
 ---
 
-### 🟠 Finding #4: Penile-BT 源文件 Journal 字段错误
+### 🟠 Finding #4: Wrong Journal field in Penile-BT source file
 
-**文件：** `clinical_kb/sources/02_prostate_gu/raw/nature-bt-penile-organ-preservation-2015.md`
-**行号：** 5 (YAML frontmatter)
-**等级：** High
-**发现者：** Angle A
+**File:** `clinical_kb/sources/02_prostate_gu/raw/nature-bt-penile-organ-preservation-2015.md`
+**Line:** 5 (YAML frontmatter)
+**Severity:** High
+**Found by:** Angle A
 
-**问题描述：**
+**Description:**
 ```yaml
 title: "The role of brachytherapy in organ preservation for penile cancer: A meta-analysis and review of the literature"
 year: 2025
-journal: "Nature"             # ← 错误
-doi: "10.1016/j.brachy.2015.03.008"  # ← 这是 Brachytherapy (Elsevier) 期刊的 DOI
-pmid: "25944394"             # ← 25944394 对应 Brachytherapy 2015
+journal: "Nature"             # ← wrong
+doi: "10.1016/j.brachy.2015.03.008"  # ← this is the DOI of the Brachytherapy (Elsevier) journal
+pmid: "25944394"             # ← 25944394 corresponds to Brachytherapy 2015
 ```
 
-**根本原因：** 文件名以 `nature-bt-` 开头，"nature" 是个误导性的标签（可能由前一轮 crawl 误标）。源文件的 frontmatter 直接把"nature"作为 journal 字段填入。
+**Root cause:** The filename starts with `nature-bt-`; "nature" is a misleading label (possibly mislabeled by an earlier crawl round). The source frontmatter directly filled "nature" into the journal field.
 
-**验证：**
-- DOI `10.1016/j.brachy.*` 是 Elsevier 的 Brachytherapy 期刊
-- PMID 25944394 → PubMed 显示是 "Brachytherapy. 2015"
-- 实际论文确实是 Brachytherapy 期刊 2015 年发表
+**Verification:**
+- The DOI `10.1016/j.brachy.*` belongs to Elsevier's Brachytherapy journal
+- PMID 25944394 → PubMed shows "Brachytherapy. 2015"
+- The actual paper was indeed published in Brachytherapy in 2015
 
-**失败场景：**
-- 自动生成参考文献时，journal="Nature" 与 DOI 不一致
-- DOI 解析器会报错或显示矛盾
-- 引用验证工具（如 Crossref）会标记此条为不匹配
+**Failure scenarios:**
+- When auto-generating references, journal="Nature" is inconsistent with the DOI
+- DOI resolvers will error out or show a contradiction
+- Citation validation tools (such as Crossref) will flag this entry as a mismatch
 
-**修复方案：**
+**Fix:**
 
 ```bash
-# 在 nature-bt-penile-organ-preservation-2015.md 第 5 行：
+# At line 5 of nature-bt-penile-organ-preservation-2015.md:
 # journal: "Nature"
-# 改为：
+# change to:
 # journal: "Brachytherapy"
 ```
 
-**附加修复：** 文件名也应该改：
+**Additional fix:** The filename should also be changed:
 
 ```bash
-# 重命名文件
+# Rename the file
 cd <workspace>/BrachyBot/clinical_kb/sources/02_prostate_gu/raw
 mv nature-bt-penile-organ-preservation-2015.md brachytherapy-penile-organ-preservation-2015.md
-# 然后 KB 中所有引用也要更新
+# Then all references in the KB must be updated as well
 # stable_id: kb:pros:penile:brachytherapy-penile-organ-preservation-2015
 ```
 
-**验证方法：**
+**Verification method:**
 ```bash
-# 1. PubMed 验证
+# 1. PubMed verification
 curl -s "https://pubmed.ncbi.nlm.nih.gov/25944394/" | grep -E "Brachytherapy|journal"
-# 2. DOI 解析
+# 2. DOI resolution
 curl -s "https://api.crossref.org/works/10.1016/j.brachy.2015.03.008" | python3 -c "import json,sys; print(json.load(sys.stdin)['message']['container-title'])"
-# 期望: ['Brachytherapy']
+# Expected: ['Brachytherapy']
 ```
 
 ---
 
-### 🟠 Finding #5: 文件计数 "110" 不一致（实际 109 + 1 孤立 .txt）
+### 🟠 Finding #5: File count "110" inconsistency (actually 109 + 1 orphaned .txt)
 
-**文件：** `clinical_kb/guidelines_brachytherapy.md`
-**行号：** 6, 14, 5335, 5683
-**等级：** High
-**发现者：** Angle C, E, sweep pass
+**File:** `clinical_kb/guidelines_brachytherapy.md`
+**Line:** 6, 14, 5335, 5683
+**Severity:** High
+**Found by:** Angle C, E, sweep pass
 
-**问题描述：**
-- Header（line 6）说 "Source files: 110"
-- Verification Provenance（line 14）说 "110 source files"
-- Master Source Index（line 5335）说 "all 110 files"
-- Limitations（line 5683）说 "snapshot of the 110 source files"
+**Description:**
+- Header (line 6) says "Source files: 110"
+- Verification Provenance (line 14) says "110 source files"
+- Master Source Index (line 5335) says "all 110 files"
+- Limitations (line 5683) says "snapshot of the 110 source files"
 
-实际 `find sources -name '*.md' -path '*/raw/*' | wc -l` = 109。
-第 110 个文件 `i125-pancreatic-guideline-2023.txt` 在 KB 的 Master Index 中**没有对应行**。
+Actually `find sources -name '*.md' -path '*/raw/*' | wc -l` = 109.
+The 110th file, `i125-pancreatic-guideline-2023.txt`, has **no corresponding row** in the KB's Master Index.
 
-**根本原因：** 这是上次 rebuild 时的遗留问题。`.txt` 和 `.md` 是同一篇论文的两种格式（`.md` 是摘要 + frontmatter，`.txt` 是 PDF 全文 OCR）。但 rebuild 时只把 `.md` 视为"真实"条目，把 `.txt` 作为辅助引用，导致计数不匹配。
+**Root cause:** This is a leftover issue from the last rebuild. `.txt` and `.md` are two formats of the same paper (`.md` is the abstract + frontmatter, `.txt` is the full-text PDF OCR). But during the rebuild, only `.md` was treated as a "real" entry and `.txt` as an auxiliary reference, causing the count mismatch.
 
-**失败场景：**
-- 自动审计脚本对比 disk 文件数（110）和 KB 声称（110）会通过，但实际只有 109 个有完整条目
-- 探索者从 Master Index 找不到 `.txt` 的存在
-- 当 `.txt` 文件独立更新时，没有索引行追踪
+**Failure scenarios:**
+- An automated audit script comparing the disk file count (110) against the KB claim (110) will pass, but only 109 actually have complete entries
+- Explorers cannot find the existence of the `.txt` from the Master Index
+- When the `.txt` file is updated independently, no index row tracks it
 
-**修复方案（推荐 Option B）：**
+**Fix (Option B recommended):**
 
-**Option A：删除 `.txt`，统一用 109**
+**Option A: Delete the `.txt`, standardize on 109**
 ```bash
-# 删除冗余的 .txt
+# Delete the redundant .txt
 rm <workspace>/BrachyBot/clinical_kb/sources/05_gi/raw/i125-pancreatic-guideline-2023.txt
-# 然后把 KB line 2263 的 "Full text also at:" 行删除
-# 把所有 "110" 改为 "109"
+# Then delete the "Full text also at:" line at KB line 2263
+# Change all "110" to "109"
 ```
 
-**Option B：保留 `.txt`，修正为 110 + Master Index 添加行**
+**Option B: Keep the `.txt`, correct to 110 + add a row to the Master Index**
 
 ```markdown
-# 修改 line 6, 14, 5335, 5683: "110" 不变
+# Modify line 6, 14, 5335, 5683: "110" stays unchanged
 
-# 在 Master Source Index 的 05_gi 表格中添加：
+# Add to the 05_gi table in the Master Source Index:
 | (txt) | [i125-pancreatic-guideline-2023.txt](sources/05_gi/raw/i125-pancreatic-guideline-2023.txt) | `kb:gi:pancreatic:i125-pancreatic-guideline-2023` (same id, .txt is full-text companion) |
 ```
 
-**推荐 Option A**（更简洁）。`.txt` 内容是 PDF OCR 提取的全文，已经被 `.md` 摘要在 KB 中反映了；如需全文可以直接从 source 库读 `.md`。
+**Option A recommended** (more concise). The `.txt` content is the full text extracted by PDF OCR and is already reflected in the KB by the `.md` abstract; if the full text is needed, the `.md` can be read directly from the source library.
 
-**验证方法：**
+**Verification method:**
 ```bash
-# 1. 实际 disk 文件数
+# 1. Actual disk file count
 find clinical_kb/sources -name "*.md" -path "*/raw/*" | wc -l
-# 2. KB 声称的 110/109
+# 2. The 110/109 claimed by the KB
 grep -c "110 source files\|all 110\|110 files" clinical_kb/guidelines_brachytherapy.md
-# 3. 两者应一致
+# 3. The two should be consistent
 ```
 
 ---
 
-### 🟠 Finding #6: GI 章节 header "15 files" vs Master Index "14 files"
+### 🟠 Finding #6: GI section header "15 files" vs Master Index "14 files"
 
-**文件：** `clinical_kb/guidelines_brachytherapy.md`
-**行号：** 2224 vs 5498
-**等级：** High
-**发现者：** Sweep pass
+**File:** `clinical_kb/guidelines_brachytherapy.md`
+**Line:** 2224 vs 5498
+**Severity:** High
+**Found by:** Sweep pass
 
-**问题描述：**
-- Line 2224 GI 章节 header: `Gastrointestinal Brachytherapy (15 files)`
+**Description:**
+- Line 2224 GI section header: `Gastrointestinal Brachytherapy (15 files)`
 - Line 5498 Master Source Index: `05_gi — Gastrointestinal Brachytherapy (14 files)`
-- Topic Tree（line 64-70）sum: 2+4+1+5+1+1 = 14
-- Master Index 是正确的（14），章节 header 多算了 1
+- Topic Tree (line 64-70) sum: 2+4+1+5+1+1 = 14
+- The Master Index is correct (14); the section header overcounts by 1
 
-**根本原因：** 跟 #5 同样的孤立 `.txt` 造成。章节 header 误算了 `.txt`。
+**Root cause:** Caused by the same orphaned `.txt` as #5. The section header mistakenly counted the `.txt`.
 
-**修复方案：**
+**Fix:**
 
-如果采用 Finding #5 的 Option A（删 `.txt`）：
+If adopting Option A from Finding #5 (delete the `.txt`):
 ```bash
 # Line 2224: (15 files) → (14 files)
 sed -i 's/Gastrointestinal Brachytherapy (15 files)/Gastrointestinal Brachytherapy (14 files)/' guidelines_brachytherapy.md
 ```
 
-如果采用 Option B（保留 `.txt`）：
+If adopting Option B (keep the `.txt`):
 ```bash
-# Master Index 也要加 .txt 行（见 #5）
+# The Master Index must also add the .txt row (see #5)
 ```
 
-**验证方法：**
+**Verification method:**
 ```bash
-# GI 文件数
+# GI file count
 find clinical_kb/sources/05_gi/raw -name "*.md" | wc -l
-# 应为 14（如果走 Option A）
+# Should be 14 (if going with Option A)
 ```
 
 ---
 
-### 🟠 Finding #7: Topic Index 4 个 topic 计数错误
+### 🟠 Finding #7: 4 topic count errors in Topic Index
 
-**文件：** `clinical_kb/guidelines_brachytherapy.md`
-**行号：** 3987, 4496, 4536, 5134
-**等级：** High
-**发现者：** Sweep pass
+**File:** `clinical_kb/guidelines_brachytherapy.md`
+**Line:** 3987, 4496, 4536, 5134
+**Severity:** High
+**Found by:** Sweep pass
 
-**问题描述：**
+**Description:**
 ```markdown
-### `I-125` (14 entries)        # 实际只有 11 个 bullet
-### `breast` (13 entries)      # 实际只有 8 个 bullet
-### `cervix` (13 entries)       # 实际只有 8 个 bullet
-### `prostate` (13 entries)     # 实际只有 8 个 bullet
+### `I-125` (14 entries)        # actually only 11 bullets
+### `breast` (13 entries)      # actually only 8 bullets
+### `cervix` (13 entries)       # actually only 8 bullets
+### `prostate` (13 entries)     # actually only 8 bullets
 ```
 
-**根本原因：** Rebuild 脚本生成 Topic Index 时用 `len(entries_for_topic)` 但没排除重复或空条目。
+**Root cause:** The rebuild script used `len(entries_for_topic)` when generating the Topic Index but did not exclude duplicate or empty entries.
 
-**失败场景：**
-- RAG 用户按 topic 过滤时，看到 "(14 entries)" 但实际只能得到 11 个，预算会算错
-- 在 prompt 中说"按 cervix topic 过滤"会得到 8 个结果而非预期的 13 个
+**Failure scenarios:**
+- When a RAG user filters by topic, they see "(14 entries)" but can only get 11, so budgets will be miscalculated
+- Saying "filter by cervix topic" in a prompt returns 8 results instead of the expected 13
 
-**修复方案（重新生成 Topic Index）：**
+**Fix (regenerate the Topic Index):**
 
 ```python
-# 重新计算 topic → entries 映射
+# Recompute the topic → entries mapping
 from collections import defaultdict
 topic_to_entries = defaultdict(list)
 for fname, tags in TOPIC_TAGS.items():
@@ -465,7 +465,7 @@ for fname, tags in TOPIC_TAGS.items():
                     topic_to_entries[tag].append(eid)
                 break
 
-# 写入 KB，每行 = 实际 entry 数
+# Write to the KB; each line = actual entry count
 for topic in sorted(topic_to_entries.keys()):
     entries = topic_to_entries[topic]
     out.append(f"### `{topic}` ({len(entries)} entries)")
@@ -475,13 +475,13 @@ for topic in sorted(topic_to_entries.keys()):
     out.append("")
 ```
 
-**验证方法：**
+**Verification method:**
 ```bash
-# 找到 4 个错误的 topic header，手动数 bullet
+# Find the 4 wrong topic headers and count bullets manually
 python3 -c "
 import re
 text = open('guidelines_brachytherapy.md').read()
-# 找到 '### \`I-125\` (14 entries)' 段
+# Find the '### \`I-125\` (14 entries)' section
 m = re.search(r'### \`I-125\` \(14 entries\)\n+(.*?)(?=\n### |\Z)', text, re.DOTALL)
 if m:
     body = m.group(1)
@@ -492,88 +492,88 @@ if m:
 
 ---
 
-### 🟠 Finding #8: Limitations 17 vs 24 实际 metadata stubs
+### 🟠 Finding #8: Limitations 17 vs 24 actual metadata stubs
 
-**文件：** `clinical_kb/guidelines_brachytherapy.md`
-**行号：** 5683
-**等级：** High
-**发现者：** Sweep pass
+**File:** `clinical_kb/guidelines_brachytherapy.md`
+**Line:** 5683
+**Severity:** High
+**Found by:** Sweep pass
 
-**问题描述：**
-Limitations 段说"Metadata-only stubs (17 files)"，但实际有 24 个 entry 完全没有 body content（只有 Topics + See also）。7 个 framework 文件 + 多个 metadata-stub 都被漏算了。
+**Description:**
+The Limitations section says "Metadata-only stubs (17 files)", but there are actually 24 entries with no body content at all (only Topics + See also). 7 framework files + multiple metadata stubs were all missed.
 
-**修复方案：**
+**Fix:**
 ```python
-# 扫描所有 entry，统计没有 Key facts 的
+# Scan all entries and count those without Key facts
 n_stubs = 0
 for entry in entries:
     if not entry.get('key_facts'):
         n_stubs += 1
 print(f"Actual metadata stubs: {n_stubs}")
-# 然后在 Limitations 段写实际数字
+# Then write the actual number in the Limitations section
 ```
 
-或者更简单：手动修改 Limitations 段的数字 17 → 24。
+Or simpler: manually change the number in the Limitations section from 17 → 24.
 
-**验证方法：**
+**Verification method:**
 ```bash
 grep -B 1 -A 3 "Key facts" guidelines_brachytherapy.md | grep "📄" | wc -l
-# 应等于有 body 的 entry 数
+# Should equal the number of entries that have a body
 ```
 
 ---
 
-### 🟡 Finding #9: "(1 files)" 复数语法错误
+### 🟡 Finding #9: "(1 files)" plural grammar error
 
-**文件：** `clinical_kb/guidelines_brachytherapy.md`
-**行号：** 46, 53, 54, 78, 90 等约 7-10 处
-**等级：** Medium
-**发现者：** Angle C, G
+**File:** `clinical_kb/guidelines_brachytherapy.md`
+**Line:** 46, 53, 54, 78, 90 and about 7-10 places
+**Severity:** Medium
+**Found by:** Angle C, G
 
-**问题描述：**
-Sub-section headers 使用 `(1 files)` 而不是 `(1 file)`。
+**Description:**
+Sub-section headers use `(1 files)` instead of `(1 file)`.
 
-**修复方案：**
+**Fix:**
 ```bash
-# 全局替换
+# Global replacement
 sed -i 's/(1 files)/(1 file)/g' guidelines_brachytherapy.md
 ```
 
-**验证方法：**
+**Verification method:**
 ```bash
 grep -E "\(1 files\)" guidelines_brachytherapy.md
-# 应为空
+# Should be empty
 ```
 
 ---
 
-### 🟡 Finding #10: 3 个 entry body 是空壳（PORTEC-2, EMBRACE-II, ICRU-89）
+### 🟡 Finding #10: 3 entry bodies are empty shells (PORTEC-2, EMBRACE-II, ICRU-89)
 
-**文件：** `clinical_kb/guidelines_brachytherapy.md`
-**行号：** 300, 346, 560
-**等级：** Medium
-**发现者：** Angle A, F, sweep pass
+**File:** `clinical_kb/guidelines_brachytherapy.md`
+**Line:** 300, 346, 560
+**Severity:** Medium
+**Found by:** Angle A, F, sweep pass
 
-**问题描述：**
-3 个 entry 只有 Topics 和 See also，没有 Key facts / Dose constraints / Trial endpoints / Key numbers 段。内容完全在 5 个 cross-cutting tables 里。
+**Description:**
+3 entries have only Topics and See also, with no Key facts / Dose constraints / Trial endpoints / Key numbers sections. Their content is entirely in the 5 cross-cutting tables.
 
-具体位置：
-- Line 300: `kb:gyn:cervix:embrace-ii-protocol` — 标题是 "OAR Dose Constraints (cervix HDR — EMBRACE II)"（不是论文标题）
-- Line 346: `kb:gyn:cervix:icru-89-gyn` — 标题是 "ICRU 89 Dose-Reporting Parameters"（不是论文标题）
-- Line 560: `kb:gyn:endometrial:portec-2-lancet-2010` — 标题是 "Endometrial Adjuvant — PORTEC-2 (VBT vs EBRT)"（cross-cutting table 标题，不是论文标题）
+Specific locations:
+- Line 300: `kb:gyn:cervix:embrace-ii-protocol` — the title is "OAR Dose Constraints (cervix HDR — EMBRACE II)" (not the paper title)
+- Line 346: `kb:gyn:cervix:icru-89-gyn` — the title is "ICRU 89 Dose-Reporting Parameters" (not the paper title)
+- Line 560: `kb:gyn:endometrial:portec-2-lancet-2010` — the title is "Endometrial Adjuvant — PORTEC-2 (VBT vs EBRT)" (a cross-cutting table title, not the paper title)
 
-**根本原因：** Rebuild 脚本从 cross-cutting tables 中抓数据，但跨章节的源文件实际内容没被复制到 entry body。同时标题也被替换成了 cross-cutting table 的标题。
+**Root cause:** The rebuild script pulled data from the cross-cutting tables, but the actual content of the cross-section source files was not copied into the entry body. The title was also replaced with the cross-cutting table title.
 
-**失败场景：**
-- RAG 系统只检索 entry（不查 cross-cutting tables）时，PORTEC-2 / EMBRACE-II / ICRU-89 的具体数据会缺失
-- 用户点开 entry 看到空 body，会以为这些论文没有内容
+**Failure scenarios:**
+- When the RAG system retrieves only entries (without consulting the cross-cutting tables), the specific data for PORTEC-2 / EMBRACE-II / ICRU-89 will be missing
+- A user opening the entry sees an empty body and assumes these papers have no content
 
-**修复方案：**
+**Fix:**
 
-从源文件 frontmatter + body 提取真实内容：
+Extract the real content from the source file frontmatter + body:
 
 ```python
-# 修复 EMBRACE-II entry
+# Fix the EMBRACE-II entry
 real_title = "Cervical Cancer Brachytherapy Dose Escalation Protocol: Analysis of Early Data Treatments According to EMBRACE II Protocol"
 real_key_facts = [
     "34 patients with locally advanced cervical cancer analyzed",
@@ -583,10 +583,10 @@ real_key_facts = [
     "13/34 achieved 80-85 Gy",
     "All 34 plans complied with EMBRACE II OAR constraints: D2cc < 90 Gy bladder, < 75 Gy rectum, < 70 Gy sigmoid",
 ]
-# ... 替换 entry 内容
+# ... replace entry content
 ```
 
-或者更简单：在每个空壳 entry 的开头加一行说明，提示用户去 Part III cross-cutting tables 看具体数据：
+Or simpler: add an explanatory line at the start of each empty-shell entry, pointing users to the Part III cross-cutting tables for the specific data:
 
 ```markdown
 > **Note:** For detailed dose constraints / endpoints / numbers, see [Part III § OAR Dose Constraints (cervix HDR — EMBRACE II)](#part-iii).
@@ -595,23 +595,23 @@ real_key_facts = [
 ...
 ```
 
-**验证方法：**
+**Verification method:**
 ```bash
-# 找没有 Key facts 段落的 entry
+# Find entries without a Key facts section
 python3 -c "
 import re
 text = open('guidelines_brachytherapy.md').read()
-# 找每个 entry (从 <a id 到下一个 --- 或 <a id)
+# Find each entry (from <a id to the next --- or <a id)
 entries = re.split(r'<a id=\"', text)
 no_facts = []
 for e in entries[1:]:
     m = re.match(r'([^>]+)\">', e)
     if not m: continue
     eid = m.group(1)
-    # 找 #### 标题
+    # Find the #### title
     title_m = re.search(r'####\s+(.+)', e)
     title = title_m.group(1) if title_m else 'unknown'
-    # 找 Key facts 段
+    # Find the Key facts section
     if '**Key facts:**' not in e:
         no_facts.append((eid, title))
 print(f'Entries without Key facts: {len(no_facts)}')
@@ -622,55 +622,55 @@ for eid, title in no_facts:
 
 ---
 
-### 🟡 Finding #11: CSCO 和 CSTRO entry 内容完全相同（duplicate）
+### 🟡 Finding #11: CSCO and CSTRO entries have identical content (duplicate)
 
-**文件：** `clinical_kb/guidelines_brachytherapy.md`
-**行号：** 3419, 3439
-**等级：** Medium
-**发现者：** Sweep pass
+**File:** `clinical_kb/guidelines_brachytherapy.md`
+**Line:** 3419, 3439
+**Severity:** Medium
+**Found by:** Sweep pass
 
-**问题描述：**
-两个 Chinese society 学会的 entry 都有完全相同的 Key facts 文本：
+**Description:**
+Both Chinese society entries have exactly the same Key facts text:
 ```markdown
 "Chinese consensus guidelines cover I-125 seed implantation techniques for pancreatic cancer.
 Topics include dose prescription and planning protocols, patient selection criteria, and combination with chemotherapy."
 ```
 
-**根本原因：** Crawl 阶段没有区分 CSCO 和 CSTRO 的具体内容。
+**Root cause:** The crawl stage did not distinguish the specific content of CSCO and CSTRO.
 
-**修复方案：**
-1. 读取源文件，看哪个文件有更具体的内容，更新
-2. 或在其中一个 entry 加 note 说明 CSCO/CSTRO 关注点差异
+**Fix:**
+1. Read the source files, see which file has more specific content, and update
+2. Or add a note to one of the entries explaining the difference in focus between CSCO/CSTRO
 
 ```python
-# 读取源文件 frontmatter
+# Read the source file frontmatter
 for f in ['csco-bt-chinese.md', 'cstro-bt-chinese.md']:
     text = SRC / '08_frameworks' / 'raw' / f
-    # ... 提取真实信息
+    # ... extract the real information
 ```
 
-**验证方法：**
+**Verification method:**
 ```bash
 diff <(grep -A 3 "csco-bt-chinese" guidelines_brachytherapy.md | head -20) \
      <(grep -A 3 "cstro-bt-chinese" guidelines_brachytherapy.md | head -20)
-# 如果输出空，则两个内容相同（验证 duplicate）
+# If the output is empty, the two have identical content (confirms duplicate)
 ```
 
 ---
 
-### 🟡 Finding #12: ICRU Reports Catalogue 归类错误
+### 🟡 Finding #12: ICRU Reports Catalogue misclassification
 
-**文件：** `clinical_kb/guidelines_brachytherapy.md`
-**行号：** 3396 (anchor), 5664-5670 (Master Index)
-**等级：** Medium
-**发现者：** Sweep pass
+**File:** `clinical_kb/guidelines_brachytherapy.md`
+**Line:** 3396 (anchor), 5664-5670 (Master Index)
+**Severity:** Medium
+**Found by:** Sweep pass
 
-**问题描述：**
-`icru-reports-catalogue.md` 是个 ICRU 文件目录，但它被归在 `frm:global_access` (Global Access & Transition) 而不是 `frm:society_methodology` (Society Methodology)。
+**Description:**
+`icru-reports-catalogue.md` is an ICRU document catalogue, but it is classified under `frm:global_access` (Global Access & Transition) rather than `frm:society_methodology` (Society Methodology).
 
-**修复方案：**
+**Fix:**
 
-修改 rebuild 脚本的 `STRUCTURE`：
+Modify the `STRUCTURE` of the rebuild script:
 
 ```python
 "08_frameworks": {
@@ -681,7 +681,7 @@ diff <(grep -A 3 "csco-bt-chinese" guidelines_brachytherapy.md | head -20) \
             "abs-mission.md",
             "astro-methodology.md",
             "gec-estro-about.md",
-            "icru-reports-catalogue.md",  # ← 移到这里
+            "icru-reports-catalogue.md",  # ← move here
             "nccn-methodology.md",
         ],
     },
@@ -691,168 +691,168 @@ diff <(grep -A 3 "csco-bt-chinese" guidelines_brachytherapy.md | head -20) \
         "files": [
             "iaea-india-bt-transition-2023.md",
             "lancet-bt-global-demand-2025.md",
-            # 移除 icru-reports-catalogue.md
+            # Remove icru-reports-catalogue.md
         ],
     },
     "chinese": {...},
 }
 ```
 
-然后重新生成整个 KB。
+Then regenerate the entire KB.
 
-**验证方法：**
+**Verification method:**
 ```bash
 grep -B 1 "icru-reports-catalogue" guidelines_brachytherapy.md
-# 应在 frm:society_methodology 段下，而非 frm:global_access
+# Should be under the frm:society_methodology section, not frm:global_access
 ```
 
 ---
 
-### 🟡 Finding #13: Topic tag 命名分歧（`VBT-21-Gy-3fx` vs `vaginal-BT-21-Gy-3fx`）
+### 🟡 Finding #13: Topic tag naming divergence (`VBT-21-Gy-3fx` vs `vaginal-BT-21-Gy-3fx`)
 
-**文件：** `clinical_kb/guidelines_brachytherapy.md`
-**行号：** 536, 571
-**等级：** Medium
-**发现者：** Angle F, sweep
+**File:** `clinical_kb/guidelines_brachytherapy.md`
+**Line:** 536, 571
+**Severity:** Medium
+**Found by:** Angle F, sweep
 
-**问题描述：**
-- PORTEC-2 entry（line 571）topic tag: `VBT-21-Gy-3fx`
-- PORTEC-4a entry（line 536）topic tag: `vaginal-BT-21-Gy-3fx`
+**Description:**
+- PORTEC-2 entry (line 571) topic tag: `VBT-21-Gy-3fx`
+- PORTEC-4a entry (line 536) topic tag: `vaginal-BT-21-Gy-3fx`
 
-两者都是描述"vaginal brachytherapy 21 Gy in 3 fractions of 7 Gy"，但用了不同的 tag 名字。
+Both describe "vaginal brachytherapy 21 Gy in 3 fractions of 7 Gy" but use different tag names.
 
-**修复方案：**
-统一为 `vaginal-BT-21-Gy-3fx`：
+**Fix:**
+Standardize on `vaginal-BT-21-Gy-3fx`:
 
 ```python
-# 在 rebuild 脚本的 TOPIC_TAGS 字典中：
+# In the TOPIC_TAGS dict of the rebuild script:
 "portec-2-lancet-2010.md": [
     "endometrial", "PORTEC-2", "vaginal-BT-vs-EBRT",
-    "vaginal-BT-21-Gy-3fx",  # ← 原来是 VBT-21-Gy-3fx
+    "vaginal-BT-21-Gy-3fx",  # ← was originally VBT-21-Gy-3fx
     "EBRT-46-Gy", "n=427", "5y-VR-1.8%-vs-1.6%"
 ],
 ```
 
-**验证方法：**
+**Verification method:**
 ```bash
 grep -E "VBT-21-Gy|vaginal-BT-21-Gy" guidelines_brachytherapy.md
-# 应只有 vaginal-BT-21-Gy-3fx（统一后）
+# Should contain only vaginal-BT-21-Gy-3fx (after standardization)
 ```
 
 ---
 
-### 🟢 Finding #14: "Journal: Various" 占位符
+### 🟢 Finding #14: "Journal: Various" placeholder
 
-**文件：** `clinical_kb/guidelines_brachytherapy.md`
-**行号：** 875, 1097, 2306, 2424, 2709, 2727, 3176, 3197, 3213, 3230, 3250, 3402
-**等级：** Low
-**发现者：** Angle A
+**File:** `clinical_kb/guidelines_brachytherapy.md`
+**Line:** 875, 1097, 2306, 2424, 2709, 2727, 3176, 3197, 3213, 3230, 3250, 3402
+**Severity:** Low
+**Found by:** Angle A
 
-**问题描述：**
-多个 entry 使用 "Various" 或 website 名称作为 Journal 字段。对于有 DOI 的 entry，DOI 已经隐含了真实期刊名。
+**Description:**
+Multiple entries use "Various" or a website name as the Journal field. For entries that have a DOI, the DOI already implies the real journal name.
 
-**修复方案：**
+**Fix:**
 
 ```python
-# 对每个 entry，从 frontmatter 或 DOI 推算真实 journal
+# For each entry, derive the real journal from frontmatter or DOI
 import requests
 def get_journal_from_doi(doi):
     r = requests.get(f"https://api.crossref.org/works/{doi}")
     return r.json()['message']['container-title'][0] if r.status_code == 200 else "Unknown"
 
-# 修复示例
+# Fix examples
 # abs-skin-2020.md: DOI 10.1016/j.brachy.2019.09.004 → Brachytherapy
 # papillon-contact-xray.md: DOI 10.1088/1361-6560/ae5757 → Physics in Medicine & Biology
 ```
 
-对于 framework 文件（无 DOI），保留 "Various" 或 website 名（"abs Website"），但用大小写规范化为 "ABS Website"。
+For framework files (no DOI), keep "Various" or the website name ("abs Website"), but normalize the casing to "ABS Website".
 
-**验证方法：**
+**Verification method:**
 ```bash
 grep -c "Journal: Various\|Website" guidelines_brachytherapy.md
-# 修复后应减少
+# Should decrease after fixing
 ```
 
 ---
 
-### 🟢 Finding #15: Orphan `.txt` 文件孤立引用
+### 🟢 Finding #15: Orphaned `.txt` file referenced in isolation
 
-**文件：** `clinical_kb/guidelines_brachytherapy.md`
-**行号：** 2263
-**等级：** Low
-**发现者：** Angle C, E, sweep
+**File:** `clinical_kb/guidelines_brachytherapy.md`
+**Line:** 2263
+**Severity:** Low
+**Found by:** Angle C, E, sweep
 
-**问题描述：**
-`i125-pancreatic-guideline-2023.txt` 在 line 2263 被引用为 "Full text also at:"，但**没在 Master Source Index 中**，**没在 Topic Tree 的 gi:pancreatic sub-topic 中**。
+**Description:**
+`i125-pancreatic-guideline-2023.txt` is referenced at line 2263 as "Full text also at:" but is **not in the Master Source Index** and **not in the gi:pancreatic sub-topic of the Topic Tree**.
 
-**修复方案：**
-见 Finding #5（建议删除 `.txt` 或在 Master Index 中添加行）。
+**Fix:**
+See Finding #5 (recommendation: delete the `.txt` or add a row in the Master Index).
 
 ---
 
-## 3. 修复优先级矩阵
+## 3. Fix Priority Matrix
 
-| 严重度 | 数量 | 修复工时 | 修复方式 |
+| Severity | Count | Fix effort | Fix method |
 |--------|------|----------|----------|
-| 🔴 Critical | 2 | 5 分钟 | sed 一行替换 |
-| 🟠 High | 6 | 30 分钟 | sed + 手动 + 重新生成 Topic Index |
-| 🟡 Medium | 6 | 1-2 小时 | 手动修复或 Python 脚本批量 |
-| 🟢 Low | 1 | 30 分钟 | 重新计算或补全 |
+| 🔴 Critical | 2 | 5 minutes | one-line sed replacement |
+| 🟠 High | 6 | 30 minutes | sed + manual + regenerate Topic Index |
+| 🟡 Medium | 6 | 1-2 hours | manual fixes or Python batch script |
+| 🟢 Low | 1 | 30 minutes | recompute or complete |
 
-**总计修复工时：2-3 小时**
+**Total fix effort: 2-3 hours**
 
 ---
 
-## 4. 完整修复执行计划
+## 4. Complete Fix Execution Plan
 
-### 4.1 立即修复（10 分钟内）
+### 4.1 Immediate fixes (within 10 minutes)
 
 ```bash
-# 修复 #1, #2: 2 个 broken anchor
+# Fix #1, #2: 2 broken anchors
 cd <workspace>/BrachyBot/clinical_kb
 sed -i 's|gec-estro-cervix-2005-haie-meder)|gec-estro-cervix-2005-haie)|g' guidelines_brachytherapy.md
 sed -i 's|embrace-i-pivotal-2021-lancet-oncol)|embrace-i-pivotal-2021-lancet)|g' guidelines_brachytherapy.md
 
-# 修复 #9: "(1 files)" → "(1 file)"
+# Fix #9: "(1 files)" → "(1 file)"
 sed -i 's|(1 files)|(1 file)|g' guidelines_brachytherapy.md
 ```
 
-### 4.2 短期修复（30 分钟内）
+### 4.2 Short-term fixes (within 30 minutes)
 
 ```bash
-# 修复 #5: 110 → 109（删除 .txt）
+# Fix #5: 110 → 109 (delete the .txt)
 rm sources/05_gi/raw/i125-pancreatic-guideline-2023.txt
 sed -i 's|110 source files|109 source files|g; s|all 110 files|all 109 files|g; s|the 110 source files|the 109 source files|g' guidelines_brachytherapy.md
-# 同时删除 line 2263 的 "Full text also at: ..." 行
-# 同时修复 line 2224: (15 files) → (14 files)
+# Also delete the "Full text also at: ..." line at line 2263
+# Also fix line 2224: (15 files) → (14 files)
 sed -i 's|Gastrointestinal Brachytherapy (15 files)|Gastrointestinal Brachytherapy (14 files)|' guidelines_brachytherapy.md
 ```
 
-### 4.3 中期修复（1-2 小时）
+### 4.3 Medium-term fixes (1-2 hours)
 
 ```bash
-# 修复 #4: Penile-BT Journal 字段
+# Fix #4: Penile-BT Journal field
 cd <workspace>/BrachyBot/clinical_kb
 sed -i 's|^journal: "Nature"$|journal: "Brachytherapy"|' sources/02_prostate_gu/raw/nature-bt-penile-organ-preservation-2015.md
 
-# 修复 #3: 8 个 entry 标题（手动 Edit 工具逐个修改）
+# Fix #3: 8 entry titles (modify one by one with the manual Edit tool)
 
-# 修复 #7: 重新生成 Topic Index（运行 rebuild 脚本）
+# Fix #7: regenerate the Topic Index (run the rebuild script)
 
-# 修复 #8: 24 vs 17 metadata stubs（实际重新计算）
+# Fix #8: 24 vs 17 metadata stubs (actually recompute)
 ```
 
-### 4.4 长期改进（可选）
+### 4.4 Long-term improvements (optional)
 
-- #10, #11, #12, #13, #14, #15: 取决于用户优先级
+- #10, #11, #12, #13, #14, #15: depends on user priorities
 
 ---
 
-## 5. 验证方法（修复后必跑）
+## 5. Verification Methods (Must Run After Fixing)
 
-### 5.1 自动化验证脚本
+### 5.1 Automated verification script
 
-创建一个 `verify_kb.py` 脚本，每次修改后跑：
+Create a `verify_kb.py` script to run after every modification:
 
 ```python
 #!/usr/bin/env python3
@@ -866,17 +866,17 @@ KB = ROOT / "guidelines_brachytherapy.md"
 
 text = KB.read_text(encoding='utf-8')
 
-# Check 1: 所有 <a id> 唯一
+# Check 1: all <a id> are unique
 ids = re.findall(r'<a id="([^"]+)">', text)
 assert len(ids) == len(set(ids)), f"Duplicate IDs: {[i for i in ids if ids.count(i) > 1]}"
 
-# Check 2: 所有 [text](#id) 引用都存在
+# Check 2: all [text](#id) references exist
 defined = set(ids)
 refs = set(re.findall(r'\(#(kb:[^)]+)\)', text))
 missing = refs - defined
 assert not missing, f"Broken refs: {missing}"
 
-# Check 3: 所有源文件都被引用
+# Check 3: all source files are referenced
 src_files = set(f.name for cat in (ROOT / "sources").iterdir() 
                 if cat.is_dir() and cat.name != "_meta"
                 for f in (cat / "raw").iterdir() 
@@ -884,13 +884,13 @@ src_files = set(f.name for cat in (ROOT / "sources").iterdir()
 kb_refs = set(re.findall(r'\[([^\]]+\.(?:md|txt))\]\(sources/[^)]+\)', text))
 assert src_files == kb_refs, f"Missing: {src_files - kb_refs}, Extra: {kb_refs - src_files}"
 
-# Check 4: 没有 "(1 files)" 语法错误
+# Check 4: no "(1 files)" grammar error
 assert "(1 files)" not in text, "Grammar error: (1 files) found"
 
-# Check 5: 没有 #N/A 链接
+# Check 5: no #N/A links
 assert "pubmed.ncbi.nlm.nih.gov/N/A" not in text, "Hallucinated N/A link found"
 
-# Check 6: Topic Index 计数准确
+# Check 6: Topic Index counts are accurate
 topic_header_re = re.compile(r"### `([^`]+)` \((\d+) entries\)\n+(.*?)(?=\n### |\Z)", re.DOTALL)
 for topic, count_str, body in topic_header_re.findall(text):
     count = int(count_str)
@@ -900,79 +900,79 @@ for topic, count_str, body in topic_header_re.findall(text):
 print("✅ All KB integrity checks passed")
 ```
 
-### 5.2 手动验证检查清单
+### 5.2 Manual verification checklist
 
-- [ ] 打开 KB，Ctrl+F "gec-estro-cervix-2005-haie-meder" — 应为 0 个匹配
-- [ ] 打开 KB，Ctrl+F "embrace-i-pivotal-2021-lancet-oncol" — 应为 0 个匹配
-- [ ] 打开 KB，Ctrl+F "(1 files)" — 应为 0 个匹配
-- [ ] 打开 KB，Ctrl+F "Nature" — 应在 cross-ref 链接等位置出现，但不应作为 Journal 字段
-- [ ] 打开 KB，Ctrl+F "110" — 应只在 disk count context 出现（已修复后应为 109）
-- [ ] 打开 KB，从 Part I IGABT 列表点击每个 cornerstone 链接 — 应跳到对应 entry
-- [ ] 打开 KB，浏览每个 category 第一个 entry — 标题应是论文标题而非章节标题
-- [ ] 打开 KB，翻到 Master Source Index — 109 行对应 109 个 .md 文件
-
----
-
-## 6. 设计层面的反思
-
-### 6.1 改造有效吗？
-
-**是。** 树形结构 + stable ID + topic tags + cross-references 显著提升了 LLM 索引能力：
-- 按 topic 路径定位：`kb:cat:sub:file-slug`
-- 按 topic 反向查询：Part III § Topic Index
-- 按主题探索：See also 网络
-
-### 6.2 改造引入的新问题
-
-1. **锚点不一致**：手工构建 111 个 ID 时容易产生细微差异（`meder` vs `haie`），未来应自动化生成
-2. **内容重复**：cross-cutting tables 和 entry body 之间的内容分布需要规则化（要么 entry 完整，要么 table 完整）
-3. **空壳 entry**：3 个 entry 完全依赖 cross-cutting table，破坏 RAG 检索完整性
-4. **计数漂移**：`.md` 和 `.txt` 双胞胎引入 +1 漂移，应统一一种格式
-
-### 6.3 长期建议
-
-1. **建立 CI 验证**：每次 KB 修改后自动跑 `verify_kb.py`
-2. **建立 source file 模板**：明确 `title` / `journal` / `year` / `doi` / `pmid` 必填，缺一则警告
-3. **建立稳定 ID 自动生成函数**：禁止手工编辑 ID
-4. **考虑迁移到结构化格式**：未来可将 KB 从 markdown 迁移到 JSON / YAML，前端用 RAG-friendly schema 渲染
+- [ ] Open the KB, Ctrl+F "gec-estro-cervix-2005-haie-meder" — should be 0 matches
+- [ ] Open the KB, Ctrl+F "embrace-i-pivotal-2021-lancet-oncol" — should be 0 matches
+- [ ] Open the KB, Ctrl+F "(1 files)" — should be 0 matches
+- [ ] Open the KB, Ctrl+F "Nature" — should appear in places such as cross-ref links, but not as a Journal field
+- [ ] Open the KB, Ctrl+F "110" — should appear only in disk count contexts (after fixing it should be 109)
+- [ ] Open the KB, click each cornerstone link in the Part I IGABT list — should jump to the corresponding entry
+- [ ] Open the KB, browse the first entry of each category — the title should be a paper title, not a section title
+- [ ] Open the KB, go to the Master Source Index — 109 rows corresponding to 109 .md files
 
 ---
 
-## 7. 附录
+## 6. Design-Level Reflections
 
-### 7.1 审查用工具
+### 6.1 Is the restructuring effective?
 
-- 8 个 sub-agents 并行扫描（Angle A, B, C, D, E, F, G, H）
-- 1 个 sweep pass
-- 主会话直接验证关键发现
+**Yes.** The tree structure + stable ID + topic tags + cross-references significantly improve the LLM's indexing capability:
+- Locate by topic path: `kb:cat:sub:file-slug`
+- Reverse-query by topic: Part III § Topic Index
+- Explore by theme: the See also network
 
-### 7.2 审查工时
+### 6.2 New problems introduced by the restructuring
 
-- 启动 8 个 sub-agents：~5 分钟
-- Sub-agent 运行：~30-60 秒每个（总并行 ~5 分钟）
-- 主会话验证：~5 分钟
-- 撰写本报告：~30 分钟
-- **总工时：~45 分钟**
+1. **Anchor inconsistency**: Manually constructing 111 IDs easily produces subtle differences (`meder` vs `haie`); generation should be automated in the future
+2. **Content duplication**: The distribution of content between cross-cutting tables and entry bodies needs rules (either the entry is complete or the table is complete)
+3. **Empty-shell entries**: 3 entries depend entirely on a cross-cutting table, breaking RAG retrieval completeness
+4. **Count drift**: The `.md`/`.txt` twins introduce a +1 drift; a single format should be standardized
 
-### 7.3 修复工时估算
+### 6.3 Long-term recommendations
 
-| 阶段 | 工时 |
+1. **Establish CI verification**: automatically run `verify_kb.py` after every KB modification
+2. **Create a source file template**: make `title` / `journal` / `year` / `doi` / `pmid` mandatory, with a warning if any is missing
+3. **Build a stable ID auto-generation function**: forbid manual ID editing
+4. **Consider migrating to a structured format**: in the future, migrate the KB from markdown to JSON / YAML and render it on the frontend with a RAG-friendly schema
+
+---
+
+## 7. Appendix
+
+### 7.1 Review tooling
+
+- 8 sub-agents scanning in parallel (Angle A, B, C, D, E, F, G, H)
+- 1 sweep pass
+- Direct verification of key findings in the main session
+
+### 7.2 Review effort
+
+- Launching 8 sub-agents: ~5 minutes
+- Sub-agent run time: ~30-60 seconds each (~5 minutes total in parallel)
+- Main-session verification: ~5 minutes
+- Writing this report: ~30 minutes
+- **Total effort: ~45 minutes**
+
+### 7.3 Fix effort estimate
+
+| Phase | Effort |
 |------|------|
-| 立即修复（#1, #2, #9） | 5-10 分钟 |
-| 短期修复（#3-#8） | 1-2 小时 |
-| 中期改进（#10-#15） | 2-3 小时 |
-| 建立 CI 验证 | 1-2 小时 |
-| **总计** | **4-8 小时** |
+| Immediate fixes (#1, #2, #9) | 5-10 minutes |
+| Short-term fixes (#3-#8) | 1-2 hours |
+| Medium-term improvements (#10-#15) | 2-3 hours |
+| Establish CI verification | 1-2 hours |
+| **Total** | **4-8 hours** |
 
-### 7.4 相关文件路径
+### 7.4 Related file paths
 
-- `clinical_kb/guidelines_brachytherapy.md` — 主 KB
-- `clinical_kb/sources/<category>/raw/` — 110 个源文件
-- `clinical_kb/_meta/MANIFEST.csv` — 源文件清单
-- `clinical_kb/_meta/FETCH_LOG.md` — 抓取日志
+- `clinical_kb/guidelines_brachytherapy.md` — main KB
+- `clinical_kb/sources/<category>/raw/` — 110 source files
+- `clinical_kb/_meta/MANIFEST.csv` — source file manifest
+- `clinical_kb/_meta/FETCH_LOG.md` — fetch log
 
 ---
 
-**报告作者：** BrachyBot Clinical KB Code Review
-**报告版本：** 1.0
-**下次审查建议：** 修复完成后，重新跑 8-angle review 验证改进
+**Report author:** BrachyBot Clinical KB Code Review
+**Report version:** 1.0
+**Recommendation for next review:** After fixes are complete, re-run the 8-angle review to verify improvements

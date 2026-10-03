@@ -41,11 +41,12 @@ def canonical_resource_read(message):
 
 
 # The object of a report-generation command is the report noun, optionally
-# qualified by one or more report-domain words.  "报告" is the protected
-# object here: a qualifier such as "手术" (surgical) modifies the report and
+# qualified by one or more report-domain words.  The report noun is the
+# protected object here: a qualifier such as "surgical" modifies the report and
 # must not let a guide rule claim the turn.  Only qualifiers that keep the
 # phrase a positive command are accepted, so status/location wordings such
-# as "报告已生成" or "生成的报告在哪里" still fail the whole-utterance match.
+# as "report generated" or "where is the generated report" still fail the
+# whole-utterance match.
 _REPORT_OBJECT_QUALIFIER = (
     r"(?:当前|完整|整个|本次|这个|一份|新的|最新|最终|详细|简要|标准|正式|"
     r"手术|穿刺|治疗|剂量|计划|规划|临床|术后|术中|病例|患者|"
@@ -61,7 +62,7 @@ def canonical_report_generation(message):
     """Thin adapter over the shared structural parser.
 
     The report must be the object of a command-position generation verb.
-    Qualifier content (``手术``/``剂量``/``分析``/``验证`` ...) does not change
+    Qualifier content (``surgical``/``dose``/``analysis``/``verification`` ...) does not change
     the requested action; negation, conditions, questions and quoted text do.
     """
     from agent_runtime import request_parse

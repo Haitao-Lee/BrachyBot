@@ -234,13 +234,14 @@ def test_timeline_projection_is_bounded_token_free_and_cannot_attest_a_preview()
 
 
 def test_dose_trends_change_series_when_anatomy_or_prescription_changes():
-    before = {'metrics_current':True,'metrics':{'v100':90},'anatomy_key':[1],'config':{'rx':120}}
+    before = {'metrics_current':True,'metrics':{'v100':90},'anatomy_key':[1],'config':{'rx':120},'planning_id':'plan'}
     after = {**before,'metrics':{'v100':91}}
     current = dose_comparison(before,after)
     assert current['comparable']
     changed = dose_comparison(after,{**after,'config':{'rx':130}})
     assert not changed['comparable'] and current['series_key'] != changed['series_key']
     other_plan = dose_comparison(after,{**after,'planning_id':'another-plan'})
+    assert not other_plan['comparable'] and other_plan['delta'] == {}
     assert current['series_key'] != other_plan['series_key']
     assert dose_comparison(after,{**after,'anatomy_key':None})['series_key'] is None
 

@@ -1,0 +1,51 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "max": 1,
+      "operation": "set",
+      "path": "objects.guide-A.visible"
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "zh",
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "state",
+      "statement": "guide-A visible in Data Tree and actual Viewer; geometry and artifacts unchanged."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "response",
+      "statement": "Acknowledge verified display or explain a real failure, not merely say it can be done."
+    }
+  ],
+  "rules": [
+    {
+      "op": "equals",
+      "path": "objects.guide-A.visible",
+      "value": true
+    }
+  ],
+  "scenario_id": "RUR-02-001",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "state",
+      "statement": "guide-A visible in Data Tree and actual Viewer; geometry and artifacts unchanged."
+    },
+    {
+      "kind": "response",
+      "statement": "Acknowledge verified display or explain a real failure, not merely say it can be done."
+    }
+  ]
+}

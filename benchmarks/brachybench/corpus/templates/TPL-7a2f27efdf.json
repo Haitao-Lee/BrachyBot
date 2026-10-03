@@ -1,0 +1,15 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "multi_step",
+  "expectation": null,
+  "facet": "multi_step",
+  "gold_status": "draft",
+  "n_source_intents": 3,
+  "representative_text": "Analyze and segment the image",
+  "source_refs": [
+    "INT-2c7ae4e924ec",
+    "INT-65044a08854d",
+    "INT-96b43a5118f3"
+  ],
+  "template_id": "TPL-7a2f27efdf"
+}

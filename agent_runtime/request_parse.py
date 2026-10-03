@@ -103,10 +103,10 @@ _INTERROGATIVE_EN = re.compile(
     r"can (?:you|i)|could|would|should|has (?:it|the)|have (?:you|they)|"
     r"did (?:you|it)|does (?:it|the))\b"
 )
-# ``是 A 还是 B`` choice questions often carry no question word or mark:
-# "刚刚完成的这个规划任务是使用的算法是基于RL的还是规则-based的".  A
-# ``无论/不管`` frame ("无论是规则还是RL都可以") is a statement and must
-# not be treated as a question.
+# ``A or B`` choice questions often carry no question word or mark:
+# "is the algorithm used by the planning task just completed based on RL or
+# rule-based?".  A ``whether/regardless`` frame ("whether rule-based or RL is
+# fine") is a statement and must not be treated as a question.
 _INTERROGATIVE_CHOICE = re.compile(
     r"是[^，。？！?!,.]{0,28}还是|"
     r"\bwhether\b[^.?!]{0,48}\bor\b",
@@ -122,6 +122,8 @@ def is_interrogative(message: object) -> bool:
     if not text:
         return False
     lower = text.lower()
+    if _polite_action_request(text):
+        return False
     if _INTERROGATIVE_END.search(text.rstrip("!！")):
         return True
     if _INTERROGATIVE_ZH.search(lower) or _INTERROGATIVE_EN.search(lower):
@@ -136,6 +138,32 @@ def is_interrogative(message: object) -> bool:
     return False
 
 
+def _polite_action_request(text: str) -> bool:
+    """A modal request with a direct action complement is still a request.
+
+    Capability/how-to questions ("can you explain how to ...") do not have
+    this syntax. This only recognizes the speech act; target/action scope,
+    negation, conditions and backend confirmations remain separate gates.
+    """
+    match = re.match(
+        r"^(?:(?:can|could|would|will)\s+you\s+(?:please\s+)?|"
+        r"(?:请问\s*)?(?:能不能|可不可以|可以|能否)\s*(?:请|帮我|为我|替我)?\s*)",
+        text.strip(), re.IGNORECASE,
+    )
+    if not match:
+        return False
+    complement = text.strip()[match.end():].strip()
+    if re.search(r"(?:如何|怎么|是否|能否|有没有|\b(?:how|whether|if|or|able|possible)\b)", complement, re.I):
+        return False
+    for action, aliases in _ACTION_ALIASES:
+        if action not in _WRITE_ACTIONS:
+            continue
+        for alias in aliases:
+            if re.match(re.escape(alias) + (r"\b" if alias.isascii() else ""), complement, re.I):
+                return bool(_find_targets(complement))
+    return False
+
+
 _NEGATION_MARKERS = (
     "不要", "不用", "不需要", "无需", "不必", "不能", "不可", "不可以",
     "没有", "取消", "切勿", "禁止", "不允许", "不执行", "不生成", "不重新",
@@ -145,7 +173,7 @@ _NEGATION_MARKERS = (
 )
 
 # Scope exclusion: the named object is carved out of an otherwise positive
-# command ("全部更新，不含导板" = update everything except the guide).  Unlike
+# command ("update everything, excluding the guide").  Unlike
 # negation it does not veto the whole action, so it is tracked per target.
 _EXCLUSION_MARKERS = (
     "不含", "不包括", "不包含", "除了", "除外", "除外", "之外",
@@ -158,13 +186,15 @@ def is_negated(message: object) -> bool:
     text = _clean(message)
     if not text:
         return False
-    if any(marker in text for marker in _NEGATION_MARKERS):
+    # A-not-A modal forms are questions/requests, not the prohibition "cannot".
+    text = re.sub(r"^(?:请问\s*)?(?:能不能|可不可以)", "", text)
+    if any(_alias_matches(text, marker.strip()) for marker in _NEGATION_MARKERS):
         return True
-    # ``别`` is a negation only in an imperative such as ``别生成``. A raw
-    # substring check also matches ordinary words like ``分别``/``识别`` and
-    # can incorrectly veto an otherwise valid read-only request. Ignore the
-    # common lexical compounds on either side while preserving ``请别…`` and
-    # ``别再…`` safety guards.
+    # The negation marker is a negation only in an imperative such as "don't
+    # generate". A raw substring check also matches ordinary words like
+    # "respectively"/"recognize" and can incorrectly veto an otherwise valid
+    # read-only request. Ignore the common lexical compounds on either side
+    # while preserving "please don't..." and "don't ... again" safety guards.
     lexical_prefixes = frozenset("分识类别特个告诀辞")
     lexical_suffixes = frozenset("名的处墅扭针称")
     for match in re.finditer("别", text):
@@ -192,33 +222,38 @@ def is_conditional(message: object) -> bool:
         if marker.startswith("在") and marker.endswith("情况下"):
             if re.search(marker, text):
                 return True
-        elif marker in text:
+        elif _alias_matches(text, marker.strip()):
             return True
     return False
 
 
 def _quoted_spans(text: str) -> List[Tuple[int, int]]:
+    # Scan once in source coordinates. Splitting on quote characters lost the
+    # offsets of the second quotation and treated apostrophes in don't/it's
+    # as quotations. Unclosed quotes/code fences remain reference material.
+    pairs = dict(_QUOTE_PAIRS)
+    pairs.update({"```": "```", "`": "`"})
     spans: List[Tuple[int, int]] = []
-    for left, right in _QUOTE_PAIRS:
-        if left == right:
-            parts = text.split(left)
-            cursor = 0
-            for index in range(1, len(parts) - 1, 2):
-                start = cursor + len(parts[index - 1]) + 1
-                end = start + len(parts[index])
-                spans.append((start, end))
-                cursor = end + 1
-        else:
-            cursor = 0
-            while True:
-                start = text.find(left, cursor)
-                if start < 0:
-                    break
-                end = text.find(right, start + len(left))
-                if end < 0:
-                    break
-                spans.append((start + len(left), end))
-                cursor = end + len(right)
+    stack = []
+    index = 0
+    while index < len(text):
+        token = "```" if text.startswith("```", index) else text[index]
+        if text[index] == "\\":
+            index += 2
+            continue
+        if token in {"'", "’"} and index and index + 1 < len(text):
+            if text[index - 1].isalnum() and text[index + 1].isalnum():
+                index += 1
+                continue
+        if stack and token == stack[-1][0]:
+            _closing, start = stack.pop()
+            if not stack:
+                spans.append((start, index))
+        elif token in pairs and (not stack or stack[-1][0] not in {'"', "'", "`", "```"}):
+            stack.append((pairs[token], index + len(token)))
+        index += len(token)
+    if stack:
+        spans.append((stack[0][1], len(text)))
     return spans
 
 
@@ -344,7 +379,7 @@ _WRITE_ACTIONS = frozenset({"generate", "clear", "export", "segment", "plan", "a
 
 # A write whose scope is "all of them" may legitimately omit the target noun
 # because the objects were just enumerated in the preceding reply (an
-# elliptical follow-up such as "那请你全部更新" / "then update everything").
+# elliptical follow-up such as "then update everything").
 # Aggregate widening is limited to (re)producing actions: an explicit
 # collection word can never authorize a destructive ``clear``.
 _AGGREGATE_WRITE_ACTIONS = frozenset({"generate", "plan", "segment"})
@@ -353,9 +388,10 @@ _AGGREGATE_SCOPE = re.compile(
     r"(?:全部|全都|全数|全盘|所有|一切|每个|各个|逐一|逐个|统统|通通|一律|"
     r"整体|整组|整个|过期|过时|"
     r"\ball\b|\beverything\b|\bboth\b|\bevery\b|\beach\b|\bstale\b|\boutdated\b|"
-    # Bare "都" is an aggregate only when it is followed by an action verb
-    # (都更新 / 都要重算); unrelated compounds such as 都市 or predications
-    # like 每次重建都失败 stay non-aggregate.
+    # A bare aggregate particle is an aggregate only when it is followed by an
+    # action verb (update all / recompute all); unrelated compounds such as the
+    # word for "city" or predications like "every rebuild fails" stay
+    # non-aggregate.
     r"都(?=(?:要|需|得|应|会|能|去|更|重|改|生|刷|做|算|建|修|换|补|填)))",
     re.IGNORECASE,
 )
@@ -367,7 +403,7 @@ def _has_aggregate_scope(text: str) -> bool:
 
 # A bare yes/confirm/go-ahead.  Evaluated with ``fullmatch`` against cleaned
 # text, and additionally rejected when the turn carries its own target/action,
-# so "可以生成报告吗" is a question and never a confirmation.
+# so "can you generate the report?" is a question and never a confirmation.
 _ACK_ONLY = re.compile(
     r"(?:好(?:的|吧|啊|呀)?|行(?:吧|啊)?|可以|同意|确认(?:执行|一下)?|没问题|"
     r"开始(?:吧|啊|执行)?|执行(?:吧|一下)?|继续(?:吧|执行)?|来吧|搞吧|走起|"
@@ -384,7 +420,7 @@ _WRITABLE_TARGETS = frozenset({
 })
 
 # What a target-less aggregate (
-#     「全部更新」 / "update everything")
+#     "update everything")
 # can mean on its own.  These are the downstream artifacts a Session
 # already owns and can reproduce.  Creating new geometry (segmentation, a
 # fresh planning run) is a different command and is never implied by a
@@ -407,7 +443,7 @@ def _subtask_can_authorize(task: Any) -> bool:
 
     This is the single authorization predicate.  Both the per-tool grant and
     the aggregate scope resolver must use it, because two filters that
-    disagree are exactly what let "全部更新；如果以后需要，重新分割CTV。"
+    disagree are exactly what let "update everything; if needed later, re-segment the CTV."
     authorize a segmentation the user only mentioned as a future
     possibility (audit defect R01).  A clause that is negated, conditional,
     quoted, attributed to someone else, interrogative, ambiguous or
@@ -426,7 +462,7 @@ def _subtask_can_authorize(task: Any) -> bool:
 
 # An explicit count turns the aggregate into a bounded reference to that
 # many items of the preceding enumeration:
-#     「刚才三项」 / "the first two"
+#     "the previous three" / "the first two"
 _AGGREGATE_COUNT_REFERENCE = re.compile(
     "(?:\u521a\u624d|\u521a\u624d\u90a3|\u4e0a\u4e00\u6761|\u4e0a\u9762|"
     "\u4e0a\u8ff0|\u524d\u9762|\u5c31\u662f\u8fd9|\u8fd9|\u90a3)"
@@ -515,7 +551,7 @@ def _find_targets(text: str) -> List[str]:
         hits = [alias for alias in aliases if _alias_matches(text, alias)]
         if hits:
             matched[target] = hits
-    # In a verb phrase such as “CTV 分割”, 分割 is the action, not a second
+    # In a verb phrase such as "segment the CTV", the verb is the action, not a second
     # target family called structure. Keep structure when its noun aliases are
     # explicitly present (e.g. “segment the structure”).
     if "structure" in matched and not any(
@@ -532,7 +568,7 @@ def _find_targets(text: str) -> List[str]:
             matched.pop("dose", None)
         if "planning" in matched and re.search(r"(?:计划|规划)\s*报告|(?<![a-z0-9_])(?:(?:treatment )?plan|planning)\s+report(?![a-z0-9_])", compact) and not coordinated:
             matched.pop("planning", None)
-    # “截图/ screenshot” names an action, not an additional business object
+    # "screenshot" names an action, not an additional business object
     # when a concrete target such as a guide or CTV is also present.
     if "screenshot" in matched and len(matched) > 1:
         matched.pop("screenshot", None)
@@ -687,6 +723,9 @@ def _subtask_clause_spans(text: str) -> List[Tuple[int, int, bool]]:
     """
     if not text:
         return []
+    # All separators must be interpreted on the same protected source. A
+    # comma inside a quoted log must never release its tail as a new command.
+    boundary_text = _mask_quoted_content(text)
     hard = re.compile(r"[,，;；。.!！?？\n]+")
     soft = re.compile(
         r"\s+(?:and then|then|however|but|also|additionally|besides|in addition|and)\s+|"
@@ -707,7 +746,7 @@ def _subtask_clause_spans(text: str) -> List[Tuple[int, int, bool]]:
         return bool(_find_targets(fragment) and _find_actions(_mask_quoted_content(fragment)))
 
     def split_soft(start: int, end: int, inherited: bool) -> List[Tuple[int, int, bool]]:
-        for match in soft.finditer(text, start, end):
+        for match in soft.finditer(boundary_text, start, end):
             left = trim_span(start, match.start())
             right = trim_span(match.end(), end)
             if not left or not right or not complete(*left) or not complete(*right):
@@ -724,7 +763,10 @@ def _subtask_clause_spans(text: str) -> List[Tuple[int, int, bool]]:
     spans: List[Tuple[int, int, bool]] = []
     pending_condition = False
     cursor = 0
-    for boundary in hard.finditer(text):
+    for boundary in hard.finditer(boundary_text):
+        if boundary.group(0) == "." and 0 < boundary.start() < len(text) - 1:
+            if text[boundary.start() - 1].isdigit() and text[boundary.end()].isdigit():
+                continue
         trimmed = trim_span(cursor, boundary.start())
         if trimmed:
             segment = text[trimmed[0]:trimmed[1]]
@@ -734,8 +776,8 @@ def _subtask_clause_spans(text: str) -> List[Tuple[int, int, bool]]:
             # consequence remains conditional even though the lexicon sees
             # that verb. Carry the condition only across clause separators,
             # never across a sentence-ending boundary.
-            continues_sentence = not re.search(r"[.!！?？\n]", boundary.group(0))
-            pending_condition = _is_conditional_prefix(segment) and continues_sentence
+            continues_sentence = not re.search(r"[;；。.!！?？\n]", boundary.group(0))
+            pending_condition = (pending_condition or _is_conditional_prefix(segment)) and continues_sentence
         cursor = boundary.end()
     trimmed = trim_span(cursor, len(text))
     if trimmed:
@@ -806,6 +848,7 @@ def _parse_subtasks(text: str) -> Tuple["RequestSubtask", ...]:
             "conditional": inherited_condition or is_conditional(unquoted),
             "interrogative": is_interrogative(clause) or bool(
                 re.match(r"\s*[?？]", source[task_end:])
+                and not _polite_action_request(clause)
             ),
             "quoted": quoted,
             "attributed": _attribution_frame(clause),
@@ -1096,10 +1139,10 @@ _ATTRIBUTIVE_GUIDE = re.compile(
 def canonical_report_mutation(message: object) -> bool:
     """Whole-utterance report *command*: the report is the object of the verb.
 
-    Qualifiers such as ``分析``/``评估`` are part of the object name, not a
-    discourse marker that changes the requested action.  An attributive form
-    such as ``重新生成的报告`` describes an existing artifact and is not a
-    command.
+    Qualifiers such as "analysis"/"assessment" are part of the object name,
+    not a discourse marker that changes the requested action.  An attributive
+    form such as "the regenerated report" describes an existing artifact and
+    is not a command.
     """
     text = _clean(message)
     if not text or len(text) > 240:
@@ -1213,10 +1256,11 @@ def is_affirmative_command(message: object) -> bool:
 def is_downstream_update_request(message: object) -> bool:
     """True for a target-less "update everything" (downstream repair) command.
 
-    ``全部更新`` / ``所有后续都更新`` name no object of their own: the objects
-    are the Session's stale artifacts.  A target-specific aggregate such as
-    ``全部重新分割`` or ``全部重新规划`` is a different command and must keep its
-    own handler, so it is deliberately excluded here.
+    "update everything" / "update all downstream" name no object of their
+    own: the objects are the Session's stale artifacts.  A target-specific
+    aggregate such as "re-segment everything" or "re-plan everything" is a
+    different command and must keep its own handler, so it is deliberately
+    excluded here.
     """
     parsed = message if isinstance(message, ParsedRequest) else parse_request(message)
     if not parsed.aggregate_command:
@@ -1250,8 +1294,9 @@ def is_affirmative_acknowledgement(message: object) -> bool:
     """True when the turn is only a yes/confirm/go-ahead, with no new request.
 
     After the assistant proposes an ordered operation and asks the user to
-    confirm, the natural reply is a bare acknowledgement ("开始吧", "执行",
-    "就按你说的做", "go ahead").  Such a turn carries no target or action of its
+    confirm, the natural reply is a bare acknowledgement ("start",
+    "execute", "do as you said", "go ahead").  Such a turn carries no target
+    or action of its
     own; it inherits the plan from the preceding assistant message, which is
     resolved separately in ``mutating_execution_authorized``.
     """
@@ -1261,7 +1306,7 @@ def is_affirmative_acknowledgement(message: object) -> bool:
     if not _ACK_ONLY.fullmatch(text):
         return False
     parsed = parse_request(message)
-    # A named object makes it a new request ("继续规划"), not a confirmation.
+    # A named object makes it a new request ("continue planning"), not a confirmation.
     # Bare start/execute verbs are allowed because they carry no object.
     for task in parsed.subtasks:
         if task.target:
@@ -1392,7 +1437,7 @@ def _aggregate_scope_resolution(
     # With no source at all the scope is the reproducible artifact family,
     # never segmentation or a new planning run.  If the utterance raised a
     # geometry target without carving it out, even that default is withheld:
-    # "全部更新；如果以后需要，重新分割CTV。" must not decide for the user
+    # "update everything; if needed later, re-segment the CTV." must not decide for the user
     # which of the two they meant (audit defect R01).
     if contested_geometry:
         return "contested_scope", frozenset()
@@ -1408,22 +1453,22 @@ def aggregate_scope_targets(
     An aggregate names no object of its own; its scope is whatever the user is
     pointing at.  Exactly three sources authorize it:
 
-    1. the *executable* targets named in the same utterance ("导板和报告全部更新").
+    1. the *executable* targets named in the same utterance ("update the guide and report together").
        A conditional, quoted, attributed or interrogative clause is not one:
-       "如果以后需要，重新分割CTV" and "CTV分割了吗？" name CTV only to talk
+       "if needed later, re-segment the CTV" and "has the CTV been segmented?" name CTV only to talk
        about it;
     2. an explicit count reference bound to that many items of the preceding
-       enumeration ("把刚才三项全部更新").  When that enumeration cannot be
+       enumeration ("update all three from before").  When that enumeration cannot be
        resolved, the set is empty and the caller must clarify rather than
        widen to everything;
     3. an elliptical follow-up pointing at whatever the immediately preceding
-       assistant reply enumerated ("那就全部更新").
+       assistant reply enumerated ("then update everything").
 
     With no source at all, the scope is the reproducible artifact family
     (dose / report / surgical_guide) — a policy default, not a grant, and
     never segmentation or a fresh planning run.  When the utterance raised a
     geometry target without carving it out, even that default is withheld and
-    the set is empty.  Targets carved out of the request ("不含导板") are
+    the set is empty.  Targets carved out of the request ("excluding the guide") are
     removed from every source.  Use :func:`aggregate_scope_provenance` to tell
     a real source from the default.
     """
@@ -1461,7 +1506,7 @@ def mutating_execution_authorized(
         return True
     parsed = parse_request(message)
     expected_target, expected_action = goal
-    # A target explicitly carved out of the request ("不含导板") is never
+    # A target explicitly carved out of the request ("excluding the guide") is never
     # authorized, even when the surrounding write is a positive aggregate.
     if expected_target in parsed.excluded_targets:
         return False
@@ -1486,7 +1531,7 @@ def mutating_execution_authorized(
             and task.action == "plan"
         ):
             return True
-    # An aggregate command ("全部更新" / "update everything") widens a write from
+    # An aggregate command ("update everything") widens a write from
     # one named object to a *finite, sourced* set of artifacts.  It is not a
     # blanket grant for every writable target: a word that names no object can
     # never mean "re-run segmentation" (audit defect F01).  Destructive targets
@@ -1620,7 +1665,7 @@ def resolve_reference_target(
     message: object,
     conversation: Optional[Iterable[object]] = None,
 ) -> Optional[str]:
-    """Resolve a deictic follow-up (``就它吧``) to the nearest prior target.
+    """Resolve a deictic follow-up ("that one") to the nearest prior target.
 
     Pure in-memory context lookup: the current turn's own explicit target
     always wins, and only an otherwise object-less reference consults the

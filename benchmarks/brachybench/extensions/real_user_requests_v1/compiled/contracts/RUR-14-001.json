@@ -1,0 +1,88 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [
+    [
+      "report",
+      "quality"
+    ]
+  ],
+  "effects": [
+    {
+      "kind": "quality",
+      "max": 1,
+      "operation": "submit"
+    },
+    {
+      "kind": "guide",
+      "max": 1,
+      "operation": "submit"
+    },
+    {
+      "kind": "report",
+      "max": 1,
+      "operation": "submit"
+    },
+    {
+      "operation": "refresh"
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "zh",
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "effects",
+      "statement": "No geometry, segmentation or valid-dose recompute; refresh all requested stale descendants."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "dependency",
+      "statement": "Report depends on verified required facts/figures; independent guide and quality may use either valid order."
+    },
+    {
+      "id": "criterion-2",
+      "kind": "response",
+      "statement": "No complete claim while receipt pending."
+    }
+  ],
+  "rules": [
+    {
+      "kind": "quality",
+      "op": "artifact",
+      "status": "completed"
+    },
+    {
+      "kind": "report",
+      "op": "artifact",
+      "status": "completed"
+    },
+    {
+      "kind": "guide",
+      "op": "artifact",
+      "status": "completed"
+    }
+  ],
+  "scenario_id": "RUR-14-001",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "effects",
+      "statement": "No geometry, segmentation or valid-dose recompute; refresh all requested stale descendants."
+    },
+    {
+      "kind": "dependency",
+      "statement": "Report depends on verified required facts/figures; independent guide and quality may use either valid order."
+    },
+    {
+      "kind": "response",
+      "statement": "No complete claim while receipt pending."
+    }
+  ]
+}

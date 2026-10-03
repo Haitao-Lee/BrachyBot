@@ -1,0 +1,12 @@
+{
+  "post-publication-targeted.log": "a1799242fc2f40833e08de37c6896fef7bac72640b3e7519f0fc65a7f8656c2e",
+  "grounding-dependencies.json": "81de56a8fbf2a4c6c7a0833fdd73382d4469fa6fb2e516f33382807f1c5cb913",
+  "targeted.log": "6800d473f52efe3e334e4c5d5561eea49e15aa5c10d5d522e99a4302b60ed79c",
+  "baseline-full.log": "cd7246e2f362349eaee3c32f8a6e86e441ffdea4d1c262903ebdb01411371f55",
+  "readiness.json": "4a632dc9e53e940dd4d933b13d7fa1617948261baa4907d5d67c519042f5cb79",
+  "review-queue.json": "62e0030c0b807aa4ab947c9fa7b4c3530d972b1f8d0dd7334c3e8848458f98e2",
+  "applied.patch": "765d74cbe5e9dae14e192ccfedac188c92fe661cb979489def385c5c2d1e4071",
+  "after-full.log": "323e2ceb5129267aa0eb3a99cdcbe07337e2b5d8776fcf295adfadcc374768ba",
+  "change_manifest.json": "6047464611e2ae692e80c64f10b94e99a5fa33c8121aed750357535286235598",
+  "original-files.tar.gz": "7d6404a08089ff285017d6cc00e8a7b360107c34ca9b7bb1bd5dca0a1795a99a"
+}

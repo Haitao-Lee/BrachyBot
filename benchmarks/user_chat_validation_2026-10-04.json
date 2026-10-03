@@ -1,0 +1,32 @@
+{
+  "validation_kind": "benchmark_engineering_contract_regression_not_SUT_evaluation",
+  "as_of": "2026-10-04",
+  "baseline_head": "7aa6d23086072b593beba069f8c2116d01c3c0f3",
+  "entry_mode": "browser_user_chat",
+  "new_contract_tests": {"passed": 37, "failed": 0, "uses_mock_DOM_and_network_only": true},
+  "full_regression": {
+    "command": "python -m pytest tests ../external/public_collection/tests -q",
+    "passed": 24293,
+    "failed": 0,
+    "skipped": 2,
+    "warnings": 6,
+    "seconds": 161.55,
+    "skip_reason": "pypdf unavailable in isolated validation environment",
+    "evidence": "/tmp/benchmark-user-chat-20261004/final-regression.xml",
+    "evidence_sha256": "0353cd972d9ec637632b6d1c0a02af87ceea630e8a49261f87662fb14927737e"
+  },
+  "corpus_quality": {"n_tasks": 11819, "empty_text": 0, "weak_intent": 0, "unresolved_grounding": 0, "pos_eq_neg": 0, "generic_observation": 0},
+  "first_staging_run": {
+    "failed": 14,
+    "cause": "missing copied acquisition/source references and deliberate asset path confinement rejecting an external symlink",
+    "resolution": "complete isolated source/metadata copies and real confined public asset copy; no scorer or safety gate relaxed"
+  },
+  "real_browser_submissions": 0,
+  "provider_calls": 0,
+  "judge_calls": 0,
+  "clinical_planning_runs": 0,
+  "service_restarts": 0,
+  "formal_result_count": 0,
+  "ready_for_all_tasks_formal_evaluation": false,
+  "remaining_gates": ["isolated test browser/session factory", "real case/attachment fixture drivers", "control and non-user event terminal assessors", "independent current-execution artifact collectors", "external source-protocol certification"]
+}

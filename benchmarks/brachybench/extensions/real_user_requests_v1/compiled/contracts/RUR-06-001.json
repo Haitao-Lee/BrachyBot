@@ -1,0 +1,74 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "max": 1,
+      "operation": "restore",
+      "token": "edit-2"
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "zh",
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "state",
+      "statement": "Seed restored to revision-8 position, needle edit-1 retained; new revision minted, not rewind version counter."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "response",
+      "statement": "Dose remains stale until verified recomputation."
+    }
+  ],
+  "rules": [
+    {
+      "op": "equals",
+      "path": "objects.seed-A.position_mm",
+      "value": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "op": "equals",
+      "path": "objects.needle-A.position_mm",
+      "value": [
+        4,
+        0,
+        0
+      ]
+    },
+    {
+      "op": "greater",
+      "path": "planning_version",
+      "value": 9
+    },
+    {
+      "op": "equals",
+      "path": "artifacts.dose",
+      "value": "stale"
+    }
+  ],
+  "scenario_id": "RUR-06-001",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "state",
+      "statement": "Seed restored to revision-8 position, needle edit-1 retained; new revision minted, not rewind version counter."
+    },
+    {
+      "kind": "response",
+      "statement": "Dose remains stale until verified recomputation."
+    }
+  ]
+}

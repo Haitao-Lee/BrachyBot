@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "ct_analysis",
+  "expectation": null,
+  "facet": "ct_analysis",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Analyze this CT image",
+  "source_refs": [
+    "INT-8ffdd28e47a8",
+    "INT-b39b8dfaca55"
+  ],
+  "template_id": "TPL-701b4d2621"
+}

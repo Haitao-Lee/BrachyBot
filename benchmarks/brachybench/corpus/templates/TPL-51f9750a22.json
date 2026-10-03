@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "precision",
+  "expectation": null,
+  "facet": "precision",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Calculate PDR BED for 30 Gy/60 pulses (0.5 Gy, 1 hr intervals, t1/2=1.5 hr). Compare to continuous LDR 30 Gy/60 hr.",
+  "source_refs": [
+    "INT-729d048ba5e1",
+    "INT-f2a1bc7d768c"
+  ],
+  "template_id": "TPL-51f9750a22"
+}

@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "treatment_planning",
+  "expectation": null,
+  "facet": "treatment_planning",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "I have an endometrial cancer patient who needs vaginal cuff brachytherapy. The patient is post-hysterectomy. Using a vaginal cylinder applicator with 2.5cm diameter, please plan the HDR treatment with a prescription dose of 3 Gy per fraction to 0.5cm depth, delivered in 5 fractions for adjuvant treatment.",
+  "source_refs": [
+    "INT-7ef155f018e8",
+    "INT-86eecfba6dc5"
+  ],
+  "template_id": "TPL-b051f2e037"
+}

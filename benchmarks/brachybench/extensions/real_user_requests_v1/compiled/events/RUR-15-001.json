@@ -1,0 +1,10 @@
+[
+  {
+    "event": "guide_failed",
+    "kind": "environment_event",
+    "payload": {
+      "code": "GEOMETRY_QA_FAILED"
+    },
+    "trigger": "guide.accepted"
+  }
+]

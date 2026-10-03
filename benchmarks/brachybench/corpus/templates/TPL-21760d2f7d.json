@@ -1,0 +1,18 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "input_variations_all",
+  "expectation": null,
+  "facet": "input_variations_all",
+  "gold_status": "draft",
+  "n_source_intents": 6,
+  "representative_text": "Set the bladder limit to 100 Gy",
+  "source_refs": [
+    "INT-06bff1ae35c6",
+    "INT-63f504e27e37",
+    "INT-72dd1e89b4b1",
+    "INT-731a782d1ca6",
+    "INT-b70ebcf35c2f",
+    "INT-e6ab6b1ea821"
+  ],
+  "template_id": "TPL-21760d2f7d"
+}

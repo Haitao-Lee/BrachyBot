@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "language",
+  "expectation": null,
+  "facet": "language",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "What are the dose constraints for prostate?",
+  "source_refs": [
+    "INT-4e70f4e78804",
+    "INT-e2fa41aac501"
+  ],
+  "template_id": "TPL-19f2e2d4d5"
+}

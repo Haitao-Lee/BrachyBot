@@ -119,7 +119,7 @@ def shortcut_supported(message, policy, *, pending_tumor_site=False, ui_state=No
         seg = r"(?:分割|勾画|勾勒)"
         return (
             full(P + r"(?:重新)?(?:执行|进行|开始)?\s*(?:ctv|oar)\s*" + seg, text)
-            # "<verb> <site> [CTV]" and "<verb> CTV <site>" and "<site> CTV 分割".
+            # "<verb> <site> [CTV]", "<verb> CTV <site>", and "<site> CTV segment".
             or full(P + r"(?:重新)?" + seg + r"\s*(?:ctv|oar)?\s*" + site
                     + r"(?:\s*(?:ctv|oar))?", text)
             or full(P + r"(?:重新)?" + site + r"\s*(?:ctv|oar)?\s*" + seg, text)
@@ -146,15 +146,15 @@ def shortcut_supported(message, policy, *, pending_tumor_site=False, ui_state=No
         prefix = (
             r"(?:那\s*)?" + P
             + r"(?:请问|那)?(?:告诉我|告知我|说一下|说明)?"
-            # Determiners such as "该患者的" name the same patient object the
+            # Determiners such as "this patient's" name the same patient object the
             # location resolver already accepts; they must not demote the turn
             # to an open semantic workflow that forgets to capture evidence.
             + r"(?:该|此|这位|这名)?(?:患者的|3d查看器里的)?"
             + r"(?:已生成的|生成的|当前的|当前)?"
         )
-        # "位于哪里" and "在哪个位置" are the same location question as
-        # "在哪里"; the contract accepts all of them instead of falling back
-        # to the provider for a purely lexical difference.
+        # "located where" and "at which position" are the same location
+        # question as "where"; the contract accepts all of them instead of
+        # falling back to the provider for a purely lexical difference.
         location_tail = (
             r"(?:位于|位在)?(?:在)?(?:哪里|哪儿|何处|哪个位置|什么位置|在哪|的位置)(?:呢|呀|啊|吗)?"
         )

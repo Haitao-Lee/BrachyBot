@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "precision",
+  "expectation": null,
+  "facet": "precision",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Calculate dose-rate at 3 cm from tandem using inverse square law (1.5 Gy/sec at 1 cm). Total dose for 25 sec dwell time over 4 fractions. Compare to tolerance.",
+  "source_refs": [
+    "INT-6285a6a50d7d",
+    "INT-8b64252d2286"
+  ],
+  "template_id": "TPL-b4a3445b04"
+}

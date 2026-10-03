@@ -1,0 +1,49 @@
+{
+  "config": {
+    "direction": [
+      0,
+      1,
+      0,
+      0,
+      0,
+      1,
+      1,
+      0,
+      0
+    ],
+    "kind": "permuted",
+    "mechanism": "coord/permuted",
+    "origin": [
+      68.33321607840509,
+      3.440577678471854,
+      -98.40546493828793
+    ],
+    "samples": [
+      [
+        2.498270941963497,
+        2.9720378714583173,
+        -3.3954637285554714
+      ],
+      [
+        -2.8866204970439977,
+        0.24209240498233697,
+        2.7391079390408066
+      ]
+    ],
+    "spacing": [
+      0.4040279416713758,
+      2.881244294600835,
+      2.070138097512243
+    ]
+  },
+  "expected": {
+    "evidence_gap_codes": [],
+    "score": 1.0,
+    "verdict": "pass",
+    "violation_codes": []
+  },
+  "family": "coord_boundary",
+  "id": "coord_boundary-000",
+  "initial_state_hash": "sha256:239baf03eb5285e1cb57f88c642542adeeb2378248a21e4d21e26c8c3734cdf5",
+  "seed": 20260929
+}

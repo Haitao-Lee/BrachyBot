@@ -1,282 +1,282 @@
-# DataMind × BrachyBot 集成分析报告
+# DataMind × BrachyBot Integration Analysis Report
 
-**分析日期:** 2026-06-03
-**分析目标:** 研究 DataMind (zjunlp/DataMind) 的可取之处，提出适用于 BrachyBot 的改进方案
-**DataMind 来源:** https://github.com/zjunlp/DataMind
-**论文:** ICLR 2026 / AAAI 2026 / KDD 2026
+**Analysis Date:** 2026-06-03
+**Analysis Objective:** Study the merits of DataMind (zjunlp/DataMind) and propose improvement plans applicable to BrachyBot
+**DataMind Source:** https://github.com/zjunlp/DataMind
+**Papers:** ICLR 2026 / AAAI 2026 / KDD 2026
 
 ---
 
-## 一、项目背景对比
+## 1. Project Background Comparison
 
-### 1.1 DataMind 概述
+### 1.1 DataMind Overview
 
-DataMind 是浙江大学 NLP 实验室（zjunlp）开发的**开源 LLM 数据分析 Agent** 框架，发表于 ICLR/AAAI/KDD 2026。核心贡献：
+DataMind is an **open-source LLM data-analysis Agent** framework developed by the Zhejiang University NLP Lab (zjunlp), published at ICLR/AAAI/KDD 2026. Its core contributions:
 
-| 论文 | 会议 | 核心贡献 |
+| Paper | Venue | Core Contribution |
 |------|------|---------|
-| Scaling Generalist Data-Analytic Agents | ICLR 2026 | DataMind-12K 数据集 + SFT/RL 训练方案 |
-| Why Do Open-Source LLMs Struggle with Data Analysis? | AAAI 2026 | 系统性实证分析，发现规划质量是决定性因素 |
-| Rewarding the Scientific Process | KDD 2026 | 过程奖励建模（Process Reward Model） |
-| LongDS-Bench | 2026-05 | 长序列多步骤分析基准 |
+| Scaling Generalist Data-Analytic Agents | ICLR 2026 | DataMind-12K dataset + SFT/RL training scheme |
+| Why Do Open-Source LLMs Struggle with Data Analysis? | AAAI 2026 | Systematic empirical analysis; found that planning quality is the decisive factor |
+| Rewarding the Scientific Process | KDD 2026 | Process Reward Modeling (Process Reward Model) |
+| LongDS-Bench | 2026-05 | Long-sequence multi-step analysis benchmark |
 
-**核心成果：** DataMind-14B 在多个数据分析基准上平均得分 71.16%，超越 DeepSeek-V3.1 和 GPT-5。
+**Key Result:** DataMind-14B achieves an average score of 71.16% across multiple data-analysis benchmarks, surpassing DeepSeek-V3.1 and GPT-5.
 
-### 1.2 BrachyBot 概述
+### 1.2 BrachyBot Overview
 
-BrachyBot 是一个**闭环自进化 AI 近距离治疗计划系统**，核心架构：
+BrachyBot is a **closed-loop self-evolving AI brachytherapy treatment planning system**. Its core architecture:
 
-| 模块 | 功能 | 技术 |
+| Module | Function | Technology |
 |------|------|------|
-| AgenticSys | LLM 驱动决策 | Function Calling, 15 家 LLM Provider |
-| 分层记忆 (L0-L4) | 上下文管理 | Meta Rules → Insight Index → Global Facts → Skills → Archive |
-| ReflexionEngine | 轨迹反思 | Actor/Evaluator/Self-Reflection Loop |
-| SkillCrystallizer | 技能结晶 | Trajectory → SOP → Executable Skill |
-| Multi-Agent Critique | 安全审查 | 多 Agent 临床评审 |
-| Web UI | 用户交互 | 三栏布局, CT Viewer, Chat, Analysis |
+| AgenticSys | LLM-driven decision making | Function Calling, 15 LLM providers |
+| Layered Memory (L0-L4) | Context management | Meta Rules → Insight Index → Global Facts → Skills → Archive |
+| ReflexionEngine | Trajectory reflection | Actor/Evaluator/Self-Reflection Loop |
+| SkillCrystallizer | Skill crystallization | Trajectory → SOP → Executable Skill |
+| Multi-Agent Critique | Safety review | Multi-agent clinical review |
+| Web UI | User interaction | Three-column layout, CT Viewer, Chat, Analysis |
 
-### 1.3 关键差异
+### 1.3 Key Differences
 
-| 维度 | DataMind | BrachyBot |
+| Dimension | DataMind | BrachyBot |
 |------|----------|-----------|
-| **领域** | 通用数据分析 | 近距离治疗（医学影像） |
-| **Agent 模式** | 代码执行 Agent | Tool Chain Agent |
-| **训练方式** | SFT + RL 训练自有模型 | 使用现成 LLM API |
-| **进化方式** | 数据合成 + 重新训练 | Reflexion + 技能结晶 |
-| **评估方式** | Pass@3 + LLM Judge | 关键词匹配 |
-| **Benchmark** | 自动化生成 | 人工编写 |
+| **Domain** | General data analysis | Brachytherapy (medical imaging) |
+| **Agent Mode** | Code-execution Agent | Tool Chain Agent |
+| **Training Approach** | SFT + RL to train own model | Uses off-the-shelf LLM APIs |
+| **Evolution Approach** | Data synthesis + retraining | Reflexion + skill crystallization |
+| **Evaluation Approach** | Pass@3 + LLM Judge | Keyword matching |
+| **Benchmark** | Automatically generated | Manually written |
 
 ---
 
-## 二、DataMind 核心创新深度解析
+## 2. In-Depth Analysis of DataMind's Core Innovations
 
-### 2.1 细粒度任务分类 + 递进式组合
+### 2.1 Fine-Grained Task Taxonomy + Progressive Composition
 
-**DataMind 的方法：**
+**DataMind's approach:**
 
 ```
-Task Taxonomy (三级分类):
-  ┌─ 数据理解 (Data Understanding)
-  │   ├─ 文件格式识别
-  │   ├─ Schema 解析
-  │   └─ 数据质量检查
-  ├─ 代码生成 (Code Generation)
-  │   ├─ 单步查询
-  │   ├─ 多步转换
-  │   └─ 复杂聚合
-  └─ 策略规划 (Strategic Planning)
-      ├─ 分析路径设计
-      ├─ 异常处理
-      └─ 结果验证
+Task Taxonomy (three-level classification):
+  ┌─ Data Understanding
+  │   ├─ File format identification
+  │   ├─ Schema parsing
+  │   └─ Data quality checking
+  ├─ Code Generation
+  │   ├─ Single-step query
+  │   ├─ Multi-step transformation
+  │   └─ Complex aggregation
+  └─ Strategic Planning
+      ├─ Analysis path design
+      ├─ Exception handling
+      └─ Result validation
 
-Recursive Composition (递归组合):
-  Level 1: 单一子任务 (e.g., "读取 CSV")
-  Level 2: 2-3 个子任务组合 (e.g., "读取 + 清洗 + 统计")
-  Level 3: 带约束的多步任务 (e.g., "处理缺失值 + 异常检测 + 生成报告")
-  Level 4: 完整分析流水线 (e.g., 从数据到洞察的端到端流程)
+Recursive Composition:
+  Level 1: Single sub-task (e.g., "read CSV")
+  Level 2: Combination of 2-3 sub-tasks (e.g., "read + clean + summarize")
+  Level 3: Multi-step task with constraints (e.g., "handle missing values + anomaly detection + generate report")
+  Level 4: Complete analysis pipeline (e.g., end-to-end flow from data to insights)
 ```
 
-**核心发现：**
-- 任务分类的粒度直接影响数据多样性
-- 递归组合可以指数级扩大任务空间
-- 难度递进比随机组合更有效
+**Key findings:**
+- The granularity of task classification directly affects data diversity
+- Recursive composition can expand the task space exponentially
+- Progressive difficulty is more effective than random combination
 
-### 2.2 过程奖励建模（Process Reward Model）
+### 2.2 Process Reward Modeling (Process Reward Model)
 
-**DataMind 的方法：**
+**DataMind's approach:**
 
-传统评估只看最终结果（outcome-only reward）：
+Traditional evaluation looks only at the final outcome (outcome-only reward):
 ```
 Answer == Gold → Reward = 1
 Answer != Gold → Reward = 0
 ```
 
-DataMind 引入过程级奖励（process-level reward）：
+DataMind introduces process-level reward:
 ```
-Step 1: 数据加载 → 评估 (格式是否正确？)
-Step 2: 数据清洗 → 评估 (缺失值处理是否合理？)
-Step 3: 分析计算 → 评估 (统计方法是否正确？)
-Step 4: 结果输出 → 评估 (结论是否合理？)
+Step 1: Data loading → Evaluate (is the format correct?)
+Step 2: Data cleaning → Evaluate (is the handling of missing values reasonable?)
+Step 3: Analysis computation → Evaluate (is the statistical method correct?)
+Step 4: Result output → Evaluate (is the conclusion reasonable?)
 
 Total Reward = Σ(step_reward × step_weight)
 ```
 
-**核心发现：**
+**Key findings:**
 - "Strategic planning quality serves as the primary determinant of model performance"
-- 过程奖励比结果奖励更稳定
-- 中间步骤的正确性高度预测最终结果
+- Process reward is more stable than outcome reward
+- The correctness of intermediate steps strongly predicts the final result
 
-### 2.3 记忆高效 + 稳定的多轮 Rollout
+### 2.3 Memory-Efficient + Stable Multi-Turn Rollout
 
-**DataMind 的方法：**
+**DataMind's approach:**
 
 ```
-问题: 长序列 rollout 中 context 窗口爆炸
+Problem: context window explosion during long-sequence rollout
 
-解决方案:
-1. 滑动窗口: 只保留最近 N 步完整 action
-2. 历史压缩: 更早步骤压缩为 summary
-3. 关键点保留: 重要决策保持完整记录
-4. 错误恢复: 失败步骤的详细记录用于调试
+Solution:
+1. Sliding window: keep only the complete actions of the most recent N steps
+2. History compression: compress earlier steps into summaries
+3. Key-point retention: keep complete records of important decisions
+4. Error recovery: detailed records of failed steps for debugging
 ```
 
-**工程实践：**
-- 使用独立的 conda 环境运行代码执行
-- 异步解释器避免主流程阻塞
-- 超时机制防止无限循环
+**Engineering practices:**
+- Use a separate conda environment to run code execution
+- Asynchronous interpreter to avoid blocking the main flow
+- Timeout mechanism to prevent infinite loops
 
-### 2.4 SKILL.md 标准化技能格式
+### 2.4 SKILL.md Standardized Skill Format
 
-**DataMind 的方法：**
+**DataMind's approach:**
 
 ```yaml
 ---
 name: data_analysis_skill
-description: "用于数据分析任务的技能，包括数据清洗、统计分析、可视化"
+description: "Skill for data analysis tasks, including data cleaning, statistical analysis, and visualization"
 ---
 
-## 触发条件
-当用户请求数据分析、统计计算、数据可视化时触发。
+## Trigger Conditions
+Triggered when the user requests data analysis, statistical computation, or data visualization.
 
-## 工作流程
-1. 识别数据格式和结构
-2. 设计分析路径
-3. 逐步执行分析
-4. 验证结果
-5. 生成报告
+## Workflow
+1. Identify the data format and structure
+2. Design the analysis path
+3. Execute the analysis step by step
+4. Validate the results
+5. Generate a report
 
-## 注意事项
-- 处理缺失值前先检查数据类型
-- 统计检验前检查正态性假设
-- 可视化选择取决于数据类型和分析目标
+## Notes
+- Check the data type before handling missing values
+- Check normality assumptions before statistical tests
+- The choice of visualization depends on the data type and analysis objective
 ```
 
-每个技能是独立文件夹 + `SKILL.md`，可被 Claude Code / Codex 自动发现。
+Each skill is a standalone folder + `SKILL.md`, automatically discoverable by Claude Code / Codex.
 
-### 2.5 LLM-as-Judge 评估框架
+### 2.5 LLM-as-Judge Evaluation Framework
 
-**DataMind 的方法：**
+**DataMind's approach:**
 
 ```
-评估层次:
-1. 规则验证: 精确匹配 / SQL 结果对比
-2. LLM Judge: 用另一个 LLM 评估语义正确性
-3. Pass@3: 3 次尝试中至少 1 次通过
+Evaluation levels:
+1. Rule validation: exact match / SQL result comparison
+2. LLM Judge: use another LLM to assess semantic correctness
+3. Pass@3: at least 1 pass out of 3 attempts
 
 Judge Prompt:
-"请评估以下数据分析结果是否正确。
- 标准答案: {gold}
- 学生答案: {prediction}
- 请从以下维度评分:
- 1. 数据处理正确性 (0-1)
- 2. 分析方法合理性 (0-1)
- 3. 结论准确性 (0-1)
- 总分: (0-1)"
+"Please evaluate whether the following data analysis result is correct.
+ Gold answer: {gold}
+ Student answer: {prediction}
+ Please score along the following dimensions:
+ 1. Data processing correctness (0-1)
+ 2. Reasonableness of the analysis method (0-1)
+ 3. Accuracy of the conclusion (0-1)
+ Total score: (0-1)"
 ```
 
-### 2.6 LongDS-Bench 长序列基准
+### 2.6 LongDS-Bench Long-Sequence Benchmark
 
-**DataMind 的方法：**
+**DataMind's approach:**
 
-专门构建测试 Agent 在长序列多步骤任务中的表现：
-- 5-10 步的分析流水线
-- 需要跨步骤传递上下文
-- 包含错误恢复场景
-- 测试 Agent 的规划和纠错能力
+Specifically built to test Agent performance on long-sequence multi-step tasks:
+- Analysis pipelines of 5-10 steps
+- Requires passing context across steps
+- Includes error-recovery scenarios
+- Tests the Agent's planning and error-correction abilities
 
-**核心发现：** 长序列任务是当前 Agent 的主要失败点。
+**Key finding:** Long-sequence tasks are the main failure point of current Agents.
 
 ---
 
-## 三、可借鉴方案详细设计
+## 3. Detailed Design of Adoptable Solutions
 
-### 3.1 方案 A：细粒度任务分类 + 递进式 Benchmark 生成
+### 3.1 Solution A: Fine-Grained Task Taxonomy + Progressive Benchmark Generation
 
-#### 3.1.1 现状分析
+#### 3.1.1 Current-State Analysis
 
-BrachyBot 当前的 benchmark 是人工编写的 1700+ 用例，存在以下问题：
+BrachyBot's current benchmark consists of 1700+ manually written cases and has the following problems:
 
 ```
-问题 1: 难度分布不均
-  简单 (1-10 字):  ████████████████████ 45%
-  中等 (10-50字):  ████ 12%  ← 严重不足
-  复杂 (50+字):     ████████████ 28%
-  临床详述 (100+字): ██████ 15%
+Problem 1: Uneven difficulty distribution
+  Easy (1-10 chars):   ████████████████████ 45%
+  Medium (10-50 chars): ████ 12%  ← severely insufficient
+  Complex (50+ chars):  ████████████ 28%
+  Detailed clinical (100+ chars): ██████ 15%
 
-问题 2: 缺乏系统化的难度递进
+Problem 2: Lack of systematic difficulty progression
   G001 "你好" → MC001 "前列腺处方剂量" → Q1003 "55岁男性完整病例"
-  （难度跳跃大，中间层薄弱）
+  (Large difficulty jumps, weak intermediate layer)
 
-问题 3: 手工编写成本高
-  每个用例需要领域专家手工设计
-  难以系统化扩展
+Problem 3: High manual authoring cost
+  Each case requires manual design by a domain expert
+  Difficult to scale systematically
 ```
 
-#### 3.1.2 借鉴方案
+#### 3.1.2 Adoptable Solution
 
-**Step 1: 定义 BrachyBot 任务分类树**
+**Step 1: Define the BrachyBot task taxonomy tree**
 
 ```
 BrachyBot Task Taxonomy:
 
-├─ L1: 单工具调用 (Single Tool)
-│   ├─ CT 信息查询 (spacing, dimensions, HU range)
-│   ├─ 简单分割请求 (CTV/OAR)
-│   ├─ 剂量参数查询 (D90, V100)
-│   └─ 文件操作 (导出, 保存)
+├─ L1: Single Tool
+│   ├─ CT information query (spacing, dimensions, HU range)
+│   ├─ Simple segmentation request (CTV/OAR)
+│   ├─ Dose parameter query (D90, V100)
+│   └─ File operations (export, save)
 │
-├─ L2: 两步组合 (Two-Step Combo)
-│   ├─ 分割 + 评估 ("分割 CTV 然后检查质量")
-│   ├─ 查询 + 对比 ("查一下 OAR 约束然后对比当前计划")
-│   ├─ 分析 + 建议 ("分析 DVH 然后给优化建议")
-│   └─ 计算 + 验证 ("计算剂量然后验证约束")
+├─ L2: Two-Step Combo
+│   ├─ Segmentation + evaluation ("分割 CTV 然后检查质量")
+│   ├─ Query + comparison ("查一下 OAR 约束然后对比当前计划")
+│   ├─ Analysis + recommendation ("分析 DVH 然后给优化建议")
+│   └─ Computation + validation ("计算剂量然后验证约束")
 │
-├─ L3: 多步带约束 (Multi-Step + Constraints)
-│   ├─ 完整分割流程 (CTV + OAR + 质量检查)
-│   ├─ 计划优化 (发现问题 → 调整参数 → 重新计算)
-│   ├─ 紧急场景 (时间压力 + 多约束)
-│   └─ 异常处理 (设备报警 + 恢复流程)
+├─ L3: Multi-Step + Constraints
+│   ├─ Complete segmentation workflow (CTV + OAR + quality check)
+│   ├─ Plan optimization (find issues → adjust parameters → recompute)
+│   ├─ Emergency scenario (time pressure + multiple constraints)
+│   └─ Exception handling (device alarm + recovery workflow)
 │
-└─ L4: 完整临床推理 (Full Clinical Reasoning)
-    ├─ 端到端计划 (CT → 分割 → 计划 → 评估 → 导出)
-    ├─ 多轮对话 (上下文传递 + 偏好学习)
-    ├─ 复杂病例 (多并发症 + 个体化方案)
-    └─ 跨模态推理 (CT + MRI 融合 + 剂量叠加)
+└─ L4: Full Clinical Reasoning
+    ├─ End-to-end planning (CT → segmentation → plan → evaluation → export)
+    ├─ Multi-turn dialogue (context passing + preference learning)
+    ├─ Complex cases (multiple comorbidities + individualized plans)
+    └─ Cross-modality reasoning (CT + MRI fusion + dose accumulation)
 ```
 
-**Step 2: 递归组合生成 Benchmark 用例**
+**Step 2: Recursively compose and generate benchmark cases**
 
 ```python
-# 伪代码: 递归组合生成器
+# Pseudocode: recursive composition generator
 def generate_benchmark_tasks(taxonomy, target_count):
     tasks = []
     
-    # Level 1: 原子任务
+    # Level 1: atomic tasks
     for atom in taxonomy.atomic_tasks:
         tasks.extend(generate_variations(atom, count=10))
     
-    # Level 2: 两步组合
+    # Level 2: two-step combinations
     for combo in itertools.combinations(taxonomy.atomic_tasks, 2):
         if is_composable(combo):
             tasks.append(compose_task(combo))
     
-    # Level 3: 带约束组合
+    # Level 3: combinations with constraints
     for base_task in tasks:
         for constraint in taxonomy.constraints:
             tasks.append(add_constraint(base_task, constraint))
     
-    # Level 4: 完整流程
+    # Level 4: full workflows
     for workflow in taxonomy.workflows:
         tasks.append(generate_workflow_task(workflow))
     
     return sample_diverse(tasks, target_count)
 ```
 
-**Step 3: 难度自动标注**
+**Step 3: Automatic difficulty labeling**
 
 ```python
 def auto_label_difficulty(task):
-    """基于特征自动标注难度"""
+    """Automatically label difficulty based on features"""
     features = {
         "input_length": len(task.input),
         "tool_count": estimate_tool_calls(task),
@@ -285,7 +285,7 @@ def auto_label_difficulty(task):
         "clinical_depth": clinical_depth_score(task),
     }
     
-    # 加权评分
+    # Weighted scoring
     score = sum(features[k] * WEIGHTS[k] for k in features)
     
     if score < 2: return "easy"
@@ -294,90 +294,90 @@ def auto_label_difficulty(task):
     return "expert"
 ```
 
-#### 3.1.3 预期收益
+#### 3.1.3 Expected Benefits
 
-| 指标 | 当前 | 改进后 |
+| Metric | Current | After Improvement |
 |------|------|--------|
-| 中等难度占比 | 12% | 35%+ |
-| 难度梯度连续性 | 跳跃式 | 平滑递进 |
-| Benchmark 生成成本 | 全手工 | 半自动 |
-| 用例多样性 | 依赖专家经验 | 系统化覆盖 |
+| Medium-difficulty share | 12% | 35%+ |
+| Difficulty-gradient continuity | Jumpy | Smooth progression |
+| Benchmark generation cost | Fully manual | Semi-automated |
+| Case diversity | Depends on expert experience | Systematic coverage |
 
 ---
 
-### 3.2 方案 B：LLM-as-Judge 评估框架
+### 3.2 Solution B: LLM-as-Judge Evaluation Framework
 
-#### 3.2.1 现状分析
+#### 3.2.1 Current-State Analysis
 
-BrachyBot 当前的评估方式：
+BrachyBot's current evaluation method:
 
 ```python
-# 当前: 关键词匹配
+# Current: keyword matching
 def evaluate_response(response, case):
     keywords = case.get("expected_keywords", [])
     for kw in keywords:
         if kw.lower() in text:
-            return "pass"  # 只要出现关键词就通过
+            return "pass"  # passes as long as a keyword appears
     return "fail"
 ```
 
-**问题：**
-- "前列腺" 出现在回答中 ≠ 正确回答了前列腺相关问题
-- 无法评估回答的完整性和准确性
-- 无法处理同义词和语义等价表达
+**Problems:**
+- The presence of "前列腺" in an answer ≠ correctly answering a prostate-related question
+- Cannot assess the completeness and accuracy of an answer
+- Cannot handle synonyms and semantically equivalent expressions
 
-#### 3.2.2 借鉴方案
+#### 3.2.2 Adoptable Solution
 
-**多层评估框架：**
+**Multi-layer evaluation framework:**
 
 ```
-Layer 1: 规则层 (Rule-Based) — 快速过滤
-  ├─ 关键词初筛 (existing)
-  ├─ 禁止词检查 (existing)
-  └─ 格式验证 (新增: 检查是否包含剂量数值、单位等)
+Layer 1: Rule layer (Rule-Based) — fast filtering
+  ├─ Keyword pre-screening (existing)
+  ├─ Forbidden-word check (existing)
+  └─ Format validation (new: check whether dose values, units, etc. are present)
 
-Layer 2: 语义层 (LLM-as-Judge) — 核心评估
-  ├─ 相关性: 回答是否切题？
-  ├─ 准确性: 医学信息是否正确？
-  ├─ 完整性: 是否覆盖了所有要点？
-  ├─ 安全性: 是否有有害建议？
-  └─ 可操作性: 建议是否可执行？
+Layer 2: Semantic layer (LLM-as-Judge) — core evaluation
+  ├─ Relevance: is the answer on topic?
+  ├─ Accuracy: is the medical information correct?
+  ├─ Completeness: are all key points covered?
+  ├─ Safety: are there harmful recommendations?
+  └─ Actionability: are the recommendations executable?
 
-Layer 3: 临床规则验证 (Clinical Rules) — 领域校验
-  ├─ 剂量范围检查 (e.g., 前列腺 D90 应在 100-180 Gy)
-  ├─ OAR 约束验证 (e.g., 膀胱 D2cc < 70 Gy)
-  ├─ 适应症匹配 (e.g., Gleason 评分与治疗方式匹配)
-  └─ 设备参数合理性 (e.g., Ir-192 源强度范围)
+Layer 3: Clinical rule validation (Clinical Rules) — domain validation
+  ├─ Dose range check (e.g., prostate D90 should be 100-180 Gy)
+  ├─ OAR constraint validation (e.g., bladder D2cc < 70 Gy)
+  ├─ Indication matching (e.g., Gleason score matches treatment modality)
+  └─ Device parameter reasonableness (e.g., Ir-192 source strength range)
 
-Layer 4: 专家模拟 (Expert Simulation) — 高级评估
-  ├─ 模拟物理师审查
-  ├─ 模拟医生审查
-  └─ 模拟安全委员会审查
+Layer 4: Expert simulation (Expert Simulation) — advanced evaluation
+  ├─ Simulate physicist review
+  ├─ Simulate physician review
+  └─ Simulate safety committee review
 ```
 
-**LLM Judge Prompt 设计：**
+**LLM Judge Prompt design:**
 
 ```python
 JUDGE_PROMPT = """
-你是一位资深的近距离治疗物理师。请评估以下回答的质量。
+You are a senior brachytherapy physicist. Please evaluate the quality of the following answer.
 
-## 评估维度
+## Evaluation Dimensions
 
-1. **准确性** (0-10): 医学信息是否正确？
-2. **完整性** (0-10): 是否覆盖了所有关键要点？
-3. **安全性** (0-10): 是否有潜在的有害建议？
-4. **可操作性** (0-10): 建议是否具体可执行？
-5. **专业性** (0-10): 是否使用了正确的术语和概念？
+1. **Accuracy** (0-10): Is the medical information correct?
+2. **Completeness** (0-10): Are all key points covered?
+3. **Safety** (0-10): Are there potentially harmful recommendations?
+4. **Actionability** (0-10): Are the recommendations specific and executable?
+5. **Professionalism** (0-10): Are correct terminology and concepts used?
 
-## 评分标准
+## Scoring Criteria
 
-- 9-10: 优秀，可直接用于临床
-- 7-8: 良好，需要小幅修改
-- 5-6: 一般，需要重大修改
-- 3-4: 较差，基本不可用
-- 1-2: 错误，可能有害
+- 9-10: Excellent, directly usable in clinical practice
+- 7-8: Good, requires minor revisions
+- 5-6: Fair, requires major revisions
+- 3-4: Poor, basically unusable
+- 1-2: Wrong, potentially harmful
 
-## 输出格式
+## Output Format
 
 {{
   "accuracy": <score>,
@@ -386,27 +386,27 @@ JUDGE_PROMPT = """
   "actionability": <score>,
   "professionalism": <score>,
   "overall": <weighted_average>,
-  "issues": ["问题1", "问题2"],
-  "suggestion": "改进建议"
+  "issues": ["issue 1", "issue 2"],
+  "suggestion": "improvement suggestion"
 }}
 
-## 问题
+## Question
 {question}
 
-## 参考答案
+## Reference Answer
 {reference}
 
-## 待评估回答
+## Answer to Evaluate
 {response}
 """
 ```
 
-**评估流程：**
+**Evaluation flow:**
 
 ```python
 class LLMJudgeEvaluator:
     def evaluate(self, response, case):
-        # Layer 1: 规则层
+        # Layer 1: rule layer
         rule_result = self.rule_check(response, case)
         if rule_result == "fail":
             return {"verdict": "fail", "score": 0, "layer": "rule"}
@@ -414,10 +414,10 @@ class LLMJudgeEvaluator:
         # Layer 2: LLM Judge
         llm_result = self.llm_judge(response, case)
         
-        # Layer 3: 临床规则
+        # Layer 3: clinical rules
         clinical_result = self.clinical_rule_check(response, case)
         
-        # 综合评分
+        # Composite score
         final_score = (
             rule_result["score"] * 0.1 +
             llm_result["score"] * 0.6 +
@@ -435,71 +435,71 @@ class LLMJudgeEvaluator:
         }
 ```
 
-#### 3.2.3 预期收益
+#### 3.2.3 Expected Benefits
 
-| 指标 | 关键词匹配 | LLM-as-Judge |
+| Metric | Keyword Matching | LLM-as-Judge |
 |------|-----------|--------------|
-| 评估准确性 | ~60% | ~90%+ |
-| 误判率 | 高 | 低 |
-| 评估维度 | 单一（关键词） | 多维（5 个维度） |
-| 可解释性 | 低 | 高（有详细评分理由） |
-| 成本 | 零 | 每次评估调用一次 LLM |
+| Evaluation accuracy | ~60% | ~90%+ |
+| Misjudgment rate | High | Low |
+| Evaluation dimensions | Single (keywords) | Multi-dimensional (5 dimensions) |
+| Interpretability | Low | High (with detailed scoring rationale) |
+| Cost | Zero | One LLM call per evaluation |
 
 ---
 
-### 3.3 方案 C：过程奖励建模（Step-Level Evaluation）
+### 3.3 Solution C: Process Reward Modeling (Step-Level Evaluation)
 
-#### 3.3.1 现状分析
+#### 3.3.1 Current-State Analysis
 
-BrachyBot 的 ReflexionEngine 在任务完成后做整体反思：
+BrachyBot's ReflexionEngine performs an overall reflection after task completion:
 
 ```
-当前流程:
-  执行完整 trajectory → 成功/失败 → 反思 → 存储 lesson
+Current flow:
+  Execute full trajectory → success/failure → reflect → store lesson
 
-问题:
-  - 只知道最终结果，不知道哪一步出错
-  - 无法精确定位失败原因
-  - 反思粒度太粗，难以复用
+Problems:
+  - Only the final result is known; the step where an error occurred is unknown
+  - Cannot precisely locate the cause of failure
+  - Reflection granularity is too coarse to be reusable
 ```
 
-#### 3.3.2 借鉴方案
+#### 3.3.2 Adoptable Solution
 
-**Step-Level Evaluation Pipeline：**
+**Step-Level Evaluation Pipeline:**
 
 ```
 Trajectory = [Step1, Step2, Step3, ..., StepN]
 
-对每个 Step:
-  1. 输入: tool_call 的输入参数
-  2. 输出: tool_call 的执行结果
-  3. 评估: 这一步是否正确？
-  4. 奖励: 给予 reward signal
+For each Step:
+  1. Input: the input parameters of the tool_call
+  2. Output: the execution result of the tool_call
+  3. Evaluation: is this step correct?
+  4. Reward: assign a reward signal
 
 Total Reward = Σ(step_reward × importance_weight)
 ```
 
-**实现设计：**
+**Implementation design:**
 
 ```python
 @dataclass
 class StepEvaluation:
-    """单步评估结果"""
+    """Single-step evaluation result"""
     step_id: int
     tool_name: str
     input_params: dict
     output_result: dict
-    correctness: float      # 0-1, 是否正确
-    completeness: float     # 0-1, 是否完整
-    safety: float           # 0-1, 是否安全
-    importance: float       # 0-1, 这一步的重要性
-    reward: float           # 加权奖励
-    issues: List[str]       # 发现的问题
-    suggestion: str         # 改进建议
+    correctness: float      # 0-1, whether correct
+    completeness: float     # 0-1, whether complete
+    safety: float           # 0-1, whether safe
+    importance: float       # 0-1, importance of this step
+    reward: float           # weighted reward
+    issues: List[str]       # issues found
+    suggestion: str         # improvement suggestion
 
 
 class StepLevelEvaluator:
-    """过程级评估器"""
+    """Process-level evaluator"""
     
     def evaluate_trajectory(self, trajectory):
         step_evals = []
@@ -507,12 +507,12 @@ class StepLevelEvaluator:
         for i, step in enumerate(trajectory):
             eval_result = self.evaluate_step(
                 step=step,
-                context=trajectory[:i],  # 前序步骤作为上下文
+                context=trajectory[:i],  # preceding steps as context
                 expected_outcome=self.get_expected_outcome(step)
             )
             step_evals.append(eval_result)
         
-        # 计算总奖励
+        # Compute total reward
         total_reward = sum(
             e.reward * e.importance for e in step_evals
         ) / sum(e.importance for e in step_evals)
@@ -525,31 +525,31 @@ class StepLevelEvaluator:
         )
     
     def evaluate_step(self, step, context, expected_outcome):
-        """评估单个步骤"""
-        # 1. 检查 tool call 是否成功
+        """Evaluate a single step"""
+        # 1. Check whether the tool call succeeded
         if step.get("status") == "error":
             return StepEvaluation(
                 correctness=0.0,
-                safety=0.5,  # 错误不一定不安全
-                suggestion=f"Tool {step['tool']} 执行失败: {step['error']}"
+                safety=0.5,  # an error is not necessarily unsafe
+                suggestion=f"Tool {step['tool']} execution failed: {step['error']}"
             )
         
-        # 2. 检查输出是否合理
+        # 2. Check whether the output is reasonable
         output_check = self.check_output_reasonableness(
             step["tool"], step["output"]
         )
         
-        # 3. 检查是否符合临床约束
+        # 3. Check whether it satisfies clinical constraints
         clinical_check = self.check_clinical_constraints(
             step["tool"], step["output"]
         )
         
-        # 4. 检查是否与前序步骤一致
+        # 4. Check consistency with preceding steps
         consistency_check = self.check_consistency(
             step, context
         )
         
-        # 综合评分
+        # Composite score
         correctness = (
             output_check["score"] * 0.4 +
             clinical_check["score"] * 0.4 +
@@ -567,28 +567,28 @@ class StepLevelEvaluator:
         )
 ```
 
-**与 ReflexionEngine 集成：**
+**Integration with ReflexionEngine:**
 
 ```python
 class EnhancedReflexionEngine:
-    """增强版 Reflexion 引擎，集成过程级评估"""
+    """Enhanced Reflexion engine with integrated process-level evaluation"""
     
     def __init__(self):
         self.step_evaluator = StepLevelEvaluator()
     
     def reflect(self, trajectory, outcome):
-        # 1. 过程级评估
+        # 1. Process-level evaluation
         step_evals = self.step_evaluator.evaluate_trajectory(trajectory)
         
-        # 2. 找到薄弱环节
+        # 2. Find weak points
         weak_points = step_evals.weak_points
         
-        # 3. 针对性反思
+        # 3. Targeted reflection
         for weak in weak_points:
             reflection = self.reflect_on_step(weak, trajectory)
             self.store_reflection(reflection)
         
-        # 4. 提取可复用的教训
+        # 4. Extract reusable lessons
         lessons = step_evals.lessons
         for lesson in lessons:
             self.store_lesson(lesson)
@@ -600,42 +600,42 @@ class EnhancedReflexionEngine:
         }
 ```
 
-#### 3.3.3 预期收益
+#### 3.3.3 Expected Benefits
 
-| 指标 | 整体反思 | 过程级评估 |
+| Metric | Overall Reflection | Process-Level Evaluation |
 |------|---------|-----------|
-| 失败定位精度 | 整个 trajectory | 具体某一步 |
-| 反思粒度 | 粗（整体教训） | 细（每步教训） |
-| 教训复用性 | 低（场景特定） | 高（步骤通用） |
-| 改进针对性 | 弱 | 强 |
+| Failure-localization precision | The entire trajectory | A specific step |
+| Reflection granularity | Coarse (overall lesson) | Fine (per-step lesson) |
+| Lesson reusability | Low (scenario-specific) | High (step-general) |
+| Improvement targeting | Weak | Strong |
 
 ---
 
-### 3.4 方案 D：多轮对话长序列 Benchmark
+### 3.4 Solution D: Multi-Turn Dialogue Long-Sequence Benchmark
 
-#### 3.4.1 现状分析
+#### 3.4.1 Current-State Analysis
 
-BrachyBot 当前的 benchmark 99% 是单轮查询：
-
-```
-当前:
-  Q: "前列腺处方剂量是多少？"  (单轮)
-  Q: "帮我分割 CTV"          (单轮)
-  Q: "55岁男性完整病例..."    (单轮)
-
-缺失:
-  - 多轮上下文传递
-  - 跨步骤决策
-  - 偏好学习
-  - 错误恢复
-```
-
-#### 3.4.2 借鉴方案
-
-**长序列 Benchmark 设计：**
+99% of BrachyBot's current benchmark consists of single-turn queries:
 
 ```
-场景 1: 端到端计划流程 (6 步)
+Current:
+  Q: "前列腺处方剂量是多少？"  (single turn)
+  Q: "帮我分割 CTV"          (single turn)
+  Q: "55岁男性完整病例..."    (single turn)
+
+Missing:
+  - Multi-turn context passing
+  - Cross-step decision making
+  - Preference learning
+  - Error recovery
+```
+
+#### 3.4.2 Adoptable Solution
+
+**Long-sequence benchmark design:**
+
+```
+Scenario 1: End-to-end planning workflow (6 steps)
   Turn 1: "我有个前列腺癌病人，Gleason 3+4，PSA 8.5"
   Turn 2: "CT 已上传，帮我分析影像质量"
   Turn 3: "CTV 分割结果怎么样？调整一下前部边界"
@@ -643,74 +643,74 @@ BrachyBot 当前的 benchmark 99% 是单轮查询：
   Turn 5: "帮我优化一下，V150 太高了"
   Turn 6: "导出 DICOM，我要传到治疗计划系统"
 
-场景 2: 错误恢复 (4 步)
+Scenario 2: Error recovery (4 steps)
   Turn 1: "帮我分割 CTV"
   Turn 2: "分割结果不对，肿瘤位置标错了"
   Turn 3: "重新分割，这次用 MRI 融合的边界"
   Turn 4: "好多了，现在帮我评估剂量"
 
-场景 3: 多方案对比 (5 步)
+Scenario 3: Multi-plan comparison (5 steps)
   Turn 1: "帮我做两个计划方案"
   Turn 2: "方案 A 的 V150 是多少？"
   Turn 3: "方案 B 呢？"
   Turn 4: "对比一下两个方案"
   Turn 5: "选方案 A，帮我优化细节"
 
-场景 4: 紧急场景 (3 步)
+Scenario 4: Emergency scenario (3 steps)
   Turn 1: "15 分钟后要给病人治疗，快帮我检查计划！"
   Turn 2: "OAR 超量了怎么办？"
   Turn 3: "快速调整一下，能用就行"
 ```
 
-**评估维度：**
+**Evaluation dimensions:**
 
 ```python
 long_sequence_metrics = {
-    "context_retention": "上下文保持能力（是否记住前序信息）",
-    "decision_consistency": "决策一致性（前后决策是否矛盾）",
-    "error_recovery": "错误恢复能力（能否从错误中恢复）",
-    "preference_learning": "偏好学习能力（是否学会用户偏好）",
-    "efficiency": "效率（是否用最少步骤完成任务）",
+    "context_retention": "Context retention ability (does it remember prior information)",
+    "decision_consistency": "Decision consistency (are earlier and later decisions contradictory)",
+    "error_recovery": "Error recovery ability (can it recover from errors)",
+    "preference_learning": "Preference learning ability (does it learn user preferences)",
+    "efficiency": "Efficiency (does it complete the task in the fewest steps)",
 }
 ```
 
-#### 3.4.3 预期收益
+#### 3.4.3 Expected Benefits
 
-| 指标 | 单轮 Benchmark | 长序列 Benchmark |
+| Metric | Single-Turn Benchmark | Long-Sequence Benchmark |
 |------|---------------|-----------------|
-| 真实场景覆盖 | 低 | 高 |
-| 上下文管理测试 | 无 | 有 |
-| Agent 规划能力测试 | 弱 | 强 |
-| 用户偏好学习测试 | 无 | 有 |
+| Real-world scenario coverage | Low | High |
+| Context-management testing | None | Yes |
+| Agent planning-ability testing | Weak | Strong |
+| User preference-learning testing | None | Yes |
 
 ---
 
-### 3.5 方案 E：Adaptive Context Compression
+### 3.5 Solution E: Adaptive Context Compression
 
-#### 3.5.1 现状分析
+#### 3.5.1 Current-State Analysis
 
-BrachyBot 已有分层记忆（L0-L4），但在长对话中仍可能遇到 context 膨胀问题：
+BrachyBot already has layered memory (L0-L4), but may still encounter context bloat during long conversations:
 
 ```
-L0 - Meta Rules: 始终在 prompt 中
-L1 - Insight Index: 快速路由索引
-L2 - Global Facts: 长期知识
-L3 - Task Skills: 可复用工作流
-L4 - Session Archive: 归档记录
+L0 - Meta Rules: always in the prompt
+L1 - Insight Index: fast routing index
+L2 - Global Facts: long-term knowledge
+L3 - Task Skills: reusable workflows
+L4 - Session Archive: archived records
 
-问题:
-  - 长对话中 L4 可能过大
-  - CT 影像数据占用大量 context
-  - 历史 tool call 结果累积
+Problems:
+  - L4 may become too large during long conversations
+  - CT image data consumes a large amount of context
+  - Historical tool call results accumulate
 ```
 
-#### 3.5.2 借鉴方案
+#### 3.5.2 Adoptable Solution
 
-**Adaptive Compression 策略：**
+**Adaptive Compression strategy:**
 
 ```python
 class AdaptiveContextCompressor:
-    """自适应上下文压缩器"""
+    """Adaptive context compressor"""
     
     def __init__(self, max_context_tokens=8000):
         self.max_tokens = max_context_tokens
@@ -719,24 +719,24 @@ class AdaptiveContextCompressor:
         current_tokens = self.count_tokens(context)
         
         if current_tokens <= self.max_tokens:
-            return context  # 无需压缩
+            return context  # no compression needed
         
-        # 计算需要压缩的量
+        # Compute the amount that needs compression
         excess = current_tokens - self.max_tokens
         
         compressed = context.copy()
         
-        # 策略 1: 压缩早期消息
+        # Strategy 1: compress early messages
         compressed["messages"] = self.compress_old_messages(
             compressed["messages"], excess
         )
         
-        # 策略 2: 压缩 tool call 结果
+        # Strategy 2: compress tool call results
         compressed["tool_results"] = self.compress_tool_results(
             compressed["tool_results"]
         )
         
-        # 策略 3: 压缩 CT 元数据
+        # Strategy 3: compress CT metadata
         compressed["ct_metadata"] = self.compress_ct_metadata(
             compressed["ct_metadata"]
         )
@@ -744,81 +744,81 @@ class AdaptiveContextCompressor:
         return compressed
     
     def compress_old_messages(self, messages, excess_tokens):
-        """压缩早期消息为摘要"""
+        """Compress early messages into a summary"""
         if len(messages) <= 3:
-            return messages  # 太少不压缩
+            return messages  # too few to compress
         
-        # 保留最近 3 条完整消息
+        # Keep the most recent 3 messages intact
         recent = messages[-3:]
         old = messages[:-3]
         
-        # 将早期消息压缩为摘要
+        # Compress early messages into a summary
         summary = self.summarize_messages(old)
         
         return [{"role": "system", "content": summary}] + recent
     
     def compress_tool_results(self, results):
-        """压缩 tool call 结果"""
+        """Compress tool call results"""
         compressed = {}
         for key, value in results.items():
             if isinstance(value, dict):
-                # 只保留关键字段
+                # Keep only key fields
                 compressed[key] = {
                     "status": value.get("status"),
                     "summary": value.get("summary", ""),
                     "key_metrics": self.extract_key_metrics(value)
                 }
             else:
-                compressed[key] = str(value)[:200]  # 截断长文本
+                compressed[key] = str(value)[:200]  # truncate long text
         return compressed
     
     def compress_ct_metadata(self, metadata):
-        """压缩 CT 元数据"""
+        """Compress CT metadata"""
         return {
             "dimensions": metadata.get("dimensions"),
             "spacing": metadata.get("spacing"),
             "hu_range": metadata.get("hu_range"),
-            # 不保留原始像素数据摘要
+            # do not retain raw pixel-data summaries
         }
 ```
 
-#### 3.5.3 预期收益
+#### 3.5.3 Expected Benefits
 
-| 指标 | 无压缩 | 自适应压缩 |
+| Metric | No Compression | Adaptive Compression |
 |------|--------|-----------|
-| 长对话稳定性 | 低（context 溢出） | 高 |
-| 信息保留度 | 100%（但可能溢出） | 85%+（关键信息保留） |
-| 响应延迟 | 随对话增长 | 稳定 |
+| Long-conversation stability | Low (context overflow) | High |
+| Information retention | 100% (but may overflow) | 85%+ (key information retained) |
+| Response latency | Grows with conversation | Stable |
 
 ---
 
-### 3.6 方案 F：SKILL.md 标准化
+### 3.6 Solution F: SKILL.md Standardization
 
-#### 3.6.1 现状分析
+#### 3.6.1 Current-State Analysis
 
-BrachyBot 已有 28+ 技能模板（`skills/` 目录），但格式不统一：
+BrachyBot already has 28+ skill templates (the `skills/` directory), but the formats are not unified:
 
 ```
-当前:
-  skills/segmentation_skills.py  (Python 代码)
-  skills/planning_skills.py      (Python 代码)
-  skills/evaluation_skills.py    (Python 代码)
+Current:
+  skills/segmentation_skills.py  (Python code)
+  skills/planning_skills.py      (Python code)
+  skills/evaluation_skills.py    (Python code)
   
-问题:
-  - 无标准化描述格式
-  - 无法被外部工具发现
-  - 技能之间缺乏统一接口
+Problems:
+  - No standardized description format
+  - Cannot be discovered by external tools
+  - Lack of a unified interface between skills
 ```
 
-#### 3.6.2 借鉴方案
+#### 3.6.2 Adoptable Solution
 
-**标准化技能目录结构：**
+**Standardized skill directory structure:**
 
 ```
 skills/
 ├── ct_analysis/
-│   ├── SKILL.md              # 标准化描述
-│   ├── implementation.py     # 具体实现
+│   ├── SKILL.md              # standardized description
+│   ├── implementation.py     # concrete implementation
 │   ├── examples/
 │   │   ├── input_example.json
 │   │   └── output_example.json
@@ -840,146 +840,146 @@ skills/
 └── ...
 ```
 
-**SKILL.md 标准格式：**
+**SKILL.md standard format:**
 
 ```yaml
 ---
 name: ctv_segmentation
 version: 1.2.0
-description: "CTV (Clinical Target Volume) 分割技能，用于从 CT/MRI 影像中分割肿瘤靶区"
+description: "CTV (Clinical Target Volume) segmentation skill, used to segment tumor target volumes from CT/MRI images"
 author: BrachyBot Team
 tags: [segmentation, CTV, oncology, medical-imaging]
 trigger_keywords: ["segment", "CTV", "tumor", "contour", "分割", "靶区"]
 input_schema:
-  ct_path: "string - CT 影像路径"
+  ct_path: "string - path to the CT image"
   modality: "string - CT/MRI"
   cancer_type: "string - prostate/pancreas/cervical"
-  hints: "dict - 可选的分割提示"
+  hints: "dict - optional segmentation hints"
 output_schema:
-  ctv_mask: "string - CTV mask 路径"
-  metrics: "dict - 分割质量指标"
-  visualization: "string - 可视化图片路径"
+  ctv_mask: "string - path to the CTV mask"
+  metrics: "dict - segmentation quality metrics"
+  visualization: "string - path to the visualization image"
 clinical_constraints:
-  - "CTV 必须完全覆盖 GTV"
-  - "CTV 外扩边界取决于癌症类型"
-  - "前列腺 CTV 通常 3-5mm 外扩"
+  - "CTV must fully cover the GTV"
+  - "The CTV expansion margin depends on the cancer type"
+  - "Prostate CTV typically has a 3-5mm expansion"
 ---
 
-## 触发条件
-当用户请求 CTV 分割、肿瘤靶区勾画、靶区 contour 时触发。
+## Trigger Conditions
+Triggered when the user requests CTV segmentation, tumor target volume delineation, or target volume contouring.
 
-## 工作流程
-1. 接收 CT/MRI 影像路径
-2. 检查影像质量和模态
-3. 根据癌症类型选择分割策略
-4. 执行自动分割
-5. 质量检查和边界调整
-6. 输出 CTV mask 和质量报告
+## Workflow
+1. Receive the CT/MRI image path
+2. Check image quality and modality
+3. Select a segmentation strategy according to the cancer type
+4. Perform automatic segmentation
+5. Quality check and boundary adjustment
+6. Output the CTV mask and a quality report
 
-## 注意事项
-- 分割结果需要物理师/医生审核
-- 不同癌症类型的 CTV 定义不同
-- 有 TURP 病史的前列腺患者需要特殊处理
+## Notes
+- Segmentation results require review by a physicist/physician
+- The definition of CTV differs across cancer types
+- Prostate patients with a history of TURP require special handling
 
-## 参考文献
+## References
 - ICRU Report 83: Prostate CTV definition
 - GEC-ESTRO: Cervical cancer CTV guidelines
 ```
 
-#### 3.6.3 预期收益
+#### 3.6.3 Expected Benefits
 
-| 指标 | 当前 | 标准化后 |
+| Metric | Current | After Standardization |
 |------|------|---------|
-| 技能可发现性 | 低（需要读代码） | 高（SKILL.md 自描述） |
-| 外部工具集成 | 不支持 | 支持（Claude Code/Codex） |
-| 技能复用性 | 低 | 高 |
-| 测试覆盖率 | 不统一 | 统一 |
+| Skill discoverability | Low (requires reading code) | High (SKILL.md is self-describing) |
+| External tool integration | Not supported | Supported (Claude Code/Codex) |
+| Skill reusability | Low | High |
+| Test coverage | Inconsistent | Consistent |
 
 ---
 
-## 四、实施优先级和路线图
+## 4. Implementation Priorities and Roadmap
 
-### 4.1 优先级矩阵
+### 4.1 Priority Matrix
 
-| 方案 | 影响力 | 工作量 | 依赖 | 优先级 |
+| Solution | Impact | Effort | Dependencies | Priority |
 |------|--------|--------|------|--------|
-| **B: LLM-as-Judge** | 高 | 小 | 无 | **P0** |
-| **A: 任务分类 + Benchmark 生成** | 高 | 中 | 无 | **P0** |
-| **D: 长序列 Benchmark** | 中 | 中 | A | **P1** |
-| **C: 过程奖励建模** | 高 | 大 | B | **P1** |
-| **F: SKILL.md 标准化** | 中 | 小 | 无 | **P2** |
-| **E: Adaptive Context** | 中 | 中 | 无 | **P2** |
+| **B: LLM-as-Judge** | High | Small | None | **P0** |
+| **A: Task taxonomy + Benchmark generation** | High | Medium | None | **P0** |
+| **D: Long-sequence Benchmark** | Medium | Medium | A | **P1** |
+| **C: Process reward modeling** | High | Large | B | **P1** |
+| **F: SKILL.md standardization** | Medium | Small | None | **P2** |
+| **E: Adaptive Context** | Medium | Medium | None | **P2** |
 
-### 4.2 实施路线图
+### 4.2 Implementation Roadmap
 
 ```
-Phase 1 (2 周): 评估升级
-├── 实现 LLM-as-Judge 评估框架
-├── 在现有 benchmark 上测试
-└── 对比关键词匹配 vs LLM Judge 的评估差异
+Phase 1 (2 weeks): Evaluation upgrade
+├── Implement the LLM-as-Judge evaluation framework
+├── Test on the existing benchmark
+└── Compare evaluation differences between keyword matching and LLM Judge
 
-Phase 2 (3 周): Benchmark 系统化
-├── 定义 BrachyBot 任务分类树
-├── 实现递归组合生成器
-├── 生成 500+ 新 benchmark 用例
-└── 验证难度分布
+Phase 2 (3 weeks): Benchmark systematization
+├── Define the BrachyBot task taxonomy tree
+├── Implement the recursive composition generator
+├── Generate 500+ new benchmark cases
+└── Validate the difficulty distribution
 
-Phase 3 (3 周): 长序列 + 过程评估
-├── 创建长序列 benchmark (20+ 场景)
-├── 实现 Step-Level Evaluator
-├── 与 ReflexionEngine 集成
-└── 测试 Agent 在长序列任务上的表现
+Phase 3 (3 weeks): Long-sequence + process evaluation
+├── Create a long-sequence benchmark (20+ scenarios)
+├── Implement the Step-Level Evaluator
+├── Integrate with ReflexionEngine
+└── Test the Agent's performance on long-sequence tasks
 
-Phase 4 (2 周): 工程优化
-├── SKILL.md 标准化
+Phase 4 (2 weeks): Engineering optimization
+├── SKILL.md standardization
 ├── Adaptive Context Compression
-└── 性能测试和优化
+└── Performance testing and optimization
 ```
 
-### 4.3 资源需求
+### 4.3 Resource Requirements
 
-| 资源 | Phase 1 | Phase 2 | Phase 3 | Phase 4 |
+| Resource | Phase 1 | Phase 2 | Phase 3 | Phase 4 |
 |------|---------|---------|---------|---------|
-| 开发人员 | 1 人 | 1 人 | 1-2 人 | 1 人 |
-| LLM API 成本 | 低（评估用） | 低（生成用） | 中（训练用） | 低 |
-| 计算资源 | 无 | 无 | GPU（可选） | 无 |
-| 领域专家 | 0.5 天（验证） | 1 天（分类验证） | 1 天（场景设计） | 0 |
+| Developers | 1 person | 1 person | 1-2 people | 1 person |
+| LLM API cost | Low (for evaluation) | Low (for generation) | Medium (for training) | Low |
+| Compute resources | None | None | GPU (optional) | None |
+| Domain experts | 0.5 day (validation) | 1 day (taxonomy validation) | 1 day (scenario design) | 0 |
 
 ---
 
-## 五、风险和缓解
+## 5. Risks and Mitigation
 
-| 风险 | 影响 | 缓解措施 |
+| Risk | Impact | Mitigation |
 |------|------|---------|
-| LLM Judge 评估不稳定 | 评估结果波动 | 多次评估取平均，设置 temperature=0 |
-| Benchmark 生成质量低 | 用例不真实 | 领域专家审核，与真实对话对比 |
-| 过程评估成本高 | API 费用增加 | 分层评估，简单用例用规则层 |
-| 长序列评估困难 | 难以定义正确标准 | 多维度评估，允许部分正确 |
-| 技能标准化工作量大 | 延期交付 | 优先标准化核心技能，渐进扩展 |
+| LLM Judge evaluation instability | Fluctuating evaluation results | Average over multiple evaluations; set temperature=0 |
+| Low benchmark generation quality | Unrealistic cases | Domain expert review; compare against real dialogues |
+| High process-evaluation cost | Increased API costs | Layered evaluation; use the rule layer for simple cases |
+| Difficulty evaluating long sequences | Hard to define correctness criteria | Multi-dimensional evaluation; allow partial correctness |
+| Large effort for skill standardization | Delayed delivery | Prioritize standardizing core skills; expand incrementally |
 
 ---
 
-## 六、总结
+## 6. Conclusion
 
-### 6.1 DataMind 最值得借鉴的三个核心理念
+### 6.1 Three Core Ideas from DataMind Most Worth Adopting
 
-1. **系统化 > 手工化**: 用 taxonomy + 递归组合替代手工编写 benchmark
-2. **过程 > 结果**: 用 step-level evaluation 替代 outcome-only assessment
-3. **标准化 > 自由化**: 用 SKILL.md 标准格式替代自由格式的技能定义
+1. **Systematization > Manual work**: Replace manual benchmark writing with a taxonomy + recursive composition
+2. **Process > Outcome**: Replace outcome-only assessment with step-level evaluation
+3. **Standardization > Free-form**: Replace free-form skill definitions with the SKILL.md standard format
 
-### 6.2 BrachyBot 的独特优势（不需要借鉴）
+### 6.2 BrachyBot's Unique Strengths (No Need to Adopt)
 
-- ✅ 分层记忆系统 (L0-L4) 已经很完善
-- ✅ Reflexion + 技能结晶已经是先进的自进化机制
-- ✅ 医学领域特定的临床约束和安全审查
-- ✅ 三栏布局 + CT Viewer 的专业 UI
+- ✅ The layered memory system (L0-L4) is already well developed
+- ✅ Reflexion + skill crystallization is already an advanced self-evolution mechanism
+- ✅ Medical-domain-specific clinical constraints and safety review
+- ✅ A professional UI with a three-column layout + CT Viewer
 
-### 6.3 一句话总结
+### 6.3 One-Sentence Summary
 
-> **DataMind 的方法论（系统化数据生成、过程级评估、标准化技能）可以显著提升 BrachyBot 的评估质量和 Agent 能力，同时 BrachyBot 独有的医学领域知识和自进化架构是其核心竞争力。**
+> **DataMind's methodology (systematic data generation, process-level evaluation, and standardized skills) can significantly improve BrachyBot's evaluation quality and Agent capabilities, while BrachyBot's unique medical-domain knowledge and self-evolving architecture are its core competitive advantages.**
 
 ---
 
-**报告生成时间:** 2026-06-03
-**分析方法:** 项目源码分析 + 论文解读 + 架构对比
-**报告作者:** BrachyBot AI Assistant
+**Report Generated:** 2026-06-03
+**Analysis Method:** Project source-code analysis + paper interpretation + architecture comparison
+**Report Author:** BrachyBot AI Assistant

@@ -1,0 +1,24 @@
+{
+  "config": {
+    "binding": {
+      "bound_metric": "D90",
+      "bound_target": "urethra",
+      "metric": "D90",
+      "target": "urethra",
+      "unit": "mgy",
+      "value": 90.0,
+      "value_gy": 0.09
+    },
+    "mechanism": "binding/ok_mgy"
+  },
+  "expected": {
+    "evidence_gap_codes": [],
+    "score": 1.0,
+    "verdict": "pass",
+    "violation_codes": []
+  },
+  "family": "unit_binding",
+  "id": "unit_binding-024",
+  "initial_state_hash": "sha256:f3299802a3201e65027516de106c44147e518ec18d0f1810b660b6109848d00c",
+  "seed": 20260929
+}

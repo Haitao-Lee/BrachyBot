@@ -1,0 +1,52 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "en",
+  "response_facts": {
+    "brain.D2cc_Gy": 4.8,
+    "distance_available": false,
+    "spinal_cord.D2cc_Gy": 7.3
+  },
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "response",
+      "statement": "Distinguish measured OAR dose ranking from unverified geometric proximity/clinical harm; use known D2cc7.3/4.8Gy without asserting they are spatially nearest."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "effects",
+      "statement": "No invented centroid/distance or unrequested new segmentation."
+    },
+    {
+      "id": "criterion-2",
+      "kind": "evidence",
+      "statement": "Any proximity claim requires actual geometric source, not organ volume/model-name inference."
+    }
+  ],
+  "rules": [],
+  "scenario_id": "RUR-40-002",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "response",
+      "statement": "Distinguish measured OAR dose ranking from unverified geometric proximity/clinical harm; use known D2cc7.3/4.8Gy without asserting they are spatially nearest."
+    },
+    {
+      "kind": "effects",
+      "statement": "No invented centroid/distance or unrequested new segmentation."
+    },
+    {
+      "kind": "evidence",
+      "statement": "Any proximity claim requires actual geometric source, not organ volume/model-name inference."
+    }
+  ]
+}

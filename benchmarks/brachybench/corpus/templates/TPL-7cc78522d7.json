@@ -1,0 +1,15 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "oar_segmentation",
+  "expectation": null,
+  "facet": "oar_segmentation",
+  "gold_status": "draft",
+  "n_source_intents": 3,
+  "representative_text": "Segment the OAR",
+  "source_refs": [
+    "INT-68ebb544b109",
+    "INT-93bd0bf6a939",
+    "INT-bd575dcdb97d"
+  ],
+  "template_id": "TPL-7cc78522d7"
+}

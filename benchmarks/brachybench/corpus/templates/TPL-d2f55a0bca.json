@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "dose_evaluation",
+  "expectation": null,
+  "facet": "dose_evaluation",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Analyze cumulative doses at fraction 3 of 4. Projected final rectum D2cc=76 Gy EQD2 (exceeds 70 Gy limit). Recommend modifications for fraction 4.",
+  "source_refs": [
+    "INT-3a93d7f25c02",
+    "INT-acc6b8b92fa9"
+  ],
+  "template_id": "TPL-d2f55a0bca"
+}

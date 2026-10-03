@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "precision",
+  "expectation": null,
+  "facet": "precision",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Calculate average deviation, max deviation, and RMS from measured dwell positions (10 positions at 5 mm). Evaluate against TG-59 tolerance (1 mm).",
+  "source_refs": [
+    "INT-ba00a2797771",
+    "INT-e7a7b2ae660c"
+  ],
+  "template_id": "TPL-3dc754e253"
+}

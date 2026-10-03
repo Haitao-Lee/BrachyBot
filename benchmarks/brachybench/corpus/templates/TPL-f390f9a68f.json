@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "treatment_planning",
+  "expectation": null,
+  "facet": "treatment_planning",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Plan the seed placement",
+  "source_refs": [
+    "INT-09fb4a848d1a",
+    "INT-3beb519d7008"
+  ],
+  "template_id": "TPL-f390f9a68f"
+}

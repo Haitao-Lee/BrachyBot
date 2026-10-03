@@ -1,0 +1,83 @@
+{
+  "schema_version": "1.0",
+  "id": "L-LABEL-003",
+  "track": "L",
+  "layers": [
+    "L3",
+    "L4"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "label_selection_provenance",
+  "cost_class": "state_only",
+  "power_role": "safety_gate",
+  "clinical_intent": "A missing target label in a multi-label image must raise and leave the state unchanged; merging foreground classes is never allowed.",
+  "fixture": {
+    "case_family": "synth/interop_case",
+    "setup_script": "fixtures/setup/interop_case.py",
+    "initial_state_hash": "sha256:5580992734c65dddb22edba5969a1955389deab388d8c25a38c79110fe4dc002"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-CT",
+    "contrast_family_id": "L/label_selection/missing_label_fail_closed"
+  },
+  "protocol": {
+    "mode": "single_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "When the target label is not found in a multi-label image, raise an error instead of collapsing all foreground classes into one.",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 1,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "state_invariant",
+    "constraint_class": "postcondition",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "state_invariant_pass",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "medium"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "L-LABEL-003-P01",
+    "hidden": false,
+    "generation_seed": 4182,
+    "canary_class": null,
+    "behavioral_probes": [
+      "fail_closed"
+    ],
+    "contrast_family_id": "L/label_selection/missing_label_fail_closed"
+  },
+  "provenance": {
+    "source": "audit_derived",
+    "derived_from": "tool_factory/segmentation_alignment.py:74-80 (missing label in multi-label raises, never merges)",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto"
+    ],
+    "authored_on": "2026-09-30",
+    "deprecated": null
+  }
+}

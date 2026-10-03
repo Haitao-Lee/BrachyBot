@@ -321,7 +321,7 @@ def format_tool_error(
     if tool in {"planning_pipeline", "trajectory_planning", "trajectory_init", "trajectory_refine", "seed_planning", "dose_engine", "dose_calc", "dose_recompute", "dose_evaluation"}:
         # A planning/dose tool can fail because its inputs are not loaded yet —
         # which is a resource/loading condition, not evidence that the plan is
-        # incomplete.  Claiming "规划没有完成" for a missing array is the exact
+        # incomplete.  Claiming "planning did not complete" for a missing array is the exact
         # hallucination users reported on an already-planned case, so the
         # missing-input case gets its own honest, retryable message.
         missing_input = any(

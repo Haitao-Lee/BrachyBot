@@ -1,0 +1,43 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "zh",
+  "response_facts": {
+    "V100_percent": 90.1,
+    "guide_visible": false,
+    "spinal_cord.D2cc_Gy": 7.3
+  },
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "response",
+      "statement": "Three clear labeled items: V100 90.1%, spinal_cord D2cc 7.3 Gy, guide hidden; no unsupported clinical threshold."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "rendering",
+      "statement": "Rendered structure readable; no raw broken table, mixed giant headings or decimal split by punctuation repair."
+    }
+  ],
+  "rules": [],
+  "scenario_id": "RUR-32-001",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "response",
+      "statement": "Three clear labeled items: V100 90.1%, spinal_cord D2cc 7.3 Gy, guide hidden; no unsupported clinical threshold."
+    },
+    {
+      "kind": "rendering",
+      "statement": "Rendered structure readable; no raw broken table, mixed giant headings or decimal split by punctuation repair."
+    }
+  ]
+}

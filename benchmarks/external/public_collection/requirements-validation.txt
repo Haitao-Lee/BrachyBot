@@ -1,0 +1,5 @@
+# Install only in an isolated benchmark environment, never clinical production.
+datasets==3.6.0
+nltk==3.9.1
+pytrec-eval-terrier==0.5.10
+pytest>=8,<9

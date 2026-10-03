@@ -1,0 +1,24 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "language",
+  "expectation": null,
+  "facet": "language",
+  "gold_status": "draft",
+  "n_source_intents": 12,
+  "representative_text": "Analyze and segment the image",
+  "source_refs": [
+    "INT-027ee5accc56",
+    "INT-2d17ac94fda7",
+    "INT-2e6195866526",
+    "INT-30adaae16c51",
+    "INT-6d18d94cd531",
+    "INT-7f1496207396",
+    "INT-8745f8152ad8",
+    "INT-a9e4a545b793",
+    "INT-aefe4ac60242",
+    "INT-bc5a0c15091b",
+    "INT-e1bb7734c69e",
+    "INT-e5c0024e6415"
+  ],
+  "template_id": "TPL-ffb64379e4"
+}

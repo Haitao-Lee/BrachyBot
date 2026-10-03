@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "multi_turn",
+  "expectation": null,
+  "facet": "multi_turn",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Turn 1: Please analyze this CT。Turn 2: segment the CTV。Turn 3: Segment the OAR as well。",
+  "source_refs": [
+    "INT-0c92391d0565",
+    "INT-ae8ed58e1dcb"
+  ],
+  "template_id": "TPL-08f46825fc"
+}

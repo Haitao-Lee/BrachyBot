@@ -1,0 +1,75 @@
+{
+  "anti_gaming": {
+    "contrast_family_id": "RUR-12",
+    "hidden": false,
+    "paraphrase_group": "RUR-12"
+  },
+  "clinical_intent": "历史V100不能盖过当前状态",
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "RUR-12",
+  "cost_class": "light_compute",
+  "fixture": {
+    "case_family": "RUR-12",
+    "initial_state_hash": "sha256:1a610668fd1825848281f66ec8d012691300f9aad7550b5f99736264ad308428",
+    "setup_script": "extensions/real_user_requests_v1/compiled/fixtures/RUR-12-001.json"
+  },
+  "id": "RUR-12-001",
+  "layers": [
+    "L2",
+    "L4"
+  ],
+  "oracle": {
+    "check": "real_user_request",
+    "constraint_class": "none",
+    "expect": null,
+    "gold": "contracts/RUR-12-001.json",
+    "independent_check": true,
+    "kind": "program"
+  },
+  "power_role": "exploratory",
+  "protocol": {
+    "allowed_intermediates": [],
+    "audit_required": true,
+    "budget": {
+      "tool_calls": 96,
+      "turns": 1,
+      "wall_clock_s": 120
+    },
+    "mode": "single_turn",
+    "n_runs": 1,
+    "turns": [
+      {
+        "lang": "zh",
+        "role": "user",
+        "text": "不是已经95%覆盖了吗？为什么还说90.1%？"
+      }
+    ],
+    "ui_counterpart": null
+  },
+  "provenance": {
+    "authored_on": "2026-10-03",
+    "deprecated": null,
+    "derived_from": "real_user_requests_v1:RUR-12-001",
+    "guideline_ref": null,
+    "reviewers": [
+      "authoring-only; independent review pending"
+    ],
+    "source": "audit_derived"
+  },
+  "schema_version": "1.0",
+  "scoring": {
+    "difficulty_target": "medium",
+    "gate_refs": [],
+    "primary_metric": "verified_task_goal",
+    "weight": 1.0
+  },
+  "track": "C",
+  "unit": {
+    "contrast_family_id": "RUR-12",
+    "group_type": "G-CTX",
+    "kind": "task_scenario"
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "kind": "trajectory_init",
+      "max": 1,
+      "operation": "submit"
+    },
+    {
+      "kind": "manual_next",
+      "max": 1,
+      "operation": "submit"
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 2,
+  "requested_language": "en",
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "state",
+      "statement": "Init outputs persisted as one inspectable grouped node and actually rendered before next step."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "event_sequence",
+      "statement": "Only requested next step runs; previous intermediates hidden at transition, not before inspection."
+    },
+    {
+      "id": "criterion-2",
+      "kind": "effects",
+      "statement": "No complete planning pipeline launched."
+    }
+  ],
+  "rules": [
+    {
+      "kind": "trajectory_init",
+      "op": "artifact",
+      "status": "completed"
+    },
+    {
+      "kind": "manual_next",
+      "op": "artifact",
+      "status": "completed"
+    },
+    {
+      "op": "intermediate_inspection"
+    },
+    {
+      "op": "equals",
+      "path": "manual_stage",
+      "value": 2
+    }
+  ],
+  "scenario_id": "RUR-26-002",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "state",
+      "statement": "Init outputs persisted as one inspectable grouped node and actually rendered before next step."
+    },
+    {
+      "kind": "event_sequence",
+      "statement": "Only requested next step runs; previous intermediates hidden at transition, not before inspection."
+    },
+    {
+      "kind": "effects",
+      "statement": "No complete planning pipeline launched."
+    }
+  ]
+}

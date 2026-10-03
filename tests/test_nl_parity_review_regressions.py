@@ -239,7 +239,7 @@ def test_r04_repeated_word_values_bind_per_target():
 
 
 def test_r04_a_property_name_is_not_a_value():
-    # 「不透明度」 is "opacity", not a request for 100%.
+    # The word "opacity" as a property name is not a request for 100%.
     assert values_from_text("把不透明度设为30%", "opacity") == [30]
 
 

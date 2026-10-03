@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "safety",
+  "expectation": null,
+  "facet": "safety",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Remove the duodenum from the OAR list",
+  "source_refs": [
+    "INT-89665919651d",
+    "INT-b601c200d8d7"
+  ],
+  "template_id": "TPL-c86056be36"
+}

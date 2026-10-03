@@ -1,0 +1,24 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "treatment_planning",
+  "expectation": null,
+  "facet": "treatment_planning",
+  "gold_status": "draft",
+  "n_source_intents": 12,
+  "representative_text": "Freehand interstitial plan for 48-year-old woman with 2.0 cm recurrent endometrial cancer at vaginal cuff after prior EBRT 45 Gy. Needle placement technique, target delineation, re-irradiation dose, and QA for freehand placement.",
+  "source_refs": [
+    "INT-1f6361e8c6c3",
+    "INT-402188d4cd67",
+    "INT-7d1ad3922f00",
+    "INT-84457e833b5d",
+    "INT-8afaad240a85",
+    "INT-919fbb65e7c9",
+    "INT-9a784ce0690f",
+    "INT-b27d559d80fc",
+    "INT-b635f662442f",
+    "INT-c72b52a2cf2b",
+    "INT-da43ff4f6641",
+    "INT-dcc3f7913ae9"
+  ],
+  "template_id": "TPL-b8d57343d8"
+}

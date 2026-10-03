@@ -119,3 +119,8 @@ start_server.sh
 # Local tooling / transient sync artifacts
 .codex-sync/
 server_codex_*.pid
+
+# Brachybench generated replay/negative-control data and run results are large
+# runtime artifacts (hundreds of MB) and not source; keep them local.
+benchmarks/brachybench/tests/replay/
+benchmarks/brachybench/results/

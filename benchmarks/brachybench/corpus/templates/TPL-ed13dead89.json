@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "hallucination",
+  "expectation": null,
+  "facet": "hallucination",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "How many organs were segmented?",
+  "source_refs": [
+    "INT-4f704220c433",
+    "INT-9774c4c3935c"
+  ],
+  "template_id": "TPL-ed13dead89"
+}

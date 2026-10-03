@@ -1,0 +1,87 @@
+{
+  "schema_version": "1.0",
+  "id": "B-MTURN-0020",
+  "track": "B",
+  "layers": [
+    "L4"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "multi_turn_continuity",
+  "cost_class": "state_only",
+  "power_role": "exploratory",
+  "clinical_intent": "Multi-turn session: 48yo M, recurrent HPV- oropharyngeal can ... then follow up with 42yo M, T1cN0M0 Gleason 3+3=6, PSA 5.2, ",
+  "fixture": {
+    "case_family": "legacy/multiturn",
+    "setup_script": "fixtures/setup/prostate_s02_full_pipeline.py",
+    "initial_state_hash": "sha256:38eabca0a6bcb5062deac0e5645e8bf52d9e5f51cdd0f137f824f4509461ada3"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-CTX",
+    "contrast_family_id": "legacy/multiturn"
+  },
+  "protocol": {
+    "mode": "multi_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "48yo M, recurrent HPV- oropharyngeal cancer (2cm surgical bed) after IMRT 70Gy + TORS 2y ago. Severe dysphagia (MDADI 45/100), PEG-dependent, bilateral vocal cord paralysis. Salvage interstitial plan.",
+        "lang": "en"
+      },
+      {
+        "role": "user",
+        "text": "42yo M, T1cN0M0 Gleason 3+3=6, PSA 5.2, 32cc prostate. Focal hemi-gland brachytherapy. Tumor right peripheral zone mid-gland. Family history (father, brother). Anxiety, normal sexual function. Focal treatment plan.",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 120,
+      "turns": 2,
+      "tool_calls": 12
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 3
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "state_invariant",
+    "constraint_class": "postcondition",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "multi_turn_state_ok",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "medium"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "MTURN-0020",
+    "hidden": false,
+    "generation_seed": 2026,
+    "canary_class": null,
+    "behavioral_probes": [
+      "multi_turn"
+    ],
+    "contrast_family_id": "legacy/multiturn"
+  },
+  "provenance": {
+    "source": "legacy_migrated",
+    "derived_from": "legacy:v1/19_workflow.json#Q1476+v1/19_workflow.json#Q1467",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto-verifier"
+    ],
+    "authored_on": "2026-09-30",
+    "deprecated": null
+  }
+}

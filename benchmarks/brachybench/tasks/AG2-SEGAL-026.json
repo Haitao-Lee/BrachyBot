@@ -1,0 +1,83 @@
+{
+  "schema_version": "1.0",
+  "id": "AG2-SEGAL-026",
+  "track": "I",
+  "layers": [
+    "L2",
+    "L4"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "segmentation_nifti_roundtrip",
+  "cost_class": "light_compute",
+  "power_role": "primary",
+  "clinical_intent": "After exporting the segmentation to NIfTI, an independent parser must confirm the geometry/dimensions are unchanged.",
+  "fixture": {
+    "case_family": "synth/interop_case",
+    "setup_script": "fixtures/setup/interop_case.py",
+    "initial_state_hash": "sha256:5580992734c65dddb22edba5969a1955389deab388d8c25a38c79110fe4dc002"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-CTX",
+    "contrast_family_id": "segmentation/nifti_roundtrip"
+  },
+  "protocol": {
+    "mode": "single_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "After exporting the segmentation to NIfTI, an independent parser must confirm the geometry/dimensions are unchanged.",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 1,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "roundtrip_fidelity",
+    "constraint_class": "none",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "roundtrip_fidelity_pass",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "medium"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "AG2-SEGAL-026-P01",
+    "hidden": false,
+    "generation_seed": 31300,
+    "canary_class": null,
+    "behavioral_probes": [
+      "dims_drift"
+    ],
+    "contrast_family_id": "segmentation/nifti_roundtrip"
+  },
+  "provenance": {
+    "source": "audit_derived",
+    "derived_from": "tool_factory/segmentation_alignment.py:131-163 (align_label_array_to_reference)",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto"
+    ],
+    "authored_on": "2026-10-01",
+    "deprecated": null
+  }
+}

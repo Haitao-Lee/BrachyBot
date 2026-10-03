@@ -134,7 +134,7 @@ class ResponseToolMixin:
         This is not a response whitelist and does not decide whether an OAR
         tool should run. The LLM/policy still owns the action decision. Once
         it has selected an OAR tool, this entity scope stops that tool from
-        broadening a request such as ``肝脏和肿瘤`` into a full structure set.
+        broadening a request such as ``liver and tumor`` into a full structure set.
         """
         if self._full_oar_scope_requested(message):
             return []
@@ -152,10 +152,11 @@ class ResponseToolMixin:
     def _explicit_organ_plus_tumor_scope(self, message: str) -> List[str]:
         """Return named organs only for an explicit anatomy-plus-tumor ask.
 
-        A tumor site alone (for example ``分割肝癌``) is a CTV request. A
-        coordinated request (``分割肝脏和肿瘤``) authorizes both the tumor CTV
-        and the named anatomy mask. This avoids inventing a broad OAR action
-        from a cancer-site name while still honoring the user's two objects.
+        A tumor site alone (for example ``segment liver cancer``) is a CTV
+        request. A coordinated request (``segment liver and tumor``) authorizes
+        both the tumor CTV and the named anatomy mask. This avoids inventing a
+        broad OAR action from a cancer-site name while still honoring the
+        user's two objects.
         """
         organs = self._requested_oar_organs(message)
         if not organs:
@@ -523,7 +524,7 @@ print(json.dumps(result))
             overlays = {}
             hide_unrelated = False
             # A location question is itself a request for an unambiguous mark,
-            # even when the user did not repeat the words "圈出" or "标注".
+            # even when the user did not repeat the words "circle it out" or "annotate".
             annotation_policy = "required"
         elif target == "surgical_guide":
             views = ["data-tree", "viewer-3d"]
@@ -705,10 +706,10 @@ print(json.dumps(result))
 
         The Session already records which downstream artifacts are stale in
         ``artifact_status`` (``quality_check`` / ``report`` / ``surgical_guide``).
-        Executing exactly those, in dependency order, is what "全部更新" means;
+        Executing exactly those, in dependency order, is what "update everything" means;
         deriving it from the record keeps the turn deterministic and avoids
         re-running operations that are already current.  Targets explicitly
-        carved out ("不含导板") are skipped.  Returns ``None`` when there is no
+        carved out ("excluding the guide") are skipped.  Returns ``None`` when there is no
         active planning or nothing is stale, leaving the turn to the model.
         """
         parsed = _request_parse.parse_request(message)
@@ -895,7 +896,7 @@ print(json.dumps(result))
 
         # This is the only direct clinical call for a current Dose/DVH
         # refresh. Do it before the legacy action-pattern scan so wording such
-        # as "重新计算DVH相关指标" cannot be mistaken for a full plan, and so
+        # as "recompute DVH-related metrics" cannot be mistaken for a full plan, and so
         # the route also works for older callers that did not install a local
         # policy first.
         if is_current_case_dose_recompute_request(message):
@@ -1104,7 +1105,7 @@ print(json.dumps(result))
                 return None
             # State gate: a guide that is already ready and whose inputs were
             # not explicitly changed is a read/presentation request, not a new
-            # long-running computation.  An explicit "重新/重建/重做/覆盖"
+            # long-running computation.  An explicit "regenerate/rebuild/redo/overwrite"
             # keeps the regeneration path.
             memory = getattr(self, "memory", None)
             retrieve = getattr(memory, "retrieve", None)
@@ -1261,7 +1262,7 @@ print(json.dumps(result))
             elif has_oar and not has_ctv:
                 if re.search(r'(ctv|靶区|临床靶区)', msg, re.IGNORECASE):
                     ordered_actions.append('segment_ctv')
-            # A coordinated request such as "分割肝脏和肿瘤" explicitly
+            # A coordinated request such as "segment liver and tumor" explicitly
             # names an anatomy mask plus a CTV candidate. Add only the named
             # OAR action; the OAR params below retain that same subset.
             if (
@@ -2438,7 +2439,7 @@ Output (JSON array of strings):"""
             return 'knowledge'
 
         # Real-time is a scoped request for changing external information,
-        # not a substring such as "当前" in "当前规划" or "score" in plan score.
+        # not a substring such as "current" in "current plan" or "score" in plan score.
         if self._detect_realtime_query(message):
             return 'realtime'
 
@@ -2742,7 +2743,7 @@ Output (JSON array of strings):"""
         """Detect external-project research and return a web-search query.
 
         A named external project must be researched from public sources.  This
-        detector also handles short follow-ups such as ``其代码在哪里`` by
+        detector also handles short follow-ups such as ``where is its code`` by
         looking at recent user messages, while an explicit BrachyBot path/name
         keeps the request in the local-code workflow.
         """
@@ -2827,6 +2828,10 @@ Output (JSON array of strings):"""
 
         Returns filtered list of valid tool calls. Invalid ones are dropped.
         """
+        # Malformed arguments stay visible as failed steps, never converted
+        # into empty/default mutation parameters by an alias normalizer.
+        rejected_arguments = [call for call in tool_calls if call.get("_argument_error")]
+        tool_calls = [call for call in tool_calls if not call.get("_argument_error")]
         # INTERNAL FIELDS that the LLM must NEVER inject into a tool call.
         # These are runtime-side-channel values that the agent passes
         # via Python kwargs (e.g. step_callback), not part of the tool
@@ -2867,7 +2872,7 @@ Output (JSON array of strings):"""
             # Do not let provider-selected captures bypass that decision.
             logger.warning("Dropping provider calls for an ambiguous visual target")
             return []
-        # Analysis requests ("分析导板特点") are read-only discourse acts.  The
+        # Analysis requests ("analyze the guide characteristics") are read-only discourse acts.  The
         # surgical_guide schema defaults to action="generate" (a mutation), so a
         # provider trying to "look at" the guide would otherwise be blocked and
         # the turn would end with "confirm to regenerate" nonsense.  Coerce
@@ -2876,7 +2881,7 @@ Output (JSON array of strings):"""
         # tools so the answer can be grounded in real characteristics.
         analysis_request = is_artifact_analysis_request(guard_question)
         if analysis_request is None and is_analysis_shaped(guard_question):
-            # A short follow-up ("分析啊") may carry no artifact noun; the
+            # A short follow-up ("analyze that") may carry no artifact noun; the
             # provider has already resolved the target.  The same read-only
             # coercion applies.
             analysis_request = {"artifact": "", "complex": False}
@@ -3044,8 +3049,8 @@ Output (JSON array of strings):"""
 
         # Object-level mis-selection guard: an unambiguous report mutation can
         # never be executed by the guide tool or by a read-only presentation
-        # tool. A provider occasionally maps "手术报告" (surgical report) to
-        # `surgical_guide` because of the word "手术". Keep the protected
+        # tool. A provider occasionally maps "surgical report" to
+        # `surgical_guide` because of the word "surgical". Keep the protected
         # report object attached to the single report capability even when a
         # semantic/compound turn bypassed the deterministic report route.
         # Negation/compound wording is excluded by the predicate itself, so
@@ -3593,4 +3598,4 @@ Output (JSON array of strings):"""
         # an explicit confirmation instead of the user seeing a generic
         # "no verifiable result".  Reset every call so it reflects one turn.
         self._blocked_mutating_tool_names = blocked_mutating
-        return valid
+        return valid + rejected_arguments

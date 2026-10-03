@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "input_variations_all",
+  "expectation": null,
+  "facet": "input_variations_all",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Generate treatment plan",
+  "source_refs": [
+    "INT-8ce5349537b7",
+    "INT-b3e01505db52"
+  ],
+  "template_id": "TPL-692c670646"
+}

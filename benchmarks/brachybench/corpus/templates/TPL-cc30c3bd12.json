@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "smoke_12",
+  "expectation": null,
+  "facet": "smoke_12",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Analyze the image",
+  "source_refs": [
+    "INT-73649e4afb9a",
+    "INT-772e5a700e1f"
+  ],
+  "template_id": "TPL-cc30c3bd12"
+}

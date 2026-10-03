@@ -28,7 +28,7 @@ def setup():
     ], 'needles': [{'id': 'n', 'trajectory_id': 't', 'points': [[0, 0, 0], [0, 0, 30]]}]}
     agent = SimpleNamespace(memory=Memory(
         dose_metrics={'v100': 0.903, 'd90': 120.63, 'plan_score': 80, 'volume_metric_units': 'fraction'},
-        dose_distribution=object(), manual_plan_version=1))
+        dose_distribution=object(), manual_plan_version=1, active_planning_id='plan', ctv_mask=object()))
     return agent, geometry
 
 
@@ -69,7 +69,7 @@ def test_anatomy_or_config_change_invalidates_dose_comparison():
     before = capture(agent, geometry)
     agent.memory.store('ctv_mask', object())
     assert not compare(before, capture(agent, geometry))['dose']['comparable']
-    agent.memory.store('ctv_mask', None)
+    agent.memory.store('ctv_mask', object())
     agent.memory.store('plan_config', {'prescription_gy': 130})
     assert not compare(before, capture(agent, geometry))['dose']['comparable']
 

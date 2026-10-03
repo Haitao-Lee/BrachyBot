@@ -36,7 +36,7 @@ _ACTION_RE = re.compile(
 _IMPERATIVE_RE = re.compile(
     # Chinese imperative markers are not followed by ``\\b`` because two
     # adjacent CJK characters are both word characters in Python's regex
-    # engine (for example ``请将3D viewer``).
+    # engine (for example "please set the 3D viewer").
     r"(?:请|帮我|麻烦|将|把|让|使|使得|需要|执行|点击|右键|右击|悬停|聚焦|失焦|指针|鼠标|选择|设置|设为|设成|调成|"
     r"调整为|改为|切换到|显示为|隐藏|展开|收起|打开|关闭|启用|禁用|放大|缩小|适配|重置|增加|减少|调高|调低|"
     r"应用|运行|提交|生成|创建|新增|重算|重新计算|重新规划|重规划|开始|停止|确认|取消|保存|下载|最大化|最小化|全屏|"
@@ -49,7 +49,7 @@ _IMPERATIVE_RE = re.compile(
 
 _QUESTION_RE = re.compile(
     # CJK question words are not separated by whitespace in normal user
-    # input (``请问3D重建按钮在哪里`` is a common example).  The previous
+    # input ("where is the 3D reconstruct button?" is a common example).  The previous
     # expression required a trailing space/end anchor and consequently let
     # location questions enter the mutation path.  Keep English words
     # boundary-aware so ``is`` in ``isodose`` is not treated as a question.
@@ -59,7 +59,7 @@ _QUESTION_RE = re.compile(
 )
 
 _LOW_LEVEL_EVENT_RE = re.compile(
-    # Event names may be glued directly to CJK text (``pointerdown坐标``),
+    # Event names may be glued directly to CJK text (for example a
     # so this intentionally has no ASCII word-boundary requirement.
     r"pointer(?:down|move|up|over|out|cancel|enter|leave)|"
     r"mouse(?:down|move|up|over|out|enter|leave)|"
@@ -95,11 +95,12 @@ _VALUE_BINDING_MARKER = re.compile(
 # Opacity word values, collected in one pass so they come back in the order
 # the user wrote them and a repeated word is kept (audit defect R04).  Running
 # one `search` per pattern in declaration order is what turned
-# 「不透明和半透明」 into [50, 100] instead of [100, 50] and dropped the second
-# 「半透明」 of 「半透明和半透明」 entirely.
+# "opaque and translucent" into [50, 100] instead of [100, 50] and dropped the
+# second "translucent" of "translucent and translucent" entirely.
 #
-# `(?!度)` keeps a *property* name from being read as a value: 「不透明度」 is
-# "opacity", not a request for 100%.
+# The negative lookahead on the opacity suffix keeps a *property* name from
+# being read as a value: an "opacity" property is "opacity", not a request
+# for 100%.
 _OPACITY_WORD_TOKENS: Tuple[Tuple[str, int], ...] = (
     ("\u5b8c\u5168\u900f\u660e|\u900f\u660e\u81f3?\u5e95|"
      "fully\\s*transparent|completely\\s*transparent", 0),
@@ -214,8 +215,8 @@ _PROPERTY_PATTERNS: Tuple[Tuple[str, str], ...] = (
 # independent from any particular natural-language sentence.
 _GROUP_ALIASES: Tuple[Tuple[str, str], ...] = (
     # Python's Unicode ``\b`` treats adjacent CJK and Latin characters as
-    # the same word. Use ASCII-token lookarounds so ``所有OAR`` and
-    # ``CTV肿瘤`` remain addressable in natural Chinese input.
+    # the same word. Use ASCII-token lookarounds so Chinese-prefixed terms
+    # like "all OAR" and "CTV tumor" remain addressable in natural Chinese input.
     ("oar", r"(?<![a-z0-9_])oar(?![a-z0-9_])|organ(?:s)?\s*at\s*risk|危及器官|器官"),
     ("ctv", r"(?<![a-z0-9_])ctv(?![a-z0-9_])|clinical\s*target|靶区|临床靶区|肿瘤|病灶|肿块"),
     ("non_traversable", r"non[_\s-]*traversable|不可穿刺|不可通过"),
@@ -426,7 +427,7 @@ def _group_from_entry(entry: Mapping[str, Any]) -> Optional[str]:
 
 
 def _command_from_text(text: str, property_name: Optional[str]) -> Optional[str]:
-    # Resolve destination selectors before the generic ``切换``/``switch``
+    # Resolve destination selectors before the generic "toggle"/"switch"
     # toggle branch.  A panel or layout control is a value-selection action;
     # treating the navigation verb as a boolean toggle can select the wrong
     # command even when the live capability is unambiguous.
@@ -686,7 +687,7 @@ def _infer_selection_value(text: str, entry: Mapping[str, Any]) -> Optional[str]
                 return value
 
     # When a custom select does not expose options yet, accept an explicit
-    # ``to/为/成/as`` value but never guess from an arbitrary trailing word.
+    # ``to/as`` value but never guess from an arbitrary trailing word.
     explicit = re.search(
         r"(?:\bto\b|\bas\b|为|成)\s*[\"“']?([^\"”'，。,。！？!?\s]+)",
         normalized,
@@ -701,11 +702,11 @@ def _is_mutation_turn(text: str) -> bool:
         return False
     # A question such as “can I set opacity?” asks for capability/help and
     # must not modify the interface. An explicit imperative wins only when it
-    # contains an actual command form ("please set ...", "把 ... 设为 ...").
+    # contains an actual command form ("please set ...", "set ... to ...").
     if _QUESTION_RE.search(normalized):
         # A question that merely contains an imperative-looking courtesy word
-        # (for example ``请问...在哪里``) is still a read/help request.  Do
-        # not mutate the UI just because the question starts with ``请`` or
+        # (for example "where is ...?") is still a read/help request.  Do
+        # not mutate the UI just because the question starts with "please" or
         # ``can you``.  An imperative followed by a real question suffix is
         # kept conservative as well; the user can issue the command directly.
         return bool(_IMPERATIVE_RE.search(normalized)) and not bool(
@@ -887,7 +888,7 @@ def _specific_subject_score(text: str, entry: Mapping[str, Any], group: Optional
             candidates.append(str(value))
     # Select-like controls publish their option labels/values as part of the
     # live capability.  Treat a value explicitly named by the user as the
-    # control subject, so ``选择报告模板 liver`` resolves to that exact
+    # control subject, so "select report template liver" resolves to that exact
     # mounted select even when the surrounding UI is currently in English.
     for option_value, option_label in _entry_option_pairs(entry):
         candidates.extend((option_value, option_label))
@@ -925,7 +926,7 @@ def _specific_label_score(text: str, entry: Mapping[str, Any]) -> float:
     Subject scoring intentionally ignores words such as ``save`` and
     ``reset`` because they are operations rather than object names.  That is
     correct for preventing a random click, but it also made a uniquely
-    labelled control like "保存"/"Save" impossible to address when no typed
+    labelled control like "Save" impossible to address when no typed
     target existed.  This second score is restricted to the control's own
     human-facing identity and ignores only generic UI nouns, so a live label
     can authorize the exact stable ref without introducing sentence branches.
@@ -1361,7 +1362,7 @@ def _resolve_ui_operation_request_single(
             # A control has two independent semantics: the subject/context it
             # belongs to (report, panel, file, ...) and the operation it can
             # perform (click/select/set/...).  The old single-property test
-            # treated ``选择报告模板`` as a report *read* query and rejected
+            # treated "select report template" as a report *read* query and rejected
             # the live select action because the entry was classified as
             # ``action``.  Preserve strictness for competing data properties,
             # but allow a context label to match a generic action control when
@@ -1401,7 +1402,7 @@ def _resolve_ui_operation_request_single(
                 continue
         score += subject_score
         # A control's visible/i18n label is an executable identity too. This
-        # covers operation-labelled controls such as Save/Reset/导出 when the
+        # covers operation-labelled controls such as Save/Reset/Export when the
         # page has not assigned a typed target, while remaining tied to the
         # currently mounted element rather than a phrase whitelist.
         label_score = _specific_label_score(text, entry)

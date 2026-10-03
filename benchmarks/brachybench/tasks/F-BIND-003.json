@@ -1,0 +1,98 @@
+{
+  "schema_version": "1.0",
+  "id": "F-BIND-003",
+  "track": "F",
+  "layers": [
+    "L2",
+    "L4",
+    "L5"
+  ],
+  "comparability": [
+    "alpha",
+    "beta",
+    "gamma"
+  ],
+  "construct": "multi_target_parameter_binding",
+  "cost_class": "state_only",
+  "power_role": "primary",
+  "clinical_intent": "The same value appearing twice must be bound twice (R04 duplicate-value regression).",
+  "fixture": {
+    "case_family": "phantom/pancreas_p03",
+    "setup_script": "fixtures/setup/pancreas_p03_pipeline.py",
+    "initial_state_hash": "sha256:bb54b53f5ceec64b975a9a01c3b7c6d5e8293a7f3b940a64bc6d922c30607a7b"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-CT",
+    "contrast_family_id": "F/bind/repeated_value"
+  },
+  "protocol": {
+    "mode": "dual_path",
+    "turns": [
+      {
+        "role": "user",
+        "text": "Set both the CTV and the OAR to 70%",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": [
+      {
+        "action": "set_opacity",
+        "target": "ctv_pancreas",
+        "value": 0.7
+      },
+      {
+        "action": "set_opacity",
+        "target": "oar_duodenum",
+        "value": 0.7
+      }
+    ],
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 1,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "state_diff",
+    "constraint_class": "postcondition",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null,
+    "persistence": "terminal",
+    "artifact": "cws.ui.opacity"
+  },
+  "scoring": {
+    "primary_metric": "state_diff_pass",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "medium"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "F-BIND-003-P01",
+    "hidden": false,
+    "generation_seed": 4503,
+    "canary_class": null,
+    "behavioral_probes": [
+      "duplicate_value_dropped"
+    ],
+    "contrast_family_id": "F/bind/repeated_value"
+  },
+  "provenance": {
+    "source": "audit_derived",
+    "derived_from": "agent_runtime/ui_operations.py:135 (values_from_text keeps repeats, R04)",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto"
+    ],
+    "authored_on": "2026-09-30",
+    "deprecated": null
+  }
+}

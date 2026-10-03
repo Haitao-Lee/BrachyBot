@@ -167,7 +167,7 @@ second, competing capture transaction.
 
 ## 4. Live LLM provider health contract
 
-An internal-server session reported "AI 语言服务暂时不可用" while the real
+An internal-server session reported "AI language service temporarily unavailable" while the real
 cause was a 401: `ANTHROPIC_API_KEY` was empty in the server environment and
 `brain/core/router.py` fell back to a stale `ANTHROPIC_AUTH_TOKEN`
 (`tp-ceb…`). The same request succeeded with the correct key plus the
@@ -693,7 +693,7 @@ been checked.
 > **This is the newest authoritative review entry and is intentionally located at the absolute beginning of the file.**
 > It records the failure in which the user asked `将结果在viewer中显示出来啊`, the
 > local classifier reported `ui_control`, but the turn still attempted an LLM
-> call and ended with `AI 语言服务暂时不可用`. The diagnosis was rechecked
+> call and ended with `AI language service temporarily unavailable`. The diagnosis was rechecked
 > against the remote source, the action registry, the frontend refresh path,
 > and a provider-independent stream test.
 
@@ -725,7 +725,7 @@ request as `ui_control`, but returned no direct execution grant. In
 `agent_runtime/chat_workflows.py`, the streaming direct-tool condition allowed
 segmentation, planning, guide generation, and dose recomputation, but not
 `ui_control`. The request therefore proceeded to
-`_run_llm_function_calling_stream()`. The trace's `LLM 调用 1` failure is the
+`_run_llm_function_calling_stream()`. The trace's `LLM call 1` failure is the
 expected observable result of that path when the configured provider is
 unavailable; it is not evidence that Viewer rendering itself failed.
 
@@ -902,7 +902,7 @@ repair is the acceptance case and must produce a non-empty
 > **This is the newest authoritative review entry and is intentionally located at the absolute beginning of the file.**
 > It records the failure shown after the user sent `重新规划一遍吧`: the UI
 > created its optimistic trace, left the request-analysis row pending, and then
-> reported `本次请求暂时无法完成` at approximately 30 seconds. The entry
+> reported `This request cannot be completed at the moment` at approximately 30 seconds. The entry
 > covers the actual request/worker/persistence ordering and the corrective
 > implementation. Earlier incident entries remain below as audit material.
 
@@ -915,7 +915,7 @@ workspace persistence before returning the `text/event-stream` response. A
 large snapshot or a busy SQLite database could therefore keep the HTTP request
 inside `api_chat()` until the frontend's connection deadline expired. Because
 the optimistic trace is rendered before the fetch resolves, the user saw its
-placeholder row (`多智能体路由`) remain `PENDING` and then received the generic
+placeholder row (`Multi-Agent Router`) remain `PENDING` and then received the generic
 failure message.
 
 | Confirmed problem | Root cause | Status |
@@ -1208,7 +1208,7 @@ evidence is:
 
 `is_current_planning_provenance_query()` recognizes questions asking which
 Planning produced a current calculation, including Chinese forms such as
-“哪次规划”“基于哪个规划”“依据”和 English forms such as “which Planning was
+“哪次规划”“基于哪个规划”“依据” and English forms such as “which Planning was
 this recomputation based on”. It is evaluated before re-plan and compound-action
 classification. The policy is:
 
@@ -3023,7 +3023,7 @@ two-pole smoothing (12 lambda/mu cycles by default): it removes the visible
 fit or closing the bores. Measured dihedral p95 dropped from 54.7 deg (raw) to
 27.5 deg.
 
-### 2. Skin-side trim ("削" the skin-facing face)
+### 2. Skin-side trim ("shave" the skin-facing face)
 
 The sleeve cylinder is built along the needle axis; on oblique needles its wall
 crosses the skin and left voxels inside the body. The final solid is now cut

@@ -11,6 +11,27 @@
     const publish = () => window.renderMonitorDashboard?.([...cards.values()], {autoCompare});
     const text = (card, zh, en) => card.language === 'zh' ? zh : en;
     const safe = value => String(value ?? '').replace(/[\\`*_{}\[\]<>|]/g, ' ');
+    // One measurement vocabulary for chat and the resident workspace. Never
+    // call a finite-surface clearance an axis distance, or missing data zero.
+    window.monitorConflictText = (pair, language = 'en') => {
+        const zh = language === 'zh', needle = pair.kind === 'needle_pairs';
+        const exact = pair.clearance_basis === 'finite_parallel_cylinders';
+        const gap = pair.surface_clearance_mm;
+        const value = Number.isFinite(gap) ? gap : pair.distance_mm;
+        const label = Number.isFinite(gap)
+            ? exact ? (zh ? '实体表面间隙' : 'finite surface gap')
+                : (zh ? '轴线模型间隙下界' : 'axis-model clearance bound')
+            : (zh ? '轴线距离' : 'axis distance');
+        const status = {new:zh?'新增':'new', worsened:zh?'加重':'worsened',
+            improved:zh?'改善但仍需复核':'improved, still needs review', existing:zh?'原有':'pre-existing'}[pair.change];
+        const minimum = pair.minimum_clearance_mm;
+        return [status, `${needle ? (zh?'针道':'needle ') : ''}${label} ${Number.isFinite(value) ? value.toFixed(2) + ' mm' : (zh?'未核实':'unverified')}`,
+            Number.isFinite(minimum) ? (zh ? `配置间隙要求 ${minimum.toFixed(2)} mm` : `configured gap ${minimum.toFixed(2)} mm`) : '',
+            exact && Number.isFinite(gap) && Number.isFinite(minimum)
+                ? (zh ? `尚差 ${Math.max(0, minimum-gap).toFixed(2)} mm（不是建议移动量）`
+                    : `gap shortfall ${Math.max(0, minimum-gap).toFixed(2)} mm (not a movement prescription)`) : '']
+            .filter(Boolean).join(' · ');
+    };
     const current = card => typeof trainingMonitorState !== 'undefined'
         && trainingMonitorState.active && trainingMonitorState.runId === card.runId
         && _activeApiSessionId() === card.sessionId;
@@ -31,11 +52,22 @@
         if (code === 'viewer_tab_hidden') return text(card,
             '页面在后台，截图已暂缓；返回页面后会自动核对版本并补拍。',
             'Capture deferred in the background; returning will recheck the revision before retrying.');
+        const reasons = {
+            monitor_targets_unavailable: ['当前 Viewer 尚无可核验的编辑对象', 'edited objects are not yet verifiable in the Viewer'],
+            target_object_not_loaded_in_live_data_tree: ['目标数据节点尚未加载', 'target data nodes have not loaded'],
+            workspace_visual_restore_incomplete: ['Viewer 资源仍在恢复', 'Viewer resources are still restoring'],
+            attachment_not_rendered: ['图像没有写入对话附件', 'images were not delivered to chat attachments'],
+            target_not_verified_visible_in_viewer: ['图中目标位置不可核验', 'target positions could not be verified in the image'],
+            capture_unavailable: ['截图执行入口不可用', 'the capture executor is unavailable'],
+        };
+        if (reasons[code]) return text(card,
+            `未完成截图：${reasons[code][0]}。文字仍来自已保存的编辑；可在资源就绪后重试。`,
+            `Image not captured: ${reasons[code][1]}. Text reflects the saved edit; retry when ready.`);
         return text(card, '本次截图尚未完成；可以重试，以下文字仍是已保存的编辑结果。',
             'Image not captured yet. Retry below; the text still describes the saved edit.');
     };
 
-    function render(card) {
+    function render(card, notify = true) {
         if (card.sessionId !== _activeApiSessionId() || card.runId !== trainingMonitorState.runId) return;
         const info = card.data.interaction;
         const lines = [text(card, '**这次编辑的反馈**', '**Feedback on this edit**')];
@@ -50,11 +82,21 @@
                 lines.push(`- **${safe(obj.id)}**：${verb}`);
             }
             for (const pair of info.conflicts || []) {
-                const value = pair.surface_clearance_mm ?? pair.distance_mm;
-                lines.push(`- ${safe(pair.first_id)} ↔ ${safe(pair.second_id)}：${text(card,
-                    pair.kind === 'seed_pairs' ? (pair.clearance_basis === 'finite_parallel_cylinders' ? '实体表面间隙' : '轴线模型间隙下界') : '针道轴线距离',
-                    pair.kind === 'seed_pairs' ? (pair.clearance_basis === 'finite_parallel_cylinders' ? 'finite surface gap' : 'axis-model clearance bound') : 'needle-axis distance')} ${Number(value).toFixed(2)} mm`);
+                lines.push(`- ${safe(pair.first_id)} ↔ ${safe(pair.second_id)}：${window.monitorConflictText(pair, card.language)}`);
             }
+            const counts = info.conflict_counts || {};
+            if (counts.resolved) lines.push(text(card, `已消除 ${counts.resolved} 组相关间距问题。`, `${counts.resolved} related spacing conflicts resolved.`));
+            if (counts.existing) lines.push(text(card, `另有 ${counts.existing} 组在编辑前已存在，不归因于这次操作。`, `${counts.existing} conflicts predated this edit and are not attributed to it.`));
+            const related = info.related_object_counts || {};
+            if (related.dependent) lines.push(text(card, `${related.dependent} 个关联粒子随针道更新，并非独立拖动。`, `${related.dependent} associated seeds followed the needle update, not independent drags.`));
+            if (related.normalized) lines.push(text(card, `${related.normalized} 个粒子仅在保存时刷新方向或归属。`, `${related.normalized} seeds only had orientation or ownership normalized on save.`));
+            for (const move of info.return_movements || []) {
+                if (!Array.isArray(move.vector_mm) || move.vector_mm.length !== 3 || !move.vector_mm.every(Number.isFinite)) continue;
+                const label = `${safe(move.object_id)}${move.endpoint ? text(card, ` 端点 ${move.endpoint}`, ` endpoint ${move.endpoint}`) : ''}`;
+                lines.push(text(card, `${label} 返回编辑前位置的患者坐标位移：[${move.vector_mm.map(v=>`${v>=0?'+':''}${v.toFixed(2)}`).join(', ')}] mm。`,
+                    `${label} pre-edit return displacement in patient coordinates: [${move.vector_mm.map(v=>`${v>=0?'+':''}${v.toFixed(2)}`).join(', ')}] mm.`));
+            }
+            if (info.return_movements?.length) lines.push(text(card, '上述向量不是屏幕拖动方向，也不是剂量最优方向；恢复操作仍需通过安全检查。', 'These vectors are not screen or dose-optimal directions; restoration still requires safety validation.'));
             lines.push(`**${text(card, '剂量对比', 'Dose comparison')}**`, info.dose_note);
             if (info.metric_rows?.length) {
                 lines.push(text(card, '| 指标 | 编辑前 | 编辑后 | 差值 |', '| Metric | Before | After | Change |'),
@@ -66,17 +108,22 @@
         if (card.busy) lines.push(card.busy);
         if (card.notice) lines.push(card.notice);
         if (card.decision) lines.push(card.decision);
-        const captureText = card.captureState === 'ready' ? text(card,
+        const captureText = ['ready', 'partial'].includes(card.captureState) ? text(card,
             '已核验的图像附在本卡片下方。若图中有紫色箭头，它表示返回编辑前位置的方向，不表示计算得到的最优位置。',
             'Verified images are attached below. Purple arrows, when present, indicate the pre-edit position, not an optimized destination.')
             : ['failed', 'deferred'].includes(card.captureState) ? errorText(card, card.captureError)
                 : card.data.suggested_screenshot ? text(card, '正在准备本次编辑的定位截图…', 'Preparing location images for this edit…') : '';
         if (captureText) lines.push(captureText);
+        if (card.captureState === 'partial') lines.push(text(card,
+            `仅部分图像已交付${card.omittedRefs?.length ? `；未核验对象：${card.omittedRefs.map(safe).join('、')}` : ''}。不能据缺失图像判断位置。`,
+            `Only partial images were delivered${card.omittedRefs?.length ? `; unverified objects: ${card.omittedRefs.map(safe).join(', ')}` : ''}. Missing images establish no location.`));
+        if (card.captureRecords?.length && !['ready','partial'].includes(card.captureState)) lines.push(text(card,
+            '此卡片下方还保留先前检查点的图像；它们不是本次待完成截图的结果。', 'Earlier checkpoint images remain below; they are not evidence of this pending capture.'));
         addChat('bot-response', lines.join('\n\n').replace(/\|\n\n\|/g, '|\n|'), false,
             card.createdAt, false, card.sessionId, {requestId: card.requestId,
                 messageId: card.messageId, messageKind:'monitor_feedback', responseLanguage: card.language});
         attachActions(card);
-        publish();
+        if (notify) publish();
     }
 
     async function capture(card) {
@@ -107,7 +154,7 @@
     window.runMonitorCheckpointAction = async (id, action, options = {}) => {
         const card = cards.get(id);
         if (!card || !latest(card) || card.busy) return false;
-        if (action === 'capture') { await capture(card); return true; }
+        if (action === 'capture') { card.retryCount = 0; await capture(card); return true; }
         if (action === 'focus') {
             const allowed = card.data.interaction?.spatial_refs || card.data.suggested_screenshot?.object_ids || [];
             const refs = options.refs || allowed;
@@ -190,7 +237,7 @@
             actions.appendChild(button);
         };
         add('定位编辑对象', 'Locate edited objects', () => window.runMonitorCheckpointAction(card.id, 'focus'));
-        if (card.captureState === 'failed') add('重试截图', 'Retry image', () => window.runMonitorCheckpointAction(card.id, 'capture'));
+        if (['failed','deferred','partial'].includes(card.captureState)) add('重试截图', 'Retry image', () => window.runMonitorCheckpointAction(card.id, 'capture'));
         if (!card.data.interaction?.dose_current) add('重算剂量并比较', 'Recompute and compare', () => window.runMonitorCheckpointAction(card.id, 'dose'));
         if (card.evidence.restore_token && !card.decision) {
             for (const keep of [false, true]) add(keep ? '保留这次编辑' : '恢复编辑前位置',
@@ -218,8 +265,12 @@
         if (card && Number(evidence.after_version) < Number(card.evidence.after_version)) return null;
         if (card?.lastEventId === evidence.event_id) return card;
         for (const prior of cards.values()) {
-            if (prior.id !== id && Number(prior.evidence.after_version) <= Number(evidence.after_version)) {
-                prior.superseded = true; cancelRetry(prior); render(prior);
+            if (prior.id !== id && !prior.superseded && Number(prior.evidence.after_version) <= Number(evidence.after_version)) {
+                prior.superseded = true; cancelRetry(prior);
+                if (['pending','deferred'].includes(prior.captureState)) {
+                    prior.captureState = 'failed'; prior.captureError = 'monitor_checkpoint_superseded';
+                }
+                render(prior, false);
             }
         }
         const newer = [...cards.values()].some(prior => Number(prior.evidence.after_version) > Number(evidence.after_version));
@@ -227,7 +278,7 @@
             card = {id, sessionId, runId, createdAt:Date.now(), requestId:`monitor-${runId}`,
                 messageId:`assistant-monitor-${runId}-edit-${id}`, captureState:'pending'};
             cards.set(id, card);
-            if (cards.size > 40) cards.delete(cards.keys().next().value);
+            if (cards.size > 40) { const oldest = cards.values().next().value; cancelRetry(oldest); cards.delete(oldest.id); }
         }
         Object.assign(card, {data, evidence, lastEventId:evidence.event_id,
             language: data.language || monitorConversationLanguage(sessionId), superseded:newer});
@@ -235,6 +286,9 @@
         card.captureState = newer ? 'failed' : data.suggested_screenshot ? 'pending' : 'none';
         if (newer) card.captureError = 'monitor_checkpoint_superseded';
         card.notice = '';
+        if (['kept','restored'].includes(evidence.decision)) card.decision = text(card,
+            evidence.decision === 'kept' ? '已保留这次编辑。' : '已恢复编辑前位置；剂量仍需更新。',
+            evidence.decision === 'kept' ? 'This edit was kept.' : 'Pre-edit position restored; dose requires updating.');
         // Screenshots and their later outcomes use exactly this same message.
         data.monitor_card_id = card.messageId;
         render(card);
@@ -249,13 +303,25 @@
         if (data.event?.event_id !== card.lastEventId) return true;
         card.captureState = result.success ? 'ready' : 'failed';
         card.captureError = result.error || '';
-        if (!result.success) retryCapture(card);
+        if (result.success && !Array.isArray(result.attachments)) {
+            card.captureState = 'failed'; card.captureError = 'attachment_not_rendered';
+        } else if (result.success && !result.attachments.length) {
+            card.captureState = 'failed'; card.captureError = 'attachment_not_rendered';
+        } else if (result.success) {
+            card.omittedRefs = result.omittedTargetRefs || [];
+            card.captureState = result.error || card.omittedRefs.length ? 'partial' : 'ready';
+            card.captureRecords ||= [];
+            if (!card.captureRecords.some(record => record.eventId === card.lastEventId))
+                card.captureRecords.push({eventId:card.lastEventId, version:card.evidence.after_version,
+                    views:[...new Set(result.attachments.map(item=>item.target).filter(Boolean))]});
+        }
+        if (card.captureState === 'failed') retryCapture(card);
         render(card);
         return true;
     };
     window.markMonitorEvidenceViewed = id => {
         const card = cards.get(id);
-        if (!card || !current(card) || card.captureState !== 'ready') return false;
+        if (!card || !current(card) || !['ready','partial'].includes(card.captureState)) return false;
         card.viewedCaptureEventId = card.lastEventId; publish(); return true;
     };
     window.resolveMonitorCheckpointDecision = (token, kept) => {
@@ -264,8 +330,9 @@
             delete card.evidence.restore_token;
             card.decision = text(card, kept ? '已保留这次编辑。' : '已恢复编辑前位置；剂量仍需更新。',
                 kept ? 'This edit was kept.' : 'Pre-edit position restored; dose requires updating.');
-            render(card);
+            render(card, false);
         }
+        publish();
     };
     window.refreshMonitorCheckpointPresentation = phase => {
         if (phase === 'active' && owner !== `${_activeApiSessionId()}:${trainingMonitorState.runId}`) {
@@ -283,7 +350,7 @@
             if (phase !== 'active' && ['pending', 'deferred'].includes(card.captureState)) {
                 card.captureState = 'failed'; card.captureError = 'monitor_stopped';
             }
-            render(card);
+            render(card, false);
         }
         publish();
         window.monitorDashboardPhase?.(phase);

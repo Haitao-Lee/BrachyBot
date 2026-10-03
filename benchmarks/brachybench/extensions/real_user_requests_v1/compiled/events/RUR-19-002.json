@@ -1,0 +1,10 @@
+[
+  {
+    "event": "external_tab_commits_geometry",
+    "kind": "environment_event",
+    "payload": {
+      "revision": 8
+    },
+    "trigger": "restore.precommit"
+  }
+]

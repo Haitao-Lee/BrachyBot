@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "output_tools",
+  "expectation": null,
+  "facet": "output_tools",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Export DICOM without plan",
+  "source_refs": [
+    "INT-608b40367871",
+    "INT-a5b2f11aa104"
+  ],
+  "template_id": "TPL-12e3a5e674"
+}

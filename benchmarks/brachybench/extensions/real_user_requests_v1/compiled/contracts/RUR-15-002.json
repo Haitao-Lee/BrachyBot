@@ -1,0 +1,69 @@
+{
+  "acceptable_outcomes": [
+    "PARTIAL",
+    "BLOCKED_BY_DEPENDENCY"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "kind": "dose",
+      "max": 1,
+      "operation": "submit"
+    },
+    {
+      "max": 1,
+      "operation": "set",
+      "path": "objects.guide-A.visible"
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "en",
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "dependency",
+      "statement": "No report built from failed dose; existing guide display independently succeeds."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "response",
+      "statement": "Report blocked by dose failure, guide displayed, no fictional dose metrics."
+    }
+  ],
+  "rules": [
+    {
+      "kind": "dose",
+      "max": 1,
+      "min": 1,
+      "op": "attempt",
+      "operation": "submit"
+    },
+    {
+      "kind": "dose",
+      "op": "job_status",
+      "status": "failed"
+    },
+    {
+      "op": "equals",
+      "path": "objects.guide-A.visible",
+      "value": true
+    }
+  ],
+  "scenario_id": "RUR-15-002",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "dependency",
+      "statement": "No report built from failed dose; existing guide display independently succeeds."
+    },
+    {
+      "kind": "response",
+      "statement": "Report blocked by dose failure, guide displayed, no fictional dose metrics."
+    }
+  ]
+}

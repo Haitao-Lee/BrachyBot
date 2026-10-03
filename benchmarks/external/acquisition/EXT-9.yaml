@@ -1,0 +1,73 @@
+benchmark: LongMemEval
+ext_id: EXT-9
+tier: specialty
+grade_R: R0
+grade_C: C2
+panels: [P6]
+
+acquisition:
+  source_url: https://github.com/xiaowu0162/LongMemEval
+  source_commit: 9e0b455f4ef0e2ab8f2e582289761153549043fc
+  source_tag: null
+  dataset_name: "longmemeval-cleaned (HF xiaowu0162/longmemeval-cleaned: oracle + s)"
+  dataset_revision: 98d7416c24c778c2fee6e6f3006e7a073259d48f
+  dataset_sha256: 12fd5698400aa99a77b0b8c1edf713e18714899dcc861e3c5871a8fadf336b16
+  dataset_size_bytes: 292771945
+  retrieval_command: |
+    git clone https://github.com/xiaowu0162/LongMemEval vendor/EXT-9
+    git -C vendor/EXT-9 checkout 9e0b455f4ef0e2ab8f2e582289761153549043fc
+    HF_ENDPOINT=https://hf-mirror.com
+    curl -L -o data/EXT-9/longmemeval_oracle.json \
+      $HF_ENDPOINT/datasets/xiaowu0162/longmemeval-cleaned/resolve/main/longmemeval_oracle.json
+    curl -L -o data/EXT-9/longmemeval_s_cleaned.json \
+      $HF_ENDPOINT/datasets/xiaowu0162/longmemeval-cleaned/resolve/main/longmemeval_s_cleaned.json
+    # the 2.7 GB _m_ variant is intentionally not fetched.
+    # dataset_sha256 above = directory digest of data/EXT-9 (2 files).
+  retrieval_date: 2026-10-01
+  license_upstream: MIT
+  license_file: LICENSE
+  license_verified_by: "brachybench-auto (GitHub + HF API 2026-10-01)"
+  activity_verified:
+    last_commit_date: 2026-05-11
+    last_release_date: null
+    open_issues: null
+
+runner:
+  official_runner: src/generation/run_generation.py
+  evaluator: src/evaluation/evaluate_qa.py (LLM judge; gpt-4o or local vLLM)
+  container: null
+  python_requires: ">=3.9"
+  native_deps: []
+  paid_apis: []
+  judge_note: "official QA score needs an LLM judge (OPENAI_API_KEY) or a local vLLM at localhost:8001; retrieval metrics (recall/ndcg in src/retrieval/eval_utils.py) are deterministic."
+
+adapter:
+  kind: ext_adapter
+  shim_used: false
+  spec_ref: "DESIGN §25.5"
+
+run:
+  smoke_size: 5
+  sample_size: 0
+  sampling_seed: 42
+  n_runs: 1
+  budget: {wall_clock_s: 600, turns: 20, tool_calls: 0}
+
+isolation:
+  sandbox: required
+  network: denied
+  write_paths: ["benchmarks/external/EXT-9/results/"]
+  forbidden_write_roots:
+    - BrachyBot/session/
+    - BrachyBot/case/
+    - BrachyBot/runtime/
+    - BrachyBot/report/
+
+contamination:
+  public_samples_allowed_for_dev_only: true
+  seen_task_ids: []
+  behavioral_probes: [B1, B2, B3, B4, B5, B6, B7]
+
+status: active
+block_reason: null
+reinclude_condition: null

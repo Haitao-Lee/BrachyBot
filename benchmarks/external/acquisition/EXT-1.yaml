@@ -1,0 +1,75 @@
+benchmark: ABRA
+ext_id: EXT-1
+tier: main
+grade_R: R0
+grade_C: C3
+panels: [P3, P4]
+
+acquisition:
+  source_url: https://github.com/Luab/ABRA
+  source_commit: 688814615dc368a66276798cb864fe9a587d7e6c
+  source_tag: null
+  dataset_name: "ABRA generated tasks (easy 249 + hard 104 = 353) from the pinned manifest; medium needs TCIA SEG"
+  dataset_revision: 688814615dc368a66276798cb864fe9a587d7e6c
+  dataset_sha256: fe270ffa0fa2ec8cc33710740bb430e3b694aba7645692da3c3240cc9aaaad31
+  dataset_size_bytes: 410451
+  retrieval_command: |
+    git clone https://github.com/Luab/ABRA vendor/EXT-1 && cd vendor/EXT-1
+    git checkout 688814615dc368a66276798cb864fe9a587d7e6c
+    python scripts/generate_tasks.py --difficulties easy medium hard \
+      --from-manifest data/studies/study_manifest.json --tasks-dir ../data/tasks
+    # 353 tasks generate offline (easy 249 + hard 104). The medium tier (SEG
+    # annotation tasks) needs the full TCIA DICOM downloads, which are large and
+    # not bundled:
+    #   python data/studies/download_lidc.py
+    #   python data/studies/download_duke_breast.py && python data/annotations/duke_breast_clinical.py
+    #   python data/studies/download_nlst_longct.py
+    # dataset_sha256 above = directory digest of data/tasks (353 yaml).
+    # source manifest study_manifest.json sha256 = a6f367980f071320295adb9832edfcd9d165d377eb74b071b3ba6384738c3086.
+  retrieval_date: 2026-10-01
+  license_upstream: MIT
+  license_file: LICENSE
+  license_verified_by: "brachybench-auto (GitHub API 2026-10-01)"
+  activity_verified:
+    last_commit_date: 2026-07-18
+    last_release_date: null
+    open_issues: 1
+
+runner:
+  official_runner: scripts/run_benchmark.py
+  evaluator: src/scoring/ (BaseScorer; planning/execution/outcome 0.20/0.30/0.50)
+  container: docker-compose.yml
+  python_requires: ">=3.11"
+  native_deps: [Docker, Node.js 20+]
+  paid_apis: []
+
+adapter:
+  kind: ext_adapter
+  shim_used: false
+  spec_ref: "DESIGN §25.5"
+
+run:
+  smoke_size: 5
+  sample_size: 0
+  sampling_seed: 42
+  n_runs: 1
+  budget: {wall_clock_s: 600, turns: 20, tool_calls: 40}
+
+isolation:
+  sandbox: required
+  network: denied
+  write_paths: ["benchmarks/external/EXT-1/results/"]
+  forbidden_write_roots:
+    - BrachyBot/session/
+    - BrachyBot/case/
+    - BrachyBot/runtime/
+    - BrachyBot/report/
+
+contamination:
+  public_samples_allowed_for_dev_only: true
+  seen_task_ids: []
+  behavioral_probes: [B1, B2, B3, B4, B5, B6, B7]
+
+status: active
+block_reason: null
+reinclude_condition: null

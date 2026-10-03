@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "workflow",
+  "expectation": null,
+  "facet": "workflow",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "28yo F with 2cm IA2 cervical adenocarcinoma, cold knife conization with negative margins. Desires fertility preservation. Pre-conization MRI no residual. LVSI negative. 3mm DOI. Observation vs adjuvant VBT decision.",
+  "source_refs": [
+    "INT-65831269575c",
+    "INT-a25daf51c015"
+  ],
+  "template_id": "TPL-7de3b47f1f"
+}

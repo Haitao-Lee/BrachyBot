@@ -1,0 +1,20 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "edge_cases",
+  "expectation": null,
+  "facet": "edge_cases",
+  "gold_status": "draft",
+  "n_source_intents": 8,
+  "representative_text": "analyze the image and then segment it",
+  "source_refs": [
+    "INT-07e7dc213cb1",
+    "INT-2dab2c875559",
+    "INT-37c85a706427",
+    "INT-3b93d7a07252",
+    "INT-66f089bc0228",
+    "INT-998f6fa82ca9",
+    "INT-ba450d1e8016",
+    "INT-dcdad9223ddf"
+  ],
+  "template_id": "TPL-f4cbd8bbd2"
+}

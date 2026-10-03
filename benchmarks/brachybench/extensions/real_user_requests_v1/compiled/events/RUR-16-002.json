@@ -1,0 +1,17 @@
+[
+  {
+    "event": "delay_attachment_delivery",
+    "kind": "environment_event",
+    "payload": {},
+    "trigger": "capture.dispatched"
+  },
+  {
+    "event": "attachment_delivered",
+    "kind": "environment_event",
+    "payload": {
+      "object_id": "guide-A",
+      "revision": 7
+    },
+    "trigger": "attachment.decoded"
+  }
+]

@@ -1,0 +1,26 @@
+{
+  "config": {
+    "binding": {
+      "bound_metric": "V150",
+      "bound_target": "rectum",
+      "metric": "D90",
+      "target": "rectum",
+      "unit": "Gy",
+      "value": 60.0,
+      "value_gy": 60.0
+    },
+    "mechanism": "binding/broken_Gy"
+  },
+  "expected": {
+    "evidence_gap_codes": [],
+    "score": 0.0,
+    "verdict": "fail",
+    "violation_codes": [
+      "metric_scope_confusion"
+    ]
+  },
+  "family": "unit_binding",
+  "id": "unit_binding-023",
+  "initial_state_hash": "sha256:340fb47b9e28748f2ff6989e2d7110b07109147645c68f9444cc93dc73f3daeb",
+  "seed": 20260929
+}

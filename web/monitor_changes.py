@@ -6,6 +6,13 @@ import math
 from types import SimpleNamespace
 
 
+def _artifact_state(artifacts, key):
+    value = artifacts.get(key)
+    if isinstance(value, dict):
+        value = value.get('status')
+    return 'stale' if value == 'outdated' else value
+
+
 def geometry_key(geometry):
     records = {}
     for kind in ('seeds', 'needles'):
@@ -78,9 +85,10 @@ def capture(agent, geometry):
         'oar_metrics': organs,
         'score_status': metrics.get('criteria_status') if 'plan_score' not in values else 'available',
         'metrics_current': (memory.retrieve('dose_distribution') is not None or memory.retrieve('dose_distribution_gy') is not None) and not memory.retrieve('manual_geometry_only')
-            and not any(stale.get(k) in ('stale', 'outdated') for k in ('dose', 'dvh')),
+            and not any(_artifact_state(stale, k) in ('stale', 'running', 'failed') for k in ('dose', 'dvh')),
         'config': copy.deepcopy(memory.retrieve('plan_config') or {}),
-        'anatomy_key': [(versions.get(k), id(memory.retrieve(k))) for k in anatomy_keys],
+        'anatomy_key': ([(versions.get(k), id(memory.retrieve(k))) for k in anatomy_keys]
+                        if any(memory.retrieve(k) is not None for k in anatomy_keys) else None),
     }
 
 
@@ -169,9 +177,11 @@ def compare(before, after):
         # Filter by edited IDs before the legacy 50-pair presentation cap.
         # Late-numbered seeds must not disappear behind old global violations.
         snapshot = snapshot.copy()
-        snapshot['seed_pairs'] = support._seed_interference_report(agent,
+        seed_report = support._seed_interference_report(agent,
             snapshot['geometry']['seeds'], snapshot['geometry']['needles'],
-            focus_ids=ids, max_pairs=None)['close_pairs']
+            focus_ids=ids, max_pairs=None)
+        snapshot['seed_pairs'] = [{**pair, 'minimum_clearance_mm': seed_report['minimum_clearance_mm']}
+                                  for pair in seed_report['close_pairs']]
         snapshot['needle_pairs'] = support._needle_interference_report(
             snapshot['geometry']['needles'], config, focus_ids=ids, max_pairs=None,
         )['close_pairs']
@@ -210,9 +220,16 @@ def compare(before, after):
 
 
 def dose_comparison(before, after):
-    comparable = bool(before['metrics_current'] and after['metrics_current']
-                      and before.get('anatomy_key') == after.get('anatomy_key')
-                      and before.get('config') == after.get('config'))
+    # Equal versions/configuration alone do not identify a comparison baseline.
+    # Missing anatomy is unknown, not evidence that two snapshots match.
+    reason = ('planning_identity_missing' if not before.get('planning_id') or not after.get('planning_id')
+              else 'planning_changed' if before['planning_id'] != after['planning_id']
+              else 'anatomy_baseline_missing' if not before.get('anatomy_key') or not after.get('anatomy_key')
+              else 'anatomy_changed' if before['anatomy_key'] != after['anatomy_key']
+              else 'configuration_changed' if before.get('config') != after.get('config')
+              else 'baseline_dose_unavailable' if not before['metrics_current']
+              else 'current_dose_unavailable' if not after['metrics_current'] else None)
+    comparable = reason is None
     organ_changes = []
     if comparable:
         for organ, row in before.get('oar_metrics', {}).items():
@@ -224,8 +241,9 @@ def dose_comparison(before, after):
         organ_changes.sort(key=lambda row: abs(row['delta']), reverse=True)
     series_key = (hashlib.sha256(json.dumps([after.get('planning_id'), after.get('anatomy_key'), after.get('config')],
                                 sort_keys=True, default=str).encode()).hexdigest()[:20]
-                  if after.get('anatomy_key') is not None else None)
+                  if after.get('anatomy_key') and after.get('planning_id') else None)
     return {'comparable': comparable, 'series_key': series_key,
+            'comparison_reason': reason,
             'before': before['metrics'] if before['metrics_current'] else {},
             'after': after['metrics'] if after['metrics_current'] else {},
             'score_status': after.get('score_status'),
@@ -350,8 +368,8 @@ def screenshot(evidence, event_id):
         if len(ids) >= 4:
             break
     ids.extend(x['id'] for x in evidence.get('changed_objects', [])
-               if x['operation'] not in ('deleted', 'reoriented')
-               and not x.get('dependent_on_needle'))
+               if x['operation'] != 'deleted'
+               and not x.get('dependent_on_needle') and not x.get('derived_from_normalization'))
     ids = list(dict.fromkeys(ids))[:8]
     if not ids:
         return None
@@ -410,8 +428,11 @@ def interaction(evidence, language='en'):
         next_step = (f"先查看 {pair['first_id']} 与 {pair['second_id']} 的间距标注；若移动非预期，可恢复这次编辑前的位置。" if zh
                      else f"Inspect the marked spacing between {pair['first_id']} and {pair['second_id']}; restore the pre-edit position if this move was unintended.")
     elif not dose.get('comparable'):
-        next_step = ('几何变化已核对。重算剂量后，在本卡片比较覆盖、热点和器官受量。' if zh
-                     else 'Geometry checked. Recompute dose to compare coverage, hot spots and organ dose in this card.')
+        next_step = (('当前剂量已计算，但缺少同一规划、相同解剖与配置的有效编辑前基线；不能通过再次重算补造前值。请先复核当前实测结果，再以它作为下一次编辑的基线。' if zh
+                      else 'Current dose is computed, but a valid pre-edit baseline for this plan, anatomy and configuration is missing. Another recomputation cannot recreate it. Review current measurements before using them as the next edit baseline.')
+                     if dose.get('after') else
+                     ('几何变化已核对。重算剂量后，在本卡片比较覆盖、热点和器官受量。' if zh
+                      else 'Geometry checked. Recompute dose to compare coverage, hot spots and organ dose in this card.'))
     else:
         delta = dose.get('delta') or {}
         findings = []
@@ -428,6 +449,36 @@ def interaction(evidence, language='en'):
                  if dose.get('comparable') else
                  ('剂量尚不可比较：等待与当前几何对应的重算结果或有效基线。' if zh
                   else 'Dose comparison unavailable: a current recomputation or valid baseline is required.'))
+    reasons = {
+        'planning_identity_missing': ('规划身份尚不可核实', 'plan identity is unverified'),
+        'planning_changed': ('前后属于不同规划', 'the snapshots belong to different plans'),
+        'anatomy_baseline_missing': ('缺少可核实的解剖基线', 'a verified anatomy baseline is missing'),
+        'anatomy_changed': ('分割或影像基线已改变', 'the segmentation or image baseline changed'),
+        'configuration_changed': ('处方或计算配置已改变', 'prescription or calculation configuration changed'),
+        'baseline_dose_unavailable': ('编辑前剂量不可用或已过期', 'pre-edit dose is unavailable or stale'),
+        'current_dose_unavailable': ('本次几何尚无有效重算结果', 'current geometry has no valid recomputed dose'),
+    }
+    if not dose.get('comparable') and dose.get('comparison_reason') in reasons:
+        why = reasons[dose['comparison_reason']][0 if zh else 1]
+        dose_note = f'剂量不可比较：{why}。' if zh else f'Dose comparison unavailable: {why}.'
+    movements = []
+    for obj in changes:
+        if obj.get('operation') != 'moved':
+            continue
+        before, after = obj.get('before'), obj.get('after')
+        points = [(None, before, after)] if obj.get('kind') == 'seeds' else (
+            [(i + 1, a, b) for i, (a, b) in enumerate(zip(before, after))]
+            if isinstance(before, list) and isinstance(after, list) else [])
+        for endpoint, a, b in points:
+            if not (isinstance(a, (list, tuple)) and isinstance(b, (list, tuple))
+                    and len(a) == len(b) == 3
+                    and all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in (*a, *b))):
+                continue
+            vector = [x - y for x, y in zip(a, b)]
+            if math.sqrt(sum(v * v for v in vector)) >= .01:
+                movements.append({'object_id': str(obj['id']), 'endpoint': endpoint,
+                                  'vector_mm': vector, 'coordinate_system': 'patient_world_mm',
+                                  'purpose': 'return_to_pre_edit_not_optimized'})
     blocking = sum(p.get('change') in ('new', 'worsened') and
                    p.get('physical_overlap') is True
                    for p in evidence.get('conflicts', []))
@@ -442,7 +493,11 @@ def interaction(evidence, language='en'):
             'conflict_counts': {'new': new, 'worsened': worse, 'resolved': resolved,
                                 'existing': evidence.get('existing_conflict_count', 0), 'blocking': blocking},
             'objects': changes[:4], 'conflicts': [p for p in evidence.get('conflicts', []) if p['change'] != 'existing'][:4],
+            'related_object_counts': {'dependent': evidence.get('dependent_object_count', 0),
+                                      'normalized': evidence.get('normalization_object_count', 0)},
+            'return_movements': movements[:4],
             'metric_rows': rows, 'dose_note': dose_note, 'next_step': next_step,
+            'comparison_reason': dose.get('comparison_reason'),
             'dose_current': bool(dose.get('after')), 'dose_comparable': bool(dose.get('comparable')),
             'existing_conflict_count': evidence.get('existing_conflict_count', 0),
             'language': 'zh' if zh else 'en'}
@@ -463,9 +518,7 @@ def overview(agent):
     def present(*keys):
         return any(mem(key) is not None for key in keys)
     def status(key, exists):
-        recorded = artifacts.get(key)
-        if isinstance(recorded, dict):
-            recorded = recorded.get('status')
+        recorded = _artifact_state(artifacts, key)
         if recorded in ('stale', 'running', 'failed'):
             return recorded
         if recorded in ('current', 'completed', 'ready'):

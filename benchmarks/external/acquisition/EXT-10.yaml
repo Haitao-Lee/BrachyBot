@@ -1,0 +1,72 @@
+benchmark: MedHallu
+ext_id: EXT-10
+tier: specialty
+grade_R: R0
+grade_C: C2
+panels: [P1]
+
+acquisition:
+  source_url: https://github.com/MedHallu/MedHallu
+  source_commit: 3c49c8ba80e47720333e508821967167ba048d49
+  source_tag: null
+  dataset_name: "UTAustin-AIHealth/MedHallu (pqa_labeled + pqa_artificial parquet)"
+  dataset_revision: 515060458a945c633debc6fd5baac7764416b724
+  dataset_sha256: 29022b7997b8fdac6ca994c5fecd98594a1b584ac5a6637983938c5797d5f20f
+  dataset_size_bytes: 11399904
+  retrieval_command: |
+    git clone https://github.com/MedHallu/MedHallu vendor/EXT-10
+    git -C vendor/EXT-10 checkout 3c49c8ba80e47720333e508821967167ba048d49
+    HF_ENDPOINT=https://hf-mirror.com
+    curl -L -o data/EXT-10/train_labeled.parquet \
+      $HF_ENDPOINT/datasets/UTAustin-AIHealth/MedHallu/resolve/main/pqa_labeled/train-00000-of-00001.parquet
+    curl -L -o data/EXT-10/train_artificial.parquet \
+      $HF_ENDPOINT/datasets/UTAustin-AIHealth/MedHallu/resolve/main/pqa_artificial/train-00000-of-00001.parquet
+    # dataset_sha256 above = directory digest of data/EXT-10 (2 files).
+  retrieval_date: 2026-10-01
+  license_upstream: MIT
+  license_file: LICENSE
+  license_verified_by: "brachybench-auto (GitHub + HF API 2026-10-01)"
+  activity_verified:
+    last_commit_date: 2025-04-25
+    last_release_date: null
+    open_issues: null
+
+runner:
+  official_runner: Detection/detection_vllm_notsurecase.py
+  evaluator: Detection/detection_vllm_notsurecase.py (sklearn accuracy/precision/recall/F1)
+  container: null
+  python_requires: ">=3.8"
+  native_deps: []
+  paid_apis: []
+  judge_note: "the SUT itself is the classifier (label 0/1/2); scoring is deterministic. Upstream uses vLLM for generation, not required for scoring."
+
+adapter:
+  kind: ext_adapter
+  shim_used: false
+  spec_ref: "DESIGN §25.5"
+
+run:
+  smoke_size: 5
+  sample_size: 0
+  sampling_seed: 42
+  n_runs: 1
+  budget: {wall_clock_s: 300, turns: 1, tool_calls: 0}
+
+isolation:
+  sandbox: required
+  network: denied
+  write_paths: ["benchmarks/external/EXT-10/results/"]
+  forbidden_write_roots:
+    - BrachyBot/session/
+    - BrachyBot/case/
+    - BrachyBot/runtime/
+    - BrachyBot/report/
+
+contamination:
+  public_samples_allowed_for_dev_only: true
+  seen_task_ids: []
+  behavioral_probes: [B1, B2, B3, B4, B5, B6, B7]
+
+status: active
+block_reason: null
+reinclude_condition: null

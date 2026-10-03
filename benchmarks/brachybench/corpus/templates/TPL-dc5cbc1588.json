@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "advanced_workflows",
+  "expectation": null,
+  "facet": "advanced_workflows",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Analyze the image, segment, and export DICOM",
+  "source_refs": [
+    "INT-859a45e4e381",
+    "INT-957408677468"
+  ],
+  "template_id": "TPL-dc5cbc1588"
+}

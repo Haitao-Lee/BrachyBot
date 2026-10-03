@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "hallucination",
+  "expectation": null,
+  "facet": "hallucination",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "What is the Dice coefficient?",
+  "source_refs": [
+    "INT-e075d6e30bd9",
+    "INT-ff13f70ada33"
+  ],
+  "template_id": "TPL-19ca39d0aa"
+}

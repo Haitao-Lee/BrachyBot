@@ -40,7 +40,7 @@ def test_question_and_mixed_turns_require_text_without_answer_whitelists():
 
 
 def test_screenshot_and_inform_demands_the_explanation_not_attachment_only():
-    """"截图告知" asks for the content that belongs to the evidence.
+    """The "screenshot and inform" request asks for the content that belongs to the evidence.
 
     Treating it as a pure capture command let the turn end as an attachment
     gallery (or a stale fallback) with no explanation of what the images show.
@@ -76,7 +76,7 @@ def test_successful_capture_fallback_acknowledges_instead_of_failing_the_turn():
     ]
 
     # The deliberate capture stop plus read-only helpers must acknowledge the
-    # capture, never report "本轮未能完成" for a plan that succeeded.
+    # capture, never report "the turn could not be completed" for a plan that succeeded.
     pending = fallback("zh", capture_steps, "截图告知", capture_pending=True)
     assert "本轮已发起截图请求" in pending
     assert "未能完成" not in pending

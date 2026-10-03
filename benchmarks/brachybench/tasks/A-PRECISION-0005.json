@@ -1,0 +1,82 @@
+{
+  "schema_version": "1.0",
+  "id": "A-PRECISION-0005",
+  "track": "A",
+  "layers": [
+    "L3"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "precision.real_intent",
+  "cost_class": "state_only",
+  "power_role": "exploratory",
+  "clinical_intent": "A brachytherapy plan requires the calculation of the equivalent dose in 2 Gy fractions (EQD2) for a cumulative rectal dose. The patient received 45 Gy in 25 fractions of external beam radiation (alpha/beta = 3 for rectum), followed by brachytherapy delivering 28 Gy in 4 fractions of 7 Gy each. Calculate the total EQD2 to the rectum, assuming the brachytherapy dose is delivered to D2cc.",
+  "fixture": {
+    "case_family": "legacy/precision",
+    "setup_script": "fixtures/setup/prostate_s02_full_pipeline.py",
+    "initial_state_hash": "sha256:38eabca0a6bcb5062deac0e5645e8bf52d9e5f51cdd0f137f824f4509461ada3"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-EQ",
+    "contrast_family_id": "legacy/precision"
+  },
+  "protocol": {
+    "mode": "single_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "A brachytherapy plan requires the calculation of the equivalent dose in 2 Gy fractions (EQD2) for a cumulative rectal dose. The patient received 45 Gy in 25 fractions of external beam radiation (alpha/beta = 3 for rectum), followed by brachytherapy delivering 28 Gy in 4 fractions of 7 Gy each. Calculate the total EQD2 to the rectum, assuming the brachytherapy dose is delivered to D2cc.",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 1,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "param_binding",
+    "constraint_class": "none",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "outcome_class_match",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "medium"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "precision-INT-a3fdf1c6c31b",
+    "hidden": false,
+    "generation_seed": 2026,
+    "canary_class": null,
+    "behavioral_probes": [
+      "en"
+    ],
+    "contrast_family_id": "legacy/precision"
+  },
+  "provenance": {
+    "source": "legacy_migrated",
+    "derived_from": "legacy:v1/21_precision.json#Q0624",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto-verifier"
+    ],
+    "authored_on": "2026-09-30",
+    "deprecated": null
+  }
+}

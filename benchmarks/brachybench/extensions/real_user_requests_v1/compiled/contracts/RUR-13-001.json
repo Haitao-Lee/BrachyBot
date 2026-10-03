@@ -1,0 +1,67 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "kind": "segmentation",
+      "max": 1,
+      "operation": "submit"
+    }
+  ],
+  "max_clarification_turns": 0,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "zh",
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "effects",
+      "statement": "Select verified head-neck route, not pancreas; no unrelated OAR/whole-plan run."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "artifact",
+      "statement": "Preserve head-neck GTVp/GTVn as tumor targets, no label2-as-artery substitution."
+    },
+    {
+      "id": "criterion-2",
+      "kind": "response",
+      "statement": "Distinguish segmentation completion from planning completion."
+    }
+  ],
+  "rules": [
+    {
+      "kind": "segmentation",
+      "op": "artifact",
+      "status": "completed"
+    },
+    {
+      "expected": {
+        "1": "GTVp",
+        "2": "GTVn"
+      },
+      "op": "labels"
+    }
+  ],
+  "scenario_id": "RUR-13-001",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "effects",
+      "statement": "Select verified head-neck route, not pancreas; no unrelated OAR/whole-plan run."
+    },
+    {
+      "kind": "artifact",
+      "statement": "Preserve head-neck GTVp/GTVn as tumor targets, no label2-as-artery substitution."
+    },
+    {
+      "kind": "response",
+      "statement": "Distinguish segmentation completion from planning completion."
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "dose_evaluation",
+  "expectation": null,
+  "facet": "dose_evaluation",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Evaluate the dose distribution",
+  "source_refs": [
+    "INT-76bc9d00b62d",
+    "INT-d566c0055026"
+  ],
+  "template_id": "TPL-61e19bf78b"
+}

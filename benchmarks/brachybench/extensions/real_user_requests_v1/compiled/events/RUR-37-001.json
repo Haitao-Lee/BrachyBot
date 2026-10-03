@@ -1,0 +1,8 @@
+[
+  {
+    "event": "compact_prior_history_preserving_provenance",
+    "kind": "environment_event",
+    "payload": {},
+    "trigger": "start"
+  }
+]

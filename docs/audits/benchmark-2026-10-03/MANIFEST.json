@@ -1,0 +1,169 @@
+{
+  "created_utc": "2026-10-03T04:59:05.348990+00:00",
+  "baseline_head": "7aa6d23086072b593beba069f8c2116d01c3c0f3",
+  "dirty_working_tree": true,
+  "scope": "Pure benchmark evaluators and exhaustive automated item audit; no clinical/live-system performance claim",
+  "task_count": 11969,
+  "track_counts": {
+    "A": 2999,
+    "B": 332,
+    "C": 539,
+    "D1": 1378,
+    "F": 1016,
+    "E": 1823,
+    "I": 961,
+    "K": 918,
+    "D2": 560,
+    "H": 477,
+    "L": 727,
+    "D3": 239
+  },
+  "source_archive_path_at_audit": "/tmp/brachybench-audit-20261003-source.tar.gz",
+  "source_archive_sha256": "a1dbf412ce673fb2bf9914a99a6fa31847304167d1d413e8727a625f0f26b0b5",
+  "source_snapshot_files": 25879,
+  "rechecked_baseline_source_files": {
+    "benchmarks/BENCHMARK_REPORT.md": "781e6f9b94bf9f20c79a79b70f305a3f985c5b576331f0f977722b13bd025048",
+    "docs/BENCHMARK_TOP_LEVEL_DESIGN_2026-09-29.md": "3ef1d252b8ac11a0230ba0858266574f78940c863f659487fd81e213e9746feb",
+    "benchmarks/brachybench/tools/run_task.py": "5171878d5e6b6db10bd2e898a0b2db9b07e65ed2ed9a3e23200aec5b9c6320d8",
+    "benchmarks/brachybench/oracles/geom.py": "cb85868ed23b391bfb5ac88f7465056ea60715f7d022210b516ed115a7efd3a9"
+  },
+  "report": {
+    "path": "/home/lht/snap/brachyplan/BrachyBot/docs/BENCHMARK_INDEPENDENT_AUDIT_2026-10-03.md",
+    "sha256": "74af627c6ad806c631a0eae720320defbbc2565506aeba9b8491e1d545bbb699",
+    "bytes": 47191,
+    "findings": 32
+  },
+  "artifacts": {
+    "README.md": {
+      "sha256": "49a030864e646459df144875aeaa42e16cbbf446f7202a4acb9f16bda2100aeb",
+      "bytes": 2528
+    },
+    "audit_deep.py": {
+      "sha256": "c843645e6827d5393e730b4f1f4b0162d63af2368385fcf85a3f489eec672d88",
+      "bytes": 11221
+    },
+    "audit_extra.json": {
+      "sha256": "adbda2350a69562a8a556ef8dfeb33a7f58b2b31b6bf0a860c64c2e60ae1d41c",
+      "bytes": 390670
+    },
+    "audit_extra.py": {
+      "sha256": "eee35d712b6abcb3dd59193d5bd3b6fdd2dc864ae355857bed927eaa1f55a08f",
+      "bytes": 6679
+    },
+    "audit_final.json": {
+      "sha256": "9a69d506228dda3f677f3e6ca7028baa987aa0acd89022790edc8a2548295725",
+      "bytes": 10039
+    },
+    "audit_finalize.py": {
+      "sha256": "502c31eed70723278ac2fcaec53b64b9e3bb1c1a76f030b37d7b27689a1b0743",
+      "bytes": 7729
+    },
+    "audit_package.py": {
+      "sha256": "27609afc46be17ae0e1aea441f2a0802e3182faa8ff990d4c144b8beac3387c0",
+      "bytes": 8089
+    },
+    "counterexamples_verified.json": {
+      "sha256": "132b0f3a53f1ba141a3b1588d2166d8a1d0b58ed4ac36e3a9d6f4549c769fc08",
+      "bytes": 27033
+    },
+    "coverage_stderr.txt": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "coverage_stdout.txt": {
+      "sha256": "68be0f6f0a0b0b43b847658cbad6a37f6f278551f3fa98c246a8d39e67d46b90",
+      "bytes": 35602
+    },
+    "hash_manifest_stderr.txt": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "hash_manifest_stdout.txt": {
+      "sha256": "a1e1b452bc1f7b4322a555597d04f99d71a85241177f099711ce7fa1bc5f4ca9",
+      "bytes": 63
+    },
+    "inventory_deep.json": {
+      "sha256": "f1f882b5fe1c9496f38b9e23d726d12a1e72e6e4a7cf69a1907ee001c6e5e404",
+      "bytes": 688185
+    },
+    "per_item_index.csv.gz": {
+      "sha256": "d4bba9a9129006a8d14eb6dc3d4f4b45a2a4352bef924a9cae27f9c56ee1143c",
+      "bytes": 317745
+    },
+    "per_item_recommendations.jsonl.gz": {
+      "sha256": "f1eeee36899919752e22b454c296768a528e27f81c1e80c9e37e4d6da5a063a4",
+      "bytes": 985437
+    },
+    "quality_audit_stderr.txt": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "quality_audit_stdout.txt": {
+      "sha256": "5ff43a8bc042df6c5dbe766564863b6e0fb52ac080a91df33bb3fc5c355d273e",
+      "bytes": 143
+    },
+    "source_snapshot_hashes.json.gz": {
+      "sha256": "7e8fcaa302b25f7e906a4fe035523d8bfc2bdde272796b9260066267ceaf35e1",
+      "bytes": 1118421
+    },
+    "validate_stderr.txt": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "validate_stdout.txt": {
+      "sha256": "4c76a20b6d5c9876a3e9be9139623c731de50cc71ea0015c4c105646f8c89853",
+      "bytes": 31
+    }
+  },
+  "native_checks": [
+    {
+      "check": "validate",
+      "command": [
+        "/opt/miniconda3/bin/python",
+        "/home/lht/snap/brachyplan/BrachyBot/benchmarks/brachybench/tools/validate.py",
+        "tasks",
+        "--root",
+        "/home/lht/snap/brachyplan/BrachyBot/benchmarks/brachybench"
+      ],
+      "exit_code": 0,
+      "stdout_chars": 31,
+      "stderr_chars": 0
+    },
+    {
+      "check": "quality_audit",
+      "command": [
+        "/opt/miniconda3/bin/python",
+        "/home/lht/snap/brachyplan/BrachyBot/benchmarks/brachybench/tools/quality_audit.py",
+        "--json"
+      ],
+      "exit_code": 0,
+      "stdout_chars": 143,
+      "stderr_chars": 0
+    },
+    {
+      "check": "coverage",
+      "command": [
+        "/opt/miniconda3/bin/python",
+        "/home/lht/snap/brachyplan/BrachyBot/benchmarks/brachybench/tools/coverage.py",
+        "--strict",
+        "--json"
+      ],
+      "exit_code": 0,
+      "stdout_chars": 35602,
+      "stderr_chars": 0
+    },
+    {
+      "check": "hash_manifest",
+      "command": [
+        "/opt/miniconda3/bin/python",
+        "/home/lht/snap/brachyplan/BrachyBot/benchmarks/brachybench/tools/hash_manifest.py",
+        "check",
+        "--root",
+        "/home/lht/snap/brachyplan/BrachyBot/benchmarks/brachybench"
+      ],
+      "exit_code": 0,
+      "stdout_chars": 63,
+      "stderr_chars": 0
+    }
+  ]
+}

@@ -1,37 +1,37 @@
-# 自然语言/UI 对等性审计附件
+# Natural Language / UI Parity Audit Attachment
 
-对应主报告：`../../NATURAL_LANGUAGE_UI_PARITY_AUDIT_2026-09-28.md`。
+Corresponds to the main report: `../../NATURAL_LANGUAGE_UI_PARITY_AUDIT_2026-09-28.md`.
 
-基线：`a3aa976844526195756a36beebc2828b165e9c33`。所有结果是 2026-09-28 审计时观察，不代表修复后行为。
+Baseline: `a3aa976844526195756a36beebc2828b165e9c33`. All results were observed during the 2026-09-28 audit and do not represent behavior after fixes.
 
-## 内容与限制
+## Contents and Limitations
 
-| 文件 | 用途 |
+| File | Purpose |
 |---|---|
-| source_manifest.csv | 全部505个被扫描代码文件的路径、行数、SHA-256 |
-| static_controls.csv | index.html中的264个静态交互候选，含事件属性 |
-| control_handler_index.csv | 上述控件的内联调用及JS函数候选位置；不是完整调用图 |
-| event_sites.csv | 568个JS/HTML事件注册/内联属性所在行，包含测试/库中匹配项 |
-| production_routes.csv | web/中的122个Flask route声明 |
-| capability_registry.csv/json | UI工具全部111个注册target及完整JSON schema |
-| capability_source_index.csv | 每个target的注册行和前端同名字符串引用，供定位dispatcher；引用不是执行证明 |
-| test_inventory.csv | 1649个Python test函数声明，不表示已执行 |
-| inventory_summary.json | 计数与基线 |
-| audit_probes.py/json | 实际纯函数在合成上下文中的语义、授权、依赖和coverage结果 |
-| audit_browser_probes.cjs/json | 实际生产JS函数抽取到Node VM，使用惰性DOM替身测试；不访问服务器 |
-| audit_inventory.py | AST/HTML/事件扫描脚本，输入为tracked_sources.txt |
-| tracked_sources.txt | 审计时源文件路径基线；仅匹配代码扩展名的条目被使用 |
-| validation_record.json | 实际测试范围、通过和环境阻断项 |
+| source_manifest.csv | Path, line count, and SHA-256 of all 505 scanned code files |
+| static_controls.csv | 264 static interaction candidates in index.html, including event attributes |
+| control_handler_index.csv | Inline calls for the above controls and candidate JS function locations; not a complete call graph |
+| event_sites.csv | Lines containing the 568 JS/HTML event registrations or inline attributes, including matches in tests/libraries |
+| production_routes.csv | 122 Flask route declarations in web/ |
+| capability_registry.csv/json | All 111 registered targets of the UI tool and the full JSON schema |
+| capability_source_index.csv | The registration line and frontend same-name string references for each target, used to locate the dispatcher; a reference is not proof of execution |
+| test_inventory.csv | 1649 Python test function declarations; presence does not mean they were executed |
+| inventory_summary.json | Counts and baseline |
+| audit_probes.py/json | Semantics, authorization, dependency, and coverage results of actual pure functions in a synthetic context |
+| audit_browser_probes.cjs/json | Actual production JS functions extracted into a Node VM and tested with lazy DOM stand-ins; no server access |
+| audit_inventory.py | AST/HTML/event scanning script; input is tracked_sources.txt |
+| tracked_sources.txt | Baseline of source file paths at audit time; only entries matching code extensions are used |
+| validation_record.json | Actual test scope, passes, and environment blockers |
 
-CSV 使用 UTF-8 BOM，方便中文表格软件读取；JSON 使用 UTF-8。控制台中文编码异常不改变 JSON 中保存的原始中文。
+CSVs use a UTF-8 BOM so Chinese spreadsheet software can read them; JSON uses UTF-8. Console CJK encoding anomalies do not alter the original Chinese stored in the JSON.
 
-**本附件没有真实患者数据、截图或模型调用结果。** 合成 guide catalog 和258对象fixture只是可复现的边界输入。动态DOM、canvas内部交互、资源恢复和GPU计算需要真实端到端补验。
+**This attachment contains no real patient data, screenshots, or model invocation results.** The synthetic guide catalog and the 258-object fixture are merely reproducible boundary inputs. Dynamic DOM, in-canvas interactions, resource recovery, and GPU computation require real end-to-end verification.
 
-静态扫描不覆盖全部动态行为。`capability_source_index.csv` 无字面引用不等于无实现，有引用也不等于可执行；必须读取实际分派和后置条件。
+Static scanning does not cover all dynamic behavior. In `capability_source_index.csv`, the absence of a literal reference does not mean there is no implementation, and the presence of a reference does not mean it is executable; the actual dispatch and postconditions must be read.
 
-## 复现探针
+## Reproducing the Probes
 
-建议将脚本复制到临时审计目录运行，避免覆盖提交的基线JSON。脚本只读取指定源码、写出脚本所在目录下的审计结果；不调用临床工具、不开启服务、不写病例。
+It is recommended to copy the scripts into a temporary audit directory before running them, so the committed baseline JSON is not overwritten. The scripts only read the specified source code and write audit results to the directory containing the script; they do not call clinical tools, start services, or write cases.
 
 ```bash
 REPO=/home/lht/snap/brachyplan/BrachyBot
@@ -42,16 +42,16 @@ node "$AUDIT_DIR/audit_browser_probes.cjs" "$REPO"
 PYTHONDONTWRITEBYTECODE=1 /home/lht/.conda/envs/brachytherapy/bin/python "$AUDIT_DIR/audit_inventory.py" "$REPO"
 ```
 
-`audit_inventory.py` 使用旧基线路径清单。审计新文件时应重新生成Git跟踪清单，并记录新HEAD、dirty diff和散列；不要把新增未跟踪文件遗漏后仍宣称全覆盖。Python纯函数probe构造包壳以避免导入时启动重型运行时，测试范围因此明确是这些函数，不是完整agent。
+`audit_inventory.py` uses the old baseline path list. When auditing new files, regenerate the Git-tracked list and record the new HEAD, dirty diff, and hashes; do not claim full coverage while omitting newly added untracked files. The Python pure-function probes build package shims to avoid launching a heavy runtime on import, so the test scope is explicitly these functions, not the complete agent.
 
-JS probe依赖函数名边界抽取。若源码重构导致抽取失败，先更新探针定位/使用正式导出的handler，不能解释为业务通过。
+The JS probes rely on extracting function boundaries by name. If source refactoring causes extraction to fail, first update the probe's targeting or use an officially exported handler; this must not be interpreted as a business-logic pass.
 
-这些脚本打印的是**观察结果**，并未断言正确实现。修复时请把本报告期望行为编成正式assertions；例如handler返回false则不能返回success，第二个独立步骤必须执行，分别30/70必须分别绑定。
+These scripts print **observations** and do not assert a correct implementation. When fixing, encode the expected behavior from this report as formal assertions; for example, if a handler returns false it must not return success, the second independent step must execute, and 30/70 must be bound separately.
 
-## 防止审计被误用
+## Preventing Misuse of the Audit
 
-- 139 passed为11个定向Python文件，不是全仓全绿。
-- 两个Node隔离回归通过，不等于真实浏览器截图/GPU/持久化通过。
-- 三个Playwright测试在本地缺依赖，未进入产品断言，不应标成已通过或代码失败。
-- 主报告的风险项和待E2E项不可被改写成已发生的临床事故。
-- 主报告只授权后续agent有依据地制定实施；本次没有业务代码修改、服务重启或release操作。
+- The 139 passed are for 11 targeted Python files, not the entire repository being green.
+- Two isolated Node regressions passing does not mean real-browser screenshots/GPU/persistence pass.
+- Three Playwright tests are missing dependencies locally and did not reach product assertions; they should not be marked as passed or as code failures.
+- The risk items and pending E2E items in the main report must not be rewritten as clinical incidents that have already occurred.
+- The main report only authorizes subsequent agents to formulate implementation based on evidence; this audit made no business-code changes, service restarts, or release operations.

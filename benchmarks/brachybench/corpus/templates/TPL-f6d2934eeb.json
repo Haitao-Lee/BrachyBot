@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "input_variations",
+  "expectation": null,
+  "facet": "input_variations",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "How large is the CTV?",
+  "source_refs": [
+    "INT-0ae1b83c0690",
+    "INT-b0b9979a2a17"
+  ],
+  "template_id": "TPL-f6d2934eeb"
+}

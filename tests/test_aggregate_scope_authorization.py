@@ -1,7 +1,7 @@
 """Aggregate "update everything" authorization scope (audit defect F01).
 
 An aggregate command names no object of its own.  It used to authorize every
-writable target, so a bare "全部更新" in an empty context — or right after a
+writable target, so a bare "update everything" in an empty context — or right after a
 case switch — authorized re-running CTV/OAR segmentation and a new planning
 pipeline.  "Everything" is a *finite, sourced* set of artifacts the user is
 pointing at, and it never silently creates new geometry.
@@ -137,7 +137,7 @@ def test_count_reference_takes_only_the_first_n_of_a_longer_list():
 
 
 def test_unresolvable_count_reference_clarifies_instead_of_executing():
-    """"刚才三项" with nothing prior to point at is not a grant."""
+    """The phrase "the three just mentioned" with nothing prior to point at is not a grant."""
     assert mutating_execution_authorized("把刚才三项全部更新", "report_auto_fill", []) is False
     assert mutating_execution_authorized("把刚才三项全部更新", "dose_recompute", None) is False
     assert mutating_execution_authorized("把刚才三项全部更新", "surgical_guide", []) is False

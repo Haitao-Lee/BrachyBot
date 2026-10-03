@@ -1,0 +1,17 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "treatment_planning",
+  "expectation": null,
+  "facet": "treatment_planning",
+  "gold_status": "draft",
+  "n_source_intents": 5,
+  "representative_text": "For a patient with a recurrent tumor at the gastroesophageal junction, please plan an endoluminal brachytherapy boost. Using a single-channel applicator with 8 dwell positions, prescribe 5 Gy per fraction in 3 fractions. The dose should be prescribed at 1cm from the source axis. Optimize to cover the tumor while sparing the heart and lungs.",
+  "source_refs": [
+    "INT-618ea835171f",
+    "INT-6c9a17159733",
+    "INT-809b2a434c8a",
+    "INT-afef74ad311c",
+    "INT-e0c0ac1b5910"
+  ],
+  "template_id": "TPL-095fbff94e"
+}

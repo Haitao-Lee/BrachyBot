@@ -1,0 +1,74 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "max": 1,
+      "operation": "set",
+      "path": "objects.ctv-A.opacity"
+    },
+    {
+      "max": 1,
+      "operation": "set",
+      "path": "objects.needle-A.opacity"
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "zh",
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "state",
+      "statement": "Both requested object types updated; guide-A display/color/opacity unchanged."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "effects",
+      "statement": "No duplicate-target alias effects or geometry edits."
+    },
+    {
+      "id": "criterion-2",
+      "kind": "response",
+      "statement": "Name both affected targets and verified30% setting; guide unchanged."
+    }
+  ],
+  "rules": [
+    {
+      "op": "equals",
+      "path": "objects.ctv-A.opacity",
+      "value": 0.3
+    },
+    {
+      "op": "equals",
+      "path": "objects.needle-A.opacity",
+      "value": 0.3
+    },
+    {
+      "op": "preserve",
+      "path": "objects.guide-A"
+    }
+  ],
+  "scenario_id": "RUR-05-001",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "state",
+      "statement": "Both requested object types updated; guide-A display/color/opacity unchanged."
+    },
+    {
+      "kind": "effects",
+      "statement": "No duplicate-target alias effects or geometry edits."
+    },
+    {
+      "kind": "response",
+      "statement": "Name both affected targets and verified30% setting; guide unchanged."
+    }
+  ]
+}

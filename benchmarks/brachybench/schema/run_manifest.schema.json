@@ -1,0 +1,113 @@
+{
+  "$id": "https://brachybench.local/schema/run_manifest.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Unified Run Manifest v1 (DESIGN §26.2, shared by EXT and PRV)",
+  "type": "object",
+  "required": ["manifest_version", "track", "run_id", "sut", "env", "benchmark", "protocol", "results_dir"],
+  "additionalProperties": false,
+  "properties": {
+    "evaluator_identity": {"type": "object"},
+    "user_chat_execution": {
+      "type": ["object", "null"],
+      "properties": {
+        "contract_version": {"const": "1.0"},
+        "entry_mode": {"const": "browser_user_chat"},
+        "execution_id": {"type": "string"},
+        "session_id": {"type": "string"},
+        "isolated_workspace": {"const": true},
+        "turns": {"type": "array", "items": {"type": "object"}}
+      }
+    },
+    "evaluation_mode": {"enum": ["formal", "component_self_test"]},
+    "comparable_sut_result": {"type": "boolean"},
+    "manifest_version": {"const": "1.0"},
+    "track": {"enum": ["EXT", "PRV"]},
+    "run_id": {"type": "string"},
+    "sut": {
+      "type": "object",
+      "required": ["sut_id", "model", "system_prompt_sha256", "adapter", "deterministic_kernels", "seen_task_ids", "human_in_loop"],
+      "properties": {
+        "sut_id": {"type": "string"},
+        "model": {
+          "type": "object",
+          "required": ["id"],
+          "properties": {
+            "id": {"type": "string"},
+            "provider": {"type": "string"},
+            "temperature": {"type": "number"}
+          }
+        },
+        "system_prompt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "tool_schema_sha256": {"type": ["string", "null"], "pattern": "^([0-9a-f]{64})?$"},
+        "adapter": {"type": "string"},
+        "deterministic_kernels": {"type": "boolean"},
+        "seen_task_ids": {"type": "array", "items": {"type": "string"}},
+        "human_in_loop": {"type": "boolean"}
+      }
+    },
+    "env": {
+      "type": "object",
+      "required": ["environment_json_sha256"],
+      "properties": {
+        "environment_json_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "weight_sha256": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "benchmark": {
+      "type": "object",
+      "properties": {
+        "ext_id": {"type": ["string", "null"]},
+        "prv_version": {"type": ["string", "null"]},
+        "task_manifest_sha256": {"type": "string"},
+        "oracle_sha256": {"type": ["string", "null"]},
+        "upstream_evaluator_sha256": {"type": ["string", "null"]}
+      }
+    },
+    "protocol": {
+      "type": "object",
+      "required": ["phase", "n_runs", "budget"],
+      "properties": {
+        "entry_mode": {"enum": ["browser_user_chat", "component_only"]},
+        "phase": {"type": "string"},
+        "n_runs": {"type": "integer", "minimum": 1},
+        "budget": {
+          "type": "object",
+          "required": ["wall_clock_s", "turns", "tool_calls"],
+          "properties": {
+            "wall_clock_s": {"type": "number", "minimum": 0},
+            "turns": {"type": "integer", "minimum": 0},
+            "tool_calls": {"type": "integer", "minimum": 0}
+          }
+        },
+        "sampling_seed": {"type": "integer"}
+      }
+    },
+    "freeze_checklist": {
+      "type": "object",
+      "properties": {"passed": {"type": "string"}, "date": {"type": "string"}}
+    },
+    "smoke_gate": {
+      "type": "object",
+      "properties": {"status": {"enum": ["PASS","FAIL","BLOCKED","LICENSE_REQUIRED","INFRA_FAILED"]}, "date": {"type": "string"}}
+    },
+    "results_dir": {"type": "string"},
+    "infra_failed_count": {"type": "integer", "minimum": 0},
+    "task_failed_count": {"type": "integer", "minimum": 0},
+
+    "partial_status_histogram": {
+      "type": "object",
+      "description": "DESIGN §25.9 eight-state outcome counts (BA-2)",
+      "properties": {
+        "COMPLETED": {"type": "integer", "minimum": 0},
+        "PARTIAL": {"type": "integer", "minimum": 0},
+        "NEEDS_CLARIFICATION": {"type": "integer", "minimum": 0},
+        "BLOCKED_BY_DEPENDENCY": {"type": "integer", "minimum": 0},
+        "REFUSED_FOR_SAFETY": {"type": "integer", "minimum": 0},
+        "FAILED_TOOL": {"type": "integer", "minimum": 0},
+        "FAILED_VERIFICATION": {"type": "integer", "minimum": 0},
+        "INFRA_FAILED": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    }
+  }
+}

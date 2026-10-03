@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "streaming_sse",
+  "expectation": null,
+  "facet": "streaming_sse",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Analyze the image and segment",
+  "source_refs": [
+    "INT-05a7dda5c4b1",
+    "INT-56d4fb4e365b"
+  ],
+  "template_id": "TPL-5479c04c00"
+}

@@ -1,0 +1,15 @@
+[
+  {
+    "event": "capture_partial",
+    "kind": "environment_event",
+    "payload": {
+      "delivered_views": [
+        "data-tree"
+      ],
+      "failed_views": [
+        "viewer-3d"
+      ]
+    },
+    "trigger": "capture.dispatched"
+  }
+]

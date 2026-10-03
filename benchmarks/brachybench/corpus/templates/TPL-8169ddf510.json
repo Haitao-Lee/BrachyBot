@@ -1,0 +1,17 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "reference_direction",
+  "expectation": null,
+  "facet": "reference_direction",
+  "gold_status": "draft",
+  "n_source_intents": 5,
+  "representative_text": "Plan a pancreatic tumor with an anterior approach",
+  "source_refs": [
+    "INT-30dbf4fba1b6",
+    "INT-4acb2b7af7de",
+    "INT-8139ab254a11",
+    "INT-b66d5f2d4d86",
+    "INT-c932b4e011c4"
+  ],
+  "template_id": "TPL-8169ddf510"
+}

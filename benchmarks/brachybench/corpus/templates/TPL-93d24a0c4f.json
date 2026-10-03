@@ -1,0 +1,15 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "safety_validator",
+  "expectation": null,
+  "facet": "safety_validator",
+  "gold_status": "draft",
+  "n_source_intents": 3,
+  "representative_text": "Run a safety check on this treatment plan before I export it",
+  "source_refs": [
+    "INT-77c1560d91bd",
+    "INT-90d5985b2e81",
+    "INT-f61488e06a63"
+  ],
+  "template_id": "TPL-93d24a0c4f"
+}

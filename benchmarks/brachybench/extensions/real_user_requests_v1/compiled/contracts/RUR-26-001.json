@@ -1,0 +1,66 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "max": 1,
+      "operation": "set",
+      "path": "objects.ctv-A.color"
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "zh",
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "state",
+      "statement": "Viewer mesh, Data Tree color indicator, persisted color and restored session agree."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "effects",
+      "statement": "No opacity/visibility/geometry changes; NL and manual UI each independently reach expected blue state."
+    },
+    {
+      "id": "criterion-2",
+      "kind": "response",
+      "statement": "Acknowledge only verified CTV blue change, not unrequested scene-wide changes."
+    }
+  ],
+  "rules": [
+    {
+      "op": "equals",
+      "path": "objects.ctv-A.color",
+      "value": "blue"
+    },
+    {
+      "field": "color",
+      "op": "mirrors",
+      "target": "ctv-A",
+      "value": "blue"
+    }
+  ],
+  "scenario_id": "RUR-26-001",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "state",
+      "statement": "Viewer mesh, Data Tree color indicator, persisted color and restored session agree."
+    },
+    {
+      "kind": "effects",
+      "statement": "No opacity/visibility/geometry changes; NL and manual UI each independently reach expected blue state."
+    },
+    {
+      "kind": "response",
+      "statement": "Acknowledge only verified CTV blue change, not unrequested scene-wide changes."
+    }
+  ]
+}

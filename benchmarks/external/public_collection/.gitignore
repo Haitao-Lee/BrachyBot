@@ -1,0 +1,4 @@
+assets/
+exports/
+__pycache__/
+*.part

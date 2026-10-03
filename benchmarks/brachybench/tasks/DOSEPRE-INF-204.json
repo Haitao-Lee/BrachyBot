@@ -1,0 +1,83 @@
+{
+  "schema_version": "1.0",
+  "id": "DOSEPRE-INF-204",
+  "track": "L",
+  "layers": [
+    "L3",
+    "L4"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "inference.resample_grid_roundtrip",
+  "cost_class": "state_only",
+  "power_role": "primary",
+  "clinical_intent": "The geometry metadata round-trip for crop -> 1 mm network grid -> re-injected CT grid must be faithful.",
+  "fixture": {
+    "case_family": "synth/interop_case",
+    "setup_script": "fixtures/setup/interop_case.py",
+    "initial_state_hash": "sha256:5580992734c65dddb22edba5969a1955389deab388d8c25a38c79110fe4dc002"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-CT",
+    "contrast_family_id": "dose_pre/inference/resample_roundtrip"
+  },
+  "protocol": {
+    "mode": "single_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "The geometry metadata round-trip for crop -> 1 mm network grid -> re-injected CT grid must be faithful.",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 1,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "roundtrip_fidelity",
+    "constraint_class": "none",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "roundtrip_fidelity_pass",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "hard"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "DOSEPRE-INF-204-P01",
+    "hidden": false,
+    "generation_seed": 7167,
+    "canary_class": null,
+    "behavioral_probes": [
+      "independent_parser"
+    ],
+    "contrast_family_id": "dose_pre/inference/resample_roundtrip"
+  },
+  "provenance": {
+    "source": "audit_derived",
+    "derived_from": "plans/dose_pre/inference.py:123-148,386-390 (resample_to_reference / resample_crop_to_full)",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto"
+    ],
+    "authored_on": "2026-10-01",
+    "deprecated": null
+  }
+}

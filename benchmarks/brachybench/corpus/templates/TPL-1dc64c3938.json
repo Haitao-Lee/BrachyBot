@@ -1,0 +1,19 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "skill_selection",
+  "expectation": null,
+  "facet": "skill_selection",
+  "gold_status": "draft",
+  "n_source_intents": 7,
+  "representative_text": "Plan brachytherapy for this pancreatic tumor",
+  "source_refs": [
+    "INT-364b41e15ada",
+    "INT-4bb9235689e1",
+    "INT-5df9a062253e",
+    "INT-a05b10c43a60",
+    "INT-a74ab85d4988",
+    "INT-bc8f2b6e412a",
+    "INT-f37a5689c23a"
+  ],
+  "template_id": "TPL-1dc64c3938"
+}

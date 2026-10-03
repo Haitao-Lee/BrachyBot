@@ -1,0 +1,90 @@
+{
+  "anti_gaming": {
+    "contrast_family_id": "RUR-36",
+    "hidden": false,
+    "paraphrase_group": "RUR-36"
+  },
+  "clinical_intent": "四轮逐步纠正集合和输出",
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "RUR-36",
+  "cost_class": "light_compute",
+  "fixture": {
+    "case_family": "RUR-36",
+    "initial_state_hash": "sha256:5c074734b87a45ce5a053e53b705f27dc8d55ea184678fabdd1e0ebf1c4bda41",
+    "setup_script": "extensions/real_user_requests_v1/compiled/fixtures/RUR-36-001.json"
+  },
+  "id": "RUR-36-001",
+  "layers": [
+    "L2",
+    "L4"
+  ],
+  "oracle": {
+    "check": "real_user_request",
+    "constraint_class": "none",
+    "expect": null,
+    "gold": "contracts/RUR-36-001.json",
+    "independent_check": true,
+    "kind": "program"
+  },
+  "power_role": "exploratory",
+  "protocol": {
+    "allowed_intermediates": [],
+    "audit_required": true,
+    "budget": {
+      "tool_calls": 96,
+      "turns": 4,
+      "wall_clock_s": 120
+    },
+    "mode": "multi_turn",
+    "n_runs": 1,
+    "turns": [
+      {
+        "lang": "zh",
+        "role": "user",
+        "text": "把导板和肿瘤都显示出来。"
+      },
+      {
+        "lang": "zh",
+        "role": "user",
+        "text": "不是都要改，导板保持刚才显示的状态，只改肿瘤Opacity滑块到40%。"
+      },
+      {
+        "lang": "zh",
+        "role": "user",
+        "text": "顺便告诉我脊髓D2cc，不要重算。"
+      },
+      {
+        "lang": "zh",
+        "role": "user",
+        "text": "最后用一句话总结实际改了什么。"
+      }
+    ],
+    "ui_counterpart": null
+  },
+  "provenance": {
+    "authored_on": "2026-10-03",
+    "deprecated": null,
+    "derived_from": "real_user_requests_v1:RUR-36-001",
+    "guideline_ref": null,
+    "reviewers": [
+      "authoring-only; independent review pending"
+    ],
+    "source": "audit_derived"
+  },
+  "schema_version": "1.0",
+  "scoring": {
+    "difficulty_target": "medium",
+    "gate_refs": [],
+    "primary_metric": "verified_task_goal",
+    "weight": 1.0
+  },
+  "track": "B",
+  "unit": {
+    "contrast_family_id": "RUR-36",
+    "group_type": "G-CTX",
+    "kind": "task_scenario"
+  }
+}

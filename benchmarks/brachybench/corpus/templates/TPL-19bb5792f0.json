@@ -1,0 +1,15 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "ui_control",
+  "expectation": null,
+  "facet": "ui_control",
+  "gold_status": "draft",
+  "n_source_intents": 3,
+  "representative_text": "Switch to the input panel",
+  "source_refs": [
+    "INT-89c7837798d7",
+    "INT-d0f3c67711b5",
+    "INT-fb7c8b666e81"
+  ],
+  "template_id": "TPL-19bb5792f0"
+}

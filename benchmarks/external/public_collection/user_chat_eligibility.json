@@ -1,0 +1,34 @@
+{
+  "effective_date": "2026-10-04",
+  "policy": "../../execution_policy.json",
+  "default": "no_formal_runs_until_browser_input_fixture_and_source_protocol_certified",
+  "ready_for_formal_evaluation": false,
+  "notes": "Data availability is not product chat execution readiness. Preserve original catalog/protocol assets; do not claim native upstream scores after adaptation.",
+  "legacy": {
+    "EXT-1": "blocked_native_OHIF_Orthanc_executor_missing",
+    "EXT-2": "user_chat_candidate_conversation_setup_and_upstream_judge_gate",
+    "EXT-3": "user_chat_candidate_already_brachy_adapted_do_not_call_native_score",
+    "EXT-4": "user_chat_candidate_real_history_replay_and_memory_protocol_gate",
+    "EXT-9": "user_chat_candidate_actual_history_setup_and_date_protocol_gate",
+    "EXT-10": "user_chat_candidate_format_parser_split_certification_gate",
+    "EXT-11": "user_chat_candidate_public_patient_note_and_calculation_format_gate",
+    "EXT-12": "blocked_original_patient_test_multiturn_simulator_missing",
+    "EXT-13": "user_chat_candidate_case_prompt_and_independent_upstream_judge_gate",
+    "EXT-14": "user_chat_candidate_physics_QA_only_no_direct_kernel_as_agent_completion",
+    "EXT-15": "user_chat_candidate_exact_official_subset_and_license_gate"
+  },
+  "new_collections": {
+    "EXT-16": "blocked_native_foreign_tools_and_loglikelihood_protocol_not_chat_equivalent",
+    "EXT-17": "blocked_native_foreign_tool_AST_execution_not_product_chat",
+    "EXT-18": "Text_user_chat_candidate_MM_blocked_until_real_image_upload_and_protocol_certified",
+    "EXT-19": "user_chat_candidate_ordered_turns_real_prior_answers_only",
+    "EXT-20": "user_chat_candidate_original_error_span_correction_format_gate",
+    "EXT-21": "user_chat_candidate_original_prompt_scoring_license_gate_no_train_only_fake_subset",
+    "EXT-22": "blocked_original_RAG_context_and_judge_plus_product_integration_missing",
+    "EXT-23": "blocked_until_frozen_corpus_in_actual_product_retrieval_tool_and_ranked_ids_verified",
+    "EXT-24": "blocked_until_frozen_corpus_in_actual_product_retrieval_tool_and_ranked_ids_verified",
+    "EXT-25": "blocked_until_frozen_corpus_in_actual_product_retrieval_tool_and_ranked_ids_verified",
+    "EXT-26": "user_chat_candidate_original_document_composition_and_real_user_upload_or_prompt_gate",
+    "EXT-27": "blocked_until_actual_low_trust_tool_return_integration_and_original_two_stage_simulator"
+  }
+}

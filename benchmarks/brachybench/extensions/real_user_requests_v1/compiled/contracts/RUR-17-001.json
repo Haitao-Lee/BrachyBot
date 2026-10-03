@@ -1,0 +1,70 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "kind": "guide",
+      "max": 1,
+      "operation": "submit"
+    },
+    {
+      "kind": "guide",
+      "max": 1,
+      "operation": "cancel"
+    },
+    {
+      "max": 1,
+      "operation": "set",
+      "path": "objects.guide-A.visible"
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 2,
+  "requested_language": "zh",
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "effects",
+      "statement": "No new guide commit after cancellation acknowledged; original guide remains."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "response",
+      "statement": "Report cancellation versus original display; do not claim rollback if nothing committed."
+    }
+  ],
+  "rules": [
+    {
+      "op": "equals",
+      "path": "objects.guide-A.visible",
+      "value": true
+    },
+    {
+      "kind": "guide",
+      "op": "job_status",
+      "status": "cancelled"
+    },
+    {
+      "op": "preserve",
+      "path": "artifact_records.guide"
+    }
+  ],
+  "scenario_id": "RUR-17-001",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "effects",
+      "statement": "No new guide commit after cancellation acknowledged; original guide remains."
+    },
+    {
+      "kind": "response",
+      "statement": "Report cancellation versus original display; do not claim rollback if nothing committed."
+    }
+  ]
+}

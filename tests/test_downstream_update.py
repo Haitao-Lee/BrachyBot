@@ -1,7 +1,7 @@
 """Deterministic downstream-repair plan for an aggregate "update everything".
 
 The Session records which artifacts are stale in ``artifact_status``.  An
-explicit "全部更新 / 所有后续都更新" turn is executed from that record, in
+explicit "update everything / update all downstream" turn is executed from that record, in
 dependency order, instead of asking the model to re-derive the plan (and then
 silently not executing it).
 """

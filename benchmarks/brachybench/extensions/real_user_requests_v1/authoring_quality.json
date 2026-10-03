@@ -1,0 +1,12 @@
+{
+  "errors": [],
+  "families": 40,
+  "formal_ready": false,
+  "formal_results": 0,
+  "live_runs": 0,
+  "negative_control_specs": 246,
+  "reason": "Independent semantic review, runnable fixture/event drivers, calibrated response/visual references and live collectors remain required.",
+  "scenarios": 82,
+  "semantic_validity": "NOT_ESTABLISHED",
+  "structural_ok": true
+}

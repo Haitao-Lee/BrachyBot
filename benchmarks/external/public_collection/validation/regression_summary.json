@@ -1,0 +1,25 @@
+{
+  "date": "2026-10-04",
+  "mode": "component_and_construction_regression_not_sut_evaluation",
+  "sut_runs": 0,
+  "model_calls": 0,
+  "paid_judge_calls": 0,
+  "service_restarts": 0,
+  "targeted_initial": {"passed":115,"skipped":1,"failed":0,"log":"installed-regression.log"},
+  "full_benchmark_regression": {
+    "command":"python -m pytest tests/ ../external/public_collection/tests -q -rs --tb=short",
+    "cwd":"benchmarks/brachybench",
+    "passed":24256,"skipped":2,"failed":0,"seconds":174.04,
+    "log":"final-full-benchmark-regression.log",
+    "skip_reasons":["test_checker_family.py:233 real PDF parser required","test_independent_audit_remediation.py:384 pypdf not installed"]
+  },
+  "after_last_collection_only_changes": {
+    "passed":48,"skipped":0,"failed":0,
+    "changes":"CMB future turns private, official HF checksum validation, cached asset acquisition provenance preserved",
+    "log":"../construction_validation.json"
+  },
+  "asset_integrity":{"files":173,"problems":0},
+  "official_hf_lfs_crosscheck":{"files":15,"mismatches":0},
+  "clinical_environment_modified":false,
+  "comparison_protocol_certified":false
+}

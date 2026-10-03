@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "smoke_04",
+  "expectation": null,
+  "facet": "smoke_04",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Calculate the dose",
+  "source_refs": [
+    "INT-c28a85114d7a",
+    "INT-f79eca666171"
+  ],
+  "template_id": "TPL-01d2ccd65d"
+}

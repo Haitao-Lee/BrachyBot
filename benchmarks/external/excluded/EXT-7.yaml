@@ -1,0 +1,70 @@
+benchmark: PhysicianBench
+ext_id: EXT-7
+tier: conditional
+grade_R: R0-Gated
+grade_C: C2
+panels: [P2]
+
+acquisition:
+  source_url: https://github.com/HealthRex/PhysicianBench
+  source_commit: c7efa8fd5b1e4744ada50668efe4b7e84023cbb0
+  source_tag: null
+  dataset_name: "PhysicianBench task definitions (in-repo, 100 tasks) + Redivis-gated FHIR image fhir-full:v1"
+  dataset_revision: gated-redivis-a0ek-0ad8tjsw9
+  dataset_sha256: gated-redivis-stanford-ehr-image
+  dataset_size_bytes: 0
+  retrieval_command: |
+    git clone https://github.com/HealthRex/PhysicianBench vendor/EXT-7
+    git -C vendor/EXT-7 checkout c7efa8fd5b1e4744ada50668efe4b7e84023cbb0
+    # task definitions (100 tasks / 670 checkpoints) are in vendor/EXT-7/tasks/v1/
+    # execution requires the Redivis-gated image:
+    #   https://stanford.redivis.com/datasets/a0ek-0ad8tjsw9  -> physicianbench-fhir-v1.tar.gz
+    #   gunzip -c physicianbench-fhir-v1.tar.gz | docker load
+  retrieval_date: 2026-10-01
+  license_upstream: Apache-2.0
+  license_file: LICENSE
+  license_verified_by: "brachybench-auto (GitHub API 2026-10-01)"
+  activity_verified:
+    last_commit_date: 2026-08-13
+    last_release_date: null
+    open_issues: 6
+
+runner:
+  official_runner: scripts/run_task.py + scripts/run_batch_task.sh
+  evaluator: scripts/run_eval.py (pytest checkpoints) + scripts/score_jobs.py (pass@k)
+  container: fhir-full:v1 (Redivis gated)
+  python_requires: ">=3.10"
+  native_deps: [Docker, uv]
+  paid_apis: []
+  grader_note: "some checkpoints use an LLM judge (OpenRouter/OpenAI); primary block is the Redivis-gated FHIR image."
+
+adapter:
+  kind: ext_adapter
+  shim_used: false
+  spec_ref: "DESIGN §25.5"
+
+run:
+  smoke_size: 5
+  sample_size: 0
+  sampling_seed: 42
+  n_runs: 5
+  budget: {wall_clock_s: 600, turns: 40, tool_calls: 60}
+
+isolation:
+  sandbox: required
+  network: denied
+  write_paths: ["benchmarks/external/EXT-7/results/"]
+  forbidden_write_roots:
+    - BrachyBot/session/
+    - BrachyBot/case/
+    - BrachyBot/runtime/
+    - BrachyBot/report/
+
+contamination:
+  public_samples_allowed_for_dev_only: true
+  seen_task_ids: []
+  behavioral_probes: [B1, B2, B3, B4, B5, B6, B7]
+
+status: blocked
+block_reason: "Redivis-gated FHIR image fhir-full:v1 (dataset a0ek-0ad8tjsw9) required to run/score"
+reinclude_condition: "obtain Redivis authorization + load physicianbench-fhir-v1 image; task defs already vendored"

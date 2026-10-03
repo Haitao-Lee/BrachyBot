@@ -2,39 +2,39 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 重计算（规划/导板/分割）运行期间把全量 workspace checkpoint 延后到有限的陈旧上限内，回收被持久化占用的规划墙钟，同时保证最终结果与现有持久化语义完全不变。
+**Goal:** During heavy recomputation (planning/guide/segmentation), defer full workspace checkpoints within a bounded staleness ceiling, reclaiming planning wall-clock time consumed by persistence, while guaranteeing final results are completely unchanged from the existing persistence semantics.
 
-**Architecture:** 在 `WorkspaceStore` 注入一个只读的"病例忙"探针（复用现有 `_case_has_running_chat_task`），调度定时器在真正落盘前判断：忙且距上次成功落盘 < 60s 就重排一个 3s 定时器；否则照常落盘并刷新时间戳。`flush_agent_checkpoint` 与全部 patch 路径不经过该判断，任务结束仍同步落盘。
+**Architecture:** Inject a read-only "case busy" probe into `WorkspaceStore` (reusing the existing `_case_has_running_chat_task`). Before actually writing to disk, the scheduling timer checks: if busy and less than 60s since the last successful write, it re-arms a 3s timer; otherwise it writes as usual and refreshes the timestamp. `flush_agent_checkpoint` and all patch paths bypass this decision, and the checkpoint is still written synchronously when the task ends.
 
-**Tech Stack:** Python 3.12、Flask、threading.Timer、pytest、`~/.conda/envs/brachytherapy/bin/python`。
+**Tech Stack:** Python 3.12, Flask, threading.Timer, pytest, `~/.conda/envs/brachytherapy/bin/python`.
 
 **Spec:** `docs/superpowers/specs/2026-09-16-planning-checkpoint-deferral-design.md`
 
-**运行约定:** 所有 pytest 命令都在仓库根 `<workspace>/BrachyBot` 执行，解释器用 `~/.conda/envs/brachytherapy/bin/python`。新测试文件按惯例把 `tests/` 加入导入路径（见 `tests/conftest.py`，无需自己处理）。
+**Run convention:** All pytest commands run from the repo root `<workspace>/BrachyBot`, using the interpreter `~/.conda/envs/brachytherapy/bin/python`. By convention, new test files add `tests/` to the import path (see `tests/conftest.py`; no action needed on your part).
 
-**约束:** 不改 `plans/*`、`tool_factory/seed_plan/*`、快照 schema、revision/租约语义；未注入 probe 时行为与现状一致；一键回退 `BRACHYBOT_CHECKPOINT_MAX_STALENESS_SECONDS=0`。
+**Constraints:** Do not change `plans/*`, `tool_factory/seed_plan/*`, the snapshot schema, or revision/lease semantics; behavior matches the status quo when no probe is injected; one-command rollback via `BRACHYBOT_CHECKPOINT_MAX_STALENESS_SECONDS=0`.
 
 ---
 
 ## File Structure
 
-| 文件 | 职责 |
+| File | Responsibility |
 |---|---|
-| `web/workspace_store.py`（修改） | 探针注入、陈旧上限、完成时间戳、延后决策、定时器集成 |
-| `web/server.py`（修改，约 `:320`） | 把 `_case_has_running_chat_task` 接成 store 的探针 |
-| `tests/test_workspace_checkpoint_deferral.py`（新建） | 决策函数/定时器/接线/回退测试 |
+| `web/workspace_store.py` (modify) | Probe injection, staleness ceiling, completion timestamp, deferral decision, timer integration |
+| `web/server.py` (modify, around `:320`) | Wire `_case_has_running_chat_task` as the store's probe |
+| `tests/test_workspace_checkpoint_deferral.py` (new) | Decision function/timer/wiring/rollback tests |
 
 ---
 
-### Task 1: WorkspaceStore 延后决策组件
+### Task 1: WorkspaceStore deferral decision component
 
 **Files:**
-- Modify: `web/workspace_store.py`（构造函数约 `:1647`；`_snapshot_agent_locked` 约 `:2661` 的 `return result` 之前）
-- Test: `tests/test_workspace_checkpoint_deferral.py`（新建）
+- Modify: `web/workspace_store.py` (constructor around `:1647`; in `_snapshot_agent_locked` around `:2661`, before `return result`)
+- Test: `tests/test_workspace_checkpoint_deferral.py` (new)
 
 - [ ] **Step 1: Write the failing tests**
 
-新建 `tests/test_workspace_checkpoint_deferral.py`：
+Create `tests/test_workspace_checkpoint_deferral.py`:
 
 ```python
 """Heavy-task checkpoint deferral tests for planning latency."""
@@ -145,11 +145,11 @@ def test_successful_checkpoint_records_completion_time(tmp_path):
 ~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_workspace_checkpoint_deferral.py -q
 ```
 
-Expected: `FAILED`（`AttributeError: 'WorkspaceStore' object has no attribute 'set_heavy_task_probe'` 等）。
+Expected: `FAILED` (`AttributeError: 'WorkspaceStore' object has no attribute 'set_heavy_task_probe'`, etc.).
 
 - [ ] **Step 3: Implement the store components**
 
-在 `web/workspace_store.py` 模块常量区（`TRANSIENT_COLLECTION_LIMIT` 等常量附近）新增：
+In the `web/workspace_store.py` module constants section (near constants such as `TRANSIENT_COLLECTION_LIMIT`), add:
 
 ```python
 def _checkpoint_max_staleness_seconds() -> float:
@@ -177,7 +177,7 @@ def _checkpoint_max_staleness_seconds() -> float:
 DEFER_RETRY_SECONDS = 3.0
 ```
 
-在 `WorkspaceStore.__init__`（`self._checkpoint_generations` 初始化附近）新增：
+In `WorkspaceStore.__init__` (near the `self._checkpoint_generations` initialization), add:
 
 ```python
         # A busy case may defer its debounced full checkpoint for a bounded
@@ -188,7 +188,7 @@ DEFER_RETRY_SECONDS = 3.0
         self.checkpoint_max_staleness_seconds = _checkpoint_max_staleness_seconds()
 ```
 
-在 `WorkspaceStore` 的 `schedule_agent_checkpoint` 之前新增两个方法：
+Before `schedule_agent_checkpoint` in `WorkspaceStore`, add two methods:
 
 ```python
     def set_heavy_task_probe(
@@ -229,7 +229,7 @@ DEFER_RETRY_SECONDS = 3.0
         return (time.monotonic() - completed_at) < self.checkpoint_max_staleness_seconds
 ```
 
-在 `_snapshot_agent_locked` 的成功返回前记录时间戳（现有代码：
+Record the timestamp before the successful return in `_snapshot_agent_locked` (existing code:
 
 ```python
             logger.info(
@@ -240,7 +240,7 @@ DEFER_RETRY_SECONDS = 3.0
             return result
 ```
 
-改为在 `return result` 之前插入）：
+Change to insert before `return result`):
 
 ```python
             if result:
@@ -258,7 +258,7 @@ DEFER_RETRY_SECONDS = 3.0
 ~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_workspace_store.py -q
 ```
 
-Expected: 新文件全部 PASS；`test_workspace_store.py` 全绿（行为未变）。
+Expected: all new tests PASS; `test_workspace_store.py` all green (behavior unchanged).
 
 - [ ] **Step 5: Commit**
 
@@ -269,15 +269,15 @@ git commit -m "perf(workspace): add heavy-task checkpoint deferral decision"
 
 ---
 
-### Task 2: 定时器延后与重排
+### Task 2: Timer deferral and re-arming
 
 **Files:**
-- Modify: `web/workspace_store.py`（`_checkpoint_timer`，约 `:3631-3678`）
-- Test: `tests/test_workspace_checkpoint_deferral.py`（追加）
+- Modify: `web/workspace_store.py` (`_checkpoint_timer`, around `:3631-3678`)
+- Test: `tests/test_workspace_checkpoint_deferral.py` (append)
 
 - [ ] **Step 1: Write the failing tests**
 
-在 `tests/test_workspace_checkpoint_deferral.py` 追加：
+Append to `tests/test_workspace_checkpoint_deferral.py`:
 
 ```python
 def _install_counter(store):
@@ -345,11 +345,11 @@ def test_timer_runs_when_probe_idle(tmp_path):
 ~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_workspace_checkpoint_deferral.py -q
 ```
 
-Expected: 新增 3 个用例 FAIL（`test_timer_defers_and_rearms_while_busy` 里 `calls == ["test.defer"]`），其余 PASS。
+Expected: the 3 new cases FAIL (`calls == ["test.defer"]` in `test_timer_defers_and_rearms_while_busy`); the rest PASS.
 
 - [ ] **Step 3: Implement the timer integration**
 
-在 `_checkpoint_timer` 的第一个 `with self._lock:` 块之后、`work_lock = self._checkpoint_work_lock(...)` 之前插入：
+Insert after the first `with self._lock:` block in `_checkpoint_timer` and before `work_lock = self._checkpoint_work_lock(...)`:
 
 ```python
         if self._should_defer_checkpoint(user_id, session_id):
@@ -376,7 +376,7 @@ Expected: 新增 3 个用例 FAIL（`test_timer_defers_and_rearms_while_busy` �
 ~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_workspace_checkpoint_deferral.py tests/test_workspace_store.py tests/test_workspace_frontend.py -q
 ```
 
-Expected: 全绿。
+Expected: all green.
 
 - [ ] **Step 5: Commit**
 
@@ -387,15 +387,15 @@ git commit -m "perf(workspace): defer scheduled checkpoints while a heavy case t
 
 ---
 
-### Task 3: server 接线
+### Task 3: server wiring
 
 **Files:**
-- Modify: `web/server.py`（`create_app` 内 `workspace_store = WorkspaceStore(...)` 之后，约 `:320`）
-- Test: `tests/test_workspace_checkpoint_deferral.py`（追加）
+- Modify: `web/server.py` (in `create_app`, after `workspace_store = WorkspaceStore(...)`, around `:320`)
+- Test: `tests/test_workspace_checkpoint_deferral.py` (append)
 
 - [ ] **Step 1: Write the failing test**
 
-追加：
+Append:
 
 ```python
 def test_create_app_wires_heavy_task_probe(tmp_path):
@@ -417,11 +417,11 @@ def test_create_app_wires_heavy_task_probe(tmp_path):
 ~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_workspace_checkpoint_deferral.py::test_create_app_wires_heavy_task_probe -q
 ```
 
-Expected: FAIL（`assert None is not None`）。
+Expected: FAIL (`assert None is not None`).
 
 - [ ] **Step 3: Implement the wiring**
 
-在 `web/server.py` 的 `workspace_store = WorkspaceStore(config.get("runtime_dir"))` 之后插入（`_case_has_running_chat_task` 是模块级函数；`brachybot_chat_tasks` 由 `register_planning_routes` 注册，所以必须调用时查找）：
+Insert after `workspace_store = WorkspaceStore(config.get("runtime_dir"))` in `web/server.py` (`_case_has_running_chat_task` is a module-level function; `brachybot_chat_tasks` is registered by `register_planning_routes`, so it must be looked up at call time):
 
 ```python
     workspace_store.set_heavy_task_probe(
@@ -438,7 +438,7 @@ Expected: FAIL（`assert None is not None`）。
 ~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_chat_tasks.py tests/test_workspace_server_recovery_indicator.py tests/test_workspace_lease_ux.py -q
 ```
 
-Expected: 全绿。
+Expected: all green.
 
 - [ ] **Step 5: Commit**
 
@@ -449,12 +449,12 @@ git commit -m "perf(server): wire chat-task probe into checkpoint deferral"
 
 ---
 
-### Task 4: 回归与端到端验收
+### Task 4: Regression and end-to-end acceptance
 
 **Files:**
-- 无代码改动（除上三个任务外）
+- No code changes (beyond the three tasks above)
 
-- [ ] **Step 1: 运行完整回归集**
+- [ ] **Step 1: Run the full regression set**
 
 ```bash
 env -u BRACHYBOT_API_KEY ~/.conda/envs/brachytherapy/bin/python -m pytest \
@@ -464,18 +464,18 @@ env -u BRACHYBOT_API_KEY ~/.conda/envs/brachytherapy/bin/python -m pytest \
   tests/test_workspace_auth.py tests/test_public_deployment.py -q
 ```
 
-Expected: 全部 PASS（`test_workspace_auth.py` 必须在无 `BRACHYBOT_API_KEY` 的环境下跑，否则是已知的环境性 401）。
+Expected: all PASS (`test_workspace_auth.py` must run in an environment without `BRACHYBOT_API_KEY`; otherwise there is a known environmental 401).
 
-- [ ] **Step 2: 重启服务器并复现一次规划**
+- [ ] **Step 2: Restart the server and reproduce one planning run**
 
 ```bash
-ps -eo pid,cmd | grep '[w]eb/server.py'   # 记录旧 pid 后按你的启动方式重启
+ps -eo pid,cmd | grep '[w]eb/server.py'   # note the old pid, then restart using your usual method
 grep -n 'Step 3/5\|Step 4/5' .runtime/logs/server.log | tail -4
 ```
 
-在 UI 上用**同一个病例、同一参数**重跑规划；记录 `Step 3/5` 与 `Step 4/5` 的时间戳。
+In the UI, rerun planning with **the same case and the same parameters**; record the timestamps of `Step 3/5` and `Step 4/5`.
 
-- [ ] **Step 3: 统计窗口内检查点数量并对比**
+- [ ] **Step 3: Count checkpoints within the window and compare**
 
 ```bash
 ~/.conda/envs/brachytherapy/bin/python - <<'PY'
@@ -497,20 +497,20 @@ print('request.completed:', sum('request.completed' in l for l in started))
 PY
 ```
 
-Expected（对照 2026-09-16 16:40 基线：Step 3 = 160.1s，20 次检查点 / 17 次 `request.completed`）：窗口检查点 ≤3 次，Step 3 墙钟明显下降。
+Expected (against the 2026-09-16 16:40 baseline: Step 3 = 160.1s, 20 checkpoints / 17 `request.completed`): ≤3 checkpoints in the window, and a marked drop in Step 3 wall-clock time.
 
-- [ ] **Step 4: 校验结果与 UI 功能未变**
+- [ ] **Step 4: Verify results and UI behavior are unchanged**
 
-对照改动前的规划结果（同一病例）：`total_seeds`、`num_trajectories`、`v100/v150/v200/d90` 必须一致；UI 上确认：规划进度正常、聊天正常、切换病例后重新打开数据完整、重启服务器后病例可恢复（无缺失掩膜/剂量/粒子）。
+Compare against the planning result before the change (same case): `total_seeds`, `num_trajectories`, `v100/v150/v200/d90` must be identical; in the UI confirm: planning progress works normally, chat works normally, reopening data after switching cases is complete, and the case can be recovered after restarting the server (no missing masks/dose/seed data).
 
-- [ ] **Step 5: 验证回退开关（可选）**
+- [ ] **Step 5: Verify the rollback switch (optional)**
 
-以 `BRACHYBOT_CHECKPOINT_MAX_STALENESS_SECONDS=0` 重启服务器，重跑一次规划，检查点数量应回到与基线相近的水平，证明一键回退有效。
+Restart the server with `BRACHYBOT_CHECKPOINT_MAX_STALENESS_SECONDS=0`, rerun planning once, and the number of checkpoints should return to a level close to the baseline, proving the one-command rollback works.
 
 ---
 
 ## Self-Review
 
-- **Spec 覆盖**：3.1 组件 → Task 1；3.2 调度集成 → Task 2；3.3 server 接线 → Task 3；3.4 日志 → Task 2 代码内 `logger.debug` + 现有日志不变；§5 测试计划 → Task 1/2/3；§6 验收 → Task 4；§7 回退 → Task 4 Step 5；§4 兼容性 → Task 1 的 probe None/env=0 用例 + 回归集 + flush 不受影响（flush 不经过 `_checkpoint_timer`，Task 2 未改该路径）。
-- **占位符扫描**：无 TBD/TODO；每个代码步骤都给了完整代码与命令。
-- **类型一致性**：`set_heavy_task_probe`、`_should_defer_checkpoint`、`_checkpoint_completed_at`、`checkpoint_max_staleness_seconds`、`DEFER_RETRY_SECONDS` 在三个任务中签名与命名一致；`_checkpoint_timer` 参数顺序 `(user_id, session_id, agent, reason, operation, generation)` 与现有实现一致。
+- **Spec coverage**: 3.1 components → Task 1; 3.2 scheduling integration → Task 2; 3.3 server wiring → Task 3; 3.4 logging → the `logger.debug` in Task 2's code + existing logs unchanged; §5 test plan → Tasks 1/2/3; §6 acceptance → Task 4; §7 rollback → Task 4 Step 5; §4 compatibility → Task 1's probe None/env=0 cases + the regression set + flush unaffected (flush does not go through `_checkpoint_timer`, and Task 2 did not change that path).
+- **Placeholder scan**: no TBD/TODO; every code step provides complete code and commands.
+- **Type consistency**: the signatures and names of `set_heavy_task_probe`, `_should_defer_checkpoint`, `_checkpoint_completed_at`, `checkpoint_max_staleness_seconds`, and `DEFER_RETRY_SECONDS` are consistent across the three tasks; the `_checkpoint_timer` parameter order `(user_id, session_id, agent, reason, operation, generation)` matches the existing implementation.

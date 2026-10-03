@@ -1,157 +1,157 @@
-# CTV 肿瘤分割统一门类设计（tumor_segmentation）
+# CTV Tumor Segmentation Unified Category Design (tumor_segmentation)
 
-日期：2026-09-17
-范围：内测树 `<workspace>/BrachyBot`（发布树同步另开一轮）
-状态：已批准，待用户复核 spec 后进入实现计划
+Date: 2026-09-17
+Scope: internal testing tree `<workspace>/BrachyBot` (release tree sync is a separate round)
+Status: Approved, awaiting user review of the spec before entering the implementation plan
 
-## 1. 背景
+## 1. Background
 
-当前六站肿瘤分割由三套互不相同的机制实现（引擎、调度、标签语义、目录约定、前端呈现都不一致）：
+The current six-site tumor segmentation is implemented by three mutually distinct mechanisms (engine, scheduling, label semantics, directory conventions, and frontend presentation are all inconsistent):
 
-| 部位 | 路由 id | 模型 | 权重位置 | 引擎 | 输出标签 | GPU 调度 |
+| Site | Route id | Model | Weight location | Engine | Output labels | GPU scheduling |
 |---|---|---|---|---|---|---|
-| 胰腺 | `nnunet_pancreatic` | nnUNet v2 Dataset005_Pancreas（3d_fullres，7 类） | `BrachyBot/VoCo/pancreatic_tumor/Dataset005_Pancreas/...` | 进程内 nnUNet | 1瘤 / 2动脉 / 3静脉 / 4胰 / 5-6未知 | DeviceManager，**无跨进程锁** |
-| 肝 | `nnunet_liver_tumor` | 两级级联 stage1_liver→stage2_tumor（5 折） | `prostate_lesion_seg/trained_models/liver_cancer_seg` | 子进程 `cascade_infer_v2.py` | 1瘤 | lease + gpu_lock |
-| 肾 | `nnunet_kidney_tumor` | 两级级联 stage1_kidney→stage2_tumor（5 折） | `kidney_tumor_seg/trained_models/kidney_cancer_seg` | 子进程 `cascade_infer_kidney.py` | 1瘤 | lease + gpu_lock |
-| 头颈 | `nnunet_head_neck_gtv` | HECKTOR Dataset510_CT（nnUNetTrainerMax500，best fold1） | `headneck_tumor_seg/data/nnUNet_results/Dataset510_HECKTOR_CT/.../best_model` | 子进程 `infer_headneck.py` | 1 GTVp / 2 GTVn | lease + gpu_lock |
-| 鼻咽平扫 | `nnunet_nasopharynx_ncct` | Dataset508_SegRapGTVnc（best fold3） | `nasopharynx_tumor_seg/trained_models/nasopharynx_cancer_seg_ncct` | 子进程 `infer_nasopharynx.py` | 1 GTVnx / 2 GTVnd | lease + gpu_lock |
-| 鼻咽增强 | `nnunet_nasopharynx_cect` | Dataset511_SegRapGTVce（best fold3） | `nasopharynx_tumor_seg/trained_models/nasopharynx_cancer_seg_cect` | 子进程 `infer_nasopharynx.py` | 1 GTVnx / 2 GTVnd | lease + gpu_lock |
-| 肺 | `vista3d_lung_tumor` | VISTA-3D 基础模型（MONAI/VISTA3D-HF，class 23，非微调） | `lung_tumor_seg/trained_models/vista3d_lung/vista3d_pretrained_model/model.safetensors` | 子进程 `infer_lung_vista.py` | 1肺肿瘤（二值） | lease + gpu_lock |
+| Pancreas | `nnunet_pancreatic` | nnUNet v2 Dataset005_Pancreas (3d_fullres, 7 classes) | `BrachyBot/VoCo/pancreatic_tumor/Dataset005_Pancreas/...` | in-process nnUNet | 1 tumor / 2 artery / 3 vein / 4 pancreas / 5-6 unknown | DeviceManager, **no cross-process lock** |
+| Liver | `nnunet_liver_tumor` | two-stage cascade stage1_liver→stage2_tumor (5 folds) | `prostate_lesion_seg/trained_models/liver_cancer_seg` | subprocess `cascade_infer_v2.py` | 1 tumor | lease + gpu_lock |
+| Kidney | `nnunet_kidney_tumor` | two-stage cascade stage1_kidney→stage2_tumor (5 folds) | `kidney_tumor_seg/trained_models/kidney_cancer_seg` | subprocess `cascade_infer_kidney.py` | 1 tumor | lease + gpu_lock |
+| Head and neck | `nnunet_head_neck_gtv` | HECKTOR Dataset510_CT (nnUNetTrainerMax500, best fold1) | `headneck_tumor_seg/data/nnUNet_results/Dataset510_HECKTOR_CT/.../best_model` | subprocess `infer_headneck.py` | 1 GTVp / 2 GTVn | lease + gpu_lock |
+| Nasopharynx non-contrast | `nnunet_nasopharynx_ncct` | Dataset508_SegRapGTVnc (best fold3) | `nasopharynx_tumor_seg/trained_models/nasopharynx_cancer_seg_ncct` | subprocess `infer_nasopharynx.py` | 1 GTVnx / 2 GTVnd | lease + gpu_lock |
+| Nasopharynx contrast-enhanced | `nnunet_nasopharynx_cect` | Dataset511_SegRapGTVce (best fold3) | `nasopharynx_tumor_seg/trained_models/nasopharynx_cancer_seg_cect` | subprocess `infer_nasopharynx.py` | 1 GTVnx / 2 GTVnd | lease + gpu_lock |
+| Lung | `vista3d_lung_tumor` | VISTA-3D foundation model (MONAI/VISTA3D-HF, class 23, not fine-tuned) | `lung_tumor_seg/trained_models/vista3d_lung/vista3d_pretrained_model/model.safetensors` | subprocess `infer_lung_vista.py` | 1 lung tumor (binary) | lease + gpu_lock |
 
-同门类还有结肠 `biomedparse_colon_primary`、前列腺 `biomedparse_prostate_lesion`（BiomedParse v2 文本提示），以及仅显式交互的 SAT3D 研究路由。
+The same category also includes colon `biomedparse_colon_primary` and prostate `biomedparse_prostate_lesion` (BiomedParse v2 text prompts), plus the SAT3D research route that is only reachable through explicit interaction.
 
-已确认的问题：
+Confirmed problems:
 
-1. 目录约定不统一：肝权重在 `prostate_lesion_seg/` 下；头颈在 `data/nnUNet_results/` 而非 `trained_models/`。
-2. 调度不统一：只有胰腺是进程内 nnUNet 且不参与跨进程 `gpu_lock`，其余走子进程 + lease + gpu_lock，存在同卡抢卡/OOM 隐患。
-3. 标签语义不统一：胰腺 1-4 全套 + `label_stats`；肝/肾二值；头颈/鼻咽 1/2 双靶；肺二值。下游 `web/structure_service.py`、`web/routes/viewer_routes.py` 用字符串前缀猜语义，`vista3d_lung_tumor` 甚至未被识别为模型源（被当成上传 mask）。
-4. 前端可用性不一致：`capability_state` 决定绿/红，新接入三站长期显示"待验证"，用户看到的选择项颜色/文案与已验证站点不同。
-5. 路由/别名缺口：`头颈部肿瘤`、`肺部肿瘤` 直接硬失败（`Unsupported CTV tumor_type`）；`鼻咽癌` 哨兵未进路由白名单，自动路径丢失；`请分割<部位> CTV` 直执行回归为 `semantic_action`（`tests/test_image_metadata_query.py:48`）。
+1. Inconsistent directory conventions: liver weights live under `prostate_lesion_seg/`; head and neck live in `data/nnUNet_results/` rather than `trained_models/`.
+2. Inconsistent scheduling: only pancreas is in-process nnUNet and does not participate in the cross-process `gpu_lock`; the rest go through subprocess + lease + gpu_lock, creating card contention/OOM risks on the same card.
+3. Inconsistent label semantics: pancreas has the full 1-4 set + `label_stats`; liver/kidney are binary; head and neck/nasopharynx are dual-target 1/2; lung is binary. Downstream `web/structure_service.py` and `web/routes/viewer_routes.py` guess semantics from string prefixes, and `vista3d_lung_tumor` is not even recognized as a model source (it is treated as an uploaded mask).
+4. Inconsistent frontend availability: `capability_state` determines green/red; the three newly integrated sites have long shown "pending validation", so the color/text of the options users see differs from verified sites.
+5. Route/alias gaps: `头颈部肿瘤` and `肺部肿瘤` fail hard (`Unsupported CTV tumor_type`); the `鼻咽癌` sentinel is not in the route whitelist, so the automatic path is lost; `请分割<部位> CTV` direct execution regresses to `semantic_action` (`tests/test_image_metadata_query.py:48`).
 
-## 2. 目标与非目标
+## 2. Goals and Non-Goals
 
-### 目标
-- 六站**并列**为同一门类 `tumor_segmentation`，由**一份注册表**统一声明与管理。
-- 前端：任意受支持肿瘤类别**交互一致**，**已支持且可用者一律绿色**。
-- 后端：**统一执行边界**（一个 GPU 队列/锁 + DeviceManager lease，胰腺一并纳入）、统一取消/超时/OOM 策略、统一输出契约、统一下游语义。
-- 下游（Structure Set / 2D / 3D / Data Tree / 规划 / 报告）对任意站点的 CTV mask **本质无差别**（规划恒取靶区并集；显示可带分标签）。
-- 修复第 1 节第 5 条的三处缺陷。
+### Goals
+- The six sites are **peer** entries in the same category `tumor_segmentation`, declared and managed uniformly by **a single registry**.
+- Frontend: any supported tumor category is **interaction-consistent**, and **anything supported and available is always green**.
+- Backend: **unified execution boundary** (one GPU queue/lock + DeviceManager lease, with pancreas included), unified cancellation/timeout/OOM policy, unified output contract, unified downstream semantics.
+- Downstream (Structure Set / 2D / 3D / Data Tree / planning / reporting) is **essentially indifferent** to the CTV mask of any site (planning always takes the target union; display may carry per-label detail).
+- Fix the three defects in Section 1 item 5.
 
-### 非目标
-- 不重写用户提供的推理脚本（`infer_lung_vista.py`、`cascade_infer*.py`、`infer_headneck.py`、`infer_nasopharynx.py` 原样保留）。
-- 不统一内部引擎实现（VISTA-3D 继续作为肺的基础模型）。
-- 不改进模型精度；不做发布树 `BrachyBot-release` 同步（另开一轮）。
-- 不改动规划/剂量/导板算法本身。
+### Non-Goals
+- Do not rewrite the user-provided inference scripts (`infer_lung_vista.py`, `cascade_infer*.py`, `infer_headneck.py`, `infer_nasopharynx.py` are kept as-is).
+- Do not unify internal engine implementations (VISTA-3D remains the foundation model for lung).
+- Do not improve model accuracy; do not do release-tree `BrachyBot-release` sync (separate round).
+- Do not change the planning/dose/guide algorithms themselves.
 
-## 3. 架构
+## 3. Architecture
 
-### 3.1 单一模型注册表 `tool_factory/CTV_seg/model_registry.py`
+### 3.1 Single Model Registry `tool_factory/CTV_seg/model_registry.py`
 
-每条 `CTVRRoute` 声明（dataclass/frozen mapping）：
+Each `CTVRRoute` declares (dataclass/frozen mapping):
 
-- `id`：规范路由名，同时作为 `tumor_type`、`ctv_source`、catalog `id`（**保持不变，避免数据迁移**）。
-- `site`、`display_zh`、`display_en`、`modality`、`ct_phase`（可空）。
-- `engine`：`inproc_nnunet` | `subprocess` | `text_guided`（结肠/前列腺的 BiomedParse v2；SAT3D 保持显式交互研究路由，同样登记来源但 `ui_visible=False`）。
-- `script`、`model_root`、`checkpoint`、`runtime_python`、`args`、`precision`。
-- `labels`（id→名称）与 `target_semantics`：`single_target` | `target_plus_anatomy` | `multi_target_gtv`。
-- `availability_probe`（现在 `site_model_availability` / `cascade_availability` / 胰腺目录检查）。
-- `catalog_status`（`verified`/`experimental`，仅作说明文字）、`validation` 指标、`requires_review`。
+- `id`: canonical route name, also used as `tumor_type`, `ctv_source`, and catalog `id` (**kept unchanged to avoid data migration**).
+- `site`, `display_zh`, `display_en`, `modality`, `ct_phase` (nullable).
+- `engine`: `inproc_nnunet` | `subprocess` | `text_guided` (BiomedParse v2 for colon/prostate; SAT3D remains an explicit-interaction research route, also registered as a source but with `ui_visible=False`).
+- `script`, `model_root`, `checkpoint`, `runtime_python`, `args`, `precision`.
+- `labels` (id→name) and `target_semantics`: `single_target` | `target_plus_anatomy` | `multi_target_gtv`.
+- `availability_probe` (currently `site_model_availability` / `cascade_availability` / pancreas directory check).
+- `catalog_status` (`verified`/`experimental`, purely explanatory text), `validation` metrics, `requires_review`.
 
-六个站点全部登记为**对等条目**；结肠/前列腺同样登记（`engine=text_guided`，BiomedParse），SAT3D 保持研究路由但登记来源。
+All six sites are registered as **peer entries**; colon/prostate are likewise registered (`engine=text_guided`, BiomedParse), and SAT3D remains a research route but registers its source.
 
-派生关系（改为从注册表派生，对外行为不变）：
-- `tool_factory/CTV_seg/__init__.py`：`TOOL_REGISTRY`、`normalize_tumor_type` 别名表、`list_tools()`、`_PREFERRED_TUMOR_TYPES`。
-- `model_catalog.py`：`CTV_MODEL_CATALOG` 条目、`catalog_with_local_status`、`filter_catalog`。
-- 兼容层：`site_models.SITE_MODELS`、`nnunet_cascade_tumor.CASCADE_SITE_SPECS` 保留为注册表派生视图，避免既有导入方与测试断裂。
+Derived relationships (changed to derive from the registry, with external behavior unchanged):
+- `tool_factory/CTV_seg/__init__.py`: `TOOL_REGISTRY`, the `normalize_tumor_type` alias table, `list_tools()`, `_PREFERRED_TUMOR_TYPES`.
+- `model_catalog.py`: `CTV_MODEL_CATALOG` entries, `catalog_with_local_status`, `filter_catalog`.
+- Compatibility layer: `site_models.SITE_MODELS` and `nnunet_cascade_tumor.CASCADE_SITE_SPECS` are kept as registry-derived views to avoid breaking existing importers and tests.
 
-### 3.2 统一执行边界
+### 3.2 Unified Execution Boundary
 
-新增 `tool_factory/CTV_seg/executor.py`：`run_ctv_model(route_id, image, *, fast_mode=None) -> ModelOutput`。
+Add `tool_factory/CTV_seg/executor.py`: `run_ctv_model(route_id, image, *, fast_mode=None) -> ModelOutput`.
 
-- **引擎适配**：`InProcNNUNetEngine`（胰腺；从 `pancreatic_tumor_nnunet.py` 抽出，只加锁不改推理参数）与 `SubprocessScriptEngine`（肝/肾/头颈/鼻咽/肺，原样调用现有脚本）。
-- **统一调度**：所有引擎先取 `DeviceManager` lease，再取**同一个跨进程 per-card 锁**（复用 `site_model_runtime.gpu_lock`，路径 `$TMPDIR/brachybot-ctv-gpu-<uid>/gpu-N.lock`）；锁目录不随调用方 `TMPDIR` 漂移（显式固定为系统临时目录下的用户目录）。
-- **统一策略**：排队超时 `BRACHYBOT_CASCADE_QUEUE_TIMEOUT_SEC`（默认 900s）、推理超时 `BRACHYBOT_CTV_TIMEOUT_SEC`、取消轮询 `raise_if_cancelled`、CUDA OOM 仅在 `device_count>=2` 时换另一张卡重试一次且**不降精度/不降折数**。
-- **几何**：输入按原 CT 网格写临时 NIfTI；输出必须与输入 `size/spacing/origin/direction` 一致（容差 1e-4），否则失败；统一转 LPI；禁止把失败输出静默重采样成"看起来可用"。
+- **Engine adapters**: `InProcNNUNetEngine` (pancreas; extracted from `pancreatic_tumor_nnunet.py`, adding only locking and not changing inference parameters) and `SubprocessScriptEngine` (liver/kidney/head and neck/nasopharynx/lung, calling the existing scripts as-is).
+- **Unified scheduling**: all engines first acquire a `DeviceManager` lease, then the **same cross-process per-card lock** (reusing `site_model_runtime.gpu_lock`, path `$TMPDIR/brachybot-ctv-gpu-<uid>/gpu-N.lock`); the lock directory does not drift with the caller's `TMPDIR` (explicitly pinned to a user directory under the system temp directory).
+- **Unified policies**: queue timeout `BRACHYBOT_CASCADE_QUEUE_TIMEOUT_SEC` (default 900s), inference timeout `BRACHYBOT_CTV_TIMEOUT_SEC`, cancellation polling `raise_if_cancelled`, CUDA OOM retried once on another card only when `device_count>=2` and **without lowering precision or reducing folds**.
+- **Geometry**: the input is written to a temporary NIfTI on the original CT grid; the output must match the input `size/spacing/origin/direction` (tolerance 1e-4), otherwise it fails; uniformly convert to LPI; never silently resample a failed output into something that "looks usable".
 
-### 3.3 统一输出契约
+### 3.3 Unified Output Contract
 
-`ModelOutput` 经 `CTVSegmentationTool` 归一为统一 metadata：
+`ModelOutput` is normalized by `CTVSegmentationTool` into unified metadata:
 
-`ctv_array`（二值靶区并集，uint8）、`ctv_mask`（LPI 参考网格）、`full_label_array`（>1 标签时）、`label_map`、`label_counts`、`label_stats`（统一计算各标签体素/体积/质心）、`ctv_voxel_count`、`ctv_volume_mm3`、`tumor_type_used`、`ctv_source`=路由 id、`target_semantics`、`ct_phase`、`inference_script`、`checkpoint`、`model_validation`。
+`ctv_array` (binary target union, uint8), `ctv_mask` (LPI reference grid), `full_label_array` (when >1 label), `label_map`, `label_counts`, `label_stats` (uniformly compute voxels/volume/centroid for each label), `ctv_voxel_count`, `ctv_volume_mm3`, `tumor_type_used`, `ctv_source`=route id, `target_semantics`, `ct_phase`, `inference_script`, `checkpoint`, `model_validation`.
 
-现状需补齐：胰腺缺 `ctv_source`/`tumor_type_used`（外层回退成 `"model"`）；级联与站点模型缺 `label_stats`；`ctv_source` 命名不一致（`model` / `nnunet_cascade_*` / 路由 id）。统一后**所有站点的 `ctv_source` 等于注册表 id**。
+Current gaps to fill: pancreas lacks `ctv_source`/`tumor_type_used` (the outer layer falls back to `"model"`); cascade and site models lack `label_stats`; `ctv_source` naming is inconsistent (`model` / `nnunet_cascade_*` / route id). After unification **every site's `ctv_source` equals the registry id**.
 
-### 3.4 下游语义统一
+### 3.4 Unified Downstream Semantics
 
-删除 `web/structure_service.py` 的 `_is_model_ctv_source`/`is_multitarget_gtv_source` 前缀猜测与 `web/routes/viewer_routes.py` 的并行 `is_model_ctv` 分支，改为**按 `ctv_source` 查注册表 `target_semantics`**：
+Delete the prefix guessing `_is_model_ctv_source`/`is_multitarget_gtv_source` in `web/structure_service.py` and the parallel `is_model_ctv` branch in `web/routes/viewer_routes.py`, replacing them with a **lookup of the registry's `target_semantics` by `ctv_source`**:
 
-- `single_target` → 二值靶区（肝/肾/肺/结肠/前列腺）。
-- `target_plus_anatomy` → 标签 1 为靶区，2..N 为解剖（归 OAR 源，如胰腺 2/3/4）。
-- `multi_target_gtv` → 标签 1/2 均为靶区；规划取并集，Data Tree 分标签显示（头颈/鼻咽）。
+- `single_target` → binary target (liver/kidney/lung/colon/prostate).
+- `target_plus_anatomy` → label 1 is the target, 2..N are anatomy (routed to the OAR source, e.g. pancreas 2/3/4).
+- `multi_target_gtv` → labels 1/2 are both targets; planning takes the union, and the Data Tree displays per-label (head and neck/nasopharynx).
 
-同步复核 `web/routes/planning_routes.py` 的 CTV/OAR 存储与 provenance 键，确保六站写入路径一致。
+Simultaneously review the CTV/OAR storage and provenance keys in `web/routes/planning_routes.py` to ensure the write paths are consistent across all six sites.
 
-### 3.5 前端统一
+### 3.5 Unified Frontend
 
-- 选择器选项来源统一为注册表（服务端渲染 + `/ctv/models?include_experimental=1` 能力状态），**新增站点只改注册表**。
-- **颜色统一：已支持且 `callable` 的肿瘤类别一律绿色**；不可用为红并给出原因。验证成熟度（`verified`/`experimental`）只影响帮助文字，不影响颜色。
-- 统一的空结果/失败/排队/推理中提示；鼻咽的 ncct/cect 作为并列条目，禁止按图像强度猜相位。
-- 别名/相位透传补齐：`brachybot-ui-api.js` 的 `updateTumorTypeSelector`、`brachybot-manual-annotation.js` 调用链，补 `鼻咽`/`头颈部肿瘤`/`肺部肿瘤` 等。
+- The selector options are uniformly sourced from the registry (server-side rendering + `/ctv/models?include_experimental=1` capability status), so **adding a site only requires changing the registry**.
+- **Unified color: any supported and `callable` tumor category is always green**; unavailable is red with a reason. Validation maturity (`verified`/`experimental`) affects only the help text, not the color.
+- Unified empty-result/failure/queued/inferring prompts; nasopharynx ncct/cect are peer entries, and guessing the phase from image intensity is forbidden.
+- Complete the alias/phase passthrough: `updateTumorTypeSelector` in `brachybot-ui-api.js` and the call chain in `brachybot-manual-annotation.js`, adding `鼻咽`/`头颈部肿瘤`/`肺部肿瘤` and the like.
 
-### 3.6 路由与别名修复
+### 3.6 Route and Alias Fixes
 
-- `normalize_tumor_type` 补：`头颈部肿瘤`/`头颈部`、`肺部肿瘤`/`肺部`/`肺` 等（对齐现有 `头颈肿瘤`/`肺癌`）。
-- `agent_runtime/response_tools.py`：`_map_tumor_type` 处理 `nasopharynx` 哨兵——已知 `ct_phase` 时直接落 ncct/cect，未知时保留"需用户选择相位"，不再记 "Unknown tumor_type" 并清空；相应调整 `_SUPPORTED_AUTOMATIC_CTV_TYPES` 判定。
-- `agent_runtime/turn_policy.py`：修正 `请分割<部位> CTV` 被判 `semantic_action`（`whole_request_contract_not_satisfied`）的直执行回归，保持 review=False。
-- `ct_phase` 保持 `enum: [ncct, cect]`；无相位时工具返回 `code=ct_phase_required, requires_user_input=True`。
+- Add to `normalize_tumor_type`: `头颈部肿瘤`/`头颈部`, `肺部肿瘤`/`肺部`/`肺`, etc. (aligned with the existing `头颈肿瘤`/`肺癌`).
+- `agent_runtime/response_tools.py`: `_map_tumor_type` handles the `nasopharynx` sentinel — when `ct_phase` is known it maps directly to ncct/cect, and when unknown it preserves "needs user to select phase", no longer logging "Unknown tumor_type" and clearing it; adjust `_SUPPORTED_AUTOMATIC_CTV_TYPES` accordingly.
+- `agent_runtime/turn_policy.py`: fix the direct-execution regression where `请分割<部位> CTV` is judged as `semantic_action` (`whole_request_contract_not_satisfied`), keeping review=False.
+- `ct_phase` remains `enum: [ncct, cect]`; when there is no phase, the tool returns `code=ct_phase_required, requires_user_input=True`.
 
-## 4. 错误处理
+## 4. Error Handling
 
-- 可用性在 catalog 探测与调用时各校验一次；缺失资源 fail closed，返回统一 `code`（沿用 `site_model_inference_failed` / `cascade_*`，统一命名）。
-- 空 mask 统一诊断文案（"模型跑完但未检出靶区" vs "模型不可用"），不按站点特判。
-- 取消：`OperationCancelled` 向上传播，子进程组终止并清理请求目录。
-- 超时：终止进程组、清理临时目录、返回可重试错误；不得遗留占卡进程。
+- Availability is validated once each at catalog probe time and at call time; missing resources fail closed and return a unified `code` (reusing `site_model_inference_failed` / `cascade_*` with unified naming).
+- Empty masks use unified diagnostic wording ("the model ran but detected no target" vs "the model is unavailable"), with no per-site special casing.
+- Cancellation: `OperationCancelled` propagates upward, the subprocess group is terminated, and the request directory is cleaned up.
+- Timeout: terminate the process group, clean up the temporary directory, and return a retryable error; no card-holding processes may be left behind.
 
-## 5. 测试
+## 5. Testing
 
-- `tests/test_model_registry.py`：注册表完整；每个 `ui_visible` 条目的 id/`tumor_type` 均可解析到已注册工具；别名矩阵；相位分发。
-- `tests/test_executor_boundary.py`：六站 mock 引擎下输出键一致；gpu_lock 参与者覆盖六站+胰腺；取消/超时/OOM 行为一致。
-- `tests/test_downstream_equivalence.py`：按 `target_semantics` 合成结果分别喂给 `structure_service`/`viewer_routes`/`planning_routes`，断言表现一致且**源码中不再存在按站点前缀特判**；肺被识别为模型源。
-- 前端契约：选择器选项 == 注册表；所有可用项绿色；鼻咽相位；别名；`/ctv/models` 字段。
-- 更新既有：`test_site_model_deployment.py`、`test_nnunet_cascade_tumor.py`、`test_review_round6_regressions.py`、`test_runtime_contracts.py`、`test_uploaded_mask_staging.py`、`test_image_metadata_query.py`。
-- 可选真实 GPU 冒烟：每站 1 例（需用户同意占用 GPU），记录时长/体素/几何。
+- `tests/test_model_registry.py`: registry completeness; every `ui_visible` entry's id/`tumor_type` resolves to a registered tool; alias matrix; phase dispatch.
+- `tests/test_executor_boundary.py`: consistent output keys under mocked engines for all six sites; gpu_lock participants cover the six sites + pancreas; consistent cancellation/timeout/OOM behavior.
+- `tests/test_downstream_equivalence.py`: synthesize results by `target_semantics` and feed them to `structure_service`/`viewer_routes`/`planning_routes`, asserting consistent behavior and that **no per-site prefix special casing remains in the source**; lung is recognized as a model source.
+- Frontend contract: selector options == registry; all available items green; nasopharynx phases; aliases; `/ctv/models` fields.
+- Update existing: `test_site_model_deployment.py`, `test_nnunet_cascade_tumor.py`, `test_review_round6_regressions.py`, `test_runtime_contracts.py`, `test_uploaded_mask_staging.py`, `test_image_metadata_query.py`.
+- Optional real-GPU smoke: 1 case per site (requires user consent to occupy the GPU), recording duration/voxels/geometry.
 
-## 6. 迁移与兼容
+## 6. Migration and Compatibility
 
-- 所有路由 id 不变 → 会话快照、`ui_bridge`、历史别名无需迁移。
-- 胰腺仅新增 GPU 锁，推理参数/精度/折数不变。
-- 权重文件不移动（目录约定不统一的问题用注册表收敛声明解决，避免大范围移动引发路径回归）。
-- 兼容层保证既有 `from ...site_models import SITE_MODELS` / `CASCADE_SITE_SPECS` 导入不破。
+- All route ids are unchanged → session snapshots, `ui_bridge`, and historical aliases need no migration.
+- Pancreas only adds a GPU lock; inference parameters/precision/folds are unchanged.
+- Weight files are not moved (the inconsistent directory-convention problem is solved by converging the declaration in the registry, avoiding path regressions caused by large-scale moves).
+- The compatibility layer ensures existing imports of `from ...site_models import SITE_MODELS` / `CASCADE_SITE_SPECS` do not break.
 
-## 7. 分阶段
+## 7. Phases
 
-1. 后端：注册表 + 执行边界 + 输出契约 + 下游语义 + 单元/等价测试。
-2. 前端 + 路由/别名缺陷修复 + 前端契约测试。
-3. 可选 GPU 冒烟与 catalog 成熟度文案定稿。
+1. Backend: registry + execution boundary + output contract + downstream semantics + unit/equivalence tests.
+2. Frontend + route/alias defect fixes + frontend contract tests.
+3. Optional GPU smoke and finalizing the catalog maturity wording.
 
-## 8. 风险
+## 8. Risks
 
-- 同仓存在另一会话的未提交改动（`index.html`、`response_tools.py`、`turn_policy.py`、`structure_service.py`、`viewer_routes.py`、`web/routes/planning_routes.py` 等）→ 改动需小步提交并逐项核对，避免冲突。
-- GPU 锁只覆盖参与协议的适配器，不约束无关训练任务。
-- VISTA-3D 在非胸部 CT 上可能假阳性（其 README 已注明）。
-- 胰腺纳入锁后可能排到长任务之后；用排队超时 + 前端状态缓解。
+- Another session's uncommitted changes exist in the same repo (`index.html`, `response_tools.py`, `turn_policy.py`, `structure_service.py`, `viewer_routes.py`, `web/routes/planning_routes.py`, etc.) → changes must be committed in small steps and checked item by item to avoid conflicts.
+- The GPU lock only covers adapters that participate in the protocol; it does not constrain unrelated training jobs.
+- VISTA-3D may produce false positives on non-chest CT (its README already notes this).
+- After pancreas is included in the lock, it may be queued behind long tasks; mitigate with queue timeout + frontend status.
 
-## 9. 开放项
+## 9. Open Items
 
-- 发布树 `BrachyBot-release` 同步：另开一轮。
-- catalog 成熟度文案最终措辞（`verified`/`experimental` 仅说明文字）。
+- Release tree `BrachyBot-release` sync: separate round.
+- Final wording for catalog maturity text (`verified`/`experimental` are explanatory text only).
 
-## 10. 增补：BiomedParse v2 作为并列的开放词汇通路（2026-09-17 追加）
+## 10. Addendum: BiomedParse v2 as a Peer Open-Vocabulary Pathway (added 2026-09-17)
 
-已确认 BiomedParse v2 是开放词汇通路，与六个专用模型并列同一门类 `tumor_segmentation`，统一管理与调度：
+It is confirmed that BiomedParse v2 is an open-vocabulary pathway, placed as a peer alongside the six dedicated models in the same category `tumor_segmentation`, with unified management and scheduling:
 
-- **并列登记**：注册表新增 `biomedparse_segmentation`（`engine=text_guided`，开放词汇，`target`/`prompt` 任意文本）与已登记的 `biomedparse_colon_primary`/`biomedparse_prostate_lesion`（闭集 prompt）。三者与专用模型共用同一门类分组、可用性探测与前端呈现。
-- **下游语义**：新增 `target_semantics='candidate_mask'` —— 开放词汇产出**可复核候选 mask**（沿用 `generic_mask`，`source=biomedparse_v2`），不自动成为 CTV/OAR；用户可在 Data Tree 显式提升为 CTV 后进入规划链。
-- **无专用模型肿瘤的回退**：当 `ctv_segmentation` 收到未注册 `tumor_type` 时，失败元数据返回 `open_vocabulary_available=True` 与建议 prompt；路由允许改用 `biomedparse_segmentation`，前端明确标注"研究性候选，需复核"。
-- **统一调度**：BiomedParse 外部推理（`scripts/biomedparse_v2_worker.py`）必须与其他引擎共用 DeviceManager lease + 跨进程 `gpu_lock`，并通过 `CUDA_VISIBLE_DEVICES` 显式指定 DeviceManager 选出的卡（当前 worker 硬用默认 `cuda`，会抢 GPU0）。
-- **前端一致**：可用即绿；肿瘤类别与开放词汇通路同分组；提示其为研究性候选。
+- **Peer registration**: the registry adds `biomedparse_segmentation` (`engine=text_guided`, open vocabulary, `target`/`prompt` arbitrary text) together with the already-registered `biomedparse_colon_primary`/`biomedparse_prostate_lesion` (closed-set prompts). All three share the same category grouping, availability probing, and frontend presentation as the dedicated models.
+- **Downstream semantics**: add `target_semantics='candidate_mask'` — open vocabulary produces a **reviewable candidate mask** (reusing `generic_mask`, `source=biomedparse_v2`) that does not automatically become CTV/OAR; the user may explicitly promote it to CTV in the Data Tree before it enters the planning chain.
+- **Fallback for tumors with no dedicated model**: when `ctv_segmentation` receives an unregistered `tumor_type`, the failure metadata returns `open_vocabulary_available=True` and a suggested prompt; the route is allowed to switch to `biomedparse_segmentation`, and the frontend explicitly labels it "research candidate, review required".
+- **Unified scheduling**: BiomedParse external inference (`scripts/biomedparse_v2_worker.py`) must share the DeviceManager lease + cross-process `gpu_lock` with the other engines, and must explicitly specify the card selected by DeviceManager via `CUDA_VISIBLE_DEVICES` (the worker currently hardcodes the default `cuda`, which would contend for GPU0).
+- **Frontend consistency**: green when available; tumor categories and the open-vocabulary pathway are grouped together; label it as a research candidate.

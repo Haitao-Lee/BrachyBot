@@ -1,0 +1,15 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "ct_analysis",
+  "expectation": null,
+  "facet": "ct_analysis",
+  "gold_status": "draft",
+  "n_source_intents": 3,
+  "representative_text": "This CT scan is for a patient with a urethral cancer. Please evaluate the tumor extent along the urethra, assess bladder involvement, evaluate for pelvic lymph node metastases, and determine if brachytherapy is appropriate for this rare malignancy.",
+  "source_refs": [
+    "INT-14c8fddde1ac",
+    "INT-64832e0e6968",
+    "INT-e68c9b7de40f"
+  ],
+  "template_id": "TPL-22a7a12de6"
+}

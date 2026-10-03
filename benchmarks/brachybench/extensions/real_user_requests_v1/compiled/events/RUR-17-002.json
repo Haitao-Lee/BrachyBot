@@ -1,0 +1,8 @@
+[
+  {
+    "event": "hold_report",
+    "kind": "environment_event",
+    "payload": {},
+    "trigger": "report.queued"
+  }
+]

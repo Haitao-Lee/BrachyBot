@@ -1,0 +1,16 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "input_variations",
+  "expectation": null,
+  "facet": "input_variations",
+  "gold_status": "draft",
+  "n_source_intents": 4,
+  "representative_text": "How many organs were segmented?",
+  "source_refs": [
+    "INT-19f67a670f48",
+    "INT-1cf87ec115ad",
+    "INT-740c36be2ddb",
+    "INT-d00a145355a6"
+  ],
+  "template_id": "TPL-89d58a9f87"
+}

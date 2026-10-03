@@ -1,0 +1,1310 @@
+{
+  "n_tasks": 11969,
+  "n_ok": 11896,
+  "n_failed": 0,
+  "n_blocked": 73,
+  "n_skipped": 0,
+  "n_contract_failures": 0,
+  "evaluation_mode": "component_self_test",
+  "comparable_sut_result": false,
+  "formal_result_count": 0,
+  "ready_for_formal_evaluation": false,
+  "blocked_tasks": [
+    {
+      "task_id": "DOSEPRE-EVAL-211",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "DOSEPRE-EVAL-212",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "DOSEPRE-EVAL-213",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "DOSEPRE-EVAL-214",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "DOSEPRE-EVAL-215",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "DOSEPRE-INF-201",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "DOSEPRE-INF-202",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "DOSEPRE-INF-203",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "DOSEPRE-INF-204",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "DOSEPRE-INF-205",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "DOSEPRE-INF-206",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "DOSEPRE-INF-207",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "DOSEPRE-INF-208",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "DOSEPRE-INF-209",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "DOSEPRE-INF-210",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "DOSEPRE-LOAD-211",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "DOSEPRE-LOAD-212",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "DOSEPRE-LOAD-213",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "DOSEPRE-LOAD-214",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "DOSEPRE-LOAD-215",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "DOSEPRE-UNET-201",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "DOSEPRE-UNET-202",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "DOSEPRE-UNET-203",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "DOSEPRE-UNET-204",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "DOSEPRE-UNET-205",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "DOSEPRE-UNET-206",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "DOSEPRE-UNET-207",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "DOSEPRE-UNET-208",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "L-DICOM-010",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "L-DICOM-011",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "L-DICOM-012",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "L-DICOM-013",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "L-DICOM-014",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "L-DICOM-051",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "L-NIFTI-006",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify dose"
+        }
+      ]
+    },
+    {
+      "task_id": "L-STL-002",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify watertight"
+        }
+      ]
+    },
+    {
+      "task_id": "L-STL-003",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify watertight"
+        }
+      ]
+    },
+    {
+      "task_id": "L-STL-004",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify watertight"
+        }
+      ]
+    },
+    {
+      "task_id": "PLAN-GEO-020",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "rectum.D2cc: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PLAN-GEO-025",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "rectum.D2cc: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PLAN-GEO-030",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "rectum.D2cc: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PR-CMP-002",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "bladder.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "rectum.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "urethra.Dmax: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PR-CMP-005",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "duodenum.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "stomach.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "left_kidney.Dmean: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PR-CMP-008",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "liver.Dmean: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "stomach.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "right_kidney.Dmean: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PR-CMP-011",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "lung.Dmean: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "esophagus.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "heart.D2cc: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PR-CMP-061",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "bladder.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "rectum.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "urethra.Dmax: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PR-CMP-062",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "bladder.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "rectum.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "urethra.Dmax: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PR-CMP-063",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "bladder.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "rectum.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "urethra.Dmax: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PR-QUAL-019",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "bladder.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "rectum.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "urethra.Dmax: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PR-QUAL-020",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "rectum.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "urethra.Dmax: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PR-QUAL-028",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "duodenum.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "stomach.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "left_kidney.Dmean: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PR-QUAL-029",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "stomach.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "left_kidney.Dmean: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PR-QUAL-037",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "liver.Dmean: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "stomach.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "right_kidney.Dmean: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PR-QUAL-038",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "stomach.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "right_kidney.Dmean: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PR-QUAL-046",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "lung.Dmean: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "esophagus.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "heart.D2cc: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PR-QUAL-047",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "esophagus.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "heart.D2cc: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PR-SEED-003",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "bladder.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "rectum.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "urethra.Dmax: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PR-SEED-006",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "duodenum.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "stomach.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "left_kidney.Dmean: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PR-SEED-009",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "liver.Dmean: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "stomach.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "right_kidney.Dmean: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PR-SEED-012",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "lung.Dmean: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "esophagus.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "heart.D2cc: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PR-TRAJ-001",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "bladder.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "rectum.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "urethra.Dmax: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PR-TRAJ-004",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "duodenum.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "stomach.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "left_kidney.Dmean: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PR-TRAJ-007",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "liver.Dmean: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "stomach.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "right_kidney.Dmean: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PR-TRAJ-010",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "lung.Dmean: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "esophagus.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "heart.D2cc: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PR-TRAJ-017",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "bladder.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "rectum.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "urethra.Dmax: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PR-TRAJ-023",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "duodenum.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "stomach.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "left_kidney.Dmean: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PR-TRAJ-029",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "liver.Dmean: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "stomach.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "right_kidney.Dmean: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "PR-TRAJ-035",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "lung.Dmean: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "esophagus.D2cc: finite measured value required"
+        },
+        {
+          "at": null,
+          "code": "oar_metric_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "heart.D2cc: finite measured value required"
+        }
+      ]
+    },
+    {
+      "task_id": "TRK-RT-021",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "roundtrip_self_only",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "only the same importer/exporter pair was used; a shared bug would survive (N11). Supply an independent parser result."
+        },
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify volume_mm3"
+        },
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify watertight"
+        }
+      ]
+    },
+    {
+      "task_id": "TRK-RT-022",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "roundtrip_self_only",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "only the same importer/exporter pair was used; a shared bug would survive (N11). Supply an independent parser result."
+        },
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify volume_mm3"
+        },
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify watertight"
+        }
+      ]
+    },
+    {
+      "task_id": "TRK-RT-023",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "roundtrip_self_only",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "only the same importer/exporter pair was used; a shared bug would survive (N11). Supply an independent parser result."
+        },
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify volume_mm3"
+        },
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify watertight"
+        }
+      ]
+    },
+    {
+      "task_id": "TRK-RT-024",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "roundtrip_self_only",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "only the same importer/exporter pair was used; a shared bug would survive (N11). Supply an independent parser result."
+        },
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify volume_mm3"
+        },
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify watertight"
+        }
+      ]
+    },
+    {
+      "task_id": "TRK-RT-025",
+      "evidence_gaps": [
+        {
+          "at": null,
+          "code": "roundtrip_self_only",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "only the same importer/exporter pair was used; a shared bug would survive (N11). Supply an independent parser result."
+        },
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify volume_mm3"
+        },
+        {
+          "at": null,
+          "code": "independent_field_missing",
+          "constraint_class": "none",
+          "detail": {},
+          "message": "independent parser did not verify watertight"
+        }
+      ]
+    }
+  ]
+}

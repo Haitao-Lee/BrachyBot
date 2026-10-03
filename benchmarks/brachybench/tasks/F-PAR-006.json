@@ -1,0 +1,95 @@
+{
+  "schema_version": "1.0",
+  "id": "F-PAR-006",
+  "track": "F",
+  "layers": [
+    "L2",
+    "L4",
+    "L5"
+  ],
+  "comparability": [
+    "alpha",
+    "beta",
+    "gamma"
+  ],
+  "construct": "nl_ui_parity",
+  "cost_class": "state_only",
+  "power_role": "primary",
+  "clinical_intent": "The NL path and UI path for the same intent must reach identical terminal states (hide the CTV structure).",
+  "fixture": {
+    "case_family": "phantom/pancreas_p03",
+    "setup_script": "fixtures/setup/pancreas_p03_pipeline.py",
+    "initial_state_hash": "sha256:bb54b53f5ceec64b975a9a01c3b7c6d5e8293a7f3b940a64bc6d922c30607a7b"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-EQ",
+    "contrast_family_id": "F/parity/visibility_ctv"
+  },
+  "protocol": {
+    "mode": "dual_path",
+    "turns": [
+      {
+        "role": "user",
+        "text": "hide the CTV structure",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": [
+      {
+        "action": "set_visibility",
+        "target": "ctv_pancreas",
+        "value": false
+      }
+    ],
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 1,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [
+      "plan.receipts[*].status in {accepted, running}"
+    ],
+    "audit_required": true,
+    "n_runs": 10
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "state_diff",
+    "constraint_class": "postcondition",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null,
+    "persistence": "terminal",
+    "artifact": "cws.ui"
+  },
+  "scoring": {
+    "primary_metric": "state_diff_pass",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "medium"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "F-PAR-EQ02",
+    "hidden": false,
+    "generation_seed": 4106,
+    "canary_class": null,
+    "behavioral_probes": [
+      "value_swap"
+    ],
+    "contrast_family_id": "F/parity/visibility_ctv"
+  },
+  "provenance": {
+    "source": "audit_derived",
+    "derived_from": "docs/NATURAL_LANGUAGE_UI_PARITY_AUDIT_2026-09-28.md#F05",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto"
+    ],
+    "authored_on": "2026-09-30",
+    "deprecated": null
+  }
+}

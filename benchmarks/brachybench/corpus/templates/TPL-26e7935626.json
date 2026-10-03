@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "input_variations",
+  "expectation": null,
+  "facet": "input_variations",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "How large is the tumor?",
+  "source_refs": [
+    "INT-5aa83e925670",
+    "INT-868028641d5e"
+  ],
+  "template_id": "TPL-26e7935626"
+}

@@ -1,0 +1,81 @@
+{
+  "schema_version": "1.0",
+  "id": "UTILS-CT-041",
+  "track": "L",
+  "layers": [
+    "L3",
+    "L4"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "ct_volume_error_contract",
+  "cost_class": "state_only",
+  "power_role": "secondary",
+  "clinical_intent": "CT dimension/frame error BUSY must return as a decidable error envelope, with retryable consistent with the code.",
+  "fixture": {
+    "case_family": "synth/interop_case",
+    "setup_script": "fixtures/setup/interop_case.py",
+    "initial_state_hash": "sha256:5580992734c65dddb22edba5969a1955389deab388d8c25a38c79110fe4dc002"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-CT",
+    "contrast_family_id": "L/ct_volume/error/BUSY"
+  },
+  "protocol": {
+    "mode": "single_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "Normalization encountering BUSY must return a stable error code.",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 1,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "error_contract",
+    "constraint_class": "postcondition",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "error_contract_pass",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "easy"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "UTILS-CT-041-P01",
+    "hidden": false,
+    "generation_seed": 9646,
+    "canary_class": null,
+    "behavioral_probes": [],
+    "contrast_family_id": "L/ct_volume/error/BUSY"
+  },
+  "provenance": {
+    "source": "audit_derived",
+    "derived_from": "utils/ct_volume.py:30-36,81-94 (empty image / unsupported dimension / frame range ValueErrors)",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto"
+    ],
+    "authored_on": "2026-10-01",
+    "deprecated": null
+  }
+}

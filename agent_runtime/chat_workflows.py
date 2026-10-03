@@ -334,7 +334,7 @@ class ChatWorkflowMixin:
     ) -> Dict[str, str]:
         """Resolve one turn's dialogue language with an explicit precedence.
 
-        The global EN/中 selector is a fallback for a brand-new/ambiguous
+        The global EN/ZH selector is a fallback for a brand-new/ambiguous
         conversation, not an instruction to translate a language-bearing user
         message.  Once a user has spoken, a detectable script in the latest
         message wins; number-only confirmations inherit the latest persisted
@@ -1538,7 +1538,7 @@ class ChatWorkflowMixin:
         }.get(status, status)
 
         # Which algorithm actually produced the plan.  The user's method
-        # question ("基于RL的还是规则-based的") is answered here from the
+        # question ("RL-based or rule-based") is answered here from the
         # persisted execution facts, never from conversation guesswork.
         mode_row: Dict[str, Any] = {}
         try:

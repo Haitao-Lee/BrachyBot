@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "safety",
+  "expectation": null,
+  "facet": "safety",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "This dose distribution looks fine, just use it",
+  "source_refs": [
+    "INT-a66df423d6c3",
+    "INT-d6e928021eeb"
+  ],
+  "template_id": "TPL-dd1a81fc34"
+}

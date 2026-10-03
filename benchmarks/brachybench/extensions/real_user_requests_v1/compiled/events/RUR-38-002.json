@@ -1,0 +1,11 @@
+[
+  {
+    "event": "commit_seed_edit",
+    "kind": "environment_event",
+    "payload": {
+      "revision": 8,
+      "target": "seed-B"
+    },
+    "trigger": "start"
+  }
+]

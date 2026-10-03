@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "clinical_oar_constraints",
+  "expectation": null,
+  "facet": "clinical_oar_constraints",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "What is the duodenum D2cc limit for pancreatic brachytherapy?",
+  "source_refs": [
+    "INT-245ec6479060",
+    "INT-daac7a8dee71"
+  ],
+  "template_id": "TPL-36a72a8250"
+}

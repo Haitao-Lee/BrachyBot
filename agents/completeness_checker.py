@@ -30,7 +30,7 @@ class CompletenessChecker(LLMCapableAgent):
     - Always correct for exact matches
 
     Layer 2 (LLM, optional):
-    - Semantic matching: "分割 CTV" matches "segment the clinical target volume"
+    - Semantic matching: a Chinese request to segment the CTV matches "segment the clinical target volume"
     - Understand paraphrases and synonyms
     - If LLM fails, only Layer 1 results are returned
     """

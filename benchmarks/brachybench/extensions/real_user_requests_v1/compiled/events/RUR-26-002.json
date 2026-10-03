@@ -1,0 +1,8 @@
+[
+  {
+    "event": "observe_intermediate_artifacts",
+    "kind": "environment_event",
+    "payload": {},
+    "trigger": "init.completed"
+  }
+]

@@ -1,0 +1,63 @@
+{
+  "acceptable_outcomes": [
+    "PARTIAL",
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "hide": [],
+      "max": 2,
+      "operation": "capture",
+      "targets": [
+        "guide-A"
+      ]
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "en",
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "response",
+      "statement": "Data Tree node verified, 3D evidence unavailable; no inferred 3D spatial claim."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "artifact",
+      "statement": "Retain delivered tree attachment and distinct missing-view status, not all-or-none suppression."
+    }
+  ],
+  "rules": [
+    {
+      "op": "attachments",
+      "targets": [
+        "guide-A"
+      ],
+      "views": [
+        "data-tree"
+      ]
+    },
+    {
+      "op": "no_attachment_view",
+      "view": "viewer-3d"
+    }
+  ],
+  "scenario_id": "RUR-23-002",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "response",
+      "statement": "Data Tree node verified, 3D evidence unavailable; no inferred 3D spatial claim."
+    },
+    {
+      "kind": "artifact",
+      "statement": "Retain delivered tree attachment and distinct missing-view status, not all-or-none suppression."
+    }
+  ]
+}

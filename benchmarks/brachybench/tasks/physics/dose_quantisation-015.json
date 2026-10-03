@@ -1,0 +1,86 @@
+{
+  "anti_gaming": {
+    "behavioral_probes": [],
+    "canary_class": null,
+    "contrast_family_id": "physics/dose_quantisation",
+    "generation_seed": 20260929,
+    "hidden": false,
+    "paraphrase_group": "PHYS-dose_quantisation-015"
+  },
+  "clinical_intent": "dose_quantisation physics-boundary probe dose_quantisation-015: Recompute the reported metric from the quantised dose grid and report whether it still matches the full-precision value.",
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "physics_boundary.dose_quantisation",
+  "cost_class": "state_only",
+  "fixture": {
+    "case_family": "synth/physics/dose_quantisation/dose_quantisation-015",
+    "initial_state_hash": "sha256:6fa02a9289d5b41645f82f33d45d25cb8781e1fa542cc195cd05626ec84edbc0",
+    "setup_script": "fixtures/physics/dose_quantisation-015.json"
+  },
+  "id": "A-DOSEQUANTISATION-015",
+  "layers": [
+    "L3"
+  ],
+  "oracle": {
+    "assist_only": false,
+    "check": "dose_quantisation",
+    "config": {
+      "mechanism": "quantisation/0.05"
+    },
+    "constraint_class": "none",
+    "evidence_keys": [],
+    "expect": {
+      "codes": [],
+      "verdict": "pass"
+    },
+    "gold": null,
+    "independent_check": true,
+    "kind": "program",
+    "tolerance": null
+  },
+  "power_role": "exploratory",
+  "protocol": {
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "budget": {
+      "tool_calls": 2,
+      "turns": 1,
+      "wall_clock_s": 20
+    },
+    "mode": "single_turn",
+    "n_runs": 3,
+    "turns": [
+      {
+        "lang": "en",
+        "role": "user",
+        "text": "Recompute the reported metric from the quantised dose grid and report whether it still matches the full-precision value."
+      }
+    ],
+    "ui_counterpart": null
+  },
+  "provenance": {
+    "authored_on": "2026-09-30",
+    "deprecated": null,
+    "derived_from": "tools/gen_physics_fixtures.py (analytic oracle)",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto-verifier"
+    ],
+    "source": "generated"
+  },
+  "schema_version": "1.0",
+  "scoring": {
+    "difficulty_target": "easy",
+    "gate_refs": [],
+    "primary_metric": "oracle_verdict_match",
+    "weight": 1.0
+  },
+  "track": "A",
+  "unit": {
+    "contrast_family_id": "physics/dose_quantisation",
+    "group_type": "G-CT",
+    "kind": "task_scenario"
+  }
+}

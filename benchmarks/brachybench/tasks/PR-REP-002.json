@@ -1,0 +1,81 @@
+{
+  "schema_version": "1.0",
+  "id": "PR-REP-002",
+  "track": "H",
+  "layers": [
+    "L3",
+    "L4"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "report_generator_all_sections_present",
+  "cost_class": "state_only",
+  "power_role": "primary",
+  "clinical_intent": "pancreas a complete treatment report must contain all five required sections: prescription / technique / dosimetry / constraints / conclusion.",
+  "fixture": {
+    "case_family": "synth/pancreas_p03",
+    "setup_script": "fixtures/setup/pancreas_p03_pipeline.py",
+    "initial_state_hash": "sha256:bb54b53f5ceec64b975a9a01c3b7c6d5e8293a7f3b940a64bc6d922c30607a7b"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-CT",
+    "contrast_family_id": "report_generator/sections"
+  },
+  "protocol": {
+    "mode": "single_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "pancreas a complete treatment report must contain all five required sections: prescription / technique / dosimetry / constraints / conclusion.",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 1,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "report_sections_complete",
+    "constraint_class": "postcondition",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "report_sections_complete_pass",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "medium"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "PR-REP-002-P01",
+    "hidden": false,
+    "generation_seed": 20002,
+    "canary_class": null,
+    "behavioral_probes": [],
+    "contrast_family_id": "report_generator/sections"
+  },
+  "provenance": {
+    "source": "audit_derived",
+    "derived_from": "tool_factory/report_generator/__init__.py:50-301 _generate_full_report; oracles/artifacts.py:30-59",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto"
+    ],
+    "authored_on": "2026-10-01",
+    "deprecated": null
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "ui_control",
+  "expectation": null,
+  "facet": "ui_control",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Set display mode to label only",
+  "source_refs": [
+    "INT-6bc76f38778d",
+    "INT-f4733f97d4ff"
+  ],
+  "template_id": "TPL-7d93711b90"
+}

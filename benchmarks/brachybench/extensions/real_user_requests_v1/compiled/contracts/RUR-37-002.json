@@ -1,0 +1,58 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "en",
+  "response_facts": {
+    "capacity": 1048576,
+    "retained": 22918,
+    "turn_total": 39166
+  },
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "response",
+      "statement": "Explain sum over calls versus retained/latest context; 39,166!=window occupancy and a decrease alone does not prove bug."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "state",
+      "statement": "Indicator derives from independently known retained22918/capacity1048576 under documented rounding, not cumulative39166."
+    },
+    {
+      "id": "criterion-2",
+      "kind": "effects",
+      "statement": "No unsolicited compaction or capacity change."
+    }
+  ],
+  "rules": [
+    {
+      "capacity": 1048576,
+      "op": "context_accounting",
+      "retained": 22918
+    }
+  ],
+  "scenario_id": "RUR-37-002",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "response",
+      "statement": "Explain sum over calls versus retained/latest context; 39,166!=window occupancy and a decrease alone does not prove bug."
+    },
+    {
+      "kind": "state",
+      "statement": "Indicator derives from independently known retained22918/capacity1048576 under documented rounding, not cumulative39166."
+    },
+    {
+      "kind": "effects",
+      "statement": "No unsolicited compaction or capacity change."
+    }
+  ]
+}

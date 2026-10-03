@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "treatment_planning",
+  "expectation": null,
+  "facet": "treatment_planning",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "For a gallbladder cancer case, please plan an interstitial HDR brachytherapy treatment. The GTV is approximately 4cm x 3cm x 3cm adjacent to the liver hilum. I plan to place 6 needles through the percutaneous approach. The prescription dose is 6 Gy per fraction in 3 fractions. Optimize dwell positions to cover the GTV while limiting the duodenal D2cc.",
+  "source_refs": [
+    "INT-0ff199fd5a35",
+    "INT-10f44f8b18be"
+  ],
+  "template_id": "TPL-70f4c20b8e"
+}

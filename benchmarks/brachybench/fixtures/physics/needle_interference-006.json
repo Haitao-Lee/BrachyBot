@@ -1,0 +1,43 @@
+{
+  "config": {
+    "mechanism": "needle/endpoint",
+    "mode": "endpoint",
+    "predicted_risk": "overlap",
+    "s": [
+      [
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        26.24542990502515,
+        0.0,
+        0.0
+      ]
+    ],
+    "t": [
+      [
+        30.939159334839474,
+        0.0,
+        0.0
+      ],
+      [
+        57.18458923986463,
+        0.0,
+        0.0
+      ]
+    ]
+  },
+  "expected": {
+    "evidence_gap_codes": [],
+    "score": 0.0,
+    "verdict": "fail",
+    "violation_codes": [
+      "interference_false_positive"
+    ]
+  },
+  "family": "needle_interference",
+  "id": "needle_interference-006",
+  "initial_state_hash": "sha256:c2ab3d3acedda7ae23e586a2a8f9ffd958fd61f6ab79ebc2439555d445483489",
+  "seed": 20260929
+}

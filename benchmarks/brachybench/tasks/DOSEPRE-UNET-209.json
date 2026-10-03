@@ -1,0 +1,81 @@
+{
+  "schema_version": "1.0",
+  "id": "DOSEPRE-UNET-209",
+  "track": "L",
+  "layers": [
+    "L3",
+    "L4"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "dose_unet.prediction_phys_coord_roundtrip",
+  "cost_class": "state_only",
+  "power_role": "primary",
+  "clinical_intent": "Prediction-grid voxel -> physical coordinate -> voxel round-trip must be lossless, and the direction matrix must be a proper orthogonal rotation.",
+  "fixture": {
+    "case_family": "synth/interop_case",
+    "setup_script": "fixtures/setup/interop_case.py",
+    "initial_state_hash": "sha256:5580992734c65dddb22edba5969a1955389deab388d8c25a38c79110fe4dc002"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-CT",
+    "contrast_family_id": "dose_pre/dose_unet/coord_roundtrip"
+  },
+  "protocol": {
+    "mode": "single_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "Prediction-grid voxel -> physical coordinate -> voxel round-trip must be lossless, and the direction matrix must be a proper orthogonal rotation.",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 1,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "coord_roundtrip",
+    "constraint_class": "none",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "coord_roundtrip_pass",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "hard"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "DOSEPRE-UNET-209-P01",
+    "hidden": false,
+    "generation_seed": 7052,
+    "canary_class": null,
+    "behavioral_probes": [],
+    "contrast_family_id": "dose_pre/dose_unet/coord_roundtrip"
+  },
+  "provenance": {
+    "source": "audit_derived",
+    "derived_from": "oracles/coord_roundtrip.py:48-158 (voxel<->physical ITK convention); plans/dose_pre/inference.py:151-183",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto"
+    ],
+    "authored_on": "2026-10-01",
+    "deprecated": null
+  }
+}

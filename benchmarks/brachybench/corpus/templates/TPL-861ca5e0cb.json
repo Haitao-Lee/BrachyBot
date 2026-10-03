@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "ui_control",
+  "expectation": null,
+  "facet": "ui_control",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Apply bone window preset",
+  "source_refs": [
+    "INT-1f6f45937c71",
+    "INT-ab3185ec34ee"
+  ],
+  "template_id": "TPL-861ca5e0cb"
+}

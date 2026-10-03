@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "as_of": "2026-10-03",
+  "purpose": "Public capability anchors; never evidence of clinical approval or native brachy workflow completion",
+  "policy": {
+    "default_action": "inventory_and_integrity_check_only",
+    "sut_runs_in_this_collection": 0,
+    "no_cross_benchmark_total": true,
+    "training_splits_not_eligible": true,
+    "gold_never_in_public_input": true,
+    "native_product_and_common_harness_results_separate": true,
+    "fidelity_certification_required_before_published_comparison": true
+  },
+  "benchmarks": [
+    {
+      "id": "EXT-16", "name": "When2Call", "domain": "tool_decision", "mode": "common_harness", "protocol": "mcq_loglikelihood_and_separate_judge", "license_data": "CC-BY-4.0", "license_code": "Apache-2.0",
+      "source": "https://github.com/NVIDIA/When2Call", "revision": "ecc8d42388e91ab37e7e737d48e16e8ecea3d1dc",
+      "why": "Explicitly tests calling, asking for missing parameters, answering directly, and admitting lack of usable tools.",
+      "limitations": "Foreign tool schemas, not BrachyBot UI execution; MCQ log-likelihood scores are not free-generation label accuracy. Judge subset overlaps MCQ and source BFCL.",
+      "upstream_evaluator": "vendor/evaluation/mcq/lm_eval_harness/when2call/utils.py",
+      "assets": [
+        {"kind": "github", "paths": ["README.md", "LICENSE.txt", "LICENSE-3rd-party.txt", "evaluation/mcq/lm_eval_harness/when2call/utils.py", "evaluation/mcq/lm_eval_harness/when2call/additional_metrics.py"]},
+        {"kind": "hf", "repo": "nvidia/When2Call", "revision": "0582f7749df63a96fdc3070932e83e72396ace53", "paths": ["README.md", "test/when2call_test_mcq.jsonl", "test/when2call_test_llm_judge.jsonl"]}
+      ]
+    },
+    {
+      "id": "EXT-17", "name": "BFCL-v3 (AST/irrelevance/parallel)", "domain": "tool_arguments", "mode": "common_harness", "protocol": "upstream_ast_checker", "license_data": "Apache-2.0", "license_code": "Apache-2.0",
+      "source": "https://github.com/gorilla-llm/gorilla", "revision": "916260dfc116bf06793a1af79b4ec8195b0453b6",
+      "why": "Function selection, structured arguments, multiple and parallel calls, and not calling irrelevant tools.",
+      "limitations": "Pinned HF assets are v3, not v4. Static AST subset only; no REST/SQL/foreign stateful executor is claimed. Overlaps When2Call source tasks.",
+      "upstream_evaluator": "vendor/berkeley-function-call-leaderboard/bfcl/eval_checker/ast_eval/ast_checker.py",
+      "assets": [
+        {"kind": "hf", "repo": "gorilla-llm/Berkeley-Function-Calling-Leaderboard", "revision": "61fc0608cfd831fcfbbaa676ebdfef0ed963eeda", "paths": ["README.md", "BFCL_v3_simple.json", "BFCL_v3_multiple.json", "BFCL_v3_parallel.json", "BFCL_v3_parallel_multiple.json", "BFCL_v3_irrelevance.json", "BFCL_v3_live_simple.json", "BFCL_v3_live_multiple.json", "BFCL_v3_live_parallel.json", "BFCL_v3_live_parallel_multiple.json", "BFCL_v3_live_irrelevance.json", "possible_answer/BFCL_v3_simple.json", "possible_answer/BFCL_v3_multiple.json", "possible_answer/BFCL_v3_parallel.json", "possible_answer/BFCL_v3_parallel_multiple.json", "possible_answer/BFCL_v3_live_simple.json", "possible_answer/BFCL_v3_live_multiple.json", "possible_answer/BFCL_v3_live_parallel.json", "possible_answer/BFCL_v3_live_parallel_multiple.json"]},
+        {"kind": "archive", "include": ["LICENSE", "README.md", "berkeley-function-call-leaderboard/bfcl", "berkeley-function-call-leaderboard/pyproject.toml", "berkeley-function-call-leaderboard/README.md"], "exclude": ["data", "result", "score", "model_handler"]},
+        {"kind": "github", "paths": ["berkeley-function-call-leaderboard/bfcl/model_handler/constant.py"]}
+      ]
+    },
+    {
+      "id": "EXT-18", "name": "MedXpertQA", "domain": "medical_reasoning", "mode": "common_harness", "protocol": "official_mcq", "license_data": "MIT", "license_code": "MIT",
+      "source": "https://github.com/TsinghuaC3I/MedXpertQA", "revision": "5f1db162d0d2b03d62da2d4fe086076a36105e18",
+      "why": "Hard medical reasoning plus actual multimodal medical image questions; reports text and MM separately.",
+      "limitations": "Knowledge/image capability, not physical-coordinate, dose-engine or surgical-guide evidence; text questions overlap EXT-15 subsets.",
+      "upstream_evaluator": "vendor/eval/utils.py",
+      "assets": [
+        {"kind": "github", "paths": ["README.md", "LICENSE", "eval/utils.py", "eval/config/prompt_templates.py", "eval/eval.ipynb"]},
+        {"kind": "hf", "repo": "TsinghuaC3I/MedXpertQA", "revision": "7e7c465a68eb2b866926bfa59c8c9d17a8daba65", "paths": ["README.md", "Text/test.jsonl", "MM/test.jsonl", "images.zip"]}
+      ]
+    },
+    {
+      "id": "EXT-19", "name": "CMB-Clin", "domain": "chinese_multiturn_clinical", "mode": "common_harness", "protocol": "case_level_ordered_qa", "license_data": "Apache-2.0", "license_code": "Apache-2.0",
+      "source": "https://github.com/FreedomIntelligence/CMB", "revision": "6c8ece46097dae736c6805dd3b831e1a38c08971",
+      "why": "Chinese clinical cases with ordered questions; grounded explanation and follow-up interpretation.",
+      "limitations": "74 cases, not thousands of independent conversations; general clinical questions, not all brachy. Judge-based clinical answers require independent scorer. CMB-Exam/train excluded from this release.",
+      "upstream_evaluator": "vendor/README.md#cmb-clin-gpt-4-evaluation-prompt",
+      "assets": [
+        {"kind": "github", "paths": ["README.md", "LICENSE", "score.py", "src/generate_answers.py"]},
+        {"kind": "hf", "repo": "FreedomIntelligence/CMB", "revision": "935fbc09edf1303d89872b21265ff597f426ac0d", "paths": ["README.md", "CMB-Clin-qa.json"]}
+      ]
+    },
+    {
+      "id": "EXT-20", "name": "MEDEC-MS", "domain": "clinical_text_correction", "mode": "common_harness", "protocol": "error_flag_span_correction", "license_data": "CC-BY-4.0", "license_code": "verify_upstream_terms_before_redistribution",
+      "source": "https://github.com/abachaa/MEDEC", "revision": "e9173f861b39706946b6a127394992c00535b1e3",
+      "why": "Detect and correct errors in clinical text instead of merely answering exam questions; relevant to final-response/report reliability.",
+      "limitations": "MS test only. UW requires DUA and is not fetched. Not a validator of BrachyBot dose/report-state consistency. Scorer dependency/terms are a separate gate.",
+      "upstream_evaluator": "https://github.com/abachaa/MEDIQA-CORR-2024/tree/4b87cb01c34d22bdef2423206305b2bedb1fe893/evaluation",
+      "assets": [
+        {"kind": "github", "paths": ["README.md", "MEDEC-MS/MEDEC-MS-TestSet-with-GroundTruth-and-ErrorType.csv"]}
+      ]
+    },
+    {
+      "id": "EXT-21", "name": "MedHALT", "domain": "hallucination_false_premise", "mode": "common_harness", "protocol": "original_reasoning_and_reference_tasks", "license_data": "Apache-2.0", "license_code": "unresolved_repository_license",
+      "source": "https://github.com/medhalt/medhalt", "revision": "2fed21ed696a1949b1fd6dfdbd7a08d792e0e05f",
+      "why": "False-confidence, fake questions, none-of-the-above and fabricated reference handling.",
+      "limitations": "Preserve intentionally misleading candidate input but hide answer labels. Public data licensed; source-code reuse needs license resolution. Not a clinical permission gate.",
+      "upstream_evaluator": "https://github.com/medhalt/medhalt/tree/2fed21ed696a1949b1fd6dfdbd7a08d792e0e05f/eval",
+      "assets": [
+        {"kind": "hf", "repo": "openlifescienceai/Med-HALT", "revision": "d1e8d04295742df7abc485062344fe328e141395", "paths": ["README.md", "reasoning_FCT/reasoning_FCT.csv", "reasoning_fake/reasoning_fake.csv", "reasoning_nota/reasoning_nota.csv", "IR_abstract2pubmedlink/IR_abstract2pubmedlink.csv", "IR_pmid2title/IR_pmid2title.csv", "IR_pubmedlink2title/IR_pubmedlink2title.csv", "IR_title2pubmedlink/IR_title2pubmedlink.csv"]}
+      ]
+    },
+    {
+      "id": "EXT-22", "name": "MedRGB", "domain": "medical_rag_robustness", "mode": "common_harness", "protocol": "data_ready_upstream_context_and_judge_gate", "license_data": "CC-BY-4.0", "license_code": "no_verified_official_runner",
+      "source": "https://huggingface.co/datasets/ngotrnghia1811/MedRGB", "revision": "fa2f90e8d4b09e29ad43a9e799f62e69d1ec6aa2",
+      "why": "Medical evidence sufficiency, noisy retrieved documents, information integration and counterfactual evidence.",
+      "limitations": "Do not expose signal/noise membership, sub-answers or counterfactual gold. Paper v1 says 3480/four sets; current card says 3680/five. Version-specific counts must be measured. Protocol/scoring certification blocked until original context composition and judge are pinned; no custom score is called original MedRGB.",
+      "upstream_evaluator": "https://arxiv.org/abs/2411.09213",
+      "assets": [
+        {"kind": "hf", "repo": "ngotrnghia1811/MedRGB", "revision": "fa2f90e8d4b09e29ad43a9e799f62e69d1ec6aa2", "paths": ["README.md", "data/bioasq-00000-of-00001.parquet", "data/pubmedqa-00000-of-00001.parquet", "data/medqa-00000-of-00001.parquet", "data/mmlu-00000-of-00001.parquet", "data/medlfqa-00000-of-00001.parquet"]}
+      ]
+    },
+    {
+      "id": "EXT-23", "name": "R2MED clinical retrieval", "domain": "clinical_evidence_retrieval", "mode": "common_harness", "protocol": "ranked_document_ids_beir", "license_data": "CC-BY-4.0", "license_code": "MIT",
+      "source": "https://github.com/R2MED/R2MED", "revision": "11244a4925a39082967a6c9d38ef01f279c316a5",
+      "why": "Fixed-corpus clinical/treatment retrieval with qrels; assesses whether tools find evidence needed for a medical question.",
+      "limitations": "Four preselected clinical subsets only, not the full eight-set R2MED aggregate. Give all systems the same corpus. Exclude pre-generated hypothetical documents and other models' results. Do not answer questions from qrels or substitute answer accuracy for retrieval metrics.",
+      "upstream_evaluator": "vendor/src/utils.py",
+      "assets": [
+        {"kind": "github", "paths": ["README.md", "LICENSE", "src/utils.py", "src/base.py", "src/eval_retrieval.py", "src/eval_BM25.py"]},
+        {"kind": "hf", "repo": "R2MED/PMC-Treatment", "revision": "53c489a44a3664ba352c07550b72b4525a5968d5", "paths": ["README.md", "corpus.jsonl", "query.jsonl", "qrels.jsonl"]},
+        {"kind": "hf", "repo": "R2MED/PMC-Clinical", "revision": "812829522f7eaa407ef82b96717be85788a50f7e", "paths": ["README.md", "corpus.jsonl", "query.jsonl", "qrels.jsonl"]},
+        {"kind": "hf", "repo": "R2MED/IIYi-Clinical", "revision": "974abbc9bc281c3169180a6aa5d7586cfd2f5877", "paths": ["README.md", "corpus.jsonl", "query.jsonl", "qrels.jsonl"]},
+        {"kind": "hf", "repo": "R2MED/MedQA-Diag", "revision": "78b585990279cc01a493f876c1b0cf09557fba57", "paths": ["README.md", "corpus.jsonl", "query.jsonl", "qrels.jsonl"]}
+      ]
+    },
+    {
+      "id": "EXT-24", "name": "NFCorpus (BEIR medical retrieval)", "domain": "medical_search", "mode": "common_harness", "protocol": "beir_test_retrieval", "license_data": "CC-BY-SA-4.0", "license_code": "Apache-2.0",
+      "source": "https://github.com/beir-cellar/beir", "revision": "ef83d29307061c65d04b035b4f4e7c18bd8374af",
+      "why": "Medical information retrieval with a small reproducible shared corpus and graded relevance judgments.",
+      "limitations": "Nutrition/medical search, not brachy-specific guidelines. Use test qrels; all-query count is not test-task count.",
+      "upstream_evaluator": "vendor/beir/retrieval/evaluation.py",
+      "assets": [
+        {"kind": "github", "paths": ["README.md", "LICENSE", "beir/retrieval/evaluation.py", "beir/retrieval/custom_metrics.py", "beir/retrieval/search/base.py", "beir/datasets/data_loader.py"]},
+        {"kind": "url_zip", "url": "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/nfcorpus.zip", "name": "nfcorpus.zip", "include": ["nfcorpus/corpus.jsonl", "nfcorpus/queries.jsonl", "nfcorpus/qrels/test.tsv"], "version_note": "Original BEIR release URL is not versioned; asset SHA256 lock is mandatory."}
+      ]
+    },
+    {
+      "id": "EXT-25", "name": "SciFact (BEIR retrieval)", "domain": "biomedical_claim_evidence", "mode": "common_harness", "protocol": "beir_test_retrieval", "license_data": "CC-BY-SA-4.0", "license_code": "Apache-2.0",
+      "source": "https://github.com/beir-cellar/beir", "revision": "ef83d29307061c65d04b035b4f4e7c18bd8374af",
+      "why": "Retrieve scientific abstracts supporting/refuting biomedical claims, complementary to clinical answer evaluation.",
+      "limitations": "This release is retrieval only, not SciFact entailment/rationale scoring. The latter needs the separate official claims/evidence protocol. Never count the two views as independent questions.",
+      "upstream_evaluator": "vendor/beir/retrieval/evaluation.py",
+      "assets": [
+        {"kind": "github", "paths": ["README.md", "LICENSE", "beir/retrieval/evaluation.py", "beir/retrieval/custom_metrics.py", "beir/retrieval/search/base.py", "beir/datasets/data_loader.py"]},
+        {"kind": "url_zip", "url": "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/scifact.zip", "name": "scifact.zip", "include": ["scifact/corpus.jsonl", "scifact/queries.jsonl", "scifact/qrels/test.tsv"], "version_note": "Original BEIR release URL is not versioned; asset SHA256 lock is mandatory."}
+      ]
+    },
+    {
+      "id": "EXT-26", "name": "LongHealth", "domain": "long_clinical_context", "mode": "common_harness", "protocol": "official_document_composition", "license_data": "Apache-2.0", "license_code": "Apache-2.0",
+      "source": "https://github.com/kbressem/LongHealth", "revision": "479922279ce8fa528fe2cd87d854c6a2f8365d21",
+      "why": "Longitudinal clinical documents, negation, chronology, distractors and missing-answer abstention; complements patient conversational memory.",
+      "limitations": "20 fictional case clusters/400 questions; task2/3 are repeated views, not 800 fresh questions. Freeze shared distractor/document order and context settings for all systems. Authors ask not to publicly republish examples or train on test data.",
+      "upstream_evaluator": "vendor/eval",
+      "assets": [
+        {"kind": "archive", "include": ["README.md", "LICENSE", "utils.py", "task1.py", "task2.py", "task1-openai.py", "task2-openai.py", "data", "eval"], "exclude": []}
+      ]
+    },
+    {
+      "id": "EXT-27", "name": "InjecAgent", "domain": "indirect_prompt_injection", "mode": "common_harness", "protocol": "typed_tool_observation_first_stage_views", "license_data": "MIT", "license_code": "MIT",
+      "source": "https://github.com/uiuc-kang-lab/InjecAgent", "revision": "f19c9f2c79a41046eb13c03c51a24c567a8ffa07",
+      "why": "Untrusted tool/RAG content must not become user authorization or leak case data. A relevant security anchor, not clinical knowledge testing.",
+      "limitations": "1054 base scenarios and enhanced repeated views, not 2108 independent tasks. Foreign tools must be mock-only. First-stage public scene is available; native full ASR requires original prompts, parsing and two-stage data-stealing simulator. Upstream utils creates an API client on import and may call a paid simulator: never auto-import it. No original ASR result is manufactured from keyword detection.",
+      "upstream_evaluator": "vendor/src/output_parsing.py and vendor/src/utils.py:get_score",
+      "assets": [{"kind": "archive", "include": ["README.md", "LICENCE", "requirements.txt", "data", "src"], "exclude": []}]
+    }
+  ]
+}

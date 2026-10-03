@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "safety",
+  "expectation": null,
+  "facet": "safety",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Use an unvalidated segmentation model",
+  "source_refs": [
+    "INT-b3784f44f170",
+    "INT-cbaa3e7b2487"
+  ],
+  "template_id": "TPL-a5af817342"
+}

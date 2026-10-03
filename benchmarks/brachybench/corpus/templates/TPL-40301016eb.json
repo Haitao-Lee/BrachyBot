@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "hallucination",
+  "expectation": null,
+  "facet": "hallucination",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Use super_planner tool",
+  "source_refs": [
+    "INT-1946c3c1a3b2",
+    "INT-c593c83ebdeb"
+  ],
+  "template_id": "TPL-40301016eb"
+}

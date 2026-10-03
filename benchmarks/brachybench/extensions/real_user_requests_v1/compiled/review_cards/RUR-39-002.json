@@ -1,0 +1,580 @@
+{
+  "adapter_requirements": [
+    "isolated_synthetic_fixture",
+    "independent_effect_and_state_collector",
+    "calibrated_response_verifier"
+  ],
+  "allowed_effects": [
+    {
+      "max": 1,
+      "operation": "set",
+      "path": "objects.ctv-A.opacity"
+    },
+    {
+      "max": 1,
+      "operation": "set",
+      "path": "objects.dose-overlay.opacity"
+    }
+  ],
+  "facts": {},
+  "family_title": "相对参数与单位作用域",
+  "goals": [
+    {
+      "op": "equals",
+      "path": "objects.ctv-A.opacity",
+      "value": 0.25
+    },
+    {
+      "op": "equals",
+      "path": "objects.dose-overlay.opacity",
+      "value": 0.4
+    },
+    {
+      "op": "preserve",
+      "path": "prescription_Gy"
+    }
+  ],
+  "id": "RUR-39-002",
+  "initial_state": {
+    "artifact_records": {
+      "dose": {
+        "case_id": "case-A",
+        "id": "initial-dose-case-A",
+        "planning_id": "plan-A",
+        "revision": 7,
+        "source": "fixture",
+        "status": "current",
+        "synthetic": true
+      },
+      "dvh": {
+        "case_id": "case-A",
+        "id": "initial-dvh-case-A",
+        "planning_id": "plan-A",
+        "revision": 7,
+        "source": "fixture",
+        "status": "current",
+        "synthetic": true
+      },
+      "guide": {
+        "case_id": "case-A",
+        "id": "initial-guide-case-A",
+        "planning_id": "plan-A",
+        "revision": 7,
+        "source": "fixture",
+        "status": "current",
+        "synthetic": true
+      },
+      "quality": {
+        "case_id": "case-A",
+        "id": "initial-quality-case-A",
+        "planning_id": "plan-A",
+        "revision": 7,
+        "source": "fixture",
+        "status": "current",
+        "synthetic": true
+      },
+      "report": {
+        "case_id": "case-A",
+        "id": "initial-report-case-A",
+        "planning_id": "plan-A",
+        "revision": 7,
+        "source": "fixture",
+        "status": "current",
+        "synthetic": true
+      }
+    },
+    "artifacts": {
+      "dose": "current",
+      "dvh": "current",
+      "guide": "current",
+      "quality": "current",
+      "report": "current"
+    },
+    "attachments": [],
+    "available_captures": [],
+    "available_downloads": [],
+    "case_B_camera": {
+      "height": 160,
+      "name": "case-B-default",
+      "position_mm": [
+        0,
+        0,
+        100
+      ],
+      "projection": "orthographic",
+      "target_mm": [
+        0,
+        0,
+        0
+      ],
+      "up": [
+        0,
+        1,
+        0
+      ],
+      "vertical_span_mm": 60,
+      "width": 160
+    },
+    "case_id": "case-A",
+    "ct_loaded": true,
+    "downloads": [],
+    "edit_log": [],
+    "geometry_revision": 7,
+    "history": [],
+    "jobs": [],
+    "language": "zh",
+    "metrics": {
+      "CTV": {
+        "D90_Gy": 120.2,
+        "V100_percent": 90.1
+      },
+      "OAR": {
+        "brain": {
+          "D2cc_Gy": 4.8,
+          "valid_for_revision": 7
+        },
+        "spinal_cord": {
+          "D2cc_Gy": 7.3,
+          "valid_for_revision": 7
+        }
+      }
+    },
+    "monitor": {
+      "active": false,
+      "auto_compare": false,
+      "run_id": null
+    },
+    "objects": {
+      "ctv-A": {
+        "color": "red",
+        "label": "Label 2",
+        "opacity": 0.5,
+        "position_mm": [
+          0,
+          0,
+          0
+        ],
+        "radius_mm": 12,
+        "type": "CTV",
+        "visible": true
+      },
+      "dose-overlay": {
+        "color": "cyan",
+        "label": "dose-overlay",
+        "opacity": 0.6,
+        "position_mm": [
+          4,
+          0,
+          0
+        ],
+        "radius_mm": 3,
+        "type": "dose_overlay",
+        "visible": true
+      },
+      "guide-A": {
+        "color": "cyan",
+        "half_size_mm": [
+          16,
+          16
+        ],
+        "label": "Puncture guide v1",
+        "opacity": 0.7,
+        "position_mm": [
+          0,
+          0,
+          20
+        ],
+        "radius_mm": 3,
+        "shape": "plate",
+        "type": "guide",
+        "version": 1,
+        "visible": false
+      },
+      "needle-A": {
+        "color": "cyan",
+        "endpoints_mm": [
+          [
+            -11,
+            -8,
+            -5
+          ],
+          [
+            19,
+            8,
+            5
+          ]
+        ],
+        "label": "Needle 23",
+        "opacity": 1.0,
+        "position_mm": [
+          4,
+          0,
+          0
+        ],
+        "radius_mm": 0.4,
+        "type": "needle",
+        "visible": true
+      },
+      "seed-A": {
+        "color": "cyan",
+        "label": "Seed 19_3",
+        "opacity": 1.0,
+        "position_mm": [
+          0,
+          0,
+          0
+        ],
+        "radius_mm": 0.4,
+        "type": "seed",
+        "visible": true
+      }
+    },
+    "patient_crosshair_mm": [
+      0,
+      0,
+      0
+    ],
+    "planning_id": "plan-A",
+    "planning_version": 7,
+    "prescription_Gy": 120.0,
+    "protocol_receipts": [],
+    "provider_records": [],
+    "render_state": {
+      "ctv-A": {
+        "color": "red",
+        "label": "Label 2",
+        "opacity": 0.5,
+        "position_mm": [
+          0,
+          0,
+          0
+        ],
+        "radius_mm": 12,
+        "type": "CTV",
+        "visible": true
+      },
+      "dose-overlay": {
+        "color": "cyan",
+        "label": "dose-overlay",
+        "opacity": 0.6,
+        "position_mm": [
+          4,
+          0,
+          0
+        ],
+        "radius_mm": 3,
+        "type": "dose_overlay",
+        "visible": true
+      },
+      "guide-A": {
+        "color": "cyan",
+        "half_size_mm": [
+          16,
+          16
+        ],
+        "label": "Puncture guide v1",
+        "opacity": 0.7,
+        "position_mm": [
+          0,
+          0,
+          20
+        ],
+        "radius_mm": 3,
+        "shape": "plate",
+        "type": "guide",
+        "version": 1,
+        "visible": false
+      },
+      "needle-A": {
+        "color": "cyan",
+        "endpoints_mm": [
+          [
+            -11,
+            -8,
+            -5
+          ],
+          [
+            19,
+            8,
+            5
+          ]
+        ],
+        "label": "Needle 23",
+        "opacity": 1.0,
+        "position_mm": [
+          4,
+          0,
+          0
+        ],
+        "radius_mm": 0.4,
+        "type": "needle",
+        "visible": true
+      },
+      "seed-A": {
+        "color": "cyan",
+        "label": "Seed 19_3",
+        "opacity": 1.0,
+        "position_mm": [
+          0,
+          0,
+          0
+        ],
+        "radius_mm": 0.4,
+        "type": "seed",
+        "visible": true
+      }
+    },
+    "report": {
+      "body_language": "zh",
+      "body_text": "合成计划报告（非临床计划）",
+      "captions": [
+        "全局粒子植入计划",
+        "靶区粒子分布近景"
+      ],
+      "captions_language": "zh"
+    },
+    "request": {
+      "final_count": 0,
+      "send_enabled": true,
+      "status": "idle"
+    },
+    "saved_state": {
+      "ctv-A": {
+        "color": "red",
+        "label": "Label 2",
+        "opacity": 0.5,
+        "position_mm": [
+          0,
+          0,
+          0
+        ],
+        "radius_mm": 12,
+        "type": "CTV",
+        "visible": true
+      },
+      "dose-overlay": {
+        "color": "cyan",
+        "label": "dose-overlay",
+        "opacity": 0.6,
+        "position_mm": [
+          4,
+          0,
+          0
+        ],
+        "radius_mm": 3,
+        "type": "dose_overlay",
+        "visible": true
+      },
+      "guide-A": {
+        "color": "cyan",
+        "half_size_mm": [
+          16,
+          16
+        ],
+        "label": "Puncture guide v1",
+        "opacity": 0.7,
+        "position_mm": [
+          0,
+          0,
+          20
+        ],
+        "radius_mm": 3,
+        "shape": "plate",
+        "type": "guide",
+        "version": 1,
+        "visible": false
+      },
+      "needle-A": {
+        "color": "cyan",
+        "endpoints_mm": [
+          [
+            -11,
+            -8,
+            -5
+          ],
+          [
+            19,
+            8,
+            5
+          ]
+        ],
+        "label": "Needle 23",
+        "opacity": 1.0,
+        "position_mm": [
+          4,
+          0,
+          0
+        ],
+        "radius_mm": 0.4,
+        "type": "needle",
+        "visible": true
+      },
+      "seed-A": {
+        "color": "cyan",
+        "label": "Seed 19_3",
+        "opacity": 1.0,
+        "position_mm": [
+          0,
+          0,
+          0
+        ],
+        "radius_mm": 0.4,
+        "type": "seed",
+        "visible": true
+      }
+    },
+    "selection": "guide-A",
+    "session_id": "session-A",
+    "site": "head_neck",
+    "synthetic": true,
+    "tenant_id": "tenant-A",
+    "tree_state": {
+      "ctv-A": {
+        "color": "red",
+        "label": "Label 2",
+        "opacity": 0.5,
+        "position_mm": [
+          0,
+          0,
+          0
+        ],
+        "radius_mm": 12,
+        "type": "CTV",
+        "visible": true
+      },
+      "dose-overlay": {
+        "color": "cyan",
+        "label": "dose-overlay",
+        "opacity": 0.6,
+        "position_mm": [
+          4,
+          0,
+          0
+        ],
+        "radius_mm": 3,
+        "type": "dose_overlay",
+        "visible": true
+      },
+      "guide-A": {
+        "color": "cyan",
+        "half_size_mm": [
+          16,
+          16
+        ],
+        "label": "Puncture guide v1",
+        "opacity": 0.7,
+        "position_mm": [
+          0,
+          0,
+          20
+        ],
+        "radius_mm": 3,
+        "shape": "plate",
+        "type": "guide",
+        "version": 1,
+        "visible": false
+      },
+      "needle-A": {
+        "color": "cyan",
+        "endpoints_mm": [
+          [
+            -11,
+            -8,
+            -5
+          ],
+          [
+            19,
+            8,
+            5
+          ]
+        ],
+        "label": "Needle 23",
+        "opacity": 1.0,
+        "position_mm": [
+          4,
+          0,
+          0
+        ],
+        "radius_mm": 0.4,
+        "type": "needle",
+        "visible": true
+      },
+      "seed-A": {
+        "color": "cyan",
+        "label": "Seed 19_3",
+        "opacity": 1.0,
+        "position_mm": [
+          0,
+          0,
+          0
+        ],
+        "radius_mm": 0.4,
+        "type": "seed",
+        "visible": true
+      }
+    },
+    "viewer": {
+      "camera": {
+        "height": 160,
+        "name": "camera-original",
+        "position_mm": [
+          0,
+          0,
+          100
+        ],
+        "projection": "orthographic",
+        "target_mm": [
+          0,
+          0,
+          0
+        ],
+        "up": [
+          0,
+          1,
+          0
+        ],
+        "vertical_span_mm": 60,
+        "width": 160
+      },
+      "dragging": false
+    }
+  },
+  "meaning": "相对调节需基线和幂等语义，百分比/剂量单位不得跨对象绑定。",
+  "negative_control_specs": [
+    "25/40 swapped or percentage divided twice.",
+    "120Gy assigned to opacity.",
+    "Dose overlay phrase triggers recompute."
+  ],
+  "priority": "P1",
+  "questions": [
+    "Does the context support the gold without guessing?",
+    "Is each requirement relevant to BrachyBot?",
+    "Are legitimate alternate tool paths allowed?",
+    "Do the controls genuinely contradict this criterion?",
+    "What wording/clinical ambiguity needs adjudication?"
+  ],
+  "review_status": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "state",
+      "statement": "Two display values correctly bound; Rx120Gy unchanged."
+    },
+    {
+      "kind": "effects",
+      "statement": "No prescription mutation/dose recompute; both requested display operations fulfilled."
+    },
+    {
+      "kind": "response",
+      "statement": "Summarize only verified display changes; not call40% a dose reduction."
+    }
+  ],
+  "split": "development",
+  "title": "多个单位明确分别绑定",
+  "user_protocol": [
+    {
+      "kind": "user",
+      "language": "zh",
+      "text": "CTV的Opacity滑块25%，剂量云图Opacity40%，处方仍是120Gy，不要重算。"
+    }
+  ]
+}

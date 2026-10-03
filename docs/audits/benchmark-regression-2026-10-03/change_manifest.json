@@ -1,0 +1,202 @@
+[
+  {
+    "path": "benchmarks/brachybench/fixtures/physics_contract_v2/dose_quantisation-000.json",
+    "before_sha256": null,
+    "after_sha256": "d605493fe3f72c257fe12a59e1ef26d03fc0a8391286789b849bcaad8da8cd4a"
+  },
+  {
+    "path": "benchmarks/brachybench/fixtures/physics_contract_v2/dose_quantisation-001.json",
+    "before_sha256": null,
+    "after_sha256": "75474e3d2edf0069f1c045a4e4fdc66d8fa1066635cd2a09a7f1bdf9d2047caa"
+  },
+  {
+    "path": "benchmarks/brachybench/fixtures/physics_contract_v2/dose_quantisation-002.json",
+    "before_sha256": null,
+    "after_sha256": "223de31cf124d147274c65670b670e127ebe0728177668c3d5df1e2b56fc58c6"
+  },
+  {
+    "path": "benchmarks/brachybench/fixtures/physics_contract_v2/dose_quantisation-003.json",
+    "before_sha256": null,
+    "after_sha256": "14d19a06e9397c01229166e707085c4ac380f27aaf62c3302456ec64b73375e7"
+  },
+  {
+    "path": "benchmarks/brachybench/fixtures/physics_contract_v2/dose_quantisation-004.json",
+    "before_sha256": null,
+    "after_sha256": "58f91a8fba6cf478c38cfaa6fc86c106bcaf09fb788ddba2f68faaa1d9514d69"
+  },
+  {
+    "path": "benchmarks/brachybench/fixtures/physics_contract_v2/dose_quantisation-005.json",
+    "before_sha256": null,
+    "after_sha256": "5e809993f929f627816f6a80c9f05fdd87494c38ad403fa4d181efe9e3a7eaee"
+  },
+  {
+    "path": "benchmarks/brachybench/fixtures/physics_contract_v2/dose_quantisation-006.json",
+    "before_sha256": null,
+    "after_sha256": "a490b6e5a7a1824c00d506ac2c8b689d4b8c40ad2300af0f1560ad6a9767bcd9"
+  },
+  {
+    "path": "benchmarks/brachybench/fixtures/physics_contract_v2/dose_quantisation-007.json",
+    "before_sha256": null,
+    "after_sha256": "04e6058df45b9701cd21904185a2aeb32a9c8c05bbf730e3d2dcd2f5f360b727"
+  },
+  {
+    "path": "benchmarks/brachybench/fixtures/physics_contract_v2/dose_quantisation-008.json",
+    "before_sha256": null,
+    "after_sha256": "3a77c76240fe60899e9412dcb1e1969a101fdaf64a81147c5b9db9e848fad30a"
+  },
+  {
+    "path": "benchmarks/brachybench/fixtures/physics_contract_v2/dose_quantisation-009.json",
+    "before_sha256": null,
+    "after_sha256": "70aa4c7d017644557a8efd39a1baba081b327d2d9dd1391279c33a2a90fb307c"
+  },
+  {
+    "path": "benchmarks/brachybench/fixtures/physics_contract_v2/dose_quantisation-010.json",
+    "before_sha256": null,
+    "after_sha256": "6809a6274e410750542bc719ee65f0f364a3224a56402e6ebac08b2759b6fb98"
+  },
+  {
+    "path": "benchmarks/brachybench/fixtures/physics_contract_v2/dose_quantisation-011.json",
+    "before_sha256": null,
+    "after_sha256": "91779bf087631848d683d72bc5db0e218c2131c8de90bc0ec13457f83efa570e"
+  },
+  {
+    "path": "benchmarks/brachybench/fixtures/physics_contract_v2/dose_quantisation-012.json",
+    "before_sha256": null,
+    "after_sha256": "a47bf310376a203750fcd8026c1081192b4cc6f65a8cd568144c340684dff776"
+  },
+  {
+    "path": "benchmarks/brachybench/fixtures/physics_contract_v2/dose_quantisation-013.json",
+    "before_sha256": null,
+    "after_sha256": "5fa1797c8dea365fb1b083deb200f56798d297932af5196aec06f2e2313c4d39"
+  },
+  {
+    "path": "benchmarks/brachybench/fixtures/physics_contract_v2/dose_quantisation-014.json",
+    "before_sha256": null,
+    "after_sha256": "a8ea926af0ee529a304901ee0f95f2d3f4f8efa2915e22c67fd2360234479409"
+  },
+  {
+    "path": "benchmarks/brachybench/fixtures/physics_contract_v2/dose_quantisation-015.json",
+    "before_sha256": null,
+    "after_sha256": "dd5fd3fad3e0b86b54be8dd7f7ee92a1589906f733415923b78375f4ae88bb0e"
+  },
+  {
+    "path": "benchmarks/brachybench/fixtures/physics_contract_v2/dose_quantisation-016.json",
+    "before_sha256": null,
+    "after_sha256": "b5fe6cc573b2b16726bb1bc2b10792917d43cd533bbf2dc69a28972c3da380ba"
+  },
+  {
+    "path": "benchmarks/brachybench/fixtures/physics_contract_v2/dose_quantisation-017.json",
+    "before_sha256": null,
+    "after_sha256": "9113c5d323f4778ce2654355115e3b9f8942de58a5f186d755889dffb87206a2"
+  },
+  {
+    "path": "benchmarks/brachybench/fixtures/physics_contract_v2/dose_quantisation-018.json",
+    "before_sha256": null,
+    "after_sha256": "4141af0594c6916686888c4a74173f2ba1ec6705bdffc12510e1d4db44f0639b"
+  },
+  {
+    "path": "benchmarks/brachybench/fixtures/physics_contract_v2/dose_quantisation-019.json",
+    "before_sha256": null,
+    "after_sha256": "a21f64f091d5c7d28522a4e3af7ac0fbdd8a229996a0226cc48f66b408a7a3b0"
+  },
+  {
+    "path": "benchmarks/brachybench/fixtures/physics_contract_v2/dose_quantisation-020.json",
+    "before_sha256": null,
+    "after_sha256": "ab219909fb517747336ee0804afa82512c2988fce00bc75e3e27b2ffb0c15905"
+  },
+  {
+    "path": "benchmarks/brachybench/fixtures/physics_contract_v2/dose_quantisation-021.json",
+    "before_sha256": null,
+    "after_sha256": "2c26ad79f42d853d3121e788ecc806d3226dea8f418453743e484bd273fb4648"
+  },
+  {
+    "path": "benchmarks/brachybench/fixtures/physics_contract_v2/dose_quantisation-022.json",
+    "before_sha256": null,
+    "after_sha256": "85c46f33a4e96432fe47ea52bb12518c514ecd410a39529d52b9d0289dbd9a19"
+  },
+  {
+    "path": "benchmarks/brachybench/fixtures/physics_contract_v2/dose_quantisation-023.json",
+    "before_sha256": null,
+    "after_sha256": "b9b9ef2577ed49eb7acd01e3989c42616d6c7f0fa5382e689bf705d8bc9ab34c"
+  },
+  {
+    "path": "benchmarks/brachybench/fixtures/physics_contract_v2/dose_quantisation-024.json",
+    "before_sha256": null,
+    "after_sha256": "12059d8c6a84e1a23af416800b5e0239c64a24edd67305d6d3ed8ddba4d81d38"
+  },
+  {
+    "path": "benchmarks/brachybench/fixtures/physics_contract_v2/manifest.json",
+    "before_sha256": null,
+    "after_sha256": "0193bafbb2a2ad023396f6d583b1bfd7925705516a10626bbf3f6f545732f2c5"
+  },
+  {
+    "path": "benchmarks/brachybench/tests/replay_contracts/v2.json",
+    "before_sha256": null,
+    "after_sha256": "c2d21552ec389010196f793c76fdab040812fa4446d8ed0782f7ff53385ac159"
+  },
+  {
+    "path": "benchmarks/brachybench/tests/test_checker_family.py",
+    "before_sha256": "d2290f73c3adb668142e6a131fc6b429d7bbf49de6f73f32867577fc5e2231e5",
+    "after_sha256": "c01a0e0ad0131aad9e29d9a56f2c435ceccabe77058a8c469df1cd988847f0f7"
+  },
+  {
+    "path": "benchmarks/brachybench/tests/test_component_contract_v2.py",
+    "before_sha256": null,
+    "after_sha256": "44c4e9c084edbe8f04cb3345e10a8b7d5f1b89fe4c779634ceb3a497fcaad2ab"
+  },
+  {
+    "path": "benchmarks/brachybench/tests/test_coverage_scenarios.py",
+    "before_sha256": "60036489bbcea7a3f199a7be7bfa45ba7bcedb90f418c0d60b3e153eb507cbcb",
+    "after_sha256": "df81da56fec70b99dd87dfb0ef4486f8690e2d188ca7fd04d1ad44bf4609ab20"
+  },
+  {
+    "path": "benchmarks/brachybench/tests/test_infra.py",
+    "before_sha256": "fa500befdc97c8d04e1e288ecfee6ade976caa62a6d761c22392515dfc40e38b",
+    "after_sha256": "97112dc76ab68577f77e96aed509cf57f55f127d66c3ec2f8a21549baaccf00d"
+  },
+  {
+    "path": "benchmarks/brachybench/tests/test_item_scoring.py",
+    "before_sha256": "2ca670295d8caaeb6218b40d9372bdb71d366da22a4e2b2c3a0ec295a48ea551",
+    "after_sha256": "5dc44c6d4105460d2213efcc1b4fe8d34e27f1f9b49824bead37598a9a0d3094"
+  },
+  {
+    "path": "benchmarks/brachybench/tests/test_panel_report.py",
+    "before_sha256": "dbf86eb1deb2f8eeb1b738bed8e91e8a6d0f4ad606d42cc4146b1ffcab12dbcd",
+    "after_sha256": "d610fdde931ce69401b93eb54ee8a7b0f48fdf97b6bc3ee983cbb8cbd4efab89"
+  },
+  {
+    "path": "benchmarks/brachybench/tests/test_physics_fixtures.py",
+    "before_sha256": "4ea34079d2f70a95d0e6601061e2a6c180cb9d5aba086a634e06a1e76eddb3f0",
+    "after_sha256": "b34e5770e797fde252c748784f21e9bac93c88a6284264c593fefb620221e51b"
+  },
+  {
+    "path": "benchmarks/brachybench/tests/test_runner.py",
+    "before_sha256": "68f8dd079a20c808f65c552ea0a5752ebce05fe411fdd147f9a9e10aa283cefc",
+    "after_sha256": "1b4984b5367273e518082d0bb651317abfc318e94ca11b10e80cd1afb8bd65f0"
+  },
+  {
+    "path": "benchmarks/brachybench/tools/component_replay.py",
+    "before_sha256": null,
+    "after_sha256": "dfcc64d46aaeaf346f7da542c4ee2f2f85e8ee7c2942b0257c94330150b3fcc7"
+  },
+  {
+    "path": "benchmarks/brachybench/tools/gen_physics_fixtures.py",
+    "before_sha256": "8a14375adeab689cbc830a57d1aa32d9343ac6e3f195d772158c29466de20ea7",
+    "after_sha256": "67ca1d2553e29921cd21de64e7fe448a51d8190d788b5b167a084502eb06835c"
+  },
+  {
+    "path": "benchmarks/brachybench/tools/migrate_component_contracts.py",
+    "before_sha256": null,
+    "after_sha256": "8f0d7ccd260e620889d2f18d2170a4f63b93907a5d99635dd27809ab65d885b0"
+  },
+  {
+    "path": "benchmarks/brachybench/tools/run_suite.py",
+    "before_sha256": "4e645dd528d97bd33a02cfb5d7fe60641f07826582aee595cba42e1491688210",
+    "after_sha256": "6ffd1584496e6461a699ef33446a7cf4d06b40e4e4e72020257eda343626b17f"
+  },
+  {
+    "path": "docs/BENCHMARK_REGRESSION_CONTRACT_REPAIR_2026-10-03.md",
+    "before_sha256": null,
+    "after_sha256": "0b3d7f86589f51b159847597d347923940bd363d972f7ae17b978efba900f14a"
+  }
+]

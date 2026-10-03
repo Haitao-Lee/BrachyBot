@@ -1,0 +1,86 @@
+{
+  "anti_gaming": {
+    "behavioral_probes": [],
+    "canary_class": null,
+    "contrast_family_id": "physics/guide_tolerance",
+    "generation_seed": 20260929,
+    "hidden": false,
+    "paraphrase_group": "PHYS-guide_tolerance-013"
+  },
+  "clinical_intent": "guide_tolerance physics-boundary probe guide_tolerance-013: Compare the built guide-hole geometry against the designed geometry and report whether every hole is within tolerance.",
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "physics_boundary.guide_tolerance",
+  "cost_class": "state_only",
+  "fixture": {
+    "case_family": "synth/physics/guide_tolerance/guide_tolerance-013",
+    "initial_state_hash": "sha256:a83ba639d50a5a285048701724d19f92894203750b6f4a4ded4ed1bce5bd7ed0",
+    "setup_script": "fixtures/physics/guide_tolerance-013.json"
+  },
+  "id": "A-GUIDETOLERANCE-013",
+  "layers": [
+    "L3"
+  ],
+  "oracle": {
+    "assist_only": false,
+    "check": "guide_tolerance",
+    "config": {
+      "mechanism": "guide/drift_0.00"
+    },
+    "constraint_class": "none",
+    "evidence_keys": [],
+    "expect": {
+      "codes": [],
+      "verdict": "pass"
+    },
+    "gold": null,
+    "independent_check": true,
+    "kind": "program",
+    "tolerance": null
+  },
+  "power_role": "exploratory",
+  "protocol": {
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "budget": {
+      "tool_calls": 2,
+      "turns": 1,
+      "wall_clock_s": 20
+    },
+    "mode": "single_turn",
+    "n_runs": 3,
+    "turns": [
+      {
+        "lang": "en",
+        "role": "user",
+        "text": "Compare the built guide-hole geometry against the designed geometry and report whether every hole is within tolerance."
+      }
+    ],
+    "ui_counterpart": null
+  },
+  "provenance": {
+    "authored_on": "2026-09-30",
+    "deprecated": null,
+    "derived_from": "tools/gen_physics_fixtures.py (analytic oracle)",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto-verifier"
+    ],
+    "source": "generated"
+  },
+  "schema_version": "1.0",
+  "scoring": {
+    "difficulty_target": "easy",
+    "gate_refs": [],
+    "primary_metric": "oracle_verdict_match",
+    "weight": 1.0
+  },
+  "track": "A",
+  "unit": {
+    "contrast_family_id": "physics/guide_tolerance",
+    "group_type": "G-CT",
+    "kind": "task_scenario"
+  }
+}

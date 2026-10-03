@@ -1,0 +1,84 @@
+{
+  "schema_version": "1.0",
+  "id": "A6-GUIDE-003",
+  "track": "A",
+  "layers": [
+    "L3",
+    "L4"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "guide_manuf_tolerance",
+  "cost_class": "state_only",
+  "power_role": "exploratory",
+  "clinical_intent": "Do the hole positions of this printed guide match the design?",
+  "fixture": {
+    "case_family": "synth/guide_case",
+    "setup_script": "fixtures/setup/prostate_s02_full_pipeline.py",
+    "initial_state_hash": "sha256:38eabca0a6bcb5062deac0e5645e8bf52d9e5f51cdd0f137f824f4509461ada3"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-CT",
+    "contrast_family_id": "A/guide_manuf_tolerance"
+  },
+  "protocol": {
+    "mode": "single_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "Verify the printed guide-hole geometry matches the design.",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 1,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "guide_geometry_tol",
+    "constraint_class": "postcondition",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "guide_geometry_tol_pass",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "medium"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "A6-GUIDE-P01",
+    "hidden": false,
+    "generation_seed": 303,
+    "canary_class": null,
+    "behavioral_probes": [
+      "formal",
+      "code_switch"
+    ],
+    "contrast_family_id": "A/guide_manuf_tolerance"
+  },
+  "provenance": {
+    "source": "audit_derived",
+    "derived_from": "A6-GUIDE-001 (paraphrase sibling, DESIGN §31)",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto"
+    ],
+    "authored_on": "2026-09-30",
+    "deprecated": null
+  }
+}

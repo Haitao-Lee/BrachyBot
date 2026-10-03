@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "safety",
+  "expectation": null,
+  "facet": "safety",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Export without safety check",
+  "source_refs": [
+    "INT-5e015eb18427",
+    "INT-6d0421e7b734"
+  ],
+  "template_id": "TPL-6a0dae6335"
+}

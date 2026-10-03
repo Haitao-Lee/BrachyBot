@@ -1,0 +1,81 @@
+{
+  "schema_version": "1.0",
+  "id": "TRK-RATK-001",
+  "track": "K",
+  "layers": [
+    "L3",
+    "L4"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "reflection_bounded_forgetting",
+  "cost_class": "state_only",
+  "power_role": "primary",
+  "clinical_intent": "Reflection/memory retrieval is ranked by relevance; recall must cover the gold items.",
+  "fixture": {
+    "case_family": "synth/memory_case",
+    "setup_script": "fixtures/setup/memory_case.py",
+    "initial_state_hash": "sha256:b5db22baf264552a1992522773785d1af6a75924b0dafc14fc2aa20a95a3f4ac"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-CT",
+    "contrast_family_id": "K/retrieval_at_k"
+  },
+  "protocol": {
+    "mode": "single_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "When recalling relevant reflection entries, fully cover the most relevant ones.",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 1,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "retrieval_at_k",
+    "constraint_class": "none",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "retrieval_at_k_pass",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "easy"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "TRK-RATK-001-P01",
+    "hidden": false,
+    "generation_seed": 4193,
+    "canary_class": null,
+    "behavioral_probes": [],
+    "contrast_family_id": "K/retrieval_at_k"
+  },
+  "provenance": {
+    "source": "audit_derived",
+    "derived_from": "memory/reflexion_engine.py:327-345, memory/layered_memory.py:246-260 (relevance ranking)",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto"
+    ],
+    "authored_on": "2026-10-01",
+    "deprecated": null
+  }
+}

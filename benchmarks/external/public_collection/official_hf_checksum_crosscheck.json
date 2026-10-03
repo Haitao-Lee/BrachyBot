@@ -1,0 +1,26 @@
+{
+  "mode": "official_public_metadata_crosscheck",
+  "date": "2026-10-04",
+  "credentials_used": false,
+  "sut_runs": 0,
+  "method": "Official HF revision-pinned tree API LFS SHA256 vs acquired assets.lock.json; non-LFS files remain covered by pinned source and local lock, not claimed as independently LFS-certified",
+  "checked_lfs_files": 15,
+  "mismatches": 0,
+  "records": [
+    {"path":"assets/EXT-16/data/test/when2call_test_mcq.jsonl","official_lfs_sha256":"8c3694e583eeeb8dbc297e6cd90da70efc68efa4b6adb7227523e828c6b7b14c"},
+    {"path":"assets/EXT-18/data/images.zip","official_lfs_sha256":"ca5d539b9ee18861cc73cf1dc249916e3989de6810130ed68975b43809e25500"},
+    {"path":"assets/EXT-21/data/IR_abstract2pubmedlink/IR_abstract2pubmedlink.csv","official_lfs_sha256":"9256581a69c6c41f3b20217070def9924423a50c49f62ad8602a934bd981cada"},
+    {"path":"assets/EXT-21/data/IR_pmid2title/IR_pmid2title.csv","official_lfs_sha256":"6eb6adf071c2b5ce0de30219d15bb9e469df66c05ccad68a9122019e78611282"},
+    {"path":"assets/EXT-21/data/IR_pubmedlink2title/IR_pubmedlink2title.csv","official_lfs_sha256":"9c135d0b4a1c584bfc47460485b877b0101564a39d7b2a3fc2cde93fae47a7f8"},
+    {"path":"assets/EXT-21/data/IR_title2pubmedlink/IR_title2pubmedlink.csv","official_lfs_sha256":"596e32a5d52fe2a8790688412018104a6dcab8167d5fda9bcef9de51e308fa95"},
+    {"path":"assets/EXT-22/data/data/bioasq-00000-of-00001.parquet","official_lfs_sha256":"0cabb81e56576237c86971af889ce83dc6d438c274bd4fb9fac5eb4831e4daec"},
+    {"path":"assets/EXT-22/data/data/pubmedqa-00000-of-00001.parquet","official_lfs_sha256":"9e88a2810e3a687f2bb360749b020842c6c3065f166dacbda5d5cf8ce94d0c06"},
+    {"path":"assets/EXT-22/data/data/medqa-00000-of-00001.parquet","official_lfs_sha256":"9612a082de72137e3ff98c557ddbf1f3e1427e239f0fb936a8521aee76117e1b"},
+    {"path":"assets/EXT-22/data/data/mmlu-00000-of-00001.parquet","official_lfs_sha256":"c6d09b921deda19268829f0cc91fea7e1b5daab903226287e6d3e75df33e2f00"},
+    {"path":"assets/EXT-22/data/data/medlfqa-00000-of-00001.parquet","official_lfs_sha256":"a816cc963643ab5072ca3ea409292983f66274bf330149150e40affc022ccc8a"},
+    {"path":"assets/EXT-23/PMC-Treatment/corpus.jsonl","official_lfs_sha256":"64f8b24dbf0535336ad08681a708fbbc894b931ca0f764864a53e2912315d193"},
+    {"path":"assets/EXT-23/PMC-Clinical/corpus.jsonl","official_lfs_sha256":"3a144a9e9d632bda656a29cae18e36a5a32379c2d93d8db218d19282550734cf"},
+    {"path":"assets/EXT-23/IIYi-Clinical/corpus.jsonl","official_lfs_sha256":"c0b1779b32b821ee4941ef5969ac5046450ab660de8890df3c3f082d958ae74f"},
+    {"path":"assets/EXT-23/MedQA-Diag/corpus.jsonl","official_lfs_sha256":"2767063e36589bcda9ea87a898effd91529548838d645adccbc9e9c22bdd0f12"}
+  ]
+}

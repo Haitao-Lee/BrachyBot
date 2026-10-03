@@ -1,13 +1,13 @@
-# NL/UI parity 修复后复审验证记录
+# NL/UI Parity Post-Fix Re-Review Verification Record
 
-日期：2026-09-28。
-远端：`rtx3090_external:/home/lht/snap/brachyplan/BrachyBot`。
-HEAD：`a0aaa2cb4467a7762b37620f53749bf700b360c7`。
-主报告：`docs/NATURAL_LANGUAGE_UI_PARITY_AUDIT_2026-09-28.md` §0A。
+Date: 2026-09-28.
+Remote: `rtx3090_external:/home/lht/snap/brachyplan/BrachyBot`.
+HEAD: `a0aaa2cb4467a7762b37620f53749bf700b360c7`.
+Main report: `docs/NATURAL_LANGUAGE_UI_PARITY_AUDIT_2026-09-28.md` §0A.
 
-## 源码范围与保护
+## Source Scope and Protection
 
-以远端git archive HEAD加当前已跟踪差异建立新的本地镜像，不使用历史本地工作副本替代最新代码。核验期间未编辑任何生产源码或测试源码。已有9个已跟踪修改均保留：
+A new local mirror was created from the remote `git archive HEAD` plus the currently tracked diff; no historical local working copy was used in place of the latest code. No production or test source was edited during verification. All nine existing tracked changes were retained:
 
 - tests/monitor-dashboard-browser.test.cjs
 - tests/test_monitor_dashboard.py
@@ -19,11 +19,11 @@ HEAD：`a0aaa2cb4467a7762b37620f53749bf700b360c7`。
 - web/routes/planning_routes.py
 - web/server_support.py
 
-既有未跟踪的 `docs/MONITOR_INTERACTION_AUDIT_REMEDIATION_2026-09-28.md` 未覆盖。无commit、reset、服务重启、临床运行或public-release修改。上传前对主报告旧哈希校验，避免覆盖并发修改。
+The pre-existing untracked `docs/MONITOR_INTERACTION_AUDIT_REMEDIATION_2026-09-28.md` was not overwritten. There were no commits, resets, service restarts, clinical runs, or public-release modifications. Before upload, the main report's old hash was verified to avoid overwriting concurrent modifications.
 
-## Python相关回归
+## Python-Related Regression
 
-远端仓库根目录，使用 `/home/lht/.conda/envs/brachytherapy/bin/python`：
+Remote repository root, using `/home/lht/.conda/envs/brachytherapy/bin/python`:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 /home/lht/.conda/envs/brachytherapy/bin/python -m pytest -q -p no:cacheprovider \
@@ -44,11 +44,11 @@ PYTHONDONTWRITEBYTECODE=1 /home/lht/.conda/envs/brachytherapy/bin/python -m pyte
   tests/test_multi_target_parameter_binding.py
 ```
 
-结果：209 passed，3个SWIG deprecation warnings，4.95s。未宣称全仓库通过。
+Result: 209 passed, 3 SWIG deprecation warnings, 4.95s. No claim is made that the entire repository passes.
 
-## Node与浏览器
+## Node and Browser
 
-本机新源码镜像根目录，Node v24.14.0：
+Local new-source mirror root, Node v24.14.0:
 
 ```powershell
 node tests/ui-control-receipt.test.cjs
@@ -64,26 +64,26 @@ node tests/depth-peeling-browser.test.cjs
 node tests/report-hidden-viewer.test.cjs
 ```
 
-三项契约和五项浏览器脚本均exit0。sync脚本打印offline为预设网络失败模拟，不是脚本失败。浏览器测试是隔离fixture，没有登录在线病例；包含真实WebGL像素读回和状态恢复检查，但不证明全产品端到端对等。
+All three contract scripts and the five browser scripts exited 0. The `offline` message printed by the sync script is a preset network-failure simulation, not a script failure. The browser tests are isolated fixtures and do not log in to live cases; they include real WebGL pixel readback and state-recovery checks, but do not prove full-product end-to-end parity.
 
-复核已有失败：
+Re-checking existing failures:
 
 ```powershell
 node tests/chat_screenshot_delivery.cjs
 node tests/test-report-lifecycle.cjs web/app/static/js/brachybot-report-editor.js
 ```
 
-- 第一项：ReferenceError: uiActionTasks is not defined（VM fixture）。
-- 第二项：第15行assert，actual true / expected false。
-- 未修改源代码、mock或断言以掩盖失败；本次未进一步归因到真实病例行为。
+- First item: `ReferenceError: uiActionTasks is not defined` (VM fixture).
+- Second item: assert at line 15, actual true / expected false.
+- No source code, mocks, or assertions were modified to conceal the failures; this session did not further attribute them to real-case behavior.
 
-## 新增隔离反例
+## Added Isolated Counterexamples
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. /home/lht/.conda/envs/brachytherapy/bin/python docs/audits/nl-ui-parity-review-20260928/review_probes.py
 node docs/audits/nl-ui-parity-review-20260928/review_browser_probes.cjs
 ```
 
-Python运行时首次使用同内容脚本的/tmp副本；模块均从最新仓库导入。Flask使用test_client，缓存、store、timer均为隔离替身，不连接生产服务、不写真实病例。两份JSON保存本次实际观察；其exit0表示采集成功，R01–R07仍是待修缺陷。
+The Python runtime first used a `/tmp` copy of the script with identical content; all modules were imported from the latest repository. Flask used `test_client`, and the cache, store, and timer were all isolated stand-ins; it did not connect to production services or write to real cases. The two JSON files record the actual observations from this session; their exit 0 means collection succeeded, and R01–R07 remain unfixed defects.
 
-后续应将反例转换为正确行为的正式回归断言，尤其要补完整工具→浏览器→保存→依赖→回答的集成，不仅测试新增helper。
+Going forward, the counterexamples should be converted into formal regression assertions of correct behavior, and in particular the full tool→browser→save→dependency→answer integration should be completed, not merely the newly added helpers tested.

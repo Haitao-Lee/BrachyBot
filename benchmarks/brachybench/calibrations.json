@@ -1,0 +1,4 @@
+{
+  "_note": "O3/O4/O5 calibration registry (DESIGN §8.5). A non-deterministic judge/rubric check counts toward the subordinate score only when its entry is calibrated=true. Required evidence: >=200 labelled items, Cohen's kappa >= 0.75 AND Gwet's AC1 >= 0.75, per-element precision/recall >= 0.80. Added by tools/scoring.py:load_calibrations().",
+  "judge_rubric": {"calibrated": false, "kappa": null, "ac1": null, "per_element_pr": null, "reviewed_on": null, "reviewers": []}
+}

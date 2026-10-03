@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "treatment_planning",
+  "expectation": null,
+  "facet": "treatment_planning",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "HDR boost for 70-year-old with Gleason 4+5=9 prostate cancer (70 cc, T3a, PSA <PHONE> needles covering prostate + SV bases, 26 Gy in 2 fractions, urethral sparing, and rationale for EBRT + HDR boost.",
+  "source_refs": [
+    "INT-1950d3059cd6",
+    "INT-7970dce6691d"
+  ],
+  "template_id": "TPL-486644ee42"
+}

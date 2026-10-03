@@ -1,0 +1,82 @@
+{
+  "schema_version": "1.0",
+  "id": "A-PRECISION-0014",
+  "track": "A",
+  "layers": [
+    "L3"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "precision.real_intent",
+  "cost_class": "state_only",
+  "power_role": "exploratory",
+  "clinical_intent": "A center is validating its treatment planning system dose calculation for a ring applicator. The TG-43 based calculation at 1 cm from the ring center gives 8.5 Gy/min. An independent calculation using a spreadsheet-based TG-43 algorithm gives 8.3 Gy/min. Calculate the percentage discrepancy between the two calculations and evaluate whether it falls within the TG-59 recommended tolerance of 5% for independent dose verification.",
+  "fixture": {
+    "case_family": "legacy/precision",
+    "setup_script": "fixtures/setup/prostate_s02_full_pipeline.py",
+    "initial_state_hash": "sha256:38eabca0a6bcb5062deac0e5645e8bf52d9e5f51cdd0f137f824f4509461ada3"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-EQ",
+    "contrast_family_id": "legacy/precision"
+  },
+  "protocol": {
+    "mode": "single_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "A center is validating its treatment planning system dose calculation for a ring applicator. The TG-43 based calculation at 1 cm from the ring center gives 8.5 Gy/min. An independent calculation using a spreadsheet-based TG-43 algorithm gives 8.3 Gy/min. Calculate the percentage discrepancy between the two calculations and evaluate whether it falls within the TG-59 recommended tolerance of 5% for independent dose verification.",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 1,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "param_binding",
+    "constraint_class": "none",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "outcome_class_match",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "medium"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "precision-INT-18e7971213fc",
+    "hidden": false,
+    "generation_seed": 2026,
+    "canary_class": null,
+    "behavioral_probes": [
+      "en"
+    ],
+    "contrast_family_id": "legacy/precision"
+  },
+  "provenance": {
+    "source": "legacy_migrated",
+    "derived_from": "legacy:v1/21_precision.json#Q0633",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto-verifier"
+    ],
+    "authored_on": "2026-09-30",
+    "deprecated": null
+  }
+}

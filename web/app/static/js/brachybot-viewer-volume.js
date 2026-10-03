@@ -3964,6 +3964,67 @@ function getDataTreeAppearanceForMesh(id, mesh) {
     };
 }
 
+// The session-scoped presentation registry stays readable for the whole case
+// (it is `finalized`, not cleared, after a restore) so late resource loaders
+// and the 3D appearance reconciler can recover saved colours/opacities. That
+// same registry is therefore authoritative on every `syncSceneAppearanceFrom
+// DataTree` pass, including viewer-mode toggles such as Dose Surface. A live
+// Data Tree edit that only mutates the in-memory node is silently reverted by
+// the next pass unless it updates the matching registry record too.
+function _dataTreePresentationRef(id) {
+    const value = String(id || '');
+    if (value === 'ctv' || value.startsWith('ctv_')) return { family: 'ctv', id: value };
+    if (value.startsWith('organ_')) return { family: 'oar', id: value };
+    if (value === 'skin_surface') return { family: 'skin', id: 'skin_surface' };
+    if (value.startsWith('seed_')) return { family: 'seed', id: value };
+    if (value.startsWith('needle_')) return { family: 'needle', id: value };
+    if (value.startsWith('dose_iso_')) return { family: 'dose_iso', id: value };
+    if (value === 'dose_overlay' || value === 'dose') return { family: 'dose_overlay', id: 'dose_overlay' };
+    if (value === 'dvh') return { family: 'dvh', id: 'dvh' };
+    if (_isDataTreeMaskId(value)) return { family: 'mask', id: _maskSceneMeshId(value) };
+    if (_planningItems('trajectories').some(item => String(item?.id) === value)) {
+        return { family: 'trajectory', id: value };
+    }
+    return { family: 'planning_mesh', id: value };
+}
+
+// Mirror the live Data Tree appearance of one node into the presentation
+// registry. Reads only presentation fields; clinical arrays stay untouched.
+function _recordDataTreePresentation(id, changes = null) {
+    const update = window.updateWorkspacePresentationForNode;
+    if (typeof update !== 'function') return false;
+    let payload = changes && typeof changes === 'object' ? { ...changes } : null;
+    if (!payload) {
+        const node = _findDataTreeNode(id);
+        if (!node) return false;
+        payload = {};
+        [
+            'visible', 'visible2D', 'visible3D', 'opacity', 'color', 'material',
+            'locked', 'standaloneVisible', 'colorbarVisible2D', 'colorbarVisible3D',
+        ].forEach(key => {
+            if (Object.prototype.hasOwnProperty.call(node, key)) payload[key] = node[key];
+        });
+    }
+    if (!Object.keys(payload).length) return false;
+    const ref = _dataTreePresentationRef(id);
+    if (update({ id: ref.id, family: ref.family }, payload)) return true;
+    // Masks and promoted structures can be registered under an alias, so try
+    // the raw id before giving up.
+    if (String(id) !== ref.id) {
+        return update({ id: String(id), family: ref.family }, payload) === true;
+    }
+    return false;
+}
+
+// Group/batch edits mutate many leaves at once. Re-reading every leaf is the
+// simplest way to keep each registry record aligned; group headers are
+// aggregates and are intentionally not registry records.
+function _syncAllDataTreePresentation() {
+    getSelectableIds().forEach(id => {
+        try { _recordDataTreePresentation(id); } catch (_) {}
+    });
+}
+
 function _setMeshMaterialColor(mesh, color) {
     if (!mesh || !color || !/^#[0-9a-f]{6}$/i.test(color)) return;
     const surface = mesh.surfaceMesh || mesh;
@@ -5552,7 +5613,14 @@ function renderDataTree() {
     requestViewerVisualRefresh('data-tree-render');
 }
 
-function _scheduleDataTreeSave(reason) {
+function _scheduleDataTreeSave(reason, presentationId = null) {
+    // A live appearance edit must update the session presentation registry
+    // before any later viewer-mode pass re-reads it, or the edit is reverted.
+    // `'*'` means a group/batch action that touched many leaves.
+    try {
+        if (presentationId === '*') _syncAllDataTreePresentation();
+        else if (presentationId) _recordDataTreePresentation(presentationId);
+    } catch (_) {}
     if (typeof window.scheduleWorkspaceSave === 'function') {
         window.scheduleWorkspaceSave(reason || 'viewer.data_tree_changed');
     }
@@ -5915,7 +5983,7 @@ function openColorPicker(id, swatchEl) {
                 }
             });
             renderDataTreeDebounced();
-            _scheduleDataTreeSave(`viewer.color:${id}`);
+            _scheduleDataTreeSave(`viewer.color:${id}`, id);
             requestViewerVisualRefresh('color-picker');
         }, 100);
         closeDialog();
@@ -5981,7 +6049,7 @@ function setDataTreeItemColor(id, color) {
     reloadOverlays();
     redrawSeedNeedleOverlays();
     renderDataTreeDebounced();
-    _scheduleDataTreeSave(`viewer.color:${id}`);
+    _scheduleDataTreeSave(`viewer.color:${id}`, id);
     requestViewerVisualRefresh('tree-color');
     return true;
 }
@@ -7528,7 +7596,7 @@ function batchToggleVisibility(visible) {
     renderDataTree();
     requestViewerVisualRefresh('batch-visibility');
     applyDataTreeViewVisibility();
-    _scheduleDataTreeSave('viewer.batch_visibility');
+    _scheduleDataTreeSave('viewer.batch_visibility', '*');
 }
 
 function _allDataTreeVisualNodes() {
@@ -7625,7 +7693,7 @@ function batchSetViewVisibility(view, visible) {
     });
     applyDataTreeViewVisibility();
     renderDataTree();
-    _scheduleDataTreeSave(`viewer.batch_${view}_visibility`);
+    _scheduleDataTreeSave(`viewer.batch_${view}_visibility`, '*');
 }
 
 function _groupViewNodes(category) {
@@ -7723,7 +7791,7 @@ function setGroupViewVisibility(category, view, visible) {
     _groupViewScopeNodes(category).forEach(node => _setNodeViewVisibility(node, view, visible));
     applyDataTreeViewVisibility();
     renderDataTree();
-    _scheduleDataTreeSave(`viewer.group_${view}_visibility:${category}`);
+    _scheduleDataTreeSave(`viewer.group_${view}_visibility:${category}`, '*');
 }
 
 window.batchSetViewVisibility = batchSetViewVisibility;
@@ -7959,7 +8027,7 @@ function batchSetOpacity(opacity) {
     renderDataTree();
     if (state.ctLoaded) loadAllSlices();
     redrawSeedNeedleOverlays();
-    _scheduleDataTreeSave('viewer.batch-opacity');
+    _scheduleDataTreeSave('viewer.batch-opacity', '*');
 }
 
 async function batchReconstruct3D() {
@@ -8172,7 +8240,7 @@ function setGroupVisibility(category, visible) {
     redrawSeedNeedleOverlays();
     requestViewerVisualRefresh('group-visibility');
     applyDataTreeViewVisibility();
-    _scheduleDataTreeSave(`viewer.group_visibility:${category}`);
+    _scheduleDataTreeSave(`viewer.group_visibility:${category}`, '*');
 }
 
 let _groupOpacityTimer = null;
@@ -8182,7 +8250,7 @@ function _commitGroupOpacity(category) {
     redrawSeedNeedleOverlays();
     requestViewerVisualRefresh('group-opacity');
     applyDataTreeViewVisibility();
-    _scheduleDataTreeSave(`viewer.group_opacity:${category}`);
+    _scheduleDataTreeSave(`viewer.group_opacity:${category}`, '*');
 }
 
 function setGroupOpacity(category, value) {
@@ -8418,7 +8486,7 @@ function setGroupColor(category, color) {
     if (state.ctLoaded) reloadOverlays();
     redrawSeedNeedleOverlays();
     requestViewerVisualRefresh('group-color');
-    _scheduleDataTreeSave(`viewer.group_color:${category}`);
+    _scheduleDataTreeSave(`viewer.group_color:${category}`, '*');
 }
 
 function _treeExpansionState() {
@@ -8515,7 +8583,7 @@ function toggleDataVisibility(id) {
         else if (state.doseOverlay) state.doseOverlay.visible = state.doseOverlay.visible === false;
         applyDataTreeViewVisibility();
         renderDataTree();
-        _scheduleDataTreeSave('viewer.visibility:dose_overlay');
+        _scheduleDataTreeSave('viewer.visibility:dose_overlay', 'dose_overlay');
         return;
     }
     // Handle individual organ toggles
@@ -8527,7 +8595,7 @@ function toggleDataVisibility(id) {
             const mesh = scene3D.meshes[id];
             if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(organ), organ.opacity ?? 0.5);
             renderDataTree();
-            _scheduleDataTreeSave(`viewer.visibility:${id}`);
+            _scheduleDataTreeSave(`viewer.visibility:${id}`, id);
         }
         return;
     }
@@ -8543,7 +8611,7 @@ function toggleDataVisibility(id) {
             const mesh = scene3D.meshes[id];
             if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(dataTreeState.ctvLabels[id]), dataTreeState.ctvLabels[id].opacity ?? dataTreeState.ctv.opacity ?? 0.7);
         renderDataTree();
-        _scheduleDataTreeSave(`viewer.visibility:${id}`);
+        _scheduleDataTreeSave(`viewer.visibility:${id}`, id);
         return;
     }
 
@@ -8555,7 +8623,7 @@ function toggleDataVisibility(id) {
         const mesh = scene3D.meshes.skin_surface;
         if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(dataTreeState.skin), dataTreeState.skin.opacity ?? 0.1);
         renderDataTree();
-        _scheduleDataTreeSave(`viewer.visibility:${id}`);
+        _scheduleDataTreeSave(`viewer.visibility:${id}`, id);
         return;
     }
 
@@ -8577,7 +8645,7 @@ function toggleDataVisibility(id) {
         });
         renderDataTree();
         redrawSeedNeedleOverlays();
-        _scheduleDataTreeSave(`viewer.visibility:${id}`);
+        _scheduleDataTreeSave(`viewer.visibility:${id}`, '*');
         return;
     }
 
@@ -8590,7 +8658,7 @@ function toggleDataVisibility(id) {
             if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(seed), seed.opacity ?? 1.0);
             renderDataTree();
             redrawSeedNeedleOverlays();
-            _scheduleDataTreeSave(`viewer.visibility:${id}`);
+            _scheduleDataTreeSave(`viewer.visibility:${id}`, id);
         }
         return;
     }
@@ -8608,7 +8676,7 @@ function toggleDataVisibility(id) {
             }
             renderDataTree();
             redrawSeedNeedleOverlays();
-            _scheduleDataTreeSave(`viewer.visibility:${id}`);
+            _scheduleDataTreeSave(`viewer.visibility:${id}`, id);
         }
         return;
     }
@@ -8622,7 +8690,7 @@ function toggleDataVisibility(id) {
             const mesh = scene3D.meshes[id];
             if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(level), level.opacity ?? 0.3);
             renderDataTree();
-            _scheduleDataTreeSave(`viewer.visibility:${id}`);
+            _scheduleDataTreeSave(`viewer.visibility:${id}`, id);
         }
         return;
     }
@@ -8639,7 +8707,7 @@ function toggleDataVisibility(id) {
             const mesh = scene3D.meshes[rawId];
             if (mesh) applyMeshVisibility(mesh, mask.visible !== false, mask.opacity ?? 0.6);
             renderDataTree();
-            _scheduleDataTreeSave(`viewer.visibility:${id}`);
+            _scheduleDataTreeSave(`viewer.visibility:${id}`, id);
         }
         return;
     }
@@ -8652,7 +8720,7 @@ function toggleDataVisibility(id) {
         const mesh = scene3D.meshes[id];
         if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(meshEntry), meshEntry.opacity ?? 0.7);
         renderDataTree();
-        _scheduleDataTreeSave(`viewer.visibility:${id}`);
+        _scheduleDataTreeSave(`viewer.visibility:${id}`, id);
         return;
     }
 
@@ -8679,7 +8747,7 @@ function toggleDataVisibility(id) {
     }
 
     renderDataTree();
-    _scheduleDataTreeSave(`viewer.visibility:${id}`);
+    _scheduleDataTreeSave(`viewer.visibility:${id}`, id);
 }
 
 function setDataItemVisibility(id, visible) {
@@ -8749,7 +8817,7 @@ function setDataOpacity(id, value) {
             state.doseOverlay.opacity = opacity;
             if (typeof reloadOverlays === 'function') reloadOverlays();
             renderDataTreeDebounced();
-            _scheduleDataTreeSave('viewer.opacity:dose_overlay');
+            _scheduleDataTreeSave('viewer.opacity:dose_overlay', 'dose_overlay');
         }
         return;
     }
@@ -8766,7 +8834,7 @@ function setDataOpacity(id, value) {
         _opacityTimer = setTimeout(() => {
             if (state.ctLoaded) reloadOverlays();
             requestViewerVisualRefresh('organ-opacity');
-            _scheduleDataTreeSave(`viewer.opacity:${id}`);
+            _scheduleDataTreeSave(`viewer.opacity:${id}`, id);
         }, 150);
         return;
     }
@@ -8786,7 +8854,7 @@ function setDataOpacity(id, value) {
         _opacityTimer = setTimeout(() => {
             if (state.ctLoaded) reloadOverlays();
             requestViewerVisualRefresh('ctv-opacity');
-            _scheduleDataTreeSave(`viewer.opacity:${id}`);
+            _scheduleDataTreeSave(`viewer.opacity:${id}`, id);
         }, 150);
         return;
     }
@@ -8807,7 +8875,7 @@ function setDataOpacity(id, value) {
         });
         renderDataTreeDebounced();
         _queueDataTreeOpacitySeedRefresh('trajectory-opacity');
-        _scheduleDataTreeSave(`viewer.opacity:${id}`);
+        _scheduleDataTreeSave(`viewer.opacity:${id}`, '*');
         return;
     }
 
@@ -8818,7 +8886,7 @@ function setDataOpacity(id, value) {
             seed.opacity = opacity;
             applyMeshOpacity(scene3D.meshes[id], opacity, isDataTreeNodeVisible3D(seed));
             _queueDataTreeOpacitySeedRefresh('seed-opacity');
-            _scheduleDataTreeSave(`viewer.opacity:${id}`);
+            _scheduleDataTreeSave(`viewer.opacity:${id}`, id);
         }
         return;
     }
@@ -8834,7 +8902,7 @@ function setDataOpacity(id, value) {
                 _setNeedleHandlesVisibility(needle.id, effectiveVisible, opacity);
             }
             _queueDataTreeOpacitySeedRefresh('needle-opacity');
-            _scheduleDataTreeSave(`viewer.opacity:${id}`);
+            _scheduleDataTreeSave(`viewer.opacity:${id}`, id);
         }
         return;
     }
@@ -8847,7 +8915,7 @@ function setDataOpacity(id, value) {
             level.opacity = opacity;
             applyMeshOpacity(scene3D.meshes[id], opacity, isDataTreeNodeVisible3D(level));
             requestViewerVisualRefresh('dose-isosurface-opacity');
-            _scheduleDataTreeSave(`viewer.opacity:${id}`);
+            _scheduleDataTreeSave(`viewer.opacity:${id}`, id);
         }
         return;
     }
@@ -8860,7 +8928,7 @@ function setDataOpacity(id, value) {
             mask.opacity = opacity;
             applyMeshOpacity(scene3D.meshes[rawId], opacity, isDataTreeNodeVisible3D(mask));
             _queueDataTreeOpacityOverlayRefresh('mask-opacity');
-            _scheduleDataTreeSave(`viewer.opacity:${id}`);
+            _scheduleDataTreeSave(`viewer.opacity:${id}`, id);
         }
         return;
     }
@@ -8881,7 +8949,7 @@ function setDataOpacity(id, value) {
             if (state.ctLoaded) reloadOverlays();
             requestViewerVisualRefresh('skin-opacity');
             renderDataTreeDebounced();
-            _scheduleDataTreeSave('viewer.opacity:skin_surface');
+            _scheduleDataTreeSave('viewer.opacity:skin_surface', 'skin_surface');
         }, 150);
         return;
     }
@@ -8891,7 +8959,7 @@ function setDataOpacity(id, value) {
         meshEntry.opacity = opacity;
         applyMeshOpacity(scene3D.meshes[id], opacity, isDataTreeNodeVisible3D(meshEntry));
         requestViewerVisualRefresh('planning-mesh-opacity');
-        _scheduleDataTreeSave(`viewer.opacity:${id}`);
+        _scheduleDataTreeSave(`viewer.opacity:${id}`, id);
         return;
     }
 
@@ -8903,7 +8971,7 @@ function setDataOpacity(id, value) {
     }
 
     _queueDataTreeOpacityOverlayRefresh('data-opacity');
-    _scheduleDataTreeSave(`viewer.opacity:${id}`);
+    _scheduleDataTreeSave(`viewer.opacity:${id}`, id);
 }
 
 function selectDataItem(id) {

@@ -1,0 +1,82 @@
+{
+  "schema_version": "1.0",
+  "id": "A-PRECISION-0010",
+  "track": "A",
+  "layers": [
+    "L3"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "precision.real_intent",
+  "cost_class": "state_only",
+  "power_role": "exploratory",
+  "clinical_intent": "A center needs to verify the positional accuracy of its afterloader source stepping mechanism. The afterloader is programmed to place the source at positions 0, 10, 20, 30, 40, and 50 mm from a reference point. Using radiochromic film measurements, the actual source positions were measured as 0.2, 10.1, 19.8, 30.3, 39.9, and 50.1 mm. Evaluate these measurements against the TG-59 tolerance criteria and determine if the afterloader passes the positional accuracy test.",
+  "fixture": {
+    "case_family": "legacy/precision",
+    "setup_script": "fixtures/setup/prostate_s02_full_pipeline.py",
+    "initial_state_hash": "sha256:38eabca0a6bcb5062deac0e5645e8bf52d9e5f51cdd0f137f824f4509461ada3"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-EQ",
+    "contrast_family_id": "legacy/precision"
+  },
+  "protocol": {
+    "mode": "single_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "A center needs to verify the positional accuracy of its afterloader source stepping mechanism. The afterloader is programmed to place the source at positions 0, 10, 20, 30, 40, and 50 mm from a reference point. Using radiochromic film measurements, the actual source positions were measured as 0.2, 10.1, 19.8, 30.3, 39.9, and 50.1 mm. Evaluate these measurements against the TG-59 tolerance criteria and determine if the afterloader passes the positional accuracy test.",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 1,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "param_binding",
+    "constraint_class": "none",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "outcome_class_match",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "medium"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "precision-INT-c6a125de6879",
+    "hidden": false,
+    "generation_seed": 2026,
+    "canary_class": null,
+    "behavioral_probes": [
+      "en"
+    ],
+    "contrast_family_id": "legacy/precision"
+  },
+  "provenance": {
+    "source": "legacy_migrated",
+    "derived_from": "legacy:v1/21_precision.json#Q0629",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto-verifier"
+    ],
+    "authored_on": "2026-09-30",
+    "deprecated": null
+  }
+}

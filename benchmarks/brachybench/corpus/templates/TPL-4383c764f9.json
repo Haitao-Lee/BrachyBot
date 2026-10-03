@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "precision",
+  "expectation": null,
+  "facet": "precision",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Calculate dose at point A from given dwell time distribution (tandem + ovoid). Verify HDR dose-rate classification.",
+  "source_refs": [
+    "INT-4921fc5a9b0e",
+    "INT-cf610bf208ba"
+  ],
+  "template_id": "TPL-4383c764f9"
+}

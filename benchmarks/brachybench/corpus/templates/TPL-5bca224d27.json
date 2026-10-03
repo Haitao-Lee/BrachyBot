@@ -1,0 +1,17 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "dose_evaluation",
+  "expectation": null,
+  "facet": "dose_evaluation",
+  "gold_status": "draft",
+  "n_source_intents": 5,
+  "representative_text": "For a rectal cancer interstitial brachytherapy boost case, evaluate the plan quality. The GTV D90 is 18.5 Gy in 3 fractions (total boost 18.5 Gy after 45Gy EBRT). The rectal D2cc is 5.5 Gy per fraction and the prostate Dmax is 4.8 Gy per fraction. Calculate the total EQD2 to the GTV and evaluate the OAR constraints.",
+  "source_refs": [
+    "INT-293bc2ae13f1",
+    "INT-4277f03d1b9f",
+    "INT-b04481a4d45f",
+    "INT-b61abcdc8884",
+    "INT-fd1863ff34cb"
+  ],
+  "template_id": "TPL-5bca224d27"
+}

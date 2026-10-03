@@ -686,7 +686,7 @@ def test_dose_overlay_opacity_is_invariant_during_slice_scrubbing():
     assert "imageData.data[idx + 3] = 255;" in renderer
     assert "Math.floor(opacity * 255)" not in renderer
     assert "dataTreeState.planning.doseOverlay.opacity = opacity;" in setter
-    assert "_scheduleDataTreeSave('viewer.opacity:dose_overlay')" in setter
+    assert "_scheduleDataTreeSave('viewer.opacity:dose_overlay', 'dose_overlay')" in setter
     assert "updateSlice(" not in setter
     assert "applyDoseOverlayLayerOpacity(layerCanvas);" in geometry
     assert "applyDoseOverlayLayerOpacity();" in (

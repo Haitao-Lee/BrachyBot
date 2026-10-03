@@ -1,41 +1,41 @@
-# CTV 肿瘤分割统一门类 Implementation Plan
+# CTV Tumor Segmentation Unified Category Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 让胰腺/肝/肾/头颈/鼻咽(平扫、增强)/肺六个肿瘤分割模型成为同一门类的对等条目，统一注册、统一 GPU 调度、统一输出契约与下游语义、统一前端体验（可用即绿）。
+**Goal:** Make the six tumor segmentation models — pancreas/liver/kidney/head-neck/nasopharynx (non-contrast, contrast-enhanced)/lung — peer entries in a single category with unified registration, unified GPU scheduling, a unified output contract and downstream semantics, and a unified front-end experience (green when usable).
 
-**Architecture:** 新增 `model_registry.py` 作为管理/语义的唯一事实源（引用现有三套执行 spec，不重写引擎）；把共享调度抽到执行边界（胰腺也纳入跨进程 `gpu_lock`）；`CTVSegmentationTool` 归一输出并统一 `ctv_source` 为路由 id；下游 `structure_service`/`viewer_routes` 改为按注册表 `target_semantics` 分类（旧快照走后缀别名回退）；前端选择器/可用性由注册表驱动，所有可用类别绿色。
+**Architecture:** Add `model_registry.py` as the single source of truth for management/semantics (referencing the existing three execution specs, not rewriting the engines); extract shared scheduling to the execution boundary (pancreas is also brought under the cross-process `gpu_lock`); `CTVSegmentationTool` normalizes output and unifies `ctv_source` as the route id; downstream `structure_service`/`viewer_routes` classify by registry `target_semantics` (old snapshots fall back via suffix aliases); the front-end selector/availability is driven by the registry, with all usable categories green.
 
-**Tech Stack:** Python 3.12（`~/.conda/envs/brachytherapy/bin/python`）、pytest、Flask、SimpleITK、nnUNet v2、原生 JS（`web/app/static/js`）、Node（语法检查，路径见下）。
+**Tech Stack:** Python 3.12 (`~/.conda/envs/brachytherapy/bin/python`), pytest, Flask, SimpleITK, nnUNet v2, vanilla JS (`web/app/static/js`), Node (syntax check, path below).
 
-**关键约定**
-- 路由 id 保持不变（`nnunet_pancreatic` / `nnunet_liver_tumor` / `nnunet_kidney_tumor` / `nnunet_head_neck_gtv` / `nnunet_nasopharynx_ncct` / `nnunet_nasopharynx_cect` / `vista3d_lung_tumor`）。
-- 端到端测试命令：`~/.conda/envs/brachytherapy/bin/python -m pytest <path> -q -p no:cacheprovider`
+**Key Conventions**
+- Route ids stay unchanged (`nnunet_pancreatic` / `nnunet_liver_tumor` / `nnunet_kidney_tumor` / `nnunet_head_neck_gtv` / `nnunet_nasopharynx_ncct` / `nnunet_nasopharynx_cect` / `vista3d_lung_tumor`).
+- End-to-end test command: `~/.conda/envs/brachytherapy/bin/python -m pytest <path> -q -p no:cacheprovider`
 - Node：`<vscode-server>/cli/servers/Stable-520fb30b2d3d324b4cb2342f6e88e2cd93751de1/server/node`
-- **提交纪律**：本工作区有另一会话未提交改动。仅对"纯属本计划"的文件执行 `git add`（新模块 + 新测试）。共享文件（`__init__.py`、`structure_service.py`、`viewer_routes.py`、`planning_routes.py`、`response_tools.py`、`turn_policy.py`、`index.html`、`brachybot-ui-api.js`）在本计划中**不改 git 索引**，完成后再统一决定提交。
+- **Commit Discipline:** This workspace has uncommitted changes from another session. Run `git add` only for files that "belong purely to this plan" (new modules + new tests). The shared files (`__init__.py`, `structure_service.py`, `viewer_routes.py`, `planning_routes.py`, `response_tools.py`, `turn_policy.py`, `index.html`, `brachybot-ui-api.js`) are **not added to the git index** by this plan; decide on committing them together afterwards.
 
 ---
 
 ## File Structure
 
-- Create: `BrachyBot/tool_factory/CTV_seg/model_registry.py` — 路由表与派生助手（管理/语义唯一事实源）。
-- Create: `BrachyBot/tests/test_model_registry.py` — 注册表契约测试。
-- Create: `BrachyBot/tests/test_ctv_downstream_equivalence.py` — 下游等价测试。
-- Modify: `BrachyBot/tool_factory/CTV_seg/__init__.py` — 由注册表派生别名/工具表；统一 `ctv_source`；统一 `label_stats`。
-- Modify: `BrachyBot/tool_factory/CTV_seg/pancreatic_tumor_nnunet.py` — 纳入共享 `gpu_lock`。
-- Modify: `BrachyBot/web/structure_service.py` — 按注册表语义分类。
-- Modify: `BrachyBot/web/routes/viewer_routes.py` — 按注册表语义分类。
-- Modify: `BrachyBot/agent_runtime/response_tools.py` — 鼻咽哨兵处理。
-- Modify: `BrachyBot/agent_runtime/turn_policy.py` — `<部位> CTV` 直执行。
-- Modify: `BrachyBot/web/app/index.html` — 选择器选项与分类文案（由注册表校对）。
-- Modify: `BrachyBot/web/app/static/js/brachybot-ui-api.js` — 全绿可用性、别名、相位。
-- Tests: `BrachyBot/tests/test_site_model_deployment.py`、`tests/test_nnunet_cascade_tumor.py`、`tests/test_web_frontend_ctv_selector.py`（新建）。
+- Create: `BrachyBot/tool_factory/CTV_seg/model_registry.py` — route table and derived helpers (single source of truth for management/semantics).
+- Create: `BrachyBot/tests/test_model_registry.py` — registry contract tests.
+- Create: `BrachyBot/tests/test_ctv_downstream_equivalence.py` — downstream equivalence tests.
+- Modify: `BrachyBot/tool_factory/CTV_seg/__init__.py` — derive aliases/tool table from the registry; unify `ctv_source`; unify `label_stats`.
+- Modify: `BrachyBot/tool_factory/CTV_seg/pancreatic_tumor_nnunet.py` — bring under the shared `gpu_lock`.
+- Modify: `BrachyBot/web/structure_service.py` — classify by registry semantics.
+- Modify: `BrachyBot/web/routes/viewer_routes.py` — classify by registry semantics.
+- Modify: `BrachyBot/agent_runtime/response_tools.py` — nasopharynx sentinel handling.
+- Modify: `BrachyBot/agent_runtime/turn_policy.py` — direct execution of `<site> CTV`.
+- Modify: `BrachyBot/web/app/index.html` — selector options and category copy (reconciled against the registry).
+- Modify: `BrachyBot/web/app/static/js/brachybot-ui-api.js` — all-green availability, aliases, phase.
+- Tests: `BrachyBot/tests/test_site_model_deployment.py`, `tests/test_nnunet_cascade_tumor.py`, `tests/test_web_frontend_ctv_selector.py` (new).
 
 ---
 
-## Phase 1 — 后端注册表 / 执行边界 / 输出契约 / 下游语义
+## Phase 1 — Backend Registry / Execution Boundary / Output Contract / Downstream Semantics
 
-### Task 1: 注册表模块
+### Task 1: Registry Module
 
 **Files:**
 - Create: `tool_factory/CTV_seg/model_registry.py`
@@ -251,7 +251,7 @@ def aliases() -> Dict[str, str]:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_model_registry.py -q -p no:cacheprovider`
-Expected: PASS（5 passed）
+Expected: PASS (5 passed)
 
 - [ ] **Step 5: Commit (only our new files)**
 
@@ -263,16 +263,16 @@ git commit -m "feat(ctv): add unified tumor-segmentation route registry"
 
 ---
 
-### Task 2: 统一 `ctv_source` 与补全 `label_stats`
+### Task 2: Unify `ctv_source` and Complete `label_stats`
 
 **Files:**
-- Modify: `tool_factory/CTV_seg/__init__.py`（`meta` 构造段，约 824-845 行）
-- Test: `tests/test_model_registry.py`（追加）
+- Modify: `tool_factory/CTV_seg/__init__.py` (the `meta` construction block, around lines 824-845)
+- Test: `tests/test_model_registry.py` (append)
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# tests/test_model_registry.py 追加
+# tests/test_model_registry.py (append)
 def test_metadata_contract_is_identical_across_engines():
     import numpy as np, SimpleITK as sitk
     from tool_factory.CTV_seg import CTVSegmentationTool
@@ -307,16 +307,16 @@ def test_metadata_contract_is_identical_across_engines():
     assert meta['label_stats']['artery']['voxel_count'] == 1
 ```
 
-> 注：`_resolve_tool` 是 Task 2 新增的内部间接层，便于在包裹层测试中注入假引擎（见 Step 3）。
+> Note: `_resolve_tool` is an internal indirection added in Task 2 so tests can inject a fake engine at the wrapper layer (see Step 3).
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_model_registry.py::test_metadata_contract_is_identical_across_engines -q -p no:cacheprovider`
-Expected: FAIL（`KeyError: 'target_semantics'` 或 `_resolve_tool` 不存在）
+Expected: FAIL (`KeyError: 'target_semantics'` or `_resolve_tool` does not exist)
 
 - [ ] **Step 3: Write minimal implementation**
 
-在 `__init__.py` 顶部 import 注册表：
+Import the registry at the top of `__init__.py`:
 
 ```python
 from .model_registry import (
@@ -324,16 +324,16 @@ from .model_registry import (
 )
 ```
 
-在 `CTVSegmentationTool` 内新增间接层（供测试注入与统一调度复用）：
+Add an indirection inside `CTVSegmentationTool` (for test injection and reuse by unified scheduling):
 
 ```python
     def _resolve_tool(self, tumor_type: str):
         return TOOL_REGISTRY[tumor_type]()
 ```
 
-把 `tool = TOOL_REGISTRY[tumor_type]()` 改为 `tool = self._resolve_tool(tumor_type)`。
+Change `tool = TOOL_REGISTRY[tumor_type]()` to `tool = self._resolve_tool(tumor_type)`.
 
-在 `meta` 字典（约 824 行）中，将 `ctv_source` 与新增字段改为：
+In the `meta` dictionary (around line 824), change `ctv_source` and the new field to:
 
 ```python
             "ctv_source": (
@@ -346,7 +346,7 @@ from .model_registry import (
             ),
 ```
 
-并在 `meta` 之后补统一的 `label_stats`（胰腺已自带；其余为空时由 `full_label_array`/`ctv_array` 现算）：
+Then, after `meta`, fill in a uniform `label_stats` (pancreas already provides it; for the rest, compute it from `full_label_array`/`ctv_array` when empty):
 
 ```python
         if not from_label_path and not meta["label_stats"]:
@@ -358,7 +358,7 @@ from .model_registry import (
             )
 ```
 
-在 `__init__.py` 模块级新增（放在 `_normalize_label_stats` 附近）：
+Add at module level in `__init__.py` (near `_normalize_label_stats`):
 
 ```python
 def _label_stats_from_array(array, label_map, spacing):
@@ -387,9 +387,9 @@ def _label_stats_from_array(array, label_map, spacing):
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_model_registry.py -q -p no:cacheprovider`
-Expected: PASS（6 passed）
+Expected: PASS (6 passed)
 
-- [ ] **Step 5: 回归**
+- [ ] **Step 5: Regression**
 
 Run: `~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_site_model_deployment.py tests/test_nnunet_cascade_tumor.py tests/test_uploaded_mask_provenance.py -q -p no:cacheprovider`
 Expected: PASS
@@ -401,20 +401,20 @@ cd <workspace>/BrachyBot
 git add tests/test_model_registry.py
 git commit -m "feat(ctv): unify ctv_source and label_stats across engines"
 ```
-（`__init__.py` 与另一会话的 WIP 共享，暂不入索引。）
+(`__init__.py` is shared with another session's WIP, so it is not staged.)
 
 ---
 
-### Task 3: 胰腺纳入统一 GPU 调度
+### Task 3: Bring Pancreas into Unified GPU Scheduling
 
 **Files:**
-- Modify: `tool_factory/CTV_seg/pancreatic_tumor_nnunet.py`（`_run_nnunet_inference`，约 449-570 行）
-- Test: `tests/test_model_registry.py`（追加）
+- Modify: `tool_factory/CTV_seg/pancreatic_tumor_nnunet.py` (`_run_nnunet_inference`, around lines 449-570)
+- Test: `tests/test_model_registry.py` (append)
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# tests/test_model_registry.py 追加
+# tests/test_model_registry.py (append)
 def test_pancreatic_inference_uses_shared_gpu_lock(monkeypatch):
     import tool_factory.CTV_seg.pancreatic_tumor_nnunet as P
     used = {}
@@ -449,13 +449,13 @@ Expected: FAIL — `AttributeError: ... '_gpu_guard'`
 
 - [ ] **Step 3: Write minimal implementation**
 
-在 `pancreatic_tumor_nnunet.py` 顶部 import：
+Import at the top of `pancreatic_tumor_nnunet.py`:
 
 ```python
 from contextlib import contextmanager
 ```
 
-在类内新增（放在 `_run_nnunet_inference` 之前）：
+Add inside the class (before `_run_nnunet_inference`):
 
 ```python
     @contextmanager
@@ -471,21 +471,21 @@ from contextlib import contextmanager
             yield
 ```
 
-在 `_run_nnunet_inference` 内、真正把张量送到 GPU 之前用 `_gpu_guard` 包住推理调用（保持原有 DeviceManager 选择与 `CUDA_VISIBLE_DEVICES` 逻辑不变）：
+Inside `_run_nnunet_inference`, wrap the inference call with `_gpu_guard` before the tensors are actually sent to the GPU (keeping the existing DeviceManager selection and `CUDA_VISIBLE_DEVICES` logic unchanged):
 
 ```python
         with self._gpu_guard(str(chosen_index)):
-            raw = predictor_fn(...)  # 现有推理调用保持不变
+            raw = predictor_fn(...)  # existing inference call unchanged
 ```
 
-（若现有实现把 `predictor` 初始化与 `predict` 分开，两层都放进 `with` 内，确保初始化也持锁。）
+(If the existing implementation separates `predictor` initialization from `predict`, put both inside the `with` block so initialization also holds the lock.)
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_model_registry.py -q -p no:cacheprovider`
-Expected: PASS（7 passed）
+Expected: PASS (7 passed)
 
-- [ ] **Step 5: 回归**
+- [ ] **Step 5: Regression**
 
 Run: `~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_nnunet_cascade_tumor.py tests/test_segmentation_override_contract.py -q -p no:cacheprovider`
 Expected: PASS
@@ -500,11 +500,11 @@ git commit -m "feat(ctv): put the pancreatic engine on the shared GPU lock"
 
 ---
 
-### Task 4: 下游按注册表语义分类
+### Task 4: Classify Downstream by Registry Semantics
 
 **Files:**
-- Modify: `web/structure_service.py`（约 169-200、243-250 行）
-- Modify: `web/routes/viewer_routes.py`（约 1133-1178 行）
+- Modify: `web/structure_service.py` (around lines 169-200, 243-250)
+- Modify: `web/routes/viewer_routes.py` (around lines 1133-1178)
 - Test: `tests/test_ctv_downstream_equivalence.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -547,11 +547,11 @@ def test_multitarget_gate_uses_registry_not_name_prefix():
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_ctv_downstream_equivalence.py -q -p no:cacheprovider`
-Expected: FAIL（`vista3d_lung_tumor` 被判为 multi-target 或 ImportError）
+Expected: FAIL (`vista3d_lung_tumor` classified as multi-target, or ImportError)
 
 - [ ] **Step 3: Write minimal implementation**
 
-`web/structure_service.py`：删掉硬编码集合，改为注册表查询（保留旧值回退）：
+`web/structure_service.py`: remove the hardcoded set and switch to a registry query (keeping the legacy-value fallback):
 
 ```python
 from tool_factory.CTV_seg.model_registry import (
@@ -569,7 +569,7 @@ def _is_model_ctv_source(source: Any) -> bool:
     return _registered_model_source(source)
 ```
 
-`_base_ctv_volume` 内的解剖分支保持"仅当语义为 target_plus_anatomy 且有 full_labels 时"：
+The anatomy branch inside `_base_ctv_volume` stays "only when the semantics are target_plus_anatomy and full_labels is present":
 
 ```python
     if is_multitarget_gtv_source(source) and full_labels is not None:
@@ -582,7 +582,7 @@ def _is_model_ctv_source(source: Any) -> bool:
             }, source
 ```
 
-`web/routes/viewer_routes.py`：把 `is_model_ctv` 的判定改为注册表驱动：
+`web/routes/viewer_routes.py`: make the `is_model_ctv` check registry-driven:
 
 ```python
 from tool_factory.CTV_seg.model_registry import (
@@ -595,14 +595,14 @@ from tool_factory.CTV_seg.model_registry import (
                 is_model_ctv = False
 ```
 
-其余（`ctv_full` 取值、`has_nnunet_oar` 分支）保持不变。
+Everything else (the `ctv_full` value lookup, the `has_nnunet_oar` branch) stays unchanged.
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_ctv_downstream_equivalence.py -q -p no:cacheprovider`
 Expected: PASS
 
-- [ ] **Step 5: 回归 + 契约扫描**
+- [ ] **Step 5: Regression + contract scan**
 
 Run: `~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_uploaded_mask_staging.py tests/test_uploaded_mask_provenance.py tests/test_structure_palette.py tests/test_site_model_deployment.py -q -p no:cacheprovider`
 Expected: PASS
@@ -617,16 +617,16 @@ git commit -m "feat(ctv): classify downstream sources from the route registry"
 
 ---
 
-### Task 5: 目录条目由注册表派生（含肺被识别为模型、弃用项隐藏）
+### Task 5: Derive Catalog Entries from the Registry (including lung recognized as a model, deprecated entries hidden)
 
 **Files:**
 - Modify: `tool_factory/CTV_seg/model_catalog.py`
-- Test: `tests/test_model_registry.py`（追加）
+- Test: `tests/test_model_registry.py` (append)
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# tests/test_model_registry.py 追加
+# tests/test_model_registry.py (append)
 def test_catalog_lists_registry_routes_as_peers():
     from tool_factory.CTV_seg import filter_catalog
     visible = {r['id']: r for r in filter_catalog() if r.get('ui_visible')}
@@ -641,11 +641,11 @@ def test_catalog_lists_registry_routes_as_peers():
 - [ ] **Step 2: Run test to verify it fails / passes**
 
 Run: `~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_model_registry.py::test_catalog_lists_registry_routes_as_peers -q -p no:cacheprovider`
-Expected: PASS（当前已满足）。若失败，进入 Step 3。
+Expected: PASS (already satisfied). If it fails, go to Step 3.
 
-- [ ] **Step 3: 若失败则最小实现**
+- [ ] **Step 3: Minimal implementation if it fails**
 
-在 `model_catalog.py` 的 catalog 组装处，用 `registry.ui_routes()` 补充缺失条目（`id/tumor_type/site/modality/target/ct_phase` 取自 `CTVRoute`），并确保 `catalog_status` 映射为 `capability_state`（`verified`→`verified`，其余→`experimental`）。
+At the catalog assembly point in `model_catalog.py`, use `registry.ui_routes()` to fill in missing entries (`id/tumor_type/site/modality/target/ct_phase` taken from `CTVRoute`), and ensure `catalog_status` maps to `capability_state` (`verified`→`verified`, otherwise→`experimental`).
 
 - [ ] **Step 4: Run test**
 
@@ -662,20 +662,20 @@ git commit -m "test(ctv): pin catalog peer entries to the route registry"
 
 ---
 
-## Phase 2 — 前端一致（全部可用即绿）+ 路由/别名缺陷
+## Phase 2 — Front-end Consistency (all usable = green) + Routing/Alias Defects
 
-### Task 6: 后端别名与路由缺陷
+### Task 6: Backend Alias and Routing Defects
 
 **Files:**
-- Modify: `tool_factory/CTV_seg/__init__.py`（`normalize_tumor_type`，约 132-210 行）
+- Modify: `tool_factory/CTV_seg/__init__.py` (`normalize_tumor_type`, around lines 132-210)
 - Modify: `agent_runtime/response_tools.py`（`_map_tumor_type` / `_SUPPORTED_AUTOMATIC_CTV_TYPES`）
 - Modify: `agent_runtime/turn_policy.py`（`_is_canonical_execution_command`）
-- Test: `tests/test_model_registry.py`（追加）+ `tests/test_image_metadata_query.py`
+- Test: `tests/test_model_registry.py` (append) + `tests/test_image_metadata_query.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# tests/test_model_registry.py 追加
+# tests/test_model_registry.py (append)
 def test_chinese_aliases_for_all_primary_sites():
     from tool_factory.CTV_seg import normalize_tumor_type as n
     assert n('头颈部肿瘤') == 'nnunet_head_neck_gtv'
@@ -696,11 +696,11 @@ def test_direct_ctv_phrase_is_a_canonical_execution_command():
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_model_registry.py -q -p no:cacheprovider`
-Expected: FAIL（`头颈部肿瘤` / `请分割胰腺 CTV`）
+Expected: FAIL (`头颈部肿瘤` / `请分割胰腺 CTV`)
 
 - [ ] **Step 3: Write minimal implementation**
 
-`normalize_tumor_type`：在现有 `aliases` 中补齐（覆盖注册表 `aliases` 字段，二者取并集）：
+`normalize_tumor_type`: complete the existing `aliases` (covering the registry `aliases` field, taking the union of the two):
 
 ```python
     aliases.update({
@@ -711,7 +711,7 @@ Expected: FAIL（`头颈部肿瘤` / `请分割胰腺 CTV`）
     })
 ```
 
-`agent_runtime/response_tools.py`：让鼻咽走"相位明确→具体模型，否则提问"：
+`agent_runtime/response_tools.py`: route nasopharynx through "explicit phase → specific model, otherwise ask":
 
 ```python
     _NASOPHARYNX_ALIASES = frozenset({
@@ -719,7 +719,7 @@ Expected: FAIL（`头颈部肿瘤` / `请分割胰腺 CTV`）
     })
 ```
 
-在 `_map_tumor_type` 内 `canonical in self._SUPPORTED_AUTOMATIC_CTV_TYPES` 判定之前加入：
+Inside `_map_tumor_type`, before the `canonical in self._SUPPORTED_AUTOMATIC_CTV_TYPES` check, add:
 
 ```python
         if canonical in self._NASOPHARYNX_ALIASES:
@@ -728,9 +728,9 @@ Expected: FAIL（`头颈部肿瘤` / `请分割胰腺 CTV`）
             return resolve_ctv_tumor_type({'tumor_type': raw})
 ```
 
-并把 `nasopharynx` 哨兵从"未知站点"警告路径中排除（已知则返回，未知则返回 `nasopharynx` 供工具层提问）。
+Also exclude the `nasopharynx` sentinel from the "unknown site" warning path (return if known; if unknown, return `nasopharynx` for the tool layer to ask).
 
-`agent_runtime/turn_policy.py`：在 `_is_canonical_execution_command` 的 segmentation 分支，允许"动词+部位+CTV"：
+`agent_runtime/turn_policy.py`: in the segmentation branch of `_is_canonical_execution_command`, allow "verb + site + CTV":
 
 ```python
         if re.match(r"^(?:请|帮我|现在)?(?:分割|勾勒|勾勒|提取)", text):
@@ -738,17 +738,17 @@ Expected: FAIL（`头颈部肿瘤` / `请分割胰腺 CTV`）
         return bool(re.search(r"(?:^|\s)ctv(?:\s|$)", text) and re.search(r"分割|segment", text))
 ```
 
-（保持既有的否定/条件拦截不变。）
+(Keep the existing negation/condition interception unchanged.)
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_model_registry.py tests/test_image_metadata_query.py -q -p no:cacheprovider`
 Expected: PASS
 
-- [ ] **Step 5: 回归**
+- [ ] **Step 5: Regression**
 
 Run: `~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_whole_request_routing.py tests/test_intent_shortcut_boundary.py tests/test_semantic_execution_authorization.py -q -p no:cacheprovider`
-Expected: 与改动前一致（不得新增失败；`test_report_object_wins_over_guide_and_dose` 属另一会话 WIP，单独跟踪）
+Expected: same as before the change (no new failures; `test_report_object_wins_over_guide_and_dose` belongs to another session's WIP and is tracked separately)
 
 - [ ] **Step 6: Commit**
 
@@ -760,12 +760,12 @@ git commit -m "fix(ctv): complete site aliases and restore direct CTV commands"
 
 ---
 
-### Task 7: 前端选择器——所有已支持类别绿色
+### Task 7: Front-end Selector — All Supported Categories Green
 
 **Files:**
-- Modify: `web/app/static/js/brachybot-ui-api.js`（`_syncTumorTypeSelectorAppearance`，约 3323-3418 行；`updateTumorTypeSelector`，约 3474-3510 行）
-- Modify: `web/app/index.html`（`?v=` bump 与分组文案）
-- Test: `tests/test_web_frontend_ctv_selector.py`（新建）
+- Modify: `web/app/static/js/brachybot-ui-api.js` (`_syncTumorTypeSelectorAppearance`, around lines 3323-3418; `updateTumorTypeSelector`, around lines 3474-3510)
+- Modify: `web/app/index.html` (`?v=` bump and group copy)
+- Test: `tests/test_web_frontend_ctv_selector.py` (new)
 
 - [ ] **Step 1: Write the failing test**
 
@@ -808,11 +808,11 @@ def test_selector_options_match_the_registry():
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_web_frontend_ctv_selector.py -q -p no:cacheprovider`
-Expected: FAIL（`鼻咽` 缺失 / 选项缺 `vista3d_lung_tumor` 之外的新项检查）
+Expected: FAIL (`鼻咽` missing / missing new-option checks beyond `vista3d_lung_tumor`)
 
 - [ ] **Step 3: Write minimal implementation**
 
-`brachybot-ui-api.js`：把颜色判定统一为"可用即绿"（成熟度只进帮助文字）：
+`brachybot-ui-api.js`: unify the color decision to "usable = green" (maturity only goes into help text):
 
 ```js
     const callable = selected?.dataset?.callable === 'true'
@@ -829,7 +829,7 @@ Expected: FAIL（`鼻咽` 缺失 / 选项缺 `vista3d_lung_tumor` 之外的新�
     });
 ```
 
-`updateTumorTypeSelector` 的别名表补鼻咽与头颈部：
+Add nasopharynx and head-neck to the `updateTumorTypeSelector` alias table:
 
 ```js
         nasopharynx: 'nnunet_nasopharynx_ncct',
@@ -839,14 +839,14 @@ Expected: FAIL（`鼻咽` 缺失 / 选项缺 `vista3d_lung_tumor` 之外的新�
         '头颈部': 'nnunet_head_neck_gtv',
 ```
 
-`web/app/index.html`：确认 6 站（含 `vista3d_lung_tumor`、两个鼻咽、头颈）都是同一"肿瘤分割"分组的 `<option>`；`brachybot-ui-api.js` 与 `brachybot-manual-annotation.js` 的 `?v=` 各 +1，并同步更新断言 `?v=` 的测试（`tests/test_runtime_contracts.py`、`tests/test_round7_regressions.py`、`tests/test_uploaded_mask_staging.py`）。
+`web/app/index.html`: confirm all 6 sites (including `vista3d_lung_tumor`, the two nasopharynx entries, and head-neck) are `<option>`s in the same "Tumor Segmentation" group; bump `?v=` by 1 for each of `brachybot-ui-api.js` and `brachybot-manual-annotation.js`, and update the tests that assert `?v=` (`tests/test_runtime_contracts.py`, `tests/test_round7_regressions.py`, `tests/test_uploaded_mask_staging.py`).
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_web_frontend_ctv_selector.py tests/test_runtime_contracts.py tests/test_round7_regressions.py tests/test_uploaded_mask_staging.py -q -p no:cacheprovider`
 Expected: PASS
 
-- [ ] **Step 5: Node 语法检查**
+- [ ] **Step 5: Node syntax check**
 
 Run: `NODE=<vscode-server>/cli/servers/Stable-520fb30b2d3d324b4cb2342f6e88e2cd93751de1/server/node; $NODE --check web/app/static/js/brachybot-ui-api.js && echo OK`
 Expected: `OK`
@@ -861,14 +861,14 @@ git commit -m "feat(ctv-ui): show every runnable tumor category in green"
 
 ---
 
-## Phase 3 — 验收
+## Phase 3 — Acceptance
 
-### Task 8: 全量相关测试 + 可选真实 GPU 冒烟
+### Task 8: Full Relevant Test Suite + Optional Real-GPU Smoke Test
 
 **Files:**
-- Test: 既有套件
+- Test: existing suites
 
-- [ ] **Step 1: 相关套件全跑**
+- [ ] **Step 1: Run all relevant suites**
 
 Run:
 ```bash
@@ -885,18 +885,18 @@ cd <workspace>/BrachyBot
   tests/test_round7_regressions.py tests/test_review_round6_regressions.py \
   -q -p no:cacheprovider
 ```
-Expected: 仅剩既有基线失败（`test_web_config_route_reads_project_root_defaults`、`test_web_api_isolates_agent_and_ui_state_by_session`、另一会话 WIP 的 `test_report_object_wins_over_guide_and_dose`），无新增。
+Expected: only the pre-existing baseline failures remain (`test_web_config_route_reads_project_root_defaults`, `test_web_api_isolates_agent_and_ui_state_by_session`, and another session's WIP `test_report_object_wins_over_guide_and_dose`); no new failures.
 
-- [ ] **Step 2: 真实 GPU 冒烟（需用户同意占用 GPU）**
+- [ ] **Step 2: Real-GPU smoke test (requires user consent to occupy the GPU)**
 
-对每站用 `tests/data` 或数据集中的真实 CT 各跑 1 例，记录：耗时、前景体素、标签计数、几何是否与输入一致、是否经共享锁。命令模板：
+Run 1 case per site using a real CT from `tests/data` or the dataset, recording: elapsed time, foreground voxels, label counts, whether the geometry matches the input, and whether the shared lock was used. Command template:
 
 ```bash
 ~/.conda/envs/brachytherapy/bin/python - <<'PY'
 import sys, time, SimpleITK as sitk
 sys.path.insert(0, '.')
 from tool_factory.CTV_seg import CTVSegmentationTool
-image = sitk.ReadImage('<真实 CT 路径>')
+image = sitk.ReadImage('<real CT path>')
 for site in ('nnunet_pancreatic','nnunet_liver_tumor','nnunet_kidney_tumor',
              'nnunet_head_neck_gtv','nnunet_nasopharynx_ncct',
              'nnunet_nasopharynx_cect','vista3d_lung_tumor'):
@@ -907,28 +907,28 @@ for site in ('nnunet_pancreatic','nnunet_liver_tumor','nnunet_kidney_tumor',
 PY
 ```
 
-- [ ] **Step 3: 汇总并请用户决定提交策略**
+- [ ] **Step 3: Summarize and ask the user to decide the commit strategy**
 
-输出一份文件清单（本计划改动的文件 vs 另一会话 WIP 的文件），由用户决定统一提交或分次提交。
+Output a file list (files changed by this plan vs files from another session's WIP) and let the user decide whether to commit together or separately.
 
 ---
 
 ## Self-Review
 
-- **Spec coverage**：§3.1→Task1/5；§3.2→Task3（+现有 gpu_lock 复用）；§3.3→Task2；§3.4→Task4；§3.5→Task7；§3.6→Task6；§5 测试→Task1-8；§6 兼容→Task1 的 legacy 别名/Task2 的 `ctv_source` 回退。
-- **Placeholder scan**：无 TBD/TODO；每个代码步骤含可执行代码或精确锚点。
-- **Type consistency**：`target_semantics` / `canonical_ctv_source` / `is_registered_model_source` / `is_multitarget_gtv_source` 在 Task1 定义，Task2/4/5 使用同一签名；`UI_routes` 命名统一为 `ui_routes()`。
-- **已知外部干扰**：`turn_policy.py`、`response_tools.py`、`structure_service.py`、`viewer_routes.py`、`model_catalog.py`、`index.html`、`brachybot-ui-api.js` 与另一会话 WIP 重叠；每个相关任务末尾都不把这些文件入索引，并单列回归命令。
+- **Spec coverage:** §3.1→Task 1/5; §3.2→Task 3 (+ reuse of the existing gpu_lock); §3.3→Task 2; §3.4→Task 4; §3.5→Task 7; §3.6→Task 6; §5 tests→Tasks 1-8; §6 compatibility→Task 1 legacy aliases / Task 2 `ctv_source` fallback.
+- **Placeholder scan:** no TBD/TODO; every code step contains runnable code or a precise anchor.
+- **Type consistency:** `target_semantics` / `canonical_ctv_source` / `is_registered_model_source` / `is_multitarget_gtv_source` are defined in Task 1 and used with the same signature in Tasks 2/4/5; the `UI_routes` name is unified as `ui_routes()`.
+- **Known external interference:** `turn_policy.py`, `response_tools.py`, `structure_service.py`, `viewer_routes.py`, `model_catalog.py`, `index.html`, `brachybot-ui-api.js` overlap with another session's WIP; at the end of each related task these files are kept out of the index, and regression commands are listed separately.
 
 ---
 
-## Phase 1b — BiomedParse v2 并列接通（追加）
+## Phase 1b — BiomedParse v2 Parallel Integration (Addendum)
 
-### Task 4b: BiomedParse 外部推理纳入统一 GPU 调度
+### Task 4b: Bring BiomedParse External Inference into Unified GPU Scheduling
 
 **Files:**
-- Modify: `tool_factory/CTV_seg/biomedparse_v2.py`（`_run_external_inference`，约 510-617 行）
-- Test: `tests/test_model_registry.py`（追加）
+- Modify: `tool_factory/CTV_seg/biomedparse_v2.py` (`_run_external_inference`, around lines 510-617)
+- Test: `tests/test_model_registry.py` (append)
 
 - [ ] **Step 1: Write the failing test**
 
@@ -959,11 +959,11 @@ def test_biomedparse_external_inference_is_pinned_and_locked(monkeypatch):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_model_registry.py::test_biomedparse_external_inference_is_pinned_and_locked -q -p no:cacheprovider`
-Expected: FAIL（env 未设置或 subprocess.run 未带 env）
+Expected: FAIL (env not set, or subprocess.run called without env)
 
 - [ ] **Step 3: Write minimal implementation**
 
-在 `_run_external_inference` 中，先经 DeviceManager + 共享锁选择并固定 GPU，再带 `env` 调用：
+In `_run_external_inference`, first select and pin the GPU via DeviceManager + the shared lock, then call with `env`:
 
 ```python
     from .site_model_runtime import gpu_lock
@@ -999,11 +999,11 @@ git add tests/test_model_registry.py
 git commit -m "feat(biomedparse): schedule open-vocabulary inference on the shared GPU lock"
 ```
 
-### Task 4c: 无专用模型肿瘤的开放词汇回退提示
+### Task 4c: Open-Vocabulary Fallback Hint for Tumors Without a Dedicated Model
 
 **Files:**
-- Modify: `tool_factory/CTV_seg/__init__.py`（未支持 tumor_type 分支，约 554-567 行）
-- Test: `tests/test_model_registry.py`（追加）
+- Modify: `tool_factory/CTV_seg/__init__.py` (unsupported tumor_type branch, around lines 554-567)
+- Test: `tests/test_model_registry.py` (append)
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1021,11 +1021,11 @@ def test_unsupported_tumor_points_at_open_vocabulary():
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_model_registry.py::test_unsupported_tumor_points_at_open_vocabulary -q -p no:cacheprovider`
-Expected: FAIL（metadata 缺字段）
+Expected: FAIL (metadata missing fields)
 
 - [ ] **Step 3: Write minimal implementation**
 
-在未支持 `tumor_type` 的 `ToolResult` metadata 中追加：
+Append to the metadata of the `ToolResult` for an unsupported `tumor_type`:
 
 ```python
                         metadata={

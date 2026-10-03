@@ -1,0 +1,83 @@
+{
+  "schema_version": "1.0",
+  "id": "AG2-RFACT-013",
+  "track": "A",
+  "layers": [
+    "L2",
+    "L4"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "report_facts_metric_provenance",
+  "cost_class": "state_only",
+  "power_role": "primary",
+  "clinical_intent": "The D2cc cited in the report must be bound to the current geometry revision; stale citations are forbidden (#4).",
+  "fixture": {
+    "case_family": "synth/prostate_s02_full_pipeline",
+    "setup_script": "fixtures/setup/prostate_s02_full_pipeline.py",
+    "initial_state_hash": "sha256:38eabca0a6bcb5062deac0e5645e8bf52d9e5f51cdd0f137f824f4509461ada3"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-CTX",
+    "contrast_family_id": "report/facts/provenance"
+  },
+  "protocol": {
+    "mode": "single_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "The D2cc cited in the report must be bound to the current geometry revision; stale citations are forbidden (#4).",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 1,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "metric_provenance",
+    "constraint_class": "none",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "metric_provenance_pass",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "medium"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "AG2-RFACT-013-P01",
+    "hidden": false,
+    "generation_seed": 32104,
+    "canary_class": null,
+    "behavioral_probes": [
+      "stale_citation"
+    ],
+    "contrast_family_id": "report/facts/provenance"
+  },
+  "provenance": {
+    "source": "audit_derived",
+    "derived_from": "tool_factory/report_facts.py:133-233 (resolve_report_facts)",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto"
+    ],
+    "authored_on": "2026-10-01",
+    "deprecated": null
+  }
+}

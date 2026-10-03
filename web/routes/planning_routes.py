@@ -1786,7 +1786,7 @@ _FULL_WORKSPACE_CHAT_TERMS = (
     "trajectory", "穿刺", "粒子", "针道", "导板", "surgical guide", "手术导板",
     "replan", "重新规划", "重建", "reconstruct", "viewer", "查看器",
     # Repair/refresh wording that operates on planning artifacts without
-    # naming one.  "请你全部更新" is a downstream repair, not a metadata read.
+    # naming one.  "Please update everything" is a downstream repair, not a metadata read.
     "重算", "重新计算", "质控", "复核", "报告", "report", "guide", "过期",
     "stale", "recompute", "recalculate", "regenerate",
 )
@@ -1837,6 +1837,16 @@ def _chat_requires_full_workspace(message: str, image_path: str = "") -> bool:
         elif term in text:
             return True
     return False
+
+
+def _case_record_is_archived(record: Any) -> bool:
+    """Return whether a resolved case lives in cold storage.
+
+    Archival is durable, not transient: no hydration retry can succeed, so a
+    chat turn must surface an activation hint immediately instead of waiting
+    out the resolve timeout and then blaming unavailable case resources.
+    """
+    return str(getattr(record, "storage_status", "")) == "archived"
 
 
 # A cold case may be installing its metadata shell in another request thread.
@@ -7969,6 +7979,23 @@ def register_planning_routes(
                         get_agent_for_owner(owner, session_id, _lightweight=True)
                         if callable(get_agent_for_owner)
                         else get_agent(session_id, _lightweight=True)
+                    )
+
+                # An archived case is a durable, non-transient state: no amount
+                # of retrying will hydrate it. Detect it before the resolve loop
+                # so the turn fails fast with an actionable activation hint
+                # instead of spinning for the full resolve timeout and then
+                # reporting a misleading "resources not available" timeout.
+                try:
+                    case_record = store.get_session(owner["id"], session_id)
+                except WorkspaceError:
+                    case_record = None
+                if case_record is not None and _case_record_is_archived(case_record):
+                    raise ChatTaskError(
+                        "This case is archived. Activate it before using its data.",
+                        code="session_archived",
+                        phase="archived",
+                        retryable=False,
                     )
 
                 resolved = resolve()

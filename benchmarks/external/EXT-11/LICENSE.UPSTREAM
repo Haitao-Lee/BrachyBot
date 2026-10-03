@@ -1,0 +1,8 @@
+MedCalc-Bench license facts (verified 2026-10-01):
+
+* Benchmark DATA (HF dataset `ncbi/MedCalc-Bench`, file test_data_11_18_final.csv):
+  Creative Commons Attribution-ShareAlike 4.0 International (CC-BY-SA-4.0).
+  Source: https://huggingface.co/datasets/ncbi/MedCalc-Bench
+* Upstream CODE (github.com/ncbi-nlp/MedCalc-Bench @ 20b10f9d66a8c3b0356ae3138533f5ec91666b6a):
+  the repository ships NO top-level LICENSE file. Code is vendored read-only for
+  the evaluator; do not redistribute the code without confirming terms with NCBI.

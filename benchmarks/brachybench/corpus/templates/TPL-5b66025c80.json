@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "dose_evaluation",
+  "expectation": null,
+  "facet": "dose_evaluation",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Evaluate Day 30 post-implant: V100=96%, V150=48%, D90=112 Gy, urethra D10=122 Gy. Evaluate per ABS guidelines with clinical significance.",
+  "source_refs": [
+    "INT-238f7cd761c7",
+    "INT-8689a702a3d6"
+  ],
+  "template_id": "TPL-5b66025c80"
+}

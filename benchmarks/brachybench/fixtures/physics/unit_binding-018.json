@@ -1,0 +1,26 @@
+{
+  "config": {
+    "binding": {
+      "bound_metric": "V100",
+      "bound_target": "urethra",
+      "metric": "V100",
+      "target": "urethra",
+      "unit": "Gy",
+      "value": 90.0,
+      "value_gy": null
+    },
+    "mechanism": "binding/broken_Gy"
+  },
+  "expected": {
+    "evidence_gap_codes": [],
+    "score": 0.0,
+    "verdict": "fail",
+    "violation_codes": [
+      "unit_conversion_error"
+    ]
+  },
+  "family": "unit_binding",
+  "id": "unit_binding-018",
+  "initial_state_hash": "sha256:3712b0ad3585f9e90f730e70d8e1435dbe97f2f8cb8e462dfc2752be8f1f469b",
+  "seed": 20260929
+}

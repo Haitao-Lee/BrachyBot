@@ -1,0 +1,75 @@
+{
+  "anti_gaming": {
+    "contrast_family_id": "RUR-39",
+    "hidden": false,
+    "paraphrase_group": "RUR-39"
+  },
+  "clinical_intent": "多个单位明确分别绑定",
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "RUR-39",
+  "cost_class": "light_compute",
+  "fixture": {
+    "case_family": "RUR-39",
+    "initial_state_hash": "sha256:f2f3039f77007c171899021fdc8f1ce554acb2b01f87e8e4eee3d1366512c6a8",
+    "setup_script": "extensions/real_user_requests_v1/compiled/fixtures/RUR-39-002.json"
+  },
+  "id": "RUR-39-002",
+  "layers": [
+    "L2",
+    "L4"
+  ],
+  "oracle": {
+    "check": "real_user_request",
+    "constraint_class": "none",
+    "expect": null,
+    "gold": "contracts/RUR-39-002.json",
+    "independent_check": true,
+    "kind": "program"
+  },
+  "power_role": "exploratory",
+  "protocol": {
+    "allowed_intermediates": [],
+    "audit_required": true,
+    "budget": {
+      "tool_calls": 96,
+      "turns": 1,
+      "wall_clock_s": 120
+    },
+    "mode": "single_turn",
+    "n_runs": 1,
+    "turns": [
+      {
+        "lang": "zh",
+        "role": "user",
+        "text": "CTV的Opacity滑块25%，剂量云图Opacity40%，处方仍是120Gy，不要重算。"
+      }
+    ],
+    "ui_counterpart": null
+  },
+  "provenance": {
+    "authored_on": "2026-10-03",
+    "deprecated": null,
+    "derived_from": "real_user_requests_v1:RUR-39-002",
+    "guideline_ref": null,
+    "reviewers": [
+      "authoring-only; independent review pending"
+    ],
+    "source": "audit_derived"
+  },
+  "schema_version": "1.0",
+  "scoring": {
+    "difficulty_target": "medium",
+    "gate_refs": [],
+    "primary_metric": "verified_task_goal",
+    "weight": 1.0
+  },
+  "track": "B",
+  "unit": {
+    "contrast_family_id": "RUR-39",
+    "group_type": "G-CTX",
+    "kind": "task_scenario"
+  }
+}

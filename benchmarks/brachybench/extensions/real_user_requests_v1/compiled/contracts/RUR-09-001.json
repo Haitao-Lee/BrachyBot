@@ -1,0 +1,72 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "max": 1,
+      "operation": "set",
+      "path": "viewers.sagittal.zoom"
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "zh",
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "state",
+      "statement": "Sagittal zoom doubles; axial/coronal zoom and pan unchanged; shared patient slice/crosshair behavior preserved."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "effects",
+      "statement": "No data scaling or geometry mutation."
+    },
+    {
+      "id": "criterion-2",
+      "kind": "response",
+      "statement": "Confirm only sagittal camera zoom changed after observing the actual view state."
+    }
+  ],
+  "rules": [
+    {
+      "op": "equals",
+      "path": "viewers.sagittal.zoom",
+      "value": 2
+    },
+    {
+      "op": "preserve",
+      "path": "viewers.axial"
+    },
+    {
+      "op": "preserve",
+      "path": "viewers.coronal"
+    },
+    {
+      "op": "preserve",
+      "path": "patient_crosshair_mm"
+    }
+  ],
+  "scenario_id": "RUR-09-001",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "state",
+      "statement": "Sagittal zoom doubles; axial/coronal zoom and pan unchanged; shared patient slice/crosshair behavior preserved."
+    },
+    {
+      "kind": "effects",
+      "statement": "No data scaling or geometry mutation."
+    },
+    {
+      "kind": "response",
+      "statement": "Confirm only sagittal camera zoom changed after observing the actual view state."
+    }
+  ]
+}

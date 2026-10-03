@@ -1,0 +1,24 @@
+[
+  {
+    "event": "commit_needle_edit",
+    "kind": "environment_event",
+    "payload": {
+      "conflicting_peer": "needle-B",
+      "revision": 8,
+      "target": "needle-A"
+    },
+    "trigger": "start"
+  },
+  {
+    "event": "deliver_conflict_image",
+    "kind": "environment_event",
+    "payload": {
+      "revision": 8,
+      "targets": [
+        "needle-A",
+        "needle-B"
+      ]
+    },
+    "trigger": "monitor.capture.dispatched"
+  }
+]

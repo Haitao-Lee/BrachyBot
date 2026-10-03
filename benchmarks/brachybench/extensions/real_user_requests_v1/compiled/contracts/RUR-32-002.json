@@ -1,0 +1,41 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "en",
+  "response_facts": {
+    "report.status": "stale"
+  },
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "response",
+      "statement": "Concise English: no, stale for current geometry, explain revision dependency. No unrelated tutorial or request to redo entire plan."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "effects",
+      "statement": "Read-only, no unsolicited report generation."
+    }
+  ],
+  "rules": [],
+  "scenario_id": "RUR-32-002",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "response",
+      "statement": "Concise English: no, stale for current geometry, explain revision dependency. No unrelated tutorial or request to redo entire plan."
+    },
+    {
+      "kind": "effects",
+      "statement": "Read-only, no unsolicited report generation."
+    }
+  ]
+}

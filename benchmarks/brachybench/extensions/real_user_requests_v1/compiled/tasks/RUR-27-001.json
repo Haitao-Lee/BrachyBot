@@ -1,0 +1,75 @@
+{
+  "anti_gaming": {
+    "contrast_family_id": "RUR-27",
+    "hidden": false,
+    "paraphrase_group": "RUR-27"
+  },
+  "clinical_intent": "单次提交几何与剂量分别报告",
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "RUR-27",
+  "cost_class": "light_compute",
+  "fixture": {
+    "case_family": "RUR-27",
+    "initial_state_hash": "sha256:b0f5ffa9721a91987dba46b620128c3965fc5e94391462c864d5c0f9060b2372",
+    "setup_script": "extensions/real_user_requests_v1/compiled/fixtures/RUR-27-001.json"
+  },
+  "id": "RUR-27-001",
+  "layers": [
+    "L2",
+    "L4"
+  ],
+  "oracle": {
+    "check": "real_user_request",
+    "constraint_class": "none",
+    "expect": null,
+    "gold": "contracts/RUR-27-001.json",
+    "independent_check": true,
+    "kind": "program"
+  },
+  "power_role": "exploratory",
+  "protocol": {
+    "allowed_intermediates": [],
+    "audit_required": true,
+    "budget": {
+      "tool_calls": 96,
+      "turns": 1,
+      "wall_clock_s": 120
+    },
+    "mode": "single_turn",
+    "n_runs": 1,
+    "turns": [
+      {
+        "lang": "zh",
+        "role": "user",
+        "text": "刚才这一步哪里变差了？"
+      }
+    ],
+    "ui_counterpart": null
+  },
+  "provenance": {
+    "authored_on": "2026-10-03",
+    "deprecated": null,
+    "derived_from": "real_user_requests_v1:RUR-27-001",
+    "guideline_ref": null,
+    "reviewers": [
+      "authoring-only; independent review pending"
+    ],
+    "source": "audit_derived"
+  },
+  "schema_version": "1.0",
+  "scoring": {
+    "difficulty_target": "medium",
+    "gate_refs": [],
+    "primary_metric": "verified_task_goal",
+    "weight": 1.0
+  },
+  "track": "J",
+  "unit": {
+    "contrast_family_id": "RUR-27",
+    "group_type": "G-CTX",
+    "kind": "task_scenario"
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "anti_gaming": {
+    "contrast_family_id": "RUR-34",
+    "hidden": false,
+    "paraphrase_group": "RUR-34"
+  },
+  "clinical_intent": "只有论文链接不给虚构器官限值",
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "RUR-34",
+  "cost_class": "light_compute",
+  "fixture": {
+    "case_family": "RUR-34",
+    "initial_state_hash": "sha256:4097f8343dd4b94a63569ddec4de828be4ec690bbb8d2a8bfc32dd28ae7ba81e",
+    "setup_script": "extensions/real_user_requests_v1/compiled/fixtures/RUR-34-001.json"
+  },
+  "id": "RUR-34-001",
+  "layers": [
+    "L2",
+    "L4"
+  ],
+  "oracle": {
+    "check": "real_user_request",
+    "constraint_class": "none",
+    "expect": null,
+    "gold": "contracts/RUR-34-001.json",
+    "independent_check": true,
+    "kind": "program"
+  },
+  "power_role": "exploratory",
+  "protocol": {
+    "allowed_intermediates": [],
+    "audit_required": true,
+    "budget": {
+      "tool_calls": 96,
+      "turns": 1,
+      "wall_clock_s": 120
+    },
+    "mode": "single_turn",
+    "n_runs": 1,
+    "turns": [
+      {
+        "lang": "zh",
+        "role": "user",
+        "text": "脊髓D2cc是7.3Gy，所以能判定超限吗？"
+      }
+    ],
+    "ui_counterpart": null
+  },
+  "provenance": {
+    "authored_on": "2026-10-03",
+    "deprecated": null,
+    "derived_from": "real_user_requests_v1:RUR-34-001",
+    "guideline_ref": null,
+    "reviewers": [
+      "authoring-only; independent review pending"
+    ],
+    "source": "audit_derived"
+  },
+  "schema_version": "1.0",
+  "scoring": {
+    "difficulty_target": "medium",
+    "gate_refs": [],
+    "primary_metric": "verified_task_goal",
+    "weight": 1.0
+  },
+  "track": "C",
+  "unit": {
+    "contrast_family_id": "RUR-34",
+    "group_type": "G-CTX",
+    "kind": "task_scenario"
+  }
+}

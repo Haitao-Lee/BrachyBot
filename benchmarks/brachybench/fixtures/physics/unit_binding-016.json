@@ -1,0 +1,24 @@
+{
+  "config": {
+    "binding": {
+      "bound_metric": "V100",
+      "bound_target": "ctv",
+      "metric": "V100",
+      "target": "ctv",
+      "unit": "percent",
+      "value": 90.0,
+      "value_gy": 90.0
+    },
+    "mechanism": "binding/ok_percent"
+  },
+  "expected": {
+    "evidence_gap_codes": [],
+    "score": 1.0,
+    "verdict": "pass",
+    "violation_codes": []
+  },
+  "family": "unit_binding",
+  "id": "unit_binding-016",
+  "initial_state_hash": "sha256:75a0999529de9ef668c0946af845173c6ae826b110bb6175c2f982512e543530",
+  "seed": 20260929
+}

@@ -1,0 +1,82 @@
+{
+  "schema_version": "1.0",
+  "id": "I-WORKFLOW-0082",
+  "track": "I",
+  "layers": [
+    "L3"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "workflow.open_intent",
+  "cost_class": "state_only",
+  "power_role": "exploratory",
+  "clinical_intent": "I have a 72-year-old male with a 2 cm prostate cancer (Gleason 3+3, Stage T1c, PSA 6.0) who has end-stage renal disease on hemodialysis (3 times weekly). He has a well-functioning arteriovenous fistula in his left arm. He has a history of renal cell carcinoma treated with right nephrectomy 10 years ago. He is on warfarin for atrial fibrillation (target INR 2.0-3.0, current INR 2.4). He wants definitive treatment. Given his ESRD, warfarin use, and solitary kidney history, should I recommend LDR brachytherapy? How do I manage his warfarin and dialysis schedule around the procedure? What dose modifications are needed?",
+  "fixture": {
+    "case_family": "legacy/workflow",
+    "setup_script": "fixtures/setup/prostate_s02_full_pipeline.py",
+    "initial_state_hash": "sha256:38eabca0a6bcb5062deac0e5645e8bf52d9e5f51cdd0f137f824f4509461ada3"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-EQ",
+    "contrast_family_id": "legacy/workflow"
+  },
+  "protocol": {
+    "mode": "single_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "I have a 72-year-old male with a 2 cm prostate cancer (Gleason 3+3, Stage T1c, PSA 6.0) who has end-stage renal disease on hemodialysis (3 times weekly). He has a well-functioning arteriovenous fistula in his left arm. He has a history of renal cell carcinoma treated with right nephrectomy 10 years ago. He is on warfarin for atrial fibrillation (target INR 2.0-3.0, current INR 2.4). He wants definitive treatment. Given his ESRD, warfarin use, and solitary kidney history, should I recommend LDR brachytherapy? How do I manage his warfarin and dialysis schedule around the procedure? What dose modifications are needed?",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 1,
+      "tool_calls": 4
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 3
+  },
+  "oracle": {
+    "kind": "judge",
+    "check": "judge_rubric",
+    "constraint_class": "none",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": true,
+    "independent_check": false,
+    "evidence_keys": [],
+    "gold": "rubric:workflow"
+  },
+  "scoring": {
+    "primary_metric": "rubric_met",
+    "gate_refs": [],
+    "weight": 0.5,
+    "difficulty_target": "medium"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "OPEN-WORKFLOW-0082",
+    "hidden": false,
+    "generation_seed": 2026,
+    "canary_class": null,
+    "behavioral_probes": [
+      "en"
+    ],
+    "contrast_family_id": "legacy/workflow"
+  },
+  "provenance": {
+    "source": "legacy_migrated",
+    "derived_from": "legacy:v1/19_workflow.json#Q1973",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto"
+    ],
+    "authored_on": "2026-09-30",
+    "deprecated": null
+  }
+}

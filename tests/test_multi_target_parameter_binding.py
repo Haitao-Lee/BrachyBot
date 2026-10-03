@@ -1,9 +1,10 @@
 """Multi-target parameter binding (audit defect F05).
 
-"请把CTV和OAR分别设为30%和70%的透明度" used to produce `ctv,30` and
-`oar,30`: the first number in the sentence was broadcast to every target.
-A "分别/respectively" request aligns values with targets positionally, and a
-length mismatch must be clarified rather than guessed at high confidence.
+A request to "set CTV and OAR to 30% and 70% opacity respectively" used to
+produce `ctv,30` and `oar,30`: the first number in the sentence was broadcast
+to every target. A "respectively" request aligns values with targets
+positionally, and a length mismatch must be clarified rather than guessed at
+high confidence.
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ def _pairs(message):
 
 
 # ---------------------------------------------------------------------------
-# "分别" aligns values with targets positionally
+# "respectively" aligns values with targets positionally
 # ---------------------------------------------------------------------------
 
 

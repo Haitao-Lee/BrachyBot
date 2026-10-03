@@ -1,0 +1,31 @@
+{
+  "n_tasks": 11969,
+  "tracks": {
+    "A": 2999,
+    "B": 332,
+    "C": 539,
+    "D1": 1378,
+    "D2": 560,
+    "D3": 239,
+    "E": 1823,
+    "F": 1016,
+    "H": 477,
+    "I": 961,
+    "K": 918,
+    "L": 727
+  },
+  "with_source_scenario_id": 0,
+  "task_content_sha256": "09a9060a0cdae37f6e0168482ebb1a6e187d25a74386057b33946c9a033a0f56",
+  "readiness": "BLOCKED",
+  "gaps": [
+    "missing_real_task_track:G",
+    "missing_real_task_track:J",
+    "missing_real_task_track:M",
+    "incomplete_source_scenario_identity",
+    "legacy_index_only_split_commitment",
+    "sealed_membership_not_available_to_private_evaluator",
+    "sealed_secrecy_not_verified"
+  ],
+  "confirmatory_ready": false,
+  "note": "Inventory cannot certify clinical gold, observer independence, unseen exposure or real browser/GPU execution."
+}

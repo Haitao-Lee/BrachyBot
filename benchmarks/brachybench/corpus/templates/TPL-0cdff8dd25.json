@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "workflow",
+  "expectation": null,
+  "facet": "workflow",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "I need to prepare a complete brachytherapy treatment plan for a 62-year-old female with stage IIB cervical cancer who has completed EBRT 45 Gy in 25 fractions with concurrent cisplatin. Post-EBRT MRI shows residual disease. She has a tandem and ovoid applicator in place. Walk me through the complete workflow from applicator placement verification to plan optimization, including imaging, dose prescription, OAR constraints, and plan evaluation.",
+  "source_refs": [
+    "INT-73bcc18e6780",
+    "INT-eb9670b5c785"
+  ],
+  "template_id": "TPL-0cdff8dd25"
+}

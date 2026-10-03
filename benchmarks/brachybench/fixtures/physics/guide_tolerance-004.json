@@ -1,0 +1,51 @@
+{
+  "config": {
+    "built": {
+      "holes": [
+        {
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "diameter_mm": 1.955116214364919,
+          "entry_mm": [
+            1.478402292465006,
+            -18.794484462615195,
+            -9.407374853658837
+          ]
+        }
+      ],
+      "thickness_mm": 2.9369054159413337
+    },
+    "designed": {
+      "holes": [
+        {
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "diameter_mm": 1.955116214364919,
+          "entry_mm": [
+            1.478402292465006,
+            -18.794484462615195,
+            -9.407374853658837
+          ]
+        }
+      ],
+      "thickness_mm": 2.9369054159413337
+    },
+    "mechanism": "guide/drift_0.00"
+  },
+  "expected": {
+    "evidence_gap_codes": [],
+    "score": 1.0,
+    "verdict": "pass",
+    "violation_codes": []
+  },
+  "family": "guide_tolerance",
+  "id": "guide_tolerance-004",
+  "initial_state_hash": "sha256:16ea0abfab0c4caafae95e54695d5ef8c5a3576db8d3c92f1991c052b6debbec",
+  "seed": 20260929
+}

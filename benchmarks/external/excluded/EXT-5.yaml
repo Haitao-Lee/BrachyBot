@@ -1,0 +1,68 @@
+benchmark: MedAgentBench
+ext_id: EXT-5
+tier: conditional
+grade_R: R0
+grade_C: C2
+panels: [P2]
+
+acquisition:
+  source_url: https://github.com/stanfordmlgroup/MedAgentBench
+  source_commit: 99260117137b09f04837a8c18d18a1107efa55ae
+  source_tag: null
+  dataset_name: "MedAgentBench in-repo (test_data_v2.json 300 tasks + funcs_v1.json 9 FHIR schemas)"
+  dataset_revision: 99260117137b09f04837a8c18d18a1107efa55ae
+  dataset_sha256: 834fce1ffc1f47da31b453813dcac21dbea92236694752ced305a2037567c97f
+  dataset_size_bytes: 170179
+  retrieval_command: |
+    git clone https://github.com/stanfordmlgroup/MedAgentBench vendor/EXT-5
+    git -C vendor/EXT-5 checkout 99260117137b09f04837a8c18d18a1107efa55ae
+    cp vendor/EXT-5/data/medagentbench/{test_data_v1.json,test_data_v2.json,funcs_v1.json} data/EXT-5/
+    # dataset_sha256 above = directory digest of data/EXT-5.
+  retrieval_date: 2026-10-01
+  license_upstream: MIT
+  license_file: LICENSE
+  license_verified_by: "brachybench-auto (GitHub API 2026-10-01)"
+  activity_verified:
+    last_commit_date: 2025-11-21
+    last_release_date: null
+    open_issues: 9
+
+runner:
+  official_runner: src/start_task.py + src/assigner.py
+  evaluator: src/server/tasks/medagentbench/eval.py (delegates to refsol.py)
+  container: jyxsu6/medagentbench:latest
+  python_requires: ">=3.9"
+  native_deps: [Docker]
+  paid_apis: []
+  grader_note: "UPSTREAM GAP: the official grader module refsol.py is NOT in the repo (README points to a Box download) and the graders query a live FHIR server. No offline official score; the adapter only reproduces the embedded task1 'sol' field, labelled non-official."
+
+adapter:
+  kind: ext_adapter
+  shim_used: false
+  spec_ref: "DESIGN §25.5"
+
+run:
+  smoke_size: 5
+  sample_size: 0
+  sampling_seed: 42
+  n_runs: 1
+  budget: {wall_clock_s: 600, turns: 8, tool_calls: 40}
+
+isolation:
+  sandbox: required
+  network: denied
+  write_paths: ["benchmarks/external/EXT-5/results/"]
+  forbidden_write_roots:
+    - BrachyBot/session/
+    - BrachyBot/case/
+    - BrachyBot/runtime/
+    - BrachyBot/report/
+
+contamination:
+  public_samples_allowed_for_dev_only: true
+  seen_task_ids: []
+  behavioral_probes: [B1, B2, B3, B4, B5, B6, B7]
+
+status: active
+block_reason: null
+reinclude_condition: null

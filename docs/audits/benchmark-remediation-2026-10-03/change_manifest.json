@@ -1,0 +1,137 @@
+[
+  {
+    "path": "benchmarks/brachybench/oracles/artifacts.py",
+    "before_sha256": "d9f469e2be1c215574e2e6076b57787f5cbea57b43aecd9fda28991729b19b02",
+    "after_sha256": "3d631cddd823f117e6d1c7a4d3d4ba9f7f922042d17712aab18266491355202f"
+  },
+  {
+    "path": "benchmarks/brachybench/oracles/coord_roundtrip.py",
+    "before_sha256": "0e451f1a60da0d6aa1c19d84eef82017e1e86cfcc5967ba3ee8c5fd504f12fab",
+    "after_sha256": "f2e912d5b77b6b534fcd37bb564fdd2c08e75266a275d072913aea25c2c7ed2e"
+  },
+  {
+    "path": "benchmarks/brachybench/oracles/geom.py",
+    "before_sha256": "cb85868ed23b391bfb5ac88f7465056ea60715f7d022210b516ed115a7efd3a9",
+    "after_sha256": "2e5d2268bc425d19e8432b4a7edce1aa02c9975961b791a407a20b9592d0e2bd"
+  },
+  {
+    "path": "benchmarks/brachybench/oracles/judge_rubric.py",
+    "before_sha256": "8a4200e2112eb63b23b5856d0c4970af622029bd5295735e407dda0584ccaf32",
+    "after_sha256": "4e6020231b76a820036dfd6203767bc550501f38842a63ac12707ae278b43b2e"
+  },
+  {
+    "path": "benchmarks/brachybench/oracles/memory.py",
+    "before_sha256": "f6b826fa928cd61947d269786f57864b4068139eab43d197c464a43937d2422a",
+    "after_sha256": "847e73fdaf9179c90b06e81f5153654607f49942addb7c2af80b45bafe19d2fd"
+  },
+  {
+    "path": "benchmarks/brachybench/oracles/recovery.py",
+    "before_sha256": "f50c7a60f30e88dade4a13278f9295ab53ce9b9000a8cc2647707706b2d5c93a",
+    "after_sha256": "c8a660a1e7c2ca912666d7fbe2e61b6d615a9e42115a10a4abb3ee89057ea1d3"
+  },
+  {
+    "path": "benchmarks/brachybench/oracles/retrieval.py",
+    "before_sha256": "44eb109a72acf416feccf339c3368b8e55783c0537fcc45b15ce1827da5bddd3",
+    "after_sha256": "89aed440059fbb3d3b0ffa26fda34e07525e0aee7c28c177ca8d94f3db5ea92a"
+  },
+  {
+    "path": "benchmarks/brachybench/oracles/security.py",
+    "before_sha256": "695bb3f7a732047e2a8451bf3120fff8fa3467e3dd0cdb45f9e70db83c3a59ed",
+    "after_sha256": "17d90cfcf0bcb76571fc88c98ff830dda6927ee5a183947d13fc565708e90784"
+  },
+  {
+    "path": "benchmarks/brachybench/oracles/state_diff.py",
+    "before_sha256": "ecfebe4c4e9ea004a60e0036ff8b0dd5a2d15f182bd6fe73f4701431acc9b746",
+    "after_sha256": "0055a0c527edc7ac478a15e131f85c42989c34720b1be8ffefcc7db04153c404"
+  },
+  {
+    "path": "benchmarks/brachybench/oracles/tool_boundary.py",
+    "before_sha256": "d3d4ffcadb9c101525b609c2b9c62baead793cb2ab4191f085cbb266ffa5ad38",
+    "after_sha256": "3044a5fd6c13e270e332dec32eb0976c24d391eb3a2beaf939809fe503ae630f"
+  },
+  {
+    "path": "benchmarks/brachybench/schema/run_manifest.schema.json",
+    "before_sha256": "4fc8430134e6969a1fa6ad39b7c7b22aa957ccb898158cdc929e1ffdebde8f38",
+    "after_sha256": "dbf3525b3307b95a829b2f15cb840aad1b28dd0fd44d04eba218463f927b1b5b"
+  },
+  {
+    "path": "benchmarks/brachybench/tests/test_independent_audit_remediation.py",
+    "before_sha256": null,
+    "after_sha256": "0a93f7d18ef9a69469de0f50c23394e89e6c4a75f93b88207fb3f692b9a0befd"
+  },
+  {
+    "path": "benchmarks/brachybench/tools/adapters/brachybot.py",
+    "before_sha256": "09c983a6a135abee445a0386a75778264c9cbd05d5d4419df24cced30f947b15",
+    "after_sha256": "7beeef709ac6262d354954df44731d46acd71e7651d57fae5ed78f19f8d0f8e2"
+  },
+  {
+    "path": "benchmarks/brachybench/tools/analysis.py",
+    "before_sha256": "0f2e53fde8323687df661980abe91765e8ba44d0d636161b1e435a51f0a80bbb",
+    "after_sha256": "fd68a408aa97136527a3dcf3eb3127b02e6e7daacf0b0273a69f811f7fb64322"
+  },
+  {
+    "path": "benchmarks/brachybench/tools/audit_readiness.py",
+    "before_sha256": null,
+    "after_sha256": "8c0e1e48fbb79838ecd2e937d93a8a7b48a65cae5e9f7563d2a2c3c3393cc271"
+  },
+  {
+    "path": "benchmarks/brachybench/tools/audit_replay_changes.py",
+    "before_sha256": null,
+    "after_sha256": "aa6ee28a85c527ea0a5476c3e76aa104ed6cd6145582e7fb3ea626dde99b8e03"
+  },
+  {
+    "path": "benchmarks/brachybench/tools/evaluator_contract.py",
+    "before_sha256": null,
+    "after_sha256": "5941c9b109f3d7159607aad8a0d54936b0301d39f7fc763fd6a8474b5a01f728"
+  },
+  {
+    "path": "benchmarks/brachybench/tools/live_smoke.py",
+    "before_sha256": "180217cd24b20a56f6f710a65f4c9be8fc521473f5685eb3d122cc2b3c6b63f3",
+    "after_sha256": "0ebdcb33ccb608216caf5e7ace027904bd7831262cd4618a0733a92440726c33"
+  },
+  {
+    "path": "benchmarks/brachybench/tools/observe.py",
+    "before_sha256": "e9f7a32dd191173e20d44694c528d6ed493d0dcbf7fed9661c30f63c43549603",
+    "after_sha256": "fe32b51a8de6e25566e24260e6b38123a7c039a6e0a1fc00d7fbc752d803f3fa"
+  },
+  {
+    "path": "benchmarks/brachybench/tools/panel_report.py",
+    "before_sha256": "11932b92f13d93b600c0be7c98318ead8d22d5e264f2517845164f5c158b45f7",
+    "after_sha256": "07afdd9f456e4419d06b5692a606c51c1b2bc39c2750c99b0b187a63d2658f0e"
+  },
+  {
+    "path": "benchmarks/brachybench/tools/run_suite.py",
+    "before_sha256": "d5c9c003faa59f97e7327898a7e6e2a116aefa22ba89011618572993eb23595a",
+    "after_sha256": "4e645dd528d97bd33a02cfb5d7fe60641f07826582aee595cba42e1491688210"
+  },
+  {
+    "path": "benchmarks/brachybench/tools/run_task.py",
+    "before_sha256": "5171878d5e6b6db10bd2e898a0b2db9b07e65ed2ed9a3e23200aec5b9c6320d8",
+    "after_sha256": "35cfeef4819c0c12b2ceb2881086bd2938ae523d05ce7570e6fb4345660ba43f"
+  },
+  {
+    "path": "benchmarks/brachybench/tools/score_report.py",
+    "before_sha256": "6aac78cfd25467d2588d1f408684d513baf17dc8af38d2a7dfdbb707710868bc",
+    "after_sha256": "b3ba25baeb924c8f3e5d0bd13b5698f9fed3c4dcdbcef4eee7ba9bf2aa0a0757"
+  },
+  {
+    "path": "benchmarks/brachybench/tools/scoring.py",
+    "before_sha256": "d89a75d6d36537db5503ded031550fc75376e1d27ea4dc5c489c66e507fec5b9",
+    "after_sha256": "3c9b7df048d7b321773c0568e1f2f4e6bba957ac805f6372befceba43c6c979f"
+  },
+  {
+    "path": "benchmarks/brachybench/tools/splits.py",
+    "before_sha256": "5160c08f58d5abf7228b50457770b205e1026bc2dd596e00b1e29a447e941066",
+    "after_sha256": "649a3790aaf1a91f99716dcfc05e5a13d075c9d94bb1330eb971330748dccc49"
+  },
+  {
+    "path": "benchmarks/external/adapter_base.py",
+    "before_sha256": "94dae46fda69012b796ae74b9d40de3fe523a7dc7338022a76e3927a684f762f",
+    "after_sha256": "2b370624db97b5294ce0e21697d7661428a24030203332344212f17aa40345be"
+  },
+  {
+    "path": "docs/BENCHMARK_AUDIT_REMEDIATION_2026-10-03.md",
+    "before_sha256": null,
+    "after_sha256": "48f299b84b3be9e68d7ca28310d2bbf117879b66a28098537b5e3ee6882e2bfa"
+  }
+]

@@ -1,0 +1,75 @@
+{
+  "anti_gaming": {
+    "contrast_family_id": "RUR-19",
+    "hidden": false,
+    "paraphrase_group": "RUR-19"
+  },
+  "clinical_intent": "另一标签页更新版本后旧写拒绝",
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "RUR-19",
+  "cost_class": "light_compute",
+  "fixture": {
+    "case_family": "RUR-19",
+    "initial_state_hash": "sha256:5362610e32d16409ed6009ff0ef614d6cdfa77dfe465349da4fb197b42451d4c",
+    "setup_script": "extensions/real_user_requests_v1/compiled/fixtures/RUR-19-002.json"
+  },
+  "id": "RUR-19-002",
+  "layers": [
+    "L2",
+    "L4"
+  ],
+  "oracle": {
+    "check": "real_user_request",
+    "constraint_class": "none",
+    "expect": null,
+    "gold": "contracts/RUR-19-002.json",
+    "independent_check": true,
+    "kind": "program"
+  },
+  "power_role": "exploratory",
+  "protocol": {
+    "allowed_intermediates": [],
+    "audit_required": true,
+    "budget": {
+      "tool_calls": 96,
+      "turns": 1,
+      "wall_clock_s": 120
+    },
+    "mode": "single_turn",
+    "n_runs": 1,
+    "turns": [
+      {
+        "lang": "en",
+        "role": "user",
+        "text": "Restore edit checkpoint cp-7."
+      }
+    ],
+    "ui_counterpart": null
+  },
+  "provenance": {
+    "authored_on": "2026-10-03",
+    "deprecated": null,
+    "derived_from": "real_user_requests_v1:RUR-19-002",
+    "guideline_ref": null,
+    "reviewers": [
+      "authoring-only; independent review pending"
+    ],
+    "source": "audit_derived"
+  },
+  "schema_version": "1.0",
+  "scoring": {
+    "difficulty_target": "medium",
+    "gate_refs": [],
+    "primary_metric": "verified_task_goal",
+    "weight": 1.0
+  },
+  "track": "D3",
+  "unit": {
+    "contrast_family_id": "RUR-19",
+    "group_type": "G-CTX",
+    "kind": "task_scenario"
+  }
+}

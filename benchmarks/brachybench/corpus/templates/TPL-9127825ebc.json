@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "clinical_kb",
+  "expectation": null,
+  "facet": "clinical_kb",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Tell me about the HDR cervical cancer protocol",
+  "source_refs": [
+    "INT-0bdd7fefab0e",
+    "INT-6be27277ff67"
+  ],
+  "template_id": "TPL-9127825ebc"
+}

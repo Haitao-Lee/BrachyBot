@@ -1,0 +1,61 @@
+{
+  "$id": "https://brachybench.local/schema/cws.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Canonical World State v1 (DESIGN §9.2)",
+  "type": "object",
+  "required": ["cws_version", "case", "plan", "dose"],
+  "additionalProperties": false,
+  "properties": {
+    "cws_version": {"const": "1.0"},
+    "case": {
+      "type": "object",
+      "required": ["id", "ct"],
+      "properties": {
+        "id": {"type": "string"},
+        "ct": {
+          "type": "object",
+          "required": ["loaded", "dims", "spacing_mm", "origin", "direction_lps"],
+          "properties": {
+            "loaded": {"type": "boolean"},
+            "dims": {"type": "array", "items": {"type": "integer"}, "minItems": 3},
+            "spacing_mm": {"type": "array", "items": {"type": "number"}, "minItems": 3},
+            "origin": {"type": "array", "items": {"type": "number"}, "minItems": 3},
+            "direction_lps": {"type": "array", "items": {"type": "number"}, "minItems": 9},
+            "hu_stats": {"type": "object"}
+          }
+        }
+      }
+    },
+    "segmentation": {"type": "object"},
+    "plan": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {"enum": ["none", "draft", "ready", "final"]},
+        "trajectories": {"type": "array"},
+        "seeds": {"type": "array"},
+        "planning_version": {"type": "integer", "minimum": 0},
+        "receipts": {"type": "array"}
+      }
+    },
+    "dose": {
+      "type": "object",
+      "required": ["computed"],
+      "properties": {
+        "engine": {"type": "string"},
+        "engine_weight_sha256": {"type": "string"},
+        "computed": {"type": "boolean"},
+        "per_seed_contributions_available": {"type": "boolean"},
+        "metrics": {"type": "object"},
+        "constraints_checked": {"type": "array"}
+      }
+    },
+    "ui": {"type": "object"},
+    "report": {"type": "object"},
+    "guide": {"type": "object"},
+    "authorization": {"type": "object"},
+    "memory": {"type": "object"},
+    "monitor": {"type": "object"},
+    "interop": {"type": "object"}
+  }
+}

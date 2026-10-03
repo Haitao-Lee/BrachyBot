@@ -1,0 +1,42 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "en",
+  "response_facts": {
+    "archived_operation": "guide-done-7",
+    "archived_revision": 7
+  },
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "effects",
+      "statement": "No replay of archived mutating commands."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "response",
+      "statement": "Report archived completion with its version; do not call it fresh after subsequent edits."
+    }
+  ],
+  "rules": [],
+  "scenario_id": "RUR-22-002",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "effects",
+      "statement": "No replay of archived mutating commands."
+    },
+    {
+      "kind": "response",
+      "statement": "Report archived completion with its version; do not call it fresh after subsequent edits."
+    }
+  ]
+}

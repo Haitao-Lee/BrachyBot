@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "input_variations_all",
+  "expectation": null,
+  "facet": "input_variations_all",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Which plan is better?",
+  "source_refs": [
+    "INT-5adbc15b9fd7",
+    "INT-c368cba3a4f8"
+  ],
+  "template_id": "TPL-586058eb70"
+}

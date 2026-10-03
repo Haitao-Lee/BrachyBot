@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "dose_engine",
+  "expectation": null,
+  "facet": "dose_engine",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Calculate the dose",
+  "source_refs": [
+    "INT-81f9a313592a",
+    "INT-b110d5b49e6d"
+  ],
+  "template_id": "TPL-6a0974c3bf"
+}

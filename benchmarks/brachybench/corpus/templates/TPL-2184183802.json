@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "dose_evaluation",
+  "expectation": null,
+  "facet": "dose_evaluation",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Calculate total treatment time and dose rate for HDR plan. Discuss whether it meets HDR classification.",
+  "source_refs": [
+    "INT-1344faed06e1",
+    "INT-c7058f1982c1"
+  ],
+  "template_id": "TPL-2184183802"
+}

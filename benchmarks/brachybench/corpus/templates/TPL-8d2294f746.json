@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "hallucination",
+  "expectation": null,
+  "facet": "hallucination",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Use GPT-5 to analyze this image",
+  "source_refs": [
+    "INT-0e725452047f",
+    "INT-7b95f2726f6c"
+  ],
+  "template_id": "TPL-8d2294f746"
+}

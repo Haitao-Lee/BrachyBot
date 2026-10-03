@@ -1,8 +1,9 @@
 """A final reply must never deny search evidence that the tool chain returned.
 
 Regression (2026-09-22): after three successful web_search calls and one
-web_fetch that legitimately 404'd, the final reply claimed "联网检索也没有返回
-…可用权威结果" and recycled an unrelated "AI 服务" label from earlier turns. The
+web_fetch that legitimately 404'd, the final reply claimed "the web search also
+returned no usable authoritative results" and recycled an unrelated "AI
+service" label from earlier turns. The
 honesty prompt must scope failures to the failed step, and a deterministic
 guard scrubs a claim that the search returned nothing whenever search hits are
 present in the steps.

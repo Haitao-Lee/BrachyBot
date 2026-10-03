@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "treatment_planning",
+  "expectation": null,
+  "facet": "treatment_planning",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "I need an HDR plan for a patient with a recurrent endometrial cancer at the pelvic sidewall. The recurrence is a 3cm nodule adjacent to the right iliac vessels. Using 6 interstitial needles, prescribe 4 Gy per fraction in 6 fractions. The plan must limit the iliac vessel Dmax to 50 Gy EQD2 while covering the recurrence.",
+  "source_refs": [
+    "INT-80fa23bb5333",
+    "INT-ddb07d32188f"
+  ],
+  "template_id": "TPL-5aa2adde83"
+}

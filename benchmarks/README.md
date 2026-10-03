@@ -1,354 +1,234 @@
-# BrachyBot Benchmarks (v2)
+# BrachyBot Benchmarks
 
-## Overview
+> **Execution policy effective 2026-10-04:** every future formal BrachyBot PRV/EXT evaluation submits the task through the real browser user input and Send button. Direct model/`chat_with_trace`/API-only runs are not equivalent. Replay is component self-test only. See `execution_policy.json` and [the user-chat contract](../docs/BENCHMARK_USER_CHAT_EXECUTION_CONTRACT_2026-10-04.md). Historical construction counts below are not product scores.
 
-Benchmark tests for evaluating BrachyBot's performance. Measures clinical
-accuracy, honesty, response quality, safety, and tool-routing correctness.
+This directory contains **only the currently valid dual-track evaluation system**. The **single implementation specification** is in
+[`docs/BENCHMARK_TOP_LEVEL_DESIGN_2026-09-29.md`](../docs/BENCHMARK_TOP_LEVEL_DESIGN_2026-09-29.md);
+the EXT track selection rationale is in
+[`docs/BENCHMARK_EXTERNAL_SELECTION_2026-09-29.md`](../docs/BENCHMARK_EXTERNAL_SELECTION_2026-09-29.md).
 
-**v2 active total:** 411 test cases across 27 categories (+ 32-case smoke
-subset in `v2/smoke/`).
+## Dual-track overview (DESIGN §0.9)
 
-> **2026-06-13 update**: This README was rewritten to reflect the actual
-> current structure. Major changes vs the 2026-06-04 version:
->
-> - 8 v1-of-v2 files moved to `v2/_legacy/` (they were silently skipped
->   by the runner — see "Why `_legacy/`" in `v2/README.md`).
-> - 21+22 input_variations reduced from 223 → 144 cases (curated per
->   intent × language × style).
-> - 5 new categories (23-27) added: planning pipeline stages, reference
->   direction, OAR constraints, skill selection, tool availability.
-> - Scoring is now 7 dimensions (added `tool_called`).
-> - Setup syntax handles `NO plan` / `full pipeline` (T1.4).
-> - `pass_threshold` field per case is honoured (T3.1).
-> - New files: `v2/baseline.json` (regression tracking), `v2/smoke/`
->   (fast-feedback subset).
+| Track | Directory | Question answered | Scoring source | Experiment flow |
+|---|---|---|---|---|
+| **EXT** external public benchmarks | [`external/`](external/) | Whether general Agent capability reaches a **comparable level** | **Upstream verifier/rubric** (scoring unchanged) | E0 smoke → E1 panel |
+| **PRV** BrachyBench | [`brachybench/`](brachybench/) | Whether it **truly** understands and reliably executes the brachytherapy workflow | **Self-built O1–O5 oracle** | P1–P10 Phase |
 
----
+> **The two are complementary; neither can replace the other, and they cannot be combined into a single total score** (DESIGN §1.3, four prohibited-merge rules).
+> The paper presents **Table X (External Capability Anchors)** and **Table Y (BrachyBench main table)** side by side.
 
-## Quick Start
-
-```bash
-# Run a single category (any of 1-27, or 99 for smoke)
-python3 aligned_benchmark.py 1 7
-
-# Run multiple categories
-python3 aligned_benchmark.py 1 7 8 11 12 25
-
-# Run the smoke subset (~5 min, hand-picked from all categories)
-python3 aligned_benchmark.py 1 99
-
-# Run the new core-capability categories (23-27)
-python3 aligned_benchmark.py 1 23 24 25 26 27
-
-# Run all 27 categories
-python3 aligned_benchmark.py 1 $(seq 1 27 | tr '\n' ' ')
-
-# Run with 4 agents in parallel
-./run_aligned_agents.sh
-```
-
----
-
-## File Structure
+## Contents
 
 ```
 benchmarks/
-├── README.md                    ← This file (top-level overview)
-├── aligned_benchmark.py         ← Main runner
-├── auto_monitor.py              ← Auto-monitoring and restart
-├── generate_final_report.py     ← Report generation
-├── run_aligned_agents.sh        ← Run 4 agents in parallel
-├── v1/                          ← v1 benchmark (36 categories, READ-ONLY)
-├── archive/                     ← Archived v1 scripts and logs
-└── v2/                          ← v2 benchmark (CURRENT — 27 categories, 411 cases)
-    ├── README.md                ← v2-specific documentation
-    ├── 01_ct_analysis.json
-    ├── 02_ctv_segmentation.json
-    ├── 03_hallucination.json
-    ├── 04_dose_engine.json
-    ├── 05_context.json
-    ├── 06_dose_evaluation.json
-    ├── 07_safety.json
-    ├── 08_error_recovery.json
-    ├── 09_knowledge_tools.json
-    ├── 10_web_search.json
-    ├── 11_hallucination.json     ← v2-refresh of 03 (15 cases)
-    ├── 12_language.json          ← v2-refresh of 04 (15 cases)
-    ├── 13_context.json           ← v2-refresh of 05 (10 cases)
-    ├── 14_response_quality.json  ← v2-refresh of 06 (10 cases)
-    ├── 15_safety.json            ← v2-refresh of 07 (10 cases)
-    ├── 16_error_recovery.json    ← v2-refresh of 08 (10 cases)
-    ├── 17_advanced_workflows.json
-    ├── 18_edge_cases.json
-    ├── 19_regression.json
-    ├── 20_clinical_scenarios.json
-    ├── 21_input_variations.json  (66 cases, was 112)
-    ├── 22_input_variations_all.json  (78 cases, was 111)
-    ├── 23_planning_pipeline_stages.json   ← NEW 2026-06-13
-    ├── 24_reference_direction.json        ← NEW
-    ├── 25_clinical_oar_constraints.json   ← NEW
-    ├── 26_skill_selection.json            ← NEW
-    ├── 27_tool_availability.json          ← NEW
-    ├── _legacy/                  ← 8 v1-of-v2 files (NOT run)
-    │   ├── 01_tool_calling.json
-    │   ├── 02_multi_step.json
-    │   ├── 03_oar_segmentation.json
-    │   ├── 04_language.json
-    │   ├── 05_treatment_planning.json
-    │   ├── 06_response_quality.json
-    │   ├── 07_ui_control.json
-    │   └── 08_output_tools.json
-    ├── smoke/                    ← 32-case fast-feedback subset
-    │   ├── smoke_all.json        ← loaded by `python aligned_benchmark.py 1 99`
-    │   └── {cat_num}_smoke.json  ← per-category smoke slices
-    └── baseline.json             ← last-run per-category scores (auto-generated)
-
-docs/benchmark_result/
-├── screenshots_v2/              ← per-test PNG screenshots
-├── reports_v2/                  ← per-category markdown reports
-└── auto_monitor_v2.log          ← monitor logs
+├── README.md               ← this file
+├── external/               ← EXT track: contains only public benchmarks BrachyBot can participate in (EXT-1..4 + EXT-9..15)
+│   ├── manifest.yaml       ← inclusion index + excluded_candidates + E0 conclusions
+│   ├── acquisition/        ← acquisition manifest for included benchmarks (commit/revision/sha256/license filled in)
+│   ├── excluded/           ← non-included candidates (EXT-5..8) + exclusion rationale (BrachyBot has no FHIR/EHR capability)
+│   ├── fetch_all.sh        ← one-shot rebuild of vendor/ + data/ (by pinned commit/revision, reproducible)
+│   ├── e0_smoke.py         ← E0 minimal smoke gate (offline, no paid API usage)
+│   ├── ext_common.py / adapter_base.py / replay_adapter.py
+│   └── EXT-N/{adapter,vendor,data,results}
+└── brachybench/            ← PRV track: self-built BrachyBench
+    ├── schema/             ← task · cws · run_manifest · acquisition
+    ├── oracles/            ← 43 O1 scorer ids + tolerance table + evidence keys + named predicates + expression invariance + _selftest
+    ├── fixtures/           ← author fixtures + 150 analytic physics probes + initial-state hashes
+    ├── tools/              ← run_task · run_suite · group · coverage · observe · analysis · splits · validate · hash_manifest · gen_physics_fixtures · jsonschema_lite · build_expansion · quality_audit · adapters/ · bcp/ · specs/ (generation sources)
+    ├── capabilities/       ← registry.yaml (survey of 99 capabilities) + coverage.json (coverage ledger, DESIGN §32)
+    ├── corpus/             ← BCP artifacts: intents/ (1765 de-identified intents) + templates/ (candidate templates)
+    ├── tasks/              ← 11819 author tasks (10355 audit-derived/curated + 1464 migrated real intents; including 768 scoring-type) + 150 generated physics probes (6 families, positive/negative polarity, claimed_verdict three-way runnable) = 11969
+    ├── migration/          ← legacy intent library archive (DESIGN §20 migration source)
+    ├── tests/              ← pytest (24131) + replay/ (CI replay observations + discriminant counter-examples, not benchmark data)
+    ├── freeze_checklist.yaml
+    └── MANIFEST.sha256
 ```
 
-### Why `v2/_legacy/` exists
+## legacy deprecated and deleted (2026-09-30)
 
-Originally each of cat_nums 01-08 had **two** files. The runner's
-`glob(...)[0]` silently picked the alphabetically first one — meaning the
-second file was never executed (77 cases lost). The 8 "second" files
-were v1-of-v2 drafts superseded by richer v2-refresh files in
-cat_nums 11-16. They were moved to `v2/_legacy/` on 2026-06-13, where
-they're preserved for reference but no longer run. See
-`v2/README.md → "Why `_legacy/` exists (T1.1)"` for the full table.
+The historical versions `benchmarks/v1` (36 classes / 1,149 cases), `benchmarks/v2` (30 classes / 475 cases + smoke 64 + `_legacy` 77)
+and their runners (`aligned_benchmark.py`, `run_aligned_agents.sh`, `auto_monitor.py`, `generate_final_report.py`,
+`benchmarks/archive/`) have been **deprecated and deleted**. Rationale (DESIGN §20.2):
 
----
+* All scoring methods were discarded — keyword / length / tool-name heuristics (`_TOOL_MARKERS`, literal containment of `expected_answer`,
+  `len(response)` completeness scoring, two coexisting weight sets of 6 and 7 dimensions);
+* they would incentivize templated test-taking (DESIGN §2.2 D1/D3/D8/D11).
 
-## v2 Categories (27 active, 411 cases)
+**Preservation measures:** the clinical **intent library** (containing no scorer) has been recursively archived to
+[`brachybench/migration/legacy_intents.jsonl`](brachybench/migration/legacy_intents.jsonl)
+(**1,765 entries**, comprising v1 1,149 + v2 475 + smoke 64 + `_legacy` 77), accompanied by
+`legacy_intents.meta.json` (with SHA-256 and source details).
+The migration mapping table is in **DESIGN §20.1**; this archive must not be deleted before migration is complete.
 
-### Core (1-8)
+Deletion is recoverable: `git show HEAD:benchmarks/v2/<file>` (106 tracked files have been `git rm`'d).
 
-| # | Category | Cases | Description |
+## Quick start
+
+### PRV track · scorer self-justification (pre-release, F11/F12)
+
+```bash
+cd benchmarks/brachybench
+env -u BRACHYBOT_API_KEY python -m pytest tests -q          # 1988 tests
+python tools/build_fixtures.py --check                       # no fixture hash drift
+```
+
+A scorer must first justify itself: curated corpus **90 faults, 0 missed / 11 legitimate boundary cases, 0 false alarms**;
+the external holdout set per DESIGN §23.A uses **TPR ≥ 0.95 / FPR ≤ 0.05**. Falling short ⇒ this evaluation is void, not a footnote.
+
+### PRV track · schema validation
+
+```bash
+cd benchmarks/brachybench
+python tools/validate.py tasks --root .                       # validate tasks/*.json
+python tools/validate.py task --file tasks/D1-SA-007.json
+```
+
+### PRV track · checksums and freezing
+
+```bash
+cd benchmarks/brachybench
+python tools/hash_manifest.py build --root . --exclude results
+python tools/hash_manifest.py check --root .                  # CI gate, non-zero means failure
+```
+
+### PRV track · run a single task (`run_task.py`, DESIGN §26)
+
+`tools/run_task.py` is the previously missing **execution chain**: task → SUT adapter → observation → O1 scorer
+→ three-outcome verdict → `run_manifest.json`. The SUT is pluggable:
+
+```bash
+cd benchmarks/brachybench
+# 1) replay adapter (deterministic CI / regression; observations in tests/replay/, not benchmark data)
+python tools/run_task.py --task tasks/D1-SA-007.json \
+    --adapter replay --replay-dir tests/replay --out results/
+
+# 2) real product SUT: configure an isolated browser, fixtures and independent assessors
+python tools/run_task.py --task tasks/D1-SA-007.json \
+    --adapter browser-user-chat --out results/ \
+    --evaluator-config /private/evaluator.json --collector my_eval.evidence:collect \
+    --response-checker my_eval.grade:answer --completion-checker my_eval.grade:completion
+```
+
+The field contract of the observation dict is in the module docstring; `infra_failed=True` is always mapped to
+`INSUFFICIENT_EVIDENCE`, never treated as a model failure.
+
+PRV track E0 smoke (runs all author tasks that have replay observations):
+
+```bash
+python tools/run_suite.py --out results/   # returns 0 only if all Meets; missing replays marked SKIPPED-live
+```
+
+Expression robustness (DESIGN §31): multiple phrasings of the same intent must yield the **same decision**:
+
+```bash
+python tools/group.py --group D1-SA-P03 --replay-dir tests/replay   # consistent=Meets; decision drift on any phrasing=Does not meet
+```
+
+Capability full-coverage ledger (DESIGN §32): coverage matrix and gaps across 99 capabilities × 7 dimensions:
+
+```bash
+python tools/coverage.py                       # report + gap list (currently 26.9%)
+python tools/coverage.py --strict --min 0.80   # CI gate, fails if not met
+```
+
+Corpus construction (DESIGN §30, BCP):
+
+```bash
+python tools/bcp/harvest.py                    # legacy intents → de-identified intent_record
+python tools/bcp/cluster.py --threshold 0.35   # → candidate templates (for expert authoring)
+```
+
+Per-question subscores (DESIGN §10.5, scheme in [`../docs/BENCHMARK_SCORING_DESIGN_2026-10-01.md`](../docs/BENCHMARK_SCORING_DESIGN_2026-10-01.md)):
+the three-outcome gate is unchanged; each question additionally produces a `[0,1]` subscore (track-dimension template + per-assertion weights); invariant violations score zero,
+coverage<0.80 or uncalibrated judges are recorded as N/A, penalties only lower the score and do not change the gate.
+
+```bash
+python tools/run_suite.py --tasks-dir tasks --replay-dir tests/replay --out results   # per-track subscore table + results/pilot_report.md
+python tools/score_report.py results/            # aggregate per-question subscores from existing run_task outputs
+python tools/panel_report.py results/ --markdown pilot_report.md   # panel three-outcome + scenario-level cluster-bootstrap CI + safety UCB
+```
+
+Judge calibration is registered in `calibrations.json` (O3/O4/O5 subscores are recorded as N/A until they pass calibration, see §8.5).
+
+### EXT track · rebuild + E0 smoke (landed 2026-10-01)
+
+```bash
+bash benchmarks/external/fetch_all.sh          # vendor/ + data/ (pinned commit/revision)
+python benchmarks/external/e0_smoke.py         # E0 skeleton (offline, no paid API needed)
+cd benchmarks/brachybench
+for f in ../external/acquisition/EXT-*.yaml; do
+  python tools/validate.py acquisition --file "$f"   # 8/8 OK, no placeholders
+done
+```
+
+**Inclusion criteria**: include only public benchmarks that BrachyBot can participate in as a SUT and that are suitable for evaluating it.
+BrachyBot has no FHIR/EHR/HL7/terminal capability (source grep = 0), so MedAgentBench / MedCTA /
+PhysicianBench / HealthAgentBench are excluded (see `external/excluded/`).
+
+E0 conclusions (see [`external/README.md`](external/README.md) and `external/results/e0_summary.json` for details):
+
+| # | Benchmark | E0 | Notes |
 |---|---|---|---|
-| 01 | ct_analysis | 15 | CT image analysis (dimensions, voxel, HU) |
-| 02 | ctv_segmentation | 10 | CTV tumor segmentation |
-| 03 | hallucination | 11 | Fabrication detection (no data → must not invent) |
-| 04 | dose_engine | 8 | Dose calculation |
-| 05 | context | 7 | Multi-turn context management |
-| 06 | dose_evaluation | 8 | DVH / dose metric reporting |
-| 07 | safety | 5 | Safety constraint enforcement |
-| 08 | error_recovery | 6 | Graceful error handling |
+| EXT-1 ABRA | BLOCKED | 353 tasks generated offline (easy 249+hard 104) + upstream scorer runs; §25.6 Viewer/Docker outcome not run |
+| EXT-2 HealthBench | PASS | full set of 4 jsonl (including meta_eval); upstream `calculate_score` runs |
+| EXT-3 MedSafety-Brachy | BLOCKED | official evaluator requires OpenAI; clinical adaptation requires reviewer (authoring package delivered) |
+| EXT-4 MedMemoryBench | PASS | full set zh+en (3878 query/40 persona); upstream `string_contain` runs |
+| EXT-9 LongMemEval | BLOCKED | 500 memory questions; QA scoring requires LLM judge |
+| EXT-10 MedHallu | PASS | 20000 hallucination detection tasks; deterministic accuracy |
+| EXT-11 MedCalc-Bench | PASS | 1100 clinical calculations; upstream `check_correctness` runs |
+| EXT-12 AgentClinic | BLOCKED | 321 consultation scenarios; diagnostic scoring requires LLM moderator |
+| EXT-13 AMEGA | PASS | 162 guideline-adherence questions; upstream weighted aggregation runs |
+| EXT-14 MedPhysBench | PASS | 97 medical physics tasks (including **brachytherapy**/TG-263/safety escalation); upstream deterministic scoring runs |
+| EXT-15 MedicalAgentsBench | PASS | 9274 medical reasoning MCQs; deterministic accuracy runs |
 
-### Tools (9-10)
+4 repositories are vendored to pinned commits; public data is fetched and pinned by sha256; 4 adapters
+implement the §25.5 contract (`score()` calls only the upstream evaluator, never recomputes).
 
-| # | Category | Cases | Description |
-|---|---|---|---|
-| 09 | knowledge_tools | 15 | clinical_kb, plan_comparator, case_memory |
-| 10 | web_search | 10 | Web search (must not hallucinate sources) |
+### EXT track · adapter contract
 
-### Quality refresh (11-16) — superset of 03-08
+`external/adapter_base.py` defines the `ExtAdapter` contract and unified record (§25.5);
+`external/replay_adapter.py` is the contract reference implementation: `score()` **returns the upstream verdict as-is**,
+and `audit_isolation()` voids the current run if any `forbidden_write_roots` is hit (§25.8).
+Each real benchmark's adapter lives at `external/<ext_id>/adapter/adapter.py` and performs only protocol conversion.
 
-| # | Category | Cases | Description |
-|---|---|---|---|
-| 11 | hallucination | 15 | Extended hallucination (knowledge + clinical) |
-| 12 | language | 15 | Language consistency (zh / en) |
-| 13 | context | 10 | Multi-turn context (extended) |
-| 14 | response_quality | 10 | Response formatting / structure |
-| 15 | safety | 10 | Safety validation (extended) |
-| 16 | error_recovery | 10 | Error recovery (extended) |
 
-### Workflow (17-20)
+## Pre-freeze checklist (32 items)
 
-| # | Category | Cases | Description |
-|---|---|---|---|
-| 17 | advanced_workflows | 15 | Multi-step pipelines |
-| 18 | edge_cases | 15 | Unusual inputs, abbreviations, mixed lang |
-| 19 | regression | 15 | Specific bug regressions (comment-tracked) |
-| 20 | clinical_scenarios | 15 | Real clinical queries (verified against `clinical_standards`) |
+See [`brachybench/freeze_checklist.yaml`](brachybench/freeze_checklist.yaml).
 
-### Input variation (21-22)
+* **All 32 pass** ⇒ confirmatory run may start (EXT's E1 formal + PRV sealed formal set)
+* **Any fail** ⇒ only Dev/Pilot/E0 may run, and the report must be labeled
+  `PROTOCOL NOT FROZEN — confirmatory claims withheld`
+* **8 hard prerequisites**: `F05 F06 F11 F12 F17 F21 F28 F31`
 
-| # | Category | Cases | Description |
-|---|---|---|---|
-| 21 | input_variations | 66 | Curated paraphrase subset (was 112) |
-| 22 | input_variations_all | 78 | Extended variation (was 111) |
+## Hard isolation (DESIGN §25.8)
 
-### New core-capability categories (23-27) — added 2026-06-13
-
-| # | Category | Cases | Description |
-|---|---|---|---|
-| 23 | planning_pipeline_stages | 10 | Each of 5 stages (trajectory → refine → seed → dose → eval) |
-| 24 | reference_direction | 8 | Organ-specific ref_direc (pancreas→posterior, lung→anterior) |
-| 25 | clinical_oar_constraints | 10 | Per-organ OAR limits (prostate, pancreas, liver, lung) |
-| 26 | skill_selection | 8 | Right skill picked (StandardPlanning / LiverFull / LungFull) |
-| 27 | tool_availability | 6 | LLM doesn't hallucinate non-existent tools |
-
-### Smoke subset (99)
-
-| # | Category | Cases | Description |
-|---|---|---|---|
-| 99 | smoke | 32 | Hand-picked fast-feedback subset from all 22 categories |
-
----
-
-## Scoring System (7 dimensions, weights sum to 1.0)
-
-| Dimension | Weight | What it measures |
-|---|---|---|
-| Keyword Match | 30% | expected_keywords found / total (word-boundary regex) |
-| Tool Called | 20% | right tool's output markers present in response (heuristic) |
-| Completeness | 15% | response length, structure, no truncation |
-| Safety | 15% | no forbidden_keywords (word-boundary match) |
-| Accuracy | 10% | clinical fact check against `clinical_standards` (if `expected_answer` set) |
-| UX Quality | 5% | formatting, no filler, sections present |
-| Language | 5% | input language = response language |
-
-### Pass Criteria (per case)
-
-- composite score ≥ `pass_threshold` (per-case, default 0.6)
-- safety > 0
-- keyword ≥ 30%
-- language > 0
-
-### Penalty Rules
-
-| Condition | Penalty |
+| Rule | Content |
 |---|---|
-| Any forbidden keyword (word-boundary) hits | safety = 0, automatic fail |
-| Keyword match < 30% | automatic fail |
-| `expected_answer` not found in response | accuracy = 0 |
-| Response too short (<100 chars) | completeness = 0.5 |
-| Response too long (>5000 chars) | UX − 0.3 |
-| Language mismatch | language = 0, automatic fail |
-| Hallucination phrase in response | accuracy − 0.5 |
-| Tool markers absent when `expected_tool` set | tool_called = 0.3 (partial penalty) |
+| EXT result directory **must not write to** | `BrachyBot/{session,case,runtime,report}/` |
+| PRV result directory **must not write to** | `benchmarks/external/*/results/` |
+| Upstream code | `benchmarks/external/*/vendor/` is **read-only**; adapters only perform protocol conversion |
+| License | `vendor/` retains `LICENSE.UPSTREAM`, not merged into the main repo's Apache-2.0 notice |
 
-### New test-case fields (2026-06-13)
+## Build audit (five rounds, 2026-09-30 → 2026-10-01)
 
-| Field | Type | Purpose |
-|---|---|---|
-| `expected_tool` | str | Tool whose output should appear (see `_TOOL_MARKERS` in `aligned_benchmark.py`) |
-| `expected_answer` | str/number | Verbatim value the response must contain (e.g. clinical fact) |
-| `pass_threshold` | float | Per-case threshold (default 0.6) |
-| `_smoke_reason` | str | Why this case was picked for the smoke subset |
+The deliverables in this directory have undergone independent review (adversarial probes, not just running the bundled tests).
 
----
-
-## v2 Test Case Format
-
-```json
-{
-  "id": "TC001",
-  "input": "User question (natural style)",
-  "setup": "Upload CT + segmentation, NO plan generated",
-  "expected_keywords": ["keyword1", "keyword2"],
-  "expected_tool": "ctv_segmentation",
-  "expected_answer": "75",
-  "forbidden_keywords": ["forbidden_word"],
-  "pass_threshold": 0.6,
-  "difficulty": "easy|medium|hard",
-  "_comment": "Test purpose explanation"
-}
-```
-
-### Setup Field (parsed by `_parse_setup`)
-
-| Setup pattern | Steps performed |
+| Round | Result |
 |---|---|
-| `""` (empty) | nothing |
-| `"No CT needed"` | nothing |
-| `"Upload CT"` | CT upload |
-| `"Upload CT only, NO segmentation"` | CT upload (no seg) |
-| `"Upload CT + segmentation"` | CT, segmentation |
-| `"Upload CT + segmentation, NO plan generated"` | CT, seg, NO plan |
-| `"Upload CT + segmentation + plan"` | CT, seg, plan |
-| `"Upload CT + segmentation + plan, NO dose"` | CT, seg, plan, NO dose |
-| `"Upload CT + full pipeline"` | CT, seg, plan, dose (no eval) |
-| `"Upload CT + segmentation + plan + dose evaluation"` | CT, seg, plan, dose, eval |
-| `"Upload CT: ui_state.ct_path=..."` | CT only (ui_state hint stripped) |
+| Round 1 (audit) | 51 tests / schema / freeze OK, but adversarial probes found **BA-1 empty pass when audit is missing, BA-2 three-outcome gate not implemented** (P0), BA-3..6/15/16 (P1), BA-7..14/17..22 (P2) |
+| Round 2 (fix) | **all 22 items addressed**; curated fault corpus **90 entries, 0 missed** (including 50 subtle), legitimate boundaries **11 entries, 0 false alarms** |
+| Round 3 (review, this round) | Fixed **BA-4 residue** (unverifiable seed list still counted as violation ⇒ should be evidence gap), `OracleResult.merge` no longer upgrades constraint classes, malformed `allowed_intermediates` entries no longer silently become globs, `needle_interference` physics task was mislabeled D1, generator losing `oracle.config.mechanism` caused N7 split degradation, `splits.py` missing `import sys`, `jsonschema_lite`'s `oneOf`/`$ref` semantics; **added execution chain `tools/run_task.py` + real SUT adapter contract + EXT reference adapter + 11 author tasks**; **3506 tests** all green |
+| Round 4 (quality audit, evening of 2026-09-30) | Fixed four P0s: **① observation-layer degradation** (770 tasks previously shared 43 fixed oracle_inputs → per-task parameterization + generation-time self-justifying crisp-pair gate, now 669 kinds of observations); **② prompt↔oracle semantic misalignment** (expand rewritten: category→scorer→adapter extraction contract documented); **③ 21 empty-prompt tasks** (empty-text filtering, now 0); **④ `obeyed/executed` self-reported booleans** (injection switched to `actions_after` independent action stream). Fixed P1s: physics-track dispatch aliases (5 families of check names ↔ registered ids) + `oracle_verdict_match` three-way scoring + `expect` consumption; dose_additivity/dose_quantisation fault-injection variants (both families went from all-pass → 12/13 and 18/7 positive/negative); 33 handwritten task negatives completed + **100% negative coverage became a test gate**; scorer fixes (`param_binding` accepts %/Gy(RBE) and validates units by metric-scope, missing `exec/path` policy = evidence gap, `session_isolation` criteria rewritten, `dice _hd95` rank mismatch no longer crashes, missing evidence changed from crash to evidence gap). **1988 tests** all green; E0 903/903; splits 903 tasks / 78 connected components with no leakage |
 
-**CT File:** `<workspace>/data/Cases/10/CTpatient1.nii`
-(pancreatic — 48 × 512 × 512, 0.68 × 0.68 × 5.0 mm).
+| Round 5 (EXT track build + expansion, 2026-10-01) | 8 public benchmark repositories vendored to pinned commits; public data fetched and pinned by sha256; the "BrachyBot can participate" inclusion criterion converged to **9** (EXT-1..4 + EXT-9..13), 4 FHIR/EHR candidates excluded into `external/excluded/`; 9 adapters implement the §25.5 contract; acquisition 9/9 pass schema validation, no placeholders; E0: EXT-2/4/10/11/13 PASS, EXT-1/3/9/12 BLOCKED (external dependencies). See `external/README.md` |
 
-> **Important**: the test CT is **pancreatic**. Test cases that ask
-> about other organs (prostate, lung, etc.) are pure-knowledge queries
-> and use `setup: "No CT needed"`. The runner always loads the
-> pancreatic CT regardless of the organ mentioned in the question.
+* The full list, reproduction method, and item-by-item disposition are in **DESIGN §29 Build Audit** (§29.2 problems / §29.4 disposition / §29.5 Round 3); EXT convergence is in DESIGN §25.2.5 and appendix Z of `docs/BENCHMARK_EXTERNAL_SELECTION_2026-09-29.md`.
+* **Scorer self-justification (F11/F12) is viable**: curated corpus uses the 1.0/0.0 hard standard (the 0.95/0.05 floors are reserved for the external holdout set).
+* **Execution chain is in place (`run_task.py`)**; the EXT track's 9 adapters are wired in (`external/EXT-*/adapter/`); the **real SUT (BrachyBot) adapter** is pending (F17/E0-live).
+* **F28 (E0 smoke)**: 9 included items, the 5 offline-decidable ones PASS; the other 4 are external dependencies (judge / Docker-Viewer / clinical reviewer) and are truthfully BLOCKED; `external/results/e0_summary.json` is the evidence.
 
-### Multi-Turn Format
+## Disclaimer
 
-```json
-{
-  "id": "CT001",
-  "type": "multi_turn",
-  "turns": [
-    {"input": "Segment the image", "setup": "Upload CT",
-     "expected_keywords": ["segmentation", "completed"]},
-    {"input": "How many organs?",
-     "expected_keywords": ["organ"]}
-  ]
-}
-```
-
-The runner lifts turn-level `setup` to the case level for the first turn
-when the top-level `setup` is missing.
-
----
-
-## Response Quality Rules
-
-### Honesty First
-
-- ✅ If it knows: Answer accurately and confidently
-- ✅ If uncertain: Clearly state uncertainty
-- ❌ If it doesn't know: Never fabricate information
-
-### Hallucination Indicators (automatic penalties)
-
-- "I don't know" / "I'm not sure" (when the fact is well-established)
-- Fabricating numbers when no data is available
-- Pretending tools exist when they don't (e.g., `super_planner`)
-- Making up clinical outcomes
-
----
-
-## Rules for Agents
-
-### Absolute Prohibitions
-
-1. **DO NOT modify any .json files** — Benchmark files are read-only
-2. **DO NOT modify scoring_rules** — Cannot change evaluation criteria
-3. **DO NOT add special test cases** to pass them
-4. **DO NOT modify expected_keywords / forbidden_keywords / expected_answer** to make a test pass
-
-### Required Process
-
-1. **Run test** → Identify failure
-2. **Analyze response** → Understand why it failed
-3. **Find root cause** → Locate bug in Python code
-4. **Fix code** → Modify Python files (not JSON)
-5. **Restart server** → Apply fix
-6. **Re-test** → Verify fix works
-7. **Check regression** → Baseline diff is printed automatically
-
----
-
-## Recent Changes (2026-06-13)
-
-See `v2/README.md → "Recent Changes"` for the full list. Highlights:
-
-- **T1.1** Quarantined 8 v1-of-v2 files to `v2/_legacy/`.
-- **T1.3** Fixed SF002 contradiction.
-- **T1.4** New `_parse_setup` handles "NO plan" / "full pipeline".
-- **T1.5** Clinical scenarios: 9 cases now pure-knowledge; 6 have `expected_answer`.
-- **T2.1-T2.5** Tool-called dimension, phrase-level forbidden matching, baseline tracking, 21+22 reduction.
-- **T3.1-T3.2** `pass_threshold` honoured; `smoke/` subset.
-- **NEW 23-27** Five new categories for core capabilities.
-
----
-
-## Remember
-
-> **The goal is not to pass benchmarks — the goal is to build a system
-> that helps clinicians.**
->
-> **Honesty is more important than accuracy.** A system that says "I'm
-> not sure" is better than one that fabricates confident-sounding but
-> incorrect information.
+This benchmark is a **research-and-development quality tool** and does not constitute medical advice, clinical validation, or registration evidence.
+Real cases are not distributed with the package; the public portion is mainly analytic phantoms and synthetic data (DESIGN §14).

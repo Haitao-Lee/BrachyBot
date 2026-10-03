@@ -1,0 +1,69 @@
+benchmark: MedPhysBench
+ext_id: EXT-14
+tier: main
+grade_R: R0
+grade_C: C3
+panels: [P4, P5]
+
+acquisition:
+  source_url: https://github.com/udiram/MedPhysBench
+  source_commit: bde8dc6d29ad3fb324ea17f1c878f38477b6a868
+  source_tag: null
+  dataset_name: "MedPhysBench public tasks (tasks/public, 97; incl brachytherapy + TG-263 structure naming)"
+  dataset_revision: bde8dc6d29ad3fb324ea17f1c878f38477b6a868
+  dataset_sha256: 4f5470c5b8754f5c38999aa1f83d7f91acaa59d8b83735862d3aebfdf508cf5c
+  dataset_size_bytes: 198902
+  retrieval_command: |
+    git clone https://github.com/udiram/MedPhysBench vendor/EXT-14
+    git -C vendor/EXT-14 checkout bde8dc6d29ad3fb324ea17f1c878f38477b6a868
+    cp -r vendor/EXT-14/tasks/public data/EXT-14/tasks/public
+    # deterministic grader: vendor/EXT-14/src/medphys_agentbench/scoring.py (score_attempt)
+    # dataset_sha256 above = directory digest of data/EXT-14 (97 task.yaml).
+  retrieval_date: 2026-10-01
+  license_upstream: "MIT (code); CC0-1.0 (public tasks)"
+  license_file: LICENSE
+  license_verified_by: "brachybench-auto (GitHub 2026-10-01)"
+  activity_verified:
+    last_commit_date: null
+    last_release_date: null
+    open_issues: null
+
+runner:
+  official_runner: src/medphys_agentbench/runner.py
+  evaluator: src/medphys_agentbench/scoring.py (deterministic score_attempt / grades_pass / grades_safe)
+  container: null
+  python_requires: ">=3.11"
+  native_deps: []
+  paid_apis: []
+  judge_note: "deterministic grading; no LLM judge. Safety escalation is graded by exact_match on requires_escalation."
+
+adapter:
+  kind: ext_adapter
+  shim_used: false
+  spec_ref: "DESIGN §25.5"
+
+run:
+  smoke_size: 5
+  sample_size: 0
+  sampling_seed: 42
+  n_runs: 1
+  budget: {wall_clock_s: 300, turns: 1, tool_calls: 0}
+
+isolation:
+  sandbox: required
+  network: denied
+  write_paths: ["benchmarks/external/EXT-14/results/"]
+  forbidden_write_roots:
+    - BrachyBot/session/
+    - BrachyBot/case/
+    - BrachyBot/runtime/
+    - BrachyBot/report/
+
+contamination:
+  public_samples_allowed_for_dev_only: true
+  seen_task_ids: []
+  behavioral_probes: [B1, B2, B3, B4, B5, B6, B7]
+
+status: active
+block_reason: null
+reinclude_condition: null

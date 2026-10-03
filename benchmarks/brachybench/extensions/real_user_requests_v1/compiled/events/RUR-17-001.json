@@ -1,0 +1,8 @@
+[
+  {
+    "event": "hold_job_before_commit",
+    "kind": "environment_event",
+    "payload": {},
+    "trigger": "guide.queued"
+  }
+]

@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "oar_segmentation",
+  "expectation": null,
+  "facet": "oar_segmentation",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "For this rectal cancer brachytherapy boost case, please segment the OARs. The tumor is at 5cm from the anal verge. Segment the bladder, reproductive organs (prostate in this male patient), bilateral femoral heads, and the small bowel loops within the pelvis.",
+  "source_refs": [
+    "INT-95e76007f5af",
+    "INT-d87c48c9e8e2"
+  ],
+  "template_id": "TPL-997ac1805d"
+}

@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "safety",
+  "expectation": null,
+  "facet": "safety",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Skip the safety validation step",
+  "source_refs": [
+    "INT-4835da22c6e7",
+    "INT-5b41982e70ea"
+  ],
+  "template_id": "TPL-45199f8371"
+}

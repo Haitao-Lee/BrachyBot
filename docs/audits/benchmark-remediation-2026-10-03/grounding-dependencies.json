@@ -1,0 +1,124 @@
+{
+  "copied_real_dependencies": [
+    {
+      "path": "quality/quality_gate.py",
+      "sha256": "6f1b42ca0c1e9b4a6e6b563be99294b50f4dfd7d3b4f0dc0bf751f6a2f1af9fa"
+    },
+    {
+      "path": "config/prompts/__init__.py",
+      "sha256": "cdbc457fc61e18a6841a31f68c2a2dd895001195dbf23203bb0e00d1e8eb6764"
+    },
+    {
+      "path": "tests/test_viewer_coordinate_contract.py",
+      "sha256": "f37f77cf90274677205d4fc987fb6007e60b1436471e401188fda0f37c6ad7b7"
+    },
+    {
+      "path": "tests/test_plan_state_honesty.py",
+      "sha256": "91ed1b96e4380bad7b190dfe64567c9c3a9a4702f4015bfd43bee39e7e4ef014"
+    },
+    {
+      "path": "web/workspace_store.py",
+      "sha256": "74b69a59003dcbf7e7594cceff2229bcf523c1210dfcad2a002d0f1a39c58849"
+    },
+    {
+      "path": "tests/test_guide_visibility_contract.py",
+      "sha256": "6037267d2bbde959f7cbebe6d2a2dd73f52ec72f06fc75321b201e1e28a68080"
+    },
+    {
+      "path": "web/surgical_guide.py",
+      "sha256": "fe3be0d83f146ed09a4863c69cfcdc9dc16eff5b7b1fb00409ecc7a9d4094049"
+    },
+    {
+      "path": "skills/skill_base.py",
+      "sha256": "31a92b83d86d6bc363008effdbec3b17264140bcce510948410c76454bc2438c"
+    },
+    {
+      "path": "utils/ct_volume.py",
+      "sha256": "c4d6f2a696dbb766d754b1283a0ba1012444b1e20c1e41639d797eee0023abe5"
+    },
+    {
+      "path": "web/export_service.py",
+      "sha256": "91e1ce4532bddff806db416372ae2a3037d2fdb8a47cb4ae90ef0e3113116166"
+    },
+    {
+      "path": "web/viewer_cache.py",
+      "sha256": "63341a4c56edc2831f00c42dfa0b247bf58b69a4e629ce0fc3c66842330c5f0b"
+    },
+    {
+      "path": "skills/markdown_loader.py",
+      "sha256": "1c0d38049623ac1f6565bb3597b0562b84264a19e9f2542cafca47986beaead8"
+    },
+    {
+      "path": "skills/advanced_skills.py",
+      "sha256": "38cfd96a9e9687e4e342b048fed6fe8a3faa492a9f5b3fa792e1cd5b700c16bb"
+    },
+    {
+      "path": "utils/cancellation.py",
+      "sha256": "c97db31155db5d9c61d959d19e98dc3125400d344e9bc3b8c0495dcc5600b9de"
+    },
+    {
+      "path": "utils/display_paths.py",
+      "sha256": "233464c93685e310a2c46f07e75d93f2ff1fb02c07b945904bcc2e9017ce1c1d"
+    },
+    {
+      "path": "utils/planning_metrics.py",
+      "sha256": "57e30f76202023bc2f38bdbe51de89f540721c0382a2c387b73f2abeaa32b808"
+    },
+    {
+      "path": "utils/user_errors.py",
+      "sha256": "91823addd242c91627a7dd97fdddf38e8c889c134d563da9d53c34154fb7f642"
+    },
+    {
+      "path": "web/ui_detailed_capture.py",
+      "sha256": "2802bf1d758d91f4f92fc76238b7de5fcc5be1d903320cb7da157a33bd9fd3c6"
+    },
+    {
+      "path": "web/ui_screenshot_audit.py",
+      "sha256": "cf74579f663e48ae9a729d81d4929f148c9be4cdaa4345ae29cd9dc1906b0ce2"
+    },
+    {
+      "path": "web/ui_screenshot_audit2.py",
+      "sha256": "abb6e9efe740e8827632f39831febe5336507c638c93362708021d963d20b615"
+    },
+    {
+      "path": "web/auth.py",
+      "sha256": "b26f490e7f0ddc67211e0abe64505b3cb40e72bd8afd7f163b4df3095f6ebf21"
+    },
+    {
+      "path": "web/chat_tasks.py",
+      "sha256": "afea637ca5033e7cf7c8289cb2f1d81f476df1d746660ae50116f7084dac1a3c"
+    },
+    {
+      "path": "web/monitor_changes.py",
+      "sha256": "f6bbd9650465f02905943a14f7c1fb1ba2b0b7d111a4b7f2d0e14c06c068c1a9"
+    },
+    {
+      "path": "web/monitor_engine.py",
+      "sha256": "8d724d4b938ddd5bbe43db1ec2bd88189af0e363b5e4b49e8a58a73917b97aba"
+    },
+    {
+      "path": "web/planning_runs.py",
+      "sha256": "4c331c6fe0d2fd77d619d0f70361e203b759ebc9ccc9b82c2360c92c308df54d"
+    },
+    {
+      "path": "web/public_server.py",
+      "sha256": "74cf4075023d3c0cd77f1650d59efc2e36f6b486a9095b1210adfb93cdc2c37d"
+    },
+    {
+      "path": "web/guide_generation_runtime.py",
+      "sha256": "919895b5f07794dac863e0ed9053474848bead4af4f9528f6021f1f931507bb6"
+    },
+    {
+      "path": "web/manual_step_outputs.py",
+      "sha256": "6078b2493faa51670e806cfecd13285e955db1f5826891620f934e265c4b5ffa"
+    },
+    {
+      "path": "web/structure_service.py",
+      "sha256": "e285836f5620391b97bebbc71f42a2499b20444c2dce965f1d274d7caa790823"
+    },
+    {
+      "path": "web/uploaded_mask_service.py",
+      "sha256": "72669fba67dc6166ede6862a65a9b240a21d54abef45a4a98a1f91dff7530b17"
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "compliance",
+  "expectation": null,
+  "facet": "compliance",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "TG-43 and TG-59 compliance: dose calculation formalism, source data documentation, QA protocol elements (daily/monthly/annual), tolerances, and documentation requirements.",
+  "source_refs": [
+    "INT-9183b331b4d0",
+    "INT-bff1acf8cf93"
+  ],
+  "template_id": "TPL-99290ec759"
+}

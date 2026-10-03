@@ -1,0 +1,15 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "input_variations",
+  "expectation": null,
+  "facet": "input_variations",
+  "gold_status": "draft",
+  "n_source_intents": 3,
+  "representative_text": "Switch to viewer",
+  "source_refs": [
+    "INT-3af731922bcc",
+    "INT-58083eec0445",
+    "INT-be12454d3630"
+  ],
+  "template_id": "TPL-69d512030d"
+}

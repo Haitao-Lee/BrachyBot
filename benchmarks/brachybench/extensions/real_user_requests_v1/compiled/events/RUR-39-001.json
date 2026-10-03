@@ -1,0 +1,10 @@
+[
+  {
+    "event": "drop_http_ack",
+    "kind": "environment_event",
+    "payload": {
+      "op_id": "opacity-half-1"
+    },
+    "trigger": "opacity.committed"
+  }
+]

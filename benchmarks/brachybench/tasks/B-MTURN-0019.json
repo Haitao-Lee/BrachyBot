@@ -1,0 +1,87 @@
+{
+  "schema_version": "1.0",
+  "id": "B-MTURN-0019",
+  "track": "B",
+  "layers": [
+    "L4"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "multi_turn_continuity",
+  "cost_class": "state_only",
+  "power_role": "exploratory",
+  "clinical_intent": "Multi-turn session: Comprehensive brachytherapy question abo ... then follow up with 60yo M with 2cm T2N0M0 anal canal SCC, c",
+  "fixture": {
+    "case_family": "legacy/multiturn",
+    "setup_script": "fixtures/setup/prostate_s02_full_pipeline.py",
+    "initial_state_hash": "sha256:38eabca0a6bcb5062deac0e5645e8bf52d9e5f51cdd0f137f824f4509461ada3"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-CTX",
+    "contrast_family_id": "legacy/multiturn"
+  },
+  "protocol": {
+    "mode": "multi_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "Comprehensive brachytherapy question about re_irradiation_interstitial. Treatment planning workflow for 52-year-old woman with 1.5 cm upper vaginal recurrence (FIGO I) after prior EBRT 50 Gy + HDR 24 Gy 8 years ago. Include surgical excision, pre-operative MRI, interstitial applicator selection, re-irradiation dose prescription, cumulative dose calculations, and post-operative care.",
+        "lang": "en"
+      },
+      {
+        "role": "user",
+        "text": "60yo M with 2cm T2N0M0 anal canal SCC, complete response post-nCRT. Liver transplant 5y ago (tacrolimus, mycophenolate). Colostomy from diverticulitis. Definitive brachytherapy with immunosuppression.",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 120,
+      "turns": 2,
+      "tool_calls": 12
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 3
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "state_invariant",
+    "constraint_class": "postcondition",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "multi_turn_state_ok",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "medium"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "MTURN-0019",
+    "hidden": false,
+    "generation_seed": 2026,
+    "canary_class": null,
+    "behavioral_probes": [
+      "multi_turn"
+    ],
+    "contrast_family_id": "legacy/multiturn"
+  },
+  "provenance": {
+    "source": "legacy_migrated",
+    "derived_from": "legacy:v1/19_workflow.json#Q1017+v1/19_workflow.json#Q1463",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto-verifier"
+    ],
+    "authored_on": "2026-09-30",
+    "deprecated": null
+  }
+}

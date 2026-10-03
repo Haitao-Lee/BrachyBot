@@ -87,7 +87,7 @@
       "coronal",
       "3d"
     ],
-    "description": "Click the viewer card expand/maximize button and toggle that card to fill the Viewers panel. Use value=3d for 'enlarge/maximize the 3D viewer' or '全屏放大三维查看器'. This changes panel layout, not camera fit or numeric zoom."
+    "description": "Click the viewer card expand/maximize button and toggle that card to fill the Viewers panel. Use value=3d for 'enlarge/maximize the 3D viewer' or 'enlarge the 3D viewer fullscreen'. This changes panel layout, not camera fit or numeric zoom."
   },
   "viewer.reset": {
     "commands": [

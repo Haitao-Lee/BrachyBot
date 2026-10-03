@@ -1,0 +1,5 @@
+# Isolated test environment only; do not install into the clinical runtime.
+pypdf==6.1.1
+jsonschema>=4.20,<5
+Pillow>=10,<13
+pytest>=8,<10

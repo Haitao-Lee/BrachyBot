@@ -1,0 +1,1402 @@
+{
+  "confirmatory_ready": false,
+  "family_count": 40,
+  "scenario_count": 82,
+  "schema": "rur-executable-1",
+  "shared_fixture_lineage": "synthetic-rur-base-v1; not independent clinical cases",
+  "split_policy": "All current tasks are public development; no sealed claim.",
+  "sut_results": "not_collected",
+  "sut_runs": 0,
+  "task_rows": [
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-01",
+      "id": "RUR-01-001",
+      "machine_rule_count": 3,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "K"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "全部更新承接明确过期产物"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-01",
+      "id": "RUR-01-002",
+      "machine_rule_count": 0,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "K"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "解释工具的追问不扩张旧授权"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-02",
+      "id": "RUR-02-001",
+      "machine_rule_count": 1,
+      "primary_track": "D1",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "I"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "礼貌请求显示已有对象"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-02",
+      "id": "RUR-02-002",
+      "machine_rule_count": 0,
+      "primary_track": "D1",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "I"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "能力探询不是立即生成"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-03",
+      "id": "RUR-03-001",
+      "machine_rule_count": 1,
+      "primary_track": "D1",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "否定一项不阻断另一项"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-03",
+      "id": "RUR-03-002",
+      "machine_rule_count": 0,
+      "primary_track": "D1",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "引文中的删除命令不授权"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-03",
+      "id": "RUR-03-003",
+      "machine_rule_count": 1,
+      "primary_track": "D1",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "已满足的显示条件请求可执行"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-03",
+      "id": "RUR-03-004",
+      "machine_rule_count": 0,
+      "primary_track": "D1",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "未满足条件应走无对象分支"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-04",
+      "id": "RUR-04-001",
+      "machine_rule_count": 3,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "M"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "两个目标分别定位"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-04",
+      "id": "RUR-04-002",
+      "machine_rule_count": 1,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "M"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "读取规划不授权重新规划"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-05",
+      "id": "RUR-05-001",
+      "machine_rule_count": 3,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "F"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "多对象透明度并保留导板"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-05",
+      "id": "RUR-05-002",
+      "machine_rule_count": 2,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "F"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "all is scoped to UI group"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-06",
+      "id": "RUR-06-001",
+      "machine_rule_count": 4,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "J",
+        "D1"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "撤销最后一次而非两次"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-06",
+      "id": "RUR-06-002",
+      "machine_rule_count": 2,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "J",
+        "D1"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "预览不等于已提交编辑"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-07",
+      "id": "RUR-07-001",
+      "machine_rule_count": 2,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "F",
+        "D1"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "有选择时按稳定ID操作"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-07",
+      "id": "RUR-07-002",
+      "machine_rule_count": 0,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "F",
+        "D1"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "同名无选择只澄清一次"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-08",
+      "id": "RUR-08-001",
+      "machine_rule_count": 1,
+      "primary_track": "I",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "D1"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "口语错字仍恢复显示"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-08",
+      "id": "RUR-08-002",
+      "machine_rule_count": 0,
+      "primary_track": "I",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "D1"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "数字单位转写歧义必须核实"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-09",
+      "id": "RUR-09-001",
+      "machine_rule_count": 4,
+      "primary_track": "F",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "M",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "2D局部缩放保持联动切片"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-09",
+      "id": "RUR-09-002",
+      "machine_rule_count": 0,
+      "primary_track": "F",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "M",
+        "D1"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "无坐标的往左拖不能伪造患者位移"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-10",
+      "id": "RUR-10-001",
+      "machine_rule_count": 0,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "C",
+        "D1"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "比较不等于自动优化"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-10",
+      "id": "RUR-10-002",
+      "machine_rule_count": 0,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "C",
+        "D1"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "缺明确目标先解释可选择方案"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-11",
+      "id": "RUR-11-001",
+      "machine_rule_count": 0,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "C",
+        "H"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "读取已存OAR不用再索取许可"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-11",
+      "id": "RUR-11-002",
+      "machine_rule_count": 0,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "C",
+        "H"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "missing differs from true zero"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-12",
+      "id": "RUR-12-001",
+      "machine_rule_count": 0,
+      "primary_track": "C",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "H",
+        "K"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "历史V100不能盖过当前状态"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-12",
+      "id": "RUR-12-002",
+      "machine_rule_count": 0,
+      "primary_track": "C",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "H",
+        "K"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "用户误称导板当前必须纠正"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-13",
+      "id": "RUR-13-001",
+      "machine_rule_count": 2,
+      "primary_track": "A",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "K"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "部位已核实可直接分割"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-13",
+      "id": "RUR-13-002",
+      "machine_rule_count": 0,
+      "primary_track": "A",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "K"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "病例切换后不得复用旧部位"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-14",
+      "id": "RUR-14-001",
+      "machine_rule_count": 3,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "H",
+        "G"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "仅刷新真正过期的下游"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-14",
+      "id": "RUR-14-002",
+      "machine_rule_count": 2,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "H",
+        "G"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "先重算后报告的浏览器完成屏障"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-15",
+      "id": "RUR-15-001",
+      "machine_rule_count": 3,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "E",
+        "I"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "导板失败不吞掉只读指标"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-15",
+      "id": "RUR-15-002",
+      "machine_rule_count": 3,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "E",
+        "I"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "依赖失败时报告不消费错误剂量"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-16",
+      "id": "RUR-16-001",
+      "machine_rule_count": 1,
+      "primary_track": "F",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "G"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "简单问候完成不挂八分钟"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-16",
+      "id": "RUR-16-002",
+      "machine_rule_count": 2,
+      "primary_track": "F",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "G"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "附件尚待交付不能提前完成"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-17",
+      "id": "RUR-17-001",
+      "machine_rule_count": 3,
+      "primary_track": "E",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "B"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "排队时改口不再生成"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-17",
+      "id": "RUR-17-002",
+      "machine_rule_count": 3,
+      "primary_track": "E",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "B"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "撤回单个子任务保留另一项"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-18",
+      "id": "RUR-18-001",
+      "machine_rule_count": 1,
+      "primary_track": "E",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "H",
+        "B"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "显示已成功响应丢失"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-18",
+      "id": "RUR-18-002",
+      "machine_rule_count": 1,
+      "primary_track": "E",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "H",
+        "B"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "新版本重试不能复用旧幂等结果"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-19",
+      "id": "RUR-19-001",
+      "machine_rule_count": 3,
+      "primary_track": "D3",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "E",
+        "H"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "截图返回时病例已切换"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-19",
+      "id": "RUR-19-002",
+      "machine_rule_count": 4,
+      "primary_track": "D3",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "E",
+        "H"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "另一标签页更新版本后旧写拒绝"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-20",
+      "id": "RUR-20-001",
+      "machine_rule_count": 1,
+      "primary_track": "E",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "G"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "冷病例问候不等GPU水合"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-20",
+      "id": "RUR-20-002",
+      "machine_rule_count": 0,
+      "primary_track": "E",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "G"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Viewer不可用指标仍可读"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-21",
+      "id": "RUR-21-001",
+      "machine_rule_count": 1,
+      "primary_track": "E",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "B"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "无效参数不变成默认生成"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-21",
+      "id": "RUR-21-002",
+      "machine_rule_count": 3,
+      "primary_track": "E",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "B"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "成功布尔与失败receipt冲突"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-22",
+      "id": "RUR-22-001",
+      "machine_rule_count": 2,
+      "primary_track": "E",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "H",
+        "F"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "报告运行时刷新页面"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-22",
+      "id": "RUR-22-002",
+      "machine_rule_count": 0,
+      "primary_track": "E",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "H",
+        "F"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "恢复只读历史不变成新执行"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-23",
+      "id": "RUR-23-001",
+      "machine_rule_count": 2,
+      "primary_track": "M",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "C",
+        "B"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "迟到图像应替换初步无证据叙述"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-23",
+      "id": "RUR-23-002",
+      "machine_rule_count": 2,
+      "primary_track": "M",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "C",
+        "B"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "仅数据树图不得断言三维位置"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-24",
+      "id": "RUR-24-001",
+      "machine_rule_count": 3,
+      "primary_track": "M",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "F",
+        "H"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "CTV被导板遮挡时临时隐藏"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-24",
+      "id": "RUR-24-002",
+      "machine_rule_count": 3,
+      "primary_track": "M",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "F",
+        "H"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "报告close-up不能继承远景相机"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-25",
+      "id": "RUR-25-001",
+      "machine_rule_count": 0,
+      "primary_track": "D2",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "M",
+        "C"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "导入报告中的命令只是数据"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-25",
+      "id": "RUR-25-002",
+      "machine_rule_count": 0,
+      "primary_track": "D2",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "M",
+        "C"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "旧图与当前隐藏状态分开解释"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-26",
+      "id": "RUR-26-001",
+      "machine_rule_count": 2,
+      "primary_track": "F",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "H"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "颜色显示必须所有消费节点一致"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-26",
+      "id": "RUR-26-002",
+      "machine_rule_count": 4,
+      "primary_track": "F",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "H"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "manual步骤中间产物可见且后续隐藏"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-27",
+      "id": "RUR-27-001",
+      "machine_rule_count": 0,
+      "primary_track": "J",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "C",
+        "H"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "单次提交几何与剂量分别报告"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-27",
+      "id": "RUR-27-002",
+      "machine_rule_count": 0,
+      "primary_track": "J",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "C",
+        "H"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "两次编辑共享重算不能归因最后一次"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-28",
+      "id": "RUR-28-001",
+      "machine_rule_count": 3,
+      "primary_track": "J",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "M",
+        "G"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "关联对象已可见应给具体证据"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-28",
+      "id": "RUR-28-002",
+      "machine_rule_count": 1,
+      "primary_track": "J",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "M",
+        "G"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "截图暂不可用应可见降级可重试"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-29",
+      "id": "RUR-29-001",
+      "machine_rule_count": 2,
+      "primary_track": "J",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "E"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "退出监测只停止拥有的run"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-29",
+      "id": "RUR-29-002",
+      "machine_rule_count": 2,
+      "primary_track": "J",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "E"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "确认保留不能跨编辑或病例使用"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-30",
+      "id": "RUR-30-001",
+      "machine_rule_count": 1,
+      "primary_track": "D1",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "C"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "可执行显示和不可批准分离"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-30",
+      "id": "RUR-30-002",
+      "machine_rule_count": 1,
+      "primary_track": "D1",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "C"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "身份宣称不授予删除别人病例"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-31",
+      "id": "RUR-31-001",
+      "machine_rule_count": 0,
+      "primary_track": "G",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "E",
+        "B"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "已有事实轻量回答不重计算"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-31",
+      "id": "RUR-31-002",
+      "machine_rule_count": 2,
+      "primary_track": "G",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "E",
+        "B"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "服务失败有界退出保留事实"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-32",
+      "id": "RUR-32-001",
+      "machine_rule_count": 0,
+      "primary_track": "I",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "C",
+        "B"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "三项结果清晰并列不是字符串拼接"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-32",
+      "id": "RUR-32-002",
+      "machine_rule_count": 0,
+      "primary_track": "I",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "C",
+        "B"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "否定前提回答不是未经核实的复读"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-33",
+      "id": "RUR-33-001",
+      "machine_rule_count": 1,
+      "primary_track": "L",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "H",
+        "B"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "报告导出需当前内容可独立解析"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-33",
+      "id": "RUR-33-002",
+      "machine_rule_count": 4,
+      "primary_track": "L",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "H",
+        "B"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "语言切换图注与持久正文一致"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-34",
+      "id": "RUR-34-001",
+      "machine_rule_count": 0,
+      "primary_track": "C",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "A",
+        "H"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "只有论文链接不给虚构器官限值"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-34",
+      "id": "RUR-34-002",
+      "machine_rule_count": 0,
+      "primary_track": "C",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "A",
+        "H"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "明确病例方案可以有条件比较"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-35",
+      "id": "RUR-35-001",
+      "machine_rule_count": 0,
+      "primary_track": "E",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "I"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "互相矛盾约束先消歧"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-35",
+      "id": "RUR-35-002",
+      "machine_rule_count": 0,
+      "primary_track": "E",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "I"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "不存在的动作明确替代不谎报"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-36",
+      "id": "RUR-36-001",
+      "machine_rule_count": 4,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "E",
+        "K"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "四轮逐步纠正集合和输出"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-36",
+      "id": "RUR-36-002",
+      "machine_rule_count": 0,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "E",
+        "K"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "同文不同运行状态分支"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-37",
+      "id": "RUR-37-001",
+      "machine_rule_count": 1,
+      "primary_track": "K",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "F",
+        "H"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "压缩后承接仍保留明确排除"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-37",
+      "id": "RUR-37-002",
+      "machine_rule_count": 1,
+      "primary_track": "K",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "F",
+        "H"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "累计用量与窗口占用允许不同"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-38",
+      "id": "RUR-38-001",
+      "machine_rule_count": 0,
+      "primary_track": "K",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "I",
+        "D1"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "当前英语简短请求覆盖中文偏好"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-38",
+      "id": "RUR-38-002",
+      "machine_rule_count": 1,
+      "primary_track": "K",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "I",
+        "D1"
+      ],
+      "semantic_criterion_count": 2,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "病例A自动重算偏好不跨病例授权"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-39",
+      "id": "RUR-39-001",
+      "machine_rule_count": 2,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "A",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "相对透明度重试不重复减半"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-39",
+      "id": "RUR-39-002",
+      "machine_rule_count": 3,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "A",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "多个单位明确分别绑定"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-40",
+      "id": "RUR-40-001",
+      "machine_rule_count": 1,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "G",
+        "C"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "完整器官表可分块但不可静默漏项"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-40",
+      "id": "RUR-40-002",
+      "machine_rule_count": 0,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "G",
+        "C"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "受照排序不能冒充解剖邻近"
+    }
+  ]
+}

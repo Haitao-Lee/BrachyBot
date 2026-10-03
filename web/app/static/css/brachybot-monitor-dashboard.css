@@ -29,3 +29,6 @@
 @media(max-width:600px) { .monitor-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 .monitor-history { margin-top:8px; }
 .monitor-history summary { cursor:pointer; }
+.monitor-capture-status { border:1px solid var(--border,#354257); border-radius:5px; padding:4px 8px; margin-top:6px; }
+.monitor-capture-status[data-state=failed],.monitor-capture-status[data-state=partial] { border-color:#ffb347; }
+.monitor-decision { color:var(--text,#dce6f4); font-weight:600; }

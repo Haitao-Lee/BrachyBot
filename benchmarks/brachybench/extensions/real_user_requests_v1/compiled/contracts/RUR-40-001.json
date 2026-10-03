@@ -1,0 +1,55 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "zh",
+  "response_facts": {
+    "no_silent_truncation": true
+  },
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "response",
+      "statement": "All53 rows accounted for via complete table or explicitly linked continuation/export; stable organ IDs, correct numeric sort, missing distinct from0."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "budget",
+      "statement": "Batch state read; no53 independent model planning loops, no hidden recompute."
+    },
+    {
+      "id": "criterion-2",
+      "kind": "evidence",
+      "statement": "Every row joins to actual fixture record; row_count alone is insufficient."
+    }
+  ],
+  "rules": [
+    {
+      "count": 53,
+      "op": "organ_rows"
+    }
+  ],
+  "scenario_id": "RUR-40-001",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "response",
+      "statement": "All53 rows accounted for via complete table or explicitly linked continuation/export; stable organ IDs, correct numeric sort, missing distinct from0."
+    },
+    {
+      "kind": "budget",
+      "statement": "Batch state read; no53 independent model planning loops, no hidden recompute."
+    },
+    {
+      "kind": "evidence",
+      "statement": "Every row joins to actual fixture record; row_count alone is insufficient."
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "error_recovery",
+  "expectation": null,
+  "facet": "error_recovery",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Segment a non-existent file <PATH>",
+  "source_refs": [
+    "INT-3f0896ebda63",
+    "INT-f2b41f99ce75"
+  ],
+  "template_id": "TPL-2d3b4967dd"
+}

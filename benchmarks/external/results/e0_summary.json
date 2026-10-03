@@ -1,0 +1,125 @@
+{
+  "results": [
+    {
+      "ext_id": "EXT-1",
+      "stages": {
+        "list_tasks": "OK: 353 tasks",
+        "build_input": "OK: 5 observations",
+        "run_task": "OK: partial_status=COMPLETED",
+        "score_probe": "BLOCKED: harness PASS (generated 353 easy tasks from the pinned manifest; upstream exact_match_scorer exercised); DESIGN §25.6 Viewer startup + outcome NOT run (needs Docker/OHIF/Orthanc + TCIA DICOM; medium/hard tiers need the full TCIA download)"
+      },
+      "verdict": "BLOCKED",
+      "detail": "harness PASS (generated 353 easy tasks from the pinned manifest; upstream exact_match_scorer exercised); DESIGN §25.6 Viewer startup + outcome NOT run (needs Docker/OHIF/Orthanc + TCIA DICOM; medium/hard tiers need the full TCIA download)"
+    },
+    {
+      "ext_id": "EXT-2",
+      "stages": {
+        "list_tasks": "OK: 5000 tasks",
+        "build_input": "OK: 5 observations",
+        "run_task": "OK: partial_status=COMPLETED",
+        "score_probe": "OK: calculate_score + GRADER_TEMPLATE exercised; live judge needs OPENAI_API_KEY"
+      },
+      "verdict": "PASS",
+      "detail": "calculate_score + GRADER_TEMPLATE exercised; live judge needs OPENAI_API_KEY"
+    },
+    {
+      "ext_id": "EXT-3",
+      "stages": {
+        "list_tasks": "OK: 450 tasks",
+        "build_input": "OK: 5 observations",
+        "run_task": "OK: partial_status=COMPLETED",
+        "score_probe": "BLOCKED: loaded 450 upstream pairs; scoring blocked on OpenAI judge + clinical reviewer adaptation (§25.3.3.1)"
+      },
+      "verdict": "BLOCKED",
+      "detail": "loaded 450 upstream pairs; scoring blocked on OpenAI judge + clinical reviewer adaptation (§25.3.3.1)"
+    },
+    {
+      "ext_id": "EXT-4",
+      "stages": {
+        "list_tasks": "OK: 3878 tasks",
+        "build_input": "OK: 5 observations",
+        "run_task": "OK: partial_status=COMPLETED",
+        "score_probe": "OK: upstream string_contain exercised over 3878 queries / 40 personas (zh+en); llm_judge metrics need JUDGE_API_KEY"
+      },
+      "verdict": "PASS",
+      "detail": "upstream string_contain exercised over 3878 queries / 40 personas (zh+en); llm_judge metrics need JUDGE_API_KEY"
+    },
+    {
+      "ext_id": "EXT-9",
+      "stages": {
+        "list_tasks": "OK: 500 tasks",
+        "build_input": "OK: 5 observations",
+        "run_task": "OK: partial_status=COMPLETED",
+        "score_probe": "BLOCKED: oracle loaded (500 questions); timestamped history + question rendered for gpt4_2655b836 (42252 chars); upstream get_anscheck_prompt built (890 chars). QA scoring requires the upstream LLM judge (src/evaluation/evaluate_qa.py; OPENAI_API_KEY or local vLLM at http://localhost:8001/v1) -- BLOCKED offline."
+      },
+      "verdict": "BLOCKED",
+      "detail": "oracle loaded (500 questions); timestamped history + question rendered for gpt4_2655b836 (42252 chars); upstream get_anscheck_prompt built (890 chars). QA scoring requires the upstream LLM judge (src/evaluation/evaluate_qa.py; OPENAI_API_KEY or local vLLM at http://localhost:8001/v1) -- BLOCKED offline."
+    },
+    {
+      "ext_id": "EXT-10",
+      "stages": {
+        "list_tasks": "OK: 20000 tasks",
+        "build_input": "OK: 5 observations",
+        "run_task": "OK: partial_status=COMPLETED",
+        "score_probe": "OK: upstream label parser + classification_accuracy exercised over 10000 rows / 20000 (row,candidate) tasks from 2 parquet split(s); label 0=factual, 1=hallucinated, 2=unsure"
+      },
+      "verdict": "PASS",
+      "detail": "upstream label parser + classification_accuracy exercised over 10000 rows / 20000 (row,candidate) tasks from 2 parquet split(s); label 0=factual, 1=hallucinated, 2=unsure"
+    },
+    {
+      "ext_id": "EXT-11",
+      "stages": {
+        "list_tasks": "OK: 1100 tasks",
+        "build_input": "OK: 5 observations",
+        "run_task": "OK: partial_status=COMPLETED",
+        "score_probe": "OK: upstream check_correctness marked ground truth correct for 3/3 probes (date, decimal, integer); delegated to evaluation/evaluate.py::check_correctness over 1100 rows / 1100 tasks"
+      },
+      "verdict": "PASS",
+      "detail": "upstream check_correctness marked ground truth correct for 3/3 probes (date, decimal, integer); delegated to evaluation/evaluate.py::check_correctness over 1100 rows / 1100 tasks"
+    },
+    {
+      "ext_id": "EXT-12",
+      "stages": {
+        "list_tasks": "OK: 321 tasks",
+        "build_input": "OK: 5 observations",
+        "run_task": "OK: partial_status=COMPLETED",
+        "score_probe": "BLOCKED: 321 text-only scenarios load (medqa+medqa_extended) and the doctor prompt builds; scoring needs the upstream LLM moderator (compare_results/query_model)"
+      },
+      "verdict": "BLOCKED",
+      "detail": "321 text-only scenarios load (medqa+medqa_extended) and the doctor prompt builds; scoring needs the upstream LLM moderator (compare_results/query_model)"
+    },
+    {
+      "ext_id": "EXT-13",
+      "stages": {
+        "list_tasks": "OK: 162 tasks",
+        "build_input": "OK: 5 observations",
+        "run_task": "OK: partial_status=COMPLETED",
+        "score_probe": "OK: upstream Experiment.calculate_score exercised over 162 questions; probe 8/4: all-True=8.75, all-False=0.0, possible=9.75 (1 negative weights); LLM evaluator supplies the booleans"
+      },
+      "verdict": "PASS",
+      "detail": "upstream Experiment.calculate_score exercised over 162 questions; probe 8/4: all-True=8.75, all-False=0.0, possible=9.75 (1 negative weights); LLM evaluator supplies the booleans"
+    },
+    {
+      "ext_id": "EXT-14",
+      "stages": {
+        "list_tasks": "OK: 97 tasks",
+        "build_input": "OK: 5 observations",
+        "run_task": "OK: partial_status=COMPLETED",
+        "score_probe": "OK: upstream score_attempt marked 'public.brachy.dwell-time-scaling-001' passed+safe (weighted_score=1.000) over 97 public tasks"
+      },
+      "verdict": "PASS",
+      "detail": "upstream score_attempt marked 'public.brachy.dwell-time-scaling-001' passed+safe (weighted_score=1.000) over 97 public tasks"
+    },
+    {
+      "ext_id": "EXT-15",
+      "stages": {
+        "list_tasks": "OK: 9274 tasks",
+        "build_input": "OK: 5 observations",
+        "run_task": "OK: partial_status=COMPLETED",
+        "score_probe": "OK: upstream calculate_accuracy (answer_idx == predicted letter) exercised over 9274 rows / 9274 tasks from 9 datasets; scorer is the documented MCQ accuracy replicated from vendor/plots/figure2_hardset.ipynb (no importable upstream evaluator)"
+      },
+      "verdict": "PASS",
+      "detail": "upstream calculate_accuracy (answer_idx == predicted letter) exercised over 9274 rows / 9274 tasks from 9 datasets; scorer is the documented MCQ accuracy replicated from vendor/plots/figure2_hardset.ipynb (no importable upstream evaluator)"
+    }
+  ]
+}

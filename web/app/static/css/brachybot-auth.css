@@ -692,7 +692,26 @@ body.workspace-hydrating::after { display: none; }
 .workspace-hydration-notice[hidden] { display: none; }
 .workspace-hydration-notice:not([hidden]):not(.workspace-hydration-out) { animation: workspaceHydrationIn 220ms ease-out both; }
 .workspace-hydration-notice.workspace-hydration-out { animation: workspaceHydrationOut 180ms ease-in both; }
+/* Cold-storage activation is a longer, explicit operation. Widen the pill
+   into a small card so the multi-line explanation stays readable, and drop
+   the elapsed clock onto its own line. */
+.workspace-hydration-notice[data-activation="1"] {
+    max-width: min(420px, calc(100vw - 36px));
+    border-radius: 14px;
+    align-items: flex-start;
+    line-height: 1.45;
+    padding: 10px 14px;
+}
+.workspace-hydration-notice[data-activation="1"] .workspace-hydration-spinner {
+    margin-top: 2px;
+}
 .workspace-notice-message { min-width: 0; overflow-wrap: anywhere; }
+.workspace-notice-elapsed {
+    flex: 0 0 auto;
+    font-variant-numeric: tabular-nums;
+    opacity: .72;
+    white-space: nowrap;
+}
 .workspace-notice-action {
     flex: 0 0 auto;
     min-height: 24px;

@@ -1,0 +1,295 @@
+# BrachyBench Pre-Freeze Checklist (DESIGN §19.7 + §27.3)
+#
+# Semantics:
+#   all 32 items pass  -> can start T3 confirmation (EXT's E1 formal + PRV sealed formal set)
+#   any fail           -> can only run Dev/Pilot/E0, report marked
+#                         "PROTOCOL NOT FROZEN — confirmatory claims withheld"
+#   8 hard prerequisites (hard: true) not passed -> all other conclusions are untrustworthy
+#
+# Each item must provide evidence (report section / script output / hash value); this file itself is committed with a version hash.
+
+version: "1.0"
+total: 32
+
+groups:
+  - id: A
+    name: Construct and Specification
+    items:
+      - id: F01
+        check: Primary endpoint, primary hypothesis, and secondary/exploratory lists finalized and preregistered
+        criterion: Preregistration number verifiable + hash committed
+        owner: design
+        ref: "DESIGN §11.1 / §19.5"
+        hard: false
+        status: pending
+        evidence: null
+      - id: F02
+        check: Three group families (G-EQ/G-CT/G-CTX) and ten-dimension contrast families defined unambiguously
+        criterion: Two-person review passed
+        owner: design
+        ref: "DESIGN §7.3"
+        hard: false
+        status: pending
+        evidence: null
+      - id: F03
+        check: Numerator/denominator/N-A handling for the six success rates frozen in writing
+        criterion: Metric dictionary signed off
+        owner: design
+        ref: "DESIGN §10.0 / §10.1"
+        hard: false
+        status: pending
+        evidence: null
+      - id: F04
+        check: Metric owner table has no conflicts and no double counting
+        criterion: Automated duplicate check passed
+        owner: design
+        ref: "DESIGN §10.4"
+        hard: false
+        status: pending
+        evidence: null
+
+  - id: B
+    name: Gold Standard and Reference
+    items:
+      - id: F05
+        check: A3a physics definition document's 8 items finalized (Appendix F Q12)
+        criterion: Physics sign-off
+        owner: physics
+        ref: "DESIGN §6.A3 / Q12"
+        hard: true
+        status: pending
+        evidence: null
+      - id: F06
+        check: Independent physics reference implementation selected, license cleared, uncertainty measured (Q7)
+        criterion: Reference description + uncertainty report
+        owner: physics
+        ref: "DESIGN §6.A3 / Q7"
+        hard: true
+        status: pending
+        evidence: null
+      - id: F07
+        check: Thresholds determined a priori (gamma band, DVH Δ, tolerance), with no post-hoc relaxation clauses
+        criterion: Threshold table + rationale
+        owner: physics
+        ref: "DESIGN §6.A3 (N9)"
+        hard: false
+        status: pending
+        evidence: null
+      - id: F08
+        check: Commissioning threshold sources verified item by item, no cross-nuclide/usage extrapolation (Q13)
+        criterion: Verification record
+        owner: physics
+        ref: "DESIGN Q13"
+        hard: false
+        status: pending
+        evidence: null
+      - id: F09
+        check: Acceptable set (A4) annotated by >=2 experts, kappa and Gwet AC1 meet targets
+        criterion: kappa/AC1 report
+        owner: clinical
+        ref: "DESIGN §6.A4 / §11.10"
+        hard: false
+        status: pending
+        evidence: null
+      - id: F10
+        check: Segmentation/vision gold standard built; occlusion-visibility manual gold standard built
+        criterion: Gold standard list
+        owner: clinical
+        ref: "DESIGN §6.A2 / §6.M"
+        hard: false
+        status: pending
+        evidence: null
+
+  - id: C
+    name: Judge Self-Verification
+    items:
+      - id: F11
+        check: Fault-injection TPR >= 0.95 (>=5 samples per class)
+        criterion: "oracles/_selftest report (§23.A A1)"
+        owner: engineering
+        ref: "DESIGN §8.6 I4"
+        hard: true
+        status: pass
+        evidence: "curated corpus 90/90 = TPR 1.000 (15 classes x >=5, gross 40 + subtle 50, BA-21 graded); pytest test_selftest_tpr_at_least_0_95 assertion = 1.0. Note: the 0.95 lower bound is reserved for the external holdout set (§23.A A1); the curated corpus uses a hard standard of 1.0"
+      - id: F12
+        check: Legitimate-boundary FPR <= 0.05
+        criterion: "oracles/_selftest report (§23.A A2)"
+        owner: engineering
+        ref: "DESIGN §8.6 I5"
+        hard: true
+        status: pass
+        evidence: "curated boundary 11/11 = FPR 0.000 (including tolerance-inclusive boundary, documentation grammar exemption, transitional state, identity dual path, rounding, contested withheld); pytest test_selftest_fpr_at_most_0_05 assertion = 0.0"
+      - id: F13
+        check: Independent state observer + independent artifact parser agreement rate = 1.0
+        criterion: I1/I3 report
+        owner: engineering
+        ref: "DESIGN §8.6 I1/I3"
+        hard: false
+        status: pending
+        evidence: null
+      - id: F14
+        check: Audit trail completeness = 100% (every side effect recorded)
+        criterion: I2 report
+        owner: engineering
+        ref: "DESIGN §8.6 I2"
+        hard: false
+        status: pending
+        evidence: null
+      - id: F15
+        check: Claim extractor F1 >= 0.9 and per-class P/R published
+        criterion: Calibration report
+        owner: engineering
+        ref: "DESIGN §8.5 / §9.4"
+        hard: false
+        status: pending
+        evidence: null
+      - id: F16
+        check: O5 judge (if used) meets all §8.5 thresholds, including per-element P/R
+        criterion: Calibration report
+        owner: engineering
+        ref: "DESIGN §8.5"
+        hard: false
+        status: pending
+        evidence: null
+
+  - id: D
+    name: Data Splits
+    items:
+      - id: F17
+        check: Four-set five-level split complete and machine-readable, hash committed
+        criterion: splits/*.json + MANIFEST.sha256
+        owner: engineering
+        ref: "DESIGN §12.6"
+        hard: true
+        status: pass
+        evidence: "splits/assignment.json: 903 tasks (753 authored + 150 physics) / 78 connected components, dev 69 / pilot 95 / sealed 397 (hash-committed, task files still in the repo pending true sealing) / public 342; five-level leakage check OK (connected-component semantics, N7); same-seed rebuild is byte-identical; tools/splits.py check passes. Note: currently only the 903/1500 scenario; will be re-split with mass production; sealed plaintext in the repo is a known limitation (§12.6 true sealing pending)"
+      - id: F18
+        check: Sealed formal set plaintext not committed, only a hash commitment
+        criterion: Commitment verifiable
+        owner: engineering
+        ref: "DESIGN §13.5 / §19.2"
+        hard: false
+        status: pending
+        evidence: null
+      - id: F19
+        check: Real case ethics numbers, de-identification process, and DUA all complete
+        criterion: Ethics documents
+        owner: clinical-legal
+        ref: "DESIGN §14.2"
+        hard: false
+        status: pending
+        evidence: null
+      - id: F20
+        check: Contamination probe calibrated with known-clean + known-exposed controls (FPR<=0.05 / TPR>=0.95)
+        criterion: Calibration report
+        owner: engineering
+        ref: "DESIGN §13.5 (N19)"
+        hard: false
+        status: pending
+        evidence: null
+
+  - id: E
+    name: Statistics and Execution
+    items:
+      - id: F21
+        check: Power simulation complete (S1-S6), outputting sample-size-effect-size-power curves
+        criterion: Simulation script + curves
+        owner: statistics
+        ref: "DESIGN §11.1"
+        hard: true
+        status: pending
+        evidence: null
+      - id: F22
+        check: Six cost categories filled into the budget based on actual measurements (not estimates)
+        criterion: Cost table
+        owner: engineering
+        ref: "DESIGN §22"
+        hard: false
+        status: pending
+        evidence: null
+      - id: F23
+        check: Assignment algorithm randomly generated with a public seed; design weights 1/pi implemented
+        criterion: splits assignment json
+        owner: engineering
+        ref: "DESIGN §12.6"
+        hard: false
+        status: pending
+        evidence: null
+      - id: F24
+        check: R2a/R2b/R2c three baselines run through and producing numbers
+        criterion: Baseline report
+        owner: engineering
+        ref: "DESIGN §12.5 / R24"
+        hard: false
+        status: pending
+        evidence: null
+
+  - id: EXT
+    name: External Track Supplement (§27.3)
+    items:
+      - id: F25
+        check: Acquisition manifest for each EXT benchmark fully filled and hash committed
+        criterion: manifest validation passed (tools/validate.py acquisition)
+        owner: engineering
+        ref: "DESIGN §25.4"
+        hard: false
+        status: pending
+        evidence: "Included items 11/11 acquisition manifests pass schema validation with no placeholders (EXT-1..4 + EXT-9..15, tools/validate.py acquisition OK); dataset_revision+sha256 all actually filled. EXT-5..8 excluded because BrachyBot cannot participate (no FHIR/EHR capability / paywall gating); manifests moved to external/excluded/ with reasons attached, not included items. tests/test_ext_track.py guards this."
+      - id: F26
+        check: Upstream source_commit + dataset_revision + SHA256 locked
+        criterion: All three complete and reviewable
+        owner: engineering
+        ref: "DESIGN §25.4"
+        hard: false
+        status: pending
+        evidence: "EXT-1..4 + EXT-9..15: source_commit + dataset_revision + dataset_sha256 all complete (directory digest / jsonl / parquet / csv / task.yaml; see acquisition/*.yaml). EXT-5..8 excluded (BrachyBot cannot participate); their acquisition records remain in external/excluded/."
+      - id: F27
+        check: LICENSE.UPSTREAM copies attached; derivative licenses reviewed (especially the MedSafetyBench adaptation set)
+        criterion: Legal/license records
+        owner: legal
+        ref: "DESIGN §27.2"
+        hard: false
+        status: pending
+        evidence: "8/8 upstream LICENSEs copied to external/EXT-N/LICENSE.UPSTREAM (MIT×5/Apache-2.0×2/CC-BY-4.0×1, licenses verified via GitHub/HF API on 2026-10-01). The MedSafetyBench derivative adaptation set license awaits legal confirmation (adaptation not yet complete)."
+      - id: F28
+        check: E0 smoke all PASS (4 primary/special benchmarks EXT-1..4 + conditional EXT-6 if enabled)
+        criterion: smoke.log all green; EXT-5/7/8 secondary controls do not require E0 but must be marked LICENSE_REQUIRED or BLOCKED
+        owner: engineering
+        ref: "DESIGN §25.6"
+        hard: true
+        status: pending
+        evidence: "PASS: EXT-2, EXT-4, EXT-10 (MedHallu), EXT-11 (MedCalc-Bench), EXT-13 (AMEGA), EXT-14 (MedPhysBench upstream score_attempt), EXT-15 (MedicalAgentsBench MCQ); BLOCKED: EXT-1 (Viewer/Docker not run), EXT-3 (OpenAI judge + clinical adaptation), EXT-9 (LongMemEval QA judge), EXT-12 (AgentClinic moderator). EXT-5..8 excluded, not part of E0. Witness: external/results/e0_summary.json. Not all green ⇒ cannot enter E1."
+      - id: F29
+        check: EXT adapters did not modify upstream repos (protocol conversion only)
+        criterion: empty diff / vendor read-only
+        owner: engineering
+        ref: "DESIGN §25.5"
+        hard: false
+        status: pass
+        evidence: "adapter/ reads vendor/ read-only; ABRA-generated tasks are written to external/EXT-1/data/ (not vendor); score() delegates to the upstream evaluator in all cases (no recomputation). vendor/ is re-extracted by fetch_all.sh from the pinned commit, with no local changes."
+      - id: F30
+        check: MedSafetyBench adaptation set all three classes (prohibited/clarification/allowed) complete + adaptation_log auditable
+        criterion: List + two-person review
+        owner: clinical
+        ref: "DESIGN §25.3.3.1"
+        hard: false
+        status: pending
+        evidence: "scaffold produced: external/EXT-3/data/adaptation_manifest.json (30 entries, source_task_id+category+expected_class slots, reviewer=pending). Three-class annotation and two-person review must be completed by a clinical reviewer."
+      - id: F31
+        check: Directory write prohibition verified (no mtime changes in forbidden_write_roots after EXT runs)
+        criterion: Isolation audit report
+        owner: engineering
+        ref: "DESIGN §25.8"
+        hard: true
+        status: pending
+        evidence: "E0 reads data and writes results/ only within this external/ tree; did not touch BrachyBot/{session,case,runtime,report}/; the formal isolation audit report will be produced at E1 runtime by audit_isolation() (external/adapter_base.py)."
+      - id: F32
+        check: Non-included candidates (EXT-5-8) have recorded exclusion reasons
+        criterion: Status clear
+        owner: engineering
+        ref: "DESIGN §25.2.3 (revised per user instruction)"
+        hard: false
+        status: pass
+        evidence: "EXT-5..8 removed from the inclusion list because BrachyBot cannot participate (no FHIR/EHR/HL7/terminal capability; paywall/gating): reasons are written item by item in external/manifest.yaml's excluded_candidates + external/excluded/README.md, with acquisition manifests retained in external/excluded/. Included items are only EXT-1..4."
+
+hard_prerequisites: [F05, F06, F11, F12, F17, F21, F28, F31]

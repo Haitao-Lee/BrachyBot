@@ -1,0 +1,16 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "ctv_segmentation",
+  "expectation": null,
+  "facet": "ctv_segmentation",
+  "gold_status": "draft",
+  "n_source_intents": 4,
+  "representative_text": "Segment the CTV",
+  "source_refs": [
+    "INT-26e9c7104579",
+    "INT-2f0a043b07c1",
+    "INT-7021759a58a7",
+    "INT-f25663f7a400"
+  ],
+  "template_id": "TPL-54125cb5ba"
+}

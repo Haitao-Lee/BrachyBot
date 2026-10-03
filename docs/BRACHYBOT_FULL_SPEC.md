@@ -1,301 +1,301 @@
-# BrachyBot 完整功能规格与实现状态
+# BrachyBot Full Feature Specification and Implementation Status
 
-规划监测的最新运行契约、时间线导出和审计修复见 [Monitor architecture and verified audit](TRAINING_MONITOR_VERIFIED_2026-09-19.md)。
+For the latest run contract, timeline export, and audit fixes for planning monitoring, see [Monitor architecture and verified audit](TRAINING_MONITOR_VERIFIED_2026-09-19.md).
 
-> 最后更新: 2026-06-22
-> 本文档覆盖项目所有功能模块、交互期望、已修复 bug、API 端点。
-
----
-
-## 目录
-
-- [一、功能模块总览](#一功能模块总览)
-  - [1. LLM 聊天系统](#1-llm-聊天系统)
-  - [2. CTV 靶区分割](#2-ctv-靶区分割)
-  - [3. OAR 危及器官分割](#3-oar-危及器官分割)
-  - [4. 规划流水线](#4-规划流水线)
-  - [5. 剂量评估](#5-剂量评估)
-  - [6. 2D 影像查看器](#6-2d-影像查看器)
-  - [7. 3D 可视化](#7-3d-可视化)
-  - [8. Data Tree 数据树](#8-data-tree-数据树)
-  - [9. DVH 剂量体积直方图](#9-dvh-剂量体积直方图)
-  - [10. 报告面板](#10-报告面板)
-  - [11. Todo 执行进度](#11-todo-执行进度)
-  - [12. Thinking Chain 思考链](#12-thinking-chain-思考链)
-  - [13. 多语言系统](#13-多语言系统)
-  - [14. 面板布局与拖拽](#14-面板布局与拖拽)
-  - [15. 会话管理](#15-会话管理)
-  - [16. 联网搜索](#16-联网搜索)
-  - [17. Quality Review 质量审核](#17-quality-review-质量审核)
-- [二、交互流程与期望效果](#二交互流程与期望效果)
-  - [1. 规划主流程](#1-规划主流程)
-  - [2. 聊天交互](#2-聊天交互)
-  - [3. 2D 查看器交互](#3-2d-查看器交互)
-  - [4. 3D 查看器交互](#4-3d-查看器交互)
-  - [5. Data Tree 交互](#5-data-tree-交互)
-  - [6. DVH 交互](#6-dvh-交互)
-  - [7. 报告面板交互](#7-报告面板交互)
-  - [8. 面板切换交互](#8-面板切换交互)
-  - [9. 全局控件交互](#9-全局控件交互)
-- [三、规划流水线详解](#三规划流水线详解)
-  - [1. 流程总览](#1-流程总览)
-  - [2. SSE 事件流](#2-sse-事件流)
-  - [3. step_callback 机制](#3-step_callback-机制)
-  - [4. 自动 OAR 触发](#4-自动-oar-触发)
-  - [5. 前端响应链](#5-前端响应链)
-  - [6. 规划结果 API](#6-规划结果-api)
-  - [7. 3D 网格数据](#7-3d-网格数据)
-  - [8. 剂量评估详情](#8-剂量评估详情)
-- [四、报告面板详解](#四报告面板详解)
-  - [1. 面板布局](#1-面板布局)
-  - [2. 数据来源](#2-数据来源)
-  - [3. 截图系统](#3-截图系统)
-  - [4. 语言系统](#4-语言系统)
-  - [5. 版本管理](#5-版本管理)
-  - [6. 模态框系统](#6-模态框系统)
-  - [7. PDF 导出](#7-pdf-导出)
-  - [8. BrachyBot 自动填充](#8-brachybot-自动填充)
-- [五、已修复 Bug 清单](#五已修复-bug-清单)
-  - [1. Report 语言问题](#1-report-语言问题)
-  - [2. 3D 查看器空白](#2-3d-查看器空白)
-  - [3. DVH Tooltip 溢出](#3-dvh-tooltip-溢出)
-  - [4. CTV 颜色修改无效](#4-ctv-颜色修改无效)
-  - [5. Report 自动截图缺失](#5-report-自动截图缺失)
-  - [6. 二级界面样式问题](#6-二级界面样式问题)
-  - [7. Quality Review 重试](#7-quality-review-重试)
-  - [8. Todo 合并逻辑](#8-todo-合并逻辑)
-  - [9. Todo 最终回复计数](#9-todo-最终回复计数)
-  - [10. 标题排版](#10-标题排版)
-- [六、API 端点清单](#六api-端点清单)
-- [七、技术栈](#七技术栈)
+> Last updated: 2026-06-22
+> This document covers all feature modules, interaction expectations, fixed bugs, and API endpoints of the project.
 
 ---
 
-# 一、功能模块总览
+## Table of Contents
 
-## 1. LLM 聊天系统
-
-### 1.1 聊天发送
-
-| 项目 | 说明 |
-|------|------|
-| **期望效果** | 用户输入消息 → 发送到 `/api/chat` → SSE 流式返回 → 实时显示回复 |
-| **输入方式** | 文本框 + Enter 发送 / 按钮点击 |
-| **流式传输** | SSE (Server-Sent Events), `stream: true` |
-| **停止功能** | 发送中再次点击按钮 → AbortController 中断 |
-| **实现状态** | ✅ 已实现 |
-
-### 1.2 工具调用显示
-
-| 项目 | 说明 |
-|------|------|
-| **期望效果** | LLM 调用工具时，Thinking Chain 中显示工具名、参数、结果 |
-| **步骤状态** | pending → done / error，带对应图标 (⚙/✓/✕) |
-| **工具进度** | 工具执行中显示进度条和百分比 |
-| **实现状态** | ✅ 已实现 |
-
-### 1.3 AI 回复渲染
-
-| 项目 | 说明 |
-|------|------|
-| **期望效果** | Markdown 渲染：标题、表格、列表、代码块、链接 |
-| **标题样式** | ChatGPT 风格：H2 底部分割线，无左侧竖线，无 emoji 图标 |
-| **表格样式** | 深色主题表格，带 `.md-table` 类名 |
-| **链接** | 新窗口打开 (`target="_blank"`) |
-| **实现状态** | ✅ 已实现 (2026-06-22 修复) |
-
-### 1.4 回复 Footer
-
-| 项目 | 说明 |
-|------|------|
-| **期望效果** | 回复底部显示：耗时 / 输入 token / 输出 token / 工具调用次数 |
-| **多语言** | 根据全局语言显示中文/英文标签 |
-| **实现状态** | ✅ 已实现 |
-
----
-
-## 2. CTV 靶区分割
-
-| 项目 | 说明 |
-|------|------|
-| **期望效果** | 上传 CT → 调用 nnUNet 分割模型 → 返回 CTV 标签图 |
-| **输入** | CT NIfTI 文件路径 + 肿瘤类型 (`nnunet_pancreatic` 等) |
-| **输出** | 多标签分割结果: label 1=tumor, 2=artery, 3=vein, 4=pancreas 等 |
-| **后处理** | 存储 `ctv_array`, `ctv_label_names`, `labelColorLUT` 到内存 |
-| **自动触发** | 规划流水线检测到无 CTV 时自动调用 |
-| **Data Tree** | CTV 节点下显示 tumor 子标签，每个有独立颜色和 3D 重建按钮 |
-| **实现状态** | ✅ 已实现 |
-
----
-
-## 3. OAR 危及器官分割
-
-| 项目 | 说明 |
-|------|------|
-| **期望效果** | 基于 CT 调用 TotalSegmentator → 返回 57+ 器官标签 |
-| **输出** | `organ_names` 字典: {label_id: organ_name} |
-| **分类** | Non-traversable (血管、骨骼) / Traversable (软组织器官) |
-| **自动触发** | CTV 分割后自动检测 OAR 数量，<5 时自动调用 |
-| **CTV 标签排除** | OAR 加载时排除已属于 CTV 的 label ID (如 artery=2, vein=3) |
-| **实现状态** | ✅ 已实现 |
+- [I. Feature Modules Overview](#i-feature-modules-overview)
+  - [1. LLM Chat System](#1-llm-chat-system)
+  - [2. CTV Target Segmentation](#2-ctv-target-segmentation)
+  - [3. OAR Organ-at-Risk Segmentation](#3-oar-organ-at-risk-segmentation)
+  - [4. Planning Pipeline](#4-planning-pipeline)
+  - [5. Dose Evaluation](#5-dose-evaluation)
+  - [6. 2D Image Viewer](#6-2d-image-viewer)
+  - [7. 3D Visualization](#7-3d-visualization)
+  - [8. Data Tree](#8-data-tree)
+  - [9. DVH Dose-Volume Histogram](#9-dvh-dose-volume-histogram)
+  - [10. Report Panel](#10-report-panel)
+  - [11. Todo Execution Progress](#11-todo-execution-progress)
+  - [12. Thinking Chain](#12-thinking-chain)
+  - [13. Multilingual System](#13-multilingual-system)
+  - [14. Panel Layout and Dragging](#14-panel-layout-and-dragging)
+  - [15. Session Management](#15-session-management)
+  - [16. Web Search](#16-web-search)
+  - [17. Quality Review](#17-quality-review)
+- [II. Interaction Flows and Expected Behavior](#ii-interaction-flows-and-expected-behavior)
+  - [1. Main Planning Flow](#1-main-planning-flow)
+  - [2. Chat Interaction](#2-chat-interaction)
+  - [3. 2D Viewer Interaction](#3-2d-viewer-interaction)
+  - [4. 3D Viewer Interaction](#4-3d-viewer-interaction)
+  - [5. Data Tree Interaction](#5-data-tree-interaction)
+  - [6. DVH Interaction](#6-dvh-interaction)
+  - [7. Report Panel Interaction](#7-report-panel-interaction)
+  - [8. Panel Switching Interaction](#8-panel-switching-interaction)
+  - [9. Global Controls Interaction](#9-global-controls-interaction)
+- [III. Planning Pipeline in Detail](#iii-planning-pipeline-in-detail)
+  - [1. Flow Overview](#1-flow-overview)
+  - [2. SSE Event Stream](#2-sse-event-stream)
+  - [3. step_callback Mechanism](#3-step_callback-mechanism)
+  - [4. Automatic OAR Trigger](#4-automatic-oar-trigger)
+  - [5. Frontend Response Chain](#5-frontend-response-chain)
+  - [6. Planning Results API](#6-planning-results-api)
+  - [7. 3D Mesh Data](#7-3d-mesh-data)
+  - [8. Dose Evaluation Details](#8-dose-evaluation-details)
+- [IV. Report Panel in Detail](#iv-report-panel-in-detail)
+  - [1. Panel Layout](#1-panel-layout)
+  - [2. Data Sources](#2-data-sources)
+  - [3. Screenshot System](#3-screenshot-system)
+  - [4. Language System](#4-language-system)
+  - [5. Version Management](#5-version-management)
+  - [6. Modal System](#6-modal-system)
+  - [7. PDF Export](#7-pdf-export)
+  - [8. BrachyBot Auto-fill](#8-brachybot-auto-fill)
+- [V. List of Fixed Bugs](#v-list-of-fixed-bugs)
+  - [1. Report Language Issue](#1-report-language-issue)
+  - [2. 3D Viewer Blank](#2-3d-viewer-blank)
+  - [3. DVH Tooltip Overflow](#3-dvh-tooltip-overflow)
+  - [4. CTV Color Change Not Working](#4-ctv-color-change-not-working)
+  - [5. Missing Report Auto-screenshots](#5-missing-report-auto-screenshots)
+  - [6. Secondary UI Style Issue](#6-secondary-ui-style-issue)
+  - [7. Quality Review Retry](#7-quality-review-retry)
+  - [8. Todo Merge Logic](#8-todo-merge-logic)
+  - [9. Todo Final Reply Count](#9-todo-final-reply-count)
+  - [10. Heading Typography](#10-heading-typography)
+- [VI. API Endpoint Reference](#vi-api-endpoint-reference)
+- [VII. Tech Stack](#vii-tech-stack)
 
 ---
 
-## 4. 规划流水线
+# I. Feature Modules Overview
 
-### 4.1 总体流程
+## 1. LLM Chat System
+
+### 1.1 Sending a Chat
+
+| Item | Description |
+|------|------|
+| **Expected behavior** | User enters a message → sent to `/api/chat` → streamed back via SSE → reply displayed in real time |
+| **Input method** | Text box + Enter to send / button click |
+| **Streaming** | SSE (Server-Sent Events), `stream: true` |
+| **Stop** | Clicking the button again while sending → abort via AbortController |
+| **Implementation status** | ✅ Implemented |
+
+### 1.2 Tool Call Display
+
+| Item | Description |
+|------|------|
+| **Expected behavior** | When the LLM calls a tool, the Thinking Chain shows the tool name, parameters, and result |
+| **Step status** | pending → done / error, with corresponding icon (⚙/✓/✕) |
+| **Tool progress** | Shows a progress bar and percentage while the tool is executing |
+| **Implementation status** | ✅ Implemented |
+
+### 1.3 AI Reply Rendering
+
+| Item | Description |
+|------|------|
+| **Expected behavior** | Markdown rendering: headings, tables, lists, code blocks, links |
+| **Heading style** | ChatGPT style: H2 bottom divider, no left vertical bar, no emoji icon |
+| **Table style** | Dark-theme table with the `.md-table` class name |
+| **Links** | Open in a new window (`target="_blank"`) |
+| **Implementation status** | ✅ Implemented (fixed 2026-06-22) |
+
+### 1.4 Reply Footer
+
+| Item | Description |
+|------|------|
+| **Expected behavior** | Shows at the bottom of the reply: elapsed time / input tokens / output tokens / tool call count |
+| **Multilingual** | Shows Chinese/English labels according to the global language |
+| **Implementation status** | ✅ Implemented |
+
+---
+
+## 2. CTV Target Segmentation
+
+| Item | Description |
+|------|------|
+| **Expected behavior** | Upload CT → call the nnUNet segmentation model → return the CTV label map |
+| **Input** | CT NIfTI file path + tumor type (`nnunet_pancreatic`, etc.) |
+| **Output** | Multi-label segmentation result: label 1=tumor, 2=artery, 3=vein, 4=pancreas, etc. |
+| **Post-processing** | Store `ctv_array`, `ctv_label_names`, `labelColorLUT` in memory |
+| **Automatic trigger** | Called automatically when the planning pipeline detects that no CTV exists |
+| **Data Tree** | Under the CTV node, tumor sub-labels are shown, each with its own color and 3D reconstruction button |
+| **Implementation status** | ✅ Implemented |
+
+---
+
+## 3. OAR Organ-at-Risk Segmentation
+
+| Item | Description |
+|------|------|
+| **Expected behavior** | Call TotalSegmentator on the CT → return 57+ organ labels |
+| **Output** | `organ_names` dictionary: {label_id: organ_name} |
+| **Categories** | Non-traversable (vessels, bones) / Traversable (soft-tissue organs) |
+| **Automatic trigger** | After CTV segmentation, automatically checks the OAR count and calls when < 5 |
+| **CTV label exclusion** | When loading OAR, exclude label IDs already belonging to the CTV (e.g. artery=2, vein=3) |
+| **Implementation status** | ✅ Implemented |
+
+---
+
+## 4. Planning Pipeline
+
+### 4.1 Overall Flow
 
 ```
-CTV 分割 → OAR 分割 → planning_pipeline(step="full") → 剂量评估
+CTV segmentation → OAR segmentation → planning_pipeline(step="full") → dose evaluation
 ```
 
-| 步骤 | 子步骤 | 说明 | 实现状态 |
+| Step | Sub-step | Description | Implementation status |
 |------|--------|------|----------|
-| `ctv_segmentation` | — | CTV 靶区分割 | ✅ |
-| `oar_segmentation` | — | OAR 危及器官分割 (自动/手动) | ✅ |
-| `planning_pipeline` | `trajectory_init` | 轨迹初始化 (130 条候选) | ✅ |
-| | `trajectory_refine` | 轨迹细化 | ✅ |
-| | `seed_planning` | 粒子位置优化 (14 颗) | ✅ |
-| | `dose_calc` | 剂量计算 | ✅ |
-| | `dose_eval` | 剂量学评估 | ✅ |
+| `ctv_segmentation` | — | CTV target segmentation | ✅ |
+| `oar_segmentation` | — | OAR organ-at-risk segmentation (automatic/manual) | ✅ |
+| `planning_pipeline` | `trajectory_init` | Trajectory initialization (130 candidates) | ✅ |
+| | `trajectory_refine` | Trajectory refinement | ✅ |
+| | `seed_planning` | Seed position optimization (14 seeds) | ✅ |
+| | `dose_calc` | Dose calculation | ✅ |
+| | `dose_eval` | Dosimetric evaluation | ✅ |
 
-### 4.2 step_callback 机制
+### 4.2 step_callback Mechanism
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **期望效果** | 每个子步骤通过 `step_callback` 发送 pending/done SSE 事件 |
-| **Todo 联动** | Todo 列表实时显示每个子步骤的呼吸动画 |
-| **DRAIN 机制** | DRAIN-1 (tool 执行后) + DRAIN-2 (store 后) 确保事件不丢失 |
-| **实现状态** | ✅ 已实现 |
+| **Expected behavior** | Each sub-step sends pending/done SSE events via `step_callback` |
+| **Todo integration** | The Todo list shows a breathing animation for each sub-step in real time |
+| **DRAIN mechanism** | DRAIN-1 (after tool execution) + DRAIN-2 (after store) ensure no events are lost |
+| **Implementation status** | ✅ Implemented |
 
-### 4.3 自动 OAR
+### 4.3 Automatic OAR
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **触发条件** | CTV 分割完成后，OAR map 中器官数 < 5 |
-| **效果** | 自动调用 `oar_segmentation`，合并到 CTV 的 Todo 项 |
-| **SSE 事件** | `oar_segmentation pending` → `oar_segmentation done` |
-| **Todo 显示** | 合并为 "CTV + OAR segmentation" 一项 |
-| **实现状态** | ✅ 已实现 (2026-06-22 修复合并逻辑) |
+| **Trigger condition** | After CTV segmentation completes, the number of organs in the OAR map is < 5 |
+| **Effect** | Automatically calls `oar_segmentation` and merges it into the CTV Todo item |
+| **SSE event** | `oar_segmentation pending` → `oar_segmentation done` |
+| **Todo display** | Merged into a single "CTV + OAR segmentation" item |
+| **Implementation status** | ✅ Implemented (merge logic fixed 2026-06-22) |
 
-### 4.4 规划结果指标
+### 4.4 Planning Result Metrics
 
-| 指标 | 说明 | 目标值 |
+| Metric | Description | Target value |
 |------|------|--------|
-| V100 | 靶区覆盖率 | ≥ 90% |
-| D90 | 90% 靶区接受的最低剂量 | ≥ 100 Gy |
-| V150/V200 | 高剂量体积比 | ≤ 50% / ≤ 20% |
-| CI | 适形指数 | ≥ 0.6 |
-| HI | 均匀指数 | ≤ 0.35 |
-| Score | 综合评分 (0-100) | ≥ 80 |
-| Seeds | 粒子数量 | — |
-| Trajectories | 针道数量 | — |
+| V100 | Target coverage | ≥ 90% |
+| D90 | Minimum dose received by 90% of the target | ≥ 100 Gy |
+| V150/V200 | High-dose volume ratio | ≤ 50% / ≤ 20% |
+| CI | Conformity index | ≥ 0.6 |
+| HI | Homogeneity index | ≤ 0.35 |
+| Score | Overall score (0-100) | ≥ 80 |
+| Seeds | Number of seeds | — |
+| Trajectories | Number of needle tracks | — |
 
 ---
 
-## 5. 剂量评估
+## 5. Dose Evaluation
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **期望效果** | 计算 CTV 和所有 OAR 的剂量指标 |
-| **CTV 指标** | Dmax, Dmin, Dmean, D98, D90, D2, V100, V150, V200, CI, HI |
-| **OAR 指标** | D2cc, D1cc, D0.1cc, Max dose |
-| **输出** | 存储到 `dose_metrics` / `metrics` 内存 |
-| **实现状态** | ✅ 已实现 |
+| **Expected behavior** | Compute dose metrics for the CTV and all OARs |
+| **CTV metrics** | Dmax, Dmin, Dmean, D98, D90, D2, V100, V150, V200, CI, HI |
+| **OAR metrics** | D2cc, D1cc, D0.1cc, Max dose |
+| **Output** | Stored in `dose_metrics` / `metrics` memory |
+| **Implementation status** | ✅ Implemented |
 
 ---
 
-## 6. 2D 影像查看器
+## 6. 2D Image Viewer
 
-### 6.1 三视图
+### 6.1 Three Views
 
-| 视图 | 说明 | 实现状态 |
+| View | Description | Implementation status |
 |------|------|----------|
-| Axial | 轴位 (默认) | ✅ |
-| Sagittal | 矢状位 | ✅ |
-| Coronal | 冠状位 | ✅ |
+| Axial | Axial view (default) | ✅ |
+| Sagittal | Sagittal view | ✅ |
+| Coronal | Coronal view | ✅ |
 
-### 6.2 切片拖拽
+### 6.2 Slice Dragging
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **期望效果** | 拖拽滑块 → 切换切片 → 重新渲染 CT + overlay |
-| **鼠标滚轮** | 滚轮切换切片 |
-| **实现状态** | ✅ 已实现 |
+| **Expected behavior** | Drag the slider → switch slice → re-render CT + overlay |
+| **Mouse wheel** | Wheel switches slices |
+| **Implementation status** | ✅ Implemented |
 
-### 6.3 标签 Overlay
+### 6.3 Label Overlay
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **期望效果** | CTV/OAR 标签以半透明颜色叠加在 CT 切片上 |
-| **颜色** | 来自 `labelColorLUT`，每个 label 有独立 RGB |
-| **可切换** | 通过 Data Tree 可见性控制 |
-| **实现状态** | ✅ 已实现 |
+| **Expected behavior** | CTV/OAR labels are overlaid on the CT slice in semi-transparent colors |
+| **Colors** | From `labelColorLUT`; each label has its own RGB |
+| **Toggleable** | Controlled via Data Tree visibility |
+| **Implementation status** | ✅ Implemented |
 
-### 6.4 剂量 Overlay
+### 6.4 Dose Overlay
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **期望效果** | 剂量分布以热力图形式叠加在 CT 切片上 |
-| **颜色映射** | 暖色=高剂量，冷色=低剂量 |
-| **处方线** | 120 Gy 等剂量线 |
-| **切换** | Dose overlay 开关 |
-| **实现状态** | ✅ 已实现 |
+| **Expected behavior** | Dose distribution is overlaid on the CT slice as a heatmap |
+| **Color mapping** | Warm colors = high dose, cool colors = low dose |
+| **Prescription line** | 120 Gy isodose line |
+| **Toggle** | Dose overlay switch |
+| **Implementation status** | ✅ Implemented |
 
 ---
 
-## 7. 3D 可视化
+## 7. 3D Visualization
 
-### 7.1 初始化
+### 7.1 Initialization
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **期望效果** | 首次切换到 Viewers 面板时初始化 Three.js 场景 |
-| **相机** | PerspectiveCamera, 初始位置 (0,0,300) |
-| **光源** | AmbientLight (0.6) + 3 个 DirectionalLight |
-| **控制器** | OrbitControls: 左键旋转, 右键平移, 滚轮缩放 |
-| **背景** | 透明 (黑色 CSS 背景) |
-| **preserveDrawingBuffer** | `true` (确保截图可用) |
-| **实现状态** | ✅ 已实现 (2026-06-22 修复) |
+| **Expected behavior** | Initializes the Three.js scene when switching to the Viewers panel for the first time |
+| **Camera** | PerspectiveCamera, initial position (0,0,300) |
+| **Lights** | AmbientLight (0.6) + 3 DirectionalLights |
+| **Controls** | OrbitControls: left-drag rotate, right-drag pan, wheel zoom |
+| **Background** | Transparent (black CSS background) |
+| **preserveDrawingBuffer** | `true` (ensures screenshots work) |
+| **Implementation status** | ✅ Implemented (fixed 2026-06-22) |
 
-### 7.2 网格加载
+### 7.2 Mesh Loading
 
-| 网格类型 | organ_id 格式 | 来源 | 实现状态 |
+| Mesh type | organ_id format | Source | Implementation status |
 |----------|--------------|------|----------|
-| CTV tumor | `ctv_1` | CTV 分割 label 1 | ✅ |
-| CTV artery | `ctv_2` | CTV 分割 label 2 | ✅ |
-| CTV vein | `ctv_3` | CTV 分割 label 3 | ✅ |
-| CTV pancreas | `ctv_4` | CTV 分割 label 4 | ✅ |
-| OAR non-traversable | `organ_{labelId}` | OAR 分割 (排除 CTV labels) | ✅ |
-| OAR traversable | `organ_{labelId}` | OAR 分割 | ✅ |
-| Seeds | `seed_{idx}` | 规划结果 | ✅ |
-| Needles | `needle_{idx}` | 规划结果 | ✅ |
-| Dose isosurfaces | `dose_iso_{threshold}` | 剂量计算 | ✅ |
+| CTV tumor | `ctv_1` | CTV segmentation label 1 | ✅ |
+| CTV artery | `ctv_2` | CTV segmentation label 2 | ✅ |
+| CTV vein | `ctv_3` | CTV segmentation label 3 | ✅ |
+| CTV pancreas | `ctv_4` | CTV segmentation label 4 | ✅ |
+| OAR non-traversable | `organ_{labelId}` | OAR segmentation (excluding CTV labels) | ✅ |
+| OAR traversable | `organ_{labelId}` | OAR segmentation | ✅ |
+| Seeds | `seed_{idx}` | Planning results | ✅ |
+| Needles | `needle_{idx}` | Planning results | ✅ |
+| Dose isosurfaces | `dose_iso_{threshold}` | Dose calculation | ✅ |
 
-### 7.3 自动加载与重建一致性
+### 7.3 Automatic Loading and Reconstruction Consistency
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **期望效果** | 自动加载 = 右键 3D Reconstruction = Data Tree 控件 |
-| **organ_id 统一** | CTV: `ctv_{lid}`, OAR: `organ_{lid}` |
-| **颜色来源** | `labelColorLUT` / `dataTreeState` |
-| **重复防护** | CTV label IDs 从 non-traversable OAR 加载中排除 |
-| **相机适配** | `fitCameraToScene()` 自动调整相机到网格包围盒 |
-| **面板切换** | 切换到 Viewers 面板时 `forceRender3DViewer()` 重新初始化 |
-| **实现状态** | ✅ 已实现 (2026-06-22 修复面板切换) |
+| **Expected behavior** | Automatic loading = right-click 3D Reconstruction = Data Tree control |
+| **Unified organ_id** | CTV: `ctv_{lid}`, OAR: `organ_{lid}` |
+| **Color source** | `labelColorLUT` / `dataTreeState` |
+| **Duplicate prevention** | CTV label IDs are excluded from non-traversable OAR loading |
+| **Camera fitting** | `fitCameraToScene()` automatically adjusts the camera to the mesh bounding box |
+| **Panel switching** | `forceRender3DViewer()` re-initializes when switching to the Viewers panel |
+| **Implementation status** | ✅ Implemented (panel switching fixed 2026-06-22) |
 
-### 7.4 方向轴
+### 7.4 Orientation Axes
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **期望效果** | 左下角显示 R/A/S 方向轴，跟随主相机旋转 |
-| **实现状态** | ✅ 已实现 |
+| **Expected behavior** | Shows R/A/S orientation axes in the lower-left corner, rotating with the main camera |
+| **Implementation status** | ✅ Implemented |
 
 ---
 
-## 8. Data Tree 数据树
+## 8. Data Tree
 
-### 8.1 结构
+### 8.1 Structure
 
 ```
 Segmentation
@@ -317,291 +317,291 @@ Planning
 └── Dose Isosurfaces (dose_iso_120, dose_iso_180, ...)
 ```
 
-### 8.2 右键菜单
+### 8.2 Context Menu
 
-| 菜单项 | 适用对象 | 功能 | 实现状态 |
+| Menu item | Applies to | Function | Implementation status |
 |--------|---------|------|----------|
-| 3D Reconstruct | 器官/CTV | 3D 重建单个器官 | ✅ |
-| 3D Reconstruct All | 多选 | 批量 3D 重建 | ✅ |
-| Change Color | 单个器官/CTV/粒子/针道 | 打开颜色选择器 | ✅ (2026-06-22 修复 CTV) |
-| Move to Category | OAR 器官 | 移动到 traversable/non-traversable | ✅ |
-| Show Selected | 多选 | 显示选中项 | ✅ |
-| Hide Selected | 多选 | 隐藏选中项 | ✅ |
-| Solo Selected | 多选 | 只显示选中项 | ✅ |
-| Opacity | 多选 | 设置透明度 (100/75/50/25%) | ✅ |
-| Show All | 全部 | 显示所有器官 | ✅ |
+| 3D Reconstruct | Organ/CTV | 3D-reconstruct a single organ | ✅ |
+| 3D Reconstruct All | Multi-select | Batch 3D reconstruction | ✅ |
+| Change Color | Single organ/CTV/seed/needle track | Opens the color picker | ✅ (CTV fixed 2026-06-22) |
+| Move to Category | OAR organ | Move to traversable/non-traversable | ✅ |
+| Show Selected | Multi-select | Show selected items | ✅ |
+| Hide Selected | Multi-select | Hide selected items | ✅ |
+| Solo Selected | Multi-select | Show only selected items | ✅ |
+| Opacity | Multi-select | Set opacity (100/75/50/25%) | ✅ |
+| Show All | All | Show all organs | ✅ |
 
-### 8.3 颜色选择器
+### 8.3 Color Picker
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **期望效果** | HSV 滑块 + 预设色块 + 实时预览 |
-| **2D 联动** | 修改后更新 `labelColorLUT` → 2D overlay 重绘 |
-| **3D 联动** | 修改后更新 `mesh.material.color` → 3D 网格即时变色 |
-| **支持对象** | organ_* , ctv_* , seed_* , needle_* , dose_iso_* |
-| **实现状态** | ✅ 已实现 (2026-06-22 修复 CTV + 3D 联动) |
+| **Expected behavior** | HSV sliders + preset swatches + live preview |
+| **2D sync** | After a change, updates `labelColorLUT` → 2D overlay redraws |
+| **3D sync** | After a change, updates `mesh.material.color` → 3D mesh changes color immediately |
+| **Supported objects** | organ_* , ctv_* , seed_* , needle_* , dose_iso_* |
+| **Implementation status** | ✅ Implemented (CTV + 3D sync fixed 2026-06-22) |
 
-### 8.4 可见性控制
+### 8.4 Visibility Control
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **眼睛图标** | 点击切换单个器官可见性 |
-| **Group 开关** | CTV/OAR/Planning 组级开关 |
-| **3D 联动** | 可见性变化同步到 3D 网格 |
-| **实现状态** | ✅ 已实现 |
+| **Eye icon** | Click to toggle a single organ's visibility |
+| **Group toggle** | Group-level toggle for CTV/OAR/Planning |
+| **3D sync** | Visibility changes sync to the 3D mesh |
+| **Implementation status** | ✅ Implemented |
 
 ---
 
-## 9. DVH 剂量体积直方图
+## 9. DVH Dose-Volume Histogram
 
-### 9.1 渲染
+### 9.1 Rendering
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **期望效果** | Plotly.js 渲染 CTV + 所有 OAR 的剂量-体积曲线 |
-| **X 轴** | 剂量 (Gy) |
-| **Y 轴** | 体积 (%) |
-| **曲线数** | 1 (CTV) + N (OARs) |
-| **处方线** | 120 Gy 垂直虚线 |
-| **实现状态** | ✅ 已实现 |
+| **Expected behavior** | Plotly.js renders dose-volume curves for the CTV + all OARs |
+| **X axis** | Dose (Gy) |
+| **Y axis** | Volume (%) |
+| **Number of curves** | 1 (CTV) + N (OARs) |
+| **Prescription line** | 120 Gy vertical dashed line |
+| **Implementation status** | ✅ Implemented |
 
 ### 9.2 Tooltip
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **期望效果** | 鼠标悬停显示器官名 + 剂量值 + 体积值 |
-| **样式** | 深色背景 (`rgba(15,23,42,0.95)`) + 亮色文字 |
-| **溢出防护** | SVG viewBox 坐标 clamp，tooltip 不超出图表区域 |
-| **CJK 字体** | Microsoft YaHei / PingFang SC / Noto Sans CJK SC |
-| **实现状态** | ✅ 已实现 (2026-06-22 修复 clamp) |
+| **Expected behavior** | Hovering shows the organ name + dose value + volume value |
+| **Style** | Dark background (`rgba(15,23,42,0.95)`) + light text |
+| **Overflow protection** | SVG viewBox coordinate clamp; the tooltip does not exceed the chart area |
+| **CJK font** | Microsoft YaHei / PingFang SC / Noto Sans CJK SC |
+| **Implementation status** | ✅ Implemented (clamp fixed 2026-06-22) |
 
-### 9.3 点击拾取
+### 9.3 Click-to-Pick
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **期望效果** | 单击曲线 → 在该点放置标记 (剂量, 体积, 器官名) |
-| **实现状态** | ✅ 已实现 |
+| **Expected behavior** | Click a curve → place a marker at that point (dose, volume, organ name) |
+| **Implementation status** | ✅ Implemented |
 
 ---
 
-## 10. 报告面板
+## 10. Report Panel
 
-### 10.1 编辑器
+### 10.1 Editor
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **期望效果** | 分区编辑：患者信息 / 影像 / 规划 / 剂量 / OAR / 解读 / 参考文献 |
-| **自动填充** | 从 server 端 `/api/report/auto-fill` 拉取数据 |
-| **实时预览** | 右侧 PDF 预览实时更新 |
-| **实现状态** | ✅ 已实现 |
+| **Expected behavior** | Sectioned editing: patient information / imaging / planning / dose / OAR / interpretation / references |
+| **Auto-fill** | Pulls data from the server-side `/api/report/auto-fill` |
+| **Live preview** | The PDF preview on the right updates in real time |
+| **Implementation status** | ✅ Implemented |
 
-### 10.2 语言
+### 10.2 Language
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **期望效果** | 跟随全局 EN/中 按钮，不从用户输入语言推断 |
-| **修复** | `refreshFinalReport` / `reportAutoFill` 优先使用 `window._i18nLang` |
-| **实现状态** | ✅ 已修复 (2026-06-22) |
+| **Expected behavior** | Follows the global EN/中 button; does not infer from the user's input language |
+| **Fix** | `refreshFinalReport` / `reportAutoFill` prioritize `window._i18nLang` |
+| **Implementation status** | ✅ Fixed (2026-06-22) |
 
-### 10.3 截图自动捕获
+### 10.3 Automatic Screenshot Capture
 
-| 截图 | 来源 | 实现状态 |
+| Screenshot | Source | Implementation status |
 |------|------|----------|
-| CTV/OAR 分割叠加 | 2D viewer canvas (axial) | ✅ |
-| 剂量分布热图 | 2D viewer canvas (如 dose overlay 开启) | ✅ |
-| 3D 规划方案 | Three.js canvas (`preserveDrawingBuffer`) | ✅ (2026-06-22 修复) |
-| DVH 曲线 | `Plotly.toImage()` | ✅ |
+| CTV/OAR segmentation overlay | 2D viewer canvas (axial) | ✅ |
+| Dose distribution heatmap | 2D viewer canvas (if dose overlay is on) | ✅ |
+| 3D treatment plan | Three.js canvas (`preserveDrawingBuffer`) | ✅ (fixed 2026-06-22) |
+| DVH curves | `Plotly.toImage()` | ✅ |
 
-**触发时机**:
-1. `refreshPlanningUI` 完成后 (规划完成)
-2. 打开 Report 面板时
-3. 点击 Auto-fill 时
-4. 导出 PDF 时
+**Trigger timing**:
+1. After `refreshPlanningUI` completes (planning finished)
+2. When the Report panel is opened
+3. When Auto-fill is clicked
+4. When exporting a PDF
 
-### 10.4 PDF 导出
+### 10.4 PDF Export
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **期望效果** | html2canvas 渲染报告页面 → 生成 PDF |
-| **语言** | 跟随 `reportForm.language` |
-| **实现状态** | ✅ 已实现 |
+| **Expected behavior** | html2canvas renders the report page → generates a PDF |
+| **Language** | Follows `reportForm.language` |
+| **Implementation status** | ✅ Implemented |
 
-### 10.5 版本快照
+### 10.5 Version Snapshots
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **保存** | 📸 Snapshot → localStorage 存储当前表单 |
-| **恢复** | 📜 History → 列出历史快照 → Restore |
-| **实现状态** | ✅ 已实现 |
+| **Save** | 📸 Snapshot → stores the current form in localStorage |
+| **Restore** | 📜 History → lists historical snapshots → Restore |
+| **Implementation status** | ✅ Implemented |
 
-### 10.6 审计日志
+### 10.6 Audit Log
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **期望效果** | 🔍 Audit → 显示所有编辑操作的时间戳和详情 |
-| **实现状态** | ✅ 已实现 |
+| **Expected behavior** | 🔍 Audit → shows timestamps and details of all editing operations |
+| **Implementation status** | ✅ Implemented |
 
-### 10.7 字段校验
+### 10.7 Field Validation
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **期望效果** | ✅ Validate → 检查必填字段和剂量范围 |
-| **校验项** | 患者姓名/性别/ID, 诊断, D90 范围, V100 范围, CI 范围 |
-| **实现状态** | ✅ 已实现 |
+| **Expected behavior** | ✅ Validate → checks required fields and dose ranges |
+| **Checked items** | Patient name/sex/ID, diagnosis, D90 range, V100 range, CI range |
+| **Implementation status** | ✅ Implemented |
 
 ---
 
-## 11. Todo 执行进度
+## 11. Todo Execution Progress
 
-### 11.1 显示
+### 11.1 Display
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **期望效果** | 底部 Dock 显示当前工作流步骤和完成状态 |
-| **预填充** | 规划请求时预填充 3 步: CTV → OAR → Planning |
-| **状态** | 预测 (空心) → 活动 (呼吸动画) → 完成 (✓) → 错误 (✕) |
-| **计数** | Header 显示 "(done/total)" |
-| **GPU 状态** | 活动步骤旁显示 GPU 使用信息 |
-| **实现状态** | ✅ 已实现 |
+| **Expected behavior** | The bottom Dock shows the current workflow steps and completion status |
+| **Pre-fill** | Pre-fills 3 steps on a planning request: CTV → OAR → Planning |
+| **Status** | Predicted (hollow) → active (breathing animation) → done (✓) → error (✕) |
+| **Count** | The header shows "(done/total)" |
+| **GPU status** | Shows GPU usage information next to the active step |
+| **Implementation status** | ✅ Implemented |
 
-### 11.2 合并逻辑
+### 11.2 Merge Logic
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **CTV + OAR 合并** | 自动 OAR 合并到 CTV 项，label 变为 "CTV + OAR segmentation" |
-| **完成条件** | CTV 和 OAR 都 done 后才标记完成 |
-| **dedup 路径** | dedup 找到合并项时也走 `_mergedDone` 逻辑 |
-| **实现状态** | ✅ 已修复 (2026-06-22) |
+| **CTV + OAR merge** | Automatic OAR is merged into the CTV item; the label becomes "CTV + OAR segmentation" |
+| **Completion condition** | Marked done only after both CTV and OAR are done |
+| **dedup path** | When dedup finds a merged item, it also follows the `_mergedDone` logic |
+| **Implementation status** | ✅ Fixed (2026-06-22) |
 
-### 11.3 折叠与隐藏
+### 11.3 Collapse and Hide
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **自动折叠** | AI 回复完成后折叠为 header |
-| **自动隐藏** | 折叠 4 秒后淡出隐藏 |
-| **手动展开** | 点击 header 展开查看详细 |
-| **新消息清除** | 每次新消息开始时清除旧 todo |
-| **实现状态** | ✅ 已实现 |
+| **Auto-collapse** | Collapses to the header after the AI reply completes |
+| **Auto-hide** | Fades out 4 seconds after collapsing |
+| **Manual expand** | Click the header to expand and view details |
+| **Clear on new message** | Clears the old todo each time a new message begins |
+| **Implementation status** | ✅ Implemented |
 
 ---
 
-## 12. Thinking Chain 思考链
+## 12. Thinking Chain
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **期望效果** | 显示 LLM 调用链：用户输入 → LLM 思考 → 工具调用 → 结果 → 回复 |
-| **实时更新** | SSE 事件实时追加步骤 |
-| **折叠/展开** | 点击 header 折叠/展开 |
-| **步骤详情** | 点击单个步骤展开查看参数和结果 |
-| **计时** | Header 显示总耗时 |
-| **自动折叠** | AI 回复后自动折叠 |
-| **实现状态** | ✅ 已实现 |
+| **Expected behavior** | Shows the LLM call chain: user input → LLM thinking → tool call → result → reply |
+| **Real-time updates** | SSE events append steps in real time |
+| **Collapse/expand** | Click the header to collapse/expand |
+| **Step details** | Click a single step to expand and view parameters and results |
+| **Timing** | The header shows the total elapsed time |
+| **Auto-collapse** | Automatically collapses after the AI reply |
+| **Implementation status** | ✅ Implemented |
 
 ---
 
-## 13. 多语言系统
+## 13. Multilingual System
 
-### 13.1 全局语言
+### 13.1 Global Language
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **切换** | 右上角 EN/中 芯片按钮 |
-| **存储** | `window._i18nLang` + localStorage |
-| **影响范围** | Todo 标签 / 工具进度 / 报告 / 状态消息 |
-| **实现状态** | ✅ 已实现 |
+| **Toggle** | EN/中 chip button in the upper-right corner |
+| **Storage** | `window._i18nLang` + localStorage |
+| **Scope** | Todo labels / tool progress / report / status messages |
+| **Implementation status** | ✅ Implemented |
 
-### 13.2 LLM 回复语言
+### 13.2 LLM Reply Language
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **期望效果** | LLM 回复语言与用户输入语言一致 |
-| **实现** | `memory/language.py` 检测输入语言 → 注入 system prompt 子句 |
-| **实现状态** | ✅ 已实现 |
+| **Expected behavior** | The LLM reply language matches the user's input language |
+| **Implementation** | `memory/language.py` detects the input language → injects a system prompt clause |
+| **Implementation status** | ✅ Implemented |
 
-### 13.3 报告语言
+### 13.3 Report Language
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **期望效果** | 跟随全局语言按钮，不从用户输入推断 |
-| **修复** | `refreshFinalReport` / `reportAutoFill` 优先 `window._i18nLang` |
-| **实现状态** | ✅ 已修复 (2026-06-22) |
+| **Expected behavior** | Follows the global language button; does not infer from user input |
+| **Fix** | `refreshFinalReport` / `reportAutoFill` prioritize `window._i18nLang` |
+| **Implementation status** | ✅ Fixed (2026-06-22) |
 
 ---
 
-## 14. 面板布局与拖拽
+## 14. Panel Layout and Dragging
 
-### 14.1 面板切换
+### 14.1 Panel Switching
 
-| 面板 | Tab 名 | 内容 | 实现状态 |
+| Panel | Tab name | Content | Implementation status |
 |------|--------|------|----------|
-| Input | 📁 Input | CT 上传 + 肿瘤类型选择 | ✅ |
-| Metrics | 📊 Metrics | 规划指标 + DVH + OAR 表 | ✅ |
-| Viewers | 🖼️ Viewers | 2D 三视图 + 3D 可视化 | ✅ |
-| Report | 📋 Report | 报告编辑器 + PDF 预览 | ✅ |
+| Input | 📁 Input | CT upload + tumor type selection | ✅ |
+| Metrics | 📊 Metrics | Planning metrics + DVH + OAR table | ✅ |
+| Viewers | 🖼️ Viewers | 2D three views + 3D visualization | ✅ |
+| Report | 📋 Report | Report editor + PDF preview | ✅ |
 
-### 14.2 拖拽分割线
+### 14.2 Draggable Dividers
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **期望效果** | 三列布局 (左/中/右) 可通过分割线拖拽调整宽度 |
-| **持久化** | 宽度保存到 localStorage |
-| **光标** | 拖拽时显示 `col-resize` |
-| **实现状态** | ✅ 已实现 |
+| **Expected behavior** | The three-column layout (left/center/right) can be resized by dragging dividers |
+| **Persistence** | Widths are saved to localStorage |
+| **Cursor** | Shows `col-resize` while dragging |
+| **Implementation status** | ✅ Implemented |
 
 ---
 
-## 15. 会话管理
+## 15. Session Management
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **自动创建** | 首次发送消息时自动创建 "New chat" 会话 |
-| **持久化** | 会话保存到 localStorage，刷新后恢复 |
-| **切换** | 左侧会话列表点击切换 |
-| **清除** | "Clear" 按钮清除当前会话 |
-| **实现状态** | ✅ 已实现 |
+| **Auto-create** | Automatically creates a "New chat" session when the first message is sent |
+| **Persistence** | Sessions are saved to localStorage and restored after refresh |
+| **Switch** | Click a session in the left-hand list to switch |
+| **Clear** | The "Clear" button clears the current session |
+| **Implementation status** | ✅ Implemented |
 
 ---
 
-## 16. 联网搜索
+## 16. Web Search
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **期望效果** | LLM 判断需要联网时调用 `web_search` 工具 |
-| **搜索源** | DuckDuckGo / Wikipedia / arXiv 等 |
-| **结果显示** | 摘要 + 来源链接 |
-| **实现状态** | ✅ 已实现 |
+| **Expected behavior** | Calls the `web_search` tool when the LLM determines web access is needed |
+| **Search sources** | DuckDuckGo / Wikipedia / arXiv, etc. |
+| **Result display** | Summary + source links |
+| **Implementation status** | ✅ Implemented |
 
 ---
 
-## 17. Quality Review 质量审核
+## 17. Quality Review
 
-| 项目 | 说明 |
+| Item | Description |
 |------|------|
-| **期望效果** | 多 Agent (PlanReviewer + FactChecker + SafetyGuardian) 审核规划结果 |
-| **审核结果** | PASS / CONDITIONAL / REJECT / ESCALATE |
-| **当前状态** | ⚠️ 已禁用 (2026-06-22) |
-| **禁用原因** | 审核后触发神秘 "Review Feedback" 重试，生成英文 stub 覆盖中文报告 |
-| **后续计划** | 定位重试来源后重新启用 |
+| **Expected behavior** | Multi-agent (PlanReviewer + FactChecker + SafetyGuardian) review of planning results |
+| **Review result** | PASS / CONDITIONAL / REJECT / ESCALATE |
+| **Current status** | ⚠️ Disabled (2026-06-22) |
+| **Reason for disabling** | After review, a mysterious "Review Feedback" retry was triggered, generating an English stub that overwrote the Chinese report |
+| **Follow-up plan** | Re-enable after locating the source of the retry |
 
 ---
 
-# 二、交互流程与期望效果
+# II. Interaction Flows and Expected Behavior
 
-## 1. 规划主流程
+## 1. Main Planning Flow
 
 ```
-用户输入: "请执行放射性粒子植入规划"
+User input: "请执行放射性粒子植入规划"
          ↓
 sendChat() → POST /api/chat (stream: true)
          ↓
-SSE 事件流:
+SSE event stream:
   1. start (language detection)
-  2. step: Crystallized Skill (记忆匹配)
-  3. step: Experience Recall (经验召回)
-  4. step: LLM Call 1 (路由决策)
+  2. step: Crystallized Skill (memory matching)
+  3. step: Experience Recall (experience recall)
+  4. step: LLM Call 1 (routing decision)
   5. step: ctv_segmentation pending → done
-  6. step: oar_segmentation pending → done (自动触发)
-  7. step: LLM Call 2 (决定调用 planning_pipeline)
+  6. step: oar_segmentation pending → done (automatic trigger)
+  7. step: LLM Call 2 (decides to call planning_pipeline)
   8. step: planning_pipeline pending
      8a. step: trajectory_init pending → done
      8b. step: trajectory_refine pending → done
@@ -609,196 +609,196 @@ SSE 事件流:
      8d. step: dose_calc pending → done
      8e. step: dose_eval pending → done
   9. step: planning_pipeline done
-  10. step: LLM Call 3 (生成回复)
-  11. text_chunk: 流式回复文本
+  10. step: LLM Call 3 (generates reply)
+  11. text_chunk: streaming reply text
   12. step: AI Response done
-  13. response: 最终回复
+  13. response: final reply
   14. done
 ```
 
-**期望效果**:
-- Todo 列表实时更新每个步骤状态
-- Thinking Chain 显示完整调用链
-- 最终回复是完整的中文规划报告
-- Metrics 面板自动更新指标
-- DVH 自动绘制
-- 3D 网格自动加载
-- Report 自动截图
+**Expected behavior**:
+- The Todo list updates each step's status in real time
+- The Thinking Chain shows the complete call chain
+- The final reply is a complete Chinese planning report
+- The Metrics panel automatically updates the metrics
+- DVH is drawn automatically
+- 3D meshes are loaded automatically
+- Report screenshots are captured automatically
 
-**当前状态**: ✅ 已正确实现
+**Current status**: ✅ Correctly implemented
 
 ---
 
-## 2. 聊天交互
+## 2. Chat Interaction
 
-| 操作 | 期望效果 | 状态 |
+| Action | Expected behavior | Status |
 |------|---------|------|
-| Enter | 发送消息 | ✅ |
-| 点击发送按钮 | 发送消息 | ✅ |
-| Shift+Enter | 换行不发送 | ✅ |
-| 发送中再次点击 | 中断当前请求 | ✅ |
-| 上/下箭头 | 浏览历史消息 | ✅ |
-| 首个 step 事件 | 替换为 Thinking Chain | ✅ |
-| text_chunk | 流式追加到回复气泡 | ✅ |
-| AI Response done | 渲染 Markdown，折叠 Thinking Chain | ✅ |
-| done | 显示 Footer (耗时/token/工具数) | ✅ |
-| Todo pending | 呼吸动画，计时开始 | ✅ |
-| Todo done | ✓ 标记，显示耗时 | ✅ |
-| AI Response done | 所有未完成项标记 done，折叠 | ✅ (2026-06-22 修复) |
-| 折叠 4s | 淡出隐藏 | ✅ |
-| 新消息 | 清除旧 Todo | ✅ |
+| Enter | Send message | ✅ |
+| Click send button | Send message | ✅ |
+| Shift+Enter | New line without sending | ✅ |
+| Click again while sending | Abort the current request | ✅ |
+| Up/Down arrows | Browse message history | ✅ |
+| First step event | Replaces with the Thinking Chain | ✅ |
+| text_chunk | Appends to the reply bubble in a stream | ✅ |
+| AI Response done | Renders Markdown, collapses the Thinking Chain | ✅ |
+| done | Shows the Footer (elapsed time/tokens/tool count) | ✅ |
+| Todo pending | Breathing animation, timer starts | ✅ |
+| Todo done | ✓ marker, shows elapsed time | ✅ |
+| AI Response done | Marks all incomplete items done, collapses | ✅ (fixed 2026-06-22) |
+| Collapsed 4s | Fades out and hides | ✅ |
+| New message | Clears the old Todo | ✅ |
 
 ---
 
-## 3. 2D 查看器交互
+## 3. 2D Viewer Interaction
 
-| 操作 | 期望效果 | 状态 |
+| Action | Expected behavior | Status |
 |------|---------|------|
-| 拖拽滑块 | 切换切片，实时渲染 | ✅ |
-| 鼠标滚轮 | 切换切片 | ✅ |
-| 键盘 ←/→ | 上/下一切片 | ✅ |
-| Window 输入 | 调整窗宽 | ✅ |
-| Level 输入 | 调整窗位 | ✅ |
-| 鼠标拖拽 (左键) | 调整窗宽窗位 | ✅ |
-| 滚轮 | 缩放 | ✅ |
-| 右键拖拽 | 平移 | ✅ |
-| 双击 | 重置缩放 | ✅ |
-| Label overlay 开关 | 显示/隐藏 CTV/OAR 轮廓 | ✅ |
-| Dose overlay 开关 | 显示/隐藏剂量热力图 | ✅ |
-| 剂量阈值滑块 | 调整剂量显示阈值 | ✅ |
+| Drag slider | Switch slice, render in real time | ✅ |
+| Mouse wheel | Switch slice | ✅ |
+| Keyboard ←/→ | Previous/next slice | ✅ |
+| Window input | Adjust window width | ✅ |
+| Level input | Adjust window level | ✅ |
+| Mouse drag (left button) | Adjust window width/level | ✅ |
+| Wheel | Zoom | ✅ |
+| Right-drag | Pan | ✅ |
+| Double-click | Reset zoom | ✅ |
+| Label overlay toggle | Show/hide CTV/OAR contours | ✅ |
+| Dose overlay toggle | Show/hide the dose heatmap | ✅ |
+| Dose threshold slider | Adjust the dose display threshold | ✅ |
 
 ---
 
-## 4. 3D 查看器交互
+## 4. 3D Viewer Interaction
 
-| 操作 | 期望效果 | 状态 |
+| Action | Expected behavior | Status |
 |------|---------|------|
-| 左键拖拽 | 旋转 | ✅ |
-| 右键拖拽 | 平移 | ✅ |
-| 滚轮 | 缩放 | ✅ |
-| 3D.fit 按钮 | 重置相机到网格包围盒 | ✅ |
-| Opacity 滑块 | 调整所有网格透明度 | ✅ |
-| Wireframe 开关 | 切换线框模式 | ✅ |
-| Skin 开关 | 显示/隐藏 CT 皮肤 | ✅ |
+| Left-drag | Rotate | ✅ |
+| Right-drag | Pan | ✅ |
+| Wheel | Zoom | ✅ |
+| 3D.fit button | Reset the camera to the mesh bounding box | ✅ |
+| Opacity slider | Adjust the opacity of all meshes | ✅ |
+| Wireframe toggle | Toggle wireframe mode | ✅ |
+| Skin toggle | Show/hide the CT skin | ✅ |
 
 ---
 
-## 5. Data Tree 交互
+## 5. Data Tree Interaction
 
-| 操作 | 期望效果 | 状态 |
+| Action | Expected behavior | Status |
 |------|---------|------|
-| 单击 | 选中项 | ✅ |
-| Ctrl+单击 | 多选/取消 | ✅ |
-| Shift+单击 | 范围选择 (同组内) | ✅ |
-| 点击眼睛图标 | 切换单项可见性 | ✅ |
-| Group 眼睛图标 | 切换整组可见性 | ✅ |
-| 右键 3D Reconstruct | 3D 重建选中器官 | ✅ |
-| 右键 Change Color | 打开颜色选择器 | ✅ (2026-06-22 修复 CTV) |
-| 右键 Show/Hide Selected | 显示/隐藏选中项 | ✅ |
-| 右键 Solo Selected | 只显示选中项 | ✅ |
-| 右键 Opacity | 设置透明度 | ✅ |
+| Single click | Select item | ✅ |
+| Ctrl+click | Multi-select/deselect | ✅ |
+| Shift+click | Range select (within the same group) | ✅ |
+| Click eye icon | Toggle a single item's visibility | ✅ |
+| Group eye icon | Toggle the whole group's visibility | ✅ |
+| Right-click 3D Reconstruct | 3D-reconstruct the selected organ | ✅ |
+| Right-click Change Color | Open the color picker | ✅ (CTV fixed 2026-06-22) |
+| Right-click Show/Hide Selected | Show/hide selected items | ✅ |
+| Right-click Solo Selected | Show only selected items | ✅ |
+| Right-click Opacity | Set opacity | ✅ |
 
 ---
 
-## 6. DVH 交互
+## 6. DVH Interaction
 
-| 操作 | 期望效果 | 状态 |
+| Action | Expected behavior | Status |
 |------|---------|------|
-| 鼠标悬停曲线 | 显示 tooltip (器官名 + 剂量 + 体积) | ✅ |
-| tooltip 不超出图表 | SVG viewBox 坐标 clamp | ✅ (2026-06-22 修复) |
-| 单击曲线 | 放置标记 (剂量, 体积, 器官名) | ✅ |
-| 单击标记 | 移除标记 | ✅ |
-| 滚轮/拖拽 | 缩放/平移 | ✅ |
-| 双击 | 重置 | ✅ |
+| Hover over a curve | Show tooltip (organ name + dose + volume) | ✅ |
+| Tooltip stays within the chart | SVG viewBox coordinate clamp | ✅ (fixed 2026-06-22) |
+| Click a curve | Place a marker (dose, volume, organ name) | ✅ |
+| Click a marker | Remove the marker | ✅ |
+| Wheel/drag | Zoom/pan | ✅ |
+| Double-click | Reset | ✅ |
 
 ---
 
-## 7. 报告面板交互
+## 7. Report Panel Interaction
 
-| 操作 | 期望效果 | 状态 |
+| Action | Expected behavior | Status |
 |------|---------|------|
-| 点击字段 | 编辑模式 | ✅ |
-| 输入内容 | 实时更新预览 | ✅ |
-| Auto-fill | 从 server 自动填充 | ✅ |
-| 📷 Capture 2D/3D/DVH | 捕获截图 | ✅ |
-| Upload | 上传自定义图片 | ✅ |
-| 📸 Snapshot | 保存当前版本 | ✅ |
-| 📜 History | 查看/恢复历史版本 | ✅ |
-| 📋 Audit | 查看编辑历史 | ✅ |
-| ✅ Validate | 校验必填字段 | ✅ |
-| Export PDF | 生成 PDF | ✅ |
+| Click a field | Edit mode | ✅ |
+| Enter content | Update the preview in real time | ✅ |
+| Auto-fill | Auto-fill from the server | ✅ |
+| 📷 Capture 2D/3D/DVH | Capture screenshots | ✅ |
+| Upload | Upload a custom image | ✅ |
+| 📸 Snapshot | Save the current version | ✅ |
+| 📜 History | View/restore historical versions | ✅ |
+| 📋 Audit | View editing history | ✅ |
+| ✅ Validate | Validate required fields | ✅ |
+| Export PDF | Generate a PDF | ✅ |
 
 ---
 
-## 8. 面板切换交互
+## 8. Panel Switching Interaction
 
-| 操作 | 期望效果 | 状态 |
+| Action | Expected behavior | Status |
 |------|---------|------|
-| 点击 Input tab | 显示输入面板 | ✅ |
-| 点击 Metrics tab | 显示指标面板 + DVH | ✅ |
-| 点击 Viewers tab | 显示 2D/3D 查看器，3D 重新初始化 | ✅ (2026-06-22 修复) |
-| 点击 Report tab | 显示报告编辑器，首次自动截图 | ✅ |
+| Click the Input tab | Show the input panel | ✅ |
+| Click the Metrics tab | Show the metrics panel + DVH | ✅ |
+| Click the Viewers tab | Show the 2D/3D viewers, re-initialize 3D | ✅ (fixed 2026-06-22) |
+| Click the Report tab | Show the report editor, auto-capture screenshots on first open | ✅ |
 
 ---
 
-## 9. 全局控件交互
+## 9. Global Controls Interaction
 
-| 操作 | 期望效果 | 状态 |
+| Action | Expected behavior | Status |
 |------|---------|------|
-| 点击 EN/中 | 切换全局语言 | ✅ |
-| 切换后 Todo | 标签更新为新语言 | ✅ |
-| 切换后 Report | 报告语言更新 | ✅ (2026-06-22 修复) |
-| 切换后 Footer | Footer 标签更新 | ✅ |
-| 拖拽分割线 | 调整面板宽度，保存到 localStorage | ✅ |
-| Clear 按钮 | 清除当前会话 | ✅ |
-| 刷新页面 | 恢复上次会话 | ✅ |
+| Click EN/中 | Toggle the global language | ✅ |
+| Todo after switching | Labels update to the new language | ✅ |
+| Report after switching | Report language updates | ✅ (fixed 2026-06-22) |
+| Footer after switching | Footer labels update | ✅ |
+| Drag dividers | Adjust panel widths, saved to localStorage | ✅ |
+| Clear button | Clear the current session | ✅ |
+| Refresh page | Restore the last session | ✅ |
 
 ---
 
-# 三、规划流水线详解
+# III. Planning Pipeline in Detail
 
-## 1. 流程总览
+## 1. Flow Overview
 
 ```
-用户: "请执行放射性粒子植入规划"
+User: "请执行放射性粒子植入规划"
     │
-    ├─→ [1] CTV 分割 (ctv_segmentation)
-    │       ├─ nnUNet 推理
-    │       ├─ 返回多标签 mask (tumor/artery/vein/pancreas)
-    │       └─ 存储 ctv_array, ctv_label_names, labelColorLUT
+    ├─→ [1] CTV segmentation (ctv_segmentation)
+    │       ├─ nnUNet inference
+    │       ├─ Return multi-label mask (tumor/artery/vein/pancreas)
+    │       └─ Store ctv_array, ctv_label_names, labelColorLUT
     │
-    ├─→ [2] OAR 分割 (oar_segmentation) [自动触发]
-    │       ├─ TotalSegmentator 推理
-    │       ├─ 返回 57+ 器官标签
-    │       └─ 存储 oar_array, organ_names
+    ├─→ [2] OAR segmentation (oar_segmentation) [automatic trigger]
+    │       ├─ TotalSegmentator inference
+    │       ├─ Return 57+ organ labels
+    │       └─ Store oar_array, organ_names
     │
-    ├─→ [3] 规划流水线 (planning_pipeline, step="full")
-    │       ├─ 3a. 轨迹初始化 (trajectory_init) → 130 条候选
-    │       ├─ 3b. 轨迹细化 (trajectory_refine) → 筛选最优
-    │       ├─ 3c. 粒子规划 (seed_planning) → 14 颗种子
-    │       ├─ 3d. 剂量计算 (dose_calc) → 3D 剂量分布
-    │       └─ 3e. 剂量评估 (dose_eval) → V100/D90/CI/HI
+    ├─→ [3] Planning pipeline (planning_pipeline, step="full")
+    │       ├─ 3a. Trajectory initialization (trajectory_init) → 130 candidates
+    │       ├─ 3b. Trajectory refinement (trajectory_refine) → select the best
+    │       ├─ 3c. Seed planning (seed_planning) → 14 seeds
+    │       ├─ 3d. Dose calculation (dose_calc) → 3D dose distribution
+    │       └─ 3e. Dose evaluation (dose_eval) → V100/D90/CI/HI
     │
-    └─→ [4] LLM 生成最终回复
-            └─ 10 段结构化报告 (中文/英文)
+    └─→ [4] LLM generates the final reply
+            └─ 10-section structured report (Chinese/English)
 ```
 
 ---
 
-## 2. SSE 事件流
+## 2. SSE Event Stream
 
-### 2.1 事件类型
+### 2.1 Event Types
 
-| 事件 | 格式 | 说明 |
+| Event | Format | Description |
 |------|------|------|
-| `start` | `{language: {code: "zh"/"en"}}` | 会话开始，包含检测到的语言 |
-| `step` | `{id, type, title, content, status, tool, params, result}` | 步骤事件 |
-| `text_chunk` | `{text: "..."}` | LLM 回复文本流 |
-| `response` | `{response: "...", llm_meta: {...}}` | 最终回复 |
-| `done` | `{context: {...}}` | 流结束 |
-| `error` | `{message: "..."}` | 错误 |
+| `start` | `{language: {code: "zh"/"en"}}` | Session start, contains the detected language |
+| `step` | `{id, type, title, content, status, tool, params, result}` | Step event |
+| `text_chunk` | `{text: "..."}` | LLM reply text stream |
+| `response` | `{response: "...", llm_meta: {...}}` | Final reply |
+| `done` | `{context: {...}}` | End of stream |
+| `error` | `{message: "..."}` | Error |
 
-### 2.2 完整事件序列
+### 2.2 Complete Event Sequence
 
 ```
 event: start
@@ -839,7 +839,7 @@ event: step
 data: {"id": 7, "type": "tool", "tool": "trajectory_init", "status": "done",
        "result": "130 trajectories", "parent_tool": "planning_pipeline"}
 
-... (trajectory_refine, seed_planning, dose_calc, dose_eval 同上)
+... (trajectory_refine, seed_planning, dose_calc, dose_eval same as above)
 
 event: step
 data: {"id": 6, "type": "tool", "tool": "planning_pipeline", "status": "done",
@@ -863,47 +863,47 @@ data: {"context": {...}}
 
 ---
 
-## 3. step_callback 机制
+## 3. step_callback Mechanism
 
-### 3.1 目的
+### 3.1 Purpose
 
-将 `planning_pipeline` 内部的 5 个子步骤暴露为独立的 SSE step 事件，使 Todo 列表能实时显示每个子步骤的进度。
+Expose the 5 sub-steps inside `planning_pipeline` as independent SSE step events, so the Todo list can show the progress of each sub-step in real time.
 
-### 3.2 实现
+### 3.2 Implementation
 
 ```python
-# 工具内部调用:
+# Called inside the tool:
 step_callback("trajectory_init", "pending", "Generating candidate trajectories")
-# ... 执行 ...
+# ... execute ...
 step_callback("trajectory_init", "done", "130 trajectories")
 ```
 
-### 3.3 DRAIN 时机
+### 3.3 DRAIN Timing
 
-| DRAIN | 位置 | 目的 |
+| DRAIN | Position | Purpose |
 |-------|------|------|
-| DRAIN-1 | `_execute_tool_with_memory` 返回后 | 刷新工具执行期间的子步骤事件 |
-| DRAIN-2 | `_store_tool_result` 返回后 | 刷新 auto-OAR 等触发的事件 |
+| DRAIN-1 | After `_execute_tool_with_memory` returns | Flush sub-step events generated during tool execution |
+| DRAIN-2 | After `_store_tool_result` returns | Flush events triggered by auto-OAR, etc. |
 
 ---
 
-## 4. 自动 OAR 触发
+## 4. Automatic OAR Trigger
 
-### 4.1 触发条件
+### 4.1 Trigger Condition
 
-CTV 分割完成后，OAR map 中器官数 < 5 时自动调用 `oar_segmentation`。
+After CTV segmentation completes, `oar_segmentation` is called automatically when the number of organs in the OAR map is < 5.
 
-### 4.2 Todo 合并
+### 4.2 Todo Merge
 
 ```javascript
 if (step.tool === 'oar_segmentation' && step.parent_tool === 'ctv_segmentation') {
     ctvItem.label = 'CTV + OAR segmentation';
     ctvItem._mergedOAR = true;
-    // 删除预测的 OAR 项
+    // Remove the predicted OAR item
 }
 ```
 
-### 4.3 完成条件
+### 4.3 Completion Condition
 
 ```javascript
 if (item._mergedOAR) {
@@ -917,28 +917,28 @@ if (item._mergedOAR) {
 
 ---
 
-## 5. 前端响应链
+## 5. Frontend Response Chain
 
-### 5.1 refreshPlanningUI 执行顺序
+### 5.1 refreshPlanningUI Execution Order
 
 ```
 1. fetch /api/planning/results
-2. updateMetrics (指标卡片)
-3. drawDVH (DVH 曲线)
-4. updateImageAnalysis (影像分析)
-5. loadCTVAndObstacleMeshes (CTV + OAR 3D 网格)
-6. loadSeeds3D (粒子 3D)
-7. loadAllIsoSurfaces (等剂量面)
-8. reportAutoFill (报告自动填充)
-9. await Promise.all (等待所有 mesh 加载)
-10. forceRender3DViewer (3D 重新渲染)
-11. updateClinicalEvaluation (临床评估)
-12. autoCaptureReportFigures (报告截图)
+2. updateMetrics (metric cards)
+3. drawDVH (DVH curves)
+4. updateImageAnalysis (image analysis)
+5. loadCTVAndObstacleMeshes (CTV + OAR 3D meshes)
+6. loadSeeds3D (3D seeds)
+7. loadAllIsoSurfaces (isodose surfaces)
+8. reportAutoFill (report auto-fill)
+9. await Promise.all (wait for all meshes to load)
+10. forceRender3DViewer (re-render 3D)
+11. updateClinicalEvaluation (clinical evaluation)
+12. autoCaptureReportFigures (report screenshots)
 ```
 
 ---
 
-## 6. 规划结果 API
+## 6. Planning Results API
 
 ### GET /api/planning/results
 
@@ -967,7 +967,7 @@ if (item._mergedOAR) {
 
 ---
 
-## 7. 3D 网格数据
+## 7. 3D Mesh Data
 
 ### GET /api/viewer/3d_mask
 
@@ -984,11 +984,11 @@ if (item._mergedOAR) {
 
 ---
 
-## 8. 剂量评估详情
+## 8. Dose Evaluation Details
 
-### OAR 剂量限制 (胰腺癌)
+### OAR Dose Constraints (Pancreatic Cancer)
 
-| 器官 | D2cc 限制 | 来源 |
+| Organ | D2cc constraint | Source |
 |------|----------|------|
 | stomach | < 90 Gy | GEC-ESTRO |
 | duodenum | < 90 Gy | GEC-ESTRO |
@@ -999,9 +999,9 @@ if (item._mergedOAR) {
 
 ---
 
-# 四、报告面板详解
+# IV. Report Panel in Detail
 
-## 1. 面板布局
+## 1. Panel Layout
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -1021,96 +1021,96 @@ if (item._mergedOAR) {
 
 ---
 
-## 2. 数据来源
+## 2. Data Sources
 
-| 字段 | 来源 | API |
+| Field | Source | API |
 |------|------|-----|
-| 患者 ID | CT 文件名 | — |
-| 影像模态 | DICOM tags | `/api/header/info` |
-| 切片数/间距/层厚 | CT shape/spacing | `/api/header/info` |
-| CTV 体积 | CTV 分割结果 | `/api/report/auto-fill` |
-| OAR 数量 | Data Tree | `/api/report/auto-fill` |
-| 总粒子数 | planning results | `/api/report/auto-fill` |
+| Patient ID | CT file name | — |
+| Imaging modality | DICOM tags | `/api/header/info` |
+| Slice count/spacing/slice thickness | CT shape/spacing | `/api/header/info` |
+| CTV volume | CTV segmentation result | `/api/report/auto-fill` |
+| OAR count | Data Tree | `/api/report/auto-fill` |
+| Total seed count | planning results | `/api/report/auto-fill` |
 | V100/D90/CI/HI | dose_metrics | `/api/report/auto-fill` |
 | OAR D2cc/D1cc | oar_metrics | `/api/report/auto-fill` |
 
 ---
 
-## 3. 截图系统
+## 3. Screenshot System
 
-### 3.1 截图类型
+### 3.1 Screenshot Types
 
-| 类型 | 来源 | 标题 (EN) | 标题 (ZH) |
+| Type | Source | Title (EN) | Title (ZH) |
 |------|------|-----------|-----------|
 | Segmentation | 2D viewer (axial) | CTV and OAR segmentation overlay | 靶区与危及器官分割重建 |
 | Dose | 2D viewer (dose overlay) | Dose distribution heatmap | 剂量分布热图 |
 | 3D Plan | Three.js canvas | 3D treatment plan | 三维规划方案 |
 | DVH | Plotly.toImage | DVH — Dose Volume Histogram | DVH 剂量体积直方图 |
 
-### 3.2 3D 截图特殊处理
+### 3.2 Special Handling for 3D Screenshots
 
 ```javascript
-// preserveDrawingBuffer: true 确保 hidden canvas 可截图
-scene3D.renderer.render(scene3D.scene, scene3D.camera);  // 显式 render
+// preserveDrawingBuffer: true ensures the hidden canvas can be captured
+scene3D.renderer.render(scene3D.scene, scene3D.camera);  // explicit render
 const dataUrl = canvas3d.toDataURL('image/png');
-if (dataUrl.length > 1000) { ... }  // 检查非空白
+if (dataUrl.length > 1000) { ... }  // check for non-blank
 ```
 
-### 3.3 去重逻辑
+### 3.3 Deduplication Logic
 
 ```javascript
 const _lastPlan = window.state.lastPlanTimestamp;
 if (_lastPlan) {
     figures = figures.filter(f => {
-        if (f.type === 'upload') return true;  // 保留用户上传
-        return f.capturedAt >= _lastPlan;       // 丢弃旧截图
+        if (f.type === 'upload') return true;  // keep user uploads
+        return f.capturedAt >= _lastPlan;       // discard old screenshots
     });
 }
-if (figures.length > 0) return;  // 只在无截图时捕获
+if (figures.length > 0) return;  // only capture when there are no screenshots
 ```
 
 ---
 
-## 4. 语言系统
+## 4. Language System
 
-### 4.1 语言来源优先级
-
-```
-1. window._i18nLang (全局 EN/中 按钮)
-2. window.reportForm.language (从 localStorage 恢复)
-3. 'en' (硬编码默认)
-```
-
-### 4.2 语言切换流程
+### 4.1 Language Source Priority
 
 ```
-用户点击 EN/中
+1. window._i18nLang (global EN/中 button)
+2. window.reportForm.language (restored from localStorage)
+3. 'en' (hard-coded default)
+```
+
+### 4.2 Language Switching Flow
+
+```
+User clicks EN/中
     ↓
 window._i18nLang = 'en'
     ↓
 reportForm.language = 'en'
     ↓
-_autoFillInterpretation()    // 重新生成解读
-renderReportEditor()          // 重渲染编辑器
-_updateReportPreview()        // 重渲染预览
+_autoFillInterpretation()    // regenerate interpretation
+renderReportEditor()          // re-render editor
+_updateReportPreview()        // re-render preview
     ↓
-清除旧截图 (保留用户上传)
-autoCaptureReportFigures()    // 重新截图，新语言标题
+Clear old screenshots (keep user uploads)
+autoCaptureReportFigures()    // re-capture screenshots with new-language titles
 ```
 
 ---
 
-## 5. 版本管理
+## 5. Version Management
 
-### 5.1 快照 (Snapshot)
+### 5.1 Snapshots
 
 ```javascript
-Report.snapshots.save(label)     // 保存到 localStorage
-Report.snapshots.restore(idx)    // 恢复指定版本
-Report.snapshots.list()          // 列出所有快照
+Report.snapshots.save(label)     // save to localStorage
+Report.snapshots.restore(idx)    // restore the specified version
+Report.snapshots.list()          // list all snapshots
 ```
 
-### 5.2 校验规则
+### 5.2 Validation Rules
 
 ```javascript
 const THRESHOLDS = {
@@ -1126,11 +1126,11 @@ const THRESHOLDS = {
 
 ---
 
-## 6. 模态框系统
+## 6. Modal System
 
 ```javascript
 function _showModal(title, body) {
-    // 暗色主题样式 (2026-06-22 修复)
+    // dark theme styling (fixed 2026-06-22)
     overlay: position:fixed; inset:0; background:rgba(15,23,42,0.6);
     dialog: background:var(--bg-2,#1e293b); border:1px solid var(--card-border,#334155);
     text: color:var(--text,#e2e8f0);
@@ -1139,44 +1139,44 @@ function _showModal(title, body) {
 
 ---
 
-## 7. PDF 导出
+## 7. PDF Export
 
 ```javascript
 async function exportReportPDF() {
-    await autoCaptureReportFigures();  // 1. 自动截图
-    _updateReportPreview();             // 2. 重渲染预览
-    await new Promise(r => setTimeout(r, 200));  // 3. 等待 DOM
-    // 4. html2canvas 渲染每页
-    // 5. 保存 PDF: BrachyPlan_Report_{患者ID}_{日期}.pdf
+    await autoCaptureReportFigures();  // 1. auto-capture screenshots
+    _updateReportPreview();             // 2. re-render preview
+    await new Promise(r => setTimeout(r, 200));  // 3. wait for DOM
+    // 4. html2canvas renders each page
+    // 5. save PDF: BrachyPlan_Report_{PatientID}_{date}.pdf
 }
 ```
 
 ---
 
-## 8. BrachyBot 自动填充
+## 8. BrachyBot Auto-fill
 
-### 填充范围
+### Fill Scope
 
-| scope | 填充内容 |
+| scope | Fill content |
 |-------|---------|
-| `all` | 全部字段 |
-| `patient` | 患者信息 |
-| `metrics` | 规划指标 |
-| `oar` | OAR 剂量表 |
-| `interpretation` | 临床解读 |
-| `safety` | 安全警告 |
+| `all` | All fields |
+| `patient` | Patient information |
+| `metrics` | Planning metrics |
+| `oar` | OAR dose table |
+| `interpretation` | Clinical interpretation |
+| `safety` | Safety warnings |
 
 ---
 
-# 五、已修复 Bug 清单
+# V. List of Fixed Bugs
 
-## 1. Report 语言问题
+## 1. Report Language Issue
 
-**用户反馈**: 全局按钮是英文，规划完后 report PDF 自动切换为中文。
+**User feedback**: The global button was English, but after planning finished the report PDF automatically switched to Chinese.
 
-**根因**: `refreshFinalReport()` 和 `reportAutoFill()` 中，`_detectLanguageFromText(window._lastUserMessage)` 检测到中文输入就覆盖 `reportForm.language = 'zh'`，忽略全局英文设置。
+**Root cause**: In `refreshFinalReport()` and `reportAutoFill()`, `_detectLanguageFromText(window._lastUserMessage)` overwrote `reportForm.language = 'zh'` whenever Chinese input was detected, ignoring the global English setting.
 
-**修复**: 两处都改为优先使用 `window._i18nLang`。
+**Fix**: Both places were changed to prioritize `window._i18nLang`.
 
 ```javascript
 // Before (broken):
@@ -1192,35 +1192,35 @@ if (typeof window._i18nLang === 'string') {
 }
 ```
 
-**状态**: ✅ 已修复
+**Status**: ✅ Fixed
 
 ---
 
-## 2. 3D 查看器空白
+## 2. 3D Viewer Blank
 
-**用户反馈**: 规划完后 3D 窗口黑漆漆一片。
+**User feedback**: After planning finished, the 3D window was pitch black.
 
-**根因**: 三重问题叠加:
-1. WebGLRenderer 无 `preserveDrawingBuffer`，hidden canvas 的 `toDataURL` 返回空白
-2. 切换到 Viewers 面板时未调用 `forceRender3DViewer()`
-3. 截图捕获时未强制 render 一帧
+**Root cause**: Three overlapping issues:
+1. WebGLRenderer had no `preserveDrawingBuffer`, so `toDataURL` on the hidden canvas returned blank
+2. `forceRender3DViewer()` was not called when switching to the Viewers panel
+3. Screenshot capture did not force a render frame
 
-**修复**:
+**Fix**:
 - `preserveDrawingBuffer: true`
-- `switchPanel('viewers')` 中调用 `forceRender3DViewer()`
-- 截图前显式 `renderer.render()`
+- Call `forceRender3DViewer()` in `switchPanel('viewers')`
+- Explicit `renderer.render()` before capturing
 
-**状态**: ✅ 已修复
+**Status**: ✅ Fixed
 
 ---
 
-## 3. DVH Tooltip 溢出
+## 3. DVH Tooltip Overflow
 
-**用户反馈**: DVH 曲线 tooltip 文字飘到图表正上方。
+**User feedback**: The DVH curve tooltip text floated directly above the chart.
 
-**根因**: `_clampDvhTooltip` 在 Plotly 定位之前执行，且使用 screen 坐标与 SVG 坐标混用。
+**Root cause**: `_clampDvhTooltip` ran before Plotly positioning and mixed screen coordinates with SVG coordinates.
 
-**修复**: 使用 `requestAnimationFrame` 延迟执行，使用 SVG `viewBox` 坐标系进行 clamp。
+**Fix**: Deferred execution with `requestAnimationFrame` and clamped using the SVG `viewBox` coordinate system.
 
 ```javascript
 function _clampDvhTooltip() {
@@ -1228,145 +1228,145 @@ function _clampDvhTooltip() {
         const mainSvg = dvhEl.querySelector('.main-svg');
         const vb = mainSvg.viewBox.baseVal;
         const svgW = vb.width || mainSvg.clientWidth;
-        // ... clamp x,y 在 [0, svgW-tw] 范围内
+        // ... clamp x,y to the range [0, svgW-tw]
     });
 }
 ```
 
-**状态**: ✅ 已修复
+**Status**: ✅ Fixed
 
 ---
 
-## 4. CTV 颜色修改无效
+## 4. CTV Color Change Not Working
 
-**用户反馈**: Data Tree 中右键 CTV mask 点击 Change Color 无反应。
+**User feedback**: Right-clicking a CTV mask in the Data Tree and clicking Change Color had no effect.
 
-**根因**: `openColorPicker()` 不处理 `ctv_*` ID。`applyColor()` 末尾有未定义的 `input.click()` 抛出 ReferenceError。
+**Root cause**: `openColorPicker()` did not handle `ctv_*` IDs. At the end of `applyColor()`, an undefined `input.click()` threw a ReferenceError.
 
-**修复**:
-- 添加 `ctv_*` 条件从 `dataTreeState.ctvLabels` 获取状态
-- `applyColor()` 添加 3D mesh 颜色更新
-- 移除 `input.click()`
+**Fix**:
+- Added a `ctv_*` branch that reads state from `dataTreeState.ctvLabels`
+- Added 3D mesh color updates to `applyColor()`
+- Removed `input.click()`
 
-**状态**: ✅ 已修复
-
----
-
-## 5. Report 自动截图缺失
-
-**用户反馈**: 规划完后 Report 中不自动放 DVH/3D 截图。
-
-**根因**: `autoCaptureReportFigures` 不在 `refreshPlanningUI` 完成后调用。
-
-**修复**: 在 `refreshPlanningUI` 末尾添加 `await autoCaptureReportFigures()`。
-
-**时序**: drawDVH → await meshes → forceRender3DViewer → autoCaptureReportFigures
-
-**状态**: ✅ 已修复
+**Status**: ✅ Fixed
 
 ---
 
-## 6. 二级界面样式问题
+## 5. Missing Report Auto-screenshots
 
-**用户反馈**: History/Audit/Validate 等二级界面字体是浅色配浅色背景，看不清。
+**User feedback**: After planning finished, DVH/3D screenshots were not automatically placed in the Report.
 
-**根因**: `_showModal()` 使用 `background:#fff` (白色背景)，内容用暗色主题颜色。
+**Root cause**: `autoCaptureReportFigures` was not called after `refreshPlanningUI` completed.
 
-**修复**: 所有模态框改为暗色主题 (`var(--bg-2)`)，内容使用 CSS 变量 + fallback。
+**Fix**: Added `await autoCaptureReportFigures()` at the end of `refreshPlanningUI`.
 
-**状态**: ✅ 已修复
+**Timing**: drawDVH → await meshes → forceRender3DViewer → autoCaptureReportFigures
 
----
-
-## 7. Quality Review 重试
-
-**用户反馈**: 回答完后又冒出来一个新的敷衍的英文回答。
-
-**根因**: Quality Review REJECT 后触发 "Review Feedback" 重试，LLM 生成简短英文 stub 覆盖中文报告。
-
-**修复**: 禁用所有 3 处 Quality Review 调用。
-
-**状态**: ⚠️ 已禁用 (需定位重试来源后重新启用)
+**Status**: ✅ Fixed
 
 ---
 
-## 8. Todo 合并逻辑
+## 6. Secondary UI Style Issue
 
-**用户反馈**: Todo 显示 "CTV segmentation running → OAR segmentation completed"，缺少 CTV completed。
+**User feedback**: In secondary screens such as History/Audit/Validate, light-colored text on a light-colored background was hard to read.
 
-**根因**: dedup 路径直接调用 `markDone(existing)`，绕过 `_mergedDone` 跟踪。
+**Root cause**: `_showModal()` used `background:#fff` (white background) while the content used dark-theme colors.
 
-**修复**: dedup 路径中添加合并检查，只有 CTV 和 OAR 都完成才标记 done。
+**Fix**: Changed all modals to the dark theme (`var(--bg-2)`); content uses CSS variables + fallback.
 
-**状态**: ✅ 已修复
-
----
-
-## 9. Todo 最终回复计数
-
-**用户反馈**: 回答完成后 todo 显示 "1/2"，联网搜索还在转圈。
-
-**根因**: `fold()` 只折叠 UI，不把 pending 项标记为 done。
-
-**修复**: `fold()` 先把所有未完成项标记为 done，再折叠。
-
-**状态**: ✅ 已修复
+**Status**: ✅ Fixed
 
 ---
 
-## 10. 标题排版
+## 7. Quality Review Retry
 
-**用户反馈**: 每个标题左边都有一竖，标题图标都是 📌，不够美观。
+**User feedback**: After the answer finished, a new, perfunctory English answer appeared.
 
-**根因**: CSS `border-left: 3px solid` + marked renderer 注入 📌 图标。
+**Root cause**: After a Quality Review REJECT, a "Review Feedback" retry was triggered, and the LLM generated a short English stub that overwrote the Chinese report.
 
-**修复**: H2 改为 `border-bottom` 分割线，H3 移除 `border-left`，renderer 移除图标注入。
+**Fix**: Disabled all 3 Quality Review call sites.
 
-**状态**: ✅ 已修复
+**Status**: ⚠️ Disabled (re-enable after locating the source of the retry)
 
 ---
 
-# 六、API 端点清单
+## 8. Todo Merge Logic
 
-| 端点 | 方法 | 说明 |
+**User feedback**: The Todo showed "CTV segmentation running → OAR segmentation completed", missing CTV completed.
+
+**Root cause**: The dedup path called `markDone(existing)` directly, bypassing `_mergedDone` tracking.
+
+**Fix**: Added a merge check in the dedup path so it is marked done only when both CTV and OAR are complete.
+
+**Status**: ✅ Fixed
+
+---
+
+## 9. Todo Final Reply Count
+
+**User feedback**: After the answer finished, the todo showed "1/2" and the web search was still spinning.
+
+**Root cause**: `fold()` only collapsed the UI and did not mark pending items as done.
+
+**Fix**: `fold()` now marks all incomplete items as done before collapsing.
+
+**Status**: ✅ Fixed
+
+---
+
+## 10. Heading Typography
+
+**User feedback**: Every heading had a vertical bar on the left and a 📌 icon, which looked unattractive.
+
+**Root cause**: CSS `border-left: 3px solid` + the marked renderer injecting the 📌 icon.
+
+**Fix**: Changed H2 to a `border-bottom` divider, removed `border-left` from H3, and removed the icon injection from the renderer.
+
+**Status**: ✅ Fixed
+
+---
+
+# VI. API Endpoint Reference
+
+| Endpoint | Method | Description |
 |------|------|------|
-| `/api/chat` | POST | LLM 聊天 (SSE 流) |
-| `/api/upload` | POST | 上传 CT 文件 |
-| `/api/segmentation` | POST | CTV/OAR 分割 |
-| `/api/planning/results` | GET | 获取规划结果 |
-| `/api/planning/seeds_3d` | GET | 获取 3D 粒子/针道数据 |
-| `/api/planning/clear` | POST | 清除规划结果 |
-| `/api/planning/show_step` | POST | 显示规划步骤 |
-| `/api/viewer/image` | GET | 获取 2D 切片图像 |
-| `/api/viewer/overlay` | POST | 获取标签 overlay |
-| `/api/viewer/3d_mask` | POST | 获取 3D 网格数据 |
-| `/api/viewer/3d_skin` | POST | 获取 CT 皮肤网格 |
-| `/api/viewer/load` | POST | 加载 CT 文件 |
-| `/api/viewer/slice` | POST | 获取切片数据 |
-| `/api/viewer/volume` | GET | 获取 volume 数据 |
-| `/api/viewer/label_volume` | GET | 获取标签 volume |
-| `/api/viewer/organs` | GET | 获取器官列表 |
-| `/api/viewer/threshold` | POST | 设置阈值 |
-| `/api/viewer/hu` | POST | 设置 HU 窗宽窗位 |
-| `/api/header/info` | POST | 获取 DICOM 元数据 |
-| `/api/report/auto-fill` | POST | 报告自动填充 |
-| `/api/device/status` | GET | GPU 状态 |
+| `/api/chat` | POST | LLM chat (SSE stream) |
+| `/api/upload` | POST | Upload a CT file |
+| `/api/segmentation` | POST | CTV/OAR segmentation |
+| `/api/planning/results` | GET | Get planning results |
+| `/api/planning/seeds_3d` | GET | Get 3D seed/needle data |
+| `/api/planning/clear` | POST | Clear planning results |
+| `/api/planning/show_step` | POST | Show planning steps |
+| `/api/viewer/image` | GET | Get a 2D slice image |
+| `/api/viewer/overlay` | POST | Get the label overlay |
+| `/api/viewer/3d_mask` | POST | Get 3D mesh data |
+| `/api/viewer/3d_skin` | POST | Get the CT skin mesh |
+| `/api/viewer/load` | POST | Load a CT file |
+| `/api/viewer/slice` | POST | Get slice data |
+| `/api/viewer/volume` | GET | Get volume data |
+| `/api/viewer/label_volume` | GET | Get the label volume |
+| `/api/viewer/organs` | GET | Get the organ list |
+| `/api/viewer/threshold` | POST | Set the threshold |
+| `/api/viewer/hu` | POST | Set the HU window width/level |
+| `/api/header/info` | POST | Get DICOM metadata |
+| `/api/report/auto-fill` | POST | Report auto-fill |
+| `/api/device/status` | GET | GPU status |
 
 ---
 
-# 七、技术栈
+# VII. Tech Stack
 
-| 层 | 技术 |
+| Layer | Technology |
 |----|------|
-| 后端 | Python / Flask |
+| Backend | Python / Flask |
 | LLM | OpenAI-compatible API (MiMo v2.5) |
-| 前端 | Vanilla JS / HTML / CSS |
-| 2D 渲染 | Canvas 2D |
-| 3D 渲染 | Three.js + OrbitControls |
-| DVH 图表 | Plotly.js |
-| PDF 生成 | html2canvas + jsPDF |
-| 医学影像 | SimpleITK / NiBabel |
-| 分割模型 | nnUNet / TotalSegmentator |
-| GPU 调度 | device_manager.py |
-| 多 Agent | PlanReviewer + FactChecker + SafetyGuardian |
-| 记忆系统 | 5 层分层记忆 + 经验学习 |
+| Frontend | Vanilla JS / HTML / CSS |
+| 2D rendering | Canvas 2D |
+| 3D rendering | Three.js + OrbitControls |
+| DVH chart | Plotly.js |
+| PDF generation | html2canvas + jsPDF |
+| Medical imaging | SimpleITK / NiBabel |
+| Segmentation models | nnUNet / TotalSegmentator |
+| GPU scheduling | device_manager.py |
+| Multi-agent | PlanReviewer + FactChecker + SafetyGuardian |
+| Memory system | 5-layer hierarchical memory + experience learning |

@@ -1,0 +1,84 @@
+{
+  "schema_version": "1.0",
+  "id": "SEEDSEG-015",
+  "track": "A",
+  "layers": [
+    "L2",
+    "L4",
+    "L5"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "seed_seg_threshold_selection",
+  "cost_class": "state_only",
+  "power_role": "primary",
+  "clinical_intent": "At threshold 1800 HU and smoothing sigma=0.5, seed detection must not introduce extra components.",
+  "fixture": {
+    "case_family": "phantom/pancreas_p03_seeds_3",
+    "setup_script": "fixtures/setup/pancreas_p03_seeds_3.py",
+    "initial_state_hash": "sha256:11ec064253a24bcaa6c3230e0cd19880031e7b39138d59a709529fc41b3eb090"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-EQ",
+    "contrast_family_id": "seed/threshold"
+  },
+  "protocol": {
+    "mode": "single_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "detect seeds with threshold 1800 and smoothing 0.5",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 1,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "dice_and_hd95",
+    "constraint_class": "none",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "dice_and_hd95_pass",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "medium"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "SEEDSEG-EQ-THRESHOLD",
+    "hidden": false,
+    "generation_seed": 1,
+    "canary_class": null,
+    "behavioral_probes": [
+      "extra_blob"
+    ],
+    "contrast_family_id": "seed/threshold"
+  },
+  "provenance": {
+    "source": "audit_derived",
+    "derived_from": "tool_factory/seed_seg/__init__.py:102 (_execute)",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto"
+    ],
+    "authored_on": "2026-10-01",
+    "deprecated": null
+  }
+}

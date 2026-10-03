@@ -1,0 +1,14 @@
+[
+  {
+    "event": "deliver_two_target_images",
+    "kind": "environment_event",
+    "payload": {
+      "revision": 7,
+      "targets": [
+        "guide-A",
+        "ctv-A"
+      ]
+    },
+    "trigger": "captures.dispatched"
+  }
+]

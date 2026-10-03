@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "precision",
+  "expectation": null,
+  "facet": "precision",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Calculate cumulative EQD2 across EBRT 45 Gy + HDR 7 Gy x4 + VBT 5 Gy x3 for tumor, bladder, and rectum (ab=10 tumor, ab=3 OARs).",
+  "source_refs": [
+    "INT-0e7345e0da26",
+    "INT-c1391520e848"
+  ],
+  "template_id": "TPL-5b120cd397"
+}

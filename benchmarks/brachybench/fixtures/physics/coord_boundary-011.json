@@ -1,0 +1,46 @@
+{
+  "config": {
+    "direction": [
+      1,
+      0.24162497252039422,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1
+    ],
+    "kind": "sheared",
+    "mechanism": "coord/sheared",
+    "origin": [
+      -106.982208135702,
+      -39.99758480817272,
+      -27.372280836039508
+    ],
+    "samples": [
+      [
+        -3.2750533554425,
+        -7.2163594489485074,
+        -2.7063844656455966
+      ]
+    ],
+    "spacing": [
+      4.568763804739188,
+      4.145632641285647,
+      2.9616663093038795
+    ]
+  },
+  "expected": {
+    "evidence_gap_codes": [],
+    "score": 0.0,
+    "verdict": "fail",
+    "violation_codes": [
+      "direction_not_orthonormal"
+    ]
+  },
+  "family": "coord_boundary",
+  "id": "coord_boundary-011",
+  "initial_state_hash": "sha256:1d7d2268f64e75202aee6936060776ae7063bd5cf584d219faae05ccf94541ef",
+  "seed": 20260929
+}

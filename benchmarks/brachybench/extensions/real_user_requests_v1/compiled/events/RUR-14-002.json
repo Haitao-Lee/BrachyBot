@@ -1,0 +1,16 @@
+[
+  {
+    "event": "dose_job_running",
+    "kind": "environment_event",
+    "payload": {},
+    "trigger": "dose.accepted"
+  },
+  {
+    "event": "dose_result",
+    "kind": "environment_event",
+    "payload": {
+      "revision": 7
+    },
+    "trigger": "dose.completed"
+  }
+]

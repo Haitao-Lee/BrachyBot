@@ -1,0 +1,81 @@
+{
+  "schema_version": "1.0",
+  "id": "PLAN-REPAIR-024",
+  "track": "A",
+  "layers": [
+    "L3",
+    "L4"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "repair_stop_reason_deterministic",
+  "cost_class": "state_only",
+  "power_role": "primary",
+  "clinical_intent": "lung final coverage must be identical under the same repair budget and must not be tampered with.",
+  "fixture": {
+    "case_family": "synth/pancreas_p03_seeds_3",
+    "setup_script": "fixtures/setup/pancreas_p03_seeds_3.py",
+    "initial_state_hash": "sha256:11ec064253a24bcaa6c3230e0cd19880031e7b39138d59a709529fc41b3eb090"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-CT",
+    "contrast_family_id": "plans/coverage_repair/stop_reason"
+  },
+  "protocol": {
+    "mode": "single_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "lung final coverage must be identical under the same repair budget and must not be tampered with.",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 1,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "semantic_equivalence",
+    "constraint_class": "none",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "semantic_equivalence_pass",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "medium"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "PLAN-REPAIR-024-P01",
+    "hidden": false,
+    "generation_seed": 5224,
+    "canary_class": null,
+    "behavioral_probes": [],
+    "contrast_family_id": "plans/coverage_repair/stop_reason"
+  },
+  "provenance": {
+    "source": "audit_derived",
+    "derived_from": "plans/coverage_repair.py:47-63,160-163 stop_reason contract; oracles/artifacts.py:342-382",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto"
+    ],
+    "authored_on": "2026-10-01",
+    "deprecated": null
+  }
+}

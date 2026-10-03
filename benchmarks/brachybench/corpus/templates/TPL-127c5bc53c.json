@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "smoke",
+  "expectation": null,
+  "facet": "smoke",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "What are the dose constraints for prostate brachytherapy?",
+  "source_refs": [
+    "INT-6d4796cba8a6",
+    "INT-9581be6b28ae"
+  ],
+  "template_id": "TPL-127c5bc53c"
+}

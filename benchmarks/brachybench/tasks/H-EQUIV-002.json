@@ -1,0 +1,81 @@
+{
+  "schema_version": "1.0",
+  "id": "H-EQUIV-002",
+  "track": "H",
+  "layers": [
+    "L3",
+    "L4"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "rerun_semantic_equivalence",
+  "cost_class": "state_only",
+  "power_role": "primary",
+  "clinical_intent": "Re-running the same query must yield a consistent conclusion.",
+  "fixture": {
+    "case_family": "synth/recovery_case",
+    "setup_script": "fixtures/setup/recovery_case.py",
+    "initial_state_hash": "sha256:bd6e1fce6a65ef8e94a4268a2c20b2f74ae3cba8841f10d288701221f8ae4a73"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-CT",
+    "contrast_family_id": "H/rerun_equivalence"
+  },
+  "protocol": {
+    "mode": "single_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "I ran the same question twice; the conclusions must agree, not say yes once and no the next.",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 1,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "semantic_equivalence",
+    "constraint_class": "none",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "semantic_equivalence_pass",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "medium"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "H-EQUIV-002-P01",
+    "hidden": false,
+    "generation_seed": 7901,
+    "canary_class": null,
+    "behavioral_probes": [],
+    "contrast_family_id": "H/rerun_equivalence"
+  },
+  "provenance": {
+    "source": "audit_derived",
+    "derived_from": "oracles/artifacts.py:341-382 SemanticEquivalence (DESIGN §6.H)",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto"
+    ],
+    "authored_on": "2026-10-01",
+    "deprecated": null
+  }
+}

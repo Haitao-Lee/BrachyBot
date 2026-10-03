@@ -1,0 +1,15 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "advanced_workflows",
+  "expectation": null,
+  "facet": "advanced_workflows",
+  "gold_status": "draft",
+  "n_source_intents": 3,
+  "representative_text": "Segment, plan seeds, calculate dose, evaluate, and generate report",
+  "source_refs": [
+    "INT-3214b7521488",
+    "INT-67fa238d2aba",
+    "INT-c08c6052c198"
+  ],
+  "template_id": "TPL-a1d5604dfd"
+}

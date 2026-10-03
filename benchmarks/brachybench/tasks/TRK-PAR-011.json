@@ -1,0 +1,87 @@
+{
+  "schema_version": "1.0",
+  "id": "TRK-PAR-011",
+  "track": "F",
+  "layers": [
+    "L3",
+    "L4"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "nl_ui_parity",
+  "cost_class": "state_only",
+  "power_role": "primary",
+  "clinical_intent": "When the UI path loses a write, the terminal state is missing a field that NL set; this must be judged a divergence.",
+  "fixture": {
+    "case_family": "phantom/pancreas_p03",
+    "setup_script": "fixtures/setup/pancreas_p03_pipeline.py",
+    "initial_state_hash": "sha256:bb54b53f5ceec64b975a9a01c3b7c6d5e8293a7f3b940a64bc6d922c30607a7b"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-CT",
+    "contrast_family_id": "F/parity/lost_write"
+  },
+  "protocol": {
+    "mode": "dual_path",
+    "turns": [
+      {
+        "role": "user",
+        "text": "When UI sync fails, the NL path's state must not gain an extra field out of nowhere.",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": [
+      {
+        "action": "set_opacity",
+        "target": "dose",
+        "value": 0.3
+      }
+    ],
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 1,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [],
+    "audit_required": true,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "state_diff",
+    "constraint_class": "postcondition",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "state_diff_pass",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "hard"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "TRK-PAR-011-P01",
+    "hidden": false,
+    "generation_seed": 4417,
+    "canary_class": null,
+    "behavioral_probes": [],
+    "contrast_family_id": "F/parity/lost_write"
+  },
+  "provenance": {
+    "source": "audit_derived",
+    "derived_from": "oracles/state_diff.py:36-107 (NL vs UI terminal state, M19)",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto"
+    ],
+    "authored_on": "2026-10-01",
+    "deprecated": null
+  }
+}

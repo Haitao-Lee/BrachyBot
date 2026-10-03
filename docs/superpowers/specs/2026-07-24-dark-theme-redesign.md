@@ -1,7 +1,7 @@
 # BrachyBot Web UI — New Dark Theme ("NightShift Indigo") Design Spec
 
 Date: 2026-07-24
-Status: Approved (方案 A)
+Status: Approved (Option A)
 
 ## Goal
 

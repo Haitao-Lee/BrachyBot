@@ -1,0 +1,11 @@
+{
+  "changed_files": 40,
+  "full_final": "24210 passed / 0 failed / 0 skipped",
+  "post_publication": "155 passed",
+  "new_tests": 9,
+  "replay_contracts": 149,
+  "blocked_component_contracts": 73,
+  "formal_ready": false,
+  "production_service_restarted": false,
+  "historical_tasks_gold_replay_and_results_modified": false
+}

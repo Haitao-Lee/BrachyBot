@@ -1,0 +1,70 @@
+benchmark: HealthBench
+ext_id: EXT-2
+tier: main
+grade_R: R0
+grade_C: C3
+panels: [P1]
+
+acquisition:
+  source_url: https://github.com/openai/simple-evals
+  source_commit: 652c89d0ca9df547706735883097e9537d40dc47
+  source_tag: null
+  dataset_name: "openai/healthbench (full: oss_eval + hard + consensus + meta_eval) via HF mirror"
+  dataset_revision: 40ee1968852fc57f625934251ac22be47077a8fb
+  dataset_sha256: 0bdff2201471aef2fb57e812c5a474c539aac928066fb06eb71a4a47383fe98f
+  dataset_size_bytes: 245985688
+  retrieval_command: |
+    HF_ENDPOINT=https://hf-mirror.com
+    for f in 2025-05-07-06-14-12_oss_eval.jsonl 2025-05-07-06-14-12_oss_meta_eval.jsonl \
+             hard_2025-05-08-21-00-10.jsonl consensus_2025-05-09-20-00-46.jsonl; do
+      curl -L -o data/EXT-2/$f $HF_ENDPOINT/datasets/openai/healthbench/resolve/main/$f
+    done
+    # dataset_sha256 above = directory digest of the four jsonl files.
+  retrieval_date: 2026-10-01
+  license_upstream: MIT
+  license_file: LICENSE
+  license_verified_by: "brachybench-auto (GitHub API 2026-10-01)"
+  activity_verified:
+    last_commit_date: 2026-04-22
+    last_release_date: null
+    open_issues: 65
+
+runner:
+  official_runner: simple_evals.py (--eval=healthbench)
+  evaluator: healthbench_eval.py (GRADER_TEMPLATE + calculate_score, used verbatim)
+  container: null
+  python_requires: ">=3.10"
+  native_deps: []
+  paid_apis: []
+  judge_note: "E1 scoring uses an LLM rubric judge (upstream default gpt-4.1); needs OPENAI_API_KEY. E0 offline exercises the pure scoring path with recorded gradings."
+
+adapter:
+  kind: ext_adapter
+  shim_used: false
+  spec_ref: "DESIGN §25.5"
+
+run:
+  smoke_size: 20
+  sample_size: 0
+  sampling_seed: 42
+  n_runs: 5
+  budget: {wall_clock_s: 600, turns: 20, tool_calls: 40}
+
+isolation:
+  sandbox: required
+  network: denied
+  write_paths: ["benchmarks/external/EXT-2/results/"]
+  forbidden_write_roots:
+    - BrachyBot/session/
+    - BrachyBot/case/
+    - BrachyBot/runtime/
+    - BrachyBot/report/
+
+contamination:
+  public_samples_allowed_for_dev_only: true
+  seen_task_ids: []
+  behavioral_probes: [B1, B2, B3, B4, B5, B6, B7]
+
+status: active
+block_reason: null
+reinclude_condition: null

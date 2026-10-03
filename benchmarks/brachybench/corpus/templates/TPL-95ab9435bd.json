@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "error_recovery",
+  "expectation": null,
+  "facet": "error_recovery",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Export DICOM without plan",
+  "source_refs": [
+    "INT-9a3ef5d3271b",
+    "INT-b7dac768b03b"
+  ],
+  "template_id": "TPL-95ab9435bd"
+}

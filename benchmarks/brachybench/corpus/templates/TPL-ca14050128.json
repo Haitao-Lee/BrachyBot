@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "workflow",
+  "expectation": null,
+  "facet": "workflow",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "65yo M, 3cm T2N0M0 Gleason 4+3=7 (PSA 12, 50cc). EBRT 46Gy + HDR boost 18Gy/2fx. Total colectomy for UC (end ileostomy), neurogenic bladder (CIC 4x daily), peripheral neuropathy. HDR with absent rectum.",
+  "source_refs": [
+    "INT-2a3c0ec25f3e",
+    "INT-442f79d02ce6"
+  ],
+  "template_id": "TPL-ca14050128"
+}

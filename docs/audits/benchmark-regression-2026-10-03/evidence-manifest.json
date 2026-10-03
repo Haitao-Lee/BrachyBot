@@ -1,0 +1,13 @@
+{
+  "applied.patch": "867365222a625f2d8593b7bdca9a11fbd801148b36da65c56985b973461619f7",
+  "change_manifest.json": "fa3bbce48963336a5520149a88d9838fa626d5ef8ca87aeb0f3a32037d9c8d68",
+  "coverage-after.log": "f4f92618be0874e1ff63112e40707a4a5477a962db9e7970c6723e63a9a57224",
+  "e0-classification.json": "f614a10e63b117eb5256b956e4bbc3bbe978c4789bcfe2d21d3c5330bfd3b7df",
+  "full-after.log": "273f9cf16e53eaf9fc6da60ab6389d822e9edede0dee6f4c65fced08f47514cb",
+  "full-final.log": "474a0004d92ba411882fea95595efc8b5a23092f1d2b71196585525f4414840a",
+  "original-files.tar.gz": "1d3817311d85dcfd5694a21a7b23ac3da20138bccabbed3031db7081a9eb9139",
+  "post-publication.log": "65fa858aa048462b970ff7028b1aef1e73905afb72244d95e063e19340f0271c",
+  "targeted-before.log": "f3bb868154b8087d76a6467a49e4b7a727ef181b40265361699ce389673dd455",
+  "targeted-final.log": "b463cbc75889f01011148e9989e990ea47ed234c4472559ad23cbbdd383d3f3a",
+  "verification-summary.json": "72555d643559af12ad9b2538b6abd3ef9da28ee6f6ac5e96cbdfe0bc8bdf2576"
+}

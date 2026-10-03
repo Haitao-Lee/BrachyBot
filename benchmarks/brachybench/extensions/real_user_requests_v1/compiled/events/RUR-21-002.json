@@ -1,0 +1,12 @@
+[
+  {
+    "event": "contradictory_tool_result",
+    "kind": "environment_event",
+    "payload": {
+      "artifact_id": null,
+      "receipt_status": "failed",
+      "success": true
+    },
+    "trigger": "report.result"
+  }
+]

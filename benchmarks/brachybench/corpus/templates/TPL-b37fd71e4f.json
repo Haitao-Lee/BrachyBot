@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "oar_segmentation",
+  "expectation": null,
+  "facet": "oar_segmentation",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "For a penile cancer interstitial brachytherapy case, please segment the OARs. The tumor is on the glans. Segment the urethra along its entire penile and bulbar course, the testes, and the anal sphincter complex. These structures must be carefully spared.",
+  "source_refs": [
+    "INT-06d17ff1f1bb",
+    "INT-11b0605f0623"
+  ],
+  "template_id": "TPL-b37fd71e4f"
+}

@@ -1,0 +1,15 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "ct_analysis",
+  "expectation": null,
+  "facet": "ct_analysis",
+  "gold_status": "draft",
+  "n_source_intents": 3,
+  "representative_text": "Please analyze this CT scan for a patient with a penile cancer. The scan shows an exophytic lesion on the glans penis. Evaluate the depth of invasion, assess for inguinal lymph node involvement, and determine if the tumor is amenable to organ-preserving brachytherapy.",
+  "source_refs": [
+    "INT-9942375fe51a",
+    "INT-c1eece806103",
+    "INT-f5409d4948ef"
+  ],
+  "template_id": "TPL-f0a13adb8e"
+}

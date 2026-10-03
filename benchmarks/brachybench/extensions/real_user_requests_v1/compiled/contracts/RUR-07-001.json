@@ -1,0 +1,55 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "max": 1,
+      "operation": "set",
+      "path": "objects.guide-B.visible"
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "zh",
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "state",
+      "statement": "guide-B only becomes visible."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "response",
+      "statement": "Use selected object's stable reference; no needless which-guide question."
+    }
+  ],
+  "rules": [
+    {
+      "op": "equals",
+      "path": "objects.guide-B.visible",
+      "value": true
+    },
+    {
+      "op": "preserve",
+      "path": "objects.guide-A"
+    }
+  ],
+  "scenario_id": "RUR-07-001",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "state",
+      "statement": "guide-B only becomes visible."
+    },
+    {
+      "kind": "response",
+      "statement": "Use selected object's stable reference; no needless which-guide question."
+    }
+  ]
+}

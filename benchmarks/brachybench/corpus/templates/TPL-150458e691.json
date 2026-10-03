@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "tool_availability",
+  "expectation": null,
+  "facet": "tool_availability",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Use the super_planner tool to make a comprehensive plan",
+  "source_refs": [
+    "INT-4df80d17833e",
+    "INT-a03833e1760f"
+  ],
+  "template_id": "TPL-150458e691"
+}

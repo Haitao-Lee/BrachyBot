@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "report_generator",
+  "expectation": null,
+  "facet": "report_generator",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Export this plan as a JSON file",
+  "source_refs": [
+    "INT-31d2a7d8c5d6",
+    "INT-fbbd890846c2"
+  ],
+  "template_id": "TPL-df1534252f"
+}

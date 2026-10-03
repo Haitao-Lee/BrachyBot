@@ -28,7 +28,7 @@ function extract(name) {
             window._activeApiSessionId=()=>caseId;window.monitorConversationLanguage=()=>lang;
             window.addChat=(_type,_text,_scroll,_at,_from,_session,meta)=>{if(!meta)return;
                 let row=document.querySelector('[data-message-id="'+meta.messageId+'"]');if(!row){row=document.createElement('div');row.dataset.messageId=meta.messageId;document.getElementById('cards').append(row);}};
-            window.reportUIEvent=async()=>{};
+            window.captureRequests=[];window.reportUIEvent=async (...args)=>captureRequests.push(args);
             window.requestPlanningAdvice=()=>{};window.stopTrainingMode=async()=>({success:true});
             window.decisions=[];window.performMonitorEditDecision=async (...args)=>decisions.push(args);
             window.fetch=async url=>({ok:true,json:async()=>url.includes('/timeline')?
@@ -85,7 +85,7 @@ function extract(name) {
         await page.screenshot({path:path.join(__dirname,'monitor-dashboard-spacing-qa.png')});
         await page.getByRole('button',{name:'seed_1',exact:true}).click();
         assert.equal(await page.evaluate(()=>scene3D.scene.getObjectByName('monitor-focus').children.length),1,'single-object focus does not draw the pair');
-        await page.evaluate(()=>updateMonitorCheckpointCapture(packet,{success:true}));
+        await page.evaluate(()=>updateMonitorCheckpointCapture(packet,{success:true,attachments:[{target:'viewer-3d',url:'/synthetic.png'}]}));
         await page.getByRole('button',{name:'1 项图像证据未查看',exact:true}).click();
         assert.equal(await page.getByRole('button',{name:/项图像证据未查看/}).count(),0);
         assert.equal(await page.evaluate(()=>scene3D.meshes.seed_1.material.color.getHex()),0x20ccb0);
@@ -93,6 +93,26 @@ function extract(name) {
         await page.getByRole('button',{name:'清除定位',exact:true}).click();
         assert.deepEqual(await page.evaluate(()=>scene3D.camera.position.toArray()),[0,0,35]);
         assert.equal(await page.evaluate(()=>!!scene3D.scene.getObjectByName('monitor-focus')),false);
+        await page.evaluate(()=>resolveMonitorCheckpointDecision('abcdef123456',true));
+        assert.match(await page.locator('#monitorDashboard').innerText(),/已保留这次编辑/);
+        assert.equal(await page.getByRole('button',{name:'保留编辑',exact:true}).count(),0);
+        await page.evaluate(()=>{
+            packet.suggested_screenshot={checkpoint_id:'e1',object_ids:['seed_1']};
+            updateMonitorCheckpointCapture(packet,{success:false,error:'monitor_targets_unavailable'});
+        });
+        assert.match(await page.locator('.monitor-capture-status').innerText(),/尚未就绪或不可见/);
+        await page.locator('#monitorDashboard').getByRole('button',{name:'重试截图',exact:true}).click();
+        assert.equal(await page.evaluate(()=>captureRequests.length),1,'HUD retry reaches the shared capture executor');
+        await page.evaluate(()=>updateMonitorCheckpointCapture(packet,{success:true,
+            attachments:[{target:'viewer-3d',url:'/partial.png'}],omittedTargetRefs:['seed_2']}));
+        assert.match(await page.locator('.monitor-capture-status').innerText(),/部分图像.*未核验：seed_2/s);
+        await page.evaluate(()=>{document.querySelector('.monitor-dashboard-body').scrollTop=80;renderMonitorDashboard([card],{});});
+        assert.equal(await page.locator('.monitor-dashboard-body').evaluate(n=>n.scrollTop),80,'feedback updates preserve reading position');
+        await page.evaluate(()=>{window._monitorEvidenceMatchesLiveGeometry=()=>false;renderMonitorDashboard([card],{});});
+        assert.doesNotMatch(await page.locator('#monitorDashboard').innerText(),/90.50/,'live geometry mismatch fences equal-version facts');
+        await page.evaluate(()=>{window._monitorEvidenceMatchesLiveGeometry=()=>true;renderMonitorDashboard([card],{});});
+        await page.locator('.monitor-capture-status').evaluate(n=>n.scrollIntoView({block:'center'}));
+        await page.screenshot({path:path.join(__dirname,'monitor-dashboard-ux-qa.png')});
         assert.equal(await page.evaluate(()=>{scene3D.meshes.seed_2.visible=false;return focusMonitorCheckpoint(['seed_1','seed_2'],{});}),false,
             'a partially hidden pair cannot be presented as fully located');
         await page.evaluate(()=>{manualPlanningState.monitorInteractionActive=true;renderMonitorDashboard([card],{});});

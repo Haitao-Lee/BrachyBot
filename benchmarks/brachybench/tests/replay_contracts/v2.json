@@ -1,0 +1,2073 @@
+{
+  "comparable_sut_result": false,
+  "entries": {
+    "A6-INTERF-001": {
+      "checker": "interference_fp",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "5102bc3828ac556896e5babd2c26e566974f7eadf208ca7f3199bac20ce4efa6",
+      "reason": "Historical positive/negative invert physical contact truth. Replace touching synthetic controls with 5 mm separation; retain interior controls and historical bytes.",
+      "repair": "separated_endpoint_control",
+      "separated_ids": [
+        "n1"
+      ],
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/A6-INTERF-001.json",
+      "task_sha256": "4084131106537d9b286598beb70dfb3362ca756c77f624375b317e394b10c44b"
+    },
+    "DOSEPRE-EVAL-211": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "afe85d7807ac22f62c73a07fb262c7cbe8f72c68577aba187c43c216505910e8",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-EVAL-211.json",
+      "task_sha256": "0c08bacf97e054c55803b0e763fea553f2f0beadc232553b5fd725fa07134649"
+    },
+    "DOSEPRE-EVAL-212": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "afe85d7807ac22f62c73a07fb262c7cbe8f72c68577aba187c43c216505910e8",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-EVAL-212.json",
+      "task_sha256": "6c0a9af482a00b8f7a2195f8b124b64495662976cff17b7429c883f7bd415c7a"
+    },
+    "DOSEPRE-EVAL-213": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "afe85d7807ac22f62c73a07fb262c7cbe8f72c68577aba187c43c216505910e8",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-EVAL-213.json",
+      "task_sha256": "509a34e268f59bbfcffe037bd763faaf69a3b1d2faa47abbbbf95e09cd3357f5"
+    },
+    "DOSEPRE-EVAL-214": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "afe85d7807ac22f62c73a07fb262c7cbe8f72c68577aba187c43c216505910e8",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-EVAL-214.json",
+      "task_sha256": "6d5557b015c1833343359b67b22bbebc7942a6c01f0c715e7071d836bc032771"
+    },
+    "DOSEPRE-EVAL-215": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "afe85d7807ac22f62c73a07fb262c7cbe8f72c68577aba187c43c216505910e8",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-EVAL-215.json",
+      "task_sha256": "29eb28a60f3daae44e55bec17f55e037d2f3474abefdab4c19111027cbc1c94a"
+    },
+    "DOSEPRE-INF-201": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "af433dafd06a8a08eb356bb0abc3b1dc4aa4fc39e50b02200d8220fddeedf6ba",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-INF-201.json",
+      "task_sha256": "19e998632abb5f91638772501a0fc3fcfae022af86c6af0505c3cef21913c35d"
+    },
+    "DOSEPRE-INF-202": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "4846ab272c0ec25f6c13c333518ba8f81ea7cd989b6cbdead77ee3cbf0cde08c",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-INF-202.json",
+      "task_sha256": "530b9c912ba43aca8aef2cbc4da15632701edca1661e6c2873e5d73ce3bfd4c9"
+    },
+    "DOSEPRE-INF-203": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "af433dafd06a8a08eb356bb0abc3b1dc4aa4fc39e50b02200d8220fddeedf6ba",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-INF-203.json",
+      "task_sha256": "6e923bd69564215df4ee12b59a4cbe99fe90143fb1d88641cf971ca710b9caaf"
+    },
+    "DOSEPRE-INF-204": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "4846ab272c0ec25f6c13c333518ba8f81ea7cd989b6cbdead77ee3cbf0cde08c",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-INF-204.json",
+      "task_sha256": "d78962bb667ab0dac673ee08264b29dc6b97c0d115532b9df8bb8495c5cc6e0c"
+    },
+    "DOSEPRE-INF-205": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "af433dafd06a8a08eb356bb0abc3b1dc4aa4fc39e50b02200d8220fddeedf6ba",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-INF-205.json",
+      "task_sha256": "96e3baba2a5bb7677a30d1bb82b1d22fbc7b9ed5314fa512399efac1ad551fc3"
+    },
+    "DOSEPRE-INF-206": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "4846ab272c0ec25f6c13c333518ba8f81ea7cd989b6cbdead77ee3cbf0cde08c",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-INF-206.json",
+      "task_sha256": "9e83694241b35fbb0e9da547dd86d80863c21d59e431f1b3dc31d86aa2828a46"
+    },
+    "DOSEPRE-INF-207": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "af433dafd06a8a08eb356bb0abc3b1dc4aa4fc39e50b02200d8220fddeedf6ba",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-INF-207.json",
+      "task_sha256": "1f96dd64d49ce174884a0a816bd69654fd757cf59be1fd74b5e625a4961a72bf"
+    },
+    "DOSEPRE-INF-208": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "4846ab272c0ec25f6c13c333518ba8f81ea7cd989b6cbdead77ee3cbf0cde08c",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-INF-208.json",
+      "task_sha256": "7dc62553606cdd1b292c58de36ddd2ef25493511e2b648c501b8f9b1217ba01e"
+    },
+    "DOSEPRE-INF-209": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "af433dafd06a8a08eb356bb0abc3b1dc4aa4fc39e50b02200d8220fddeedf6ba",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-INF-209.json",
+      "task_sha256": "4c6ef24647a140caefa68ce1848dc235bf55cc9def0f451af3d94e4fdd74f7d5"
+    },
+    "DOSEPRE-INF-210": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "4846ab272c0ec25f6c13c333518ba8f81ea7cd989b6cbdead77ee3cbf0cde08c",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-INF-210.json",
+      "task_sha256": "4e9e28a07b405e495547954c80c9758af7c63cab9fa133af4ed12c966d43a9a7"
+    },
+    "DOSEPRE-LOAD-211": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "afe85d7807ac22f62c73a07fb262c7cbe8f72c68577aba187c43c216505910e8",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-LOAD-211.json",
+      "task_sha256": "0b1fa6c7c3a7bdfe601187574fe66da92f18c02f65e349ec3eedeaf73f029b52"
+    },
+    "DOSEPRE-LOAD-212": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "afe85d7807ac22f62c73a07fb262c7cbe8f72c68577aba187c43c216505910e8",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-LOAD-212.json",
+      "task_sha256": "85053e81184d80d88e50b8d5e503c2f4397eace8d1e8a10a5fa4dbba3025b5c1"
+    },
+    "DOSEPRE-LOAD-213": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "afe85d7807ac22f62c73a07fb262c7cbe8f72c68577aba187c43c216505910e8",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-LOAD-213.json",
+      "task_sha256": "87e5a7741173a86054fad276fa8fa00ce2b01e6ae887a4350b0d9b3ce2123525"
+    },
+    "DOSEPRE-LOAD-214": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "afe85d7807ac22f62c73a07fb262c7cbe8f72c68577aba187c43c216505910e8",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-LOAD-214.json",
+      "task_sha256": "6dc4d4b14b682c1879d0d246740363db1dbdd1e3571c1698bf6ea2da58c3ad67"
+    },
+    "DOSEPRE-LOAD-215": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "afe85d7807ac22f62c73a07fb262c7cbe8f72c68577aba187c43c216505910e8",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-LOAD-215.json",
+      "task_sha256": "d76a16abc9f9c1db800b3918c77ae356c2df2426a388e3fa3fa89ddfb44be53e"
+    },
+    "DOSEPRE-UNET-201": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "9641666df282bf84d5b846a8d600732ef29fbcf275957f2b78d530427018a8fe",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-UNET-201.json",
+      "task_sha256": "3185b6de3da38e886baae068959b8383570ff9722fc0aea2a52b6f5ac73f7caa"
+    },
+    "DOSEPRE-UNET-202": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "afe85d7807ac22f62c73a07fb262c7cbe8f72c68577aba187c43c216505910e8",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-UNET-202.json",
+      "task_sha256": "7192d64bf66073289728634ae5eec7e10b545422aa66a51b7edca1457545f94b"
+    },
+    "DOSEPRE-UNET-203": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "ce9ca7f03fa0dc3010845149e714ad484429861d860e4efbf040320670befe59",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-UNET-203.json",
+      "task_sha256": "47c30282f185cc4f19df24c74900c8376cedc72318b5362351a3323f0841fc6e"
+    },
+    "DOSEPRE-UNET-204": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "103ecc66229d244ef2644f0fe1a94eccf9375fc2b1f5f14a0aaaf733c47cb41a",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-UNET-204.json",
+      "task_sha256": "318921c8ec6e2a4aa07c12a8b850b5df421c1cc0b005ac315b5821c16d5da64d"
+    },
+    "DOSEPRE-UNET-205": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "fb5f6e3776058be763aaf6e5e9119e3e75b22754e0bd3ae0290b82c1a4876050",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-UNET-205.json",
+      "task_sha256": "245a10e8dd29817bde370bb8785143971e0d0d4f72915480c25e5bae4354b250"
+    },
+    "DOSEPRE-UNET-206": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "547bcdc8a0f42f6b6b5f883bad6ed870d6945f1a9f1e5019962eecc37788946d",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-UNET-206.json",
+      "task_sha256": "891dda67825014a838a0885262f074957119cfadaaa3292ccdbfaaf05b4d421c"
+    },
+    "DOSEPRE-UNET-207": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "24751c4401b6c73d441758e4fe0fb90a1876cfc833b5236be6ed1b4833d904cf",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-UNET-207.json",
+      "task_sha256": "39bcb359133440ec4e65e1185b25c996ce255257a171c61a7153c1e708e7aa62"
+    },
+    "DOSEPRE-UNET-208": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "6eec8cc2c5ddd9166ccb71b0d5f26d479bc66a144eb7c947d4dd57db2aec22ef",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/DOSEPRE-UNET-208.json",
+      "task_sha256": "fefc52b034494377946ccf54e90b2cb760462fb922743fc672099f7394fa3c2d"
+    },
+    "H-JOURNAL-001": {
+      "allowed_paths": [
+        "ui.version_fence.state_seq"
+      ],
+      "checker": "state_invariant",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "721f02a6bd506a2d66a8dcb7e77128e1d4a5a640ad728355b9f34b4b9d54888e",
+      "reason": "Explicit component policy allows receipt journal and UI sequence bookkeeping only. Plan revision, geometry, dose and terminal status remain protected.",
+      "repair": "explicit_receipt_permission",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/H-JOURNAL-001.json",
+      "task_sha256": "2a6e2c475eb50ea556aecba4d79d3b5360892f6cba19a00a35f1179e605c02d5"
+    },
+    "H-JOURNAL-004": {
+      "allowed_paths": [
+        "ui.version_fence.state_seq"
+      ],
+      "checker": "state_invariant",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "c8e7556c68d113fb4609300bbf9d52dd2f77ff00c80511c6c7ce1173a13559c2",
+      "reason": "Explicit component policy allows receipt journal and UI sequence bookkeeping only. Plan revision, geometry, dose and terminal status remain protected.",
+      "repair": "explicit_receipt_permission",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/H-JOURNAL-004.json",
+      "task_sha256": "cda5f88d043de6d94183e5b5f5334a1356742adefdb855f7267ae15d85fd96b3"
+    },
+    "H-RECEIPT-008": {
+      "allowed_paths": [
+        "plan.receipts",
+        "ui.version_fence.state_seq"
+      ],
+      "checker": "state_invariant",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "375443d36e14d848b6e720a13ac112a6fa39e2d9de880ff864ecee4fc45da7e3",
+      "reason": "Explicit component policy allows receipt journal and UI sequence bookkeeping only. Plan revision, geometry, dose and terminal status remain protected.",
+      "repair": "explicit_receipt_permission",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/H-RECEIPT-008.json",
+      "task_sha256": "3c18e41fd962221fea9289a07c3a4585703a63b580a6672a1a2023829219a983"
+    },
+    "H-RECEIPT-009": {
+      "allowed_paths": [
+        "plan.receipts"
+      ],
+      "checker": "state_invariant",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "b00efc811afe483744cbd9697b1259c683e3315cf8a335a47a7830b057cccc1a",
+      "reason": "Explicit component policy allows receipt journal and UI sequence bookkeeping only. Plan revision, geometry, dose and terminal status remain protected.",
+      "repair": "explicit_receipt_permission",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/H-RECEIPT-009.json",
+      "task_sha256": "966c21ab060619d2eccdbf19a4166fbfecd1366d116e8b85db73110a8f9179c5"
+    },
+    "H-RECEIPT-012": {
+      "allowed_paths": [
+        "ui.version_fence.state_seq"
+      ],
+      "checker": "state_invariant",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "fde4fae3239f6979970f2b2c3cb48c250f3f5e5ce366e6e2e756ae7fb9b3a671",
+      "reason": "Explicit component policy allows receipt journal and UI sequence bookkeeping only. Plan revision, geometry, dose and terminal status remain protected.",
+      "repair": "explicit_receipt_permission",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/H-RECEIPT-012.json",
+      "task_sha256": "149d729d8f5d6708eef2040ad7b2fb821f2f18aaa575a0ffaa38fddb9a19db71"
+    },
+    "L-DICOM-006": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "30eaf0b902675393ec76858181983fb1c668e9535ed259ff0f8f754c2b92054f",
+      "reason": "ROI-only fixture cannot certify DICOM geometry; test only generic name preservation.",
+      "repair": "roi_names_component_scope",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/L-DICOM-006.json",
+      "task_sha256": "61982def242ba7c5e06022371b0c1250d2a262c6f593d8d2c28d29c3c0a1d139"
+    },
+    "L-DICOM-010": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "92c8b3e68861783a300a3ae963e07dd0f31db254257eeee8064fb96ffa224b08",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/L-DICOM-010.json",
+      "task_sha256": "3521ae8d6df9acf47f3ecc4f27900a7ce52a8ec56937852edfc281b8dbf60e3f"
+    },
+    "L-DICOM-011": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "1011dbe8a185961ac1b76126b15d4b7a6a6a12bb81bcc1db5a19accef17043e0",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/L-DICOM-011.json",
+      "task_sha256": "528be5629967737712b19a4fe78003b8a9cda19310933de1615f88285ee39b0e"
+    },
+    "L-DICOM-012": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "4dc40e8072036938bf4df8db05654c4904492afe6de9decc80a3d195c37f8f33",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/L-DICOM-012.json",
+      "task_sha256": "440fe03f4550315a5c25c7efb939324e48df682fcca01095411e201e7c5993ea"
+    },
+    "L-DICOM-013": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "76b02fd1c4e10dd27576eed7b91d9e5069498fa69b7b8b74eebf910e3c25e5de",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/L-DICOM-013.json",
+      "task_sha256": "378ee5e8abf268e668902920c3e97b96915e0af98da3292163eee08f88e9b22f"
+    },
+    "L-DICOM-014": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "d2ed0cc50f895caa3ebce9b1895f20a7a29be7f6de807fd9720c50a8d198df80",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/L-DICOM-014.json",
+      "task_sha256": "36f595d2e6649ade5e43aa9b15ce7374b9d1501346a1b23f37b71366e8514ab9"
+    },
+    "L-DICOM-051": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "a1ed230f89f2e1af0bb8fe91c53229b5d781b059df2e94a6323f952e26293b57",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/L-DICOM-051.json",
+      "task_sha256": "7ab6e01912480c8de538e59bf5924dfe8e501d9823ccceb0f1ce2188eb18a6a6"
+    },
+    "L-NIFTI-006": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "c1196e106f2a2f054e78403f56110492e87ae219b79bdf85ccae28126ab67640",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/L-NIFTI-006.json",
+      "task_sha256": "781d38de126d43a0bf89a80bbb20c74cfb76fe5984a51fb46fd6d8e70ff2e116"
+    },
+    "L-STL-002": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "95c792ebe64df406fc588c69f78a221d8be06f3f014cc5a389abc4b4c0e9d179",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/L-STL-002.json",
+      "task_sha256": "746e2f1dc9d47667136e515b4cc927c728d89ffcf199e8578c088626b4d4288f"
+    },
+    "L-STL-003": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "31ad8aa49c431498cf795b7f6daa85599a6dbf6eada46be44bee339733b09224",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/L-STL-003.json",
+      "task_sha256": "e98bf319d8994f82a5b89a853e9f2de6057274697456679af3a9e65f8bbcc762"
+    },
+    "L-STL-004": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing"
+      ],
+      "positive_sha256": "e147b82cda2a5ccc1ad338e45fb403c1bc169dd83ffd39008ee8b25a63ebdad0",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/L-STL-004.json",
+      "task_sha256": "d52731b471f41b141322299fbe0badd21e306220c388650e711311d754aafc0e"
+    },
+    "PLAN-GEO-020": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "e11121f00973ffe271e04e8ba9dc8405ff03e95a46898946bf8c586c50698665",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PLAN-GEO-020.json",
+      "task_sha256": "721c8bf6c293105ebf8ba33e554e3697ca31afc6c8268e4ac54ac88dc5c81c2f"
+    },
+    "PLAN-GEO-025": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "08624c97783865452f727c0d2dd23dc544997e7fd292a99a9923e7a8a98c63a5",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PLAN-GEO-025.json",
+      "task_sha256": "e9f9006264de64653a2621359753d1672128a3b8b8c98e3ea5716f8f58204ed6"
+    },
+    "PLAN-GEO-030": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "db1d390bc5c2957246732fabddc77eebc1534e8074b3697aec84b08b692de341",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PLAN-GEO-030.json",
+      "task_sha256": "d8b5a24e028fb86c677f7dd2b09075a4a63866411f46869cfcd684cf52ed8ed9"
+    },
+    "PLAN2-GEO-006": {
+      "checker": "interference_fp",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "ae70105ef6fb5cc9ddc2483a6948a4b9d67bd3e7e85313d86ad6d22dc1ac6c36",
+      "reason": "Historical positive/negative invert physical contact truth. Replace touching synthetic controls with 5 mm separation; retain interior controls and historical bytes.",
+      "repair": "separated_endpoint_control",
+      "separated_ids": [
+        "end_1"
+      ],
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/PLAN2-GEO-006.json",
+      "task_sha256": "4adcd63702274007435bb47045b32d986bbf9aeeec83e4b2db4315ec78000f1a"
+    },
+    "PLAN2-GEO-007": {
+      "checker": "interference_fp",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "cee2cdad3ccb6a89d36d9eb024608397734d32f31368ffa72a393e01ea44382e",
+      "reason": "Historical positive/negative invert physical contact truth. Replace touching synthetic controls with 5 mm separation; retain interior controls and historical bytes.",
+      "repair": "separated_endpoint_control",
+      "separated_ids": [
+        "end_prostate"
+      ],
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/PLAN2-GEO-007.json",
+      "task_sha256": "e3aee729aef90bbb05d7232f23111ce447da8e7241a460c7a8da250c6283abe5"
+    },
+    "PLAN2-GEO-008": {
+      "checker": "interference_fp",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "9989f3bc7e4e045f2a95e39a0d5abda599a86291a20070e20f48f70048899cd4",
+      "reason": "Historical positive/negative invert physical contact truth. Replace touching synthetic controls with 5 mm separation; retain interior controls and historical bytes.",
+      "repair": "separated_endpoint_control",
+      "separated_ids": [
+        "end_pancreas"
+      ],
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/PLAN2-GEO-008.json",
+      "task_sha256": "4f1c5dfc248e41ea555ef182bde7455f1349783bca8930d2f90e68e7b9175feb"
+    },
+    "PLAN2-GEO-009": {
+      "checker": "interference_fp",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "311ae37f22b62b2d203f7e98bb118052b6e47554009008f1ba0d7f2d262d9151",
+      "reason": "Historical positive/negative invert physical contact truth. Replace touching synthetic controls with 5 mm separation; retain interior controls and historical bytes.",
+      "repair": "separated_endpoint_control",
+      "separated_ids": [
+        "end_liver"
+      ],
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/PLAN2-GEO-009.json",
+      "task_sha256": "cedd5846e49319092249a07f878dcdab9bffb6689e24fb57ab3bb125d8ccb64f"
+    },
+    "PLAN2-GEO-010": {
+      "checker": "interference_fp",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "25222737983f136d8fe1ef34321b9aea177e2504c43e69f70939dbe7a33a65f2",
+      "reason": "Historical positive/negative invert physical contact truth. Replace touching synthetic controls with 5 mm separation; retain interior controls and historical bytes.",
+      "repair": "separated_endpoint_control",
+      "separated_ids": [
+        "end_lung"
+      ],
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/PLAN2-GEO-010.json",
+      "task_sha256": "2495089f636f71e19f1cb912519c952613ea8807d1db6e179a4215d3786be4ce"
+    },
+    "PLAN2-GEO-011": {
+      "checker": "interference_fp",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "0ef869f82a3f2899003c4e4053f5a9750d94cc3eb487a74237df01470fed12d3",
+      "reason": "Historical positive/negative invert physical contact truth. Replace touching synthetic controls with 5 mm separation; retain interior controls and historical bytes.",
+      "repair": "separated_endpoint_control",
+      "separated_ids": [
+        "end_breast"
+      ],
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/PLAN2-GEO-011.json",
+      "task_sha256": "4465f9593f0f87eb6f511315889275b9e3012b3261b9c10c148c9af8bb819edc"
+    },
+    "PLAN2-GEO-041": {
+      "checker": "interference_fp",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "c5fe3704daf99a8520d262517ca0b31afb8eb90f2dfc2bdf25a2c4e1c405437c",
+      "reason": "Historical positive/negative invert physical contact truth. Replace touching synthetic controls with 5 mm separation; retain interior controls and historical bytes.",
+      "repair": "separated_endpoint_control",
+      "separated_ids": [
+        "e"
+      ],
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/PLAN2-GEO-041.json",
+      "task_sha256": "e715c4628ab412a4f12a0e6fdbb75c406f92246eaffa085b2cdad82084a13e7d"
+    },
+    "PLAN2-GEO-042": {
+      "checker": "interference_fp",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "59ecd45365f55af4d9229ceea4a51263d2a9f82cd6b4eb38801151aeda7078e3",
+      "reason": "Historical positive/negative invert physical contact truth. Replace touching synthetic controls with 5 mm separation; retain interior controls and historical bytes.",
+      "repair": "separated_endpoint_control",
+      "separated_ids": [
+        "e"
+      ],
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/PLAN2-GEO-042.json",
+      "task_sha256": "95f85cc2d1cd29b08c192fee670712c8a6ba0fd3ef3a5726fd0548b431b360de"
+    },
+    "PLAN2-GEO-043": {
+      "checker": "interference_fp",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "e6ed47bca34a9aa2edb3e640011a747d71b7db39c82833b2282a9f4b6fd50cbe",
+      "reason": "Historical positive/negative invert physical contact truth. Replace touching synthetic controls with 5 mm separation; retain interior controls and historical bytes.",
+      "repair": "separated_endpoint_control",
+      "separated_ids": [
+        "e"
+      ],
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/PLAN2-GEO-043.json",
+      "task_sha256": "75bce8538bdad15cdf0ff7eb2d900fbff48a658770864531d4e85cba7f0e7407"
+    },
+    "PR-CMP-002": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "a810fe7485d2dbe7321e911d8154eb13db38fd9314a5e7e0fc3e437d051debd0",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PR-CMP-002.json",
+      "task_sha256": "7cac45af4207840097ed838f0cc29e1f2835ec44b7e4aa7f7875c02ebab26a05"
+    },
+    "PR-CMP-005": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "30a114bf215b9ed5c1845a01952ce01c0ae1c0cca14160b40be74761d967ea78",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PR-CMP-005.json",
+      "task_sha256": "78b8993ece2824917da8a31926adda739ad7575773634fe1049a322932785836"
+    },
+    "PR-CMP-008": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "58cb946113ef0c25a2efa6cd2e2a3f6ce1e9e0cdd652893d493e532c8ab3052d",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PR-CMP-008.json",
+      "task_sha256": "a4809dff8b50dce711e56dfabb686902d2a8efcb537c8acd05f4f0b0627bc98e"
+    },
+    "PR-CMP-011": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "bfc4aca8dbe996a7b29959044a90c0d1a10c8e88c1ac6d6149a91ee86e093f19",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PR-CMP-011.json",
+      "task_sha256": "6d98c1c361d9cce9f3bd19cb8934ba9ca638e668b2c5e1d2916c994f5892de49"
+    },
+    "PR-CMP-061": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "babc809a8c7acca30daad93f6895d24f2cbebe1812286d77b63b402ff86cc805",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PR-CMP-061.json",
+      "task_sha256": "ea8b48024f6cde07ae9be0daeb9b10b380865816265a4b618e75865c28dd0e89"
+    },
+    "PR-CMP-062": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "babc809a8c7acca30daad93f6895d24f2cbebe1812286d77b63b402ff86cc805",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PR-CMP-062.json",
+      "task_sha256": "ee8004721639ec80d36fd6abc3f8f12215291c86d40dd8478728d04693b6a7ae"
+    },
+    "PR-CMP-063": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "babc809a8c7acca30daad93f6895d24f2cbebe1812286d77b63b402ff86cc805",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PR-CMP-063.json",
+      "task_sha256": "bebfd8152d831c6f2976bfb537d17dbca1cc93f89f5d4e5418fdad990760fe68"
+    },
+    "PR-QUAL-019": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "45dcfc6ed598c37b211aa6f0eb0e74e732aae899b0655448661c71a92bee107f",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PR-QUAL-019.json",
+      "task_sha256": "7493e1e4933ff9e99b73fb19d9b75b74c5d7570dd3d4a82b2baf47f4a816d4e5"
+    },
+    "PR-QUAL-020": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "9b8bac6487b01009ec24cf08559884b5326c274e3e59311853442da5b952619f",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PR-QUAL-020.json",
+      "task_sha256": "fc698389f2292a4c2fd52e2ae664db477dfbfe796cd0a3a2a7a8434b8541c75b"
+    },
+    "PR-QUAL-028": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "1f6b4a877bcf8275d41be6bc2c802a6470576c3c0f605890c6e0f00eecdbee7c",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PR-QUAL-028.json",
+      "task_sha256": "5ca3a03fc286d395d27041443435c42879744ebf518f73b1d22ea9d1312a2e1a"
+    },
+    "PR-QUAL-029": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "edb23fc8db840b37a196d2544e8fe7971efa8ef942e58ff9eda0743ed580eef6",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PR-QUAL-029.json",
+      "task_sha256": "4d18a258d02f1d4ab6715853195617a3d040d76de599e7e78dc193bb4b89c577"
+    },
+    "PR-QUAL-037": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "e56d07783ccc70a30b40edc4144a6adb030e3ddc08badd7c604f35e036970a25",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PR-QUAL-037.json",
+      "task_sha256": "212e194f116ffe247eaef346522245e4dce7738dfef31b6d988b39cb238bbc87"
+    },
+    "PR-QUAL-038": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "09f529ba4e917b4dfeba78816c0a2544d7f18d8d29461bd5ecb543e037139bcc",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PR-QUAL-038.json",
+      "task_sha256": "09b3bf4d59ccac82919b186b606aa4b9eee03dc708b1b9f672335a920b215008"
+    },
+    "PR-QUAL-046": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "a4e160a5321747f3ab98d420de8de6c82023cb1fc2426e051b743d17b07c3049",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PR-QUAL-046.json",
+      "task_sha256": "c4f92df2b737585f75713faf69240463dff9fc540d92dda624866f79f93e6bd4"
+    },
+    "PR-QUAL-047": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "8997e6c9f496f33498896ee1f1f8514e53bcb8b4e6531c304e08511e02bf98c8",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PR-QUAL-047.json",
+      "task_sha256": "6befaf60155f2e6987969ba89a0dba380d527abe34b7542e954be0508bfcaab8"
+    },
+    "PR-SEED-003": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "a810fe7485d2dbe7321e911d8154eb13db38fd9314a5e7e0fc3e437d051debd0",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PR-SEED-003.json",
+      "task_sha256": "30e6cc073e7fd9f09123e186bdd2a250cb1a43aa3ce78d263510a520bb7d4133"
+    },
+    "PR-SEED-006": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "30a114bf215b9ed5c1845a01952ce01c0ae1c0cca14160b40be74761d967ea78",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PR-SEED-006.json",
+      "task_sha256": "a7b75530dba500b99cdc4257cd260f5c18d18a73a619ae60e1704a2378519ad4"
+    },
+    "PR-SEED-009": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "58cb946113ef0c25a2efa6cd2e2a3f6ce1e9e0cdd652893d493e532c8ab3052d",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PR-SEED-009.json",
+      "task_sha256": "dc319686ce6301f202edc9996435ad3dfa465962613cabc80c2683b8221c1061"
+    },
+    "PR-SEED-012": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "bfc4aca8dbe996a7b29959044a90c0d1a10c8e88c1ac6d6149a91ee86e093f19",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PR-SEED-012.json",
+      "task_sha256": "075e5478316eb516e8ed757d897c35d5827679d78a2d5b95e96696c530f096a9"
+    },
+    "PR-TRAJ-001": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "d11f5c1b52fd1050232f1222fafce0e80e5ef07d31930f2b076aae9db30810fd",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PR-TRAJ-001.json",
+      "task_sha256": "f23cf32110146d463addc9d147d5d85bee6c455af47a8cd52a8a9710736807a6"
+    },
+    "PR-TRAJ-003": {
+      "checker": "interference_fp",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "4ca9095f28b542ddfcf489d9831d109cb805a5ac8a8d4bc4498cdd27a2dc6b33",
+      "reason": "Historical positive/negative invert physical contact truth. Replace touching synthetic controls with 5 mm separation; retain interior controls and historical bytes.",
+      "repair": "separated_endpoint_control",
+      "separated_ids": [
+        "p_endpoint"
+      ],
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/PR-TRAJ-003.json",
+      "task_sha256": "fff1c30d689ae3ec0155cb898051b848b856e04e49788c86748c92ffb8c4bda1"
+    },
+    "PR-TRAJ-004": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "0e5d8dab8fe62a6e768f70ad4a5edae9a59a76f55b402816e77d15ec95ec7261",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PR-TRAJ-004.json",
+      "task_sha256": "d6834a693dd101b17d032d3b13fc695ab5410e230aadc5c28d73e1191da6f992"
+    },
+    "PR-TRAJ-006": {
+      "checker": "interference_fp",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "4ca9095f28b542ddfcf489d9831d109cb805a5ac8a8d4bc4498cdd27a2dc6b33",
+      "reason": "Historical positive/negative invert physical contact truth. Replace touching synthetic controls with 5 mm separation; retain interior controls and historical bytes.",
+      "repair": "separated_endpoint_control",
+      "separated_ids": [
+        "p_endpoint"
+      ],
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/PR-TRAJ-006.json",
+      "task_sha256": "d06794c55bbeba15ac85263c0efad37c9e31bc62d834ab9fdc227e9ff70ff2ac"
+    },
+    "PR-TRAJ-007": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "263e4dfed1f0cdc1f56995a6b06011a24f88b0f686e859bbf2b7fe31a84bcc39",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PR-TRAJ-007.json",
+      "task_sha256": "1595b7fe3fe72410f84ca5fcde74cbfd83c51cb62ee21a4aa8e812c714c282a3"
+    },
+    "PR-TRAJ-009": {
+      "checker": "interference_fp",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "4ca9095f28b542ddfcf489d9831d109cb805a5ac8a8d4bc4498cdd27a2dc6b33",
+      "reason": "Historical positive/negative invert physical contact truth. Replace touching synthetic controls with 5 mm separation; retain interior controls and historical bytes.",
+      "repair": "separated_endpoint_control",
+      "separated_ids": [
+        "p_endpoint"
+      ],
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/PR-TRAJ-009.json",
+      "task_sha256": "7b8b204e17b91bd87c7a71d6f6dddc1d96e231c7739ae6089dc332555bc6a40f"
+    },
+    "PR-TRAJ-010": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "067222003e051ec3631944557df669c2fb5aef02e9fa17254de1fe8cbd7d917a",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PR-TRAJ-010.json",
+      "task_sha256": "e18f893655c44ddd14222ddd713aea2fa01f320512c4a231c65b07c317cef2ed"
+    },
+    "PR-TRAJ-012": {
+      "checker": "interference_fp",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "4ca9095f28b542ddfcf489d9831d109cb805a5ac8a8d4bc4498cdd27a2dc6b33",
+      "reason": "Historical positive/negative invert physical contact truth. Replace touching synthetic controls with 5 mm separation; retain interior controls and historical bytes.",
+      "repair": "separated_endpoint_control",
+      "separated_ids": [
+        "p_endpoint"
+      ],
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/PR-TRAJ-012.json",
+      "task_sha256": "e3a9bf6df5f8b7f045290eac2b12746d804a41ddf9a75fa8425d7c66b1852e6c"
+    },
+    "PR-TRAJ-017": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "a810fe7485d2dbe7321e911d8154eb13db38fd9314a5e7e0fc3e437d051debd0",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PR-TRAJ-017.json",
+      "task_sha256": "866bd988bb8d423141faab9a207fc65ee2f9d350bb54039419f55eee934adae1"
+    },
+    "PR-TRAJ-023": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "30a114bf215b9ed5c1845a01952ce01c0ae1c0cca14160b40be74761d967ea78",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PR-TRAJ-023.json",
+      "task_sha256": "68491bcb50e61c9e5c8b78c0323569113b8f36b7ccabd68d331a52209c52cd7d"
+    },
+    "PR-TRAJ-029": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "58cb946113ef0c25a2efa6cd2e2a3f6ce1e9e0cdd652893d493e532c8ab3052d",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PR-TRAJ-029.json",
+      "task_sha256": "6e207f5def5fd08095c62ee9c18940ae2e24e07400ad6e342ac9af0d194d6c71"
+    },
+    "PR-TRAJ-035": {
+      "checker": "hard_constraint",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "oar_metric_missing",
+        "oar_metric_missing",
+        "oar_metric_missing"
+      ],
+      "positive_sha256": "bfc4aca8dbe996a7b29959044a90c0d1a10c8e88c1ac6d6149a91ee86e093f19",
+      "reason": "No measured OAR values in this replay. Do not invent below-limit values to make a positive case.",
+      "repair": "missing_oar_observation",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/PR-TRAJ-035.json",
+      "task_sha256": "dec760ae27e14ce99f82f7010536a273590b86456d069ce4998b2574820b5a96"
+    },
+    "RTOOL-ENVMGR-006": {
+      "checker": "path_traversal_blocked",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "8883cc5f007cbc18240239d18d9b985423a134bd27df6caf0337932315a2a2bd",
+      "reason": "Backslash is a literal filename character on POSIX. New POSIX control really escapes the declared root.",
+      "repair": "posix_traversal_control",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/RTOOL-ENVMGR-006.json",
+      "task_sha256": "e3e6d725b0eead8cbd03e9921b0ff819d54ca94919cb4c3c6d1c204fcef6fbf7"
+    },
+    "RTOOL-TOOLCRE-015": {
+      "checker": "path_traversal_blocked",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "5bdcae6dd4b6fb857fb24d32eb06ae848b65f8ee3057a5afc3c78bdef17d66fa",
+      "reason": "Backslash is a literal filename character on POSIX. New POSIX control really escapes the declared root.",
+      "repair": "posix_traversal_control",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/RTOOL-TOOLCRE-015.json",
+      "task_sha256": "783d716d13e5d48f42cee2736c50b3260043566464ebb08ee9b62a830e4fe658"
+    },
+    "SEEDSEG-001": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "0b0b6fd68ed2dd4a6f9a27b68f99d8e968a58214392c28362be60e664b49ad16",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEEDSEG-001.json",
+      "task_sha256": "709650e7aee5fc4d99720f171e18c1a80306e110cf06538ef7f63135e10a2f47"
+    },
+    "SEEDSEG-002": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "e33192c1c7c3a24e5915f113ef3c87d7b9874d84f8f5e4e32409427d1b7e64b6",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEEDSEG-002.json",
+      "task_sha256": "dfc4ae645586341a9c7f51564436f041e74c766b4f0323bfdb972bf4c07088f5"
+    },
+    "SEEDSEG-003": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "67fd722c8d86c65752a9e27032fc8366def1a99344827af7bf79f5795f49d8de",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEEDSEG-003.json",
+      "task_sha256": "3c53db5901c431ca1a398b2eea5b26ce42987531992cddace6afa8b2131eed44"
+    },
+    "SEEDSEG-010": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "67fd722c8d86c65752a9e27032fc8366def1a99344827af7bf79f5795f49d8de",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEEDSEG-010.json",
+      "task_sha256": "b280dd64fe93f260c2f4f49ad89c800442d3b36a3c50edf96625d8559819a91f"
+    },
+    "SEEDSEG-011": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "67fd722c8d86c65752a9e27032fc8366def1a99344827af7bf79f5795f49d8de",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEEDSEG-011.json",
+      "task_sha256": "c4212fb5f75970e00ff7cea460c78a455fa2e72663e30e8f5848dbd31b3ae65d"
+    },
+    "SEEDSEG-012": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "67fd722c8d86c65752a9e27032fc8366def1a99344827af7bf79f5795f49d8de",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEEDSEG-012.json",
+      "task_sha256": "423eba3a75fd495d1090bf7c9a7fa10d6b10680910d56badd56f97ba59cbba85"
+    },
+    "SEEDSEG-013": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "591bd4fea9fead849208f756e725bb37bddc26ec9c2b43bbaba5650674b41f46",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEEDSEG-013.json",
+      "task_sha256": "2e23fd17f0e1f192bb5a81234eb8ed21120d367d2c0a0e8ceccf392e9a3399ac"
+    },
+    "SEEDSEG-014": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "0b0b6fd68ed2dd4a6f9a27b68f99d8e968a58214392c28362be60e664b49ad16",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEEDSEG-014.json",
+      "task_sha256": "1e0fb4b63eaa66267b92925babf075eb78afea3a985293053426b6bf990449ef"
+    },
+    "SEEDSEG-015": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "0b0b6fd68ed2dd4a6f9a27b68f99d8e968a58214392c28362be60e664b49ad16",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEEDSEG-015.json",
+      "task_sha256": "73ed22c49a1b45ec0889fd8d698505a7d0991c27d8407fb332d924ae53051290"
+    },
+    "SEEDSEG-016": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "0b0b6fd68ed2dd4a6f9a27b68f99d8e968a58214392c28362be60e664b49ad16",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEEDSEG-016.json",
+      "task_sha256": "42218f0807149bf7b1a1459c101f19299bea1bd150c332880acf858e71e75021"
+    },
+    "SEEDSEG-017": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "67fd722c8d86c65752a9e27032fc8366def1a99344827af7bf79f5795f49d8de",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEEDSEG-017.json",
+      "task_sha256": "d01605bf9fc8d40eca1e7685f1e7b66a36ce501d7e1b114fb8d92cdae21371ff"
+    },
+    "SEEDSEG-018": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "67fd722c8d86c65752a9e27032fc8366def1a99344827af7bf79f5795f49d8de",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEEDSEG-018.json",
+      "task_sha256": "649ac2973696ac5afc92ce19e158936e58e148a634012f16c49dff72812c32f9"
+    },
+    "SEEDSEG-019": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "67fd722c8d86c65752a9e27032fc8366def1a99344827af7bf79f5795f49d8de",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEEDSEG-019.json",
+      "task_sha256": "f8f64b1e1c5b124505a686d4dc9ffab308e0b8306e124c3b6c68ab47d3a3bf78"
+    },
+    "SEEDSEG-020": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "67fd722c8d86c65752a9e27032fc8366def1a99344827af7bf79f5795f49d8de",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEEDSEG-020.json",
+      "task_sha256": "f5ae8f689048c6c2c80ff91350afbeea0476a757ada9fdcd97033419ab3391fd"
+    },
+    "SEEDSEG-021": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "67fd722c8d86c65752a9e27032fc8366def1a99344827af7bf79f5795f49d8de",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEEDSEG-021.json",
+      "task_sha256": "6faf306414610bd722374ef7edeec30330f8cd1e538bf2a1fcd754e0b9dcd394"
+    },
+    "SEEDSEG-022": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "67fd722c8d86c65752a9e27032fc8366def1a99344827af7bf79f5795f49d8de",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEEDSEG-022.json",
+      "task_sha256": "dba8abe00c1f49a7fcc027cc38c507f94db4fdcf0be45e35cdcf467de9c67996"
+    },
+    "SEEDSEG-025": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "67fd722c8d86c65752a9e27032fc8366def1a99344827af7bf79f5795f49d8de",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEEDSEG-025.json",
+      "task_sha256": "a89c0124b7587b1f6f84bce1af349b5b5d0c8f67c97c6345058bce387cb489c3"
+    },
+    "SEEDSEG-026": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "67fd722c8d86c65752a9e27032fc8366def1a99344827af7bf79f5795f49d8de",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEEDSEG-026.json",
+      "task_sha256": "a8f8d2495f7602ecf449d2c2e010464dee58b3f0ff5fae34f58ac3b7c3bab1ea"
+    },
+    "SEEDSEG-027": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "67fd722c8d86c65752a9e27032fc8366def1a99344827af7bf79f5795f49d8de",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEEDSEG-027.json",
+      "task_sha256": "f33bff248d0233b3581c313acf29ff4e5eda074f702f816ce252dd8eae2e364c"
+    },
+    "SEGALIGN-001": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "74e0fa5ab2c5ba4f05ecf13a70dda41a103cb650ffdb0b70cfd9ada105d5c749",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEGALIGN-001.json",
+      "task_sha256": "35d36d36df3eab4969c01d53a7471cab9b5af6821829cbd37a2e3f8aa2285b1e"
+    },
+    "SEGALIGN-002": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "74e0fa5ab2c5ba4f05ecf13a70dda41a103cb650ffdb0b70cfd9ada105d5c749",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEGALIGN-002.json",
+      "task_sha256": "ad8b9f9724de4da4acde6c2f4990f6dc9b785a583f968a0add3410cb2f127535"
+    },
+    "SEGALIGN-003": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "74e0fa5ab2c5ba4f05ecf13a70dda41a103cb650ffdb0b70cfd9ada105d5c749",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEGALIGN-003.json",
+      "task_sha256": "fd3dbf558cc1c55892ca41f1e8a80ae43d9a3b1cb76ce0849cc2699126969ddc"
+    },
+    "SEGALIGN-004": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "74e0fa5ab2c5ba4f05ecf13a70dda41a103cb650ffdb0b70cfd9ada105d5c749",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEGALIGN-004.json",
+      "task_sha256": "8f6c459334a003a39f75346a0dbb538f37b21c08c432a2514d772634f55dba51"
+    },
+    "SEGALIGN-005": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "74e0fa5ab2c5ba4f05ecf13a70dda41a103cb650ffdb0b70cfd9ada105d5c749",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEGALIGN-005.json",
+      "task_sha256": "22065658e736479e8b1101f9bf13b66fde9401b52646acd3a9b7e7edf8d9d677"
+    },
+    "SEGALIGN-006": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "74e0fa5ab2c5ba4f05ecf13a70dda41a103cb650ffdb0b70cfd9ada105d5c749",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEGALIGN-006.json",
+      "task_sha256": "db72848f865139536e014a78af7397c6e3924713bfe5859aede4de7a8d5f7512"
+    },
+    "SEGALIGN-007": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "74e0fa5ab2c5ba4f05ecf13a70dda41a103cb650ffdb0b70cfd9ada105d5c749",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEGALIGN-007.json",
+      "task_sha256": "1448a321424a5ff13045a5a625067cdc62829ecec3f16dd90fdb1efcf74d67eb"
+    },
+    "SEGALIGN-008": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "74e0fa5ab2c5ba4f05ecf13a70dda41a103cb650ffdb0b70cfd9ada105d5c749",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEGALIGN-008.json",
+      "task_sha256": "187bfae10acb5b1956057be0e18c6712fe7981ad1089dc0b148820b5d070d268"
+    },
+    "SEGALIGN-009": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "74e0fa5ab2c5ba4f05ecf13a70dda41a103cb650ffdb0b70cfd9ada105d5c749",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEGALIGN-009.json",
+      "task_sha256": "7af8688a8771c5089cf9d261edf9ec0e61164ee86b796c69686c5d3c63d99595"
+    },
+    "SEGALIGN-010": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "74e0fa5ab2c5ba4f05ecf13a70dda41a103cb650ffdb0b70cfd9ada105d5c749",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEGALIGN-010.json",
+      "task_sha256": "a8ac47aba16d8f57bff176c0a59a9d8d45e36dd6486765c8b8e8ecf46662a060"
+    },
+    "SEGALIGN-011": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "74e0fa5ab2c5ba4f05ecf13a70dda41a103cb650ffdb0b70cfd9ada105d5c749",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEGALIGN-011.json",
+      "task_sha256": "b1d0662506ff9c249b5451629a538f089a5dba00493f13eda4b0c251f51e2519"
+    },
+    "SEGALIGN-012": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "74e0fa5ab2c5ba4f05ecf13a70dda41a103cb650ffdb0b70cfd9ada105d5c749",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEGALIGN-012.json",
+      "task_sha256": "59847f0ff54b11e30b20e50a42a8087d577eb05c8a9bb90deb9a9d6f355e06ac"
+    },
+    "SEGALIGN-013": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "74e0fa5ab2c5ba4f05ecf13a70dda41a103cb650ffdb0b70cfd9ada105d5c749",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEGALIGN-013.json",
+      "task_sha256": "72d56808233734b56d4bd3fbdeb979f57cc6aef2ac46a882730cfa8b0413d675"
+    },
+    "SEGALIGN-014": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "74e0fa5ab2c5ba4f05ecf13a70dda41a103cb650ffdb0b70cfd9ada105d5c749",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEGALIGN-014.json",
+      "task_sha256": "3c56aabfec1525ab3b449ac528fe06516f8783e483e706c776c6f91a386c4b19"
+    },
+    "SEGALIGN-015": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "74e0fa5ab2c5ba4f05ecf13a70dda41a103cb650ffdb0b70cfd9ada105d5c749",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEGALIGN-015.json",
+      "task_sha256": "4e78feeb4c1f17e17ef433be29874f6e0f79e02f6279ca6c3e4247f7d79c2e92"
+    },
+    "SEGALIGN-016": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "74e0fa5ab2c5ba4f05ecf13a70dda41a103cb650ffdb0b70cfd9ada105d5c749",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEGALIGN-016.json",
+      "task_sha256": "9f493d0ac7b1aa9bbcc95dd202f185bfbff6843063571430e9650df098e5a442"
+    },
+    "SEGALIGN-017": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "74e0fa5ab2c5ba4f05ecf13a70dda41a103cb650ffdb0b70cfd9ada105d5c749",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEGALIGN-017.json",
+      "task_sha256": "8039fad33352ba62be3d40a9799cc5b13df4501f2d0618cc03dc0afd4b6ced02"
+    },
+    "SEGALIGN-018": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "74e0fa5ab2c5ba4f05ecf13a70dda41a103cb650ffdb0b70cfd9ada105d5c749",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SEGALIGN-018.json",
+      "task_sha256": "4b4ca709d411cc5458b19323c0afffb1d391b6cbf9d74b59243a536fa38efd31"
+    },
+    "SG-CTV-020": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "68d410d52fbf2d077f4e8e7b2b37d753c00693e4aea2447773ae001cdcd7cac0",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SG-CTV-020.json",
+      "task_sha256": "90a10f7ee1c09078b77b4f253803af08964f6cd5984d8396ca3405629e4f9c50"
+    },
+    "SG-CTV-021": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "37f80e0dd1b7047fda40836debe53531bb6dfc24c65935bcfbdc9d9163d0757d",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SG-CTV-021.json",
+      "task_sha256": "7be69e08e23b51fd897b2cedb7ce250af72ae21bfdcdbaa12aa3605d6621a195"
+    },
+    "SG-CTV-022": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "019c8b81027a89e8a503ababc50c492e35d734beaacb5781890491e91036f4dc",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SG-CTV-022.json",
+      "task_sha256": "3c33b95aa8fae6bfb524f3dcabde950e6b1b8184c14b04b1da9e663cd8531371"
+    },
+    "SG-CTV-023": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "fd2f01d469e4ed69a81019562fc6f00421cfc7ffe193b186c2fd51832694aa89",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SG-CTV-023.json",
+      "task_sha256": "78b6df5b475fc19d9b4e0feda8f5938e7e59f162700cc02415fee159c41b2f47"
+    },
+    "SG-CTV-024": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "d4357ea673136cdd045415d560379ff6bd7d36b208e291506a365709356c517d",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SG-CTV-024.json",
+      "task_sha256": "47da8244708c23faa2c057f00e2eb9992fa2d12ffa14ddc9dbc07b984aa8c52e"
+    },
+    "SG-CTV-025": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "86b93a0d5618392284693830457848e7401a5158a38f9f382aa76abc5ab99f1e",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SG-CTV-025.json",
+      "task_sha256": "ca30ef8e2341e6a364a0315cf0409408c3e8281504b80afb03d4f0e8916f3f21"
+    },
+    "SG-CTV-026": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "259bbea229055bb967dcc2a257843ebcfbf9c410b1477a8ba1edded1bef510f1",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SG-CTV-026.json",
+      "task_sha256": "120846e30fc89bfd8a8d8f0875673446333cbc9438ae5b0d18ff3839ef02cb89"
+    },
+    "SG-OAR-023": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "1367d6f896cc664ccaba75ad7b3c8286b03acdc8fb26d7e56f19161451459e21",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SG-OAR-023.json",
+      "task_sha256": "6840393e8586b9ce8e019843ade362499f149346d72f1e63f3374428670a98a0"
+    },
+    "SG-OAR-024": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "90427d98f393c8c0f427de6456e286cd6dcd54cf8385ef6fc7fda88b5dccdee7",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SG-OAR-024.json",
+      "task_sha256": "e976e8cba1396f5f3a8c55f1a5241806da479055f443479ce9e95e3ad5cf1b89"
+    },
+    "SG-OAR-025": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "1dcc3543387c17c59fca3657f338fdc5c26a851e13d86f01cf682ce5a5ddfc71",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SG-OAR-025.json",
+      "task_sha256": "9054940b62e05acc23658a6735451be85cf586ebc4df0e6e602b190dd100b3bd"
+    },
+    "SG-OAR-026": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "8c61c6de09efb23ed0871d98b952404c73903004a4a6fc2bfa1647f96b0e77ab",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SG-OAR-026.json",
+      "task_sha256": "99c25ec9b63557e74d3d539cc8bf43a00bf91c259c4dfda5e2a450aff82f4b94"
+    },
+    "SG-OAR-027": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "94ea16f24fc25945c80f99dbe9ea2108440af0c1532ace9fc694b7d1b2ffd25b",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SG-OAR-027.json",
+      "task_sha256": "a0bd51d16e2fd0bddc5215bc80549cf42a47858576c0a96d2337e102dbfd6d0c"
+    },
+    "SG-OAR-028": {
+      "checker": "dice_and_hd95",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "45f71815653ca85e4c5e05d835b68fec0048aa2567dda22f68bacaf803e0361a",
+      "reason": "1D toy vectors embedded as synthetic 2D strips; 2D masks have two explicit in-plane spacings. Not clinical segmentation evidence.",
+      "repair": "synthetic_planar_mask_contract",
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SG-OAR-028.json",
+      "task_sha256": "fe5b40706f51eb823046e064001179ead98e35a9c908ec8b2e7ce79fe89cc1c3"
+    },
+    "SG-SEED-028": {
+      "checker": "interference_fp",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "08c2c74917fce408139441322b1ea2420ec0cc29219bbb4132211b27ff85b457",
+      "reason": "Historical positive/negative invert physical contact truth. Replace touching synthetic controls with 5 mm separation; retain interior controls and historical bytes.",
+      "repair": "separated_endpoint_control",
+      "separated_ids": [
+        "pair_0"
+      ],
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SG-SEED-028.json",
+      "task_sha256": "6a82d34ed431e5ae9b65cae8987f7d7a488abec9a4b8e75cea3eab06473b57c3"
+    },
+    "SG-SEED-029": {
+      "checker": "interference_fp",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "c0e00da3c034975091ce2f7d011276af402658112bb933f796cea664bf58cbb4",
+      "reason": "Historical positive/negative invert physical contact truth. Replace touching synthetic controls with 5 mm separation; retain interior controls and historical bytes.",
+      "repair": "separated_endpoint_control",
+      "separated_ids": [
+        "pair_0"
+      ],
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SG-SEED-029.json",
+      "task_sha256": "bd523e9eeaa72d11e17eea5acee6661efb475a035048377d8e2c95e8e0bdcab2"
+    },
+    "SG-SEED-030": {
+      "checker": "interference_fp",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "3ce4ee320b30be94b51f717d5c5a7b0ee3474dbc2af56e0035b12d459f4ae931",
+      "reason": "Historical positive/negative invert physical contact truth. Replace touching synthetic controls with 5 mm separation; retain interior controls and historical bytes.",
+      "repair": "separated_endpoint_control",
+      "separated_ids": [
+        "pair_0"
+      ],
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SG-SEED-030.json",
+      "task_sha256": "ebf737f6bec0bf80b8467a50e805542ba1fbf6b4b636b92dc29ab114bf26334b"
+    },
+    "SG-SEED-031": {
+      "checker": "interference_fp",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Meets",
+      "expected_positive_gap_codes": [],
+      "positive_sha256": "218cc21448bd3948c2ce447b4f6cfa70f83322357b84e1d580433573ed1bc4eb",
+      "reason": "Historical positive/negative invert physical contact truth. Replace touching synthetic controls with 5 mm separation; retain interior controls and historical bytes.",
+      "repair": "separated_endpoint_control",
+      "separated_ids": [
+        "pair_0"
+      ],
+      "status": "reviewed_synthetic_component",
+      "task_path": "tasks/SG-SEED-031.json",
+      "task_sha256": "a891fe4ac435feff87a3a34c8ae9431290d2844fcf66539fa2ce238526ff5939"
+    },
+    "TRK-RT-021": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing",
+        "independent_field_missing",
+        "roundtrip_self_only"
+      ],
+      "positive_sha256": "d391fb7b5f42bced38f647d41595016c3c6e530919aa2bb04d1c4726b5864509",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/TRK-RT-021.json",
+      "task_sha256": "b15e69cd85db60ab10f2a019000c715b59b3ad7ee4f1f63f9a412ab6c37d1a0a"
+    },
+    "TRK-RT-022": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing",
+        "independent_field_missing",
+        "roundtrip_self_only"
+      ],
+      "positive_sha256": "e6f3db275140a987b7dd2e43c52f43f93a08f867bcdc18a625316ec7998a0116",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/TRK-RT-022.json",
+      "task_sha256": "b84c185947e740c40d1c818fec856735f6cd913a7431ed7ce70b45a5c327609f"
+    },
+    "TRK-RT-023": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing",
+        "independent_field_missing",
+        "roundtrip_self_only"
+      ],
+      "positive_sha256": "c4f7986da30baac25d4b2015f8370095ea8c7ae55862b9780a79f010d4994dd7",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/TRK-RT-023.json",
+      "task_sha256": "f9269e00ab1bc109de669ce75d2496cba7a29510d7131e9cd22c3b74c4029aec"
+    },
+    "TRK-RT-024": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing",
+        "independent_field_missing",
+        "roundtrip_self_only"
+      ],
+      "positive_sha256": "84dc5c76e5b1816db3f1cb441b2fc4f0d4ef90cfcce58399d92581e64972c9c5",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/TRK-RT-024.json",
+      "task_sha256": "3984e9b3dcb441fc9b49e38e693182499d582d54efec70bb669bb0f78b79fecc"
+    },
+    "TRK-RT-025": {
+      "checker": "roundtrip_fidelity",
+      "expected_negative": "Does not meet",
+      "expected_positive": "Insufficient evidence for the benchmark criterion",
+      "expected_positive_gap_codes": [
+        "independent_field_missing",
+        "independent_field_missing",
+        "roundtrip_self_only"
+      ],
+      "positive_sha256": "b2a496ebdf8ce6eab2215f7d9b49c2310225d419b64fe4869d45f9e334a12c0c",
+      "reason": "Historical independent parser output is absent/incomplete. Preserve evidence gap; do not copy candidate values as real observation.",
+      "repair": "missing_independent_reference",
+      "status": "BLOCKED-evidence",
+      "task_path": "tasks/TRK-RT-025.json",
+      "task_sha256": "d42ad151cb28df8d6c2bbe631129a63111d9a23f3a56a05e88b28cb34ab53e13"
+    }
+  },
+  "evaluation_mode": "component_self_test",
+  "expectations_source": "Explicit contract reasoning; no oracle-derived label regeneration",
+  "negative_file_sha256": "5439f210d552218e3ea4056516a62a96383897addc18a3a55cff0771e407a43b",
+  "schema_version": 2
+}

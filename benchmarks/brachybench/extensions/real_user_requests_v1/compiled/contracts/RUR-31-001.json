@@ -1,0 +1,50 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "zh",
+  "response_facts": {
+    "V100_percent": 90.1
+  },
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "response",
+      "statement": "Correct current V100 90.1% in one concise sentence with appropriate scope."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "effects",
+      "statement": "No dose, segmentation, guide generation or serial per-ROI query; read current compact facts."
+    },
+    {
+      "id": "criterion-2",
+      "kind": "budget",
+      "statement": "Measure state access/model round trips and first-useful-feedback; no disguised expensive background work."
+    }
+  ],
+  "rules": [],
+  "scenario_id": "RUR-31-001",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "response",
+      "statement": "Correct current V100 90.1% in one concise sentence with appropriate scope."
+    },
+    {
+      "kind": "effects",
+      "statement": "No dose, segmentation, guide generation or serial per-ROI query; read current compact facts."
+    },
+    {
+      "kind": "budget",
+      "statement": "Measure state access/model round trips and first-useful-feedback; no disguised expensive background work."
+    }
+  ]
+}

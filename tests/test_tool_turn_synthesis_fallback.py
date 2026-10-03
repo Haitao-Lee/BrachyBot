@@ -3,7 +3,8 @@
 Regression: a knowledge question whose every provider round was a tool call
 (web_search/web_fetch) exhausted ``max_iterations`` with no answer text. The
 empty-response fallback then emitted the metadata-only evidence summary
-("已完成资料检索…" / "已读取来源页面，但当前尚未生成综合回答。") which lists
+("materials search completed…" / "source pages were read, but no synthesized
+answer has been generated yet") which lists
 sources but never answers the question. The runtime must give the model one
 final, tool-free synthesis round before that last-resort summary.
 """

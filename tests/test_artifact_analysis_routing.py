@@ -1,4 +1,4 @@
-"""Routing contracts for artifact-analysis requests ("分析导板特点").
+"""Routing contracts for artifact-analysis requests ("analyze the guide characteristics").
 
 An analysis request is a read-only discourse act over an already-produced
 artifact. It must never restart a workflow, never ask the user to "confirm"

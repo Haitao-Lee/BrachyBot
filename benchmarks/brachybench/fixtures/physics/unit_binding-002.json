@@ -1,0 +1,26 @@
+{
+  "config": {
+    "binding": {
+      "bound_metric": "D2cc",
+      "bound_target": "other",
+      "metric": "D2cc",
+      "target": "rectum",
+      "unit": "mgy",
+      "value": 45.0,
+      "value_gy": 0.045
+    },
+    "mechanism": "binding/broken_mgy"
+  },
+  "expected": {
+    "evidence_gap_codes": [],
+    "score": 0.0,
+    "verdict": "fail",
+    "violation_codes": [
+      "param_bound_to_wrong_target"
+    ]
+  },
+  "family": "unit_binding",
+  "id": "unit_binding-002",
+  "initial_state_hash": "sha256:6cfdde15997abc4b324705ab0890376da5cc6e9cb37b7724dfae778d452c8f7c",
+  "seed": 20260929
+}

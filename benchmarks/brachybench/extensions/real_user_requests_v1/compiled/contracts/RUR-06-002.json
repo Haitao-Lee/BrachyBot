@@ -1,0 +1,54 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "max": 1,
+      "operation": "cancel_preview"
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "en",
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "state",
+      "statement": "Persistent geometry unchanged; preview cleared, no historical committed edit invented."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "response",
+      "statement": "Explain preview cancellation versus restoring committed geometry."
+    }
+  ],
+  "rules": [
+    {
+      "op": "equals",
+      "path": "preview",
+      "value": null
+    },
+    {
+      "op": "preserve",
+      "path": "geometry_revision"
+    }
+  ],
+  "scenario_id": "RUR-06-002",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "state",
+      "statement": "Persistent geometry unchanged; preview cleared, no historical committed edit invented."
+    },
+    {
+      "kind": "response",
+      "statement": "Explain preview cancellation versus restoring committed geometry."
+    }
+  ]
+}

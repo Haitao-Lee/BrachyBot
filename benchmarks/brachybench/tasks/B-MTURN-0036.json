@@ -1,0 +1,87 @@
+{
+  "schema_version": "1.0",
+  "id": "B-MTURN-0036",
+  "track": "B",
+  "layers": [
+    "L4"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "multi_turn_continuity",
+  "cost_class": "state_only",
+  "power_role": "exploratory",
+  "clinical_intent": "Multi-turn session: Our department is setting up a new HDR b ... then follow up with A 60-year-old woman named Grace has a St",
+  "fixture": {
+    "case_family": "legacy/multiturn",
+    "setup_script": "fixtures/setup/prostate_s02_full_pipeline.py",
+    "initial_state_hash": "sha256:38eabca0a6bcb5062deac0e5645e8bf52d9e5f51cdd0f137f824f4509461ada3"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-CTX",
+    "contrast_family_id": "legacy/multiturn"
+  },
+  "protocol": {
+    "mode": "multi_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "Our department is setting up a new HDR brachytherapy program with an Elekta microSelectron (Ir-192, 10 Ci), Varian Acuity TPS, and Nucletron applicators. Outline the complete QA program including daily, monthly, and annual checks, source exchange procedures, TG-59 compliance, and documentation requirements.",
+        "lang": "en"
+      },
+      {
+        "role": "user",
+        "text": "A 60-year-old woman named Grace has a Stage IIB cervical cancer. She has completed 45 Gy of EBRT and is scheduled for brachytherapy. However, she develops a pulmonary embolism 2 days before the planned brachytherapy procedure. She is started on therapeutic anticoagulation with enoxaparin. The team must decide whether to proceed with brachytherapy or delay treatment. Analyze the risks and benefits of proceeding versus delaying.",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 120,
+      "turns": 2,
+      "tool_calls": 12
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 3
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "state_invariant",
+    "constraint_class": "postcondition",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "multi_turn_state_ok",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "medium"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "MTURN-0036",
+    "hidden": false,
+    "generation_seed": 2026,
+    "canary_class": null,
+    "behavioral_probes": [
+      "multi_turn"
+    ],
+    "contrast_family_id": "legacy/multiturn"
+  },
+  "provenance": {
+    "source": "legacy_migrated",
+    "derived_from": "legacy:v1/19_workflow.json#Q1002+v1/19_workflow.json#Q0980",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto-verifier"
+    ],
+    "authored_on": "2026-09-30",
+    "deprecated": null
+  }
+}

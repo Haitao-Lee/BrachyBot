@@ -630,9 +630,10 @@ def test_tumor_location_with_screenshot_tail_uses_canonical_3d_route():
 
 
 def test_patient_prefixed_tumor_location_with_location_tail_uses_the_screenshot_route():
-    """"该患者的肿瘤位于哪里" is the same location question as "肿瘤在哪里".
+    """The patient-prefixed "where is the tumor located" is the same location
+    question as "where is the tumor".
 
-    A determiner prefix and the "位于" tail used to fail the whole-request
+    A determiner prefix and the "is located" tail used to fail the whole-request
     contract, demoting the turn to open semantic_action where the model
     answered from metrics without ever capturing grounded screenshots.
     """

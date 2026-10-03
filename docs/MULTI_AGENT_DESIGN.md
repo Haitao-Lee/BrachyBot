@@ -1,53 +1,53 @@
 # BrachyBot Multi-Agent System Design
 
-## 1. 现有架构分析
+## 1. Existing Architecture Analysis
 
-### 当前组件
+### Current Components
 ```
 BrachyBot/
-├── AgenticSys.py          # 主Agent (BrachyAgent)
-│   ├── chat_with_stream() # LLM对话 + 工具执行
-│   ├── ToolRegistry       # 工具注册表
-│   └── AgentMemory        # 记忆系统
+├── AgenticSys.py          # Main Agent (BrachyAgent)
+│   ├── chat_with_stream() # LLM conversation + tool execution
+│   ├── ToolRegistry       # Tool registry
+│   └── AgentMemory        # Memory system
 │
-├── brain/                 # 大脑系统
+├── brain/                 # Brain system
 │   ├── core/
-│   │   ├── multi_agent_critic.py  # ✅ 已有：4个评审persona
-│   │   ├── tree_search_planner.py # 树搜索规划
-│   │   └── tool_code_writer.py    # 工具代码生成
+│   │   ├── multi_agent_critic.py  # ✅ Existing: 4 reviewer personas
+│   │   ├── tree_search_planner.py # Tree-search planning
+│   │   └── tool_code_writer.py    # Tool code generation
 │   ├── deciders/
-│   │   ├── clinical_decider.py    # 临床决策
-│   │   ├── planner_decider.py     # 规划决策
-│   │   └── quality_decider.py     # 质量决策
+│   │   ├── clinical_decider.py    # Clinical decision
+│   │   ├── planner_decider.py     # Planning decision
+│   │   └── quality_decider.py     # Quality decision
 │   ├── integration/
-│   │   └── enhanced_agent.py      # ✅ 已有：自我进化集成
+│   │   └── enhanced_agent.py      # ✅ Existing: self-evolution integration
 │   ├── knowledge/
-│   │   └── rag.py                 # RAG知识检索
-│   └── providers/                 # 14个LLM提供商
+│   │   └── rag.py                 # RAG knowledge retrieval
+│   └── providers/                 # 14 LLM providers
 │
-├── memory/                # 记忆系统
-│   ├── layered_memory.py  # L0-L4分层记忆
-│   ├── reflexion_engine.py # 自我反思
-│   └── skill_crystallizer.py # 技能结晶
+├── memory/                # Memory system
+│   ├── layered_memory.py  # L0-L4 layered memory
+│   ├── reflexion_engine.py # Self-reflection
+│   └── skill_crystallizer.py # Skill crystallization
 │
-└── skills/                # 技能系统
+└── skills/                # Skill system
 ```
 
-### 已有但未充分利用的能力
-1. **MultiAgentCritic** - 有4个评审persona，但只在plan review时调用
-2. **EnhancedAgentIntegration** - 有pre/post hook，但未深度集成
-3. **Deciders** - 有Clinical/Planner/Quality decider，但未串联
+### Existing but Underutilized Capabilities
+1. **MultiAgentCritic** - has 4 reviewer personas, but is only invoked during plan review
+2. **EnhancedAgentIntegration** - has pre/post hooks, but is not deeply integrated
+3. **Deciders** - has Clinical/Planner/Quality deciders, but they are not connected
 
-## 2. Multi-Agent 架构设计
+## 2. Multi-Agent Architecture Design
 
-### 核心理念
-借鉴 OpenCode、AutoGPT、CrewAI 的设计理念：
-- **每个Agent有明确的角色和职责**
-- **Agent之间通过消息传递协作**
-- **关键输出必须经过独立Agent审核**
-- **支持并行执行和异步通信**
+### Core Concepts
+Drawing on the design philosophies of OpenCode, AutoGPT, and CrewAI:
+- **Each agent has a clear role and responsibility**
+- **Agents collaborate through message passing**
+- **Critical outputs must be reviewed by independent agents**
+- **Supports parallel execution and asynchronous communication**
 
-### 架构图
+### Architecture Diagram
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                      BrachyBot Multi-Agent System                │
@@ -56,15 +56,14 @@ BrachyBot/
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐       │
 │  │  User Input   │───▶│  Router      │───▶│  Planner     │       │
 │  │  (Natural     │    │  Agent       │    │  Agent       │       │
-│  │   Language)   │    │  (任务分发)   │    │  (任务规划)   │       │
+│  │   Language)   │    │  (Dispatch)  │    │  (Planning)  │       │
 │  └──────────────┘    └──────────────┘    └──────┬───────┘       │
-│                                                  │               │
 │                    ┌─────────────────────────────┼────────┐      │
 │                    ▼                             ▼        ▼      │
 │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────┐  │
 │  │  Clinical         │  │  Tool            │  │  Knowledge   │  │
 │  │  Executor         │  │  Executor        │  │  Agent       │  │
-│  │  (临床执行)        │  │  (工具执行)       │  │  (知识检索)   │  │
+│  │  (Clinical)       │  │  (Tool Exec)     │  │  (Knowledge) │  │
 │  └────────┬─────────┘  └────────┬─────────┘  └──────┬───────┘  │
 │           │                      │                    │          │
 │           └──────────────────────┼────────────────────┘          │
@@ -74,32 +73,32 @@ BrachyBot/
 │  │  ┌────────────┐  ┌────────────┐  ┌────────────┐          │   │
 │  │  │  Plan       │  │  Fact      │  │  Safety    │          │   │
 │  │  │  Reviewer   │  │  Checker   │  │  Guardian  │          │   │
-│  │  │  (计划审核)  │  │  (事实核查) │  │  (安全守护) │          │   │
+│  │  │  (Review)   │  │  (Verify)   │  │  (Safety)  │          │   │
 │  │  └────────────┘  └────────────┘  └────────────┘          │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │                                  │                               │
 │                                  ▼                               │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │                    Response Synthesizer                    │   │
-│  │  (综合所有Agent输出，生成最终响应)                            │   │
+│  │  (Synthesizes all agent outputs into the final response)  │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-## 3. Agent 角色定义
+## 3. Agent Role Definitions
 
-### 3.1 Router Agent (路由Agent)
-**职责**: 理解用户意图，分发到正确的执行路径
+### 3.1 Router Agent
+**Responsibility**: Understand user intent and dispatch to the correct execution path
 
 ```python
 class RouterAgent:
-    """分析用户输入，决定调用哪些Agent"""
+    """Analyze user input and decide which agents to invoke"""
     
     def route(self, user_input: str) -> RoutingDecision:
-        # 1. 意图识别
-        # 2. 复杂度评估
-        # 3. 选择执行路径
+        # 1. Intent recognition
+        # 2. Complexity assessment
+        # 3. Select execution path
         return RoutingDecision(
             intent="clinical_planning",
             complexity="high",
@@ -108,165 +107,165 @@ class RouterAgent:
         )
 ```
 
-### 3.2 Planner Agent (规划Agent)
-**职责**: 分解复杂任务为可执行步骤
+### 3.2 Planner Agent
+**Responsibility**: Decompose complex tasks into executable steps
 
 ```python
 class PlannerAgent:
-    """将复杂任务分解为工具调用序列"""
+    """Decompose complex tasks into a sequence of tool calls"""
     
     def plan(self, task: str, context: dict) -> ExecutionPlan:
-        # 1. 分析任务需求
-        # 2. 查询可用工具
-        # 3. 生成执行计划
-        # 4. 优化执行顺序
+        # 1. Analyze task requirements
+        # 2. Query available tools
+        # 3. Generate execution plan
+        # 4. Optimize execution order
         return ExecutionPlan(steps=[...], parallel_groups=[...])
 ```
 
-### 3.3 Clinical Executor (临床执行器)
-**职责**: 执行临床相关的工具调用
+### 3.3 Clinical Executor
+**Responsibility**: Execute clinically related tool calls
 
 ```python
 class ClinicalExecutor:
-    """执行CTV分割、OAR分割、剂量计算等临床工具"""
+    """Execute clinical tools such as CTV segmentation, OAR segmentation, and dose calculation"""
     
     def execute(self, step: PlanStep) -> ToolResult:
-        # 1. 准备工具参数
-        # 2. 调用工具
-        # 3. 验证结果
-        # 4. 记录执行历史
+        # 1. Prepare tool parameters
+        # 2. Invoke tool
+        # 3. Validate results
+        # 4. Record execution history
 ```
 
-### 3.4 Knowledge Agent (知识Agent)
-**职责**: 检索和验证医学知识
+### 3.4 Knowledge Agent
+**Responsibility**: Retrieve and verify medical knowledge
 
 ```python
 class KnowledgeAgent:
-    """RAG检索 + 联网查询 + 事实验证"""
+    """RAG retrieval + web search + fact verification"""
     
     def search(self, query: str) -> KnowledgeResult:
-        # 1. 本地RAG检索
-        # 2. 联网搜索 (如果需要)
-        # 3. 结果验证
-        # 4. 引用追踪
+        # 1. Local RAG retrieval
+        # 2. Web search (if needed)
+        # 3. Result verification
+        # 4. Citation tracking
 ```
 
-### 3.5 Plan Reviewer (计划审核Agent)
-**职责**: 审核治疗计划的质量
+### 3.5 Plan Reviewer
+**Responsibility**: Review the quality of treatment plans
 
 ```python
 class PlanReviewer:
-    """独立审核计划，给出改进建议"""
+    """Independently review the plan and provide improvement suggestions"""
     
     def review(self, plan: dict, dose_metrics: dict) -> ReviewResult:
-        # 1. 剂量学审核
-        # 2. 临床规范审核
-        # 3. 风险评估
-        # 4. 综合评分
+        # 1. Dosimetric review
+        # 2. Clinical guideline review
+        # 3. Risk assessment
+        # 4. Overall scoring
 ```
 
-### 3.6 Fact Checker (事实核查Agent)
-**职责**: 验证信息的准确性和来源
+### 3.6 Fact Checker
+**Responsibility**: Verify the accuracy and sources of information
 
 ```python
 class FactChecker:
-    """验证联网搜索结果和医学知识的准确性"""
+    """Verify the accuracy of web search results and medical knowledge"""
     
     def verify(self, claims: list, sources: list) -> VerificationResult:
-        # 1. 来源验证
-        # 2. 交叉验证
-        # 3. 时效性检查
-        # 4. 置信度评估
+        # 1. Source verification
+        # 2. Cross-validation
+        # 3. Timeliness check
+        # 4. Confidence assessment
 ```
 
-### 3.7 Safety Guardian (安全守护Agent)
-**职责**: 确保输出安全，防止危险操作
+### 3.7 Safety Guardian
+**Responsibility**: Ensure output safety and prevent dangerous operations
 
 ```python
 class SafetyGuardian:
-    """检查所有输出，确保临床安全"""
+    """Inspect all outputs to ensure clinical safety"""
     
     def check(self, action: str, context: dict) -> SafetyResult:
-        # 1. 剂量安全检查
-        # 2. 操作合规检查
-        # 3. 风险预警
-        # 4. 拦截危险操作
+        # 1. Dose safety check
+        # 2. Operation compliance check
+        # 3. Risk alerting
+        # 4. Intercept dangerous operations
 ```
 
-## 4. 质量门控机制 (Quality Gate)
+## 4. Quality Gate Mechanism
 
-### 4.1 触发条件
+### 4.1 Trigger Conditions
 ```python
 QUALITY_GATE_TRIGGERS = {
-    # 必须经过审核的场景
+    # Scenarios requiring mandatory review
     "mandatory": [
-        "dose_evaluation",        # 剂量评估结果
-        "treatment_plan",         # 治疗计划
-        "clinical_recommendation", # 临床建议
-        "web_search_result",      # 联网搜索结果
+        "dose_evaluation",        # Dose evaluation results
+        "treatment_plan",         # Treatment plan
+        "clinical_recommendation", # Clinical recommendation
+        "web_search_result",      # Web search results
     ],
     
-    # 可选审核的场景
+    # Scenarios with optional review
     "optional": [
-        "segmentation_result",    # 分割结果
-        "trajectory_plan",        # 轨迹规划
+        "segmentation_result",    # Segmentation results
+        "trajectory_plan",        # Trajectory planning
     ],
 }
 ```
 
-### 4.2 审核流程
+### 4.2 Review Flow
 ```python
 class QualityGate:
-    """质量门控层"""
+    """Quality gate layer"""
     
     def gate(self, output_type: str, content: dict) -> GateResult:
         if output_type in MANDATORY_TRIGGERS:
-            # 并行调用多个审核Agent
+            # Invoke multiple review agents in parallel
             reviews = parallel([
                 self.plan_reviewer.review(content),
                 self.fact_checker.verify(content),
                 self.safety_guardian.check(content),
             ])
             
-            # 综合判断
+            # Overall judgment
             return self._synthesize_reviews(reviews)
         
         return GateResult(passed=True)
 ```
 
-## 5. 实现方案
+## 5. Implementation Plan
 
-### 5.1 新增文件结构
+### 5.1 New File Structure
 ```
 BrachyBot/
-├── agents/                    # 新增：Agent目录
+├── agents/                    # New: Agent directory
 │   ├── __init__.py
-│   ├── base_agent.py          # Agent基类
-│   ├── router_agent.py        # 路由Agent
-│   ├── planner_agent.py       # 规划Agent
-│   ├── clinical_executor.py   # 临床执行器
-│   ├── knowledge_agent.py     # 知识Agent
-│   ├── plan_reviewer.py       # 计划审核Agent
-│   ├── fact_checker.py        # 事实核查Agent
-│   ├── safety_guardian.py     # 安全守护Agent
-│   └── response_synthesizer.py # 响应合成器
+│   ├── base_agent.py          # Agent base class
+│   ├── router_agent.py        # Router Agent
+│   ├── planner_agent.py       # Planner Agent
+│   ├── clinical_executor.py   # Clinical Executor
+│   ├── knowledge_agent.py     # Knowledge Agent
+│   ├── plan_reviewer.py       # Plan Reviewer Agent
+│   ├── fact_checker.py        # Fact Checker Agent
+│   ├── safety_guardian.py     # Safety Guardian Agent
+│   └── response_synthesizer.py # Response Synthesizer
 │
-├── quality/                   # 新增：质量门控
+├── quality/                   # New: Quality gate
 │   ├── __init__.py
-│   ├── quality_gate.py        # 质量门控主逻辑
-│   ├── review_aggregator.py   # 审核结果聚合
-│   └── feedback_loop.py       # 反馈循环
+│   ├── quality_gate.py        # Quality gate main logic
+│   ├── review_aggregator.py   # Review result aggregation
+│   └── feedback_loop.py       # Feedback loop
 │
-└── communication/             # 新增：Agent通信
+└── communication/             # New: Agent communication
     ├── __init__.py
-    ├── message_bus.py          # 消息总线
-    ├── agent_registry.py       # Agent注册表
-    └── protocol.py             # 通信协议
+    ├── message_bus.py          # Message bus
+    ├── agent_registry.py       # Agent registry
+    └── protocol.py             # Communication protocol
 ```
 
-### 5.2 核心接口设计
+### 5.2 Core Interface Design
 
-#### Agent基类
+#### Agent Base Class
 ```python
 # agents/base_agent.py
 from abc import ABC, abstractmethod
@@ -299,12 +298,12 @@ class AgentResponse:
     success: bool
     result: Any
     confidence: float  # 0.0-1.0
-    reasoning: str     # 推理过程
+    reasoning: str     # Reasoning process
     suggestions: List[str] = None
     warnings: List[str] = None
 
 class BaseAgent(ABC):
-    """所有Agent的基类"""
+    """Base class for all agents"""
     
     def __init__(self, role: AgentRole, llm_callback=None):
         self.role = role
@@ -313,12 +312,12 @@ class BaseAgent(ABC):
     
     @abstractmethod
     def process(self, message: AgentMessage) -> AgentResponse:
-        """处理消息并返回响应"""
+        """Process a message and return a response"""
         pass
     
     def send_message(self, receiver: AgentRole, content: Any, 
                      message_type: str = "request") -> AgentMessage:
-        """发送消息给其他Agent"""
+        """Send a message to another agent"""
         msg = AgentMessage(
             sender=self.role,
             receiver=receiver,
@@ -329,11 +328,11 @@ class BaseAgent(ABC):
         return msg
     
     def receive_feedback(self, feedback: AgentMessage):
-        """接收反馈用于自我改进"""
+        """Receive feedback for self-improvement"""
         self.message_history.append(feedback)
 ```
 
-#### 消息总线
+#### Message Bus
 ```python
 # communication/message_bus.py
 from typing import Dict, List, Callable
@@ -341,7 +340,7 @@ from collections import defaultdict
 import asyncio
 
 class MessageBus:
-    """Agent间通信的消息总线"""
+    """Message bus for inter-agent communication"""
     
     def __init__(self):
         self._subscribers: Dict[str, List[Callable]] = defaultdict(list)
@@ -349,30 +348,30 @@ class MessageBus:
         self._history: List[AgentMessage] = []
     
     def subscribe(self, message_type: str, handler: Callable):
-        """订阅消息类型"""
+        """Subscribe to a message type"""
         self._subscribers[message_type].append(handler)
     
     async def publish(self, message: AgentMessage):
-        """发布消息"""
+        """Publish a message"""
         self._history.append(message)
         
-        # 通知订阅者
+        # Notify subscribers
         for handler in self._subscribers.get(message.message_type, []):
             await handler(message)
         
-        # 通知目标Agent的订阅者
+        # Notify subscribers of the target agent
         for handler in self._subscribers.get(message.receiver.value, []):
             await handler(message)
     
     def get_history(self, agent_role: AgentRole = None) -> List[AgentMessage]:
-        """获取消息历史"""
+        """Get message history"""
         if agent_role:
             return [m for m in self._history 
                    if m.sender == agent_role or m.receiver == agent_role]
         return self._history
 ```
 
-#### 质量门控
+#### Quality Gate
 ```python
 # quality/quality_gate.py
 from typing import List, Dict, Any
@@ -380,10 +379,10 @@ from dataclasses import dataclass
 from enum import Enum
 
 class GateDecision(Enum):
-    PASS = "pass"           # 通过
-    CONDITIONAL = "conditional"  # 有条件通过
-    REJECT = "reject"       # 拒绝
-    ESCALATE = "escalate"   # 上报给人类
+    PASS = "pass"           # Pass
+    CONDITIONAL = "conditional"  # Conditional pass
+    REJECT = "reject"       # Reject
+    ESCALATE = "escalate"   # Escalate to human
 
 @dataclass
 class ReviewResult:
@@ -403,9 +402,9 @@ class GateResult:
     requires_human_review: bool = False
 
 class QualityGate:
-    """质量门控层 - 审核所有关键输出"""
+    """Quality gate layer - reviews all critical outputs"""
     
-    # 必须审核的输出类型
+    # Output types requiring mandatory review
     MANDATORY_REVIEWS = {
         "treatment_plan",
         "dose_evaluation", 
@@ -413,7 +412,7 @@ class QualityGate:
         "web_search_medical",
     }
     
-    # 可选审核的输出类型
+    # Output types with optional review
     OPTIONAL_REVIEWS = {
         "segmentation_result",
         "trajectory_plan",
@@ -426,78 +425,78 @@ class QualityGate:
     
     async def review(self, output_type: str, content: Any, 
                     context: Dict = None) -> GateResult:
-        """审核输出"""
+        """Review output"""
         
         if output_type not in self.MANDATORY_REVIEWS:
             if output_type not in self.OPTIONAL_REVIEWS:
                 return GateResult(passed=True, decision=GateDecision.PASS, 
                                 reviews=[], final_message="No review needed")
         
-        # 并行调用审核Agent
+        # Invoke review agents in parallel
         reviews = await self._parallel_review(content, context)
         
-        # 聚合结果
+        # Aggregate results
         gate_result = self._aggregate_reviews(reviews)
         
-        # 记录历史
+        # Record history
         self.review_history.append(gate_result)
         
         return gate_result
     
     async def _parallel_review(self, content: Any, 
                               context: Dict) -> List[ReviewResult]:
-        """并行调用多个审核Agent"""
+        """Invoke multiple review agents in parallel"""
         import asyncio
         
         tasks = []
         
-        # 计划审核
+        # Plan review
         if "plan_reviewer" in self.agents:
             tasks.append(self.agents["plan_reviewer"].review(content, context))
         
-        # 事实核查
+        # Fact check
         if "fact_checker" in self.agents and self._needs_fact_check(content):
             tasks.append(self.agents["fact_checker"].verify(content, context))
         
-        # 安全检查
+        # Safety check
         if "safety_guardian" in self.agents:
             tasks.append(self.agents["safety_guardian"].check(content, context))
         
-        # 并行执行
+        # Parallel execution
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
-        # 过滤异常
+        # Filter exceptions
         valid_results = []
         for r in results:
             if isinstance(r, ReviewResult):
                 valid_results.append(r)
             elif isinstance(r, Exception):
-                # 记录异常但不阻塞
+                # Log exception but do not block
                 pass
         
         return valid_results
     
     def _aggregate_reviews(self, reviews: List[ReviewResult]) -> GateResult:
-        """聚合审核结果"""
+        """Aggregate review results"""
         if not reviews:
             return GateResult(passed=True, decision=GateDecision.PASS,
                             reviews=[], final_message="No reviews available")
         
-        # 计算加权分数
+        # Compute weighted score
         total_weight = sum(r.confidence for r in reviews)
         if total_weight == 0:
             weighted_score = sum(r.score for r in reviews) / len(reviews)
         else:
             weighted_score = sum(r.score * r.confidence for r in reviews) / total_weight
         
-        # 收集所有concerns和suggestions
+        # Collect all concerns and suggestions
         all_concerns = []
         all_suggestions = []
         for r in reviews:
             all_concerns.extend(r.concerns)
             all_suggestions.extend(r.suggestions)
         
-        # 判断决策
+        # Determine decision
         reject_count = sum(1 for r in reviews if r.decision == GateDecision.REJECT)
         escalate_count = sum(1 for r in reviews if r.decision == GateDecision.ESCALATE)
         
@@ -523,20 +522,20 @@ class QualityGate:
         )
 ```
 
-### 5.3 集成到现有系统
+### 5.3 Integration into the Existing System
 
-#### 修改 AgenticSys.py
+#### Modifying AgenticSys.py
 ```python
-# 在 BrachyAgent 中集成 multi-agent system
+# Integrate multi-agent system into BrachyAgent
 class BrachyAgent:
     def __init__(self, ...):
-        # ... 现有初始化代码 ...
+        # ... existing initialization code ...
         
-        # 初始化 multi-agent system
+        # Initialize multi-agent system
         self._init_multi_agent_system()
     
     def _init_multi_agent_system(self):
-        """初始化多Agent系统"""
+        """Initialize the multi-agent system"""
         from agents import (
             RouterAgent, PlannerAgent, ClinicalExecutor,
             KnowledgeAgent, PlanReviewer, FactChecker, 
@@ -545,10 +544,10 @@ class BrachyAgent:
         from quality import QualityGate
         from communication import MessageBus
         
-        # 创建消息总线
+        # Create message bus
         self.message_bus = MessageBus()
         
-        # 创建Agent
+        # Create agents
         self.agents = {
             "router": RouterAgent(llm_callback=self._llm_callback),
             "planner": PlannerAgent(llm_callback=self._llm_callback),
@@ -560,39 +559,39 @@ class BrachyAgent:
             "synthesizer": ResponseSynthesizer(llm_callback=self._llm_callback),
         }
         
-        # 创建质量门控
+        # Create quality gate
         self.quality_gate = QualityGate(self.agents)
     
     async def chat_with_multi_agent(self, message: str):
-        """Multi-agent 版本的 chat"""
+        """Multi-agent version of chat"""
         
-        # 1. Router Agent 分析意图
+        # 1. Router Agent analyzes intent
         routing = await self.agents["router"].process(message)
         
-        # 2. Planner Agent 制定计划
+        # 2. Planner Agent formulates a plan
         if routing.complexity == "high":
             plan = await self.agents["planner"].process(routing)
         else:
             plan = None
         
-        # 3. 执行计划
+        # 3. Execute plan
         results = []
         if plan:
             for step in plan.steps:
-                # Knowledge Agent 检索相关知识
+                # Knowledge Agent retrieves relevant knowledge
                 if step.needs_knowledge:
                     knowledge = await self.agents["knowledge"].process(step)
                     step.context["knowledge"] = knowledge
                 
-                # Clinical Executor 执行
+                # Clinical Executor executes
                 result = await self.agents["clinical"].process(step)
                 results.append(result)
         else:
-            # 简单任务直接执行
+            # Execute simple tasks directly
             result = await self.agents["clinical"].process(message)
             results.append(result)
         
-        # 4. 质量门控审核
+        # 4. Quality gate review
         for result in results:
             if result.needs_review:
                 gate_result = await self.quality_gate.review(
@@ -600,58 +599,58 @@ class BrachyAgent:
                 )
                 
                 if not gate_result.passed:
-                    # 需要修改或上报
+                    # Needs revision or escalation
                     if gate_result.requires_human_review:
                         yield self._format_human_review_request(gate_result)
                     else:
-                        # 根据反馈修改
+                        # Revise based on feedback
                         result = await self._revise_based_on_feedback(
                             result, gate_result.reviews
                         )
         
-        # 5. 合成最终响应
+        # 5. Synthesize final response
         response = await self.agents["synthesizer"].process(results)
         
         yield response
 ```
 
-## 6. 与 OpenCode 等开源库的对比
+## 6. Comparison with Open Source Libraries Such as OpenCode
 
-### OpenCode 的特点
-1. **Subagent 机制**: 每个复杂任务派出独立的 subagent
-2. **Tool 隔离**: 每个 subagent 有自己的工具集
-3. **结果聚合**: 主 agent 综合所有 subagent 的结果
+### OpenCode's Characteristics
+1. **Subagent mechanism**: dispatch an independent subagent for each complex task
+2. **Tool isolation**: each subagent has its own tool set
+3. **Result aggregation**: the main agent synthesizes results from all subagents
 
-### BrachyBot 的增强
-1. **专业化的 Agent**: 针对临床场景的 specialized agents
-2. **质量门控**: 独立的审核层，确保输出安全
-3. **知识验证**: 事实核查 agent，防止幻觉
-4. **反馈循环**: 基于审核结果的持续改进
+### BrachyBot's Enhancements
+1. **Specialized agents**: agents specialized for clinical scenarios
+2. **Quality gate**: an independent review layer to ensure output safety
+3. **Knowledge verification**: a fact-checking agent to prevent hallucinations
+4. **Feedback loop**: continuous improvement based on review results
 
-## 7. 实施路线图
+## 7. Implementation Roadmap
 
-### Phase 1: 基础框架 (1-2周)
-- [ ] 创建 `agents/` 目录和基类
-- [ ] 实现 `MessageBus` 消息总线
-- [ ] 实现 `RouterAgent` 路由Agent
+### Phase 1: Foundation Framework (1-2 weeks)
+- [ ] Create the `agents/` directory and base classes
+- [ ] Implement the `MessageBus` message bus
+- [ ] Implement the `RouterAgent` router agent
 
-### Phase 2: 核心Agent (2-3周)
-- [ ] 实现 `PlanReviewer` 计划审核Agent
-- [ ] 实现 `FactChecker` 事实核查Agent
-- [ ] 实现 `SafetyGuardian` 安全守护Agent
-- [ ] 实现 `QualityGate` 质量门控
+### Phase 2: Core Agents (2-3 weeks)
+- [ ] Implement the `PlanReviewer` plan review agent
+- [ ] Implement the `FactChecker` fact-checking agent
+- [ ] Implement the `SafetyGuardian` safety guardian agent
+- [ ] Implement the `QualityGate` quality gate
 
-### Phase 3: 集成测试 (1-2周)
-- [ ] 集成到 `AgenticSys.py`
-- [ ] 修改 `chat_with_stream()` 使用 multi-agent
-- [ ] 添加前端展示审核结果
+### Phase 3: Integration Testing (1-2 weeks)
+- [ ] Integrate into `AgenticSys.py`
+- [ ] Modify `chat_with_stream()` to use multi-agent
+- [ ] Add frontend display of review results
 
-### Phase 4: 优化迭代 (持续)
-- [ ] 收集用户反馈
-- [ ] 优化 Agent 提示词
-- [ ] 添加更多 specialized agents
+### Phase 4: Optimization and Iteration (Continuous)
+- [ ] Collect user feedback
+- [ ] Optimize agent prompts
+- [ ] Add more specialized agents
 
-## 8. 配置示例
+## 8. Configuration Example
 
 ```yaml
 # config/multi_agent.yaml
@@ -660,7 +659,7 @@ multi_agent:
   
   agents:
     router:
-      model: "deepseek"  # 使用便宜的模型做路由
+      model: "deepseek"  # Use a cheaper model for routing
       temperature: 0.1
     
     planner:
@@ -668,7 +667,7 @@ multi_agent:
       temperature: 0.2
     
     plan_reviewer:
-      model: "deepseek"  # 使用更强的模型做审核
+      model: "deepseek"  # Use a stronger model for review
       temperature: 0.1
       personas:
         - name: "Dosimetry Expert"
@@ -680,7 +679,7 @@ multi_agent:
     
     fact_checker:
       model: "deepseek"
-      temperature: 0.0  # 事实核查用低温度
+      temperature: 0.0  # Low temperature for fact checking
       sources:
         - "pubmed"
         - "nccn_guidelines"
@@ -713,73 +712,73 @@ multi_agent:
     parallel_execution: true
 ```
 
-## 9. 示例场景
+## 9. Example Scenarios
 
-### 场景1: 治疗计划审核
+### Scenario 1: Treatment Plan Review
 ```
-用户: "请为这个胰腺癌患者生成治疗计划"
+User: "Please generate a treatment plan for this pancreatic cancer patient"
 
-[Router Agent] → 识别为复杂临床任务
-[Planner Agent] → 制定执行计划:
-  1. CTV分割
-  2. OAR分割  
-  3. 轨迹规划
-  4. 种子规划
-  5. 剂量计算
-  6. 剂量评估
+[Router Agent] → Recognized as a complex clinical task
+[Planner Agent] → Formulates an execution plan:
+  1. CTV segmentation
+  2. OAR segmentation
+  3. Trajectory planning
+  4. Seed planning
+  5. Dose calculation
+  6. Dose evaluation
 
-[Clinical Executor] → 按计划执行步骤1-6
+[Clinical Executor] → Executes steps 1-6 as planned
 
-[Quality Gate] → 触发审核
-  [Plan Reviewer] → 检查剂量学参数
-    - D90: 0.75 (偏低，建议增加种子)
-    - V100: 80.3% (低于95%目标)
-    - Score: 41/100 (需要改进)
+[Quality Gate] → Triggers review
+  [Plan Reviewer] → Checks dosimetric parameters
+    - D90: 0.75 (low, consider adding seeds)
+    - V100: 80.3% (below the 95% target)
+    - Score: 41/100 (needs improvement)
   
-  [Safety Guardian] → 安全检查
-    - 最大剂量70.26 (需要确认OAR耐受)
-    - 建议检查十二指肠受量
+  [Safety Guardian] → Safety check
+    - Max dose 70.26 (needs confirmation of OAR tolerance)
+    - Recommend checking duodenum dose
 
-[Response Synthesizer] → 综合生成响应
-  - 展示计划结果
-  - 显示审核意见
-  - 提供改进建议
+[Response Synthesizer] → Synthesizes the response
+  - Present plan results
+  - Show review comments
+  - Provide improvement suggestions
 ```
 
-### 场景2: 联网搜索验证
+### Scenario 2: Web Search Verification
 ```
-用户: "胰腺癌粒子植入的最新指南是什么？"
+User: "What are the latest guidelines for pancreatic cancer seed implantation?"
 
-[Router Agent] → 识别为知识查询
-[Knowledge Agent] → 联网搜索
-  - 搜索结果: NCCN指南2024版...
+[Router Agent] → Recognized as a knowledge query
+[Knowledge Agent] → Web search
+  - Search result: NCCN Guidelines 2024 edition...
 
-[Quality Gate] → 触发事实核查
-  [Fact Checker] → 验证搜索结果
-    - 来源: nccn.org ✓
-    - 时效性: 2024年 ✓
-    - 引用: 有具体引用 ✓
-    - 置信度: 0.9
+[Quality Gate] → Triggers fact checking
+  [Fact Checker] → Verifies search results
+    - Source: nccn.org ✓
+    - Timeliness: 2024 ✓
+    - Citations: specific citations present ✓
+    - Confidence: 0.9
 
-[Response Synthesizer] → 生成响应
-  - 展示指南内容
-  - 标注来源和置信度
-  - 提供引用链接
+[Response Synthesizer] → Generates response
+  - Present guideline content
+  - Annotate sources and confidence
+  - Provide citation links
 ```
 
-## 10. 总结
+## 10. Summary
 
-本方案的核心优势:
+Core advantages of this approach:
 
-1. **专业化分工**: 每个Agent专注自己的领域
-2. **质量门控**: 关键输出必须经过独立审核
-3. **事实验证**: 防止LLM幻觉，确保信息准确
-4. **安全守护**: 临床安全是第一优先级
-5. **可扩展性**: 易于添加新的Agent和规则
-6. **透明性**: 用户可以看到审核过程和结果
+1. **Specialized division of labor**: each agent focuses on its own domain
+2. **Quality gate**: critical outputs must undergo independent review
+3. **Fact verification**: prevent LLM hallucinations and ensure information accuracy
+4. **Safety guardian**: clinical safety is the top priority
+5. **Extensibility**: easy to add new agents and rules
+6. **Transparency**: users can see the review process and results
 
-与现有系统的兼容性:
-- 基于现有的 `MultiAgentCritic` 扩展
-- 利用现有的 `EnhancedAgentIntegration` 框架
-- 复用现有的 LLM Router 和 Provider
-- 保持与前端的 SSE 流式通信
+Compatibility with the existing system:
+- Extends the existing `MultiAgentCritic`
+- Leverages the existing `EnhancedAgentIntegration` framework
+- Reuses the existing LLM Router and Provider
+- Maintains SSE streaming communication with the frontend

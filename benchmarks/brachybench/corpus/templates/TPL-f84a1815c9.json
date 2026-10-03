@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "precision",
+  "expectation": null,
+  "facet": "precision",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Calculate total air-kerma strength (90 seeds x 0.5 U), dose-rate at prescription point (Lambda=1.27 cGy/U/hr), and time to deliver 145 Gy. Discuss I-125 decay (t1/2=59.4 days).",
+  "source_refs": [
+    "INT-2c729662b9a8",
+    "INT-93eb474f4241"
+  ],
+  "template_id": "TPL-f84a1815c9"
+}

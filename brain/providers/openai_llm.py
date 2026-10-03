@@ -115,7 +115,7 @@ class OpenAILLM(BaseLLM):
                     args = json.loads(tc.function.arguments)
                 except json.JSONDecodeError:
                     args = tc.function.arguments
-                # Flat format: {"id", "name", "arguments"} 鈥?NOT nested under "function".
+                # Flat format: {"id", "name", "arguments"} — NOT nested under "function".
                 # Consumers in agent_runtime.llm_runtime handle both flat and nested formats.
                 # Some providers (qwen, deepseek, etc.) use nested {"function": {"name", "arguments"}}.
                 tool_calls.append({

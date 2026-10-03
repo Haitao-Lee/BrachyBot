@@ -1,0 +1,15 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "oar_segmentation",
+  "expectation": null,
+  "facet": "oar_segmentation",
+  "gold_status": "draft",
+  "n_source_intents": 3,
+  "representative_text": "For an endometrial cancer case receiving vaginal cuff brachytherapy, please segment the OARs. The patient is post-hysterectomy. Segment the bladder, rectum, sigmoid colon, and the small bowel loops adjacent to the vaginal cuff.",
+  "source_refs": [
+    "INT-718e67eaac5b",
+    "INT-cebb34a4b0d1",
+    "INT-de49d040e691"
+  ],
+  "template_id": "TPL-e3f0573508"
+}

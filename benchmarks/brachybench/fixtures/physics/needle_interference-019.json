@@ -1,0 +1,43 @@
+{
+  "config": {
+    "mechanism": "needle/parallel",
+    "mode": "parallel",
+    "predicted_risk": "overlap",
+    "s": [
+      [
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        19.618595171147785,
+        0.0,
+        0.0
+      ]
+    ],
+    "t": [
+      [
+        0.0,
+        4.04193634953413,
+        0.0
+      ],
+      [
+        19.618595171147785,
+        4.04193634953413,
+        0.0
+      ]
+    ]
+  },
+  "expected": {
+    "evidence_gap_codes": [],
+    "score": 0.0,
+    "verdict": "fail",
+    "violation_codes": [
+      "interference_false_positive"
+    ]
+  },
+  "family": "needle_interference",
+  "id": "needle_interference-019",
+  "initial_state_hash": "sha256:ef90012dc291017ad3453e217f2a9356a26125f290fb629b005d4f4a346658b2",
+  "seed": 20260929
+}

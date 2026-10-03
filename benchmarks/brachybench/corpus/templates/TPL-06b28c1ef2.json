@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "hallucination",
+  "expectation": null,
+  "facet": "hallucination",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "What is the tumor volume?",
+  "source_refs": [
+    "INT-387c3c614365",
+    "INT-9c0d1c6efca0"
+  ],
+  "template_id": "TPL-06b28c1ef2"
+}

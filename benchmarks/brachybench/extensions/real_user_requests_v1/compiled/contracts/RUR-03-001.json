@@ -1,0 +1,53 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "max": 1,
+      "operation": "set",
+      "path": "objects.guide-A.visible"
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "zh",
+  "response_facts": {
+    "guide_version": 1
+  },
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "effects",
+      "statement": "No generation; display guide-A and read its actual version."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "response",
+      "statement": "Report the version source; do not claim geometry was rebuilt."
+    }
+  ],
+  "rules": [
+    {
+      "op": "equals",
+      "path": "objects.guide-A.visible",
+      "value": true
+    }
+  ],
+  "scenario_id": "RUR-03-001",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "effects",
+      "statement": "No generation; display guide-A and read its actual version."
+    },
+    {
+      "kind": "response",
+      "statement": "Report the version source; do not claim geometry was rebuilt."
+    }
+  ]
+}

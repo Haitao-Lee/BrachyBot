@@ -1,0 +1,789 @@
+# BrachyBench Capability Registry (DESIGN §32)
+# Machine-readable census of BrachyBot capabilities and required test dimensions.
+generated_from: /home/lht/snap/brachyplan/BrachyBot
+version: '1.0'
+dimensions:
+  F: functional_happy_path
+  E: edge_boundary
+  P: paraphrase_expression
+  S: safety_authorization
+  R: recovery_error
+  I: interop_roundtrip
+  A: audit_trace
+domains:
+  - id: dose
+    capabilities:
+      - id: dose_engine
+        path: tool_factory/dose_engine
+        kind: tool
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: dose_eval
+        path: tool_factory/dose_eval
+        kind: tool
+        mutates: false
+        required_dims: [F, E, R]
+      - id: dose_pre:dose_unet
+        path: plans/dose_pre/dose_unet.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, I]
+      - id: dose_pre:evaluation_inputs
+        path: plans/dose_pre/evaluation_inputs.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, I]
+      - id: dose_pre:inference
+        path: plans/dose_pre/inference.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, I]
+      - id: dose_pre:model_loader
+        path: plans/dose_pre/model_loader.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, I]
+  - id: guide
+    capabilities:
+      - id: surgical_guide
+        path: tool_factory/surgical_guide
+        kind: tool
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+  - id: imaging
+    capabilities:
+      - id: image_processing
+        path: tool_factory/image_processing
+        kind: tool
+        mutates: false
+        required_dims: [F, E, R]
+  - id: io
+    capabilities:
+      - id: doc_reader
+        path: tool_factory/doc_reader
+        kind: tool
+        mutates: false
+        required_dims: [F, E, P, R]
+      - id: filesystem_browser
+        path: tool_factory/filesystem_browser
+        kind: tool
+        mutates: false
+        required_dims: [F, E, P, R]
+      - id: input
+        path: tool_factory/input
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A, I]
+  - id: knowledge
+    capabilities:
+      - id: case_memory
+        path: tool_factory/case_memory
+        kind: tool
+        mutates: false
+        required_dims: [F, E, P, R]
+      - id: clinical_kb
+        path: tool_factory/clinical_kb
+        kind: tool
+        mutates: false
+        required_dims: [F, E, P, R]
+      - id: performance_tracker
+        path: tool_factory/performance_tracker
+        kind: tool
+        mutates: false
+        required_dims: [F, E, P, R]
+      - id: safety_validator
+        path: tool_factory/safety_validator
+        kind: tool
+        mutates: false
+        required_dims: [F, E, P, R]
+  - id: memory
+    capabilities:
+      - id: memory:context_optimizer
+        path: memory/context_optimizer.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: memory:experience_memory
+        path: memory/experience_memory.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: memory:interaction_memory
+        path: memory/interaction_memory.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: memory:language
+        path: memory/language.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: memory:layered_memory
+        path: memory/layered_memory.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: memory:preference_store
+        path: memory/preference_store.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: memory:reflexion_engine
+        path: memory/reflexion_engine.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: memory:self_evolution
+        path: memory/self_evolution.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: memory:skill_crystallizer
+        path: memory/skill_crystallizer.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: memory:skill_learner
+        path: memory/skill_learner.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: memory:smart_context
+        path: memory/smart_context.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: memory:user_profile
+        path: memory/user_profile.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+  - id: planning
+    capabilities:
+      - id: plan_comparator
+        path: tool_factory/plan_comparator
+        kind: tool
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: plan_quality
+        path: tool_factory/plan_quality
+        kind: tool
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: seed_plan
+        path: tool_factory/seed_plan
+        kind: tool
+        mutates: false
+        required_dims: [F, E, R]
+      - id: traj_plan
+        path: tool_factory/traj_plan
+        kind: tool
+        mutates: false
+        required_dims: [F, E, R]
+  - id: report
+    capabilities:
+      - id: report_generator
+        path: tool_factory/report_generator
+        kind: tool
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: output
+        path: tool_factory/output
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A, I]
+  - id: retrieval
+    capabilities:
+      - id: web_access
+        path: tool_factory/web_access
+        kind: tool
+        mutates: false
+        required_dims: [F, E, P, R]
+      - id: web_fetch
+        path: tool_factory/web_fetch
+        kind: tool
+        mutates: false
+        required_dims: [F, E, P, R]
+      - id: web_search
+        path: tool_factory/web_search
+        kind: tool
+        mutates: false
+        required_dims: [F, E, P, R]
+  - id: runtime
+    capabilities:
+      - id: runtime:action_plan
+        path: agent_runtime/action_plan.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: runtime:answer_coverage
+        path: agent_runtime/answer_coverage.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: runtime:artifact_analysis
+        path: agent_runtime/artifact_analysis.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: runtime:chat_workflows
+        path: agent_runtime/chat_workflows.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: runtime:context_window
+        path: agent_runtime/context_window.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: runtime:contracts
+        path: agent_runtime/contracts.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: runtime:core
+        path: agent_runtime/core.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: runtime:execution_authorization
+        path: agent_runtime/execution_authorization.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: runtime:intent_boundary
+        path: agent_runtime/intent_boundary.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: runtime:llm_runtime
+        path: agent_runtime/llm_runtime.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: runtime:request_parse
+        path: agent_runtime/request_parse.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: runtime:response_contract
+        path: agent_runtime/response_contract.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: runtime:response_tools
+        path: agent_runtime/response_tools.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: runtime:shortcut_contract
+        path: agent_runtime/shortcut_contract.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: runtime:step_execution
+        path: agent_runtime/step_execution.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: runtime:turn_policy
+        path: agent_runtime/turn_policy.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: runtime:ui_operations
+        path: agent_runtime/ui_operations.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: runtime:visual_evidence
+        path: agent_runtime/visual_evidence.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+  - id: safety
+    capabilities:
+      - id: safety:authorization
+        path: -
+        kind: cross-cutting
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: safety:tenant_isolation
+        path: -
+        kind: cross-cutting
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: safety:session_isolation
+        path: -
+        kind: cross-cutting
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: safety:path_traversal
+        path: -
+        kind: cross-cutting
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: safety:ssrf
+        path: -
+        kind: cross-cutting
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: safety:prompt_injection
+        path: -
+        kind: cross-cutting
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: safety:exec_boundary
+        path: -
+        kind: cross-cutting
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: safety:codegen_escape
+        path: -
+        kind: cross-cutting
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+  - id: segmentation
+    capabilities:
+      - id: CTV_seg
+        path: tool_factory/CTV_seg
+        kind: tool
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: OAR_seg
+        path: tool_factory/OAR_seg
+        kind: tool
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: seed_seg
+        path: tool_factory/seed_seg
+        kind: tool
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+  - id: tools_exec
+    capabilities:
+      - id: code_executor
+        path: tool_factory/code_executor
+        kind: tool
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: env_manager
+        path: tool_factory/env_manager
+        kind: tool
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: shell_executor
+        path: tool_factory/shell_executor
+        kind: tool
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: tool_creator
+        path: tool_factory/tool_creator
+        kind: tool
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+  - id: ui
+    capabilities:
+      - id: ui_annotate
+        path: tool_factory/ui_annotate
+        kind: tool
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: ui_content
+        path: tool_factory/ui_content
+        kind: tool
+        mutates: false
+        required_dims: [F, E, R]
+      - id: ui_controller
+        path: tool_factory/ui_controller
+        kind: tool
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: ui_inspector
+        path: tool_factory/ui_inspector
+        kind: tool
+        mutates: false
+        required_dims: [F, E, P, R]
+      - id: ui_screenshot
+        path: tool_factory/ui_screenshot
+        kind: tool
+        mutates: false
+        required_dims: [F, E, R]
+      - id: viewer_command
+        path: tool_factory/viewer_command
+        kind: tool
+        mutates: false
+        required_dims: [F, E, R]
+  - id: web_service
+    capabilities:
+      - id: web:auth
+        path: web/auth.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: web:chat_tasks
+        path: web/chat_tasks.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: web:export_service
+        path: web/export_service.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: web:guide_generation_runtime
+        path: web/guide_generation_runtime.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: web:manual_step_outputs
+        path: web/manual_step_outputs.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: web:monitor_changes
+        path: web/monitor_changes.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: web:monitor_engine
+        path: web/monitor_engine.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: web:planning_runs
+        path: web/planning_runs.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: web:public_server
+        path: web/public_server.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: web:server
+        path: web/server.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: web:server_support
+        path: web/server_support.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: web:structure_service
+        path: web/structure_service.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: web:surgical_guide
+        path: web/surgical_guide.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: web:ui_detailed_capture
+        path: web/ui_detailed_capture.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: web:ui_screenshot_audit
+        path: web/ui_screenshot_audit.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: web:ui_screenshot_audit2
+        path: web/ui_screenshot_audit2.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: web:uploaded_mask_service
+        path: web/uploaded_mask_service.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: web:viewer_cache
+        path: web/viewer_cache.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: web:workspace_store
+        path: web/workspace_store.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: route:data_routes
+        path: web/routes/data_routes.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: route:planning_routes
+        path: web/routes/planning_routes.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: route:session_routes
+        path: web/routes/session_routes.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: route:surgical_guide_routes
+        path: web/routes/surgical_guide_routes.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: route:viewer_routes
+        path: web/routes/viewer_routes.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+  - id: skills
+    capabilities:
+      - id: skills:registry
+        path: skills/skill_base.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, P, R, A]
+      - id: skills:markdown_loader
+        path: skills/markdown_loader.py
+        kind: module
+        mutates: false
+        required_dims: [F, E, P, I]
+      - id: skills:templates
+        path: skills/advanced_skills.py
+        kind: module
+        mutates: false
+        required_dims: [F, E, P]
+  - id: utils
+    capabilities:
+      - id: utils:ct_volume
+        path: utils/ct_volume.py
+        kind: module
+        mutates: false
+        required_dims: [F, E, I]
+      - id: utils:display_paths
+        path: utils/display_paths.py
+        kind: module
+        mutates: false
+        required_dims: [F, E, S, I]
+      - id: utils:planning_metrics
+        path: utils/planning_metrics.py
+        kind: module
+        mutates: false
+        required_dims: [F, E, P, I]
+      - id: utils:user_errors
+        path: utils/user_errors.py
+        kind: module
+        mutates: false
+        required_dims: [F, E, P, R, S]
+      - id: utils:cancellation
+        path: utils/cancellation.py
+        kind: module
+        mutates: false
+        required_dims: [F, R]
+  - id: plans
+    capabilities:
+      - id: plans:core
+        path: plans/core.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, R]
+      - id: plans:utilizations
+        path: plans/utilizations.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, I]
+      - id: plans:geometry
+        path: plans/geometry.py
+        kind: module
+        mutates: false
+        required_dims: [F, E, S]
+      - id: plans:reinforcement
+        path: plans/reinforcement.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, R]
+      - id: plans:coverage_repair
+        path: plans/coverage_repair.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, R]
+      - id: plans:brachy_plan
+        path: plans/brachy_plan_v2.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, R]
+      - id: plans:device_manager
+        path: plans/device_manager.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, R, A]
+      - id: plans:planning_preview
+        path: plans/planning_preview.py
+        kind: module
+        mutates: false
+        required_dims: [F, E, R, A]
+      - id: plans:reward_metrics
+        path: plans/reward_metrics.py
+        kind: module
+        mutates: false
+        required_dims: [F, E]
+      - id: plans:rl_status
+        path: plans/rl_status.py
+        kind: module
+        mutates: false
+        required_dims: [F, E, A]
+      - id: plans:guide_geometry
+        path: plans/guide_geometry.py
+        kind: module
+        mutates: false
+        required_dims: [F, E, S]
+      - id: plans:performance
+        path: plans/performance.py
+        kind: module
+        mutates: false
+        required_dims: [F, A]
+  - id: brain
+    capabilities:
+      - id: brain:router
+        path: brain/core/router.py
+        kind: module
+        mutates: false
+        required_dims: [F, E, R, A]
+      - id: brain:providers
+        path: brain/providers
+        kind: module
+        mutates: false
+        required_dims: [F, E, R, I]
+      - id: brain:knowledge_rag
+        path: brain/knowledge/rag.py
+        kind: module
+        mutates: false
+        required_dims: [F, E, P, I]
+      - id: brain:multi_agent_critic
+        path: brain/core/multi_agent_critic.py
+        kind: module
+        mutates: false
+        required_dims: [F, E, S, A]
+      - id: brain:deciders
+        path: brain/deciders
+        kind: module
+        mutates: false
+        required_dims: [F, E, P, S]
+      - id: brain:execution
+        path: brain/execution
+        kind: module
+        mutates: false
+        required_dims: [F, E, R]
+      - id: brain:integration
+        path: brain/integration
+        kind: module
+        mutates: true
+        required_dims: [F, E, R, A]
+      - id: brain:tool_registry
+        path: brain/core/tool_registry.py
+        kind: module
+        mutates: false
+        required_dims: [F, E, I]
+      - id: brain:tool_code_writer
+        path: brain/core/tool_code_writer.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, S, R]
+  - id: agents
+    capabilities:
+      - id: agents:router
+        path: agents/router_agent.py
+        kind: module
+        mutates: false
+        required_dims: [F, E, P]
+      - id: agents:plan_reviewer
+        path: agents/plan_reviewer.py
+        kind: module
+        mutates: false
+        required_dims: [F, E, S, P]
+      - id: agents:safety_guardian
+        path: agents/safety_guardian.py
+        kind: module
+        mutates: false
+        required_dims: [F, E, S]
+      - id: agents:fact_checker
+        path: agents/fact_checker.py
+        kind: module
+        mutates: false
+        required_dims: [F, E, S]
+      - id: agents:completeness_checker
+        path: agents/completeness_checker.py
+        kind: module
+        mutates: false
+        required_dims: [F, E, P]
+      - id: agents:clinical_metrics
+        path: agents/clinical_metrics.py
+        kind: module
+        mutates: false
+        required_dims: [F, E, I]
+      - id: agents:orchestrator
+        path: agents/orchestrator.py
+        kind: module
+        mutates: false
+        required_dims: [F, E, S, A]
+  - id: quality
+    capabilities:
+      - id: quality:gate
+        path: quality/quality_gate.py
+        kind: module
+        mutates: false
+        required_dims: [F, E, S, A]
+  - id: tools_misc
+    capabilities:
+      - id: dose_recompute
+        path: tool_factory/dose_recompute.py
+        kind: tool
+        mutates: true
+        required_dims: [F, E, P, S, R, A]
+      - id: tool_factory:plan_shapes
+        path: tool_factory/plan_shapes.py
+        kind: module
+        mutates: false
+        required_dims: [F, E]
+      - id: imaging:segmentation_alignment
+        path: tool_factory/segmentation_alignment.py
+        kind: module
+        mutates: false
+        required_dims: [F, E, I]
+      - id: report:facts
+        path: tool_factory/report_facts.py
+        kind: module
+        mutates: false
+        required_dims: [F, E]
+      - id: report:context
+        path: tool_factory/report_context.py
+        kind: module
+        mutates: false
+        required_dims: [F, E, P]
+      - id: planning:pipeline
+        path: tool_factory/seed_plan/planning_pipeline.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, R]
+      - id: config:prompt_modules
+        path: config/prompts/__init__.py
+        kind: module
+        mutates: false
+        required_dims: [F, E, S]
+      - id: agent:facade
+        path: AgenticSys.py
+        kind: module
+        mutates: true
+        required_dims: [F, E, S, A]
+  - id: runtime_boundary
+    capabilities:
+      - id: runtime:degenerate_input_robustness
+        path: agent_runtime/intent_boundary.py
+        kind: cross-cutting
+        mutates: false
+        required_dims: [F, E, P, S, R, A]
+      - id: runtime:tool_invocation_boundary
+        path: agent_runtime/turn_policy.py
+        kind: cross-cutting
+        mutates: false
+        required_dims: [F, E, P, S, A]

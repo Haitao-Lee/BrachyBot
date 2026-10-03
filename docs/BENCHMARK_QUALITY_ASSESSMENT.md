@@ -1,167 +1,167 @@
-# BrachyBot Benchmark 质量评估报告
+# BrachyBot Benchmark Quality Assessment Report
 
-**评估日期:** 2026-06-01 (更新)
-**评估范围:** 889 个测试用例 (去重后)
-**评估目标:** 用户多样性、问题真实性、覆盖完整性
+**Assessment date:** 2026-06-01 (updated)
+**Scope:** 889 test cases (after deduplication)
+**Assessment goals:** user diversity, question realism, coverage completeness
 
 ---
 
-## 一、总体评估
+## 1. Overall Assessment
 
-| 维度 | 上次评分 | 本次评分 | 变化 |
+| Dimension | Previous score | Current score | Change |
 |------|---------|---------|------|
-| **用户多样性** | 6/10 | **8/10** | - |
-| **问题真实性** | 5/10 | **8/10** | - |
-| **覆盖完整性** | 7/10 | **9/10** | ⬆️ +1 |
-| **语言多样性** | 7/10 | **9/10** | - |
-| **难度梯度** | 5/10 | **8/10** | - |
-| **去重质量** | 5/10 | **9/10** | ⬆️ +4 |
-| **工具覆盖** | 6/10 | **9/10** | ⬆️ +3 |
-| **总体** | **6/10** | **8.5/10** | ⬆️ +0.3 |
+| **User diversity** | 6/10 | **8/10** | - |
+| **Question realism** | 5/10 | **8/10** | - |
+| **Coverage completeness** | 7/10 | **9/10** | ⬆️ +1 |
+| **Language diversity** | 7/10 | **9/10** | - |
+| **Difficulty gradient** | 5/10 | **8/10** | - |
+| **Deduplication quality** | 5/10 | **9/10** | ⬆️ +4 |
+| **Tool coverage** | 6/10 | **9/10** | ⬆️ +3 |
+| **Overall** | **6/10** | **8.5/10** | ⬆️ +0.3 |
 
 ---
 
-## 二、重大改进
+## 2. Major Improvements
 
-### 2.1 用户性格多样性 (6→8)
+### 2.1 User Personality Diversity (6→8)
 
-**新增性格类型:**
+**New personality types:**
 
-| 性格类型 | 案例 | 文件 |
+| Personality type | Example | File |
 |---------|------|------|
-| **焦虑的初学者** | "我之前没用过AI做计划的工具" | 01_greeting.json G007 |
-| **压力下的用户** | "15分钟后要给病人做治疗，快帮我看看！" | 01_greeting.json G009 |
-| **疲惫的夜班人员** | "连续第三个夜班了，脑子不太转了" | 01_greeting.json G020 |
-| **完美主义专家** | "V150是28%，能不能优化到25%以下？" | 01_greeting.json G018 |
-| **怀疑者** | "我不太觉得AI能做好近距离治疗计划" | 01_greeting.json G019 |
-| **患者家属** | "我是患者家属，想了解一下近距离治疗" | 01_greeting.json G028 |
+| **Anxious beginner** | "I haven't used an AI planning tool before" | 01_greeting.json G007 |
+| **User under pressure** | "I have to treat a patient in 15 minutes, help me take a look quickly!" | 01_greeting.json G009 |
+| **Exhausted night-shift staff** | "Third night shift in a row, my brain isn't working well" | 01_greeting.json G020 |
+| **Perfectionist expert** | "V150 is 28%, can you optimize it below 25%?" | 01_greeting.json G018 |
+| **Skeptic** | "I don't really think AI can do brachytherapy planning well" | 01_greeting.json G019 |
+| **Patient's family member** | "I'm a patient's family member and would like to learn about brachytherapy" | 01_greeting.json G028 |
 
-**✅ 改进显著**
+**✅ Significant improvement**
 
-### 2.2 问题真实性 (5→8)
+### 2.2 Question Realism (5→8)
 
-**改进前的问题:**
+**Problems before improvement:**
 ```json
-// 模板化
-{"input": "分割"}
-{"input": "计算"}
+// Templated
+{"input": "segment"}
+{"input": "compute"}
 ```
 
-**改进后的真实表达:**
+**Realistic expressions after improvement:**
 ```json
-// 自然的澄清请求 (16_clarification.json)
-{"input": "可以帮我重新分割一下吗？"}
+// Natural clarification requests (16_clarification.json)
+{"input": "Can you re-segment this for me?"}
 {"input": "That's not what I meant — the bladder, not the rectum."}
-{"input": "我点错了，能再来一次吗？"}
+{"input": "I clicked the wrong thing, can we try again?"}
 ```
 
-**✅ 不再使用单字机械输入**
+**✅ No longer uses single-word mechanical input**
 
-### 2.3 中等复杂度问题 (新增)
+### 2.3 Medium-Complexity Questions (new)
 
-**23_medium_complexity.json - 新增55个中等复杂度问题:**
+**23_medium_complexity.json - 55 new medium-complexity questions:**
 
-| 问题类型 | 示例 |
+| Question type | Example |
 |---------|------|
-| 剂量咨询 | "前列腺癌近距离治疗处方剂量是多少？" |
-| OAR约束 | "宫颈癌HDR的OAR约束标准是什么？" |
-| 计划评估 | "我刚做的计划DVH怎么样？" |
-| 设备故障 | "我的afterloader报警了，怎么办？" |
-| 指南咨询 | "TG-43和TG-137有什么区别？" |
+| Dose consultation | "What is the prescription dose for prostate cancer brachytherapy?" |
+| OAR constraints | "What are the OAR constraint standards for cervical cancer HDR?" |
+| Plan evaluation | "How is the DVH of the plan I just made?" |
+| Equipment failure | "My afterloader is alarming, what should I do?" |
+| Guideline consultation | "What is the difference between TG-43 and TG-137?" |
 
-**✅ 填补了难度梯度空白**
+**✅ Filled the difficulty-gradient gap**
 
-### 2.4 多语言医学场景 (4→9)
+### 2.4 Multilingual Medical Scenarios (4→9)
 
-**改进前 (4/10):**
+**Before improvement (4/10):**
 ```json
-// 只有问候语
+// Greetings only
 {"input": "Bonjour", "expected_keywords": ["你好", "bonjour"]}
 ```
 
-**改进后 (9/10):**
+**After improvement (9/10):**
 ```json
-// 医学场景多语言 (13_multilingual.json)
-ML001: "请问前列腺癌的近距离治疗处方剂量一般是多少？" (中文医学查询)
-ML007: "このCTのspacingとdimensionを教えてください" (日文)
-ML013: "Quelle est la dose de prescription pour un cancer de l'utérus?" (法文)
-ML010: "这个CT的尺寸...can you analyze this?" (代码切换)
-ML011: "Can you tell me where is the... um... the 肿瘤?" (非母语用户)
+// Multilingual medical scenarios (13_multilingual.json)
+ML001: "请问前列腺癌的近距离治疗处方剂量一般是多少？" (Chinese medical query)
+ML007: "このCTのspacingとdimensionを教えてください" (Japanese)
+ML013: "Quelle est la dose de prescription pour un cancer de l'utérus?" (French)
+ML010: "这个CT的尺寸...can you analyze this?" (code-switching)
+ML011: "Can you tell me where is the... um... the 肿瘤?" (non-native speaker)
 ```
 
-**✅ 新增30个多语言医学场景**
+**✅ 30 new multilingual medical scenarios**
 
 ---
 
-## 三、各文件评估对比
+## 3. Per-File Assessment Comparison
 
-| 文件 | 上次评分 | 本次评分 | 变化 | 主要改进 |
+| File | Previous score | Current score | Change | Main improvements |
 |------|---------|---------|------|---------|
-| 01_greeting.json | 6/10 | **8/10** | ⬆️ | 性格多样性、真实场景 |
-| 13_multilingual.json | 4/10 | **9/10** | ⬆️⬆️ | 医学场景多语言 |
-| 16_clarification.json | 3/10 | **7/10** | ⬆️⬆️ | 无单字输入 |
-| 23_medium_complexity.json | NEW | **8/10** | 🆕 | 中等复杂度填补 |
+| 01_greeting.json | 6/10 | **8/10** | ⬆️ | Personality diversity, realistic scenarios |
+| 13_multilingual.json | 4/10 | **9/10** | ⬆️⬆️ | Multilingual medical scenarios |
+| 16_clarification.json | 3/10 | **7/10** | ⬆️⬆️ | No single-word input |
+| 23_medium_complexity.json | NEW | **8/10** | 🆕 | Medium-complexity gap filled |
 | 02_ct_analysis.json | 7/10 | 7/10 | - | - |
-| benchmarks_part3.json | 9/10 | 9/10 | - | 保持优秀 |
+| benchmarks_part3.json | 9/10 | 9/10 | - | Remains excellent |
 
 ---
 
-## 四、仍需改进的地方
+## 4. Areas Still Needing Improvement
 
-### 4.1 轻微问题
+### 4.1 Minor Issues
 
-| 问题 | 严重程度 | 说明 |
+| Issue | Severity | Description |
 |------|---------|------|
-| expected_keywords方法 | 低 | 仍使用关键词匹配，可能鼓励模板响应 |
-| 代码混合格式 | 低 | G013 "有个胰腺癌的case" 混合自然，但缺少更多类似案例 |
-| 后续对话测试 | 中 | 仍以单轮为主，缺少多轮上下文 |
+| expected_keywords method | Low | Still uses keyword matching, which may encourage templated responses |
+| Code-mixed format | Low | G013 "有个胰腺癌的case" mixes naturally, but more similar cases are needed |
+| Follow-up dialogue testing | Medium | Still mostly single-turn; lacks multi-turn context |
 
-### 4.2 建议补充的场景
+### 4.2 Scenarios Recommended for Addition
 
-| 缺失场景 | 示例 |
+| Missing scenario | Example |
 |---------|------|
-| **后续对话** | "接着刚才说的，这个病人的剂量..." |
-| **紧急程度分级** | "这个超量5% vs 超量50%的处理方式" |
-| **团队协作场景** | "我的住院医让我来问你..." |
+| **Follow-up dialogue** | "Continuing what we discussed, this patient's dose..." |
+| **Urgency grading** | "Handling this 5% overdose vs a 50% overdose" |
+| **Team collaboration scenario** | "My resident asked me to ask you..." |
 
 ---
 
-## 五、总结
+## 5. Summary
 
-### 5.1 整体评价
+### 5.1 Overall Evaluation
 
-Benchmark质量从 **6/10 提升至 8.2/10**，主要改进:
+Benchmark quality improved from **6/10 to 8.2/10**; the main improvements:
 
-1. ✅ **用户性格多样性大幅提升** - 新增焦虑初学者、压力用户、疲惫夜班、完美主义者等
-2. ✅ **问题真实性显著改善** - 16_clarification.json 不再使用单字输入
-3. ✅ **中等复杂度问题填补** - 23_medium_complexity.json 新增55个案例
-4. ✅ **多语言医学场景完善** - 13_multilingual.json 从问候语升级到医学查询
+1. ✅ **User personality diversity greatly improved** - added anxious beginners, stressed users, exhausted night-shift staff, perfectionists, etc.
+2. ✅ **Question realism significantly improved** - 16_clarification.json no longer uses single-word input
+3. ✅ **Medium-complexity questions filled in** - 23_medium_complexity.json adds 55 cases
+4. ✅ **Multilingual medical scenarios expanded** - 13_multilingual.json upgraded from greetings to medical queries
 
-### 5.2 质量评级
+### 5.2 Quality Ratings
 
-| 等级 | 评分 | 说明 |
+| Grade | Score | Description |
 |------|------|------|
-| 优秀 | 9-10 | 32_tool_integration.json, 31_clinical_workflow.json |
-| 良好 | 7-8 | 大部分核心类别 |
-| 达标 | 6-7 | 部分边界测试 |
-| 需改进 | <6 | 无 |
+| Excellent | 9-10 | 32_tool_integration.json, 31_clinical_workflow.json |
+| Good | 7-8 | Most core categories |
+| Meets standard | 6-7 | Some boundary tests |
+| Needs improvement | <6 | None |
 
-### 5.3 结论
+### 5.3 Conclusion
 
-**Benchmark 质量已达到优秀水平 (8.5/10)**，可以有效评估 BrachyBot 的全方位能力。
+**Benchmark quality has reached an excellent level (8.5/10)** and can effectively evaluate BrachyBot's capabilities across the board.
 
-**本次改进重点:**
-1. ✅ **去重清理** — 删除2000+重复用例（benchmarks_part1-4.json是benchmark_2000.json的完全拷贝）
-2. ✅ **修复损坏文件** — benchmark_200.json JSON格式错误已修复
-3. ✅ **新增6个工具测试** — case_memory, clinical_kb, plan_comparator, safety_validator, report_generator, performance_tracker
-4. ✅ **新增多轮对话测试** — 30_multi_turn.json 支持上下文保持验证
-5. ✅ **新增临床工作流测试** — 31_clinical_workflow.json 端到端场景
-6. ✅ **新增工具集成测试** — 32_tool_integration.json 全工具协作验证
-7. ✅ **更新测试运行器** — 支持multi_turn测试格式
+**Highlights of this round of improvements:**
+1. ✅ **Deduplication cleanup** — removed 2000+ duplicate cases (benchmarks_part1-4.json are complete copies of benchmark_2000.json)
+2. ✅ **Repaired corrupted files** — benchmark_200.json JSON format errors fixed
+3. ✅ **Added 6 tool tests** — case_memory, clinical_kb, plan_comparator, safety_validator, report_generator, performance_tracker
+4. ✅ **Added multi-turn dialogue tests** — 30_multi_turn.json supports context-retention verification
+5. ✅ **Added clinical workflow tests** — 31_clinical_workflow.json end-to-end scenarios
+6. ✅ **Added tool integration tests** — 32_tool_integration.json verifies all tools working together
+7. ✅ **Updated the test runner** — supports the multi_turn test format
 
-**覆盖完整性提升:** 从覆盖18个工具扩展到覆盖24个工具（+6个新工具），新增75个测试用例。
+**Coverage completeness improvement:** expanded from covering 18 tools to 24 tools (+6 new tools), adding 75 test cases.
 
 ---
 
-**报告更新:** 2026-06-01
-**评估方法:** 人工审查 + 自动化去重分析 + 前后对比分析
+**Report updated:** 2026-06-01
+**Assessment method:** manual review + automated deduplication analysis + before/after comparison

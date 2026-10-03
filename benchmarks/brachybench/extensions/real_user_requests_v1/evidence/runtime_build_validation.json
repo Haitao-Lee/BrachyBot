@@ -1,0 +1,28 @@
+{
+  "schema": "benchmark-component-validation-1",
+  "date": "2026-10-03",
+  "validation_type": "component_and_infrastructure_tests_not_sut_performance",
+  "scenario_count": 82,
+  "family_count": 40,
+  "full_regression": {
+    "passed": 24769,
+    "failed": 0,
+    "skipped": 0,
+    "warnings": 3,
+    "seconds": 175.87,
+    "source_log": "/tmp/rur-runtime-full-regression-final-20261003.log"
+  },
+  "existing_benchmark_tests": 24210,
+  "extension_tests": 559,
+  "authoring_tests": 135,
+  "runtime_tests": 424,
+  "isolation_grounding_sources": 179,
+  "sut_runs": 0,
+  "provider_calls": 0,
+  "clinical_gpu_jobs": 0,
+  "performance_results": "not_collected_at_user_request",
+  "clinical_validation": false,
+  "real_browser_observed": false,
+  "semantic_review": "pending_independent_review",
+  "confirmatory_eligible": false
+}

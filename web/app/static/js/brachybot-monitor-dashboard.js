@@ -75,6 +75,7 @@
         panel.hidden = !['active', 'starting', 'stopping', 'stop_error'].includes(phase);
         if (panel.hidden) return;
         const summary = panel.querySelector('summary'), body = panel.querySelector('.monitor-dashboard-body');
+        const scrollTop = body.scrollTop;
         const historyOpen = !!body.querySelector('.monitor-history')?.open;
         const timelineOpen = !!body.querySelector('.monitor-timeline')?.open, oarsOpen = !!body.querySelector('.monitor-oars')?.open;
         summary.textContent = t('监测工作台', 'Monitor workspace') + ' · ' + ({
@@ -87,11 +88,14 @@
         const currentVersion = typeof manualPlanningState === 'undefined' ? null : Number(manualPlanningState.planningVersion);
         const planId = typeof manualPlanningState === 'undefined' ? null : manualPlanningState.planningId;
         const dragging = typeof manualPlanningState !== 'undefined' && manualPlanningState.monitorInteractionActive;
-        const cardCurrent = card && Number(card.evidence.after_version) === currentVersion
-            && String(card.evidence.planning_id) === String(planId) && !dragging;
+        const cardRevisionMatches = card && Number(card.evidence.after_version) === currentVersion
+            && String(card.evidence.planning_id) === String(planId);
+        const geometryMatches = !cardRevisionMatches || typeof _monitorEvidenceMatchesLiveGeometry !== 'function'
+            || _monitorEvidenceMatchesLiveGeometry(card.evidence);
+        const cardCurrent = cardRevisionMatches && !dragging && geometryMatches;
         const overviewCurrent = overviewOwner === own() && Number(overview?.planning_version) === currentVersion
-            && String(overview?.planning_id) === String(planId) && !dragging;
-        const metrics = cardCurrent ? (card.evidence.dose?.after || {})
+            && String(overview?.planning_id) === String(planId) && !dragging && geometryMatches;
+        const metrics = cardCurrent && Object.keys(card.evidence.dose?.after || {}).length ? card.evidence.dose.after
             : (overviewCurrent ? overview.metrics : {}) || {};
         const metricGrid = el('div', undefined, 'monitor-metrics');
         for (const [key, label, unit] of [['v100','V100','%'], ['d90','D90','Gy'], ['v200','V200','%'], ['plan_score',t('评分','Score'),'/100']]) {
@@ -148,7 +152,7 @@
         toggleLabel.append(toggle, document.createTextNode(t(' 自动重算并比较（合并连续编辑）', ' Auto compare (coalesces edits)')));
         controls.append(toggleLabel, button(t('结束监测', 'Finish Monitor'), () => stopTrainingMode(), phase === 'starting' || phase === 'stopping'));
         body.append(controls);
-        const unread = list.filter(item => item.captureState === 'ready' && item.viewedCaptureEventId !== item.lastEventId);
+        const unread = list.filter(item => ['ready','partial'].includes(item.captureState) && item.viewedCaptureEventId !== item.lastEventId);
         const pendingImages = list.filter(item => !item.superseded && ['pending','deferred'].includes(item.captureState));
         const decisions = list.filter(item => !item.superseded && !item.decision && item.evidence.restore_token
             && Number(item.evidence.after_version) === currentVersion && String(item.evidence.planning_id) === String(planId));
@@ -162,26 +166,26 @@
             const finding = el('div', undefined, 'monitor-finding'); finding.dataset.severity = info.severity || (info.priority === 'attention' ? 'warning' : 'info');
             if (info.severity === 'blocking') finding.append(el('strong',t('需先处理：物理几何重叠','Resolve first: physical geometry overlap')));
             if (!cardCurrent) finding.append(el('p', t('以下是较早版本的记录，不能作为当前规划结论。', 'Earlier revision record, not a conclusion about the current plan.')));
-            finding.append(el('strong', info.headline || ''), el('p', info.next_step || ''), el('small', info.dose_note || ''));
+            const headline = el('p',undefined,'monitor-headline'); headline.append(el('strong',info.headline || ''));
+            finding.append(headline, el('p', info.next_step || ''), el('small', info.dose_note || ''));
             for (const pair of info.conflicts || []) {
-                const value = pair.surface_clearance_mm ?? pair.distance_mm;
                 const row = el('p');
                 for (const [i,ref] of [pair.first_id,pair.second_id].entries()) {
                     if (i) row.append(document.createTextNode(' ↔ '));
                     row.append(button(ref, () => window.runMonitorCheckpointAction(card.id,'focus',{refs:[ref]}), !cardCurrent || phase !== 'active'));
                 }
-                const clearanceLabel = pair.kind === 'seed_pairs'
-                    ? pair.clearance_basis === 'finite_parallel_cylinders'
-                        ? t('实体表面间隙', 'finite surface gap')
-                        : t('轴线模型间隙下界', 'axis-model clearance bound')
-                    : t('针道轴线距离', 'needle-axis distance');
-                row.append(document.createTextNode(` · ${clearanceLabel} ${Number(value).toFixed(2)} mm `));
+                row.append(document.createTextNode(` · ${window.monitorConflictText(pair, lang())} `));
                 row.append(button(t('查看间距','Show spacing'), () => window.runMonitorCheckpointAction(card.id,'focus',{refs:[pair.first_id,pair.second_id]}), !cardCurrent || phase !== 'active'));
                 finding.append(row);
             }
             for (const obj of info.objects || []) if (obj.operation !== 'deleted') finding.append(button(obj.id,
                 () => window.runMonitorCheckpointAction(card.id,'focus',{refs:[obj.id]}), !cardCurrent || phase !== 'active'));
             if (card.busy || card.notice) finding.append(el('p', card.busy || card.notice));
+            if (card.decision) finding.append(el('p', card.decision, 'monitor-decision'));
+            const counts = info.conflict_counts || {};
+            if (counts.resolved || counts.existing) finding.append(el('small', t(
+                `已消除 ${counts.resolved || 0} 组；另有 ${counts.existing || 0} 组编辑前已存在。`,
+                `${counts.resolved || 0} resolved; ${counts.existing || 0} pre-existing conflicts.`)));
             if (info.metric_rows?.length) {
                 const comparison = el('details');
                 comparison.append(el('summary', t('查看各指标与器官差值', 'Metric and organ-dose changes')));
@@ -189,12 +193,37 @@
                 finding.append(comparison);
             }
             body.append(finding);
+            const capture = el('div', undefined, 'monitor-capture-status');
+            capture.dataset.state = card.captureState;
+            const captureLabels = {pending:t('截图正在准备，文字反馈已保存。', 'Images are preparing; text feedback is saved.'),
+                deferred:t('截图已暂缓；页面可见且版本仍有效时重试。', 'Capture deferred; retries require a visible page and a current revision.'),
+                ready:t('已交付图像证据。', 'Image evidence delivered.'),
+                partial:t('部分图像已交付；未核验对象不能据图定位。', 'Partial images delivered; unverified objects cannot be located from them.'),
+                failed:t('未交付本检查点图像；文字反馈仍有效。', 'No images delivered for this checkpoint; recorded text is retained.'),
+                none:t('本次没有需要定位的存续对象，不安排定位截图。', 'No surviving target requires location capture for this edit.')};
+            capture.append(el('p',captureLabels[card.captureState] || ''));
+            if (card.omittedRefs?.length && card.captureState === 'partial') capture.append(el('small',t('未核验：','Unverified: ') + card.omittedRefs.join(', ')));
+            const reasons = {monitor_targets_unavailable:t('Viewer 对象尚未就绪或不可见。','Viewer targets are not ready or visible.'),
+                viewer_tab_hidden:t('浏览器页面在后台。','The browser page is in the background.'),
+                attachment_not_rendered:t('图像未写入对话附件。','Images were not delivered to chat attachments.'),
+                workspace_visual_restore_incomplete:t('Viewer 资源仍在恢复。','Viewer resources are still restoring.'),
+                target_object_not_loaded_in_live_data_tree:t('目标数据节点尚未加载。','Target data nodes have not loaded.'),
+                target_not_verified_visible_in_viewer:t('目标图像位置尚不可核验。','Target image locations are unverified.'),
+                monitor_checkpoint_superseded:t('后续编辑已改变几何；旧版本不能补拍。','Later edits changed geometry; old revisions cannot be recaptured.'),
+                monitor_stopped:t('监测已经结束。','Monitoring has stopped.')};
+            if (card.captureError && ['failed','deferred'].includes(card.captureState)) capture.append(el('small',
+                reasons[card.captureError] || t('截图未完成，可在当前资源就绪后重试。','Capture incomplete; retry when current resources are ready.')));
+            body.append(capture);
             const actions = el('div', undefined, 'monitor-dashboard-actions');
             const act = (label, action) => actions.append(button(label,
                 () => window.runMonitorCheckpointAction(card.id, action), phase !== 'active' || !!card.busy || !cardCurrent));
-            act(t('定位对象', 'Locate objects'), 'focus');
+            if ((info.spatial_refs || card.data.suggested_screenshot?.object_ids || []).length)
+                act(t('定位对象', 'Locate objects'), 'focus');
             actions.append(button(t('清除定位', 'Clear focus'), () => window.clearMonitorFocus(true)));
             if (!info.dose_current) act(t('立即重算比较', 'Compare now'), 'dose');
+            if (['failed','deferred','partial'].includes(card.captureState) && card.data.suggested_screenshot
+                && !['monitor_checkpoint_superseded','monitor_stopped'].includes(card.captureError))
+                act(t('重试截图', 'Retry image'), 'capture');
             if (card.evidence.restore_token && !card.decision) {
                 act(t('恢复编辑前位置', 'Restore pre-edit position'), 'restore');
                 act(t('保留编辑', 'Keep edit'), 'keep');
@@ -208,7 +237,7 @@
                     await requestPlanningAdvice({question:t('请结合最新已提交的监测编辑证据，简要解释几何间距与剂量差值的取舍；没有对应证据的因果、临床限值和最优移动方向不要推测。',
                         'Briefly explain the geometry and dose trade-offs in the latest committed monitor edit evidence. Do not infer causes, clinical limits or optimal movements without evidence.')});
                 } finally { adviceBusy = false; draw(); }
-            }, phase !== 'active' || adviceBusy));
+            }, phase !== 'active' || adviceBusy || !cardCurrent));
             body.append(actions);
         }
         const history = el('details', undefined, 'monitor-history');
@@ -245,6 +274,7 @@
                 `Showing ${timeline.returned_event_count} recent events; ${timeline.dropped_event_count} earlier events exceeded retention.`)));
             body.append(events);
         }
+        body.scrollTop = scrollTop;
     }
     async function refreshOverview() {
         if (trainingMonitorState.phase !== 'active' || typeof fetch !== 'function') return;

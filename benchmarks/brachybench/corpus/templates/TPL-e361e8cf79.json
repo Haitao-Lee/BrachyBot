@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "treatment_planning",
+  "expectation": null,
+  "facet": "treatment_planning",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Interstitial brachytherapy for 42-year-old woman with 2.8 cm vaginal melanoma (Breslow 3.2 mm) after excision with positive deep margins. Syed-Neblett template, melanoma-specific dose, and organ preservation approach.",
+  "source_refs": [
+    "INT-4e1ad888bb1a",
+    "INT-aec11f77191d"
+  ],
+  "template_id": "TPL-e361e8cf79"
+}

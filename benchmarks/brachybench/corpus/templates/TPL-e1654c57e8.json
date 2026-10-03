@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "oar_segmentation",
+  "expectation": null,
+  "facet": "oar_segmentation",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "List the segmented organs",
+  "source_refs": [
+    "INT-c56b6fbc17d6",
+    "INT-e5e08276e5f8"
+  ],
+  "template_id": "TPL-e1654c57e8"
+}

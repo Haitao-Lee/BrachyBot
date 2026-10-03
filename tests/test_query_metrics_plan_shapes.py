@@ -1,6 +1,6 @@
 """Regression tests for seed/needle metrics read from real plan containers.
 
-A completed case with 22 needles and 181 seeds answered ``粒子数量 22``:
+A completed case with 22 needles and 181 seeds answered ``particle count 22``:
 ``query_metrics(seed_count)`` received the optimizer's per-trajectory plan
 entries (22 items) instead of flat seed records and counted the needles.
 These tests pin the correct contract across every plan shape the workspace

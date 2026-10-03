@@ -1,0 +1,47 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "en",
+  "response_facts": {
+    "V100_delta_pp": -0.2,
+    "V200_delta_pp": 3.4,
+    "covers_edits": [
+      "edit-A",
+      "edit-B"
+    ],
+    "current_score": null
+  },
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "response",
+      "statement": "Deltas explicitly attributed to two-edit sequence, not last edit; separately discuss coverage/hot volume and missing current score."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "evidence",
+      "statement": "Only same-case/anatomy/config comparable before/after accepted."
+    }
+  ],
+  "rules": [],
+  "scenario_id": "RUR-27-002",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "response",
+      "statement": "Deltas explicitly attributed to two-edit sequence, not last edit; separately discuss coverage/hot volume and missing current score."
+    },
+    {
+      "kind": "evidence",
+      "statement": "Only same-case/anatomy/config comparable before/after accepted."
+    }
+  ]
+}

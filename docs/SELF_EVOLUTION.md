@@ -1,200 +1,202 @@
-# BrachyBot 自我进化系统
+# BrachyBot Self-Evolution System
 
-**最后更新:** 2026-06-04
+**Last updated:** 2026-06-04
 
-## 一、系统概述
+## 1. System Overview
 
-BrachyBot 的自我进化系统是 AI-BrachyAgent 架构的核心组件之一。系统通过闭环反馈机制，从测试结果、临床交互和错误案例中持续学习，自动优化工具链、提示词和响应策略。
+BrachyBot's self-evolution system is one of the core components of the AI-BrachyAgent architecture. Through a closed-loop feedback mechanism, the system continuously learns from test results, clinical interactions, and error cases, automatically optimizing the toolchain, prompts, and response strategies.
 
-### 设计目标
+### Design Goals
 
-- **自动化能力提升**: 通过基准测试驱动，自动发现弱点并生成改进方案
-- **临床安全保障**: 所有进化路径均需通过安全验证，确保不降低临床安全性
-- **知识积累**: 从每次交互中提取可复用的经验，形成结构化知识库
+- **Automated capability improvement**: Benchmark-driven, automatically discovers weaknesses and generates improvement plans
+- **Clinical safety assurance**: All evolution paths must pass safety validation to ensure clinical safety is not reduced
+- **Knowledge accumulation**: Extract reusable experience from each interaction to form a structured knowledge base
 
 ---
 
-## 二、进化架构
+## 2. Evolution Architecture
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                  自我进化闭环                         │
+│                Self-Evolution Closed Loop            │
 │                                                     │
 │   ┌──────────┐    ┌──────────┐    ┌──────────┐     │
-│   │ 基准测试  │───▶│ 弱点分析  │───▶│ 改进生成  │     │
+│   │Benchmark │───▶│Weakness  │───▶│Improve-  │     │
+│   │          │    │Analysis  │    │ment Gen. │     │
 │   └──────────┘    └──────────┘    └──────────┘     │
 │        ▲                               │            │
 │        │           ┌──────────┐        │            │
-│        └───────────│ 验证测试  │◀───────┘            │
+│        └───────────│Validation│◀───────┘            │
+│                    │Test      │                     │
 │                    └──────────┘                     │
 └─────────────────────────────────────────────────────┘
 ```
 
-### 核心组件
+### Core Components
 
-| 组件 | 职责 | 关键文件 |
+| Component | Responsibility | Key File |
 |------|------|----------|
-| **ToolRegistry** | 工具注册与发现 | `AgenticSys.py` |
-| **SkillManager** | 技能加载与执行 | `skills/` |
-| **PromptEngine** | 提示词动态组装 | `config/prompts/` |
-| **BenchmarkRunner** | 基准测试执行 | `benchmarks/aligned_benchmark.py` |
-| **CaseMemory** | 案例记忆与检索 | `memory/` |
-| **ClinicalKB** | 临床知识库 | `clinical_kb/` |
+| **ToolRegistry** | Tool registration and discovery | `AgenticSys.py` |
+| **SkillManager** | Skill loading and execution | `skills/` |
+| **PromptEngine** | Dynamic prompt assembly | `config/prompts/` |
+| **BenchmarkRunner** | Benchmark execution | `benchmarks/aligned_benchmark.py` |
+| **CaseMemory** | Case memory and retrieval | `memory/` |
+| **ClinicalKB** | Clinical knowledge base | `clinical_kb/` |
 
 ---
 
-## 三、基准测试系统
+## 3. Benchmark System
 
-### v2 基准测试（当前版本）
+### v2 Benchmark (current version)
 
-- **总用例数**: 525
-- **分类数**: 22
-- **测试重点**: 系统能力（非 LLM 知识）
+- **Total test cases**: 525
+- **Number of categories**: 22
+- **Test focus**: System capabilities (not LLM knowledge)
 
-#### 分类概览
+#### Category Overview
 
-| 类别 | 用例数 | 说明 |
+| Category | Test Cases | Description |
 |------|--------|------|
-| ct_analysis | 30 | CT 图像分析 |
-| ctv_segmentation | 15 | CTV 肿瘤分割 |
-| hallucination | 21+15 | 幻觉检测（基础+高级） |
-| dose_engine | 14 | 剂量计算 |
-| context | 15+10 | 多轮上下文保持 |
-| dose_evaluation | 13 | 剂量评估 |
-| safety | 25+10 | 安全约束验证 |
-| error_recovery | 14 | 错误恢复 |
-| knowledge_tools | 15 | 临床知识库工具 |
-| web_search | 10 | 网络搜索工具 |
-| language | 15 | 语言一致性 |
-| response_quality | 10 | 响应格式化 |
-| ui_control | 10 | UI 控制能力 |
-| output_tools | 10 | 输出工具调用 |
-| advanced_workflows | 10 | 高级工作流 |
-| edge_cases | 10 | 边界情况 |
-| regression | 10 | 回归测试 |
-| clinical_scenarios | 10 | 临床场景 |
-| input_variations | 30+26 | 输入变体测试 |
+| ct_analysis | 30 | CT image analysis |
+| ctv_segmentation | 15 | CTV tumor segmentation |
+| hallucination | 21+15 | Hallucination detection (basic + advanced) |
+| dose_engine | 14 | Dose calculation |
+| context | 15+10 | Multi-turn context retention |
+| dose_evaluation | 13 | Dose evaluation |
+| safety | 25+10 | Safety constraint validation |
+| error_recovery | 14 | Error recovery |
+| knowledge_tools | 15 | Clinical knowledge base tools |
+| web_search | 10 | Web search tools |
+| language | 15 | Language consistency |
+| response_quality | 10 | Response formatting |
+| ui_control | 10 | UI control capabilities |
+| output_tools | 10 | Output tool invocation |
+| advanced_workflows | 10 | Advanced workflows |
+| edge_cases | 10 | Edge cases |
+| regression | 10 | Regression tests |
+| clinical_scenarios | 10 | Clinical scenarios |
+| input_variations | 30+26 | Input variation tests |
 
-#### 测试流程
+#### Test Process
 
 ```bash
-# 运行单个分类
+# Run a single category
 python3 aligned_benchmark.py <agent_id> <category_number>
 
-# 运行多个分类
+# Run multiple categories
 python3 aligned_benchmark.py <agent_id> 1 2 3 4 5 6 7 8
 
-# 并行运行 4 个 agent
+# Run 4 agents in parallel
 ./run_aligned_agents.sh
 ```
 
-### v1 基准测试（归档）
+### v1 Benchmark (archived)
 
-- **总用例数**: 2000
-- **分类数**: 38
-- **状态**: 已归档至 `benchmarks/v1/`
-- **通过率**: 1.6%（主要因为 no_response 问题，非能力缺陷）
+- **Total test cases**: 2000
+- **Number of categories**: 38
+- **Status**: Archived to `benchmarks/v1/`
+- **Pass rate**: 1.6% (mainly due to no_response issues, not capability deficiencies)
 
 ---
 
-## 四、已知问题与改进方向
+## 4. Known Issues and Improvement Directions
 
-### 4.1 v1 测试主要失败模式
+### 4.1 Main Failure Modes of v1 Tests
 
-| 失败类型 | 数量 | 原因 |
+| Failure Type | Count | Cause |
 |----------|------|------|
-| no_response | 1961 | 系统未响应（需检查 Web API 通信） |
-| keyword_mismatch | 2 | 关键词匹配逻辑需优化 |
-| low_relevance | 2 | 响应与问题相关性不足 |
+| no_response | 1961 | System did not respond (need to check Web API communication) |
+| keyword_mismatch | 2 | Keyword matching logic needs optimization |
+| low_relevance | 2 | Response relevance to the question is insufficient |
 
-### 4.2 v2 改进重点
+### 4.2 v2 Improvement Focus
 
-1. **工具调用可靠性**: 确保 CT 分析、分割、剂量计算等工具链正确触发
-2. **多轮对话上下文**: 验证跨轮次信息保持能力
-3. **幻觉防控**: 检测并阻止编造临床数据
-4. **安全边界**: 验证 OAR 剂量约束、禁忌症拒绝等安全机制
-5. **语言一致性**: 确保响应语言与输入语言匹配
+1. **Tool invocation reliability**: Ensure toolchains such as CT analysis, segmentation, and dose calculation are triggered correctly
+2. **Multi-turn dialogue context**: Verify the ability to retain information across turns
+3. **Hallucination prevention**: Detect and block fabricated clinical data
+4. **Safety boundaries**: Validate safety mechanisms such as OAR dose constraints and contraindication refusal
+5. **Language consistency**: Ensure the response language matches the input language
 
-### 4.3 进化策略
+### 4.3 Evolution Strategy
 
 ```
-弱点发现 → 根因分析 → 改进方案 → A/B 测试 → 部署上线
+Weakness Discovery → Root Cause Analysis → Improvement Plan → A/B Testing → Deployment
     │                                         │
-    └─────────────── 效果验证 ◀────────────────┘
+    └─────────────── Effect Validation ◀───────┘
 ```
 
-| 策略 | 实现方式 | 适用场景 |
+| Strategy | Implementation | Applicable Scenario |
 |------|----------|----------|
-| **提示词优化** | 调整 `config/prompts/system_prompt.md` | 响应格式、语言风格 |
-| **工具链增强** | 扩展 `tool_factory/` | 新增工具能力 |
-| **知识库更新** | 更新 `clinical_kb/` | 临床知识补充 |
-| **技能扩展** | 新增 `skills/` 模块 | 复合工作流 |
-| **记忆优化** | 优化 `memory/` 检索 | 案例经验复用 |
+| **Prompt optimization** | Adjust `config/prompts/system_prompt.md` | Response format, language style |
+| **Toolchain enhancement** | Extend `tool_factory/` | Add new tool capabilities |
+| **Knowledge base update** | Update `clinical_kb/` | Supplement clinical knowledge |
+| **Skill extension** | Add new `skills/` modules | Composite workflows |
+| **Memory optimization** | Optimize `memory/` retrieval | Case experience reuse |
 
 ---
 
-## 五、安全机制
+## 5. Safety Mechanisms
 
-### 进化安全约束
+### Evolution Safety Constraints
 
-1. **临床安全优先**: 任何进化不得降低 OAR 保护、剂量约束等安全指标
-2. **幻觉零容忍**: 进化后必须通过 hallucination 分类测试
-3. **回归验证**: 每次进化需通过全部 safety 类测试
-4. **人工审核**: 涉及临床决策逻辑的变更需人工确认
+1. **Clinical safety first**: No evolution may reduce safety metrics such as OAR protection and dose constraints
+2. **Zero tolerance for hallucination**: After evolution, the hallucination category tests must pass
+3. **Regression validation**: Each evolution must pass all safety category tests
+4. **Human review**: Changes involving clinical decision logic require human confirmation
 
-### 安全测试覆盖
+### Safety Test Coverage
 
-- OAR 剂量约束验证（QUANTEC/TG-43 标准）
-- 禁忌症识别与拒绝
-- 剂量超限警告
-- 幻觉检测（编造剂量值、适应症等）
-- 错误恢复（工具失败时的安全降级）
+- OAR dose constraint validation (QUANTEC/TG-43 standards)
+- Contraindication identification and refusal
+- Dose exceedance warnings
+- Hallucination detection (fabricated dose values, indications, etc.)
+- Error recovery (safe degradation when tools fail)
 
 ---
 
-## 六、运行指标
+## 6. Operating Metrics
 
-### 当前状态（截至 2026-06-04）
+### Current Status (as of 2026-06-04)
 
-| 指标 | 值 |
+| Metric | Value |
 |------|-----|
-| v2 基准测试用例 | 525 |
-| v2 分类数 | 22 |
-| 工具链工具数 | 15+ |
-| 技能模块数 | 6 |
-| 临床知识条目 | 持续增长 |
+| v2 benchmark test cases | 525 |
+| v2 number of categories | 22 |
+| Number of toolchain tools | 15+ |
+| Number of skill modules | 6 |
+| Clinical knowledge entries | Continuously growing |
 
-### 进化周期
+### Evolution Cycle
 
 ```
-每日: 自动运行基准测试 → 生成报告
-每周: 分析弱点趋势 → 制定改进计划
-每月: 评估整体进步 → 调整进化策略
+Daily: automatically run benchmarks → generate reports
+Weekly: analyze weakness trends → formulate improvement plans
+Monthly: evaluate overall progress → adjust evolution strategy
 ```
 
 ---
 
-## 七、文件结构
+## 7. File Structure
 
 ```
 docs/
-├── SELF_EVOLUTION.md              ← 本文档
-├── BrachyBot_SELF_EVOLUTION_REPORT_20260530.md  ← v1 测试报告
-├── BENCHMARK_ISSUES_AND_FIXES.md  ← 基准测试问题与修复
-├── BENCHMARK_OVERCORRECTION_REVIEW.md  ← 过度修正审查
-├── BENCHMARK_QUALITY_ASSESSMENT.md  ← 质量评估
-├── BENCHMARK_REQUIREMENTS_CHECKLIST.md  ← 需求清单
-├── CODE_REVIEW_REPORT.md          ← 代码审查报告
-├── OPTIMIZATION_SUMMARY.md        ← 优化总结
-└── QA_REPORT_2026-05-30.md        ← QA 报告
+├── SELF_EVOLUTION.md              ← This document
+├── BrachyBot_SELF_EVOLUTION_REPORT_20260530.md  ← v1 test report
+├── BENCHMARK_ISSUES_AND_FIXES.md  ← Benchmark issues and fixes
+├── BENCHMARK_OVERCORRECTION_REVIEW.md  ← Overcorrection review
+├── BENCHMARK_QUALITY_ASSESSMENT.md  ← Quality assessment
+├── BENCHMARK_REQUIREMENTS_CHECKLIST.md  ← Requirements checklist
+├── CODE_REVIEW_REPORT.md          ← Code review report
+├── OPTIMIZATION_SUMMARY.md        ← Optimization summary
+└── QA_REPORT_2026-05-30.md        ← QA report
 ```
 
 ---
 
-## 八、相关文档
+## 8. Related Documents
 
-- [基准测试 README](../benchmarks/README.md) — 测试执行指南
-- [v2 测试指南](../benchmarks/v2/README.md) — v2 详细测试流程
-- [系统提示词](../config/prompts/system_prompt.md) — 当前提示词配置
-- [工具工厂](../tool_factory/) — 工具注册与实现
-- [技能系统](../skills/) — 技能模块定义
+- [Benchmark README](../benchmarks/README.md) — Test execution guide
+- [v2 Test Guide](../benchmarks/v2/README.md) — Detailed v2 test process
+- [System Prompt](../config/prompts/system_prompt.md) — Current prompt configuration
+- [Tool Factory](../tool_factory/) — Tool registration and implementation
+- [Skill System](../skills/) — Skill module definitions

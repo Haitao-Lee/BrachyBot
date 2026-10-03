@@ -2,37 +2,37 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** ①在飞快照不再被常规调度取消（忙时合并为一次跟进）；②UI 桥状态改为小侧车文件，不再为 UI 事件重写 30MB 快照；③规划延迟日志加入 loadavg/CPU 时间归因。
+**Goal:** ① An in-flight snapshot is no longer cancelled by routine scheduling (during busy periods it coalesces into a single follow-up); ② UI bridge state moves to a small sidecar file, so a 30MB snapshot is no longer rewritten for UI events; ③ planning latency logs gain loadavg/CPU-time attribution.
 
-**Architecture:** A. `WorkspaceStore` 增加 `_checkpoint_inflight/_checkpoint_dirty`，`schedule_agent_checkpoint` 在飞期间只置 dirty，快照收尾时补一次合并跟进；B. 新增 `save_ui_bridge/load_ui_bridge` 侧车 + 恢复时按时间取新；C. `plans/performance.py` 记录并输出竞争上下文。
+**Architecture:** A. `WorkspaceStore` gains `_checkpoint_inflight/_checkpoint_dirty`; `schedule_agent_checkpoint` only sets dirty while a snapshot is in flight, and one coalesced follow-up is added when the snapshot finishes; B. add `save_ui_bridge/load_ui_bridge` sidecar + pick the newer by timestamp on recovery; C. `plans/performance.py` records and outputs contention context.
 
-**Tech Stack:** Python 3.12、Flask、pytest、`~/.conda/envs/brachytherapy/bin/python`。
+**Tech Stack:** Python 3.12, Flask, pytest, `~/.conda/envs/brachytherapy/bin/python`.
 
 **Spec:** `docs/superpowers/specs/2026-09-16-checkpoint-coalescing-ui-bridge-design.md`
 
-**运行约定:** pytest 在仓库根 `<workspace>/BrachyBot` 执行；dirty 工作树中有大量无关 WIP，实施者只改本任务文件、不要回滚任何现有修改、不要执行任何 git 写命令（提交由控制者选择性拣选）。
+**Run Convention:** pytest is executed at the repository root `<workspace>/BrachyBot`; the dirty worktree contains a lot of unrelated WIP, so the implementer should only change this task's files, not revert any existing changes, and not run any git write commands (the controller cherry-picks commits selectively).
 
-**回退:** A/B 可独立回滚（B 改回 `save_snapshot_patch` 一行）；C 仅日志。
+**Rollback:** A/B can be rolled back independently (B reverts to the one-line `save_snapshot_patch`); C is logging only.
 
 ---
 
 ## File Structure
 
-| 文件 | 职责 |
+| File | Responsibility |
 |---|---|
-| `web/workspace_store.py`（修改） | inflight/dirty、合并跟进、侧车读写 |
-| `web/routes/planning_routes.py`（修改） | `_flush_ui_bridge_checkpoint` 改走侧车 |
-| `web/server.py`（修改） | 恢复时按时间选择快照桥/侧车桥（新增模块级 helper） |
-| `plans/performance.py`（修改） | contention 归因字段 |
-| `tests/test_workspace_checkpoint_deferral.py`（追加） | A 的测试 |
-| `tests/test_ui_bridge_sidecar.py`（新建） | B 的测试 |
-| `tests/test_planning_latency_profile.py`（追加） | C 的测试 |
+| `web/workspace_store.py` (modify) | inflight/dirty, coalesced follow-up, sidecar read/write |
+| `web/routes/planning_routes.py` (modify) | `_flush_ui_bridge_checkpoint` switched to the sidecar |
+| `web/server.py` (modify) | choose the snapshot bridge/sidecar bridge by timestamp on recovery (new module-level helper) |
+| `plans/performance.py` (modify) | contention attribution fields |
+| `tests/test_workspace_checkpoint_deferral.py` (append) | tests for A |
+| `tests/test_ui_bridge_sidecar.py` (new) | tests for B |
+| `tests/test_planning_latency_profile.py` (append) | tests for C |
 
 ---
 
-### Task 1: 检查点合并（不取消在飞快照）
+### Task 1: Checkpoint Coalescing (do not cancel in-flight snapshots)
 
-**Files:** Modify `web/workspace_store.py`（`__init__`、`schedule_agent_checkpoint`、`_snapshot_agent_locked` 拆分 + wrapper、`flush_agent_checkpoint`、`discard_agent_checkpoint`）；Append tests `tests/test_workspace_checkpoint_deferral.py`。
+**Files:** Modify `web/workspace_store.py` (`__init__`, `schedule_agent_checkpoint`, `_snapshot_agent_locked` split + wrapper, `flush_agent_checkpoint`, `discard_agent_checkpoint`); Append tests `tests/test_workspace_checkpoint_deferral.py`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -84,18 +84,18 @@ def test_flush_clears_dirty(tmp_path):
         _cancel_timers(store, key)
 ```
 
-（`timer.args` 是 `threading.Timer` 的构造参数元组：`(user_id, session_id, agent, reason, operation, generation)`。）
+(`timer.args` is the constructor-argument tuple of `threading.Timer`: `(user_id, session_id, agent, reason, operation, generation)`.)
 
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
 ~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_workspace_checkpoint_deferral.py -q
 ```
-Expected: 3 个新用例 FAIL（`_checkpoint_inflight` 不存在 / `_snapshot_agent_locked_inner` 不存在 / dirty 未清）。
+Expected: the 3 new cases FAIL (`_checkpoint_inflight` does not exist / `_snapshot_agent_locked_inner` does not exist / dirty not cleared).
 
 - [ ] **Step 3: Implement**
 
-`__init__`（紧跟 `_checkpoint_completed_at` 初始化之后）新增：
+In `__init__` (immediately after the `_checkpoint_completed_at` initialization), add:
 
 ```python
         # Coalesce checkpoint scheduling while a full snapshot is in flight:
@@ -105,7 +105,7 @@ Expected: 3 个新用例 FAIL（`_checkpoint_inflight` 不存在 / `_snapshot_ag
         self._checkpoint_dirty: Dict[Tuple[str, str], bool] = {}
 ```
 
-`schedule_agent_checkpoint` 的 `with self._lock:` 块开头（`existing = ...` 之前）插入：
+At the start of the `with self._lock:` block in `schedule_agent_checkpoint` (before `existing = ...`), insert:
 
 ```python
             if self._checkpoint_inflight.get(key):
@@ -117,7 +117,7 @@ Expected: 3 个新用例 FAIL（`_checkpoint_inflight` 不存在 / `_snapshot_ag
                 return
 ```
 
-把现有 `_snapshot_agent_locked` 整体改名为 `_snapshot_agent_locked_inner`（内容不动），并新增 wrapper：
+Rename the existing `_snapshot_agent_locked` entirely to `_snapshot_agent_locked_inner` (content unchanged), and add a wrapper:
 
 ```python
     def _snapshot_agent_locked(
@@ -168,13 +168,13 @@ Expected: 3 个新用例 FAIL（`_checkpoint_inflight` 不存在 / `_snapshot_ag
                 )
 ```
 
-`flush_agent_checkpoint` 的 `with self._lock:` 内、`generation = ...` 之前加：
+Inside the `with self._lock:` of `flush_agent_checkpoint`, before `generation = ...`, add:
 
 ```python
             self._checkpoint_dirty.pop(key, None)
 ```
 
-`discard_agent_checkpoint` 的 `with self._lock:` 内同样加：
+Also add inside the `with self._lock:` of `discard_agent_checkpoint`:
 
 ```python
             self._checkpoint_dirty.pop(key, None)
@@ -185,19 +185,19 @@ Expected: 3 个新用例 FAIL（`_checkpoint_inflight` 不存在 / `_snapshot_ag
 ```bash
 ~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_workspace_checkpoint_deferral.py tests/test_workspace_store.py tests/test_workspace_frontend.py -q
 ```
-Expected: 全绿（含既有 superseded/discard/orphan 用例）。
+Expected: all green (including the existing superseded/discard/orphan cases).
 
 - [ ] **Step 5 (do NOT do): Commit — controller handles it.**
 
 ---
 
-### Task 2: UI 桥侧车持久化
+### Task 2: UI Bridge Sidecar Persistence
 
-**Files:** Modify `web/workspace_store.py`（新增两个方法）、`web/routes/planning_routes.py`（`_flush_ui_bridge_checkpoint`）、`web/server.py`（新增 helper + 恢复处调用）；Create `tests/test_ui_bridge_sidecar.py`。
+**Files:** Modify `web/workspace_store.py` (add two methods), `web/routes/planning_routes.py` (`_flush_ui_bridge_checkpoint`), `web/server.py` (add helper + call at recovery); Create `tests/test_ui_bridge_sidecar.py`.
 
 - [ ] **Step 1: Write the failing tests**
 
-新建 `tests/test_ui_bridge_sidecar.py`：
+Create `tests/test_ui_bridge_sidecar.py`:
 
 ```python
 """UI bridge sidecar persistence tests (no full-snapshot rewrites)."""
@@ -286,11 +286,11 @@ def test_flush_ui_bridge_uses_sidecar_writer(tmp_path):
 ```bash
 ~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_ui_bridge_sidecar.py -q
 ```
-Expected: FAIL（`ImportError: _select_case_bridge` / `AttributeError: save_ui_bridge`）。
+Expected: FAIL (`ImportError: _select_case_bridge` / `AttributeError: save_ui_bridge`).
 
 - [ ] **Step 3: Implement**
 
-`web/workspace_store.py` 在 `set_heavy_task_probe` 之前新增：
+`web/workspace_store.py`, add before `set_heavy_task_probe`:
 
 ```python
     def save_ui_bridge(
@@ -326,7 +326,7 @@ Expected: FAIL（`ImportError: _select_case_bridge` / `AttributeError: save_ui_b
         return dict(payload) if isinstance(payload, dict) else {}
 ```
 
-`web/routes/planning_routes.py` 的 `_flush_ui_bridge_checkpoint` 内：
+inside `_flush_ui_bridge_checkpoint` in `web/routes/planning_routes.py`:
 
 ```python
     store, user_id, selected, bridge, reason = item
@@ -336,9 +336,9 @@ Expected: FAIL（`ImportError: _select_case_bridge` / `AttributeError: save_ui_b
         ...
 ```
 
-（替换原来的 `store.save_snapshot_patch(...)` 调用；异常处理分支保持原样。）
+(Replaces the original `store.save_snapshot_patch(...)` call; the exception-handling branch stays as is.)
 
-`web/server.py` 模块级新增 helper（放在 `_case_has_running_chat_task` 附近）：
+`web/server.py`: add a module-level helper (near `_case_has_running_chat_task`):
 
 ```python
 def _select_case_bridge(snapshot_bridge: Any, sidecar_bridge: Any) -> dict:
@@ -357,7 +357,7 @@ def _select_case_bridge(snapshot_bridge: Any, sidecar_bridge: Any) -> dict:
     return dict(snapshot)
 ```
 
-`web/server.py:583` 处替换为：
+At `web/server.py:583`, replace with:
 
 ```python
             bridge = _select_case_bridge(
@@ -366,26 +366,26 @@ def _select_case_bridge(snapshot_bridge: Any, sidecar_bridge: Any) -> dict:
             )
 ```
 
-（后续 `if isinstance(bridge, dict):` 块不变。`Mapping` 已在 server.py 导入；若未导入需补。）
+(The following `if isinstance(bridge, dict):` block stays unchanged. `Mapping` is already imported in server.py; add the import if not.)
 
 - [ ] **Step 4: Run tests**
 
 ```bash
 ~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_ui_bridge_sidecar.py tests/test_workspace_store.py tests/test_workspace_frontend.py tests/test_workspace_server_recovery_indicator.py -q
 ```
-Expected: 全绿。
+Expected: all green.
 
 - [ ] **Step 5 (do NOT do): Commit — controller handles it.**
 
 ---
 
-### Task 3: 规划竞争归因
+### Task 3: Planning Contention Attribution
 
 **Files:** Modify `plans/performance.py`；Append tests `tests/test_planning_latency_profile.py`。
 
 - [ ] **Step 1: Write the failing test**
 
-Append 到 `tests/test_planning_latency_profile.py`：
+Append to `tests/test_planning_latency_profile.py`:
 
 ```python
 def test_profile_records_contention_context():
@@ -412,14 +412,14 @@ def test_profile_records_contention_context():
 ```bash
 ~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_planning_latency_profile.py -q
 ```
-Expected: 新用例 FAIL（`KeyError: 'contention'`），其余通过。
+Expected: the new case FAILs (`KeyError: 'contention'`); the rest pass.
 
 - [ ] **Step 3: Implement**
 
-`plans/performance.py`：
+`plans/performance.py`:
 
-- 顶部 import 增加 `import os`、`import threading`；
-- 新增 helper：
+- Add `import os` and `import threading` to the top imports;
+- Add a helper:
 
 ```python
 def _loadavg_1m() -> float:
@@ -429,7 +429,7 @@ def _loadavg_1m() -> float:
         return 0.0
 ```
 
-- `collect_planning_latency` 改为：
+- Change `collect_planning_latency` to:
 
 ```python
 def collect_planning_latency(function):
@@ -479,15 +479,15 @@ def collect_planning_latency(function):
 ```bash
 ~/.conda/envs/brachytherapy/bin/python -m pytest tests/test_planning_latency_profile.py tests/test_planning_latency_equivalence.py -q
 ```
-Expected: 全绿（既有并发隔离/异常恢复用例不受影响）。
+Expected: all green (existing concurrency-isolation/exception-recovery cases unaffected).
 
 - [ ] **Step 5 (do NOT do): Commit — controller handles it.**
 
 ---
 
-### Task 4: 回归 + 端到端验收
+### Task 4: Regression + End-to-End Acceptance
 
-- [ ] **Step 1: 回归集**
+- [ ] **Step 1: Regression set**
 
 ```bash
 env -u BRACHYBOT_API_KEY ~/.conda/envs/brachytherapy/bin/python -m pytest \
@@ -499,20 +499,20 @@ env -u BRACHYBOT_API_KEY ~/.conda/envs/brachytherapy/bin/python -m pytest \
   tests/test_workspace_auth.py tests/test_public_deployment.py -q
 ```
 
-- [ ] **Step 2: 服务器验收（用户执行）**
+- [ ] **Step 2: Server acceptance (run by the user)**
 
-重启服务器（加载新代码）→ 重跑一次规划 + 导板，检查：
+Restart the server (to load the new code) → rerun one planning + guide session, and check:
 
-1. 长任务阶段不再出现连续 `checkpoint cancelled stale`；`checkpoint started` 能 `completed`；
-2. `Slow request` 中不再出现 5–9s 的 `POST /api/workspace/state`（侧车生效）；
-3. `[planning_latency]` 新字段可解释墙钟：安静窗口 `load1` 低；繁忙窗口 `load1` 高、`parallelism` 高；
-4. 结果指标不变；打开旧病例/新病例/删除病例后 UI 桥状态恢复正常。
+1. During long tasks, no consecutive `checkpoint cancelled stale` appears; `checkpoint started` can reach `completed`;
+2. `Slow request` no longer shows a 5–9s `POST /api/workspace/state` (sidecar effective);
+3. The new `[planning_latency]` fields explain wall-clock time: a quiet window has low `load1`; a busy window has high `load1` and high `parallelism`;
+4. Result metrics are unchanged; after opening an old case/a new case/deleting a case, the UI bridge state recovers normally.
 
 ---
 
 ## Self-Review
 
-- **Spec 覆盖**：§3A → Task 1；§3B → Task 2；§3C → Task 3；§5 测试 → 各任务；§6 验收 → Task 4；§4 兼容/回退 → 测试（无在飞时行为不变、旧工作区回退快照、C 仅增字段）+ 提交说明。
-- **占位符扫描**：无 TBD/TODO；每个代码步骤含完整代码与命令。
-- **类型一致性**：`_checkpoint_inflight`/`_checkpoint_dirty`（Dict 键为 `(str, str)`）、`save_ui_bridge/load_ui_bridge`、`_select_case_bridge`、`contention` 字段命名在任务与测试间一致；`_snapshot_agent_locked` wrapper 保留原签名，`_snapshot_agent_locked_inner` 仅改名。
-- **既有测试兼容**：wrapper 保留 stale-generation 早退语义（测试 `test_superseded_checkpoint_does_not_record_completion` 依赖）；`_checkpoint_timer`/defer 逻辑未动。
+- **Spec coverage:** §3A → Task 1; §3B → Task 2; §3C → Task 3; §5 tests → each task; §6 acceptance → Task 4; §4 compatibility/rollback → tests (behavior unchanged when nothing is in flight, old workspace falls back to snapshot, C only adds fields) + commit notes.
+- **Placeholder scan:** no TBD/TODO; every code step contains complete code and commands.
+- **Type consistency:** `_checkpoint_inflight`/`_checkpoint_dirty` (Dict keys are `(str, str)`), `save_ui_bridge/load_ui_bridge`, `_select_case_bridge`, and the `contention` field naming are consistent between tasks and tests; the `_snapshot_agent_locked` wrapper keeps the original signature, and `_snapshot_agent_locked_inner` is only renamed.
+- **Existing test compatibility:** the wrapper keeps the stale-generation early-exit semantics (relied on by the test `test_superseded_checkpoint_does_not_record_completion`); the `_checkpoint_timer`/defer logic is untouched.

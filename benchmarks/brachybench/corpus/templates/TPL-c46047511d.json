@@ -1,0 +1,27 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "input_variations_all",
+  "expectation": null,
+  "facet": "input_variations_all",
+  "gold_status": "draft",
+  "n_source_intents": 15,
+  "representative_text": "Calculate the dose",
+  "source_refs": [
+    "INT-0e61b581fbf1",
+    "INT-11113991c996",
+    "INT-1665b21e2860",
+    "INT-24f00cbf42c2",
+    "INT-301988225a8d",
+    "INT-33cbbf3437c0",
+    "INT-3c858d903ee1",
+    "INT-504a1eba0fca",
+    "INT-ae24c2569019",
+    "INT-c882ace6d102",
+    "INT-defa6f793a8c",
+    "INT-f044d5f444b5",
+    "INT-f15f67d43e8d",
+    "INT-f2a2236d47c1",
+    "INT-fd22571d2aaf"
+  ],
+  "template_id": "TPL-c46047511d"
+}

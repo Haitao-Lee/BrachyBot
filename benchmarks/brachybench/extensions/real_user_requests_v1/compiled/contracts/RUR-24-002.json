@@ -1,0 +1,79 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "kind": "report_figures",
+      "max": 1,
+      "operation": "submit"
+    },
+    {
+      "hide": [],
+      "max": 2,
+      "operation": "capture",
+      "targets": [
+        "ctv-A"
+      ]
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "en",
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "artifact",
+      "statement": "Global includes requested CTV/nearby structures/needles; close-up CTV target occupancy and clipping satisfy pre-reviewed figure-role thresholds."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "state",
+      "statement": "Original camera restored; persisted report figures use new view-specific camera receipts."
+    },
+    {
+      "id": "criterion-2",
+      "kind": "response",
+      "statement": "No high image-resolution claim substituted for object legibility."
+    }
+  ],
+  "rules": [
+    {
+      "kind": "report_figures",
+      "op": "artifact",
+      "status": "completed"
+    },
+    {
+      "op": "figure_roles",
+      "roles": [
+        "global",
+        "CTV_closeup"
+      ]
+    },
+    {
+      "op": "preserve",
+      "path": "viewer"
+    }
+  ],
+  "scenario_id": "RUR-24-002",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "artifact",
+      "statement": "Global includes requested CTV/nearby structures/needles; close-up CTV target occupancy and clipping satisfy pre-reviewed figure-role thresholds."
+    },
+    {
+      "kind": "state",
+      "statement": "Original camera restored; persisted report figures use new view-specific camera receipts."
+    },
+    {
+      "kind": "response",
+      "statement": "No high image-resolution claim substituted for object legibility."
+    }
+  ]
+}

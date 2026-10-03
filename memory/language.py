@@ -127,7 +127,7 @@ def detect(
 
     Returns a dict:
         {"code": "en"|"zh"|"ja"|"ko"|"ru"|"ar",
-         "name": "English"|"中文 (Chinese)"|...,
+         "name": "English"|"Chinese"|...,
          "source": "explicit"|"detected"|"memory"|"default"}
 
     The `explicit` arg wins over detection. ``fallback`` is consulted only
@@ -165,7 +165,7 @@ def detect(
         )
 
     # Latin UI labels are words, not a competing sentence: counting every
-    # letter makes '在 data tree 的哪里呢' incorrectly English. Compare word
+    # letter makes 'where is it in the data tree' incorrectly English. Compare word
     # units for mixed Chinese prose, while leaving genuinely English prose,
     # short ambiguous labels, and other scripts on the existing path.
     latin_words = len(re.findall(r"[A-Za-z]+(?:[-_][A-Za-z]+)*", cleaned))

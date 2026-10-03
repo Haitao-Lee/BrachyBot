@@ -1,0 +1,8 @@
+{
+  "n_tasks": 11819,
+  "empty_text": [],
+  "weak_intent": [],
+  "unresolved_grounding": [],
+  "pos_eq_neg": [],
+  "generic_observation": []
+}

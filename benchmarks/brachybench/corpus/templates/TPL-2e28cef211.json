@@ -1,0 +1,16 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "output_tools",
+  "expectation": null,
+  "facet": "output_tools",
+  "gold_status": "draft",
+  "n_source_intents": 4,
+  "representative_text": "Generate a clinical report",
+  "source_refs": [
+    "INT-2b988a6eb600",
+    "INT-530dd8ef3267",
+    "INT-7902a729a35c",
+    "INT-954d9520893c"
+  ],
+  "template_id": "TPL-2e28cef211"
+}

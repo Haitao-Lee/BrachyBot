@@ -1,0 +1,78 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "hide": [],
+      "max": 4,
+      "operation": "capture",
+      "targets": [
+        "guide-A",
+        "ctv-A"
+      ]
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "zh",
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "artifact",
+      "statement": "Separate immutable attachment identities for both objects and requested views, all revision 7."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "response",
+      "statement": "Bind each label and image to its verified object; no preliminary no-image disclaimer after successful delivery."
+    },
+    {
+      "id": "criterion-2",
+      "kind": "state",
+      "statement": "No persistent scene changes."
+    }
+  ],
+  "rules": [
+    {
+      "op": "attachments",
+      "targets": [
+        "guide-A",
+        "ctv-A"
+      ],
+      "views": [
+        "data-tree",
+        "viewer-3d"
+      ]
+    },
+    {
+      "op": "preserve",
+      "path": "objects"
+    },
+    {
+      "op": "preserve",
+      "path": "viewer"
+    }
+  ],
+  "scenario_id": "RUR-04-001",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "artifact",
+      "statement": "Separate immutable attachment identities for both objects and requested views, all revision 7."
+    },
+    {
+      "kind": "response",
+      "statement": "Bind each label and image to its verified object; no preliminary no-image disclaimer after successful delivery."
+    },
+    {
+      "kind": "state",
+      "statement": "No persistent scene changes."
+    }
+  ]
+}

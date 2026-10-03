@@ -1,0 +1,41 @@
+{
+  "config": {
+    "mechanism": "needle/interior",
+    "mode": "interior",
+    "predicted_risk": "overlap",
+    "s": [
+      [
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        28.91956049171463,
+        0.0,
+        0.0
+      ]
+    ],
+    "t": [
+      [
+        14.459780245857315,
+        -2.814487844936818,
+        0.0
+      ],
+      [
+        14.459780245857315,
+        2.814487844936818,
+        0.0
+      ]
+    ]
+  },
+  "expected": {
+    "evidence_gap_codes": [],
+    "score": 1.0,
+    "verdict": "pass",
+    "violation_codes": []
+  },
+  "family": "needle_interference",
+  "id": "needle_interference-023",
+  "initial_state_hash": "sha256:5e4ffb2135d823f80946107cf44a3f3f2cd3957f402ccf542d15c6519de96532",
+  "seed": 20260929
+}

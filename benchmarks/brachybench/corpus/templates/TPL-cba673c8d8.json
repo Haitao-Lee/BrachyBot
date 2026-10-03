@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "dose_engine",
+  "expectation": null,
+  "facet": "dose_engine",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Is the dose distribution acceptable?",
+  "source_refs": [
+    "INT-c0be0a8e8147",
+    "INT-d6513094da59"
+  ],
+  "template_id": "TPL-cba673c8d8"
+}

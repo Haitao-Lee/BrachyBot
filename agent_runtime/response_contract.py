@@ -30,7 +30,7 @@ _ACTION_RE = re.compile(
     re.IGNORECASE,
 )
 # A command can also demand the content that goes with its evidence:
-# "截图告知" is not a pure capture command — the images must be explained.
+# "capture and tell me" is not a pure capture command — the images must be explained.
 # Without this signal the turn degrades into an attachment-only acknowledgement
 # and the user is never told what the screenshots show.
 _CONTENT_REQUEST_RE = re.compile(
@@ -89,12 +89,12 @@ def build_response_contract(
     question = _has_question_signal(message)
     action = _has_action_signal(message)
     value = re.sub(r"\s+", " ", str(message or "").strip())
-    # "截图告知"/"capture and tell me" demand the content that belongs to the
+    # "capture and tell me" demands the content that belongs to the
     # evidence even without a question mark; treat that as an information
     # request so the two-stage screenshot flow must explain the images.
     content_request = bool(value and _CONTENT_REQUEST_RE.search(value))
     question = question or content_request
-    # A noun phrase such as "生成结果在哪里" contains an action-looking
+    # A noun phrase such as "where is the generated result" contains an action-looking
     # word, but is still one information-seeking question. Treat a turn as
     # mixed only when a command clause is explicitly separated from the
     # question clause (or uses a clear polite imperative prefix).

@@ -1,0 +1,68 @@
+benchmark: MedCTA
+ext_id: EXT-6
+tier: conditional
+grade_R: R0-Gated
+grade_C: C2
+panels: [P2]
+
+acquisition:
+  source_url: https://github.com/IVUL-KAUST/MedCTA
+  source_commit: eb7d1dc0adc6da4c31d9c5ebef3a8059a620022c
+  source_tag: null
+  dataset_name: "MedCTA medcta_dataset (release/HF IVUL-KAUST/MedCTA; opencompass/data is gitignored, not in repo)"
+  dataset_revision: not-public-in-repo
+  dataset_sha256: not-public-in-repo
+  dataset_size_bytes: 0
+  retrieval_command: |
+    # Code only (vendored); task data is NOT public:
+    git clone https://github.com/IVUL-KAUST/MedCTA vendor/EXT-6
+    git -C vendor/EXT-6 checkout eb7d1dc0adc6da4c31d9c5ebef3a8059a620022c
+    # requires: MedCTA dataset release + opencompass/configs/datasets/gta_bench.py
+    #           + data/MCTA/toolmeta.json (all external/gitignored)
+  retrieval_date: 2026-10-01
+  license_upstream: Apache-2.0
+  license_file: LICENSE.txt
+  license_verified_by: "brachybench-auto (GitHub API 2026-10-01)"
+  activity_verified:
+    last_commit_date: 2026-06-11
+    last_release_date: null
+    open_issues: 4
+
+runner:
+  official_runner: opencompass/run.py configs/eval_medcta_bench.py
+  evaluator: clinical_accuracy.py + goal_accuracy.py (OpenAI Responses API, gpt-5.4)
+  container: null
+  python_requires: ">=3.10"
+  native_deps: [GPU, tool server (agentlego-server), lmdeploy]
+  paid_apis: [SERPER_API_KEY, MATHPIX_APP_ID, MATHPIX_APP_KEY, OPENAI_API_KEY]
+
+adapter:
+  kind: ext_adapter
+  shim_used: false
+  spec_ref: "DESIGN §25.5"
+
+run:
+  smoke_size: 5
+  sample_size: 0
+  sampling_seed: 42
+  n_runs: 5
+  budget: {wall_clock_s: 600, turns: 20, tool_calls: 40}
+
+isolation:
+  sandbox: required
+  network: denied
+  write_paths: ["benchmarks/external/EXT-6/results/"]
+  forbidden_write_roots:
+    - BrachyBot/session/
+    - BrachyBot/case/
+    - BrachyBot/runtime/
+    - BrachyBot/report/
+
+contamination:
+  public_samples_allowed_for_dev_only: true
+  seen_task_ids: []
+  behavioral_probes: [B1, B2, B3, B4, B5, B6, B7]
+
+status: blocked
+block_reason: "task dataset not public (opencompass/data gitignored); tools need paid Serper + Mathpix; graders need OpenAI; README still anonymized"
+reinclude_condition: "provide MedCTA dataset release + paid Serper/Mathpix/OpenAI keys; then fill dataset_revision + dataset_sha256 and pass E0"

@@ -1,0 +1,26 @@
+{
+  "config": {
+    "binding": {
+      "bound_metric": "V100",
+      "bound_target": "other",
+      "metric": "V100",
+      "target": "rectum",
+      "unit": "%",
+      "value": 45.0,
+      "value_gy": 45.0
+    },
+    "mechanism": "binding/broken_%"
+  },
+  "expected": {
+    "evidence_gap_codes": [],
+    "score": 0.0,
+    "verdict": "fail",
+    "violation_codes": [
+      "param_bound_to_wrong_target"
+    ]
+  },
+  "family": "unit_binding",
+  "id": "unit_binding-017",
+  "initial_state_hash": "sha256:272f064b1168b6f17024d81fe4653f42204669fecda1d752265ebca4314305b4",
+  "seed": 20260929
+}

@@ -1,0 +1,1 @@
+OK: /home/lht/snap/brachyplan/BrachyBot/benchmarks/brachybench

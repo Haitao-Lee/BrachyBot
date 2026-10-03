@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "knowledge_tools",
+  "expectation": null,
+  "facet": "knowledge_tools",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Save this case",
+  "source_refs": [
+    "INT-3da55709c481",
+    "INT-4a652b867446"
+  ],
+  "template_id": "TPL-6c8682ff7f"
+}

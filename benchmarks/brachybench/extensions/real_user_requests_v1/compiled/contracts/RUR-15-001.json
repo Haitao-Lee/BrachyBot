@@ -1,0 +1,66 @@
+{
+  "acceptable_outcomes": [
+    "PARTIAL",
+    "FAILED_TOOL"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "kind": "guide",
+      "max": 1,
+      "operation": "submit"
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "zh",
+  "response_facts": {
+    "brain.D2cc_Gy": 4.8,
+    "spinal_cord.D2cc_Gy": 7.3
+  },
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "outcome",
+      "statement": "Guide fails honestly; OAR read still returns available measurements."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "response",
+      "statement": "List 7.3 and 4.8 Gy with correct organ scope; explain guide failure, no all-failed/all-succeeded blanket reply."
+    }
+  ],
+  "rules": [
+    {
+      "kind": "guide",
+      "max": 1,
+      "min": 1,
+      "op": "attempt",
+      "operation": "submit"
+    },
+    {
+      "kind": "guide",
+      "op": "job_status",
+      "status": "failed"
+    },
+    {
+      "op": "preserve",
+      "path": "artifact_records.guide"
+    }
+  ],
+  "scenario_id": "RUR-15-001",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "outcome",
+      "statement": "Guide fails honestly; OAR read still returns available measurements."
+    },
+    {
+      "kind": "response",
+      "statement": "List 7.3 and 4.8 Gy with correct organ scope; explain guide failure, no all-failed/all-succeeded blanket reply."
+    }
+  ]
+}

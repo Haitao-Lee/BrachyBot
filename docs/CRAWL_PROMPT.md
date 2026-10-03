@@ -1,45 +1,45 @@
-# 任务：Brachytherapy 临床知识库 — 原始资料抓取
+# Task: Brachytherapy Clinical Knowledge Base — Source Material Crawling
 
-> **用途**：本 prompt 用于在另一台有公开网络访问权限的电脑上驱动一个 agent，把 brachytherapy（近距离放射治疗）的全部官方权威资料抓取下来，保存为结构化的 Markdown 文件，传回本项目，再由本项目的 agent 整理成最终的 `clinical_kb/guidelines_brachytherapy.md`。
+> **Purpose**: This prompt is used to drive an agent on another computer with public network access to crawl all official authoritative brachytherapy materials, save them as structured Markdown files, transfer them back to this project, and then have this project's agent organize them into the final `clinical_kb/guidelines_brachytherapy.md`.
 >
-> **生成日期**：2026-06-17
-> **关联文件**：`clinical_kb/guidelines_brachytherapy.md`（最终 KB），`clinical_kb/sources/_crawled/`（放置抓取结果的目录）
+> **Generated date**: 2026-06-17
+> **Related files**: `clinical_kb/guidelines_brachytherapy.md` (final KB), `clinical_kb/sources/_crawled/` (directory for storing crawl results)
 
 ---
 
-## 1. 你的身份与目标
+## 1. Your Identity and Goal
 
-你是一个临床文献抓取 agent。任务：**从公开网络抓取 brachytherapy（近距离放射治疗）的全部官方权威资料**，保存为结构化的 Markdown 文件，输出到一个文件夹，让后续 agent 可以基于这些原文构建一个**临床可参考**的知识库。
+You are a clinical literature crawling agent. Task: **crawl all official authoritative brachytherapy materials from the public internet**, save them as structured Markdown files, output them to a folder, so that a downstream agent can build a **clinically referenceable** knowledge base based on these source texts.
 
-你**只有抓取和保存原文**两个动作。不要总结、不要改写、不要 LLM 加工。原文抓什么就存什么。后续处理由别的 agent 做。
+You have **only two actions: crawl and save the source text**. Do not summarize, do not rewrite, do not LLM-process. Save exactly what the source text contains. Subsequent processing is done by another agent.
 
-## 2. 工作环境与工具
+## 2. Working Environment and Tools
 
-- 你有 `WebFetch` 工具（HTTP GET 抓取网页/PDF 文本）
-- 你有 `WebSearch` 工具（Google 搜索）
-- 你有 `Write` 工具（保存文件）
-- 你有 `Bash` 工具（建目录、打包）
-- 你**没有** PubMed/ABS 订阅，但 open-access 期刊和 PDF 通常可访问
-- 遇到 403/付费墙/必须登录：跳过，记到 MANIFEST，**不要伪造内容**
-- 不要为了凑数编造 URL 或论文标题
+- You have the `WebFetch` tool (HTTP GET to fetch web page/PDF text)
+- You have the `WebSearch` tool (Google search)
+- You have the `Write` tool (save files)
+- You have the `Bash` tool (create directories, package)
+- You **do not have** a PubMed/ABS subscription, but open-access journals and PDFs are usually accessible
+- Encountering 403/paywall/login required: skip, record in MANIFEST, **do not fabricate content**
+- Do not invent URLs or paper titles just to pad the count
 
-## 3. 输出目录结构
+## 3. Output Directory Structure
 
-**所有内容输出到 `/tmp/brachy_kb_crawl/`（或用户指定路径），最终打包成 `/tmp/brachy_kb_crawl.tar.gz`。**
+**All content is output to `/tmp/brachy_kb_crawl/` (or a user-specified path), and finally packaged into `/tmp/brachy_kb_crawl.tar.gz`.**
 
 ```
 /tmp/brachy_kb_crawl/
 ├── 00_meta/
-│   ├── MANIFEST.csv                 # 所有抓取项的清单（含失败项）
-│   ├── FETCH_LOG.md                 # 抓取日志：哪些域被屏蔽、用了哪些镜像
-│   └── SOURCES_BY_CATEGORY.md       # 按分类汇总的来源列表
+│   ├── MANIFEST.csv                 # Manifest of all crawled items (including failures)
+│   ├── FETCH_LOG.md                 # Fetch log: which domains were blocked, which mirrors were used
+│   └── SOURCES_BY_CATEGORY.md       # Source list summarized by category
 ├── 01_gynecologic/
-│   ├── INDEX.md                     # 本分类的来源索引
+│   ├── INDEX.md                     # Source index for this category
 │   └── raw/
 │       ├── gec-estro-cervix-2018.md
 │       ├── embrace-i-pivotal-2021-lancet-oncol.md
 │       ├── abs-cervix-consensus-2018.md
-│       └── ...（每份原文一个 .md）
+│       └── ...（one .md per source text）
 ├── 02_prostate_gu/
 │   ├── INDEX.md
 │   └── raw/
@@ -73,35 +73,35 @@
 │   ├── INDEX.md
 │   └── raw/
 │       └── ...
-└── README.md                         # 抓取说明、源列表、未完成项
+└── README.md                         # Crawl notes, source list, incomplete items
 ```
 
-## 4. 每个原文文件的格式
+## 4. Format of Each Source File
 
-每抓到一份资料，存为 `raw/<slug>.md`，**严格按以下模板**：
+For each piece of material crawled, save as `raw/<slug>.md`, **strictly following the template below**:
 
 ```markdown
 ---
-title: "<完整论文/指南标题，verbatim>"
-authors: ["作者1", "作者2", ...]   # 或 "Writing Committee", "ABS H&N Working Group" 等
+title: "<full paper/guideline title, verbatim>"
+authors: ["Author1", "Author2", ...]   # or "Writing Committee", "ABS H&N Working Group", etc.
 year: 2022
-journal: "<期刊名或机构>"          # 例 "Brachytherapy" / "Radiotherapy and Oncology" / "ABS Consensus"
-volume: "X(Y)"                    # 可选
-pages: "Z-W"                      # 可选
-doi: "10.xxxx/..."                # 必填，如无 DOI 写 "N/A"
-pmid: "12345678"                  # 可选
-url: "<抓取的实际 URL>"           # 必填
-fetched_date: "2026-06-17"        # 抓取日期
-fetch_method: "webfetch"          # 抓取方式
+journal: "<journal name or institution>"          # e.g. "Brachytherapy" / "Radiotherapy and Oncology" / "ABS Consensus"
+volume: "X(Y)"                    # optional
+pages: "Z-W"                      # optional
+doi: "10.xxxx/..."                # required, if no DOI write "N/A"
+pmid: "12345678"                  # optional
+url: "<actual URL crawled>"           # required
+fetched_date: "2026-06-17"        # fetch date
+fetch_method: "webfetch"          # fetch method
 doc_type: "guideline|consensus|journal_paper|task_group_report|review|book_chapter"
-category: "01_gynecologic"        # 分类
-priority: "P0|P1|P2"              # 见下方优先级
+category: "01_gynecologic"        # category
+priority: "P0|P1|P2"              # see priority below
 ---
 
 # <Title>
 
-**完整引用（Citation）:**
-<作者. 标题. 期刊. 年. 卷(期): 页. DOI:>
+**Full Citation:**
+<Authors. Title. Journal. Year. Volume(Issue): Pages. DOI:>
 
 **URL:** <url>
 
@@ -110,46 +110,46 @@ priority: "P0|P1|P2"              # 见下方优先级
 ---
 
 ## Abstract / Executive Summary
-<如果原网页有 abstract，verbatim 复制；没有就抓取 Executive Summary / 关键结论段>
+<If the original page has an abstract, copy it verbatim; otherwise fetch the Executive Summary / key conclusion paragraphs>
 
 ## Key Recommendations / Main Findings
-<逐条列出原文件的主要发现或推荐，每条独立成行，保留原文术语。原文是表就保留为表。>
+<List the main findings or recommendations of the original document item by item, each on its own line, preserving the original terms. If the original is a table, keep it as a table.>
 
 ## Full Content Excerpt
-<以下内容是 WebFetch 抓取的实际原文（可能是 HTML 转 markdown、或 PDF 提取的文本），尽量保留原始结构、表格、参考文献列表>
-<至少抓取并保存 2000 词以上的正文>
+<The following is the actual source text crawled by WebFetch (may be HTML converted to markdown, or text extracted from PDF); preserve the original structure, tables, and reference lists as much as possible>
+<Fetch and save at least 2000 words of body text>
 
 ## References (if applicable)
-<如果抓到了参考文献列表，verbatim 复制>
+<If a reference list was retrieved, copy it verbatim>
 
 ## Notes for downstream agent
-<留给后续 agent 看的备注：哪些章节是剂量学规范、哪些是临床证据、哪些是历史背景。1-3 句话。>
+<Notes for the downstream agent: which sections are dosimetry specifications, which are clinical evidence, which are historical background. 1-3 sentences.>
 ```
 
-## 5. MANIFEST.csv 格式
+## 5. MANIFEST.csv Format
 
-`00_meta/MANIFEST.csv`，表头：
+`00_meta/MANIFEST.csv`, header:
 
 ```csv
 category,slug,title,year,journal,doi,pmid,url,fetch_status,fetch_date,local_path,notes
 01_gynecologic,gec-estro-cervix-2018,"GEC-ESTRO/ABS recommendations on 3D image-based treatment planning",2018,Radiotherapy and Oncology,10.1016/j.radonc.2018.01.014,...,
 ```
 
-`fetch_status` 取值：`fetched` / `partial` / `blocked` / `paywall` / `not_found` / `wrong_url`
+`fetch_status` values: `fetched` / `partial` / `blocked` / `paywall` / `not_found` / `wrong_url`
 
-## 6. 必须抓取的来源清单（共约 86 项，按 P0/P1/P2 优先级）
+## 6. Required Source List (approximately 86 items total, by P0/P1/P2 priority)
 
-### 优先级说明
+### Priority Description
 
-- **P0**：核心指南/共识/RCT 结果，必须抓到正文（≥2000 词或全文）
-- **P1**：重要补充文献/综述，抓到 abstract + 关键章节即可（≥500 词）
-- **P2**：背景/历史/边缘文献，标题+abstract 即可
+- **P0**: Core guidelines/consensus/RCT results; body text must be retrieved (≥2000 words or full text)
+- **P1**: Important supplementary literature/reviews; retrieving abstract + key sections is sufficient (≥500 words)
+- **P2**: Background/historical/peripheral literature; title + abstract is sufficient
 
 ---
 
-### 01_gynecologic（宫颈/阴道/外阴/子宫内膜）— 12 项
+### 01_gynecologic (cervix/vagina/vulva/endometrium) — 12 items
 
-| # | 优先级 | 标题 / 描述 | DOI / URL 提示 | 目标本地文件 |
+| # | Priority | Title / Description | DOI / URL Hint | Target Local File |
 |---|---|---|---|---|
 | 1 | P0 | Haie-Meder C, et al. Recommendations from GEC-ESTRO Working Group for 3D image-based treatment planning in cervix cancer BT (2005) | Radiother Oncol 2005;74(3):235-245. DOI: 10.1016/j.radonc.2004.12.013 | gec-estro-cervix-2005-haie-meder.md |
 | 2 | P0 | Dimopoulos JCA, et al. Systematic evaluation of MRI findings in advanced cervix cancer; reference for GTV/HR-CTV/IR-CTV (2012) | Radiother Oncol 2012;102(1):112-118. DOI: 10.1016/j.radonc.2011.10.016 | dimopoulos-mri-ctv-2012.md |
@@ -164,9 +164,9 @@ category,slug,title,year,journal,doi,pmid,url,fetch_status,fetch_date,local_path
 | 11 | P1 | PORTEC-2 (VCB vs EBRT for intermediate-risk endometrial) | Lancet 2010;375(9717):816-823. DOI: 10.1016/S0140-6736(09)62163-2 | portec-2-lancet-2010.md |
 | 12 | P1 | PORTEC-3 (chemoRT for high-risk endometrial) | Lancet Oncol 2018. DOI lookup | portec-3-lancet-oncol-2018.md |
 
-### 02_prostate_gu（前列腺/膀胱/尿道/阴茎）— 12 项
+### 02_prostate_gu (prostate/bladder/urethra/penis) — 12 items
 
-| # | 优先级 | 标题 | DOI / URL | 目标本地文件 |
+| # | Priority | Title | DOI / URL | Target Local File |
 |---|---|---|---|---|
 | 1 | P0 | Yamada Y, et al. ABS 2022 Consensus Guidelines for HDR Prostate Brachytherapy | Brachytherapy 2022. DOI: 10.1016/j.brachy.2021.09.013 | abs-2022-prostate-hdr.md |
 | 2 | P0 | Davis BJ, et al. ABS/AUA/ASTRO LDR Permanent Seed Implant Guidelines (2012, 2017 update) | Brachytherapy 2012. DOI: 10.1016/j.brachy.2011.07.005 | abs-aua-astro-ldr-2012.md |
@@ -181,9 +181,9 @@ category,slug,title,year,journal,doi,pmid,url,fetch_status,fetch_date,local_path
 | 11 | P2 | Real-Time TRUS Intraoperative Planning (various) | DOI lookup | real-time-trus-planning.md |
 | 12 | P2 | Urethral Sparing & Neurovascular Bundle Dosimetry (Mohammed et al.) | DOI lookup | urethra-sparing-nvb.md |
 
-### 03_breast（乳腺 APBI / IORT / boost）— 11 项
+### 03_breast (breast APBI / IORT / boost) — 11 items
 
-| # | 优先级 | 标题 | DOI / URL | 目标本地文件 |
+| # | Priority | Title | DOI / URL | Target Local File |
 |---|---|---|---|---|
 | 1 | P0 | ASTRO 2022 APBI Consensus Statement | https://www.astro.org/Patient-Care-and-Research/Clinical-Practice-Statements (free PDF) | astro-2022-apbi.md |
 | 2 | P0 | ABS 2016 Consensus Guideline on APBI (and 2018 update) | Brachytherapy 2016. DOI: 10.1016/j.brachy.2016.05.001 | abs-apbi-2016.md |
@@ -197,9 +197,9 @@ category,slug,title,year,journal,doi,pmid,url,fetch_status,fetch_date,local_path
 | 10 | P1 | WBI + Brachytherapy Boost (EORTC 22881, START) | DOI lookup | wbi-boost-eortc.md |
 | 11 | P1 | Intraoperative Electronic BT (Intrabeam, Xoft) | DOI lookup | iort-electronic-bt.md |
 
-### 04_head_neck_skin（头颈 + 皮肤）— 10 项
+### 04_head_neck_skin (head & neck + skin) — 10 items
 
-| # | 优先级 | 标题 | DOI / URL | 目标本地文件 |
+| # | Priority | Title | DOI / URL | Target Local File |
 |---|---|---|---|---|
 | 1 | P0 | ABS Head & Neck Interstitial Brachytherapy Consensus (Shah et al., 2018) | Brachytherapy 2018. DOI: 10.1016/j.brachy.2018.01.009 | abs-hn-2018.md |
 | 2 | P0 | GEC-ESTRO Head & Neck BT Recommendations | DOI lookup (likely 2017-2018) | gec-estro-hn.md |
@@ -212,9 +212,9 @@ category,slug,title,year,journal,doi,pmid,url,fetch_status,fetch_date,local_path
 | 9 | P1 | Keloid Brachytherapy (post-op, superficial) | DOI lookup | keloid-bt.md |
 | 10 | P2 | Nasopharyngeal BT (intracavitary) | DOI lookup | npc-intracavitary-bt.md |
 
-### 05_gi（食管/直肠/肛门/胆管/胰腺/胃）— 11 项
+### 05_gi (esophagus/rectum/anus/bile duct/pancreas/stomach) — 11 items
 
-| # | 优先级 | 标题 | DOI / URL | 目标本地文件 |
+| # | Priority | Title | DOI / URL | Target Local File |
 |---|---|---|---|---|
 | 1 | P0 | ABS Esophageal Brachytherapy Consensus (2014) | Brachytherapy 2014. DOI: 10.1016/j.brachy.2014.07.001 | abs-esophageal-2014.md |
 | 2 | P0 | NCCN Esophageal Cancer Guideline (current, BT section) | nccn.org | nccn-esophageal-2024.md |
@@ -228,9 +228,9 @@ category,slug,title,year,journal,doi,pmid,url,fetch_status,fetch_date,local_path
 | 10 | P1 | I-125 + Gemcitabine for LAPC (Chinese trials) | PMID lookup | pancreatic-i125-gemcitabine.md |
 | 11 | P2 | Gastric Brachytherapy review | DOI lookup | gastric-bt.md |
 
-### 06_other_sites（肺/脑/眼/肉瘤/儿科/血管）— 10 项
+### 06_other_sites (lung/brain/eye/sarcoma/pediatric/vascular) — 10 items
 
-| # | 优先级 | 标题 | DOI / URL | 目标本地文件 |
+| # | Priority | Title | DOI / URL | Target Local File |
 |---|---|---|---|---|
 | 1 | P0 | Goldman JM, et al. (or ABS) Endobronchial Brachytherapy Consensus | DOI lookup | endobronchial-bt-consensus.md |
 | 2 | P0 | BRACHY Trial (Surveillance or similar) for endobronchial BT | DOI lookup | brachy-trial-lung.md |
@@ -243,9 +243,9 @@ category,slug,title,year,journal,doi,pmid,url,fetch_status,fetch_date,local_path
 | 9 | P2 | Vascular Brachytherapy (Sr-90, P-32) for in-stent restenosis (historical) | DOI lookup (pre-2005) | vascular-bt-sr90.md |
 | 10 | P2 | Cardiac / Vascular BT review (recent reappraisal) | DOI lookup | cardiac-vascular-review.md |
 
-### 07_physics（物理与剂量学）— 11 项
+### 07_physics (physics and dosimetry) — 11 items
 
-| # | 优先级 | 标题 | DOI / URL | 目标本地文件 |
+| # | Priority | Title | DOI / URL | Target Local File |
 |---|---|---|---|---|
 | 1 | P0 | Nath R, et al. AAPM TG-43: Dosimetry of Interstitial Brachytherapy Sources (1995) | Med Phys 1995;22(2):209-234. DOI: 10.1118/1.597458 | aapm-tg-43-nath-1995.md |
 | 2 | P0 | Rivard MJ, et al. Update of AAPM TG-43: Revised Protocol for Brachytherapy Dose Calculations (2004) | Med Phys 2004;31(3):633-674. DOI: 10.1118/1.1646040 | aapm-tg-43u1-rivard-2004.md |
@@ -259,9 +259,9 @@ category,slug,title,year,journal,doi,pmid,url,fetch_status,fetch_date,local_path
 | 10 | P0 | ICRU Report 58 (1997): Dose and Volume Specification for Interstitial BT | ICRU website | icru-58-is.md |
 | 11 | P0 | IAEA TRS-398: Absorbed Dose Determination in Photon and Electron Beams (BT section) | IAEA website | iaea-trs-398.md |
 
-### 08_frameworks（学会与框架）— 9 项
+### 08_frameworks (societies and frameworks) — 9 items
 
-| # | 优先级 | 标题 | DOI / URL | 目标本地文件 |
+| # | Priority | Title | DOI / URL | Target Local File |
 |---|---|---|---|---|
 | 1 | P1 | ABS Mission and Guideline Methodology | https://www.americanbrachytherapy.org/about | abs-mission.md |
 | 2 | P1 | GEC-ESTRO / ESTRO Working Group Structure | https://www.estro.org/Groups/GEC-ESTRO | gec-estro-about.md |
@@ -275,83 +275,83 @@ category,slug,title,year,journal,doi,pmid,url,fetch_status,fetch_date,local_path
 
 ---
 
-**总计 86 项。** 目标抓取成功率 ≥70%。
+**86 items in total.** Target crawl success rate ≥70%.
 
-## 7. 执行流程（严格按顺序）
+## 7. Execution Flow (strict order)
 
-1. **建立目录骨架**（`mkdir -p`）
-2. **先抓 P0**（共 ~45 项）
-3. **再抓 P1**（共 ~25 项）
-4. **最后抓 P2**（共 ~16 项）
-5. **每个分类生成 INDEX.md**（基于 MANIFEST 自动生成）
-6. **写 FETCH_LOG.md**：记录哪些域被屏蔽、用了哪些镜像、为何某些来源失败
-7. **写 README.md**：抓取总览、成功/失败统计、注意事项
-8. **打包**：`cd /tmp && tar czf brachy_kb_crawl.tar.gz brachy_kb_crawl/`
+1. **Create the directory skeleton** (`mkdir -p`)
+2. **Crawl P0 first** (~45 items total)
+3. **Then crawl P1** (~25 items total)
+4. **Finally crawl P2** (~16 items total)
+5. **Generate INDEX.md for each category** (auto-generated from MANIFEST)
+6. **Write FETCH_LOG.md**: record which domains were blocked, which mirrors were used, and why some sources failed
+7. **Write README.md**: crawl overview, success/failure statistics, notes
+8. **Package**: `cd /tmp && tar czf brachy_kb_crawl.tar.gz brachy_kb_crawl/`
 
-## 8. 抓取策略（关键！）
+## 8. Crawling Strategy (Critical!)
 
-### 优先级 1：开放访问 PDF / 全文
+### Priority 1: Open-Access PDF / Full Text
 
-- PMC（PubMed Central）：所有 PMC 文章都是免费的
-- 期刊开放内容：多数 red journal / blue journal / green journal 文章发表 12 个月后开放
-- 学会官网的指南 PDF：ABS, GEC-ESTRO, NCCN, ASTRO 大多有免费 PDF 下载链接
-- 预印本：medRxiv, arXiv, ResearchGate
+- PMC (PubMed Central): all PMC articles are free
+- Journal open content: most red journal / blue journal / green journal articles become open 12 months after publication
+- Guideline PDFs on society websites: ABS, GEC-ESTRO, NCCN, ASTRO mostly have free PDF download links
+- Preprints: medRxiv, arXiv, ResearchGate
 
-### 优先级 2：摘要 + 关键章节
+### Priority 2: Abstract + Key Sections
 
-- 如果全文付费，至少抓 abstract + intro + 关键结果章节
-- 至少 500 词的实质内容
+- If the full text is paywalled, at least fetch abstract + intro + key results sections
+- At least 500 words of substantive content
 
-### 优先级 3：只记录 metadata
+### Priority 3: Record metadata only
 
-- 如果完全 blocked，只在 MANIFEST 记一行，URL 标 `fetch_status=blocked`
+- If completely blocked, record only one row in MANIFEST, mark URL as `fetch_status=blocked`
 
-### 严禁
+### Strictly Prohibited
 
-- ❌ 抓不到就编造内容
-- ❌ 用训练数据补全
-- ❌ 改写或"翻译"原文
-- ❌ 把不同来源混在一起
+- ❌ Fabricating content when a fetch fails
+- ❌ Filling in with training data
+- ❌ Rewriting or "translating" the source text
+- ❌ Mixing different sources together
 
-## 9. 质量自检（完成前必做）
+## 9. Quality Self-Check (mandatory before completion)
 
-完成后检查：
+After completion, check:
 
-- [ ] MANIFEST.csv 存在且每行格式正确
-- [ ] FETCH_LOG.md 存在且诚实记录所有屏蔽/失败
-- [ ] 每份 P0 文件 ≥2000 词（用 `wc -w` 检查）
-- [ ] 每份文件有正确的 frontmatter（DOI, URL, fetch_date）
-- [ ] README.md 含总览 + 成功/失败统计
-- [ ] 文件夹按 8 分类组织
-- [ ] tar.gz 成功生成
+- [ ] MANIFEST.csv exists and every row is correctly formatted
+- [ ] FETCH_LOG.md exists and honestly records all blocks/failures
+- [ ] Each P0 file is ≥2000 words (check with `wc -w`)
+- [ ] Each file has correct frontmatter (DOI, URL, fetch_date)
+- [ ] README.md contains overview + success/failure statistics
+- [ ] Folder is organized into 8 categories
+- [ ] tar.gz successfully generated
 
-输出最后一行应该是：
+The last line of output should be:
 
 ```
 ✅ Done. /tmp/brachy_kb_crawl.tar.gz ready (size: X MB, X/86 sources fetched).
 ```
 
-## 10. 预期产出
+## 10. Expected Deliverables
 
-一个 `.tar.gz` 文件（~30-100 MB），传给主会话的 agent，它会基于这些原文构建最终的 `clinical_kb/guidelines_brachytherapy.md`。
+A `.tar.gz` file (~30-100 MB), passed to the main session's agent, which will build the final `clinical_kb/guidelines_brachytherapy.md` based on these source texts.
 
 ---
 
-## 附录 A：抓取后下一步（给用户的交接说明）
+## Appendix A: Next Steps After Crawling (handoff instructions for the user)
 
-1. 把 `brachy_kb_crawl.tar.gz` 下载到本机
-2. 解压到 `clinical_kb/sources/_crawled/`
-3. 通知主项目的 agent（运行 `brachy_kb_crawl` 工作流的）
-4. 主 agent 会：
-   - 把每份原文按 8 分类归位
-   - 提取关键 dose/fractionation/OAR 数据，结构化进 `guidelines_brachytherapy.md`
-   - 删除旧有的 121 个 reconstructed 文件
-   - 更新 `INDEX.md` 加 "verification status" 标签
-   - 重新生成主 KB
+1. Download `brachy_kb_crawl.tar.gz` to the local machine
+2. Extract to `clinical_kb/sources/_crawled/`
+3. Notify the main project's agent (the one running the `brachy_kb_crawl` workflow)
+4. The main agent will:
+   - File each source text into its proper place under the 8 categories
+   - Extract key dose/fractionation/OAR data and structure it into `guidelines_brachytherapy.md`
+   - Delete the existing 121 reconstructed files
+   - Update `INDEX.md` to add "verification status" tags
+   - Regenerate the main KB
 
-## 附录 B：网络访问参考清单
+## Appendix B: Network Access Reference List
 
-抓取 agent 应该**能访问**的常用域（不需要登录）：
+Common domains the crawling agent should **be able to access** (no login required):
 
 - `https://pubmed.ncbi.nlm.nih.gov/`
 - `https://www.ncbi.nlm.nih.gov/pmc/` (PMC free)
@@ -374,4 +374,4 @@ category,slug,title,year,journal,doi,pmid,url,fetch_status,fetch_date,local_path
 - `https://www.researchgate.net/` (publicly visible papers)
 - `https://www.cstro.org/`, `https://www.csco.org.cn/` (Chinese societies)
 
-如果某个域在你的环境被屏蔽，**记录到 FETCH_LOG.md**，不要伪造。
+If a domain is blocked in your environment, **record it in FETCH_LOG.md**; do not fabricate.

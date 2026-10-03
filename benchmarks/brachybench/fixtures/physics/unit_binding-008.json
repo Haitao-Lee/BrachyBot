@@ -1,0 +1,24 @@
+{
+  "config": {
+    "binding": {
+      "bound_metric": "V100",
+      "bound_target": "bladder",
+      "metric": "V100",
+      "target": "bladder",
+      "unit": "percent",
+      "value": 75.0,
+      "value_gy": 75.0
+    },
+    "mechanism": "binding/ok_percent"
+  },
+  "expected": {
+    "evidence_gap_codes": [],
+    "score": 1.0,
+    "verdict": "pass",
+    "violation_codes": []
+  },
+  "family": "unit_binding",
+  "id": "unit_binding-008",
+  "initial_state_hash": "sha256:a82b14fa7007c936ec146dcb2188f1b0bbaa1431c51527fd4211902e25c5de13",
+  "seed": 20260929
+}

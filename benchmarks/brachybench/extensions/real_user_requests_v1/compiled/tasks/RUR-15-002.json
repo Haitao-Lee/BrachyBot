@@ -1,0 +1,75 @@
+{
+  "anti_gaming": {
+    "contrast_family_id": "RUR-15",
+    "hidden": false,
+    "paraphrase_group": "RUR-15"
+  },
+  "clinical_intent": "依赖失败时报告不消费错误剂量",
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "RUR-15",
+  "cost_class": "light_compute",
+  "fixture": {
+    "case_family": "RUR-15",
+    "initial_state_hash": "sha256:1dfc9f258b341d7873c87f86f06bb82c039ce5a6534429f3d575f92b17e3a255",
+    "setup_script": "extensions/real_user_requests_v1/compiled/fixtures/RUR-15-002.json"
+  },
+  "id": "RUR-15-002",
+  "layers": [
+    "L2",
+    "L4"
+  ],
+  "oracle": {
+    "check": "real_user_request",
+    "constraint_class": "none",
+    "expect": null,
+    "gold": "contracts/RUR-15-002.json",
+    "independent_check": true,
+    "kind": "program"
+  },
+  "power_role": "exploratory",
+  "protocol": {
+    "allowed_intermediates": [],
+    "audit_required": true,
+    "budget": {
+      "tool_calls": 96,
+      "turns": 1,
+      "wall_clock_s": 120
+    },
+    "mode": "single_turn",
+    "n_runs": 1,
+    "turns": [
+      {
+        "lang": "en",
+        "role": "user",
+        "text": "Recompute dose and generate its report; also show the existing guide."
+      }
+    ],
+    "ui_counterpart": null
+  },
+  "provenance": {
+    "authored_on": "2026-10-03",
+    "deprecated": null,
+    "derived_from": "real_user_requests_v1:RUR-15-002",
+    "guideline_ref": null,
+    "reviewers": [
+      "authoring-only; independent review pending"
+    ],
+    "source": "audit_derived"
+  },
+  "schema_version": "1.0",
+  "scoring": {
+    "difficulty_target": "medium",
+    "gate_refs": [],
+    "primary_metric": "verified_task_goal",
+    "weight": 1.0
+  },
+  "track": "B",
+  "unit": {
+    "contrast_family_id": "RUR-15",
+    "group_type": "G-CTX",
+    "kind": "task_scenario"
+  }
+}

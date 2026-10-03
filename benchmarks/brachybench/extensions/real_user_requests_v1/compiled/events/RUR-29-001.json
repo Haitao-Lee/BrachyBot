@@ -1,0 +1,8 @@
+[
+  {
+    "event": "drop_stop_ack",
+    "kind": "environment_event",
+    "payload": {},
+    "trigger": "monitor.stop.requested"
+  }
+]

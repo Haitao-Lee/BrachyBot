@@ -1,0 +1,17 @@
+[
+  {
+    "event": "commit_seed_edit",
+    "kind": "environment_event",
+    "payload": {
+      "from_revision": 7,
+      "id": "edit-A",
+      "new_conflict": {
+        "peer": "seed-B",
+        "surface_gap_mm": -0.2
+      },
+      "target": "seed-A",
+      "to_revision": 8
+    },
+    "trigger": "start"
+  }
+]

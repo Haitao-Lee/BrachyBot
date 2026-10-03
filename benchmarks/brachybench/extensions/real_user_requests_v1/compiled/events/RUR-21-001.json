@@ -1,0 +1,10 @@
+[
+  {
+    "event": "malformed_arguments",
+    "kind": "environment_event",
+    "payload": {
+      "raw": "{\"target\":\"guide-A\","
+    },
+    "trigger": "provider.tool_call"
+  }
+]

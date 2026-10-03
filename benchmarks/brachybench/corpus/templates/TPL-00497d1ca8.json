@@ -1,0 +1,29 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "input_variations",
+  "expectation": null,
+  "facet": "input_variations",
+  "gold_status": "draft",
+  "n_source_intents": 17,
+  "representative_text": "Analyze and segment the image",
+  "source_refs": [
+    "INT-22a6b5c42cfc",
+    "INT-23e395985e74",
+    "INT-2827940bba7a",
+    "INT-29997ee52156",
+    "INT-308d7e63e871",
+    "INT-43be0e2334ea",
+    "INT-6e583572016f",
+    "INT-896e91e149fd",
+    "INT-8fbf7359ca5f",
+    "INT-9d3b49dd9c37",
+    "INT-b78c09ab4e65",
+    "INT-c1fdbff58b4f",
+    "INT-cdb7558c51ec",
+    "INT-d02ba229b8fb",
+    "INT-d19d2188a7cd",
+    "INT-e2540b28d4f3",
+    "INT-e9fd21bf664b"
+  ],
+  "template_id": "TPL-00497d1ca8"
+}

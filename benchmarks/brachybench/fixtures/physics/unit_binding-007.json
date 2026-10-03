@@ -1,0 +1,26 @@
+{
+  "config": {
+    "binding": {
+      "bound_metric": "D2cc",
+      "bound_target": "other",
+      "metric": "D2cc",
+      "target": "urethra",
+      "unit": "mgy",
+      "value": 75.0,
+      "value_gy": 0.075
+    },
+    "mechanism": "binding/broken_mgy"
+  },
+  "expected": {
+    "evidence_gap_codes": [],
+    "score": 0.0,
+    "verdict": "fail",
+    "violation_codes": [
+      "param_bound_to_wrong_target"
+    ]
+  },
+  "family": "unit_binding",
+  "id": "unit_binding-007",
+  "initial_state_hash": "sha256:cf19fa5bef8f7ab322ac7e037ed4093b4e4519009f2c5417632c2a622b34b9f3",
+  "seed": 20260929
+}

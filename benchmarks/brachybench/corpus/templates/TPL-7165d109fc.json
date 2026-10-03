@@ -1,0 +1,15 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "treatment_planning",
+  "expectation": null,
+  "facet": "treatment_planning",
+  "gold_status": "draft",
+  "n_source_intents": 3,
+  "representative_text": "I have a patient with a large vulvar tumor (6cm) requiring interstitial HDR brachytherapy. The template has 16 needles in a modified Heyman pattern. The prescription dose is 3 Gy per fraction in 12 fractions. Optimize to achieve adequate coverage of the large treatment volume while respecting the tolerance of the urethra (D2cc < 65 Gy EQD2) and anus (D2cc < 60 Gy EQD2).",
+  "source_refs": [
+    "INT-3353762d2b5e",
+    "INT-4fe509b709c5",
+    "INT-ac00674909bd"
+  ],
+  "template_id": "TPL-7165d109fc"
+}

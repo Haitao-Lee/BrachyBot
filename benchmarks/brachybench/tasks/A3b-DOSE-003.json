@@ -1,0 +1,130 @@
+{
+  "schema_version": "1.0",
+  "id": "A3b-DOSE-003",
+  "track": "A",
+  "layers": [
+    "L2",
+    "L3",
+    "L4"
+  ],
+  "comparability": [
+    "alpha",
+    "beta",
+    "gamma"
+  ],
+  "construct": "agent_dose_workflow_correctness",
+  "cost_class": "light_compute",
+  "power_role": "secondary",
+  "clinical_intent": "Compute the dose for the three-seed plan and report D90; require the additivity invariant to hold and D90 to be traceable to the actual computation",
+  "fixture": {
+    "case_family": "phantom/pancreas_p03",
+    "setup_script": "fixtures/setup/pancreas_p03_seeds_3.py",
+    "initial_state_hash": "sha256:11ec064253a24bcaa6c3230e0cd19880031e7b39138d59a709529fc41b3eb090"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-EQ",
+    "contrast_family_id": "A3b/dose"
+  },
+  "protocol": {
+    "mode": "single_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "What is the D90? Help me compute the dose",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 120,
+      "turns": 1,
+      "tool_calls": 8
+    },
+    "allowed_intermediates": [
+      "dose.computed false->true",
+      "plan.receipts[*].status in {accepted, running}"
+    ],
+    "audit_required": true,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "artifact": "cws.dose",
+    "check": "dose_additivity",
+    "constraint_class": "none",
+    "tolerance": {
+      "rel_eps": 0.0001,
+      "accumulation": "float64"
+    },
+    "also_assert": [
+      {
+        "check": "metric_provenance",
+        "claim": "D90",
+        "require_evidence_keys": true,
+        "evidence_keys": {
+          "case_id": "pancreas_p03",
+          "planning_id": "plan_5",
+          "planning_version": 5,
+          "geometry_revision": 5,
+          "roi_id": "ctv_pancreas",
+          "metric_name": "D90",
+          "unit": "Gy",
+          "dose_definition": "dose_to_water@t_ref",
+          "source_artifact_id": "dose_eval_run#1",
+          "computed_at": "T0",
+          "valid_for_revision": 5
+        }
+      },
+      {
+        "check": "pred",
+        "predicate": "dose_engine_is_doseunet"
+      }
+    ],
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [
+      "case_id",
+      "planning_id",
+      "planning_version",
+      "geometry_revision",
+      "roi_id",
+      "metric_name",
+      "unit",
+      "dose_definition",
+      "source_artifact_id",
+      "computed_at",
+      "valid_for_revision"
+    ],
+    "gold": null,
+    "persistence": "terminal"
+  },
+  "scoring": {
+    "primary_metric": "additivity_invariant_pass",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "medium"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "A3b-DOSE-P01",
+    "hidden": false,
+    "generation_seed": 11,
+    "canary_class": null,
+    "behavioral_probes": [
+      "colloquial",
+      "reordered"
+    ],
+    "contrast_family_id": "A3b/dose"
+  },
+  "provenance": {
+    "source": "audit_derived",
+    "derived_from": "A3b-DOSE-002 (paraphrase sibling, DESIGN §31)",
+    "guideline_ref": null,
+    "reviewers": [
+      "phy_lee",
+      "dev_lee"
+    ],
+    "authored_on": "2026-09-29",
+    "deprecated": null
+  }
+}

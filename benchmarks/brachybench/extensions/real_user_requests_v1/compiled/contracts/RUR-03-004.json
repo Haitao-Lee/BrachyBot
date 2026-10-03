@@ -1,0 +1,41 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "en",
+  "response_facts": {
+    "guide_exists": false
+  },
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "effects",
+      "statement": "Current case has no guide, so no show/generate effect."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "response",
+      "statement": "Tell user the guide is absent; no needless permission question and no fictional visible object."
+    }
+  ],
+  "rules": [],
+  "scenario_id": "RUR-03-004",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "effects",
+      "statement": "Current case has no guide, so no show/generate effect."
+    },
+    {
+      "kind": "response",
+      "statement": "Tell user the guide is absent; no needless permission question and no fictional visible object."
+    }
+  ]
+}

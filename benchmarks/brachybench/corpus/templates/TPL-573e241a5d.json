@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "compliance",
+  "expectation": null,
+  "facet": "compliance",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Develop a brachytherapy treatment protocol for prostate cancer using HDR brachytherapy as monotherapy for intermediate-risk disease. Include the patient selection criteria, imaging and applicator requirements, prescription dose and fractionation, dose constraints for organs at risk, and the recommended follow-up schedule with PSA monitoring.",
+  "source_refs": [
+    "INT-625ea8faf052",
+    "INT-e1c388aadd7b"
+  ],
+  "template_id": "TPL-573e241a5d"
+}

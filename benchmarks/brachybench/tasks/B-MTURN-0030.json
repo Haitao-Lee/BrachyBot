@@ -1,0 +1,87 @@
+{
+  "schema_version": "1.0",
+  "id": "B-MTURN-0030",
+  "track": "B",
+  "layers": [
+    "L4"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "multi_turn_continuity",
+  "cost_class": "state_only",
+  "power_role": "exploratory",
+  "clinical_intent": "Multi-turn session: I am treating a 45-year-old female with  ... then follow up with 45yo F with 3cm vaginal cuff recurrence ",
+  "fixture": {
+    "case_family": "legacy/multiturn",
+    "setup_script": "fixtures/setup/prostate_s02_full_pipeline.py",
+    "initial_state_hash": "sha256:38eabca0a6bcb5062deac0e5645e8bf52d9e5f51cdd0f137f824f4509461ada3"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-CTX",
+    "contrast_family_id": "legacy/multiturn"
+  },
+  "protocol": {
+    "mode": "multi_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "I am treating a 45-year-old female with a 3 cm breast cancer (Stage I, triple negative, BRCA1 positive) who had a lumpectomy with close margins (1 mm). She is very physically active and a competitive swimmer. She wants breast-conserving therapy and refuses re-excision. She is concerned about long-term radiation effects on her swimming performance. She asks about the comparison between whole breast radiation, accelerated partial breast irradiation with brachytherapy, and proton therapy. She wants the treatment with the fewest side effects and shortest treatment duration. Given her triple negative histology and BRCA status, which approach would you recommend?",
+        "lang": "en"
+      },
+      {
+        "role": "user",
+        "text": "45yo F with 3cm vaginal cuff recurrence (Grade 3 serous) after TAH-BSO + EBRT 45Gy 2y ago. BMI 42, HbA1c 8.2%, OSA on CPAP. Interstitial brachytherapy plan addressing comorbidities and technical challenges.",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 120,
+      "turns": 2,
+      "tool_calls": 12
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 3
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "state_invariant",
+    "constraint_class": "postcondition",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "multi_turn_state_ok",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "medium"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "MTURN-0030",
+    "hidden": false,
+    "generation_seed": 2026,
+    "canary_class": null,
+    "behavioral_probes": [
+      "multi_turn"
+    ],
+    "contrast_family_id": "legacy/multiturn"
+  },
+  "provenance": {
+    "source": "legacy_migrated",
+    "derived_from": "legacy:v1/19_workflow.json#Q1984+v1/19_workflow.json#Q1444",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto-verifier"
+    ],
+    "authored_on": "2026-09-30",
+    "deprecated": null
+  }
+}

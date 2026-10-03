@@ -1,0 +1,14 @@
+{
+  "_comment": "candidate for expert authoring (DESIGN §30.3); no oracle yet",
+  "category": "treatment_planning",
+  "expectation": null,
+  "facet": "treatment_planning",
+  "gold_status": "draft",
+  "n_source_intents": 2,
+  "representative_text": "Please create a surface brachytherapy plan for a skin cancer on the chest wall. The lesion is 3cm x 2cm, and I am using a custom surface applicator with 4 dwell positions. The prescription dose is 4 Gy per fraction in 8 fractions to 5mm depth. Optimize to provide uniform dose across the treatment area while limiting dose to the underlying lung.",
+  "source_refs": [
+    "INT-5209378a08f7",
+    "INT-e0b5fbb6d636"
+  ],
+  "template_id": "TPL-88055218f4"
+}

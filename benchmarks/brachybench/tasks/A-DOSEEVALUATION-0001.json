@@ -1,0 +1,82 @@
+{
+  "schema_version": "1.0",
+  "id": "A-DOSEEVALUATION-0001",
+  "track": "A",
+  "layers": [
+    "L3"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "dose_evaluation.real_intent",
+  "cost_class": "state_only",
+  "power_role": "exploratory",
+  "clinical_intent": "Please evaluate the dose distribution for a completed prostate LDR brachytherapy plan. The DVH shows D90 = 148 Gy, V100 = 94%, V150 = 52%, V200 = 18%. The rectal D1cc is 125 Gy and the urethral Dmax is 168 Gy. Evaluate these parameters against the ABS quality guidelines and provide a comprehensive assessment.",
+  "fixture": {
+    "case_family": "legacy/dose_evaluation",
+    "setup_script": "fixtures/setup/prostate_s02_full_pipeline.py",
+    "initial_state_hash": "sha256:38eabca0a6bcb5062deac0e5645e8bf52d9e5f51cdd0f137f824f4509461ada3"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-EQ",
+    "contrast_family_id": "legacy/dose_evaluation"
+  },
+  "protocol": {
+    "mode": "single_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "Please evaluate the dose distribution for a completed prostate LDR brachytherapy plan. The DVH shows D90 = 148 Gy, V100 = 94%, V150 = 52%, V200 = 18%. The rectal D1cc is 125 Gy and the urethral Dmax is 168 Gy. Evaluate these parameters against the ABS quality guidelines and provide a comprehensive assessment.",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 1,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "param_binding",
+    "constraint_class": "none",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "outcome_class_match",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "medium"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "dose_evaluation-INT-b231f69ac1c0",
+    "hidden": false,
+    "generation_seed": 2026,
+    "canary_class": null,
+    "behavioral_probes": [
+      "en"
+    ],
+    "contrast_family_id": "legacy/dose_evaluation"
+  },
+  "provenance": {
+    "source": "legacy_migrated",
+    "derived_from": "legacy:v1/06_dose_evaluation.json#Q0201",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto-verifier"
+    ],
+    "authored_on": "2026-09-30",
+    "deprecated": null
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "anti_gaming": {
+    "contrast_family_id": "RUR-04",
+    "hidden": false,
+    "paraphrase_group": "RUR-04"
+  },
+  "clinical_intent": "两个目标分别定位",
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "RUR-04",
+  "cost_class": "light_compute",
+  "fixture": {
+    "case_family": "RUR-04",
+    "initial_state_hash": "sha256:3d591b11ca48957a56248f3c0cde37150a4653fc499955e2967356893e207238",
+    "setup_script": "extensions/real_user_requests_v1/compiled/fixtures/RUR-04-001.json"
+  },
+  "id": "RUR-04-001",
+  "layers": [
+    "L2",
+    "L4"
+  ],
+  "oracle": {
+    "check": "real_user_request",
+    "constraint_class": "none",
+    "expect": null,
+    "gold": "contracts/RUR-04-001.json",
+    "independent_check": true,
+    "kind": "program"
+  },
+  "power_role": "exploratory",
+  "protocol": {
+    "allowed_intermediates": [],
+    "audit_required": true,
+    "budget": {
+      "tool_calls": 96,
+      "turns": 1,
+      "wall_clock_s": 120
+    },
+    "mode": "single_turn",
+    "n_runs": 1,
+    "turns": [
+      {
+        "lang": "zh",
+        "role": "user",
+        "text": "截图告诉我导板在哪里，肿瘤在哪里，分别标出来。"
+      }
+    ],
+    "ui_counterpart": null
+  },
+  "provenance": {
+    "authored_on": "2026-10-03",
+    "deprecated": null,
+    "derived_from": "real_user_requests_v1:RUR-04-001",
+    "guideline_ref": null,
+    "reviewers": [
+      "authoring-only; independent review pending"
+    ],
+    "source": "audit_derived"
+  },
+  "schema_version": "1.0",
+  "scoring": {
+    "difficulty_target": "medium",
+    "gate_refs": [],
+    "primary_metric": "verified_task_goal",
+    "weight": 1.0
+  },
+  "track": "B",
+  "unit": {
+    "contrast_family_id": "RUR-04",
+    "group_type": "G-CTX",
+    "kind": "task_scenario"
+  }
+}

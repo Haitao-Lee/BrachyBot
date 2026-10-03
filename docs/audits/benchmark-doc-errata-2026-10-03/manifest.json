@@ -1,0 +1,15 @@
+{
+  "scope": "Documentation errata only; no code, weights, gold, splits or results changed",
+  "files": [
+    {
+      "path": "docs/BENCHMARK_INDEPENDENT_AUDIT_2026-10-03.md",
+      "before_sha256": "74af627c6ad806c631a0eae720320defbbc2565506aeba9b8491e1d545bbb699",
+      "after_sha256": "7f3dfb60343a38be50bd76dcd2902c4f25993baa23604bcf6b06774bfacdd41b"
+    },
+    {
+      "path": "docs/BENCHMARK_AUDIT_REMEDIATION_2026-10-03.md",
+      "before_sha256": "48f299b84b3be9e68d7ca28310d2bbf117879b66a28098537b5e3ee6882e2bfa",
+      "after_sha256": "9e7ad13dda677509e41e652c67c3aace7a036152e308fbe566236ef2b8d5e001"
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "schema_version": "1.0",
+  "id": "L-MASK-001",
+  "track": "L",
+  "layers": [
+    "L3",
+    "L4"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "mask_format_alignment_invariant",
+  "cost_class": "state_only",
+  "power_role": "primary",
+  "clinical_intent": "The same mask loaded and aligned from .nii.gz and .mha must have identical geometry headers and must not be translated.",
+  "fixture": {
+    "case_family": "synth/prostate_s02",
+    "setup_script": "fixtures/setup/prostate_s02_full_pipeline.py",
+    "initial_state_hash": "sha256:38eabca0a6bcb5062deac0e5645e8bf52d9e5f51cdd0f137f824f4509461ada3"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-CT",
+    "contrast_family_id": "L/mask_format_alignment/containers"
+  },
+  "protocol": {
+    "mode": "single_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "Save the same mask as nii.gz and mha, then align; the geometry headers must be exactly identical.",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 1,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "coord_roundtrip",
+    "constraint_class": "none",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null
+  },
+  "scoring": {
+    "primary_metric": "coord_roundtrip_pass",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "medium"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "L-MASK-001-P01",
+    "hidden": false,
+    "generation_seed": 4170,
+    "canary_class": null,
+    "behavioral_probes": [],
+    "contrast_family_id": "L/mask_format_alignment/containers"
+  },
+  "provenance": {
+    "source": "audit_derived",
+    "derived_from": "tool_factory/segmentation_alignment.py:94-128 (align_label_image_to_reference)",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto"
+    ],
+    "authored_on": "2026-09-30",
+    "deprecated": null
+  }
+}

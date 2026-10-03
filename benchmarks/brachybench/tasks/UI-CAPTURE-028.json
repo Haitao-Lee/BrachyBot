@@ -1,0 +1,90 @@
+{
+  "schema_version": "1.0",
+  "id": "UI-CAPTURE-028",
+  "track": "F",
+  "layers": [
+    "L2",
+    "L4",
+    "L5"
+  ],
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "capture_locate_paraphrase",
+  "cost_class": "state_only",
+  "power_role": "primary",
+  "clinical_intent": "Different phrasings of the same \"locate a control\" intent must produce the same capture decision.",
+  "fixture": {
+    "case_family": "phantom/pancreas_p03",
+    "setup_script": "fixtures/setup/pancreas_p03_pipeline.py",
+    "initial_state_hash": "sha256:bb54b53f5ceec64b975a9a01c3b7c6d5e8293a7f3b940a64bc6d922c30607a7b"
+  },
+  "unit": {
+    "kind": "task_scenario",
+    "group_type": "G-EQ",
+    "contrast_family_id": "web/capture/paraphrase_locate"
+  },
+  "protocol": {
+    "mode": "single_turn",
+    "turns": [
+      {
+        "role": "user",
+        "text": "where is the send button? capture and mark it",
+        "lang": "en"
+      }
+    ],
+    "ui_counterpart": null,
+    "budget": {
+      "wall_clock_s": 60,
+      "turns": 1,
+      "tool_calls": 6
+    },
+    "allowed_intermediates": [],
+    "audit_required": false,
+    "n_runs": 5
+  },
+  "oracle": {
+    "kind": "program",
+    "check": "state_invariant",
+    "constraint_class": "postcondition",
+    "expect": null,
+    "tolerance": null,
+    "assist_only": false,
+    "independent_check": true,
+    "evidence_keys": [],
+    "gold": null,
+    "also_assert": [
+      {
+        "check": "pred",
+        "predicate": "no_residual_temp_state"
+      }
+    ]
+  },
+  "scoring": {
+    "primary_metric": "state_invariant_pass",
+    "gate_refs": [],
+    "weight": 1.0,
+    "difficulty_target": "medium"
+  },
+  "anti_gaming": {
+    "paraphrase_group": "UI-CAPTURE-EQ-LOCATE",
+    "hidden": false,
+    "generation_seed": 1,
+    "canary_class": null,
+    "behavioral_probes": [
+      "paraphrase"
+    ],
+    "contrast_family_id": "web/capture/paraphrase_locate"
+  },
+  "provenance": {
+    "source": "audit_derived",
+    "derived_from": "tool_factory/ui_screenshot/__init__.py:291-300 (preserve_current_view)",
+    "guideline_ref": null,
+    "reviewers": [
+      "auto"
+    ],
+    "authored_on": "2026-10-01",
+    "deprecated": null
+  }
+}
