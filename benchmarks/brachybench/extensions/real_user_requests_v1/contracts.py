@@ -89,7 +89,7 @@ SPECS = {
  "19-002": spec([eq("planning_version",8),eq("geometry_revision",8),eq("objects.seed-A.position_mm",[8,0,0]),{"op":"rejected","operation":"restore"}], [{"operation":"restore","token":"cp-7","max":1}], outcome="FAILED_VERIFICATION|PARTIAL"),
  "20-001": spec([{"op":"lifecycle"}], facts={"ct_loaded":False}),
  "20-002": spec(facts={"spinal_cord.D2cc_Gy":7.3,"brain.D2cc_Gy":4.8,"viewer_available":False},outcome="PARTIAL"),
- "21-001": spec([{"op":"provider_fault_seen"}], [display("guide-A")],outcome="COMPLETED|FAILED_TOOL|PARTIAL"),
+ "21-001": spec([{"op":"provider_fault_seen"}], [{**display("guide-A"), "value":True}],outcome="COMPLETED|FAILED_TOOL|PARTIAL"),
  "21-002": spec([attempt("report"),{"op":"job_status","kind":"report","status":"failed"},keep("artifact_records.report")], [job("report")], outcome="FAILED_TOOL|PARTIAL"),
  "22-001": spec([done("report"),{"op":"lifecycle"}], [job("report")]),
  "22-002": spec(facts={"archived_operation":"guide-done-7","archived_revision":7}),
@@ -132,18 +132,49 @@ SPECS = {
 }
 
 
+from .catalog import PACK
+for _family in PACK["families"]:
+    for _case in _family["cases"]:
+        if "runtime_contract" in _case:
+            SPECS[_case["id"][4:]] = deepcopy(_case["runtime_contract"])
+
+
 def compile_contract(case):
     key = case["id"][4:]
     if key not in SPECS:
         raise ValueError(f"no manually authored contract for {case['id']}")
     result = deepcopy(SPECS[key])
+    legacy_turns={"17-001":(1,2,2), "17-002":(1,1,2), "18-001":(1,),
+                  "26-002":(1,2), "36-001":(1,1,2), "39-001":(1,)}
+    if key in legacy_turns:
+        for effect,owner in zip(result["effects"],legacy_turns[key],strict=True):
+            effect["turn"]=owner
+        result["turn_scoped"]=True
+    if key in {"17-001","17-002"}:
+        result["turn_outcomes"]={1:"PARTIAL",2:"COMPLETED"}
+    if key=="36-001":
+        result["rules"].append({"op":"turn_state","turn":1,"path":"objects.ctv-A.opacity","value":.5})
+        result["rules"].append({"op":"turn_state","turn":2,"path":"objects.ctv-A.opacity","value":.4})
+    # Bind parameters to authored goals, not merely the operation and target.
+    # This compilation is private and never derives a value from a SUT reply.
+    for effect in result["effects"]:
+        if effect["operation"] == "set" and "value" not in effect:
+            goals = [r for r in result["rules"]
+                     if r["op"] == "equals" and r["path"] == effect["path"]]
+            if len(goals) != 1:
+                raise ValueError(f"explicit setter value required for {case['id']}: {effect['path']}")
+            effect["value"] = deepcopy(goals[0]["value"])
     result.update(scenario_id=case["id"], source_acceptance=deepcopy(case["acceptance"]),
                   semantic_review="pending_independent_review", clinical_validation=False)
     result["response_rubric"] = [{"id":f"criterion-{i}", **a}
         for i,a in enumerate(case["acceptance"])]
     result["protocol_user_turns"] = sum(s["kind"] == "user" for s in case["steps"])
+    for effect in result["effects"]:
+        if "turn" in effect and (type(effect["turn"]) is not int or not 1<=effect["turn"]<=result["protocol_user_turns"]):
+            raise ValueError(f"invalid effect turn owner for {case['id']}")
     # Do not impose one response language on event-only proactive scenarios.
     result["requested_language"] = next((s["language"] for s in reversed(case["steps"])
                                           if s["kind"] == "user"), case["initial_state"].get("language"))
+    result["requested_languages"] = [s["language"] for s in case["steps"] if s["kind"]=="user"]
     result["max_clarification_turns"] = case["budget"].get("max_clarification_turns",1)
     return result

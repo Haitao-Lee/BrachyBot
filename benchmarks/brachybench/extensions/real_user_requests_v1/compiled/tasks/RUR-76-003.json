@@ -1,0 +1,75 @@
+{
+  "anti_gaming": {
+    "contrast_family_id": "RUR-76",
+    "hidden": false,
+    "paraphrase_group": "RUR-76"
+  },
+  "clinical_intent": "Old screenshot is not current post-edit evidence",
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "RUR-76",
+  "cost_class": "light_compute",
+  "fixture": {
+    "case_family": "RUR-76",
+    "initial_state_hash": "sha256:4d10e65d59f6f673c363fe04c98af18269ef4ad13da50245cae9b8727c32f085",
+    "setup_script": "extensions/real_user_requests_v1/compiled/fixtures/RUR-76-003.json"
+  },
+  "id": "RUR-76-003",
+  "layers": [
+    "L2",
+    "L4"
+  ],
+  "oracle": {
+    "check": "real_user_request",
+    "constraint_class": "none",
+    "expect": null,
+    "gold": "contracts/RUR-76-003.json",
+    "independent_check": true,
+    "kind": "program"
+  },
+  "power_role": "exploratory",
+  "protocol": {
+    "allowed_intermediates": [],
+    "audit_required": true,
+    "budget": {
+      "tool_calls": 96,
+      "turns": 1,
+      "wall_clock_s": 120
+    },
+    "mode": "single_turn",
+    "n_runs": 1,
+    "turns": [
+      {
+        "lang": "en",
+        "role": "user",
+        "text": "This old screenshot is revision 6; the current plan is revision 7. Can it verify the current seed positions?"
+      }
+    ],
+    "ui_counterpart": null
+  },
+  "provenance": {
+    "authored_on": "2026-10-04",
+    "deprecated": null,
+    "derived_from": "real_user_requests_v1:RUR-76-003",
+    "guideline_ref": null,
+    "reviewers": [
+      "authoring-only; independent review pending"
+    ],
+    "source": "audit_derived"
+  },
+  "schema_version": "1.0",
+  "scoring": {
+    "difficulty_target": "medium",
+    "gate_refs": [],
+    "primary_metric": "verified_task_goal",
+    "weight": 1.0
+  },
+  "track": "C",
+  "unit": {
+    "contrast_family_id": "RUR-76",
+    "group_type": "G-CTX",
+    "kind": "task_scenario"
+  }
+}

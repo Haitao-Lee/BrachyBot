@@ -8,17 +8,23 @@
     {
       "max": 1,
       "operation": "set",
-      "path": "objects.guide-A.visible"
+      "path": "objects.guide-A.visible",
+      "turn": 1,
+      "value": true
     },
     {
       "max": 1,
       "operation": "set",
-      "path": "objects.ctv-A.visible"
+      "path": "objects.ctv-A.visible",
+      "turn": 1,
+      "value": true
     },
     {
       "max": 1,
       "operation": "set",
-      "path": "objects.ctv-A.opacity"
+      "path": "objects.ctv-A.opacity",
+      "turn": 2,
+      "value": 0.4
     }
   ],
   "max_clarification_turns": 1,
@@ -26,6 +32,12 @@
   "max_provider_calls": 4,
   "protocol_user_turns": 4,
   "requested_language": "zh",
+  "requested_languages": [
+    "zh",
+    "zh",
+    "zh",
+    "zh"
+  ],
   "response_facts": {
     "spinal_cord.D2cc_Gy": 7.3
   },
@@ -60,6 +72,18 @@
     {
       "count": 4,
       "op": "per_turn"
+    },
+    {
+      "op": "turn_state",
+      "path": "objects.ctv-A.opacity",
+      "turn": 1,
+      "value": 0.5
+    },
+    {
+      "op": "turn_state",
+      "path": "objects.ctv-A.opacity",
+      "turn": 2,
+      "value": 0.4
     }
   ],
   "scenario_id": "RUR-36-001",
@@ -73,5 +97,6 @@
       "kind": "response",
       "statement": "Each turn has its own evidence-backed fulfillment; final one sentence names actual persistent edits plus requested7.3Gy fact without resurrecting superseded goals."
     }
-  ]
+  ],
+  "turn_scoped": true
 }

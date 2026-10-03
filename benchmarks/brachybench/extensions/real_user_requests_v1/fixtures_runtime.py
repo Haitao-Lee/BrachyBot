@@ -61,10 +61,11 @@ def materialize(case):
         item.setdefault("visible",True)
         item.setdefault("opacity",1.)
         item.setdefault("color","red" if item.get("type")=="CTV" else "cyan")
-        item.setdefault("position_mm",[0,0,0] if item.get("type") in ("CTV","seed") else [4,0,0])
+        item.setdefault("position_mm",[0,0,20] if item.get("type")=="guide" else [0,0,0] if item.get("type") in ("CTV","seed") else [4,0,0])
         item.setdefault("radius_mm",12 if item.get("type")=="CTV" else .4 if item.get("type") in ("seed","needle") else 3)
         if item.get("type")=="guide":
-            item.update(version=1,position_mm=[0,0,20],shape="plate",half_size_mm=[16,16])
+            for key, value in dict(version=1, position_mm=[0,0,20], shape="plate", half_size_mm=[16,16]).items():
+                item.setdefault(key, value)
         elif item.get("type")=="needle":
             center=item["position_mm"]
             item.setdefault("endpoints_mm",[[center[j]+v[j] for j in range(3)] for v in ([-15,-8,-5],[15,8,5])])

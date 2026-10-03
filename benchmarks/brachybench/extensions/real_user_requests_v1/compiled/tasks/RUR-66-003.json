@@ -1,0 +1,80 @@
+{
+  "anti_gaming": {
+    "contrast_family_id": "RUR-66",
+    "hidden": false,
+    "paraphrase_group": "RUR-66"
+  },
+  "clinical_intent": "Ambiguous transparency resolved as opacity",
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "RUR-66",
+  "cost_class": "light_compute",
+  "fixture": {
+    "case_family": "RUR-66",
+    "initial_state_hash": "sha256:18300f19ad16b5154d40765fbe64250db427f610aa0b8c41ac8a8747b162f2f4",
+    "setup_script": "extensions/real_user_requests_v1/compiled/fixtures/RUR-66-003.json"
+  },
+  "id": "RUR-66-003",
+  "layers": [
+    "L2",
+    "L4"
+  ],
+  "oracle": {
+    "check": "real_user_request",
+    "constraint_class": "none",
+    "expect": null,
+    "gold": "contracts/RUR-66-003.json",
+    "independent_check": true,
+    "kind": "program"
+  },
+  "power_role": "exploratory",
+  "protocol": {
+    "allowed_intermediates": [],
+    "audit_required": true,
+    "budget": {
+      "tool_calls": 96,
+      "turns": 2,
+      "wall_clock_s": 120
+    },
+    "mode": "multi_turn",
+    "n_runs": 1,
+    "turns": [
+      {
+        "lang": "en",
+        "role": "user",
+        "text": "Make it 30 percent transparent; ask if that is ambiguous."
+      },
+      {
+        "lang": "en",
+        "role": "user",
+        "text": "I mean the CTV opacity slider should be 0.3."
+      }
+    ],
+    "ui_counterpart": null
+  },
+  "provenance": {
+    "authored_on": "2026-10-04",
+    "deprecated": null,
+    "derived_from": "real_user_requests_v1:RUR-66-003",
+    "guideline_ref": null,
+    "reviewers": [
+      "authoring-only; independent review pending"
+    ],
+    "source": "audit_derived"
+  },
+  "schema_version": "1.0",
+  "scoring": {
+    "difficulty_target": "medium",
+    "gate_refs": [],
+    "primary_metric": "verified_task_goal",
+    "weight": 1.0
+  },
+  "track": "B",
+  "unit": {
+    "contrast_family_id": "RUR-66",
+    "group_type": "G-CTX",
+    "kind": "task_scenario"
+  }
+}

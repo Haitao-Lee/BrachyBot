@@ -20,6 +20,7 @@
   "max_provider_calls": 4,
   "protocol_user_turns": 0,
   "requested_language": "zh",
+  "requested_languages": [],
   "response_facts": {},
   "response_rubric": [
     {

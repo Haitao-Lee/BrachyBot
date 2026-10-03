@@ -34,9 +34,10 @@ def same(a,b):
 
 def _match(effect,rule):
     if effect["operation"]!=rule["operation"]: return False
+    if "turn" in rule and not same(effect.get("turn"),rule["turn"]): return False
     a=effect.get("args",{})
     for key in ("path","kind","token","run_id","value"):
-        if key in rule and a.get(key)!=rule[key]: return False
+        if key in rule and not same(a.get(key),rule[key]): return False
     if "targets" in rule and a.get("target") not in rule["targets"]: return False
     if "hide" in rule and not set(a.get("hide",[]))<=set(rule["hide"]): return False
     return True
@@ -87,6 +88,13 @@ def _valid_image(obs,f):
 def rule_check(r,o):
     s=o["terminal_state"]; initial=o["initial_state"]; audit=o["audit"]; op=r["op"]
     if op=="equals": return same(at(s,r["path"]),r["value"])
+    if op=="event_fired":
+        return any(e["event"]==r["event"] and e["trigger"]==r["trigger"] for e in o["events_fired"])
+    if op in {"turn_state","turn_outcome"}:
+        rows=[row for row in o["turn_responses"] if row["final"] and row["turn"]==r["turn"]]
+        if len(rows)!=1: return False
+        if op=="turn_outcome": return rows[0]["outcome"] in r["outcomes"]
+        return same(at(rows[0].get("state_at_delivery",{}),r["path"]),r["value"])
     if op=="preserve": return at(s,r["path"]) is not MISSING and at(s,r["path"])==at(initial,r["path"])
     if op=="greater":
         v=at(s,r["path"]); return type(v) in (int,float) and v>r["value"]

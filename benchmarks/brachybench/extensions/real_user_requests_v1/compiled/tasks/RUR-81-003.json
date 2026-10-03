@@ -1,0 +1,75 @@
+{
+  "anti_gaming": {
+    "contrast_family_id": "RUR-81",
+    "hidden": false,
+    "paraphrase_group": "RUR-81"
+  },
+  "clinical_intent": "Unknown tumor site does not select pancreas",
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "RUR-81",
+  "cost_class": "light_compute",
+  "fixture": {
+    "case_family": "RUR-81",
+    "initial_state_hash": "sha256:c85d9784e9608dffaf42ebef97812b0814b147b7ae2134bbd1bef364485cfafa",
+    "setup_script": "extensions/real_user_requests_v1/compiled/fixtures/RUR-81-003.json"
+  },
+  "id": "RUR-81-003",
+  "layers": [
+    "L2",
+    "L4"
+  ],
+  "oracle": {
+    "check": "real_user_request",
+    "constraint_class": "none",
+    "expect": null,
+    "gold": "contracts/RUR-81-003.json",
+    "independent_check": true,
+    "kind": "program"
+  },
+  "power_role": "exploratory",
+  "protocol": {
+    "allowed_intermediates": [],
+    "audit_required": true,
+    "budget": {
+      "tool_calls": 96,
+      "turns": 1,
+      "wall_clock_s": 120
+    },
+    "mode": "single_turn",
+    "n_runs": 1,
+    "turns": [
+      {
+        "lang": "en",
+        "role": "user",
+        "text": "Segment the tumor, but ask for its site if this current case has no verified site; don't guess pancreas."
+      }
+    ],
+    "ui_counterpart": null
+  },
+  "provenance": {
+    "authored_on": "2026-10-04",
+    "deprecated": null,
+    "derived_from": "real_user_requests_v1:RUR-81-003",
+    "guideline_ref": null,
+    "reviewers": [
+      "authoring-only; independent review pending"
+    ],
+    "source": "audit_derived"
+  },
+  "schema_version": "1.0",
+  "scoring": {
+    "difficulty_target": "medium",
+    "gate_refs": [],
+    "primary_metric": "verified_task_goal",
+    "weight": 1.0
+  },
+  "track": "B",
+  "unit": {
+    "contrast_family_id": "RUR-81",
+    "group_type": "G-CTX",
+    "kind": "task_scenario"
+  }
+}

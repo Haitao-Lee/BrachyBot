@@ -1,0 +1,8 @@
+[
+  {
+    "event": "dose_failed",
+    "kind": "environment_event",
+    "payload": {},
+    "trigger": "dose.running"
+  }
+]

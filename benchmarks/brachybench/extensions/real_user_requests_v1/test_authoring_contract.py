@@ -10,7 +10,7 @@ import pytest
 def test_catalog_structural_contract():
     result = validate(PACK)
     assert result["structural_ok"], result["errors"]
-    assert (result["families"], result["scenarios"], result["negative_control_specs"]) == (40, 82, 246)
+    assert (result["families"], result["scenarios"], result["negative_control_specs"]) == (84, 210, 630)
     assert result["formal_ready"] is False and result["formal_results"] == 0
 
 @pytest.mark.parametrize("family", PACK["families"], ids=lambda f:f["id"])

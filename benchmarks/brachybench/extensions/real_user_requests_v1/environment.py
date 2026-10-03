@@ -87,7 +87,10 @@ class Environment:
         previous=self.current_turn; self.current_turn=owner
         row=self.record("response","deliver",{"text":text,"final":final,"outcome":outcome,"stage":stage,"attachments":list(attachments),"downloads":list(downloads)},source="transport")
         self.responses.append({"text":text,"final":final,"outcome":outcome,"stage":stage,
-                               "turn":self.current_turn,"at":row["seq"],"sha256":sha256(text.encode()).hexdigest()})
+                               "turn":self.current_turn,"at":row["seq"],"sha256":sha256(text.encode()).hexdigest(),
+                               "state_at_delivery":{key:deepcopy(self.state.get(key)) for key in
+                                   ("objects","artifacts","geometry_revision","planning_version",
+                                    "monitor","language","viewer","viewers","report")}})
         if final and owner==previous:
             r=self.state["request"]; r["final_count"]+=1; r.update(status="terminal",send_enabled=True)
             self.record("lifecycle","final",{"outcome":outcome,"final_count":r["final_count"]},source="transport")
@@ -183,6 +186,9 @@ class Environment:
         jid=f"{self.execution_id}-job-{len(self.state['jobs'])}"
         j={"id":jid,"kind":kind,"status":"queued","scope":self.scope(),"args":a,
            "requested_at":self.sequence,"execution_id":self.execution_id}
+        input_kinds={"quality":("dose",), "report":("dose","quality"),
+                     "report_figures":("dose",)}.get(kind,())
+        j["inputs"]={key:deepcopy(self.state["artifact_records"].get(key)) for key in input_kinds}
         self.state["jobs"].append(j); self.record("effect","submit",a,status="committed")
         self.events.emit(f"{kind}.queued",self)
         self.events.emit(f"{kind}.accepted",self)
@@ -213,11 +219,11 @@ class Environment:
         self.events.emit(f"{kind}.result",self)
         if j["status"]=="failed": return
         a=self.install_artifact(kind,job_id=j["id"])
+        a["sources"]=deepcopy(j["inputs"])
         if kind=="dose": self.state["artifacts"]["dvh"]="current"
         if kind=="segmentation":
             a["label_semantics"]={"1":"GTVp","2":"GTVn"}; a["model"]=j["args"]["model"]
         if kind=="report":
-            a["sources"]={k:deepcopy(self.state["artifact_records"].get(k)) for k in ("dose","quality")}
             payload=pdf_bytes(self.state); self._save_artifact(a,"report.pdf",payload)
         if kind=="trajectory_init":
             self.state.update(manual_stage=1,intermediate_node={"id":"init-group","visible":True,

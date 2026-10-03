@@ -8,12 +8,14 @@
     {
       "kind": "trajectory_init",
       "max": 1,
-      "operation": "submit"
+      "operation": "submit",
+      "turn": 1
     },
     {
       "kind": "manual_next",
       "max": 1,
-      "operation": "submit"
+      "operation": "submit",
+      "turn": 2
     }
   ],
   "max_clarification_turns": 1,
@@ -21,6 +23,10 @@
   "max_provider_calls": 4,
   "protocol_user_turns": 2,
   "requested_language": "en",
+  "requested_languages": [
+    "en",
+    "en"
+  ],
   "response_facts": {},
   "response_rubric": [
     {
@@ -74,5 +80,6 @@
       "kind": "effects",
       "statement": "No complete planning pipeline launched."
     }
-  ]
+  ],
+  "turn_scoped": true
 }

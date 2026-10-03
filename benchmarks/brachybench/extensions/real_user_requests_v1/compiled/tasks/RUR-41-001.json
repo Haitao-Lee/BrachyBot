@@ -1,0 +1,75 @@
+{
+  "anti_gaming": {
+    "contrast_family_id": "RUR-41",
+    "hidden": false,
+    "paraphrase_group": "RUR-41"
+  },
+  "clinical_intent": "Already-visible guide stays visible",
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "RUR-41",
+  "cost_class": "light_compute",
+  "fixture": {
+    "case_family": "RUR-41",
+    "initial_state_hash": "sha256:3d591b11ca48957a56248f3c0cde37150a4653fc499955e2967356893e207238",
+    "setup_script": "extensions/real_user_requests_v1/compiled/fixtures/RUR-41-001.json"
+  },
+  "id": "RUR-41-001",
+  "layers": [
+    "L2",
+    "L4"
+  ],
+  "oracle": {
+    "check": "real_user_request",
+    "constraint_class": "none",
+    "expect": null,
+    "gold": "contracts/RUR-41-001.json",
+    "independent_check": true,
+    "kind": "program"
+  },
+  "power_role": "exploratory",
+  "protocol": {
+    "allowed_intermediates": [],
+    "audit_required": true,
+    "budget": {
+      "tool_calls": 96,
+      "turns": 1,
+      "wall_clock_s": 120
+    },
+    "mode": "single_turn",
+    "n_runs": 1,
+    "turns": [
+      {
+        "lang": "en",
+        "role": "user",
+        "text": "Show the guide; if it is already visible, leave it alone."
+      }
+    ],
+    "ui_counterpart": null
+  },
+  "provenance": {
+    "authored_on": "2026-10-04",
+    "deprecated": null,
+    "derived_from": "real_user_requests_v1:RUR-41-001",
+    "guideline_ref": null,
+    "reviewers": [
+      "authoring-only; independent review pending"
+    ],
+    "source": "audit_derived"
+  },
+  "schema_version": "1.0",
+  "scoring": {
+    "difficulty_target": "medium",
+    "gate_refs": [],
+    "primary_metric": "verified_task_goal",
+    "weight": 1.0
+  },
+  "track": "F",
+  "unit": {
+    "contrast_family_id": "RUR-41",
+    "group_type": "G-CTX",
+    "kind": "task_scenario"
+  }
+}

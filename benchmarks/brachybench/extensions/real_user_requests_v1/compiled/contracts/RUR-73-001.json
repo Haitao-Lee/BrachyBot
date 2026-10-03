@@ -1,0 +1,81 @@
+{
+  "acceptable_outcomes": [
+    "PARTIAL"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "kind": "dose",
+      "max": 1,
+      "operation": "submit",
+      "turn": 1
+    },
+    {
+      "max": 1,
+      "operation": "set",
+      "path": "objects.seed-A.visible",
+      "turn": 1,
+      "value": false
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "en",
+  "requested_languages": [
+    "en"
+  ],
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "response",
+      "statement": "Report dose failure and skipped report separately, while confirming independent seed hiding."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "effects",
+      "statement": "Respect the target, value, turn and artifact scopes of the private contract."
+    },
+    {
+      "id": "criterion-2",
+      "kind": "evidence",
+      "statement": "Use current-case provenance and independently collected per-turn states; pending is not completed."
+    }
+  ],
+  "rules": [
+    {
+      "kind": "dose",
+      "op": "job_status",
+      "status": "failed"
+    },
+    {
+      "op": "equals",
+      "path": "objects.seed-A.visible",
+      "value": false
+    },
+    {
+      "event": "dose_failed",
+      "op": "event_fired",
+      "trigger": "dose.running"
+    }
+  ],
+  "scenario_id": "RUR-73-001",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "response",
+      "statement": "Report dose failure and skipped report separately, while confirming independent seed hiding."
+    },
+    {
+      "kind": "effects",
+      "statement": "Respect the target, value, turn and artifact scopes of the private contract."
+    },
+    {
+      "kind": "evidence",
+      "statement": "Use current-case provenance and independently collected per-turn states; pending is not completed."
+    }
+  ]
+}

@@ -8,12 +8,14 @@
     {
       "kind": "trajectory_init",
       "max": 1,
-      "operation": "submit"
+      "operation": "submit",
+      "turn": 1
     },
     {
       "kind": "manual_next",
       "max": 1,
-      "operation": "submit"
+      "operation": "submit",
+      "turn": 2
     }
   ],
   "facts": {},

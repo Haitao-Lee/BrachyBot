@@ -8,7 +8,9 @@
     {
       "max": 1,
       "operation": "set",
-      "path": "objects.guide-A.opacity"
+      "path": "objects.guide-A.opacity",
+      "turn": 1,
+      "value": 0.35
     }
   ],
   "facts": {},

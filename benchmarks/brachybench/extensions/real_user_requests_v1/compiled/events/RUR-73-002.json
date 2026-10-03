@@ -1,0 +1,10 @@
+[
+  {
+    "event": "guide_failed",
+    "kind": "environment_event",
+    "payload": {
+      "code": "GUIDE_DEMO_FAILURE"
+    },
+    "trigger": "guide.running"
+  }
+]

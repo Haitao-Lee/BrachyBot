@@ -1,0 +1,90 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "max": 1,
+      "operation": "set",
+      "path": "objects.ctv-A.opacity",
+      "turn": 2,
+      "value": 0.3
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 2,
+  "requested_language": "en",
+  "requested_languages": [
+    "en",
+    "en"
+  ],
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "response",
+      "statement": "Clarify the referent and opacity convention, then apply the explicit normalized value."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "effects",
+      "statement": "Respect the target, value, turn and artifact scopes of the private contract."
+    },
+    {
+      "id": "criterion-2",
+      "kind": "evidence",
+      "statement": "Use current-case provenance and independently collected per-turn states; pending is not completed."
+    }
+  ],
+  "rules": [
+    {
+      "op": "turn_state",
+      "path": "objects.ctv-A.opacity",
+      "turn": 1,
+      "value": 0.5
+    },
+    {
+      "op": "equals",
+      "path": "objects.ctv-A.opacity",
+      "value": 0.3
+    },
+    {
+      "op": "turn_outcome",
+      "outcomes": [
+        "NEEDS_CLARIFICATION"
+      ],
+      "turn": 1
+    },
+    {
+      "op": "turn_outcome",
+      "outcomes": [
+        "COMPLETED"
+      ],
+      "turn": 2
+    }
+  ],
+  "scenario_id": "RUR-66-003",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "response",
+      "statement": "Clarify the referent and opacity convention, then apply the explicit normalized value."
+    },
+    {
+      "kind": "effects",
+      "statement": "Respect the target, value, turn and artifact scopes of the private contract."
+    },
+    {
+      "kind": "evidence",
+      "statement": "Use current-case provenance and independently collected per-turn states; pending is not completed."
+    }
+  ],
+  "turn_outcomes": {
+    "1": "NEEDS_CLARIFICATION",
+    "2": "COMPLETED"
+  }
+}

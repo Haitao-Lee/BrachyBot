@@ -8,7 +8,8 @@
     {
       "max": 1,
       "operation": "set",
-      "path": "viewers.sagittal.zoom"
+      "path": "viewers.sagittal.zoom",
+      "value": 2
     }
   ],
   "facts": {},

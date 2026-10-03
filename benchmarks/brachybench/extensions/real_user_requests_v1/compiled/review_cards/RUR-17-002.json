@@ -8,17 +8,20 @@
     {
       "kind": "report",
       "max": 1,
-      "operation": "submit"
+      "operation": "submit",
+      "turn": 1
     },
     {
       "kind": "guide",
       "max": 1,
-      "operation": "submit"
+      "operation": "submit",
+      "turn": 1
     },
     {
       "kind": "report",
       "max": 1,
-      "operation": "cancel"
+      "operation": "cancel",
+      "turn": 2
     }
   ],
   "facts": {},

@@ -41,7 +41,7 @@ def task_for(case):
         "scoring":{"primary_metric":"verified_task_goal","gate_refs":[],"weight":1.,"difficulty_target":"medium"},
         "anti_gaming":{"paraphrase_group":case["family_id"],"contrast_family_id":case["family_id"],"hidden":False},
         "provenance":{"source":"audit_derived","derived_from":f"real_user_requests_v1:{case['id']}",
-                      "authored_on":"2026-10-03","reviewers":["authoring-only; independent review pending"],"guideline_ref":None,"deprecated":None},
+                      "authored_on":"2026-10-04" if "design_version" in case else "2026-10-03","reviewers":["authoring-only; independent review pending"],"guideline_ref":None,"deprecated":None},
     }
 
 
@@ -75,7 +75,22 @@ def products():
                      "semantic_criterion_count":len(contract["response_rubric"]),"split":"development",
                      "runtime_ready":True,"semantic_review":"pending_independent_review",
                      "confirmatory_eligible":False,"profile":"decision_sandbox"})
-    result["index.json"]={"schema":"rur-executable-1","family_count":40,"scenario_count":len(rows),
+    result["coverage.json"]={"schema":"rur-design-coverage-2", "original_scenarios":82,
+        "added_scenarios":sum("design_version" in c for c in cases()),
+        "state_contrast_additions":sum(c.get("design_version")=="state-contrast-2026-10-04" for c in cases()),
+        "workflow_additions":sum(c.get("design_version")=="workflow-completion-2026-10-04" for c in cases()),
+        "multi_turn_scenarios":sum(sum(s["kind"]=="user" for s in c["steps"])>1 for c in cases()),
+        "event_script_scenarios":sum(any(s["kind"]=="environment_event" for s in c["steps"]) for c in cases()),
+        "negative_control_specifications":sum(len(c["negative_controls"]) for c in cases()),
+        "families":[{"id":f["id"], "meaning":f["gap"], "tracks":f["tracks"],
+                     "scenarios":[c["id"] for c in f["cases"]],
+                     "multi_turn_scenarios":[c["id"] for c in f["cases"] if sum(s["kind"]=="user" for s in c["steps"])>1],
+                     "event_script_scenarios":[c["id"] for c in f["cases"] if any(s["kind"]=="environment_event" for s in c["steps"])],
+                     "component_contract":"built", "independent_semantic_review":"pending",
+                     "live_browser_validation":"not_run"} for f in PACK["families"]],
+        "interpretation":"Presence is a design inventory, not proof of exhaustive coverage or agent competence.",
+        "formal_entry":"real user chat input with independent effects and delivery collection; no task or gold sent to SUT"}
+    result["index.json"]={"schema":"rur-executable-1","family_count":len(PACK["families"]),"scenario_count":len(rows),
                           "task_rows":rows,"sut_runs":0,"sut_results":"not_collected",
                           "confirmatory_ready":False,"split_policy":"All current tasks are public development; no sealed claim.",
                           "shared_fixture_lineage":"synthetic-rur-base-v1; not independent clinical cases"}

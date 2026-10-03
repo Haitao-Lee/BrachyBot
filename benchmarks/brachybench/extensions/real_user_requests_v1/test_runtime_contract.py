@@ -24,19 +24,14 @@ from .runner import evaluate_recording, sign_recording, execute, safe_public_sta
 CASES=cases()
 
 
-def witness(case,root):
-    """Exercise actual sandbox effects; checker self-test, never a SUT."""
-    env=Environment(case,root,execution_id="component-self-test")
-    contract=compile_contract(case)
-    user_turns=contract["protocol_user_turns"]
-    users=[s for s in case["steps"] if s["kind"]=="user"]
-    if user_turns: env.begin_turn(users[0]["text"],users[0]["language"])
-    for effect in contract["effects"]:
+def run_effects(env,contract,effects):
+    """Private checker witness effects, not an agent implementation."""
+    for effect in effects:
         op=effect["operation"]
-        args={k:v for k,v in effect.items() if k not in {"operation","max","targets","hide"}}
+        args={k:v for k,v in effect.items() if k not in {"operation","max","targets","hide","turn"}}
         if op=="set":
             eq=next((r for r in contract["rules"] if r["op"]=="equals" and r["path"]==args["path"]),None)
-            args["value"]=eq["value"] if eq else True
+            args.setdefault("value", eq["value"] if eq else True)
         if op=="capture":
             if any(e.get("kind")=="report_figures" for e in contract["effects"]): continue
             for target in effect["targets"]:
@@ -48,6 +43,24 @@ def witness(case,root):
         if op=="submit":
             cancelled=any(r["op"]=="job_status" and r["kind"]==args["kind"] and r["status"]=="cancelled" for r in contract["rules"])
             if not cancelled: env.call("advance")
+def witness(case,root):
+    """Exercise actual sandbox effects; checker self-test, never a SUT."""
+    env=Environment(case,root,execution_id="component-self-test")
+    contract=compile_contract(case)
+    user_turns=contract["protocol_user_turns"]
+    users=[s for s in case["steps"] if s["kind"]=="user"]
+    if case.get("design_version")=="workflow-completion-2026-10-04" or contract.get("turn_scoped"):
+        for n,user in enumerate(users,1):
+            env.begin_turn(user["text"],user["language"])
+            run_effects(env,contract,[e for e in contract["effects"] if e.get("turn",1)==n])
+            if n==1 and any(r["op"]=="provider_fault_seen" for r in contract["rules"]): env.call("provider")
+            outcome=contract.get("turn_outcomes",{}).get(n,contract["acceptable_outcomes"][0]).split("|")[0]
+            env.deliver_response("Component checker witness, not a tested agent response.",outcome=outcome,
+                attachments=[f["id"] for f in env.state["available_captures"]],
+                downloads=[f["id"] for f in env.state["available_downloads"]])
+        return env,contract
+    if user_turns: env.begin_turn(users[0]["text"],users[0]["language"])
+    run_effects(env,contract,contract["effects"])
     if any(r["op"]=="provider_fault_seen" for r in contract["rules"]): env.call("provider")
     for turn in range(user_turns or 1):
         if turn: env.begin_turn(users[turn]["text"],users[turn]["language"])
@@ -234,6 +247,6 @@ def test_jsonl_protocol_plumbing_isolated_double_not_sut(tmp_path):
 
 def test_build_deterministic_and_all_rule_operators_implemented():
     a=products(); b=products(); assert a==b
-    assert a["index.json"]["scenario_count"]==82
+    assert a["index.json"]["scenario_count"]==210
     assert a["index.json"]["sut_runs"]==0
     assert all(not r["confirmatory_eligible"] for r in a["index.json"]["task_rows"])

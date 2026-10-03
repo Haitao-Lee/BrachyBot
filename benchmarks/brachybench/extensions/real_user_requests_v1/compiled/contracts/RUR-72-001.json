@@ -1,0 +1,85 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [
+    [
+      "report",
+      "quality"
+    ]
+  ],
+  "effects": [
+    {
+      "kind": "quality",
+      "max": 1,
+      "operation": "submit",
+      "turn": 1
+    },
+    {
+      "kind": "report",
+      "max": 1,
+      "operation": "submit",
+      "turn": 1
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "en",
+  "requested_languages": [
+    "en"
+  ],
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "response",
+      "statement": "Verify quality completion before report consumes it, preserving current guide and dose."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "effects",
+      "statement": "Respect the target, value, turn and artifact scopes of the private contract."
+    },
+    {
+      "id": "criterion-2",
+      "kind": "evidence",
+      "statement": "Use current-case provenance and independently collected per-turn states; pending is not completed."
+    }
+  ],
+  "rules": [
+    {
+      "kind": "quality",
+      "op": "artifact",
+      "status": "completed"
+    },
+    {
+      "kind": "report",
+      "op": "artifact",
+      "status": "completed"
+    },
+    {
+      "op": "equals",
+      "path": "artifacts.guide",
+      "value": "current"
+    }
+  ],
+  "scenario_id": "RUR-72-001",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "response",
+      "statement": "Verify quality completion before report consumes it, preserving current guide and dose."
+    },
+    {
+      "kind": "effects",
+      "statement": "Respect the target, value, turn and artifact scopes of the private contract."
+    },
+    {
+      "kind": "evidence",
+      "statement": "Use current-case provenance and independently collected per-turn states; pending is not completed."
+    }
+  ]
+}

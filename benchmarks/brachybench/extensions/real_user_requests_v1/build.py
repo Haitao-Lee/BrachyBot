@@ -13,6 +13,8 @@ else:
 def outputs():
     pack = dict(PACK)
     pack["catalog_sha256"] = hashlib.sha256(Path(__file__).with_name("catalog.py").read_bytes()).hexdigest()
+    pack["expansion_sha256"] = hashlib.sha256(Path(__file__).with_name("expansion.py").read_bytes()).hexdigest()
+    pack["completion_sha256"] = hashlib.sha256(Path(__file__).with_name("completion.py").read_bytes()).hexdigest()
     quality = validate(pack)
     if not quality["structural_ok"]:
         raise ValueError("\n".join(quality["errors"]))

@@ -1,0 +1,75 @@
+{
+  "anti_gaming": {
+    "contrast_family_id": "RUR-53",
+    "hidden": false,
+    "paraphrase_group": "RUR-53"
+  },
+  "clinical_intent": "Stale report cannot be exported as latest",
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "RUR-53",
+  "cost_class": "light_compute",
+  "fixture": {
+    "case_family": "RUR-53",
+    "initial_state_hash": "sha256:f99455b68ca2e266e6457e136f51e39f33f9ae1810779f3309a360aaa60b0143",
+    "setup_script": "extensions/real_user_requests_v1/compiled/fixtures/RUR-53-002.json"
+  },
+  "id": "RUR-53-002",
+  "layers": [
+    "L2",
+    "L4"
+  ],
+  "oracle": {
+    "check": "real_user_request",
+    "constraint_class": "none",
+    "expect": null,
+    "gold": "contracts/RUR-53-002.json",
+    "independent_check": true,
+    "kind": "program"
+  },
+  "power_role": "exploratory",
+  "protocol": {
+    "allowed_intermediates": [],
+    "audit_required": true,
+    "budget": {
+      "tool_calls": 96,
+      "turns": 1,
+      "wall_clock_s": 120
+    },
+    "mode": "single_turn",
+    "n_runs": 1,
+    "turns": [
+      {
+        "lang": "en",
+        "role": "user",
+        "text": "Export the latest valid report only; if the saved report is stale, ask before rebuilding."
+      }
+    ],
+    "ui_counterpart": null
+  },
+  "provenance": {
+    "authored_on": "2026-10-04",
+    "deprecated": null,
+    "derived_from": "real_user_requests_v1:RUR-53-002",
+    "guideline_ref": null,
+    "reviewers": [
+      "authoring-only; independent review pending"
+    ],
+    "source": "audit_derived"
+  },
+  "schema_version": "1.0",
+  "scoring": {
+    "difficulty_target": "medium",
+    "gate_refs": [],
+    "primary_metric": "verified_task_goal",
+    "weight": 1.0
+  },
+  "track": "B",
+  "unit": {
+    "contrast_family_id": "RUR-53",
+    "group_type": "G-CTX",
+    "kind": "task_scenario"
+  }
+}

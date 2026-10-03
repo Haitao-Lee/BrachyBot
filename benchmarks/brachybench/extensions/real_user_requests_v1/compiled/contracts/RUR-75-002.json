@@ -1,0 +1,91 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "max": 1,
+      "operation": "set",
+      "path": "objects.guide-A.visible",
+      "turn": 1,
+      "value": true
+    },
+    {
+      "hide": [],
+      "max": 2,
+      "operation": "capture",
+      "targets": [
+        "guide-A"
+      ],
+      "turn": 2
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 2,
+  "requested_language": "en",
+  "requested_languages": [
+    "en",
+    "en"
+  ],
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "response",
+      "statement": "Maintain explicit persistent visible state while capturing the same guide on turn 2."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "effects",
+      "statement": "Respect the target, value, turn and artifact scopes of the private contract."
+    },
+    {
+      "id": "criterion-2",
+      "kind": "evidence",
+      "statement": "Use current-case provenance and independently collected per-turn states; pending is not completed."
+    }
+  ],
+  "rules": [
+    {
+      "op": "turn_state",
+      "path": "objects.guide-A.visible",
+      "turn": 1,
+      "value": true
+    },
+    {
+      "op": "equals",
+      "path": "objects.guide-A.visible",
+      "value": true
+    },
+    {
+      "op": "attachments",
+      "targets": [
+        "guide-A"
+      ],
+      "views": [
+        "data-tree",
+        "viewer-3d"
+      ]
+    }
+  ],
+  "scenario_id": "RUR-75-002",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "response",
+      "statement": "Maintain explicit persistent visible state while capturing the same guide on turn 2."
+    },
+    {
+      "kind": "effects",
+      "statement": "Respect the target, value, turn and artifact scopes of the private contract."
+    },
+    {
+      "kind": "evidence",
+      "statement": "Use current-case provenance and independently collected per-turn states; pending is not completed."
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "max": 1,
+      "operation": "monitor_stop",
+      "run_id": "run-owned",
+      "turn": 1
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 2,
+  "requested_language": "en",
+  "requested_languages": [
+    "en",
+    "en"
+  ],
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "response",
+      "statement": "Stop the active owned run on turn 1; confirm inactive state on turn 2 without creating a new run."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "effects",
+      "statement": "Respect the target, value, turn and artifact scopes of the private contract."
+    },
+    {
+      "id": "criterion-2",
+      "kind": "evidence",
+      "statement": "Use current-case provenance and independently collected per-turn states; pending is not completed."
+    }
+  ],
+  "rules": [
+    {
+      "op": "turn_state",
+      "path": "monitor.active",
+      "turn": 1,
+      "value": false
+    },
+    {
+      "op": "equals",
+      "path": "monitor.active",
+      "value": false
+    }
+  ],
+  "scenario_id": "RUR-77-001",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "response",
+      "statement": "Stop the active owned run on turn 1; confirm inactive state on turn 2 without creating a new run."
+    },
+    {
+      "kind": "effects",
+      "statement": "Respect the target, value, turn and artifact scopes of the private contract."
+    },
+    {
+      "kind": "evidence",
+      "statement": "Use current-case provenance and independently collected per-turn states; pending is not completed."
+    }
+  ]
+}

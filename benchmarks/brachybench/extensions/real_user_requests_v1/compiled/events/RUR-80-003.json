@@ -1,0 +1,8 @@
+[
+  {
+    "event": "drop_http_ack",
+    "kind": "environment_event",
+    "payload": {},
+    "trigger": "visibility.committed"
+  }
+]

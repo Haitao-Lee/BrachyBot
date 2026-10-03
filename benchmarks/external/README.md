@@ -1,42 +1,42 @@
-# BrachyBot · 公开 benchmark 集合
+# BrachyBot · Public Benchmark Collection
 
-> **2026-10-04 更新：** 后续所有正式 BrachyBot 测评统一从真实浏览器对话框输入题目并点击发送。任意模型回调默认被拒绝；E0/回归必须显式声明 `component_self_test`。详见 [统一执行契约](../../docs/BENCHMARK_USER_CHAT_EXECUTION_CONTRACT_2026-10-04.md) 与 `public_collection/user_chat_eligibility.json`。下文的 common-harness 分类是原始资产/协议背景，不是绕过产品入口的许可。
+> **2026-10-04 update:** All future formal BrachyBot evaluations must submit each task through the real browser chat input and activate the Send button. Arbitrary model callbacks are rejected by default; E0 and regression runs must explicitly declare `component_self_test`. See the [unified execution contract](../../docs/BENCHMARK_USER_CHAT_EXECUTION_CONTRACT_2026-10-04.md) and `public_collection/user_chat_eligibility.json`. The common-harness categories below describe source assets and protocols; they do not authorize bypassing the product entry point.
 
-本目录用于公开能力锚点，不代替 `../brachybench/` 的原生近距离治疗、Viewer、Monitor 和产物状态测试。**数据收集成功、离线 scorer 单测通过、原版协议可运行、模型实测结果是四件不同的事。** 不合并成一个跨 benchmark 总分。
+This directory provides public capability anchors. It does not replace the native brachytherapy, Viewer, Monitor, or artifact-state evaluations in `../brachybench/`. **Successful data acquisition, passing offline scorer tests, an executable original protocol, and measured model results are four different things.** Do not combine them into a single cross-benchmark score.
 
-本轮收集/审查基线为 2026-10-03，收尾日期 2026-10-04。既有 11 个 legacy adapter 保留，新集合在 [`public_collection/`](public_collection/README.md)，新增 12 项 EXT-16…27。详细筛选、原版协议限制和旧项问题见 [审查报告](../../docs/BENCHMARK_PUBLIC_COLLECTION_AUDIT_2026-10-03.md)。**本轮 SUT/model/judge 调用数为 0。**
+The collection/review baseline is 2026-10-03, with work completed on 2026-10-04. The 11 legacy adapters remain in place. The new collection is in [`public_collection/`](public_collection/README.md) and adds 12 items, EXT-16 through EXT-27. See the [review report](../../docs/BENCHMARK_PUBLIC_COLLECTION_AUDIT_2026-10-03.md) for selection criteria, original-protocol limitations, and issues with earlier entries. **This work made zero SUT, model, or judge calls.**
 
-## 两层目录，不混淆实验身份
+## Two directory layers, two distinct experimental identities
 
-| 层 | 入口 | 含义 |
+| Layer | Entry point | Meaning |
 |---|---|---|
-| 既有 adapter | `manifest.yaml`、`acquisition/*.yaml`、`EXT-N/adapter/` | 历史构建状态；`active`/E0 PASS 不是公开比较资格认证 |
-| 新公开集合 | `public_collection/catalog.json`、`assets.lock.json`、`pool.py` | 上游版本锁定、测试集、私有参考答案/公开输入分离、原版 scorer/renderer 接口 |
-| 筛选和复用规则 | `public_collection/selection.json` | 每项用途、条件、排除或重叠原因；仅收集有意义的方向 |
+| Existing adapters | `manifest.yaml`, `acquisition/*.yaml`, `EXT-N/adapter/` | Historical construction status; `active` or E0 PASS does not certify eligibility for public comparison |
+| New public collection | `public_collection/catalog.json`, `assets.lock.json`, `pool.py` | Pinned upstream versions, test data, separation of private references from public inputs, and original scorer/renderer interfaces |
+| Selection and reuse rules | `public_collection/selection.json` | Purpose, conditions, exclusions, and overlap rationale for each item; only meaningful directions are retained |
 
-新集合可通过统一 common-harness 输入测试 BrachyBot 所用的模型/决策组件，但并不自动赋予产品外国工具、EHR、病理或医院系统的能力。**原生 BrachyBot、同一 mock-tool harness 的模型/agent、原版公开 leaderboard 三种结果必须分别报告。**
+The new collection can provide common-harness inputs for evaluating models or decision components used by BrachyBot, but does not automatically give the product capabilities in external tools, EHRs, pathology systems, or hospital systems. Report results for **native BrachyBot**, **models/agents using the same mock-tool harness**, and **original public leaderboards** separately.
 
-## 现有 11 项重新定位
+## Repositioning the 11 existing entries
 
-| ID | 项目 | 本轮审查后的定位 |
+| ID | Benchmark | Position after this review |
 |---|---|---|
-| EXT-1 | ABRA | 影像软件操作方法/条件实验；353/655 生成题，不能声称已运行 OHIF/Orthanc 原版环境 |
-| EXT-2 | HealthBench | 医学沟通、接地、诚实辅助锚点；需真实独立 rubric judge，hard/consensus 不是新独立题库 |
-| EXT-3 | MedSafetyBench-BrachyAdapted | 原版安全数据与 Brachy 改编题分开报告；改编须专家签署，不能称原版安全成绩 |
-| EXT-4 | MedMemoryBench | 医学对话记忆辅助；须固定 zh/en、persona/session 时间范围，不能用参考答案生成 SUT 输出 |
-| EXT-9 | LongMemEval | oracle/s/m 分轨；默认 oracle 的结果不能冒充长历史能力；judge 仍为独立依赖 |
-| EXT-10 | MedHallu | 医学幻觉检测辅助；上游 parser 有空答案/弃答解析问题，需同时披露 raw response 与协议版本 |
-| EXT-11 | MedCalc-Bench | 临床计算辅助，不等于粒源剂量引擎验证 |
-| EXT-12 | AgentClinic | **隔离，禁止旧单轮 adapter 产生 AgentClinic 成绩**；缺原版 patient/test 多轮环境，已显式 BLOCKED |
-| EXT-13 | AMEGA | 指南遵循辅助；加权求和不等于 criteria 已经独立判定；需 judge/人审 |
-| EXT-14 | MedPhysBench | 医学物理最贴合的公开锚点之一；97 题；不等于本产品病例计划获批 |
-| EXT-15 | MedicalAgentsBench | 当前 9 套完整来源题 != 原版 `test_hard` 十切片协议；只作显式辅助基线，须逐底层数据集确认许可/重叠 |
+| EXT-1 | ABRA | Imaging-software interaction methodology / conditional experiment; 353 of 655 generated tasks. Do not claim execution in the original OHIF/Orthanc environment. |
+| EXT-2 | HealthBench | Auxiliary anchor for medical communication, grounding, and honesty; requires a genuinely independent rubric judge. Hard/consensus variants are not new independent task sets. |
+| EXT-3 | MedSafetyBench-BrachyAdapted | Report original safety data separately from Brachy-adapted tasks. Adaptations require expert sign-off and must not be reported as original benchmark scores. |
+| EXT-4 | MedMemoryBench | Auxiliary medical-dialogue memory anchor; fix zh/en, persona, and session-duration settings. Never use reference answers to generate SUT outputs. |
+| EXT-9 | LongMemEval | Report oracle, `s`, and `m` tracks separately. Oracle-mode results do not establish long-history capability; an independent judge remains a dependency. |
+| EXT-10 | MedHallu | Auxiliary medical hallucination-detection anchor; the upstream parser has empty-answer/abstention parsing issues. Preserve raw responses and disclose the protocol version. |
+| EXT-11 | MedCalc-Bench | Auxiliary clinical-calculation anchor; it is not validation of the brachytherapy source-dose engine. |
+| EXT-12 | AgentClinic | **Quarantined: the legacy single-turn adapter must not produce AgentClinic scores.** The original patient/test multi-turn environment is missing; status is explicitly BLOCKED. |
+| EXT-13 | AMEGA | Auxiliary guideline-adherence anchor; a weighted sum does not mean criteria were independently assessed. Requires a judge or human review. |
+| EXT-14 | MedPhysBench | One of the closest public anchors for medical physics; 97 questions. It does not establish clinical approval of a plan produced by this product. |
+| EXT-15 | MedicalAgentsBench | The current nine complete source sets are not the original ten-slice `test_hard` protocol. Treat them only as an explicitly labeled auxiliary baseline; verify licenses and overlap for every underlying dataset. |
 
-本轮已修复既有 adapter 的**直接 `build_input` 和调用边界**参考答案泄露，包括 EXT-15 的 `reference_letter/reference_content`。采用逐项公开字段契约，保留合法临床内容和“供模型判断的候选答案”，不递归删掉所有叫 `answer/expected` 的文本。
+This round also fixed reference-answer exposure at the existing adapters' direct `build_input` and invocation boundaries, including EXT-15's `reference_letter` and `reference_content`. The implementation uses an explicit per-item public-field contract. It preserves legitimate clinical content and candidate answers that the model is supposed to assess; it does not recursively remove every field or text fragment named `answer` or `expected`.
 
-## 不运行模型的复现命令
+## Reproduction commands without model calls
 
-在 `benchmarks/external/` 中，使用单独的 benchmark Python 环境：
+Use a dedicated benchmark Python environment from `benchmarks/external/`:
 
 ```bash
 python -m public_collection.collect fetch
@@ -46,10 +46,10 @@ python -m pytest public_collection/tests -q
 python -m public_collection.pool export --id EXT-20 --out /tmp/medec-public-new
 ```
 
-分别为按已审核 SHA256 获取、完整性检查、题库清单、构建/契约/scorer 正负对照测试、公开输入导出。都不会调用模型。
+These commands respectively fetch sources by reviewed SHA256, verify integrity, inventory the task pool, run construction/contract/scorer positive and negative controls, and export public inputs. None calls a model.
 
-`fetch_all.sh --public-collection` 只触发新集合按锁获取，不触碰既有 vendor。**不要为了复用新增题库执行无参数的旧 `fetch_all.sh`**：旧脚本会重建旧 vendor/data，并有未固定 HF `main` 的历史段落。新的锁包含 canonical URL、实际下载 URL、字节数及 SHA256；使用公开镜像不绕过认证/DUA。
+`fetch_all.sh --public-collection` fetches only the new collection according to its lock and does not touch existing vendor data. **Do not run the legacy `fetch_all.sh` without arguments just to reuse the new task set:** the legacy script rebuilds old vendor/data directories and contains historical sections that do not pin Hugging Face `main`. The new lock records canonical and actual download URLs, byte counts, and SHA256 hashes. Public mirrors do not bypass authentication or data-use agreements.
 
-只把导出的公开 bundle 挂载给 SUT；不能把包含 gold/qrels/scorer 的整个仓库或 assets 目录给终端 agent。`--bootstrap-lock` 仅用于明确审核后的上游升级，本轮已经生成锁，日常复现不需要它。
+Mount only the exported public bundle for the SUT. Do not expose the full repository or assets directory containing gold labels, qrels, or scorers to a terminal agent. `--bootstrap-lock` is only for an explicitly reviewed upstream update; the lock has already been generated for this collection, so routine reproduction does not need it.
 
-本轮没有修改临床推理/规划/Viewer/Monitor 代码，没有重启服务，没有创建患者实验，也没有调用付费 judge。历史 `results/e0_summary.json` 保留为历史组件记录，不升级为本轮模型结果。
+This work did not modify clinical reasoning, planning, Viewer, or Monitor code; restart a service; create a patient experiment; or call a paid judge. The historical `results/e0_summary.json` remains a component record and is not reclassified as a model result from this round.

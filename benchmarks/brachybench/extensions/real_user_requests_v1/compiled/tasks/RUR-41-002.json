@@ -1,0 +1,75 @@
+{
+  "anti_gaming": {
+    "contrast_family_id": "RUR-41",
+    "hidden": false,
+    "paraphrase_group": "RUR-41"
+  },
+  "clinical_intent": "Absent guide is not invented",
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "RUR-41",
+  "cost_class": "light_compute",
+  "fixture": {
+    "case_family": "RUR-41",
+    "initial_state_hash": "sha256:0c68de87f85c69eea4e9269e3f61fa7ebdc3b9fb4de1430f56efd28835e6c192",
+    "setup_script": "extensions/real_user_requests_v1/compiled/fixtures/RUR-41-002.json"
+  },
+  "id": "RUR-41-002",
+  "layers": [
+    "L2",
+    "L4"
+  ],
+  "oracle": {
+    "check": "real_user_request",
+    "constraint_class": "none",
+    "expect": null,
+    "gold": "contracts/RUR-41-002.json",
+    "independent_check": true,
+    "kind": "program"
+  },
+  "power_role": "exploratory",
+  "protocol": {
+    "allowed_intermediates": [],
+    "audit_required": true,
+    "budget": {
+      "tool_calls": 96,
+      "turns": 1,
+      "wall_clock_s": 120
+    },
+    "mode": "single_turn",
+    "n_runs": 1,
+    "turns": [
+      {
+        "lang": "en",
+        "role": "user",
+        "text": "Display the guide that belongs to this case, not a newly generated one."
+      }
+    ],
+    "ui_counterpart": null
+  },
+  "provenance": {
+    "authored_on": "2026-10-04",
+    "deprecated": null,
+    "derived_from": "real_user_requests_v1:RUR-41-002",
+    "guideline_ref": null,
+    "reviewers": [
+      "authoring-only; independent review pending"
+    ],
+    "source": "audit_derived"
+  },
+  "schema_version": "1.0",
+  "scoring": {
+    "difficulty_target": "medium",
+    "gate_refs": [],
+    "primary_metric": "verified_task_goal",
+    "weight": 1.0
+  },
+  "track": "F",
+  "unit": {
+    "contrast_family_id": "RUR-41",
+    "group_type": "G-CTX",
+    "kind": "task_scenario"
+  }
+}

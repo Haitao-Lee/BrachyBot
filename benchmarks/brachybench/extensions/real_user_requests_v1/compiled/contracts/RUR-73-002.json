@@ -1,0 +1,84 @@
+{
+  "acceptable_outcomes": [
+    "PARTIAL"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "kind": "guide",
+      "max": 1,
+      "operation": "submit",
+      "turn": 1
+    },
+    {
+      "kind": "report",
+      "max": 1,
+      "operation": "submit",
+      "turn": 1
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 1,
+  "requested_language": "en",
+  "requested_languages": [
+    "en"
+  ],
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "response",
+      "statement": "Verify report completion and guide failure without treating independent report as guide-dependent."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "effects",
+      "statement": "Respect the target, value, turn and artifact scopes of the private contract."
+    },
+    {
+      "id": "criterion-2",
+      "kind": "evidence",
+      "statement": "Use current-case provenance and independently collected per-turn states; pending is not completed."
+    }
+  ],
+  "rules": [
+    {
+      "kind": "guide",
+      "op": "job_status",
+      "status": "failed"
+    },
+    {
+      "kind": "report",
+      "op": "artifact",
+      "status": "completed"
+    },
+    {
+      "op": "preserve",
+      "path": "artifact_records.guide"
+    },
+    {
+      "event": "guide_failed",
+      "op": "event_fired",
+      "trigger": "guide.running"
+    }
+  ],
+  "scenario_id": "RUR-73-002",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "response",
+      "statement": "Verify report completion and guide failure without treating independent report as guide-dependent."
+    },
+    {
+      "kind": "effects",
+      "statement": "Respect the target, value, turn and artifact scopes of the private contract."
+    },
+    {
+      "kind": "evidence",
+      "statement": "Use current-case provenance and independently collected per-turn states; pending is not completed."
+    }
+  ]
+}

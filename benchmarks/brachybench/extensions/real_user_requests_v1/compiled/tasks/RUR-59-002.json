@@ -1,0 +1,75 @@
+{
+  "anti_gaming": {
+    "contrast_family_id": "RUR-59",
+    "hidden": false,
+    "paraphrase_group": "RUR-59"
+  },
+  "clinical_intent": "One explicit capture does not alter preference",
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "RUR-59",
+  "cost_class": "light_compute",
+  "fixture": {
+    "case_family": "RUR-59",
+    "initial_state_hash": "sha256:39c3df303e427871ce09a7ae0723da3bef61fcad8f260ef2f54204d4984aaf0a",
+    "setup_script": "extensions/real_user_requests_v1/compiled/fixtures/RUR-59-002.json"
+  },
+  "id": "RUR-59-002",
+  "layers": [
+    "L2",
+    "L4"
+  ],
+  "oracle": {
+    "check": "real_user_request",
+    "constraint_class": "none",
+    "expect": null,
+    "gold": "contracts/RUR-59-002.json",
+    "independent_check": true,
+    "kind": "program"
+  },
+  "power_role": "exploratory",
+  "protocol": {
+    "allowed_intermediates": [],
+    "audit_required": true,
+    "budget": {
+      "tool_calls": 96,
+      "turns": 1,
+      "wall_clock_s": 120
+    },
+    "mode": "single_turn",
+    "n_runs": 1,
+    "turns": [
+      {
+        "lang": "en",
+        "role": "user",
+        "text": "I normally disable screenshots, but take one guide evidence set now; keep the preference disabled."
+      }
+    ],
+    "ui_counterpart": null
+  },
+  "provenance": {
+    "authored_on": "2026-10-04",
+    "deprecated": null,
+    "derived_from": "real_user_requests_v1:RUR-59-002",
+    "guideline_ref": null,
+    "reviewers": [
+      "authoring-only; independent review pending"
+    ],
+    "source": "audit_derived"
+  },
+  "schema_version": "1.0",
+  "scoring": {
+    "difficulty_target": "medium",
+    "gate_refs": [],
+    "primary_metric": "verified_task_goal",
+    "weight": 1.0
+  },
+  "track": "K",
+  "unit": {
+    "contrast_family_id": "RUR-59",
+    "group_type": "G-CTX",
+    "kind": "task_scenario"
+  }
+}

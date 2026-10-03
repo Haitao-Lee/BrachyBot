@@ -1,0 +1,1647 @@
+{
+  "added_scenarios": 128,
+  "event_script_scenarios": 35,
+  "families": [
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-01",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "两条孤立用户句不能替代可核实的历史目标、授权与执行承接。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-01-001",
+        "RUR-01-002"
+      ],
+      "tracks": [
+        "B",
+        "D1",
+        "K"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-02",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "不能把所有问句都等同只读，也不能把能力问句一律当执行。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-02-001",
+        "RUR-02-002"
+      ],
+      "tracks": [
+        "D1",
+        "B",
+        "I"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-03",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "同句多个言语行为需要局部授权，而非全句禁用或全句允许。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-03-001",
+        "RUR-03-002",
+        "RUR-03-003",
+        "RUR-03-004"
+      ],
+      "tracks": [
+        "D1",
+        "B"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-04",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "工具集合正确仍可能目标、动作、附件绑定错误。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-04-001",
+        "RUR-04-002"
+      ],
+      "tracks": [
+        "B",
+        "D1",
+        "M"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-05",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "全部、只、其他、除了需要集合运算与明确对象范围。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-05-001",
+        "RUR-05-002"
+      ],
+      "tracks": [
+        "B",
+        "D1",
+        "F"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-06",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "撤销要绑定已提交编辑及版本，不能靠最近字符串或视觉对象猜测。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-06-001",
+        "RUR-06-002"
+      ],
+      "tracks": [
+        "B",
+        "J",
+        "D1"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-07",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "同名不能全选；有稳定选择时也不能过度澄清。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-07-001",
+        "RUR-07-002"
+      ],
+      "tracks": [
+        "B",
+        "F",
+        "D1"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-08",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "噪声下应恢复可确定意图；高风险数值不能纠错猜测。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-08-001",
+        "RUR-08-002"
+      ],
+      "tracks": [
+        "I",
+        "B",
+        "D1"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-09",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "屏幕上下与患者坐标不等价，数据树选择与截图像素引用需消歧。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-09-001",
+        "RUR-09-002"
+      ],
+      "tracks": [
+        "F",
+        "M",
+        "D1"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-10",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "更好是多目标约束，不能用单个score授权自动改患者几何。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-10-001",
+        "RUR-10-002"
+      ],
+      "tracks": [
+        "B",
+        "C",
+        "D1"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-11",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "已保存OAR剂量要可发现；0、缺测、stale不能互换。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-11-001",
+        "RUR-11-002"
+      ],
+      "tracks": [
+        "B",
+        "C",
+        "H"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-12",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "当前权威事实、旧对话和用户错误前提要分层核对。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-12-001",
+        "RUR-12-002"
+      ],
+      "tracks": [
+        "C",
+        "H",
+        "K"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-13",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "通用肿瘤不能猜胰腺，明确病例部位可以复用且不能继承旧病例。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-13-001",
+        "RUR-13-002"
+      ],
+      "tracks": [
+        "A",
+        "D1",
+        "K"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [
+        "RUR-14-002"
+      ],
+      "id": "RUR-14",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "调用顺序不是完成；有效产物不必重算，报告不得引用pending依赖。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-14-001",
+        "RUR-14-002"
+      ],
+      "tracks": [
+        "B",
+        "H",
+        "G"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [
+        "RUR-15-001",
+        "RUR-15-002"
+      ],
+      "id": "RUR-15",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "失败要阻断依赖而不是所有任务，回复要逐项可核实。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-15-001",
+        "RUR-15-002"
+      ],
+      "tracks": [
+        "B",
+        "E",
+        "I"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [
+        "RUR-16-002"
+      ],
+      "id": "RUR-16",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "工具完成、回答流结束、附件落地和发送按钮须有一致终态。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-16-001",
+        "RUR-16-002"
+      ],
+      "tracks": [
+        "F",
+        "B",
+        "G"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [
+        "RUR-17-001",
+        "RUR-17-002"
+      ],
+      "id": "RUR-17",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "新请求取代旧意图需可取消边界；已提交不可当没发生。",
+      "multi_turn_scenarios": [
+        "RUR-17-001",
+        "RUR-17-002"
+      ],
+      "scenarios": [
+        "RUR-17-001",
+        "RUR-17-002"
+      ],
+      "tracks": [
+        "E",
+        "D1",
+        "B"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [
+        "RUR-18-001"
+      ],
+      "id": "RUR-18",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "超时可能发生在提交之后；重试不能盲目重复写或隐藏未知。",
+      "multi_turn_scenarios": [
+        "RUR-18-001"
+      ],
+      "scenarios": [
+        "RUR-18-001",
+        "RUR-18-002"
+      ],
+      "tracks": [
+        "E",
+        "H",
+        "B"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [
+        "RUR-19-001",
+        "RUR-19-002"
+      ],
+      "id": "RUR-19",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "异步结果必须绑定所有者，不能在当前病例或新版场景自动应用。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-19-001",
+        "RUR-19-002"
+      ],
+      "tracks": [
+        "D3",
+        "E",
+        "H"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-20",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "应等待必要资源而非全部资源；缺功能不应阻断独立轻量请求。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-20-001",
+        "RUR-20-002"
+      ],
+      "tracks": [
+        "E",
+        "B",
+        "G"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [
+        "RUR-21-001",
+        "RUR-21-002"
+      ],
+      "id": "RUR-21",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "坏JSON、未知工具、矛盾返回值不可降级成默认写或假成功。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-21-001",
+        "RUR-21-002"
+      ],
+      "tracks": [
+        "E",
+        "D1",
+        "B"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [
+        "RUR-22-001",
+        "RUR-22-002"
+      ],
+      "id": "RUR-22",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "浏览器重载不能重复任务或丢失已完成事实，恢复需服务器状态。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-22-001",
+        "RUR-22-002"
+      ],
+      "tracks": [
+        "E",
+        "H",
+        "F"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [
+        "RUR-23-001",
+        "RUR-23-002"
+      ],
+      "id": "RUR-23",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "计划已创建不等于图到达，已到达的图也不能被早期免责声明否定。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-23-001",
+        "RUR-23-002"
+      ],
+      "tracks": [
+        "M",
+        "C",
+        "B"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-24",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "bbox投影不证明可见；最小场景干预和失败路径恢复均须验证。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-24-001",
+        "RUR-24-002"
+      ],
+      "tracks": [
+        "M",
+        "F",
+        "H"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-25",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "上传图/报告的指令不等于用户授权；不同版本的图不能替代当前事实。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-25-001",
+        "RUR-25-002"
+      ],
+      "tracks": [
+        "D2",
+        "M",
+        "C"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [
+        "RUR-26-002"
+      ],
+      "id": "RUR-26",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "比较的是最终目标状态和合法过程，不是固定工具名或固定点击脚本。",
+      "multi_turn_scenarios": [
+        "RUR-26-002"
+      ],
+      "scenarios": [
+        "RUR-26-001",
+        "RUR-26-002"
+      ],
+      "tracks": [
+        "F",
+        "B",
+        "H"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [
+        "RUR-27-001",
+        "RUR-27-002"
+      ],
+      "id": "RUR-27",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "一次编辑和连续两次编辑、预览与commit、dose/score不得混为因果。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-27-001",
+        "RUR-27-002"
+      ],
+      "tracks": [
+        "J",
+        "C",
+        "H"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [
+        "RUR-28-001",
+        "RUR-28-002"
+      ],
+      "id": "RUR-28",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "监测事件要关联实际编辑对象，capture失败不吞建议也不伪称已截图。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-28-001",
+        "RUR-28-002"
+      ],
+      "tracks": [
+        "J",
+        "M",
+        "G"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [
+        "RUR-29-001"
+      ],
+      "id": "RUR-29",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "本地光效和服务器run状态不能分裂，stop不能被关键词误判start。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-29-001",
+        "RUR-29-002"
+      ],
+      "tracks": [
+        "J",
+        "D1",
+        "E"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-30",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "安全拒绝要局部，正常读/显示不能因另一项不可授权被连带拒绝。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-30-001",
+        "RUR-30-002"
+      ],
+      "tracks": [
+        "D1",
+        "B",
+        "C"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [
+        "RUR-31-002"
+      ],
+      "id": "RUR-31",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "聪明不只正确，还要避免无意义模型轮次、重复GPU任务和永久等待。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-31-001",
+        "RUR-31-002"
+      ],
+      "tracks": [
+        "G",
+        "E",
+        "B"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-32",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "最终回复要同时覆盖已完成/未完成项且遵守语言与简洁约束，不以长度加分。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-32-001",
+        "RUR-32-002"
+      ],
+      "tracks": [
+        "I",
+        "C",
+        "B"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-33",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "按钮执行不等于有效PDF/STL，导出文件必须可解析且属于当前版本。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-33-001",
+        "RUR-33-002"
+      ],
+      "tracks": [
+        "L",
+        "H",
+        "B"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-34",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "实际剂量与限值来源要分开，公开引文不能自动升级成适用阈值。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-34-001",
+        "RUR-34-002"
+      ],
+      "tracks": [
+        "C",
+        "A",
+        "H"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-35",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "奇怪输入不是只有拒绝；可以明确边界并完成可行的独立部分。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-35-001",
+        "RUR-35-002"
+      ],
+      "tracks": [
+        "E",
+        "B",
+        "I"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-36",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "必须跨多个真实输入更新目标，不是命中固定第一句模板。",
+      "multi_turn_scenarios": [
+        "RUR-36-001"
+      ],
+      "scenarios": [
+        "RUR-36-001",
+        "RUR-36-002"
+      ],
+      "tracks": [
+        "B",
+        "E",
+        "K"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [
+        "RUR-37-001"
+      ],
+      "id": "RUR-37",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "压缩不能丢授权排除项；本轮累计token不等于当前保留窗口token。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-37-001",
+        "RUR-37-002"
+      ],
+      "tracks": [
+        "K",
+        "F",
+        "H"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [
+        "RUR-38-002"
+      ],
+      "id": "RUR-38",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "偏好是可覆盖默认，不是跨病例授权或新请求的强制约束。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-38-001",
+        "RUR-38-002"
+      ],
+      "tracks": [
+        "K",
+        "I",
+        "D1"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [
+        "RUR-39-001"
+      ],
+      "id": "RUR-39",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "相对调节需基线和幂等语义，百分比/剂量单位不得跨对象绑定。",
+      "multi_turn_scenarios": [
+        "RUR-39-001"
+      ],
+      "scenarios": [
+        "RUR-39-001",
+        "RUR-39-002"
+      ],
+      "tracks": [
+        "B",
+        "A",
+        "D1"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-40",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "53个器官不能变成只返回靶区、截断后假称全部或逐器官模型循环。",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-40-001",
+        "RUR-40-002"
+      ],
+      "tracks": [
+        "B",
+        "G",
+        "C"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-41",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "Existing visible objects require no regeneration; absent objects require an honest unavailable branch.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-41-001",
+        "RUR-41-002"
+      ],
+      "tracks": [
+        "F",
+        "B",
+        "D1"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-42",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "Version identity is distinct from a generic guide label and from clinical validity.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-42-001",
+        "RUR-42-002"
+      ],
+      "tracks": [
+        "F",
+        "C",
+        "D1"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-43",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "An explicit exclusion changes target membership; an empty filter must not fall back to all objects.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-43-001",
+        "RUR-43-002"
+      ],
+      "tracks": [
+        "F",
+        "B"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-44",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "A strict numeric predicate and absent measurement lead to different answers, never zero imputation.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-44-001",
+        "RUR-44-002"
+      ],
+      "tracks": [
+        "C",
+        "B"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-45",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "Execute a verified true display branch; do not guess an unknown dose condition.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-45-001",
+        "RUR-45-002"
+      ],
+      "tracks": [
+        "D1",
+        "B"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-46",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "All-current state requires no work; a report-only stale state authorizes only that incremental artifact.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-46-001",
+        "RUR-46-002"
+      ],
+      "tracks": [
+        "B",
+        "G",
+        "D1"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-47",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "Independent saved-dose reads must survive an unavailable Viewer without fabricated display success.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-47-001",
+        "RUR-47-002"
+      ],
+      "tracks": [
+        "B",
+        "F",
+        "C"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-48",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "The same operation vocabulary in a hypothetical and an imperative must have different authorization.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-48-001",
+        "RUR-48-002"
+      ],
+      "tracks": [
+        "D1",
+        "I"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-49",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "Harmless spelling noise is recoverable; conflicting numeric units require clarification rather than clinical mutation.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-49-001",
+        "RUR-49-002"
+      ],
+      "tracks": [
+        "I",
+        "D1"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-50",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "A relative factor with a known zero baseline has a precise answer; vague magnitude does not justify an arbitrary value.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-50-001",
+        "RUR-50-002"
+      ],
+      "tracks": [
+        "F",
+        "I"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-51",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "Percent and fraction express exact intended setter values, not prescription dose or a guessed scale.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-51-001",
+        "RUR-51-002"
+      ],
+      "tracks": [
+        "F",
+        "I"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-52",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "A current stable selection resolves a pronoun; no selection does not authorize a first-match fallback.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-52-001",
+        "RUR-52-002"
+      ],
+      "tracks": [
+        "F",
+        "K",
+        "D1"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-53",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "Exporting an existing current report is not regeneration; a stale report cannot be relabeled current.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-53-001",
+        "RUR-53-002"
+      ],
+      "tracks": [
+        "B",
+        "H",
+        "D1"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-54",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "A screenshot transaction must restore display; a user hide command intentionally persists.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-54-001",
+        "RUR-54-002"
+      ],
+      "tracks": [
+        "F",
+        "H",
+        "D1"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-55",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "Two target captures require distinct attachments; no available Viewer requires honest nonvisual evidence rather than fabricated location.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-55-001",
+        "RUR-55-002"
+      ],
+      "tracks": [
+        "H",
+        "C",
+        "F"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-56",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "A stored engineering score and an explicitly supplied demonstration limit are usable facts, not clinical clearance.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-56-001",
+        "RUR-56-002"
+      ],
+      "tracks": [
+        "C",
+        "D1"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-57",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "An inactive run is a no-op; an active owned run requires server-confirmed termination, not starting another run.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-57-001",
+        "RUR-57-002"
+      ],
+      "tracks": [
+        "B",
+        "D1",
+        "E"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-58",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "English object IDs and logs must not override explicit Chinese output; requested English can override a Chinese UI.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-58-001",
+        "RUR-58-002"
+      ],
+      "tracks": [
+        "I",
+        "K"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-59",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "A preference constrains ordinary responses but does not cancel a narrowly explicit current request.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-59-001",
+        "RUR-59-002"
+      ],
+      "tracks": [
+        "K",
+        "D1"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-60",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "A report-only scope and a guide-only scope must not authorize each other's artifact jobs.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-60-001",
+        "RUR-60-002"
+      ],
+      "tracks": [
+        "B",
+        "D1",
+        "G"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-61",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "Saved measurements can be read during image hydration; no active plan must not be replaced by historical facts.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-61-001",
+        "RUR-61-002"
+      ],
+      "tracks": [
+        "B",
+        "E",
+        "G"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-62",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "Imported instructions and previous-case summaries are evidence inputs, never authority for actions or current-case facts.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-62-001",
+        "RUR-62-002"
+      ],
+      "tracks": [
+        "D2",
+        "C",
+        "K"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-63",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "One absent independent target must not cancel the available target or trigger target creation.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-63-001",
+        "RUR-63-002"
+      ],
+      "tracks": [
+        "B",
+        "F",
+        "C"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-64",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "A numerical ratio is answerable locally; compliance cannot be inferred from that ratio without applicable criteria.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-64-001",
+        "RUR-64-002"
+      ],
+      "tracks": [
+        "C",
+        "I",
+        "D1"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-65",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "A later instruction changes authorized value or target without erasing first-turn fulfillment.",
+      "multi_turn_scenarios": [
+        "RUR-65-001",
+        "RUR-65-002",
+        "RUR-65-003",
+        "RUR-65-004"
+      ],
+      "scenarios": [
+        "RUR-65-001",
+        "RUR-65-002",
+        "RUR-65-003",
+        "RUR-65-004"
+      ],
+      "tracks": [
+        "B",
+        "K",
+        "D1"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-66",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "An unresolved first turn must not mutate; the second turn supplies a stable intended target.",
+      "multi_turn_scenarios": [
+        "RUR-66-001",
+        "RUR-66-002",
+        "RUR-66-003",
+        "RUR-66-004"
+      ],
+      "scenarios": [
+        "RUR-66-001",
+        "RUR-66-002",
+        "RUR-66-003",
+        "RUR-66-004"
+      ],
+      "tracks": [
+        "B",
+        "F",
+        "K"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-67",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "Answer formatting and language do not authorize persistent interface changes or hidden tools.",
+      "multi_turn_scenarios": [
+        "RUR-67-001",
+        "RUR-67-002"
+      ],
+      "scenarios": [
+        "RUR-67-001",
+        "RUR-67-002",
+        "RUR-67-003",
+        "RUR-67-004"
+      ],
+      "tracks": [
+        "I",
+        "C",
+        "G"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-68",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "Read and write clauses must bind their own targets and exclude unrequested generation.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-68-001",
+        "RUR-68-002",
+        "RUR-68-003",
+        "RUR-68-004"
+      ],
+      "tracks": [
+        "B",
+        "D1",
+        "C"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-69",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "Explicit slider endpoints are valid; incompatible clinical units and out-of-range values need clarification.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-69-001",
+        "RUR-69-002",
+        "RUR-69-003",
+        "RUR-69-004"
+      ],
+      "tracks": [
+        "F",
+        "D1",
+        "I"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-70",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "Requested statistic, validity revision, nonzero dose and unavailable rows must be distinguished.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-70-001",
+        "RUR-70-002",
+        "RUR-70-003",
+        "RUR-70-004"
+      ],
+      "tracks": [
+        "C",
+        "B",
+        "H"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-71",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "Numerical deltas are usable only with revision, anatomy and edit attribution recorded.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-71-001",
+        "RUR-71-002",
+        "RUR-71-003",
+        "RUR-71-004"
+      ],
+      "tracks": [
+        "C",
+        "B",
+        "D1"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-72",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "Current upstream outputs avoid unnecessary work; stale dependencies require explicit completion order.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-72-001",
+        "RUR-72-002",
+        "RUR-72-003",
+        "RUR-72-004"
+      ],
+      "tracks": [
+        "B",
+        "G",
+        "H"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [
+        "RUR-73-001",
+        "RUR-73-002",
+        "RUR-73-003",
+        "RUR-73-004"
+      ],
+      "id": "RUR-73",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "A failed clinical job blocks dependent outputs but not independent reads or safe display operations.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-73-001",
+        "RUR-73-002",
+        "RUR-73-003",
+        "RUR-73-004"
+      ],
+      "tracks": [
+        "E",
+        "B",
+        "C"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-74",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "Explanations of failure, permissions and workflow purpose remain separate from explicit execution.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-74-001",
+        "RUR-74-002",
+        "RUR-74-003",
+        "RUR-74-004"
+      ],
+      "tracks": [
+        "D1",
+        "B",
+        "I"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-75",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "Evidence requests must retain real target identities and distinguish temporary visibility from persistent intent.",
+      "multi_turn_scenarios": [
+        "RUR-75-002",
+        "RUR-75-003"
+      ],
+      "scenarios": [
+        "RUR-75-001",
+        "RUR-75-002",
+        "RUR-75-003",
+        "RUR-75-004"
+      ],
+      "tracks": [
+        "H",
+        "F",
+        "C"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-76",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "Stored object metadata, old pictures and absent distance measurements cannot support unseen spatial or clinical conclusions.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-76-001",
+        "RUR-76-002",
+        "RUR-76-003",
+        "RUR-76-004"
+      ],
+      "tracks": [
+        "C",
+        "H",
+        "I"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [
+        "RUR-77-002"
+      ],
+      "id": "RUR-77",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "Ownership, acknowledgement and repeat stops are distinct from a local visual indicator.",
+      "multi_turn_scenarios": [
+        "RUR-77-001"
+      ],
+      "scenarios": [
+        "RUR-77-001",
+        "RUR-77-002",
+        "RUR-77-003",
+        "RUR-77-004"
+      ],
+      "tracks": [
+        "E",
+        "B",
+        "D1"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-78",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "Advice must identify actual edits, uncertainty and coordinate meaning without inventing optimization or hidden clinical operations.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-78-001",
+        "RUR-78-002",
+        "RUR-78-003",
+        "RUR-78-004"
+      ],
+      "tracks": [
+        "C",
+        "B",
+        "D1"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-79",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "Decision tokens need valid identity and current ownership; keeping an edit is not permission to recalculate everything.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-79-001",
+        "RUR-79-002",
+        "RUR-79-003",
+        "RUR-79-004"
+      ],
+      "tracks": [
+        "D1",
+        "E",
+        "K"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [
+        "RUR-80-001",
+        "RUR-80-002",
+        "RUR-80-003",
+        "RUR-80-004"
+      ],
+      "id": "RUR-80",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "Late events, case switching and concurrent revision changes require current ownership evidence.",
+      "multi_turn_scenarios": [
+        "RUR-80-004"
+      ],
+      "scenarios": [
+        "RUR-80-001",
+        "RUR-80-002",
+        "RUR-80-003",
+        "RUR-80-004"
+      ],
+      "tracks": [
+        "E",
+        "D1",
+        "B"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-81",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "Unavailable rendering or absent tools must not erase independent facts or create unsupported execution claims.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-81-001",
+        "RUR-81-002",
+        "RUR-81-003",
+        "RUR-81-004"
+      ],
+      "tracks": [
+        "B",
+        "C",
+        "G"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-82",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "Caption persistence, output language and export require distinct actions and current-version artifacts.",
+      "multi_turn_scenarios": [
+        "RUR-82-002",
+        "RUR-82-004"
+      ],
+      "scenarios": [
+        "RUR-82-001",
+        "RUR-82-002",
+        "RUR-82-003",
+        "RUR-82-004"
+      ],
+      "tracks": [
+        "I",
+        "B",
+        "H"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [],
+      "id": "RUR-83",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "Imported prose and unrelated identities cannot broaden the active user's explicitly scoped authorization.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-83-001",
+        "RUR-83-002",
+        "RUR-83-003",
+        "RUR-83-004"
+      ],
+      "tracks": [
+        "D2",
+        "D1",
+        "C"
+      ]
+    },
+    {
+      "component_contract": "built",
+      "event_script_scenarios": [
+        "RUR-84-004"
+      ],
+      "id": "RUR-84",
+      "independent_semantic_review": "pending",
+      "live_browser_validation": "not_run",
+      "meaning": "A short read request, token accounting and preserved exclusions constrain tools as well as final wording.",
+      "multi_turn_scenarios": [],
+      "scenarios": [
+        "RUR-84-001",
+        "RUR-84-002",
+        "RUR-84-003",
+        "RUR-84-004"
+      ],
+      "tracks": [
+        "G",
+        "K",
+        "C"
+      ]
+    }
+  ],
+  "formal_entry": "real user chat input with independent effects and delivery collection; no task or gold sent to SUT",
+  "interpretation": "Presence is a design inventory, not proof of exhaustive coverage or agent competence.",
+  "multi_turn_scenarios": 22,
+  "negative_control_specifications": 630,
+  "original_scenarios": 82,
+  "schema": "rur-design-coverage-2",
+  "state_contrast_additions": 48,
+  "workflow_additions": 80
+}

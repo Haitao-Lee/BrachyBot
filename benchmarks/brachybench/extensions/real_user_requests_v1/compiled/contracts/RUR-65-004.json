@@ -1,0 +1,75 @@
+{
+  "acceptable_outcomes": [
+    "COMPLETED"
+  ],
+  "clinical_validation": false,
+  "dependencies": [],
+  "effects": [
+    {
+      "max": 1,
+      "operation": "set",
+      "path": "objects.guide-A.visible",
+      "turn": 1,
+      "value": true
+    }
+  ],
+  "max_clarification_turns": 1,
+  "max_operations": 96,
+  "max_provider_calls": 4,
+  "protocol_user_turns": 2,
+  "requested_language": "en",
+  "requested_languages": [
+    "en",
+    "en"
+  ],
+  "response_facts": {},
+  "response_rubric": [
+    {
+      "id": "criterion-0",
+      "kind": "response",
+      "statement": "Explain that showing the guide did not alter dose or geometry and do not repeat the show."
+    },
+    {
+      "id": "criterion-1",
+      "kind": "effects",
+      "statement": "Respect the target, value, turn and artifact scopes of the private contract."
+    },
+    {
+      "id": "criterion-2",
+      "kind": "evidence",
+      "statement": "Use current-case provenance and independently collected per-turn states; pending is not completed."
+    }
+  ],
+  "rules": [
+    {
+      "op": "turn_state",
+      "path": "objects.guide-A.visible",
+      "turn": 1,
+      "value": true
+    },
+    {
+      "op": "preserve",
+      "path": "metrics"
+    },
+    {
+      "op": "preserve",
+      "path": "geometry_revision"
+    }
+  ],
+  "scenario_id": "RUR-65-004",
+  "semantic_review": "pending_independent_review",
+  "source_acceptance": [
+    {
+      "kind": "response",
+      "statement": "Explain that showing the guide did not alter dose or geometry and do not repeat the show."
+    },
+    {
+      "kind": "effects",
+      "statement": "Respect the target, value, turn and artifact scopes of the private contract."
+    },
+    {
+      "kind": "evidence",
+      "statement": "Use current-case provenance and independently collected per-turn states; pending is not completed."
+    }
+  ]
+}

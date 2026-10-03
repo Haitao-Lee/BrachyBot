@@ -8,7 +8,8 @@
     {
       "max": 1,
       "operation": "set",
-      "path": "objects.guide-B.visible"
+      "path": "objects.guide-B.visible",
+      "value": true
     }
   ],
   "max_clarification_turns": 1,
@@ -16,6 +17,9 @@
   "max_provider_calls": 4,
   "protocol_user_turns": 1,
   "requested_language": "zh",
+  "requested_languages": [
+    "zh"
+  ],
   "response_facts": {},
   "response_rubric": [
     {

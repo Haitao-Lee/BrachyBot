@@ -488,6 +488,17 @@ family("40", "大集合查询与可解释筛选", ["B", "G", "C"], "53个器官�
         ["Large organ volume used to rank radiation effect.","Highest dose labelled closest without geometry.","Infer lower-neck location from list of all segmented structures."])
 ])
 
+if __package__:
+    from .expansion import register
+else:
+    from expansion import register
+register(family, scenario, fixture, U, A, BASE)
+if __package__:
+    from .completion import register as register_completion
+else:
+    from completion import register as register_completion
+register_completion(family, scenario, fixture, U, E, A, BASE)
+
 PACK = {
     "schema_version": "authoring-contract-1.0", "pack_id": "real_user_requests_v1",
     "authored_on": "2026-10-03", "status": "AUTHORING_ONLY",

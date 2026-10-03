@@ -8,17 +8,21 @@
     {
       "kind": "guide",
       "max": 1,
-      "operation": "submit"
+      "operation": "submit",
+      "turn": 1
     },
     {
       "kind": "guide",
       "max": 1,
-      "operation": "cancel"
+      "operation": "cancel",
+      "turn": 2
     },
     {
       "max": 1,
       "operation": "set",
-      "path": "objects.guide-A.visible"
+      "path": "objects.guide-A.visible",
+      "turn": 2,
+      "value": true
     }
   ],
   "max_clarification_turns": 1,
@@ -26,6 +30,10 @@
   "max_provider_calls": 4,
   "protocol_user_turns": 2,
   "requested_language": "zh",
+  "requested_languages": [
+    "zh",
+    "zh"
+  ],
   "response_facts": {},
   "response_rubric": [
     {
@@ -66,5 +74,10 @@
       "kind": "response",
       "statement": "Report cancellation versus original display; do not claim rollback if nothing committed."
     }
-  ]
+  ],
+  "turn_outcomes": {
+    "1": "PARTIAL",
+    "2": "COMPLETED"
+  },
+  "turn_scoped": true
 }

@@ -1,0 +1,11 @@
+[
+  {
+    "event": "switch_case",
+    "kind": "environment_event",
+    "payload": {
+      "case_id": "case-B",
+      "session_id": "session-B"
+    },
+    "trigger": "start"
+  }
+]

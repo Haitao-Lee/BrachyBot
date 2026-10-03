@@ -1,0 +1,10 @@
+[
+  {
+    "event": "provider_transient_error",
+    "kind": "environment_event",
+    "payload": {
+      "code": "UNAVAILABLE"
+    },
+    "trigger": "start"
+  }
+]

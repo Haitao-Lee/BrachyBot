@@ -1,0 +1,454 @@
+{
+  "approval_record": null,
+  "artifact_records": {
+    "dose": {
+      "case_id": "case-A",
+      "id": "initial-dose-case-A",
+      "planning_id": "plan-A",
+      "revision": 7,
+      "source": "fixture",
+      "status": "current",
+      "synthetic": true
+    },
+    "dvh": {
+      "case_id": "case-A",
+      "id": "initial-dvh-case-A",
+      "planning_id": "plan-A",
+      "revision": 7,
+      "source": "fixture",
+      "status": "current",
+      "synthetic": true
+    },
+    "guide": {
+      "case_id": "case-A",
+      "id": "initial-guide-case-A",
+      "planning_id": "plan-A",
+      "revision": 7,
+      "source": "fixture",
+      "status": "current",
+      "synthetic": true
+    },
+    "quality": {
+      "case_id": "case-A",
+      "id": "initial-quality-case-A",
+      "planning_id": "plan-A",
+      "revision": 7,
+      "source": "fixture",
+      "status": "current",
+      "synthetic": true
+    },
+    "report": {
+      "case_id": "case-A",
+      "id": "initial-report-case-A",
+      "planning_id": "plan-A",
+      "revision": 7,
+      "source": "fixture",
+      "status": "current",
+      "synthetic": true
+    }
+  },
+  "artifacts": {
+    "dose": "current",
+    "dvh": "current",
+    "guide": "current",
+    "quality": "current",
+    "report": "current"
+  },
+  "attachments": [],
+  "available_captures": [],
+  "available_downloads": [],
+  "case_B_camera": {
+    "height": 160,
+    "name": "case-B-default",
+    "position_mm": [
+      0,
+      0,
+      100
+    ],
+    "projection": "orthographic",
+    "target_mm": [
+      0,
+      0,
+      0
+    ],
+    "up": [
+      0,
+      1,
+      0
+    ],
+    "vertical_span_mm": 60,
+    "width": 160
+  },
+  "case_id": "case-A",
+  "ct_loaded": true,
+  "downloads": [],
+  "edit_log": [],
+  "geometry_revision": 7,
+  "history": [],
+  "imported_summary": "clinically approved",
+  "jobs": [],
+  "language": "zh",
+  "metrics": {
+    "CTV": {
+      "D90_Gy": 120.2,
+      "V100_percent": 90.1
+    },
+    "OAR": {
+      "brain": {
+        "D2cc_Gy": 4.8,
+        "valid_for_revision": 7
+      },
+      "spinal_cord": {
+        "D2cc_Gy": 7.3,
+        "valid_for_revision": 7
+      }
+    }
+  },
+  "monitor": {
+    "active": false,
+    "auto_compare": false,
+    "run_id": null
+  },
+  "objects": {
+    "ctv-A": {
+      "color": "red",
+      "label": "Label 2",
+      "opacity": 0.5,
+      "position_mm": [
+        0,
+        0,
+        0
+      ],
+      "radius_mm": 12,
+      "type": "CTV",
+      "visible": true
+    },
+    "guide-A": {
+      "color": "cyan",
+      "half_size_mm": [
+        16,
+        16
+      ],
+      "label": "Puncture guide v1",
+      "opacity": 0.7,
+      "position_mm": [
+        0,
+        0,
+        20
+      ],
+      "radius_mm": 3,
+      "shape": "plate",
+      "type": "guide",
+      "version": 1,
+      "visible": false
+    },
+    "needle-A": {
+      "color": "cyan",
+      "endpoints_mm": [
+        [
+          -11,
+          -8,
+          -5
+        ],
+        [
+          19,
+          8,
+          5
+        ]
+      ],
+      "label": "Needle 23",
+      "opacity": 1.0,
+      "position_mm": [
+        4,
+        0,
+        0
+      ],
+      "radius_mm": 0.4,
+      "type": "needle",
+      "visible": true
+    },
+    "seed-A": {
+      "color": "cyan",
+      "label": "Seed 19_3",
+      "opacity": 1.0,
+      "position_mm": [
+        0,
+        0,
+        0
+      ],
+      "radius_mm": 0.4,
+      "type": "seed",
+      "visible": true
+    }
+  },
+  "patient_crosshair_mm": [
+    0,
+    0,
+    0
+  ],
+  "planning_id": "plan-A",
+  "planning_version": 7,
+  "prescription_Gy": 120.0,
+  "protocol_receipts": [],
+  "provider_records": [],
+  "render_state": {
+    "ctv-A": {
+      "color": "red",
+      "label": "Label 2",
+      "opacity": 0.5,
+      "position_mm": [
+        0,
+        0,
+        0
+      ],
+      "radius_mm": 12,
+      "type": "CTV",
+      "visible": true
+    },
+    "guide-A": {
+      "color": "cyan",
+      "half_size_mm": [
+        16,
+        16
+      ],
+      "label": "Puncture guide v1",
+      "opacity": 0.7,
+      "position_mm": [
+        0,
+        0,
+        20
+      ],
+      "radius_mm": 3,
+      "shape": "plate",
+      "type": "guide",
+      "version": 1,
+      "visible": false
+    },
+    "needle-A": {
+      "color": "cyan",
+      "endpoints_mm": [
+        [
+          -11,
+          -8,
+          -5
+        ],
+        [
+          19,
+          8,
+          5
+        ]
+      ],
+      "label": "Needle 23",
+      "opacity": 1.0,
+      "position_mm": [
+        4,
+        0,
+        0
+      ],
+      "radius_mm": 0.4,
+      "type": "needle",
+      "visible": true
+    },
+    "seed-A": {
+      "color": "cyan",
+      "label": "Seed 19_3",
+      "opacity": 1.0,
+      "position_mm": [
+        0,
+        0,
+        0
+      ],
+      "radius_mm": 0.4,
+      "type": "seed",
+      "visible": true
+    }
+  },
+  "report": {
+    "body_language": "zh",
+    "body_text": "合成计划报告（非临床计划）",
+    "captions": [
+      "全局粒子植入计划",
+      "靶区粒子分布近景"
+    ],
+    "captions_language": "zh"
+  },
+  "request": {
+    "final_count": 0,
+    "send_enabled": true,
+    "status": "idle"
+  },
+  "saved_state": {
+    "ctv-A": {
+      "color": "red",
+      "label": "Label 2",
+      "opacity": 0.5,
+      "position_mm": [
+        0,
+        0,
+        0
+      ],
+      "radius_mm": 12,
+      "type": "CTV",
+      "visible": true
+    },
+    "guide-A": {
+      "color": "cyan",
+      "half_size_mm": [
+        16,
+        16
+      ],
+      "label": "Puncture guide v1",
+      "opacity": 0.7,
+      "position_mm": [
+        0,
+        0,
+        20
+      ],
+      "radius_mm": 3,
+      "shape": "plate",
+      "type": "guide",
+      "version": 1,
+      "visible": false
+    },
+    "needle-A": {
+      "color": "cyan",
+      "endpoints_mm": [
+        [
+          -11,
+          -8,
+          -5
+        ],
+        [
+          19,
+          8,
+          5
+        ]
+      ],
+      "label": "Needle 23",
+      "opacity": 1.0,
+      "position_mm": [
+        4,
+        0,
+        0
+      ],
+      "radius_mm": 0.4,
+      "type": "needle",
+      "visible": true
+    },
+    "seed-A": {
+      "color": "cyan",
+      "label": "Seed 19_3",
+      "opacity": 1.0,
+      "position_mm": [
+        0,
+        0,
+        0
+      ],
+      "radius_mm": 0.4,
+      "type": "seed",
+      "visible": true
+    }
+  },
+  "selection": "guide-A",
+  "session_id": "session-A",
+  "site": "head_neck",
+  "synthetic": true,
+  "tenant_id": "tenant-A",
+  "tree_state": {
+    "ctv-A": {
+      "color": "red",
+      "label": "Label 2",
+      "opacity": 0.5,
+      "position_mm": [
+        0,
+        0,
+        0
+      ],
+      "radius_mm": 12,
+      "type": "CTV",
+      "visible": true
+    },
+    "guide-A": {
+      "color": "cyan",
+      "half_size_mm": [
+        16,
+        16
+      ],
+      "label": "Puncture guide v1",
+      "opacity": 0.7,
+      "position_mm": [
+        0,
+        0,
+        20
+      ],
+      "radius_mm": 3,
+      "shape": "plate",
+      "type": "guide",
+      "version": 1,
+      "visible": false
+    },
+    "needle-A": {
+      "color": "cyan",
+      "endpoints_mm": [
+        [
+          -11,
+          -8,
+          -5
+        ],
+        [
+          19,
+          8,
+          5
+        ]
+      ],
+      "label": "Needle 23",
+      "opacity": 1.0,
+      "position_mm": [
+        4,
+        0,
+        0
+      ],
+      "radius_mm": 0.4,
+      "type": "needle",
+      "visible": true
+    },
+    "seed-A": {
+      "color": "cyan",
+      "label": "Seed 19_3",
+      "opacity": 1.0,
+      "position_mm": [
+        0,
+        0,
+        0
+      ],
+      "radius_mm": 0.4,
+      "type": "seed",
+      "visible": true
+    }
+  },
+  "viewer": {
+    "camera": {
+      "height": 160,
+      "name": "camera-original",
+      "position_mm": [
+        0,
+        0,
+        100
+      ],
+      "projection": "orthographic",
+      "target_mm": [
+        0,
+        0,
+        0
+      ],
+      "up": [
+        0,
+        1,
+        0
+      ],
+      "vertical_span_mm": 60,
+      "width": 160
+    },
+    "dragging": false
+  }
+}

@@ -8,17 +8,20 @@
     {
       "kind": "report",
       "max": 1,
-      "operation": "submit"
+      "operation": "submit",
+      "turn": 1
     },
     {
       "kind": "guide",
       "max": 1,
-      "operation": "submit"
+      "operation": "submit",
+      "turn": 1
     },
     {
       "kind": "report",
       "max": 1,
-      "operation": "cancel"
+      "operation": "cancel",
+      "turn": 2
     }
   ],
   "max_clarification_turns": 1,
@@ -26,6 +29,10 @@
   "max_provider_calls": 4,
   "protocol_user_turns": 2,
   "requested_language": "en",
+  "requested_languages": [
+    "en",
+    "en"
+  ],
   "response_facts": {},
   "response_rubric": [
     {
@@ -66,5 +73,10 @@
       "kind": "response",
       "statement": "State each subtask outcome separately."
     }
-  ]
+  ],
+  "turn_outcomes": {
+    "1": "PARTIAL",
+    "2": "COMPLETED"
+  },
+  "turn_scoped": true
 }

@@ -10,6 +10,9 @@
   "max_provider_calls": 4,
   "protocol_user_turns": 1,
   "requested_language": "en",
+  "requested_languages": [
+    "en"
+  ],
   "response_facts": {},
   "response_rubric": [
     {

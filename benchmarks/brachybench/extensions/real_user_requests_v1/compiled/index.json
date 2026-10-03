@@ -1,7 +1,7 @@
 {
   "confirmatory_ready": false,
-  "family_count": 40,
-  "scenario_count": 82,
+  "family_count": 84,
+  "scenario_count": 210,
   "schema": "rur-executable-1",
   "shared_fixture_lineage": "synthetic-rur-base-v1; not independent clinical cases",
   "split_policy": "All current tasks are public development; no sealed claim.",
@@ -1232,7 +1232,7 @@
       "confirmatory_eligible": false,
       "family": "RUR-36",
       "id": "RUR-36-001",
-      "machine_rule_count": 4,
+      "machine_rule_count": 6,
       "primary_track": "B",
       "profile": "decision_sandbox",
       "runtime_ready": true,
@@ -1397,6 +1397,2162 @@
       "semantic_review": "pending_independent_review",
       "split": "development",
       "title": "受照排序不能冒充解剖邻近"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-41",
+      "id": "RUR-41-001",
+      "machine_rule_count": 1,
+      "primary_track": "F",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Already-visible guide stays visible"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-41",
+      "id": "RUR-41-002",
+      "machine_rule_count": 0,
+      "primary_track": "F",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Absent guide is not invented"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-42",
+      "id": "RUR-42-001",
+      "machine_rule_count": 2,
+      "primary_track": "F",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "C",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Explicit guide version selects one object"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-42",
+      "id": "RUR-42-002",
+      "machine_rule_count": 1,
+      "primary_track": "F",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "C",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Stale guide can be displayed with caveat"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-43",
+      "id": "RUR-43-001",
+      "machine_rule_count": 2,
+      "primary_track": "F",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Hide seeds while retaining needle"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-43",
+      "id": "RUR-43-002",
+      "machine_rule_count": 0,
+      "primary_track": "F",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Empty version filter leaves scene unchanged"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-44",
+      "id": "RUR-44-001",
+      "machine_rule_count": 0,
+      "primary_track": "C",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Strict OAR threshold excludes equal and zero"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-44",
+      "id": "RUR-44-002",
+      "machine_rule_count": 0,
+      "primary_track": "C",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Missing OAR measurement remains unknown"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-45",
+      "id": "RUR-45-001",
+      "machine_rule_count": 1,
+      "primary_track": "D1",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Measured true condition permits display"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-45",
+      "id": "RUR-45-002",
+      "machine_rule_count": 1,
+      "primary_track": "D1",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Unknown condition cannot authorize display"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-46",
+      "id": "RUR-46-001",
+      "machine_rule_count": 0,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "G",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "All-current refresh is a verified no-op"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-46",
+      "id": "RUR-46-002",
+      "machine_rule_count": 1,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "G",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Only stale report is rebuilt"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-47",
+      "id": "RUR-47-001",
+      "machine_rule_count": 2,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "F",
+        "C"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Compound show and dose query both succeed"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-47",
+      "id": "RUR-47-002",
+      "machine_rule_count": 0,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "F",
+        "C"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Unavailable Viewer preserves independent dose answer"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-48",
+      "id": "RUR-48-001",
+      "machine_rule_count": 0,
+      "primary_track": "D1",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "I"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Hypothetical hide stays read-only"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-48",
+      "id": "RUR-48-002",
+      "machine_rule_count": 1,
+      "primary_track": "D1",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "I"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Direct hide changes only visibility"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-49",
+      "id": "RUR-49-001",
+      "machine_rule_count": 1,
+      "primary_track": "I",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Harmless display typo is recoverable"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-49",
+      "id": "RUR-49-002",
+      "machine_rule_count": 0,
+      "primary_track": "I",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Conflicting prescription units are not guessed"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-50",
+      "id": "RUR-50-001",
+      "machine_rule_count": 2,
+      "primary_track": "F",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "I"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Zero opacity remains zero under relative halving"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-50",
+      "id": "RUR-50-002",
+      "machine_rule_count": 0,
+      "primary_track": "F",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "I"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Unspecified opacity increment requests one clarification"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-51",
+      "id": "RUR-51-001",
+      "machine_rule_count": 1,
+      "primary_track": "F",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "I"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Opacity percent converts once"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-51",
+      "id": "RUR-51-002",
+      "machine_rule_count": 2,
+      "primary_track": "F",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "I"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Opacity fraction is not divided again"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-52",
+      "id": "RUR-52-001",
+      "machine_rule_count": 1,
+      "primary_track": "F",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "K",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Selected CTV grounds this one"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-52",
+      "id": "RUR-52-002",
+      "machine_rule_count": 0,
+      "primary_track": "F",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "K",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Missing selection leaves pronoun unresolved"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-53",
+      "id": "RUR-53-001",
+      "machine_rule_count": 1,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "H",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Current report export requires real download"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-53",
+      "id": "RUR-53-002",
+      "machine_rule_count": 0,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "H",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Stale report cannot be exported as latest"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-54",
+      "id": "RUR-54-001",
+      "machine_rule_count": 3,
+      "primary_track": "F",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "H",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "CTV evidence hides occluder only temporarily"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-54",
+      "id": "RUR-54-002",
+      "machine_rule_count": 1,
+      "primary_track": "F",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "H",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Explicit hide persists after reply"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-55",
+      "id": "RUR-55-001",
+      "machine_rule_count": 2,
+      "primary_track": "H",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "C",
+        "F"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Guide and CTV each have delivered evidence"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-55",
+      "id": "RUR-55-002",
+      "machine_rule_count": 0,
+      "primary_track": "H",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "C",
+        "F"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "No Viewer evidence means no spatial assertion"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-56",
+      "id": "RUR-56-001",
+      "machine_rule_count": 0,
+      "primary_track": "C",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Score cannot establish clinical approval"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-56",
+      "id": "RUR-56-002",
+      "machine_rule_count": 0,
+      "primary_track": "C",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Demo threshold comparison remains a measurement"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-57",
+      "id": "RUR-57-001",
+      "machine_rule_count": 1,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "E"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Inactive Monitor stop does not start one"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-57",
+      "id": "RUR-57-002",
+      "machine_rule_count": 1,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "E"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Owned active Monitor run is stopped"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-58",
+      "id": "RUR-58-001",
+      "machine_rule_count": 0,
+      "primary_track": "I",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "K"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Chinese response survives English diagnostic log"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-58",
+      "id": "RUR-58-002",
+      "machine_rule_count": 1,
+      "primary_track": "I",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "K"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "English output request overrides Chinese UI"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-59",
+      "id": "RUR-59-001",
+      "machine_rule_count": 0,
+      "primary_track": "K",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "No-auto-capture preference survives read query"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-59",
+      "id": "RUR-59-002",
+      "machine_rule_count": 2,
+      "primary_track": "K",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "One explicit capture does not alter preference"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-60",
+      "id": "RUR-60-001",
+      "machine_rule_count": 2,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "G"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Report-only refresh leaves stale guide untouched"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-60",
+      "id": "RUR-60-002",
+      "machine_rule_count": 2,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "G"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Guide-only refresh leaves report untouched"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-61",
+      "id": "RUR-61-001",
+      "machine_rule_count": 0,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "E",
+        "G"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Image loading does not block saved metric read"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-61",
+      "id": "RUR-61-002",
+      "machine_rule_count": 0,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "E",
+        "G"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "No active planning record means no current dose"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-62",
+      "id": "RUR-62-001",
+      "machine_rule_count": 0,
+      "primary_track": "D2",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "C",
+        "K"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Quoted imported instruction grants no execution"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-62",
+      "id": "RUR-62-002",
+      "machine_rule_count": 0,
+      "primary_track": "D2",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "C",
+        "K"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Old case summary cannot replace current organ dose"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-63",
+      "id": "RUR-63-001",
+      "machine_rule_count": 1,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "F",
+        "C"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Present guide executes despite absent seed"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-63",
+      "id": "RUR-63-002",
+      "machine_rule_count": 2,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "F",
+        "C"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Two hidden targets both execute"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-64",
+      "id": "RUR-64-001",
+      "machine_rule_count": 0,
+      "primary_track": "C",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "I",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Saved dose ratio has exact units"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-64",
+      "id": "RUR-64-002",
+      "machine_rule_count": 0,
+      "primary_track": "C",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "I",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Unknown applicable criterion prevents compliance claim"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-65",
+      "id": "RUR-65-001",
+      "machine_rule_count": 2,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "K",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Show then hide the same guide"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-65",
+      "id": "RUR-65-002",
+      "machine_rule_count": 2,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "K",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Correct opacity after seeing first change"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-65",
+      "id": "RUR-65-003",
+      "machine_rule_count": 3,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "K",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Correct target without reversing completed prior action"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-65",
+      "id": "RUR-65-004",
+      "machine_rule_count": 3,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "K",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Read-only follow-up does not repeat mutation"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-66",
+      "id": "RUR-66-001",
+      "machine_rule_count": 4,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "F",
+        "K"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Missing selected object then explicit CTV"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-66",
+      "id": "RUR-66-002",
+      "machine_rule_count": 5,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "F",
+        "K"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Duplicate guide names resolved by version"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-66",
+      "id": "RUR-66-003",
+      "machine_rule_count": 4,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "F",
+        "K"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Ambiguous transparency resolved as opacity"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-66",
+      "id": "RUR-66-004",
+      "machine_rule_count": 5,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "F",
+        "K"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Unclear group answer excludes guide"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-67",
+      "id": "RUR-67-001",
+      "machine_rule_count": 1,
+      "primary_track": "I",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "C",
+        "G"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Chinese then English same saved measurement"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-67",
+      "id": "RUR-67-002",
+      "machine_rule_count": 0,
+      "primary_track": "I",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "C",
+        "G"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Concise answer then full available organ table"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-67",
+      "id": "RUR-67-003",
+      "machine_rule_count": 0,
+      "primary_track": "I",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "C",
+        "G"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Plain text excludes raw tool JSON"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-67",
+      "id": "RUR-67-004",
+      "machine_rule_count": 0,
+      "primary_track": "I",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "C",
+        "G"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Incomplete data must not be formatted as complete"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-68",
+      "id": "RUR-68-001",
+      "machine_rule_count": 1,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "C"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Show guide and read CTV volume"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-68",
+      "id": "RUR-68-002",
+      "machine_rule_count": 1,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "C"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Hide needle and explain guide generation"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-68",
+      "id": "RUR-68-003",
+      "machine_rule_count": 2,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "C"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Color CTV while reading OAR dose"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-68",
+      "id": "RUR-68-004",
+      "machine_rule_count": 2,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "C"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Query report does not borrow guide show authorization"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-69",
+      "id": "RUR-69-001",
+      "machine_rule_count": 2,
+      "primary_track": "F",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "I"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Zero opacity does not delete or hide node"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-69",
+      "id": "RUR-69-002",
+      "machine_rule_count": 2,
+      "primary_track": "F",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "I"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Full opacity endpoint is accepted"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-69",
+      "id": "RUR-69-003",
+      "machine_rule_count": 0,
+      "primary_track": "F",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "I"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Out-of-range opacity is not silently clipped"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-69",
+      "id": "RUR-69-004",
+      "machine_rule_count": 0,
+      "primary_track": "F",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "I"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Millimeter request is not opacity authorization"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-70",
+      "id": "RUR-70-001",
+      "machine_rule_count": 0,
+      "primary_track": "C",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "H"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Dmax is not D2cc"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-70",
+      "id": "RUR-70-002",
+      "machine_rule_count": 0,
+      "primary_track": "C",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "H"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Missing Dmean cannot be derived from D2cc"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-70",
+      "id": "RUR-70-003",
+      "machine_rule_count": 0,
+      "primary_track": "C",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "H"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Stale organ rows require provenance caveat"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-70",
+      "id": "RUR-70-004",
+      "machine_rule_count": 0,
+      "primary_track": "C",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "H"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Measured zero is not absent organ"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-71",
+      "id": "RUR-71-001",
+      "machine_rule_count": 0,
+      "primary_track": "C",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "One-edit matched comparison supports exact deltas"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-71",
+      "id": "RUR-71-002",
+      "machine_rule_count": 0,
+      "primary_track": "C",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Two-edit comparison cannot isolate last drag"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-71",
+      "id": "RUR-71-003",
+      "machine_rule_count": 0,
+      "primary_track": "C",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Changed CTV prevents like-for-like improvement claim"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-71",
+      "id": "RUR-71-004",
+      "machine_rule_count": 0,
+      "primary_track": "C",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "No score after recompute must stay unavailable"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-72",
+      "id": "RUR-72-001",
+      "machine_rule_count": 3,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "G",
+        "H"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Quality then report only"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-72",
+      "id": "RUR-72-002",
+      "machine_rule_count": 3,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "G",
+        "H"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Dose then quality then report"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-72",
+      "id": "RUR-72-003",
+      "machine_rule_count": 2,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "G",
+        "H"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Guide and report independent current-input refresh"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-72",
+      "id": "RUR-72-004",
+      "machine_rule_count": 2,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "G",
+        "H"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Current guide display plus stale report refresh"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-73",
+      "id": "RUR-73-001",
+      "machine_rule_count": 3,
+      "primary_track": "E",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "C"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Failed dose blocks report but not seed hide"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-73",
+      "id": "RUR-73-002",
+      "machine_rule_count": 4,
+      "primary_track": "E",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "C"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Failed guide does not block report"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-73",
+      "id": "RUR-73-003",
+      "machine_rule_count": 3,
+      "primary_track": "E",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "C"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Failed guide and available organ read"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-73",
+      "id": "RUR-73-004",
+      "machine_rule_count": 3,
+      "primary_track": "E",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "C"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Failed dose leaves saved old dose labeled old"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-74",
+      "id": "RUR-74-001",
+      "machine_rule_count": 0,
+      "primary_track": "D1",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "I"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Why stale is a diagnostic question"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-74",
+      "id": "RUR-74-002",
+      "machine_rule_count": 0,
+      "primary_track": "D1",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "I"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Tool recommendation is not tool permission"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-74",
+      "id": "RUR-74-003",
+      "machine_rule_count": 0,
+      "primary_track": "D1",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "I"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Why not executed uses actual history"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-74",
+      "id": "RUR-74-004",
+      "machine_rule_count": 1,
+      "primary_track": "D1",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "I"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Polite display is an actual request"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-75",
+      "id": "RUR-75-001",
+      "machine_rule_count": 3,
+      "primary_track": "H",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "F",
+        "C"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Hidden guide screenshot does not permanently show it"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-75",
+      "id": "RUR-75-002",
+      "machine_rule_count": 3,
+      "primary_track": "H",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "F",
+        "C"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Persistent show followed by screenshot"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-75",
+      "id": "RUR-75-003",
+      "machine_rule_count": 2,
+      "primary_track": "H",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "F",
+        "C"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Guide then CTV captures survive across turns"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-75",
+      "id": "RUR-75-004",
+      "machine_rule_count": 3,
+      "primary_track": "H",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "F",
+        "C"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Capture only CTV with explicit occluder permission"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-76",
+      "id": "RUR-76-001",
+      "machine_rule_count": 0,
+      "primary_track": "C",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "H",
+        "I"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Data Tree existence does not imply visible 3D location"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-76",
+      "id": "RUR-76-002",
+      "machine_rule_count": 0,
+      "primary_track": "C",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "H",
+        "I"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Stored centroid is patient-space, not screen-space"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-76",
+      "id": "RUR-76-003",
+      "machine_rule_count": 0,
+      "primary_track": "C",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "H",
+        "I"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Old screenshot is not current post-edit evidence"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-76",
+      "id": "RUR-76-004",
+      "machine_rule_count": 0,
+      "primary_track": "C",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "H",
+        "I"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Dose ranking does not prove nearest organ"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-77",
+      "id": "RUR-77-001",
+      "machine_rule_count": 2,
+      "primary_track": "E",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Owned stop followed by repeated stop"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-77",
+      "id": "RUR-77-002",
+      "machine_rule_count": 2,
+      "primary_track": "E",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Lost stop ACK requires state confirmation"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-77",
+      "id": "RUR-77-003",
+      "machine_rule_count": 1,
+      "primary_track": "E",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Other run token is not owned stop permission"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-77",
+      "id": "RUR-77-004",
+      "machine_rule_count": 1,
+      "primary_track": "E",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Monitor status query does not finish it"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-78",
+      "id": "RUR-78-001",
+      "machine_rule_count": 0,
+      "primary_track": "C",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Geometry conflict does not imply dose deterioration"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-78",
+      "id": "RUR-78-002",
+      "machine_rule_count": 0,
+      "primary_track": "C",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Baseline conflicts are not all caused by last move"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-78",
+      "id": "RUR-78-003",
+      "machine_rule_count": 0,
+      "primary_track": "C",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Seed reprojection is not independent user editing"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-78",
+      "id": "RUR-78-004",
+      "machine_rule_count": 0,
+      "primary_track": "C",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "D1"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Return vector is not dose-optimal recommendation"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-79",
+      "id": "RUR-79-001",
+      "machine_rule_count": 1,
+      "primary_track": "D1",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "E",
+        "K"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Consumed undo token stays consumed"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-79",
+      "id": "RUR-79-002",
+      "machine_rule_count": 0,
+      "primary_track": "D1",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "E",
+        "K"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Wrong-case undo token is rejected conceptually"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-79",
+      "id": "RUR-79-003",
+      "machine_rule_count": 2,
+      "primary_track": "D1",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "E",
+        "K"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Keep means preserve edited geometry, not refresh all outputs"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-79",
+      "id": "RUR-79-004",
+      "machine_rule_count": 3,
+      "primary_track": "D1",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "E",
+        "K"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Preview cancellation is not committed history undo"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-80",
+      "id": "RUR-80-001",
+      "machine_rule_count": 3,
+      "primary_track": "E",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "B"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "External edit makes checkpoint stale before undo"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-80",
+      "id": "RUR-80-002",
+      "machine_rule_count": 3,
+      "primary_track": "E",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "B"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Case switch before query cannot reuse old dose"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-80",
+      "id": "RUR-80-003",
+      "machine_rule_count": 2,
+      "primary_track": "E",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "B"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Lost show ACK is not permission to toggle"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-80",
+      "id": "RUR-80-004",
+      "machine_rule_count": 5,
+      "primary_track": "E",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "B"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Queued report cancelled by later turn"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-81",
+      "id": "RUR-81-001",
+      "machine_rule_count": 0,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "C",
+        "G"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "No Viewer still permits saved organ table"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-81",
+      "id": "RUR-81-002",
+      "machine_rule_count": 1,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "C",
+        "G"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Unsupported printer action does not block guide show"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-81",
+      "id": "RUR-81-003",
+      "machine_rule_count": 0,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "C",
+        "G"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Unknown tumor site does not select pancreas"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-81",
+      "id": "RUR-81-004",
+      "machine_rule_count": 0,
+      "primary_track": "B",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "C",
+        "G"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Unsupported drag direction needs explicit limit"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-82",
+      "id": "RUR-82-001",
+      "machine_rule_count": 5,
+      "primary_track": "I",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "H"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Global English updates captions without rebuilding"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-82",
+      "id": "RUR-82-002",
+      "machine_rule_count": 3,
+      "primary_track": "I",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "H"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Translate then export current report"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-82",
+      "id": "RUR-82-003",
+      "machine_rule_count": 0,
+      "primary_track": "I",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "H"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Explain stale caption issue without silent regeneration"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-82",
+      "id": "RUR-82-004",
+      "machine_rule_count": 5,
+      "primary_track": "I",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "B",
+        "H"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Stale PDF requires explicit rebuild confirmation then export"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-83",
+      "id": "RUR-83-001",
+      "machine_rule_count": 0,
+      "primary_track": "D2",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "C"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Tool output instruction is not new user permission"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-83",
+      "id": "RUR-83-002",
+      "machine_rule_count": 0,
+      "primary_track": "D2",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "C"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Quoted prior user command is not current execution"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-83",
+      "id": "RUR-83-003",
+      "machine_rule_count": 1,
+      "primary_track": "D2",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "C"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Explicit active target overrides unrelated old ID"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-83",
+      "id": "RUR-83-004",
+      "machine_rule_count": 0,
+      "primary_track": "D2",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "D1",
+        "C"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Imported clinical approval is not verified sign-off"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-84",
+      "id": "RUR-84-001",
+      "machine_rule_count": 0,
+      "primary_track": "G",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "K",
+        "C"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "One-line saved metric uses no clinical jobs"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-84",
+      "id": "RUR-84-002",
+      "machine_rule_count": 0,
+      "primary_track": "G",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "K",
+        "C"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Turn token total is not retained context"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-84",
+      "id": "RUR-84-003",
+      "machine_rule_count": 2,
+      "primary_track": "G",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "K",
+        "C"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Compacted history preserves explicit report-only scope"
+    },
+    {
+      "confirmatory_eligible": false,
+      "family": "RUR-84",
+      "id": "RUR-84-004",
+      "machine_rule_count": 2,
+      "primary_track": "G",
+      "profile": "decision_sandbox",
+      "runtime_ready": true,
+      "secondary_tracks": [
+        "K",
+        "C"
+      ],
+      "semantic_criterion_count": 3,
+      "semantic_review": "pending_independent_review",
+      "split": "development",
+      "title": "Provider failure explanation stays bounded"
     }
   ]
 }

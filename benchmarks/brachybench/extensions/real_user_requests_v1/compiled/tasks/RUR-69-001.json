@@ -1,0 +1,75 @@
+{
+  "anti_gaming": {
+    "contrast_family_id": "RUR-69",
+    "hidden": false,
+    "paraphrase_group": "RUR-69"
+  },
+  "clinical_intent": "Zero opacity does not delete or hide node",
+  "comparability": [
+    "alpha",
+    "beta"
+  ],
+  "construct": "RUR-69",
+  "cost_class": "light_compute",
+  "fixture": {
+    "case_family": "RUR-69",
+    "initial_state_hash": "sha256:5c074734b87a45ce5a053e53b705f27dc8d55ea184678fabdd1e0ebf1c4bda41",
+    "setup_script": "extensions/real_user_requests_v1/compiled/fixtures/RUR-69-001.json"
+  },
+  "id": "RUR-69-001",
+  "layers": [
+    "L2",
+    "L4"
+  ],
+  "oracle": {
+    "check": "real_user_request",
+    "constraint_class": "none",
+    "expect": null,
+    "gold": "contracts/RUR-69-001.json",
+    "independent_check": true,
+    "kind": "program"
+  },
+  "power_role": "exploratory",
+  "protocol": {
+    "allowed_intermediates": [],
+    "audit_required": true,
+    "budget": {
+      "tool_calls": 96,
+      "turns": 1,
+      "wall_clock_s": 120
+    },
+    "mode": "single_turn",
+    "n_runs": 1,
+    "turns": [
+      {
+        "lang": "en",
+        "role": "user",
+        "text": "Set CTV opacity to zero; leave its visibility flag on."
+      }
+    ],
+    "ui_counterpart": null
+  },
+  "provenance": {
+    "authored_on": "2026-10-04",
+    "deprecated": null,
+    "derived_from": "real_user_requests_v1:RUR-69-001",
+    "guideline_ref": null,
+    "reviewers": [
+      "authoring-only; independent review pending"
+    ],
+    "source": "audit_derived"
+  },
+  "schema_version": "1.0",
+  "scoring": {
+    "difficulty_target": "medium",
+    "gate_refs": [],
+    "primary_metric": "verified_task_goal",
+    "weight": 1.0
+  },
+  "track": "F",
+  "unit": {
+    "contrast_family_id": "RUR-69",
+    "group_type": "G-CTX",
+    "kind": "task_scenario"
+  }
+}

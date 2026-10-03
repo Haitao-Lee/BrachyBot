@@ -1,0 +1,10 @@
+[
+  {
+    "event": "dose_failed",
+    "kind": "environment_event",
+    "payload": {
+      "code": "DOSE_DEMO_FAILURE"
+    },
+    "trigger": "dose.running"
+  }
+]

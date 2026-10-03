@@ -8,7 +8,9 @@
     {
       "max": 1,
       "operation": "set",
-      "path": "objects.guide-A.visible"
+      "path": "objects.guide-A.visible",
+      "turn": 1,
+      "value": true
     }
   ],
   "max_clarification_turns": 1,
@@ -16,6 +18,10 @@
   "max_provider_calls": 4,
   "protocol_user_turns": 2,
   "requested_language": "zh",
+  "requested_languages": [
+    "zh",
+    "zh"
+  ],
   "response_facts": {},
   "response_rubric": [
     {
@@ -56,5 +62,6 @@
       "kind": "response",
       "statement": "Verified display, not unsupported duplicate-operation claim."
     }
-  ]
+  ],
+  "turn_scoped": true
 }
