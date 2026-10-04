@@ -17,6 +17,7 @@ import ipaddress
 import logging
 import socket
 import requests
+from utils.public_http import public_get, bounded_text
 from typing import Optional
 from urllib.parse import urljoin, urlparse
 
@@ -218,7 +219,7 @@ The tool will:
                 is_public, reason = self._validate_public_url(current_url)
                 if not is_public:
                     return self._failure(reason)
-                response = requests.get(
+                response = public_get(
                     current_url,
                     headers=headers,
                     timeout=(3.05, 10),
@@ -351,12 +352,15 @@ The tool will:
         if doi and not pmid:
             try:
                 search_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term={doi}&retmode=json"
-                resp = requests.get(search_url, timeout=5)
+                resp = public_get(search_url, timeout=5)
                 if resp.status_code == 200:
-                    data = resp.json()
+                    import json
+                    data = json.loads(bounded_text(resp))
                     ids = data.get("esearchresult", {}).get("idlist", [])
                     if ids:
                         pmid = ids[0]
+                else:
+                    resp.close()
             except Exception:
                 pass
 
@@ -365,10 +369,10 @@ The tool will:
         try:
             # Use PubMed E-utilities API
             api_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id={pmid}&rettype=abstract&retmode=text"
-            response = requests.get(api_url, timeout=10)
+            response = public_get(api_url, timeout=10)
 
             if response.status_code == 200:
-                text = response.text[:max_length]
+                text = bounded_text(response)[:max_length]
                 # Extract title
                 title_match = re.search(r'\d+\.\s+(.+?)\.', text)
                 title = title_match.group(1) if title_match else f"PubMed {pmid}"
@@ -379,6 +383,7 @@ The tool will:
                     message=f"Fetched PubMed article: {pmid}"
                 )
 
+            response.close()
             return self._failure("PubMed API failed")
         except Exception as e:
             return self._failure(f"PubMed request failed: {e}")
@@ -396,16 +401,17 @@ The tool will:
             # Get README via API
             api_url = f"https://api.github.com/repos/{owner}/{repo}/readme"
             headers = {'Accept': 'application/vnd.github.v3.raw'}
-            response = requests.get(api_url, headers=headers, timeout=10)
+            response = public_get(api_url, headers=headers, timeout=10)
 
             if response.status_code == 200:
-                text = response.text[:max_length]
+                text = bounded_text(response)[:max_length]
                 return ToolResult(
                     success=True,
                     data={"url": url, "title": f"{owner}/{repo} README", "content": text, "status_code": 200, "source": "GitHub API"},
                     message=f"Fetched GitHub README: {owner}/{repo}"
                 )
 
+            response.close()
             return self._failure("GitHub API failed")
         except Exception as e:
             return self._failure(f"GitHub request failed: {e}")

@@ -612,7 +612,7 @@ function _renderReportMarkdownWithMarked(md) {
         // Reuse the application sanitizer so report fields cannot introduce
         // raw HTML, event handlers, or unsafe URLs.
         if (typeof _sanitizeHtml === 'function') return _sanitizeHtml(rendered);
-        return rendered;
+        return escHtml(String(md));
     } catch (error) {
         console.warn('report Markdown rendering failed:', error);
         return '';
@@ -1664,7 +1664,7 @@ function _updateReportPreview() {
                 <table class="hp-id-table">
                     <tr><th>${escHtml(s.name)}</th><td>${escHtml(f.patient.name) || ND}</td>
                         <th>${escHtml(s.gender)}</th><td>${escHtml(f.patient.gender) || ND}</td></tr>
-                    <tr><th>${escHtml(s.age)}</th><td>${f.patient.age || ND}</td>
+                    <tr><th>${escHtml(s.age)}</th><td>${escHtml(String(f.patient.age || '')) || ND}</td>
                         <th>${escHtml(s.id)}</th><td>${escHtml(f.patient.id) || escHtml(f.case.patientId) || ND}</td></tr>
                     <tr><th>${escHtml(s.department)}</th><td colspan="3">${escHtml(f.patient.department) || ND}</td></tr>
                     <tr><th>${escHtml(s.ward)}</th><td>${escHtml(f.patient.ward) || ND}</td>

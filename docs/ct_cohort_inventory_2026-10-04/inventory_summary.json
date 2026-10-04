@@ -1,0 +1,90 @@
+{
+  "root": "/home/lht/nas/LHT_workspace/Brachytherapy/CT",
+  "scan_seconds": 452.84786653518677,
+  "scope": "name-based enumeration; metadata parsing; selected mask payload QA only",
+  "datasets": {
+    "AbdomenAtlas3": {
+      "counts": {
+        "no_extension": 1,
+        ".md": 6,
+        ".sh": 5,
+        ".txt": 5,
+        ".csv": 10,
+        ".py": 19,
+        ".pdf": 1,
+        ".png": 1,
+        ".jpg": 1,
+        ".pptx": 1,
+        "nifti_gz": 407711
+      },
+      "logical_bytes": null,
+      "directory_count": 18533
+    },
+    "HECKTOR2026": {
+      "counts": {
+        "zip_or_part": 5,
+        ".csv": 1,
+        "nifti_gz": 1014
+      },
+      "logical_bytes": null,
+      "directory_count": 340
+    },
+    "MSD": {
+      "counts": {
+        "appledouble": 834,
+        "no_extension": 3,
+        ".json": 5,
+        "nifti_gz": 1448
+      },
+      "logical_bytes": null,
+      "directory_count": 19
+    },
+    "PanTS": {
+      "counts": {
+        "no_extension": 1,
+        ".md": 2,
+        ".sh": 2,
+        ".png": 1,
+        ".jpg": 1,
+        ".pptx": 1,
+        ".xlsx": 1,
+        "nifti_gz": 297029
+      },
+      "logical_bytes": null,
+      "directory_count": 29706
+    },
+    "SegRap23": {
+      "counts": {
+        "no_extension": 1,
+        "zip_or_part": 4,
+        "nifti_gz": 480
+      },
+      "logical_bytes": null,
+      "directory_count": 5
+    },
+    "kits21": {
+      "counts": {
+        "no_extension": 5,
+        ".md": 8,
+        ".py": 19,
+        ".jl": 1,
+        ".m": 1,
+        ".sh": 1,
+        ".json": 12973,
+        ".png": 22,
+        "nifti_gz": 5457
+      },
+      "logical_bytes": null,
+      "directory_count": 13583
+    },
+    "psma_pet_ct_lesions": {
+      "counts": {
+        ".csv": 1,
+        ".dcm": 374151
+      },
+      "logical_bytes": null,
+      "directory_count": 1792
+    }
+  },
+  "errors": []
+}

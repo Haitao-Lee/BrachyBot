@@ -25,6 +25,8 @@ _TRUE_VALUES = {"1", "true", "yes", "on"}
 def _configured_roots() -> tuple[Path, ...]:
     """Return the directories the read-only browser may inspect by default."""
     project_root = Path(__file__).resolve().parents[2]
+    # CLI deployments retain explicitly trusted local project access. Web
+    # agents take the authenticated-case branch below, before these defaults.
     roots = [project_root, project_root / "uploads", project_root / "outputs"]
     for variable in (
         "BRACHYBOT_FILESYSTEM_ROOTS",
@@ -50,6 +52,12 @@ def _configured_roots() -> tuple[Path, ...]:
 def _path_is_allowed(path: str) -> tuple[bool, Path]:
     """Resolve a path and enforce the browser's explicit root allowlist."""
     resolved = Path(path).expanduser().resolve(strict=False)
+    from utils.tool_security import workspace_root, checked_path
+    if workspace_root() is not None:
+        try:
+            return True, checked_path(resolved)
+        except PermissionError:
+            return False, resolved
     global_access = os.environ.get(
         "BRACHYBOT_ENABLE_FILESYSTEM_BROWSER_GLOBAL", ""
     ).strip().lower() in _TRUE_VALUES
@@ -124,6 +132,8 @@ class FilesystemBrowserTool(BaseTool):
 
                 for item in items:
                     item_path = resolved_path / item
+                    if not _path_is_allowed(str(item_path))[0]:
+                        continue
                     try:
                         st = item_path.stat()
                         is_dir = item_path.is_dir()

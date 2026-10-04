@@ -3343,37 +3343,33 @@ function instrumentUIControls() {
 
 (function installApiRequestFetchWrapper() {
     const nativeFetch = window.fetch.bind(window);
-    // Support ?api_key=xxx in URL
+    // Remove URL credentials; deployment keys are entered in the auth overlay.
     const urlParams = new URLSearchParams(window.location.search);
     const keyFromUrl = urlParams.get('api_key');
     if (keyFromUrl) {
-        // A deployment key may be supplied in the URL for convenience. Keep
-        // it scoped to this browser session; credentials must not survive a
-        // deleted case or leak into a later session through persistent storage.
-        sessionStorage.setItem('BRACHYBOT_API_KEY', keyFromUrl);
-        window.BRACHYBOT_API_KEY = keyFromUrl;
+        // URL credentials leak through history/referrers. Do not consume them.
         // Clean URL without reload
-        const cleanUrl = window.location.pathname;
+        urlParams.delete('api_key');
+        const cleanUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '') + window.location.hash;
         window.history.replaceState({}, '', cleanUrl);
     }
     window.setBrachyBotApiKey = function setBrachyBotApiKey(key) {
         const value = String(key || '').trim();
         window.BRACHYBOT_API_KEY = value;
-        if (value) sessionStorage.setItem('BRACHYBOT_API_KEY', value);
-        else sessionStorage.removeItem('BRACHYBOT_API_KEY');
+        try {
+            localStorage.removeItem('BRACHYBOT_API_KEY');
+            if (value) sessionStorage.setItem('BRACHYBOT_API_KEY', value);
+            else sessionStorage.removeItem('BRACHYBOT_API_KEY');
+        } catch (_) {}
         // Capability probes can run before the auth overlay is submitted.
         // Notify the UI so protected, read-only probes are retried as soon as
         // the deployment key becomes available.
         window.dispatchEvent(new Event('brachybot:api-key-changed'));
     };
     window.fetch = function brachybotFetch(input, init) {
-        // The deployment key is persisted in localStorage so the operator's
-        // remembered credential survives reloads and tab closings on this
-        // workstation, and setBrachyBotApiKey() keeps the in-memory copy in
-        // sync. Reading order keeps a fresh in-memory key authoritative.
+        // Persistent localStorage is not a credential source.
         const key = window.BRACHYBOT_API_KEY
             || sessionStorage.getItem('BRACHYBOT_API_KEY')
-            || localStorage.getItem('BRACHYBOT_API_KEY')
             || '';
         const url = typeof input === 'string' ? input : (input && input.url) || '';
         let isApiRequest = url.startsWith(API + '/') || url.startsWith('/api/');
@@ -4873,10 +4869,10 @@ function updateImageAnalysis() {
     // Render
     const renderGroup = (g) => `
         <div style="margin-top:6px;">
-            <div style="font-size:0.6rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.06em;padding:3px 6px;border-bottom:1px solid var(--border-hairline);margin-bottom:2px;">${g.title}</div>
+            <div style="font-size:0.6rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.06em;padding:3px 6px;border-bottom:1px solid var(--border-hairline);margin-bottom:2px;">${escHtml(g.title)}</div>
             <table class="rp-oar-table" style="font-size:0.66rem;">
                 <tbody>
-                ${g.rows.map(([k, v]) => `<tr><th style="text-align:left;color:var(--text-dim);font-weight:500;width:42%;padding:2px 6px;vertical-align:top;">${k}</th><td style="padding:2px 6px;vertical-align:top;">${v}</td></tr>`).join('')}
+                ${g.rows.map(([k, v]) => `<tr><th style="text-align:left;color:var(--text-dim);font-weight:500;width:42%;padding:2px 6px;vertical-align:top;">${escHtml(String(k))}</th><td style="padding:2px 6px;vertical-align:top;">${escHtml(String(v))}</td></tr>`).join('')}
                 </tbody>
             </table>
         </div>
@@ -13724,7 +13720,9 @@ window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
             : `Context auto-compressed: case facts and key results kept; folded ${folds} older messages (${before} → ${after} tokens).`);
     }
 
+    let _contextStatusRequestSeq = 0;
     async function refreshContextStatus() {
+        const requestSeq = ++_contextStatusRequestSeq;
         const { ring } = _ringEls();
         if (ring) ring.classList.add('is-busy');
         try {
@@ -13747,14 +13745,16 @@ window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
                 cache: 'no-store',
             });
             const data = await res.json().catch(() => null);
-            if (data && data.context) {
+            const currentCase = typeof window.activeSessionId === 'string' && window.activeSessionId
+                ? window.activeSessionId : (typeof activeSessionId !== 'undefined' ? String(activeSessionId || '') : '');
+            if (res.ok && requestSeq === _contextStatusRequestSeq && currentCase === sessionId && data && data.context) {
                 updateContextIndicator(data.context);
                 _maybeNotifyCompression(data.context);
             }
         } catch (_) {
             /* indicator is best-effort */
         } finally {
-            if (ring) ring.classList.remove('is-busy');
+            if (ring && requestSeq === _contextStatusRequestSeq) ring.classList.remove('is-busy');
         }
     }
     window.refreshContextStatus = refreshContextStatus;

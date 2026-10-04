@@ -1,0 +1,15 @@
+{
+  "status": "DRAFT",
+  "study_kind": "descriptive_stress",
+  "investigator": null,
+  "frozen_at": null,
+  "sampling_seed": 1729,
+  "row_ids": [],
+  "cohort_frame": {"path": null, "sha256": null},
+  "arms": ["browser-chat"],
+  "primary_endpoint": "software_workflow_completion_within_budget",
+  "analysis": null,
+  "sample_size_basis": "Census of the hash-frozen eligible target-run frame, not a fixed 800-case sample or a clinical power claim.",
+  "reference_policy": {"enabled": false, "scope": "separately_registered_optional_physics_substudy"},
+  "note": "Pin a reviewed build-frame output and freeze this protocol after approvals. All-targets is permitted here, but not in a paired cluster study. Never present software completion as clinical, dose-physics, or manufacturing acceptance."
+}

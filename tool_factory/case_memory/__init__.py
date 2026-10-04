@@ -10,6 +10,7 @@ import json
 import time
 import logging
 import hashlib
+import re
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 
@@ -19,6 +20,30 @@ logger = logging.getLogger(__name__)
 
 MEMORY_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cases")
 os.makedirs(MEMORY_DIR, exist_ok=True)
+
+
+def _case_directory():
+    from utils.tool_security import output_directory
+    return output_directory("case_memory", MEMORY_DIR)
+
+
+def _case_file(case_id):
+    if not isinstance(case_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", case_id):
+        raise ValueError("Invalid case ID")
+    from utils.tool_security import checked_path
+    root = _case_directory().resolve()
+    return checked_path(root / f"{case_id}.json", root=root)
+
+
+def _case_files():
+    # A glob is not an ownership check: skip links escaping this case store.
+    from utils.tool_security import checked_path
+    root = _case_directory().resolve()
+    for path in root.glob("*.json"):
+        try:
+            yield checked_path(path, root=root)
+        except (PermissionError, OSError):
+            continue
 
 
 class CaseMemoryTool(BaseTool):
@@ -74,7 +99,7 @@ Capabilities:
         case_data["case_id"] = case_id
         case_data["saved_at"] = time.time()
 
-        case_file = os.path.join(MEMORY_DIR, f"{case_id}.json")
+        case_file = _case_file(case_id)
         try:
             with open(case_file, 'w', encoding='utf-8') as f:
                 json.dump(case_data, f, indent=2, ensure_ascii=False)
@@ -88,7 +113,7 @@ Capabilities:
 
     def _retrieve_case(self, case_id: str) -> ToolResult:
         """Retrieve a specific case."""
-        case_file = os.path.join(MEMORY_DIR, f"{case_id}.json")
+        case_file = _case_file(case_id)
         if not os.path.exists(case_file):
             return ToolResult(success=False, error=f"Case '{case_id}' not found", message=f"Case not found: {case_id}")
         try:
@@ -106,7 +131,7 @@ Capabilities:
         min_v100 = query.get("min_v100", 0)
         min_score = query.get("min_plan_score", 0)
 
-        for case_file in Path(MEMORY_DIR).glob("*.json"):
+        for case_file in _case_files():
             try:
                 with open(case_file, 'r', encoding='utf-8') as f:
                     case = json.load(f)
@@ -142,7 +167,7 @@ Capabilities:
     def _list_cases(self) -> ToolResult:
         """List all stored cases."""
         cases = []
-        for case_file in Path(MEMORY_DIR).glob("*.json"):
+        for case_file in _case_files():
             try:
                 with open(case_file, 'r', encoding='utf-8') as f:
                     case = json.load(f)
@@ -161,7 +186,7 @@ Capabilities:
     def _get_statistics(self) -> ToolResult:
         """Get aggregate statistics across all cases."""
         cases = []
-        for case_file in Path(MEMORY_DIR).glob("*.json"):
+        for case_file in _case_files():
             try:
                 with open(case_file, 'r', encoding='utf-8') as f:
                     cases.append(json.load(f))
@@ -190,7 +215,7 @@ Capabilities:
         cancer_type = query.get("cancer_type", "").lower()
 
         similar = []
-        for case_file in Path(MEMORY_DIR).glob("*.json"):
+        for case_file in _case_files():
             try:
                 with open(case_file, 'r', encoding='utf-8') as f:
                     case = json.load(f)

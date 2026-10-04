@@ -1493,6 +1493,8 @@ def mutating_execution_authorized(
     message: object,
     tool_name: str,
     conversation: object = None,
+    *,
+    params: object = None,
 ) -> bool:
     """Second-line check before a provider-selected mutation executes.
 
@@ -1501,9 +1503,13 @@ def mutating_execution_authorized(
     quoted text and purely conditional turns are rejected here even if the
     routing layer already passed a grant.
     """
+    from agent_runtime.execution_authorization import tool_call_is_mutating
+    if not tool_call_is_mutating(tool_name, params):
+        return True
     goal = tool_authorization_target(tool_name)
     if goal is None:
-        return True
+        from agent_runtime.execution_authorization import MUTATING_TOOLS
+        return tool_name not in MUTATING_TOOLS
     parsed = parse_request(message)
     expected_target, expected_action = goal
     # A target explicitly carved out of the request ("excluding the guide") is never

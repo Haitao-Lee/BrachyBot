@@ -236,10 +236,10 @@ class VoCoSegmentationBase(BaseTool):
         ras_image = self._resample_to_model_space(image)
 
         # Step 2: Write to temp file for MONAI
-        tmp_path = os.path.join(tempfile.gettempdir(), f"voco_input_{os.getpid()}.nii.gz")
-        sitk.WriteImage(ras_image, tmp_path)
-
+        fd, tmp_path = tempfile.mkstemp(prefix="brachybot_voco_", suffix=".nii.gz")
+        os.close(fd)
         try:
+            sitk.WriteImage(ras_image, tmp_path)
             # Step 3: Build MONAI transforms on the already-resampled image
             # NOTE: Do NOT use CropForegroundd - it changes array size and breaks coordinate mapping
             # SpatialPadd is needed to ensure minimum size for sliding_window_inference

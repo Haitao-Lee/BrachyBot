@@ -157,15 +157,8 @@ def register_data_routes(
         user = current_user(store)
         if not user:
             raise WorkspaceError("Authentication required")
-        data = request.get_json(silent=True) if request.is_json else {}
-        session_id = str(
-            explicit_session_id
-            or request.headers.get("X-BrachyBot-Session")
-            or (data or {}).get("session_id")
-            or request.args.get("session_id")
-            or flask_session.get("bb_session_id")
-            or ""
-        ).strip()
+        from web.request_identity import explicit_case_id
+        session_id = str(explicit_case_id(explicit_session_id) or flask_session.get("bb_session_id") or "").strip()
         if not session_id:
             raise WorkspaceError("No case session is selected")
         store.get_session(user["id"], session_id)

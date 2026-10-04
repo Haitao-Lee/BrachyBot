@@ -1,0 +1,158 @@
+{
+  "AbdomenAtlas3": {
+    "target_rows": 27969,
+    "source_case_ids": 9262,
+    "existing_ct_inputs": 9262,
+    "existing_images_all_modalities": 9262,
+    "status_counts": {
+      "PAIR_ENUMERATED_QA_PENDING": 27969
+    },
+    "positive_metadata_target_rows": 4886,
+    "phase_target_rows": {
+      "Arterial": 1209,
+      "UNKNOWN": 24321,
+      "Venous": 1740,
+      "Plain": 573,
+      "Delay": 126
+    }
+  },
+  "HECKTOR2026": {
+    "target_rows": 338,
+    "source_case_ids": 338,
+    "existing_ct_inputs": 338,
+    "existing_images_all_modalities": 338,
+    "status_counts": {
+      "PAIR_ENUMERATED_QA_PENDING": 338
+    },
+    "positive_metadata_target_rows": 0,
+    "phase_target_rows": {
+      "NCCT_PET_CT": 338
+    }
+  },
+  "KiTS21": {
+    "target_rows": 300,
+    "source_case_ids": 300,
+    "existing_ct_inputs": 300,
+    "existing_images_all_modalities": 300,
+    "status_counts": {
+      "PAIR_ENUMERATED_QA_PENDING": 300
+    },
+    "positive_metadata_target_rows": 0,
+    "phase_target_rows": {
+      "contrast_phase_not_per_case_verified": 300
+    }
+  },
+  "MSD:Task03_Liver": {
+    "target_rows": 201,
+    "source_case_ids": 201,
+    "existing_ct_inputs": 201,
+    "existing_images_all_modalities": 201,
+    "status_counts": {
+      "PAIR_ENUMERATED_QA_PENDING": 131,
+      "UNLABELED_TEST": 70
+    },
+    "positive_metadata_target_rows": 0,
+    "phase_target_rows": {
+      "declared_by_dataset": 201
+    }
+  },
+  "MSD:Task05_Prostate": {
+    "target_rows": 48,
+    "source_case_ids": 48,
+    "existing_ct_inputs": 0,
+    "existing_images_all_modalities": 48,
+    "status_counts": {
+      "EXCLUDED_NON_CT_NON_TUMOR": 48
+    },
+    "positive_metadata_target_rows": 0,
+    "phase_target_rows": {
+      "declared_by_dataset": 48
+    }
+  },
+  "MSD:Task06_Lung": {
+    "target_rows": 95,
+    "source_case_ids": 95,
+    "existing_ct_inputs": 95,
+    "existing_images_all_modalities": 95,
+    "status_counts": {
+      "PAIR_ENUMERATED_QA_PENDING": 63,
+      "UNLABELED_TEST": 32
+    },
+    "positive_metadata_target_rows": 0,
+    "phase_target_rows": {
+      "declared_by_dataset": 95
+    }
+  },
+  "MSD:Task07_Pancreas": {
+    "target_rows": 420,
+    "source_case_ids": 420,
+    "existing_ct_inputs": 281,
+    "existing_images_all_modalities": 281,
+    "status_counts": {
+      "PAIR_ENUMERATED_QA_PENDING": 281,
+      "MISSING_CT_AND_UNLABELED_TEST": 139
+    },
+    "positive_metadata_target_rows": 0,
+    "phase_target_rows": {
+      "declared_by_dataset": 420
+    }
+  },
+  "MSD:Task10_Colon": {
+    "target_rows": 190,
+    "source_case_ids": 190,
+    "existing_ct_inputs": 190,
+    "existing_images_all_modalities": 190,
+    "status_counts": {
+      "PAIR_ENUMERATED_QA_PENDING": 126,
+      "UNLABELED_TEST": 64
+    },
+    "positive_metadata_target_rows": 0,
+    "phase_target_rows": {
+      "declared_by_dataset": 190
+    }
+  },
+  "PSMA_PET_CT_Lesions": {
+    "target_rows": 597,
+    "source_case_ids": 597,
+    "existing_ct_inputs": 597,
+    "existing_images_all_modalities": 597,
+    "status_counts": {
+      "DICOM_SEG_CONVERSION_AND_TARGET_SELECTION_REQUIRED": 597
+    },
+    "positive_metadata_target_rows": 0,
+    "phase_target_rows": {
+      "whole_body_PET_CT": 597
+    }
+  },
+  "PanTS": {
+    "target_rows": 9901,
+    "source_case_ids": 9901,
+    "existing_ct_inputs": 9901,
+    "existing_images_all_modalities": 9901,
+    "status_counts": {
+      "PAIR_ENUMERATED_QA_PENDING": 9901
+    },
+    "positive_metadata_target_rows": 1077,
+    "phase_target_rows": {
+      "Non-contrast": 4485,
+      "Venous": 2897,
+      "Arterial": 2450,
+      "UNKNOWN": 1,
+      "Delay": 68
+    }
+  },
+  "SegRap23": {
+    "target_rows": 240,
+    "source_case_ids": 120,
+    "existing_ct_inputs": 240,
+    "existing_images_all_modalities": 240,
+    "status_counts": {
+      "PAIR_ENUMERATED_QA_PENDING": 240
+    },
+    "positive_metadata_target_rows": 0,
+    "phase_target_rows": {
+      "CECT": 120,
+      "NCCT": 120
+    }
+  }
+}

@@ -1,0 +1,263 @@
+{
+  "schema_version": 1,
+  "files": [
+    {
+      "path": ".gitignore",
+      "bytes": 116,
+      "sha256": "64c7ddd5303be386808febbd4664b1d3073e469d9ea8af44d1f881c05e1599b2"
+    },
+    {
+      "path": "brachycohort/__init__.py",
+      "bytes": 100,
+      "sha256": "4195cca9e4a4c44799ca2ae9c7d73572babfd95015c3e450db330fd6858b7633"
+    },
+    {
+      "path": "brachycohort/__main__.py",
+      "bytes": 61,
+      "sha256": "3129adff95e0f38b87ab34cddfc27082c7892bcaec267ff5d40f160fdf55b44a"
+    },
+    {
+      "path": "brachycohort/analysis.py",
+      "bytes": 22759,
+      "sha256": "8d4303b6dee60fcf531e28d8f1594c5da7487ad691e0a7289a5c1c1145e9e5ea"
+    },
+    {
+      "path": "brachycohort/browser.py",
+      "bytes": 20228,
+      "sha256": "73ed6567a9d7b9ff17b676d6577a3a7d505e3b953d9eb33d2a1e1625a58a2f9b"
+    },
+    {
+      "path": "brachycohort/cli.py",
+      "bytes": 16356,
+      "sha256": "0657e3deaaaf254c42ccc7ef2fc81d4f39eb851b109acf364e62999e7cbdfb85"
+    },
+    {
+      "path": "brachycohort/cohort.py",
+      "bytes": 9965,
+      "sha256": "99d2dda0a4f3dcfebb965bb94ce93ad4e056f6bc1c160c6d8381379bbc1a1d74"
+    },
+    {
+      "path": "brachycohort/core.py",
+      "bytes": 8846,
+      "sha256": "a7f2bb0cff2245e53136388076dcdb56a0a00a9e3bbf2d553b4b7d4a4e4f6053"
+    },
+    {
+      "path": "brachycohort/dicom.py",
+      "bytes": 10190,
+      "sha256": "d321fc727d3b78b26e6b98c4e322f80a53b3c3709529949e79c0789bb09a1804"
+    },
+    {
+      "path": "brachycohort/gates.py",
+      "bytes": 5710,
+      "sha256": "c41fde56dc1aeb2abc3429383c51750d0f3d1ee9b71ecf25eb5fd7ec151eeccd"
+    },
+    {
+      "path": "brachycohort/leases.py",
+      "bytes": 4090,
+      "sha256": "baff51f24994930e6e06e3512bbd61da36551197809a5630965feea37f472a64"
+    },
+    {
+      "path": "brachycohort/observer.py",
+      "bytes": 8410,
+      "sha256": "7627a0b37d0affbb9bd41264f577336aec5c32e8e4f8f6ad27a5ae41d546fee4"
+    },
+    {
+      "path": "brachycohort/preflight.py",
+      "bytes": 9542,
+      "sha256": "01b269b4be88cb0415b7261ff0ed584f81fe7f6572d475d219bdd85b956145d8"
+    },
+    {
+      "path": "brachycohort/profiles.py",
+      "bytes": 4670,
+      "sha256": "ac55c7ad3b5727c87e4d60456648dc9c500ca14a13f8b7a3260545340403cf5c"
+    },
+    {
+      "path": "brachycohort/progress.py",
+      "bytes": 4171,
+      "sha256": "8685844894ec38f98e8bd58ea8cd2e837b73d9c844892b8a01df677cab2b377a"
+    },
+    {
+      "path": "brachycohort/recovery.py",
+      "bytes": 17102,
+      "sha256": "597652c383f9df7ea590c8179de586d06f4f22d365e88e9ad9fdd4c1f0e3d899"
+    },
+    {
+      "path": "brachycohort/resources.py",
+      "bytes": 1451,
+      "sha256": "1d3238a2d10d1a5d927f6e91fbb24f238a2fd5b87a6b833f2fe0012d768551d3"
+    },
+    {
+      "path": "brachycohort/runner.py",
+      "bytes": 25805,
+      "sha256": "d8235973a42186bf804d6ef4519f6b42f97ef267fe87dd6e1f51a4702e337c25"
+    },
+    {
+      "path": "brachycohort/runtime.py",
+      "bytes": 13207,
+      "sha256": "39ed960595c17fe8847db70f16c55223b9d507856f0fa8b62548f6bef0612a04"
+    },
+    {
+      "path": "brachycohort/server_entry.py",
+      "bytes": 829,
+      "sha256": "79f0a5224e42b8efe416bbcca0feaa8e680e665f8f8b189ea172a4f7d14b157b"
+    },
+    {
+      "path": "brachycohort/verify.py",
+      "bytes": 11134,
+      "sha256": "9c7b01452cf653393358daf26872442eae7c0fdc9b1a74fcc9aa66c4259ce877"
+    },
+    {
+      "path": "configs/acceptance_rules.draft.json",
+      "bytes": 641,
+      "sha256": "936cb06385545f261cce4e8ed2be9fdd7c46b3187cf0f3a04a81f63b982e61f5"
+    },
+    {
+      "path": "configs/artifact_review.example.json",
+      "bytes": 426,
+      "sha256": "86a73c68c7a8785d6b6e91b66642d3d65f23ed155be2eaf21e42a6075983cb77"
+    },
+    {
+      "path": "configs/budget.draft.json",
+      "bytes": 380,
+      "sha256": "542191dbbb20e864fcc4a0e2d3370b0b4629f25bcf21fad3dc0089f7df3f3241"
+    },
+    {
+      "path": "configs/case_approval.example.json",
+      "bytes": 396,
+      "sha256": "72c4ab366f330ad914923d28ec27bb649a191997e0fbd2bf0185c0ea6c03877c"
+    },
+    {
+      "path": "configs/conversion_approval.example.json",
+      "bytes": 475,
+      "sha256": "9c3b8fb514732765103202effb7e14e1c6f7a6b280ab2fe2bafec6f4a99e2076"
+    },
+    {
+      "path": "configs/experiment.census.example.json",
+      "bytes": 1926,
+      "sha256": "a05f1f2b34387ad03fada911179ef1d687dd1c5190246080fb868cb7cb35e8ad"
+    },
+    {
+      "path": "configs/experiment.example.json",
+      "bytes": 1861,
+      "sha256": "2dba9dfe9c5a1660acb6b05db91064f34960dd7b4a48301fdbe6fb1000bfc8e9"
+    },
+    {
+      "path": "configs/governance.draft.json",
+      "bytes": 418,
+      "sha256": "f1ce759f3af554888bb2b2c5a9ab689baacd0095796084015436b0268d735deb"
+    },
+    {
+      "path": "configs/preflight.example.json",
+      "bytes": 383,
+      "sha256": "29592c95769e452e633439f609263eebe0a70c9f74b80e737fdc78185fffd994"
+    },
+    {
+      "path": "configs/profiles.draft.json",
+      "bytes": 1206,
+      "sha256": "17e40baccc8740cc534cfb6d340e619133322e03f068ce48c9aa7687df6d0df0"
+    },
+    {
+      "path": "configs/protocol.census.draft.json",
+      "bytes": 796,
+      "sha256": "2da12ff135998107f7831919cb30707871219e7400c0771cb96f08b5c7074c79"
+    },
+    {
+      "path": "configs/protocol.draft.json",
+      "bytes": 559,
+      "sha256": "f16614a08e4277ada0116792238078942de2d73a2c4c15989b1d6aeabc3a0be4"
+    },
+    {
+      "path": "pyproject.toml",
+      "bytes": 659,
+      "sha256": "f47229e00990be03256106d47db7cf6d5448f832243121b4bf3def6183d35d56"
+    },
+    {
+      "path": "README.md",
+      "bytes": 35902,
+      "sha256": "6824424c3ccab28092ef9cc2bb99c45f012515e104add5aacad1414bad4ce454"
+    },
+    {
+      "path": "tests/conftest.py",
+      "bytes": 2647,
+      "sha256": "f7a3fefb8da30a8c215a9f72fae70aeebdb109dc52e8abf28466ffcc1aa760a5"
+    },
+    {
+      "path": "tests/test_analysis_reference_recovery.py",
+      "bytes": 5734,
+      "sha256": "e74679f441ae30471c4b03a494700215ff6733540251d3d777336726ee8fc9d1"
+    },
+    {
+      "path": "tests/test_browser_contract.py",
+      "bytes": 16253,
+      "sha256": "355e04a4cbb855ce21a7b7d9093ddd5f23a71f42ac61641ed55fcb668a26c46d"
+    },
+    {
+      "path": "tests/test_case_resumption.py",
+      "bytes": 14471,
+      "sha256": "1ba2f0ecb56328574192aa9f5ba92e8447690bdd7ebaac9adc3f6e773590d5c9"
+    },
+    {
+      "path": "tests/test_census_scheduling.py",
+      "bytes": 12139,
+      "sha256": "97060a2e71735df456f2fb8cd5bfe1afb6ed0c3f5305fa1f2d109a739d511856"
+    },
+    {
+      "path": "tests/test_core.py",
+      "bytes": 3319,
+      "sha256": "a799fe9a12402a374620cf5bdbdfaa0bc83a49ff5c9548506da5b4d159f2a24e"
+    },
+    {
+      "path": "tests/test_dicom.py",
+      "bytes": 6522,
+      "sha256": "b12f4ed5c902c6099cd44da1342786fc3095b5e9c7b44c8e1f5042ae57d48890"
+    },
+    {
+      "path": "tests/test_preflight.py",
+      "bytes": 3186,
+      "sha256": "adaf7e5f2cd2ecb4e94b513ec2494c7ca1b94c9a87ebc84d5d30933697e86e22"
+    },
+    {
+      "path": "tests/test_profiles.py",
+      "bytes": 1653,
+      "sha256": "48adb0b57e8b347c6453b3ac0b65a9a512bd07381624acc7d23f6599950fd5ed"
+    },
+    {
+      "path": "tests/test_protocol_and_collection.py",
+      "bytes": 6499,
+      "sha256": "ce371e859cf73ec2e83486aa461c1b3fb943c05e487a38c393d18b4a301852c9"
+    },
+    {
+      "path": "tests/test_runtime_identity.py",
+      "bytes": 3027,
+      "sha256": "57ecc47f58fdab662aeea4a7a0166b73ac27cd7c533994f095d88142763ab4bb"
+    },
+    {
+      "path": "tests/test_verification.py",
+      "bytes": 3083,
+      "sha256": "8a9505f7046f9dd16a7806a8d337cf070e3325eb5b76cb2c0fe8870185fdcdb4"
+    },
+    {
+      "path": "tools/verify_package.py",
+      "bytes": 2201,
+      "sha256": "c845886487eb1931b3f9d07ac97289f6d75b590a34d73480e626078a0b91ab1f"
+    },
+    {
+      "path": "VALIDATION.md",
+      "bytes": 5794,
+      "sha256": "52f4bbd728c55159f93f613035323c22ecd7b76774cd93a71a94037bc48a4fd2"
+    }
+  ],
+  "related_documents": [
+    {
+      "path": "docs/CT_COHORT_EXPERIMENT_IMPLEMENTATION_2026-10-04.md",
+      "bytes": 16584,
+      "sha256": "7fc1dcfdbb66dc5fcd023e135dc821508163b90fb09ee280f1b0a30327ae4fe3"
+    },
+    {
+      "path": "docs/CT_COHORT_PLANNING_EXPERIMENT_DESIGN_2026-10-04.md",
+      "bytes": 107475,
+      "sha256": "1c98063a7be80d65919e655f87661bad8016702178362d32a40fea9e557c6efb"
+    }
+  ],
+  "purpose": "Delivered source integrity, not experiment results"
+}

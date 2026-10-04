@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import numpy as np
 import SimpleITK as sitk
+from utils.image_limits import read_image
 
 
 def normalize_positive_label_value(value, *, name: str = "target_value") -> int:
@@ -124,7 +125,7 @@ def align_label_to_reference(
     """Read and resample a label image onto the reference CT physical grid."""
 
     return align_label_image_to_reference(
-        sitk.ReadImage(label_path), reference_image, orientation
+        read_image(label_path), reference_image, orientation
     )
 
 

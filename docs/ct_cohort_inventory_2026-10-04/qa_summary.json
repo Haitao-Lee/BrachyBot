@@ -1,0 +1,27 @@
+{
+  "sample_rows": 54,
+  "sample_status_counts": {
+    "READABLE_NONEMPTY_PAIR": 36,
+    "EMPTY_TARGET": 18
+  },
+  "abdomen_atlas_metadata_positive_cases": {
+    "liver": 1469,
+    "kidney": 2125,
+    "pancreatic": 1110,
+    "colon": 182
+  },
+  "abdomen_atlas_any_three_lesions": 3732,
+  "abdomen_atlas_multiple_three_lesions": 880,
+  "manifest_rows": 40299,
+  "unique_existing_ct_paths": 21405,
+  "psma_segment_signatures": {
+    "[{\"item_tags\": [\"(0008,2218)\", \"(0008,2228)\", \"(0062,0003)\", \"(0062,0004)\", \"(0062,0005)\", \"(0062,0008)\", \"(0062,000F)\", \"(0062,0020)\", \"(0062,0021)\"], \"label\": \"Tumor lesions\", \"number\": 1}]": 597
+  },
+  "psma_reference_matches_ct": {
+    "false": 597
+  },
+  "psma_frame_matches_ct": {
+    "true": 597
+  },
+  "psma_patient_clusters": 378
+}

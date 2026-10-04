@@ -123,6 +123,7 @@ def resolve_dose_evaluation_inputs(retrieve: Retrieve) -> Dict[str, Any]:
     )
 
     seen_shapes = []
+    oar_mismatch = False
     for dose_key, unit in _DOSE_SOURCES_GY:
         dose = _as_array(retrieve(dose_key))
         if dose is None:
@@ -133,6 +134,9 @@ def resolve_dose_evaluation_inputs(retrieve: Retrieve) -> Dict[str, Any]:
             if ctv is None or ctv.shape != dose.shape:
                 continue
             oar_in = oar if (oar is not None and oar.shape == dose.shape) else None
+            if (ct_grid_oar is not None or plan_grid_oar is not None) and oar_in is None:
+                oar_mismatch = True
+                continue
             dose_gy = (dose.astype(np.float32, copy=False) * np.float32(to_gy))
             params: Dict[str, Any] = {
                 "dose_array": dose_gy,
@@ -158,6 +162,8 @@ def resolve_dose_evaluation_inputs(retrieve: Retrieve) -> Dict[str, Any]:
 
     if not seen_shapes:
         return {"resolution_error": MISSING_INPUT_ERROR, "params": {}}
+    if oar_mismatch:
+        return {"resolution_error": "Loaded OAR and dose grids do not match; OAR evaluation cannot be silently omitted", "params": {}}
 
     mask_shapes = [
         (name, mask.shape)

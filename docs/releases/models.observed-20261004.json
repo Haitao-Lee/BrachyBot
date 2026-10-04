@@ -1,0 +1,195 @@
+{
+  "scope": "Observed local models/ and VoCo/ bytes only; external model/runtime roots are not frozen; no provenance or clinical approval implied",
+  "models": [
+    {
+      "path": "models/dose_unet_spacing1mm/best_model.pth",
+      "bytes": 67954686,
+      "sha256": "d73d19f22c846ee989786eabd9336fba80b8c9658881a6e878aca846861b5681"
+    },
+    {
+      "path": "VoCo/3D-IRCADb/model_basline_57.19.pt",
+      "bytes": 298651152,
+      "sha256": "13045fc6938a7a21174d755a27f232ef0aa4c8d7db340efb3ada30508173f493"
+    },
+    {
+      "path": "VoCo/3D-IRCADb/model_suprem_68.48.pt",
+      "bytes": 256344832,
+      "sha256": "fc526e1f9d7e44a14cbc0899aecad0eeb72b021e73a8d31d282fa14d2c3dd59d"
+    },
+    {
+      "path": "VoCo/3D-IRCADb/model_voco_74.27.pt",
+      "bytes": 298651152,
+      "sha256": "7bdeeeb851f9301f9a06c1d7b40ac179ea416a9e2349e896e59580faedef8dfd"
+    },
+    {
+      "path": "VoCo/Amos-MR/model_base_71.46.pt",
+      "bytes": 298653712,
+      "sha256": "2f380f9e7a43667c04e32afe670d0778911ba17552e2dcf8b9c0f881bcbea834"
+    },
+    {
+      "path": "VoCo/Amos-MR/model_suprem_75.69.pt",
+      "bytes": 256347392,
+      "sha256": "783ad5ca5a81b220c82f0b5f66af46963c232dbc87a57202279f8b4369c9aa02"
+    },
+    {
+      "path": "VoCo/Amos-MR/model_voco_79.24.pt",
+      "bytes": 298653712,
+      "sha256": "345866ecd8001d2c6e57f09c6cf012a193c6f6c790e404288c61a04b7a4d5b1d"
+    },
+    {
+      "path": "VoCo/Aorta/model_46.76.pt",
+      "bytes": 298650960,
+      "sha256": "513187f8dccd8af063cb43d43842da04da84b399e92e4e125913c3db8bc1833d"
+    },
+    {
+      "path": "VoCo/Aorta/model_69.64.pt",
+      "bytes": 298650960,
+      "sha256": "0e834ae9aeb5410446b4e0f3b6cb2b3ae5f7737354a170971e177c0be6c30be3"
+    },
+    {
+      "path": "VoCo/Atlas-MR/model_base_60.40.pt",
+      "bytes": 298651152,
+      "sha256": "8370a2b9080695227030b48eda84c0bc09cd866d01f4727c2abf7d6f901254fa"
+    },
+    {
+      "path": "VoCo/Atlas-MR/model_suprem_64.64.pt",
+      "bytes": 256344832,
+      "sha256": "cd19296b1dce8fe9d343fe56e1a8d1f7e3f9f9b98029698180d63cf1dcae7f89"
+    },
+    {
+      "path": "VoCo/Atlas-MR/model_voco_70.17.pt",
+      "bytes": 298651152,
+      "sha256": "a26c5606f37ba10b32e157ba00ac9df41828d952e22c6e992ad172d69eb5d584"
+    },
+    {
+      "path": "VoCo/BRATS21/model_90.23.pt",
+      "bytes": 298672080,
+      "sha256": "33a094463c4770d568b734f0432c9f13bb4386f36b8ae4965bb718a8f47a009f"
+    },
+    {
+      "path": "VoCo/BTCV/model_baseline.pt",
+      "bytes": 256346944,
+      "sha256": "996b61baed807a8a409bb05bddc6acad1ac25a289edfb1e2b03f852679187137"
+    },
+    {
+      "path": "VoCo/BTCV/model_suprem_85.32.pt",
+      "bytes": 256346944,
+      "sha256": "6719a25a7b362e1f6ba5bc35bf2e0da5d2a359ee50990b6a74d8db5f0131fb22"
+    },
+    {
+      "path": "VoCo/BTCV/model_swin_82.58.pt",
+      "bytes": 256346944,
+      "sha256": "f7727cebd5889e74d60f7a013573934d8150a1dc9d880d0f83c3d28a8ea78405"
+    },
+    {
+      "path": "VoCo/BTCV/model_unimiss_81.85.pt",
+      "bytes": 159594136,
+      "sha256": "902f21d8db310d6a09777fc43427440dfbfaee02f34947d3446e09eb540e2bc9"
+    },
+    {
+      "path": "VoCo/BTCV/model_voco_86.64.pt",
+      "bytes": 298653264,
+      "sha256": "72c91cdfed8d33b4da4db0359748e588a4d6cafe5615b5dcac90ba2ff3783a7e"
+    },
+    {
+      "path": "VoCo/CC-CCII/logs_swin_base_voco160k/model_93.8.pt",
+      "bytes": 298651088,
+      "sha256": "0efcb673930fb9b40650dfd3167ba49a0e311e194a2a9587da6490a16bdc35ae"
+    },
+    {
+      "path": "VoCo/COVID/model_68.78.pt",
+      "bytes": 298650960,
+      "sha256": "45eadce035b67ecf716d5bbe04553d1c57594fbcc68d7af5bd9196534ee80b21"
+    },
+    {
+      "path": "VoCo/FUMPE/model_baseline_50.31.pt",
+      "bytes": 298650960,
+      "sha256": "e03ca0a0e14630fc13df2fb212736432a360dfe8aaa2c17f3bf750adf874f769"
+    },
+    {
+      "path": "VoCo/FUMPE/model_voco_55.32.pt",
+      "bytes": 298650960,
+      "sha256": "55e5908334c7231077da45dfe2a0eb75b2a731b0495d25ce351eb12e81bab101"
+    },
+    {
+      "path": "VoCo/Kipa/model_suprem.pt",
+      "bytes": 256345216,
+      "sha256": "7db20ef777f8a403df4a7214a20732ee9024b19a0c415b9d2a6ec12078fd5485"
+    },
+    {
+      "path": "VoCo/Kipa/model_voco.pt",
+      "bytes": 298651536,
+      "sha256": "4716a431262c62cd6e410f5a9e047c61bbd8db00800df5749b41b3c5c5022946"
+    },
+    {
+      "path": "VoCo/LUNA16/luna_ncc/3d_swin_Simple_luna_ncc_rcb_(order_xyz)/20240531-120548/model_best.pth",
+      "bytes": 753967202,
+      "sha256": "8fa5ad7c1801bb4508da285496ec091f9bdd143ca24e15f2a6ada726d7368551"
+    },
+    {
+      "path": "VoCo/Lung/model_suprem_69.86.pt",
+      "bytes": 256344640,
+      "sha256": "12c0251797fdad289589100e91b57f70153422158cdd9f6826b7ac0ba773aa9a"
+    },
+    {
+      "path": "VoCo/Lung/model_voco_75.74.pt",
+      "bytes": 298650960,
+      "sha256": "48471463294a01dd716733b3f8843484386788de2ffdf823e9e7e704e714f463"
+    },
+    {
+      "path": "VoCo/PANORAMA/model_pano_suprem.pt",
+      "bytes": 256345600,
+      "sha256": "487d5986d650ae55a48ac2011ad8b6eb55887cc36e9ecc6ef5363ab835a454fe"
+    },
+    {
+      "path": "VoCo/PANORAMA/model_voco.pt",
+      "bytes": 298651479,
+      "sha256": "12465b2baf738d700575ea5bbe1737e6ef06b2c60efea2c53287626c0a931abb"
+    },
+    {
+      "path": "VoCo/SegThor/model_90.17.pt",
+      "bytes": 298651536,
+      "sha256": "7649ba1dc350b4d62dbc78a6c4cc6940b40e146571832687ecd67f54cac97f8d"
+    },
+    {
+      "path": "VoCo/Totalsegmentator/model_voco_base_84.84.pt",
+      "bytes": 298670928,
+      "sha256": "ba7245daee1750a748dc7984e37ebb2686ad372964c483519dd8f4f42791a120"
+    },
+    {
+      "path": "VoCo/Totalsegmentator/model_voco_large_85.27.pt",
+      "bytes": 1169206160,
+      "sha256": "4219059ae92f966ce6f1f80d5502ee0f87d92e9951136c27c88a4bfd596527a0"
+    },
+    {
+      "path": "VoCo/colon/model_suprem_38.78.pt",
+      "bytes": 256344640,
+      "sha256": "a4a260458220416f687689689e892639912c5b90ea43f04f72494f66aadcf683"
+    },
+    {
+      "path": "VoCo/colon/model_voco_42.57.pt",
+      "bytes": 298650960,
+      "sha256": "2e8e131d2b37afac57eb4154ac2b884baa5b2370f335d5e547f9709745901191"
+    },
+    {
+      "path": "VoCo/pancreatic_tumor/Dataset005_Pancreas/nnUNetTrainer__nnUNetPlans__3d_fullres/fold_0/checkpoint_best.pth",
+      "bytes": 249731606,
+      "sha256": "495d2ee1cd873350cc4a08a5719bf73bbdd41a70317499bc65f69e8af2450092"
+    },
+    {
+      "path": "VoCo/pancreatic_tumor/Dataset005_Pancreas/nnUNetTrainer__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth",
+      "bytes": 249731824,
+      "sha256": "8a22e2a2aba47bbe3ae0dc8a91e89957f2a62fa324c06938b2668f4c3ed568f2"
+    },
+    {
+      "path": "VoCo/voco_ssl/logs_swin_B/model_current_epoch.pt",
+      "bytes": 246499652,
+      "sha256": "30481765139e1edb00b8f5c99d3b1e20aade83aada2255baca15caa3d8777cb4"
+    },
+    {
+      "path": "VoCo/voco_ssl/logs_swin_L/model_current_epoch.pt",
+      "bytes": 891277764,
+      "sha256": "7782d7dbc5457e86664020a4fb1c6931d7140a174907a5520c82402a55e012a5"
+    }
+  ]
+}

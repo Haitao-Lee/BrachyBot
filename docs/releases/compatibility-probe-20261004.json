@@ -1,0 +1,38 @@
+{
+  "scope": "Synthetic ABI/API and real DoseUNet checkpoint compatibility only; no independent dose truth or clinical validation",
+  "versions": {
+    "torch": "2.10.0+cu126",
+    "torchvision": "0.25.0+cu126",
+    "monai": "1.6.1",
+    "nnunetv2": "2.7.0",
+    "TotalSegmentator": "2.13.0",
+    "numpy": "2.4.6",
+    "scipy": "1.15.3",
+    "SimpleITK": "2.5.0",
+    "pydicom": "2.4.5",
+    "dicom2nifti": "2.6.0"
+  },
+  "checkpoint_sha256": "d73d19f22c846ee989786eabd9336fba80b8c9658881a6e878aca846861b5681",
+  "cpu_seconds": 0.1658567008562386,
+  "dose_shape": [
+    1,
+    1,
+    32,
+    32,
+    32
+  ],
+  "dose_finite": true,
+  "cuda_available": true,
+  "voCo_real_checkpoint_and_physical_mapping": "NOT_VALIDATED",
+  "validation_precision": "FP32; TF32 disabled only in this detached probe",
+  "monai_voCo_api_shape": [
+    1,
+    2,
+    64,
+    64,
+    64
+  ],
+  "sitk_roundtrip_index_error": 0.0,
+  "cuda_cpu_max_abs_error": 5.438923835754395e-07,
+  "cuda_cpu_allclose": true
+}

@@ -1,0 +1,28 @@
+{
+  "total_manifest_rows": 40299,
+  "paired_nifti_ct_target_rows": 39349,
+  "paired_nifti_ct_inputs": 20642,
+  "all_existing_ct_inputs": 21405,
+  "unmatched_dedicated_lesion_files": [],
+  "dicom_series_modality_counts": {
+    "PT": 597,
+    "CT": 597,
+    "SEG": 597
+  },
+  "dicom_files_by_modality": {
+    "SEG": 597,
+    "PT": 187701,
+    "CT": 185853
+  },
+  "psma_seg_pet_reference_counts": {
+    "true": 597
+  },
+  "colonic_lesion_named_files": 183,
+  "sample_rows": 54,
+  "sample_status_counts": {
+    "READABLE_NONEMPTY_PAIR": 36,
+    "EMPTY_TARGET": 18
+  },
+  "sample_label_canonicalization_required": 6,
+  "sample_grid_mismatches": 0
+}

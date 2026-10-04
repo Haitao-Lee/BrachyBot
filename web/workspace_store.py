@@ -28,6 +28,7 @@ import threading
 import time
 import uuid
 from contextlib import contextmanager
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Iterator, List, Mapping, Optional, Tuple
@@ -50,9 +51,31 @@ DEFAULT_ARCHIVE_ROOT = os.environ.get("BRACHYBOT_ARCHIVE_ROOT") or str(
 )
 TRANSFER_MANIFEST_VERSION = 1
 TRANSFER_HASH_CHUNK_BYTES = 4 * 1024 * 1024
-TRASH_RETENTION_SECONDS = int(
-    os.environ.get("BRACHYBOT_TRASH_RETENTION_DAYS", "7")
-) * 24 * 60 * 60
+try:
+    _trash_days = max(1, int(os.environ.get("BRACHYBOT_TRASH_RETENTION_DAYS", "7")))
+except (TypeError, ValueError):
+    _trash_days = 7
+TRASH_RETENTION_SECONDS = _trash_days * 24 * 60 * 60
+
+
+class _SnapshotCache(OrderedDict):
+    """Bound large control-plane snapshots by count AND serialized bytes."""
+    max_items = 8
+    max_bytes = 64 * 1024 * 1024
+
+    def get(self, key, default=None):
+        value = super().get(key, default)
+        if key in self:
+            self.move_to_end(key)
+        return value
+
+    def __setitem__(self, key, value):
+        self.pop(key, None)
+        if value[1] > self.max_bytes:
+            return
+        super().__setitem__(key, value)
+        while len(self) > self.max_items or sum(item[1] for item in self.values()) > self.max_bytes:
+            self.popitem(last=False)
 # Candidate trajectories are an in-process planning workspace, not durable
 # clinical results. Persisting thousands of nested NumPy objects on every
 # memory.store checkpoint made a chat turn spend minutes encoding data that can
@@ -1778,6 +1801,7 @@ def _atomic_bytes(path: Path, data: bytes) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temp, path)
+        WorkspaceStore._fsync_directory(path.parent)
         try:
             os.chmod(path, 0o600)
         except OSError:
@@ -1800,6 +1824,7 @@ def _atomic_npy(path: Path, array: np.ndarray) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temp, path)
+        WorkspaceStore._fsync_directory(path.parent)
     finally:
         if temp.exists():
             temp.unlink(missing_ok=True)
@@ -1854,7 +1879,7 @@ class WorkspaceStore:
         # remains authoritative and every write/delete invalidates this cache.
         self._snapshot_cache: Dict[
             Tuple[str, str], Tuple[int, int, Dict[str, Any]]
-        ] = {}
+        ] = _SnapshotCache()
         # Account quota checks used to recursively walk every case directory
         # for every uploaded megabyte.  Keep a process-local total instead:
         # writes invalidate it once, while a single upload uses one stable
@@ -2257,8 +2282,8 @@ class WorkspaceStore:
             )
             connection.execute(
                 "UPDATE users SET storage_quota_bytes = ? "
-                "WHERE storage_quota_bytes < ?",
-                (DEFAULT_USER_QUOTA_BYTES, DEFAULT_USER_QUOTA_BYTES),
+                "WHERE storage_quota_bytes IS NULL OR storage_quota_bytes <= 0",
+                (DEFAULT_USER_QUOTA_BYTES,),
             )
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_case_sessions_activity "
@@ -3903,7 +3928,8 @@ class WorkspaceStore:
             # current segmentation outputs.  Keeping a raw-direction CT here
             # beside LPI masks recreates the mirror/translation bug after a
             # server restart.
-            raw_image = sitk.ReadImage(str(path))
+            from utils.image_limits import read_image
+            raw_image = read_image(path)
             raw_frame, source_meta = normalize_ct_image(raw_image)
             image = sitk.DICOMOrient(raw_frame, "LPI")
             import numpy as np
@@ -5488,6 +5514,7 @@ class WorkspaceStore:
                 os.fsync(handle.fileno())
             os.replace(temp, path)
             self._invalidate_storage_usage(user_id)
+            self._fsync_directory(path.parent)
             try:
                 os.chmod(path, 0o600)
             except OSError:
@@ -5563,6 +5590,7 @@ class WorkspaceStore:
             os.replace(temp, path)
             self._invalidate_storage_usage(user_id)
             try:
+                self._fsync_directory(path.parent)
                 os.chmod(path, 0o600)
             except OSError:
                 pass
@@ -5709,4 +5737,7 @@ class WorkspaceStore:
 
 
 def _safe_filename(value: str) -> str:
-    return "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in str(value))[:96] or "value"
+    result = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in str(value))[:96] or "value"
+    if result in {".", ".."}:
+        raise WorkspaceError("Invalid artifact filename")
+    return result

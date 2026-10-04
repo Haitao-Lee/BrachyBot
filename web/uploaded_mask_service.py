@@ -316,7 +316,8 @@ def _ct_image(memory: Any, image_path: str) -> sitk.Image:
     if isinstance(current, sitk.Image):
         return current
     try:
-        return sitk.ReadImage(str(image_path))
+        from utils.image_limits import read_image
+        return read_image(image_path)
     except Exception as exc:
         raise UploadedMaskError(f"Unable to read CT image: {exc}") from exc
 

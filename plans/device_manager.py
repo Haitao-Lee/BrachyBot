@@ -308,7 +308,7 @@ class DeviceManager:
         return True
 
     # --- acquisition ---
-    def acquire(self, caller: str = "default", prefer: Optional[str] = None) -> str:
+    def acquire(self, caller: str = "default", prefer: Optional[str] = None, *, _reserve: bool = True) -> str:
         """Pick the best device for `caller`. Returns a torch device
         string ('cpu' / 'cuda:0' / 'cuda:1' / 'mps').
 
@@ -360,9 +360,10 @@ class DeviceManager:
                 chosen = self._auto_pick()
             # Cache the choice for this caller (so model weights stay warm).
             self._preferred[caller] = chosen
-            self._active_per_device[chosen] = self._active_per_device.get(chosen, 0) + 1
+            if _reserve:
+                self._active_per_device[chosen] = self._active_per_device.get(chosen, 0) + 1
         logger.info(f"device_manager: {caller} → {chosen} "
-                    f"(active on {chosen}: {self._active_per_device[chosen]})")
+                    f"(active on {chosen}: {self._active_per_device.get(chosen, 0)})")
         return chosen
 
     @contextmanager
@@ -492,7 +493,7 @@ def get_device(caller: str = "default", prefer: Optional[str] = None) -> "torch.
     the single import tools should use, replacing the 12+ copies of
     `torch.device("cuda" if torch.cuda.is_available() else "cpu")`."""
     import torch
-    chosen = DeviceManager.instance().acquire(caller=caller, prefer=prefer)
+    chosen = DeviceManager.instance().acquire(caller=caller, prefer=prefer, _reserve=False)
     return torch.device(chosen)
 
 

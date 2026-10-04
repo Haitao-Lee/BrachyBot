@@ -338,9 +338,12 @@ Capabilities:
 
     def _export_json(self, plan: Dict, output_path: str = None) -> ToolResult:
         """Export plan as JSON."""
+        from utils.tool_security import output_directory, checked_path
+        directory = output_directory("reports", OUTPUT_DIR)
         if not output_path:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_path = os.path.join(OUTPUT_DIR, f"plan_{timestamp}.json")
+            output_path = str(directory / f"plan_{timestamp}.json")
+        output_path = str(checked_path(output_path))
 
         try:
             with open(output_path, 'w', encoding='utf-8') as f:
@@ -351,10 +354,13 @@ Capabilities:
 
     def _export_markdown(self, plan: Dict, patient: Dict = None, output_path: str = None) -> ToolResult:
         """Export plan as Markdown."""
+        from utils.tool_security import output_directory, checked_path
+        directory = output_directory("reports", OUTPUT_DIR)
         content = self._generate_full_report(plan, patient)
         if not output_path:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_path = os.path.join(OUTPUT_DIR, f"plan_{timestamp}.md")
+            output_path = str(directory / f"plan_{timestamp}.md")
+        output_path = str(checked_path(output_path))
 
         try:
             with open(output_path, 'w', encoding='utf-8') as f:

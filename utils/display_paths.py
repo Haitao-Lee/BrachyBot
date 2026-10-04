@@ -139,7 +139,11 @@ def resolve_user_path(value: Any, roots: Optional[DisplayRoots] = None) -> Any:
             return prefix
         if value.startswith(token + "/") or value.startswith(token + "\\"):
             rest = value[len(token) + 1:].replace("\\", "/")
-            return os.path.normpath(os.path.join(prefix, *rest.split("/")))
+            target = os.path.realpath(os.path.join(prefix, *rest.split("/")))
+            boundary = os.path.realpath(prefix)
+            if os.path.commonpath([boundary, target]) != boundary:
+                raise ValueError("Display path escapes its declared root")
+            return target
     if value.startswith(GENERIC_TOKEN + "/") or value.startswith(GENERIC_TOKEN + "\\"):
         name = value[len(GENERIC_TOKEN) + 1:].replace("\\", "/")
         found = _find_unique_basename(name, roots)

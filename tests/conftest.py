@@ -6,6 +6,7 @@ Pytest Configuration
 import os
 import sys
 import importlib
+import pytest
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
@@ -25,3 +26,16 @@ if _loaded_config is not None and not hasattr(_loaded_config, "__path__"):
 # parent-directory helper from inserting a same-named flat module into
 # ``sys.modules`` before application imports begin.
 importlib.import_module("config")
+
+
+@pytest.fixture(autouse=True)
+def isolated_auth_fixture(monkeypatch):
+    """Existing account tests explicitly opt into enrollment; not a server default.
+
+    Clear process-wide auth budgets between tests, never between real requests.
+    Default-closed tests delete this environment override in their own scope.
+    """
+    monkeypatch.setenv("BRACHYBOT_ALLOW_SELF_REGISTRATION", "1")
+    from web import server_support
+    with server_support._rate_limit_lock:
+        server_support._rate_limit_auth_store.clear()

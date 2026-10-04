@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import math
 from pathlib import Path
 from typing import Any, Optional, Tuple
 
@@ -19,7 +20,7 @@ try:
     DOSE_MODEL_SCALE_GY = float(os.environ.get("BRACHYBOT_DOSE_MODEL_SCALE_GY", "190.8"))
 except ValueError as exc:  # Fail during startup instead of displaying wrong Gy.
     raise ValueError("BRACHYBOT_DOSE_MODEL_SCALE_GY must be numeric") from exc
-if not DOSE_MODEL_SCALE_GY > 0:
+if not math.isfinite(DOSE_MODEL_SCALE_GY) or not DOSE_MODEL_SCALE_GY > 0:
     raise ValueError("BRACHYBOT_DOSE_MODEL_SCALE_GY must be greater than zero")
 
 try:
@@ -28,7 +29,7 @@ try:
     )
 except ValueError as exc:
     raise ValueError("BRACHYBOT_DEFAULT_PRESCRIPTION_GY must be numeric") from exc
-if not DEFAULT_PRESCRIPTION_GY > 0:
+if not math.isfinite(DEFAULT_PRESCRIPTION_GY) or not DEFAULT_PRESCRIPTION_GY > 0:
     raise ValueError("BRACHYBOT_DEFAULT_PRESCRIPTION_GY must be greater than zero")
 
 
@@ -129,13 +130,13 @@ def resolve_dose_scale_gy(
                 value = float(source.get(key))
             except (TypeError, ValueError):
                 continue
-            if value > 0:
+            if math.isfinite(value) and value > 0:
                 return value
     try:
         explicit = float(dose_scale_gy)
     except (TypeError, ValueError):
         explicit = 0.0
-    if explicit > 0:
+    if math.isfinite(explicit) and explicit > 0:
         return explicit
     return LEGACY_DOSE_MODEL_SCALE_GY
 
@@ -220,12 +221,7 @@ def load_dose_model(explicit_path: Optional[str] = None,
 
     try:
         import torch
-        try:
-            checkpoint = torch.load(path, map_location=device, weights_only=False)
-        except TypeError:
-            # Compatibility with trusted local PyTorch releases without the
-            # weights_only keyword. The deployed checkpoint is a metadata dict.
-            checkpoint = torch.load(path, map_location=device)
+        checkpoint = torch.load(path, map_location=device, weights_only=True)
 
         if not isinstance(checkpoint, dict) or "model_state_dict" not in checkpoint:
             raise ValueError(

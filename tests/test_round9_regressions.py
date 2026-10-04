@@ -211,7 +211,7 @@ class Round9RegressionTests(unittest.TestCase):
             def iter_content(self, chunk_size):
                 return []
 
-        with mock.patch("tool_factory.web_fetch.requests.get", return_value=BlockedResp()):
+        with mock.patch("tool_factory.web_fetch.public_get", return_value=BlockedResp()), mock.patch.object(tool, "_validate_public_url", return_value=(True, "")):
             r = tool._execute(url="https://zhuanlan.zhihu.com/p/123")
             assert r.success is False
             assert "blocked automated access" in r.error
@@ -227,7 +227,7 @@ class Round9RegressionTests(unittest.TestCase):
             def iter_content(self, chunk_size):
                 return []
 
-        with mock.patch("tool_factory.web_fetch.requests.get", return_value=ServerResp()):
+        with mock.patch("tool_factory.web_fetch.public_get", return_value=ServerResp()), mock.patch.object(tool, "_validate_public_url", return_value=(True, "")):
             r = tool._execute(url="https://example.com/")
             assert r.success is False
             assert "server error" in r.error

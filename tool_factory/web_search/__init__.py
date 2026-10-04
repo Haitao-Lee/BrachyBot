@@ -310,7 +310,7 @@ def _search_weather(query: str, max_results: int = 5) -> List[Dict]:
     if not city:
         city = "Shanghai"
 
-    resp = requests.get(f"https://wttr.in/{city}?format=j1", headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+    resp = requests.get(f"https://wttr.in/{quote_plus(city, safe='')}?format=j1", headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
     if resp.status_code == 200:
         data = resp.json()
         current = data.get("current_condition", [{}])[0]

@@ -128,46 +128,53 @@ class VoCoProstateTool(BaseTool):
         original_direction = image.GetDirection()
 
         import tempfile
-        tmp_path = os.path.join(tempfile.gettempdir(), f"voco_input_{os.getpid()}.nii.gz")
-        sitk.WriteImage(image, tmp_path)
+        fd, tmp_path = tempfile.mkstemp(prefix="brachybot_voco_", suffix=".nii.gz")
+        os.close(fd)
+        try:
+            sitk.WriteImage(image, tmp_path)
 
-        test_ds = Dataset(data=[{"image": tmp_path}], transform=transforms)
-        test_loader = DataLoader(test_ds, batch_size=1, shuffle=False, num_workers=0)
+            test_ds = Dataset(data=[{"image": tmp_path}], transform=transforms)
+            test_loader = DataLoader(test_ds, batch_size=1, shuffle=False, num_workers=0)
 
-        model_inferer = partial(
-            sliding_window_inference,
-            roi_size=list(self.ROI_SIZE),
-            sw_batch_size=4,
-            predictor=self._model,
-            overlap=0.75,
-        )
+            model_inferer = partial(
+                sliding_window_inference,
+                roi_size=list(self.ROI_SIZE),
+                sw_batch_size=4,
+                predictor=self._model,
+                overlap=0.75,
+            )
 
-        with torch.no_grad():
-            for batch_data in test_loader:
-                data = batch_data["image"].to(self._device)
-                with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=torch.cuda.is_available()):
-                    logits = model_inferer(data)
-                output = logits.argmax(1, keepdim=True)
-                pred_array = output.squeeze(0).squeeze(0).cpu().numpy()
+            with torch.no_grad():
+                for batch_data in test_loader:
+                    data = batch_data["image"].to(self._device)
+                    with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=torch.cuda.is_available()):
+                        logits = model_inferer(data)
+                    output = logits.argmax(1, keepdim=True)
+                    pred_array = output.squeeze(0).squeeze(0).cpu().numpy()
 
-                # Create prediction image in transformed space
-                pred_image = sitk.GetImageFromArray(pred_array)
-                # Set spacing to the resampled spacing (1.5, 1.5, 1.5)
-                pred_image.SetSpacing(self.SPACING)
-                # Set origin and direction to match the transformed image
-                # The transforms change orientation to RAS, so we need to account for that
-                pred_image.SetOrigin((0.0, 0.0, 0.0))  # RAS origin
-                pred_image.SetDirection((1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0))  # RAS direction
+                    # Create prediction image in transformed space
+                    pred_image = sitk.GetImageFromArray(pred_array)
+                    # Set spacing to the resampled spacing (1.5, 1.5, 1.5)
+                    pred_image.SetSpacing(self.SPACING)
+                    # Set origin and direction to match the transformed image
+                    # The transforms change orientation to RAS, so we need to account for that
+                    pred_image.SetOrigin((0.0, 0.0, 0.0))  # RAS origin
+                    pred_image.SetDirection((1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0))  # RAS direction
 
-                # Resample prediction back to original image space using nearest neighbor
-                resampler = sitk.ResampleImageFilter()
-                resampler.SetReferenceImage(image)
-                resampler.SetInterpolator(sitk.sitkNearestNeighbor)
-                resampler.SetDefaultPixelValue(0)
-                resampled_pred = resampler.Execute(pred_image)
+                    # Resample prediction back to original image space using nearest neighbor
+                    resampler = sitk.ResampleImageFilter()
+                    resampler.SetReferenceImage(image)
+                    resampler.SetInterpolator(sitk.sitkNearestNeighbor)
+                    resampler.SetDefaultPixelValue(0)
+                    resampled_pred = resampler.Execute(pred_image)
 
-                return sitk.GetArrayFromImage(resampled_pred)
-        return np.zeros(image.GetSize()[::-1], dtype=np.int64)
+                    return sitk.GetArrayFromImage(resampled_pred)
+            return np.zeros(image.GetSize()[::-1], dtype=np.int64)
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except FileNotFoundError:
+                pass
 
     def _execute(self, **kwargs) -> ToolResult:
 

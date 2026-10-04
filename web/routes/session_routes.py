@@ -51,12 +51,8 @@ def register_session_routes(
         to its originating case after the user navigates elsewhere. Only the
         create/select endpoints update ``bb_session_id``.
         """
-        candidate = str(
-            explicit_session_id
-            or request.headers.get("X-BrachyBot-Session")
-            or session.get("bb_session_id")
-            or ""
-        ).strip()
+        from web.request_identity import explicit_case_id
+        candidate = str(explicit_case_id(explicit_session_id) or session.get("bb_session_id") or "").strip()
         if not candidate:
             raise WorkspaceError("No case session is selected")
         entry = store.require_local_session(user["id"], candidate)

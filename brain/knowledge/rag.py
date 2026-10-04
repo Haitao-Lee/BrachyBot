@@ -6,7 +6,8 @@ import hashlib
 import json
 import math
 import re
-from collections import Counter
+from collections import Counter, OrderedDict
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -50,7 +51,8 @@ class SimpleRAG:
 
     def __init__(self, knowledge_base: Optional[str] = None):
         self.knowledge_base = Path(knowledge_base) if knowledge_base else _AUTHORITATIVE_KB
-        self._cache: Dict[str, List[str]] = {}
+        self._cache: Dict[str, List[str]] = OrderedDict()
+        self._cache_lock = threading.RLock()
         self._documents: Optional[List[Dict[str, Any]]] = None
 
     def _load(self) -> Dict[str, Any]:
@@ -98,9 +100,12 @@ class SimpleRAG:
         return documents
 
     def retrieve(self, query: str, top_k: int = 5) -> List[str]:
+        top_k = max(1, min(int(top_k), 20))
         cache_key = hashlib.sha256(f"{query}:{top_k}".encode("utf-8")).hexdigest()
-        if cache_key in self._cache:
-            return list(self._cache[cache_key])
+        with self._cache_lock:
+            if cache_key in self._cache:
+                self._cache.move_to_end(cache_key)
+                return list(self._cache[cache_key])
 
         if self._documents is None:
             self._documents = self._build_documents()
@@ -133,7 +138,12 @@ class SimpleRAG:
             citations = " ".join(f"[{url}]({url})" for url in document["urls"])
             suffix = f" Sources: {citations}" if citations else " Source link unavailable; do not use as a clinical limit."
             results.append(f"{document['title']}: {document['body']}{suffix}")
-        self._cache[cache_key] = results
+        with self._cache_lock:
+            # Do not retain unusually large KB responses for every user query.
+            if sum(len(item.encode("utf-8")) for item in results) <= 256 * 1024:
+                self._cache[cache_key] = results
+                while len(self._cache) > 256:
+                    self._cache.popitem(last=False)
         return list(results)
 
 

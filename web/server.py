@@ -388,11 +388,11 @@ def create_app(config: Optional[Dict] = None):
         _allowed_origins = [o.strip() for o in _origin_env.split(",") if o.strip()]
     elif _TRUST_NETWORK:
         _allowed_origins = [
-            r"http://localhost(:\d+)?",
-            r"http://127\.0\.0\.1(:\d+)?",
-            r"http://10\.\d+\.\d+\.\d+(:\d+)?",
-            r"http://192\.168\.\d+\.\d+(:\d+)?",
-            r"http://172\.(1[6-9]|2\d|3[01])\.\d+\.\d+(:\d+)?",
+            r"^http://localhost(:\d+)?$",
+            r"^http://127\.0\.0\.1(:\d+)?$",
+            r"^http://10\.\d+\.\d+\.\d+(:\d+)?$",
+            r"^http://192\.168\.\d+\.\d+(:\d+)?$",
+            r"^http://172\.(1[6-9]|2\d|3[01])\.\d+\.\d+(:\d+)?$",
         ]
     else:
         _allowed_origins = [
@@ -527,8 +527,9 @@ def create_app(config: Optional[Dict] = None):
         if not user:
             raise WorkspaceError("Authentication required")
         requested_value = explicit_session_id
-        if requested_value is None and has_request_context():
-            requested_value = str(request.headers.get("X-BrachyBot-Session") or "").strip() or None
+        if has_request_context():
+            from web.request_identity import explicit_case_id
+            requested_value = explicit_case_id(explicit_session_id)
         if requested_value:
             try:
                 requested = _normalize_session_id(requested_value)
@@ -565,13 +566,8 @@ def create_app(config: Optional[Dict] = None):
             candidate = ""
             if user:
                 try:
-                    candidate = str(request.headers.get("X-BrachyBot-Session") or "").strip()
-                    if not candidate and request.is_json:
-                        body = request.get_json(silent=True)
-                        if isinstance(body, Mapping):
-                            candidate = str(body.get("session_id") or "").strip()
-                    if not candidate:
-                        candidate = str(request.args.get("session_id") or "").strip()
+                    from web.request_identity import explicit_case_id
+                    candidate = str(explicit_case_id() or "")
                     if not candidate:
                         candidate = str(flask_session.get("bb_session_id") or "").strip()
                 except Exception:
@@ -1178,6 +1174,25 @@ def create_app(config: Optional[Dict] = None):
                         exc_info=True,
                     )
 
+    def _flush_workspaces_on_shutdown():
+        # Capture references under the cache lock, then serialize without it.
+        # A cold-start shell is not a complete clinical snapshot.
+        with _sessions_lock:
+            cached = list(_sessions.items())
+        for (owner_id, case_id), agent in cached:
+            if getattr(agent, "_workspace_hydration_in_progress", False):
+                continue
+            try:
+                workspace_store.flush_agent_checkpoint(owner_id, case_id, agent, "server.shutdown")
+            except Exception:
+                logger.exception("Unable to flush a cached workspace during shutdown")
+
+    app.extensions["brachybot_shutdown_flush"] = _flush_workspaces_on_shutdown
+
+    @app.errorhandler(WorkspaceError)
+    def _workspace_unavailable(_error):
+        return jsonify({"error": "The requested case is unavailable", "code": "workspace_unavailable"}), 403
+
     if config.get("expose_internal_seams"):
         # Deterministic hooks for the archive sweep regression tests. They are
         # opt-in so production callers never expose cache internals.
@@ -1255,6 +1270,18 @@ def create_app(config: Optional[Dict] = None):
         return None
 
     @app.after_request
+    def _security_response_headers(response):
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        response.headers.setdefault("Referrer-Policy", "same-origin")
+        # Compatible baseline; strict script nonces require migrating the UI's
+        # existing inline handlers and are not falsely claimed here.
+        response.headers.setdefault("Content-Security-Policy", "object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'")
+        if request.path.startswith("/api/"):
+            response.headers.setdefault("Cache-Control", "private, no-store")
+        return response
+
+    @app.after_request
     def _log_slow_requests(response):
         """Persist requests that took long enough to risk a browser timeout.
 
@@ -1295,7 +1322,10 @@ def create_app(config: Optional[Dict] = None):
             return None
         if not contains_display_token(body):
             return None
-        _restore_display_tokens(body, _request_display_roots())
+        try:
+            _restore_display_tokens(body, _request_display_roots())
+        except (ValueError, OSError):
+            return jsonify({"error": "Invalid display path"}), 400
         return None
 
     @app.after_request
@@ -1339,6 +1369,7 @@ def create_app(config: Optional[Dict] = None):
             return None
         if not request.path.startswith("/api/"):
             return None
+        body_target = ""
         try:
             user = current_user(workspace_store)
             if not user:
@@ -1355,11 +1386,8 @@ def create_app(config: Optional[Dict] = None):
             body_target = ""
             if isinstance(body, Mapping):
                 body_target = str(body.get("session_id") or "").strip()
-            explicit_target = (
-                str(request.headers.get("X-BrachyBot-Session") or "").strip()
-                or body_target
-                or str(request.args.get("session_id") or "").strip()
-            )
+            from web.request_identity import explicit_case_id
+            explicit_target = explicit_case_id()
             if explicit_target:
                 try:
                     target_id = _normalize_session_id(explicit_target)
@@ -1375,7 +1403,7 @@ def create_app(config: Optional[Dict] = None):
         except WorkspaceLeaseConflict as exc:
             return jsonify({"error": str(exc), "code": "workspace_locked", "editable": False}), 409
         except WorkspaceError as exc:
-            if request.headers.get("X-BrachyBot-Session"):
+            if request.headers.get("X-BrachyBot-Session") or body_target or request.args.get("session_id"):
                 # A request-bound case is part of the operation's identity.
                 # Never fall back to the currently selected browser case when
                 # that identity is malformed, deleted, or owned by another
@@ -1659,6 +1687,8 @@ def create_app(config: Optional[Dict] = None):
         import os
         import SimpleITK as sitk
 
+        from utils.image_limits import image_header, read_image, check_voxel_count
+
         if not os.path.exists(path):
             raise FileNotFoundError(f"Path does not exist: {path}")
 
@@ -1690,7 +1720,7 @@ def create_app(config: Optional[Dict] = None):
                     continue
                 # Read Modality + size from first file
                 try:
-                    head = sitk.ReadImage(files[0])
+                    head = image_header(files[0])
                     modality = ""
                     try:
                         modality = head.GetMetaData("0008|0060") or ""
@@ -1715,12 +1745,14 @@ def create_app(config: Optional[Dict] = None):
                 )
 
             reader.SetFileNames(best_files)
+            header = image_header(best_files[0])
+            check_voxel_count(header.GetSize(), components=header.GetNumberOfComponents(), series_length=len(best_files))
             img = reader.Execute()
 
             # Try to enrich tags from the first slice (after series read,
             # tags may be empty on the volume — read a slice separately).
             try:
-                first = sitk.ReadImage(best_files[0])
+                first = read_image(best_files[0])
                 best_meta["first_slice_tags"] = _extract_dicom_tags(first)
             except Exception:
                 pass
@@ -1744,7 +1776,7 @@ def create_app(config: Optional[Dict] = None):
                 ext = ".nii.gz"
 
         if ext in volume_exts or ext == ".nii.gz":
-            return sitk.ReadImage(path), "volume", {"file": os.path.abspath(path)}
+            return read_image(path), "volume", {"file": os.path.abspath(path)}
 
         # 3) Single .dcm (or unknown — try DICOM reader)
         if ext in (".dcm", ".dicom", ".dic") or ext == "":
@@ -1752,6 +1784,8 @@ def create_app(config: Optional[Dict] = None):
             try:
                 rdr = sitk.ImageFileReader()
                 rdr.SetFileName(path)
+                rdr.ReadImageInformation()
+                check_voxel_count(rdr.GetSize(), components=rdr.GetNumberOfComponents())
                 img = rdr.Execute()
                 meta = {"file": os.path.abspath(path)}
                 try:
@@ -1761,10 +1795,10 @@ def create_app(config: Optional[Dict] = None):
                 return img, "dicom_file", meta
             except Exception:
                 # Last-resort generic read
-                return sitk.ReadImage(path), "volume", {"file": os.path.abspath(path)}
+                return read_image(path), "volume", {"file": os.path.abspath(path)}
 
         # Unknown extension — try anyway
-        return sitk.ReadImage(path), "volume", {"file": os.path.abspath(path)}
+        return read_image(path), "volume", {"file": os.path.abspath(path)}
 
     def _load_ct_image(path):
         """Load a CT and normalize 4-D sources to one 3-D planning frame.
@@ -2456,6 +2490,10 @@ def run_server(port: int = 8080, host: str = "127.0.0.1", config: Optional[Dict]
             logger.warning("[shutdown] Unable to close live Monitor snapshots", exc_info=True)
         # Signal all background threads to stop
         _shutdown_event.set()
+        try:
+            app.extensions["brachybot_shutdown_flush"]()
+        except Exception:
+            logger.exception("Unable to finish workspace shutdown checkpoints")
         # Kill any orphaned subprocesses (e.g. GPU manager)
         try:
             import psutil
@@ -2466,6 +2504,7 @@ def run_server(port: int = 8080, host: str = "127.0.0.1", config: Optional[Dict]
                     child.terminate()
                 except Exception:
                     pass
+            psutil.wait_procs(children, timeout=5)
         except ImportError:
             pass
         # Cancel any pending AbortControllers from refreshPlanningUI

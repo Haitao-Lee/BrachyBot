@@ -40,9 +40,40 @@ MUTATING_TOOLS: FrozenSet[str] = frozenset({
     "report_auto_fill",
     "report_generator",
     "ui_controller",
+    "dicom_rt_exporter",
+    "case_memory",
+    "code_executor", "code_writer", "write_tool", "create_tool", "tool_creator",
+    "self_evolve", "evolve", "shell_executor", "env_manager",
 })
 
 PLANNING_ANCHOR_TOOLS: FrozenSet[str] = frozenset({"planning_pipeline"})
+
+# Mixed-effect tools must be classified by the validated operation, not merely
+# by the tool name. Unknown/missing explicit operations remain fail-closed.
+READ_ONLY_ACTIONS = {
+    "case_memory": frozenset({"retrieve", "search", "list", "statistics", "recommend"}),
+    "surgical_guide": frozenset({"status", "analyze"}),
+}
+
+
+def tool_call_is_mutating(tool_name: str, params: object = None) -> bool:
+    """Classify an invocation without granting it any execution permission.
+
+    A name-only legacy case-memory query describes the read capability. Actual
+    callers must pass parameters (including {} for a missing action); that
+    distinction preserves the old introspection API without allowing a save
+    or a malformed call to acquire the read exemption.
+    """
+    name = str(tool_name or "")
+    if name not in MUTATING_TOOLS:
+        return False
+    if name == "case_memory" and params is None:
+        return False
+    if name in READ_ONLY_ACTIONS and isinstance(params, Mapping):
+        action = params.get("action")
+        if isinstance(action, str) and action.strip().lower() in READ_ONLY_ACTIONS[name]:
+            return False
+    return True
 
 # Missing masks are deterministic prerequisites of an authorized full planning
 # workflow.  A guide is deliberately absent: it is generated only when the
@@ -114,7 +145,9 @@ class TurnExecutionAuthorization:
         source: str,
     ) -> None:
         self.grant_tools(
-            (str(call.get("tool") or "") for call in calls if isinstance(call, Mapping) and not call.get("_argument_error")),
+            (str(call.get("tool") or "") for call in calls
+             if isinstance(call, Mapping) and not call.get("_argument_error")
+             and tool_call_is_mutating(call.get("tool", ""), call.get("params") or {})),
             source=source,
         )
 
@@ -146,9 +179,9 @@ class TurnExecutionAuthorization:
     def workflow_allowed(self, workflow: str) -> bool:
         return str(workflow or "") in self.granted_workflows
 
-    def tool_allowed(self, tool_name: str) -> bool:
+    def tool_allowed(self, tool_name: str, params: object = None) -> bool:
         name = str(tool_name or "")
-        if name not in MUTATING_TOOLS:
+        if not tool_call_is_mutating(name, params):
             return True
         if name in self.granted_tools:
             return True

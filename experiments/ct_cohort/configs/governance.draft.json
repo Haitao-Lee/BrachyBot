@@ -1,0 +1,14 @@
+{
+  "status": "DRAFT",
+  "institutional_determination": null,
+  "data_steward": null,
+  "nas_server_acl_verified": false,
+  "permitted_datasets": [],
+  "model_data_flow_approved": false,
+  "dataset_license_evidence": [],
+  "retention_owner": null,
+  "retention_policy": null,
+  "face_geometry_access": "restricted; server-side ACL verification required",
+  "external_model_destinations": [],
+  "approval_date": null
+}

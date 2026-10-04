@@ -1,0 +1,4052 @@
+[
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000003:Arterial:kidney_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000003/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000003/segmentations/kidney_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      301,
+      212,
+      215
+    ],
+    "label_shape": [
+      301,
+      212,
+      215
+    ],
+    "ct_spacing": [
+      1.5,
+      1.5,
+      1.5
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "unknown",
+      "unknown"
+    ],
+    "label_units": [
+      "mm",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "R",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        1.5,
+        0.0,
+        0.0,
+        -235.55859375
+      ],
+      [
+        0.0,
+        1.5,
+        0.0,
+        -45.05859375
+      ],
+      [
+        0.0,
+        0.0,
+        1.5,
+        26.5
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0.0,
+      1.0000000591389835
+    ],
+    "finite_integer_labels": false,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 5.9138983488082886e-08,
+    "explicit_label_canonicalization_required": true,
+    "target_voxels": 136415,
+    "target_volume_cm3": 460.400625,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000001:Arterial:kidney_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000001/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000001/segmentations/kidney_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      511,
+      404,
+      339
+    ],
+    "label_shape": [
+      511,
+      404,
+      339
+    ],
+    "ct_spacing": [
+      0.822265625,
+      0.822265625,
+      2.5
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "unknown",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        -0.822265625,
+        0.0,
+        0.0,
+        214.0888671875
+      ],
+      [
+        -0.0,
+        0.822265625,
+        0.0,
+        -16.5888671875
+      ],
+      [
+        0.0,
+        -0.0,
+        2.5,
+        -957.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 0,
+    "target_volume_cm3": 0.0,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "EMPTY_TARGET"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000001:Arterial:liver_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000001/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000001/segmentations/liver_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      511,
+      404,
+      339
+    ],
+    "label_shape": [
+      511,
+      404,
+      339
+    ],
+    "ct_spacing": [
+      0.822265625,
+      0.822265625,
+      2.5
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "mm",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        -0.822265625,
+        0.0,
+        0.0,
+        214.0888671875
+      ],
+      [
+        -0.0,
+        0.822265625,
+        0.0,
+        -16.5888671875
+      ],
+      [
+        0.0,
+        -0.0,
+        2.5,
+        -957.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0,
+      1
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 11574,
+    "target_volume_cm3": 19.5635541343689,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000003:Arterial:liver_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000003/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000003/segmentations/liver_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      301,
+      212,
+      215
+    ],
+    "label_shape": [
+      301,
+      212,
+      215
+    ],
+    "ct_spacing": [
+      1.5,
+      1.5,
+      1.5
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "unknown",
+      "unknown"
+    ],
+    "label_units": [
+      "mm",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "R",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        1.5,
+        0.0,
+        0.0,
+        -235.55859375
+      ],
+      [
+        0.0,
+        1.5,
+        0.0,
+        -45.05859375
+      ],
+      [
+        0.0,
+        0.0,
+        1.5,
+        26.5
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 0,
+    "target_volume_cm3": 0.0,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "EMPTY_TARGET"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000188:Arterial:pancreas_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000188/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000188/segmentations/pancreatic_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      512,
+      350,
+      493
+    ],
+    "label_shape": [
+      512,
+      350,
+      493
+    ],
+    "ct_spacing": [
+      0.68359375,
+      0.68359375,
+      1.25
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "unknown",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "P",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        -0.68359375,
+        0.0,
+        0.0,
+        168.0
+      ],
+      [
+        0.0,
+        -0.68359375,
+        0.0,
+        15.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.25,
+        -617.7999267578125
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0.0,
+      1.0000000591389835
+    ],
+    "finite_integer_labels": false,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 5.9138983488082886e-08,
+    "explicit_label_canonicalization_required": true,
+    "target_voxels": 1130,
+    "target_volume_cm3": 0.6600618362426758,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000001:Arterial:pancreas_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000001/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000001/segmentations/pancreatic_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      511,
+      404,
+      339
+    ],
+    "label_shape": [
+      511,
+      404,
+      339
+    ],
+    "ct_spacing": [
+      0.822265625,
+      0.822265625,
+      2.5
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "mm",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        -0.822265625,
+        0.0,
+        0.0,
+        214.0888671875
+      ],
+      [
+        -0.0,
+        0.822265625,
+        0.0,
+        -16.5888671875
+      ],
+      [
+        0.0,
+        -0.0,
+        2.5,
+        -957.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 0,
+    "target_volume_cm3": 0.0,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "EMPTY_TARGET"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000086:Delay:kidney_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000086/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000086/segmentations/kidney_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      506,
+      368,
+      302
+    ],
+    "label_shape": [
+      506,
+      368,
+      302
+    ],
+    "ct_spacing": [
+      0.7109375,
+      0.7109375,
+      1.2000000476837158
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "mm",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "P",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        -0.7109375,
+        0.0,
+        0.0,
+        207.64453125
+      ],
+      [
+        0.0,
+        -0.7109375,
+        0.0,
+        311.64453125
+      ],
+      [
+        0.0,
+        0.0,
+        1.2000000476837158,
+        -874.2000122070312
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0,
+      1
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 1291,
+    "target_volume_cm3": 0.7830154852158011,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000391:Delay:kidney_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000391/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000391/segmentations/kidney_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      489,
+      315,
+      391
+    ],
+    "label_shape": [
+      489,
+      315,
+      391
+    ],
+    "ct_spacing": [
+      0.8261719942092896,
+      0.8261719942092896,
+      0.800000011920929
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "unknown",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "P",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        -0.8261719942092896,
+        0.0,
+        0.0,
+        219.0
+      ],
+      [
+        0.0,
+        -0.8261719942092896,
+        0.0,
+        211.5
+      ],
+      [
+        0.0,
+        0.0,
+        0.800000011920929,
+        -297.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 0,
+    "target_volume_cm3": 0.0,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "EMPTY_TARGET"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000201:Delay:liver_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000201/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000201/segmentations/liver_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      432,
+      338,
+      49
+    ],
+    "label_shape": [
+      432,
+      338,
+      49
+    ],
+    "ct_spacing": [
+      0.9765620231628418,
+      0.9765620231628418,
+      5.0
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "sec"
+    ],
+    "label_units": [
+      "mm",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "R",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        0.9765620231628418,
+        0.0,
+        0.0,
+        -499.023193359375
+      ],
+      [
+        0.0,
+        0.9765620231628418,
+        0.0,
+        -499.023193359375
+      ],
+      [
+        0.0,
+        0.0,
+        5.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0,
+      1
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 187243,
+    "target_volume_cm3": 892.8433282163259,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000086:Delay:liver_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000086/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000086/segmentations/liver_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      506,
+      368,
+      302
+    ],
+    "label_shape": [
+      506,
+      368,
+      302
+    ],
+    "ct_spacing": [
+      0.7109375,
+      0.7109375,
+      1.2000000476837158
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "unknown",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "P",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        -0.7109375,
+        0.0,
+        0.0,
+        207.64453125
+      ],
+      [
+        0.0,
+        -0.7109375,
+        0.0,
+        311.64453125
+      ],
+      [
+        0.0,
+        0.0,
+        1.2000000476837158,
+        -874.2000122070312
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 0,
+    "target_volume_cm3": 0.0,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "EMPTY_TARGET"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000265:Delay:pancreas_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000265/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000265/segmentations/pancreatic_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      502,
+      498,
+      340
+    ],
+    "label_shape": [
+      502,
+      498,
+      340
+    ],
+    "ct_spacing": [
+      0.798828125,
+      0.798828125,
+      2.5
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "mm",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        -0.798828125,
+        0.0,
+        0.0,
+        198.1005859375
+      ],
+      [
+        -0.0,
+        0.798828125,
+        0.0,
+        20.8994140625
+      ],
+      [
+        0.0,
+        -0.0,
+        2.5,
+        -1308.5
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0,
+      1
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 25182,
+    "target_volume_cm3": 40.17324583053589,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000086:Delay:pancreas_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000086/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000086/segmentations/pancreatic_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      506,
+      368,
+      302
+    ],
+    "label_shape": [
+      506,
+      368,
+      302
+    ],
+    "ct_spacing": [
+      0.7109375,
+      0.7109375,
+      1.2000000476837158
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "mm",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "P",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        -0.7109375,
+        0.0,
+        0.0,
+        207.64453125
+      ],
+      [
+        0.0,
+        -0.7109375,
+        0.0,
+        311.64453125
+      ],
+      [
+        0.0,
+        0.0,
+        1.2000000476837158,
+        -874.2000122070312
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 0,
+    "target_volume_cm3": 0.0,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "EMPTY_TARGET"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000017:Plain:kidney_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000017/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000017/segmentations/kidney_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      512,
+      422,
+      101
+    ],
+    "label_shape": [
+      512,
+      422,
+      101
+    ],
+    "ct_spacing": [
+      0.5859375,
+      0.5859375,
+      2.5
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "mm",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "P",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        -0.5859375,
+        0.0,
+        0.0,
+        143.70703125
+      ],
+      [
+        0.0,
+        -0.5859375,
+        0.0,
+        309.70703125
+      ],
+      [
+        0.0,
+        0.0,
+        2.5,
+        -573.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0,
+      1
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 1073,
+    "target_volume_cm3": 0.9209632873535156,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000012:Plain:kidney_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000012/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000012/segmentations/kidney_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      512,
+      433,
+      540
+    ],
+    "label_shape": [
+      512,
+      433,
+      540
+    ],
+    "ct_spacing": [
+      0.5859375,
+      0.5859375,
+      0.8133580684661865
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "unknown",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "P",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        -0.5859375,
+        0.0,
+        0.0,
+        147.70703125
+      ],
+      [
+        0.0,
+        -0.5859375,
+        0.0,
+        323.70703125
+      ],
+      [
+        0.0,
+        0.0,
+        0.8133580684661865,
+        -380.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 0,
+    "target_volume_cm3": 0.0,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "EMPTY_TARGET"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000012:Plain:liver_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000012/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000012/segmentations/liver_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      512,
+      433,
+      540
+    ],
+    "label_shape": [
+      512,
+      433,
+      540
+    ],
+    "ct_spacing": [
+      0.5859375,
+      0.5859375,
+      0.8133580684661865
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "mm",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "P",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        -0.5859375,
+        0.0,
+        0.0,
+        147.70703125
+      ],
+      [
+        0.0,
+        -0.5859375,
+        0.0,
+        323.70703125
+      ],
+      [
+        0.0,
+        0.0,
+        0.8133580684661865,
+        -380.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0,
+      1
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 6433,
+    "target_volume_cm3": 1.796378787612411,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000017:Plain:liver_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000017/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000017/segmentations/liver_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      512,
+      422,
+      101
+    ],
+    "label_shape": [
+      512,
+      422,
+      101
+    ],
+    "ct_spacing": [
+      0.5859375,
+      0.5859375,
+      2.5
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "unknown",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "P",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        -0.5859375,
+        0.0,
+        0.0,
+        143.70703125
+      ],
+      [
+        0.0,
+        -0.5859375,
+        0.0,
+        309.70703125
+      ],
+      [
+        0.0,
+        0.0,
+        2.5,
+        -573.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 0,
+    "target_volume_cm3": 0.0,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "EMPTY_TARGET"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000250:Plain:pancreas_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000250/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000250/segmentations/pancreatic_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      512,
+      370,
+      148
+    ],
+    "label_shape": [
+      512,
+      370,
+      148
+    ],
+    "ct_spacing": [
+      0.6699219942092896,
+      0.6699219942092896,
+      2.5
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "unknown",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "P",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        -0.6699219942092896,
+        0.0,
+        0.0,
+        171.5
+      ],
+      [
+        0.0,
+        -0.6699219942092896,
+        0.0,
+        171.5
+      ],
+      [
+        0.0,
+        0.0,
+        2.5,
+        -398.5
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0.0,
+      1.0000000591389835
+    ],
+    "finite_integer_labels": false,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 5.9138983488082886e-08,
+    "explicit_label_canonicalization_required": true,
+    "target_voxels": 1301,
+    "target_volume_cm3": 1.4597072932532054,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000012:Plain:pancreas_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000012/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000012/segmentations/pancreatic_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      512,
+      433,
+      540
+    ],
+    "label_shape": [
+      512,
+      433,
+      540
+    ],
+    "ct_spacing": [
+      0.5859375,
+      0.5859375,
+      0.8133580684661865
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "mm",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "P",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        -0.5859375,
+        0.0,
+        0.0,
+        147.70703125
+      ],
+      [
+        0.0,
+        -0.5859375,
+        0.0,
+        323.70703125
+      ],
+      [
+        0.0,
+        0.0,
+        0.8133580684661865,
+        -380.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 0,
+    "target_volume_cm3": 0.0,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "EMPTY_TARGET"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000004:UNKNOWN:colon_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000004/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000004/segmentations/colon_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      512,
+      368,
+      91
+    ],
+    "label_shape": [
+      512,
+      368,
+      91
+    ],
+    "ct_spacing": [
+      0.703125,
+      0.703125,
+      5.0
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "sec"
+    ],
+    "label_units": [
+      "mm",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "R",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        0.703125,
+        0.0,
+        0.0,
+        -182.89688110351562
+      ],
+      [
+        0.0,
+        0.703125,
+        0.0,
+        -179.296875
+      ],
+      [
+        0.0,
+        0.0,
+        5.0,
+        -427.75
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0,
+      1
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 6841,
+    "target_volume_cm3": 16.910430908203125,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00002193:UNKNOWN:colon_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00002193/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00002193/segmentations/colon_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      489,
+      316,
+      161
+    ],
+    "label_shape": [
+      489,
+      316,
+      161
+    ],
+    "ct_spacing": [
+      0.7773439884185791,
+      0.7773439884185791,
+      2.5
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "sec"
+    ],
+    "label_units": [
+      "mm",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "R",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        0.7773439884185791,
+        0.0,
+        0.0,
+        -217.7227783203125
+      ],
+      [
+        0.0,
+        0.7773439884185791,
+        0.0,
+        -202.4227752685547
+      ],
+      [
+        0.0,
+        0.0,
+        2.5,
+        -364.25
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0,
+      1
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 604,
+    "target_volume_cm3": 0.9124381512590611,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000008:UNKNOWN:kidney_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000008/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000008/segmentations/kidney_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      494,
+      387,
+      79
+    ],
+    "label_shape": [
+      494,
+      387,
+      79
+    ],
+    "ct_spacing": [
+      0.7578125,
+      0.7578125,
+      5.0
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "unknown",
+      "unknown"
+    ],
+    "label_units": [
+      "unknown",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "R",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        0.7578125,
+        0.0,
+        0.0,
+        -387.2421875
+      ],
+      [
+        0.0,
+        0.7578125,
+        0.0,
+        -387.2421875
+      ],
+      [
+        0.0,
+        0.0,
+        5.0,
+        -390.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0,
+      1
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 172856,
+    "target_volume_cm3": 496.33853271484367,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000002:UNKNOWN:kidney_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000002/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000002/segmentations/kidney_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      403,
+      313,
+      201
+    ],
+    "label_shape": [
+      403,
+      313,
+      201
+    ],
+    "ct_spacing": [
+      0.8984375,
+      0.8984375,
+      1.0
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "unknown",
+      "unknown"
+    ],
+    "label_units": [
+      "unknown",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "R",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        0.8984375,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.8984375,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 0,
+    "target_volume_cm3": 0.0,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "EMPTY_TARGET"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000014:UNKNOWN:liver_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000014/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000014/segmentations/liver_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      262,
+      213,
+      166
+    ],
+    "label_shape": [
+      262,
+      213,
+      166
+    ],
+    "ct_spacing": [
+      1.5,
+      1.4999998807907104,
+      1.5
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "unknown",
+      "unknown"
+    ],
+    "label_units": [
+      "mm",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "R",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        1.4999737739562988,
+        0.008999837562441826,
+        0.0,
+        -206.55751037597656
+      ],
+      [
+        -0.008871718309819698,
+        1.499972939491272,
+        0.0,
+        -17.938629150390625
+      ],
+      [
+        0.0,
+        0.0,
+        1.5,
+        58.670448303222656
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0.0,
+      1.0000000591389835
+    ],
+    "finite_integer_labels": false,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 5.9138983488082886e-08,
+    "explicit_label_canonicalization_required": true,
+    "target_voxels": 15329,
+    "target_volume_cm3": 51.73536902604652,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000002:UNKNOWN:liver_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000002/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000002/segmentations/liver_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      403,
+      313,
+      201
+    ],
+    "label_shape": [
+      403,
+      313,
+      201
+    ],
+    "ct_spacing": [
+      0.8984375,
+      0.8984375,
+      1.0
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "unknown",
+      "unknown"
+    ],
+    "label_units": [
+      "unknown",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "R",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        0.8984375,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.8984375,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 0,
+    "target_volume_cm3": 0.0,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "EMPTY_TARGET"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000015:UNKNOWN:pancreas_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000015/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000015/segmentations/pancreatic_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      502,
+      342,
+      33
+    ],
+    "label_shape": [
+      502,
+      342,
+      33
+    ],
+    "ct_spacing": [
+      0.84375,
+      0.84375,
+      7.5
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "sec"
+    ],
+    "label_units": [
+      "unknown",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "R",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        0.84375,
+        0.0,
+        0.0,
+        -431.15625
+      ],
+      [
+        0.0,
+        0.84375,
+        0.0,
+        -431.15625
+      ],
+      [
+        0.0,
+        0.0,
+        7.5,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0.0,
+      1.0000000591389835
+    ],
+    "finite_integer_labels": false,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 5.9138983488082886e-08,
+    "explicit_label_canonicalization_required": true,
+    "target_voxels": 73,
+    "target_volume_cm3": 0.38977294921875,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000002:UNKNOWN:pancreas_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000002/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000002/segmentations/pancreatic_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      403,
+      313,
+      201
+    ],
+    "label_shape": [
+      403,
+      313,
+      201
+    ],
+    "ct_spacing": [
+      0.8984375,
+      0.8984375,
+      1.0
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "unknown",
+      "unknown"
+    ],
+    "label_units": [
+      "unknown",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "R",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        0.8984375,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.8984375,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 0,
+    "target_volume_cm3": 0.0,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "EMPTY_TARGET"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000011:Venous:kidney_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000011/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000011/segmentations/kidney_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      512,
+      398,
+      391
+    ],
+    "label_shape": [
+      512,
+      398,
+      391
+    ],
+    "ct_spacing": [
+      0.876953125,
+      0.876953125,
+      2.5
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "mm",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        -0.876953125,
+        0.0,
+        0.0,
+        235.0615234375
+      ],
+      [
+        -0.0,
+        0.876953125,
+        0.0,
+        -7.5615234375
+      ],
+      [
+        0.0,
+        -0.0,
+        2.5,
+        -1269.5
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0,
+      1
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 344,
+    "target_volume_cm3": 0.6613802337646486,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000006:Venous:kidney_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000006/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000006/segmentations/kidney_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      512,
+      448,
+      384
+    ],
+    "label_shape": [
+      512,
+      448,
+      384
+    ],
+    "ct_spacing": [
+      0.78125,
+      0.78125,
+      2.5
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "unknown",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        -0.78125,
+        0.0,
+        0.0,
+        185.609375
+      ],
+      [
+        -0.0,
+        0.78125,
+        0.0,
+        5.390625
+      ],
+      [
+        0.0,
+        -0.0,
+        2.5,
+        -1196.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 0,
+    "target_volume_cm3": 0.0,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "EMPTY_TARGET"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000006:Venous:liver_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000006/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000006/segmentations/liver_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      512,
+      448,
+      384
+    ],
+    "label_shape": [
+      512,
+      448,
+      384
+    ],
+    "ct_spacing": [
+      0.78125,
+      0.78125,
+      2.5
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "mm",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        -0.78125,
+        0.0,
+        0.0,
+        185.609375
+      ],
+      [
+        -0.0,
+        0.78125,
+        0.0,
+        5.390625
+      ],
+      [
+        0.0,
+        -0.0,
+        2.5,
+        -1196.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0,
+      1
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 157,
+    "target_volume_cm3": 0.23956298828125,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000010:Venous:liver_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000010/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000010/segmentations/liver_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      480,
+      433,
+      666
+    ],
+    "label_shape": [
+      480,
+      433,
+      666
+    ],
+    "ct_spacing": [
+      0.951171875,
+      0.951171875,
+      2.5
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "unknown",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        -0.951171875,
+        0.0,
+        0.0,
+        243.0244140625
+      ],
+      [
+        -0.0,
+        0.951171875,
+        0.0,
+        -18.0244140625
+      ],
+      [
+        0.0,
+        -0.0,
+        2.5,
+        -253.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 0,
+    "target_volume_cm3": 0.0,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "EMPTY_TARGET"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000010:Venous:pancreas_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000010/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000010/segmentations/pancreatic_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      480,
+      433,
+      666
+    ],
+    "label_shape": [
+      480,
+      433,
+      666
+    ],
+    "ct_spacing": [
+      0.951171875,
+      0.951171875,
+      2.5
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "mm",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        -0.951171875,
+        0.0,
+        0.0,
+        243.0244140625
+      ],
+      [
+        -0.0,
+        0.951171875,
+        0.0,
+        -18.0244140625
+      ],
+      [
+        0.0,
+        -0.0,
+        2.5,
+        -253.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0,
+      1
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 87,
+    "target_volume_cm3": 0.1967783260345459,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "AbdomenAtlas3:BDMAP_00000006:Venous:pancreas_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/image_only/BDMAP_00000006/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/AbdomenAtlas3/data/mask_only/BDMAP_00000006/segmentations/pancreatic_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      512,
+      448,
+      384
+    ],
+    "label_shape": [
+      512,
+      448,
+      384
+    ],
+    "ct_spacing": [
+      0.78125,
+      0.78125,
+      2.5
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "mm",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        -0.78125,
+        0.0,
+        0.0,
+        185.609375
+      ],
+      [
+        -0.0,
+        0.78125,
+        0.0,
+        5.390625
+      ],
+      [
+        0.0,
+        -0.0,
+        2.5,
+        -1196.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 0,
+    "target_volume_cm3": 0.0,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "EMPTY_TARGET"
+  },
+  {
+    "row_id": "HECKTOR2026:CHUM-001:NCCT_PET_CT:GTVp_1_and_GTVn_2_research_target_union",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/HECKTOR2026/HECKTOR 2026 Training Data No MDA/CHUM-001/CHUM-001__CT.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/HECKTOR2026/HECKTOR 2026 Training Data No MDA/CHUM-001/CHUM-001.nii.gz",
+    "target_values": [
+      1,
+      2
+    ],
+    "ct_shape": [
+      512,
+      512,
+      90
+    ],
+    "label_shape": [
+      512,
+      512,
+      90
+    ],
+    "ct_spacing": [
+      0.9765620231628418,
+      0.9765620231628418,
+      3.30674147605896
+    ],
+    "ct_dtype": "int32",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "mm",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "P",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        -0.9765620231628418,
+        0.0,
+        0.0,
+        250.0
+      ],
+      [
+        0.0,
+        -0.9765620231628418,
+        0.0,
+        250.0
+      ],
+      [
+        0.0,
+        0.0,
+        3.30674147605896,
+        -278.29998779296875
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0,
+      1,
+      2
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 5845,
+    "target_volume_cm3": 18.43250756517701,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "HECKTOR2026:CHUS-055:NCCT_PET_CT:GTVp_1_and_GTVn_2_research_target_union",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/HECKTOR2026/HECKTOR 2026 Training Data No MDA/CHUS-055/CHUS-055__CT.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/HECKTOR2026/HECKTOR 2026 Training Data No MDA/CHUS-055/CHUS-055.nii.gz",
+    "target_values": [
+      1,
+      2
+    ],
+    "ct_shape": [
+      512,
+      512,
+      134
+    ],
+    "label_shape": [
+      512,
+      512,
+      134
+    ],
+    "ct_spacing": [
+      1.171875,
+      1.171875,
+      3.0
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "mm",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "P",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        -1.171875,
+        0.0,
+        0.0,
+        300.0
+      ],
+      [
+        0.0,
+        -1.171875,
+        0.0,
+        230.0
+      ],
+      [
+        0.0,
+        0.0,
+        3.0,
+        -439.5
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0,
+      1,
+      2
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 11372,
+    "target_volume_cm3": 46.8511962890625,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "KiTS21:case_00000:contrast_phase_not_per_case_verified:renal_tumor_excludes_kidney_1_and_cyst_3",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/kits21/kits21/data/case_00000/imaging.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/kits21/kits21/data/case_00000/aggregated_MAJ_seg.nii.gz",
+    "target_values": [
+      2
+    ],
+    "ct_shape": [
+      611,
+      512,
+      512
+    ],
+    "label_shape": [
+      611,
+      512,
+      512
+    ],
+    "ct_spacing": [
+      0.5,
+      0.919921875,
+      0.919921875
+    ],
+    "ct_dtype": "float64",
+    "ct_units": [
+      "unknown",
+      "unknown"
+    ],
+    "label_units": [
+      "unknown",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "I",
+      "P",
+      "L"
+    ],
+    "ct_affine_ras": [
+      [
+        0.0,
+        0.0,
+        -0.919921875,
+        0.0
+      ],
+      [
+        0.0,
+        -0.919921875,
+        0.0,
+        0.0
+      ],
+      [
+        -0.5,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0,
+      1,
+      2
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 20462,
+    "target_volume_cm3": 8.658047756195069,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "KiTS21:case_00150:contrast_phase_not_per_case_verified:renal_tumor_excludes_kidney_1_and_cyst_3",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/kits21/kits21/data/case_00150/imaging.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/kits21/kits21/data/case_00150/aggregated_MAJ_seg.nii.gz",
+    "target_values": [
+      2
+    ],
+    "ct_shape": [
+      106,
+      512,
+      512
+    ],
+    "label_shape": [
+      106,
+      512,
+      512
+    ],
+    "ct_spacing": [
+      2.5,
+      0.7421879768371582,
+      0.7421879768371582
+    ],
+    "ct_dtype": "float64",
+    "ct_units": [
+      "unknown",
+      "unknown"
+    ],
+    "label_units": [
+      "unknown",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "I",
+      "P",
+      "L"
+    ],
+    "ct_affine_ras": [
+      [
+        0.0,
+        0.0,
+        -0.7421879768371582,
+        0.0
+      ],
+      [
+        0.0,
+        -0.7421879768371582,
+        0.0,
+        0.0
+      ],
+      [
+        -2.5,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0,
+      1,
+      2
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 8498,
+    "target_volume_cm3": 11.702659385469918,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "MSD:Task03_Liver:liver_0:declared_by_dataset:cancer",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/MSD/Task03_Liver/Task03_Liver/imagesTr/liver_0.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/MSD/Task03_Liver/Task03_Liver/labelsTr/liver_0.nii.gz",
+    "target_values": [
+      2
+    ],
+    "ct_shape": [
+      512,
+      512,
+      75
+    ],
+    "label_shape": [
+      512,
+      512,
+      75
+    ],
+    "ct_spacing": [
+      0.703125,
+      0.703125,
+      5.0
+    ],
+    "ct_dtype": "float32",
+    "ct_units": [
+      "mm",
+      "sec"
+    ],
+    "label_units": [
+      "mm",
+      "sec"
+    ],
+    "ct_axis_codes": [
+      "R",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        0.703125,
+        0.0,
+        0.0,
+        -186.39688110351562
+      ],
+      [
+        0.0,
+        0.703125,
+        0.0,
+        -179.296875
+      ],
+      [
+        0.0,
+        0.0,
+        5.0,
+        -368.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0,
+      1,
+      2
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 2591,
+    "target_volume_cm3": 6.404754638671875,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "MSD:Task03_Liver:liver_40:declared_by_dataset:cancer",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/MSD/Task03_Liver/Task03_Liver/imagesTr/liver_40.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/MSD/Task03_Liver/Task03_Liver/labelsTr/liver_40.nii.gz",
+    "target_values": [
+      2
+    ],
+    "ct_shape": [
+      512,
+      512,
+      122
+    ],
+    "label_shape": [
+      512,
+      512,
+      122
+    ],
+    "ct_spacing": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "ct_dtype": "float32",
+    "ct_units": [
+      "mm",
+      "sec"
+    ],
+    "label_units": [
+      "mm",
+      "sec"
+    ],
+    "ct_axis_codes": [
+      "R",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0,
+      1,
+      2
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 122480,
+    "target_volume_cm3": 122.48,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "MSD:Task06_Lung:lung_001:declared_by_dataset:cancer",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/MSD/Task06_Lung/imagesTr/lung_001.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/MSD/Task06_Lung/labelsTr/lung_001.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      512,
+      512,
+      304
+    ],
+    "label_shape": [
+      512,
+      512,
+      304
+    ],
+    "ct_spacing": [
+      0.693359375,
+      0.693359375,
+      1.0
+    ],
+    "ct_dtype": "float32",
+    "ct_units": [
+      "mm",
+      "sec"
+    ],
+    "label_units": [
+      "mm",
+      "sec"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        -0.693359375,
+        0.0,
+        0.0,
+        182.1533203125
+      ],
+      [
+        0.0,
+        0.693359375,
+        0.0,
+        -40.1533203125
+      ],
+      [
+        0.0,
+        0.0,
+        1.0,
+        -305.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0,
+      1
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 2719,
+    "target_volume_cm3": 1.307151699066162,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "MSD:Task06_Lung:lung_047:declared_by_dataset:cancer",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/MSD/Task06_Lung/imagesTr/lung_047.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/MSD/Task06_Lung/labelsTr/lung_047.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      512,
+      512,
+      636
+    ],
+    "label_shape": [
+      512,
+      512,
+      636
+    ],
+    "ct_spacing": [
+      0.78515625,
+      0.78515625,
+      1.0
+    ],
+    "ct_dtype": "float32",
+    "ct_units": [
+      "mm",
+      "sec"
+    ],
+    "label_units": [
+      "mm",
+      "sec"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        -0.78515625,
+        0.0,
+        0.0,
+        191.607421875
+      ],
+      [
+        0.0,
+        0.78515625,
+        0.0,
+        -30.607421875
+      ],
+      [
+        0.0,
+        0.0,
+        1.0,
+        -655.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0,
+      1
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 8167,
+    "target_volume_cm3": 5.0347132415771485,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "MSD:Task07_Pancreas:pancreas_001:declared_by_dataset:cancer",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/MSD/Task07_Pancreas/imagesTr/pancreas_001.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/MSD/Task07_Pancreas/labelsTr/pancreas_001.nii.gz",
+    "target_values": [
+      2
+    ],
+    "ct_shape": [
+      512,
+      512,
+      110
+    ],
+    "label_shape": [
+      512,
+      512,
+      110
+    ],
+    "ct_spacing": [
+      0.6445310115814209,
+      0.6445310115814209,
+      2.5
+    ],
+    "ct_dtype": "float32",
+    "ct_units": [
+      "mm",
+      "sec"
+    ],
+    "label_units": [
+      "mm",
+      "sec"
+    ],
+    "ct_axis_codes": [
+      "R",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        0.6445310115814209,
+        0.0,
+        0.0,
+        -329.3553466796875
+      ],
+      [
+        0.0,
+        0.6445310115814209,
+        0.0,
+        -329.3553466796875
+      ],
+      [
+        0.0,
+        0.0,
+        2.5,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0,
+      1,
+      2
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 26153,
+    "target_volume_cm3": 27.161212853881523,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "MSD:Task07_Pancreas:pancreas_229:declared_by_dataset:cancer",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/MSD/Task07_Pancreas/imagesTr/pancreas_229.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/MSD/Task07_Pancreas/labelsTr/pancreas_229.nii.gz",
+    "target_values": [
+      2
+    ],
+    "ct_shape": [
+      512,
+      512,
+      87
+    ],
+    "label_shape": [
+      512,
+      512,
+      87
+    ],
+    "ct_spacing": [
+      0.8789060115814209,
+      0.8789060115814209,
+      2.5
+    ],
+    "ct_dtype": "float32",
+    "ct_units": [
+      "mm",
+      "sec"
+    ],
+    "label_units": [
+      "mm",
+      "sec"
+    ],
+    "ct_axis_codes": [
+      "R",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        0.8789060115814209,
+        0.0,
+        0.0,
+        -449.1209716796875
+      ],
+      [
+        0.0,
+        0.8789060115814209,
+        0.0,
+        -449.1209716796875
+      ],
+      [
+        0.0,
+        0.0,
+        2.5,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0,
+      1,
+      2
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 3733,
+    "target_volume_cm3": 7.209130190662639,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "MSD:Task10_Colon:colon_001:declared_by_dataset:colon cancer primaries",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/MSD/Task10_Colon/imagesTr/colon_001.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/MSD/Task10_Colon/labelsTr/colon_001.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      512,
+      512,
+      60
+    ],
+    "label_shape": [
+      512,
+      512,
+      60
+    ],
+    "ct_spacing": [
+      0.7792969942092896,
+      0.7792969942092896,
+      7.5
+    ],
+    "ct_dtype": "float32",
+    "ct_units": [
+      "mm",
+      "sec"
+    ],
+    "label_units": [
+      "mm",
+      "sec"
+    ],
+    "ct_axis_codes": [
+      "R",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        0.7792969942092896,
+        0.0,
+        0.0,
+        -198.72076416015625
+      ],
+      [
+        0.0,
+        0.7792969942092896,
+        0.0,
+        -198.72076416015625
+      ],
+      [
+        0.0,
+        0.0,
+        7.5,
+        -642.5
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0.0,
+      1.0
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 1783,
+    "target_volume_cm3": 8.121170134818138,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "MSD:Task10_Colon:colon_115:declared_by_dataset:colon cancer primaries",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/MSD/Task10_Colon/imagesTr/colon_115.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/MSD/Task10_Colon/labelsTr/colon_115.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      512,
+      512,
+      97
+    ],
+    "label_shape": [
+      512,
+      512,
+      97
+    ],
+    "ct_spacing": [
+      0.7167969942092896,
+      0.7167969942092896,
+      5.0
+    ],
+    "ct_dtype": "float32",
+    "ct_units": [
+      "mm",
+      "sec"
+    ],
+    "label_units": [
+      "mm",
+      "sec"
+    ],
+    "ct_axis_codes": [
+      "R",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        0.7167969942092896,
+        0.0,
+        0.0,
+        -185.78326416015625
+      ],
+      [
+        0.0,
+        0.7167969942092896,
+        0.0,
+        -350.6043701171875
+      ],
+      [
+        0.0,
+        0.0,
+        5.0,
+        363.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0.0,
+      1.0
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 4706,
+    "target_volume_cm3": 12.089665314252821,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "PanTS:PanTS_00000224:Arterial:pancreatic_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/PanTS/data/ImageTr/PanTS_00000224/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/PanTS/data/LabelTr/PanTS_00000224/segmentations/pancreatic_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      512,
+      380,
+      215
+    ],
+    "label_shape": [
+      512,
+      380,
+      215
+    ],
+    "ct_spacing": [
+      0.7148439884185791,
+      0.7148439884185791,
+      0.800000011920929
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "unknown",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "A",
+      "I"
+    ],
+    "ct_affine_ras": [
+      [
+        -0.7148439884185791,
+        -0.0,
+        -0.0,
+        159.0852813720703
+      ],
+      [
+        -0.0,
+        0.7148439884185791,
+        0.0,
+        -183.0
+      ],
+      [
+        0.0,
+        0.0,
+        -0.800000011920929,
+        -30.610015869140625
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0,
+      1
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 530,
+    "target_volume_cm3": 0.2166648206065064,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "PanTS:PanTS_00000018:Arterial:pancreatic_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/PanTS/data/ImageTr/PanTS_00000018/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/PanTS/data/LabelTr/PanTS_00000018/segmentations/pancreatic_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      467,
+      277,
+      343
+    ],
+    "label_shape": [
+      467,
+      277,
+      343
+    ],
+    "ct_spacing": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "mm",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "A",
+      "I"
+    ],
+    "ct_affine_ras": [
+      [
+        -1.0,
+        -0.0,
+        -0.0,
+        511.0
+      ],
+      [
+        -0.0,
+        1.0,
+        0.0,
+        -0.0
+      ],
+      [
+        0.0,
+        0.0,
+        -1.0,
+        858.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 0,
+    "target_volume_cm3": 0.0,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "EMPTY_TARGET"
+  },
+  {
+    "row_id": "PanTS:PanTS_00000026:Non-contrast:pancreatic_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/PanTS/data/ImageTr/PanTS_00000026/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/PanTS/data/LabelTr/PanTS_00000026/segmentations/pancreatic_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      512,
+      362,
+      81
+    ],
+    "label_shape": [
+      512,
+      362,
+      81
+    ],
+    "ct_spacing": [
+      0.6289060115814209,
+      0.6289060115814209,
+      5.0
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "sec"
+    ],
+    "label_units": [
+      "unknown",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "R",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        0.6289060115814209,
+        0.0,
+        0.0,
+        -160.3709716796875
+      ],
+      [
+        0.0,
+        0.6289060115814209,
+        0.0,
+        -353.3709716796875
+      ],
+      [
+        0.0,
+        0.0,
+        5.0,
+        -494.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0.0,
+      1.0000000591389835
+    ],
+    "finite_integer_labels": false,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 5.9138983488082886e-08,
+    "explicit_label_canonicalization_required": true,
+    "target_voxels": 7244,
+    "target_volume_cm3": 14.325834780225724,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "PanTS:PanTS_00000001:Non-contrast:pancreatic_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/PanTS/data/ImageTr/PanTS_00000001/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/PanTS/data/LabelTr/PanTS_00000001/segmentations/pancreatic_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      512,
+      333,
+      200
+    ],
+    "label_shape": [
+      512,
+      333,
+      200
+    ],
+    "ct_spacing": [
+      0.625,
+      0.625,
+      0.800000011920929
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "mm",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "L",
+      "P",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        -0.625,
+        0.0,
+        0.0,
+        159.6875
+      ],
+      [
+        0.0,
+        -0.625,
+        0.0,
+        293.6875
+      ],
+      [
+        0.0,
+        0.0,
+        0.800000011920929,
+        -451.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 0,
+    "target_volume_cm3": 0.0,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "EMPTY_TARGET"
+  },
+  {
+    "row_id": "PanTS:PanTS_00000003:Venous:pancreatic_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/PanTS/data/ImageTr/PanTS_00000003/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/PanTS/data/LabelTr/PanTS_00000003/segmentations/pancreatic_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      495,
+      349,
+      40
+    ],
+    "label_shape": [
+      495,
+      349,
+      40
+    ],
+    "ct_spacing": [
+      0.8183590173721313,
+      0.8183590173721313,
+      7.5
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "mm",
+      "sec"
+    ],
+    "label_units": [
+      "mm",
+      "sec"
+    ],
+    "ct_axis_codes": [
+      "R",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        0.8183590173721313,
+        0.0,
+        0.0,
+        -418.18145751953125
+      ],
+      [
+        0.0,
+        0.8183590173721313,
+        0.0,
+        -418.18145751953125
+      ],
+      [
+        0.0,
+        0.0,
+        7.5,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0,
+      1
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 1055,
+    "target_volume_cm3": 5.299092095899243,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "PanTS:PanTS_00000006:Venous:pancreatic_lesion_not_histology",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/PanTS/data/ImageTr/PanTS_00000006/ct.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/PanTS/data/LabelTr/PanTS_00000006/segmentations/pancreatic_lesion.nii.gz",
+    "target_values": [
+      1
+    ],
+    "ct_shape": [
+      512,
+      431,
+      114
+    ],
+    "label_shape": [
+      512,
+      431,
+      114
+    ],
+    "ct_spacing": [
+      0.78125,
+      0.78125,
+      5.0
+    ],
+    "ct_dtype": "int16",
+    "ct_units": [
+      "unknown",
+      "unknown"
+    ],
+    "label_units": [
+      "unknown",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "R",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        0.78125,
+        0.0,
+        0.0,
+        -399.21875
+      ],
+      [
+        0.0,
+        0.78125,
+        0.0,
+        -399.21875
+      ],
+      [
+        0.0,
+        0.0,
+        5.0,
+        -565.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 0,
+    "target_volume_cm3": 0.0,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "EMPTY_TARGET"
+  },
+  {
+    "row_id": "SegRap23:segrap_0000:CECT:GTVp_1_and_GTVn_2_research_target_union",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/SegRap23/Images-contrastCT/segrap_0000.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/SegRap23/Masks-Task2/segrap_0000.nii.gz",
+    "target_values": [
+      1,
+      2
+    ],
+    "ct_shape": [
+      1024,
+      1024,
+      127
+    ],
+    "label_shape": [
+      1024,
+      1024,
+      127
+    ],
+    "ct_spacing": [
+      0.5322265625,
+      0.5322265625,
+      3.0
+    ],
+    "ct_dtype": "float64",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "mm",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "R",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        0.5322265625,
+        0.0,
+        0.0,
+        -271.9677734375
+      ],
+      [
+        0.0,
+        0.5322265625,
+        0.0,
+        -283.9677734375
+      ],
+      [
+        0.0,
+        0.0,
+        3.0,
+        -547.5
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0.0,
+      1.0,
+      2.0
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 315712,
+    "target_volume_cm3": 268.2905868530274,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "SegRap23:segrap_0060:CECT:GTVp_1_and_GTVn_2_research_target_union",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/SegRap23/Images-contrastCT/segrap_0060.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/SegRap23/Masks-Task2/segrap_0060.nii.gz",
+    "target_values": [
+      1,
+      2
+    ],
+    "ct_shape": [
+      1024,
+      1024,
+      121
+    ],
+    "label_shape": [
+      1024,
+      1024,
+      121
+    ],
+    "ct_spacing": [
+      0.5615234375,
+      0.5615234375,
+      3.0
+    ],
+    "ct_dtype": "float64",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "mm",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "R",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        0.5615234375,
+        0.0,
+        0.0,
+        -290.9384765625
+      ],
+      [
+        0.0,
+        0.5615234375,
+        0.0,
+        -365.9384765625
+      ],
+      [
+        0.0,
+        0.0,
+        3.0,
+        -498.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0.0,
+      1.0,
+      2.0
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 108691,
+    "target_volume_cm3": 102.81361162662508,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "SegRap23:segrap_0000:NCCT:GTVp_1_and_GTVn_2_research_target_union",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/SegRap23/Images-CT/segrap_0000.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/SegRap23/Masks-Task2/segrap_0000.nii.gz",
+    "target_values": [
+      1,
+      2
+    ],
+    "ct_shape": [
+      1024,
+      1024,
+      127
+    ],
+    "label_shape": [
+      1024,
+      1024,
+      127
+    ],
+    "ct_spacing": [
+      0.5322265625,
+      0.5322265625,
+      3.0
+    ],
+    "ct_dtype": "float64",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "mm",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "R",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        0.5322265625,
+        0.0,
+        0.0,
+        -271.9677734375
+      ],
+      [
+        0.0,
+        0.5322265625,
+        0.0,
+        -283.9677734375
+      ],
+      [
+        0.0,
+        0.0,
+        3.0,
+        -547.5
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0.0,
+      1.0,
+      2.0
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 315712,
+    "target_volume_cm3": 268.2905868530274,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  },
+  {
+    "row_id": "SegRap23:segrap_0060:NCCT:GTVp_1_and_GTVn_2_research_target_union",
+    "ct_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/SegRap23/Images-CT/segrap_0060.nii.gz",
+    "label_path": "/home/lht/nas/LHT_workspace/Brachytherapy/CT/SegRap23/Masks-Task2/segrap_0060.nii.gz",
+    "target_values": [
+      1,
+      2
+    ],
+    "ct_shape": [
+      1024,
+      1024,
+      121
+    ],
+    "label_shape": [
+      1024,
+      1024,
+      121
+    ],
+    "ct_spacing": [
+      0.5615234375,
+      0.5615234375,
+      3.0
+    ],
+    "ct_dtype": "float64",
+    "ct_units": [
+      "mm",
+      "unknown"
+    ],
+    "label_units": [
+      "mm",
+      "unknown"
+    ],
+    "ct_axis_codes": [
+      "R",
+      "A",
+      "S"
+    ],
+    "ct_affine_ras": [
+      [
+        0.5615234375,
+        0.0,
+        0.0,
+        -290.9384765625
+      ],
+      [
+        0.0,
+        0.5615234375,
+        0.0,
+        -365.9384765625
+      ],
+      [
+        0.0,
+        0.0,
+        3.0,
+        -498.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "label_values": [
+      0.0,
+      1.0,
+      2.0
+    ],
+    "finite_integer_labels": true,
+    "near_integer_labels_1e_6": true,
+    "max_integer_deviation": 0.0,
+    "explicit_label_canonicalization_required": false,
+    "target_voxels": 108691,
+    "target_volume_cm3": 102.81361162662508,
+    "nibabel_grid_equal_1e_4": true,
+    "sample_status": "READABLE_NONEMPTY_PAIR"
+  }
+]

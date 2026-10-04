@@ -182,6 +182,9 @@ class DicomRTExporterTool(BaseTool):
         structures = kwargs.get("structures") or {}
         dose_array = kwargs.get("dose_array")
         output_dir = kwargs.get("output_dir")
+        from utils.tool_security import output_directory, workspace_root
+        if workspace_root() is not None:
+            output_dir = str(output_directory("dicom_rt", "."))
         if ct_image is None or not hasattr(ct_image, "GetSize"):
             return ToolResult(success=False, error="ct_image must be a SimpleITK image")
         if not isinstance(structures, dict) or not structures:

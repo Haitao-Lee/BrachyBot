@@ -2892,7 +2892,8 @@ Output (JSON array of strings):"""
                 params = coerce_analysis_tool_call(
                     name, call.get("params") or {}, guard_question,
                 )
-                if name in MUTATING_TOOLS and name != "ui_controller":
+                from agent_runtime.execution_authorization import tool_call_is_mutating
+                if tool_call_is_mutating(name, params) and name != "ui_controller":
                     if name == "surgical_guide":
                         kept.append({**call, "params": params})
                     else:
@@ -3562,27 +3563,29 @@ Output (JSON array of strings):"""
         # provider selected its tool.  ui_controller is governed by the
         # action-level gate above.
         blocked_mutating: List[str] = []
-        if guard_question and getattr(self, "_active_turn_policy", None) is not None and not getattr(
-            getattr(self, "_active_turn_policy", None), "direct_execution", False
-        ):
+        from agent_runtime.execution_authorization import tool_call_is_mutating
+        from utils.tool_security import EXECUTION_TOOLS
+        if (getattr(self, "config", None) or {}).get("_workspace_root"):
+            blocked_mutating.extend(str(call.get("tool") or "") for call in valid if call.get("tool") in EXECUTION_TOOLS)
+            valid = [call for call in valid if call.get("tool") not in EXECUTION_TOOLS]
+        if guard_question and getattr(self, "_active_turn_policy", None) is not None:
             conversation = getattr(getattr(self, "memory", None), "conversation", None)
             allowed = []
             for call in valid:
                 tool_name = str(call.get("tool") or "")
                 call_params = call.get("params") if isinstance(call.get("params"), dict) else {}
                 if (
-                    tool_name in MUTATING_TOOLS
+                    tool_call_is_mutating(tool_name, call_params)
                     and tool_name != "ui_controller"
+                    and tool_name not in (
+                        getattr(active_policy, "execution_grants", ())
+                        if getattr(active_policy, "direct_execution", False) else ()
+                    )
                     # Read-only guide actions ("status" for a state check,
                     # "analyze" for characteristics) never write; blocking them
                     # turned inspection questions into "confirm to regenerate".
-                    and not (
-                        tool_name == "surgical_guide"
-                        and str(call_params.get("action") or "").strip().lower()
-                        in {"status", "analyze"}
-                    )
                     and not _request_parse.mutating_execution_authorized(
-                        guard_question, tool_name, conversation
+                        guard_question, tool_name, conversation, params=call_params
                     )
                 ):
                     logger.warning(

@@ -1,0 +1,10 @@
+{
+  "status": "DRAFT",
+  "reviewer": null,
+  "frozen_at": null,
+  "guide_checks": ["scale_mm", "channel_count_and_axis_alignment", "minimum_wall_and_clearance", "skin_fit_and_fov", "manufacturing_process_acceptance"],
+  "report_checks": ["current_case_and_versions", "current_quality_evaluation", "source_model_and_dose_calibration", "all_required_figures", "figure_framing_and_readability", "annotation_accuracy", "viewer_state_restored"],
+  "numerical_rules": {},
+  "criteria": {},
+  "note": "Numerical manufacturing, clinical and physical-dose tolerances require qualified review. Topology and PDF parsing alone cannot pass this gate."
+}

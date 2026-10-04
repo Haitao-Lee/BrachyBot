@@ -5241,7 +5241,7 @@ function renderDataTree() {
                 run?.num_trajectories ? `${run.num_trajectories} trajectories` : '',
                 run?.total_seeds ? `${run.total_seeds} seeds` : '',
             ].filter(Boolean).join(' · ');
-            const runArg = JSON.stringify(runId).replace(/</g, '\\u003c');
+            const runArg = escHtml(JSON.stringify(runId));
             // Report text and figures are stored in the planning-scoped UI
             // snapshot, while the durable artifact catalog may arrive later.
             // Use both sources so a historical Planning exposes its real

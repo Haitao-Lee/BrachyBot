@@ -9,15 +9,13 @@
     const LEASE_RELEASE_TIMEOUT_MS = 4000;
     let authenticationPromise = null;
 
-    // Keep the editor identity stable across page reloads. A sessionStorage
-    // token made the same browser look like a different editor after reload.
+    // Preserve this tab's editor identity across reloads, not across all tabs.
     let editorToken = null;
-    try { editorToken = localStorage.getItem(editorKey) || sessionStorage.getItem(editorKey); } catch (_) {}
+    try { editorToken = sessionStorage.getItem(editorKey); localStorage.removeItem(editorKey); } catch (_) {}
     if (!editorToken) {
         editorToken = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`).replace(/-/g, '');
     }
     try {
-        localStorage.setItem(editorKey, editorToken);
         sessionStorage.setItem(editorKey, editorToken);
     } catch (_) {}
 
@@ -160,7 +158,6 @@
                 if (keyInput && !keyInput.value) {
                     const storedKey = window.BRACHYBOT_API_KEY
                         || sessionStorage.getItem('BRACHYBOT_API_KEY')
-                        || localStorage.getItem('BRACHYBOT_API_KEY')
                         || '';
                     if (storedKey) keyInput.value = storedKey;
                 }
@@ -213,11 +210,11 @@
         } else {
             // The UI API wrapper normally provides this helper. Keep the
             // login shell usable when static assets are temporarily cached
-            // out of order. Persist to localStorage so the remembered key
-            // survives reloads and tab closings.
+            // out of order. Keep the key in this tab's session only.
             window.BRACHYBOT_API_KEY = key;
-            if (key) localStorage.setItem('BRACHYBOT_API_KEY', key);
-            else localStorage.removeItem('BRACHYBOT_API_KEY');
+            localStorage.removeItem('BRACHYBOT_API_KEY');
+            if (key) sessionStorage.setItem('BRACHYBOT_API_KEY', key);
+            else sessionStorage.removeItem('BRACHYBOT_API_KEY');
         }
     }
 
@@ -716,6 +713,15 @@
             try { await request('/api/auth/logout', {}, false); } catch (_) {}
             state.user = null;
             state.csrfToken = null;
+            try { if (window.SessionCache) await window.SessionCache.closeAndClear(); } catch (_) {}
+            try {
+                for (const storage of [localStorage, sessionStorage]) {
+                    for (const key of Object.keys(storage)) {
+                        if (/^(?:brachybot_|brachyplan_|BRACHYBOT_API_KEY)/.test(key)) storage.removeItem(key);
+                    }
+                }
+            } catch (_) {}
+            window.BRACHYBOT_API_KEY = '';
             // Clear the remembered username so the next sign-in starts blank.
             try { localStorage.removeItem(rememberKey); } catch (_) {}
             location.reload();

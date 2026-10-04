@@ -382,13 +382,16 @@ def build_guide_characteristics_facts(guide_state: Any) -> Dict[str, Any]:
         summary: Dict[str, Any] = {}
         for key in (
             "source_needle_count", "excluded_needle_paths",
-            "max_centerline_deviation_mm", "skin_fit",
+            "max_centerline_deviation_mm", "centerline_deviation_method", "skin_fit",
             "skin_surface_interpolation", "geometry_resolution_mm",
             "requested_geometry_resolution_mm", "bore_quality",
             "needle_spacing", "stage_timings_seconds", "grid_budget",
         ):
             if validation.get(key) is not None:
                 summary[key] = _bounded(validation.get(key))
+        if "centerline_deviation_method" in validation:
+            summary["mesh_centerline_deviation_mm"] = _bounded(validation.get("mesh_centerline_deviation_mm"))
+            summary["mesh_centerline_measured"] = validation.get("mesh_centerline_deviation_mm") is not None
         connectivity = validation.get("plate_connectivity")
         if isinstance(connectivity, Mapping):
             summary["plate_connectivity_single_piece"] = connectivity.get("single_piece")

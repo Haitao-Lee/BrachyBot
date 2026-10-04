@@ -1005,7 +1005,7 @@ class ChatWorkflowMixin:
             # technical details in logs; raw credentials/endpoints/errors do
             # not belong in the user-facing chat stream.
             if finish_reason == "error" or content.startswith("Error:"):
-                logger.warning("Lightweight LLM provider failure: %s", content[:500])
+                logger.warning("Lightweight LLM provider failure (content length=%d)", len(content))
                 local_fallback = self._small_talk_fallback_response(
                     message, "zh" if trace_zh else "en"
                 )
@@ -3495,6 +3495,8 @@ class ChatWorkflowMixin:
 
     def _handle_self_evolution(self) -> str:
         """Handle self-evolution request."""
+        if (getattr(self, "config", None) or {}).get("_workspace_root"):
+            return "Developer code generation and self-evolution are disabled in web case agents."
         if not self.evolution_engine:
             return "Self-evolution system not available."
         results = self.evolution_engine.evolve()
@@ -3516,6 +3518,8 @@ class ChatWorkflowMixin:
 
     def _handle_code_writing(self, params: Dict) -> str:
         """Handle tool code writing request."""
+        if (getattr(self, "config", None) or {}).get("_workspace_root"):
+            return "Developer code generation and self-evolution are disabled in web case agents."
         if not self.tool_code_writer:
             return "Tool code writer not available."
         if not self.brain_available:
@@ -6583,10 +6587,20 @@ class ChatWorkflowMixin:
                     "tool": step.get("tool", ""),
                     "params": step.get("params", {}),
                 })
-        success = "error" not in response.lower() and "fail" not in response.lower()
+        tool_steps = [step for step in (steps or []) if step.get("type") == "tool"]
+        # A fluent answer is not execution evidence. Only record verified
+        # tool completion as a successful execution experience; a text-only
+        # response remains unverified regardless of its language or wording.
+        success = bool(tool_steps) and all(
+            step.get("status") in {"done", "completed"}
+            and step.get("success", True) is True
+            and not (isinstance(step.get("result"), dict) and step["result"].get("success") is False)
+            for step in tool_steps
+        )
         self.exp_memory.record(
             user_intent=message,
-            context={"phase": self.memory.current_phase.value},
+            context={"phase": self.memory.current_phase.value,
+                     "execution_evidence": "completed_tools" if success else "failed_or_unverified"},
             tool_chain=tool_chain,
             outcome=response[:500],
             success=success,

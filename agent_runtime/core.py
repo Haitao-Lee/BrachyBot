@@ -178,6 +178,9 @@ class ToolRegistry:
 
     def is_available(self, name: str) -> bool:
         """Return dynamic tool availability without executing the tool."""
+        from utils.tool_security import EXECUTION_TOOLS
+        if (getattr(self, "security_config", None) or {}).get("_workspace_root") and name in EXECUTION_TOOLS:
+            return False
         tool = self.get(name)
         checker = getattr(tool, "is_available", None)
         if not callable(checker):
@@ -202,7 +205,9 @@ class ToolRegistry:
 
     def execute(self, tool_name: str, **kwargs):
         tool = self.get(tool_name)
-        return tool.execute(**kwargs)
+        from utils.tool_security import tool_scope
+        with tool_scope(getattr(self, "security_config", None)):
+            return tool.execute(**kwargs)
 
     @property
     def tool_names(self) -> List[str]:

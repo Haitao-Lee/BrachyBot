@@ -44,11 +44,8 @@ def register_surgical_guide_routes(app, get_agent):
     def request_case_context():
         store = current_app.extensions.get("brachybot_workspace_store")
         user = current_user(store) if store is not None else None
-        session_id = str(
-            request.headers.get("X-BrachyBot-Session")
-            or flask_session.get("bb_session_id")
-            or ""
-        ).strip()
+        from web.request_identity import explicit_case_id
+        session_id = str(explicit_case_id() or flask_session.get("bb_session_id") or "").strip()
         if not store or not user or not session_id:
             raise SurgicalGuideError("Authenticated case session is required")
         entry = store.get_session(user["id"], session_id)

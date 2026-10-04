@@ -128,33 +128,40 @@ class VoCoAortaVesselTool(BaseTool):
         original_direction = image.GetDirection()
 
         import tempfile
-        tmp_path = os.path.join(tempfile.gettempdir(), f"voco_input_{os.getpid()}.nii.gz")
-        sitk.WriteImage(image, tmp_path)
+        fd, tmp_path = tempfile.mkstemp(prefix="brachybot_voco_", suffix=".nii.gz")
+        os.close(fd)
+        try:
+            sitk.WriteImage(image, tmp_path)
 
-        test_ds = Dataset(data=[{"image": tmp_path}], transform=transforms)
-        test_loader = DataLoader(test_ds, batch_size=1, shuffle=False, num_workers=0)
+            test_ds = Dataset(data=[{"image": tmp_path}], transform=transforms)
+            test_loader = DataLoader(test_ds, batch_size=1, shuffle=False, num_workers=0)
 
-        model_inferer = partial(
-            sliding_window_inference,
-            roi_size=list(self.ROI_SIZE),
-            sw_batch_size=4,
-            predictor=self._model,
-            overlap=0.75,
-        )
+            model_inferer = partial(
+                sliding_window_inference,
+                roi_size=list(self.ROI_SIZE),
+                sw_batch_size=4,
+                predictor=self._model,
+                overlap=0.75,
+            )
 
-        with torch.no_grad():
-            for batch_data in test_loader:
-                data = batch_data["image"].to(self._device)
-                with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=torch.cuda.is_available()):
-                    logits = model_inferer(data)
-                output = logits.argmax(1, keepdim=True)
+            with torch.no_grad():
+                for batch_data in test_loader:
+                    data = batch_data["image"].to(self._device)
+                    with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=torch.cuda.is_available()):
+                        logits = model_inferer(data)
+                    output = logits.argmax(1, keepdim=True)
 
-                output_image = sitk.GetImageFromArray(output.squeeze(0).squeeze(0).cpu().numpy())
-                output_image.SetSpacing(original_spacing)
-                output_image.SetOrigin(original_origin)
-                output_image.SetDirection(original_direction)
-                return sitk.GetArrayFromImage(output_image)
-        return np.zeros(image.GetSize()[::-1], dtype=np.int64)
+                    output_image = sitk.GetImageFromArray(output.squeeze(0).squeeze(0).cpu().numpy())
+                    output_image.SetSpacing(original_spacing)
+                    output_image.SetOrigin(original_origin)
+                    output_image.SetDirection(original_direction)
+                    return sitk.GetArrayFromImage(output_image)
+            return np.zeros(image.GetSize()[::-1], dtype=np.int64)
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except FileNotFoundError:
+                pass
 
     def _execute(self, **kwargs) -> ToolResult:
         image = kwargs.get("image")

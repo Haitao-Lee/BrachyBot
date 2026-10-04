@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "profiles": [
+    {
+      "id": "site-specific-review-required",
+      "version": "draft-1",
+      "status": "DRAFT_NOT_EXECUTABLE",
+      "clinical_reviewer": null,
+      "physics_reviewer": null,
+      "approved_at": null,
+      "applicability": {"site": null, "datasets": [], "target_semantics": [], "phases": [], "purpose": "retrospective research", "required_case_facts": [], "contraindications": []},
+      "evidence": [{"reference": null, "section": null, "applicability": null}],
+      "source": {"isotope": null, "model": null, "strength": null, "strength_unit": null, "time_assumptions": null},
+      "engine": {"name": null, "weights_sha256": null, "calibration": null, "compatibility_review": null},
+      "target_policy": {"kind": "supplied_union_no_margin", "clinical_ctv_claim": false},
+      "oar_policy": {"kind": "product_inference", "constraints": [], "unknown_constraints": "not clinically evaluable"},
+      "guide_policy": {"truncation_margin_mm": 5.0, "manufacturing_acceptance": null},
+      "settings": {"prescription_gy": null, "upper_dose_gy": null, "coverage_fraction": null, "max_iterations": null, "mode": null},
+      "ui_controls": {}
+    }
+  ]
+}

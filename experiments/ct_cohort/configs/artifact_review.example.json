@@ -1,0 +1,12 @@
+{
+  "status": "DRAFT",
+  "recipe_hash": "COPY_ACTUAL_RECIPE_HASH",
+  "attempt_id": "COPY_ACTUAL_ATTEMPT_ID",
+  "reviewer": null,
+  "reviewed_at": null,
+  "artifact_hashes": {},
+  "checks": {},
+  "numerical_observations": {},
+  "rules_hash": "COPY_FROZEN_ACCEPTANCE_RULES_HASH",
+  "note": "Use PASS/FAIL/UNKNOWN for every frozen check; bind all reviewed guide/report/figure bytes to their hashes. Not executable as written."
+}

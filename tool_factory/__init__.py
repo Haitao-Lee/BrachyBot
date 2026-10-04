@@ -140,6 +140,8 @@ class BaseTool(ABC):
         start_time = time.time()
         try:
             with self._operation_tracker():
+                from utils.tool_security import validate_tool_paths
+                validate_tool_paths(self.name, kwargs)
                 self.validate_input(**kwargs)
                 logger.info(f"Executing tool: {self.name}")
                 result = self._execute(**kwargs)

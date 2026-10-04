@@ -1,3 +1,383 @@
+# 2026-10-04 Acceptance follow-up: corrections and remaining release gates
+
+The independent acceptance findings were confirmed. The action-aware authorization contract and the surgical-guide dependency evidence guard are corrected; the current top-level `tests/` suite has been run, including guide-test collection. Final actual-checkout runs under both the old product interpreter and the offline rebuilt candidate each report **2,167 passed, 8 skipped, 17 warnings, 4 subtests passed; zero failures and zero collection errors**. This is not the nested benchmark suite or an authenticated browser/clinical validation. The full disposition, exact test environments, skip reasons, paired evidence, credential-scan boundaries and remaining blockers are recorded in [PRE_RELEASE_ACCEPTANCE_FOLLOWUP_2026-10-04.md](PRE_RELEASE_ACCEPTANCE_FOLLOWUP_2026-10-04.md). That follow-up supersedes the historical test-scope and listener claims below.
+
+The earlier **466 passed / 1 baseline failure + 297 passed** statement describes **764 selected tests**, not a full-suite result. It omitted a real authorization-contract regression and a guide-test collection error. No assertion of “no new failures in the full suite” is justified by that earlier run. The retired report-generator test now exercises the supported report CLI rather than importing a removed module. No scoring criteria were relaxed.
+
+A separate, offline-rebuilt, hash-locked Torch 2.10.0+cu126 candidate environment has passed the top-level suite and bounded synthetic compatibility checks. It has **not** replaced either running service environment and is **not** a real-case/model-physics release qualification. The active LAN environment remains Torch 2.6.0. Provider-side credential revocation is still unverified, and the compromised credential is still detected, without disclosing its value, in the LAN process environment. **Release remains blocked.**
+
+Known literal copies in two restricted historical-backup files and the independent public startup script were deliberately redacted, with a before/after-hash receipt. Consequently, the original backup's 61-file before-hash manifest is no longer unchanged for those two sanitized files; this is disclosed, not silently presented as intact recovery evidence. No other public source was copied, no service was restarted, and no patient experiment was started by this follow-up.
+
+The prior listener statement is obsolete: the observed LAN/public processes are PID 916502 / 917541, started at 19:07:56 / 19:09:45 on 2026-10-04 (Asia/Shanghai), both on loopback. The observation does not identify who restarted them and must not be treated as timeless runtime evidence. Follow-up Python changes require a separately coordinated reload before being described as active protection.
+
+---
+
+# Historical 2026-10-04 independent verification and remediation update
+
+The newest findings below were independently checked against HEAD `0d1dbffe4de291b39737b87ea44961429b12748c`. Corrections, narrowed claims, regression evidence and unresolved release gates are detailed in [PRE_RELEASE_REVIEW_REMEDIATION_2026-10-04.md](PRE_RELEASE_REVIEW_REMEDIATION_2026-10-04.md).
+
+The historical audit is retained below; its checkmarks are original findings, **not** a claim that every item is now closed. One provider-credential literal was redacted. It still requires revocation/rotation. `TRUST_NETWORK` does not disable account authentication; a nominal zero guide-axis deviation is not measured final-mesh QA; legacy calibration must not be silently replaced with another model's scale. The installed Torch 2.6.0 environment remains blocked for release under the newer CVE-2026-24747 advisory.
+
+Final bounded verification: core/security/artifact regressions **466 passed, 1 pre-existing failed**; Monitor/Viewer/report/uploaded-mask/response regressions **297 passed**; the new negative-control file **42 passed** (already included in the core count, not an additional 42 results). Three Node VM harnesses passed with their required source-file arguments. Python compilation, changed-JavaScript syntax, shell syntax and task-delta whitespace checks passed. The one baseline failure imports the absent `benchmarks.generate_final_report`; it is not hidden or weakened.
+
+The selected-file patch is applied only after baseline and overlay hashes match, with a restricted recoverable backup. No active service restart, package installation, patient operation, database/account modification or independent public-checkout change is included. Running Python processes have not been declared updated or secure.
+
+Historical actual-checkout delivery: 61 selected files matched their overlay hashes; the same bounded 466/297 regression counts and three frontend harness successes were reproduced. Recovery directory: `/tmp/brachybot-review-backup-20261004-GQZavM` (0700, private). These are original-delivery facts, not current full-suite or current-listener evidence. Two credential-bearing backup files were subsequently sanitized as described in the acceptance follow-up. Release remains blocked; use the follow-up for the latest validation scope and runtime observations.
+
+---
+
+# 2026-10-04 上线前全库安全与正确性代码审查（Pre-Release Review）
+
+> **本条目是当前最新、权威的上线前审查，位于文件绝对开头。**
+> 覆盖范围：认证/会话、路由授权、Agent 工具执行边界、文件/路径处理、
+> 前端 JS、状态/并发/持久化、规划/剂量/导板数值正确性与部署配置。
+> 方法是静态代码审查 + 跨模块数据流追踪（非渗透测试）。每条结论均标注
+> 复核状态：`✅ 已复核`（逐行读过证据代码）、`⚠️ 待复核`（自动化审查发现，
+> 证据合理但需负责人确认）。本轮**未修改任何产品代码**，只新增本报告。
+
+---
+
+## 0. 执行摘要
+
+**总体结论：当前工作树的开发/LAN 部署形态存在多个可在上线前修复的真实高危问题，其中“关键密钥硬编码 + 内网默认关闭认证/限流/CSRF 边界放松”“Agent 工具层绕过 Web 层文件所有权校验”“DICOM 元数据存储型 XSS”“多标签 CTV 剂量评估把血管当靶区”四项必须在任何非 loopback 暴露之前修复。** 生产入口 `web/public_server.py` 的失败关闭策略本身较完善，但被评审覆盖的是通用 `web/server.py` + `start_server.sh` 这一实际被使用的内网形态。
+
+### 严重度分级
+| 级别 | 含义 |
+|---|---|
+| **P0 严重** | 可直接导致密钥泄露、任意文件读写/跨租户数据泄露、脚本执行、或临床输出错误，上线前必修 |
+| **P1 高** | 明显安全/正确性缺陷，需在有限前置条件下可利用或影响临床可信度 |
+| **P2 中** | 真实缺陷/鲁棒性问题，可能造成数据损坏、误报成功、资源耗尽 |
+| **P3 低 / 加固** | 纵深防御、卫生问题、潜伏风险 |
+
+### 发现数量
+| 级别 | 数量 | 摘要位置 |
+|---|---:|---|
+| P0 | 4 组（展开 12 条） | 第 1 节 |
+| P1 | 9 | 第 2 节 |
+| P2 | 14 | 第 3 节 |
+| P3 / 潜伏 | 14 | 第 4、5 节 |
+
+> 说明：不同评审子任务对同一问题有重叠，本报告已去重并合并到同一条目下。
+
+---
+
+## 1. P0 — 上线前必修（严重）
+
+### P0-1 生产 LLM 密钥硬编码在启动脚本；内网启用“关闭认证”的不安全默认 ✅ 已复核
+
+**证据**
+- `start_server.sh:22`
+  ```bash
+  LLM_API_KEY="[REDACTED_PROVIDER_CREDENTIAL]"
+  ```
+  该值被导出为 `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`（`start_server.sh:91-93`）。
+- `start_server.sh:98,102-106`
+  ```bash
+  HOST="${BRACHYBOT_HOST:-192.168.1.113}"
+  export BRACHYBOT_TRUST_NETWORK="${BRACHYBOT_TRUST_NETWORK:-1}"
+  export BRACHYBOT_ALLOW_INSECURE_REMOTE="${BRACHYBOT_ALLOW_INSECURE_REMOTE:-1}"
+  if [[ "$HOST" != "127.0.0.1" && ... && -z "${BRACHYBOT_API_KEY:-}" ]]; then
+      echo "Notice: ... relying on BRACHYBOT_ALLOW_INSECURE_REMOTE=1 ..."
+  ```
+  `web/server.py` 只有在设置了 `BRACHYBOT_API_KEY` 或 `ALLOW_INSECURE_REMOTE=1` 时才允许非 loopback 绑定，此脚本**默认强制打开不安全覆盖**，且默认监听 `192.168.1.113`。
+
+**影响**
+1. 明文密钥落盘，任何备份/快照/容器镜像/`git clean` 前的目录拷贝都会泄露。**应立即轮换该 key**，因为其已存在于工作树。
+2. 临床服务在内网以明文 HTTP 无 API key 暴露，结合 P0-4 的 Cookie `Secure` 默认关闭，任意同网段主机可访问全部 `/api/*`。
+
+**修复**
+- 删除脚本中的字面量，只从 `BRACHYBOT_OPENCODE_GO_TOKEN`/受保护的 auth 文件读取；启动时校验非空并 `umask 077`。
+- `ALLOW_INSECURE_REMOTE` 默认 `0`；`TRUST_NETWORK` 默认 `0`。非 loopback 必须同时要求 `BRACHYBOT_API_KEY` 且 `BRACHYBOT_COOKIE_SECURE=1`，否则拒绝启动。
+- 尽早轮换密钥并审计历史日志。
+
+---
+
+### P0-2 Agent 工具层绕过 Web 层所有权/路径校验，实现任意文件读写与跨租户读取 ✅ 已复核
+
+Web 路由层通过 `_validate_path` + `owns_path` + `_safe_workspace_child` 做了很好的约束；但**LLM 工具层基本没有等价约束**。下列工具均已在 `AgenticSys.py` 注册并对模型可见。
+
+**(a) `case_memory` 路径穿越（读 + 写）** — `tool_factory/case_memory/__init__.py:73,77,91`
+```python
+case_id = case_data.get("case_id") or self._generate_case_id(case_data)
+case_file = os.path.join(MEMORY_DIR, f"{case_id}.json")
+...
+with open(case_file, 'w', ...)   # _save_case
+...
+case_file = os.path.join(MEMORY_DIR, f"{case_id}.json")  # _retrieve_case
+```
+`case_id` 直接来自工具参数，未做任何清洗。
+- 读：`case_memory(action="retrieve", case_id="../../../../.runtime/workspaces/<user>/<session>/snapshot")` → 读取其他账号的 case 快照（含聊天记录、报告状态）。
+- 写：`case_id="../../../../tmp/evil"` → 在任意可写位置创建 `.json`。
+- 绝对路径也会因 `os.path.join` 丢弃 `MEMORY_DIR` 而逃逸。
+- `case_memory` **不在** `MUTATING_TOOLS`（见 P0-3(b)），因此 `save` 不受二次授权门约束。
+
+**(b) `report_generator` 任意文件写** — `tool_factory/report_generator/__init__.py:43,339-346,352-360`
+```python
+"output_path": {"type": "string", "description": "Output file path (optional)"},
+...
+with open(output_path, 'w', encoding='utf-8') as f:  # _export_json / _export_markdown
+```
+一次合法的“生成报告”授权后，模型可在参数里指定绝对路径或 `../../`，覆盖任意 `.json`/`.md`。（虽在 `MUTATING_TOOLS`，但授权只针对工具名，不约束路径。）
+
+**(c) `dicom_rt_exporter` 任意目录写** — `tool_factory/output/dicom_rt_exporter.py:175,184,227-244`
+```python
+out = Path(output_dir).resolve()
+out.mkdir(parents=True, exist_ok=True)
+...
+dataset.save_as(str(path), ...)   # RTSTRUCT/RTPLAN/RTDOSE
+```
+无根目录约束，可创建目录并写入三个同名 DICOM 文件覆盖目标。
+
+**(d) 分割/规划工具接受任意文件系统路径（任意读 / 跨租户）** — `tool_factory/CTV_seg/__init__.py:509-543`（OAR_seg / seed_seg / planning_pipeline `ct_image_path` 同型）
+```python
+image_path = kwargs.get("image_path"); label_path = kwargs.get("label_path")
+...
+if label_path and os.path.exists(label_path):
+    image = sitk.ReadImage(image_path)
+```
+`AgenticSys.py:2341-2375` 只检查 `os.path.exists`，随后还会把该路径持久化为 `ct_path`，使后续 Viewer 操作都指向外部文件。Web 层对同类操作有 `owned_case_path` 校验，工具层没有。
+
+**(e) `filesystem_browser` / `doc_reader` 根目录包含整个工程（含 `.runtime` 全部租户）** — `tool_factory/filesystem_browser/__init__.py:25-64`
+```python
+project_root = Path(__file__).resolve().parents[2]
+roots = [project_root, project_root / "uploads", project_root / "outputs"]
+...
+resolved.relative_to(root)   # 允许工程根下任意文件
+```
+`WorkspaceStore.runtime_dir` 默认就是 `<project_root>/.runtime`（`workspace_store.py:1817`），因此 `doc_reader(file_path=".../.runtime/workspaces/<other-user>/<session>/snapshot.json")` 可读取其他账号的会话；`filesystem_browser` 可枚举其他租户目录。（`BRACHYBOT_ENABLE_FILESYSTEM_BROWSER_GLOBAL` 不是限制，默认按工程根放行。）
+
+**修复（统一原则）**
+1. 在工具执行入口建立**单一的、独立于模型**的路径授权层：只允许当前 `(user, session)` 的 workspace root 及其派生目录，禁止 `..`/绝对路径/符号链接逃逸；`getattr` 级别的 `_path_is_allowed` 应升级为“必须传入 caller 上下文”。
+2. `case_memory.case_id` 强制 `^[A-Za-z0-9_-]{1,64}$`；`report_generator.output_path`、`dicom_rt_exporter.output_dir` 从公开 schema 移除，改为服务端派生。
+3. 分割/规划工具只接受服务端已登记的 artifact id，不接受原始文件路径；不要把用户路径存成 `ct_path`。
+4. 把 `.runtime`、其他租户 workspace 从 `filesystem_browser`/`doc_reader` 默认根中排除，并让这两个工具绑定当前 case。
+
+---
+
+### P0-3 Agent 执行授权层的自授权与集合不一致 ✅ 已复核
+
+**(a) 供应商工具调用即视为已授权** — `agent_runtime/llm_runtime.py:2344,3895`
+```python
+authorization.grant_tool_calls(valid_tool_calls, source="llm_tool_calls")
+```
+`execution_authorization.py:149-160` 的 `tool_allowed()` 对不在 `MUTATING_TOOLS` 的名字一律返回 `True`。也就是说“模型选择了该工具”本身构成授权，而不是独立于模型的策略。
+
+**(b) `MUTATING_TOOLS` 与其它层不一致** — `agent_runtime/execution_authorization.py:24-43`
+`MUTATING_TOOLS` 缺少 `code_writer` / `self_evolve` / `code_executor` / `shell_executor` / `tool_creator` / `env_manager` / `case_memory`，但 `agent_runtime/step_execution.py:41` 却把 `code_executor/code_writer/self_evolve` 当作 mutating：
+```python
+return tool in MUTATING_TOOLS or tool in {"code_executor", "code_writer", "self_evolve"}
+```
+且 `llm_runtime.py:2443-2447,4196-4199` 直接处理 `self_evolve` / `code_writer`：
+```python
+elif tool_name in ("self_evolve", "evolve"): ...
+elif tool_name in ("code_writer", "write_tool", "create_tool"):
+    result_text = self._handle_code_writing(params)
+```
+三处“mutating 集合”定义不一致，属于纵深防御缺陷：不同执行路径可能选中不同的检查。
+
+**(c) `direct_execution` 回合完全跳过 mutating 二次授权** — `agent_runtime/response_tools.py:3564-3596`
+```python
+if guard_question and ... and not getattr(..., "direct_execution", False):
+    ...
+    if (tool_name in MUTATING_TOOLS and ... and not mutating_execution_authorized(...)):
+        blocked...
+```
+当回合被分类为本地快速路径（`direct_execution=True`，常见于宽泛的规划/分割/路由关键词）时，provider 发出的**所有** mutating 调用都不再对照当轮请求复核，包括注入进来的附加变更。
+
+**(d) 代码执行“沙箱”为可绕过的 denylist**（gated）
+- `tool_factory/code_executor/__init__.py:67-95,135-152,176`：仅过滤字面属性名，且暴露 `getattr/type/object/super` 与 `numpy/pandas/scipy`；`getattr((), "__cla"+"ss__").__bases__[0].__subclasses__()` 即可逃逸，最终 `exec(compile(code,...))`（:176）。
+- `tool_factory/shell_executor/__init__.py:36-43`：允许 `python/pip/curl/wget/git/cp/mv/find`，且**只校验可执行名**，`python -c ...` 即为任意代码执行。
+- `brain/core/tool_code_writer.py:289-324`：子串/AST denylist + `exec_module` 同进程执行，同样可被字符串拼接与 `getattr` 绕过。
+- `tool_factory/env_manager/__init__.py:537-576`：`subprocess.run([python, "-c", command])`。
+以上均由 `BRACHYBOT_ENABLE_*` 在**执行时**才判定（如 `code_executor/_execution_enabled()`），默认关闭——但工具已注册，一旦某部署为“本地可信”打开，即同进程 RCE。
+
+**修复**
+1. 合并为**唯一权威的 mutating/executing 集合**；任何代码/文件/env/self-evolve 工具都必须要求独立的、非模型来源的授权。
+2. `direct_execution` 不应关闭二次校验，只应预置授权（`grant_policy` 已做）。
+3. denylist 无法安全化 `getattr` 可达的解释器：必须在**独立进程/容器 + seccomp/文件系统隔离**中执行，或移除该能力。禁止在生产/多租户部署启用 `BRACHYBOT_ENABLE_*` 执行类工具。
+
+---
+
+### P0-4 DICOM 元数据存储型 XSS；主服务缺少 CSP 等安全头 ✅ 已复核（sink 与数据源）
+
+**证据**
+- 数据源：`web/server.py:1794,1807,1821` 将 DICOM 标签（`patient_name`、`study_description` 等）直接放入 `/api/header/info` 响应。
+- Sink：`web/app/static/js/brachybot-ui-api.js:4782-4793` 收集这些字段，`4879` 与 `4887` 未转义插入：
+  ```js
+  ${g.rows.map(([k, v]) => `<tr>...${k}...${v}...`).join('')}
+  ...
+  host.innerHTML = html;
+  ```
+  同文件其它地方用了 `escHtml`，说明这是遗漏而非策略。
+- 主服务 `web/server.py` 的 `after_request`（1211/1257/1301）只做 checkpoint 与慢请求日志，**未设置 `Content-Security-Policy` / `X-Frame-Options` / `X-Content-Type-Options`**（仅 `public_server.py:63-65` 设置了后两者），因此 XSS 无第二道防线。
+
+**影响**：上传一份恶意构造的 CT/DICOM（产品的首要输入）即可在临床医生已登录会话中执行任意脚本，读取/外传影像与 PHI。
+
+**修复**：所有插值走 `escHtml` 或用 `textContent`；主服务补 CSP（配合 nonce/hash）、`X-Content-Type-Options: nosniff`、`X-Frame-Options: SAMEORIGIN`；把 DICOM 元数据在服务端做白名单与长度限制。
+
+---
+
+## 2. P1 — 高
+
+### P1-1 `web_access.fetch` 无 SSRF 校验 + 搜索结果以“强制指令”注入会话 ✅ 已复核
+- `tool_factory/web_access/__init__.py:299-330`：`fetch_url` → `_fetch_direct` → `self.session.get(url, allow_redirects=True)`，**无 scheme/host/IP 校验**（对比 `web_fetch` 有 `_validate_public_url`）。`web_access` 在 `SEMANTIC_TOOLS`（`agent_runtime/turn_policy.py:27`），不在 `MUTATING_TOOLS`，无需授权。
+- 可利用：`web_access(action="fetch", url="http://169.254.169.254/...")`、`http://127.0.0.1:<port>/...`、或公网 URL 302 跳转到内网（`allow_redirects=True`）。
+- 注入放大：`agent_runtime/llm_runtime.py:2092` 把抓取内容以 `[MANDATORY: ... You MUST use this information ...]` 的 user 角色指令插入对话，可被页面内容劫持为工具调用指令。
+- 修复：统一走 `web_fetch` 的校验（含每次重定向复检、私网/链路本地/元数据 CIDR 阻断、连接钉住已校验 IP）；抓取内容一律作为数据通道（tool 角色/明确分隔），绝不用祈使句注入。
+
+### P1-2 多标签 CTV 剂量评估把动脉/静脉当作靶区（临床正确性） ✅ 已复核
+- `tool_factory/seed_plan/planning_pipeline.py:5259`
+  ```python
+  target_mask = ctv_mask > 0
+  target_doses = dose_distribution[target_mask]
+  ```
+  而 `_build_radiation_volume`（:1438-1463）明确注释：
+  ```
+  CTV mask from nnUNet pancreatic segmentation:
+      1 = tumor (target), 2 = artery (obstacle), 3 = vein (obstacle), 4 = pancreas
+  ```
+  同一工程的 RL 覆盖用 `radiation_volume == target_value`（仅标签 1）。因此对胰腺多标签 CTV，发布的 V100/V150/D90/Dmean/CI/cov 会把血管计入靶区，且与 RL 覆盖互相矛盾。
+- 修复：`target_mask = ctv_mask == target_value`（或落库前把 CTV 二值化到标签 1），并加一条 1/2/3 标签 CTV 的单元测试。
+
+### P1-3 `/api/tasks` 与 `/api/tasks/<id>` 授权失败即“开放” ✅ 已复核
+- `web/routes/planning_routes.py:3077-3083`
+  ```python
+  def task_workspace_owner() -> Optional[str]:
+      try: _, user, session_id = request_case_context()
+      except WorkspaceError: return None
+      return f"{user['id']}:{session_id}"
+  # :8479
+  return jsonify(task_manager.get_all_tasks(workspace_owner=task_workspace_owner()))
+  ```
+- `web/server_support.py:337-353`：`workspace_owner is None` 时**跳过 owner 过滤**，返回全部租户任务。
+- 任意已认证用户带一个不归属的 `X-BrachyBot-Session` 头即可让 owner 解析失败 → 返回所有账号的 task（类型、描述、result）。目前全局 task_manager 无生产写入者，属潜伏 IDOR，但授权逻辑确为 fail-open。
+- 修复：owner 解析失败必须 fail-closed（401/403），永不把 `None` 当“不过滤”。
+
+### P1-4 旧版截图路由无所有权绑定 ✅ 已复核
+- `web/routes/planning_routes.py:9188-9212` `GET /api/screenshots/<filename>`：只校验文件名后缀与共享 API key（`_valid_screenshot_request`），`_safe_screenshot_path` 从共享 `uploads/screenshots/` 提供文件，**不绑定 user/session**。无 API key 的本地部署下 `_valid_api_key_from_request()` 直接返回 `True`。
+- 磁盘上存在真实历史 PNG（可能含患者影像）。文件名虽为随机 12-hex，属“知道即可拿”。
+- 修复：删除旧路由，或改走 `session_artifact_path(user_id, session_id, "screenshots", filename)` 并在有所有权的会话内提供。
+
+### P1-5 部署认证默认值不安全 ✅ 已复核
+- `web/auth.py:251`：`BRACHYBOT_ALLOW_SELF_REGISTRATION` 默认 `"1"`（开放注册）。仅 `public_server.py` 强制关闭。
+- `web/auth.py:21-22,42,59-65`：`BRACHYBOT_DEBUG_ACCOUNT_ENABLED` 默认 `"1"`，用户名 `HaitaoLi`，`BRACHYBOT_DEBUG_SESSION_LIFETIME_DAYS` 默认 `3650`；非 public 模式即生效。
+- `web/auth.py:157`：`SESSION_COOKIE_SECURE` 默认关。
+- `web/server_support.py:194,211,3576-3580`：`_TRUST_NETWORK` 下 `RATE_LIMIT_REQUESTS=9999` 且 `rate_limit` 装饰器**直接短路**，登录端点因此**无暴力破解保护**。
+- 修复：自注册默认 `0`；debug 账号默认关闭并要求显式开启+短生命周期；非 loopback 强制 `Secure`；登录/认证限流不随 `_TRUST_NETWORK` 放松。
+
+### P1-6 GPU 设备管理器泄漏活跃租约计数 ✅ 已复核
+- `plans/device_manager.py:363` `acquire()` 每次都 `self._active_per_device[chosen] += 1`；`get_device()`（:490-496）只调用 `acquire()` 而**从不释放**（`acquire_session` 是唯一成对释放的上下文管理器）。生产调用点大量使用 `get_device`（如 `planning_pipeline.py:1431`、`cnn_dose_engine.py:137`）。
+- `_auto_pick` 用 `count*200` 惩罚，计数无界增长后会把新任务错误地赶离真正空闲的 GPU。`tool_factory/OAR_seg/totalsegmentator_oar.py:537` 的注释已确认同一泄漏。
+- 修复：`acquire()` 不计租约；只在 `acquire_session` 中增减，或让 `get_device` 使用不计数的选择路径。
+
+### P1-7 快照缓存无上界且启动时预热全部活跃病例（OOM） ✅ 已复核
+- `web/workspace_store.py:1855` 定义 `_snapshot_cache`；`:5423` 写入 `copy.deepcopy(snapshot)`；仅在单病例写/删/归档时 `pop`，无 LRU/TTL。启动路径 `mark_running_sessions_interrupted` 会遍历所有 `active` 会话并 `load_snapshot` 进缓存。快照可达数十 MB，长期多用户服务将内存无界增长。
+- 修复：加 LRU 上限，启动扫描不缓存或只存文件 identity；按需重读。
+
+### P1-8 `BRACHYBOT_TRASH_RETENTION_DAYS` 无校验，负值导致全量永久删除 ✅ 已复核
+- `web/workspace_store.py:53-55`
+  ```python
+  TRASH_RETENTION_SECONDS = int(os.environ.get("BRACHYBOT_TRASH_RETENTION_DAYS", "7")) * 24*60*60
+  ```
+  未 clamp（对照 `SESSION_ARCHIVE_AFTER_DAYS` 有 `max(1, …)`）。`-1` 会得到负秒 → cutoff 在未来 → 下次维护把所有 trashed 病例永久删除；非整数则导入即崩溃。
+- 修复：`max(1, …)` + 解析失败回退。
+
+### P1-9 分割/规划工具任意文件读（跨租户）——见 P0-2(d)
+（与 P0-2 同源，此处不重复。）
+
+---
+
+## 3. P2 — 中
+
+| ID | 问题 | 证据 | 影响 | 修复 | 复核 |
+|---|---|---|---|---|---|
+| P2-1 | 导板 QA 中心线偏差恒为 0（误导性 QA） | `web/surgical_guide.py:3793,4627` `"guide_centerline_deviation_mm": 0.0` / `"max_centerline_deviation_mm": 0.0` | 物理导板 QA 声称零偏差，实际 sleeve 轴可能与计划针轴不一致 | 计算 `inward_direction` 与 `(target-external)` 的夹角/距离并上报 | ✅ |
+| P2-2 | OAR 网格不匹配时被静默丢弃 | `plans/dose_pre/evaluation_inputs.py:135` `oar_in = oar if (oar is not None and oar.shape==dose.shape) else None` | 报告中 OAR DVH 整体缺失，且无原因说明（“缺 OAR 视为安全”模式） | 检索到非空 OAR 却无法配对时返回 `resolution_error` | ✅ |
+| P2-3 | 目标覆盖评估异常被吞成 0% | `planning_pipeline.py:2731-2737` shape 不符 `return 0.0`；`except Exception: ... return 0.0` | 评估失败被当作 0% 覆盖并触发修复/落盘 | 传播错误或返回独立 sentinel；与 DVH 统一使用 `>=` | ✅ |
+| P2-4 | 编辑租约守卫与路由解析目标不一致 | `web/server.py:1356-1374`（header→body→query）vs `planning_routes.py:2788-2802`（cookie/header，忽略 body） | 同账号两窗口下，body.session_id 与 cookie 不一致时可绕过租约，静默写另一病例 | 守卫与路由共用同一 canonical 解析器，禁止 body 与 header/cookie 冲突 | ✅ |
+| P2-5 | 登出不清除浏览器侧患者数据缓存 | `brachybot-auth.js:714-722`（未清 `SessionCache` IndexedDB / `localStorage` / API key） | 共享工作站上下一位用户或残留 XSS 可恢复上一位患者的 CT/标签/报告图 | 登出时 `SessionCache.invalidateAll()` + 清 scoped keys | ✅ |
+| P2-6 | 编辑器令牌存 localStorage，跨窗口租约失效 | `brachybot-auth.js:14-22` 同时写 `localStorage`+`sessionStorage`；服务端仅比对 owner_token | 同一浏览器两个窗口共享 token → 第二个窗口被当作续租，绕过“另一窗口正在编辑”只读态，可能并发覆盖临床计划 | 令牌放 `sessionStorage`（按标签页隔离），跨标签协调用 `BroadcastChannel` | ✅ |
+| P2-7 | 世界可写 `/tmp` 中可预测 PID 临时文件（符号链接覆盖） | `tool_factory/CTV_seg/voco_base.py:239` `f"voco_input_{os.getpid()}.nii.gz"`（同型见其它 VoCo 模块） | 本机用户可预置符号链接，使推理写覆盖敏感文件 | 用 `mkdtemp`/`NamedTemporaryFile(O_EXCL)` | ✅ |
+| P2-8 | NIfTI/DICOM 解压炸弹（声明维度无体素上限） | `web/server.py:1747,1767` `sitk.ReadImage(path)`；`_load_ct_image` 强制 `GetArrayFromImage` | 小体积 gzip 头声明巨维度 → `/api/viewer/load` OOM | 读取后按 `prod(GetSize())`/物理体积设上限再分配 | ✅ |
+| P2-9 | RTDOSE `pixel_array` 无上限解析 | `tool_factory/input/dicom_rt_importer.py:63` `np.asarray(dataset.pixel_array)` | 恶意 RTDOSE 依据头部维度大分配 | 校验 `Rows*Cols*Frames`/`ContourData` 总量 | ✅ |
+| P2-10 | `torch.load(weights_only=False)` + torch 版本未钉 | `plans/dose_pre/model_loader.py:224`；`scripts/sat3d_worker.py:175-176`；`requirements.txt` `torch>=2.0.0` | 被篡改的模型文件 → 反序列化 RCE；旧 torch 对应 CVE-2025-32434 | 改 `weights_only=True`/safetensors，校验模型 hash，钉住已修复 torch | ✅ |
+| P2-11 | 依赖全部未钉版本/无锁文件 | `requirements.txt`、`deploy/public/requirements.txt` | 构建不可复现、供应链替换无防护 | `pip-compile`/`uv` 锁文件 + hash | ✅ |
+| P2-12 | CORS 正则未锚定 + credentials | `web/server.py:389-404` `r"http://localhost(:\d+)?"` 等，`CORS(..., supports_credentials=True)` | flask-cors 以 `re.match` 前缀匹配 → `http://localhost.evil.com` 等通过 | 所有模式加 `^...$` 或用精确 origin 比较 | ✅ |
+| P2-13 | 关停不刷新去抖 checkpoint、不 join 子进程 | `web/server.py:2439-2474`；`workspace_store.py:4079` 去抖 timer | 退出丢失 0.75s 窗口内的 memory.store 与延迟 checkpoint，可能留下半写产物 | 关停前 flush agent checkpoint、drain timer、terminate+wait 子进程 | ✅ |
+| P2-14 | “原子写”不 fsync 父目录 | `workspace_store.py:1772-1787` 等（归档路径已 fsync，快照/上传/artifact 未做） | 掉电后目录项可能仍指向旧文件，违背“durable”承诺 | 复用 `_fsync_directory` | ✅ |
+
+补充（同类，证据已读）：`workspace_store.py:2258-2262` 每次启动无条件把用户配额抬回默认 40 GiB（曾有 schema 迁移无版本标记）；`workspace_store.py` 的 `_case_locks/_checkpoint_generations/_session_generations` 等按会话键只增不删（长跑内存缓涨，⚠️ 待复核量化）。
+
+---
+
+## 4. P3 — 低 / 加固
+
+| ID | 问题 | 证据 | 修复 | 复核 |
+|---|---|---|---|---|
+| P3-1 | `/api/healthz` 泄露 PID 与实例 UUID | `planning_routes.py:7053-7080`；`auth.py:181` 豁免认证 | 只返回常量 `{ok:true}`，去掉 pid/instance id | ✅ |
+| P3-2 | `resolve_user_path` 不拒绝 `..` | `utils/display_paths.py:137-147` `os.path.normpath(os.path.join(prefix, *rest.split("/")))` | 解析后断言仍位于 token 前缀之下 | ✅ |
+| P3-3 | `_safe_filename` 允许 `.`/`..` | `workspace_store.py:5711` | 去除前导点或拒绝 `{"",".",".."}` | ✅ |
+| P3-4 | 原始模型输出/CT 路径写入日志（PHI） | `llm_runtime.py:3804`；`chat_workflows.py:1008` | 只记长度/hash，加 PHI 脱敏过滤器 | ✅ |
+| P3-5 | 以子串判定“成功” | `chat_workflows.py:6586` `success = "error" not in ... and "fail" not in ...` | 用结构化 `ToolResult.success`/收据 | ⚠️ |
+| P3-6 | 内联事件属性用 `JSON.stringify` 造成引号截断/注入 | `brachybot-viewer-volume.js:5244,5296-5311` | HTML 转义或改 `data-*`+`addEventListener` | ⚠️ |
+| P3-7 | 报告 `patient.age` 未转义 | `brachybot-report-export.js:1667` | `escHtml(age)` + 类型校验 | ⚠️ |
+| P3-8 | API key 可经 URL 传入并落 localStorage/window | `brachybot-ui-api.js:3347-3358`；`brachybot-auth.js:158-166,209-221` | 禁止 URL 凭证；仅 header/cookie；模块闭包保存 | ⚠️ |
+| P3-9 | `web_fetch` SSRF 校验与请求为两次解析（DNS rebinding） | `tool_factory/web_fetch/__init__.py:104-126,221` | 解析一次并钉住 IP 连接 | ⚠️ |
+| P3-10 | `web_search` 天气城市未 URL 编码 | `tool_factory/web_search/__init__.py:303-313` | `urllib.parse.quote` | ⚠️ |
+| P3-11 | UI bridge 会话解析失败回退到共享 `"web"` 桶 | `planning_routes.py:2799-2802` | fail-closed 401 | ✅ |
+| P3-12 | `Dxcc` off-by-one，满体积时取不到最小剂量 | `planning_pipeline.py:5338-5340` `min(n_voxels, n-1)` | clamp 到 `n` | ✅ |
+| P3-13 | `distance_filter` 当 `upper_bound==lower_bound` 除零 | `plans/geometry.py:1462`；校验见 `planning_pipeline.py:951-953` | 交叉校验 `upper>lower` 并守卫分母 | ✅ |
+| P3-14 | 旧版缺校准默认回退 120 Gy/单位（另有 190.8） | `plans/dose_pre/model_loader.py:134-140` | 缺校准应报错或用 legacy 标记，不得静默 1.59× 缩放 | ⚠️ |
+
+其它 ⚠️ 待复核（自动化审查发现，需负责人确认）：多智能体 reviewer 提示词拼接不可信文本（`agents/orchestrator.py`、`agents/fact_checker.py`，仅顾问性）、RAG/上下文缓存无上界（`brain/knowledge/rag.py:53,100-136`）、`brain/execution/plan_executor.py:88-99` 与 `brain/core/tree_search_planner.py:160-170` 若接线则从 LLM/RAG 计划执行 mutating 工具且无当轮授权、报告 Markdown 清洗器 fail-open 回退（`brachybot-report-export.js:604-615`）、上下文状态轮询竞态（`brachybot-ui-api.js:13727-13759`）、`get_agent` 等待最长 300s 占用 waitress 线程（`web/server.py:658-668`）、`code_executor` 模板把 `ct_path` 以 `.format` 拼进源码（`response_tools.py:434-459`）。
+
+---
+
+## 5. 已核实为**防护良好**的区域（避免误报）
+
+- **租户隔离数据层**：`get_session/rename_session/load_snapshot/save_snapshot_patch/archive_session/move_to_trash/…/write_artifact/owns_path` 全部以 `WHERE id=? AND user_id=?` 约束（`workspace_store.py:2365-2600,5259-5588`）。传其他租户 id 返回 `WorkspaceNotFound`。
+- **会话 id 规范化**：`server.py:511-515` 要求 `[a-f0-9]{32}`。
+- **artifact/导出路径穿越**：`_safe_workspace_child`（`workspace_store.py:1765-1769`）+ `relative_to` 覆盖会话 artifact、截图、CT 删除、报告导出、`api_download_export_file`（`data_routes.py:655-669`）。
+- **归档/传输**：`_tree_manifest` 拒绝符号链接（`workspace_store.py:4487-4537`），传输前校验 hash，使用 `BEGIN IMMEDIATE` 事务。
+- **快照数组反序列化**：`np.load(..., allow_pickle=False)`（`workspace_store.py:864-869`）。
+- **归档解压**：请求路径中无 `tarfile`/`zipfile.extractall`/`shutil.unpack_archive`；`zipfile` 仅用于生成导出且入口名固定。
+- **`web_fetch` SSRF 初检**：校验 scheme/凭证并对每次重定向复检 `is_global`（除 P3-9 的 DNS rebinding 窗口）。
+- **CSRF**：全局为所有非安全 `/api/*` 方法加 `X-CSRF-Token`（`auth.js:631-662`，服务端 `auth.py:186-187` 强制），`/api/auth/*` 三个写路由自带 `csrf_valid()`。
+- **`public_server.py`**：强制 public 模式、关闭 debug 账号与自注册、要求 API key 与 cookie secret 分离、HTTPS-only、仅 loopback 监听——是失败关闭的。
+- **SQL**：全部参数化；唯一 f-string `WHERE {where}` 由固定常量构造（`workspace_store.py:2351`）。
+- **无 debug/admin 路由**，`app.run` 无 `debug=True`。
+
+---
+
+## 6. 上线前必修清单（按顺序）
+
+1. **轮换泄露的 LLM key**；删除 `start_server.sh` 字面量；关闭 `TRUST_NETWORK`/`ALLOW_INSECURE_REMOTE` 默认；非 loopback 强制 API key + `Secure` Cookie。
+2. **建立工具层统一路径/所有权授权层**，修掉 P0-2 全部任意读写/跨租户路径；`case_memory` 清洗 id；移除 `report_generator.output_path`、`dicom_rt_exporter.output_dir` 的公开路径参数。
+3. **修 P0-3 授权不一致**：单一 mutating 集合；`direct_execution` 不跳过二次校验；执行类工具容器化或生产禁用。
+4. **修 DICOM XSS + 补 CSP/XFO/XCTO**。
+5. **修 P1-2 剂量靶区 `ctv_mask==1` 临床 bug**，补多标签单测。
+6. **部署默认硬化**：自注册关、debug 账号关、登录限流独立于 trust 模式。
+7. 按 P1/P2 逐条修复并补回归测试（任务授权 fail-closed、截图所有权、GPU 计数、快照缓存上界、trash retention clamp、原子写 fsync、关停 flush）。
+8. 依赖锁文件 + 模型文件 hash + `weights_only=True`。
+
+---
+
+## 7. 审查方法、范围与局限
+
+- **方法**：并行静态审查 + 人工逐条复核证据代码；按 `file:line` 追踪输入来源到 sink。**非**动态渗透测试，未运行攻击载荷。
+- **覆盖**：web 认证/会话/路由授权、Agent runtime/工具执行、文件/路径/归档、前端 JS、状态/并发/SQLite/配置、规划/剂量/导板数值。
+- **未覆盖/需后续动态验证**：`benchmarks/` 与 `tests/` 内部代码仅作旁证；GPU/CUDA 运行时行为、真实 DICOM 解析器的内存实测、多进程并发压力、前端在真实浏览器中的可利用性（如 XSS 需真实上传样本确认）、`brain/*` 若未接线则其风险为潜伏。
+- **误报控制**：第 5 节列出已确认防护良好的区域，避免重复告警；`⚠️ 待复核` 条目在修复前应由模块负责人确认可利用性。
+- **本报告不修改产品代码**；修复时请逐条附回归测试，避免“文档化但未修复”。
+
+## 8. 结论
+
+代码在**租户数据层、归档传输、CSRF、失败关闭的生产入口**上做得扎实；主要风险集中在**“模型可调用工具层”这个信任边界**与**部署默认值**：Web 层的所有权/路径校验没有下沉到工具层，导致任意读写与跨租户读取；执行类工具是 denylist；授权集合三处不一致；再加上密钥硬编码与内网默认关闭认证/限流/Cookie Secure，构成一套可被组合利用的攻击面。此外还有一条真实临床正确性缺陷（多标签 CTV 靶区）。建议先完成第 6 节 1–5 项，再评估上线。
+
+---
+
+
+
 # 2026-09-15 Incident Review — Release logout/login restored an empty workspace; report capture, LLM status, and input contracts repaired
 
 > **This is the newest authoritative review entry and is intentionally located

@@ -1,0 +1,8 @@
+{
+  "version": "supplied-union-no-margin-v1",
+  "allow_near_integer_repair": true,
+  "max_preflight_memory_bytes": 8589934592,
+  "label_alphabets": {},
+  "unit_overrides": {},
+  "note": "Populate source-specific label alphabets and unknown-unit evidence from reviewed dataset metadata. Empty mappings never authorize repair or assume mm. No component removal or margin expansion."
+}

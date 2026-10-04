@@ -9,6 +9,7 @@ would make a clinically unsafe import look like a native mask.
 from __future__ import annotations
 
 from pathlib import Path
+import math
 from typing import Any, Dict, List
 
 import numpy as np
@@ -32,11 +33,18 @@ def _read_rtstruct(dataset: Any) -> Dict[str, Any]:
         for item in getattr(dataset, "StructureSetROISequence", [])
     }
     structures: List[Dict[str, Any]] = []
+    total_coordinates = 0
     for roi in getattr(dataset, "ROIContourSequence", []):
         number = _uid(getattr(roi, "ReferencedROINumber", ""))
         contours = []
         for contour in getattr(roi, "ContourSequence", []):
-            values = np.asarray(getattr(contour, "ContourData", []), dtype=float)
+            coordinates = getattr(contour, "ContourData", [])
+            total_coordinates += len(coordinates)
+            if total_coordinates > 3_000_000:
+                raise ValueError("RTSTRUCT contour coordinate budget exceeded")
+            values = np.asarray(coordinates, dtype=float)
+            if not np.all(np.isfinite(values)):
+                raise ValueError("RTSTRUCT contour coordinates must be finite")
             if values.size < 9 or values.size % 3:
                 continue
             contours.append({
@@ -60,6 +68,9 @@ def _read_rtstruct(dataset: Any) -> Dict[str, Any]:
 
 
 def _read_rtdose(dataset: Any) -> Dict[str, Any]:
+    dimensions = [int(getattr(dataset, key, default) or 0) for key, default in (("Rows", 0), ("Columns", 0), ("NumberOfFrames", 1))]
+    if any(value <= 0 for value in dimensions) or math.prod(dimensions) > 256 * 1024 * 1024:
+        raise ValueError("RTDOSE dimensions are invalid or exceed the voxel limit")
     pixels = np.asarray(dataset.pixel_array)
     scaling = float(getattr(dataset, "DoseGridScaling", 1.0) or 1.0)
     if scaling <= 0 or not np.isfinite(scaling):

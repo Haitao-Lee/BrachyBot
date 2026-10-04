@@ -1,0 +1,20 @@
+{
+  "PanTS": {
+    "metadata_cases": 9901,
+    "enumerated_ct_cases": 9901,
+    "metadata_without_ct": [],
+    "ct_without_metadata": []
+  },
+  "AbdomenAtlas3": {
+    "metadata_cases": 9262,
+    "enumerated_ct_cases": 9262,
+    "metadata_without_ct": [],
+    "ct_without_metadata": []
+  },
+  "HECKTOR2026": {
+    "metadata_cases": 338,
+    "enumerated_ct_cases": 338,
+    "metadata_without_ct": [],
+    "ct_without_metadata": []
+  }
+}

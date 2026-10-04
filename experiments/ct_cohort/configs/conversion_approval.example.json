@@ -1,0 +1,14 @@
+{
+  "row_id": "COPY_EXACT_DICOM_ROW_ID",
+  "status": "DRAFT",
+  "reviewer": null,
+  "reviewed_at": null,
+  "conversion_path": "COPY_NAS_CONVERSION_JSON_PATH",
+  "conversion_sha256": "COPY_RECEIPT_HASH",
+  "checks": {
+    "registration_same_frame": "UNKNOWN",
+    "target_site_and_components": "UNKNOWN",
+    "resampling_volume_change": "UNKNOWN"
+  },
+  "note": "JSONL approval. Matching DICOM frame UIDs alone do not establish clinical registration or target suitability."
+}

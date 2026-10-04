@@ -1455,6 +1455,8 @@ def distance_filter(x, x1, x2, k):
     Returns:
         float: The filtered output value based on the input `x`.
     """
+    if not np.isfinite(x1) or not np.isfinite(x2) or x2 <= x1:
+        raise ValueError("Distance filter requires finite upper_bound > lower_bound")
     if x < x1:
         return 1e-6  # Return a very small constant value if x is less than x1
     else:

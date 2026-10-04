@@ -1377,8 +1377,10 @@ def test_lease_release_does_not_depend_on_fetch_wrapper_side_effects():
 
 def test_lease_identity_survives_reload_and_is_bound_to_selected_case():
     auth = read("web/app/static/js/brachybot-auth.js")
-    assert "localStorage.getItem(editorKey) || sessionStorage.getItem(editorKey)" in auth
-    assert "localStorage.setItem(editorKey, editorToken)" in auth
+    assert "editorToken = sessionStorage.getItem(editorKey)" in auth
+    assert "localStorage.getItem(editorKey)" not in auth
+    assert "sessionStorage.setItem(editorKey, editorToken)" in auth
+    assert "localStorage.setItem(editorKey, editorToken)" not in auth
     assert "function currentLeaseSessionId()" in auth
 
 

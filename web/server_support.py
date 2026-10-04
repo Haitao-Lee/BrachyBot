@@ -213,6 +213,7 @@ RATE_LIMIT_DATA_REQUESTS = 9999 if _TRUST_NETWORK else _positive_int_env(
 )
 _rate_limit_store: Dict[str, list] = {}
 _rate_limit_data_store: Dict[str, list] = {}
+_rate_limit_auth_store: Dict[str, list] = {}
 _rate_limit_lock = threading.Lock()
 
 _MESH_CACHE_LOCK = threading.Lock()
@@ -3243,6 +3244,8 @@ def _rate_limit_bucket_for_request() -> str:
     bucket because they do not mutate the clinical case.
     """
     path = str(request.path or "/").rstrip("/") or "/"
+    if path in {"/api/auth/login", "/api/auth/register", "/api/auth/change-password"}:
+        return "auth"
     if request.method.upper() == "GET":
         return "data"
     if path in _RATE_LIMIT_DATA_PATHS:
@@ -3253,10 +3256,14 @@ def _rate_limit_bucket_for_request() -> str:
 
 
 def _rate_limit_store_for_bucket(bucket: str) -> Dict[str, list]:
+    if bucket == "auth":
+        return _rate_limit_auth_store
     return _rate_limit_data_store if bucket == "data" else _rate_limit_store
 
 
 def _rate_limit_budget_for_bucket(bucket: str) -> int:
+    if bucket == "auth":
+        return _positive_int_env("BRACHYBOT_AUTH_RATE_LIMIT_REQUESTS", 20)
     return RATE_LIMIT_DATA_REQUESTS if bucket == "data" else RATE_LIMIT_REQUESTS
 
 
@@ -3273,7 +3280,7 @@ def _check_rate_limit(client_ip: str, bucket: str = "default") -> bool:
         _rate_limit_cleanup_counter += 1
         if _rate_limit_cleanup_counter >= 100:
             _rate_limit_cleanup_counter = 0
-            for candidate_store in (_rate_limit_store, _rate_limit_data_store):
+            for candidate_store in (_rate_limit_store, _rate_limit_data_store, _rate_limit_auth_store):
                 expired_ips = [
                     ip for ip, timestamps in candidate_store.items()
                     if all(now - t >= RATE_LIMIT_WINDOW for t in timestamps)
@@ -3576,7 +3583,7 @@ def require_api_key(f):
 def rate_limit(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if not _TRUST_NETWORK:
+        if not _TRUST_NETWORK or _rate_limit_bucket_for_request() == "auth":
             client_ip = _client_ip_for_rate_limit()
             bucket = _rate_limit_bucket_for_request()
             if not _check_rate_limit(client_ip, bucket):

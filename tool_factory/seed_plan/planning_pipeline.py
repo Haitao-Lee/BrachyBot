@@ -963,6 +963,8 @@ def _apply_planning_overrides(args, overrides):
                     maximum=1000.0,
                 )
             )
+        if target["upper_bound"] <= target["lower_bound"]:
+            raise ValueError("distance_filter.upper_bound must exceed lower_bound")
         if "parallel_angle_tolerance_deg" in distance:
             target["parallel_angle_tolerance_deg"] = _finite_number(
                 distance["parallel_angle_tolerance_deg"],
@@ -2729,12 +2731,16 @@ def _plan_target_coverage(plan_res, radiation_volume, target_value, dose_thresho
             for dose_map in entry[2] or []:
                 arr = np.asarray(dose_map)
                 if arr.shape != accumulated.shape:
-                    return 0.0
+                    raise ValueError("Plan dose map does not share the target grid")
+                if not np.all(np.isfinite(arr)):
+                    raise ValueError("Plan dose map contains non-finite values")
                 accumulated += arr
-        return float(np.count_nonzero(accumulated[target] > float(dose_threshold))) / target_count
+        if not np.all(np.isfinite(accumulated)) or not np.isfinite(float(dose_threshold)):
+            raise ValueError("Plan coverage inputs are non-finite")
+        return float(np.count_nonzero(accumulated[target] >= float(dose_threshold))) / target_count
     except Exception:
         logger.exception("[planning] Unable to evaluate plan target coverage")
-        return 0.0
+        raise
 
 
 def _normalize_mask_to_ct_grid(mask, ct_image, label_name, agent=None):
@@ -5214,6 +5220,8 @@ class PlanningPipelineTool(BaseTool):
         # planning-grid error below can be returned to the agent and UI.
         dose_distribution = np.asarray(dose_distribution, dtype=np.float32)
         ctv_mask = np.asarray(ctv_mask)
+        if not np.all(np.isfinite(dose_distribution)) or np.any(dose_distribution < 0):
+            return ToolResult(success=False, error="[dose_eval] Dose values must be finite and non-negative; invalid metrics were not published.")
         logger.info(
             "[dose_eval] dose_distribution shape: %s, ctv_mask shape: %s",
             dose_distribution.shape,
@@ -5256,7 +5264,9 @@ class PlanningPipelineTool(BaseTool):
             previous_metrics,
             dose_scale_gy=(agent.memory.retrieve("dose_scale_gy") if agent else None),
         )
-        target_mask = ctv_mask > 0
+        # Planning uses label 1 after source-specific target normalization.
+        # Pancreatic vessels/organ labels must not contribute to CTV DVH.
+        target_mask = ctv_mask == 1
         target_doses = dose_distribution[target_mask]
 
         if len(target_doses) == 0:
@@ -5336,7 +5346,7 @@ class PlanningPipelineTool(BaseTool):
                             if organ_vol_cm3 < x_cc:
                                 return float(np.min(oar_doses))
                             n_voxels = int(x_cc / voxel_vol_cm3)
-                            n_voxels = max(1, min(n_voxels, n - 1))
+                            n_voxels = max(1, min(n_voxels, n))
                             return float(sorted_doses_desc[n_voxels - 1])
 
                         # Dx%: dose received by x% of organ volume

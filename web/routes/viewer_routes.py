@@ -23,6 +23,7 @@ from web.viewer_cache import (
     viewer_cache_key,
 )
 from utils.ct_volume import normalize_ct_image
+from utils.image_limits import read_image
 from agent_runtime.core import PlanningPhase
 
 try:
@@ -505,11 +506,8 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         """
         store = current_app.extensions.get("brachybot_workspace_store")
         user = current_user(store) if store is not None else None
-        session_id = str(
-            request.headers.get("X-BrachyBot-Session")
-            or flask_session.get("bb_session_id")
-            or ""
-        ).strip()
+        from web.request_identity import explicit_case_id
+        session_id = str(explicit_case_id() or flask_session.get("bb_session_id") or "").strip()
         if store is None or user is None or not session_id:
             raise ValueError("Authenticated case session is required")
         entry = store.get_session(user["id"], session_id)
@@ -1750,7 +1748,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                         ct_path = agent.memory.retrieve("ct_path")
                         if ct_path and os.path.exists(str(ct_path)):
                             from tool_factory.segmentation_alignment import align_label_to_reference
-                            aligned = align_label_to_reference(str(stored_oar_path), sitk.ReadImage(str(ct_path)), "LPI")
+                            aligned = align_label_to_reference(str(stored_oar_path), read_image(ct_path), "LPI")
                             oar_array = sitk.GetArrayFromImage(aligned)
                             stored_oar_source = stored_oar_source or "uploaded_unknown"
                             agent.memory.store("oar_source", stored_oar_source)

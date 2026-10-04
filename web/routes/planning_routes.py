@@ -1090,8 +1090,9 @@ def _validate_label_geometry(ct_path: str, label_path: str) -> Optional[str]:
     user can resample explicitly and upload the corrected label instead.
     """
     try:
-        ct = sitk.ReadImage(ct_path)
-        label = sitk.ReadImage(label_path)
+        from utils.image_limits import read_image
+        ct = read_image(ct_path)
+        label = read_image(label_path)
     except Exception as exc:
         return f"Unable to read CT or mask: {exc}"
     if tuple(ct.GetSize()) != tuple(label.GetSize()):
@@ -1950,11 +1951,8 @@ def register_planning_routes(
         """Resolve and authorize the case explicitly bound to this request."""
         store = current_app.extensions.get("brachybot_workspace_store")
         user = current_user(store) if store is not None else None
-        session_id = str(
-            request.headers.get("X-BrachyBot-Session")
-            or flask_session.get("bb_session_id")
-            or ""
-        ).strip()
+        from web.request_identity import explicit_case_id
+        session_id = str(explicit_case_id() or flask_session.get("bb_session_id") or "").strip()
         if not store or not user or not session_id:
             raise WorkspaceError("Authentication required")
         entry = store.get_session(user["id"], session_id)
@@ -2786,19 +2784,16 @@ def register_planning_routes(
         return bool(store.owns_path(user["id"], session_id, path))
 
     def request_ui_session_id(data: Optional[Dict[str, Any]] = None) -> str:
-        """Resolve UI bridge state from the signed selected-case cookie.
+        """Resolve a request-bound case only after ownership validation.
 
-        UI bridge events used to trust a client-side ``session_id``.  That is
-        unsafe once multiple accounts share one server: even a rejected agent
-        lookup could otherwise expose an in-memory bridge bucket.  Existing
-        payloads retain their field for compatibility but it is deliberately
-        ignored here.
+        The canonical resolver checks all explicit identity fields together;
+        the selected-case cookie is only a fallback, never authorization.
         """
         _ = data
         try:
             _, _, session_id = request_case_context()
         except WorkspaceError:
-            return _ui_session_id("web")
+            raise WorkspaceError("UI bridge requires an authenticated case")
         return _ui_session_id(session_id)
 
     def public_training_status(training: Any) -> Dict[str, Any]:
@@ -7070,7 +7065,6 @@ def register_planning_routes(
         response = jsonify({
             "ok": True,
             "status": "ok",
-            "pid": os.getpid(),
             "server_instance_id": str(
                 current_app.config.get("BRACHYBOT_SERVER_INSTANCE_ID") or ""
             ),
@@ -8423,6 +8417,9 @@ def register_planning_routes(
     @rate_limit
     def api_tasks_stream():
         """SSE endpoint for real-time task progress updates."""
+        owner = task_workspace_owner()
+        if owner is None:
+            return jsonify({"error": "Case unavailable"}), 403
         task_id = request.args.get("task_id")
 
         def generate():
@@ -8431,7 +8428,7 @@ def register_planning_routes(
             try:
                 while time.time() < deadline:
                     if task_id:
-                        task = task_manager.get_task(task_id, workspace_owner=task_workspace_owner())
+                        task = task_manager.get_task(task_id, workspace_owner=owner)
                         payload = {"task": task}
                         if task:
                             data = json.dumps(task)
@@ -8444,7 +8441,7 @@ def register_planning_routes(
                             yield f"event: task\ndata: {json.dumps(payload)}\n\n".encode("utf-8")
                             break
                     else:
-                        tasks = task_manager.get_all_tasks(workspace_owner=task_workspace_owner())
+                        tasks = task_manager.get_all_tasks(workspace_owner=owner)
                         data = json.dumps(tasks)
                         if data != last_payload:
                             last_payload = data
@@ -8468,7 +8465,10 @@ def register_planning_routes(
     @rate_limit
     def api_task_status(task_id):
         """Get task status."""
-        task = task_manager.get_task(task_id, workspace_owner=task_workspace_owner())
+        owner = task_workspace_owner()
+        if owner is None:
+            return jsonify({"error": "Case unavailable"}), 403
+        task = task_manager.get_task(task_id, workspace_owner=owner)
         if task is None:
             return jsonify({"error": "Task not found"}), 404
         return jsonify(task)
@@ -8478,7 +8478,10 @@ def register_planning_routes(
     @rate_limit
     def api_tasks_list():
         """List all tasks."""
-        return jsonify(task_manager.get_all_tasks(workspace_owner=task_workspace_owner()))
+        owner = task_workspace_owner()
+        if owner is None:
+            return jsonify({"error": "Case unavailable"}), 403
+        return jsonify(task_manager.get_all_tasks(workspace_owner=owner))
 
     @app.route("/api/export/report", methods=["POST"])
     @require_api_key
@@ -9200,8 +9203,9 @@ def register_planning_routes(
         if not _valid_screenshot_request(filename):
             return jsonify({"error": "Invalid or missing API key"}), 401
         try:
-            filepath = _safe_screenshot_path(filename)
-        except (ValueError, OSError) as exc:
+            store, user, session_id = request_case_context()
+            filepath = str(store.session_artifact_path(user["id"], session_id, "screenshots", filename))
+        except (WorkspaceError, ValueError, OSError) as exc:
             return jsonify({"error": str(exc)}), 400
         if not os.path.exists(filepath):
             return jsonify({"error": "File not found"}), 404

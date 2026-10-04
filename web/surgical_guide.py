@@ -3791,6 +3791,8 @@ def _planned_path_deviation(paths: Sequence[NeedleGuidePath]) -> List[Dict[str, 
             "line_length_mm": line_length,
             "seed_count": path.seed_count,
             "guide_centerline_deviation_mm": 0.0,
+            "centerline_deviation_method": "nominal_axis_by_construction_not_mesh_measurement",
+            "mesh_centerline_deviation_mm": None,
         })
     return checks
 
@@ -4625,6 +4627,8 @@ def _generate_surgical_guide(
                 if key not in {"holes", "skipped"}
             },
             "max_centerline_deviation_mm": 0.0,
+            "centerline_deviation_method": "nominal_axis_by_construction_not_mesh_measurement",
+            "mesh_centerline_deviation_mm": None,
             "skin_fit": "Physical signed-distance skin surface with explicit clearance",
             "skin_surface_interpolation": "physical_signed_distance_linear",
             "geometry_resolution_mm": params["geometry_resolution_mm"],

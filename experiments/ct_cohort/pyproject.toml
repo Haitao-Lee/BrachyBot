@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "brachybot-ct-cohort"
+version = "0.2.1"
+description = "NAS-backed, real-browser supplied-target research experiments"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24", "nibabel>=5.2", "SimpleITK>=2.3", "playwright>=1.50", "pydicom>=3.0", "pypdf>=5", "trimesh>=4", "psutil>=5.9"]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "pytest-asyncio>=0.24"]
+
+[project.scripts]
+brachy-cohort = "brachycohort.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["brachycohort*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

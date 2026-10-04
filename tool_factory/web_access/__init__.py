@@ -297,113 +297,22 @@ class UnifiedWebAccess:
     # =========================================================================
 
     def fetch_url(self, url: str, max_length: int = 5000) -> Dict:
-        """
-        Fetch a URL with multiple fallback strategies.
-        Returns dict with title, content, source.
-        """
-        parsed = urlparse(url)
-        hostname = parsed.hostname or ""
+        # One transport policy for every public URL, not a weaker alias.
+        from tool_factory.web_fetch import WebFetchTool
+        result = WebFetchTool()._execute(url=url, max_length=max_length)
+        if result.success:
+            return {"success": True, **result.data, "source": "public_fetch"}
+        return {"success": False, "error": result.error or result.message}
 
-        # Strategy 1: Direct fetch
-        result = self._fetch_direct(url, max_length)
-        if result.get("success"):
-            return result
-
-        # Strategy 2: PubMed API for PubMed URLs
-        if "pubmed.ncbi.nlm.nih.gov" in hostname:
-            result = self._fetch_pubmed_api(url, max_length)
-            if result.get("success"):
-                return result
-
-        # Strategy 3: GitHub API for GitHub URLs
-        if "github.com" in hostname:
-            result = self._fetch_github_api(url, max_length)
-            if result.get("success"):
-                return result
-
-        # All strategies failed
-        return {"success": False, "error": "All fetch strategies failed"}
-
+    # Compatibility method names share the same guarded transport.
     def _fetch_direct(self, url: str, max_length: int) -> Dict:
-        """Direct HTTP fetch."""
-        try:
-            response = self.session.get(url, timeout=10, allow_redirects=True)
-            if response.status_code != 200:
-                return {"success": False, "error": f"HTTP {response.status_code}"}
-
-            content_type = response.headers.get('content-type', '')
-
-            if 'application/json' in content_type:
-                text = response.text[:max_length]
-                title = "JSON Response"
-            else:
-                html = response.text
-                title = self._extract_title(html) or "Web Page"
-                text = self._html_to_text(html)[:max_length]
-
-            return {
-                "success": True,
-                "url": url,
-                "title": title,
-                "content": text,
-                "source": "direct"
-            }
-
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+        return self.fetch_url(url, max_length)
 
     def _fetch_pubmed_api(self, url: str, max_length: int) -> Dict:
-        """Fetch PubMed article via API."""
-        match = re.search(r'/(\d+)/?$', url)
-        if not match:
-            return {"success": False, "error": "Cannot extract PMID"}
-
-        pmid = match.group(1)
-        try:
-            api_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id={pmid}&rettype=abstract&retmode=text"
-            response = self.session.get(api_url, timeout=10)
-
-            if response.status_code == 200:
-                text = response.text[:max_length]
-                title_match = re.search(r'\d+\.\s+(.+?)\.', text)
-                title = title_match.group(1) if title_match else f"PubMed {pmid}"
-
-                return {
-                    "success": True,
-                    "url": url,
-                    "title": title,
-                    "content": text,
-                    "source": "PubMed API"
-                }
-
-            return {"success": False, "error": "PubMed API failed"}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+        return self.fetch_url(url, max_length)
 
     def _fetch_github_api(self, url: str, max_length: int) -> Dict:
-        """Fetch GitHub content via API."""
-        match = re.search(r'github\.com/([^/]+)/([^/]+)', url)
-        if not match:
-            return {"success": False, "error": "Cannot parse GitHub URL"}
-
-        owner, repo = match.group(1), match.group(2)
-        try:
-            api_url = f"https://api.github.com/repos/{owner}/{repo}/readme"
-            headers = {'Accept': 'application/vnd.github.v3.raw'}
-            response = self.session.get(api_url, headers=headers, timeout=10)
-
-            if response.status_code == 200:
-                return {
-                    "success": True,
-                    "url": url,
-                    "title": f"{owner}/{repo} README",
-                    "content": response.text[:max_length],
-                    "source": "GitHub API"
-                }
-
-            return {"success": False, "error": "GitHub API failed"}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+        return self.fetch_url(url, max_length)
 
     # =========================================================================
     # Unified Search

@@ -1,0 +1,16 @@
+{
+  "status": "DRAFT",
+  "study_kind": "descriptive_pilot",
+  "investigator": null,
+  "frozen_at": null,
+  "sampling_seed": 1729,
+  "row_ids": [],
+  "arms": ["browser-chat", "manual-ui"],
+  "primary_endpoint": "first_attempt_verified_software_workflow_completion_within_budget",
+  "analysis": null,
+  "sample_size_basis": null,
+  "proposed_main_pairs": 800,
+  "proposed_noninferiority_margin": 0.05,
+  "proposed_reference_clusters": 200,
+  "note": "Proposed design numbers are not approvals or measured power. Frozen row_ids are required even for a pilot."
+}

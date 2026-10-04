@@ -1129,11 +1129,28 @@ def test_new_chat_turn_cannot_revive_cancelled_previous_turn():
     assert agent._is_turn_cancelled(first) is True
 
 
-def test_benchmark_report_generator_resolves_repository_root():
-    from benchmarks import generate_final_report
+def test_benchmark_report_generator_resolves_repository_root(tmp_path):
+    """Exercise the supported reporting CLI from an unrelated working directory.
 
+    The obsolete generate_final_report module was retired. Do not add a dummy
+    `_ROOT` shim or weaken benchmark grading to satisfy its old import test.
+    """
+    import json
+    import subprocess
+    import sys
     expected_root = Path(__file__).resolve().parents[1]
-    assert Path(generate_final_report._ROOT).resolve() == expected_root
+    results = tmp_path / "results"
+    results.mkdir()
+    (results / "sample.record.json").write_text(json.dumps({"item_score": {
+        "track": "F", "verdict": "Meets", "value": .8,
+    }}))
+    process = subprocess.run([
+        sys.executable, str(expected_root / "benchmarks/brachybench/tools/score_report.py"),
+        str(results), "--json",
+    ], cwd=tmp_path, capture_output=True, text=True, check=True, timeout=30)
+    report = json.loads(process.stdout)
+    assert report["n_items"] == 1
+    assert report["per_track"]["F"]["meets"] == 1
 
 
 def test_unconnected_brain_tool_fails_instead_of_reporting_placeholder_success():
@@ -1682,7 +1699,7 @@ def test_web_fetch_validates_every_redirect_hop(monkeypatch):
         calls.append(url)
         return RedirectResponse()
 
-    monkeypatch.setattr(web_fetch.requests, "get", fake_get)
+    monkeypatch.setattr(web_fetch, "public_get", fake_get)
     result = tool._fetch_direct("http://public.example/start", 5000)
 
     assert result.success is False

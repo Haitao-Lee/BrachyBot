@@ -1,0 +1,11 @@
+{
+  "row_id": "COPY_EXACT_RESOLVED_ROW_ID",
+  "status": "DRAFT",
+  "reviewer": null,
+  "reviewed_at": null,
+  "target_hash": "COPY_VERIFIED_TARGET_HASH",
+  "source_hashes": {"ct": "COPY_CT_HASH", "label": "COPY_LABEL_HASH"},
+  "profile_id": "COPY_APPROVED_PROFILE_ID",
+  "reviewed_cluster_id": null,
+  "note": "One JSON object per line in case_approvals.jsonl. The example is not an approval."
+}

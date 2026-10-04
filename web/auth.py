@@ -39,7 +39,7 @@ def _configured_debug_account(config: Dict[str, Any]) -> Dict[str, Any]:
     ).strip().lower()
     enabled_value = config.get("enable_debug_account")
     if enabled_value is None:
-        enabled_value = os.environ.get("BRACHYBOT_DEBUG_ACCOUNT_ENABLED", "1")
+        enabled_value = os.environ.get("BRACHYBOT_DEBUG_ACCOUNT_ENABLED", "0")
     enabled = mode not in _PUBLIC_DEPLOYMENT_MODES and str(enabled_value).lower() in _TRUE_VALUES
 
     username_value = config.get("debug_account_username")
@@ -248,7 +248,7 @@ def register_auth_routes(app: Flask, store: WorkspaceStore) -> None:
     @require_api_key
     @rate_limit
     def auth_register():
-        if os.environ.get("BRACHYBOT_ALLOW_SELF_REGISTRATION", "1").lower() not in {"1", "true", "yes", "on"}:
+        if os.environ.get("BRACHYBOT_ALLOW_SELF_REGISTRATION", "0").lower() not in {"1", "true", "yes", "on"}:
             return jsonify({
                 "error": "Registration is closed. Contact the administrator for an account.",
                 "message": "当前服务仅接受受邀用户，请联系管理员开通账号。",

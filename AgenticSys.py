@@ -111,6 +111,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         self.memory = AgentMemory(session_id)
         self.registry = ToolRegistry()
         self.config = config or {}
+        self.registry.security_config = self.config
         # Web workspaces supply this directory from the authenticated case
         # root. Standalone/CLI agents keep the historical defaults, while a
         # web case never leaks interaction or learned-clinical state into the
@@ -1502,6 +1503,11 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         Now the LLM receives a clear error message and must learn to follow
         the correct workflow: ctv_segmentation → oar_segmentation → planning.
         """
+        from utils.tool_security import validate_tool_paths
+        try:
+            validate_tool_paths(tool_name, params, config=getattr(self, "config", None))
+        except (PermissionError, ValueError, OSError) as exc:
+            return ToolResult(success=False, error=str(exc))
         # DISABLED: Auto-fix mechanism that was hiding LLM errors
         # The LLM should follow the workflow order specified in system_prompt.md
         # If it doesn't, it should receive a clear error, not have the system
@@ -2337,13 +2343,18 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
     def _validate_and_execute(self, tool_name: str, params: Dict, max_retries: int = 1) -> Any:
         """Execute tool with validation and automatic recovery.
         If result is invalid, tries recovery actions before giving up."""
+        from utils.tool_security import validate_tool_paths
+        try:
+            validate_tool_paths(tool_name, params, config=self.config)
+        except (PermissionError, ValueError, OSError) as exc:
+            return ToolResult(success=False, error=str(exc))
         # Pre-execution: check file existence for path-based tools
         if "image_path" in params:
             path = params["image_path"]
             if not os.path.exists(path):
                 # 1) Try the same basename in the canonical uploads dir.
                 alt = os.path.join(os.path.dirname(__file__), "uploads", os.path.basename(path))
-                if os.path.exists(alt):
+                if os.path.exists(alt) and not self.config.get("_workspace_root"):
                     params["image_path"] = alt
                     logger.info(f"Path corrected: {path} → {alt}")
                 else:
@@ -2370,6 +2381,11 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                         params["image_path"] = remembered
                     else:
                         return ToolResult(success=False, error=f"File not found: {path}")
+            # Revalidate remembered/corrected paths before storing or executing.
+            try:
+                validate_tool_paths(tool_name, params, config=self.config)
+            except (PermissionError, ValueError, OSError) as exc:
+                return ToolResult(success=False, error=str(exc))
             # Store ct_path in memory for 3D reconstruction and other tools
             if tool_name in ("ctv_segmentation", "oar_segmentation", "biomedparse_segmentation"):
                 self.memory.store("ct_path", params["image_path"])

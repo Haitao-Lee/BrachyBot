@@ -192,10 +192,11 @@
         } catch (_) {}
     }
 
+    var cacheClosed = false;
     var api = {
         get: async function (sessionId, ns, key) {
             var db = await openDB();
-            if (!db) return null;
+            if (!db || cacheClosed) return null;
             // Never make a cache hit wait for the quota baseline scan.
             beginRunningSizeInitialization(db);
             // Return as soon as IndexedDB responds. The previous code started
@@ -209,7 +210,7 @@
         },
         put: async function (sessionId, ns, key, data) {
             var db = await openDB();
-            if (!db) return;
+            if (!db || cacheClosed) return;
             beginRunningSizeInitialization(db);
             var delta = await dbPut(db, [sessionId, ns, key], data);
             adjustRunningSize(delta);
@@ -238,6 +239,10 @@
             _sizeInitialized = true;
         },
         estimatedSize: function () { return _runningSize; },
+        closeAndClear: async function () {
+            cacheClosed = true;
+            await api.invalidateAll();
+        },
     };
 
     window.SessionCache = api;

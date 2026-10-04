@@ -11,7 +11,7 @@ from web.workspace_store import WorkspaceStore
 def _app(tmp_path, **auth_config):
     app = Flask(__name__)
     store = WorkspaceStore(tmp_path / "runtime")
-    configure_auth(app, store, {"secret_key": "test-secret", **auth_config})
+    configure_auth(app, store, {"secret_key": "test-secret", "enable_debug_account": True, **auth_config})
     register_auth_routes(app, store)
     return app
 

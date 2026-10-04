@@ -1,0 +1,11 @@
+{
+  "status": "DRAFT",
+  "owner": null,
+  "max_attempts": null,
+  "max_retained_bytes": null,
+  "deadline_utc": null,
+  "measured_pilot_runtime": null,
+  "measured_pilot_output_bytes": null,
+  "approved_account_quota_bytes": null,
+  "note": "Use pilot measurements; example config timeouts are caps, not feasibility predictions. Account quota is independent of NAS free space."
+}
