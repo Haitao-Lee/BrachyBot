@@ -1476,13 +1476,15 @@ async function hydrateGenericMasksFromServer(scope, retryAttempt = 0) {
                 loading: true,
                 status: 'loading',
                 error: null,
-                visible: existing.visible !== false,
-                visible2D: existing.visible2D !== false,
-                visible3D: existing.visible3D !== false,
+                visible: (existing.visible ?? metadata.visible) !== false,
+                visible2D: (existing.visible2D ?? metadata.visible2D) !== false,
+                visible3D: (existing.visible3D ?? metadata.visible3D) !== false,
                 opacity: typeof existing.opacity === 'number'
                     ? existing.opacity
-                    : (metadata.kind === 'uploaded_mask_label' ? 0.6 : 0.42),
-                color: existing.color || '#f08a5d',
+                    : (typeof metadata.opacity === 'number' && Number.isFinite(metadata.opacity)
+                        ? Math.max(0, Math.min(1, metadata.opacity))
+                        : (metadata.kind === 'uploaded_mask_label' ? 0.6 : 0.42)),
+                color: existing.color || metadata.color || '#f08a5d',
             };
             if (savedPresentation && typeof savedPresentation === 'object') {
                 [

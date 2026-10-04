@@ -1112,8 +1112,10 @@
         });
         const id = String(item.id || item.nodeId || fallbackId || '').trim();
         if (id) record.id = id;
-        if (item.nodeId != null) record.nodeId = String(item.nodeId);
-        if (item.objectId != null) record.objectId = String(item.objectId);
+        const nodeId = item.nodeId ?? item.node_id ?? item.data_tree_node_id;
+        const objectId = item.objectId ?? item.object_id;
+        if (nodeId != null) record.nodeId = String(nodeId);
+        if (objectId != null) record.objectId = String(objectId);
         if (item.labelId != null || item.label_id != null) {
             record.labelId = item.labelId ?? item.label_id;
         }
@@ -1131,13 +1133,32 @@
     }
 
     function _presentationAdd(registry, item, family, fallbackId = '') {
-        const record = _presentationRecord(item, fallbackId);
-        if (!record) return;
+        const incoming = _presentationRecord(item, fallbackId);
+        if (!incoming) return;
         const normalizedFamily = _presentationFamily(family);
-        const id = String(record.id || fallbackId || '').trim();
+        const id = String(incoming.id || fallbackId || '').trim();
         const fallback = String(fallbackId || '').trim();
-        const nodeId = String(record.nodeId || item.nodeId || '').trim();
-        const objectId = String(record.objectId || item.objectId || '').trim();
+        const nodeId = String(incoming.nodeId || '').trim();
+        const objectId = String(incoming.objectId || '').trim();
+        const refs = new Set([id, fallback, nodeId, objectId].filter(Boolean));
+        if (normalizedFamily === 'mask') {
+            [item.mask_id, item.maskId, item.serverMaskId].forEach(value => {
+                if (value != null && String(value).trim()) refs.add(String(value).trim());
+            });
+            // Keep the map key even when a legacy DOM id differs. The raw
+            // mask id and backend mask:<id> are aliases, NOT a label/name.
+            // Do not strip mask_ indiscriminately: it can be a genuine id.
+            [...refs].forEach(ref => {
+                refs.add(ref.startsWith('mask:') ? ref.slice(5) : 'mask:' + ref);
+            });
+        }
+        const previous = normalizedFamily && [...refs]
+            .map(ref => registry.byFamilyId[normalizedFamily + ':' + ref])
+            .find(Boolean);
+        // A compact browser projection overrides only fields it contains;
+        // agent-only colours/opacity remain available. Keep one shared record
+        // behind all aliases so a live edit updates every late loader.
+        const record = Object.assign(previous || {}, incoming);
         const label = String(record.label || record.name || '').trim();
         const labelId = String(record.labelId ?? item.label_id ?? '').trim();
         if (id) registry.byId[id] = record;
@@ -1146,7 +1167,7 @@
         // example). Keep that alias scoped to its family so a numeric mask
         // id cannot accidentally override a CTV/OAR id in the global table.
         if (normalizedFamily) {
-            [id, fallback].filter(Boolean).forEach(ref => {
+            refs.forEach(ref => {
                 registry.byFamilyId[normalizedFamily + ':' + ref] = record;
             });
         }
@@ -1232,8 +1253,22 @@
         // data_tree. Index the object under both its durable mask id and the
         // data-tree node id so a catalogue response can restore it before the
         // normal snapshot merge runs.
+        const agentUi = snapshotOrTree.agent?.ui_state || {};
+        // Unlike data_tree, masks live in viewer.masks. A partial browser
+        // shell must not discard their independently durable Agent copy.
+        Object.entries(agentUi.viewer?.masks?.labels || {}).forEach(([id, item]) =>
+            add(item, 'mask', id));
+        // Older UI bridge checkpoints stored generic-mask appearance as
+        // nodes rather than viewer.masks. Recover presentation only, never
+        // geometry/classification from this read-only projection.
+        (Array.isArray(agentUi.data_tree?.nodes) ? agentUi.data_tree.nodes : []).forEach(item => {
+            if (['mask', 'generic_mask', 'uploaded_mask_label'].includes(item?.type)
+                || String(item?.object_id || item?.objectId || '').startsWith('mask:')) {
+                add(item, 'mask', item?.mask_id || item?.id || item?.node_id || '');
+            }
+        });
         Object.entries(viewer.masks?.labels || {}).forEach(([id, item]) =>
-            add(item, 'mask', item?.id || item?.mask_id || id));
+            add(item, 'mask', id));
         Object.entries(tree).forEach(([key, item]) => {
             if ([
                 'ct', 'ctv', 'oar', 'skin', 'dose', 'seeds', 'needles',
@@ -1282,6 +1317,10 @@
                 if (record) return _presentationClone(record);
             }
         }
+        // Different uploads often have the same name ("Label 1/2"). An
+        // unknown durable mask must never borrow another mask's palette or a
+        // CTV/OAR record from global label aliases.
+        if (family === 'mask' && values.length) return null;
         for (const value of values) {
             const record = registry.byObjectId[value]
                 || registry.byNodeId[value]
@@ -1324,8 +1363,15 @@
         const id = String(criteria.id || '').trim();
         // Never use the global label/ID aliases for writes: a CTV and OAR
         // can share a numeric label, while family-scoped IDs are unambiguous.
-        const record = family && id && registry.byFamilyId[family + ':' + id];
-        if (!record || !changes || typeof changes !== 'object') return false;
+        if (!family || !id || !changes || typeof changes !== 'object') return false;
+        let record = registry.byFamilyId[family + ':' + id];
+        // A newly uploaded mask has no entry in the pre-upload snapshot. A
+        // live edit still needs a record before the next catalogue pass.
+        if (!record && family === 'mask') {
+            _presentationAdd(registry, { id }, family, id);
+            record = registry.byFamilyId[family + ':' + id];
+        }
+        if (!record) return false;
         let updated = false;
         WORKSPACE_PRESENTATION_KEYS.forEach(key => {
             if (Object.prototype.hasOwnProperty.call(changes, key)) {
@@ -4196,7 +4242,20 @@
                                 .map(ref => currentByIdentity.get(ref))
                                 .find(Boolean);
                             if (currentId && currentLabels[currentId]) {
-                                copyDisplayProperties(currentLabels[currentId], m);
+                                // This replay can finish after the operator
+                                // edits a visible mask during hydration. Use
+                                // the same alias-aware registry as catalogue
+                                // and mesh loaders, including those live edits,
+                                // rather than copying the old snapshot again.
+                                const current = currentLabels[currentId];
+                                const restored = getWorkspacePresentationForNode({
+                                    id: currentId,
+                                    objectId: current.objectId || current.object_id,
+                                    nodeId: current.nodeId || current.node_id,
+                                    family: 'mask',
+                                    sessionId,
+                                });
+                                copyDisplayProperties(current, { ...m, ...(restored || {}) });
                                 return;
                             }
                             if (isUploaded) {

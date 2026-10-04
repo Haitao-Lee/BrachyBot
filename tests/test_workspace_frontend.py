@@ -1766,7 +1766,14 @@ def test_preserve_clinical_restore_does_not_drop_server_owned_upload_siblings():
     assert "const preserveClinicalData = options.preserveClinicalData === true" in restore_block
     assert "if (!preserveClinicalData)" in restore_block
     assert "const currentLabels = state.maskLabels || (state.maskLabels = {})" in restore_block
-    assert "copyDisplayProperties(currentLabels[currentId], m)" in restore_block
+    # Reconcile presentation through the shared, live-edit-aware registry.
+    # Copying only m would reintroduce an old-snapshot overwrite during loading.
+    # The cross-module runtime harness also exercises this branch and verifies
+    # that a promoted sibling does not erase a remaining upload-mask child.
+    assert "const current = currentLabels[currentId]" in restore_block
+    assert "getWorkspacePresentationForNode({" in restore_block
+    assert "family: 'mask'" in restore_block
+    assert "copyDisplayProperties(current, { ...m, ...(restored || {}) })" in restore_block
     assert "pending[ref] = presentation" in restore_block
     # The old unconditional assignment erased a remaining Upload Mask child
     # after one sibling had been promoted to CTV. It is now limited to the
