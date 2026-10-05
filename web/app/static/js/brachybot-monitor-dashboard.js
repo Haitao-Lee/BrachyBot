@@ -5,6 +5,7 @@
     let requestSequence = 0, overviewAbort = null, overviewTimer = null, focusLayer = null, focusRestore = null;
     let stopRecovery = null;
     let adviceBusy = false;
+    let spatialState = null, spatialLabels = [], drawnSignature = '';
     const lang = () => monitorConversationLanguage(_activeApiSessionId());
     const t = (zh, en) => lang() === 'zh' ? zh : en;
     const el = (tag, value, className) => {
@@ -18,8 +19,9 @@
     const ownedCards = () => cards.filter(card => card.sessionId === _activeApiSessionId()
         && card.runId === trainingMonitorState.runId);
     const latest = () => ownedCards().filter(card => !card.superseded).at(-1);
-    const button = (label, action, disabled = false) => {
+    const button = (label, action, disabled = false, control = '') => {
         const node = el('button', label, 'btn btn-sm'); node.type = 'button'; node.disabled = disabled;
+        node.dataset.brachyControlRef = `monitor:${trainingMonitorState.runId || ''}:${latest()?.id || ''}:${control || label}`;
         node.addEventListener('click', action); return node;
     };
     function showEvidence(card) {
@@ -27,6 +29,55 @@
         if (!message) return false;
         message.scrollIntoView({block:'center', behavior:'smooth'});
         window.markMonitorEvidenceViewed?.(card.id); return true;
+    }
+    window.openMonitorGuidance = id => {
+        const card=latest(),panel=document.getElementById('monitorDashboard');
+        if(!panel || panel.hidden || !card || card.id!==id)return false;
+        panel.open=true;
+        const body=panel.querySelector('.monitor-dashboard-body');body.scrollTop=0;
+        const heading=body.querySelector('.monitor-guidance-title');
+        heading?.focus?.({preventScroll:true});
+        return true;
+    };
+    function viewerCoach(card,current) {
+        // Keep guidance beside the image, outside the canvas. No popup, no
+        // camera takeover and no extra words burned into captured pixels.
+        const viewer=document.getElementById('viewer3d');
+        if(!viewer)return;
+        let rail=viewer.querySelector('.monitor-viewer-guide');
+        if(!rail){rail=el('section',undefined,'monitor-viewer-guide');
+            rail.setAttribute('data-html2canvas-ignore','true');
+            rail.setAttribute('aria-label',t('当前编辑建议','Current edit guidance'));
+            viewer.insertBefore(rail,viewer.querySelector('.viewer-card-ctrl'));}
+        const info=window.monitorInteractionFor?.(card?.data.interaction,lang());
+        const guide=window.monitorGuidanceFor?.(info,lang());
+        rail.hidden=!current || trainingMonitorState.phase!=='active' || !guide;
+        if(rail.hidden){rail.replaceChildren();return;}
+        const restore=window.preserveMonitorPresentation?.(rail) || (()=>{});
+        rail.dataset.monitorOwner=`${own()}:${card.id}`;
+        rail.dataset.severity=info.severity || 'info';
+        rail.setAttribute('aria-label',t('当前编辑建议','Current edit guidance'));
+        rail.setAttribute('aria-busy',String(!!(card.busy || card.previewBusy)));
+        const panel=window.createMonitorGuidancePanel(info,lang(),false,{evidence:card.evidence});
+        const text=el('div',undefined,'monitor-viewer-copy');
+        text.append(el('small',t('本次编辑','This edit')),el('strong',card.previewGeometry
+            ? t('位置预览 · 尚未修改规划','Position preview · plan unchanged') : panel.querySelector('.monitor-guidance-title').textContent));
+        const status=card.busy || (card.previewBusy?t('正在核对几何…','Checking geometry…'):card.notice || card.decision);
+        text.append(el('span',status || (card.previewGeometry ? t('确认后仍需安全检查和剂量重算。','Confirmation still requires safety checks and dose recomputation.')
+            : panel.querySelector('.monitor-guide-meaning p')?.textContent) || ''));
+        const commands=el('div',undefined,'monitor-viewer-actions');
+        const preview=card.previewGeometry && (card.previewCandidate || card.evidence.restore_token && !card.decision);
+        const step=preview ? {action:card.previewCandidate?'apply':'restore',label:card.previewCandidate
+            ? t('确认候选位置','Confirm candidate') : t('确认恢复原位置','Confirm restoration')}
+            : guide.steps?.find(step=>step.action===info.primary_action);
+        if(step && ['focus','dose','details','preview','spacing','apply','restore'].includes(step.action)){
+            const control=button(step.label,()=>window.runMonitorCheckpointAction(card.id,step.action,
+                {refs:step.refs,objectId:step.object_id,candidateId:card.previewCandidate?.candidate_id,surface:'viewer'}),
+                !!card.busy || !!card.previewBusy || !!window.__reportCaptureActive,'viewer-primary');
+            control.classList.add('monitor-primary-action');commands.append(control);
+        }
+        commands.append(button(t('详细建议','Guidance'),()=>window.openMonitorGuidance(card.id),false,'viewer-guidance'));
+        rail.replaceChildren(text,commands);restore();
     }
     function sparkline(samples, key) {
         const NS = 'http://www.w3.org/2000/svg', svg = document.createElementNS(NS, 'svg');
@@ -73,8 +124,18 @@
         if (!panel) return;
         const phase = trainingMonitorState.phase;
         panel.hidden = !['active', 'starting', 'stopping', 'stop_error'].includes(phase);
-        if (panel.hidden) return;
+        if (panel.hidden) {viewerCoach(null,false);return;}
         const summary = panel.querySelector('summary'), body = panel.querySelector('.monitor-dashboard-body');
+        const signature=JSON.stringify([own(),lang(),phase,!!stopRecovery,preferences.autoCompare===true,adviceBusy,
+            planIdentity(),ownedCards().map(card=>[card.lastEventId,card.superseded,card.data.interaction,
+                card.captureState,card.captureError,card.omittedRefs,card.viewedCaptureEventId,card.busy,card.notice,
+                card.decision,card.detailsOpen,card.previewCandidates,card.previewCandidate,card.previewBusy]),
+            overviewOwner,overview,timelineOwner,timeline,window.getMonitorSpatialState?.(latest()?.evidence),
+            latest() ? window.getMonitorTargetAvailability?.(latest().data.interaction?.spatial_refs || [],latest().evidence) : null,
+            typeof _monitorEvidenceMatchesLiveGeometry==='function' && latest() ? _monitorEvidenceMatchesLiveGeometry(latest().evidence) : null]);
+        if(signature===drawnSignature)return;
+        drawnSignature=signature;
+        const restorePresentation=window.preserveMonitorPresentation?.(body) || (()=>{});
         const scrollTop = body.scrollTop;
         const historyOpen = !!body.querySelector('.monitor-history')?.open;
         const timelineOpen = !!body.querySelector('.monitor-timeline')?.open, oarsOpen = !!body.querySelector('.monitor-oars')?.open;
@@ -85,6 +146,7 @@
         })[phase];
         body.replaceChildren();
         const card = latest(), list = ownedCards();
+        body.dataset.monitorOwner=`${own()}:${card?.id || ''}`;
         const currentVersion = typeof manualPlanningState === 'undefined' ? null : Number(manualPlanningState.planningVersion);
         const planId = typeof manualPlanningState === 'undefined' ? null : manualPlanningState.planningId;
         const dragging = typeof manualPlanningState !== 'undefined' && manualPlanningState.monitorInteractionActive;
@@ -93,6 +155,7 @@
         const geometryMatches = !cardRevisionMatches || typeof _monitorEvidenceMatchesLiveGeometry !== 'function'
             || _monitorEvidenceMatchesLiveGeometry(card.evidence);
         const cardCurrent = cardRevisionMatches && !dragging && geometryMatches;
+        viewerCoach(card,cardCurrent);
         const overviewCurrent = overviewOwner === own() && Number(overview?.planning_version) === currentVersion
             && String(overview?.planning_id) === String(planId) && !dragging && geometryMatches;
         const metrics = cardCurrent && Object.keys(card.evidence.dose?.after || {}).length ? card.evidence.dose.after
@@ -146,28 +209,63 @@
         if (currentStage) body.append(el('p', t('下一步优先核对：','Next review: ') + tips[currentStage.key]));
         if (workflow.childNodes.length) body.append(el('small', t('数据可用不代表临床通过。', 'Data availability is not clinical approval.')));
         const controls = el('div', undefined, 'monitor-dashboard-actions');
+        controls.classList.add('monitor-session-controls');
         const toggleLabel = el('label'), toggle = el('input'); toggle.type = 'checkbox';
         toggle.checked = preferences.autoCompare === true; toggle.disabled = phase !== 'active';
+        toggle.dataset.brachyControlRef=`monitor:${trainingMonitorState.runId}:auto-compare`;
         toggle.addEventListener('change', () => window.setMonitorAutoCompare(toggle.checked));
         toggleLabel.append(toggle, document.createTextNode(t(' 自动重算并比较（合并连续编辑）', ' Auto compare (coalesces edits)')));
-        controls.append(toggleLabel, button(t('结束监测', 'Finish Monitor'), () => stopTrainingMode(), phase === 'starting' || phase === 'stopping'));
+        controls.append(button(phase==='stop_error' ? t('重试结束监测','Retry Finish Monitor') : t('结束监测', 'Finish Monitor'),
+            () => stopTrainingMode(), phase === 'starting' || phase === 'stopping','finish'));
+        const statusDetails=el('details',undefined,'monitor-plan-details');statusDetails.dataset.monitorSection='plan-details';
+        statusDetails.open=!window.monitorGuidanceFor?.(card?.data.interaction,lang());
+        const statusSummary=el('summary',t('剂量、流程状态与监测设置','Dose, workflow and monitor settings'));
+        statusSummary.dataset.brachyControlRef=`monitor:${trainingMonitorState.runId}:plan-details`;
+        statusDetails.append(statusSummary);
+        for(const child of [...body.childNodes]) statusDetails.append(child);
+        statusDetails.append(toggleLabel,el('small',t('自动重算默认关闭。开启后才会合并连续编辑并计算剂量。','Auto compare is off by default. Enabling it coalesces edits before calculating dose.')));
         body.append(controls);
+        if(phase!=='active')body.append(el('p',phase==='stop_error'
+            ? t('结束请求尚未得到服务器确认。这里保留记录，但不再执行编辑建议；可重试结束。','The server has not confirmed the stop. Records remain, edit guidance is disabled; retry Finish Monitor.')
+            : t('正在核对监测状态；不会自动修改规划。','Checking monitor state; the plan will not be changed automatically.'),'monitor-session-state'));
         const unread = list.filter(item => ['ready','partial'].includes(item.captureState) && item.viewedCaptureEventId !== item.lastEventId);
         const pendingImages = list.filter(item => !item.superseded && ['pending','deferred'].includes(item.captureState));
         const decisions = list.filter(item => !item.superseded && !item.decision && item.evidence.restore_token
+            && item.data.interaction?.decision_required !== false
             && Number(item.evidence.after_version) === currentVersion && String(item.evidence.planning_id) === String(planId));
         const pending = el('div',undefined,'monitor-pending');
-        pending.append(el('span',t(`${decisions.length} 项编辑待选择 · ${pendingImages.length} 项截图准备中`,`${decisions.length} edit decisions · ${pendingImages.length} captures preparing`)));
+        if(decisions.length || pendingImages.length) pending.append(el('span',t(`${decisions.length} 项编辑待选择 · ${pendingImages.length} 项截图准备中`,`${decisions.length} edit decisions · ${pendingImages.length} captures preparing`)));
         if (unread.length) pending.append(button(t(`${unread.length} 项图像证据未查看`,`${unread.length} unseen image records`), () => showEvidence(unread[0])));
         body.append(pending);
-        if (!card) body.append(el('p', t('保存一次编辑后，这里会显示变化、间距检查和下一步。', 'Save an edit to see its changes, spacing checks and next step here.')));
+        if (!card) body.append(el('p', t('照常拖动并保存针道或粒子。我会标出刚编辑的对象，先反馈几何问题；剂量需要你确认重算，不会偷偷计算。',
+            'Drag and save a needle or seed as usual. I will mark the edited object and check geometry first; dose calculation needs your choice, never hidden work.'),'monitor-onboarding'));
         if (card) {
-            const info = card.data.interaction || {};
+            const info = window.monitorInteractionFor?.(card.data.interaction,lang()) || card.data.interaction || {};
             const finding = el('div', undefined, 'monitor-finding'); finding.dataset.severity = info.severity || (info.priority === 'attention' ? 'warning' : 'info');
-            if (info.severity === 'blocking') finding.append(el('strong',t('需先处理：物理几何重叠','Resolve first: physical geometry overlap')));
+            if (info.severity === 'blocking' && !window.monitorGuidanceFor?.(info,lang()))
+                finding.append(el('strong',t('需先处理：物理几何重叠','Resolve first: physical geometry overlap')));
             if (!cardCurrent) finding.append(el('p', t('以下是较早版本的记录，不能作为当前规划结论。', 'Earlier revision record, not a conclusion about the current plan.')));
-            const headline = el('p',undefined,'monitor-headline'); headline.append(el('strong',info.headline || ''));
-            finding.append(headline, el('p', info.next_step || ''), el('small', info.dose_note || ''));
+            const headline = el('p',undefined,'monitor-headline'); headline.setAttribute('role','status');
+            headline.append(el('strong',info.assessment?.title || info.headline || ''));
+            const guide = window.monitorGuidanceFor?.(info,lang());
+            const guidancePanel = window.createMonitorGuidancePanel?.(info,lang(),!cardCurrent,
+                {id:card.id,runId:card.runId,evidence:card.evidence,surface:'dashboard',preview:!!card.previewGeometry,
+                    canConfirmPreview:!!card.previewCandidate || !!card.evidence.restore_token && !card.decision,
+                    candidateId:card.previewCandidate?.candidate_id,current:cardCurrent && phase === 'active',busy:card.busy || card.previewBusy});
+            if (guidancePanel) finding.append(guidancePanel);
+            else finding.append(headline, el('p', cardCurrent ? info.next_step || '' : ''), el('small', info.dose_note || ''));
+            const record=el('details',undefined,'monitor-object-record');record.dataset.monitorSection='object-record';
+            record.open=!guidancePanel;
+            record.append(el('summary',t('对象编号、检查过程与详细差值','Object IDs, checks and detailed changes')));
+            const stages = el('div',undefined,'monitor-edit-stages');
+            for (const label of [t('✓ 编辑已保存','✓ Edit saved'), t('✓ 几何已检查','✓ Geometry checked'),
+                info.dose_comparable ? t('✓ 剂量可比较','✓ Dose comparable') : info.dose_current
+                    ? t('剂量已更新 · 缺前值','Dose current · baseline missing') : t('剂量待更新','Dose pending'),
+                ({ready:t('图像已交付','Images delivered'),partial:t('部分图像已交付','Partial images delivered'),
+                    pending:t('截图准备中','Images preparing'),deferred:t('截图暂缓','Capture deferred'),
+                    failed:t('截图未完成','Capture incomplete'),none:t('本次未安排截图','No image scheduled')})[card.captureState] || t('截图状态未核实','Image status unverified')])
+                stages.append(el('span',label));
+            record.append(stages);
             for (const pair of info.conflicts || []) {
                 const row = el('p');
                 for (const [i,ref] of [pair.first_id,pair.second_id].entries()) {
@@ -176,22 +274,25 @@
                 }
                 row.append(document.createTextNode(` · ${window.monitorConflictText(pair, lang())} `));
                 row.append(button(t('查看间距','Show spacing'), () => window.runMonitorCheckpointAction(card.id,'focus',{refs:[pair.first_id,pair.second_id]}), !cardCurrent || phase !== 'active'));
-                finding.append(row);
+                record.append(row);
             }
-            for (const obj of info.objects || []) if (obj.operation !== 'deleted') finding.append(button(obj.id,
+            for (const obj of info.objects || []) if (obj.operation !== 'deleted') record.append(button(obj.id,
                 () => window.runMonitorCheckpointAction(card.id,'focus',{refs:[obj.id]}), !cardCurrent || phase !== 'active'));
             if (card.busy || card.notice) finding.append(el('p', card.busy || card.notice));
             if (card.decision) finding.append(el('p', card.decision, 'monitor-decision'));
             const counts = info.conflict_counts || {};
-            if (counts.resolved || counts.existing) finding.append(el('small', t(
+            if (counts.resolved || counts.existing) record.append(el('small', t(
                 `已消除 ${counts.resolved || 0} 组；另有 ${counts.existing || 0} 组编辑前已存在。`,
                 `${counts.resolved || 0} resolved; ${counts.existing || 0} pre-existing conflicts.`)));
             if (info.metric_rows?.length) {
                 const comparison = el('details');
+                comparison.open = !!card.detailsOpen;
+                comparison.addEventListener('toggle',()=>{card.detailsOpen=comparison.open;});
                 comparison.append(el('summary', t('查看各指标与器官差值', 'Metric and organ-dose changes')));
                 for (const row of info.metric_rows) comparison.append(el('p', `${row.metric}: ${Number(row.before).toFixed(2)} → ${Number(row.after).toFixed(2)} (${row.delta >= 0 ? '+' : ''}${Number(row.delta).toFixed(2)} ${row.unit})`));
-                finding.append(comparison);
+                record.append(comparison);
             }
+            finding.append(record);
             body.append(finding);
             const capture = el('div', undefined, 'monitor-capture-status');
             capture.dataset.state = card.captureState;
@@ -200,10 +301,11 @@
                 ready:t('已交付图像证据。', 'Image evidence delivered.'),
                 partial:t('部分图像已交付；未核验对象不能据图定位。', 'Partial images delivered; unverified objects cannot be located from them.'),
                 failed:t('未交付本检查点图像；文字反馈仍有效。', 'No images delivered for this checkpoint; recorded text is retained.'),
-                none:t('本次没有需要定位的存续对象，不安排定位截图。', 'No surviving target requires location capture for this edit.')};
+                none:t('本次未安排定位截图；不代表对象不存在。', 'No location image scheduled; this does not establish missing objects.')};
             capture.append(el('p',captureLabels[card.captureState] || ''));
             if (card.omittedRefs?.length && card.captureState === 'partial') capture.append(el('small',t('未核验：','Unverified: ') + card.omittedRefs.join(', ')));
-            const reasons = {monitor_targets_unavailable:t('Viewer 对象尚未就绪或不可见。','Viewer targets are not ready or visible.'),
+            const reasons = {monitor_interaction_busy:t('正在操作 Viewer；空闲后再捕获，不抢占操作。','Viewer interaction active; capture resumes when idle.'),
+                monitor_targets_unavailable:t('Viewer 对象尚未就绪或不可见。','Viewer targets are not ready or visible.'),
                 viewer_tab_hidden:t('浏览器页面在后台。','The browser page is in the background.'),
                 attachment_not_rendered:t('图像未写入对话附件。','Images were not delivered to chat attachments.'),
                 workspace_visual_restore_incomplete:t('Viewer 资源仍在恢复。','Viewer resources are still restoring.'),
@@ -215,18 +317,41 @@
                 reasons[card.captureError] || t('截图未完成，可在当前资源就绪后重试。','Capture incomplete; retry when current resources are ready.')));
             body.append(capture);
             const actions = el('div', undefined, 'monitor-dashboard-actions');
-            const act = (label, action) => actions.append(button(label,
-                () => window.runMonitorCheckpointAction(card.id, action), phase !== 'active' || !!card.busy || !cardCurrent));
+            const act = (label, action) => {
+                if (guidancePanel?.querySelector(`.monitor-guide-actions [data-guide-action="${action}"]`)) return;
+                const control = button(guide?.steps?.find(step=>step.action === action)?.label || label, () => window.runMonitorCheckpointAction(card.id, action),
+                    phase !== 'active' || !!card.busy || !cardCurrent, action);
+                if (action === info.primary_action) control.classList.add('monitor-primary-action');
+                actions.append(control);
+            };
             if ((info.spatial_refs || card.data.suggested_screenshot?.object_ids || []).length)
                 act(t('定位对象', 'Locate objects'), 'focus');
-            actions.append(button(t('清除定位', 'Clear focus'), () => window.clearMonitorFocus(true)));
+            actions.append(button(t('清除定位', 'Clear focus'), () => window.runMonitorCheckpointAction(card.id,'clear_focus')));
             if (!info.dose_current) act(t('立即重算比较', 'Compare now'), 'dose');
+            if (info.primary_action === 'details') act(t('查看本次指标取舍','Review measured trade-offs'),'details');
             if (['failed','deferred','partial'].includes(card.captureState) && card.data.suggested_screenshot
                 && !['monitor_checkpoint_superseded','monitor_stopped'].includes(card.captureError))
                 act(t('重试截图', 'Retry image'), 'capture');
             if (card.evidence.restore_token && !card.decision) {
+                if (info.schema_version === 3) act(t('预览编辑前位置（不修改）','Preview pre-edit position (read only)'), 'preview');
                 act(t('恢复编辑前位置', 'Restore pre-edit position'), 'restore');
                 act(t('保留编辑', 'Keep edit'), 'keep');
+            }
+            for (const obj of info.objects || []) if (info.schema_version === 3 && obj.kind === 'seeds' && info.decision_required && obj.operation !== 'deleted'
+                && !guide?.steps?.some(step=>step.action === 'spacing' && step.object_id === obj.id))
+                actions.append(button(guide?.steps?.find(step=>step.action === 'spacing' && step.object_id === obj.id)?.label || t(`寻找 ${obj.id} 间距候选`,`Find spacing candidates for ${obj.id}`),
+                    () => window.runMonitorCheckpointAction(card.id,'spacing',{objectId:obj.id}), !cardCurrent || !!card.previewBusy));
+            for (const candidate of card.previewCandidates || []) actions.append(button(
+                t(`预览候选 ${candidate.distance_mm.toFixed(2)} mm（未算剂量）`,`Preview candidate ${candidate.distance_mm.toFixed(2)} mm (no dose)`),
+                () => window.runMonitorCheckpointAction(card.id,'select_candidate',{candidateId:candidate.candidate_id}), !cardCurrent || !!card.previewBusy));
+            if (card.previewCandidate) actions.append(button(t('确认应用几何候选（剂量待重算）','Confirm geometric candidate (dose needs updating)'),
+                () => window.runMonitorCheckpointAction(card.id,'apply',{candidateId:card.previewCandidate.candidate_id}), !cardCurrent || !!card.previewBusy));
+            if (info.decision_required === false) {
+                const more = el('details',undefined,'monitor-secondary-actions');
+                more.append(el('summary',t('更多操作（无需每次确认保留）','More actions (no routine keep confirmation required)')));
+                more.firstChild.dataset.brachyControlRef = `monitor:${card.runId}:${card.id}:more`;
+                const secondary = [...actions.children].filter(node => /恢复编辑前|保留编辑|Restore pre-edit|Keep edit/.test(node.textContent));
+                secondary.forEach(node => more.append(node)); actions.append(more);
             }
             actions.append(button(t('查看证据与记录', 'View evidence and history'), () => showEvidence(card)));
             actions.append(button(adviceBusy ? t('正在解释…', 'Explaining…') : t('解释这些变化', 'Explain these changes'), async () => {
@@ -234,12 +359,30 @@
                 if (adviceBusy) return;
                 adviceBusy = true; draw();
                 try {
-                    await requestPlanningAdvice({question:t('请结合最新已提交的监测编辑证据，简要解释几何间距与剂量差值的取舍；没有对应证据的因果、临床限值和最优移动方向不要推测。',
-                        'Briefly explain the geometry and dose trade-offs in the latest committed monitor edit evidence. Do not infer causes, clinical limits or optimal movements without evidence.')});
+                    await requestPlanningAdvice({question:t('请依据最新已提交的监测编辑证据，像带我操作一样简短说明：这一步具体改变了什么、实际影响和代价、优先下一步及选择条件、操作后如何验证。区分单次编辑与连续编辑；无有效前值不补造比较。引用当前具体对象和实测值，不重复泛泛检查清单，不推测没有证据的临床限值、因果或最优移动方向。',
+                        'Coach me briefly using the latest committed monitor evidence: what this edit changed, measured effects and costs, the first next step and when to choose it, and how to verify afterward. Distinguish single edits from sequences; do not invent missing baselines. Use current object references and measurements, not generic checklists or unsupported clinical limits, causes or optimal movements.')});
                 } finally { adviceBusy = false; draw(); }
             }, phase !== 'active' || adviceBusy || !cardCurrent));
-            body.append(actions);
+            if(guidancePanel){
+                const options=el('details',undefined,'monitor-command-options');options.dataset.monitorSection='commands';
+                const optionsSummary=el('summary',t('定位、撤销与其他操作','Location, undo and other actions'));
+                optionsSummary.dataset.brachyControlRef=`monitor:${card.runId}:${card.id}:commands`;
+                options.append(optionsSummary,actions);body.append(options);
+                if(card.previewGeometry || card.previewCandidate){
+                    const preview=el('div',undefined,'monitor-preview-decision');
+                    preview.append(el('p',t('紫色位置是只读预览，规划尚未改变。先看位置，再确认操作。','Purple geometry is a read-only preview; the plan has not changed. Inspect it before confirming.')));
+                    if(card.previewCandidate && !guidancePanel.querySelector('[data-guide-action="apply"]'))preview.append(button(t('确认应用几何候选（剂量待重算）','Confirm geometric candidate (dose needs updating)'),
+                        ()=>window.runMonitorCheckpointAction(card.id,'apply',{candidateId:card.previewCandidate.candidate_id}),!cardCurrent || !!card.previewBusy,'confirm-preview'));
+                    else if(!card.previewCandidate && card.evidence.restore_token && !card.decision && !guidancePanel.querySelector('[data-guide-action="restore"]'))preview.append(button(t('确认恢复编辑前位置','Confirm restore pre-edit position'),
+                        ()=>window.runMonitorCheckpointAction(card.id,'restore'),!cardCurrent || !!card.busy,'confirm-restore'));
+                    // The live guide already owns confirmation and dismissal.
+                    // Preserve alternatives in the disclosure, not a second CTA.
+                    options.append(preview);
+                }
+            }else body.append(actions);
+            body.insertBefore(finding,controls.nextSibling);
         }
+        body.append(statusDetails);
         const history = el('details', undefined, 'monitor-history');
         history.open = historyOpen;
         history.append(el('summary', t(`本页保留 ${list.length} 次编辑 · 查看趋势`, `${list.length} retained edits · trends`)));
@@ -275,6 +418,7 @@
             body.append(events);
         }
         body.scrollTop = scrollTop;
+        restorePresentation();
     }
     async function refreshOverview() {
         if (trainingMonitorState.phase !== 'active' || typeof fetch !== 'function') return;
@@ -307,6 +451,7 @@
     };
     window.renderMonitorDashboard = (nextCards, nextPreferences) => {
         cards = nextCards; preferences = nextPreferences;
+        bindControls();
         if (typeof manualPlanningState !== 'undefined') visibleIdentity = planIdentity();
         const card = latest(), revision = `${own()}:${card?.lastEventId || ''}`;
         if (revision !== overviewRevision) { overviewRevision = revision; scheduleOverview(); }
@@ -319,6 +464,7 @@
         draw();
     };
     window.clearMonitorFocus = (restore = false) => {
+        (document.querySelectorAll?.('.monitor-tree-target') || []).forEach(row=>row.classList.remove('monitor-tree-target'));
         if (restore) focusRestore?.();
         focusRestore = null;
         if (focusLayer) {
@@ -332,11 +478,147 @@
             focusLayer = null;
             scene3D.requestRender?.(2);
         }
+        spatialState=null;spatialLabels=[];
     };
-    window.focusMonitorCheckpoint = (refs, evidence) => {
+    // Availability is not a location claim. Resolve exact identities in the
+    // live scene/tree without hydrating, reconstructing, or changing visibility.
+    window.getMonitorTargetAvailability = (refs, evidence) => {
+        if (!trainingMonitorState.active || !Array.isArray(refs) || refs.length > 8
+            || typeof scene3D === 'undefined'
+            || String(evidence?.planning_id) !== String(manualPlanningState.planningId)
+            || Number(evidence?.after_version) !== Number(manualPlanningState.planningVersion)
+            || manualPlanningState.monitorInteractionActive
+            || (typeof _monitorEvidenceMatchesLiveGeometry === 'function' && !_monitorEvidenceMatchesLiveGeometry(evidence))) return [];
+        return refs.map(ref => {
+            const entries = Object.entries(scene3D.meshes || {}).filter(([id,mesh]) =>
+                _screenshot3DIdentityFor(id,mesh).includes(ref));
+            const visibility = entries.map(([id,mesh]) => _screenshot3DVisibility(id,mesh));
+            const direct = String(ref).replace(/^(?:seed|needle|trajectory):/, '');
+            const node = visibility.find(item => item.node)?.node
+                || (typeof _findDataTreeNode === 'function' ? _findDataTreeNode(direct) : null);
+            if (node?.sessionId && String(node.sessionId) !== String(_activeApiSessionId())
+                || node?.planningId && String(node.planningId) !== String(evidence.planning_id))
+                return {ref,state:'unavailable'};
+            const unavailable = /^(deleted|missing|not_generated|failed|error)$/.test(String(node?.status || ''));
+            const loading = node?.loading === true || /^(loading|restoring|persisted_not_loaded|generating)$/.test(String(node?.status || ''));
+            let parentHidden = false, parent = typeof _dataTreeParentNode === 'function' ? _dataTreeParentNode(node) : null;
+            const seen = new Set();
+            while (parent && !seen.has(parent)) {
+                seen.add(parent);
+                if (parent.visible === false || parent.visible3D === false) parentHidden = true;
+                parent = typeof _dataTreeParentNode === 'function' ? _dataTreeParentNode(parent) : null;
+            }
+            const ownHidden = node?.visible === false || node?.visible3D === false;
+            const state = unavailable ? 'unavailable' : loading ? 'loading'
+                : visibility.some(item => item.locatable) ? 'visible'
+                : ownHidden || parentHidden ? 'hidden' : entries.length ? 'not_renderable' : 'not_loaded';
+            return {ref,state,nodeId:node?.id,loaded:entries.length > 0,
+                // Never reveal an entire hidden group, change opacity, or
+                // reconstruct geometry as a side effect of locating one seed.
+                revealable:state === 'hidden' && ownHidden && !parentHidden && entries.length > 0};
+        });
+    };
+    window.locateMonitorDataTreeTarget = (ref, evidence) => {
+        const target = window.getMonitorTargetAvailability([ref],evidence)[0];
+        if (!target || target.state === 'unavailable'
+            || typeof window.resolveDataTreeRowTargetRef !== 'function') return false;
+        const row = window.resolveDataTreeRowTargetRef(ref);
+        if (!row || row.dataset.liveNode === 'false' || !row.closest('#dataTreeBody')) return false;
+        const identities = [row.dataset.nodeId,row.dataset.objectId,row.dataset.item].filter(Boolean);
+        if (![target.nodeId,ref,String(ref).replace(/^(?:seed|needle|trajectory):/,'')]
+            .filter(Boolean).some(id => identities.includes(id))) return false;
+        const tab = document.querySelector('.panel-tab[data-panel="viewers"]');
+        if (tab && typeof switchPanel === 'function') switchPanel('viewers',tab);
+        for (let group = row.closest('.tree-group'); group; group = group.parentElement?.closest('.tree-group')) {
+            if (group.dataset.group && typeof window.setTreeGroupExpansion === 'function')
+                window.setTreeGroupExpansion(group.dataset.group,true);
+        }
+        document.querySelectorAll('.monitor-tree-target').forEach(item => item.classList.remove('monitor-tree-target'));
+        row.classList.add('monitor-tree-target');row.tabIndex = -1;
+        row.scrollIntoView?.({block:'nearest',behavior:'auto'});row.focus?.({preventScroll:true});
+        return true;
+    };
+    window.reconcileMonitorSpatialVisibility = () => {
+        if(!focusLayer || !spatialState || trainingMonitorState.screenshotPendingRunId
+            || window.__reportCaptureActive || window.isWorkspacePresentationWriteLocked?.(_activeApiSessionId()))return;
+        const valid=spatialState.refs.every(ref=>Object.entries(scene3D.meshes || {}).some(([id,mesh])=>
+            _screenshot3DIdentityFor(id,mesh).includes(ref) && _screenshot3DVisibility(id,mesh).locatable));
+        if(!valid)window.clearMonitorFocus();
+    };
+    window.getMonitorSpatialState = evidence => {
+        if(!spatialState || !focusLayer || focusLayer.visible===false || spatialState.owner!==own()
+            || !trainingMonitorState.active || manualPlanningState.monitorInteractionActive
+            || String(evidence?.planning_id)!==String(spatialState.planningId)
+            || Number(evidence?.after_version)!==Number(spatialState.version)
+            || (evidence?.geometry_key && evidence.geometry_key!==spatialState.geometryKey)
+            || String(manualPlanningState.planningId)!==String(spatialState.planningId)
+            || Number(manualPlanningState.planningVersion)!==Number(spatialState.version)
+            || (typeof _monitorEvidenceMatchesLiveGeometry==='function' && !_monitorEvidenceMatchesLiveGeometry(evidence)))return null;
+        const visible=spatialState.refs.filter(ref=>Object.entries(scene3D.meshes || {}).some(([id,mesh])=>
+            _screenshot3DIdentityFor(id,mesh).includes(ref) && _screenshot3DVisibility(id,mesh).locatable));
+        if(!visible.length || visible.length!==spatialState.refs.length)return null;
+        const inFrame=visible.filter(ref=>{
+            const item=spatialLabels.find(label=>label.sprite.userData.objectRef===ref);
+            if(!item)return false;
+            const point=item.anchor.clone().project(scene3D.camera);
+            return [point.x,point.y,point.z].every(Number.isFinite) && Math.abs(point.x)<=1 && Math.abs(point.y)<=1 && Math.abs(point.z)<=1;
+        });
+        return {status:inFrame.length ? 'located' : 'offscreen',refs:inFrame,letters:spatialState.letters,canRestore:!!focusRestore};
+    };
+    window.suspendMonitorSpatialAnnotations = () => {
+        const layer=focusLayer,ownership=own(),wasVisible=layer?.visible;
+        if(!layer)return null;
+        layer.visible=false;scene3D.requestRender?.(1);
+        return () => {
+            if(layer!==focusLayer || ownership!==own())return;
+            layer.visible=wasVisible;placeSpatialLabels();scene3D.requestRender?.(2);
+        };
+    };
+    function placeSpatialLabels(){
+        if(!spatialLabels.length || !scene3D.camera)return;
+        const camera=scene3D.camera,size=scene3D.renderer?.getSize?.(new THREE.Vector2());
+        const height=size?.y || 600,width=Math.min(224,(size?.x || 600)*.65);
+        const canvasWidth=size?.x || 600,occupied=[];
+        const right=new THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion),up=new THREE.Vector3(0,1,0).applyQuaternion(camera.quaternion);
+        for(const [index,item] of spatialLabels.entries()){
+            const visibleHeight=camera.isOrthographicCamera ? (camera.top-camera.bottom)/camera.zoom
+                : 2*item.anchor.distanceTo(camera.position)*Math.tan(THREE.MathUtils.degToRad(camera.fov/2));
+            const unit=visibleHeight/height,labelWidth=item.isMeasurement ? Math.min(360,(size?.x || 600)*.85) : width;
+            const labelHeight=(item.isMeasurement ? labelWidth/8 : 28)*unit;
+            item.sprite.scale.set(labelWidth*unit,labelHeight,1);
+            // Stagger labels without moving their patient-space anchors. Lines
+            // explicitly connect each label to the verified object, not a box
+            // midpoint mistaken for a collision witness.
+            item.sprite.position.copy(item.anchor).addScaledVector(up,(item.isMeasurement ? -46 : 34+index*36)*unit)
+                .addScaledVector(right,(index%2 ? 1 : -1)*Math.min(45,width/5)*unit);
+            const projected=item.sprite.position.clone().project(camera);
+            if([projected.x,projected.y,projected.z].every(Number.isFinite) && Math.abs(projected.z)<=1){
+                const marginX=Math.min(.9,labelWidth/(size?.x || 600)+.04),marginY=(item.isMeasurement ? labelWidth/8+4 : 34)/height;
+                projected.x=Math.max(-1+marginX,Math.min(1-marginX,projected.x));
+                projected.y=Math.max(-1+marginY,Math.min(1-marginY,projected.y));
+                const pixelHeight=item.isMeasurement ? labelWidth/8 : 30;
+                const originalX=(projected.x+1)*canvasWidth/2,originalY=(1-projected.y)*height/2;
+                let chosen=null;
+                // At most three object badges and a few measurements. Try a
+                // bounded set of screen-space lanes, preserving the leaders'
+                // fixed patient anchors; stacked labels must not hide letters.
+                for(const shift of [0,-36,36,-72,72,-108,108,-144,144]){
+                    const candidate={x:originalX,y:Math.max(pixelHeight/2+4,Math.min(height-pixelHeight/2-4,originalY+shift)),w:labelWidth,h:pixelHeight};
+                    if(!occupied.some(box=>Math.abs(candidate.x-box.x)<(candidate.w+box.w)/2+6
+                        && Math.abs(candidate.y-box.y)<(candidate.h+box.h)/2+6)){chosen=candidate;break;}
+                }
+                if(chosen){projected.x=chosen.x/canvasWidth*2-1;projected.y=1-chosen.y/height*2;occupied.push(chosen);}
+                else occupied.push({x:originalX,y:originalY,w:labelWidth,h:pixelHeight});
+                item.sprite.position.copy(projected.unproject(camera));
+            }
+            item.line.geometry.setFromPoints([item.anchor,item.sprite.position]);
+        }
+    }
+    window.focusMonitorCheckpoint = (refs, evidence, options = {}) => {
         if (typeof scene3D === 'undefined' || !scene3D.scene || manualPlanningState.monitorInteractionActive
             || trainingMonitorState.screenshotPendingRunId || window.__reportCaptureActive) return false;
-        if (String(evidence?.planning_id) !== String(manualPlanningState.planningId)
+        if (!trainingMonitorState.active || !Array.isArray(refs) || refs.length>8
+            || String(evidence?.planning_id) !== String(manualPlanningState.planningId)
             || Number(evidence?.after_version) !== Number(manualPlanningState.planningVersion)
             || (evidence.geometry_key && typeof _monitorEvidenceMatchesLiveGeometry === 'function'
                 && !_monitorEvidenceMatchesLiveGeometry(evidence))) return false;
@@ -344,19 +626,74 @@
             _screenshot3DIdentityFor(id, mesh).some(ref => refs.includes(ref)) && _screenshot3DVisibility(id, mesh).locatable);
         if (!refs.length || !refs.every(ref => matched.some(([id, mesh]) =>
             _screenshot3DIdentityFor(id, mesh).includes(ref)))) return false;
-        window.clearMonitorFocus(true);
-        const restore = window.focusPlanningObjectsForScreenshot(refs, {editEvidence:evidence});
-        if (!restore || restore.focusResult?.status !== 'resolved') { restore?.(); return false; }
-        focusRestore = restore;
+        window.clearMonitorFocus(options.reframe !== false);
+        if (options.reframe !== false) {
+            const restore = window.focusPlanningObjectsForScreenshot(refs, {editEvidence:evidence});
+            if (!restore || restore.focusResult?.status !== 'resolved') { restore?.(); return false; }
+            focusRestore = restore;
+        }
         focusLayer = new THREE.Group(); focusLayer.name = 'monitor-focus';
         const overlap = (evidence.conflicts || []).some(pair => pair.change !== 'existing'
             && pair.physical_overlap === true);
         const color = overlap ? 0xff687a : 0xffb347;
-        for (const [, mesh] of matched) {
+        const colors=[0x62c9ff,0xffc56b,0xea9cff];
+        const ownedLabels=window.monitorSpatialGuide?.(latest()?.data.interaction,evidence,lang()) || [];
+        const labels=(options.labels || (ownedLabels.length ? ownedLabels : refs.slice(0,3).map((ref,index)=>({ref,letter:String.fromCharCode(65+index),label:t('定位对象','Located object')}))))
+            .filter(item=>refs.includes(item.ref)).slice(0,3);
+        for (const [id, mesh] of matched) {
             const box = new THREE.Box3().setFromObject(mesh);
-            const outline = new THREE.Box3Helper(box, color);
+            const refsForMesh=_screenshot3DIdentityFor(id,mesh);
+            const identity=labels.find(item=>refsForMesh.includes(item.ref));
+            const accent=identity ? colors['ABC'.indexOf(identity.letter)] || colors[0] : color;
+            const outline = new THREE.Box3Helper(box, accent);
+            outline.material.depthTest=false;outline.renderOrder=1000;
             outline.userData.monitorAnnotation = true;
             focusLayer.add(outline);
+            // Draw a separate geometric edge overlay, not a recolored mesh.
+            // Bound work even if a ref unexpectedly resolves to a large mesh.
+            let edgeCount=0;mesh.traverse(child=>{
+                if(edgeCount>=4 || !child.isMesh || !child.geometry?.attributes?.position
+                    || child.geometry.attributes.position.count>5000)return;
+                const edge=new THREE.LineSegments(new THREE.EdgesGeometry(child.geometry,12),
+                    new THREE.LineBasicMaterial({color:accent,depthTest:false}));
+                edge.matrixAutoUpdate=false;edge.matrix.copy(child.matrixWorld);edge.renderOrder=1001;
+                edge.userData={monitorAnnotation:true,objectRef:identity?.ref,purpose:'object_outline_not_mesh_change'};
+                focusLayer.add(edge);edgeCount++;
+            });
+        }
+        for(const item of labels){
+            const match=matched.find(([id,mesh])=>_screenshot3DIdentityFor(id,mesh).includes(item.ref));
+            if(!match)continue;
+            const box=new THREE.Box3().setFromObject(match[1]),anchor=box.getCenter(new THREE.Vector3());
+            const change=(evidence.changed_objects || []).find(obj=>String(obj.id)===item.ref
+                && !obj.dependent_on_needle && !obj.derived_from_normalization);
+            const valid=point=>Array.isArray(point) && point.length===3 && point.every(Number.isFinite);
+            const points=change?.kind==='needles' && Array.isArray(change.after) ? change.after : [change?.after];
+            const previous=change?.kind==='needles' && Array.isArray(change.before) ? change.before : [change?.before];
+            const moved=points.map((point,index)=>({point,prior:previous[index]})).filter(pair=>valid(pair.point) && valid(pair.prior))
+                .sort((a,b)=>new THREE.Vector3(...b.point).distanceTo(new THREE.Vector3(...b.prior))-new THREE.Vector3(...a.point).distanceTo(new THREE.Vector3(...a.prior)));
+            if(moved.length)anchor.set(...moved[0].point);
+            else if(valid(points[0]))anchor.set(...points[0]);
+            const accent=colors['ABC'.indexOf(item.letter)] || colors[0];
+            const canvas=document.createElement('canvas');canvas.width=480;canvas.height=60;
+            const ctx=canvas.getContext('2d');if(!ctx)continue;
+            ctx.fillStyle='#111b2b';ctx.fillRect(0,0,480,60);ctx.strokeStyle=`#${accent.toString(16).padStart(6,'0')}`;ctx.lineWidth=3;ctx.strokeRect(2,2,476,56);
+            ctx.fillStyle='#ffffff';ctx.font='bold 26px sans-serif';ctx.textBaseline='middle';
+            const label=`${item.letter} · ${item.label}`;ctx.fillText(label,14,30,450);
+            const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(canvas),depthTest:false}));
+            sprite.renderOrder=1002;sprite.userData={monitorAnnotation:true,label,objectRef:item.ref,letter:item.letter,locationAnchor:anchor.toArray()};
+            const line=new THREE.Line(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color:accent,depthTest:false}));
+            line.renderOrder=1001;line.userData.monitorAnnotation=true;focusLayer.add(sprite,line);spatialLabels.push({sprite,line,anchor,canvas,accent});
+            // Actual moved endpoint/seed trace. This arrow records the past
+            // movement (before -> after), never recommends a future direction.
+            for(const pair of moved.slice(0,2)){
+                const before=new THREE.Vector3(...pair.prior),after=new THREE.Vector3(...pair.point),vector=after.clone().sub(before);
+                if(vector.length()<.01)continue;
+                const arrow=new THREE.ArrowHelper(vector.clone().normalize(),before,vector.length(),accent,
+                    Math.min(vector.length()*.22,1.5),Math.min(vector.length()*.12,.8));
+                arrow.traverse(node=>{if(node.material){node.material.depthTest=false;node.renderOrder=1001;}});
+                arrow.userData={monitorAnnotation:true,purpose:'recorded_move_not_recommendation',objectRef:item.ref};focusLayer.add(arrow);
+            }
         }
         // These points come from the very same finite-segment spacing check.
         // An endpoint witness may only provide a conservative axis-model bound.
@@ -391,9 +728,96 @@
             sprite.scale.set(labelHeight * 8, labelHeight, 1);
             sprite.position.addScaledVector(camera.up.clone().normalize(), labelHeight * 1.5);
             sprite.userData.monitorAnnotation = true; sprite.userData.label = label; focusLayer.add(sprite);
+            const leader=new THREE.Line(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color,depthTest:false}));
+            leader.userData.monitorAnnotation=true;focusLayer.add(leader);
+            spatialLabels.push({sprite,line:leader,anchor:a.clone().add(b).multiplyScalar(.5),isMeasurement:true,canvas,measurement,exactSurface});
         }
-        scene3D.scene.add(focusLayer); scene3D.requestRender?.(3);
+        spatialState={owner:own(),planningId:evidence.planning_id,version:evidence.after_version,geometryKey:evidence.geometry_key,
+            refs:labels.map(item=>item.ref),letters:labels.map(item=>item.letter)};
+        placeSpatialLabels();scene3D.scene.add(focusLayer); scene3D.requestRender?.(3);
         return true;
+    };
+    window.previewMonitorGeometry = (geometry, evidence) => {
+        const items = [...(geometry?.seeds || []), ...(geometry?.needles || [])];
+        const refs = items.map(item=>String(item.id));
+        if (!refs.length || items.length > 32 || !window.focusMonitorCheckpoint(refs,evidence,{reframe:false})) return false;
+        const valid = point => Array.isArray(point) && point.length === 3 && point.every(Number.isFinite);
+        for (const item of items) {
+            const points = item.points || [item.position];
+            if (!points.length || !points.every(valid)) { window.clearMonitorFocus(); return false; }
+            const geometry = new THREE.BufferGeometry().setFromPoints(points.map(point=>new THREE.Vector3(...point)));
+            const material = new THREE.LineDashedMaterial({color:0xb38aff,dashSize:1,gapSize:.6,depthTest:false});
+            const line = new THREE.Line(geometry,material); line.computeLineDistances();
+            line.userData.monitorAnnotation = true; line.userData.readOnlyPreview = true; focusLayer.add(line);
+            // A point marker is a location reference, not a fabricated seed mesh.
+            for (const point of points) {
+                const marker = new THREE.Mesh(new THREE.SphereGeometry(.45,8,6),new THREE.MeshBasicMaterial({color:0xb38aff,wireframe:true,depthTest:false}));
+                marker.position.set(...point); marker.userData.monitorAnnotation = true; focusLayer.add(marker);
+            }
+            const change = (evidence.changed_objects || []).find(change=>String(change.id) === String(item.id));
+            const currentPoints=change?.kind === 'seeds' ? [change.after] : change?.after || [];
+            for(const [index,point] of points.entries())if (valid(currentPoints[index]) && valid(point)) {
+                const start = new THREE.Vector3(...currentPoints[index]), end = new THREE.Vector3(...point), vector = end.clone().sub(start);
+                if (vector.length() > .01) {
+                    const arrow = new THREE.ArrowHelper(vector.clone().normalize(),start,vector.length(),0xb38aff,
+                        Math.min(vector.length()*.25,1.5),Math.min(vector.length()*.15,.8));
+                    arrow.traverse(node=>{if(node.material){node.material.depthTest=false;node.renderOrder=1001;}});
+                    arrow.userData.monitorAnnotation = true; arrow.userData.readOnlyPreview = true;
+                    arrow.userData.purpose='preview_destination_not_optimized';arrow.userData.objectRef=item.id;arrow.userData.endpoint=index+1;
+                    focusLayer.add(arrow);
+                }
+            }
+        }
+        scene3D.requestRender?.(3); return true;
+    };
+    window.addEventListener?.('i18nchange', () => {
+        // Repaint text textures in place: no camera restore/reframe, preview
+        // dismissal, geometry mutation, network request or new screenshot.
+        const labels=window.monitorSpatialGuide?.(latest()?.data.interaction,latest()?.evidence,lang()) || [];
+        for(const item of spatialLabels){
+            const ctx=item.canvas?.getContext('2d');if(!ctx)continue;
+            let label;
+            if(item.isMeasurement){
+                const m=item.measurement,exact=item.exactSurface;
+                label=Number.isFinite(m.surface_clearance_mm)
+                    ? t(`轴线 ${m.value_mm.toFixed(2)} mm · ${exact?'实体表面间隙':'轴线模型间隙下界'} ${m.surface_clearance_mm.toFixed(2)} mm`,
+                        `Axis ${m.value_mm.toFixed(2)} mm · ${exact?'finite surface gap':'axis-model clearance bound'} ${m.surface_clearance_mm.toFixed(2)} mm`)
+                    : t(`针道最短轴线距离 ${m.value_mm.toFixed(2)} mm`,`Needle-axis distance ${m.value_mm.toFixed(2)} mm`);
+                ctx.fillStyle='#172030';ctx.fillRect(0,0,640,80);ctx.fillStyle='#ffffff';ctx.font='24px sans-serif';
+                ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(label,320,40,620);
+            }else{
+                const identity=labels.find(row=>row.ref===item.sprite.userData.objectRef);if(!identity)continue;
+                label=`${identity.letter} · ${identity.label}`;
+                ctx.fillStyle='#111b2b';ctx.fillRect(0,0,480,60);ctx.strokeStyle=`#${item.accent.toString(16).padStart(6,'0')}`;
+                ctx.lineWidth=3;ctx.strokeRect(2,2,476,56);ctx.fillStyle='#ffffff';ctx.font='bold 26px sans-serif';
+                ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(label,14,30,450);
+            }
+            item.sprite.userData.label=label;item.sprite.material.map.needsUpdate=true;
+        }
+        if(focusLayer)scene3D.requestRender?.(1);
+        draw();
+    });
+    // An explicit focus may offer camera restoration. Once the user moves
+    // the camera, clearing an annotation must not restore that older pose.
+    let observedControls = null;
+    const bindControls = () => {
+        if (typeof scene3D === 'undefined' || !scene3D.controls?.addEventListener || observedControls === scene3D.controls) return;
+        observedControls = scene3D.controls;
+        const controls = observedControls;
+        controls.addEventListener('start', () => {
+            if (!trainingMonitorState.active || typeof scene3D === 'undefined' || scene3D.controls !== controls) return;
+            focusRestore = null; window.__monitorCameraInteracting = true;
+            manualPlanningState.monitorInteractionEpoch = Number(manualPlanningState.monitorInteractionEpoch || 0)+1;
+        });
+        controls.addEventListener('end', () => {
+            if (typeof scene3D === 'undefined' || scene3D.controls !== controls) return;
+            window.__monitorCameraInteracting = false; window.resumeMonitorInteraction?.();
+            window.refreshMonitorSpatialPresentation?.();draw();
+        });
+        controls.addEventListener('change',()=>{
+            if(scene3D.controls!==controls || !focusLayer)return;
+            placeSpatialLabels();scene3D.requestRender?.(1);
+        });
     };
     window.queueMonitorStopRecovery = (sessionId, runId) => {
         const key = `${sessionId}:${runId}`;
@@ -419,6 +843,7 @@
     if (typeof setInterval === 'function') setInterval(() => {
         if (document.hidden || trainingMonitorState.phase !== 'active') return;
         const identity = planIdentity();
+        bindControls();
         if (identity === visibleIdentity) return;
         visibleIdentity = identity;
         window.clearMonitorFocus();

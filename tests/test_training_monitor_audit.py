@@ -189,7 +189,7 @@ def test_manual_workflow_exposes_real_surgical_guide_actions():
     assert "/api/surgical-guides/generate" in guide
 
 
-def test_monitor_and_screenshots_follow_conversation_language():
+def test_monitor_ui_follows_global_locale_but_chat_screenshots_remain_turn_owned():
     root = Path(__file__).resolve().parents[1]
     chat_core = (root / "web/app/static/js/brachybot-chat-core.js").read_text(encoding="utf-8")
     ui_api = (root / "web/app/static/js/brachybot-ui-api.js").read_text(encoding="utf-8")
@@ -198,11 +198,45 @@ def test_monitor_and_screenshots_follow_conversation_language():
     assert "function detectConversationLanguage(text)" in chat_core
     assert "function conversationLanguageForSession" in chat_core
     assert "session.conversationLanguage = detectedLanguage" in chat_core
-    assert "const conversation = window.conversationLanguageForSession(sessionId);" in ui_api
-    assert "return window._responseLanguage || window._i18nLang || 'en';" in ui_api
+    monitor_locale = ui_api.split('function monitorConversationLanguage(', 1)[1].split('window.monitorConversationLanguage', 1)[0]
+    assert "return window._i18nLang === 'zh' ? 'zh' : 'en';" in monitor_locale
+    assert 'conversationLanguageForSession' not in monitor_locale
+    assert 'trainingMonitorState.language' not in monitor_locale
+    assert "new CustomEvent('i18nchange'" in chat_core
     assert "const language = monitorConversationLanguage(ownerSessionId);" in ui_api
     assert "window.monitorConversationLanguage(startSessionId)" in manual
     assert "window.monitorConversationLanguage(stopSessionId)" in manual
+    annotation = (root / "web/app/static/js/brachybot-visual-annotation.js").read_text(encoding="utf-8")
+    assert "attachment?.mode === 'monitor'" in annotation
+    assert 'questionLanguage' in annotation, 'ordinary screenshots keep their separate turn-language policy'
+
+
+def test_monitor_global_locale_runtime_counterexamples():
+    import shutil
+    import subprocess
+
+    node = shutil.which('node')
+    assert node, 'Monitor JavaScript contract validation requires Node.js'
+    root = Path(__file__).resolve().parents[1]
+    subprocess.run([node, str(root / 'tests/monitor-global-locale.test.cjs'),
+                    str(root / 'web/app/static/js')], check=True, timeout=30)
+
+
+def test_restart_closed_monitor_keeps_bilingual_summary_without_recomputing():
+    import copy
+    from web.server_support import _close_stale_training_snapshot
+
+    training = {'active': True, 'language': 'en', 'run_id': 'run',
+                'events': [{'type': 'manual.needle.drag', 'label': 'Needle moved'}],
+                'event_counts': {'manual.needle.drag': 1}}
+    original = copy.deepcopy(training)
+    restored = _close_stale_training_snapshot(training)
+    summary = restored['last_summary']
+    assert set(summary['content_localized']) == {'zh', 'en'}
+    assert summary['content'] == summary['content_localized']['en']
+    assert '1' in summary['content_localized']['en'] and '1' in summary['content_localized']['zh']
+    assert restored['events'] == original['events'] and training == original
+    assert restored['active'] is False and restored['run_id'] is None
 
 
 def test_monitor_maps_manual_stages_to_their_own_viewer_checkpoint():

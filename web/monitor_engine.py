@@ -332,14 +332,16 @@ def _training_feedback_for_event(agent, session_id: Optional[str], event: Dict[s
         from web.monitor_changes import describe
         evidence = detail['edit_evidence']
         raw, localized = describe(evidence, 'en'), describe(evidence, language)
-        return {'raw': raw, 'localized': localized} if return_pair else localized
+        return {'raw': raw, 'localized': localized,
+                'by_language': {'en': raw, 'zh': describe(evidence, 'zh')}} if return_pair else localized
     source_event = dict(event)
     source_event["language"] = "en"
     source_event["detail"] = {**detail, "language": "en"}
     raw = _training_feedback_for_event_source(agent, session_id, source_event, snapshot=snapshot)
     localized = _localize_monitor_text(raw, language) if raw is not None else None
     if return_pair:
-        return {"raw": raw, "localized": localized}
+        return {"raw": raw, "localized": localized,
+                "by_language": {"en": raw, "zh": _localize_monitor_text(raw, "zh") if raw is not None else None}}
     return localized
 
 

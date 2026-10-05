@@ -464,11 +464,14 @@ def _close_stale_training_snapshot(
             key = str(event.get("type") or "ui.event")
             counts[key] = counts.get(key, 0) + 1
     language = _monitor_language(snapshot.get("language"))
+    summary_by_language = {lang: _format_training_summary(events, counts, {}, lang)
+                           for lang in ('zh', 'en')}
     snapshot["last_summary"] = {
         "message_id": f"assistant-monitor-{old_run_id or 'latest'}-summary",
         "request_id": f"monitor-{old_run_id or 'latest'}",
         "message_kind": "monitor_summary",
-        "content": _format_training_summary(events, counts, {}, language),
+        "content": summary_by_language[language],
+        "content_localized": summary_by_language,
         "language": language,
         "completed_at": snapshot["stopped_at"],
         "closed_reason": reason,

@@ -657,6 +657,11 @@
     }
 
     function languageFor(attachment, context = {}) {
+        // Monitor is globally localized UI. Ordinary chat screenshots remain
+        // turn-owned artifacts; do not alter that separate language contract.
+        if (attachment?.mode === 'monitor' || context.mode === 'monitor' || context.monitorOnly === true) {
+            return window._i18nLang === 'zh' ? 'zh' : 'en';
+        }
         // A screenshot is a reply artifact. Its language must be resolved from
         // the visible turn and persisted on the attachment, not from the
         // current UI/Data Tree locale (which may change before a delayed
@@ -761,8 +766,27 @@
         return '';
     }
 
+    function monitorCaptureIdentity(mark, captured, attachment) {
+        if(attachment?.mode!=='monitor')return null;
+        const rows=metadataFor(attachment).monitor_spatial_labels;
+        const ref=text(captured?.target_ref ?? captured?.targetRef,220);
+        if(!Array.isArray(rows) || rows.length>3 || !ref || ref!==text(mark?.target_ref ?? mark?.targetRef,220)
+            || new Set(rows.map(item=>item?.ref)).size!==rows.length
+            || new Set(rows.map(item=>item?.letter)).size!==rows.length)return null;
+        return rows.find(item=>item?.ref===ref && /^[ABC]$/.test(item.letter)
+            && ['edited','spacing','related'].includes(item.role) && [null,'seeds','needles'].includes(item.kind)) || null;
+    }
+
     function localizedAnnotationLabel(mark, captured, attachment, context = {}) {
         const language = languageFor(attachment, context);
+        const identity=monitorCaptureIdentity(mark,captured,attachment);
+        if(identity){
+            const noun=identity.kind==='needles' ? (language==='zh'?'针道':'needle')
+                : identity.kind==='seeds' ? (language==='zh'?'粒子':'seed') : (language==='zh'?'对象':'object');
+            const role=identity.role==='edited' ? (language==='zh'?`刚编辑的${noun}`:`Edited ${noun}`)
+                : identity.role==='spacing' ? (language==='zh'?'间距检查对象':'Spacing reference') : (language==='zh'?'相关对象':'Related object');
+            return `${identity.letter} · ${role}`;
+        }
         const raw = text(mark?.label || captured?.label, 120);
         const semanticKind = annotationSemanticKind(mark, captured, attachment);
         const ordinal = annotationOrdinal(mark, captured, semanticKind);
@@ -966,6 +990,9 @@
                                 attachment,
                                 context,
                             ),
+                            color:monitorCaptureIdentity(mark,validated.captured,attachment)
+                                ? ({A:'#62c9ff',B:'#ffc56b',C:'#ea9cff'})[monitorCaptureIdentity(mark,validated.captured,attachment).letter]
+                                : mark.color,
                         },
                         validated,
                     });

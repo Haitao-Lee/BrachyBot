@@ -20,8 +20,10 @@ def test_free_text_planning_assessment_uses_normal_chat_grounded_response_path()
 
 def test_assessment_language_is_consistent_for_toolbar_fallback():
     manual = (ROOT / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
-    assert "_formatAdviceReport(advice, prefix, language)" in manual
-    assert "const prefix = language === 'zh'" in manual
+    assert "_formatAdviceReport(advice, prefix, displayLanguage)" in manual
+    assert "const prefix = displayLanguage === 'zh'" in manual
+    assert "data.advice_by_language?.[displayLanguage]" in manual
+    assert "(!trainingMonitorState.active && detectedLanguage)" in manual
 
 
 def test_natural_language_assessment_is_read_only_local_intent():

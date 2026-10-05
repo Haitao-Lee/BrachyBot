@@ -113,6 +113,7 @@ WORKSPACE_READ_ONLY_POST_PATHS = frozenset({
     "/api/planning/dose_overlay_slice",
     "/api/planning/dose_contour_slice",
     "/api/training/advice",
+    "/api/training/edit_preview",
     "/api/report/auto-fill",
     "/api/readiness",
     "/api/viewer/slice",

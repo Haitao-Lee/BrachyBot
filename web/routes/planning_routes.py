@@ -2905,6 +2905,7 @@ def register_planning_routes(
                             seed_changed = 'seeds' in evidence['changed_kinds']
                             needle_changed = 'needles' in evidence['changed_kinds']
                             if changed:
+                                training.pop('candidate_offer', None)
                                 training.pop('pending_restore', None)
                                 if seed_changed or needle_changed:
                                     token = uuid4().hex[:12]
@@ -3014,6 +3015,16 @@ def register_planning_routes(
                           else ('这条编辑决策已过期或不属于当前监测轮次；本次未改动几何。' if zh
                                 else 'This edit decision expired or belongs to a different monitor run. No geometry was changed.'))
                 return jsonify(success=False, error=reason, code='monitor_edit_decision_unavailable'), 409
+            # Keep is a decision about a specific revision too. Never consume
+            # an old offer after a plan selection, edit, or run change.
+            if data.get('monitor_run_id') and data['monitor_run_id'] != training.get('run_id'):
+                return jsonify(success=False, code='monitor_checkpoint_superseded', error='Monitor run changed.'), 409
+            agent = get_cached_agent(session_id) if callable(get_cached_agent) else get_agent(session_id)
+            if agent is None or (
+                    int(agent.memory.retrieve('manual_plan_version') or 0) != pending['version']
+                    or active_planning_id(agent.memory) != pending['planning_id']
+                    or geometry_key(_current_planning_snapshot(agent)) != pending['after_key']):
+                return jsonify(success=False, code='monitor_checkpoint_superseded', error='Plan changed; decision not applied.'), 409
             if data.get('decision') == 'keep':
                 training.pop('pending_restore', None)
                 latest = training.get('latest_edit') or {}
@@ -3023,9 +3034,6 @@ def register_planning_routes(
                 return jsonify(success=True, kept=True, evidence=latest)
             if data.get('decision') != 'restore':
                 return jsonify(success=False, error='An explicit restore or keep decision is required.'), 400
-            agent = get_agent(session_id)
-            if agent is None:
-                return jsonify(success=False, error='The case is not ready; no geometry was restored.'), 409
             if (int(agent.memory.retrieve('manual_plan_version') or 0) != pending['version']
                     or active_planning_id(agent.memory) != pending['planning_id']
                     or geometry_key(_current_planning_snapshot(agent)) != pending['after_key']):
@@ -3068,6 +3076,154 @@ def register_planning_routes(
                 return response
             finally:
                 g.pop('monitor_restore_payload', None)
+
+    def monitor_preview_context(data):
+        """Read/preview/apply all use the same server-owned revision fence."""
+        from web.monitor_changes import geometry_key
+        session_id = request_ui_session_id(data)
+        training = _ui_bucket(session_id).get('training') or {}
+        evidence = training.get('latest_edit') or {}
+        agent = get_cached_agent(session_id) if callable(get_cached_agent) else None
+        if (not training.get('active') or not agent or not evidence
+                or data.get('monitor_run_id') != training.get('run_id')
+                or str(data.get('planning_id') or '') != str(evidence.get('planning_id') or '')
+                or str(data.get('planning_version')) != str(evidence.get('after_version'))
+                or data.get('geometry_key') != evidence.get('geometry_key')
+                or data.get('checkpoint_id') != evidence.get('geometry_event_id')):
+            raise ValueError('monitor_checkpoint_superseded')
+        for kind in ('manual_seeds', 'manual_needles'):
+            records = agent.memory.retrieve(kind)
+            if isinstance(records, list) and (any(not isinstance(item, dict) or not item.get('id') for item in records)
+                    or len({str(item['id']) for item in records}) != len(records)):
+                raise ValueError('monitor_geometry_unverified')
+        geometry = _current_planning_snapshot(agent)
+        if (active_planning_id(agent.memory) != evidence['planning_id']
+                or int(agent.memory.retrieve('manual_plan_version') or 0) != evidence['after_version']
+                or geometry_key(geometry) != evidence['geometry_key']):
+            raise ValueError('monitor_checkpoint_superseded')
+        return session_id, training, agent, evidence, geometry
+
+    def monitor_target_membership(agent):
+        """A sampled physical seed cylinder must lie in the current CTV grid.
+
+        This is a geometric gate, not dose/OAR or clinical acceptance.
+        """
+        image = agent.memory.retrieve('ct_image')
+        if image is None:
+            raise ValueError('monitor_target_unavailable')
+        shape = tuple(reversed(image.GetSize()))
+        mask = None
+        for key in ('ctv_array', 'ctv_mask', 'ctv_full_labels'):
+            value = agent.memory.retrieve(key)
+            if value is not None and np.asarray(value).shape == shape:
+                mask = np.asarray(value)
+                break
+        if mask is None:
+            raise ValueError('monitor_target_unavailable')
+        settings = _manual_seed_geometry_settings(agent.memory)
+        def contains(seed):
+            center = np.asarray(seed['position'], dtype=float)
+            direction = np.asarray(seed.get('direction'), dtype=float)
+            if center.shape != (3,) or direction.shape != (3,) or not np.isfinite([*center, *direction]).all():
+                return False
+            length = np.linalg.norm(direction)
+            if length < 1e-6:
+                return False
+            axis = direction / length
+            basis = np.cross(axis, [0., 1., 0.] if abs(axis[1]) < .9 else [1., 0., 0.])
+            basis /= np.linalg.norm(basis)
+            second = np.cross(axis, basis)
+            for z in (-settings['length_mm']/2, 0., settings['length_mm']/2):
+                for offset in (np.zeros(3), basis, -basis, second, -second):
+                    point = center + axis*z + offset*settings['radius_mm']
+                    try:
+                        x, y, zidx = image.TransformPhysicalPointToIndex(tuple(float(v) for v in point))
+                        if not (0 <= zidx < shape[0] and 0 <= y < shape[1] and 0 <= x < shape[2]
+                                and np.isfinite(mask[zidx, y, x]) and mask[zidx, y, x] > 0):
+                            return False
+                    except (RuntimeError, ValueError, TypeError):
+                        return False
+            return True
+        return contains
+
+    @app.route('/api/training/edit_preview', methods=['POST'])
+    @require_api_key
+    @rate_limit
+    @monitor_decision_ready
+    def api_training_edit_preview():
+        data = request.get_json(silent=True) or {}
+        try:
+            sid, training, agent, evidence, geometry = monitor_preview_context(data)
+            pending = training.get('pending_restore') or {}
+            if data.get('mode') == 'previous':
+                if (not pending or data.get('token') != pending.get('token')
+                        or pending.get('run_id') != training.get('run_id')
+                        or time.time() > pending.get('expires_at', 0)):
+                    raise ValueError('monitor_edit_decision_unavailable')
+                ids = {str(obj['id']) for obj in evidence.get('changed_objects', [])
+                       if not obj.get('derived_from_normalization') and obj.get('operation') != 'deleted'}
+                previous = pending['before']['geometry']
+                return jsonify(success=True, mode='previous', read_only=True,
+                    planning_version=evidence['after_version'], geometry_key=evidence['geometry_key'],
+                    geometry={kind: [item for item in previous.get(kind, []) if str(item.get('id')) in ids][:32]
+                              for kind in ('seeds', 'needles')},
+                    validation={'dose': 'not_computed', 'clinical': 'not_assessed', 'geometry': 'recorded_pre_edit_not_verified_safe'})
+            if data.get('mode') != 'spacing':
+                raise ValueError('monitor_preview_mode_invalid')
+            from web.monitor_candidates import seed_spacing_candidates
+            result = seed_spacing_candidates(geometry, evidence, str(data.get('object_id') or ''),
+                normalize=lambda seeds, needles: _normalize_manual_seed_records(agent.memory, seeds, needles),
+                spacing=lambda seeds, needles, ref: _seed_interference_report(agent, seeds, needles, focus_ids={ref}, max_pairs=None),
+                contains=monitor_target_membership(agent))
+            offer_id = uuid4().hex[:12]
+            for index, candidate in enumerate(result['candidates']):
+                candidate['candidate_id'] = f'{offer_id}-{index}'
+            # Only tiny, server-issued destinations are retained. No caller
+            # coordinates or dose fields can authorize a later mutation.
+            training['candidate_offer'] = {'id': offer_id, 'expires_at': time.time()+120,
+                'run_id': training['run_id'], 'event_id': evidence['geometry_event_id'],
+                'version': evidence['after_version'], 'geometry_key': evidence['geometry_key'],
+                'candidates': copy.deepcopy(result['candidates'])}
+            return jsonify(success=True, mode='spacing', read_only=True, **result)
+        except (ValueError, KeyError, TypeError) as error:
+            code = str(error) if str(error).startswith('monitor_') else 'monitor_geometry_unverified'
+            return jsonify(success=False, code=code, error='Preview unavailable; no geometry changed.'), 409
+
+    @app.route('/api/training/apply_candidate', methods=['POST'])
+    @require_api_key
+    @rate_limit
+    @monitor_decision_ready
+    def api_training_apply_candidate():
+        data = request.get_json(silent=True) or {}
+        try:
+            sid, training, agent, evidence, geometry = monitor_preview_context(data)
+            offer = training.get('candidate_offer') or {}
+            candidate = next((item for item in offer.get('candidates', [])
+                              if item['candidate_id'] == data.get('candidate_id')), None)
+            if (not candidate or data.get('confirm') is not True or time.time() > offer.get('expires_at', 0)
+                    or offer.get('run_id') != training['run_id']
+                    or offer.get('event_id') != evidence['geometry_event_id']
+                    or offer.get('version') != evidence['after_version']
+                    or offer.get('geometry_key') != evidence['geometry_key']):
+                raise ValueError('monitor_candidate_expired')
+            seeds = copy.deepcopy(geometry['seeds'])
+            selected = next(item for item in seeds if str(item['id']) == candidate['object_id'])
+            selected['position'] = candidate['position']
+            seeds = _normalize_manual_seed_records(agent.memory, seeds, geometry['needles'])
+            selected = next(item for item in seeds if str(item['id']) == candidate['object_id'])
+            report = _seed_interference_report(agent, seeds, geometry['needles'], focus_ids={candidate['object_id']}, max_pairs=None)
+            if report['status'] != 'clear' or report['close_pairs'] or not monitor_target_membership(agent)(selected):
+                raise ValueError('monitor_candidate_no_longer_valid')
+            # No override, no new seed, no deletion. Ordinary commit performs
+            # its own normalization, safety, fork, version and persistence.
+            g.monitor_restore_payload = {'session_id': sid, 'expected_version': evidence['after_version'],
+                'planning_id': evidence['planning_id'], 'reason': 'move', 'seeds': seeds, 'needles': geometry['needles']}
+            return api_manual_planning_update_seeds()
+        except (ValueError, KeyError, TypeError, StopIteration) as error:
+            code = str(error) if str(error).startswith('monitor_') else 'monitor_geometry_unverified'
+            return jsonify(success=False, code=code, error='Candidate not applied; no geometry changed.'), 409
+        finally:
+            g.pop('monitor_restore_payload', None)
 
     def task_workspace_owner() -> Optional[str]:
         """Return the server-derived owner key for transient progress tasks."""
@@ -5491,6 +5647,7 @@ def register_planning_routes(
             "feedback": feedback if bucket.get("training", {}).get("active") else None,
             "feedback_raw": feedback_pair.get("raw") if feedback_pair and bucket.get("training", {}).get("active") else None,
             "feedback_localized": feedback if bucket.get("training", {}).get("active") else None,
+            "feedback_by_language": feedback_pair.get("by_language") if feedback and feedback_pair else None,
             "suggested_screenshot": suggested_screenshot if bucket.get("training", {}).get("active") else None,
             "language": language,
             "monitor_run_id": active_run_id or None,
@@ -5715,20 +5872,23 @@ def register_planning_routes(
         )
         try:
             localized_advice = _localize_plan_advice(advice, language)
-            summary = _format_training_summary(events, counts, advice, language)
+            summary_by_language = {lang: _format_training_summary(events, counts, advice, lang)
+                                   for lang in ('zh', 'en')}
+            summary = summary_by_language[language]
         except Exception:
             logger.exception("[monitor_stop] summary rendering failed")
             localized_advice = {}
-            summary = (
-                "监测已结束，但总结生成失败；监测事件仍保存在病例记录中。"
-                if language == "zh" else
-                "Monitoring stopped, but the summary could not be rendered; events remain saved with the case."
-            )
+            summary_by_language = {
+                'zh': "监测已结束，但总结生成失败；监测事件仍保存在病例记录中。",
+                'en': "Monitoring stopped, but the summary could not be rendered; events remain saved with the case.",
+            }
+            summary = summary_by_language[language]
         summary_message = {
             "message_id": f"assistant-monitor-{active_run_id or 'latest'}-summary",
             "request_id": f"monitor-{active_run_id or 'latest'}",
             "message_kind": "monitor_summary",
             "content": summary,
+            "content_localized": summary_by_language,
             "language": language,
             "completed_at": time.time(),
         }
@@ -5751,6 +5911,7 @@ def register_planning_routes(
             "session_id": session_id,
             "monitor_run_id": active_run_id or None,
             "summary": summary,
+            "summary_by_language": summary_by_language,
             "event_counts": counts,
             "feedback": feedback,
             "advice": advice,
@@ -5777,6 +5938,7 @@ def register_planning_routes(
         response = {
             **advice,
             "localized_advice": _localize_plan_advice(advice, language),
+            "advice_by_language": {lang: _localize_plan_advice(advice, lang) for lang in ('zh', 'en')},
             "language": language,
         }
         question = str(data.get("question") or "").strip()
@@ -6054,6 +6216,8 @@ def register_planning_routes(
             result["localized_advice"] = _localize_plan_advice(
                 result["advice"], monitor_language
             )
+            result["advice_by_language"] = {lang: _localize_plan_advice(result["advice"], lang)
+                                           for lang in ('zh', 'en')}
             result["planning_id"] = planning_id
             publish_planning_run(agent, result, status="completed")
             checkpoint_operation(

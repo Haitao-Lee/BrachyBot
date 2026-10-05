@@ -193,6 +193,86 @@ def test_keep_preserves_geometry_and_consumes_only_its_decision(live_monitor):
     assert post('training/restore_edit', {'token': token, 'decision': 'restore'}).status_code == 409
 
 
+@pytest.mark.parametrize('change', ['version', 'plan', 'geometry', 'run'])
+def test_keep_is_version_and_geometry_fenced_without_consuming_offer(live_monitor, change):
+    agent, geometry, post, sid = live_monitor
+    result = commit_move(agent, geometry, post)
+    token = result['monitor_edit']['restore_token']
+    payload = {'token': token, 'decision': 'keep', 'monitor_run_id': 'run'}
+    if change == 'version': agent.memory.store('manual_plan_version', 99)
+    if change == 'plan': agent.memory.store('active_planning_id', 'other')
+    if change == 'geometry': agent.memory.values['manual_seeds'][1]['position'][2] += 1
+    if change == 'run': payload['monitor_run_id'] = 'other'
+    response = post('training/restore_edit', payload)
+    assert response.status_code == 409
+    assert support._ui_bucket(sid)['training']['pending_restore']['token'] == token
+
+
+def preview_request(result, **extra):
+    evidence = result['monitor_edit']
+    return dict(monitor_run_id='run', planning_id=evidence['planning_id'],
+                planning_version=evidence['after_version'], geometry_key=evidence['geometry_key'],
+                checkpoint_id=evidence['geometry_event_id'], token=evidence['restore_token'], **extra)
+
+
+def test_previous_position_preview_is_read_only_and_keeps_restore_token(live_monitor):
+    agent,geometry,post,sid=live_monitor
+    result=commit_move(agent,geometry,post)
+    before=dict(agent.memory.values)
+    response=post('training/edit_preview',preview_request(result,mode='previous'))
+    assert response.status_code==200,response.get_json()
+    data=response.get_json()
+    assert data['read_only'] is True
+    assert data['geometry']['seeds'][0]['position']==[0,0,15]
+    assert data['validation']['geometry']=='recorded_pre_edit_not_verified_safe'
+    assert agent.memory.values==before
+    assert support._ui_bucket(sid)['training']['pending_restore']['token']==result['monitor_edit']['restore_token']
+
+
+@pytest.mark.parametrize('field,value', [('monitor_run_id','other'),('planning_id','other'),
+    ('planning_version',99),('geometry_key','forged'),('checkpoint_id','forged'),('token','forged')])
+def test_preview_never_crosses_revision_or_inverse_owner(live_monitor,field,value):
+    agent,geometry,post,sid=live_monitor
+    result=commit_move(agent,geometry,post)
+    payload=preview_request(result,mode='previous');payload[field]=value
+    assert post('training/edit_preview',payload).status_code==409
+    assert agent.memory.retrieve('manual_seeds')[1]['position']==[0,0,6]
+
+
+def test_spacing_offer_and_explicit_apply_use_real_seed_commit(live_monitor):
+    import numpy as np
+    import SimpleITK as sitk
+    agent,geometry,post,sid=live_monitor
+    agent.memory.store('ct_image',sitk.GetImageFromArray(np.zeros((32,4,4),dtype=np.float32)))
+    agent.memory.store('ctv_array',np.ones((32,4,4),dtype=np.uint8))
+    result=commit_move(agent,geometry,post)
+    payload=preview_request(result,mode='spacing',object_id='b')
+    response=post('training/edit_preview',payload)
+    assert response.status_code==200,response.get_json()
+    offer=response.get_json()
+    assert offer['candidates'],offer
+    candidate=offer['candidates'][0]
+    assert agent.memory.retrieve('manual_seeds')[1]['position']==[0,0,6]
+    payload['candidate_id']=candidate['candidate_id']
+    assert post('training/apply_candidate',payload).status_code==409,'missing explicit confirmation'
+    payload.update(confirm=True,position=[999,999,999],allow_unsafe=True)
+    applied=post('training/apply_candidate',payload)
+    assert applied.status_code==200,applied.get_json()
+    assert agent.memory.retrieve('manual_seeds')[1]['position']==candidate['position']
+    assert agent.memory.retrieve('manual_plan_version')==3
+    assert agent.memory.retrieve('manual_artifact_status')['dose']=='stale'
+    assert applied.get_json()['monitor_checkpoint']
+    assert post('training/apply_candidate',payload).status_code==409,'cannot replay a consumed or superseded offer'
+
+
+def test_spacing_search_requires_current_ctv_instead_of_fake_success(live_monitor):
+    agent,geometry,post,sid=live_monitor
+    result=commit_move(agent,geometry,post)
+    response=post('training/edit_preview',preview_request(result,mode='spacing',object_id='b'))
+    assert response.status_code==409
+    assert response.get_json()['code']=='monitor_target_unavailable'
+
+
 def test_commit_delivers_coaching_without_telemetry_round_trip(live_monitor):
     agent, geometry, post, sid = live_monitor
     result = commit_move(agent, geometry, post)

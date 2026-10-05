@@ -1810,9 +1810,13 @@ function _flushMonitorFeedback(ownerSessionId, ownerRunId, options = {}) {
         : unique.map(item => `- ${item.message}`).join('\n');
     const requestId = `monitor-${ownerRunId}`;
     const messageId = `assistant-${requestId}-feedback-${Date.now()}`;
-    addChat(
+    const copies=unique.every(item=>item.localeCopies?.zh && item.localeCopies?.en)
+        ? Object.fromEntries(['zh','en'].map(lang=>[lang,`**${lang==='zh'?'阶段监测':'Stage monitor'}**\n\n${unique.length===1
+            ? unique[0].localeCopies[lang] : unique.map(item=>`- ${item.localeCopies[lang]}`).join('\n')}`])) : null;
+    const emit=copies && window.addMonitorLocalizedChat || addChat;
+    emit(
         'bot-response',
-        `**${title}**\n\n${body}`,
+        copies || `**${title}**\n\n${body}`,
         true,
         Date.now(),
         false,
@@ -1870,7 +1874,7 @@ function _attachMonitorEditChoices(messageId, evidence, sessionId, runId) {
     row.appendChild(actions);
 }
 
-function _queueMonitorFeedback(message, type, label, ownerSessionId, ownerRunId, evidence = null) {
+function _queueMonitorFeedback(message, type, label, ownerSessionId, ownerRunId, evidence = null, localeCopies = null) {
     if (!message || !trainingMonitorState.active) return false;
     const immediate = type === 'manual.dose'
         || (/^(planning|segmentation)\.step$/i.test(type)
@@ -1881,9 +1885,12 @@ function _queueMonitorFeedback(message, type, label, ownerSessionId, ownerRunId,
         const title = monitorChatText('监测建议', 'Monitor feedback', ownerSessionId);
         const requestId = `monitor-${ownerRunId}`;
         const messageId = `assistant-${requestId}-feedback-${Date.now()}`;
-        addChat(
+        const copies=localeCopies?.zh && localeCopies?.en ? {
+            zh:`**监测建议**\n\n${localeCopies.zh}`,en:`**Monitor feedback**\n\n${localeCopies.en}`} : null;
+        const emit=copies && window.addMonitorLocalizedChat || addChat;
+        emit(
             'bot-response',
-            `**${title}**\n\n${message}`,
+            copies || `**${title}**\n\n${message}`,
             true,
             Date.now(),
             false,
@@ -1902,7 +1909,7 @@ function _queueMonitorFeedback(message, type, label, ownerSessionId, ownerRunId,
     if (!Array.isArray(trainingMonitorState.pendingFeedback)) {
         trainingMonitorState.pendingFeedback = [];
     }
-    trainingMonitorState.pendingFeedback.push({ message, type, label, evidence, at: Date.now() });
+    trainingMonitorState.pendingFeedback.push({ message, type, label, evidence, localeCopies, at: Date.now() });
     _clearMonitorFeedbackTimer();
     trainingMonitorState.feedbackTimer = setTimeout(() => {
         _flushMonitorFeedback(ownerSessionId, ownerRunId);
@@ -1911,24 +1918,36 @@ function _queueMonitorFeedback(message, type, label, ownerSessionId, ownerRunId,
 }
 
 function monitorConversationLanguage(sessionId = trainingMonitorState.sessionId) {
-    const requestedSessionId = String(sessionId || '');
-    const monitorSessionId = String(trainingMonitorState?.sessionId || '');
-    const monitorPhase = String(trainingMonitorState?.phase || '').toLowerCase();
-    const monitorLanguage = String(trainingMonitorState?.language || '').toLowerCase();
-    // A monitor run keeps the language chosen when it started. Machine-issued
-    // edit commands must not switch later monitor feedback to another locale.
-    if (requestedSessionId && requestedSessionId === monitorSessionId
-        && ['starting', 'active', 'stopping'].includes(monitorPhase)
-        && ['zh', 'en'].includes(monitorLanguage)) {
-        return monitorLanguage;
-    }
-    if (typeof window.conversationLanguageForSession === 'function') {
-        const conversation = window.conversationLanguageForSession(sessionId);
-        if (conversation === 'zh' || conversation === 'en') return conversation;
-    }
-    return window._responseLanguage || window._i18nLang || 'en';
+    // Compatibility name only: Monitor is product UI, not an LLM reply turn.
+    // Global EN/中 owns its locale even during a run or an in-flight request.
+    return window._i18nLang === 'zh' ? 'zh' : 'en';
 }
 window.monitorConversationLanguage = monitorConversationLanguage;
+window.monitorUILanguage = monitorConversationLanguage;
+const _monitorLocalizedMessages = new Map();
+window.addMonitorLocalizedChat = (type, copies, scroll, at, restored, sessionId, metadata) => {
+    if(!copies || typeof copies.zh!=='string' || typeof copies.en!=='string')return false;
+    const locale=monitorConversationLanguage(sessionId),meta={...metadata,responseLanguage:locale};
+    addChat(type,copies[locale],scroll,at,restored,sessionId,meta);
+    if(meta.messageId){
+        _monitorLocalizedMessages.set(`${sessionId}:${meta.messageId}`,{type,copies,at,sessionId,meta});
+        if(_monitorLocalizedMessages.size>80)_monitorLocalizedMessages.delete(_monitorLocalizedMessages.keys().next().value);
+    }
+    return true;
+};
+window.addEventListener('i18nchange', () => {
+    trainingMonitorState.language = monitorConversationLanguage();
+    setMonitorPresentation(trainingMonitorState.phase || 'inactive');
+    for(const item of _monitorLocalizedMessages.values()){
+        if(item.sessionId!==_activeApiSessionId())continue;
+        const row=[...document.querySelectorAll('[data-message-id]')].find(node=>node.dataset.messageId===item.meta.messageId);
+        if(!row)continue;
+        const restore=window.preserveMonitorPresentation?.(row);
+        addChat(item.type,item.copies[monitorConversationLanguage(item.sessionId)],false,item.at,false,item.sessionId,
+            {...item.meta,responseLanguage:monitorConversationLanguage(item.sessionId)});
+        restore?.();
+    }
+});
 
 function monitorChatText(zh, en, sessionId = trainingMonitorState.sessionId) {
     return monitorConversationLanguage(sessionId) === 'zh' ? zh : en;
@@ -2045,7 +2064,7 @@ function restoreTrainingMonitorSnapshot(training, sessionId) {
         return;
     }
     trainingMonitorState.runId = staleRunId;
-    trainingMonitorState.language = snapshot.language || monitorConversationLanguage(sessionId);
+    trainingMonitorState.language = monitorConversationLanguage(sessionId);
     trainingMonitorState.goal = snapshot.goal || '';
     trainingMonitorState.sessionId = sessionId;
     if (snapshot.active) {
@@ -2253,7 +2272,7 @@ window.performMonitorEditDecision = async function(token, kept, owner) {
         const response = await fetch(API + '/training/restore_edit', {
             signal: abort.signal, method: 'POST',
             headers: {'Content-Type': 'application/json', 'X-BrachyBot-Session': sessionId},
-            body: JSON.stringify({session_id:sessionId, token, language, decision:kept ? 'keep' : 'restore'}),
+            body: JSON.stringify({session_id:sessionId, monitor_run_id:runId, token, language, decision:kept ? 'keep' : 'restore'}),
         });
         const data = await response.json();
         if (!response.ok || !data.success) {
@@ -2281,8 +2300,9 @@ window.handleMonitorConversation = async function(text) {
     const decision = String(text).trim().match(/^(复位|撤销|保留|undo|restore|keep)\s+([a-f0-9]{12})[。.!！]?$/i);
     const query = /^(?:请|告诉我|请告诉我)?\s*(?:刚刚|刚才|这次|上一步|本次).{0,18}(?:变好|变坏|改善|劣化|影响|变化|评分|分数|score).{0,12}[?？。]?$|^(?:不是)?可以计算规划的\s*score\s*吗[?？。]?$|^(?:did|how did|was) (?:my |the )?(?:last|latest) edit (?:improve|worsen|affect|change).{0,35}\?$/i.test(text);
     const adjustmentQuery = /(?:如何|怎么|应该怎样|how (?:should|do) I).{0,15}(?:调整|调节|拖动|移动|adjust|move).{0,25}(?:针道|穿刺针|粒子|needle|seed)/i.test(text);
-    if (!restorePlanQuery && !executeAlgorithmRestore && !decision && (!(query || adjustmentQuery)
-        || /[，,;；“”"「」]|以及|另外|然后|同时|如果|假如|\band\b|\bif\b/i.test(text))) return false;
+    // Open-ended questions belong to the semantic agent with compact monitor
+    // facts and the live operation catalogue, not a keyword-triggered reply.
+    if (!restorePlanQuery && !executeAlgorithmRestore && !decision) return false;
     const sessionId = _activeApiSessionId();
     const runId = trainingMonitorState.runId;
     const language = monitorConversationLanguage(sessionId);
@@ -2423,7 +2443,8 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
             && typeof window.receiveMonitorCheckpoint === 'function') {
             return window.receiveMonitorCheckpoint(data);
         }
-        const feedbackText = !options.cachedCheckpoint && data && (data.feedback_localized || data.feedback);
+        const feedbackText = !options.cachedCheckpoint && data && (data.feedback_by_language?.[monitorConversationLanguage(ownerSessionId)]
+            || data.feedback_localized || data.feedback);
         const queued = _queueMonitorFeedback(
             feedbackText,
             type,
@@ -2431,13 +2452,17 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
             ownerSessionId,
             ownerRunId,
             data?.event?.detail?.edit_evidence,
+            data?.feedback_by_language,
         );
         if (!queued && feedbackText && _shouldLogTrainingFeedback(feedbackText, type, label)) {
             const monitorPrefix = monitorChatText('监测建议', 'Monitor feedback', ownerSessionId);
             const requestId = `monitor-${ownerRunId}`;
-            addChat(
+            const copies=data.feedback_by_language?.zh && data.feedback_by_language?.en ? {
+                zh:`**监测建议**\n\n${data.feedback_by_language.zh}`,en:`**Monitor feedback**\n\n${data.feedback_by_language.en}`} : null;
+            const emit=copies && window.addMonitorLocalizedChat || addChat;
+            emit(
                 'bot-response',
-                `**${monitorPrefix}**\n\n${feedbackText}`,
+                copies || `**${monitorPrefix}**\n\n${feedbackText}`,
                 true,
                 Date.now(),
                 false,
@@ -2493,6 +2518,12 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                         }
                         return;
                     }
+                    if ((typeof manualPlanningState !== 'undefined' && manualPlanningState.monitorInteractionActive)
+                        || window.__monitorCameraInteracting || window.__reportCaptureActive) {
+                        if (trainingMonitorState.screenshotPendingRunId === ownerRunId) trainingMonitorState.screenshotPendingRunId = null;
+                        window.updateMonitorCheckpointCapture?.(data,{success:false,error:'monitor_interaction_busy'});
+                        return;
+                    }
                     const checkpointId = ss.checkpoint_id || String(Date.now());
                     // Every edit owns an immutable evidence message. A later
                     // seed/needle checkpoint must not replace an earlier image.
@@ -2505,10 +2536,14 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                             mode: 'monitor',
                             layout: 'auto',
                     };
-                    const focusObjectIds = [
+                    const requestedFocusIds = [
                         ...(Array.isArray(ss.focus_seed_ids) ? ss.focus_seed_ids : []),
                         ...(Array.isArray(ss.object_ids) ? ss.object_ids : []),
                     ].map(String);
+                    const monitorSpatialLabels=(window.monitorSpatialGuide?.(data.interaction,
+                        data.event?.detail?.edit_evidence,data.language || language) || [])
+                        .filter(item=>requestedFocusIds.includes(item.ref));
+                    const focusObjectIds=monitorSpatialLabels.length ? monitorSpatialLabels.map(item=>item.ref) : requestedFocusIds;
                     _interceptScreenshot(
                         ss.target || 'dose-overview',
                         ss.question || ss.description || monitorChatText('监测截图', 'Monitor screenshot', ownerSessionId),
@@ -2523,7 +2558,8 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                             monitorPlanningVersion: ss.planning_version,
                             monitorPlanningId: ss.planning_id,
                             monitorEditEvidence: ss.edit_evidence,
-                            responseLanguage: data.language || language,
+                            monitorSpatialLabels:monitorSpatialLabels.map(({ref,letter,kind,role})=>({ref,letter,kind,role})),
+                            responseLanguage: monitorConversationLanguage(ownerSessionId),
                             plan: {
                                 version: 5,
                                 mode: 'monitor',
@@ -2625,6 +2661,10 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                         if (next && next.runId === trainingMonitorState.runId && next.sessionId === _activeApiSessionId()) {
                             void reportUIEvent(next.type, next.label, {}, { cachedCheckpoint: next.data });
                         }
+                        if (ownerRunId === trainingMonitorState.runId && ownerSessionId === _activeApiSessionId())
+                            window.resumeMonitorSpatialAssistance?.();
+                        if (ownerRunId === trainingMonitorState.runId && ownerSessionId === _activeApiSessionId())
+                            window.notifyMonitorResourcesReady?.({session_id:ownerSessionId});
                     });
                 }, 500);
             }
@@ -5435,14 +5475,16 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         const alreadyPresent = (sessions[sessionAtStart].messages || []).some(message =>
             summaryMessageId && String(message?.id || '') === summaryMessageId
         );
-        if (!alreadyPresent) {
+        if (!alreadyPresent || (persistedSummary.content_localized?.zh && persistedSummary.content_localized?.en)) {
             const rawSummaryTimestamp = Number(persistedSummary.completed_at || Date.now());
             const summaryTimestamp = rawSummaryTimestamp > 0 && rawSummaryTimestamp < 1e12
                 ? rawSummaryTimestamp * 1000
                 : rawSummaryTimestamp;
-            addChat(
+            const copies=persistedSummary.content_localized;
+            const emit=copies && window.addMonitorLocalizedChat || addChat;
+            emit(
                 'bot-response',
-                String(persistedSummary.content),
+                copies || String(persistedSummary.content),
                 false,
                 summaryTimestamp,
                 false,
@@ -6191,6 +6233,13 @@ async function _runWorkspaceRestoreTransaction(options = {}) {
             result || {},
         );
         resolveVisualReady(readinessEntry.result);
+        if ((readinessEntry.result.ready === true || readinessEntry.result.reason === 'visual_restore_partial')
+            && !readinessEntry.result.cancelled && _activeApiSessionId() === sessionAtStart
+            && window.__workspaceHydrationRunId === hydrationRunId) {
+            window.dispatchEvent(new CustomEvent('brachybot:monitor-resources-ready', {
+                detail:{session_id:sessionAtStart},
+            }));
+        }
     };
     readinessEntry.resolveReady = settleVisualReady;
     readinessStore[readinessKey] = readinessEntry;
@@ -12985,6 +13034,7 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
     let activeViewRestore = null;
     let restoreVisibility = null;
     let restoreOccluders = null;
+    const restoreMonitorAnnotations=window.suspendMonitorSpatialAnnotations?.();
     const attachments = [];
     const omittedTargetRefs = new Set();
     let uploadedCount = 0;
@@ -13167,6 +13217,7 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                     restoreOccluders = null;
                     if (ownerSessionId === String(_activeApiSessionId())) {
                         await _restoreScreenshotViewerState(snapshot, activeViewRestore);
+                        restoreMonitorAnnotations?.();
                     }
                     activeViewRestore = null;
                     presentationRestored = true;
@@ -13236,6 +13287,7 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                         temporary_occluders: presentationEvidence.occluders,
                         appearance_preserved: presentationEvidence.appearancePreserved,
                         grounding_manifest: groundingManifest,
+                        monitor_spatial_labels:options.monitorOnly ? options.monitorSpatialLabels || [] : [],
                     },
                 }),
             });
@@ -13294,6 +13346,7 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                             temporary_occluders: presentationEvidence.occluders,
                             appearance_preserved: presentationEvidence.appearancePreserved,
                             grounding_manifest: groundingManifest,
+                            monitor_spatial_labels:options.monitorOnly ? options.monitorSpatialLabels || [] : [],
                         },
                     ),
                     visual_analysis: captureSpec.analysis_required !== false,
@@ -13365,6 +13418,7 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                 await _restoreScreenshotViewerState(snapshot, activeViewRestore);
             }
         } finally {
+            restoreMonitorAnnotations?.();
             if (!presentationRestored && presentationToken !== null) window.unlockWorkspacePresentationWrites?.(presentationToken);
             releaseCapture();
         }

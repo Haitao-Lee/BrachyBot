@@ -1545,7 +1545,9 @@ async function _runManualDoseJob(job) {
             `Manual AI dose updated: ${data.total_seeds} seeds, V100=${v100}, D90=${d90}.`,
         ));
         if (data.advice && data.advice.advice && trainingMonitorState.active) {
-            const localizedAdvice = data.localized_advice?.advice || data.advice.advice;
+            const displayLanguage=window.monitorConversationLanguage?.(_activeApiSessionId()) || (window._i18nLang || 'en');
+            const localizedAdvice = data.advice_by_language?.[displayLanguage]?.advice
+                || data.localized_advice?.advice || data.advice.advice;
             addChat('system', _manualText(
                 '监测建议：' + localizedAdvice.slice(0, 2).join(' '),
                 'Monitor advice: ' + localizedAdvice.slice(0, 2).join(' '),
@@ -2310,7 +2312,9 @@ function _showRecoveredMonitorSummary(status, sessionId, runId, language, screen
     const summary = status?.summary_message;
     if (String(status?.monitor_run_id || '') !== String(runId || '')
         || !summary?.content) return false;
-    addChat('bot-response', summary.content, true, Date.now(), false, sessionId, {
+    const copies=summary.content_localized;
+    const emit=copies && window.addMonitorLocalizedChat || addChat;
+    emit('bot-response', copies || summary.content, true, Date.now(), false, sessionId, {
         requestId: summary.request_id || `monitor-${runId}`,
         messageId: summary.message_id || `assistant-monitor-${runId}-summary`,
         messageKind: 'monitor_summary',
@@ -2479,12 +2483,14 @@ async function startTrainingMode(goal = 'Monitor planning workflow') {
             trainingMonitorState.active = true;
             window.setMonitorPresentation?.('active');
         }
-        const startedMessage = language === 'zh'
-            ? '监测已启动。聊天上方的监测工作台会保留当前指标、产物状态和最新编辑反馈。保存粒子或针道编辑后，可点击“定位对象”在 3D 中查看，或恢复编辑前位置；截图与逐次记录仍保存在对话中。默认不自动重算，可打开“自动重算并比较”合并连续编辑后的剂量计算，或点击“立即重算比较”。多次编辑后的差值按整个编辑序列说明，不归因于单次拖动。'
-            : 'Monitoring started. The workspace above chat keeps current metrics, artifact states and the latest edit feedback visible. After saving a seed or needle edit, use Locate objects in 3D or restore its pre-edit position; images and edit history remain in chat. Automatic dose comparison is off by default: enable Auto compare to coalesce edits, or choose Compare now. Multi-edit dose changes describe the sequence, not a single drag.';
-        addChat(
+        const startedCopies={
+            zh:'监测已开启。照常拖动并保存针道或粒子，我会在 Viewer 标出刚编辑的对象，说明具体变化并给出下一步建议。剂量重算由你决定，默认不会自动启动。',
+            en:'Monitoring is on. Drag and save needles or seeds as usual. I will mark the edited object in the Viewer, explain the measured change and suggest a next step. Dose recomputation is your choice and is off by default.',
+        };
+        const emit=window.addMonitorLocalizedChat || addChat;
+        emit(
             'bot-response',
-            startedMessage,
+            window.addMonitorLocalizedChat ? startedCopies : startedCopies[window.monitorConversationLanguage?.(startSessionId) || language],
             true,
             Date.now(),
             false,
@@ -2512,7 +2518,7 @@ async function startTrainingMode(goal = 'Monitor planning workflow') {
                     'training_monitor_start', 'done', '监测模式', 'Monitor mode',
                     _manualText('已启动', 'Started'),
                 );
-                addChat('bot-response', language === 'zh'
+                addChat('bot-response', _manualText('zh','en') === 'zh'
                     ? '监测已在服务器启动，连接已恢复。'
                     : 'Monitoring started on the server; the connection has recovered.',
                 true, Date.now(), false, startSessionId);
@@ -2525,7 +2531,7 @@ async function startTrainingMode(goal = 'Monitor planning workflow') {
                     'training_monitor_start', 'error', '监测模式', 'Monitor mode',
                     _manualText('启动未确认', 'Start unconfirmed'),
                 );
-                addChat('error', language === 'zh'
+                addChat('error', _manualText('zh','en') === 'zh'
                     ? '监测启动状态尚未确认。为避免重复启动，请先点击“结束监测”核实或重试。'
                     : 'Monitor start is unconfirmed. Use Finish Monitor to reconcile before starting another run.',
                 true, Date.now(), false, startSessionId);
@@ -2548,9 +2554,9 @@ async function startTrainingMode(goal = 'Monitor planning workflow') {
             trainingMonitorState.runId = null;
             trainingMonitorState.screenshotGalleryContext = null;
         }
-        const errorDetail = _manualErrorDetail(e, language);
+        const errorDetail = _manualErrorDetail(e);
         if (typeof _inputButtonProgress === 'function') _inputButtonProgress('training_monitor_start', 'error', '\u76d1\u6d4b\u6a21\u5f0f', 'Monitor mode', errorDetail || _manualText('\u542f动失败', 'Failed to start'));
-        const failed = language === 'zh'
+        const failed = _manualText('zh','en') === 'zh'
             ? `监测模式启动失败：${errorDetail}`
             : `Monitor mode failed to start: ${errorDetail}`;
         addChat('error', failed, true, Date.now(), false, startSessionId);
@@ -2587,8 +2593,7 @@ async function stopTrainingMode() {
     }
     const stopRunId = trainingMonitorState.runId;
     if (typeof _inputButtonProgress === 'function') _inputButtonProgress('training_monitor_stop', 'running', '\u6b63\u5728\u7ed3束\u76d1\u6d4b', 'Stopping monitor mode');
-    const language = trainingMonitorState.language
-        || (typeof window.monitorConversationLanguage === 'function'
+    const language = (typeof window.monitorConversationLanguage === 'function'
             ? window.monitorConversationLanguage(stopSessionId)
             : (window._i18nLang || 'en'));
     if (typeof _flushMonitorFeedback === 'function') {
@@ -2664,9 +2669,11 @@ async function stopTrainingMode() {
         }
         const localizedAdvice = data.localized_advice || data.advice;
         const fallbackPrefix = language === 'zh' ? '规划监测总结' : 'Planning monitoring summary';
-        addChat(
+        const copies=data.summary_by_language || data.summary_message?.content_localized;
+        const emit=copies && window.addMonitorLocalizedChat || addChat;
+        emit(
             'bot-response',
-            data.summary || _formatAdviceReport(localizedAdvice, fallbackPrefix, language),
+            copies || data.summary || _formatAdviceReport(localizedAdvice, fallbackPrefix, language),
             true,
             Date.now(),
             false,
@@ -2691,7 +2698,7 @@ async function stopTrainingMode() {
         if (typeof _inputButtonProgress === 'function') _inputButtonProgress('training_monitor_stop', 'done', '\u7ed3束\u76d1测', 'Stop monitor mode', _manualText('\u5df2\u5b8c\u6210', 'Completed'));
         return data;
     } catch (e) {
-        const errorDetail = _manualErrorDetail(e, language);
+        const errorDetail = _manualErrorDetail(e);
         if (typeof _inputButtonProgress === 'function') _inputButtonProgress('training_monitor_stop', 'error', '\u7ed3\u675f\u76d1\u6d4b', 'Stop monitor mode', errorDetail || _manualText('\u7ed3束失败', 'Failed to stop'));
         // An aborted response does not prove that the server discarded the
         // stop. Reconcile against the case lease before changing local state.
@@ -2724,7 +2731,7 @@ async function stopTrainingMode() {
             window.queueMonitorStopRecovery?.(stopSessionId, stopRunId);
         }
         const timedOut = e?.name === 'AbortError';
-        const failed = language === 'zh'
+        const failed = _manualText('zh','en') === 'zh'
             ? `监测结束尚未得到服务器确认（${errorDetail}）。保留本轮任务，可点击“结束监测”重试；不会误启动新一轮。`
             : `Monitor stop is not confirmed (${errorDetail}). The run is retained; retry Finish Monitor before starting another.`;
         addChat('error', failed, true, Date.now(), false, stopSessionId, {
@@ -2741,7 +2748,6 @@ async function stopTrainingMode() {
 
 function _formatAdviceReport(advice, prefix = '', language = null) {
     const lang = language
-        || trainingMonitorState.language
         || (typeof window.monitorConversationLanguage === 'function'
             ? window.monitorConversationLanguage()
             : (window._i18nLang || 'en'));
@@ -2784,7 +2790,7 @@ async function requestPlanningAdvice(options = {}) {
     const detectedLanguage = question && typeof detectConversationLanguage === 'function'
         ? detectConversationLanguage(question)
         : '';
-    const language = detectedLanguage || (typeof window.monitorConversationLanguage === 'function'
+    const language = (!trainingMonitorState.active && detectedLanguage) || (typeof window.monitorConversationLanguage === 'function'
         ? window.monitorConversationLanguage(_activeApiSessionId())
         : (window._i18nLang || 'en'));
     if (typeof _inputButtonProgress === 'function') _inputButtonProgress('planning_advice', 'running', '\u6b63在\u751f\u6210\u89c4\u5212建议', 'Generating planning advice');
@@ -2816,11 +2822,16 @@ async function requestPlanningAdvice(options = {}) {
             // strengths/issues checklist.
             addChat('bot-response', naturalResponse);
         } else {
-            const advice = data.localized_advice || data.advice;
-            const prefix = language === 'zh'
+            const displayLanguage=window.monitorConversationLanguage?.(_activeApiSessionId()) || language;
+            const advice = data.advice_by_language?.[displayLanguage] || data.localized_advice || data.advice;
+            const prefix = displayLanguage === 'zh'
                 ? '基于当前指标和界面状态的详细规划建议：'
                 : 'Detailed plan advice based on current metrics and UI state:';
-            addChat('bot-response', _formatAdviceReport(advice, prefix, language));
+            const copies=data.advice_by_language && Object.fromEntries(['zh','en'].map(lang=>[lang,
+                _formatAdviceReport(data.advice_by_language[lang],lang==='zh'?'当前规划详细建议':'Detailed current-plan advice',lang)]));
+            if(copies && window.addMonitorLocalizedChat) window.addMonitorLocalizedChat('bot-response',copies,true,Date.now(),false,_activeApiSessionId(),
+                {messageId:`assistant-monitor-${adviceRunId}-advice-${Date.now()}`,messageKind:'monitor_feedback'});
+            else addChat('bot-response', _formatAdviceReport(advice, prefix, displayLanguage));
         }
         reportUIEvent('training.advice', question ? 'Conversational planning assessment requested' : 'Detailed advice requested', {
             conversational: !!question,
@@ -3529,6 +3540,7 @@ function init3DScene() {
         window.clearMonitorFocus?.();
         isDragging = true;
         manualPlanningState.monitorInteractionActive = true;
+        window.resumeMonitorInteraction?.();
         manualPlanningState.monitorInteractionEpoch = Number(manualPlanningState.monitorInteractionEpoch || 0) + 1;
         seedDragMoved = false;
         const cameraDir = new THREE.Vector3();
@@ -3548,6 +3560,7 @@ function init3DScene() {
         window.clearMonitorFocus?.();
         isDragging = true;
         manualPlanningState.monitorInteractionActive = true;
+        window.resumeMonitorInteraction?.();
         manualPlanningState.monitorInteractionEpoch = Number(manualPlanningState.monitorInteractionEpoch || 0) + 1;
         needleDragMoved = false;
         const cameraDir = new THREE.Vector3();
@@ -3953,6 +3966,7 @@ function init3DScene() {
             }
             isDragging = false;
             manualPlanningState.monitorInteractionActive = false;
+            window.resumeMonitorInteraction?.();
             scene3D.controls.enabled = true;
             interactionCanvas.style.cursor = 'grab';
             const finishedObject = selectedObject;
@@ -5310,6 +5324,7 @@ function focusPlanningObjectsForScreenshot(objectIds, options = {}) {
         fov: scene3D.camera.fov,
         zoom: scene3D.camera.zoom,
     };
+    const monitorPoseEpoch = typeof manualPlanningState === 'undefined' ? 0 : Number(manualPlanningState.monitorInteractionEpoch || 0);
     const box = new THREE.Box3();
     visibleTargets.forEach(([, mesh]) => box.expandByObject(mesh));
     if (box.isEmpty()) return null;
@@ -5413,6 +5428,11 @@ function focusPlanningObjectsForScreenshot(objectIds, options = {}) {
     if (scene3D.requestRender) scene3D.requestRender(3);
 
     const restore = () => {
+        if (options.editEvidence && typeof manualPlanningState !== 'undefined'
+            && Number(manualPlanningState.monitorInteractionEpoch || 0) !== monitorPoseEpoch) {
+            restore.focusResult.camera_restored_after_capture = false;
+            return; // Keep the user's newer camera interaction, not the saved pose.
+        }
         sync3DCameraPose({
             position: saved.position,
             target: saved.target,
@@ -6357,6 +6377,10 @@ async function _loadSeeds3D(requestScope) {
 
         uiDebugLog(`[loadSeeds3D] Added ${data.seeds.length} seeds + ${data.needles.length} needles to 3D scene (total meshes: ${Object.keys(scene3D.meshes).length})`);
         window.scheduleCameraFitForSceneMutation?.('planning-geometry-loaded');
+        window.dispatchEvent(new CustomEvent('brachybot:monitor-resources-ready', {detail:{
+            session_id:_activeApiSessionId(),planning_id:manualPlanningState.planningId,
+            planning_version:manualPlanningState.planningVersion,
+        }}));
 
         return { seeds: data.seeds.length, needles: data.needles.length };
     } catch (e) {

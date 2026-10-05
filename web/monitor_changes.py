@@ -47,6 +47,8 @@ def compact_evidence(evidence):
         'conflicts': evidence.get('conflicts', [])[:4],
         'resolved_conflicts': evidence.get('resolved_conflicts', 0),
         'dose': evidence.get('dose'),
+        'guidance': {key: value for key, value in guided_feedback(evidence).items()
+                     if key in ('state', 'meaning', 'recommendation', 'verification', 'limitation', 'focus_refs')},
         'interpretation': 'Use these measured deltas, not chat-history numbers. No calibrated model-noise threshold or dose-optimal movement has been established. Score change is not clinical approval.',
     }
 
@@ -247,7 +249,10 @@ def dose_comparison(before, after):
             'before': before['metrics'] if before['metrics_current'] else {},
             'after': after['metrics'] if after['metrics_current'] else {},
             'score_status': after.get('score_status'),
-            'oar_changes': organ_changes[:4], 'oar_metric_comparison_count': len(organ_changes),
+            # The largest absolute decreases must not hide every observed rise.
+            'oar_changes': sorted(organ_changes, key=lambda row: (row['delta'] < .005, -abs(row['delta'])))[:4],
+            'oar_metric_comparison_count': len(organ_changes),
+            'oar_increase_count': sum(row['delta'] >= .005 for row in organ_changes),
             'delta': {k: after['metrics'][k] - v for k, v in before['metrics'].items()
                       if k in after['metrics']} if comparable else {}}
 
@@ -360,10 +365,27 @@ def describe(evidence, language='en'):
     return '\n\n'.join(lines)
 
 
+def _guidance_pair(evidence):
+    """Do not let unchanged dependent-seed conflicts eclipse a needle edit."""
+    pairs = evidence.get('conflicts') or []
+    actionable = next((p for p in pairs if p.get('change') in ('new', 'worsened')), None)
+    if actionable:
+        return actionable
+    independent = {str(obj.get('id')) for obj in evidence.get('changed_objects', [])
+                   if not obj.get('dependent_on_needle') and not obj.get('derived_from_normalization')}
+    return next((p for p in pairs if p.get('change') == 'improved'
+                 or independent.intersection((str(p.get('first_id')), str(p.get('second_id'))))), None)
+
+
 def screenshot(evidence, event_id):
     ids = []
-    for p in (p for p in evidence.get('conflicts', [])
-              if p['change'] in ('new', 'worsened')):
+    priority_pairs = [p for p in evidence.get('conflicts', []) if p['change'] in ('new', 'worsened')]
+    # An improved/pre-existing conflict still needs both members in the
+    # evidence image when it is the current recommendation's subject.
+    if not priority_pairs:
+        pair = _guidance_pair(evidence)
+        priority_pairs = [pair] if pair else []
+    for p in priority_pairs:
         ids.extend((p['first_id'], p['second_id']))
         if len(ids) >= 4:
             break
@@ -384,6 +406,25 @@ def screenshot(evidence, event_id):
 
 
 def interaction(evidence, language='en'):
+    """Keep both deterministic display projections with the same owned evidence.
+
+    A global UI language change must not request new measurements or translate
+    a medical finding through an LLM. Numerical facts and authorization remain
+    outside this display-only map.
+    """
+    language = 'zh' if language == 'zh' else 'en'
+    other_language = 'en' if language == 'zh' else 'zh'
+    result = _interaction(evidence, language)
+    other = _interaction(evidence, other_language)
+    fields = ('headline', 'dose_note', 'next_step', 'assessment', 'metric_rows')
+    result['localized'] = {
+        language: {key: result[key] for key in fields},
+        other_language: {key: other[key] for key in fields},
+    }
+    return result
+
+
+def _interaction(evidence, language='en'):
     """A revisioned edit card, derived only from committed evidence.
 
     Geometry and dose are separate assessments. This does not assign clinical
@@ -482,12 +523,14 @@ def interaction(evidence, language='en'):
     blocking = sum(p.get('change') in ('new', 'worsened') and
                    p.get('physical_overlap') is True
                    for p in evidence.get('conflicts', []))
-    return {'schema_version': 2, 'checkpoint_id': evidence.get('geometry_event_id') or evidence.get('event_id'),
+    assessment = decision_summary(evidence, rows, language)
+    guide = guided_feedback(evidence, language)
+    return {'schema_version': 3, 'checkpoint_id': evidence.get('geometry_event_id') or evidence.get('event_id'),
             'revision': evidence.get('after_version'), 'priority': priority, 'headline': headline,
             'category': 'geometry', 'severity': 'blocking' if blocking else 'warning' if new or worse else 'info',
             'blocking_scope': 'physical_geometry' if blocking else None,
             'spatial_refs': list(dict.fromkeys(
-                [str(p[k]) for p in evidence.get('conflicts', [])
+                guide['focus_refs'] + [str(p[k]) for p in evidence.get('conflicts', [])
                  if p['change'] in ('new', 'worsened') for k in ('first_id', 'second_id')]
                 + [str(obj['id']) for obj in changes if obj['operation'] != 'deleted']))[:8],
             'conflict_counts': {'new': new, 'worsened': worse, 'resolved': resolved,
@@ -500,7 +543,192 @@ def interaction(evidence, language='en'):
             'comparison_reason': dose.get('comparison_reason'),
             'dose_current': bool(dose.get('after')), 'dose_comparable': bool(dose.get('comparable')),
             'existing_conflict_count': evidence.get('existing_conflict_count', 0),
-            'language': 'zh' if zh else 'en'}
+            'language': 'zh' if zh else 'en', 'assessment': assessment,
+            'guidance': guide,
+            'decision_required': bool(new or worse or blocking),
+            'primary_action': guide['primary_action']}
+
+
+def guided_feedback(evidence, language='en'):
+    """A bilingual, evidence-owned coaching contract; never an optimization verdict.
+
+    These are measured state transitions and executable next steps, not user
+    intent keyword rules. No model call, new clinical limit or dose prediction.
+    """
+    def localized(zh):
+        def t(chinese, english):
+            return chinese if zh else english
+
+        def number(value):
+            return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+        dose = evidence.get('dose') or {}
+        delta = dose.get('delta') or {}
+        changes = [obj for obj in evidence.get('changed_objects', [])
+                   if not obj.get('dependent_on_needle') and not obj.get('derived_from_normalization')]
+        objects = []
+        for obj in changes[:2]:
+            name = str(obj.get('id', ''))
+            distance = obj.get('distance_mm')
+            if obj.get('operation') == 'moved' and number(distance):
+                verb = t('最大端点位移', 'maximum endpoint displacement') if obj.get('kind') == 'needles' else t('位移', 'displacement')
+                objects.append(f'{name} {verb} {distance:.2f} mm')
+            else:
+                verbs = {'added': t('新增', 'added'), 'deleted': t('删除', 'deleted'),
+                         'reoriented': t('方向或归属改变', 'orientation or ownership changed')}
+                if obj.get('operation') in verbs:
+                    objects.append(f"{name} {verbs[obj['operation']]}")
+        observation = t('；'.join(objects), '; '.join(objects)) or t('已记录本次提交。', 'This submission is recorded.')
+        pair = _guidance_pair(evidence)
+        focus_refs = [str(pair[k]) for k in ('first_id', 'second_id')] if pair else []
+        steps = []
+        state = 'geometry_review' if pair else 'dose_review'
+        if evidence.get('superseded'):
+            return {'state': 'historical', 'title': t('这条反馈已不是当前规划，请看最新编辑。', 'Use the latest edit: this feedback is historical.'),
+                    'observation': observation, 'meaning': t('后续操作已改变几何，以下只保留当时的记录。', 'Later edits changed geometry; this is a record of the earlier findings.'),
+                    'recommendation': t('先查看最新编辑卡片，不要按这条旧建议操作。', 'Check the latest edit card; do not act on this older advice.'),
+                    'verification': '', 'limitation': '', 'findings': [], 'steps': [], 'focus_refs': [], 'primary_action': 'details'}
+        findings = []
+        count = max(1, int(dose.get('edit_count') or 1))
+        if dose.get('comparable'):
+            hot_key = 'v150' if number(delta.get('v150')) and abs(delta['v150']) >= .005 and (not number(delta.get('v200')) or abs(delta['v200']) < .005) else 'v200'
+            for key, label in [('v100', t('靶区覆盖 V100', 'Target coverage V100')),
+                               ('d90', 'D90'), (hot_key, t(f'高剂量体积 {hot_key.upper()}', f'High-dose volume {hot_key.upper()}'))]:
+                value = delta.get(key)
+                before, after = (dose.get('before') or {}).get(key), (dose.get('after') or {}).get(key)
+                if not all(number(v) for v in (value, before, after)):
+                    continue
+                unit = t('个百分点', 'pp') if key.startswith('v') else 'Gy'
+                change = t('变化小于 0.01 的显示精度', 'change below the 0.01 display precision') if abs(value) < .005 else f'{value:+.2f} {unit}'
+                findings.append(f'{label}: {before:.2f} → {after:.2f} ({change})')
+            for row in (dose.get('oar_changes') or [])[:1]:
+                if all(number(row.get(k)) for k in ('before', 'after', 'delta')):
+                    findings.append(f"{row['organ']} {row['metric']}: {row['before']:.2f} → {row['after']:.2f} ({row['delta']:+.2f} Gy)")
+        if pair:
+            changed = pair.get('change') in ('new', 'worsened')
+            kind = t('针道', 'needles') if pair.get('kind') == 'needle_pairs' else t('粒子', 'seeds')
+            subject = f"{pair['first_id']} ↔ {pair['second_id']}"
+            title = t(f'先处理这对{kind}的间距：{subject}。', f'Check the spacing of these {kind} first: {subject}.')
+            if not changed:
+                title = t(f'间距有改善但还需复核：{subject}。', f'Spacing improved but still needs review: {subject}.') if pair.get('change') == 'improved' else t(f'本次未新增这个问题，但原有间距仍需处理：{subject}。', f'This is not a new problem; the existing spacing still needs review: {subject}.')
+            exact = pair.get('clearance_basis') == 'finite_parallel_cylinders'
+            gap, minimum = pair.get('surface_clearance_mm'), pair.get('minimum_clearance_mm')
+            label = t('实体表面间隙', 'finite surface gap') if exact else t('轴线模型间隙下界', 'axis-model clearance bound')
+            measure = f'{label} {gap:.2f} mm' if number(gap) else t('当前间隙尚不可量化', 'the current gap cannot be quantified')
+            prior = pair.get('previous_distance_mm')
+            if number(gap) and number(prior):
+                measure += t(f'（编辑前 {prior:.2f} mm）', f' (before {prior:.2f} mm)')
+            if number(minimum):
+                measure += t(f'；配置要求至少 {minimum:.2f} mm。', f'; the configured minimum is {minimum:.2f} mm.')
+            meaning = measure + ' ' + (t('这次编辑后该对间距新增违规或加重；先解决几何，再判断剂量取舍。', 'The pair is newly conflicting or worse after this edit; address geometry before judging the dose trade-off.') if changed else t('改善不等于已经满足间距要求；也不把编辑前已有的问题算作本次造成。', 'Improvement does not establish clearance, and pre-existing problems are not attributed to this edit.'))
+            recommendation = t('先查看这对对象的标注，确认是否是你想保留的调整。', 'Locate the marked pair first and check whether this is the adjustment you intended.')
+            steps.append({'action': 'focus', 'label': t('查看这对对象的间距', 'Locate this spacing issue'), 'refs': focus_refs})
+            edited_seed = next((obj for obj in changes if obj.get('kind') == 'seeds' and obj.get('id') in focus_refs and obj.get('operation') != 'deleted'), None)
+            if changed and edited_seed:
+                recommendation += t('若要保留本次调整，可先寻找并预览局部间距候选，再决定是否应用。', 'To keep the adjustment, inspect local spacing candidates before deciding whether to apply one.')
+                steps.append({'action': 'spacing', 'object_id': edited_seed['id'], 'label': t('寻找局部间距候选', 'Find local spacing candidates')})
+            if evidence.get('restore_token'):
+                recommendation += t('若是误拖，先预览编辑前位置，再决定是否恢复。', 'If it was an unintended drag, preview the pre-edit position before deciding whether to restore it.')
+                steps.append({'action': 'preview', 'label': t('先预览原位置（不修改）', 'Preview the prior position first')})
+            verification = t('保存修正后，确认这对对象的间距问题是否消除，再重算剂量核对覆盖、热点及器官受量。', 'After saving a correction, check that this pair clears the spacing check, then recompute dose to review coverage, hot spots and organ dose.')
+            limitation = t('间隙不足量不是建议拖动量；原位置和局部候选都不等于剂量最优或已获临床认可。', 'A clearance shortfall is not a prescribed displacement; neither the old position nor a local candidate is dose-optimal or clinically approved.')
+        elif not dose.get('comparable'):
+            if dose.get('after'):
+                title = t('剂量已更新，但不能补出这次调整的“前后好坏”。', 'Dose is current, but this edit has no valid before/after verdict.')
+                meaning = t('缺少同一规划、相同解剖和计算配置的有效编辑前剂量；再次重算不能补造过去的结果。', 'A valid pre-edit dose for the same plan, anatomy and configuration is missing; recomputing cannot recreate the past result.')
+                recommendation = t('先复核当前剂量，把这份有效结果作为下一次调整的比较基线；不用为补前值而重复重算。', 'Review the current dose and use that valid result as the next edit baseline; do not recompute just to invent a missing baseline.')
+                steps.append({'action': 'details', 'label': t('查看当前结果与缺失的基线', 'Review current results and baseline status')})
+            else:
+                title = t('几何已保存；下一步先确认剂量影响。', 'Geometry is saved; check its dose impact next.')
+                meaning = t('相关间距检查未见新增或加重；当前几何还没有有效的新剂量，不能据旧 DVH 说变好或变坏。', 'Related spacing checks found no new or worsened conflicts, but this geometry has no valid new dose; an old DVH cannot establish improvement or deterioration.')
+                missing_baseline = dose.get('comparison_reason') in ('baseline_dose_unavailable', 'anatomy_baseline_missing', 'anatomy_changed', 'configuration_changed', 'planning_changed', 'planning_identity_missing')
+                recommendation = t('先计算当前剂量，核对当前实测结果；缺少有效前值时只能建立后续基线，不能判断刚才这一步的剂量好坏。', 'Compute the current dose and review its measurements; without a valid baseline this can establish a future baseline, not a dose verdict on the last edit.') if missing_baseline else t('点击“重算剂量并比较”；结果就绪后，本卡片会补充实际变化，不必重复询问。', 'Choose Recompute and compare; this card will receive measured changes when available, without repeating your question.')
+                steps.append({'action': 'dose', 'label': t('重算剂量并比较', 'Recompute and compare')})
+            verification = t('下一次保存调整后，比较同一基线下的覆盖、热点、器官受量及几何检查，而不是只看评分。', 'After the next saved edit, compare coverage, hot spots, organ dose and geometry against the same baseline, not score alone.')
+            limitation = t('未发现新增相关间距问题，不表示整个规划没有问题或已经安全。', 'No new related spacing conflict does not mean the entire plan is problem-free or safe.')
+        else:
+            v100, v200, d90, v150 = delta.get('v100'), delta.get('v200'), delta.get('d90'), delta.get('v150')
+            coverage_down = (number(v100) and v100 <= -.005) or (number(d90) and d90 <= -.005)
+            coverage_up = number(v100) and v100 >= .005
+            hotspots_up = (number(v200) and v200 >= .005) or (number(v150) and v150 >= .005)
+            organ_rise = next((r for r in dose.get('oar_changes', []) if number(r.get('delta')) and r['delta'] >= .005), None)
+            title = t('这次有明确取舍，先看代价再决定保留。', 'There is a measured trade-off; review the cost before deciding to keep it.') if coverage_down or hotspots_up or organ_rise else t('已有可比结果，按你的调整目标核对是否值得保留。', 'Comparable results are ready; check them against your intended adjustment.')
+            parts = []
+            if number(v100) and abs(v100) >= .005:
+                parts.append(t(f"覆盖率 V100 {'增加' if coverage_up else '减少'} {abs(v100):.2f} 个百分点", f"V100 {'increased' if coverage_up else 'decreased'} by {abs(v100):.2f} pp"))
+            if number(d90) and abs(d90) >= .005:
+                parts.append(t(f"D90 {'增加' if d90 > 0 else '减少'} {abs(d90):.2f} Gy", f"D90 {'increased' if d90 > 0 else 'decreased'} by {abs(d90):.2f} Gy"))
+            for key, value in [('V150', v150), ('V200', v200)]:
+                if number(value) and abs(value) >= .005:
+                    parts.append(t(f"高剂量体积 {key} {'增加' if value > 0 else '减少'} {abs(value):.2f} 个百分点", f"{key} {'increased' if value > 0 else 'decreased'} by {abs(value):.2f} pp"))
+            if organ_rise:
+                parts.append(t(f"{organ_rise['organ']} {organ_rise['metric']} 增加 {organ_rise['delta']:.2f} Gy", f"{organ_rise['organ']} {organ_rise['metric']} increased by {organ_rise['delta']:.2f} Gy"))
+            meaning = ('；'.join(parts) + '。') if zh and parts else '; '.join(parts) + '.' if parts else t('所列指标没有达到显示精度的变化，或缺少这些指标；不能据此假定无影响。', 'Listed changes are below display precision or these metrics are missing; this does not establish no impact.')
+            if count > 1:
+                meaning += t(f'这些剂量差值覆盖 {count} 次编辑，不能只归因于刚才一步。', f' These dose differences cover {count} edits, not just the last move.')
+            if coverage_down:
+                decreasing = 'V100' if number(v100) and v100 <= -.005 else 'D90'
+                recommendation = t(f'如果你的目标是提高覆盖，这次 {decreasing} 的方向与目标相反；先复核低剂量区域，再决定是否保留。', f'If your aim was improved coverage, {decreasing} moved in the opposite direction; inspect the low-dose region before keeping the adjustment.')
+            elif coverage_up and (hotspots_up or organ_rise):
+                recommendation = t('如果目的是提高覆盖，先复核同时增加的热点或器官受量是否符合已确认的病例约束；不能只凭 V100 上升保留。', 'If your aim was coverage, first review the increased hot spots or organ dose against confirmed case constraints; a V100 increase alone is not a reason to keep it.')
+            elif hotspots_up or organ_rise:
+                recommendation = t('先复核增加的高剂量体积或器官受量，以及已确认的病例约束，再决定是否保留这组调整。', 'Review the increased high-dose volume or organ dose and confirmed case constraints before keeping this adjustment sequence.')
+            else:
+                recommendation = t('核对这些变化是否符合你这一步的目标，并展开器官差值检查代价；不要把评分升高当作全部改善。', 'Check whether these changes match your intended goal and review organ-dose differences for costs; a higher score is not overall improvement.')
+            steps.append({'action': 'details', 'label': t('展开指标与器官取舍', 'Review metric and organ-dose trade-offs')})
+            verification = t('保留后继续调整时，使用当前有效剂量作为基线；恢复几何后必须重算，不能沿用这份剂量。', 'Use the current valid dose as the baseline for further edits; restoring geometry requires dose recomputation.')
+            limitation = t('此处只列出部分器官指标；剂量变化不等于临床通过，也未建立模型噪声或显著性阈值。', 'Only a subset of organ metrics is shown; dose changes are not clinical approval, and no model-noise or significance threshold is established.')
+        resolved = int(evidence.get('resolved_conflicts') or 0)
+        if resolved and not pair:
+            observation += t(f'；已消除 {resolved} 组相关间距问题。', f'; {resolved} related spacing conflicts resolved.')
+        existing = int(evidence.get('existing_conflict_count') or 0)
+        if existing and not pair:
+            observation += t(f'另有 {existing} 组原有相关间距问题未归因于本次操作。', f' {existing} pre-existing related spacing conflicts are not attributed to this edit.')
+        return {'state': state, 'title': title, 'observation': observation,
+                'meaning': meaning, 'recommendation': recommendation, 'verification': verification,
+                'limitation': limitation, 'findings': findings, 'steps': steps[:3],
+                'focus_refs': focus_refs, 'primary_action': steps[0]['action'] if steps else 'details'}
+
+    copies = {'zh': localized(True), 'en': localized(False)}
+    return {'schema_version': 1, **copies['zh' if language == 'zh' else 'en'], 'localized': copies}
+
+
+def decision_summary(evidence, rows, language='en'):
+    """Measured trade-offs, never a fabricated clinical or causal verdict."""
+    zh = language == 'zh'
+    dose = evidence.get('dose') or {}
+    count = int(dose.get('edit_count') or 1)
+    new = int(evidence.get('new_conflict_count') or 0)
+    worse = int(evidence.get('worsened_conflict_count') or 0)
+    conflicts = [p for p in evidence.get('conflicts', []) if p.get('change') in ('new', 'worsened')]
+    primary = conflicts[0] if conflicts else None
+    highlights = [r for r in rows if r.get('key') in ('v100', 'v200', 'd90')]
+    if dose.get('comparable'):
+        # Include an observed OAR increase before the score, not a volume list.
+        organs = [r for r in rows if str(r.get('key', '')).startswith('oar:') and r.get('delta', 0) > 0]
+        highlights = (highlights[:2] + organs[:1]) if organs else highlights[:3]
+    else:
+        highlights = []
+    if new or worse:
+        title = (f'优先处理本次新增 {new} 组、加重 {worse} 组间距问题。' if zh
+                 else f'Inspect {new} new and {worse} worsened spacing conflicts first.')
+    elif dose.get('comparable') and highlights:
+        def label(row):
+            return f"{row['metric']} {'+' if row['delta'] >= 0 else ''}{row['delta']:.2f} {row['unit']}"
+        title = ('本次调整序列的实测变化：' if zh and count > 1 else '本次编辑的实测变化：' if zh
+                 else 'Measured edit-sequence changes: ' if count > 1 else 'Measured edit changes: ')
+        title += '；'.join(label(row) for row in highlights)
+    elif evidence.get('resolved_conflicts'):
+        title = (f"消除了 {evidence['resolved_conflicts']} 组相关间距问题；剂量影响单独核对。" if zh
+                 else f"Resolved {evidence['resolved_conflicts']} related spacing conflicts; dose impact is a separate assessment.")
+    else:
+        title = ('编辑已保存，未发现新增或加重的相关间距问题。' if zh
+                 else 'Edit saved; no new or worsened related spacing conflicts were found.')
+    return {'title': title, 'primary_pair': primary, 'highlights': highlights,
+            'attribution': 'edit_sequence' if count > 1 else 'single_edit', 'edit_count': count,
+            'dose_status': 'comparable' if dose.get('comparable') else 'current_without_baseline' if dose.get('after') else 'awaiting_recomputation',
+            'clinical_status': 'not_assessed', 'movement_status': 'no_dose_optimized_position',
+            'geometry_status': 'attention' if new or worse else 'no_new_or_worsened_conflicts'}
 
 
 def overview(agent):

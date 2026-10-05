@@ -365,7 +365,7 @@ def test_browser_annotation_pipeline_is_semantic_state_aware_and_non_mutating():
     assert "_validate_screenshot_annotation_marks" in route
     assert "/api/screenshot/annotation" in route
     assert "grounding_manifest: groundingManifest" in ui_api
-    assert "brachybot-visual-annotation.js?v=8" in index
+    assert "brachybot-visual-annotation.js?v=9" in index
     assert "_annotateRequiredScreenshotBeforeDisplay" in ui_api
     assert "semanticDataTreeTarget" in annotation
     assert "const hasEnvelope" in annotation

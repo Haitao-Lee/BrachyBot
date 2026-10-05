@@ -7674,6 +7674,9 @@ function applyDataTreeViewVisibility() {
     if (state.ctLoaded) reloadOverlays();
     redrawSeedNeedleOverlays();
     requestViewerVisualRefresh('data-tree-view-visibility');
+    // Presentation-only Monitor invalidation, coalesced outside this executor.
+    // Never start capture, dose calculation or geometry work from an eye click.
+    window.monitorVisualStateChanged?.();
 }
 
 function batchSetViewVisibility(view, visible) {
@@ -8791,6 +8794,7 @@ function _queueDataTreeOpacityOverlayRefresh(reason) {
         _opacityTimer = null;
         if (state.ctLoaded) reloadOverlays();
         requestViewerVisualRefresh(reason || 'data-opacity');
+        window.monitorVisualStateChanged?.();
     }, 80);
 }
 
@@ -8803,6 +8807,7 @@ function _queueDataTreeOpacitySeedRefresh(reason) {
         _dataTreeOpacitySeedFrame = null;
         redrawSeedNeedleOverlays();
         requestViewerVisualRefresh(reason || 'data-tree-opacity');
+        window.monitorVisualStateChanged?.();
     });
 }
 
