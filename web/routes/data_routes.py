@@ -182,6 +182,10 @@ def register_data_routes(
         return jsonify({"success": False, "error": str(exc)}), status
 
     def mark_report_stale(user_id: str, session_id: str, reason: str) -> None:
+        with store._case_guard(user_id, session_id):
+            mark_report_stale_locked(user_id, session_id, reason)
+
+    def mark_report_stale_locked(user_id: str, session_id: str, reason: str) -> None:
         snapshot = store.load_snapshot(user_id, session_id)
         report = snapshot.get("report")
         if not isinstance(report, Mapping) or not report:
@@ -663,6 +667,20 @@ def register_data_routes(
 
 
 def _delete_object(
+    store: WorkspaceStore,
+    user: Mapping[str, Any],
+    session_id: str,
+    agent: Any,
+    object_id: str,
+) -> Dict[str, Any]:
+    # Read-modify-replace presentation operations must share the same case
+    # lock as browser patches, checkpoints and archive/delete transitions.
+    with store._case_guard(str(user["id"]), session_id):
+        store.require_local_session(str(user["id"]), session_id)
+        return _delete_object_locked(store, user, session_id, agent, object_id)
+
+
+def _delete_object_locked(
     store: WorkspaceStore,
     user: Mapping[str, Any],
     session_id: str,

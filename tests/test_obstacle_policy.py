@@ -24,10 +24,11 @@ class _Agent:
         self.memory = _Memory(ui_state)
 
 
-def test_default_policy_covers_bones_cartilage_and_vessels_only():
+def test_default_policy_covers_bones_vessels_and_critical_hollow_organs():
     labels = _default_obstacle_label_ids()
     assert {25, 52, 54, 65, 79, 91, 92, 116, 117}.issubset(labels)
-    assert not ({6, 15, 16, 17, 18, 19, 20, 51} & labels)
+    assert {6, 15, 18, 19, 20, 21, 51}.issubset(labels)
+    assert not ({16, 17} & labels)  # Lung tissue is not silently made a hard obstacle.
 
 
 def test_data_tree_adds_hard_labels_without_downgrading_default_policy():

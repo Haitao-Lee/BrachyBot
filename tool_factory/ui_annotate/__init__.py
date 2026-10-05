@@ -291,6 +291,9 @@ class UIAnnotateTool(BaseTool):
             "..", "..", "uploads", "screenshots"
         )
         screenshots_dir = os.path.normpath(screenshots_dir)
+        from utils.tool_security import workspace_root, checked_path
+        if workspace_root() is not None:
+            screenshots_dir = str(checked_path(workspace_root() / "screenshots"))
         try:
             filename = _screenshot_filename_from_url(image_url)
             image_path = _safe_screenshot_path(screenshots_dir, filename)

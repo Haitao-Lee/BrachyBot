@@ -210,7 +210,8 @@ Actions:
 - search: combined JSON + raw source search
 - guidelines: authoritative guideline/source search
 - source_search: raw source-only retrieval
-- add: add a JSON entry"""
+- Shared clinical evidence is read-only to case agents. Contributions require
+  a separate human review workflow."""
 
     input_schema = {
         "action": {
@@ -218,7 +219,7 @@ Actions:
             "description": "Action to run",
             "enum": [
                 "standards", "constraints", "tolerance", "protocol", "benchmark",
-                "search", "guidelines", "source_search", "add",
+                "search", "guidelines", "source_search",
             ],
         },
         "organ": {"type": "string", "description": "Organ or cancer site name"},
@@ -695,6 +696,10 @@ Actions:
 
     def _execute(self, **kwargs) -> ToolResult:
         action = kwargs.get("action", "")
+        if action in {"add", "propose", "refresh_sources"}:
+            from utils.tool_security import workspace_root
+            if workspace_root() is not None or os.environ.get("BRACHYBOT_ALLOW_KB_ADMIN_WRITES", "0") != "1":
+                return self._result(success=False, error="Shared clinical evidence mutations require a separate administrator review workflow")
         if not action:
             return self._result(success=False, error="No action", message="Specify: standards, constraints, tolerance, protocol, benchmark, search, guidelines, source_search, add, propose, review_queue, refresh_sources")
 

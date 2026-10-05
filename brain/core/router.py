@@ -276,6 +276,8 @@ class LLMRouter:
             t0 = time.time()
             try:
                 response = llm.chat(prompt=prompt, system=system, tools=tools, **kwargs)
+                if getattr(response, "finish_reason", None) == "error":
+                    raise RuntimeError("Upstream provider returned an error response")
                 self._record_stats(name, ok=True, latency_ms=(time.time() - t0) * 1000)
                 # Tag the response with the actual provider used
                 if not getattr(response, "model", None) or not response.model:
@@ -291,7 +293,7 @@ class LLMRouter:
                 if not allow_fallback:
                     break
         return LLMResponse(
-            content=f"Error: All providers failed. Last error: {last_err}",
+            content="The model service is temporarily unavailable; no verified answer was generated.",
             finish_reason="error",
         )
 
@@ -317,6 +319,8 @@ class LLMRouter:
             t0 = time.time()
             try:
                 response = llm.chat_messages(messages=messages, tools=tools, **kwargs)
+                if getattr(response, "finish_reason", None) == "error":
+                    raise RuntimeError("Upstream provider returned an error response")
                 self._record_stats(name, ok=True, latency_ms=(time.time() - t0) * 1000)
                 if not getattr(response, "model", None) or not response.model:
                     try:
@@ -331,7 +335,7 @@ class LLMRouter:
                 if not allow_fallback:
                     break
         return LLMResponse(
-            content=f"Error: All providers failed. Last error: {last_err}",
+            content="The model service is temporarily unavailable; no verified answer was generated.",
             finish_reason="error",
         )
 

@@ -28,6 +28,7 @@
     var _sizeInitialized = false;
     var _sizeInitialization = null;
     var _pendingSizeDelta = 0;
+    var cacheEpoch = 0;
 
     function openDB() {
         if (_db) return Promise.resolve(_db);
@@ -87,9 +88,11 @@
                     deletedBytes += Number(cursor.value && cursor.value.size) || 0;
                     cursor.delete();
                     cursor.continue();
-                } else { resolve(deletedBytes); }
+                }
             };
+            tx.oncomplete = function () { resolve(deletedBytes); };
             tx.onerror = function () { resolve(0); };
+            tx.onabort = function () { resolve(0); };
         });
     }
 
@@ -128,7 +131,9 @@
         // Start the one-time baseline scan in the background instead of making
         // the first CT/mesh/report cache access wait for every old entry.
         var scanStartedAt = Date.now();
+        var generation = cacheEpoch;
         _sizeInitialization = dbGetAll(db).then(function (entries) {
+            if (generation !== cacheEpoch) return;
             var baseline = entries.reduce(function (total, entry) {
                 // Mutations committed after the scan began are represented by
                 // _pendingSizeDelta. Excluding them prevents a put/delete that
@@ -141,12 +146,13 @@
             _pendingSizeDelta = 0;
             _sizeInitialized = true;
         }).catch(function () {
+            if (generation !== cacheEpoch) return;
             // Cache accounting must never block a clinical restore. If the
             // baseline cannot be read, retain only deltas observed afterward.
             _runningSize = Math.max(0, _runningSize + _pendingSizeDelta);
             _pendingSizeDelta = 0;
             _sizeInitialized = true;
-        }).finally(function () { _sizeInitialization = null; });
+        }).finally(function () { if (generation === cacheEpoch) _sizeInitialization = null; });
         return _sizeInitialization;
     }
 
@@ -174,8 +180,9 @@
     var _evictionScheduled = false;
 
     async function sessionCacheEvict() {
+        var generation = cacheEpoch;
         var db = await openDB();
-        if (!db) return;
+        if (!db || cacheClosed || generation !== cacheEpoch) return;
         await ensureRunningSize(db);
         if (_runningSize <= MAX_BYTES) return;
         try {
@@ -183,8 +190,9 @@
             entries.sort(function (a, b) { return a.timestamp - b.timestamp; });
             var toFree = _runningSize - MAX_BYTES;
             var evicted = 0;
-            for (var i = 0; i < entries.length - 4 && toFree > 0; i++) {
-                var deleted = await dbDeleteAll(db, entries[i].key);
+            for (var i = 0; i < entries.length && toFree > 0; i++) {
+                if (cacheClosed || generation !== cacheEpoch) return;
+                var deleted = await dbDeleteOne(db, entries[i].key);
                 toFree -= deleted;
                 evicted += deleted;
             }
@@ -193,56 +201,73 @@
     }
 
     var cacheClosed = false;
+    var clearing = null;
     var api = {
         get: async function (sessionId, ns, key) {
+            var generation = cacheEpoch;
             var db = await openDB();
-            if (!db || cacheClosed) return null;
+            if (!db || cacheClosed || generation !== cacheEpoch) return null;
             // Never make a cache hit wait for the quota baseline scan.
             beginRunningSizeInitialization(db);
             // Return as soon as IndexedDB responds. The previous code started
             // dbGet() but always slept for the full timeout on every cache hit.
-            return Promise.race([
+            var value = await Promise.race([
                 dbGet(db, [sessionId, ns, key]),
                 new Promise(function (resolve) {
                     setTimeout(function () { resolve(null); }, CACHE_GET_TIMEOUT_MS);
                 }),
             ]);
+            return cacheClosed || generation !== cacheEpoch ? null : value;
         },
         put: async function (sessionId, ns, key, data) {
+            var generation = cacheEpoch;
             var db = await openDB();
-            if (!db || cacheClosed) return;
+            if (!db || cacheClosed || generation !== cacheEpoch || !data || !Number.isFinite(data.byteLength) || data.byteLength > MAX_BYTES || data.byteLength < 0) return;
             beginRunningSizeInitialization(db);
             var delta = await dbPut(db, [sessionId, ns, key], data);
+            if (generation !== cacheEpoch) return;
             adjustRunningSize(delta);
             scheduleEviction();
         },
         invalidate: async function (sessionId, ns, key) {
+            var generation = cacheEpoch;
             var db = await openDB();
-            if (!db) return;
+            if (!db || cacheClosed || generation !== cacheEpoch) return;
             beginRunningSizeInitialization(db);
             var deleted = await dbDeleteOne(db, [sessionId, ns, key]);
+            if (generation !== cacheEpoch) return;
             adjustRunningSize(-deleted);
         },
         invalidateSession: async function (sessionId) {
+            var generation = cacheEpoch;
             var db = await openDB();
-            if (!db) return;
+            if (!db || cacheClosed || generation !== cacheEpoch) return;
             beginRunningSizeInitialization(db);
             var deleted = await dbDeleteAll(db, IDBKeyRange.bound([sessionId, '', ''], [sessionId, '\uffff', '\uffff']));
+            if (generation !== cacheEpoch) return;
             adjustRunningSize(-deleted);
         },
-        invalidateAll: async function () {
-            var db = await openDB();
-            if (!db) return;
-            await dbDeleteAll(db, null);
-            _runningSize = 0;
-            _pendingSizeDelta = 0;
-            _sizeInitialized = true;
+        invalidateAll: function () {
+            if (clearing) return clearing;
+            cacheEpoch += 1;
+            cacheClosed = true;
+            clearing = (async function () {
+                try {
+                    var db = await openDB();
+                    if (db) await dbDeleteAll(db, null);
+                    _runningSize = 0;
+                    _pendingSizeDelta = 0;
+                    _sizeInitialized = true;
+                    _sizeInitialization = null;
+                } finally {
+                    cacheClosed = false;
+                    clearing = null;
+                }
+            })();
+            return clearing;
         },
         estimatedSize: function () { return _runningSize; },
-        closeAndClear: async function () {
-            cacheClosed = true;
-            await api.invalidateAll();
-        },
+        closeAndClear: function () { return api.invalidateAll(); },
     };
 
     window.SessionCache = api;

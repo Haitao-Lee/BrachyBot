@@ -226,9 +226,9 @@ _MANUAL_DOSE_MODEL_CACHE: Dict[str, Any] = {}
 # Per-seed predictions are immutable CPU arrays. A needle edit usually moves
 # only the seeds on one trajectory; reusing unchanged seed maps makes that
 # interaction incremental while preserving the exact trained DoseUNet output.
-_MANUAL_DOSE_SEED_CACHE: Dict[tuple, Any] = {}
-_MANUAL_DOSE_SEED_CACHE_ORDER: list = []
 _MANUAL_DOSE_SEED_CACHE_LIMIT = 128
+from utils.dose_seed_cache import DoseSeedCache, dose_input_identity
+_MANUAL_DOSE_SEED_CACHE = DoseSeedCache(max_entries=_MANUAL_DOSE_SEED_CACHE_LIMIT)
 _MANUAL_DOSE_TRANSACTION_LOCK = threading.Lock()
 _MANUAL_DOSE_SESSION_LOCKS: Dict[str, threading.RLock] = {}
 
@@ -2488,19 +2488,19 @@ def _compute_manual_ai_dose(
         args.image_normalize[0],
         args.image_normalize[1],
     )
-    dose_signature = (
-        dose_cache_key,
-        tuple(int(v) for v in dose_image.GetSize()),
-        tuple(round(float(v), 5) for v in dose_image.GetSpacing()),
-        tuple(round(float(v), 5) for v in dose_image.GetOrigin()),
-        tuple(round(float(v), 5) for v in dose_image.GetDirection()),
+    dose_signature = dose_input_identity(
+        getattr(agent, "_workspace", None) or getattr(agent, "session_id", None) or id(agent),
+        dose_image,
+        {"seed_info": dose_seed_info, "normalization": args.image_normalize,
+         "infer_img_size": args.radiation_array_params["infer_img_size"]},
+        (dose_cache_key, id(dose_model)),
     )
     def _seed_cache_key(seed):
         return (
             dose_signature,
-            tuple(round(float(v), 4) for v in seed["position"]),
-            tuple(round(float(v), 5) for v in seed["direction"]),
-            round(float(seed["weight"]), 5),
+            tuple(float(v) for v in seed["position"]),
+            tuple(float(v) for v in seed["direction"]),
+            float(seed["weight"]),
         )
 
     def _cached_seed_maps(seed_records, model_records, *, deadline=None):
@@ -2530,13 +2530,8 @@ def _compute_manual_ai_dose(
                 deadline=deadline,
             )
             for (index, cache_key), seed_dose in zip(missing_records, computed_maps):
-                array = np.asarray(seed_dose, dtype=np.float32).copy()
-                _MANUAL_DOSE_SEED_CACHE[cache_key] = array
-                _MANUAL_DOSE_SEED_CACHE_ORDER.append(cache_key)
+                array = _MANUAL_DOSE_SEED_CACHE.put(cache_key, seed_dose)
                 cached_maps[index] = array
-            while len(_MANUAL_DOSE_SEED_CACHE_ORDER) > _MANUAL_DOSE_SEED_CACHE_LIMIT:
-                stale_key = _MANUAL_DOSE_SEED_CACHE_ORDER.pop(0)
-                _MANUAL_DOSE_SEED_CACHE.pop(stale_key, None)
         return [np.asarray(item, dtype=np.float32) for item in cached_maps if item is not None], len(missing_seeds)
 
     def _changed_trajectory_ids(old_needles, new_needles):
@@ -3040,8 +3035,8 @@ def _compute_manual_ai_dose(
             sorted_desc = np.sort(od)[::-1]
 
             def dose_at_xcc(x_cc):
-                nvox = max(1, int(np.ceil(x_cc / max(voxel_vol_cm3, 1e-9))))
-                idx = min(nvox - 1, len(sorted_desc) - 1)
+                from utils.dose_metrics import hottest_volume_count
+                idx = hottest_volume_count(x_cc, voxel_vol_cm3, len(sorted_desc)) - 1
                 return float(sorted_desc[idx])
 
             oar_metrics[name] = {
@@ -3247,7 +3242,7 @@ def _rate_limit_bucket_for_request() -> str:
     bucket because they do not mutate the clinical case.
     """
     path = str(request.path or "/").rstrip("/") or "/"
-    if path in {"/api/auth/login", "/api/auth/register", "/api/auth/change-password"}:
+    if path in {"/api/auth/login", "/api/auth/register", "/api/auth/change-password", "/api/auth/password"}:
         return "auth"
     if request.method.upper() == "GET":
         return "data"
@@ -3326,15 +3321,34 @@ def _rate_limit_retry_after_ms(client_ip: str, bucket: str = "default") -> int:
 
 
 def _client_ip_for_rate_limit() -> str:
-    """Honor proxy headers only when the deployment explicitly trusts them."""
+    """Trust forwarded addresses only from explicitly configured proxy peers.
+
+    Walk the chain right-to-left, discarding trusted proxies, rather than
+    accepting an attacker-controlled first XFF hop. The legacy boolean alone
+    is deliberately insufficient authority to trust an arbitrary peer.
+    """
+    import ipaddress
+    peer = request.remote_addr or "unknown"
     if os.environ.get("BRACHYBOT_TRUST_PROXY", "").lower() in TRUE_VALUES:
-        forwarded = request.headers.get("X-Forwarded-For", "")
-        if forwarded:
-            return forwarded.split(",", 1)[0].strip()
-        real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
-            return real_ip.strip()
-    return request.remote_addr or "unknown"
+        try:
+            networks = [ipaddress.ip_network(value.strip(), strict=False)
+                        for value in os.environ.get("BRACHYBOT_TRUSTED_PROXY_CIDRS", "").split(",") if value.strip()]
+            def trusted(address):
+                return any(address in network for network in networks)
+            current = ipaddress.ip_address(peer)
+            if trusted(current):
+                forwarded = request.headers.get("X-Forwarded-For", "")
+                hops = forwarded.split(",") if forwarded else [request.headers.get("X-Real-IP", "")]
+                if len(hops) > 32:
+                    return peer
+                for raw in reversed(hops):
+                    if not trusted(current):
+                        break
+                    current = ipaddress.ip_address(raw.strip())
+                return str(current)
+        except ValueError:
+            return peer
+    return peer
 
 
 def _is_loopback_host(host: str) -> bool:

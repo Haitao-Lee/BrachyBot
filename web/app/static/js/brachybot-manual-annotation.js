@@ -2216,11 +2216,11 @@ function _showSeed2DContextMenu(event, seed) {
         : 'Delete seed';
     menu.innerHTML = `
         <div class="ctx-menu-item ctx-menu-summary" aria-disabled="true">
-            <strong>${title} ${seed.id}</strong>
-            <small>${owner}: ${needle?.id || seed.trajectory_id}<br>${position} mm</small>
+            <strong>${escHtml(title)} ${escHtml(seed.id)}</strong>
+            <small>${escHtml(owner)}: ${escHtml(needle?.id || seed.trajectory_id)}<br>${escHtml(position)} mm</small>
         </div>
         <div class="ctx-menu-sep"></div>
-        <button class="ctx-menu-item" type="button" data-delete-seed="${seed.id}">
+        <button class="ctx-menu-item" type="button" data-delete-seed="${escHtml(seed.id)}">
             <span class="ctx-icon">&#128465;</span>${remove}
         </button>`;
     document.body.appendChild(menu);

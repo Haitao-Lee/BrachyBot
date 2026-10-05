@@ -35,13 +35,13 @@ def test_non_traversable_data_tree_label_uses_faithful_mesh_geometry():
 
 def test_soft_tissue_mesh_keeps_presentation_smoothing():
     agent = _Agent([{
-        "id": "organ_6",
-        "label_id": 6,
+        "id": "organ_5",
+        "label_id": 5,
         "source": "oar",
         "category": "traversable",
     }])
 
-    assert not _requires_label_faithful_mesh(agent, "oar", 6)
+    assert not _requires_label_faithful_mesh(agent, "oar", 5)
 
 
 def test_every_ctv_label_uses_the_same_boundary_as_dose_evaluation():

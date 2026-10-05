@@ -60,7 +60,7 @@ class AbsoluteDoseMetricsTool(BaseTool):
                 },
                 "spacing": {
                     "type": "array",
-                    "description": "Voxel spacing [x, y, z] in mm (default: [1, 1, 1])",
+                    "description": "Required physical dose-grid spacing [x, y, z] in mm",
                 },
                 "cc_values": {
                     "type": "array",
@@ -87,7 +87,13 @@ class AbsoluteDoseMetricsTool(BaseTool):
     def _execute(self, **kwargs) -> ToolResult:
         dose_array = kwargs["dose_array"]
         masks = kwargs["masks"]
-        spacing = kwargs.get("spacing", [1.0, 1.0, 1.0])
+        from utils.dose_metrics import validated_spacing
+        from utils.dose_units import physical_volume
+        try:
+            spacing = validated_spacing(kwargs.get("spacing"))
+            dose_array = physical_volume(dose_array, units="physical_gy")
+        except (TypeError, ValueError) as exc:
+            return ToolResult(success=False, error=str(exc))
         cc_values = kwargs.get("cc_values", [2, 1, 0.5])
 
         voxel_volume_mm3 = float(spacing[0] * spacing[1] * spacing[2])
@@ -113,8 +119,8 @@ class AbsoluteDoseMetricsTool(BaseTool):
             struct_results["Dmedian"] = float(np.median(struct_doses))
 
             for cc in cc_values:
-                voxels_needed = int(cc / voxel_volume_cc)
-                voxels_needed = max(1, min(voxels_needed, total_voxels))
+                from utils.dose_metrics import hottest_volume_count
+                voxels_needed = hottest_volume_count(cc, voxel_volume_cc, total_voxels)
                 dose_value = float(sorted_doses[voxels_needed - 1]) if voxels_needed > 0 else 0.0
                 struct_results[f"D{cc}cc"] = dose_value
 

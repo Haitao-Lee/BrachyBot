@@ -769,7 +769,7 @@ def test_add_seed_can_target_a_specific_needle_without_silently_creating_one():
     assert "if (!spacingWarning) scheduleManualDoseRecompute('seed_add')" in add_block
     assert "The current spacing needs attention, but the new seed was kept." in add_block
     assert "addManualSeedToPlanningNode('${firstId}'" in tree
-    assert "addManualSeed('${needleId}', {source:'3d_context'})" in manual
+    assert "addManualSeed(${brachybotInlineArgument(needleId)}, {source:'3d_context'})" in manual
 
 
 def test_add_seed_spacing_exception_is_narrow_and_keeps_later_edits_strict():

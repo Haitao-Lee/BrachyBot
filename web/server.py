@@ -1264,6 +1264,10 @@ def create_app(config: Optional[Dict] = None):
     @app.before_request
     def _record_request_started_at():
         """Stamp each request so a stall can be identified from the log."""
+        if request.endpoint == "static":
+            from utils.static_assets import is_public_asset
+            if not is_public_asset((request.view_args or {}).get("filename", "")):
+                return "Not found", 404
         try:
             g.brachybot_request_started_at = time.perf_counter()
         except Exception:

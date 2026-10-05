@@ -79,6 +79,8 @@ def _cache_directory(root: Path, namespace: str, *, create: bool) -> Path:
     # boundary explicit so a malformed namespace can never escape the case.
     directory.relative_to(case_root)
     if create:
+        if not case_root.is_dir():
+            raise ValueError("A deleted/moved case cannot be recreated by a Viewer cache write")
         directory.mkdir(parents=True, exist_ok=True)
         try:
             os.chmod(directory, 0o700)
@@ -105,8 +107,11 @@ def load_viewer_cache(root: Optional[Path], namespace: str, key: str) -> Optiona
         path = _cache_path(Path(root), namespace, key, create=False)
         if not path.is_file():
             return None
-        with gzip.open(path, "rt", encoding="utf-8") as handle:
-            envelope = json.load(handle)
+        with gzip.open(path, "rb") as handle:
+            raw = handle.read(_CACHE_MAX_BYTES + 1)
+        if len(raw) > _CACHE_MAX_BYTES:
+            raise ValueError("Expanded Viewer cache exceeds its byte limit")
+        envelope = json.loads(raw)
         if not isinstance(envelope, dict):
             return None
         if envelope.get("schema") != _CACHE_SCHEMA or envelope.get("cache_key") != key:
@@ -198,8 +203,29 @@ def save_viewer_cache(root: Path, namespace: str, key: str, payload: Mapping[str
                     pass
 
 
+def _save_owned_viewer_cache(root, namespace, key, payload, owner):
+    store, user_id, session_id = owner
+    try:
+        with store._case_guard(user_id, session_id):
+            store.require_local_session(user_id, session_id)
+            if Path(root).resolve() != store.workspace_root(user_id, session_id, create=False).resolve():
+                return None
+            with store._quota_commit_lock(user_id):
+                # Reserve conservatively for the compressed JSON envelope;
+                # no persistent cache is required for a successful mesh read.
+                path = _cache_path(root, namespace, key, create=False)
+                budget = len(json.dumps(dict(payload), ensure_ascii=False, allow_nan=False).encode("utf-8")) + 4096
+                store._ensure_replacement_capacity(user_id, path, budget)
+                result = save_viewer_cache(root, namespace, key, payload)
+                store._invalidate_storage_usage(user_id)
+                return result
+    except Exception:
+        logger.warning("Owned Viewer cache persistence skipped namespace=%s", namespace)
+        return None
+
+
 def schedule_viewer_cache_write(
-    root: Optional[Path], namespace: str, key: str, payload: Mapping[str, Any]
+    root: Optional[Path], namespace: str, key: str, payload: Mapping[str, Any], *, owner=None
 ) -> None:
     """Persist a cache entry without delaying the HTTP mesh response.
 
@@ -208,13 +234,15 @@ def schedule_viewer_cache_write(
     request safely recomputes it from the durable case arrays.
     """
 
-    if root is None:
+    if root is None or owner is None:
         return
     identity = (str(Path(root).resolve()), str(namespace), str(key))
     with _CACHE_LOCK:
         if identity in _PENDING_WRITES:
             return
-        future = _WRITE_EXECUTOR.submit(save_viewer_cache, Path(root), namespace, key, dict(payload))
+        if len(_PENDING_WRITES) >= 32:
+            return
+        future = _WRITE_EXECUTOR.submit(_save_owned_viewer_cache, Path(root), namespace, key, dict(payload), owner)
         _PENDING_WRITES[identity] = future
 
         def _finished(done: Future) -> None:

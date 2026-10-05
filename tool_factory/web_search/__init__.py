@@ -1521,7 +1521,7 @@ class WebSearchTool(BaseTool):
         cache_key = f"{search_type}:{query}"
         cached = self.cache.get(cache_key)
         if cached:
-            logger.info(f"Cache hit for: {query[:50]}")
+            logger.info("Search cache hit; query_chars=%d", len(query))
             return ToolResult(success=True, data=cached, message=f"Found {len(cached.get('results', []))} results (cached)")
 
         # Route to appropriate search strategy
@@ -1556,9 +1556,9 @@ class WebSearchTool(BaseTool):
                         if page_text and len(page_text) > 100:
                             r["page_content"] = page_text[:2000]
                             fetched += 1
-                            logger.info(f"Fetched {len(page_text)} chars from {url[:60]}")
+                            logger.info("Fetched external page; chars=%d", len(page_text))
                 except Exception as e:
-                    logger.warning(f"Failed to fetch {url[:60]}: {e}")
+                    logger.warning("External page fetch failed; error_type=%s", type(e).__name__)
 
         # Score relevance (after fetching page content)
         relevance = self.validator.score_relevance(query, results)
@@ -1683,7 +1683,7 @@ class WebSearchTool(BaseTool):
         if best_score < 0.3 and len(query) > 20:
             simplified = self._simplify_query(query)
             if simplified != query:
-                logger.info(f"Fallback: trying simplified query '{simplified}'")
+                logger.info("Search fallback: simplified query_chars=%d", len(simplified))
                 fallback_results = self.engines['bing'].search_with_retry(simplified, max_results, retries=1)
                 if fallback_results:
                     score = self.validator.score_relevance(simplified, fallback_results)

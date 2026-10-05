@@ -36,8 +36,8 @@ MISSING_INPUT_ERROR = (
 # store sites in chat_workflows/server_support), so it carries the plan's
 # calibration; the physical-Gy grid is already Gy.
 _DOSE_SOURCES_GY = (
-    ("dose_distribution_gy", "normalized"),
     ("dose_distribution_physical_gy", "physical"),
+    ("dose_distribution_gy", "normalized"),
     ("dose_distribution", "normalized"),
 )
 
@@ -92,11 +92,8 @@ def resolve_dose_evaluation_inputs(retrieve: Retrieve) -> Dict[str, Any]:
     previous_metrics = retrieve("dose_metrics") or retrieve("metrics") or {}
     if not isinstance(previous_metrics, dict):
         previous_metrics = {}
-    dose_scale = resolve_dose_scale_gy(
-        plan_config,
-        previous_metrics,
-        dose_scale_gy=retrieve("dose_scale_gy"),
-    )
+    from utils.dose_units import calibrated_scale, physical_volume
+    dose_scale = None
 
     def _first(*keys: str) -> Any:
         # NumPy arrays do not define a scalar truth value; never select
@@ -119,7 +116,9 @@ def resolve_dose_evaluation_inputs(retrieve: Retrieve) -> Dict[str, Any]:
 
     mask_pairs: Tuple[Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[list]], ...] = (
         (ct_grid_ctv, ct_grid_oar, ct_spacing),
-        (plan_grid_ctv, plan_grid_oar, _planning_grid_spacing(retrieve) or ct_spacing),
+        # A resampled grid cannot inherit the acquisition grid's voxel volume.
+        # Even matching array shapes do not establish matching physical spacing.
+        (plan_grid_ctv, plan_grid_oar, _planning_grid_spacing(retrieve)),
     )
 
     seen_shapes = []
@@ -129,7 +128,6 @@ def resolve_dose_evaluation_inputs(retrieve: Retrieve) -> Dict[str, Any]:
         if dose is None:
             continue
         seen_shapes.append((dose_key, dose.shape))
-        to_gy = float(dose_scale) if unit == "normalized" else 1.0
         for ctv, oar, spacing in mask_pairs:
             if ctv is None or ctv.shape != dose.shape:
                 continue
@@ -137,7 +135,14 @@ def resolve_dose_evaluation_inputs(retrieve: Retrieve) -> Dict[str, Any]:
             if (ct_grid_oar is not None or plan_grid_oar is not None) and oar_in is None:
                 oar_mismatch = True
                 continue
-            dose_gy = (dose.astype(np.float32, copy=False) * np.float32(to_gy))
+            try:
+                if unit == "normalized":
+                    dose_scale = calibrated_scale(previous_metrics, plan_config, explicit=retrieve("dose_scale_gy"))
+                dose_gy = physical_volume(dose, units=unit if unit == "normalized" else "physical_gy", scale=dose_scale)
+                if spacing is None or len(spacing) != 3 or not np.isfinite(spacing).all() or np.any(np.asarray(spacing) <= 0):
+                    raise ValueError("Valid dose-grid spacing is required for volume and Dxcc evaluation")
+            except (ValueError, TypeError) as exc:
+                return {"resolution_error": str(exc), "params": {}}
             params: Dict[str, Any] = {
                 "dose_array": dose_gy,
                 "ctv_mask": ctv,

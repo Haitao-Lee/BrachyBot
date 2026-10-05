@@ -1,0 +1,32 @@
+{
+  "scope": "synthetic developer browser components only; no authenticated product or patient case",
+  "browser": "154.0.8037.93",
+  "tests": [
+    {
+      "name": "native_array_cursor_is_an_exact_key_not_a_suffix_range",
+      "status": "passed"
+    },
+    {
+      "name": "one_key_invalidation_preserves_neighbors",
+      "status": "passed"
+    },
+    {
+      "name": "clear_fences_old_operations_and_allows_a_new_session",
+      "status": "passed"
+    },
+    {
+      "name": "eviction_keeps_total_below_cap_even_with_fewer_than_four_items",
+      "status": "passed"
+    },
+    {
+      "name": "inline_argument_survives_html_and_javascript_contexts_without_execution",
+      "status": "passed"
+    },
+    {
+      "name": "legacy_toast_is_a_text_only_notification",
+      "status": "passed"
+    }
+  ],
+  "cache_sha256": "475d7f7367ae49724c5f777a0f3f6a088f1ae3c1419e96327e3a61ba1ea5ef26",
+  "ui_sha256": "d9c3101401bdb4f54d40139cdee43902dcbd7611bb953903582ccf0b51b36560"
+}

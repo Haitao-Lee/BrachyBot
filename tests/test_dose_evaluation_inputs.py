@@ -75,7 +75,12 @@ def test_physical_gy_grid_is_used_unchanged():
 
 
 def test_planning_grid_pair_uses_the_resampled_masks():
+    import SimpleITK as sitk
+
+    planning_ct = sitk.GetImageFromArray(np.zeros((2, 8, 8), dtype=np.float32))
+    planning_ct.SetSpacing((1.2, 1.2, 2.0))
     memory = {
+        "resampled_ct": planning_ct,
         "dose_distribution": np.zeros((2, 8, 8), dtype=np.float32),
         "dose_distribution_gy": np.zeros((2, 4, 4), dtype=np.float32),
         "ctv_array": np.zeros((2, 4, 4), dtype=np.uint8),  # CT grid: no dose match below
@@ -93,6 +98,7 @@ def test_planning_grid_pair_uses_the_resampled_masks():
     assert params["ctv_mask"] is memory["resampled_ctv"]
     assert params["dose_array"].shape == (2, 8, 8)
     assert float(params["dose_array"].max()) == pytest.approx(6.0)
+    assert params["spacing"] == [1.2, 1.2, 2.0]
 
 
 def test_grid_mismatch_is_an_honest_error():

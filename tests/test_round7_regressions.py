@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 import numpy as np
 import pytest
@@ -735,7 +736,7 @@ def test_dose_overlay_opacity_is_invariant_during_slice_scrubbing():
     assert "_composite2DViewerCanvas(a.ax, { doseOpacity: 0.7 })" in ui_api
     assert 'src="static/js/brachybot-viewer-volume.js?v=' in index
     assert 'src="static/js/brachybot-3d-manual.js?v=' in index
-    assert "brachybot-manual-annotation.js?v=29" in index
+    assert re.search(r"brachybot-manual-annotation\.js\?v=\d+", index)
 
 
 def test_manual_seed_defaults_to_needle_middle_and_is_proximity_selectable():

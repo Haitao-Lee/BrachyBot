@@ -1334,61 +1334,25 @@ def ray_min_distance(p1, d1, p2, d2, epsilon=1e-6):
     Returns:
     - min_distance: The minimum distance between the two rays
     """
-    # Ensure inputs are numpy arrays
-    p1 = np.array(p1)
-    d1 = np.array(d1)
-    p2 = np.array(p2)
-    d2 = np.array(d2)
-
-    # Calculate the cross product of the direction vectors
-    n = np.cross(d1, d2)
-    n_norm = np.linalg.norm(n)
-
-    if n_norm < epsilon:
-        # Rays are parallel
-        m = np.cross(p1 - p2, d1)
-        m_norm = np.linalg.norm(m)
-        if m_norm < epsilon:
-            # Rays are collinear
-            t = np.dot(p2 - p1, d1) / np.dot(d1, d1)
-            s = np.dot(p1 - p2, d2) / np.dot(d2, d2)
-            if t <= 0 or s <= 0:
-                return 0.0  # Rays overlap, minimum distance is 0
-            else:
-                return np.linalg.norm(p1 - p2)  # Rays do not overlap, return distance between start points
-        else:
-            # Rays are parallel but not collinear
-            return m_norm / np.linalg.norm(d1)  # Return fixed distance between parallel rays
-    else:
-        # Rays are not parallel
-        dp = p2 - p1
-        a = np.dot(d1, d1)
-        b = np.dot(d1, d2)
-        c = np.dot(d2, d2)
-        e = np.dot(d1, dp)
-        f = np.dot(d2, dp)
-        denom = a * c - b ** 2
-        t_star = (e * c - f * b) / denom
-        s_star = (a * f - b * e) / denom
-
-        if t_star >= 0 and s_star >= 0:
-            # Both parameters are non-negative, closest points are on the rays
-            q1 = p1 + t_star * d1
-            q2 = p2 + s_star * d2
-            return np.linalg.norm(q1 - q2)
-        elif t_star < 0 and s_star >= 0:
-            # t* < 0, s* >= 0, closest point is on the first ray's starting point
-            u_star = max(0, np.dot(p1 - p2, d2) / np.dot(d2, d2))
-            q2 = p2 + u_star * d2
-            return np.linalg.norm(p1 - q2)
-        elif t_star >= 0 and s_star < 0:
-            # t* >= 0, s* < 0, closest point is on the second ray's starting point
-            u_star = max(0, np.dot(p2 - p1, d1) / np.dot(d1, d1))
-            q1 = p1 + u_star * d1
-            return np.linalg.norm(q1 - p2)
-        else:
-            # t* < 0, s* < 0, closest point is the distance between the starting points of the two rays
-            return np.linalg.norm(p1 - p2)
+    vectors = [np.asarray(v, dtype=np.float64) for v in (p1, d1, p2, d2)]
+    if any(v.shape != (3,) or not np.isfinite(v).all() for v in vectors):
+        raise ValueError("Ray geometry must contain finite 3D vectors")
+    p1, d1, p2, d2 = vectors
+    n1, n2 = np.linalg.norm(d1), np.linalg.norm(d2)
+    if n1 <= 0 or n2 <= 0:
+        raise ValueError("Ray directions must be nonzero")
+    d1, d2 = d1 / n1, d2 / n2
+    w = p1 - p2
+    b, d, e = float(np.dot(d1, d2)), float(np.dot(d1, w)), float(np.dot(d2, w))
+    # Both constrained boundaries must be checked even for parallel rays.
+    candidates = [np.linalg.norm(w + max(0.0, -d) * d1),
+                  np.linalg.norm(w - max(0.0, e) * d2)]
+    denominator = 1.0 - b * b
+    if denominator > float(epsilon) ** 2:
+        t, s = (b * e - d) / denominator, (e - b * d) / denominator
+        if t >= 0 and s >= 0:
+            candidates.append(np.linalg.norm(w + t * d1 - s * d2))
+    return float(min(candidates))
 
 
 def min_distance_to_lines(target_point, target_direction, lines):

@@ -4510,10 +4510,12 @@ def register_planning_routes(
         # the authenticated case workspace so a server restart can reuse them
         # without allowing one case's geometry to leak into another case.
         cache_root = None
+        cache_owner = None
         case_session_id = ""
         try:
             store, user, case_session_id = request_case_context()
             cache_root = store.workspace_root(user["id"], case_session_id, create=False)
+            cache_owner = (store, user["id"], case_session_id)
         except Exception as exc:
             # The route remains usable for legacy/test agents that are not
             # attached to the workspace bridge; cache failure is never a dose
@@ -4698,6 +4700,7 @@ def register_planning_routes(
                 }
                 schedule_viewer_cache_write(
                     cache_root, "dose-isosurface", persistent_cache_key, empty_payload,
+                    owner=cache_owner,
                 )
                 return _planning_json_response(empty_payload)
 
@@ -4749,6 +4752,7 @@ def register_planning_routes(
             }
             schedule_viewer_cache_write(
                 cache_root, "dose-isosurface", persistent_cache_key, payload,
+                owner=cache_owner,
             )
             return _planning_json_response(payload)
         except Exception as e:
@@ -7226,14 +7230,17 @@ def register_planning_routes(
             uptime_s = max(0.0, time.monotonic() - float(started))
         except (TypeError, ValueError):
             uptime_s = None
-        response = jsonify({
+        payload = {
             "ok": True,
             "status": "ok",
             "server_instance_id": str(
                 current_app.config.get("BRACHYBOT_SERVER_INSTANCE_ID") or ""
             ),
             "uptime_s": round(uptime_s, 3) if uptime_s is not None else None,
-        })
+        }
+        if not current_user(store):
+            payload = {"ok": True, "status": "ok"}
+        response = jsonify(payload)
         response.headers["Cache-Control"] = "no-store"
         return response
 

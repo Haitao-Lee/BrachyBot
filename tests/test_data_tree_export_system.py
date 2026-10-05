@@ -58,7 +58,9 @@ class _Memory:
             "organ_names": {2: "Duodenum", 3: "Kidney L"},
             "organ_counts": {2: 27, 3: 27},
             "oar_source": "model",
-            "dose_distribution_gy": dose,
+            "dose_distribution_gy": dose / 190.8,
+            "dose_distribution_physical_gy": dose,
+            "dose_units": "normalized_model_output",
             "dose_scale_gy": 190.8,
             "dose_metrics": {"v100": 90.0, "d90": 120.0},
             "dvh_data": {
@@ -585,7 +587,7 @@ def test_export_service_serializes_true_units_geometry_and_types(tmp_path):
         user["id"], session.id, agent, catalog["dose:volume"], "nifti", destination,
     )
     exported_dose = sitk.GetArrayFromImage(sitk.ReadImage(str(dose_path)))
-    assert np.allclose(exported_dose, agent.memory.retrieve("dose_distribution_gy"))
+    assert np.allclose(exported_dose, agent.memory.retrieve("dose_distribution_physical_gy"))
     assert float(exported_dose.max()) == 300.0
 
     dvh_path = service.export_object(

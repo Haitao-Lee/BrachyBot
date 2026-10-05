@@ -11,6 +11,22 @@ import requests
 import urllib3
 
 
+def _public_address(value):
+    address = ipaddress.ip_address(value)
+    if not address.is_global:
+        return False
+    if isinstance(address, ipaddress.IPv6Address):
+        # Deny transition/translation ranges conservatively. A public IPv6
+        # wrapper must not encode a loopback/private IPv4 destination.
+        if address.ipv4_mapped is not None:
+            return address.ipv4_mapped.is_global
+        if (address.sixtofour is not None or address.teredo is not None
+                or address in ipaddress.ip_network("64:ff9b::/96")
+                or address in ipaddress.ip_network("64:ff9b:1::/48")):
+            return False
+    return True
+
+
 def resolve_public_url(url):
     parsed = urlsplit(url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
@@ -20,7 +36,7 @@ def resolve_public_url(url):
     host = parsed.hostname.rstrip(".").encode("idna").decode("ascii").lower()
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
     addresses = list(dict.fromkeys(item[4][0] for item in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)))
-    if not addresses or any(not ipaddress.ip_address(addr).is_global for addr in addresses):
+    if not addresses or any(not _public_address(addr) for addr in addresses):
         raise ValueError("Local/private URLs are not allowed")
     return parsed, host, port, addresses
 

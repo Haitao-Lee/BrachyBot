@@ -5,15 +5,15 @@
   "module_sha256": "dad562e79d2036fb836c2656f487658bf3344675bd09f8bf08186b839f1f06ff",
   "dependencies": {
     "plans/guide_geometry.py": "fbd6d7531a1e060988e730899f530882010d9cb5fb0350fd672ea97f675de770",
-    "tool_factory/seed_plan/planning_pipeline.py": "3ee5ff0d97a63cc6f8c06c19177fc08eaa931152ee6c9c41a31f4bc37d4d9947",
+    "tool_factory/seed_plan/planning_pipeline.py": "b2158617f31f03347e0baa2b659898cb16d4772d98b03bc601d0755f20acff72",
     "web/planning_runs.py": "4c331c6fe0d2fd77d619d0f70361e203b759ebc9ccc9b82c2360c92c308df54d"
   },
   "renewal": {
-    "date": "2026-10-04",
-    "before_pipeline_sha256": "6066ac1982e85f157ebc556a23afd7975df03949729454fb9db9bc643dcb349a",
-    "evidence_path": "docs/benchmarks/surgical_guide_dependency_renewal_2026-10-04.json",
-    "evidence_sha256": "c63632aab2c727b4684ccc13dafb6eccb260bcfea6d55ad74b6c8a167e1bb974",
-    "note": "Pre-release edits affect distance validation, target coverage, target-label DVH, and Dxcc, not the guide's imported canonical needle helper. The helper AST is unchanged. Four pre/post isolated synthetic pairs preserve input, mesh, needle-path, auxiliary-hole and QA hashes. Evidence is fixture-level only, not a real-case/browser performance claim. The frozen historical guide module remains unchanged."
+    "date": "2026-10-06",
+    "before_pipeline_sha256": "3ee5ff0d97a63cc6f8c06c19177fc08eaa931152ee6c9c41a31f4bc37d4d9947",
+    "evidence_path": "docs/benchmarks/surgical_guide_dependency_renewal_2026-10-06-review.json",
+    "evidence_sha256": "7c4729665a03e553ede260984d5c6d89dd8f8e04a5072c45fc09e72537638f4a",
+    "note": "Obstacle-name policy, its dependency-free source ontology and Dxcc selection changed; the guide's imported canonical needle helper AST is unchanged. Four isolated pre/post synthetic pairs preserve input, mesh, needle-path, auxiliary-hole and QA hashes, with recorded timings. This is fixture-level dependency evidence, not a real-case/browser or clinical performance claim. The historical guide module is unchanged."
   },
   "validation_environment": {"numpy": "2.4.6", "scipy": "1.15.3", "skimage": "0.26.0", "SimpleITK": "2.5.0"}
 }

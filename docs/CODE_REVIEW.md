@@ -1,3 +1,311 @@
+# 2026-10-06 Independent verification and scoped remediation
+
+The preceding review was independently checked against HEAD `95a3c6ea8bf6fa51680c0941739aecb7f76ccb83`. Real defects in dose units, per-case seed-cache identity, guide/knowledge-base authorization, external evidence provenance, geometric distances, quota/lifecycle commits and browser rendering/cache handling were repaired with synthetic negative controls. The full disposition of every labeled reference, scientific corrections, intermediate failures, exact evidence scopes and remaining release gates is in [PRE_RELEASE_SECOND_REVIEW_FOLLOWUP_2026-10-06.md](PRE_RELEASE_SECOND_REVIEW_FOLLOWUP_2026-10-06.md).
+
+This supersedes earlier assertions of latest status, not the original evidence. The original review and all history below are retained verbatim. Its tables contain 89 overlapping labels; the claimed 65 deduplicated issues need a mapping. Not every proposed remedy was valid: native IndexedDB array keys are exact keys, URL credentials were intentionally removed, source-change transfer journals must not be blindly discarded, and the release scanner already checks more than two files.
+
+Three verified ignored-worktree credential literals were sanitized without retaining plaintext backups. Provider revocation/history cleanup are unverified, and the read-only process audit still detected a registered compromised credential in the active LAN environment. The release gate remains blocked. No commit/push, service restart, public-checkout patch, real-patient planning, GPU migration or clinical authorization is implied by this remediation.
+
+Actual-checkout acceptance: **2,290 passed, 2 skipped, 31 warnings, 4 subtests passed; zero failures and zero collection errors**. All 84 selected-file hashes and original backups were checked; the prior report remains an exact suffix. Independent public-source fingerprints and the two service PIDs were unchanged. Exact environments, skip reasons, paired guide/browser evidence, delivery manifest and remaining blockers are in the follow-up. The backend processes were not reloaded, so a code/test pass is not runtime activation, deployment approval or clinical-physics acceptance.
+
+---
+
+# 2026-10-05 全项目上线前代码审查（第二次全量 / Pre-Release Full Review）
+
+> **本条目是当前最新、权威的上线前审查，位于文件绝对开头；其下所有历史条目原文保留。**
+> 基线 HEAD：`95a3c6ea8`（`feat(monitor): closed-loop editing, geometry/dose evidence and guided recovery`）。
+> 范围：整个 `/home/lht/snap/brachyplan/BrachyBot`（web 层、agent runtime、tool_factory（排除 vendor/model 目录）、
+> plans 科学计算、前端 JS、持久化/并发、LLM/提示词/知识库、依赖/打包、仓库卫生、测试缺口）。
+> 方法：6 路并行静态审查 + 跨模块数据流追踪 + 对关键项逐行复核（非渗透测试、未运行真实患者规划/GPU 推理）。
+> 每条的复核状态：`✅ 已复核`（本报告作者逐行读过证据代码并给出可行路径）、`⚠️ 待复核`（自动审查发现，证据合理但需负责人确认）。
+> **本轮未修改任何产品代码，只新增本报告。**
+
+---
+
+## 0. 执行摘要
+
+**总体结论：项目工程成熟度较高（租户隔离、请求-病例绑定、原子写、公开部署失败关闭、执行授权分层都已具备），但仍存在若干会在真实开放使用后造成“错误临床输出 / 密钥与源码泄露 / 持久化数据损坏”的严重缺陷，必须在任何非 loopback 或面向真实患者开放前修复。** 尤其注意两类“静默错误”：一是**剂量导出/评估把归一化模型单位当作 Gy**（约 190× 误差）以及**跨病例剂量缓存复用**；二是**授权按工具名而非动作判定**导致只读问题触发写操作。
+
+### 严重度分级
+| 级别 | 含义 |
+|---|---|
+| **P0 严重** | 直接导致密钥泄露、临床剂量错误、跨患者数据污染，开放前必修 |
+| **P1 高** | 明显安全/正确性缺陷，前置条件有限即可触发或影响临床可信度 |
+| **P2 中** | 真实缺陷/鲁棒性问题，可能造成数据损坏、资源耗尽、误报 |
+| **P3 低 / 加固** | 纵深防御、卫生、潜伏风险 |
+
+### 发现数量（本轮去重后）
+| 级别 | 数量 | 主要内容 |
+|---|---:|---|
+| P0 | 4 | 泄露 key 仍在磁盘/git 历史；剂量导出与 RTDOSE 以 Gy 写归一化值；跨病例剂量缓存污染 |
+| P1 | 13 | 只读授权触发导板生成；共享临床 KB 可被模型写入；外部网页内容未设不可信边界；依赖缺失致干净安装无法启动；源码备份泄露；剂量评估输入优先级错误；默认障碍物漏肠管；针间距共线判定符号反转；缓存/导出绕过配额；快照丢失更新 |
+| P2 | 26 | DVH/Dxcc 口径不一致、RTDOSE 几何、分割对齐假设、资源上限、provider 故障处理、提示词/日志 PHI 等 |
+| P3 / 潜伏 | 22 | 计时侧信道、限流细节、沙箱（默认关闭）、动态工具全局态、仓库卫生、测试缺口等 |
+
+---
+
+## 1. P0 — 上线前必修（严重）
+
+### P0-1 上一轮修复的“另一个”泄露 key 仍在磁盘与 git 全历史中 ✅ 已复核
+**证据**
+- `.claude/worktrees/ui-design-fixes/AgenticSys.py:308`、`.claude/worktrees/datamind-report/AgenticSys.py:490`、`.claude/worktrees/benchmark-optimization/AgenticSys.py:308` 均含明文 `"api_key": "sk-cp-JTtRZ0CJ…"`（MiniMax/anthropic 配置）。
+- `git log --all --oneline -S 'sk-cp-'` 命中提交 `9eeedac8d`、`6a30d3287`、`91de9c589`、`8a29fb9e1`，即该 key 已进入 git 全历史。
+- `.claude/worktrees/**` 被 gitignore、未被跟踪，但仍在**当前磁盘工作树**上；历史版本则随仓库分发。
+**影响**：任何拿到 checkout、备份或 git 访问的人都能取得一个在用 provider 凭据。上一轮只清除了 `sk-Sm2…` 这一个 key（`start_server.sh`/`CODE_REVIEW.md`/`start-public.sh`），**并未覆盖 `sk-cp-…`**。
+**修复**：在提供方撤销/轮换该 key；用 `git filter-repo`/BFG 从全部历史与所有 worktree 清除；删除硬编码 fallback，只允许 env/用户 auth 文件；把 `sk-`/`sk-cp-` 扫描纳入发布门禁（见 `scripts/pre_release_security_check.py`，目前只扫两个文件）。
+
+### P0-2 剂量 NIfTI 导出把“归一化模型输出”标注为 Gy（约 190× 低估）✅ 已复核
+**证据**
+- `web/export_service.py:837` `dose_gy = memory.retrieve("dose_distribution_gy")`，随后 `:841` `_write_nifti(dose_gy, path, memory, unit="Gy")`。
+- `_write_nifti`（`web/export_service.py:145-158`）把数组原样写入并打上 `BrachyBot.Unit/intent_name = "Gy"`。
+- 但 `dose_distribution_gy` 按契约就是**归一化模型输出**：存于 `tool_factory/seed_plan/planning_pipeline.py:5116`、`web/server_support.py:3129`（`dose_original`），物理量是同处 `:3130` 的 `dose_distribution_physical_gy`；`_dose_gy()`（`:986-992`）本可正确换算，却只在 `dose_distribution_gy is None` 的 fallback 分支使用。
+**影响**：导出的“剂量体积”NIfTI 实际是模型单位却声明为 Gy，外部 TPS/QA 读到 ~1 而非 ~120–190 Gy，量级约 190× 错误且不报错。
+**修复**：`dose` 导出统一走 `self._dose_gy(memory, raw)` 并据 `dose_units` 决定是否换算，无法解析校准时报错退出。
+
+### P0-3 `dicom_rt_exporter` 缺省把归一化剂量按 `scale=1.0` 写成 RTDOSE（GY）✅ 已复核
+**证据**
+- `tool_factory/output/dicom_rt_exporter.py:220` `scale_gy = float(kwargs.get("dose_scale_gy") or 1.0)`，`:223` `physical_dose = dose * scale_gy`，`:359` 以 `DoseUnits="GY"` 写出。
+- `dose_scale_gy` 既非必需也未出现在 `input_schema`（`:165-177`）；provider/直连调用会漏传。唯一正确注入 scale 的是路由层 `web/routes/planning_routes.py:7702-7727`。
+**影响**：RTDOSE 以“物理剂量”名义写出约 190× 偏低的值，TPS 导入后近似零剂量计划。
+**修复**：缺省用 `resolve_dose_scale_gy(...)`/`DOSE_MODEL_SCALE_GY`，或在无法解析校准（且 `dose_units` 非物理 Gy）时拒绝导出；`dose_units` 参数目前也被忽略。
+
+### P0-4 手动剂量逐 seed 缓存按几何键复用，可跨病例串剂量 ✅ 已复核
+**证据**
+- `web/server_support.py:2384` `dose_cache_key = str(dose_device)`；`:2491-2500` `dose_signature = (dose_cache_key, GetSize, GetSpacing, GetOrigin, GetDirection)`；seed 键再加 position/direction/weight（`:2502-2508`）。
+- 缓存实体为模块级 `_MANUAL_DOSE_SEED_CACHE`（`:229-231`）。键中**没有 CT 体素内容摘要、没有病例/session id**。
+- `_MANUAL_DOSE_SEED_CACHE`/`_MANUAL_DOSE_SEED_CACHE_ORDER` 的写入与 LRU 淘汰（`:2536-2539`）**没有加锁**（见 P1-13 相关）。
+**影响**：dose map 依赖 CT 灰度，但签名只含几何。两个病例只要网格几何相同、seed 位置/方向/权重重合，就会命中并复用**另一患者**的剂量图——静默的跨病例临床污染。
+**修复**：把 CT/`dose_image` 的内容摘要（含 `case_id`）折入 `dose_signature`；不要仅以几何作键；用锁保护缓存与顺序表。
+
+---
+
+## 2. P1 — 高
+
+### P1-1 只读“导板是否已生成”问题会授予并执行导板生成 ✅ 已复核
+**证据**
+- `agent_runtime/turn_policy.py:2061-2071`：`is_surgical_guide_status_query` 返回 `direct_execution=True, execution_grants=frozenset({"surgical_guide"})`；`:2041-2043` 对多意图中带导板状态子任务同样授予。
+- `agent_runtime/response_tools.py:3571-3599`：当 `direct_execution` 且工具名在 `execution_grants` 中时，**跳过**第二道 `mutating_execution_authorized` 语义门。
+- `agent_runtime/execution_authorization.py:124-139`：授权按**工具名**（`granted_tools`）判定，不区分动作。
+- `tool_factory/surgical_guide/__init__.py:147`：`action = str(kwargs.get("action") or "generate")`，schema `required=[]`（`:131`）。
+**影响**：用户只是问“导板生成了吗？”，provider（或被注入内容/幻觉驱动）发出 `surgical_guide`（缺省即 generate）时，会执行网格生成并发布 Planning 快照——在没有任何生成指令下发生持久化写入。
+**修复**：把 `execution_grants` 改为**动作级** `(tool, action)`；在第二道门为 `surgical_guide` 计算有效动作（缺省按 `generate`）而非整工具豁免；`surgical_guide` 缺省动作改为只读 `status`。
+
+### P1-2 `clinical_kb(action="add")` 可被模型直接持久写入共享知识库 ✅ 已复核
+**证据**
+- `tool_factory/clinical_kb/__init__.py:221` 的 LLM `input_schema` enum 含 `"add"`；`:724-725` 分派到 `_add_entry`（`:524-533`）→ `_save_kb`（`:252-255`）覆盖 `tool_factory/clinical_kb/data/knowledge_base.json`。
+- `agent_runtime/execution_authorization.py:24-47` 的 `MUTATING_TOOLS` **不含** `clinical_kb`；`agent_runtime/request_parse.py:1507-1508` 对未分类工具返回“已授权”。
+- 安全的 `propose`→人工复核路径存在（`:549-574`），但**未**出现在 LLM enum 中。
+**影响**：模型或被注入内容可无授权地持久污染剂量阈值（被 `brain/knowledge/rag.py`、`DoseRAG` 读取），且知识库是**跨租户共享**的仓库状态，绕过病例 workspace 边界。
+**修复**：从 LLM schema/description 移除 `add`，所有写入走 `propose`+人工复核；若确需直写，则将 `clinical_kb` 纳入 `MUTATING_TOOLS` 并做动作级授权。
+
+### P1-3 普通（模型自选）工具路径的网页/搜索结果未套“不可信数据”边界且被持久化 ⚠️ 待复核
+**证据**
+- 强制搜索路径已包装：`agent_runtime/llm_runtime.py:2092`（"External search evidence (untrusted data…)"）。
+- 但模型自选工具路径 `agent_runtime/llm_runtime.py:2526-2554`、`:4552-4576` 直接把 `web_search`/`web_fetch`/`web_access` 输出作为普通 `role:"tool"` 内容追加（`_fc_text[:4000]`），随后 `self.memory.add_message("user", f"[Tool result: {_fc_text[:500]}]")` 持久化；`tool_factory/response_tools.py:2366-2419` 只追加事实核查备注，未加分隔。
+- `tool_factory/web_fetch/__init__.py:310-314` 原样返回抓取正文，无不可信包裹。
+**影响**：任意抓取页面正文可进入上下文并跨轮次再注入，诱导后续模型调用 `web_fetch` 外发病例数据或 `ui_annotate` 等读/UI 工具。临床写操作仍受用户文本第二道门约束，但读/外发/UI 工具不受。
+**修复**：对 `_EVIDENCE_ONLY_TOOLS` 的普通结果路径套用同样的不可信包裹与持久化策略；不要把外部正文原文写入 durable user-role memory；对所有消费外部内容的回合强制加载 safety/security 模块。
+
+### P1-4 `requirements.txt` 缺少硬依赖 `vtk` / `scikit-learn`，干净安装无法 import `plans` ✅ 已复核
+**证据**
+- `plans/geometry.py:2` `import vtk`；`:10` `from sklearn.cluster import DBSCAN`；`plans/utilizations.py:17` `from sklearn.decomposition import PCA`——均为无保护顶层导入。
+- `requirements.txt` 中**没有** `vtk`、`scikit-learn`、`pillow`（grep 无命中）。
+**影响**：按文档 `pip install -r requirements.txt` 后启动会在 `import plans` 处 `ModuleNotFoundError`，核心规划链路不可导入。当前工作站只因未跟踪的 conda/锁环境补齐而正常。
+**修复**：把 `vtk`、`scikit-learn`（及显式的 `pillow`）加入 `requirements.txt`，或改为惰性导入。
+
+### P1-5 静态目录向未认证客户端泄露 `.bak`/`.orig` 源码备份 ✅ 已复核
+**证据**
+- `web/server.py:379` `Flask(..., static_folder=APP_DIR, static_url_path="")`，`APP_DIR=web/app`（`web/server_support.py:40`）。
+- `web/app/` 下存在大量备份：`index.html.bak_codex_*`、`static/js/*.js.orig`、`brachybot-ui-api.js.bak_codex_report_finish_20260918`、`brachybot-workspace.js.bak_codex_*` 等（`ls` 确认；均未被 git 跟踪，但部署内测 checkout 实际存在）。
+- 公共部署 `deploy/public/nginx.conf.example:66` 只拦 `\.bak|\.py$|\.env|\.sqlite|/\.`，**不拦 `.orig`**。
+**影响**：未认证客户端可下载历史源码/JS，泄露路由、feature flag 与内部逻辑，辅助定向攻击；公共部署同样可经 `.orig` 绕过。
+**修复**：从被服务目录移除备份；加应用级/网关级后缀拒绝（`.bak*`、`.orig`、`.rej`、`.tmp`、`.log`、`.py`、点文件）；备份移出 `web/app`。
+
+### P1-6 剂量评估优先使用归一化别名而非显式物理 Gy ✅ 已复核
+**证据**：`plans/dose_pre/evaluation_inputs.py:30-42`，`_DOSE_SOURCES_GY` 顺序为 `("dose_distribution_gy","normalized")` → `("dose_distribution_physical_gy","physical")` → `("dose_distribution","normalized")`。
+**影响**：当两者同时存在时，明确的物理 Gy 数组被忽略，改用一个可能由 legacy/猜测 scale（见 P2-5）换算的归一化数组，导致 `dose_evaluation` 报错 Gy。
+**修复**：两者都在且网格匹配时优先 `dose_distribution_physical_gy`（`to_gy=1.0`），仅在缺失时才回退归一化别名。
+
+### P1-7 默认“不可穿越”障碍物词表漏掉肠管/胃/十二指肠/食管/结肠等 ✅ 已复核
+**证据**
+- `tool_factory/seed_plan/planning_pipeline.py:62-69` 的 `_NON_TRAVERSABLE_NAME_PATTERNS` 仅覆盖骨/软骨/血管/神经。
+- `_default_obstacle_label_ids`（`:77-97`）据此从 TotalSegmentator 名称派生；`_build_radiation_volume` docstring（`:1456-1459`）却声称“vessels, bowel, bone and a few critical soft structures become obstacles”。
+- `colon/small_bowel/duodenum/stomach/esophagus`（及 `urinary_bladder/heart`）不匹配任何 pattern，默认被当作可穿越。
+**影响**：默认情况下针道路径可穿过肠管/胃/食管等临床关键结构，而代码注释宣称会拦截；只有操作员手动在 Data Tree 覆盖才会阻止。
+**修复**：把 bowel/stomach/duodenum/esophagus（并确认 bladder/heart）纳入不可穿越模式，或修正文档政策（若为有意）。
+
+### P1-8 `ray_min_distance` 反平行共线分支方向符号反转 ✅ 已复核
+**证据**：`plans/geometry.py:1347-1358`。`cross≈0` 时 `t=dot(p2-p1,d1)/|d1|²`、`s=dot(p1-p2,d2)/|d2|²`，`if t<=0 or s<=0: return 0.0 else return |p1-p2|`。
+**影响**：对 `d2=-d1`、`p2=p1+a·d1`：`a>0`（两射线相向、针体实际重叠）时 `t=s=a>0` 返回非零“安全”距离；`a<0`（背离）时返回 0 误判碰撞。该函数被 `min_distance_to_lines`/`get_candidate_traj_distance`（`:3438-3453`）及安全门 `get_trajectory_spacing_safety_mask`（`:3514`）使用，可能放行重叠针或误拒正常针。
+**修复**：按方向分别处理共线：重叠→0，否则取两条射线最近点的距离并用 `t,s≥0` 夹紧，不依赖方向符号。
+
+### P1-9 viewer mesh/skin 缓存写入绕过配额且可重建已删除病例目录 ✅ 已复核
+**证据**
+- `web/viewer_cache.py:148-205` `save_viewer_cache` 无 `ensure_capacity`、无 storage-usage 失效；`_cache_path(..., create=True)`（`:75-87`）会 `mkdir(parents=True, exist_ok=True)`；`:201-217` 异步调度写。
+- 账户配额扫描只覆盖 `workspaces/` 与 `trash/`（`web/workspace_store.py:5369-5387`）。
+**影响**：派生 mesh 缓存（默认每命名空间 1 GiB，`viewer_cache.py:41-42`）不受账户配额约束，可静默超配额并使 `_storage_usage_cache` 失真；后台写可在病例删除/移入 trash/归档后重新 `mkdir` 出孤儿目录树。
+**修复**：缓存写走 `workspace_output_transaction`/`_ensure_replacement_capacity` 并失效用量；病例删除时取消挂起写、写前校验 session 仍存在。
+
+### P1-10 导出 staging 绕过配额且无并发上限 ⚠️ 待复核
+**证据**：`web/export_service.py:1444-1450` 写入 `staging_dir/scene_exports/<job>`（在 `workspaces_dir`/`trash_dir` 之外）；`:1361-1386` `ExportJobManager.create` 每任务起一个无上限 daemon 线程；`:1339-1359` 只在请求时机会性清理。
+**影响**：`user_storage_bytes` 从不统计导出 staging，可写满磁盘超配额；单用户可并发大量导出线程（各建模型/网格/zip）打满 CPU/线程。
+**修复**：staging 计入/预留配额；每用户/全局导出并发信号量；独立周期清理。
+
+### P1-11 `mark_session_interrupted` 写快照未持 `_case_guard`，与 UI/report 补丁互相覆盖 ⚠️ 待复核
+**证据**：`web/workspace_store.py:4236-4258`（load+写，无 `_case_guard`）；在 hydration 时 `:3903` 调用；而 `save_snapshot_patch`（`:2637`）只持 `_case_guard`。
+**影响**：并发“中断修复”和实时 UI/报告补丁对 `snapshot.json` 读-改-写，后写者静默丢弃对方更新（临床/UI 数据丢失，即 lost update）。
+**修复**：把 `mark_session_interrupted` 及启动修复遍历纳入 `_case_guard`。
+
+### P1-12 `replace_snapshot_section` 无 revision fencing，旧标签页可覆盖较新分区 ⚠️ 待复核
+**证据**：`web/workspace_store.py:2752-2799` 对 `ui`/`report`/`chat`/`operation` 做整段替换，无 `expected_revision`；对比 `save_snapshot_patch:2801-2813` 有 fence。
+**影响**：后台/旧浏览器可在另一浏览器产生较新数据后，用旧快照整段覆盖报告/聊天/UI，合并保护在此被有意绕过；租约只是软约束。
+**修复**：为 `replace_snapshot_section` 增加 `expected_revision` 并拒绝过期替换，或要求持有活动编辑租约。
+
+### P1-13 provider 故障以“content”返回，令多provider failover 失效且错误文本直达用户 ✅ 已复核（模式）
+**证据**：`brain/providers/anthropic_llm.py:216-219`、`deepseek_llm.py:94`、`generic_openai_compat.py:192`、`gemini_llm.py:164` 等均 `return LLMResponse(content=f"Error: {e}", finish_reason="error")` 而非抛出；`brain/core/router.py:287-296,327-336` 仅在异常时推进 fallback；非流式工具循环 `agent_runtime/llm_runtime.py:2227,2266-2268` 未检查 `finish_reason=="error"`。
+**影响**：单 provider 故障会把技术错误串当作临床回答返回（可达 `web/routes/planning_routes.py:8442`），且文档声称的多 provider 回退链对这些 provider 不生效。
+**修复**：provider 失败即抛异常（或在 `router.chat_messages` 检测 `finish_reason=="error"`/错误标记以推进回退），并在工具循环加错误护栏。
+
+---
+
+## 3. P2 — 中
+
+| ID | 复核 | 问题 | 证据 | 影响/修复 |
+|---|---|---|---|---|
+| P2-1 | ✅ | 等剂量 STL 导出用物理 Gy 阈值比对归一化剂量 | `web/export_service.py:1027-1039`；对照正确实现 `web/routes/planning_routes.py:4610` | 阈值判定/网格层级错误或直接报越界；应走 `dose_gy_to_model` |
+| P2-2 | ✅ | Dxcc 计算在多数路径用 `int()` 截断，手动路径用 `ceil` | `comprehensive_dose_evaluation.py:161`、`absolute_dose_metrics.py:116`、`planning_pipeline.py:5348` vs `server_support.py:3043` | 同一 OAR 的 Dxcc 依赖路径，截断会高估 D2cc/D1cc；统一 `max(1,int(round()))` 并夹到 n |
+| P2-3 | ✅ | OAR 百分比约束 `dmax_pct`/`max_dose_pct` 未评估 | KB 含 `dmax_pct`；`comprehensive_dose_evaluation.py:277-283` 的 `metric_map` 无该键（`clinical_standards.py:54-57` 归一为 `max_dose_pct`） | `oar_violations` 漏报、计划评分不惩罚；映射为 `Dmax/prescription` 或显式拒绝不支持键 |
+| P2-4 | ✅ | 缺失校准静默回退 legacy 120 Gy | `plans/dose_pre/model_loader.py:113-141`（`LEGACY_DOSE_MODEL_SCALE_GY=120`） | 丢失校准的当前计划剂量错 1.59× 且无提示；仅在证明为 legacy 时使用，否则 fail-closed |
+| P2-5 | ⚠️ | `planning_dose_value_to_gy` 对 ≤5 的值猜 Rx 倍数 | `model_loader.py:90-92`；重复于 `report_auto_fill.py:216-219`、`clinical_metrics.py:60-80` | 合法的低 Gy（如 4 Gy 分次）被 ×120 变 480 Gy；要求显式单位 |
+| P2-6 | ⚠️ | 缺 CT spacing 时 Dxcc 默认 1mm 各向同性 | `evaluation_inputs.py:157`；`dose_eval/__init__.py:140`、`comprehensive_dose_evaluation.py:122` 默认 `[1,1,1]` | 各向异性网格下体积/Dxcc 错误且无警告；缺 spacing 应失败或标注来源 |
+| P2-7 | ⚠️ | 模型分割对齐由参考范围反推 spacing，假设物理范围一致 | `segmentation_alignment.py:153-163` | 被裁剪/降采样的模型输出会被缩放平移而非拒绝，静默错位 CTV/OAR |
+| P2-8 | ✅ 模式 | provider 客户端无超时 | `qwen_llm.py:55`、`kimi_llm.py:54`、`glm_llm.py:53`、`deepseek_llm.py:49`、`groq_llm.py:51`、`grok_llm.py:52`、`mimo_llm.py:48`、`tencent_llm.py:48` 无 `timeout`/`max_retries` | 上游挂起可占用线程约 600s×retries；统一设超时+重试上限 |
+| P2-9 | ✅ 模式 | 流式重试/非流式回退重复输出已发文本 | `generic_openai_compat.py:239-255,304-317`；`anthropic_llm.py:413-484` | 部分回答后出现整段重复；一旦发出 chunk 就应 re-raise |
+| P2-10 | ⚠️ | Anthropic 工具参数解析失败退化为 `{}`、非流式回退丢 tool_calls | `anthropic_llm.py:444-448,477` | 畸形调用可能以空参执行（含写动作）或被静默丢弃；应标记无效并让运行时拒绝 |
+| P2-11 | ⚠️ | 上下文压缩可能压掉安全关键工具输出 | `agent_runtime/context_window.py:528-555,643-747`、`_FACT_KEYS:87-94` | `safety_validator`/几何失败等不在 ledger，长会话可能被当作“干净”；把安全结论纳入确定性 ledger |
+| P2-12 | ⚠️ | 用户/病例文本进入日志（PHI） | `llm_runtime.py:1382,2045,3190,3397`；`chat_workflows.py:3687,4147,5653`；`web_search/__init__.py:1524,1559,1561`；`web_fetch/__init__.py:183` | 患者标识/临床文本/URL 落盘；只记录长度/哈希，debug 才输出并脱敏 |
+| P2-13 | ⚠️ | `tool_security` 路径校验按参数名启发式，可被 `_` 前缀/非常规键绕过 | `utils/tool_security.py:49-66`（`not key.startswith("_")`；仅 `_PATH_FIELDS`/`_path` 等后缀） | 非约定键（`source/dest/input/file`）或 `_` 嵌套路径不受约束；应对所有指向已存在文件的字符串 fail-closed 校验或逐工具白名单 |
+| P2-14 | ✅ | `ui_annotate` 读写全局共享目录且未列为 mutating | `tool_factory/ui_annotate/__init__.py:289-316`（硬编码 `uploads/screenshots`）；`execution_authorization.py:24-47` 无 `ui_annotate` | 多租户下可跨病例读图、在病例 workspace 外写文件；应按 `_workspace_root` 解析并加入 `MUTATING_TOOLS` |
+| P2-15 | ✅ | `/api/healthz` 泄露 `server_instance_id`/`uptime_s` | `web/routes/planning_routes.py:7229-7236`；`web/auth.py:181` 对其豁免会话门 | 匿名重启/存活 oracle（公共部署 nginx 注入 API key）；返回常量 `{"ok":true}` |
+| P2-16 | ✅ | `/api/auth/password` 限流分桶路径不匹配 | 路由 `web/auth.py:328` 是 `/api/auth/password`，桶匹配 `web/server_support.py:3250` 写的是 `/api/auth/change-password` | 改密口令猜测落默认桶；trust 网络上 `rate_limit` 对非 auth 桶直接短路（`:3589`），等同无限额 |
+| P2-17 | ⚠️ | 快照缓存可能在未加锁写者间以错误身份缓存他人内容 | `workspace_store.py:5445-5452`（`stat()` 后 deepcopy，结合 P1-11/P1-12 的无锁写者） | 之后 `load_snapshot` 可能命中过期快照；仅在持 `_case_guard` 时更新缓存 |
+| P2-18 | ⚠️ | 归档/恢复 transfer journal 在“源已变”时永久卡死 | `workspace_store.py:4867-4892,4911-4936`；reconcile 捕获 `WorkspaceError` 后永久推迟 `:5255-5283` | 病例无法再归档/恢复；源已变时丢弃过期 journal |
+| P2-19 | ⚠️ | 归档存储在不可用时永久删除会遗留 NAS 孤儿 | `workspace_store.py:5333-5356`（仅当 `archive_available` 才清 archive root） | 孤儿临床数据无 DB 引用、隐私/留存问题；archive 不可用时拒绝永久删除或持久化待删 journal |
+| P2-20 | ⚠️ | `move_to_trash`/`restore_from_trash` 未与快照/检查点写者串行 | `workspace_store.py:5285-5309,5311-5331` | TOCTOU：并发补丁可重建 active/trash 目录，产生孤儿与状态不一致 |
+| P2-21 | ⚠️ | `permanently_delete` 遗留孤儿字节且从不清理 per-case 簿记 | `workspace_store.py:5333-5356`；`_case_locks`/`_checkpoint_*`/`_workspace_output_locks`/`_array_refs` 从不移除 | 不可达但占配额的孤儿目录 + 进程内存随会话单调增长 |
+| P2-22 | ⚠️ | `audit_events` 无留存/清理，DB 单调增长 | `workspace_store.py:2228-2235,5618-5623`（只增不删） | 磁盘耗尽、WAL checkpoint 变慢；加按龄/量留存与 `wal_checkpoint(TRUNCATE)` |
+| P2-23 | ⚠️ | `save_ui_bridge` 写无上限浏览器负载且不做容量检查 | `workspace_store.py:3962-3993` | 高频 UI 遥测可绕过配额撑爆 workspace；限制大小并走容量检查 |
+| P2-24 | ⚠️ | 规划运行历史内存/磁盘无上限，每次 fork 深拷贝大数组 | `planning_runs.py:493-527,584-669`；`workspace_store.py:3158-3216` | 长会话内存与病例磁盘持续增长；给保留 run 数设上限/惰性存储 |
+| P2-25 | ⚠️ | server stdout 日志无轮转；Werkzeug 开发服务器线程无上限（SSE） | `start_server.sh:159` 重定向到 `/tmp/brachybot_server.log`；`web/server.py:2565` `app.run(threaded=True)`；`web/chat_tasks.py:338-378` | `/tmp` 可写满；并发 SSE 耗线程；轮转日志并用有界 WSGI（waitress/gunicorn） |
+| P2-26 | ⚠️ | 默认临床参数全局且无来源标注 | `config/default_params.json:21-34`（`DVH_rate=0.9`、`dose_scale_gy=190.8`、`in_lowest_dose_gy=120`） | 胰腺调参被静默套用到肝/肾/肺/前列腺，违反提示词的“站点特异、有出处”要求 |
+
+---
+
+## 4. P3 — 低 / 加固
+
+| ID | 复核 | 问题 | 证据 |
+|---|---|---|---|
+| P3-1 | ✅ | 登录计时侧信道可枚举用户名 | `web/auth.py:287` 短路（`not user or not is_active or not check_password_hash`），无 dummy hash |
+| P3-2 | ⚠️ | 无每账户登录锁定 | `web/server_support.py:3273-3303` 仅按 IP；分布式撞库不受限 |
+| P3-3 | ⚠️ | `BRACHYBOT_TRUST_PROXY=1` 信任任意 `X-Forwarded-For` 做限流键 | `web/server_support.py:3330-3337` 取首个 XFF；可轮换伪造 IP 规避限流 |
+| P3-4 | ⚠️ | 内部异常文本回传客户端 | `web/server.py:1570,1932`；`planning_routes.py:3334,3574,4203,4881,7440`；`data_routes.py:182` 返回 `str(e)` |
+| P3-5 | ✅ | CSP 不限制脚本 | `web/server.py:1280` 仅 `object-src/base-uri/frame-ancestors/form-action`，无 `default-src`/`script-src` |
+| P3-6 | ⚠️ | `<path>` 通用 token 可跨账户探测文件名存在性 | `utils/display_paths.py:110-124,147-150` 在共享 runtime 树做唯一 basename 解析；`server.py:1896`(400) vs `:1900`(403) 状态差可区分 |
+| P3-7 | ⚠️ | 调试账户默认 10 年 cookie、默认用户名 | `web/auth.py:21-22,56-66,164-167`（`DEFAULT_DEBUG_SESSION_LIFETIME_DAYS=3650`，默认 `HaitaoLi`） |
+| P3-8 | ⚠️ | LAN 服务用 Werkzeug 开发服务器 | `web/server.py:2565` |
+| P3-9 | ⚠️ | `Secure` cookie 依赖 env 与 insecure-remote 覆盖 | `web/auth.py:157`；`web/server.py:2426-2439` + `start_server.sh` 的 override |
+| P3-10 | ⚠️ | 持久化截图签名无过期 | `web/server_support.py:3504-3535`（HMAC 仅覆盖 `session_id:filename`，无时间戳） |
+| P3-11 | ⚠️ | 上传仅按扩展名信任，无 magic 校验 | `web/server_support.py:53-56,3448-3451`；`web/server.py:1466,1507` |
+| P3-12 | ✅ 模式 | `code_executor` 沙箱可逃逸（默认关闭、web 禁用） | `tool_factory/code_executor/__init__.py:67-94,135-176`；`().__class__.__base__.__subclasses__` payload 通过 `_sanitize_code` |
+| P3-13 | ✅ 模式 | `shell_executor` 允许 `python/pip/curl/wget`，黑名单可绕（默认关闭、web 禁用） | `tool_factory/shell_executor/__init__.py:36-43,96-118,152-171` |
+| P3-14 | ✅ | `code_executor` 无超时/取消，daemon 线程 | `code_executor/__init__.py:173-179`；`llm_runtime.py:4206-4234` |
+| P3-15 | ✅ | `tool_creator` 动态工具为进程全局、落盘并跨会话注册 | `tool_factory/tool_creator/__init__.py:98,237-256,292-295`（web 禁用） |
+| P3-16 | ⚠️ | `brain/*` 另有一套直接 `execute_fn` 执行，绕过 `tool_scope`（当前为死代码） | `brain/core/tool_registry.py:74-81,187-194`；`brain/execution/{case,plan}_executor.py:337,95`；无调用者 |
+| P3-17 | ⚠️ | 确认机制依赖助手文本中的标记短语+反引号工具名 | `request_parse.py:1340-1357,1372-1375`；`llm_runtime.py:295-320` |
+| P3-18 | ✅ | 工具全参（含路径/case_data）被 SSE/检查点持久化 | `agent_runtime/core.py:2190-2235`；`llm_runtime.py:2401-2410`（仅 `ui_content/ui_screenshot` 做白名单） |
+| P3-19 | ⚠️ | `public_get` 的 `is_global` 接受 NAT64/IPv4-embedded IPv6 | `utils/public_http.py:22-24`；`ipaddress.ip_address("64:ff9b::7f00:1").is_global==True` |
+| P3-20 | ✅ | DOI 未编码拼入 PubMed eutils URL（仅查询注入，host 固定） | `tool_factory/web_fetch/__init__.py:338-355` |
+| P3-21 | ✅ | `case_memory` 只拒符号链接不拒硬链接 | `tool_factory/case_memory/__init__.py:38-46`；`utils/tool_security.py:28-33`（`resolve()` 不防同 inode 硬链接） |
+| P3-22 | ✅ | `output_directory` 无 scope 时不做约束（CLI 路径） | `utils/tool_security.py:69-73`；`chat_workflows.py:6860` 默认 `./output` |
+| P3-23 | ✅ | 路径拒绝被吞成普通 `ToolResult` 失败，模型可能换路径重试 | `tool_factory/__init__.py:140-169` 的泛 `except Exception` |
+| P3-24 | ✅ | `_INTERNAL_FIELDS` 未剥离 `_agent` | `agent_runtime/response_tools.py:2845-2848`；工具读 `kwargs.get("_agent")`（`surgical_guide/__init__.py:144` 等） |
+| P3-25 | ✅ | `web_search`/`web_access` 仍用裸 `requests`/`session`（固定 host） | `tool_factory/web_search/__init__.py:310,355,…`；`web_access/__init__.py:251-293`——跟随重定向、走 env 代理，与统一传输策略不一致 |
+| P3-26 | ✅ | 多个 provider 客户端构造无 timeout | 见 P2-8 |
+
+### 前端专项（占位见第 4.1 节）
+| ID | 复核 | 问题 | 证据 |
+|---|---|---|---|
+| FE-1 | ✅ sink / ⚠️ 可利用性 | Data-Tree `color`/`id` 未转义进入 `innerHTML`/内联事件 | `brachybot-viewer-volume.js:5694-5717`（`style="background:${itemState.color};"`，`onclick="handleTreeItemClick('${id}', …)"`）；`_normalizeStructureColor:4255-4268` 对非法值原样返回 |
+| FE-2 | ⚠️ | 种子/针/category id 未转义进入内联事件 | `brachybot-manual-annotation.js:2217-2225`；`brachybot-3d-manual.js:4159-4185`；`brachybot-viewer-volume.js:6303-6311,7410` |
+| FE-3 | ✅ | 部署 key 经 `?api_key=` 被静默丢弃（文档声称可用的功能失效） | `brachybot-ui-api.js:3387-3395` 读后删除但从不 `setBrachyBotApiKey`；`brachybot-auth.js:152-163` 仍宣称支持 |
+| FE-4 | ✅ | `showToast` 被调用但全局未定义 → 所有错误提示静默消失 | 调用点 `brachybot-workspace.js:5486-5543`、`brachybot-dvh-planning.js:1118-1170`、`brachybot-surgical-guide.js:105`；全仓无定义（只有 `showBrachyBotNotice`） |
+| FE-5 | ✅ 函数 / ⚠️ 调用点 | IndexedDB 淘汰用 `openCursor(arrayKey)+continue()` 删除其后**所有**条目 | `brachybot-session-cache.js:79-94,176-193`；应 `store.delete(key)` 或 `IDBKeyRange.only` |
+| FE-6 | ⚠️ | 两个 `window.fetch` 包装器，顺序/缓存版本不一致会丢失 API-Key 或 CSRF | `brachybot-ui-api.js:3384-3442`；`brachybot-auth.js:627-659`；`index.html` 顺序依赖 `?v=` 独立 |
+| FE-7 | ⚠️ | 剂量色带偏好存全局 localStorage，快照缺省时跨病例回退 | `brachybot-3d-manual.js:8519,8555-8563,8920-8952` |
+| FE-8 | ⚠️ | `mode:'replace'` UI 状态仅按 tab 序列，跨 tab 可能互相覆盖 | `brachybot-ui-api.js:2189-2228` |
+| FE-9 | ⚠️ | 报告打印用 `document.write` 到同源 `window.opener` 弹窗且不关闭 | `brachybot-report-export.js:2082-2091,2100-2109` |
+| FE-10 | ⚠️ | 预就绪窗口把临床对话写 localStorage（PHI、配额异常） | `brachybot-chat-core.js:213-224`（未 try/catch、无大小上限） |
+| FE-11 | ⚠️ | 登出清理正则漏点号命名/非前缀存储键 | `brachybot-auth.js:718-723` 只匹配 `brachybot_|brachyplan_|BRACHYBOT_API_KEY`；`brachybot.doseColorbar.v5`、`layout.*` 幸存 |
+| FE-12 | ⚠️ | 上下文压缩弹窗组件键未转义 | `brachybot-ui-api.js:13874-13885,13906` |
+| FE-13 | ✅ | 全局 `escHtml` 重复定义且不转义单引号；`_escHtml` 与它不一致 | `brachybot-chat-core.js:101`、`brachybot-report-editor.js:1`、`brachybot-report-shell.js:87-92` |
+| FE-14 | ⚠️ | 重复/失效函数定义（`_openScreenshotModal`、`_oarVolumePercent`、`setupViewerResizers`） | `brachybot-ui-api.js:10235,10389,6888`；`brachybot-report-export.js:1`/`report-shell.js:26` |
+| FE-15 | ✅ | `viewerUndo/Redo` 实际改标注，但命令映射标为 transform | `brachybot-manual-annotation.js:3246-3260`；`brachybot-ui-api.js:679-680` |
+| FE-16 | ✅ | `_getCurrentPrescriptionGy` 用 `<=5` 魔数推断单位 | `brachybot-3d-manual.js:8494-8501` |
+| FE-17 | ⚠️ | 永不清理的定时器与无上限撤销栈 | `brachybot-report-shell.js:1741-1750`；`brachybot-monitor-dashboard.js:843-852`；`brachybot-ui-api.js:13939`；`brachybot-manual-annotation.js:3071` |
+| FE-18 | ✅ | `SessionCache.cacheClosed` 置位后不复位 | `brachybot-session-cache.js:195,242-245` |
+| FE-19 | ⚠️ | 打印窗口泄漏；导出文件名用未校验患者 ID | `brachybot-report-export.js:2083-2091,2105` |
+| FE-20 | ✅ | 无 CSP + 大量内联事件处理器 | `web/app/index.html` 头部无 CSP（服务端仅兼容基线，见 P3-5） |
+
+---
+
+## 5. 已核实为**防护良好**的区域（避免误报）
+
+- **请求-病例绑定**：`web/request_identity.py` 拒绝显式参数/头/体/查询的身份冲突，server/session/data/planning/guide/viewer 解析器统一使用，cookie 仅作回退。✅
+- **文件/产物所有权**：下载/导出/zip/artifact 均先 `_validate_path` 再 `owns_path`/`owned_case_path`，含 `relative_to`/`_safe_workspace_child`；未发现可达的路径穿越或跨病例内容读取。✅
+- **任务/截图隔离**：`TaskManager.get_task/get_all_tasks` 强制服务端派生 `workspace_owner`；任务列表/详情/SSE 与两处截图路由均要求会话鉴权+签名/所有权。✅
+- **CSRF/会话**：`/api/*` 默认要求会话（除 auth/healthz），所有写操作要求 `X-CSRF-Token`；`SameSite=Lax`、`HttpOnly`、改密后 epoch 吊销会话；登录 CSRF 由 JSON+精确 origin 预检阻断。✅
+- **注册/调试默认**：自注册默认关闭，调试账户默认禁用且 public 模式不可用。✅
+- **CORS**：内置 LAN/loopback 正则已锚定 `^…$`；字面量 origin 精确匹配，无前后缀绕过。✅
+- **SSRF 传输**：`utils/public_http.py` 单次解析、拒非全局地址与 URL 凭据、固定已校验 IP、以原主机名做 TLS SNI 校验、禁重定向、限制并关闭响应体；`web_fetch` 每个重定向 hop 重新校验。✅
+- **归档处理**：只有 zip 创建，无解压；无 `extractall`/tar；无 `pickle`/`yaml.load`/`marshal`/`eval`（`code_executor` 除外且默认关闭）。✅
+- **原子写与恢复**：`_atomic_bytes`/`_atomic_npy` 临时文件+fsync+`os.replace`+目录 fsync；sidecar 先写后引用、提交后剪枝；`workspace_output_transaction` 备份回滚 + 配额预留 + 锁序（case→quota）正确。✅
+- **数组 sidecar 版本化/复用**：不会覆盖仍被活动快照引用的数组，重启后正确处理嵌套 OAR/CTV。✅
+- **公开部署**：`web/public_server.py` 强制 HTTPS origin、独立 32 字符密钥、绝对 runtime 目录、拒绝 trust/enrollment 覆盖，waitress 清理不可信代理头；启动前 host/is_secure 校验。✅
+- **开发者工具在 web 病例中的分层封禁**：`EXECUTION_TOOLS` 在 `validate_tool_paths`、`ToolRegistry.is_available`、`response_tools._normalize_tool_params`、各工具 `is_available` 与 `chat_workflows` 直连 handler 多处拦截。✅
+- **模型加载硬化**：DoseUNet `weights_only=True` + 显式 channel_order/3 轴 target_spacing/正 dose_multiplier 校验（已实测可加载现网 checkpoint）。✅
+- **安全审查代理偏保守**：`agents/safety_guardian.py`、`plan_reviewer.py` 缺出处阈值时返回 `conditional` 而非 `pass`；`_llm_clinical_decide` fail-open 为死代码。✅
+- **聊天任务日志有界**（`MAX_TASK_JOURNAL_EVENTS`/`MAX_TASK_STEPS`），子进程临时目录 `finally` 清理，文件日志用轮转 handler。✅
+
+---
+
+## 6. 上线前必修清单（按顺序）
+
+1. **P0-1**：在 provider 撤销/轮换泄露的 `sk-cp-…`，从所有 worktree 与 git 历史清除，并把 `sk-`/`sk-cp-` 扫描纳入发布门禁。
+2. **P0-2/P0-3**：修复剂量 NIfTI 与 RTDOSE 导出的单位换算，无法解析校准时 fail-closed。
+3. **P0-4**：剂量 seed 缓存键加入 CT 内容摘要与 `case_id`，并加锁。
+4. **P1-1/P1-2**：授权改为动作级；`surgical_guide` 缺省只读；从 LLM 暴露面移除 `clinical_kb add`（走 propose+复核）。
+5. **P1-4**：补齐 `requirements.txt`（vtk/scikit-learn/pillow）并接入已存在的 hash-locked 锁文件。
+6. **P1-5**：移除被服务的 `.bak/.orig` 并加后缀拒绝（含 nginx `.orig`）。
+7. **P1-3**：所有外部内容统一“不可信数据”包裹并调整持久化策略。
+8. **P1-6/P1-8/P1-7**：剂量评估输入优先级、针间距共线判定、默认障碍物词表。
+9. **P1-9..P1-13**：缓存/导出绕过配额、快照 lost-update/fencing、provider failover 与错误直达。
+10. **P2**：DVH/Dxcc 口径统一、RTDOSE 几何、分割对齐校验、PHI 日志、真实浏览器与崩溃一致性验证（详见第 3、4 节）。
+
+**剩余发布门禁（代码补丁无法替代）**：provider 密钥撤销、Torch ≥2.10.0 隔离环境迁移与真实模型精度/来源认证、严格 CSP、真实 TLS/Access/cookie 部署验证、重复标签页/崩溃一致性/资源限制专项验证、已弃用 VoCo 物理几何验证。**绿色测试不等于已获临床授权或渗透测试结论。**
+
+---
+
+## 7. 审查方法、范围与局限
+
+- **范围**：全仓（`web/`、`agent_runtime/`、`tool_factory/`（排除 vendor/model 权重）、`plans/`、`brain/`、`agents/`、`config/`、`utils/`、`web/app/static/js`、`tests/`、`deploy/`、`requirements.txt`、`docs/releases/`）。
+- **方法**：6 路并行静态审查（web 安全 / agent 工具边界 / 临床数值 / 前端 / 持久化并发 / LLM 依赖与测试），随后由报告作者对 P0/P1 及多数 P2 逐条阅读证据代码复核；对沙箱逃逸、路径校验等运行了小规模只读探针。
+- **不是**：渗透测试、真实患者端到端、GPU 推理、临床物理独立验证、全量 24k benchmark 套件、机器级 DLP。`⚠️ 待复核` 项为证据合理但需负责人确认；已知/上一轮修复项在正文标注。
+- **本报告只新增文档，未改动任何产品代码。** 所有 `file:line` 以基线 `95a3c6ea8` 为准，若后续并发会话改动，行号可能漂移，请以符号/函数名为准重新定位。
+
+---
+
+
+
 # 2026-10-04 Acceptance follow-up: corrections and remaining release gates
 
 The independent acceptance findings were confirmed. The action-aware authorization contract and the surgical-guide dependency evidence guard are corrected; the current top-level `tests/` suite has been run, including guide-test collection. Final actual-checkout runs under both the old product interpreter and the offline rebuilt candidate each report **2,167 passed, 8 skipped, 17 warnings, 4 subtests passed; zero failures and zero collection errors**. This is not the nested benchmark suite or an authenticated browser/clinical validation. The full disposition, exact test environments, skip reasons, paired evidence, credential-scan boundaries and remaining blockers are recorded in [PRE_RELEASE_ACCEPTANCE_FOLLOWUP_2026-10-04.md](PRE_RELEASE_ACCEPTANCE_FOLLOWUP_2026-10-04.md). That follow-up supersedes the historical test-scope and listener claims below.

@@ -30,6 +30,8 @@ def checked_path(value, *, root=None):
     path = Path(os.fspath(value)).expanduser().resolve()
     if boundary is not None and path != boundary and boundary not in path.parents:
         raise PermissionError("Tool path is outside the authenticated case workspace")
+    if boundary is not None and path.is_file() and path.stat().st_nlink > 1:
+        raise PermissionError("Hard-linked tool files are not accepted in web case workspaces")
     return path
 
 
@@ -58,7 +60,7 @@ def validate_tool_paths(name, params, *, config=None):
                                 validate_file(entry)
                             elif isinstance(entry, (dict, list, tuple)):
                                 visit(entry)
-                    elif isinstance(item, (dict, list, tuple)) and not str(key).startswith("_"):
+                    elif isinstance(item, (dict, list, tuple)):
                         visit(item)
             elif isinstance(value, (list, tuple)):
                 for item in value:

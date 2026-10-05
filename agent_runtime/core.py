@@ -626,7 +626,7 @@ class AgentMemory:
         with self._lock:
             entry = {
                 "tool": tool_name,
-                "inputs": {k: str(v)[:100] for k, v in inputs.items()},
+                "inputs": ToolResultPipeline.trace_params(tool_name, inputs),
                 "success": result.success,
                 "message": result.message,
                 "execution_time": result.execution_time,
@@ -642,6 +642,24 @@ class AgentMemory:
                 if len(summary) >= 10:
                     break
             entry["summary"] = summary
+            from utils.external_evidence import EXTERNAL_TOOLS, evidence_receipt
+            if tool_name in EXTERNAL_TOOLS:
+                receipt = evidence_receipt(tool_name, json.dumps(getattr(result, "data", None), ensure_ascii=False, default=str))
+                entry["message"] = receipt
+                entry["summary"] = {"external_evidence": receipt}
+            if tool_name in {"safety_validator", "safety_guardian", "geometry_validator", "plan_reviewer", "dose_evaluation"}:
+                evidence = dict(self.planning_results.get("safety_evidence") or {})
+                metadata = getattr(result, "metadata", None) or {}
+                fields = {key: metadata[key] for key in ("status", "decision", "passed", "safe", "violations", "warnings", "requires_review") if key in metadata}
+                encoded = json.dumps(fields, ensure_ascii=False, default=str)
+                evidence[tool_name] = {
+                    "success": bool(result.success),
+                    "planning_id": self.planning_results.get("active_planning_id") or self.planning_results.get("planning_run_id"),
+                    "planning_version": self.planning_results.get("planning_version", 0),
+                    "manual_plan_version": self.planning_results.get("manual_plan_version", 0),
+                    "details": fields if len(encoded) <= 2000 else {"details_omitted": True, "requires_reread": True},
+                }
+                self.planning_results["safety_evidence"] = evidence
             self.tool_results.append(entry)
         self._notify_persistence(f"tool:{tool_name}")
 
@@ -2228,7 +2246,8 @@ class ToolResultPipeline:
                 "target_refs",
             )
         else:
-            return source
+            from utils.trace_privacy import presentation_params
+            return presentation_params(source)
         return {
             key: source.get(key)
             for key in allowed

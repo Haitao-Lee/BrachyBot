@@ -22,6 +22,9 @@ DEFAULT_DEBUG_ACCOUNT_USERNAME = "HaitaoLi"
 DEFAULT_DEBUG_SESSION_LIFETIME_DAYS = 3650
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _PUBLIC_DEPLOYMENT_MODES = {"public", "production", "release"}
+# Use the same default KDF for missing/inactive users; never short-circuit the
+# expensive verification based solely on whether an account exists.
+_DUMMY_PASSWORD_HASH = generate_password_hash(secrets.token_urlsafe(32))
 
 
 def _configured_debug_account(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -283,8 +286,13 @@ def register_auth_routes(app: Flask, store: WorkspaceStore) -> None:
         data = request.get_json(silent=True) or {}
         username = str(data.get("username") or "").strip()
         password = str(data.get("password") or "")
+        if len(username) > 64 or len(password) > 1024:
+            return _json_error("Invalid username or password", 401)
         user = store.get_user_by_username(username)
-        if not user or not bool(user.get("is_active")) or not check_password_hash(str(user.get("password_hash") or ""), password):
+        active = bool(user and user.get("is_active"))
+        password_hash = str(user.get("password_hash") or "") if active else _DUMMY_PASSWORD_HASH
+        verified = check_password_hash(password_hash or _DUMMY_PASSWORD_HASH, password)
+        if not active or not verified:
             return _json_error("Invalid username or password", 401)
         sessions = store.list_sessions(user["id"])
         active = str(session.get("bb_session_id") or "")

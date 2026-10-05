@@ -1,3 +1,11 @@
+// Protect both the JavaScript-string and HTML-attribute contexts.
+function brachybotInlineArgument(value) {
+    return JSON.stringify(String(value)).replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+window.brachybotInlineArgument = brachybotInlineArgument;
+
 /**
  * Present a short, non-blocking application notification.
  *
@@ -42,6 +50,10 @@ function showBrachyBotNotice(message, kind = 'info', durationMs = 6000) {
     if (Number.isFinite(durationMs) && durationMs > 0) timer = setTimeout(dismiss, durationMs);
 }
 window.showBrachyBotNotice = showBrachyBotNotice;
+// Legacy UI entry points share the same safe text-only notification surface.
+window.showToast = function showToast(message, kind = 'info', durationMs = 6000) {
+    return showBrachyBotNotice(message, kind, durationMs);
+};
 
 // Keep this compatibility helper in the first UI bundle.  Older cached
 // versions of collectUIState called jsonClone before the workspace bundle
@@ -676,8 +688,8 @@ function _uiOperationActionFromElement(element) {
     if (/viewerFlipH\s*\(/i.test(source)) return { target: 'viewer.transform', command: 'flip_h', semantic_property: 'layout' };
     if (/viewerFlipV\s*\(/i.test(source)) return { target: 'viewer.transform', command: 'flip_v', semantic_property: 'layout' };
     if (/viewerRotate\s*\(/i.test(source)) return { target: 'viewer.transform', command: 'rotate', semantic_property: 'layout' };
-    if (/viewerUndo\s*\(/i.test(source)) return { target: 'viewer.transform', command: 'undo', semantic_property: 'layout' };
-    if (/viewerRedo\s*\(/i.test(source)) return { target: 'viewer.transform', command: 'redo', semantic_property: 'layout' };
+    if (/viewerUndo\s*\(/i.test(source)) return { target: 'viewer.annotations', command: 'undo', semantic_property: 'annotations' };
+    if (/viewerRedo\s*\(/i.test(source)) return { target: 'viewer.annotations', command: 'redo', semantic_property: 'annotations' };
     if (/toggle3DWireframe\s*\(/i.test(source)) return { target: '3d.wireframe', command: 'toggle', value_source: 'control', semantic_property: 'visibility' };
     if (/toggle3DSkin\s*\(/i.test(source)) return { target: '3d.skin', command: 'toggle', value_source: 'control', semantic_property: 'visibility' };
     if (/updateLabelImage\s*\(/i.test(source)) return { target: '3d.labels', command: 'toggle', value_source: 'control', semantic_property: 'visibility' };
@@ -13880,7 +13892,7 @@ window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
             for (const [k, v] of Object.entries(comps)) {
                 const n = Number(v || 0);
                 if (n <= 0) continue;
-                const label = compLabels[k] || k;
+                const label = escHtml(compLabels[k] || k);
                 const cp = compTotal > 0 ? (n / compTotal * 100).toFixed(1) : '–';
                 compRows += `<div style="display:flex;justify-content:space-between;padding:2px 0;font-size:13px;"><span>${label}</span><span style="font-variant-numeric:tabular-nums;">${n.toLocaleString()} (${cp}%)</span></div>`;
             }

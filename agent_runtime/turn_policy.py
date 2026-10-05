@@ -2038,9 +2038,7 @@ def _classify_local_candidate(
             False,
             frozenset(tool_names),
             direct_execution=True,
-            execution_grants=frozenset(
-                {"surgical_guide"} if "surgical_guide" in tool_names else set()
-            ),
+            execution_grants=frozenset(),
             parsed_subtasks=parsed_subtasks,
         )
 
@@ -2067,7 +2065,7 @@ def _classify_local_candidate(
             False,
             frozenset({"surgical_guide"}),
             direct_execution=True,
-            execution_grants=frozenset({"surgical_guide"}),
+            execution_grants=frozenset(),
         )
 
     # A question about problems, risks, or review items in the active plan is

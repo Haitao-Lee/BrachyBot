@@ -1,0 +1,47 @@
+{
+  "scope": "No Git-history, compressed-archive, patient/model-data or provider-portal validation. Source matches and environment values are never printed.",
+  "release_gate": "blocked",
+  "findings_by_id": {
+    "torch_checkpoint_cve": 1,
+    "credential_revocation_unverified": 1,
+    "plaintext_provider_key": 13,
+    "compromised_process_credential": 3,
+    "manual_release_requirements": 1
+  },
+  "source_files": 38782,
+  "source_bytes": 1041379430,
+  "processes": {
+    "inspected_pids": [
+      1226191,
+      1226477
+    ],
+    "requested_pids": [
+      1226191,
+      1226477
+    ],
+    "scope": "same-user selected processes; compromised fingerprints only"
+  },
+  "runtime_findings": [
+    {
+      "id": "compromised_process_credential",
+      "severity": "block",
+      "pid": 1226477,
+      "variable": "ANTHROPIC_API_KEY",
+      "message": "A registered compromised credential remains in process environment."
+    },
+    {
+      "id": "compromised_process_credential",
+      "severity": "block",
+      "pid": 1226477,
+      "variable": "BRACHYBOT_OPENCODE_GO_TOKEN",
+      "message": "A registered compromised credential remains in process environment."
+    },
+    {
+      "id": "compromised_process_credential",
+      "severity": "block",
+      "pid": 1226477,
+      "variable": "ANTHROPIC_AUTH_TOKEN",
+      "message": "A registered compromised credential remains in process environment."
+    }
+  ]
+}

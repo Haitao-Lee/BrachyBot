@@ -100,7 +100,7 @@ window.chatTranslate = chatTranslate;
 
 function escHtml(str) {
     if (!str) return '';
-    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 /******** SESSION MANAGEMENT ********/
@@ -218,9 +218,9 @@ function saveSessions() {
         window.scheduleWorkspaceSave('chat.changed');
         return;
     }
-    localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
-    localStorage.setItem(ACTIVE_KEY, activeSessionId);
-    uiDebugLog(`[Session] Saved ${Object.keys(sessions).length} sessions, active=${activeSessionId}`);
+    // Before authenticated hydration finishes, retain the transient UI only
+    // in memory. Never place clinical conversation text in localStorage.
+    uiDebugLog(`[Session] Deferred server-owned chat persistence`);
 }
 
 function generateSessionId() {

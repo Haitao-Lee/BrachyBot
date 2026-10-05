@@ -4075,6 +4075,7 @@ const CATEGORY_RULES = [
     { pattern: /cartilage|disc|meniscus/i, category: 'non_traversable' },
     { pattern: /aorta|vena\s*cava|iliac\s+(artery|vein|vena)|femoral\s*(artery|vein)|carotid|jugular|artery|vein|vessel|brachiocephalic\s+trunk/i, category: 'non_traversable' },
     { pattern: /nerve|plexus|sciatic|spinal\s*cord|brachial/i, category: 'non_traversable' },
+    { pattern: /bowel|colon|duodenum|stomach|esophagus|oesophagus|urinary\s*bladder|heart/i, category: 'non_traversable' },
     // Traversable: soft tissue organs
     { pattern: /bladder|rectum|sigmoid|colon|small\s*bowel|intestine|stomach/i, category: 'traversable' },
     { pattern: /prostate|uterus|cervix|vagina|seminal|vesicle/i, category: 'traversable' },
@@ -4261,7 +4262,7 @@ function _normalizeStructureColor(color) {
     const value = String(color || '').trim().toLowerCase();
     if (/^#[0-9a-f]{6}$/.test(value)) return value;
     const match = value.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
-    if (!match) return value;
+    if (!match) return '#cccccc';
     return `#${match.slice(1, 4)
         .map(channel => Math.max(0, Math.min(255, Number(channel))).toString(16).padStart(2, '0'))
         .join('')}`;
@@ -5644,7 +5645,7 @@ function renderTreeItem(id, itemState, info) {
     const indent = isSubItem ? 'style="padding-left:1.6rem;"' : '';
     // 3D button for organs, CTV, CTV sub-labels, planning items, and masks
     const canRecon3d = id === 'ctv' || id === 'skin_surface' || id.startsWith('organ_') || id.startsWith('ctv_') || id.startsWith('seed_') || id.startsWith('needle_') || isMaskId;
-    const recon3dBtn = canRecon3d ? `<button class="recon3d-btn" title="3D Reconstruct" onclick="event.stopPropagation();reconstructOrgan3D('${id}')">&#9638;</button>` : '';
+    const recon3dBtn = canRecon3d ? `<button class="recon3d-btn" title="3D Reconstruct" onclick="event.stopPropagation();reconstructOrgan3D(${brachybotInlineArgument(id)})">&#9638;</button>` : '';
     const isCt = id === 'ct';
     const windowWidth = _viewerWindowValue(state?.viewerSettings?.window, 400);
     const windowLevel = _viewerLevelValue(state?.viewerSettings?.level, 40);
@@ -5684,24 +5685,24 @@ function renderTreeItem(id, itemState, info) {
         </span>`
         : '';
 
-    const dataAttr = (id === 'ctv' || id.startsWith('organ_') || id.startsWith('ctv_')) ? `data-organ-id="${id}"` : '';
+    const dataAttr = (id === 'ctv' || id.startsWith('organ_') || id.startsWith('ctv_')) ? `data-organ-id="${escHtml(id)}"` : '';
     const selectedClass = selectedItems.has(id) ? 'selected' : '';
 
     const statusLabel = itemState.status && itemState.status !== 'ready'
-        ? `<span class="item-status item-status-${itemState.status}" title="${escHtml(itemState.error || itemState.status)}">${escHtml(_dtStatusText(itemState.status))}</span>`
+        ? `<span class="item-status item-status-${escHtml(itemState.status)}" title="${escHtml(itemState.error || itemState.status)}">${escHtml(_dtStatusText(itemState.status))}</span>`
         : '';
     return `<div class="tree-item ${isCt ? 'tree-item--ct' : ''} ${selectedClass}" data-node-id="${escHtml(itemState.nodeId || id)}" data-object-id="${escHtml(itemState.objectId || id)}" data-node-type="${escHtml(itemState.type || 'visual') }" data-source="${escHtml(itemState.source || '')}" data-planning-id="${escHtml(itemState.planningId || itemState.planning_id || '')}" data-live-node="true" data-visual-target="true" data-status="${escHtml(itemState.status || 'ready')}" data-visible="${itemState.visible !== false}" data-visible-2d="${itemState.visible2D !== false}" data-visible-3d="${itemState.visible3D !== false}" ${loadedClass} ${indent} ${dataAttr}
-        onclick="handleTreeItemClick('${id}', event)"
-        oncontextmenu="event.preventDefault();event.stopPropagation();handleTreeItemRightClick('${id}', event)">
-        <button class="eye-btn ${eyeClass}" onclick="event.stopPropagation();toggleDataVisibility('${id}')" ${disabledAttr}>${eyeIcon}</button>
-        <span class="color-swatch" style="background:${itemState.color};" onclick="event.stopPropagation();openColorPicker('${id}', this)" title="Click to change color"></span>
+        onclick="handleTreeItemClick(${brachybotInlineArgument(id)}, event)"
+        oncontextmenu="event.preventDefault();event.stopPropagation();handleTreeItemRightClick(${brachybotInlineArgument(id)}, event)">
+        <button class="eye-btn ${eyeClass}" onclick="event.stopPropagation();toggleDataVisibility(${brachybotInlineArgument(id)})" ${disabledAttr}>${eyeIcon}</button>
+        <span class="color-swatch" style="background:${itemState.color};" onclick="event.stopPropagation();openColorPicker(${brachybotInlineArgument(id)}, this)" title="Click to change color"></span>
         <span class="item-label">${escHtml(itemState.label || '')}</span>
         <span class="item-info">${escHtml(info || '')}</span>${ctWindowLevelControls}${statusLabel}
         ${recon3dBtn}
         <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(itemState.opacity * 100)}"
             ${disabledAttr}
             onclick="event.stopPropagation()"
-            oninput="setDataOpacity('${id}', this.value)">
+            oninput="setDataOpacity(${brachybotInlineArgument(id)}, this.value)">
     </div>`;
 }
 
@@ -5712,8 +5713,8 @@ function renderArtifactTreeItem(itemState) {
         ? _dtText('截图', 'Screenshot')
         : _dtText('报告', 'Report');
     return `<div class="tree-item ${selectedClass}" data-node-id="${escHtml(itemState.nodeId || id)}" data-object-id="${escHtml(itemState.objectId || id)}" data-node-type="${escHtml(itemState.type || 'artifact')}" data-source="${escHtml(itemState.source || 'artifact')}" data-live-node="true" data-visual-target="true" data-status="${escHtml(itemState.status || 'ready')}" data-visible="${itemState.visible !== false}" data-visible-2d="${itemState.visible2D !== false}" data-visible-3d="${itemState.visible3D !== false}"
-        onclick="handleTreeItemClick('${id}', event)"
-        oncontextmenu="event.preventDefault();event.stopPropagation();handleTreeItemRightClick('${id}', event)">
+        onclick="handleTreeItemClick(${brachybotInlineArgument(id)}, event)"
+        oncontextmenu="event.preventDefault();event.stopPropagation();handleTreeItemRightClick(${brachybotInlineArgument(id)}, event)">
         <span class="color-swatch" style="background:${itemState.color};pointer-events:none;"></span>
         <span class="item-label">${escHtml(itemState.label || '')}</span>
         <span class="item-info">${escHtml(typeLabel)}</span>
@@ -6224,14 +6225,14 @@ function showGroupContextMenu(x, y, category) {
 
     // Rename the CTV / OAR group node from its header context menu.
     if (category === 'ctv' || category === 'oar') {
-        items += `<div class="ctx-menu-item" onclick="hideContextMenu();renameDataTreeNode('${category}')">
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();renameDataTreeNode(${brachybotInlineArgument(category)})">
             <span class="ctx-icon">&#9998;</span> ${_dtText('重命名', 'Rename')}</div>`;
         items += `<div class="ctx-menu-sep"></div>`;
     }
 
     // 3D Reconstruct all in group (only for OAR/organ groups)
     if (category === 'oar' || (ORGAN_CATEGORIES[category] && category !== 'ctv')) {
-        items += `<div class="ctx-menu-item" onclick="hideContextMenu();groupReconstruct3D('${category}')">
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();groupReconstruct3D(${brachybotInlineArgument(category)})">
             <span class="ctx-icon">&#9638;</span> 3D Reconstruct All (${count})</div>`;
         items += `<div class="ctx-menu-sep"></div>`;
     }
@@ -6247,15 +6248,15 @@ function showGroupContextMenu(x, y, category) {
         const destination = category === 'oar' ? 'ctv' : 'oar';
         const destinationLabel = destination.toUpperCase();
         if (_dataTreeGroupObjectIds(category).length) {
-            items += `<div class="ctx-menu-item" onclick="hideContextMenu();_runDataTreeAction(moveDataTreeGroup('${category}', '${destination}'))">
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();_runDataTreeAction(moveDataTreeGroup(${brachybotInlineArgument(category)}, '${destination}'))">
                 <span class="ctx-icon">&#8644;</span> ${_dtText(`移动全部到 ${destinationLabel}`, `Move all to ${destinationLabel}`)}</div>`;
         }
     }
 
     if (count > 0) {
-        items += `<div class="ctx-menu-item" onclick="hideContextMenu();_runDataTreeAction(exportDataTreeGroup('${category}'))">
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();_runDataTreeAction(exportDataTreeGroup(${brachybotInlineArgument(category)}))">
             <span class="ctx-icon">&#8681;</span> ${_dtText('导出', 'Export')}</div>`;
-        items += `<div class="ctx-menu-item ctx-menu-danger" onclick="hideContextMenu();_runDataTreeAction(deleteDataTreeGroup('${category}'))">
+        items += `<div class="ctx-menu-item ctx-menu-danger" onclick="hideContextMenu();_runDataTreeAction(deleteDataTreeGroup(${brachybotInlineArgument(category)}))">
             <span class="ctx-icon">&#128465;</span> ${_dtText('删除真实数据', 'Delete data')}</div>`;
         items += `<div class="ctx-menu-sep"></div>`;
     }
@@ -6263,24 +6264,24 @@ function showGroupContextMenu(x, y, category) {
     // Image and the abstract Segmentation collection do not own a separate
     // viewer state. Their children remain the authoritative visual nodes.
     if (category !== 'artifacts') {
-        items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupVisibility('${category}',true)">
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupVisibility(${brachybotInlineArgument(category)},true)">
             <span class="ctx-icon">&#128065;</span> Show All</div>`;
-        items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupVisibility('${category}',false)">
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupVisibility(${brachybotInlineArgument(category)},false)">
         <span class="ctx-icon">&#128065;</span> Hide All</div>`;
         items += `<div class="ctx-menu-sep"></div>`;
-        items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupViewVisibility('${category}','2d',true)">
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupViewVisibility(${brachybotInlineArgument(category)},'2d',true)">
             <span class="ctx-icon">2D</span> Show in 2D</div>`;
-        items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupViewVisibility('${category}','2d',false)">
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupViewVisibility(${brachybotInlineArgument(category)},'2d',false)">
             <span class="ctx-icon">2D</span> Hide in 2D</div>`;
-        items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupViewVisibility('${category}','3d',true)">
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupViewVisibility(${brachybotInlineArgument(category)},'3d',true)">
             <span class="ctx-icon">3D</span> Show in 3D</div>`;
-        items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupViewVisibility('${category}','3d',false)">
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupViewVisibility(${brachybotInlineArgument(category)},'3d',false)">
             <span class="ctx-icon">3D</span> Hide in 3D</div>`;
     }
 
     // Solo this group (only for organ groups)
     if (category === 'oar' || (ORGAN_CATEGORIES[category] && category !== 'ctv')) {
-        items += `<div class="ctx-menu-item" onclick="hideContextMenu();soloGroup('${category}')">
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();soloGroup(${brachybotInlineArgument(category)})">
             <span class="ctx-icon">&#128269;</span> Solo This Group</div>`;
     }
 
@@ -6300,7 +6301,7 @@ function showGroupContextMenu(x, y, category) {
         items += `<div class="ctx-menu-item" style="opacity:0.5;cursor:default;font-size:0.6rem;">
             <span class="ctx-icon">&#127912;</span> Opacity</div>`;
         for (const op of [100, 75, 50, 25]) {
-            items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupOpacityValue('${category}', ${op})">
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupOpacityValue(${brachybotInlineArgument(category)}, ${op})">
                 <span class="ctx-icon" style="opacity:${op / 100}">&#9632;</span> ${op}%</div>`;
         }
         items += `<label class="ctx-menu-item" onclick="event.stopPropagation()">
@@ -6308,7 +6309,7 @@ function showGroupContextMenu(x, y, category) {
             <input type="color" value="${getGroupDisplayColor(category)}"
                 aria-label="Group color"
                 style="margin-left:auto;width:28px;height:20px;border:0;background:transparent;cursor:pointer"
-                onchange="setGroupColor('${category}', this.value);hideContextMenu()">
+                onchange="setGroupColor(${brachybotInlineArgument(category)}, this.value);hideContextMenu()">
         </label>`;
     }
 

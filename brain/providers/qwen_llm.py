@@ -52,7 +52,7 @@ class QwenLLM(BaseLLM):
         start_time = time.time()
         try:
             import openai
-            client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url)
+            client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url, timeout=60.0, max_retries=0)
 
             chat_kwargs = {}
             chat_kwargs.update(self.extra_kwargs)

@@ -42,6 +42,7 @@ MUTATING_TOOLS: FrozenSet[str] = frozenset({
     "ui_controller",
     "dicom_rt_exporter",
     "case_memory",
+    "clinical_kb",
     "code_executor", "code_writer", "write_tool", "create_tool", "tool_creator",
     "self_evolve", "evolve", "shell_executor", "env_manager",
 })
@@ -53,6 +54,7 @@ PLANNING_ANCHOR_TOOLS: FrozenSet[str] = frozenset({"planning_pipeline"})
 READ_ONLY_ACTIONS = {
     "case_memory": frozenset({"retrieve", "search", "list", "statistics", "recommend"}),
     "surgical_guide": frozenset({"status", "analyze"}),
+    "clinical_kb": frozenset({"standards", "constraints", "tolerance", "protocol", "benchmark", "search", "guidelines", "source_search", "review_queue"}),
 }
 
 

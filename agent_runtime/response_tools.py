@@ -2845,6 +2845,7 @@ Output (JSON array of strings):"""
         _INTERNAL_FIELDS = {
             "step_callback", "progress_callback", "memory", "agent",
             "_internal", "callback", "context", "ctx", "self_ref",
+            "_agent", "_workspace_root", "_workspace_owner", "_workspace_store",
         }
         # Values that look like Python reprs — only seen when the LLM
         # is mimicking a schema field that doesn't exist. Reject any
@@ -3577,10 +3578,10 @@ Output (JSON array of strings):"""
                 if (
                     tool_call_is_mutating(tool_name, call_params)
                     and tool_name != "ui_controller"
-                    and tool_name not in (
+                    and (tool_name == "surgical_guide" or tool_name not in (
                         getattr(active_policy, "execution_grants", ())
                         if getattr(active_policy, "direct_execution", False) else ()
-                    )
+                    ))
                     # Read-only guide actions ("status" for a state check,
                     # "analyze" for characteristics) never write; blocking them
                     # turned inspection questions into "confirm to regenerate".

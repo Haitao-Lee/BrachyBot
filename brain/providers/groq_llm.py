@@ -48,7 +48,7 @@ class GroqLLM(BaseLLM):
     def _chat(self, messages: List[Dict], tools: List[Dict] = None, **kwargs) -> LLMResponse:
         try:
             import openai
-            client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url)
+            client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url, timeout=60.0, max_retries=0)
 
             chat_kwargs = {}
 

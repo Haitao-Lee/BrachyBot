@@ -2099,10 +2099,12 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         # failures remain non-fatal because the in-memory/clinical data path is
         # authoritative.
         cache_root = None
+        cache_owner = None
         case_session_id = ""
         try:
             store, user, case_session_id = request_case_context()
             cache_root = store.workspace_root(user["id"], case_session_id, create=False)
+            cache_owner = (store, user["id"], case_session_id)
         except Exception as exc:
             logger.debug("Segmentation mesh persistent cache unavailable: %s", exc)
 
@@ -2423,6 +2425,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 "segmentation-mesh",
                 persistent_cache_key,
                 payload,
+                owner=cache_owner,
             )
 
             return _viewer_json_response(payload)
@@ -2499,10 +2502,12 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         # case, so restarting the server does not repeat a full CT marching
         # cubes pass or accidentally reuse another patient's surface.
         cache_root = None
+        cache_owner = None
         case_session_id = ""
         try:
             store, user, case_session_id = request_case_context()
             cache_root = store.workspace_root(user["id"], case_session_id, create=False)
+            cache_owner = (store, user["id"], case_session_id)
         except Exception as exc:
             logger.debug("Skin mesh persistent cache unavailable: %s", exc)
 
@@ -2680,6 +2685,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 "skin-mesh",
                 skin_cache_key,
                 payload,
+                owner=cache_owner,
             )
             return _viewer_json_response(payload)
         except Exception as e:

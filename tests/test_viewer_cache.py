@@ -21,6 +21,7 @@ def test_viewer_cache_key_is_stable_and_changes_with_derived_inputs():
 
 def test_viewer_cache_round_trip_is_atomic_and_case_scoped(tmp_path):
     root = tmp_path / "case"
+    root.mkdir()
     key = viewer_cache_key("segmentation_mesh", {"mask_digest": "abc"})
     payload = {
         "success": True,
@@ -40,6 +41,7 @@ def test_viewer_cache_round_trip_is_atomic_and_case_scoped(tmp_path):
 
 def test_corrupt_or_wrong_key_cache_is_treated_as_a_miss(tmp_path):
     root = tmp_path / "case"
+    root.mkdir()
     key = viewer_cache_key("dose_isosurface", {"threshold": 120})
     path = save_viewer_cache(root, "dose-isosurface", key, {"success": True})
     assert path is not None

@@ -4138,10 +4138,10 @@ function init3DScene() {
         }
 
         if (type === 'seed') {
-            items += `<div class="ctx-menu-item" onclick="hideContextMenu();highlightSeed('${id}')">
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();highlightSeed(${brachybotInlineArgument(id)})">
                 <span class="ctx-icon">&#127912;</span> Highlight</div>`;
             // Show dose at seed position
-            items += `<div class="ctx-menu-item" onclick="hideContextMenu();showSeedDose('${id}')">
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();showSeedDose(${brachybotInlineArgument(id)})">
                 <span class="ctx-icon">&#9889;</span> Show Dose</div>`;
 
             // Restore the complete immutable algorithm Planning, including
@@ -4150,38 +4150,38 @@ function init3DScene() {
                 <span class="ctx-icon">&#8634;</span> Restore algorithm planning</div>`;
 
             // Delete seed
-            items += `<div class="ctx-menu-item" onclick="hideContextMenu();deleteSeed3D('${id}')">
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();deleteSeed3D(${brachybotInlineArgument(id)})">
                 <span class="ctx-icon">&#128465;</span> Delete</div>`;
         }
 
         if (type === 'needle') {
             // Show seeds on needle
-            items += `<div class="ctx-menu-item" onclick="hideContextMenu();showNeedleSeeds('${id}')">
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();showNeedleSeeds(${brachybotInlineArgument(id)})">
                 <span class="ctx-icon">&#128167;</span> Show Seeds</div>`;
 
             // Delete needle
-            items += `<div class="ctx-menu-item" onclick="hideContextMenu();deleteNeedle3D('${id}')">
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();deleteNeedle3D(${brachybotInlineArgument(id)})">
                 <span class="ctx-icon">&#128465;</span> Delete</div>`;
         }
 
         if (type === 'needle' || type === 'needle_handle') {
-            items += `<div class="ctx-menu-item" onclick="hideContextMenu();addManualSeed('${needleId}', {source:'3d_context'})">
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();addManualSeed(${brachybotInlineArgument(needleId)}, {source:'3d_context'})">
                 <span class="ctx-icon">&#10133;</span> ${_manualText('在此针道添加粒子', 'Add seed to this needle')}</div>`;
-            items += `<div class="ctx-menu-item" onclick="hideContextMenu();restoreNeedleToAlgorithm('${needleId}')">
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();restoreNeedleToAlgorithm(${brachybotInlineArgument(needleId)})">
                 <span class="ctx-icon">&#8634;</span> Restore algorithm position</div>`;
-            items += `<div class="ctx-menu-item" onclick="hideContextMenu();setNeedleVisibilityFrom3D('${needleId}', true)">
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();setNeedleVisibilityFrom3D(${brachybotInlineArgument(needleId)}, true)">
                 <span class="ctx-icon">&#128065;</span> Show needle and seeds</div>`;
-            items += `<div class="ctx-menu-item" onclick="hideContextMenu();setNeedleVisibilityFrom3D('${needleId}', false)">
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();setNeedleVisibilityFrom3D(${brachybotInlineArgument(needleId)}, false)">
                 <span class="ctx-icon">&#128065;</span> Hide needle and seeds</div>`;
             items += `<div class="ctx-menu-sep"></div>`;
             items += `<div class="ctx-menu-item" style="opacity:0.5;cursor:default;font-size:0.6rem;">
                 <span class="ctx-icon">&#127912;</span> Opacity</div>`;
             for (const opacity of [100, 75, 50, 25]) {
-                items += `<div class="ctx-menu-item" onclick="hideContextMenu();setNeedleOpacityFrom3D('${needleId}', ${opacity / 100})">
+                items += `<div class="ctx-menu-item" onclick="hideContextMenu();setNeedleOpacityFrom3D(${brachybotInlineArgument(needleId)}, ${opacity / 100})">
                     <span class="ctx-icon">&#9632;</span> ${opacity}%</div>`;
             }
             if (type === 'needle_handle') {
-                items += `<div class="ctx-menu-item" onclick="hideContextMenu();deleteNeedle3D('${needleId}')">
+                items += `<div class="ctx-menu-item" onclick="hideContextMenu();deleteNeedle3D(${brachybotInlineArgument(needleId)})">
                     <span class="ctx-icon">&#128465;</span> Delete</div>`;
             }
         }

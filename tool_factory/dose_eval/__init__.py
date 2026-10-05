@@ -137,7 +137,13 @@ class DoseEvaluationTool(BaseTool):
         target_value = kwargs.get("target_value", 1)
         oar_constraints = kwargs.get("oar_constraints", {})
         organ_names = kwargs.get("organ_names", {}) or {}
-        spacing = kwargs.get("spacing", [1.0, 1.0, 1.0])
+        from utils.dose_metrics import validated_spacing
+        from utils.dose_units import physical_volume
+        try:
+            spacing = validated_spacing(kwargs.get("spacing"))
+            dose_array = physical_volume(dose_array, units="physical_gy")
+        except (TypeError, ValueError) as exc:
+            return ToolResult(success=False, error=str(exc))
         tumor_type = kwargs.get("tumor_type", "")
 
         dose_array = np.asarray(dose_array)

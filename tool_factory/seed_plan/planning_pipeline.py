@@ -66,6 +66,7 @@ _NON_TRAVERSABLE_NAME_PATTERNS = (
     r"aorta|vena\s*cava|iliac\s+(?:artery|vein|vena)|femoral\s*(?:artery|vein)|"
     r"carotid|jugular|artery|vein|vessel|brachiocephalic\s+trunk",
     r"nerve|plexus|sciatic|spinal\s*cord|brachial",
+    r"bowel|colon|duodenum|stomach|esophagus|oesophagus|urinary\s*bladder|heart",
 )
 
 
@@ -76,25 +77,12 @@ def _is_default_non_traversable_name(name: str) -> bool:
 
 def _default_obstacle_label_ids():
     """Return TotalSegmentator labels classified as non-traversable by default."""
-    try:
-        from tool_factory.OAR_seg.totalsegmentator_oar import TOTALSEG_LABEL_MAPPING
-        return frozenset(
-            int(label_id)
-            for label_id, name in TOTALSEG_LABEL_MAPPING.items()
-            if _is_default_non_traversable_name(name)
-        )
-    except Exception as exc:
-        # Reduced test environments may omit TotalSegmentator dependencies.
-        logger.warning("Unable to load TotalSegmentator label mapping: %s", exc)
-        # Keep the safety default conservative if a lightweight environment
-        # can read a previously generated OAR mask but cannot import the map.
-        return frozenset(
-            set(range(25, 51))
-            | set(range(52, 61))
-            | set(range(62, 69))
-            | set(range(69, 80))
-            | set(range(91, 118))
-        )
+    from utils.oar_labels import TOTALSEG_LABEL_MAPPING
+    return frozenset(
+        int(label_id)
+        for label_id, name in TOTALSEG_LABEL_MAPPING.items()
+        if _is_default_non_traversable_name(name)
+    )
 
 
 # Keep the old public symbol for integrations that import it directly, while
@@ -5345,8 +5333,8 @@ class PlanningPipelineTool(BaseTool):
                         def dose_at_xcc(x_cc):
                             if organ_vol_cm3 < x_cc:
                                 return float(np.min(oar_doses))
-                            n_voxels = int(x_cc / voxel_vol_cm3)
-                            n_voxels = max(1, min(n_voxels, n))
+                            from utils.dose_metrics import hottest_volume_count
+                            n_voxels = hottest_volume_count(x_cc, voxel_vol_cm3, n)
                             return float(sorted_doses_desc[n_voxels - 1])
 
                         # Dx%: dose received by x% of organ volume

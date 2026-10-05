@@ -59,8 +59,8 @@ class ComprehensiveDoseEvaluationTool(BaseTool):
                 },
                 "prescribed_dose": {
                     "type": "number",
-                    "description": "Prescribed dose in Gy (default: 1.0)",
-                    "default": 1.0,
+                    "description": "Prescribed physical dose in Gy; the software default is not a clinically approved prescription",
+                    "default": DEFAULT_PRESCRIPTION_GY,
                 },
                 "vx_values": {
                     "type": "array",
@@ -76,7 +76,7 @@ class ComprehensiveDoseEvaluationTool(BaseTool):
                 },
                 "spacing": {
                     "type": "array",
-                    "description": "Voxel spacing [x, y, z] in mm (default: [1, 1, 1])",
+                    "description": "Required physical dose-grid spacing [x, y, z] in mm",
                 },
                 "num_dvh_bins": {
                     "type": "integer",
@@ -119,7 +119,16 @@ class ComprehensiveDoseEvaluationTool(BaseTool):
         vx_values = kwargs.get("vx_values", [100, 150, 200, 90])
         dx_values = kwargs.get("dx_values", [90, 95, 99, 50])
         cc_values = kwargs.get("cc_values", [2, 1, 0.5])
-        spacing = kwargs.get("spacing", [1.0, 1.0, 1.0])
+        from utils.dose_metrics import validated_spacing
+        from utils.dose_units import physical_volume
+        try:
+            spacing = validated_spacing(kwargs.get("spacing"))
+            dose_array = physical_volume(dose_array, units="physical_gy")
+            prescribed_dose = float(prescribed_dose)
+            if not np.isfinite(prescribed_dose) or prescribed_dose <= 0:
+                raise ValueError("Prescribed physical dose must be finite and positive")
+        except (TypeError, ValueError) as exc:
+            return ToolResult(success=False, error=str(exc))
         num_bins = kwargs.get("num_dvh_bins", 300)
         structure_type = kwargs.get("structure_type", {})
         tumor_type = kwargs.get("tumor_type", "")
@@ -158,8 +167,8 @@ class ComprehensiveDoseEvaluationTool(BaseTool):
                     struct_metrics[f"D{dx}"] = float(sorted_doses[idx])
 
             for cc in cc_values:
-                voxels_needed = max(1, int(cc / voxel_volume_cc))
-                voxels_needed = min(voxels_needed, total_voxels)
+                from utils.dose_metrics import hottest_volume_count
+                voxels_needed = hottest_volume_count(cc, voxel_volume_cc, total_voxels)
                 struct_metrics[f"D{cc}cc"] = float(sorted_doses[voxels_needed - 1])
 
             struct_metrics["Dmean"] = float(np.mean(struct_doses))
@@ -203,6 +212,7 @@ class ComprehensiveDoseEvaluationTool(BaseTool):
                             struct_metrics,
                             constraint,
                             source=constraint_source,
+                            prescribed_dose=prescribed_dose,
                         )
                     )
 
@@ -273,6 +283,7 @@ class ComprehensiveDoseEvaluationTool(BaseTool):
         struct_metrics: Dict,
         constraint: Dict,
         source: str = "clinical_kb",
+        prescribed_dose=None,
     ) -> List[Dict]:
         metric_map = {
             "d2cc": "D2cc",
@@ -283,6 +294,16 @@ class ComprehensiveDoseEvaluationTool(BaseTool):
         }
         violations = []
         for limit_key, limit in constraint.items():
+            if str(limit_key).lower() in {"dmax_pct", "max_dose_pct"}:
+                # KB stores fractions of prescription (1.2 means 120% Rx).
+                if prescribed_dose is None or not np.isfinite(prescribed_dose) or prescribed_dose <= 0:
+                    raise ValueError("Prescription is required to evaluate relative OAR constraints")
+                metric_key = "Dmax"
+                actual = float(struct_metrics[metric_key]) / float(prescribed_dose)
+                if actual > float(limit):
+                    violations.append({"structure": struct_name, "metric": "Dmax/Rx",
+                                       "actual": actual, "constraint": float(limit), "source": source})
+                continue
             metric_key = metric_map.get(str(limit_key).lower())
             if not metric_key or metric_key not in struct_metrics:
                 continue

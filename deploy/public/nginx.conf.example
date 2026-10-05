@@ -63,6 +63,7 @@ server {
         proxy_pass http://127.0.0.1:18082;
     }
     # Only publish the known UI, never arbitrary files from the repository.
-    location ~ (?:\.bak|\.py$|\.env|\.sqlite|/\.) { return 404; }
+    # Deny source/backup artifacts even if a future static location bypasses Flask.
+    location ~* (?:/\.|\.(?:bak[^/]*|orig|rej|tmp|log|py|env|sqlite(?:3)?)(?:$|/)) { return 404; }
     location / { proxy_pass http://127.0.0.1:18082; }
 }

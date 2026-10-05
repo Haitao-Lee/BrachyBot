@@ -107,14 +107,22 @@ def _find_unique_basename(name: str, roots: DisplayRoots) -> str:
     root that yields a hit, so a broader root cannot re-find the same file and
     turn a unique match into a false ambiguity.
     """
-    for root in (roots.workspace_root, roots.runtime_dir, roots.app_root):
+    # A web case may resolve names only in its own workspace. Searching the
+    # shared runtime before the later ownership check creates an existence
+    # oracle for another account, and needlessly traverses every patient case.
+    search_roots = (roots.workspace_root,) if roots.workspace_root else (roots.runtime_dir, roots.app_root)
+    for root in search_roots:
         if not root or not os.path.isdir(root):
             continue
         matches: List[str] = []
         try:
             for dirpath, dirnames, filenames in os.walk(root):
+                dirnames[:] = [entry for entry in dirnames if not os.path.islink(os.path.join(dirpath, entry))]
                 if name in filenames or name in dirnames:
-                    matches.append(os.path.join(dirpath, name))
+                    target = os.path.join(dirpath, name)
+                    if os.path.islink(target):
+                        continue
+                    matches.append(target)
                     if len(matches) > 1:
                         return ""
         except OSError:

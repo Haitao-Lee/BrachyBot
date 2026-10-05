@@ -90,7 +90,7 @@ _FACT_KEYS = (
     "dose_metrics", "metrics", "total_seeds", "num_trajectories",
     "seed_positions", "needles", "plan_config", "prescription_gy",
     "manual_artifact_status", "surgical_guide", "artifact_status",
-    "response_contract", "monitor_last_edit", "manual_plan_version",
+    "response_contract", "monitor_last_edit", "manual_plan_version", "safety_evidence",
 )
 
 
@@ -664,6 +664,16 @@ def build_case_facts(memory: Any) -> str:
                 return None
 
     lines: List[str] = ["## Case facts (verbatim)"]
+    safety = _get("safety_evidence")
+    if isinstance(safety, Mapping) and safety:
+        lines.append("- Safety evidence is not clinical approval. Missing or stale evidence is NOT a pass.")
+        for tool, evidence in safety.items():
+            if not isinstance(evidence, Mapping):
+                continue
+            current = (evidence.get("planning_id") == (_get("active_planning_id") or _get("planning_run_id"))
+                       and evidence.get("planning_version") == (_get("planning_version") or 0)
+                       and evidence.get("manual_plan_version") == (_get("manual_plan_version") or 0))
+            lines.append("- Safety receipt: " + json.dumps({"tool": tool, "current": current, **dict(evidence)}, ensure_ascii=False, default=str))
     try:
         if _get("ct_path") or _get("ct_image") is not None:
             lines.append("- CT: loaded")

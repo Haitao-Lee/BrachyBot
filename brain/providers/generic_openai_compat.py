@@ -214,6 +214,7 @@ class GenericOpenAICompatLLM(BaseLLM):
 
         for attempt in range(self.max_retries + 1):
             start_time = time.time()
+            emitted = False
             try:
                 client = self._get_client()
 
@@ -252,6 +253,7 @@ class GenericOpenAICompatLLM(BaseLLM):
 
                     if delta.content:
                         full_content += delta.content
+                        emitted = True
                         yield delta.content
 
                     if delta.tool_calls:
@@ -302,6 +304,10 @@ class GenericOpenAICompatLLM(BaseLLM):
                 return
 
             except Exception as e:
+                if emitted:
+                    self._record_llm_error(e)
+                    yield {"type": "error", "content": "The model stream was interrupted; partial output was not replayed."}
+                    return
                 error_str = str(e).lower()
                 is_retryable = any(x in error_str for x in [
                     "rate_limit", "429", "too many requests", "rpm",

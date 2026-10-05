@@ -134,31 +134,36 @@ def align_label_array_to_reference(
     reference_image: sitk.Image,
     orientation: str = "LPI",
     dtype=None,
+    source_geometry=None,
 ) -> sitk.Image:
     """Convert a model NumPy mask and align it to a physical CT grid.
 
-    Predictor outputs do not carry image metadata.  Equal-sized outputs can
-    inherit the raw input grid directly; for a different shape, infer the
-    source spacing from the reference physical extent rather than calling
-    ``CopyInformation`` (which rejects different image sizes).
+    Equal-sized raw-input-grid outputs may inherit the documented predictor
+    grid. Different-sized outputs require explicit source geometry; a crop
+    must never be stretched to cover the reference field of view.
     """
     values = np.asarray(label_array)
+    if values.ndim != 3 or not np.isfinite(values).all():
+        raise ValueError("Segmentation must be a finite 3D label array")
     if dtype is not None:
         values = values.astype(dtype, copy=False)
     label = sitk.GetImageFromArray(values)
     reference_size = reference_image.GetSize()
     source_size = label.GetSize()
-    if source_size == reference_size:
+    if source_geometry is not None:
+        spacing = np.asarray(source_geometry["spacing"], dtype=float)
+        origin = np.asarray(source_geometry["origin"], dtype=float)
+        direction = np.asarray(source_geometry["direction"], dtype=float).reshape(3, 3)
+        if (spacing.shape != (3,) or origin.shape != (3,) or not np.isfinite(spacing).all()
+                or np.any(spacing <= 0) or not np.isfinite(origin).all()
+                or not np.isfinite(direction).all()
+                or not np.allclose(direction.T @ direction, np.eye(3), atol=1e-6)):
+            raise ValueError("Invalid segmentation source geometry")
+        label.SetSpacing(tuple(spacing))
+        label.SetOrigin(tuple(origin))
+        label.SetDirection(tuple(direction.ravel()))
+    elif source_size == reference_size:
         label.CopyInformation(reference_image)
     else:
-        reference_spacing = reference_image.GetSpacing()
-        source_spacing = tuple(
-            float(reference_spacing[index])
-            * max(int(reference_size[index]) - 1, 1)
-            / max(int(source_size[index]) - 1, 1)
-            for index in range(3)
-        )
-        label.SetSpacing(source_spacing)
-        label.SetOrigin(reference_image.GetOrigin())
-        label.SetDirection(reference_image.GetDirection())
+        raise ValueError("Different-sized segmentation array requires explicit source geometry; crop extent cannot be inferred from shape")
     return align_label_image_to_reference(label, reference_image, orientation)

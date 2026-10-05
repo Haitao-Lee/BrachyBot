@@ -3684,7 +3684,7 @@ class ChatWorkflowMixin:
             _result = self._run_llm_function_calling(message, [], [0])
             response = _result[0] if isinstance(_result, tuple) else _result
             if self._is_llm_provider_error(response):
-                logger.warning("LLM provider failure suppressed from non-trace chat output: %s", str(response)[:500])
+                logger.warning("LLM provider failure suppressed from non-trace chat output (response_chars=%s)", len(str(response)))
                 response = self._current_llm_unavailable_message()
         else:
             # The non-trace API is still used by a few integrations. Keep its
@@ -4144,7 +4144,7 @@ class ChatWorkflowMixin:
                 response = self._current_llm_unavailable_message()
                 llm_meta = {"usage": {}, "latency_ms": 0, "llm_calls": 0}
             if self._is_llm_provider_error(response):
-                logger.warning("LLM provider failure suppressed from trace chat output: %s", str(response)[:500])
+                logger.warning("LLM provider failure suppressed from trace chat output (response_chars=%s)", len(str(response)))
                 add_step(
                     "error",
                     "AI 服务不可用" if self.memory.user_lang == "zh" else "AI Service Unavailable",
@@ -5650,7 +5650,7 @@ class ChatWorkflowMixin:
                 response = self._current_llm_unavailable_message()
                 llm_meta = {"usage": {}, "latency_ms": 0, "llm_calls": 0}
             if self._is_llm_provider_error(response):
-                logger.warning("LLM provider failure suppressed from streaming chat output: %s", str(response)[:500])
+                logger.warning("LLM provider failure suppressed from streaming chat output (response_chars=%s)", len(str(response)))
                 step = add_step(
                     "error",
                     "AI 服务不可用" if self.memory.user_lang == "zh" else "AI Service Unavailable",

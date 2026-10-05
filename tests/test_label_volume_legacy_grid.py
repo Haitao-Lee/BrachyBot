@@ -42,7 +42,7 @@ def test_legacy_label_array_has_safe_shape_fallback_without_reference():
     assert np.all(aligned[2:, :, :] == 0)
 
 
-def test_model_array_alignment_accepts_a_different_shape():
+def test_model_array_alignment_accepts_a_different_shape_with_known_geometry():
     reference = sitk.Image([6, 5, 4], sitk.sitkInt16)
     reference.SetSpacing((2.0, 3.0, 4.0))
     reference.SetOrigin((10.0, 20.0, 30.0))
@@ -50,7 +50,10 @@ def test_model_array_alignment_accepts_a_different_shape():
     model_array = np.zeros((2, 3, 4), dtype=np.uint16)
     model_array[1, 1, 2] = 9
 
-    aligned = align_label_array_to_reference(model_array, reference, dtype=np.uint16)
+    with pytest.raises(ValueError, match="explicit source geometry"):
+        align_label_array_to_reference(model_array, reference, dtype=np.uint16)
+    aligned = align_label_array_to_reference(model_array, reference, dtype=np.uint16,
+        source_geometry={"spacing": (10.0/3, 6.0, 12.0), "origin": reference.GetOrigin(), "direction": reference.GetDirection()})
 
     assert aligned.GetSize() == reference.GetSize()
     assert int(sitk.GetArrayFromImage(aligned).max()) == 9

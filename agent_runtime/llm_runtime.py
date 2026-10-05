@@ -17,6 +17,7 @@ from urllib.parse import unquote, urlparse
 
 from config.prompts import SYSTEM_PROMPT_TEMPLATE, get_prompt_modules
 from agent_runtime.core import AgentMemory, ToolResultPipeline
+from utils.external_evidence import EXTERNAL_TOOLS, evidence_message, evidence_receipt
 from agent_runtime.action_plan import ActionPlan
 from agent_runtime.step_execution import StepExecutionState, append_tool_receipt, decode_provider_call
 from agent_runtime.answer_coverage import (
@@ -1379,7 +1380,7 @@ class LLMRuntimeMixin:
                 preview = ""
                 if isinstance(content, str):
                     content_len = len(content)
-                    preview = content[:160].replace("\n", " ")
+                    preview = "text content withheld"
                 elif isinstance(content, list):
                     content_len = len(content)
                     preview = f"multimodal_parts={len(content)}"
@@ -2042,7 +2043,7 @@ class LLMRuntimeMixin:
                 "asks about BrachyBot itself. Local filesystem listings are not evidence "
                 "about the external project.\n"
             )
-        logger.info(f"Forced search check: msg='{message[:50]}', detected='{_forced_search_query}'")
+        logger.info("Forced search check: message_chars=%d, detected=%s", len(message), bool(_forced_search_query))
         _had_forced_search = False
         if _forced_search_query:
             try:
@@ -2216,6 +2217,8 @@ class LLMRuntimeMixin:
                     logger.error(f"LLM call failed: {e}")
                     return f"LLM error: {e}"
 
+            if getattr(response, "finish_reason", None) == "error":
+                return "模型服务暂时不可用，本轮未取得可验证回复。" if self.memory.user_lang == "zh" else "The model service is temporarily unavailable; no verified answer was generated."
             if response.usage:
                 self._record_context_usage(response.usage)
                 total_usage["prompt_tokens"] += response.usage.get("prompt_tokens", 0)
@@ -2547,11 +2550,11 @@ class LLMRuntimeMixin:
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tool_id,
-                    "content": _fc_text[:4000]
+                    "content": evidence_message(tool_name, _fc_text) if tool_name in EXTERNAL_TOOLS else _fc_text[:4000]
                 })
                 # Store in conversation memory for context persistence
                 self.memory.add_message("assistant", f"[Called {tool_name}]")
-                self.memory.add_message("user", f"[Tool result: {_fc_text[:500]}]")
+                self.memory.add_message("user", evidence_receipt(tool_name, _fc_text) if tool_name in EXTERNAL_TOOLS else f"[Tool result: {_fc_text[:500]}]")
 
             if not _new_tool_call_executed:
                 logger.warning(
@@ -3187,7 +3190,7 @@ class LLMRuntimeMixin:
                     message,
                     fallback=_fallback_code,
                 )
-            logger.info(f"[LANG] Detected: {_lang_info['code']} (source={_lang_info['source']}), msg='{message[:50]}'")
+            logger.info("Language detected: %s (source=%s)", _lang_info['code'], _lang_info['source'])
             enhanced_context += "\n" + _lang_clause(_lang_info) + "\n"
             if not internal_followup:
                 _session_language_store(self.memory, _lang_info)
@@ -3394,7 +3397,7 @@ class LLMRuntimeMixin:
                 "asks about BrachyBot itself. Local filesystem listings are not evidence "
                 "about the external project.\n"
             )
-        logger.info(f"Forced search check: msg='{message[:50]}', detected='{_forced_search_query}'")
+        logger.info("Forced search check: message_chars=%d, detected=%s", len(message), bool(_forced_search_query))
         _had_forced_search = False
         if _forced_search_query:
             try:
@@ -4569,11 +4572,11 @@ class LLMRuntimeMixin:
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tool_id,
-                    "content": _fc_text[:4000]
+                    "content": evidence_message(tool_name, _fc_text) if tool_name in EXTERNAL_TOOLS else _fc_text[:4000]
                 })
                 # Store in conversation memory for context persistence
                 self.memory.add_message("assistant", f"[Called {tool_name}]")
-                self.memory.add_message("user", f"[Tool result: {_fc_text[:500]}]")
+                self.memory.add_message("user", evidence_receipt(tool_name, _fc_text) if tool_name in EXTERNAL_TOOLS else f"[Tool result: {_fc_text[:500]}]")
                 # Running context size after each tool append. This pinpoints
                 # which step inflates the next provider prompt.
                 try:

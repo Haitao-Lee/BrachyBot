@@ -21,6 +21,7 @@ import hashlib
 import logging
 import math
 import os
+import re
 import secrets
 import shutil
 import sqlite3
@@ -1869,6 +1870,7 @@ class WorkspaceStore:
         # and fsync the same CT-sized artifact set concurrently.
         self._checkpoint_work_locks: Dict[Tuple[str, str], threading.Lock] = {}
         self._case_locks: Dict[Tuple[str, str], threading.RLock] = {}
+        self._case_lock_users: Dict[Tuple[str, str], int] = {}
         # Array references are process-local acceleration metadata. The durable
         # snapshot remains authoritative; after restart the encoder rebuilds a
         # nested name-to-path index so unchanged sidecars can be reused safely.
@@ -1947,6 +1949,7 @@ class WorkspaceStore:
         category: str,
         *,
         additional_bytes: int = 0,
+        staging_job_id: Optional[str] = None,
     ) -> Iterator[Path]:
         """Serialize and roll back a direct-to-directory workspace exporter.
 
@@ -1965,6 +1968,12 @@ class WorkspaceStore:
             self.workspace_root(user_id, session_id, create=True) / "artifacts",
             safe_category,
         )
+        if staging_job_id is not None:
+            if not re.fullmatch(r"[0-9a-f]{32}", str(staging_job_id)):
+                raise WorkspaceError("Invalid staged export job identity")
+            root = _safe_workspace_child(self.staging_dir / "scene_exports" / str(user_id), staging_job_id)
+            if root.exists():
+                raise WorkspaceError("Staged export identity is already in use")
         backup = self.staging_dir / f"workspace-output-{secrets.token_hex(16)}"
 
         with self._workspace_output_lock(user_id, session_id, safe_category):
@@ -2002,12 +2011,14 @@ class WorkspaceStore:
                 # actual committed bytes while normal writers are excluded
                 # from the quota commit section. The transaction's own
                 # reservation is intentionally not double-counted here.
-                with self._quota_commit_lock(user_id):
+                with self._case_guard(user_id, session_id), self._quota_commit_lock(user_id):
+                    self.require_local_session(user_id, session_id)
                     self._invalidate_storage_usage(user_id)
                     user = self.get_user_by_id(user_id)
                     if not user:
                         raise WorkspaceNotFound("Account is unavailable")
-                    if self.user_storage_bytes(user_id) > int(
+                    other_reservations = max(0, self._reserved_storage_bytes(user_id) - reservation)
+                    if self.user_storage_bytes(user_id) + other_reservations > int(
                         user["storage_quota_bytes"]
                     ):
                         raise WorkspaceQuotaExceeded(
@@ -2173,8 +2184,22 @@ class WorkspaceStore:
         key = (user_id, session_id)
         with self._lock:
             guard = self._case_locks.setdefault(key, threading.RLock())
-        with guard:
-            yield
+            # Count both holders and waiters, including reentrant acquisitions.
+            # Removing a lock merely because a case was deleted can otherwise
+            # split a waiting writer and a new writer onto different locks.
+            self._case_lock_users[key] = self._case_lock_users.get(key, 0) + 1
+        try:
+            with guard:
+                yield
+        finally:
+            with self._lock:
+                remaining = self._case_lock_users[key] - 1
+                if remaining:
+                    self._case_lock_users[key] = remaining
+                else:
+                    self._case_lock_users.pop(key, None)
+                    if self._case_locks.get(key) is guard:
+                        self._case_locks.pop(key, None)
 
     def _initialize_database(self) -> None:
         with self._connection() as connection:
@@ -2570,6 +2595,10 @@ class WorkspaceStore:
         }
 
     def load_snapshot(self, user_id: str, session_id: str) -> Dict[str, Any]:
+        with self._case_guard(user_id, session_id):
+            return self._load_snapshot_locked(user_id, session_id)
+
+    def _load_snapshot_locked(self, user_id: str, session_id: str) -> Dict[str, Any]:
         record = self.get_session(user_id, session_id)
         record = self._recover_archived_without_remote(user_id, session_id, record)
         if record.storage_status == "archived":
@@ -2757,6 +2786,7 @@ class WorkspaceStore:
         value: Mapping[str, Any],
         *,
         reason: str = "workspace.section_replaced",
+        expected_revision: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Atomically replace one top-level presentation section.
 
@@ -2767,6 +2797,9 @@ class WorkspaceStore:
         if section not in {"ui", "report", "chat", "operation"}:
             raise WorkspaceError("Unsupported workspace section")
         with self._case_guard(user_id, session_id):
+            record = self.require_local_session(user_id, session_id)
+            if expected_revision is not None and int(expected_revision) != record.revision:
+                raise WorkspaceLeaseConflict("This case was updated in another browser; reload it before editing")
             root = self.workspace_root(user_id, session_id, create=True)
             snapshot = self.load_snapshot(user_id, session_id)
             safe_value = dict(value or {})
@@ -3980,6 +4013,7 @@ class WorkspaceStore:
         payload["reason"] = str(reason)
         payload["saved_at"] = time.time()
         with self._case_guard(user_id, session_id):
+            self.require_local_session(user_id, session_id)
             root = self.workspace_root(user_id, session_id, create=True)
             path = _safe_workspace_child(root, "ui_bridge.json")
             # JS text can contain an unpaired UTF-16 surrogate (an emoji split by
@@ -3988,8 +4022,12 @@ class WorkspaceStore:
             payload_bytes = json.dumps(
                 payload, ensure_ascii=False, indent=2, allow_nan=False,
             ).encode("utf-8", errors="backslashreplace")
-            _atomic_bytes(path, payload_bytes)
-        self._invalidate_storage_usage(user_id)
+            if len(payload_bytes) > 2 * 1024**2:
+                raise WorkspaceError("UI bridge payload exceeds the 2 MiB limit")
+            with self._quota_commit_lock(user_id):
+                self._ensure_replacement_capacity(user_id, path, len(payload_bytes))
+                _atomic_bytes(path, payload_bytes)
+                self._invalidate_storage_usage(user_id)
         self._audit(user_id, session_id, reason, {"keys": sorted(str(k) for k in payload.keys())})
 
     def load_ui_bridge(self, user_id: str, session_id: str) -> Dict[str, Any]:
@@ -4234,6 +4272,11 @@ class WorkspaceStore:
         return self.snapshot_agent(user_id, session_id, agent, reason="operation.checkpoint", operation=operation)
 
     def mark_session_interrupted(self, user_id: str, session_id: str, detail: str) -> Dict[str, Any]:
+        with self._case_guard(user_id, session_id):
+            self.require_local_session(user_id, session_id)
+            return self._mark_session_interrupted_locked(user_id, session_id, detail)
+
+    def _mark_session_interrupted_locked(self, user_id: str, session_id: str, detail: str) -> Dict[str, Any]:
         snapshot = self.load_snapshot(user_id, session_id)
         # A server restart terminates the Python task, but the last checkpoint
         # may still label its reserved Planning run as ``running``. Preserve
@@ -5283,6 +5326,10 @@ class WorkspaceStore:
         return result
 
     def move_to_trash(self, user_id: str, session_id: str) -> WorkspaceSession:
+        with self._case_guard(user_id, session_id):
+            return self._move_to_trash_locked(user_id, session_id)
+
+    def _move_to_trash_locked(self, user_id: str, session_id: str) -> WorkspaceSession:
         record = self.get_session(user_id, session_id)
         # An archived case already lives outside the local quota tree. Keep
         # that cold copy in place while its DB status moves to the recycle
@@ -5309,6 +5356,10 @@ class WorkspaceStore:
         return self.get_session(user_id, session_id, include_trashed=True)
 
     def restore_from_trash(self, user_id: str, session_id: str) -> WorkspaceSession:
+        with self._case_guard(user_id, session_id):
+            return self._restore_from_trash_locked(user_id, session_id)
+
+    def _restore_from_trash_locked(self, user_id: str, session_id: str) -> WorkspaceSession:
         record = self.get_session(user_id, session_id, include_trashed=True)
         if record.status != "trashed":
             raise WorkspaceError("Only trashed sessions can be restored")
@@ -5331,7 +5382,13 @@ class WorkspaceStore:
         return self.get_session(user_id, session_id)
 
     def permanently_delete(self, user_id: str, session_id: str) -> None:
+        with self._case_guard(user_id, session_id):
+            return self._permanently_delete_locked(user_id, session_id)
+
+    def _permanently_delete_locked(self, user_id: str, session_id: str) -> None:
         record = self.get_session(user_id, session_id, include_trashed=True)
+        if record.storage_status == "archived" and not self.archive_available:
+            raise WorkspaceArchived("Archive storage must be available before permanently deleting an archived case")
         roots = (
             self.workspace_root(user_id, session_id),
             self.workspace_root(user_id, session_id, trashed=True),
@@ -5373,7 +5430,8 @@ class WorkspaceStore:
         if cached is not None:
             return cached
         total = 0
-        for base in (self.workspaces_dir / user_key, self.trash_dir / user_key):
+        for base in (self.workspaces_dir / user_key, self.trash_dir / user_key,
+                     self.staging_dir / "scene_exports" / user_key):
             if not base.exists():
                 continue
             for path in base.rglob("*"):

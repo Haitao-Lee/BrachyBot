@@ -137,19 +137,23 @@ def _image_geometry(image) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
 
 
 def _mask_contours(mask: np.ndarray, image) -> Iterable[List[float]]:
-    """Yield simple closed planar contours, one bounding contour per slice."""
+    """Preserve disconnected regions and holes at half-voxel boundaries.
+
+    Padding closes masks touching the image edge. All rings in one ROI use
+    CLOSEDPLANAR_XOR: a hole must not be exported as another filled organ.
+    Bounding boxes are not contours and must never stand in for segmentation.
+    """
+    from skimage.measure import find_contours
     for z in range(mask.shape[0]):
-        ys, xs = np.where(mask[z])
-        if not len(xs):
-            continue
-        xmin, xmax = int(xs.min()), int(xs.max())
-        ymin, ymax = int(ys.min()), int(ys.max())
-        corners = [(xmin, ymin, z), (xmax, ymin, z), (xmax, ymax, z), (xmin, ymax, z)]
-        points: List[float] = []
-        for index in corners:
-            physical = image.TransformIndexToPhysicalPoint(tuple(index))
-            points.extend(float(value) for value in physical)
-        yield points
+        plane = np.pad(np.asarray(mask[z], dtype=np.uint8), 1)
+        for ring in find_contours(plane, .5, fully_connected="high"):
+            if len(ring) < 4 or not np.allclose(ring[0], ring[-1]):
+                raise ValueError("Structure contour is not a closed polygon")
+            points: List[float] = []
+            for y, x in ring[:-1]:
+                physical = image.TransformContinuousIndexToPhysicalPoint((float(x - 1), float(y - 1), float(z)))
+                points.extend(float(value) for value in physical)
+            yield points
 
 
 class DicomRTExporterTool(BaseTool):
@@ -170,6 +174,8 @@ class DicomRTExporterTool(BaseTool):
                 "ct_image": {"type": "object"},
                 "structures": {"type": "object"},
                 "dose_array": {"type": "array"},
+                "dose_units": {"type": "string", "enum": ["gy", "physical_gy", "normalized", "normalized_model", "normalized_model_output"]},
+                "dose_scale_gy": {"type": "number", "exclusiveMinimum": 0},
                 "seed_plan": {"type": "array"},
                 "seeds": {"type": "array"},
                 "output_dir": {"type": "string"},
@@ -217,10 +223,22 @@ class DicomRTExporterTool(BaseTool):
         if not channels:
             return ToolResult(success=False, error="At least one seed trajectory is required")
         tags = kwargs.get("dicom_tags") if isinstance(kwargs.get("dicom_tags"), dict) else {}
-        scale_gy = float(kwargs.get("dose_scale_gy") or 1.0)
-        if not np.isfinite(scale_gy) or scale_gy <= 0:
-            return ToolResult(success=False, error="dose_scale_gy must be positive")
-        physical_dose = dose * scale_gy
+        from utils.dose_units import physical_volume, PHYSICAL_UNITS
+        units = kwargs.get("dose_units")
+        # A caller with a saved explicit calibration is a legacy normalized
+        # caller; neither unit nor calibration must ever default to 1 Gy.
+        if not units and kwargs.get("dose_scale_gy") is not None:
+            units = "normalized"
+        try:
+            physical_dose = physical_volume(dose, units=units, scale=kwargs.get("dose_scale_gy"))
+            scale_gy = 1.0 if str(units).lower() in PHYSICAL_UNITS else float(kwargs["dose_scale_gy"])
+            spacing, _, direction = _image_geometry(ct_image)
+            if (not np.isfinite(spacing).all() or np.any(spacing <= 0)
+                    or not np.isfinite(direction).all()
+                    or not np.allclose(direction.T @ direction, np.eye(3), atol=1e-6)):
+                raise ValueError("DICOM-RT requires a finite orthonormal image grid with positive spacing")
+        except (ValueError, TypeError, KeyError) as exc:
+            return ToolResult(success=False, error=str(exc))
         prescription = kwargs.get("prescription_gy")
         try:
             prescription = float(prescription) if prescription is not None else None
@@ -285,7 +303,7 @@ class DicomRTExporterTool(BaseTool):
             roi_contour.ContourSequence = dicom["Sequence"]()
             for contour_data in _mask_contours(mask, image):
                 contour = dicom["Dataset"]()
-                contour.ContourGeometricType = "CLOSED_PLANAR"
+                contour.ContourGeometricType = "CLOSEDPLANAR_XOR"
                 contour.NumberOfContourPoints = len(contour_data) // 3
                 contour.ContourData = contour_data
                 roi_contour.ContourSequence.append(contour)
@@ -362,7 +380,10 @@ class DicomRTExporterTool(BaseTool):
         ds.DoseGridScaling = float(scaling)
         ds.PixelSpacing = [float(spacing[1]), float(spacing[0])]
         ds.SliceThickness = float(spacing[2])
-        ds.GridFrameOffsetVector = [float(index * spacing[2]) for index in range(physical_dose.shape[0])]
+        # Offsets are signed along cross(row, column), not always image k.
+        sign = float(np.dot(np.cross(direction[:, 0], direction[:, 1]), direction[:, 2]))
+        ds.GridFrameOffsetVector = [float(index * spacing[2] * sign) for index in range(physical_dose.shape[0])]
+        ds.FrameIncrementPointer = [0x3004000C]
         ds.ImagePositionPatient = [float(value) for value in origin]
         ds.ImageOrientationPatient = [
             float(direction[0, 0]), float(direction[1, 0]), float(direction[2, 0]),

@@ -834,10 +834,8 @@ class ExportService:
                 "seeds": _normalized_seeds(memory),
             })
         elif item.data_type == "dose":
-            dose_gy = memory.retrieve("dose_distribution_gy")
-            if dose_gy is None:
-                raw_dose = memory.retrieve("dose_distribution")
-                dose_gy = self._dose_gy(memory, raw_dose)
+            from utils.dose_units import workspace_physical_dose
+            dose_gy = workspace_physical_dose(memory.retrieve)
             _write_nifti(dose_gy, path, memory, unit="Gy")
         elif item.data_type == "dose_isosurface":
             self._write_dose_isosurface(
@@ -985,11 +983,11 @@ class ExportService:
 
     @classmethod
     def _dose_gy(cls, memory: Any, dose: Any) -> np.ndarray:
-        array = np.asarray(dose, dtype=np.float32)
+        from utils.dose_units import calibrated_scale, physical_volume, PHYSICAL_UNITS
         units = str(memory.retrieve("dose_units") or "").strip().lower()
-        if units in {"gy", "physical_gy"}:
-            return array
-        return array * cls._dose_scale_gy(memory)
+        scale = None if units in PHYSICAL_UNITS else calibrated_scale(
+            memory.retrieve("dose_metrics"), memory.retrieve("plan_config"), explicit=memory.retrieve("dose_scale_gy"))
+        return physical_volume(dose, units=units, scale=scale)
 
     @classmethod
     def _prescription_gy(cls, memory: Any) -> float:
@@ -1024,19 +1022,9 @@ class ExportService:
     ) -> None:
         if not threshold_gy > 0:
             raise ExportError("The dose iso-surface threshold is invalid")
-        physical_dose = memory.retrieve("dose_distribution_gy")
-        raw = physical_dose
-        if raw is None:
-            raw = memory.retrieve("dose_distribution")
-        if raw is None:
-            raise ExportError("No dose distribution is available")
-        dose = np.asarray(raw, dtype=np.float32)
-        units = str(memory.retrieve("dose_units") or "").strip().lower()
-        level = (
-            threshold_gy
-            if physical_dose is not None or units in {"gy", "physical_gy"}
-            else dose_gy_to_model(threshold_gy, self._dose_scale_gy(memory))
-        )
+        from utils.dose_units import workspace_physical_dose
+        dose = workspace_physical_dose(memory.retrieve)
+        level = threshold_gy
         if dose.ndim != 3 or dose.size == 0:
             raise ExportError("The dose volume is empty")
         data_min = float(np.nanmin(dose))
@@ -1329,6 +1317,10 @@ class ExportJobManager:
     # cancelled, downloaded, and abandoned exports accumulated outside the
     # account quota walk until they exhausted the staging filesystem.
     RETENTION_SECONDS = 3600
+    MAX_ACTIVE_JOBS = 4
+    MAX_ACCOUNT_ACTIVE_JOBS = 1
+    MAX_SELECTIONS = 512
+    _ACTIVE_STATES = frozenset({"queued", "preparing", "running", "packaged"})
 
     def __init__(self, store: Any, get_agent_for_owner: Callable[..., Any]):
         self.store = store
@@ -1341,7 +1333,7 @@ class ExportJobManager:
         now = time.time()
         stale = [
             job_id for job_id, job in self._jobs.items()
-            if job.status not in {"queued", "preparing", "running"}
+            if job.status not in self._ACTIVE_STATES
             and (job.created_at + self.RETENTION_SECONDS) < now
         ]
         for job_id in stale:
@@ -1357,6 +1349,7 @@ class ExportJobManager:
                     Path(job.zip_path).unlink(missing_ok=True)
                 except OSError:
                     pass
+            self.store.invalidate_storage_usage(job.user_id)
 
     def create(
         self,
@@ -1367,13 +1360,18 @@ class ExportJobManager:
     ) -> ExportJob:
         with self._lock:
             self._purge_locked()
-        job = ExportJob(
-            job_id=uuid.uuid4().hex,
-            user_id=str(user["id"]),
-            session_id=str(session_id),
-            total=len(selections),
-        )
-        with self._lock:
+            active = [job for job in self._jobs.values() if job.status in self._ACTIVE_STATES]
+            if len(active) >= self.MAX_ACTIVE_JOBS or sum(job.user_id == str(user["id"]) for job in active) >= self.MAX_ACCOUNT_ACTIVE_JOBS:
+                raise ExportError("Another export is running; wait for it to finish or cancel it")
+            if not selections or len(selections) > self.MAX_SELECTIONS:
+                raise ExportError("Select between 1 and 512 export objects")
+            self.store.require_local_session(str(user["id"]), str(session_id))
+            job = ExportJob(
+                job_id=uuid.uuid4().hex,
+                user_id=str(user["id"]),
+                session_id=str(session_id),
+                total=len(selections),
+            )
             self._jobs[job.job_id] = job
         owner = dict(user)
         worker = threading.Thread(
@@ -1425,6 +1423,35 @@ class ExportJobManager:
         session_name: str,
     ) -> None:
         try:
+            # Reserve a bounded hint, then validate actual bytes atomically.
+            # Array-heavy data are generated outside the quota lock. This is
+            # an application quota transaction, not an OS filesystem sandbox.
+            agent = self.get_agent_for_owner(dict(user), job.session_id)
+            if agent is None:
+                raise ExportError("The case workspace could not be loaded")
+            arrays = (agent.memory.retrieve(key) for key in ("ctv_array", "oar_array", "dose_distribution_gy"))
+            estimate = 65536 + 2 * sum(getattr(value, "nbytes", 0) for value in arrays if value is not None)
+            with self.store.workspace_output_transaction(job.user_id, job.session_id, "scene_export", additional_bytes=estimate, staging_job_id=job.job_id) as job_root:
+                self._run_staged(job, user, selections, session_name, job_root)
+                if job.status == "failed":
+                    raise ExportError("Export failed before its quota commit")
+                terminal = "cancelled" if job.cancel_requested else ("completed_with_errors" if job.failures or job.skipped else "completed")
+                if job.cancel_requested and job.zip_path:
+                    Path(job.zip_path).unlink(missing_ok=True)
+                    job.zip_path = ""
+                job.status = "packaged"
+            job.status = terminal
+        except Exception as exc:
+            job.status = "failed"
+            job.zip_path = ""
+            job.current = ""
+            job.failures.append({"object_id": "session", "error": str(exc) if isinstance(exc, ExportError) else "Export could not be committed; check account storage and case status"})
+
+    def _run_staged(
+        self, job: ExportJob, user: Mapping[str, Any],
+        selections: list[Mapping[str, Any]], session_name: str, job_root: Path,
+    ) -> None:
+        try:
             job.status = "preparing"
             agent = self.get_agent_for_owner(dict(user), job.session_id)
             if agent is None:
@@ -1442,10 +1469,7 @@ class ExportJobManager:
             # store's private staging root remains server-owned, while job
             # authorization still binds every download to user + Session.
             export_root = (
-                self.store.staging_dir
-                / "scene_exports"
-                / job.job_id
-                / folder
+                job_root / folder
             )
             export_root.mkdir(parents=True, exist_ok=True)
             job.export_root = str(export_root)
@@ -1455,7 +1479,7 @@ class ExportJobManager:
             job.status = "running"
             for selection in selections:
                 if job.cancel_requested:
-                    job.status = "cancelled"
+                    job.status = "packaged"
                     break
                 object_id = str(selection.get("object_id") or "")
                 if source_changed or self._version_vector(agent.memory) != source_version:
@@ -1538,7 +1562,7 @@ class ExportJobManager:
                 "bytes": manifest_path.stat().st_size,
             })
 
-            if job.status == "cancelled":
+            if job.cancel_requested:
                 # Completed files remain intact in server staging for
                 # diagnostics, but a cancelled job is never presented as a
                 # downloadable Scene and does not spend time compressing work
@@ -1553,10 +1577,7 @@ class ExportJobManager:
                     if path.is_file():
                         archive.write(path, f"{folder}/{path.relative_to(export_root).as_posix()}")
             job.zip_path = str(zip_path)
-            job.status = (
-                "completed_with_errors"
-                if job.failures or job.skipped else "completed"
-            )
+            job.status = "packaged"
             job.current = ""
         except Exception as exc:
             logger.exception(

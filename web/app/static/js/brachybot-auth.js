@@ -150,8 +150,9 @@
                 if (remEl && remembered) remEl.checked = true;
             } catch (_) {}
             // Auto-fill the deployment access key from any key the browser
-            // already holds (set via ?api_key=, a previous sign-in, or the
-            // session/local storage copy). The operator should only need to
+            // already holds (a previous sign-in in this browser session).
+            // URL credentials and persistent local storage are not trusted.
+            // The operator should only need to
             // enter username and password on a protected deployment.
             try {
                 const keyInput = document.getElementById('authDeploymentKey');
@@ -717,7 +718,7 @@
             try {
                 for (const storage of [localStorage, sessionStorage]) {
                     for (const key of Object.keys(storage)) {
-                        if (/^(?:brachybot_|brachyplan_|BRACHYBOT_API_KEY)/.test(key)) storage.removeItem(key);
+                        if (/^(?:brachybot[_.]|brachyplan[_.]|BRACHYBOT_API_KEY|layout\.)/i.test(key)) storage.removeItem(key);
                     }
                 }
             } catch (_) {}

@@ -180,7 +180,7 @@ The tool will:
         if not is_public:
             return self._failure(reason)
 
-        logger.info(f"Fetching URL: {url}")
+        logger.info("Fetching external URL (content withheld)")
 
         # Strategy 1: Direct fetch
         result = self._fetch_direct(url, max_length)
@@ -351,7 +351,8 @@ The tool will:
         # If we have DOI but no PMID, look up PMID via DOI
         if doi and not pmid:
             try:
-                search_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term={doi}&retmode=json"
+                from urllib.parse import urlencode
+                search_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?" + urlencode({"db": "pubmed", "term": doi, "retmode": "json"})
                 resp = public_get(search_url, timeout=5)
                 if resp.status_code == 200:
                     import json

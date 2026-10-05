@@ -197,7 +197,7 @@ def test_guide_generation_status_question_only_calls_read_only_status():
     policy = classify_local_turn(message)
     assert policy.intent == 'surgical_guide_status_query'
     assert policy.direct_execution
-    assert policy.execution_grants == {'surgical_guide'}
+    assert policy.execution_grants == frozenset()
     assert policy.action_plan is None
     calls = ResponseToolMixin()._detect_tool_request(message)
     assert calls == [{

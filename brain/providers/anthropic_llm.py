@@ -445,7 +445,7 @@ class AnthropicLLM(BaseLLM):
                 try:
                     tc["arguments"] = json.loads(tc["arguments"]) if tc["arguments"] else {}
                 except json.JSONDecodeError:
-                    tc["arguments"] = {}
+                    raise ValueError("Provider returned malformed tool arguments")
 
             self._record_llm_success()
             yield {
@@ -459,22 +459,29 @@ class AnthropicLLM(BaseLLM):
 
         except Exception as e:
             logger.error(f"Anthropic stream error: {e}")
+            if full_content or tool_calls:
+                self._record_llm_error(e)
+                yield {"type": "error", "content": "The model stream was interrupted; partial output was not replayed."}
+                return
             # Fallback to non-streaming if stream fails
             try:
                 logger.info("Falling back to non-streaming chat...")
                 request_kwargs.pop("stream", None)
                 response = client.messages.create(**request_kwargs)
                 content = ""
+                fallback_calls = []
                 for block in response.content:
                     if block.type == "text":
                         content += block.text
+                    elif block.type == "tool_use":
+                        fallback_calls.append({"id": block.id, "name": block.name, "arguments": block.input})
                 
                 self._record_llm_success()
                 yield {
                     "type": "final",
                     "content": content,
                     "finish_reason": response.stop_reason,
-                    "tool_calls": [],
+                    "tool_calls": fallback_calls,
                     "usage": {
                         "prompt_tokens": response.usage.input_tokens,
                         "completion_tokens": response.usage.output_tokens,
