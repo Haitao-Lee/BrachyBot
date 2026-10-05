@@ -1078,6 +1078,10 @@ def is_current_oar_count_query(message: str) -> bool:
     text = re.sub(r"\s+", " ", str(message or "").strip().lower())
     if not text or not _is_interrogative(text):
         return False
+    # "How much" / "多少" denotes a quantity, not necessarily a count of
+    # organs. Never substitute an organ inventory for a dose question.
+    if _is_current_case_dose_query(text):
+        return False
     if _contains_any(text, (
         "guideline", "standard", "constraint", "limit", "recommended",
         "clinical", "指南", "标准", "限值", "推荐", "临床",
@@ -1824,6 +1828,25 @@ def is_surgical_guide_status_query(message: str) -> bool:
         return False
     if _has_explicit_guide_generation_command(text):
         return False
+    parsed = _request_parse.parse_request(text)
+    # Existence/status is not a hypothetical consequence or a cross-artifact
+    # dependency question. Keep those on the primary semantic path.
+    if any(task.conditional or task.quoted or task.attributed for task in parsed.subtasks):
+        return False
+    # A plan can qualify the guide's ownership without being a second goal:
+    # "Has the current plan generated a guide?" Contrast coordinated objects
+    # or cross-artifact dependencies, which require full semantic synthesis.
+    context_prefix = re.match(
+        r"^(?:当前|本次|这次|本例|该|这个)?(?:规划|计划)(?:结果)?(?:的)?",
+        text,
+    )
+    status_subject = text
+    if context_prefix:
+        remainder = text[context_prefix.end():]
+        if not re.match(r"^(?:和|与|及|并|、)", remainder):
+            status_subject = remainder
+    if set(_request_parse.parse_request(status_subject).objects) - {"surgical_guide"}:
+        return False
     return bool(
         re.search(
             r"(?:生成|创建|制作|完成|存在|加载|保存|generate|create|build|load|save)"
@@ -1947,7 +1970,7 @@ def resolve_compound_query_intents(
 ) -> Tuple[Tuple[str, str], ...]:
     """Resolve a small compound turn only when every clause is a known read.
 
-    Any unknown clause, write goal, negation, condition, or quotation makes
+    Any unknown clause, write goal, condition, or instruction quotation makes
     this resolver abstain and leaves the established semantic workflow in
     charge. Returned pairs are the read intent and original clause.
     """
@@ -1963,15 +1986,25 @@ def resolve_compound_query_intents(
     resolved = []
     for clause in clauses:
         local = _request_parse.parse_request(clause)
-        # A prohibited, quoted, attributed, or conditional clause contributes
-        # no executable/read task, but does not cancel a separate positive
-        # read request in the same turn.
+        # A clause that cannot authorize a write may still ask a substantive
+        # question. Never silently discard it and accept a partial read plan.
         if any(
-            task.negated or task.conditional or task.attributed
+            task.conditional or task.attributed
             or (task.quoted and task.action)
             for task in local.subtasks
         ):
+            return ()
+        if local.subtasks and all(
+            task.negated and not task.interrogative and task.action
+            for task in local.subtasks
+        ):
+            # A pure prohibition is a restriction, not an unanswered question
+            # or an affirmative goal. Retain it in the original request;
+            # never materialize the prohibited operation as a sibling read.
+            # Mixed/uncertain clauses still require semantic interpretation.
             continue
+        if any(task.negated and not task.interrogative for task in local.subtasks):
+            return ()
         intent = _read_query_subtask_intent(clause, conversation, ui_state)
         if not intent:
             return ()
@@ -2650,7 +2683,7 @@ def classify_local_turn(
         # This candidate already reaches the primary model. Keep its mounted
         # UI capability surface and registered action validator; a compound
         # request is sent through the semantic fallback before this point.
-        return replace(candidate, routing_source="primary_semantic",
+        return replace(candidate, allow_tools=SEMANTIC_TOOLS, routing_source="primary_semantic",
                        candidate_intent=candidate.intent,
                        routing_reason="ui_capability_resolution")
     if candidate.intent in {"knowledge_query", "clinical_knowledge"}:

@@ -1633,6 +1633,20 @@ function _visualEvidenceFallbackResponse(evidence, sessionId, responseLanguage =
         responseLanguage || _chatLanguageForSession(sessionId) || window._responseLanguage || ''
     ).toLowerCase();
     const zh = language.startsWith('zh');
+    // Report figures and dose charts are explanatory evidence, not locations.
+    const locationEvidence = (Array.isArray(evidence) ? evidence : []).filter(item => {
+        const meta = item?.view_metadata || item?.viewMetadata || {};
+        return String(item?.visual_purpose || item?.visualPurpose
+            || meta.visual_purpose || meta.visualPurpose || '').toLowerCase() === 'locate';
+    });
+    if (!locationEvidence.length) {
+        const retained = String(preliminaryResponse || '').trim();
+        const notice = zh
+            ? '图像附件已保留，但本次图像解读未完成。已读取的信息不能替代图像中的空间剂量核验；附件存在也不能证明报告内容完整或与最新规划一致。'
+            : 'Image attachments are retained, but image interpretation did not complete. Read results do not verify spatial dose distribution; attachment availability does not establish report completeness or consistency with the latest plan.';
+        return [retained, notice].filter(Boolean).join('\n\n');
+    }
+    evidence = locationEvidence;
     const appendPreliminary = answer => {
         const raw = String(preliminaryResponse || '').trim();
         if (!raw) return answer;
@@ -4165,6 +4179,7 @@ async function sendChat(prefill, options) {
                             turnSessionId,
                             turnIdentity.responseLanguage,
                             text,
+                            opts.visualContext?.preliminary_response || '',
                         )
                         : _chatUserVisibleFailure(turnSessionId, 'request', serverCode),
                     true,
@@ -4249,9 +4264,7 @@ async function sendChat(prefill, options) {
                         screenshotMode: 'chat',
                         includeAll: true,
                         forceAnalysis: forceVisualAnalysis,
-                        preliminaryResponse: (data?.steps || []).some(step =>
-                            step?.type === 'tool' && !['ui_screenshot', 'ui_content'].includes(step.tool))
-                            ? responseBody : '',
+                        preliminaryResponse: [responseBody, presentation.userMessage].filter(Boolean).join('\n\n'),
                     },
                 );
             }
@@ -5142,6 +5155,7 @@ async function sendChat(prefill, options) {
                                     turnSessionId,
                                     turnIdentity.responseLanguage,
                                     text,
+                                    opts.visualContext?.preliminary_response || '',
                                 )
                                 : _chatUserVisibleFailure(turnSessionId, 'request', failureCode);
                             finalResponseReceived = true;
@@ -5368,9 +5382,7 @@ async function sendChat(prefill, options) {
                 screenshotMode: screenshotGallery.mode || 'chat',
                 includeAll: true,
                 forceAnalysis: forceVisualAnalysis,
-                preliminaryResponse: steps.some(step => step?.type === 'tool'
-                    && !['ui_screenshot', 'ui_content'].includes(step.tool))
-                    ? responseText : '',
+                preliminaryResponse: [responseText, ...presentationMessages].filter(Boolean).join('\n\n'),
                 multiIntentQuery: window._lastLLMMeta?.multi_intent_query === true,
                 onFollowupState: (state, info = {}) => {
                     visualFollowupState = String(state || '');
@@ -5542,8 +5554,7 @@ async function sendChat(prefill, options) {
             );
             let usedGroundedFallback = false;
             if (_visualResponseNeedsGroundedFallback(renderedFinalText, opts.visualEvidence || [])) {
-                const multiTurnContext = opts.multiIntentQuery === true
-                    ? String(opts.visualContext?.preliminary_response || '').trim() : '';
+                const multiTurnContext = String(opts.visualContext?.preliminary_response || '').trim();
                 renderedFinalText = _visualEvidenceFallbackResponse(
                     opts.visualEvidence || [],
                     turnSessionId,
@@ -5719,6 +5730,7 @@ async function sendChat(prefill, options) {
                         turnSessionId,
                         turnIdentity.responseLanguage,
                         text,
+                        opts.visualContext?.preliminary_response || '',
                     )
                     : _chatUserVisibleFailure(turnSessionId, 'request');
                 addChat(isInternalFollowup ? 'bot-response' : 'error', visualFailure, true,

@@ -18,7 +18,7 @@ ASPECT_SEEDS_PER_NEEDLE = "seeds_per_needle"
 ASPECT_OAR_DOSE = "oar_dose"
 
 _NEEDLE_TERMS = (
-    "穿刺针", "针道", "进针",
+    "穿刺针", "针道", "进针", "根针",
     "needle", "trajectory", "trajectories",
 )
 _SEED_TERMS = (
@@ -35,7 +35,7 @@ _COUNT_PATTERN = re.compile(
     r"how many|number of|\bcount\b|\btotal\b"
 )
 _BREAKDOWN_TERMS = (
-    "分别", "每枚", "每条", "每个", "各个", "逐一", "分布",
+    "分别", "每枚", "每条", "每个", "每根", "各个", "逐一", "分布",
     "breakdown", "distribution", "per needle", "per trajectory",
     "per-needle", "each needle", "each trajectory", "each ", "per ",
 )
@@ -98,21 +98,20 @@ def _declared_covers(contract: Any) -> Optional[FrozenSet[str]]:
 def missing_metric_aspects(message: str, contract: Any) -> FrozenSet[str]:
     """Return the asked aspects a read result does not answer.
 
-    Contracts without an explicit ``covers`` declaration keep the previous
-    behavior (treated as covering the turn): coverage is opt-in so no
-    unrelated direct-read tool is unexpectedly routed through review.
+    Missing declarations are unknown coverage, not proof that a question
+    was answered. This only controls a synthesis bypass, never tool access.
     """
     required = required_metric_aspects(message)
     if not required:
         return frozenset()
     covered = _declared_covers(contract)
     if covered is None:
-        return frozenset()
+        return required
     return frozenset(required - covered)
 
 
 def contract_covers_turn(message: str, contract: Any) -> bool:
-    return not missing_metric_aspects(message, contract)
+    return bool(required_metric_aspects(message)) and _declared_covers(contract) is not None and not missing_metric_aspects(message, contract)
 
 
 def uncovered_metric_aspects(message: str, contracts: Any) -> FrozenSet[str]:
@@ -136,8 +135,9 @@ def uncovered_metric_aspects(message: str, contracts: Any) -> FrozenSet[str]:
         saw_contract = True
         declared = _declared_covers(contract)
         if declared is None:
-            # Undeclared contract: treated as covering the whole turn.
-            return frozenset()
+            # Unknown evidence contributes no coverage and cannot erase a
+            # sibling result's known gap.
+            continue
         covered |= set(declared)
     if not saw_contract:
         return frozenset()
@@ -158,7 +158,9 @@ def direct_read_decision(message: str, contracts: Any) -> tuple:
         # No typed read at all: keep the previous (False, empty) contract so
         # callers do not treat an evidence-synthesis turn as a direct read.
         return False, frozenset()
-    return True, frozenset()
+    # Unmodeled requests require semantic synthesis. A tool result containing
+    # data is not evidence that an arbitrary whole user request was satisfied.
+    return bool(required_metric_aspects(message)), frozenset()
 
 
 def coverage_followup_instruction(missing: Any, covered: Any = ()) -> str:

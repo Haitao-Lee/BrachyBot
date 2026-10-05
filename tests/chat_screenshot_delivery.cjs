@@ -30,6 +30,7 @@ function contextFor(steps, keys = new Set()) {
     };
     const context = vm.createContext({
         steps, screenshotTaskKeys: keys,
+        uiActionTasks: [], sessionContentTaskKeys: new Set(),
         data: null, currentEvent: '', responseText: '', responseEl: null,
         finalTextStreamStarted: false, finalResponseReceived: false,
         isInternalFollowup: false, reportUiActionRequested: false,

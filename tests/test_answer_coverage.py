@@ -71,19 +71,19 @@ def test_english_breakdown_question_requires_the_same_aspects():
     )
 
 
-def test_unmodeled_questions_keep_the_existing_fast_path():
+def test_unmodeled_questions_require_semantic_synthesis():
     contract = {"mode": "direct_read", "covers": ["dose"]}
 
     assert required_metric_aspects("当前病例的 D90 是多少？") == frozenset()
-    assert contract_covers_turn("当前病例的 D90 是多少？", contract) is True
+    assert contract_covers_turn("当前病例的 D90 是多少？", contract) is False
 
 
-def test_contract_without_coverage_declaration_preserves_fast_path():
-    """Non-metric tools never declared coverage; their behavior must not change."""
+def test_contract_without_coverage_declaration_cannot_prove_completion():
+    """Unknown coverage must not grant a synthesis/completeness bypass."""
 
-    assert contract_covers_turn("有多少枚穿刺针？", {"mode": "direct_read"}) is True
-    assert contract_covers_turn("有多少枚穿刺针？", {}) is True
-    assert contract_covers_turn("有多少枚穿刺针？", None) is True
+    assert contract_covers_turn("有多少枚穿刺针？", {"mode": "direct_read"}) is False
+    assert contract_covers_turn("有多少枚穿刺针？", {}) is False
+    assert contract_covers_turn("有多少枚穿刺针？", None) is False
 
 
 def test_distribution_wording_requires_a_breakdown():

@@ -95,7 +95,7 @@ def is_internal_tool_result_message(message: object) -> bool:
 _INTERROGATIVE_END = re.compile(r"[?？吗呢]$")
 _INTERROGATIVE_ZH = re.compile(
     r"(?:是不是|有没有|能不能|可不可以|是否|怎么样|如何|怎么|为什么|为何|什么|谁|"
-    r"哪里|哪儿|在哪|哪次|哪个|哪一个|哪种|哪一种|"
+    r"哪里|哪儿|在哪|哪次|哪个|哪一个|哪种|哪一种|多少|多久|多大|怎样|"
     r"完成.*[了没]|做了[没吗]|好了[没吗]|生成.*[了没]|分割.*[了没]|规划.*[了没])"
 )
 _INTERROGATIVE_EN = re.compile(
@@ -156,7 +156,7 @@ def _polite_action_request(text: str) -> bool:
     if re.search(r"(?:如何|怎么|是否|能否|有没有|\b(?:how|whether|if|or|able|possible)\b)", complement, re.I):
         return False
     for action, aliases in _ACTION_ALIASES:
-        if action not in _WRITE_ACTIONS:
+        if action not in _WRITE_ACTIONS | {"display", "ui_change"}:
             continue
         for alias in aliases:
             if re.match(re.escape(alias) + (r"\b" if alias.isascii() else ""), complement, re.I):

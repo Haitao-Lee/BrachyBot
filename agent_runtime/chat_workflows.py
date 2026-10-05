@@ -3670,7 +3670,7 @@ class ChatWorkflowMixin:
             response = self._answer_with_material(
                 message,
                 self._session_content_response(target, self.memory.user_lang),
-                steps=steps, step_id_ref=step_id,
+                steps=[], step_id_ref=[0],
             )
             self.memory.add_message("assistant", response)
             self._record_experience(message, response)

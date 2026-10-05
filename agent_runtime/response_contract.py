@@ -94,6 +94,13 @@ def build_response_contract(
     # request so the two-stage screenshot flow must explain the images.
     content_request = bool(value and _CONTENT_REQUEST_RE.search(value))
     question = question or content_request
+    # Modal requests ("could you show ...?") are not capability questions.
+    # Reuse the structural speech-act boundary instead of disagreeing with
+    # tool routing merely because the utterance has a question mark.
+    from agent_runtime.request_parse import _polite_action_request
+    if _polite_action_request(value):
+        action = True
+        question = content_request
     # A noun phrase such as "where is the generated result" contains an action-looking
     # word, but is still one information-seeking question. Treat a turn as
     # mixed only when a command clause is explicitly separated from the

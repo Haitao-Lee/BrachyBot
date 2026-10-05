@@ -10906,6 +10906,8 @@ async function _appendPersistedReportFigures(plan, galleryContext, ownerSessionI
             session_id: ownerSessionId,
             planning_id: activePlanningId,
             source: 'report_artifact',
+            visual_purpose: 'explain',
+            annotation_policy: 'none',
             response_language: context.responseLanguage || language,
             visual_analysis: analyze,
             view_metadata: {
@@ -11479,8 +11481,8 @@ function _sessionContentObjectSummary(objectIds, tree, language) {
 function _sessionContentSummary(target, planning, tree, language, command = {}) {
     const zh = language === 'zh';
     const metrics = planning?.metrics && typeof planning.metrics === 'object' ? planning.metrics : {};
-    const report = window.reportForm && (!window.reportForm.sessionId
-        || String(window.reportForm.sessionId) === String(_activeApiSessionId()))
+    const report = window.reportForm && window.reportForm.sessionId
+        && String(window.reportForm.sessionId) === String(_activeApiSessionId())
         ? window.reportForm : null;
     const chat = typeof window.getSessionContentSnapshot === 'function'
         ? window.getSessionContentSnapshot(_activeApiSessionId()) : null;
@@ -11616,6 +11618,7 @@ function _sessionContentSummary(target, planning, tree, language, command = {}) 
             lines.push(zh
                 ? `\u62a5\u544a\u5df2\u52a0\u8f7d${technique ? `\uff08${technique}\uff09` : ''}\uff0c\u5305\u542b ${figureCount} \u4e2a\u5df2\u4fdd\u5b58\u56fe\u4ef6\u3002`
                 : `Report is loaded${technique ? ` (${technique})` : ''} with ${figureCount} saved figure(s).`);
+            lines.push(_reportDoseContentSummary(report, planning, language));
         } else if (target === 'report') {
             lines.push(zh ? '\u5f53\u524d Session \u5c1a\u65e0\u5df2\u52a0\u8f7d\u7684\u62a5\u544a\u6587\u672c\u3002' : 'No report text is loaded for the current Session.');
         }
@@ -11638,6 +11641,40 @@ function _sessionContentSummary(target, planning, tree, language, command = {}) 
         lines.push(_sessionContentObjectSummary(command?.object_ids, tree, language));
     }
     return lines.filter(Boolean).join('\n\n');
+}
+
+function _reportDoseContentSummary(report, planning, language) {
+    const zh = language === 'zh';
+    const recorded = report?.metrics || {};
+    const current = planning?.metrics || {};
+    const rows = [], missing = [], different = [];
+    const number = value => value !== null && value !== undefined && value !== ''
+        && Number.isFinite(Number(value)) ? Number(value) : null;
+    [['V100', 'v100', '%'], ['V150', 'v150', '%'], ['V200', 'v200', '%'],
+        ['D90', 'd90', 'Gy'], ['D95', 'd95', 'Gy'], ['CI', 'ci', ''],
+        ['HI', 'hi', ''], ['Score', 'score', '/100']].forEach(([label, key, unit]) => {
+        const saved = number(recorded[key]);
+        if (saved === null) { missing.push(label); return; }
+        rows.push(`${label}=${saved}${unit ? ' ' + unit : ''}`);
+        // Compare physical-dose fields only; fraction/percentage contracts
+        // require explicit units and must not be guessed from magnitude.
+        const live = number(_contentMetric(current, [label, key]));
+        if (unit === 'Gy' && live !== null && Math.abs(saved - live) > 0.015) different.push(label);
+    });
+    const rx = number(report?.planning?.prescriptionGy);
+    if (rx !== null) rows.unshift(`${zh ? '处方' : 'Prescription'}=${rx} Gy`);
+    const oarCount = Array.isArray(report?.oarDose) ? report.oarDose.filter(row =>
+        row && ['d2cc', 'd1cc', 'd0_1cc', 'v100'].some(key => number(row[key]) !== null)).length : 0;
+    return [
+        (zh ? '报告实际填写的剂量字段：' : 'Dose fields actually populated in the report: ')
+            + (rows.join('; ') || (zh ? '无。' : 'none.')),
+        missing.length ? (zh ? '尚未填写：' : 'Not populated: ') + missing.join(', ') : '',
+        zh ? `报告内有 ${oarCount} 个器官的受量记录；这不等于已核验完整性或临床合格性。`
+            : `${oarCount} organ dose rows are populated; completeness and clinical acceptability are not established.`,
+        different.length ? (zh ? '与当前剂量指标不一致：' : 'Different from current dose metrics: ') + different.join(', ') : '',
+        zh ? '图件存在不代表报告已更新；版本一致性、Dmean/D2/Dmax是否另有记录及空间剂量分布仍需单独核验。'
+            : 'Figure availability does not establish freshness; version consistency, any separately recorded Dmean/D2/Dmax, and spatial dose distribution require separate verification.',
+    ].filter(Boolean).join('\n\n');
 }
 
 function _sessionContentUnavailableMessage(target, language) {

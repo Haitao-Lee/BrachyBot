@@ -7238,7 +7238,8 @@ def register_planning_routes(
             ),
             "uptime_s": round(uptime_s, 3) if uptime_s is not None else None,
         }
-        if not current_user(store):
+        store = current_app.extensions.get("brachybot_workspace_store")
+        if store is None or not current_user(store):
             payload = {"ok": True, "status": "ok"}
         response = jsonify(payload)
         response.headers["Cache-Control"] = "no-store"
