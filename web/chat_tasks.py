@@ -504,6 +504,7 @@ class ChatTaskManager:
         response_language: str = "",
         ui_language: str = "",
         resource_waiter_factory: Optional[Callable[..., Any]] = None,
+        response_factory: Optional[Callable[..., Any]] = None,
     ) -> ChatTask:
         """Start one worker, rejecting concurrent turns in the same case.
 
@@ -783,7 +784,17 @@ class ChatTaskManager:
                     try:
                         if callable(resource_waiter_factory):
                             agent._workspace_resource_waiter = resource_waiter_factory(agent, report_tool_resources)
-                        turn_stream = agent.chat_with_stream(task.message)
+                        # Receipt-only visual delivery is still a case-owned,
+                        # cancellable task with the same durable finalizer. A
+                        # failed eligibility check retains normal model flow.
+                        direct = response_factory(task, agent) if callable(response_factory) else None
+                        if direct is not None:
+                            turn_stream = iter((
+                                task.encode_event("response", direct),
+                                task.encode_event("done", {}),
+                            ))
+                        else:
+                            turn_stream = agent.chat_with_stream(task.message)
                         for event in turn_stream:
                             # Explicit Stop is the only normal cancellation path.
                             # Providers may flush a buffered event after their

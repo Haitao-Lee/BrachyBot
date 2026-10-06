@@ -3028,6 +3028,9 @@ function cancelVisibleChatProgress(reason) {
             window._toolProgressEls = [];
         }
     } catch (_) {}
+    try {
+        document.querySelectorAll('#chatMessages .visual-delivery-status').forEach(status => status.remove());
+    } catch (_) {}
 }
 
 window.cancelVisibleChatProgress = cancelVisibleChatProgress;
@@ -3265,7 +3268,14 @@ function createLiveThinkingChain(resumeStartTime, requestId = '', traceLanguage 
     // Live timer — updates the `.thinking-time` span every 100ms.
     // We keep the timer reference on the header so finalizeThinkingChain
     // can clearInterval it when the chain collapses.
+    header._startTime = startTime;
     const timer = setInterval(() => {
+        // Detached/replaced traces must not keep a hidden interval alive.
+        if (header.isConnected === false) {
+            clearInterval(header._timer);
+            header._timer = null;
+            return;
+        }
         const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
         const timeEl = header.querySelector('.thinking-time');
         if (timeEl) timeEl.textContent = elapsed + 's';
@@ -3414,7 +3424,8 @@ const _mountedAssistantFinalRequestIds = new Set();
 
 function _collapseFinalizedThinkingChain(chainEl) {
     if (!chainEl || chainEl.dataset.finalized !== '1'
-        || chainEl.dataset.finalResponseMounted !== '1') return;
+        || chainEl.dataset.finalResponseMounted !== '1'
+        || chainEl.dataset.deliveryPending === '1') return;
     const toggle = chainEl.querySelector('.thinking-toggle');
     const stepsDiv = chainEl.querySelector('.thinking-steps');
     const timeEl = chainEl.querySelector('.thinking-time');
@@ -3460,12 +3471,20 @@ function finalizeThinkingChain(chainEl, headerEl, steps) {
     // adds .expanded back and the user sees the tool history covering
     // the final response.
     chainEl.dataset.finalized = '1';
-    chainEl.dataset.live = '0';
+    const pendingDelivery = Array.isArray(steps) && steps.some(step =>
+        step?.phase === 'final_response' && ['pending', 'active'].includes(step.status));
+    chainEl.dataset.live = pendingDelivery ? '1' : '0';
+    if (pendingDelivery) chainEl.dataset.deliveryPending = '1';
+    else delete chainEl.dataset.deliveryPending;
     const traceLanguage = _normalizeTraceLanguage(chainEl.dataset.traceLanguage || '');
     const labelEl = headerEl && headerEl.querySelector('.thinking-label');
     if (labelEl) labelEl.textContent = _chainI18n('header', traceLanguage);
     updateChainHeader(headerEl, steps);
-    if (headerEl && headerEl._timer) {
+    if (!pendingDelivery && headerEl && headerEl._timer) {
+        const timeEl = headerEl.querySelector('.thinking-time');
+        if (timeEl && headerEl._startTime) {
+            timeEl.textContent = ((Date.now() - headerEl._startTime) / 1000).toFixed(1) + 's';
+        }
         clearInterval(headerEl._timer);
         headerEl._timer = null;
     }
@@ -3487,6 +3506,8 @@ function cancelThinkingChain(chainEl, headerEl) {
     if (!chainEl) return;
     chainEl.dataset.finalized = '1';
     chainEl.dataset.cancelled = '1';
+    chainEl.dataset.live = '0';
+    delete chainEl.dataset.deliveryPending;
     if (headerEl && headerEl._timer) {
         clearInterval(headerEl._timer);
         headerEl._timer = null;

@@ -156,6 +156,9 @@ async function testFinalCleanup(rendererThrows = false, newerTurn = false) {
         turnGeneration: 1, todo: null, cancelTurnUi: cancel,
         chatAbortController: null, turnAbortController: null,
         _waitForFinalReplyPaint: async () => {},
+        // This fixture isolates sendChat cleanup; real DOM status and clock
+        // behavior are covered by chat_visual_delivery_clock/browser tests.
+        _updateVisualDeliveryStatus() {},
         finalizeThinkingChain: () => { if (rendererThrows) throw new Error('renderer failed'); },
         saveSessionMessage() {}, setTimeout() {},
         setStreamingState: value => buttons.push(value), console: { warn() {} },

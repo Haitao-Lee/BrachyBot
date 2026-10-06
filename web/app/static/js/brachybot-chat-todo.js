@@ -2716,11 +2716,12 @@ function _registerPendingVisualFinalResponse(record) {
         'pending',
         record.responseLanguage,
         String(record.responseLanguage || '').toLowerCase().startsWith('zh')
-            ? '等待截图分析完成'
-            : 'Waiting for screenshot analysis',
+            ? '截图已就绪，正在核对证据并完成回复'
+            : 'Images ready; checking evidence and completing the reply',
     );
     _pendingVisualFinalResponseMap().set(key, Object.assign({}, record, { key }));
     _refreshFinalResponseTrace(record, false);
+    _updateVisualDeliveryStatus(record, 'checking');
     return true;
 }
 
@@ -2766,8 +2767,65 @@ function _settlePendingVisualFinalResponse(sessionId, requestId, status, content
         content,
     );
     _refreshFinalResponseTrace(record, true);
+    _updateVisualDeliveryStatus(record, terminalStatus);
+    const chain = record.stepsDiv?.closest?.('.thinking-chain');
+    if (chain) {
+        if (terminalStatus === 'cancelled' && typeof cancelThinkingChain === 'function') {
+            cancelThinkingChain(chain, record.headerEl);
+        } else if (typeof finalizeThinkingChain === 'function') {
+            // The parent SSE ended earlier, but this is its real delivery
+            // boundary. Stop the original clock, not a new child timer.
+            finalizeThinkingChain(chain, record.headerEl, record.steps);
+        }
+    }
     registry.delete(key);
     return true;
+}
+
+function _updateVisualDeliveryStatus(record, phase) {
+    if (!record || String(activeSessionId || '') !== String(record.sessionId || '')) return;
+    if (['done', 'error', 'cancelled'].includes(phase)) {
+        document.querySelectorAll('#chatMessages .chat-row.bot').forEach(row => {
+            if (String(row.dataset.requestId || '') === String(record.requestId || '')) {
+                row.querySelector('.visual-delivery-status')?.remove();
+            }
+        });
+        return;
+    }
+    if (typeof ensureAssistantReplyContainer !== 'function') return;
+    const shell = ensureAssistantReplyContainer(record.requestId, record.assistantMessageId);
+    if (!shell?.wrapper) return;
+    if (shell.response && !String(shell.response.textContent || '').trim()) shell.response.hidden = true;
+    let status = shell.wrapper.querySelector('.visual-delivery-status');
+    if (!status) {
+        status = document.createElement('div');
+        status.className = 'visual-delivery-status';
+        status.setAttribute('role', 'status');
+        status.setAttribute('aria-live', 'polite');
+        const dot = document.createElement('span');
+        dot.className = 'visual-delivery-dot';
+        dot.setAttribute('aria-hidden', 'true');
+        const copy = document.createElement('span');
+        copy.className = 'visual-delivery-copy';
+        const title = document.createElement('span');
+        title.className = 'visual-delivery-title';
+        const note = document.createElement('span');
+        note.className = 'visual-delivery-note';
+        copy.append(title, note);
+        status.append(dot, copy);
+        shell.wrapper.insertBefore(status, shell.attachments || null);
+    }
+    const zh = String(record.responseLanguage || '').toLowerCase().startsWith('zh');
+    const title = status.querySelector('.visual-delivery-title');
+    const note = status.querySelector('.visual-delivery-note');
+    const text = phase === 'capturing'
+        ? (zh ? '正在取景、标注并保存截图' : 'Framing, marking and saving the images')
+        : (zh ? '截图已就绪 · 正在核对证据' : 'Images ready · Checking the evidence');
+    // Avoid repeated live-region announcements on every clock tick.
+    if (title.textContent !== text) title.textContent = text;
+    note.textContent = phase === 'capturing'
+        ? (zh ? '完成的图片会先显示，随后补充位置说明。' : 'Completed images appear first, followed by the explanation.')
+        : (zh ? '可以先点击图片放大查看，回复会补充在这里。' : 'You can open the images now; the explanation will appear here.');
 }
 
 function _finishFinalResponseTraceSteps(
@@ -4777,6 +4835,11 @@ async function sendChat(prefill, options) {
                                     screenshotTaskKeys.add(_ssKey);
                                 uiDebugLog('[SSE-STEP] Intercepting ui_screenshot, target:', _ssTarget);
                                 try {
+                                    _updateVisualDeliveryStatus({
+                                        sessionId: turnSessionId, requestId: turnRequestId,
+                                        assistantMessageId: turnAssistantMessageId,
+                                        responseLanguage: turnIdentity.responseLanguage,
+                                    }, 'capturing');
                                     const captureTask = screenshotCaptureQueue.then(() =>
                                         _interceptScreenshot(_ssTarget, _ssQuestion, screenshotGallery, {
                                             sessionId: turnSessionId,
@@ -5520,11 +5583,12 @@ async function sendChat(prefill, options) {
             responseEl = null;
         }
         if (isInternalFollowup) {
+            const receiptDelivered = window._lastLLMMeta?.route === 'grounded_location_receipt';
             const visualEnvelope = typeof window.parseVisualResponseEnvelope === 'function'
                 ? window.parseVisualResponseEnvelope(renderedFinalText)
                 : null;
             let annotationResult = null;
-            if (typeof window.applyVisualResponseAnnotations === 'function') {
+            if (!receiptDelivered && typeof window.applyVisualResponseAnnotations === 'function') {
                 try {
                     // This also handles a missing/malformed envelope for
                     // required locate evidence. The browser has a complete
@@ -5553,7 +5617,7 @@ async function sendChat(prefill, options) {
                 opts.visualAttachmentLabels || [],
             );
             let usedGroundedFallback = false;
-            if (_visualResponseNeedsGroundedFallback(renderedFinalText, opts.visualEvidence || [])) {
+            if (!receiptDelivered && _visualResponseNeedsGroundedFallback(renderedFinalText, opts.visualEvidence || [])) {
                 const multiTurnContext = String(opts.visualContext?.preliminary_response || '').trim();
                 renderedFinalText = _visualEvidenceFallbackResponse(
                     opts.visualEvidence || [],
@@ -5890,6 +5954,12 @@ async function sendChat(prefill, options) {
                     } else if (typeof finalizeThinkingChain === 'function') {
                         finalizeThinkingChain(chainEl, headerEl, steps);
                     }
+                }
+                if (traceTerminal && !visualFinalResponsePending) {
+                    _updateVisualDeliveryStatus({
+                        sessionId: turnSessionId, requestId: turnRequestId,
+                        assistantMessageId: turnAssistantMessageId,
+                    }, turnCancelled ? 'cancelled' : (turnFailed ? 'error' : 'done'));
                 }
                 if (traceTerminal && (turnFailed || turnCancelled)
                     && todo && typeof todo.fold === 'function') {

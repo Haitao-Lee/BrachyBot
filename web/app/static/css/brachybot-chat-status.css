@@ -1454,6 +1454,27 @@
 .usage-sep { width: 1px; height: 12px; background: var(--border-soft); }
 
 /* Thinking chain (collapsible) — sunken */
+.visual-delivery-status {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.65rem;
+    margin: 0.4rem 0 0.6rem;
+    padding: 0.75rem 0.85rem;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-sm);
+    background: var(--bg-1);
+    max-width: 34rem;
+}
+.visual-delivery-copy { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+.visual-delivery-title { font-size: 0.76rem; font-weight: 500; line-height: 1.45; color: var(--text-secondary); }
+.visual-delivery-note { font-size: 0.7rem; line-height: 1.5; color: var(--text-dim); }
+.visual-delivery-dot {
+    width: 0.4rem; height: 0.4rem; flex: 0 0 0.4rem; margin-top: 0.32rem;
+    border-radius: 50%; background: var(--accent, #7b9cff);
+    animation: visual-delivery-pulse 1.8s ease-in-out infinite;
+}
+@keyframes visual-delivery-pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .visual-delivery-dot { animation: none; } }
 .thinking-chain {
     background: var(--bg-sunken);
     border: 1px solid var(--border-hairline);

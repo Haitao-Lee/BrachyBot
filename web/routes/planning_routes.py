@@ -41,6 +41,7 @@ from agent_runtime.visual_evidence import (
     grounded_location_answer,
     normalize_visual_evidence_context,
 )
+from web.visual_location_delivery import location_delivery_context
 from web.planning_runs import (
     activate_planning_run,
     active_planning_id,
@@ -2462,6 +2463,8 @@ def register_planning_routes(
                                 "analysis_required",
                                 "annotation_policy",
                                 "request_intent",
+                                "semantic_target",
+                                "semantic_targets",
                                 "preserve_current_view",
                                 "target_refs",
                             )
@@ -8188,6 +8191,41 @@ def register_planning_routes(
                 return wait_for_tool
 
             start_gate = threading.Event()
+
+            def receipt_response(task, resolved_agent):
+                if visual_context is None or not task.internal_followup:
+                    return None
+                # Cancellation/archive/session fences remain effective even
+                # though this operation needs no decoded clinical arrays.
+                waiter = getattr(resolved_agent, "_workspace_resource_waiter", None)
+                if callable(waiter):
+                    waiter(False)
+                started = time.perf_counter()
+                snapshot = store.load_snapshot(owner["id"], session_id)
+                context = location_delivery_context(
+                    snapshot, visual_context, task.parent_request_id, session_id,
+                    _snapshot_annotation_planning_state(snapshot),
+                    lambda filename: store.session_artifact_path(
+                        owner["id"], session_id, "screenshots", filename),
+                )
+                if context is None:
+                    return None
+                answer = grounded_location_answer(context, task.response_language)
+                if not answer:
+                    return None
+                if _snapshot_annotation_planning_state(
+                    store.load_snapshot(owner["id"], session_id)
+                ) != _snapshot_annotation_planning_state(snapshot):
+                    return None
+                if callable(waiter):
+                    waiter(False)
+                task.grounded_visual_answer = answer
+                return {"response": answer, "llm_meta": {
+                    "usage": {}, "llm_calls": 0, "route": "grounded_location_receipt",
+                    "phase_timings_ms": {"location_receipt_ms": round(
+                        (time.perf_counter() - started) * 1000, 1)},
+                }}
+
             try:
                 task = chat_tasks.start(
                     current_app._get_current_object(),
@@ -8200,6 +8238,7 @@ def register_planning_routes(
                     start_gate=start_gate,
                     agent_supplier=agent_supplier if agent is None else None,
                     resource_waiter_factory=resource_waiter,
+                    response_factory=receipt_response if visual_context is not None else None,
                     request_id=request_id,
                     user_message_id=user_message_id,
                     assistant_message_id=assistant_message_id,
