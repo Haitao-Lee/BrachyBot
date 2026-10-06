@@ -8,7 +8,7 @@ import json
 from collections import Counter
 
 from agent_runtime.action_plan import ActionPlan
-from agent_runtime.execution_authorization import MUTATING_TOOLS
+from agent_runtime.execution_authorization import tool_call_is_mutating
 
 
 def decode_provider_call(payload, index=0):
@@ -36,9 +36,7 @@ def decode_provider_call(payload, index=0):
 
 
 def is_state_changing(tool, params):
-    if tool == "surgical_guide" and params.get("action") in {"status", "analyze"}:
-        return False
-    return tool in MUTATING_TOOLS or tool in {"code_executor", "code_writer", "self_evolve"}
+    return tool_call_is_mutating(tool, params) or tool in {"code_executor", "code_writer", "self_evolve"}
 
 
 class StepExecutionState:
@@ -113,7 +111,9 @@ class StepExecutionState:
         self.outcomes[call["key"]] = status
         tool, params = call.get("tool", ""), call.get("params") or {}
         self.receipts.append({"key": call["_receipt_key"], "tool": tool, "status": status,
-                              "attempted": attempted})
+                              "attempted": attempted, "epoch": self.epoch,
+                              "admission_denied": bool(call.get("_argument_error")),
+                              "partial_ui_batch": call.get("_partial_ui_batch")})
         del self.receipts[:-64]
         # A failed writer can have partially changed state too. Never reuse a
         # pre-write read as evidence for the post-write workspace.

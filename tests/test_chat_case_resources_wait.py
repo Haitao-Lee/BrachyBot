@@ -12,9 +12,9 @@ import pytest
 from web.chat_tasks import ChatTaskCancelled, ChatTaskError
 from web.routes import planning_routes
 from web.routes.planning_routes import (
-    _chat_requires_full_workspace,
     await_chat_case_resources,
 )
+from agent_runtime.workspace_readiness import requires_full_workspace
 
 
 class _Shell:
@@ -29,23 +29,19 @@ class _Shell:
         self._workspace_ready_event = threading.Event()
 
 
-def test_lightweight_and_clinical_messages_are_distinguished():
-    assert _chat_requires_full_workspace("你好", "") is False
-    assert _chat_requires_full_workspace("hello", "") is False
-    assert _chat_requires_full_workspace("当前规划结果如何", "") is True
-    assert _chat_requires_full_workspace("hello", "/tmp/screenshot.png") is True
+def test_lightweight_and_array_operations_are_distinguished():
+    # Resource readiness is a tool dependency, not an intent/word classifier.
+    assert requires_full_workspace("query_metrics", {"metric_type": "dose_metrics"}) is False
+    assert requires_full_workspace("surgical_guide", {"action": "status"}) is False
+    assert requires_full_workspace("dose_recompute", {}) is True
 
 
 def test_aggregate_repair_requires_full_workspace():
-    # "update everything" reads CTV/dose arrays to rebuild downstream results
-    # but contains none of the historical domain keywords.  It must bind to the
-    # hydrated Agent, or a completed plan looks unfinished.
-    for message in (
-        "请你全部更新",
-        "全部更新，所有后续都更新",
-        "把过期的都更新",
+    # Aggregate repair is still bound to complete inputs, whatever the wording.
+    for tool in (
+        "dose_recompute", "dose_evaluation", "report_auto_fill", "surgical_guide",
     ):
-        assert _chat_requires_full_workspace(message, "") is True, message
+        assert requires_full_workspace(tool, {}) is True, tool
 
 
 def test_wait_reports_phases_until_ready():

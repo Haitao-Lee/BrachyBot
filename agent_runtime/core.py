@@ -205,6 +205,10 @@ class ToolRegistry:
 
     def execute(self, tool_name: str, **kwargs):
         tool = self.get(tool_name)
+        workspace_agent = getattr(self, "workspace_agent", None)
+        if workspace_agent is not None:
+            from agent_runtime.workspace_readiness import ensure_workspace_ready
+            ensure_workspace_ready(workspace_agent, tool_name, kwargs)
         from utils.tool_security import tool_scope
         with tool_scope(getattr(self, "security_config", None)):
             return tool.execute(**kwargs)
@@ -270,6 +274,19 @@ class ToolRegistry:
         self._openai_tools_cache_key = cache_key
         self._openai_tools_cache = openai_tools
         return openai_tools
+
+    def conversation_capability_metadata(self) -> Dict[str, Dict]:
+        """Server-approved extension metadata; not provider/client assertions.
+
+        Tools may opt into conversational read discovery with
+        conversation_access='read'. Schema validators, workspace scope and
+        the tool implementation still own safety. An absent declaration
+        does not automatically make an unknown tool safe.
+        """
+        return {
+            name: {"conversation_access": getattr(tool, "conversation_access", None)}
+            for name, tool in self._tools.items() if self.is_available(name)
+        }
 
     def to_tool_descriptions(self) -> str:
         """Generate human-readable tool descriptions for LLM prompts."""

@@ -1781,65 +1781,6 @@ def _remove_manual_needle(snapshot, needle_id: str):
     }
 
 
-_FULL_WORKSPACE_CHAT_TERMS = (
-    "ct", "ctv", "oar", "mask", "segmentation", "segment", "分割", "掩膜",
-    "planning", "plan", "规划", "剂量", "dose", "dvh", "needle", "seed",
-    "trajectory", "穿刺", "粒子", "针道", "导板", "surgical guide", "手术导板",
-    "replan", "重新规划", "重建", "reconstruct", "viewer", "查看器",
-    # Repair/refresh wording that operates on planning artifacts without
-    # naming one.  "Please update everything" is a downstream repair, not a metadata read.
-    "重算", "重新计算", "质控", "复核", "报告", "report", "guide", "过期",
-    "stale", "recompute", "recalculate", "regenerate",
-)
-
-# Deterministic intents that always read or rebuild clinical arrays.  These are
-# bound to the fully hydrated Agent even when the wording carries no domain
-# noun, because acting on a metadata-only shell makes a completed plan look
-# unfinished.
-_FULL_WORKSPACE_CHAT_INTENTS = frozenset({
-    "downstream_update",
-    "dose_recompute",
-    "planning",
-    "treatment_plan",
-    "clinical_planning",
-    "segmentation",
-    "surgical_guide_generation",
-    "report_generation",
-})
-
-
-def _chat_requires_full_workspace(message: str, image_path: str = "") -> bool:
-    """Return whether a chat turn needs decoded CT/label/planning arrays.
-
-    Metadata-only status and knowledge questions must be able to answer while
-    a large case is warming in the background.  Clinical actions remain bound
-    to the fully hydrated Agent so a fast response can never overwrite a case
-    with incomplete arrays.
-    """
-    if image_path:
-        return True
-    text = str(message or "").strip().lower()
-    try:
-        from agent_runtime.turn_policy import classify_local_turn
-
-        policy = classify_local_turn(message)
-    except Exception:
-        policy = None
-    if policy is not None and (
-        getattr(policy, "direct_execution", False)
-        or getattr(policy, "action_plan", None) is not None
-    ):
-        if str(getattr(policy, "intent", "") or "") in _FULL_WORKSPACE_CHAT_INTENTS:
-            return True
-    for term in _FULL_WORKSPACE_CHAT_TERMS:
-        if term.isascii():
-            if re.search(r"\b" + re.escape(term) + r"\b", text):
-                return True
-        elif term in text:
-            return True
-    return False
-
-
 def _case_record_is_archived(record: Any) -> bool:
     """Return whether a resolved case lives in cold storage.
 
@@ -8185,38 +8126,66 @@ def register_planning_routes(
                             )
                         time.sleep(0.25)
                         resolved = resolve()
-                hydration_error = str(
-                    getattr(resolved, "_workspace_hydration_error", "") or ""
-                )
-                if hydration_error:
-                    raise ChatTaskError(
-                        hydration_error,
-                        code="workspace_hydration_failed",
-                        phase=str(
-                            getattr(resolved, "_workspace_hydration_phase", "failed")
-                            or "failed"
-                        ),
-                        retryable=True,
-                    )
                 if not getattr(resolved, "_workspace_data_ready", True):
-                    # Low-risk knowledge/status turns can use the JSON
-                    # metadata shell immediately. Only clinical actions wait
-                    # for arrays, and the wait is progress-aware so a damaged
-                    # CT or stalled decoder cannot leave a chat spinner
-                    # forever.
-                    if not _chat_requires_full_workspace(message, image_path):
-                        report("background")
-                        logger.info(
-                            "Using metadata-only case shell for lightweight chat session=%s",
-                            session_id,
-                        )
-                    else:
-                        await_chat_case_resources(
-                            resolved, report, session_id=session_id
-                        )
+                    # Interpret the original request now; actual tool
+                    # dependencies, not domain words, own the ready barrier.
+                    # Even a failed array decode need not block saved-state
+                    # queries. An array reader/write still fails precisely.
+                    report("background")
                 if resolved is not None and clear_context:
                     resolved.memory.clear_conversation()
                 return resolved
+
+            def resource_waiter(resolved, progress):
+                """Construct a task-owned barrier, with explicit owner/case fencing."""
+                lookup = getattr(getattr(resolved, "memory", None), "retrieve", None)
+                initial_ct_path = str(lookup("ct_path") or "") if callable(lookup) else ""
+                def wait_for_tool(required):
+                    if not progress({"phase": "check", "quiet": True}):
+                        raise ChatTaskCancelled()
+                    # No request-cookie fallback: the originating owner/case
+                    # remains authoritative even after browser navigation.
+                    try:
+                        entry = store.get_session(owner["id"], session_id)
+                    except WorkspaceError as exc:
+                        raise ChatTaskCancelled("The owning case is no longer available") from exc
+                    if _case_record_is_archived(entry):
+                        raise ChatTaskError("This case is archived. Activate it before using its data.",
+                            code="session_archived", phase="archived", retryable=False)
+                    # A completed explicit CT import also sets superseded on
+                    # the same live Agent to stop its old restore. That flag
+                    # alone must not permanently disable subsequent chats.
+                    current_ct_path = str(lookup("ct_path") or "") if callable(lookup) else ""
+                    changed_input = bool(initial_ct_path and current_ct_path != initial_ct_path)
+                    detached = False
+                    if getattr(resolved, "_workspace_hydration_superseded", False):
+                        detached = (
+                            get_agent_for_owner(owner, session_id, _lightweight=True) is not resolved
+                            if callable(get_agent_for_owner)
+                            else not getattr(resolved, "_workspace_data_ready", True)
+                        )
+                    if changed_input or detached:
+                        raise ChatTaskError("Case resources were replaced; retry in the current case state.",
+                            code="workspace_hydration_cancelled", retryable=True)
+                    if not required:
+                        return
+                    if not getattr(resolved, "_workspace_data_ready", True):
+                        started = time.perf_counter()
+                        try:
+                            await_chat_case_resources(resolved,
+                                lambda phase: progress({"phase": phase}), session_id=session_id)
+                        except Exception:
+                            progress({"phase": "failed"})
+                            raise
+                        timings = getattr(resolved, "_turn_timings", None)
+                        if isinstance(timings, dict):
+                            timings["workspace_wait_ms"] = round(
+                                timings.get("workspace_wait_ms", 0) + (time.perf_counter() - started) * 1000, 1)
+                        if not progress({"phase": "ready"}):
+                            raise ChatTaskCancelled()
+                        # Deletion/archive/reset can race the final event.
+                        wait_for_tool(False)
+                return wait_for_tool
 
             start_gate = threading.Event()
             try:
@@ -8230,6 +8199,7 @@ def register_planning_routes(
                     on_finish=finalize_chat_task,
                     start_gate=start_gate,
                     agent_supplier=agent_supplier if agent is None else None,
+                    resource_waiter_factory=resource_waiter,
                     request_id=request_id,
                     user_message_id=user_message_id,
                     assistant_message_id=assistant_message_id,
@@ -8424,6 +8394,12 @@ def register_planning_routes(
             return resp
         else:
             try:
+                # Legacy non-streaming callers have no task-owned progress or
+                # cancellation observer. Keep their conservative ready barrier;
+                # do not let this transport run a mutation on a cold shell.
+                if not getattr(agent, "_workspace_data_ready", True):
+                    await_chat_case_resources(agent, lambda phase: True,
+                        session_id=str(getattr(agent.memory, "session_id", "") or ""))
                 operation_message = (
                     "聊天回复进行中"
                     if response_language == "zh"

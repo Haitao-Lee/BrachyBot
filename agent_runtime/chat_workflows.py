@@ -3223,6 +3223,22 @@ class ChatWorkflowMixin:
             self._active_turn_policy = previous_policy
         return response or material_text
 
+    def _resolve_turn_policy(self, message: str):
+        """One runtime entry: semantic-first decisions, separately proved fast paths."""
+        from agent_runtime.semantic_kernel import semantic_runtime_policy
+        candidate = classify_local_turn(
+            message, pending_tumor_site=self._pending_tumor_site_clarification(),
+            conversation=getattr(self.memory, "conversation", None),
+            ui_state=self._ui_state_snapshot(),
+        )
+        config = getattr(self, "config", None)
+        # Config-less legacy mixin harnesses remain compatible. Real agents
+        # always install a config mapping; semantic-first is their default.
+        runtime = config.get("agent_runtime", {}) if isinstance(config, Mapping) else {}
+        runtime = runtime if isinstance(runtime, Mapping) else {}
+        enabled = isinstance(config, Mapping) and runtime.get("intent_mode", "semantic_first") != "legacy"
+        return semantic_runtime_policy(candidate, enabled=enabled, message=message)
+
     def _activate_turn_policy(self, policy, message: str = "") -> None:
         """Install a routing hint and its explicit fast-path grants."""
         self._active_turn_policy = policy
@@ -3255,6 +3271,20 @@ class ChatWorkflowMixin:
                         "action.plan.created",
                         action_plan=authorization.action_plan.to_dict(),
                     )
+
+        # A proved direct workflow may inspect prerequisites or load CT before
+        # its first registry call. Bind that workflow to complete resources
+        # after recording its existing grants, not through keyword hydration.
+        # Semantic turns still interpret first and wait only for selected tools.
+        if getattr(policy, "direct_execution", False):
+            grants = set(getattr(policy, "execution_grants", ()) or ())
+            plan = getattr(policy, "action_plan", None)
+            grants.update(str(getattr(step, "tool", "") or "")
+                for step in (getattr(plan, "steps", ()) or ()))
+            if grants:
+                from agent_runtime.workspace_readiness import ensure_workspace_ready
+                for tool_name in sorted(grants):
+                    ensure_workspace_ready(self, tool_name, {})
 
     @staticmethod
     def _routing_trace(message: str, policy) -> Dict[str, Any]:
@@ -3579,12 +3609,7 @@ class ChatWorkflowMixin:
         local_policy = (
             visual_analysis_policy()
             if internal_followup
-            else classify_local_turn(
-                message,
-                pending_tumor_site=self._pending_tumor_site_clarification(),
-                conversation=getattr(self.memory, "conversation", None),
-                ui_state=self._ui_state_snapshot(),
-            )
+            else self._resolve_turn_policy(message)
         )
         self._activate_turn_policy(local_policy, message)
         if local_policy.intent in {
@@ -3789,12 +3814,7 @@ class ChatWorkflowMixin:
         local_policy = (
             visual_analysis_policy()
             if internal_followup
-            else classify_local_turn(
-                message,
-                pending_tumor_site=self._pending_tumor_site_clarification(),
-                conversation=getattr(self.memory, "conversation", None),
-                ui_state=self._ui_state_snapshot(),
-            )
+            else self._resolve_turn_policy(message)
         )
         self._activate_turn_policy(local_policy, message)
 
@@ -4744,12 +4764,7 @@ class ChatWorkflowMixin:
         local_policy = (
             visual_analysis_policy()
             if internal_followup
-            else classify_local_turn(
-                message,
-                pending_tumor_site=self._pending_tumor_site_clarification(),
-                conversation=getattr(self.memory, "conversation", None),
-                ui_state=self._ui_state_snapshot(),
-            )
+            else self._resolve_turn_policy(message)
         )
         self._activate_turn_policy(local_policy, message)
 

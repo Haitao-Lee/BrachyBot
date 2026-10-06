@@ -503,6 +503,7 @@ class ChatTaskManager:
         internal_followup: bool = False,
         response_language: str = "",
         ui_language: str = "",
+        resource_waiter_factory: Optional[Callable[..., Any]] = None,
     ) -> ChatTask:
         """Start one worker, rejecting concurrent turns in the same case.
 
@@ -754,7 +755,34 @@ class ChatTaskManager:
                     }
                     turn_stream = None
                     provider_start_seen = False
+                    previous_resource_waiter = getattr(agent, "_workspace_resource_waiter", None)
+                    if callable(resource_waiter_factory):
+                        wait_progress = {"phase": "", "published_at": 0.0}
+
+                        def report_tool_resources(payload):
+                            if not task.is_running():
+                                return False
+                            info = payload if isinstance(payload, dict) else {}
+                            if info.get("quiet"):
+                                return True
+                            phase = str(info.get("phase") or "")
+                            now = time.monotonic()
+                            if phase == wait_progress["phase"] and now - wait_progress["published_at"] < HYDRATION_PROGRESS_HEARTBEAT_SECONDS:
+                                return True
+                            wait_progress.update(phase=phase, published_at=now)
+                            zh = _trace_is_zh(task)
+                            task.publish(task.encode_event("step", {
+                                "id": f"tool-resources-{task.task_id}",
+                                "type": "tool", "tool": "workspace_hydration",
+                                "title": "准备操作所需资源" if zh else "Preparing resources for the operation",
+                                "status": "done" if phase == "ready" else ("error" if phase == "failed" else "pending"),
+                                "content": _hydration_phase_text(phase, zh),
+                            }))
+                            return True
+
                     try:
+                        if callable(resource_waiter_factory):
+                            agent._workspace_resource_waiter = resource_waiter_factory(agent, report_tool_resources)
                         turn_stream = agent.chat_with_stream(task.message)
                         for event in turn_stream:
                             # Explicit Stop is the only normal cancellation path.
@@ -831,6 +859,13 @@ class ChatTaskManager:
                                 pass
                         else:
                             agent._active_turn_context = previous_turn_context
+                        if previous_resource_waiter is None:
+                            try:
+                                delattr(agent, "_workspace_resource_waiter")
+                            except AttributeError:
+                                pass
+                        else:
+                            agent._workspace_resource_waiter = previous_resource_waiter
                     if task.is_running():
                         task.completion_status = "completed"
                         # The final response is gated by the lightweight chat

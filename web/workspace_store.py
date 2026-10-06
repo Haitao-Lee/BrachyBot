@@ -3768,16 +3768,23 @@ class WorkspaceStore:
                     memory.planning_results.setdefault(key, value)
             if hasattr(memory, "_planning_versions"):
                 memory._planning_versions = planning_versions
-            memory.patient_data = patient_data
-            memory.conversation = conversation
-            memory.tool_results = tool_results
-            memory.context_summary = context_summary
-            memory.compaction_count = compaction_count
-            if not conversation_state:
-                conversation_state = _restore_json(memory.conversation_state)
-            memory.conversation_state = conversation_state
-            memory.user_lang = user_lang
-            memory._ui_state = ui_state
+            # The initial metadata pass already installed the control plane.
+            # Background array decoding may finish during a chat/UI update;
+            # publishing an old conversation/language/UI snapshot here would
+            # erase that live turn. Publish clinical results only on those
+            # passes. Fresh agents still restore every durable field below.
+            background_pass = bool(getattr(agent, "_workspace_hydration_in_progress", False))
+            if not background_pass:
+                memory.patient_data = patient_data
+                memory.conversation = conversation
+                memory.tool_results = tool_results
+                memory.context_summary = context_summary
+                memory.compaction_count = compaction_count
+                if not conversation_state:
+                    conversation_state = _restore_json(memory.conversation_state)
+                memory.conversation_state = conversation_state
+                memory.user_lang = user_lang
+                memory._ui_state = ui_state
             memory.conversation_state["data_available"] = sorted(
                 memory.planning_results.keys()
             )
@@ -3913,9 +3920,9 @@ class WorkspaceStore:
             planning_reconciliation.get("active_planning_id") or memory.retrieve("active_planning_id") or "none",
             ",".join(restored_aliases) or "none",
         )
-        if isinstance(state.get("config"), Mapping):
+        if not background_pass and isinstance(state.get("config"), Mapping):
             agent.config.update(_restore_json(state["config"]))
-        if hasattr(agent, "run_ledger") and isinstance(state.get("runtime_state"), Mapping):
+        if not background_pass and hasattr(agent, "run_ledger") and isinstance(state.get("runtime_state"), Mapping):
             agent.run_ledger.restore_state(_restore_json(state["runtime_state"]))
         ct_started = time.perf_counter()
         if load_ct:

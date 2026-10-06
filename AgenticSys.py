@@ -110,6 +110,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         self._validate_mixin_contract()
         self.memory = AgentMemory(session_id)
         self.registry = ToolRegistry()
+        self.registry.workspace_agent = self
         self.config = config or {}
         self.registry.security_config = self.config
         # Web workspaces supply this directory from the authenticated case
@@ -1508,6 +1509,11 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             validate_tool_paths(tool_name, params, config=getattr(self, "config", None))
         except (PermissionError, ValueError, OSError) as exc:
             return ToolResult(success=False, error=str(exc))
+        # Gate on the selected tool's real data dependencies BEFORE injecting
+        # arrays. A read-only dose/report question can use saved metadata while
+        # clinical computation waits on the task-owned, cancellable waiter.
+        from agent_runtime.workspace_readiness import ensure_workspace_ready
+        ensure_workspace_ready(self, tool_name, params)
         # DISABLED: Auto-fix mechanism that was hiding LLM errors
         # The LLM should follow the workflow order specified in system_prompt.md
         # If it doesn't, it should receive a clear error, not have the system
