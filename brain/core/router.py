@@ -19,6 +19,7 @@ from collections import defaultdict
 from typing import Dict, List, Optional, Any, Iterable
 
 from .base import BaseLLM, LLMResponse
+from .usage import normalize_usage
 
 logger = logging.getLogger(__name__)
 
@@ -285,6 +286,7 @@ class LLMRouter:
                         response.model = name
                     except Exception:
                         pass
+                response.usage = self._usage_for_provider(response.usage, name, response.model)
                 return response
             except Exception as e:
                 last_err = e
@@ -327,6 +329,7 @@ class LLMRouter:
                         response.model = name
                     except Exception:
                         pass
+                response.usage = self._usage_for_provider(response.usage, name, response.model)
                 return response
             except Exception as e:
                 last_err = e
@@ -368,7 +371,13 @@ class LLMRouter:
         t0 = time.time()
         try:
             if hasattr(llm, 'chat_messages_stream'):
-                yield from llm.chat_messages_stream(messages=messages, tools=tools, **kwargs)
+                for chunk in llm.chat_messages_stream(messages=messages, tools=tools, **kwargs):
+                    if isinstance(chunk, dict) and chunk.get('type') == 'final':
+                        chunk = dict(chunk)
+                        chunk['usage'] = self._usage_for_provider(
+                            chunk.get('usage'), name, chunk.get('model') or getattr(llm, 'model', ''),
+                        )
+                    yield chunk
             else:
                 # Fallback to non-streaming — yield only the final dict
                 # (content is included in the dict; yielding it separately causes double content)
@@ -378,13 +387,24 @@ class LLMRouter:
                     "content": response.content or "",
                     "finish_reason": response.finish_reason,
                     "tool_calls": response.tool_calls if response.tool_calls else None,
-                    "usage": response.usage,
+                    "usage": self._usage_for_provider(response.usage, name, response.model),
                 }
             self._record_stats(name, ok=True, latency_ms=(time.time() - t0) * 1000)
         except Exception as e:
             self._record_stats(name, ok=False, latency_ms=(time.time() - t0) * 1000, error=str(e))
             logger.error(f"LLM stream call failed: {e}")
             yield {"type": "error", "content": f"Error: {str(e)}"}
+
+    def _usage_for_provider(self, usage, name, model=""):
+        """Attach actual route identity, never the unrelated default route."""
+        normalized = normalize_usage(usage)
+        info = getattr(self, 'provider_meta', {}).get(name, {})
+        resolved_model = model if model and model != name else (
+            info.get('model') or getattr(self.providers.get(name), 'model', '') or name)
+        normalized.update(provider=name, model=resolved_model,
+                          context_window=info.get('max_context_tokens') or 0,
+                          window_source='provider_config' if info.get('max_context_tokens') else 'model_registry')
+        return normalized
 
     # ------------------------------------------------------------------
     # Provider selection & stats helpers

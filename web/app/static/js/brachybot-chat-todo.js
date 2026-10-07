@@ -5160,6 +5160,9 @@ async function sendChat(prefill, options) {
                         // event; we just stash it for later rendering.
                         if (data.llm_meta) {
                             window._lastLLMMeta = data.llm_meta;
+                            if (data.llm_meta.context_status && String(activeSessionId || '') === turnSessionId) {
+                                window.updateContextIndicator?.(data.llm_meta.context_status);
+                            }
                             responseRoute = String(data.llm_meta.route || '');
                             if (Number(data.llm_meta.llm_calls || 0) > 0
                                 && typeof window.updateBrainStatusIndicator === 'function') {

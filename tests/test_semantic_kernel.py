@@ -50,10 +50,20 @@ def test_general_requests_do_not_preselect_a_topic_fact_packet(message):
     assert policy.action_plan is None and not policy.parsed_goals
 
 
-@pytest.mark.parametrize('intent', ['small_talk', 'visual_analysis', 'external_project_query', 'session_content_query'])
+@pytest.mark.parametrize('intent', ['small_talk', 'visual_analysis', 'external_project_query'])
 def test_transport_and_isolated_routes_keep_their_contract(intent):
     candidate = LocalTurnPolicy(intent, 'low', False, False, False)
     assert semantic_runtime_policy(candidate) is candidate
+
+
+def test_content_classification_without_a_proved_command_remains_a_semantic_hint():
+    # Unlike native attachment transport, a report/content topic can contain
+    # factual questions and restrictions; it is not an execution contract.
+    candidate = LocalTurnPolicy('session_content_query', 'low', False, False, False)
+    policy = semantic_runtime_policy(candidate)
+    assert is_semantic_first(policy)
+    assert policy.candidate_intent == 'session_content_query'
+    assert not policy.direct_execution and not policy.execution_grants
 
 
 def test_verified_fast_path_and_rollback_are_preserved():

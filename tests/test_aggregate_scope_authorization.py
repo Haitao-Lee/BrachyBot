@@ -36,7 +36,7 @@ GEOMETRY_TOOLS = (
 
 
 # ---------------------------------------------------------------------------
-# A bare aggregate reproduces artifacts; it never creates new geometry
+# A bare aggregate needs a sourced scope; a policy default is not permission
 # ---------------------------------------------------------------------------
 
 
@@ -47,9 +47,9 @@ GEOMETRY_TOOLS = (
     "都更新一下",
     "update everything",
 ])
-def test_bare_aggregate_authorizes_only_the_reproducible_artifact_family(message):
+def test_bare_aggregate_without_context_requires_scope_resolution(message):
     for tool in DOWNSTREAM_TOOLS:
-        assert mutating_execution_authorized(message, tool) is True, tool
+        assert mutating_execution_authorized(message, tool) is False, tool
     # Re-segmentation and a new planning run create geometry. An aggregate
     # that names no object cannot mean "rebuild the anatomy".
     for tool in GEOMETRY_TOOLS:
@@ -61,14 +61,14 @@ def test_bare_aggregate_after_a_case_switch_still_refuses_to_resegment():
     conversation = []  # fresh case: nothing has been enumerated yet
     for tool in ("ctv_segmentation", "oar_segmentation", "planning_pipeline"):
         assert mutating_execution_authorized("全部更新", tool, conversation) is False, tool
-    assert mutating_execution_authorized("全部更新", "report_auto_fill", conversation) is True
+    assert mutating_execution_authorized("全部更新", "report_auto_fill", conversation) is False
 
 
 def test_bare_aggregate_never_authorizes_a_destructive_clear():
     from agent_runtime.request_parse import ui_action_explicitly_authorized
 
     for message in ("全部更新", "那请你全部更新", "update everything"):
-        assert mutating_execution_authorized(message, "report_auto_fill") is True
+        assert mutating_execution_authorized(message, "report_auto_fill") is False
         # Destructive UI targets have their own clause-local gate; the
         # aggregate path must not reach them.
         assert ui_action_explicitly_authorized(message, "report.clear") is False
@@ -175,8 +175,12 @@ def test_exclusions_apply_to_the_whole_aggregate_scope(message):
     scope = aggregate_scope_targets(message)
     assert "surgical_guide" not in scope
     assert mutating_execution_authorized(message, "surgical_guide") is False
-    assert mutating_execution_authorized(message, "report_auto_fill") is True
-    assert mutating_execution_authorized(message, "dose_evaluation") is True
+    assert mutating_execution_authorized(message, "report_auto_fill") is False
+    assert mutating_execution_authorized(message, "dose_evaluation") is False
+    conversation = [{'role': 'assistant', 'content': '需要更新：剂量、报告、导板。'},
+                    {'role': 'user', 'content': message}]
+    assert mutating_execution_authorized(message, 'report_auto_fill', conversation)
+    assert mutating_execution_authorized(message, 'dose_evaluation', conversation)
 
 
 def test_exclusion_removes_a_named_target_from_the_scope_too():

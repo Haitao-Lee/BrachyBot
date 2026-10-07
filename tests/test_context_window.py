@@ -235,7 +235,7 @@ def test_calibration_uses_post_compression_estimate():
     packed = obj._enforce_context_budget(messages, current_user_content="current request")
 
     assert obj._ctx_last_meta["compressed"] is True
-    assert obj._ctx_last_estimate == obj._ctx_last_meta["after_tokens"]
+    assert obj._ctx_last_estimate == estimate_messages(packed)
     assert obj._ctx_last_estimate < before
 
 
@@ -323,13 +323,8 @@ def test_context_status_prefers_measured_provider_usage():
     assert status["ratio"] > 0
 
 
-def test_context_indicator_uses_durable_context_not_tool_peak():
-    """The ring must not report a transient tool-result peak as the context.
-
-    A turn's later provider calls append tool results, so their prompt_tokens
-    can be far larger than the durable conversation. Reporting the peak made
-    the next turn look smaller once the transient results were gone.
-    """
+def test_context_indicator_tracks_the_latest_call_not_the_first_call():
+    """Tool results really occupy the current request; never hide their cost."""
     from agent_runtime.llm_runtime import LLMRuntimeMixin
 
     obj = LLMRuntimeMixin()
@@ -347,11 +342,11 @@ def test_context_indicator_uses_durable_context_not_tool_peak():
     obj._begin_context_turn()
     obj._record_context_usage({"prompt_tokens": 30_000})  # first call: durable
     obj._record_context_usage({"prompt_tokens": 39_166})  # later call: tool peak
-    assert obj.context_status()["used_tokens"] == 30_000
+    assert obj.context_status()["used_tokens"] == 39_166
 
 
-def test_context_indicator_grows_monotonically_across_turns():
-    """A growing conversation must never make the ring shrink."""
+def test_context_indicator_can_decrease_when_the_next_request_is_smaller():
+    """Selected history/tool eviction is a legitimate decrease, not a cumulative bill."""
     from agent_runtime.llm_runtime import LLMRuntimeMixin
 
     obj = LLMRuntimeMixin()
@@ -374,12 +369,12 @@ def test_context_indicator_grows_monotonically_across_turns():
 
     obj._begin_context_turn()
     obj._record_context_usage({"prompt_tokens": 33_000})
-    obj._record_context_usage({"prompt_tokens": 45_000})
+    obj._record_context_usage({"prompt_tokens": 35_000})
     second = obj.context_status()["used_tokens"]
 
-    assert first == 30_000
-    assert second == 33_000
-    assert second > first
+    assert first == 39_166
+    assert second == 35_000
+    assert second < first
 
 
 def test_context_status_exposes_scope_and_turn_totals():
@@ -411,8 +406,8 @@ def test_context_status_exposes_scope_and_turn_totals():
     )
 
     status = obj.context_status()
-    assert status["scope"] == "current_context"
-    assert status["used_tokens"] == 1_000  # durable first call
+    assert status["scope"] == "latest_request"
+    assert status["used_tokens"] == 3_200
     assert status["turn_input_tokens"] == 4_000
     assert status["turn_output_tokens"] == 300
     assert status["turn_total_tokens"] == 4_300

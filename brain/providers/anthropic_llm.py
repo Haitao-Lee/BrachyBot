@@ -13,6 +13,7 @@ import uuid
 from typing import Dict, List
 
 from ..core.base import BaseLLM, LLMResponse
+from ..core.usage import anthropic_usage, merge_usage_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -232,11 +233,7 @@ class AnthropicLLM(BaseLLM):
                     "arguments": block.input,
                 })
 
-        usage = {
-            "prompt_tokens": response.usage.input_tokens,
-            "completion_tokens": response.usage.output_tokens,
-            "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
-        }
+        usage = anthropic_usage(response.usage)
 
         self._record_llm_success()
         return LLMResponse(
@@ -411,7 +408,13 @@ class AnthropicLLM(BaseLLM):
             stream = client.messages.create(**request_kwargs)
 
             for event in stream:
-                if event.type == "content_block_delta":
+                if event.type == "message_start":
+                    # Input usage is delivered here. message_delta normally
+                    # reports output only; replacing it lost the entire input.
+                    usage_data = merge_usage_snapshot(
+                        usage_data, anthropic_usage(getattr(event.message, 'usage', None)),
+                    )
+                elif event.type == "content_block_delta":
                     if event.delta.type == "text_delta":
                         full_content += event.delta.text
                         yield event.delta.text
@@ -431,12 +434,9 @@ class AnthropicLLM(BaseLLM):
                         finish_reason = event.delta.stop_reason
                     # Extract usage from message_delta if available
                     if hasattr(event, 'usage') and event.usage:
-                        usage_data = {
-                            "prompt_tokens": getattr(event.usage, 'input_tokens', 0) or 0,
-                            "completion_tokens": getattr(event.usage, 'output_tokens', 0) or 0,
-                            "total_tokens": (getattr(event.usage, 'input_tokens', 0) or 0) +
-                                           (getattr(event.usage, 'output_tokens', 0) or 0),
-                        }
+                        usage_data = merge_usage_snapshot(
+                            usage_data, anthropic_usage(event.usage),
+                        )
 
             latency_ms = (time.time() - start_time) * 1000
 
@@ -482,11 +482,7 @@ class AnthropicLLM(BaseLLM):
                     "content": content,
                     "finish_reason": response.stop_reason,
                     "tool_calls": fallback_calls,
-                    "usage": {
-                        "prompt_tokens": response.usage.input_tokens,
-                        "completion_tokens": response.usage.output_tokens,
-                        "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
-                    },
+                    "usage": anthropic_usage(response.usage),
                     "latency_ms": (time.time() - start_time) * 1000,
                 }
             except Exception as fallback_e:

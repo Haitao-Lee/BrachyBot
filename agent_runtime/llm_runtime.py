@@ -11,6 +11,7 @@ import os
 import re
 import time
 from functools import lru_cache
+from brain.core.usage import normalize_usage
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 from urllib.parse import unquote, urlparse
 
@@ -29,7 +30,7 @@ from agent_runtime.answer_coverage import (
 from agent_runtime.turn_policy import filter_tool_schemas
 from agent_runtime.semantic_kernel import (
     PLAN_TOOL, SemanticDecisionState, admission_error_text, admitted_proposals, identify_proposals, is_semantic_first,
-    partial_batch_notice, project_provider_schemas, request_plan_schema,
+    partial_batch_notice, project_provider_schemas, request_plan_schema, outcome_plan_contract_offered,
 )
 from agent_runtime.request_frame import (
     WHOLE_REQUEST_INSTRUCTION, request_frame_context, final_iteration_answer,
@@ -630,6 +631,20 @@ def same_turn_evidence_digest(evidence: Optional[List], *, limit: int = 1800) ->
     )
 
 
+def pending_receipt_instruction(receipts):
+    """Final-round control state, never a phrase-specific response rewrite."""
+    waiting = list(dict.fromkeys(str(item.get('tool')) for item in receipts or ()
+        if isinstance(item, dict) and item.get('status') == 'pending'
+        and item.get('attempted') is not False and item.get('tool') != PLAN_TOOL))
+    if not waiting:
+        return ''
+    return ('\n[Outstanding execution receipts]\n' + ', '.join(waiting)
+        + ' are accepted but not confirmed complete. Reconcile them as pending in the answer. '
+          'The next step is observing their existing receipts, NOT asking for a retry, '
+          'resubmitting, or recommending that the user trigger the same still-pending action again. '
+          'Do not confuse a completed tool dispatch with a completed artifact update.\n')
+
+
 def _scrub_false_search_absence(text: str, steps: List[Dict]) -> str:
     """Remove claims that search/tools returned nothing when evidence exists.
 
@@ -855,6 +870,27 @@ _PRESENTATION_HELPER_TOOLS = frozenset(
 )
 
 
+def _browser_capture_wait_required(name, metadata):
+    """Only actual visual work waits for the browser's image callback."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    if name == 'ui_screenshot':
+        return True  # successful screenshot dispatch is visual even in legacy traces
+    if name != 'ui_content' or metadata.get('structured_report_read') is True:
+        return False
+    command = metadata.get('content_command') or {}
+    return isinstance(command, dict) and command.get('analysis') is True
+
+
+def _step_waits_for_capture(step):
+    if 'browser_capture_pending' in step:
+        return step['browser_capture_pending'] is True
+    metadata = step.get('metadata') or {}
+    if metadata:
+        return _browser_capture_wait_required(_fallback_tool_name(step), metadata)
+    # Compatibility for historic screenshot-only trace records.
+    return _fallback_tool_name(step) in _PRESENTATION_CAPTURE_TOOLS
+
+
 def _presentation_capture_fallback(
     lang: str,
     steps: List[Dict],
@@ -875,6 +911,7 @@ def _presentation_capture_fallback(
     tool_steps = [s for s in steps or [] if s.get("type") == "tool"]
     presentation_steps = [
         s for s in tool_steps if _fallback_tool_name(s) in _PRESENTATION_CAPTURE_TOOLS
+        and _step_waits_for_capture(s)
     ]
     if not presentation_steps:
         return None
@@ -1115,13 +1152,33 @@ class LLMRuntimeMixin:
                               metadata={"internal_only": True, "user_visible": False,
                                         "completed": True, "grants_execution": False})
         except ValueError as error:
+            state.plan_errors = (state.plan_errors + [str(error)[:400]])[-4:]
             return ToolResult(False, message=str(error), error=str(error),
                               metadata={"internal_only": True, "user_visible": False,
                                         "completed": False, "grants_execution": False})
 
     @staticmethod
     def _outcome_evidence_repair(state, receipts, *, epoch=None):
+        if not state.goals and state.require_plan and not state.plan_errors and not state.repair_issued:
+            state.repair_issued = True
+            return ('The offered semantic outcome contract has not been recorded. Submit '
+                    'record_request_plan covering every passive-frame clause, including restrictions, '
+                    'alongside ONLY still-needed operations. Existing successful reads must not '
+                    'repeat. Do not infer completion from the absence of a plan or borrow a '
+                    'workflow suggestion as permission. This is one bounded contract repair.')
+        if not state.goals and state.plan_errors and not state.repair_issued:
+            state.repair_issued = True
+            return ('The outcome proposal was rejected: ' + '; '.join(state.plan_errors)
+                    + '. Repair record_request_plan using the passive frame clause IDs and ONLY mounted '
+                      'capabilities. evidence_requirements are read-only, mode=read only. fields are '
+                      'exact JSON data paths, covers are returned contract aspects, not clause IDs. '
+                      'Omit optional fields/covers if unknown. Do not repeat successful reads. For '
+                      'text/version/field checks, browser presentation is not a factual read: use '
+                      'available structured state inspection and reconcile every requested outcome '
+                      'with actual returned facts. A plan is not authorization or completion.')
         missing = state.missing_evidence(receipts, epoch=epoch)
+        pending = state.pending_evidence(receipts, epoch=epoch)
+        missing = [identity for identity in missing if identity not in pending]
         if not missing or state.repair_issued:
             return ""
         state.repair_issued = True
@@ -1140,7 +1197,15 @@ class LLMRuntimeMixin:
             return
         authorization = getattr(self, "_current_execution_authorization", lambda: None)()
         if authorization is not None and hasattr(authorization, "set_action_plan"):
-            authorization.set_action_plan(plan, source=source)
+            accepted = authorization.set_action_plan(plan, source=source)
+            if accepted is False:
+                # Make malformed graphs recoverable. Do not poison the valid
+                # turn plan or silently discard all calls after reordering.
+                reason = '; '.join(plan.validate()) or 'ambiguous dependency remapping'
+                for call in tool_calls:
+                    if call.get('tool') != PLAN_TOOL and not call.get('_argument_error'):
+                        call.update(_argument_error='Invalid action dependency graph: ' + reason,
+                                    _admission_denied=True, _admission_code='dependency_graph')
             ledger = getattr(self, "run_ledger", None)
             if ledger is not None:
                 from agent_runtime.contracts import RunStatus
@@ -1334,6 +1399,10 @@ class LLMRuntimeMixin:
             router = getattr(self, "brain_router", None)
             meta = getattr(router, "provider_meta", {}) or {}
             default = getattr(router, "default_provider", None)
+            resolve_order = getattr(router, '_resolve_provider_order', None)
+            if callable(resolve_order):
+                order = resolve_order(None, 'general', True)
+                default = order[0] if order else default
             info = meta.get(default, {}) if default else {}
             declared = int(info.get("max_context_tokens") or 0)
             model = str(info.get("model") or "")
@@ -1373,7 +1442,7 @@ class LLMRuntimeMixin:
         return manager
 
     def _begin_context_turn(self) -> None:
-        """Reset per-turn compression retry bookkeeping."""
+        """Reset the turn ledger, retaining the last request until a new one is packed."""
         self._ctx_retry_used = False
         self._ctx_last_meta = None
         self._ctx_last_estimate = 0
@@ -1381,17 +1450,32 @@ class LLMRuntimeMixin:
         self._ctx_call_index = 0
         self._ctx_turn_prompt_sum = 0
         self._ctx_turn_completion_sum = 0
-        # Keep the previous turn's durable size so a status query before this
-        # turn's first provider call still shows the last real context instead
-        # of a transient tool-result peak.
-        self._ctx_prev_turn_prompt_tokens = int(
-            getattr(self, "_ctx_turn_prompt_tokens", 0) or 0
-        )
-        # First measured provider prompt of the turn. Unlike the last call
-        # (which also carries transient tool results), this represents the
-        # durable context that will be re-sent on the next request, so it is
-        # the value the context indicator must show.
-        self._ctx_turn_prompt_tokens = 0
+        self._ctx_turn_total_sum = 0
+        self._ctx_missing_usage_calls = 0
+        self._ctx_peak_tokens = 0
+        self._ctx_accounting_turn = getattr(self, '_active_turn_token', None)
+        self._ctx_observed_at_ms = time.time() * 1000
+
+    def _ensure_context_turn(self) -> None:
+        if (not hasattr(self, '_ctx_call_index') or
+                getattr(self, '_ctx_accounting_turn', None) != getattr(self, '_active_turn_token', None)):
+            self._begin_context_turn()
+
+    def _accounted_llm_meta(self, meta):
+        """Publish the same ledger for every answer path, including read fallbacks."""
+        result = dict(meta or {})
+        status = self.context_status()
+        result['context_status'] = status
+        if status['llm_calls']:
+            result['usage'] = {
+                'prompt_tokens': status['turn_input_tokens'],
+                'completion_tokens': status['turn_output_tokens'],
+                'total_tokens': status['turn_total_tokens'],
+                'usage_complete': not status['missing_usage_calls'],
+                'missing_usage_calls': status['missing_usage_calls'],
+            }
+            result['llm_calls'] = status['llm_calls']
+        return result
 
     def _cap_oversized_messages(self, messages: List[Dict]) -> List[Dict]:
         """Head/tail-truncate any single message that dominates the prompt.
@@ -1503,9 +1587,11 @@ class LLMRuntimeMixin:
         # without any per-message bound.
         messages = self._cap_oversized_messages(messages)
         estimated = manager.usage(messages, tools)
-        self._ctx_last_estimate = estimated
+        self._ctx_last_estimate = estimate_messages(messages, tools)
         components = estimate_breakdown(messages, tools)
         self._ctx_last_components = components
+        self._ctx_current = manager.snapshot(messages, tools)
+        self._ctx_observed_at_ms = time.time() * 1000
         if estimated >= _CTX_AUDIT_THRESHOLD_TOKENS:
             self._log_context_contributors(messages, tools, estimated)
         # Remember the fixed provider overhead (system prompt + tool schemas +
@@ -1533,7 +1619,8 @@ class LLMRuntimeMixin:
             # Calibrate against what was actually sent, not the pre-compression
             # estimate.  Leaving the pre value made the provider-usage EMA read
             # a large compression as a gross over-estimate and drift low.
-            self._ctx_last_estimate = meta.after_tokens
+            self._ctx_last_estimate = estimate_messages(packed, tools)
+            self._ctx_current = manager.snapshot(packed, tools)
             logger.warning(
                 "Context window compression: window=%s before=%s after=%s "
                 "ratio_before=%.3f ratio_after=%.3f folds=%s passes=%s reason=%s "
@@ -1559,100 +1646,63 @@ class LLMRuntimeMixin:
             self._ctx_last_meta = manager.snapshot(messages, tools)
             return messages
 
-    def _record_context_usage(self, usage: Any) -> None:
-        """Calibrate the token estimator from real provider usage."""
-        try:
-            prompt_tokens = int((usage or {}).get("prompt_tokens") or 0)
-            completion_tokens = int((usage or {}).get("completion_tokens") or 0)
-            total_tokens = int((usage or {}).get("total_tokens") or 0)
-            estimated = int(getattr(self, "_ctx_last_estimate", 0) or 0)
-            self._ctx_call_index = int(getattr(self, "_ctx_call_index", 0) or 0) + 1
-            if prompt_tokens or completion_tokens:
-                self._ctx_turn_prompt_sum = (
-                    int(getattr(self, "_ctx_turn_prompt_sum", 0) or 0) + prompt_tokens
-                )
-                self._ctx_turn_completion_sum = (
-                    int(getattr(self, "_ctx_turn_completion_sum", 0) or 0)
-                    + completion_tokens
-                )
-            if prompt_tokens:
-                # The provider's prompt_tokens is the ground truth for the
-                # context that was actually sent. Keep the last value for
-                # diagnostics and the first value of the turn as the durable
-                # context size shown by the indicator.
-                self._ctx_last_prompt_tokens = prompt_tokens
-                if not int(getattr(self, "_ctx_turn_prompt_tokens", 0) or 0):
-                    self._ctx_turn_prompt_tokens = prompt_tokens
-                    previous = int(
-                        getattr(self, "_ctx_prev_turn_prompt_tokens", 0) or 0
-                    )
-                    if previous and prompt_tokens < previous:
-                        # Make any decrease auditable. It is legitimate only
-                        # when transient content (an image or tool results) was
-                        # not persisted into the durable history; a compression
-                        # would be logged separately.
-                        logger.warning(
-                            "Context indicator decreased without compression: "
-                            "prev=%s now=%s (transient image/tool content not "
-                            "persisted into history)",
-                            previous, prompt_tokens,
-                        )
-                meta = getattr(self, "_ctx_last_meta", None)
-                if isinstance(meta, dict):
-                    try:
-                        window = float(self._context_window_manager().window)
-                    except Exception:
-                        window = 0.0
-                    meta["used_tokens"] = prompt_tokens
-                    meta["measured"] = True
-                    if window > 0:
-                        meta["ratio"] = round(prompt_tokens / window, 4)
-            if prompt_tokens and estimated:
-                self._context_window_manager().record_usage(
-                    actual_prompt_tokens=prompt_tokens, estimated_tokens=estimated
-                )
-            # Per-call audit trail. It makes the two different quantities
-            # verifiable: this call's input/output, the turn's running sum, and
-            # the durable context the indicator reports.
-            try:
-                window = int(self._context_window_manager().window)
-            except Exception:
-                window = 0
-            logger.info(
-                "Context usage: call=%s prompt=%s completion=%s total=%s | "
-                "turn_prompt_sum=%s turn_completion_sum=%s | "
-                "context_now=%s window=%s basis=%s",
-                self._ctx_call_index, prompt_tokens, completion_tokens,
-                total_tokens or (prompt_tokens + completion_tokens),
-                int(getattr(self, "_ctx_turn_prompt_sum", 0) or 0),
-                int(getattr(self, "_ctx_turn_completion_sum", 0) or 0),
-                self._durable_context_tokens(), window,
-                "measured" if prompt_tokens else "unavailable",
+    def _record_context_usage(self, usage: Any) -> Dict[str, Any]:
+        """Record ONE completed call. Streaming snapshots are merged by providers."""
+        row = normalize_usage(usage)
+        self._ctx_call_index = int(getattr(self, '_ctx_call_index', 0)) + 1
+        for attribute, key in (('_ctx_turn_prompt_sum', 'prompt_tokens'),
+                               ('_ctx_turn_completion_sum', 'completion_tokens'),
+                               ('_ctx_turn_total_sum', 'total_tokens')):
+            setattr(self, attribute, int(getattr(self, attribute, 0)) + row[key])
+        if not row['usage_complete']:
+            self._ctx_missing_usage_calls = int(getattr(self, '_ctx_missing_usage_calls', 0)) + 1
+        manager = self._context_window_manager()
+        snapshot = dict(getattr(self, '_ctx_current', None) or manager.snapshot([]))
+        model = str(row.get('model') or snapshot.get('model') or '')
+        declared = int(row.get('context_window') or 0)
+        window = resolve_context_window(model, declared) if (declared or model) else manager.window
+        request_manager = manager if window == manager.window else ContextWindowManager(
+            window=window, trigger_ratio=manager.trigger_ratio,
+            reserve_output_tokens=manager.reserve_output_tokens,
+        )
+        # Route identity is known even when the provider omits its usage.
+        # Never retain the preceding call's measurements or window in that case.
+        snapshot.update(window=window, model=model, provider=str(row.get('provider') or ''),
+                        window_source=row.get('window_source') or 'runtime_config',
+                        target_tokens=request_manager.target_tokens,
+                        trigger_tokens=request_manager.trigger_tokens,
+                        reserve_output_tokens=request_manager.reserve_output_tokens,
+                        input_reported=row['input_reported'], output_reported=row['output_reported'])
+        if row['input_reported']:
+            used = row['prompt_tokens'] + row['completion_tokens']
+            snapshot.update(
+                used_tokens=used, input_tokens=row['prompt_tokens'],
+                output_tokens=row['completion_tokens'],
+                measured=True, estimated=False, source='provider_usage',
+                context_complete=row['usage_complete'],
             )
-        except Exception:
-            pass
-
-    def _durable_context_tokens(self) -> int:
-        """Best real size of the durable context (system + tools + history)."""
-        for value in (
-            getattr(self, "_ctx_turn_prompt_tokens", 0),
-            getattr(self, "_ctx_prev_turn_prompt_tokens", 0),
-            getattr(self, "_ctx_last_prompt_tokens", 0),
-        ):
-            value = int(value or 0)
-            if value:
-                return value
-        return 0
+            estimated = int(getattr(self, '_ctx_last_estimate', 0) or 0)
+            if estimated and window == manager.window:
+                manager.record_usage(actual_prompt_tokens=row['prompt_tokens'], estimated_tokens=estimated)
+        else:
+            # A missing input measurement must not resurrect an old measured
+            # prompt or pretend the current request consumed zero tokens.
+            snapshot.update(measured=False, estimated=True, context_complete=False,
+                            source='request_estimate', input_tokens=None,
+                            output_tokens=row['completion_tokens'])
+            snapshot['used_tokens'] = int(getattr(self, '_ctx_last_estimate', 0) * manager.calibration) + row['completion_tokens']
+        snapshot['ratio'] = snapshot['used_tokens'] / float(snapshot['window'])
+        snapshot['call_index'] = self._ctx_call_index
+        self._ctx_current = snapshot
+        self._ctx_observed_at_ms = time.time() * 1000
+        self._ctx_peak_tokens = max(int(getattr(self, '_ctx_peak_tokens', 0)), snapshot['used_tokens'])
+        logger.info('Token accounting: call=%s input=%s output=%s context=%s window=%s source=%s complete=%s',
+                    self._ctx_call_index, row['prompt_tokens'], row['completion_tokens'],
+                    snapshot['used_tokens'], snapshot['window'], snapshot['source'], row['usage_complete'])
+        return row
 
     def _fallback_context_usage(self, manager: ContextWindowManager) -> int:
-        """Best real context size when no per-turn snapshot is available.
-
-        Prefers the last measured provider ``prompt_tokens``; otherwise
-        estimates the durable conversation plus the known fixed provider
-        overhead.  This prevents the indicator from reading 0 on a non-empty
-        session (the previous behaviour when ``_ctx_last_meta`` was unset).
-        """
-        actual = self._durable_context_tokens()
+        """Estimate retained history plus known overhead; never claim a measured next prompt."""
         live = 0
         try:
             memory = getattr(self, "memory", None)
@@ -1670,67 +1720,51 @@ class LLMRuntimeMixin:
                 live = int((estimate_messages(messages) + overhead) * calibration)
         except Exception:
             live = 0
-        return max(actual, live)
+        return live
 
     def context_status(self, messages: Optional[List[Dict]] = None) -> Dict[str, Any]:
-        """Public snapshot for the context indicator and manual command."""
+        """One public contract for the ring, footer, SSE and status endpoint.
+
+        Current context is the latest provider request's input + reported
+        output, NOT the first call, a lifetime sum, or a promised next prompt.
+        Before usage is returned (or after manual compaction) it is an estimate.
+        """
         try:
             manager = self._context_window_manager()
         except Exception:
             return {"window": 0, "used_tokens": 0, "ratio": 0.0}
-        meta = getattr(self, "_ctx_last_meta", None)
-        status: Dict[str, Any] = dict(meta) if isinstance(meta, dict) else {}
+        current = getattr(self, '_ctx_current', None)
+        status = dict(current) if isinstance(current, dict) else {}
         if messages is not None:
-            status.update(manager.snapshot(messages))
-        else:
-            status.setdefault("window", manager.window)
-            status.setdefault("target_tokens", manager.target_tokens)
-            status.setdefault("trigger_tokens", manager.trigger_tokens)
-            status.setdefault("trigger_ratio", manager.trigger_ratio)
-            # The provider's measured prompt_tokens is authoritative and is the
-            # single basis for the indicator. Using an estimate on some turns
-            # and a measurement on others made the same growing conversation
-            # read differently (and could even appear to shrink).
-            measured = self._durable_context_tokens()
-            if measured:
-                status["used_tokens"] = measured
-                status["ratio"] = round(measured / float(manager.window), 4)
-                status["measured"] = True
-            elif "used_tokens" not in status:
-                used = self._fallback_context_usage(manager)
-                if used:
-                    status["used_tokens"] = used
-                    status["ratio"] = round(used / float(manager.window), 4)
-                    status["estimated"] = True
-        if "used_tokens" in status and "ratio" not in status:
-            status["ratio"] = round(
-                int(status["used_tokens"]) / float(manager.window), 4
-            )
-        # Explicit semantics so the UI never conflates the two quantities:
-        #   scope=current_context -> durable context size (next request's prompt)
-        #   turn_total_tokens     -> this turn's cumulative usage across calls
-        if messages is None:
-            status["scope"] = "current_context"
-            status["model"] = str(
-                getattr(getattr(self, "brain_router", None), "default_provider", "")
-                or ""
-            )
-            status.setdefault("measured", False)
-            status.setdefault("estimated", not bool(status.get("measured")))
-            status["turn_total_tokens"] = (
-                int(getattr(self, "_ctx_turn_prompt_sum", 0) or 0)
-                + int(getattr(self, "_ctx_turn_completion_sum", 0) or 0)
-            )
-            status["turn_input_tokens"] = int(
-                getattr(self, "_ctx_turn_prompt_sum", 0) or 0
-            )
-            status["turn_output_tokens"] = int(
-                getattr(self, "_ctx_turn_completion_sum", 0) or 0
-            )
-            status["llm_calls"] = int(getattr(self, "_ctx_call_index", 0) or 0)
+            status = manager.snapshot(messages)
+        if not status:
+            status = manager.snapshot([])
+            status.update(used_tokens=self._fallback_context_usage(manager), source='retained_history_estimate')
+        status['ratio'] = int(status.get('used_tokens', 0)) / float(status['window'])
+        scope = ('latest_request' if status.get('source') == 'provider_usage'
+                 else ('retained_context_estimate' if status.get('source') == 'retained_history_estimate'
+                       else 'request_estimate'))
+        status.update(scope=scope, accounting_version=2,
+                      observed_at_ms=getattr(self, '_ctx_observed_at_ms', 0),
+                      turn_total_tokens=int(getattr(self, '_ctx_turn_total_sum', 0)),
+                      turn_input_tokens=int(getattr(self, '_ctx_turn_prompt_sum', 0)),
+                      turn_output_tokens=int(getattr(self, '_ctx_turn_completion_sum', 0)),
+                      llm_calls=int(getattr(self, '_ctx_call_index', 0)),
+                      missing_usage_calls=int(getattr(self, '_ctx_missing_usage_calls', 0)),
+                      turn_peak_context_tokens=int(getattr(self, '_ctx_peak_tokens', 0)),
+                      history_policy='relevance_selected_and_age_compacted')
+        memory = getattr(self, 'memory', None)
+        status['retained_messages'] = len(getattr(memory, 'conversation', ()) or ())
+        status['history_compactions'] = int(getattr(memory, 'compaction_count', 0) or 0)
+        meta = getattr(self, '_ctx_last_meta', None)
+        if isinstance(meta, dict):
+            for key in ('compressed', 'manual', 'folded_messages', 'before_tokens', 'after_tokens'):
+                if key in meta:
+                    status[key] = meta[key]
         components = getattr(self, "_ctx_last_components", None)
         if isinstance(components, dict):
             status["components"] = dict(components)
+            status['components_source'] = 'estimated_input_before_generation'
         return status
 
     def compress_context_now(self, aggressive: bool = True) -> Dict[str, Any]:
@@ -1756,17 +1790,18 @@ class LLMRuntimeMixin:
         # The last provider measurement describes the pre-compression context;
         # drop it (including the stashed previous-turn value) so the status
         # falls back to a live estimate of what remains.
-        self._ctx_last_prompt_tokens = 0
-        self._ctx_turn_prompt_tokens = 0
-        self._ctx_prev_turn_prompt_tokens = 0
-        self._begin_context_turn()
-        meta = getattr(self, "_ctx_last_meta", None)
-        result = dict(meta) if isinstance(meta, dict) else {}
-        result.setdefault("compressed", True)
+        self._ctx_current = None
+        self._ctx_observed_at_ms = time.time() * 1000
+        self._ctx_last_components = None
+        self._ctx_last_estimate = 0
+        result = {'compressed': conversation_after < conversation_before,
+                  'folded_messages': max(0, before.get('retained_messages', 0) - len(self.memory.conversation))}
         result["previous"] = before
         result["manual"] = True
         result["conversation_tokens_before"] = conversation_before + estimate_text(summary_before)
         result["conversation_tokens_after"] = conversation_after + estimate_text(summary_after)
+        self._ctx_last_meta = dict(result, before_tokens=result['conversation_tokens_before'],
+                                   after_tokens=result['conversation_tokens_after'])
         logger.warning(
             "Manual context compression: conversation_tokens %s -> %s "
             "(messages=%s, summary_chars %s -> %s)",
@@ -1783,6 +1818,7 @@ class LLMRuntimeMixin:
         LLM-driven function calling loop with enhanced self-evolving memory.
         """
         turn_context = getattr(self, "_active_turn_context", {}) or {}
+        _turn_policy_intent = getattr(getattr(self, '_active_turn_policy', None), 'intent', '')
         internal_followup = bool(turn_context.get("internal_followup"))
         response_contract = build_response_contract(
             message,
@@ -1796,7 +1832,7 @@ class LLMRuntimeMixin:
         # Auto-compact conversation history if too long
         if self.memory.needs_compaction():
             self.memory.compact(keep_last=6)
-        self._begin_context_turn()
+        self._ensure_context_turn()
 
         enhanced_context = ""
         ui_state_for_override = self.memory.get_ui_state()
@@ -2209,7 +2245,8 @@ class LLMRuntimeMixin:
         _empty_response_retries = 0
         _executed_successful_tool_keys = set()
         execution_state = self._new_step_execution_state()
-        decision_state = SemanticDecisionState(message)
+        decision_state = SemanticDecisionState(message, require_plan=outcome_plan_contract_offered(
+            messages, getattr(self, '_active_turn_policy', None)))
         # Trace prose is part of the visible dialogue turn.  Keep it aligned
         # with the language resolved by ChatWorkflowMixin instead of letting
         # the provider-loop's historical English literals leak into a
@@ -2288,11 +2325,10 @@ class LLMRuntimeMixin:
 
             if getattr(response, "finish_reason", None) == "error":
                 return "模型服务暂时不可用，本轮未取得可验证回复。" if self.memory.user_lang == "zh" else "The model service is temporarily unavailable; no verified answer was generated."
-            if response.usage:
-                self._record_context_usage(response.usage)
-                total_usage["prompt_tokens"] += response.usage.get("prompt_tokens", 0)
-                total_usage["completion_tokens"] += response.usage.get("completion_tokens", 0)
-                total_usage["total_tokens"] += response.usage.get("total_tokens", 0)
+            response_usage = normalize_usage(response.usage)
+            self._record_context_usage(response_usage)
+            for key in total_usage:
+                total_usage[key] += response_usage[key]
             total_latency_ms += response.latency_ms or 0
             llm_calls += 1
 
@@ -2482,9 +2518,17 @@ class LLMRuntimeMixin:
                     continue
                 if _tool_key in _failed_tools or _tool_key in execution_state.failures:
                     logger.info(f"Skipping duplicate failed tool call: {tool_name}")
+                    result_text = ('The unchanged operation already failed in this turn and was not '
+                                   're-executed. Resolve the failure or change the invalid input; '
+                                   'do not claim this operation succeeded.')
+                    execution_state.record(tc, success=False, attempted=False)
+                    append_tool_receipt(messages, tc, result_text)
+                    _new_tool_call_executed = True
                     continue
                 if execution_state.reuse(tc):
                     logger.warning("Skipping duplicate successful tool call: %s", tool_name)
+                    append_tool_receipt(messages, tc, execution_state.reuse_text(tc))
+                    _new_tool_call_executed = True
                     continue
                 _new_tool_call_executed = True
 
@@ -2597,9 +2641,17 @@ class LLMRuntimeMixin:
                             )
 
                 step_status = "done" if tool_succeeded else "error"
-                execution_state.record(tc, success=tool_succeeded, metadata=getattr(tool_result, "metadata", None))
+                receipt_status = execution_state.record(
+                    tc, success=tool_succeeded, metadata=getattr(tool_result, "metadata", None),
+                    result=tool_result, text=result_text)
+                from agent_runtime.step_execution import execution_result_text
+                result_text = execution_result_text(receipt_status, result_text)
+                steps[-1]['execution_status'] = receipt_status
                 steps[-1]["status"] = step_status
                 steps[-1]["result"] = result_text[:200]
+                tc['_browser_capture_pending'] = tool_succeeded and _browser_capture_wait_required(
+                    tool_name, getattr(tool_result, 'metadata', None))
+                steps[-1]['browser_capture_pending'] = tc['_browser_capture_pending']
                 if tool_succeeded and tool_name != PLAN_TOOL:
                     _executed_successful_tool_keys.add(_tool_key)
                     _turn_evidence.append((tool_name, result_text))
@@ -2660,6 +2712,11 @@ class LLMRuntimeMixin:
                 )
                 break
 
+            clarification = decision_state.clarification_response(execution_state.receipts)
+            if clarification:
+                final_response = clarification
+                break
+
             # Browser screenshots are captured and uploaded after the SSE
             # turn. A server-side follow-up round cannot see that image yet,
             # so it can only repeat the request. Stop after a screenshot-only
@@ -2668,7 +2725,8 @@ class LLMRuntimeMixin:
             if (
                 not internal_followup
                 and tool_calls
-                and all(tc.get("tool") in {"ui_screenshot", "ui_content"} for tc in tool_calls)
+                and any(tc.get('_browser_capture_pending') for tc in tool_calls)
+                and all(tc.get('_browser_capture_pending') for tc in tool_calls if tc.get('tool') != PLAN_TOOL)
             ):
                 _presentation_capture_pending = True
                 break
@@ -2711,6 +2769,7 @@ class LLMRuntimeMixin:
                 if _fail_summary:
                     _present_instruction = _HONEST_FAILURE_PROMPT.format(failures=_fail_summary)
                 _present_instruction += response_presentation_instruction(response_contract)
+                _present_instruction += pending_receipt_instruction(execution_state.receipts)
                 _uncovered_metric_aspects = uncovered_metric_aspects(
                     message, _turn_read_contracts
                 )
@@ -2744,10 +2803,10 @@ class LLMRuntimeMixin:
                 final_response = _visual_analysis_unavailable_message(
                     inherited_language or getattr(self.memory, "user_lang", "en")
                 )
-            elif getattr(self, "_blocked_mutating_tool_names", None):
-                final_response = _blocked_mutation_message(
+            elif self._current_blocked_mutations()[0]:
+                final_response = self._confirmation_fallback(
                     getattr(self.memory, "user_lang", "en"),
-                    getattr(self, "_blocked_mutating_tool_names", []),
+                    self._current_blocked_mutations()[0],
                 )
             elif tools_executed:
                 _fallback_lang = "zh" if str(getattr(self.memory, "user_lang", "en") or "en").lower().startswith("zh") else "en"
@@ -2765,7 +2824,6 @@ class LLMRuntimeMixin:
                 )
                 _fb_usage = _fb_meta.get("usage") or {}
                 if _fb_usage:
-                    self._record_context_usage(_fb_usage)
                     total_usage["prompt_tokens"] += _fb_usage.get("prompt_tokens", 0)
                     total_usage["completion_tokens"] += _fb_usage.get("completion_tokens", 0)
                     total_usage["total_tokens"] += _fb_usage.get("total_tokens", 0)
@@ -2940,6 +2998,7 @@ class LLMRuntimeMixin:
                 "content": (digest + "\n\n" if digest else "") + _FINAL_SYNTHESIS_INSTRUCTION,
             }
         ]
+        synthesis_messages = self._enforce_context_budget(synthesis_messages, [], current_user_content=message)
         try:
             response = _chat_messages_with_retry(
                 self.brain_router,
@@ -2950,18 +3009,16 @@ class LLMRuntimeMixin:
         except Exception as exc:
             logger.warning("[LLM loop] Final tool-free synthesis failed: %s", exc)
             return "", {}
+        usage = normalize_usage(getattr(response, 'usage', None))
+        self._record_context_usage(usage)
+        call_meta = {'usage': usage, 'latency_ms': getattr(response, 'latency_ms', 0) or 0, 'llm_calls': 1}
         text = str(self._clean_response_text(getattr(response, "content", "") or "") or "").strip()
         text = _scrub_false_search_absence(text, steps)
         if not text or _is_placeholder_tool_response(text):
-            return "", {}
+            return "", call_meta
         if re.search(r"```tool_call|\[TOOL_CALL\]", text):
-            return "", {}
-        usage = getattr(response, "usage", None) or {}
-        return text, {
-            "usage": usage,
-            "latency_ms": getattr(response, "latency_ms", 0) or 0,
-            "llm_calls": 1,
-        }
+            return "", call_meta
+        return text, call_meta
 
     def _resolve_tool_turn_response(
         self,
@@ -2998,7 +3055,7 @@ class LLMRuntimeMixin:
                 if lang == "zh"
                 else "Based on the current case results:\n\n"
             )
-            return prefix + "\n\n".join(tool_results_text), {}
+            return prefix + "\n\n".join(tool_results_text), meta
         if (
             accumulated_text
             and len(accumulated_text) > 10
@@ -3223,6 +3280,7 @@ class LLMRuntimeMixin:
 
         _turn_token = self._current_turn_token()
         turn_context = getattr(self, "_active_turn_context", {}) or {}
+        _turn_policy_intent = getattr(getattr(self, '_active_turn_policy', None), 'intent', '')
         internal_followup = bool(turn_context.get("internal_followup"))
         response_contract = build_response_contract(
             message,
@@ -3240,7 +3298,7 @@ class LLMRuntimeMixin:
         # Auto-compact conversation history if too long
         if self.memory.needs_compaction():
             self.memory.compact(keep_last=6)
-        self._begin_context_turn()
+        self._ensure_context_turn()
 
         enhanced_context = ""
         ui_state_for_override = self.memory.get_ui_state()
@@ -3596,7 +3654,8 @@ class LLMRuntimeMixin:
         _empty_response_retries = 0
         _executed_successful_tool_keys = set()
         execution_state = self._new_step_execution_state()
-        decision_state = SemanticDecisionState(message)
+        decision_state = SemanticDecisionState(message, require_plan=outcome_plan_contract_offered(
+            messages, getattr(self, '_active_turn_policy', None)))
         # Keep provider-loop trace prose in the language selected at the turn
         # boundary. Tool names and JSON keys remain stable identifiers.
         _trace_zh = getattr(self, "_active_trace_language", "en") == "zh"
@@ -3747,11 +3806,10 @@ class LLMRuntimeMixin:
                                 self._turn_timings["llm_generation_ms"] = round(call_latency, 1)
                             llm_calls += 1
 
-                            if chunk.get("usage"):
-                                self._record_context_usage(chunk["usage"])
-                                total_usage["prompt_tokens"] += chunk["usage"].get("prompt_tokens", 0)
-                                total_usage["completion_tokens"] += chunk["usage"].get("completion_tokens", 0)
-                                total_usage["total_tokens"] += chunk["usage"].get("total_tokens", 0)
+                            response_usage = normalize_usage(chunk.get('usage'))
+                            self._record_context_usage(response_usage)
+                            for key in total_usage:
+                                total_usage[key] += response_usage[key]
 
                             # Check for tool calls in streaming response
                             if chunk.get("tool_calls"):
@@ -3948,6 +4006,9 @@ class LLMRuntimeMixin:
                 # Tool calls were generated but all filtered out (e.g. empty code)
                 # Mark as executed so summary call triggers instead of fallback message
                 tools_executed = True
+                tc['_browser_capture_pending'] = bool(tool_result is not None and tool_result.success
+                    and _browser_capture_wait_required(tool_name, tool_result.metadata))
+                tool_step['browser_capture_pending'] = tc['_browser_capture_pending']
                 break
 
             # Preserve the provider's ordered decision before clinical
@@ -4089,6 +4150,16 @@ class LLMRuntimeMixin:
                     continue
                 if execution_state.reuse(tc):
                     logger.warning("Skipping duplicate successful tool call: %s", tool_name)
+                    append_tool_receipt(messages, tc, execution_state.reuse_text(tc))
+                    _new_tool_call_executed = True
+                    continue
+                if _tool_key in execution_state.failures:
+                    result_text = ('The unchanged operation already failed in this turn and was not '
+                                   're-executed. Resolve the failure or change the invalid input; '
+                                   'do not claim this operation succeeded.')
+                    execution_state.record(tc, success=False, attempted=False)
+                    append_tool_receipt(messages, tc, result_text)
+                    _new_tool_call_executed = True
                     continue
                 _new_tool_call_executed = True
 
@@ -4579,7 +4650,12 @@ class LLMRuntimeMixin:
                     # Unknown tools and raised exceptions have no ToolResult.
                     step_status = "error"
                 _metadata = getattr(tool_result, "metadata", {}) or {}
-                execution_state.record(tc, success=step_status == "done", metadata=_metadata)
+                receipt_status = execution_state.record(
+                    tc, success=step_status == "done", metadata=_metadata,
+                    result=tool_result, text=result_text)
+                from agent_runtime.step_execution import execution_result_text
+                result_text = execution_result_text(receipt_status, result_text)
+                tool_step['execution_status'] = receipt_status
                 if tool_result is not None and tool_result.success and tool_name != PLAN_TOOL:
                     _executed_successful_tool_keys.add(_tool_key)
                     _turn_evidence.append((tool_name, result_text))
@@ -4734,13 +4810,19 @@ class LLMRuntimeMixin:
                 )
                 break
 
+            clarification = decision_state.clarification_response(execution_state.receipts)
+            if clarification:
+                final_response = clarification
+                break
+
             # The browser captures/uploads screenshots after the SSE turn.
             # Continuing server-side can only repeat the same capture because
             # the image is not available to this loop yet.
             if (
                 not internal_followup
                 and tool_calls
-                and all(tc.get("tool") in {"ui_screenshot", "ui_content"} for tc in tool_calls)
+                and any(tc.get('_browser_capture_pending') for tc in tool_calls)
+                and all(tc.get('_browser_capture_pending') for tc in tool_calls if tc.get('tool') != PLAN_TOOL)
             ):
                 _presentation_capture_pending = True
                 break
@@ -4783,6 +4865,7 @@ class LLMRuntimeMixin:
                 if _fail_summary:
                     _present_instruction = _HONEST_FAILURE_PROMPT.format(failures=_fail_summary)
                 _present_instruction += response_presentation_instruction(response_contract)
+                _present_instruction += pending_receipt_instruction(execution_state.receipts)
                 _uncovered_metric_aspects = uncovered_metric_aspects(
                     message, _turn_read_contracts
                 )
@@ -4828,7 +4911,7 @@ class LLMRuntimeMixin:
         if not final_response:
             _fb_lang = "zh" if str(getattr(self.memory, "user_lang", "en") or "en").lower().startswith("zh") else "en"
             _blocked_tools = [
-                str(name) for name in (getattr(self, "_blocked_mutating_tool_names", None) or [])
+                str(name) for name in (self._current_blocked_mutations()[0] or [])
                 if str(name)
             ]
             if internal_followup:
@@ -4836,7 +4919,7 @@ class LLMRuntimeMixin:
                     inherited_language or _fb_lang
                 )
             elif _blocked_tools:
-                final_response = _blocked_mutation_message(_fb_lang, _blocked_tools)
+                final_response = self._confirmation_fallback(_fb_lang, _blocked_tools)
             elif accumulated_text and not tools_executed and _is_safe_accumulated_text(accumulated_text):
                 final_response = accumulated_text
             elif tools_executed:
@@ -4853,7 +4936,6 @@ class LLMRuntimeMixin:
                 )
                 _fb_usage = _fb_meta.get("usage") or {}
                 if _fb_usage:
-                    self._record_context_usage(_fb_usage)
                     total_usage["prompt_tokens"] += _fb_usage.get("prompt_tokens", 0)
                     total_usage["completion_tokens"] += _fb_usage.get("completion_tokens", 0)
                     total_usage["total_tokens"] += _fb_usage.get("total_tokens", 0)

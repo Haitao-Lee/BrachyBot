@@ -456,6 +456,7 @@ def _subtask_can_authorize(task: Any) -> bool:
         or task.interrogative
         or task.quoted
         or task.attributed
+        or getattr(task, 'completed_action', False)
         or task.ambiguous
         or task.excluded
     )
@@ -695,13 +696,30 @@ def _mask_quoted_content(text: str) -> str:
 
 def _attribution_frame(text: str) -> bool:
     return bool(re.search(
-        r"(?:日志|记录|原文|对话|邮件|消息|引用|转述|他说|她说|用户说|用户要求|医生说|"
+        r"(?:日志|记录|原文|对话|邮件|消息|引用|转述|"
+        r"(?:我|你|您|他|她|它|用户|医生)(?:刚才|之前|已经)?(?:说|表示|声称|提到|告诉)|用户要求|"
         r"上面写着|文中写着|内容提到|提到有人说|"
         r"\b(?:the log|the record|the quote|quoted text|according to|"
-        r"(?:he|she|they|the user|the doctor) said|the message says)\b)",
+        r"(?:I|you|he|she|they|the user|the doctor) (?:said|say|claimed)|the message says)\b)",
         text,
         re.IGNORECASE,
     ))
+
+
+def _completed_action_frame(text: str) -> bool:
+    """Aspect-marked accomplishments describe state, not a new command.
+
+    Apply to the action's own clause. An independent later imperative keeps
+    its authorization; this is not a topic or tool-specific exception.
+    """
+    if re.match(r'\s*(?:请|帮我|替我|为我|把|将|please\b|could you\b|can you\b)', text, re.I):
+        return False
+    verbs = r'(?:生成|更新|重算|计算|重建|分割|删除|清空|规划|执行)'
+    return bool(re.search(
+        r'(?:已(?:经)?|早就|曾经).{0,10}' + verbs
+        + r'|' + verbs + r'(?:过了?|好了|完了|完毕|完成了)'
+        + r'|\b(?:has|have|had) (?:already )?been \w+(?:ed|en)\b'
+        + r'|\b(?:was|were) (?:already )?\w+(?:ed|en)\b', text, re.I))
 
 
 def _is_conditional_prefix(text: str) -> bool:
@@ -852,6 +870,7 @@ def _parse_subtasks(text: str) -> Tuple["RequestSubtask", ...]:
             ),
             "quoted": quoted,
             "attributed": _attribution_frame(clause),
+            "completed_action": _completed_action_frame(unquoted),
             "ambiguous": ambiguous_pairing or (len(actions) > 1 and len(ordered_targets) > 1),
             "aggregate": _has_aggregate_scope(unquoted),
             "excluded": bool(ordered_targets) and (
@@ -910,6 +929,7 @@ class RequestSubtask:
     interrogative: bool = False
     quoted: bool = False
     attributed: bool = False
+    completed_action: bool = False
     ambiguous: bool = False
     aggregate: bool = False
     excluded: bool = False
@@ -921,7 +941,7 @@ class RequestSubtask:
             bool(self.target)
             and self.action in _WRITE_ACTIONS
             and not (self.negated or self.interrogative or self.conditional
-                     or self.quoted or self.attributed or self.ambiguous)
+                     or self.quoted or self.attributed or self.completed_action or self.ambiguous)
         )
 
     @property
@@ -937,7 +957,7 @@ class RequestSubtask:
             self.aggregate
             and self.action in _AGGREGATE_WRITE_ACTIONS
             and not (self.negated or self.interrogative or self.conditional
-                     or self.quoted or self.attributed or self.ambiguous)
+                     or self.quoted or self.attributed or self.completed_action or self.ambiguous)
         )
 
     @property
@@ -1035,6 +1055,7 @@ class ParsedRequest:
                     "interrogative": task.interrogative,
                     "quoted": task.quoted,
                     "attributed": task.attributed,
+                    "completed_action": task.completed_action,
                     "ambiguous": task.ambiguous,
                     "aggregate": task.aggregate,
                     "excluded": task.excluded,
@@ -1317,7 +1338,8 @@ def is_affirmative_acknowledgement(message: object) -> bool:
 def _previous_assistant_text(conversation: object) -> str:
     """Return the assistant message that immediately precedes the current turn."""
     try:
-        items = list(conversation or [])
+        from agent_runtime.discourse import human_dialogue
+        items = human_dialogue(conversation)
     except TypeError:
         return ""
     seen_current_user = False
@@ -1335,44 +1357,6 @@ def _previous_assistant_text(conversation: object) -> str:
         if role == "assistant" and seen_current_user:
             return _conversation_text(item.get("content", item.get("message", "")))
     return ""
-
-
-def _pending_confirmation_tools(conversation: object) -> frozenset[str]:
-    """Read only the operation list in our explicit confirmation prompt.
-
-    A prior answer explaining which tools *could* be used is not an offer to
-    run them.  In particular, an assistant-authored tool name in prose must
-    never make a later bare acknowledgement an execution grant.
-    """
-    text = _previous_assistant_text(conversation)
-    if not text or not any(marker in text for marker in _CONFIRMATION_PROMPT_MARKERS):
-        return frozenset()
-    # _blocked_mutation_message renders the pending operations in exactly one
-    # backticked list.  Do not search the rest of the reply for tool names.
-    match = re.search(r"`([a-z0-9_,\s]+)`", text, re.IGNORECASE)
-    if not match:
-        return frozenset()
-    names = {part.strip() for part in match.group(1).split(",")}
-    names.discard("")
-    return frozenset(name for name in names if name in _TOOL_MUTATION_GOAL)
-
-
-
-# Tools that form the deterministic planning dependency chain.  When the user
-# confirms a blocked-mutation prompt, the whole chain is authorized even if the
-# LLM re-emits only the first steps.
-_PLANNING_CHAIN_TOOLS = frozenset({
-    "ctv_segmentation",
-    "oar_segmentation",
-    "planning_pipeline",
-})
-
-# Markers that identify the blocked-mutation confirmation prompt generated by
-# ``_blocked_mutation_message`` in llm_runtime.py.
-_CONFIRMATION_PROMPT_MARKERS = (
-    "\u4e3a\u907f\u514d\u8bef\u6539\u5f53\u524d\u75c5\u4f8b",
-    "To avoid changing the current case without consent",
-)
 
 
 def _aggregate_scope_resolution(
@@ -1421,7 +1405,7 @@ def _aggregate_scope_resolution(
         if target in _AGGREGATE_ARTIFACT_TARGETS
     ]
     if count is not None:
-        if not prior_targets:
+        if not prior_targets or count > len(prior_targets):
             # "just those N" with nothing prior to point at is a request for
             # clarification, not a grant to run everything.
             return "unresolved_count_reference", frozenset()
@@ -1495,6 +1479,7 @@ def mutating_execution_authorized(
     conversation: object = None,
     *,
     params: object = None,
+    confirmed_calls: object = (),
 ) -> bool:
     """Second-line check before a provider-selected mutation executes.
 
@@ -1544,30 +1529,15 @@ def mutating_execution_authorized(
     # are not in ``_TOOL_MUTATION_GOAL`` and ``clear`` is excluded from the
     # aggregate action set, so this path can never authorize a destructive
     # operation.
-    if parsed.aggregate_command and expected_target in aggregate_scope_targets(
-        parsed, conversation
-    ):
-        return True
+    if parsed.aggregate_command:
+        provenance, scope = aggregate_scope_provenance(parsed, conversation)
+        if provenance in {'named', 'count_reference', 'elliptical'} and expected_target in scope:
+            return True
     # A bare acknowledgement is bound to an explicit pending confirmation,
     # never to an explanatory answer that happened to mention a tool.
-    pending_tools = (
-        _pending_confirmation_tools(conversation)
-        if conversation and is_affirmative_acknowledgement(message)
-        else frozenset()
-    )
-    if tool_name in pending_tools:
-        return True
-    # When the pending operation is a full planning pipeline, its CTV/OAR
-    # prerequisites are authorized as part of the same dependency chain.
-    # The LLM may re-emit only the first steps (ctv_segmentation,
-    # oar_segmentation) instead of the anchor tool named in the prompt; those
-    # are prerequisites of the confirmed plan and must not trigger a second
-    # confirmation loop.
-    if (
-        "planning_pipeline" in pending_tools
-        and tool_name in _PLANNING_CHAIN_TOOLS
-    ):
-        return True
+    if confirmed_calls and is_affirmative_acknowledgement(message):
+        from agent_runtime.confirmation import confirmed_operation_allowed
+        return confirmed_operation_allowed(tool_name, params, confirmed_calls)
     return False
 
 
@@ -1645,7 +1615,8 @@ def _last_user_text(conversation: Optional[Iterable[object]]) -> str:
     if not conversation:
         return ""
     try:
-        items = list(conversation)
+        from agent_runtime.discourse import human_dialogue
+        items = human_dialogue(conversation)
     except TypeError:
         return ""
     for item in reversed(items[-8:]):

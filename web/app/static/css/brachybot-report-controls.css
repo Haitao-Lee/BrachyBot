@@ -1738,6 +1738,18 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .rp-modal-body { padding: 1rem; color: var(--text); }
 
+/* Context controls reuse the global modal, theme and button tokens. */
+.context-compress-dialog { width: min(460px, 100%); }
+.context-compress-dialog p { margin: 0 0 0.85rem; font-size: 0.8rem; line-height: 1.65; }
+.context-compress-stats {
+    margin-bottom: 0.85rem; padding: 0.65rem 0.8rem;
+    background: var(--bg-3); border: 1px solid var(--card-border);
+    border-radius: var(--control-r); font-size: 0.74rem; font-variant-numeric: tabular-nums;
+}
+.context-compress-dialog .context-compress-note { color: var(--text-dim); font-size: 0.72rem; }
+.context-compress-actions { display: flex; gap: 0.6rem; justify-content: flex-end; flex-wrap: wrap; }
+.context-compress-actions .btn { font-size: 0.75rem; min-height: 32px; padding: 0.4rem 0.85rem; }
+
 .rp-audit-section + .rp-audit-section { margin-top: 1rem; }
 .rp-audit-heading {
     margin: 0 0 0.45rem;

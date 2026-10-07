@@ -997,6 +997,8 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             return True
         return any(
             str(call.get("tool") or "") in PLANNING_ANCHOR_TOOLS
+            and (call.get("params") or {}).get("step", "full") == "full"
+            and not call.get("_argument_error")
             for call in (tool_calls or [])
             if isinstance(call, dict)
         )
@@ -1838,7 +1840,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         # be set in all code paths).
         if tool_name == "planning_pipeline":
             params["_agent"] = self
-        elif tool_name in {"dose_recompute", "report_auto_fill", "tool_creator"}:
+        elif tool_name in {"dose_recompute", "report_auto_fill", "tool_creator", "ui_content"}:
             params["_agent"] = self
 
         # BUG FIX 2026-06-17 (duplicate oar_segmentation): the LLM

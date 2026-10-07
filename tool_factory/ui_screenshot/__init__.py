@@ -423,6 +423,8 @@ class UIScreenshotTool(BaseTool):
             message=model_instruction,
             metadata={
                 "frontend_action": "screenshot_plan",
+                "completed": False,
+                "execution_claim": "accepted_pending_browser",
                 "screenshot_command": {
                     "command": "screenshot_plan",
                     "target": views[0],

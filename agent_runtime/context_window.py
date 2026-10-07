@@ -327,12 +327,12 @@ class ContextWindowManager:
         preserve_tail_rounds: int = 6,
         facts_max_chars: int = 8_000,
     ) -> None:
-        self.window = max(8_192, int(window))
+        self.window = max(512, int(window))
         self.trigger_ratio = min(0.98, max(0.5, float(trigger_ratio)))
-        self.reserve_output_tokens = max(512, int(reserve_output_tokens))
+        self.reserve_output_tokens = min(max(128, int(reserve_output_tokens)), max(128, self.window // 2))
         self.safety_margin = min(
             max(MIN_SAFETY_MARGIN, int(safety_margin), int(self.window * 0.02)),
-            max(512, self.window // 4),
+            max(128, self.window // 4),
         )
         self.preserve_tail_rounds = max(2, int(preserve_tail_rounds))
         self.facts_max_chars = max(1_000, int(facts_max_chars))
@@ -342,7 +342,7 @@ class ContextWindowManager:
     @property
     def target_tokens(self) -> int:
         return max(
-            1_000,
+            128,
             self.window - self.reserve_output_tokens - self.safety_margin,
         )
 
@@ -360,7 +360,7 @@ class ContextWindowManager:
         return self.usage(messages, tools) >= self.trigger_tokens
 
     def record_usage(self, *, actual_prompt_tokens: int, estimated_tokens: int) -> None:
-        """Calibrate the estimator from real provider usage (EMA)."""
+        """Calibrate against the RAW estimate, never an already calibrated cost."""
         if actual_prompt_tokens <= 0 or estimated_tokens <= 0:
             return
         observed = actual_prompt_tokens / float(estimated_tokens)
@@ -368,6 +368,7 @@ class ContextWindowManager:
         self.calibration = round(0.8 * self.calibration + 0.2 * observed, 4)
 
     def snapshot(self, messages: Iterable[Mapping[str, Any]], tools: Optional[Any] = None) -> Dict[str, Any]:
+        messages = list(messages)
         used = self.usage(messages, tools)
         return {
             "window": self.window,
@@ -375,9 +376,13 @@ class ContextWindowManager:
             "target_tokens": self.target_tokens,
             "trigger_tokens": self.trigger_tokens,
             "trigger_ratio": self.trigger_ratio,
+            "reserve_output_tokens": self.reserve_output_tokens,
             "ratio": round(used / float(self.window), 4),
             "calibration": self.calibration,
-            "message_count": len(list(messages)) if not isinstance(messages, list) else len(messages),
+            "message_count": len(messages),
+            "measured": False,
+            "estimated": True,
+            "source": "request_estimate",
         }
 
     # -- compression -------------------------------------------------------

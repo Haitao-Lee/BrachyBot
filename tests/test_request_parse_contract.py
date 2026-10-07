@@ -377,6 +377,10 @@ def test_written_verb_and_typo_tolerance_for_report_noun():
 def test_aggregate_follow_up_authorizes_the_stale_artifacts(message):
     parsed = parse_request(message)
     assert parsed.aggregate_command
+    conversation = [
+        {"role": "assistant", "content": "需要更新：剂量、报告、导板。"},
+        {"role": "user", "content": message},
+    ]
     for tool in (
         "dose_recompute",
         "dose_evaluation",
@@ -384,7 +388,8 @@ def test_aggregate_follow_up_authorizes_the_stale_artifacts(message):
         "report_generator",
         "surgical_guide",
     ):
-        assert mutating_execution_authorized(message, tool) is True, tool
+        assert not mutating_execution_authorized(message, tool), tool
+        assert mutating_execution_authorized(message, tool, conversation) is True, tool
 
 
 def test_a_named_target_aggregate_only_authorizes_what_it_names():
@@ -432,9 +437,13 @@ def test_aggregate_scope_never_authorizes_a_destructive_clear():
 def test_aggregate_scope_respects_an_explicit_exclusion(message):
     parsed = parse_request(message)
     assert "surgical_guide" in parsed.excluded_targets
-    assert mutating_execution_authorized(message, "report_auto_fill") is True
-    assert mutating_execution_authorized(message, "dose_evaluation") is True
-    assert mutating_execution_authorized(message, "surgical_guide") is False
+    conversation = [
+        {"role": "assistant", "content": "需要更新：剂量、报告、导板。"},
+        {"role": "user", "content": message},
+    ]
+    assert mutating_execution_authorized(message, "report_auto_fill", conversation) is True
+    assert mutating_execution_authorized(message, "dose_evaluation", conversation) is True
+    assert mutating_execution_authorized(message, "surgical_guide", conversation) is False
 
 
 @pytest.mark.parametrize("message", [
@@ -488,7 +497,7 @@ def test_recompute_synonyms_authorize_dose_recompute(message):
     assert mutating_execution_authorized(message, "dose_recompute")
 
 
-def _provider_gate_normalizer(message, calls):
+def _provider_gate_normalizer(message, calls, conversation=None):
     from agent_runtime.turn_policy import LocalTurnPolicy
 
     class Memory:
@@ -500,6 +509,8 @@ def _provider_gate_normalizer(message, calls):
 
     normalizer = ResponseToolMixin()
     normalizer.memory = Memory()
+    if conversation is not None:
+        normalizer.memory.conversation = conversation
     normalizer._active_turn_policy = LocalTurnPolicy(
         "semantic_action", "medium", False, True, True, None,
         direct_execution=False,
@@ -512,6 +523,9 @@ def test_provider_mutations_survive_for_an_aggregate_follow_up():
         {"id": "dose", "tool": "dose_recompute", "params": {}},
         {"id": "report", "tool": "report_auto_fill", "params": {}},
         {"id": "guide", "tool": "surgical_guide", "params": {"action": "generate"}},
+    ], conversation=[
+        {"role": "assistant", "content": "需要更新：剂量、报告、导板。"},
+        {"role": "user", "content": "那请你全部更新"},
     ])
     tools = {call["tool"] for call in calls}
     assert {"dose_recompute", "report_auto_fill", "surgical_guide"} <= tools
@@ -530,6 +544,9 @@ def test_provider_excludes_a_carved_out_target():
     calls = _provider_gate_normalizer("\u5168\u90e8\u66f4\u65b0\uff0c\u4e0d\u542b\u5bfc\u677f", [
         {"id": "report", "tool": "report_auto_fill", "params": {}},
         {"id": "guide", "tool": "surgical_guide", "params": {"action": "generate"}},
+    ], conversation=[
+        {"role": "assistant", "content": "需要更新：剂量、报告、导板。"},
+        {"role": "user", "content": "全部更新，不含导板"},
     ])
     tools = {call["tool"] for call in calls}
     assert "report_auto_fill" in tools
@@ -675,12 +692,21 @@ def test_confirmation_prompt_ack_authorizes_full_planning_chain():
         {"role": "user", "content": "\u6267\u884c"},
     ]
 
-    # The full planning dependency chain is authorized.
+    confirmed = [
+        {"tool": "planning_pipeline", "params": {"step": "full"}},
+        {"tool": "surgical_guide", "params": {"action": "generate"}},
+    ]
+    # Prompt wording is not permission. Only the consumed server proposal
+    # binds the acknowledgement to the concrete full workflow.
     for tool in ("ctv_segmentation", "oar_segmentation", "planning_pipeline"):
-        assert mutating_execution_authorized("\u6267\u884c", tool, conversation) is True
+        assert not mutating_execution_authorized("\u6267\u884c", tool, conversation)
+        params = {"step": "full"} if tool == "planning_pipeline" else {}
+        assert mutating_execution_authorized("\u6267\u884c", tool, conversation,
+            params=params, confirmed_calls=confirmed)
 
     # A tool named in the confirmation prompt is also authorized.
-    assert mutating_execution_authorized("\u6267\u884c", "surgical_guide", conversation) is True
+    assert mutating_execution_authorized("\u6267\u884c", "surgical_guide", conversation,
+        params={"action": "generate"}, confirmed_calls=confirmed)
 
     # An unrelated mutation is still blocked.
     assert mutating_execution_authorized("\u6267\u884c", "dose_recompute", conversation) is False
@@ -694,8 +720,14 @@ def test_confirmation_list_must_be_bounded_and_not_inherited_from_prose():
         )},
         {"role": "user", "content": "执行"},
     ]
-    assert mutating_execution_authorized("执行", "dose_recompute", conversation)
-    assert mutating_execution_authorized("执行", "surgical_guide", conversation)
+    assert not mutating_execution_authorized("执行", "dose_recompute", conversation)
+    assert not mutating_execution_authorized("执行", "surgical_guide", conversation)
+    confirmed = [{"tool": "dose_recompute", "params": {"planning_id": "A"}},
+                 {"tool": "surgical_guide", "params": {"action": "generate", "planning_id": "A"}}]
+    assert mutating_execution_authorized("执行", "dose_recompute", conversation,
+        params={"planning_id": "A"}, confirmed_calls=confirmed)
+    assert not mutating_execution_authorized("执行", "dose_recompute", conversation,
+        params={"planning_id": "B"}, confirmed_calls=confirmed)
     assert not mutating_execution_authorized("执行", "report_auto_fill", conversation)
 
 

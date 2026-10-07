@@ -466,6 +466,19 @@ class ChatTaskManager:
             ]
             return max(candidates, key=lambda task: task.created_at, default=None)
 
+    def run_idle_operation(self, user_id: str, session_id: str, operation):
+        """Serialize a short control-plane mutation with chat start admission.
+
+        A cancelled worker may still be restoring its memory snapshot. Do not
+        compact concurrently or its cleanup can undo the acknowledged change.
+        No provider or clinical calculation may run inside this callback.
+        """
+        with self._lock:
+            if self.active(user_id, session_id) or self.live(user_id, session_id):
+                raise ChatTaskError('Wait for the current chat task to finish before compressing context.',
+                                    code='context_busy', retryable=True)
+            return operation()
+
     def latest(self, user_id: str, session_id: str) -> Optional[ChatTask]:
         with self._lock:
             self._purge_locked()

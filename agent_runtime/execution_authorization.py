@@ -11,6 +11,7 @@ these grants instead of re-parsing the user's raw message.
 """
 
 from dataclasses import dataclass, field
+import json
 from typing import Dict, FrozenSet, Iterable, List, Mapping, Set
 
 from agent_runtime.action_plan import ActionPlan
@@ -58,6 +59,15 @@ READ_ONLY_ACTIONS = {
 }
 
 
+def _same_json_value(actual, expected):
+    """Compare finite, typed JSON values; True is not the integer 1."""
+    try:
+        return (json.dumps(actual, sort_keys=True, allow_nan=False)
+                == json.dumps(expected, sort_keys=True, allow_nan=False))
+    except (TypeError, ValueError):
+        return False
+
+
 def tool_call_is_mutating(tool_name: str, params: object = None) -> bool:
     """Classify an invocation without granting it any execution permission.
 
@@ -98,8 +108,10 @@ class TurnExecutionAuthorization:
     events: List[Dict[str, object]] = field(default_factory=list)
     action_plan: ActionPlan = field(default_factory=ActionPlan)
     execution_receipts: List[Dict[str, object]] = field(default_factory=list)
+    _name_grants: Set[str] = field(default_factory=set, repr=False)
+    _call_grants: Dict[str, List[dict]] = field(default_factory=dict, repr=False)
 
-    def set_action_plan(self, plan: ActionPlan, *, source: str = "llm") -> None:
+    def set_action_plan(self, plan: ActionPlan, *, source: str = "llm") -> bool:
         """Record the ordered action plan for this isolated turn.
 
         A merge that cannot be remapped unambiguously leaves the previous plan
@@ -109,12 +121,14 @@ class TurnExecutionAuthorization:
         :meth:`ActionPlan.validate` and will refuse to run them.
         """
         if not isinstance(plan, ActionPlan):
-            return
+            return False
         plan = plan.with_request_id(f"turn_{self.token}")
         merged = self.action_plan.merge(plan).with_request_id(f"turn_{self.token}")
-        refused = merged.steps == self.action_plan.steps and bool(plan.steps)
-        self.action_plan = merged
-        problems = self.action_plan.validate()
+        incoming_problems = plan.validate()
+        problems = incoming_problems or merged.validate()
+        refused = bool(problems) or (merged.steps == self.action_plan.steps and bool(plan.steps))
+        if not refused:
+            self.action_plan = merged
         self.events.append({
             "source": str(source or "llm"),
             "action_plan": self.action_plan.to_dict(),
@@ -122,17 +136,25 @@ class TurnExecutionAuthorization:
             "merge_refused": refused,
             "plan_problems": list(problems),
         })
+        return not refused
 
     def grant_tools(self, tools: Iterable[str], *, source: str) -> None:
+        self._record_grants(tools, source=source, name_grant=True)
+
+    def _record_grants(self, tools, *, source, name_grant):
         names = {str(name or "").strip() for name in tools}
         names.discard("")
         if not names:
             return
         self.granted_tools.update(names)
+        if name_grant:
+            self._name_grants.update(names)
         # A local needle/seed edit or dose evaluation is not permission to
         # launch the full planning pipeline. Only the full-pipeline operation
         # can grant its missing CTV/OAR prerequisites.
-        if "planning_pipeline" in names:
+        if ('planning_pipeline' in names and (name_grant or any(
+                params.get('step', 'full') == 'full'
+                for params in self._call_grants.get('planning_pipeline', ())))):
             self.granted_workflows.add(PLANNING_WORKFLOW)
         self.events.append({
             "source": str(source or "unknown"),
@@ -146,12 +168,22 @@ class TurnExecutionAuthorization:
         *,
         source: str,
     ) -> None:
-        self.grant_tools(
-            (str(call.get("tool") or "") for call in calls
-             if isinstance(call, Mapping) and not call.get("_argument_error")
-             and tool_call_is_mutating(call.get("tool", ""), call.get("params") or {})),
-            source=source,
-        )
+        admitted = []
+        for call in calls:
+            if (not isinstance(call, Mapping) or call.get('_argument_error')
+                    or not tool_call_is_mutating(call.get('tool', ''), call.get('params') or {})):
+                continue
+            params = call.get('params') or {}
+            if not isinstance(params, Mapping):
+                continue
+            try:
+                frozen = json.loads(json.dumps(dict(params), allow_nan=False))
+            except (TypeError, ValueError):
+                continue
+            name = str(call.get('tool') or '')
+            self._call_grants.setdefault(name, []).append(frozen)
+            admitted.append(name)
+        self._record_grants(admitted, source=source, name_grant=False)
 
     def grant_policy(self, policy) -> None:
         self.grant_tools(
@@ -186,12 +218,27 @@ class TurnExecutionAuthorization:
         if not tool_call_is_mutating(name, params):
             return True
         if name in self.granted_tools:
-            return True
+            if params is None or name in self._name_grants:
+                return True  # legacy introspection or proved whole-command grant
+            if isinstance(params, Mapping):
+                # Normalization can enrich a call with server-owned inputs,
+                # but cannot replace its explicit operation/target/value.
+                protected = {'action', 'actions', 'planning_id', 'node_id', 'target', 'step'}
+                for expected in self._call_grants.get(name, ()):
+                    defaults = {'step': 'full'} if name == 'planning_pipeline' else {}
+                    if (all(key in params and _same_json_value(params[key], value)
+                            for key, value in expected.items())
+                            and not any(key in params and key not in expected
+                                        and params[key] != defaults.get(key) for key in protected)):
+                        return True
+            # An existing scoped grant must not fall through to the broader
+            # workflow grant and thereby accept another plan or operation.
+            return False
         # Only an accepted full planning workflow may derive prerequisites.
         # Granting CTV/OAR alone must never authorize planning_pipeline.
         return (
             self.workflow_allowed(PLANNING_WORKFLOW)
-            and name in PLANNING_DERIVED_TOOLS
+            and name in PLANNING_DERIVED_TOOLS - {'planning_pipeline'}
         )
 
     def snapshot(self) -> Dict[str, object]:

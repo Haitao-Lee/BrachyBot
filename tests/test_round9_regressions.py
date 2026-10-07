@@ -150,7 +150,16 @@ class Round9RegressionTests(unittest.TestCase):
         self.assertIn("_screenshot_called_this_turn = set()", runtime)
         self.assertIn("_tool_key in _screenshot_called_this_turn", runtime)
         self.assertIn("_screenshot_called_this_turn.add(_tool_key)", runtime)
-        self.assertIn('all(tc.get("tool") in {"ui_screenshot", "ui_content"}', runtime)
+        # Completion is determined by the actual result contract, not the
+        # tool name: structured report reads must reach the answer round.
+        from agent_runtime.llm_runtime import _browser_capture_wait_required
+        self.assertTrue(_browser_capture_wait_required('ui_screenshot', {}))
+        self.assertTrue(_browser_capture_wait_required('ui_content', {
+            'content_command': {'analysis': True}}))
+        self.assertFalse(_browser_capture_wait_required('ui_content', {
+            'structured_report_read': True, 'completed': True}))
+        self.assertFalse(_browser_capture_wait_required('ui_content', {
+            'content_command': {'analysis': False}}))
 
     def test_invalid_screenshot_calls_are_filtered_before_tool_execution(self):
         from agent_runtime.response_tools import ResponseToolMixin

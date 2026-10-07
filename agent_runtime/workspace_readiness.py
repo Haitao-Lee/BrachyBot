@@ -63,8 +63,16 @@ def ensure_workspace_ready(agent, tool_name, params=None):
 
 def _finite_fields(source, names):
     result = {}
+    aliases = {}
+    for original in source:
+        if isinstance(original, str):
+            aliases.setdefault(original.casefold(), []).append(original)
     for key in names:
-        value = source.get(key)
+        # Canonical explicit absence wins. Only an unambiguous legacy casing
+        # alias may supply a field; never resurrect an invalidated lowercase
+        # value or infer absence merely because a producer returned D90/V100.
+        matches = aliases.get(key.casefold(), [])
+        value = source[key] if key in source else source[matches[0]] if len(matches) == 1 else None
         if isinstance(value, bool):
             continue
         if isinstance(value, (int, float)):
@@ -101,10 +109,15 @@ def saved_case_evidence(agent):
             "full_resources_ready": bool(getattr(agent, "_workspace_data_ready", True)),
             "freshness": "saved_snapshot_not_independent_validation",
             "dose_metrics": _finite_fields(metrics, (
-                "prescription_gy", "prescribed_dose", "v100", "v150", "v200",
+                "prescription_gy", "prescribed_dose", "prescription_dose", "v100", "v150", "v200",
                 "d90", "d95", "dmean", "d2", "dmax", "ci", "hi", "plan_score",
             )),
             "metric_units": {"dose": "Gy", "volume_fractions": "as_stored"},
+            "evidence_limits": {
+                "dose_engine_physics_not_established_by_this_packet": True,
+                "approval_records_not_queried": True,
+                "no_edit_specific_before_after_geometry_or_dose": True,
+            },
         }
         for key in ("total_seeds", "num_trajectories"):
             # Zero is not evidence of absence when geometry is not decoded.

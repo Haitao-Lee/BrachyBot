@@ -13704,6 +13704,10 @@ window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
 (function () {
     const RING_CIRCUMFERENCE = 2 * Math.PI * 15;
     let _lastNotifiedCompression = '';
+    const _contextByCase = new Map();
+    let _compressionPromise = null;
+    const _contextCase = () => String(window.activeSessionId
+        || (typeof activeSessionId !== 'undefined' ? activeSessionId : '') || '');
 
     function _ensureContextRing() {
         let ring = document.getElementById('contextRing');
@@ -13746,14 +13750,14 @@ window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
         const { ring, fg, label } = _ringEls();
         if (!ring || !fg || !label) return;
         const ctx = context && typeof context === 'object' ? context : {};
-        let ratio = Number(ctx.ratio);
-        if (!Number.isFinite(ratio)) {
-            const used = Number(ctx.used_tokens || 0);
-            const windowSize = Number(ctx.window || 0);
-            ratio = windowSize > 0 ? used / windowSize : 0;
-        }
-        ratio = Math.max(0, Math.min(1, ratio));
-        fg.style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - ratio));
+        const previous = _contextByCase.get(_contextCase());
+        if (Number(ctx.observed_at_ms || 0) > 0 && Number(previous?.observed_at_ms || 0) > Number(ctx.observed_at_ms)) return;
+        _contextByCase.set(_contextCase(), ctx);
+        const used = Number(ctx.used_tokens || 0);
+        const windowSize = Number(ctx.window || 0);
+        let ratio = windowSize > 0 ? used / windowSize : 0;
+        ratio = Math.max(0, ratio);
+        fg.style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - Math.min(1, ratio)));
         const usedTokens = Number(ctx.used_tokens || 0);
         const windowTokens = Number(ctx.window || 0);
         if (usedTokens > 0 && ratio < 0.01) {
@@ -13763,16 +13767,19 @@ window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
         } else {
             label.textContent = '–';
         }
+        if (ctx.estimated && usedTokens > 0) label.textContent = '~' + label.textContent;
+        else if (ctx.context_complete === false && ctx.measured) label.textContent = '≥' + label.textContent;
         ring.classList.toggle('is-warn', ratio >= 0.6 && ratio < 0.8);
         ring.classList.toggle('is-high', ratio >= 0.8 && ratio < 0.9);
         ring.classList.toggle('is-critical', ratio >= 0.9);
-        // Name the scope explicitly. The ring is the durable context that the
-        // next request will send, NOT this turn's cumulative consumption, so
-        // the two must never look like the same count.
+        // Ring and footer use the same server snapshot. Context is the latest
+        // model call, not the cumulative input billed again on every round.
         const zh = _contextIndicatorZh();
-        const pct = Math.round(ratio * 100);
+        const pct = usedTokens > 0 && ratio < 0.01 ? '<1' : String(Math.round(ratio * 100));
         const basis = ctx.measured
-            ? (zh ? '实测' : 'measured')
+            ? (ctx.context_complete === false
+                ? (zh ? '已返回用量下界' : 'reported usage lower bound')
+                : (zh ? '实测' : 'measured'))
             : (ctx.estimated ? (zh ? '估算' : 'estimated') : '');
         const turnTotal = Number(ctx.turn_total_tokens || 0);
         let detail;
@@ -13786,10 +13793,17 @@ window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
                 : (zh ? '当前上下文用量' : 'Context usage');
         }
         if (turnTotal > 0) {
+            const totalPrefix = ctx.missing_usage_calls > 0 ? '≥' : '';
             detail += zh
-                ? `；本轮累计 ${turnTotal.toLocaleString()} tokens（含工具调用）`
-                : `; this turn total ${turnTotal.toLocaleString()} tokens (incl. tool calls)`;
+                ? `；本轮累计 ${totalPrefix}${turnTotal.toLocaleString()} tokens（多次模型调用之和）`
+                : `; this turn total ${totalPrefix}${turnTotal.toLocaleString()} tokens (sum of model calls)`;
         }
+        detail += ctx.estimated
+            ? (zh ? '；这是保留或待发送上下文的估算，实际调用后校准' : '; estimate of retained or pending context, calibrated after the call')
+            : (zh ? '；最新一次模型调用的输入＋输出' : '; latest model call input + output');
+        detail += zh ? '；不是全部聊天历史，历史会按相关性选择并自动折叠'
+            : '; not all chat history; history is selected and compacted';
+        if (ctx.missing_usage_calls > 0) detail += zh ? '；部分调用未返回完整用量' : '; some calls omitted complete usage';
         if (ctx.compressed) {
             detail += zh ? '；已压缩历史' : '; history compressed';
         }
@@ -13808,13 +13822,12 @@ window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
     window.updateContextIndicator = updateContextIndicator;
 
     function _maybeNotifyCompression(ctx) {
-        if (!ctx || !ctx.compressed) return;
-        const key = `${ctx.before_tokens}-${ctx.after_tokens}`;
+        if (!ctx || !ctx.compressed || ctx.manual) return;
+        const key = `${_contextCase()}-${ctx.before_tokens}-${ctx.after_tokens}`;
         if (!key || key === _lastNotifiedCompression) return;
         _lastNotifiedCompression = key;
         if (typeof addChat !== 'function') return;
-        const zh = typeof monitorConversationLanguage === 'function'
-            ? monitorConversationLanguage() === 'zh' : (window._i18nLang === 'zh');
+        const zh = _contextIndicatorZh();
         const before = Number(ctx.before_tokens || 0).toLocaleString();
         const after = Number(ctx.after_tokens || 0).toLocaleString();
         const folds = Number(ctx.folded_messages || 0);
@@ -13862,48 +13875,60 @@ window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
     }
     window.refreshContextStatus = refreshContextStatus;
 
-    async function compressContextNow() {
-        const zh = typeof monitorConversationLanguage === 'function'
-            ? monitorConversationLanguage() === 'zh' : (window._i18nLang === 'zh');
-        // Fetch current status first so the dialog can show real numbers.
-        let ctx = null;
-        try {
-            const headers = {};
-            let sid = '';
-            if (typeof window.activeSessionId === 'string' && window.activeSessionId) {
-                sid = window.activeSessionId;
-            } else if (typeof activeSessionId !== 'undefined' && activeSessionId) {
-                sid = String(activeSessionId);
+    function compressContextNow() {
+        if (_compressionPromise) return _compressionPromise;
+        _compressionPromise = _compressForCase(_contextCase()).finally(() => { _compressionPromise = null; });
+        return _compressionPromise;
+    }
+
+    async function _compressForCase(sessionId) {
+        if (!sessionId) return false;
+        // Open immediately. A slow status endpoint must never feel like the
+        // click did nothing, and reading status never authorizes a mutation.
+        const dialog = _showCompressConfirmDialog(_contextByCase.get(sessionId));
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        fetch(API + '/chat/context', {
+            method: 'GET', headers: { 'X-BrachyBot-Session': sessionId },
+            cache: 'no-store', signal: controller.signal,
+        }).then(async res => {
+            const data = await res.json().catch(() => null);
+            if (res.ok && _contextCase() === sessionId && data?.session_id === sessionId && data.context) {
+                dialog.update(data.context);
             }
-            if (sid) headers['X-BrachyBot-Session'] = sid;
-            const r = await fetch(API + '/chat/context', { method: 'GET', headers, cache: 'no-store' });
-            const d = await r.json().catch(() => null);
-            if (d && d.context) ctx = d.context;
-        } catch (_) { /* dialog still works with empty data */ }
-
-        const ok = await _showCompressConfirmDialog(ctx, zh);
-        if (!ok) return false;
-
+        }).catch(() => {}).finally(() => clearTimeout(timeout));
+        const ok = await dialog.promise;
+        controller.abort();
+        clearTimeout(timeout);
+        if (!ok || _contextCase() !== sessionId) return false;
         const { ring } = _ringEls();
         if (ring) ring.classList.add('is-busy');
         try {
             const res = await fetch(API + '/chat/context/compress', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ aggressive: true }),
+                headers: { 'Content-Type': 'application/json', 'X-BrachyBot-Session': sessionId },
+                body: JSON.stringify({ aggressive: true, confirmed: true }),
             });
             const data = await res.json().catch(() => null);
             if (!res.ok || !data || data.success === false) {
-                throw new Error((data && data.error) || `HTTP ${res.status}`);
+                const busyMessage = _contextIndicatorZh()
+                    ? '当前对话尚未结束，请结束后再压缩上下文。'
+                    : 'Wait for the current chat to finish before compressing context.';
+                throw new Error(data?.code === 'context_busy' ? busyMessage
+                    : (_contextIndicatorZh() ? `无法完成压缩（HTTP ${res.status}）` : `Could not compress context (HTTP ${res.status})`));
             }
+            if (_contextCase() !== sessionId) return true;
             if (data.context) updateContextIndicator(data.context);
+            const zh = _contextIndicatorZh();
             if (typeof addChat === 'function') {
-                addChat('system', zh ? '已压缩历史上下文：病例与关键结果已保留。'
-                                     : 'Context compressed; case facts and key results were preserved.');
+                addChat('system', data.persisted === false
+                    ? (zh ? '上下文已在内存中压缩，但保存失败，重启后可能恢复原历史。' : 'Context compacted in memory, but saving failed; a restart may restore the old history.')
+                    : (zh ? '已压缩历史上下文：病例数据与关键结果已保留，旧对话细节会折叠。' : 'Context compressed; case data and key results kept, older conversation details folded.'));
             }
             return true;
         } catch (error) {
-            if (typeof addChat === 'function') {
+            const zh = _contextIndicatorZh();
+            if (_contextCase() === sessionId && typeof addChat === 'function') {
                 addChat('system', zh ? `压缩上下文失败：${error.message}`
                                      : `Context compression failed: ${error.message}`);
             }
@@ -13914,65 +13939,74 @@ window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
     }
     window.compressContextNow = compressContextNow;
 
-    function _showCompressConfirmDialog(ctx, zh) {
-        return new Promise(resolve => {
+    function _showCompressConfirmDialog(ctx) {
+        const previousFocus = document.activeElement;
+        const overlay = document.createElement('div');
+        overlay.className = 'rp-modal-overlay context-compress-overlay';
+        let settled = false, resolveResult;
+        const promise = new Promise(resolve => { resolveResult = resolve; });
+        const done = value => {
+            if (settled) return;
+            settled = true;
+            window.removeEventListener('i18nchange', render);
+            overlay.remove();
+            previousFocus?.focus?.();
+            resolveResult(value);
+        };
+        function render() {
+            if (settled) return;
+            const zh = _contextIndicatorZh();
             const c = ctx || {};
-            const used = Number(c.used_tokens || 0);
-            const win = Number(c.window || 0);
-            const pct = win > 0 ? (used / win * 100).toFixed(1) : '–';
-            const comps = (c.components && typeof c.components === 'object') ? c.components : {};
-            const compLabels = zh
-                ? { system: '系统指令', runtime_context: '运行时上下文', facts: '病例事实', history: '历史对话', tool_results: '工具结果', conversation: '当前对话', images: '图像', tools: '工具定义', other: '其他' }
-                : { system: 'System', runtime_context: 'Runtime context', facts: 'Case facts', history: 'History', tool_results: 'Tool results', conversation: 'Conversation', images: 'Images', tools: 'Tool defs', other: 'Other' };
-            let compRows = '';
-            const compTotal = Object.values(comps).reduce((s, v) => s + Number(v || 0), 0);
-            for (const [k, v] of Object.entries(comps)) {
-                const n = Number(v || 0);
-                if (n <= 0) continue;
-                const label = escHtml(compLabels[k] || k);
-                const cp = compTotal > 0 ? (n / compTotal * 100).toFixed(1) : '–';
-                compRows += `<div style="display:flex;justify-content:space-between;padding:2px 0;font-size:13px;"><span>${label}</span><span style="font-variant-numeric:tabular-nums;">${n.toLocaleString()} (${cp}%)</span></div>`;
+            const used = Number(c.used_tokens || 0), win = Number(c.window || 0);
+            const basis = c.measured ? (c.context_complete === false
+                ? (zh ? '已返回用量下界' : 'reported usage lower bound')
+                : (zh ? '实测' : 'measured')) : (zh ? '估算' : 'estimated');
+            const usageText = win > 0 ? `${used.toLocaleString()} / ${win.toLocaleString()} tokens · ${(used / win * 100).toFixed(1)}% · ${basis}`
+                : (zh ? '用量信息正在加载；不影响确认或取消。' : 'Loading usage; you can still confirm or cancel.');
+            // Updating status/locale must not replace a button under a user's
+            // pointer, interrupt a click, or move the keyboard focus.
+            if (overlay.querySelector('.context-compress-dialog')) {
+                overlay.querySelector('#context-compress-title').textContent = zh ? '是否压缩上下文？' : 'Compress context?';
+                overlay.querySelector('#context-compress-description').textContent = zh
+                    ? '旧对话将折叠为摘要，部分原文细节不再发送给模型。病例数据、规划结果和报告不会被修改。'
+                    : 'Older conversation will be summarized; some original details will no longer be sent to the model. Case data, planning results and reports will not be changed.';
+                overlay.querySelector('.context-compress-stats').textContent = usageText;
+                overlay.querySelector('.context-compress-note').textContent = zh
+                    ? '上下文显示最新一次模型调用的用量，不是本轮累计消耗，也不是全部聊天历史。'
+                    : 'Context shows the latest model call, not this turn’s accumulated consumption or the full chat history.';
+                overlay.querySelector('.context-compress-actions [data-act="cancel"]').textContent = zh ? '取消' : 'Cancel';
+                overlay.querySelector('[data-act="confirm"]').textContent = zh ? '是，确认压缩' : 'Yes, compress context';
+                overlay.querySelector('.rp-modal-close').setAttribute('aria-label', zh ? '关闭' : 'Close');
+                return;
             }
-            if (!compRows) compRows = `<div style="font-size:13px;opacity:.6;">${zh ? '暂无分布数据' : 'No breakdown data'}</div>`;
-
-            const overlay = document.createElement('div');
-            overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10001;display:flex;align-items:center;justify-content:center;';
-            overlay.setAttribute('role', 'dialog');
-            overlay.setAttribute('aria-modal', 'true');
-            overlay.innerHTML = `
-<div class="rp-modal-dialog" data-rp-modal="1" style="background:var(--bg-panel,#1e1e2e);border:1px solid var(--border,#444);border-radius:12px;max-width:420px;width:92%;box-shadow:0 8px 32px rgba(0,0,0,.4);overflow:hidden;">
-  <div class="rp-modal-header" style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border,#444);">
-    <span class="rp-modal-title" style="font-weight:600;font-size:15px;">${zh ? '压缩上下文' : 'Compress context'}</span>
-    <button class="rp-modal-close" data-act="cancel" style="background:none;border:none;font-size:18px;cursor:pointer;opacity:.6;">✕</button>
-  </div>
-  <div class="rp-modal-body" style="padding:16px 18px;">
-    <div style="margin-bottom:12px;font-size:14px;">
-      <div style="display:flex;justify-content:space-between;padding:3px 0;"><span>${zh ? '当前占用' : 'Current usage'}</span><span style="font-variant-numeric:tabular-nums;font-weight:600;">${used.toLocaleString()} tokens (${pct}%)</span></div>
-      <div style="display:flex;justify-content:space-between;padding:3px 0;opacity:.7;"><span>${zh ? '窗口大小' : 'Window size'}</span><span style="font-variant-numeric:tabular-nums;">${win.toLocaleString()} tokens</span></div>
-    </div>
-    <div style="margin-bottom:12px;">
-      <div style="font-size:13px;font-weight:600;margin-bottom:4px;">${zh ? '占比分布' : 'Distribution'}</div>
-      ${compRows}
-    </div>
-    <div style="font-size:12px;opacity:.7;margin-bottom:14px;">${zh ? '压缩后历史将折叠为摘要，病例数据与关键结果不受影响。' : 'History will be folded into a summary. Case data and key results are preserved.'}</div>
-    <div style="display:flex;gap:10px;justify-content:flex-end;">
-      <button data-act="cancel" style="padding:7px 18px;border-radius:6px;border:1px solid var(--border,#555);background:transparent;cursor:pointer;font-size:13px;">${zh ? '取消' : 'Cancel'}</button>
-      <button data-act="confirm" style="padding:7px 18px;border-radius:6px;border:none;background:var(--accent,#e05555);color:#fff;cursor:pointer;font-size:13px;font-weight:600;">${zh ? '确认压缩' : 'Compress'}</button>
-    </div>
-  </div>
-</div>`;
-            const done = (val) => { overlay.remove(); resolve(val); };
-            overlay.addEventListener('click', (e) => {
-                const act = e.target?.dataset?.act;
-                if (act === 'confirm') done(true);
-                else if (act === 'cancel') done(false);
-                else if (e.target === overlay) done(false);
-            });
-            const onKey = (e) => { if (e.key === 'Escape') { document.removeEventListener('keydown', onKey); done(false); } };
-            document.addEventListener('keydown', onKey);
-            document.body.appendChild(overlay);
-            overlay.querySelector('[data-act="confirm"]')?.focus();
+            const focusedAction = overlay.contains(document.activeElement) ? document.activeElement.dataset?.act : 'cancel';
+            overlay.innerHTML = `<section class="rp-modal-dialog context-compress-dialog" role="dialog" aria-modal="true" aria-labelledby="context-compress-title" aria-describedby="context-compress-description" tabindex="-1">
+                <div class="rp-modal-header"><b class="rp-modal-title" id="context-compress-title">${zh ? '是否压缩上下文？' : 'Compress context?'}</b>
+                <button type="button" class="rp-modal-close" data-act="cancel" aria-label="${zh ? '关闭' : 'Close'}">✕</button></div>
+                <div class="rp-modal-body"><p id="context-compress-description">${zh ? '旧对话将折叠为摘要，部分原文细节不再发送给模型。病例数据、规划结果和报告不会被修改。' : 'Older conversation will be summarized; some original details will no longer be sent to the model. Case data, planning results and reports will not be changed.'}</p>
+                <div class="context-compress-stats" aria-live="polite">${usageText}</div>
+                <p class="context-compress-note">${zh ? '上下文显示最新一次模型调用的用量，不是本轮累计消耗，也不是全部聊天历史。' : 'Context shows the latest model call, not this turn’s accumulated consumption or the full chat history.'}</p>
+                <div class="context-compress-actions"><button type="button" class="btn" data-act="cancel">${zh ? '取消' : 'Cancel'}</button><button type="button" class="btn btn-primary" data-act="confirm">${zh ? '是，确认压缩' : 'Yes, compress context'}</button></div></div></section>`;
+            overlay.querySelector(`.context-compress-actions [data-act="${focusedAction || 'cancel'}"]`)?.focus();
+        }
+        overlay.addEventListener('click', event => {
+            const act = event.target.closest?.('[data-act]')?.dataset?.act;
+            if (act === 'confirm') done(true);
+            else if (act === 'cancel' || event.target === overlay) done(false);
         });
+        overlay.addEventListener('keydown', event => {
+            if (event.key === 'Escape') { event.preventDefault(); done(false); return; }
+            if (event.key !== 'Tab') return;
+            const buttons = [...overlay.querySelectorAll('button:not([disabled])')];
+            const first = buttons[0], last = buttons[buttons.length - 1];
+            if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+            else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+        });
+        document.body.appendChild(overlay);
+        render();
+        window.addEventListener('i18nchange', render);
+        window.requestAnimationFrame(() => { if (!settled) overlay.classList.add('is-open'); });
+        return { promise, update: value => { ctx = value; render(); } };
     }
 
     function isContextCommand(text) {
@@ -13981,6 +14015,10 @@ window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
         return /^(?:\/compress|\/压缩|压缩上下文|压缩对话|compress context|compact context|compress history)[!！。.]?$/.test(value);
     }
     window.isContextCommand = isContextCommand;
+    window.addEventListener('i18nchange', () => {
+        const context = _contextByCase.get(_contextCase());
+        if (context) updateContextIndicator(context);
+    });
 
     if (typeof window !== 'undefined') {
         window.addEventListener('load', () => {

@@ -937,6 +937,12 @@ class ChatWorkflowMixin:
                     messages = self._pack_context_for_provider(messages, message)
             except Exception as _p:
                 logger.debug("Lightweight context packing skipped: %s", _p)
+            ensure_context = getattr(self, '_ensure_context_turn', None)
+            enforce_context = getattr(self, '_enforce_context_budget', None)
+            if callable(ensure_context):
+                ensure_context()
+            if callable(enforce_context):
+                messages = enforce_context(messages, current_user_content=message)
             call_start = time.perf_counter()
             content = ""
             usage = {}
@@ -987,8 +993,11 @@ class ChatWorkflowMixin:
                             # whole answer in the final envelope.
                             content = str(chunk["content"])
                         finish_reason = str(chunk.get("finish_reason") or finish_reason)
-                        if chunk.get("usage"):
-                            usage = dict(chunk["usage"])
+                        from brain.core.usage import normalize_usage
+                        usage = normalize_usage(chunk.get('usage'))
+                        record_usage = getattr(self, '_record_context_usage', None)
+                        if callable(record_usage):
+                            record_usage(usage)
                     elif chunk.get("type") == "error":
                         stream_error = str(chunk.get("content") or "")
             latency_ms = round((time.perf_counter() - call_start) * 1000, 1)
@@ -2832,13 +2841,20 @@ class ChatWorkflowMixin:
             "Answer the current question directly and concisely."
         )
         started = time.perf_counter()
+        ensure_context = getattr(self, '_ensure_context_turn', None)
+        enforce_context = getattr(self, '_enforce_context_budget', None)
+        if callable(ensure_context):
+            ensure_context()
+        provider_messages = [
+            {'role': 'system', 'content': system_prompt},
+            {'role': 'user', 'content': user_prompt},
+        ]
+        if callable(enforce_context):
+            provider_messages = enforce_context(provider_messages, current_user_content=user_prompt)
         try:
             try:
                 response_obj = chat_messages(
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
+                    messages=provider_messages,
                     tools=None,
                     task_type="general",
                 )
@@ -2846,16 +2862,17 @@ class ChatWorkflowMixin:
                 # Keep small test adapters and older provider wrappers
                 # compatible without changing the production contract.
                 response_obj = chat_messages(
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
+                    messages=provider_messages,
                     tools=None,
                 )
             elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
             content = response_obj.content if hasattr(response_obj, "content") else str(response_obj or "")
             content = str(content or "").strip()
-            usage = getattr(response_obj, "usage", {}) or {}
+            from brain.core.usage import normalize_usage
+            usage = normalize_usage(getattr(response_obj, 'usage', None))
+            record_usage = getattr(self, '_record_context_usage', None)
+            if callable(record_usage):
+                record_usage(usage)
             meta.update({
                 "usage": dict(usage) if isinstance(usage, dict) else {},
                 "latency_ms": elapsed_ms,
@@ -3117,22 +3134,40 @@ class ChatWorkflowMixin:
             self._active_turn_token = self._turn_generation
             self._cancel_requested = False
             token = self._active_turn_token
+            pending_confirmation = getattr(self, '_pending_execution_confirmation', None)
+            self._pending_execution_confirmation = None
+            local = getattr(self, '_turn_local', None)
+            if local is None:
+                local = threading.local()
+                self._turn_local = local
         # A screenshot/location turn has a two-stage response: the browser
         # first captures grounded evidence and a hidden multimodal child then
         # writes the user-facing explanation. Reset this per-turn marker so a
         # previous capture can never suppress the next ordinary reply.
         self._visual_analysis_pending = False
-        local = getattr(self, "_turn_local", None)
-        if local is None:
-            local = threading.local()
-            self._turn_local = local
+        begin_accounting = getattr(self, '_begin_context_turn', None)
+        if callable(begin_accounting):
+            begin_accounting()
         local.token = token
+        # The turn's original human message is immutable. Later tool receipts
+        # may be stored under legacy user roles; they are never a new request.
+        local.human_message = str(message or '')
+        from agent_runtime.confirmation import PendingConfirmation
+        from agent_runtime.request_parse import is_affirmative_acknowledgement
+        local.confirmed_calls = (
+            pending_confirmation.consume(getattr(self, 'memory', None), token)
+            if isinstance(pending_confirmation, PendingConfirmation)
+            and is_affirmative_acknowledgement(message) else ()
+        )
+        self._blocked_mutating_proposals = []
+        local.blocked_names, local.blocked_proposals = [], []
         # Every chat turn receives a fresh authorization ledger.  Workflow
         # recovery and tool normalization must use this ledger instead of
         # re-reading keywords from the raw user message.
         authorization = TurnExecutionAuthorization(token)
         self._turn_execution_authorization = authorization
         local.authorization = authorization
+        authorization.grant_tool_calls(local.confirmed_calls, source='server_bound_confirmation')
         ledgers = getattr(self, "_turn_execution_authorizations", None)
         if not isinstance(ledgers, dict):
             ledgers = {}
@@ -3146,6 +3181,42 @@ class ChatWorkflowMixin:
         if ledger is not None:
             ledger.begin(message)
         return token
+
+    def _current_human_message(self) -> str:
+        local = getattr(self, '_turn_local', None)
+        if local is not None and hasattr(local, 'human_message'):
+            return local.human_message
+        # Compatibility for non-chat callers and small harnesses only.
+        from agent_runtime.discourse import latest_human_message
+        return latest_human_message(getattr(getattr(self, 'memory', None), 'conversation', ()))
+
+    def _current_confirmed_calls(self):
+        return getattr(getattr(self, '_turn_local', None), 'confirmed_calls', ())
+
+    def _current_blocked_mutations(self):
+        local = getattr(self, '_turn_local', None)
+        if local is not None and hasattr(local, 'blocked_names'):
+            return local.blocked_names, local.blocked_proposals
+        return (getattr(self, '_blocked_mutating_tool_names', ()),
+                getattr(self, '_blocked_mutating_proposals', ()))
+
+    def _confirmation_fallback(self, language, names):
+        from agent_runtime.confirmation import PendingConfirmation, proposal_preview
+        from agent_runtime.llm_runtime import _blocked_mutation_message
+        token = self._current_turn_token()
+        proposal = PendingConfirmation.create(
+            self._current_blocked_mutations()[1], getattr(self, 'memory', None), token)
+        if proposal is None:
+            return ('该操作尚未获得明确的对象和执行范围，请说明要修改哪个对象以及如何修改。'
+                    if str(language).startswith('zh') else
+                    'The operation has no confirmed object and scope. Specify what to change and how.')
+        with self._turn_state_lock:
+            if token != self._active_turn_token or self._cancel_requested:
+                return ('本轮已取消，未保留待执行操作。' if str(language).startswith('zh')
+                        else 'This turn was cancelled; no operation is awaiting confirmation.')
+            self._pending_execution_confirmation = proposal
+        return (_blocked_mutation_message(language, names) + '\n\n```json\n'
+                + proposal_preview(json.loads(proposal.payload)) + '\n```')
 
     # Read-only fetch surface for material adjudication turns.  A keyword
     # reader's output is only reference material; when the material does not
@@ -4373,7 +4444,7 @@ class ChatWorkflowMixin:
         llm_meta = dict(llm_meta or {})
         llm_meta.setdefault("response_contract", response_contract)
         try:
-            llm_meta.setdefault("context_status", self.context_status())
+            llm_meta = self._accounted_llm_meta(llm_meta)
         except Exception:
             pass
         return {"response": response, "steps": steps, "llm_meta": llm_meta}
@@ -4593,7 +4664,7 @@ class ChatWorkflowMixin:
                 ).as_dict(),
             )
             try:
-                normalized_meta.setdefault("context_status", self.context_status())
+                normalized_meta = self._accounted_llm_meta(normalized_meta)
             except Exception:
                 pass
             normalized_payload["llm_meta"] = normalized_meta

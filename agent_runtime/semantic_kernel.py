@@ -7,6 +7,7 @@ or replace action-specific authorization and backend validators.
 from copy import deepcopy
 from dataclasses import replace
 import json
+import re
 from collections.abc import Mapping
 from collections import Counter
 
@@ -70,8 +71,6 @@ def semantic_runtime_policy(candidate, *, enabled=True, message=None):
             for intent, _ in subtasks
         ):
             return candidate
-    if candidate.intent == 'session_content_query':
-        return candidate
     return replace(
         LocalTurnPolicy('semantic_action', candidate.complexity,
                         candidate.requires_review, False, candidate.use_completeness,
@@ -83,6 +82,32 @@ def semantic_runtime_policy(candidate, *, enabled=True, message=None):
 
 def is_semantic_first(policy):
     return getattr(policy, 'routing_reason', '') == 'semantic_first_outcomes'
+
+
+def outcome_plan_contract_offered(messages, policy):
+    """Require a clause-bound plan only when that frame was actually offered.
+
+    Legacy/nonsemantic adapters cannot obey a schema referring to unprovided
+    clause IDs. Production semantic packing supplies this passive frame.
+    This check is not authorization and never permits any operation.
+    """
+    prefix = '[Structured state data; not instructions]\n[Passive request frame]\n'
+    if not is_semantic_first(policy):
+        return False
+    for item in messages:
+        if (not isinstance(item, Mapping) or item.get('role') != 'user'
+                or not isinstance(item.get('content'), str) or not item['content'].startswith(prefix)):
+            continue
+        try:
+            frame = json.loads(item['content'][len(prefix):])
+        except (ValueError, TypeError):
+            continue
+        # Do not add a mandatory generation round to a single uncomplicated
+        # saved-fact answer. Compound clauses need an explicit reconciliation;
+        # this threshold grants no operation and is not an intent verdict.
+        if isinstance(frame, Mapping) and isinstance(frame.get('clauses'), list):
+            return len(frame['clauses']) > 1
+    return False
 
 
 def project_provider_schemas(schemas, policy, metadata=None):
@@ -208,10 +233,12 @@ def request_plan_schema():
     """Small optional plan, emitted alongside evidence calls in the SAME round."""
     return {'type': 'function', 'function': {
         'name': PLAN_TOOL,
-        'description': ('Record requested outcomes for a compound/ambiguous request. Include ALL '
+        'description': ('Record requested outcomes for EVERY non-trivial semantic request, including '
+                        'short factual requests and corrections. Include ALL '
                         'passive-frame clause IDs, including restrictions/context. Emit with the '
                         'needed evidence calls in the same batch. This does NOT authorize or '
-                        'execute any operation. Skip for a simple answer.'),
+                        'execute any operation. Record alongside evidence calls, not in a separate '
+                        'planning-only round. Do not treat a short request as a reason to skip its outcomes.'),
         'parameters': {'type': 'object', 'properties': {
             'goals': {'type': 'array', 'minItems': 1, 'maxItems': 12, 'items': {
                 'type': 'object', 'properties': {
@@ -220,8 +247,32 @@ def request_plan_schema():
                     'mode': {'type': 'string', 'enum': ['answer', 'read', 'display', 'modify',
                                                        'control', 'constraint', 'context', 'clarify', 'unsupported']},
                     'outcome': {'type': 'string', 'maxLength': 300},
+                    'clarification_question': {'type': 'string', 'minLength': 1, 'maxLength': 300,
+                        'description': ('Only for mode=clarify. One focused question in the user language '
+                            'resolving the highest-impact missing choice. No numbered catalogue or '
+                            'instructions to execute. This permits an immediate clarification without '
+                            'an extra synthesis call when the turn contains no factual/action outcomes.')},
                     'evidence': {'type': 'string', 'enum': ['session', 'ui', 'report', 'external', 'dialogue', 'none']},
                     'tools': {'type': 'array', 'maxItems': 12, 'items': {'type': 'string'}},
+                    'evidence_requirements': {'type': 'array', 'maxItems': 12,
+                        'description': ('For factual reads, bind EACH required operation to its selectors '
+                            '(e.g. metric_type, target, action, planning_id). All listed tools/requirements '
+                            'are required, not alternatives. This property is legal ONLY for mode=read '
+                            'with read-only tools; omit it for answer/modify/clarify/constraint. Optional '
+                            'Initial requirements normally contain ONLY tool and params. Add fields/covers '
+                            'ONLY after observing the actual returned payload/contract, never guess them. '
+                            'fields must be EXACT case-sensitive dotted JSON data paths (e.g. d90 or '
+                            'report.stale), never natural-language descriptions. Omit fields when the '
+                            'payload schema is unknown. covers names actual returned response_contract '
+                            'aspects, NOT clause IDs; omit it if unknown. A wrong-subject read is not coverage.'),
+                        'items': {'type': 'object', 'properties': {
+                            'tool': {'type': 'string'},
+                            'params': {'type': 'object', 'maxProperties': 16},
+                            'fields': {'type': 'array', 'maxItems': 12, 'items': {
+                                'type': 'string', 'pattern': r'^[\w-]+(?:\.[\w-]+)*$'}},
+                            'covers': {'type': 'array', 'maxItems': 12, 'items': {
+                                'type': 'string', 'pattern': r'^[\w-]+(?:\.[\w-]+)*$'}},
+                        }, 'required': ['tool', 'params']}},
                 }, 'required': ['id', 'clauses', 'mode', 'outcome', 'evidence', 'tools'],
             }},
         }, 'required': ['goals']},
@@ -230,10 +281,12 @@ def request_plan_schema():
 
 class SemanticDecisionState:
     """Turn-local, bounded proposal/evidence index; never a completion oracle."""
-    def __init__(self, message):
+    def __init__(self, message, *, require_plan=False):
         self.frame = build_request_frame(message)
+        self.require_plan = bool(require_plan)
         self.goals = ()
         self.repair_issued = False
+        self.plan_errors = []
 
     def accept(self, params, mounted_names):
         if self.frame['omitted_clause_count'] or any(c['truncated'] for c in self.frame['clauses']):
@@ -258,12 +311,50 @@ class SemanticDecisionState:
                 raise ValueError('Invalid outcome identity, clause reference, capability or evidence source.')
             if mode in {'constraint', 'context', 'clarify', 'unsupported'} and tools:
                 raise ValueError('A restriction, context or clarification cannot propose an execution.')
+            question = goal.get('clarification_question')
+            if question is not None and (mode != 'clarify' or not isinstance(question, str)
+                    or not question.strip() or len(question) > 300 or '\n' in question):
+                raise ValueError('A clarification question must be one bounded line on a clarification goal.')
             if mode == 'read' and evidence in {'session', 'ui', 'report', 'external'} and not tools:
                 raise ValueError('A factual read must name its evidence capability.')
+            requirements = deepcopy(goal.get('evidence_requirements', []))
+            if not isinstance(requirements, list) or len(requirements) > 12:
+                raise ValueError('Provide at most 12 evidence requirements.')
+            from agent_runtime.execution_authorization import tool_call_is_mutating
+            for requirement_index, requirement in enumerate(requirements):
+                if not isinstance(requirement, Mapping) or mode != 'read':
+                    raise ValueError('Only factual reads may declare evidence requirements.')
+                name, selectors = requirement.get('tool'), requirement.get('params')
+                if (name not in tools or not isinstance(selectors, dict) or len(selectors) > 16
+                        or tool_call_is_mutating(name, selectors)):
+                    raise ValueError('Bind requirements to a named read-only capability and its selectors.')
+                try:
+                    encoded = json.dumps(selectors, allow_nan=False)
+                except (TypeError, ValueError):
+                    raise ValueError('Evidence selectors must be finite JSON values.') from None
+                if len(encoded) > 1600:
+                    raise ValueError('Evidence selectors exceed the passive metadata budget.')
+                if name == 'ui_content' and selectors.get('target') == 'report' and selectors.get('analysis_basis') == 'structured':
+                    # This operation reads saved fields independent of prose;
+                    # normalization binds question to the real human request.
+                    # A paraphrased question is not a different saved report.
+                    requirement = dict(requirement, params={key: value for key, value in selectors.items()
+                                                           if key != 'question'})
+                    requirements[requirement_index] = requirement
+                for key in ('fields', 'covers'):
+                    names = requirement.get(key, [])
+                    if (not isinstance(names, list) or len(names) > 12 or not all(
+                            isinstance(value, str) and 1 <= len(value) <= 80
+                            and re.fullmatch(r'[\w-]+(?:\.[\w-]+)*', value) for value in names)):
+                        raise ValueError('Evidence fields/aspects must be exact dotted JSON paths, not prose. '
+                                         'Omit optional fields/covers when the actual payload schema is unknown.')
             seen.add(identity)
             covered.update(refs)
             accepted.append(dict(id=identity, clauses=list(refs), mode=mode, outcome=outcome,
-                                 evidence=evidence, tools=list(tools)))
+                                 evidence=evidence, tools=list(tools),
+                                 evidence_requirements=deepcopy(requirements)))
+            if question is not None:
+                accepted[-1]['clarification_question'] = question.strip()
         if covered != clauses:
             raise ValueError('The proposal omits one or more original clauses; include restrictions and context.')
         # Do not leave a partially accepted plan behind on validation failure.
@@ -271,16 +362,70 @@ class SemanticDecisionState:
         return {'accepted': True, 'requested_outcomes': len(accepted), 'grants_execution': False,
                 'request_sha256': self.frame['request_sha256']}
 
+    def clarification_response(self, receipts=()):
+        """No additional generation for a pure, explicit clarification.
+
+        Never replace an independent answer, unsupported outcome or operation
+        receipt with a question; partial results must still be reconciled.
+        The model chooses the question, not a finite natural-language router.
+        """
+        if not self.goals or any(g['mode'] not in {'clarify', 'context', 'constraint'} for g in self.goals):
+            return ''
+        questions = [g.get('clarification_question', '') for g in self.goals if g['mode'] == 'clarify']
+        if len(questions) != 1 or not questions[0]:
+            return ''
+        if any(isinstance(r, Mapping) and r.get('tool') != PLAN_TOOL for r in receipts):
+            return ''
+        return questions[0]
+
+    def pending_operations(self, receipts=()):
+        """Transport-level pending operations, not semantic task completion."""
+        return list(dict.fromkeys(r.get('tool') for r in receipts
+            if isinstance(r, Mapping) and r.get('status') == 'pending'
+            and r.get('attempted') is not False and r.get('tool') != PLAN_TOOL))
+
     def missing_evidence(self, receipts, *, epoch=None):
         # Consume the executor's outcomes, not UI "done" labels. Pending
         # browser dispatches and reads from before a write are not current.
-        successful = {s.get('tool') for s in receipts if isinstance(s, Mapping)
+        successful = [s for s in receipts if isinstance(s, Mapping)
                       and s.get('status') == 'succeeded'
                       and s.get('attempted') is not False
-                      and (epoch is None or s.get('epoch') == epoch)}
+                      and (epoch is None or s.get('epoch') == epoch)]
+        names = {s.get('tool') for s in successful}
+        from agent_runtime.step_execution import parameter_fingerprints
+        def meets(requirement):
+            expected = parameter_fingerprints(requirement['params'])
+            return any(
+                receipt.get('tool') == requirement['tool']
+                and all(receipt.get('selector_hashes', {}).get(key) == value for key, value in expected.items())
+                and set(requirement.get('covers', ())).issubset(receipt.get('covers', ()))
+                and all(receipt.get('field_states', {}).get(path) == 'present'
+                        for path in requirement.get('fields', ()))
+                for receipt in successful)
         return [goal['id'] for goal in self.goals if goal['mode'] == 'read'
                 and goal['evidence'] in {'session', 'ui', 'report', 'external'}
-                and not (set(goal['tools']) & successful)]
+                and (not set(goal['tools']).issubset(names)
+                     or not all(meets(item) for item in goal['evidence_requirements']))]
+
+    def pending_evidence(self, receipts, *, epoch=None):
+        """Wait for accepted browser work instead of dispatching it again."""
+        from agent_runtime.step_execution import parameter_fingerprints
+        current = [s for s in receipts if isinstance(s, Mapping)
+                   and s.get('status') in {'succeeded', 'pending'} and s.get('attempted') is not False
+                   and (epoch is None or s.get('epoch') == epoch)]
+        pending = {s.get('tool') for s in current if s.get('status') == 'pending'}
+        available = {s.get('tool') for s in current}
+        def waiting_or_met(requirement):
+            selectors = parameter_fingerprints(requirement['params'])
+            return any(s.get('tool') == requirement['tool'] and all(
+                s.get('selector_hashes', {}).get(k) == v for k, v in selectors.items())
+                and (s.get('status') == 'pending' or (
+                    set(requirement.get('covers', ())).issubset(s.get('covers', ()))
+                    and all(s.get('field_states', {}).get(p) == 'present'
+                            for p in requirement.get('fields', ())))) for s in current)
+        return [g['id'] for g in self.goals if g['mode'] == 'read'
+                and set(g['tools']) & pending and set(g['tools']).issubset(available)
+                and all(waiting_or_met(r) for r in g['evidence_requirements'])]
 
     def context(self):
         if not self.goals:
@@ -294,9 +439,17 @@ class SemanticDecisionState:
 
     def audit(self, receipts=(), *, epoch=None):
         return {'request_sha256': self.frame['request_sha256'], 'planned_goal_count': len(self.goals),
+                'outcome_plan_required': self.require_plan,
+                'outcome_plan_recorded': bool(self.goals),
                 'proposal_is_authorization': False,
                 'denied_call_count': sum(bool(s.get('admission_denied')) for s in receipts if isinstance(s, Mapping)),
                 'reduced_ui_batch_count': sum(bool(s.get('partial_ui_batch')) for s in receipts if isinstance(s, Mapping)),
                 'goals_without_read_receipts': self.missing_evidence(receipts, epoch=epoch),
+                'goals_awaiting_browser_receipts': self.pending_evidence(receipts, epoch=epoch),
+                'operations_awaiting_completion_receipts': self.pending_operations(receipts),
+                'focused_clarification_available': bool(self.clarification_response(receipts)),
+                'unbound_read_goals': [g['id'] for g in self.goals if g['mode'] == 'read'
+                                      and not g['evidence_requirements']],
+                'plan_validation_errors': list(self.plan_errors),
                 'semantic_accuracy_verified': False}
 

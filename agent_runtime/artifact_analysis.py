@@ -166,7 +166,8 @@ def _iter_user_texts(conversation: Optional[Iterable[object]]) -> Iterable[str]:
     if not conversation:
         return
     try:
-        items = list(conversation)
+        from agent_runtime.discourse import human_dialogue
+        items = human_dialogue(conversation)
     except TypeError:
         return
     for item in reversed(items[-12:]):

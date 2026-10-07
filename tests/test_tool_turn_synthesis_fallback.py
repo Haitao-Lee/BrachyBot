@@ -91,9 +91,11 @@ def test_synthesis_rejects_placeholder_and_tool_call_output():
             capture_pending=False,
         )
 
-        # Still a non-empty honest fallback, but no synthesis was accepted.
+        # Rejected content still used a real provider round. Missing usage is
+        # marked unavailable; it must not erase that call from the ledger.
         assert text
-        assert meta.get("llm_calls", 0) == 0
+        assert meta.get("llm_calls", 0) == 1
+        assert meta['usage']['usage_complete'] is False
         assert "尚未生成综合回答" in text or "已完成资料检索" in text
 
 

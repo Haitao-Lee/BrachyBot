@@ -13,6 +13,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from agent_runtime.request_parse import parse_request
+from agent_runtime.discourse import human_dialogue
 
 
 def _clause_spans(text: str):
@@ -69,17 +70,14 @@ def build_request_frame(message: Any, conversation=()) -> dict:
     prior = []
     # Only real user/assistant discourse is useful for ellipsis. Tool receipts
     # stored under historical user roles must not become pending instructions.
-    history = list(conversation or ())[-10:]
+    history = human_dialogue(conversation)[-10:]
+    if history and history[-1].get('role') == 'user' and history[-1].get('content') == raw:
+        history = history[:-1]
     for record in history:
         if not isinstance(record, Mapping):
             continue
         role, content = record.get('role'), record.get('content')
         if role not in {'user', 'assistant'} or not isinstance(content, str):
-            continue
-        if content == raw or content.lstrip().startswith((
-            '[Tool result:', '[Called ', '[External evidence',
-            '[Structured state', '[BrachyBot', 'Visual evidence analysis follow-up.',
-        )):
             continue
         prior.append({'role': role, 'text': content[-350:],
                       'authority': 'reference_only_not_execution_permission'})
@@ -96,6 +94,9 @@ WHOLE_REQUEST_INSTRUCTION = (
         'Interpret the original human message, not a routing label or a keyword hit. '
         'In this SAME function-calling turn, identify each requested outcome, '
         'its target, restrictions, dependencies, evidence source and response format. '
+        'Use record_request_plan for each non-trivial semantic request, including corrections '
+        'and short factual questions. Emit it ALONGSIDE needed evidence calls in the same batch; '
+        'it is a passive outcome ledger, not an extra classifier or authorization. '
         'The passive request frame contains excerpts and lexical hints, NOT a semantic verdict or permission. '
         'Use the full original message for omitted/truncated or coordinated clauses. '
         'A negative/question/conditional clause remains relevant; never drop it because it cannot authorize a write. '
@@ -105,10 +106,45 @@ WHOLE_REQUEST_INSTRUCTION = (
         'Retain independent authorization, confirmation and safety checks. '
         'Prefer a compact authoritative read to clarify available state; ask one focused question '
         'only when unresolved ambiguity changes an action, its scope or required input. '
+        'Resolve the highest-impact ambiguity with ONE focused question, not a catalogue '
+        'of hypothetical tasks or a questionnaire about every downstream field. '
+        'For a pure clarification, include that question in clarification_question on the '
+        'mode=clarify outcome; the executor can return it directly without another model round. '
         'Do not ask permission to read the data necessary to answer the question. '
         'Tool names are capabilities: choose the registered operation and valid action arguments '
         'by the desired outcome, not by words in the request. Separate display from generation, '
         'saved report content from current dose, and task submission from verified completion. '
+        'For a pending dispatch, explain what is awaiting its receipt; do not ask the user to '
+        'resubmit or retry an operation that is still running. A changed needle may be only '
+        'one of several edits: restoring it alone does not restore all original geometry or dose. '
+        'An explanatory answer needs no speculative physics or invented case facts. If edit-specific '
+        'before/after geometry or dose is unavailable, say so concisely; do not fill that gap '
+        'with a mechanism or numeric claim the actual engine/evidence did not establish. '
+        'An edit, dose recomputation, planning optimization and downstream generation are '
+        'separate operations. Do not assume an optimizer reruns or seeds are redistributed '
+        'merely because a needle moves. Describe actual transitions from operation schemas '
+        'and receipts, not from a recommended workflow or hypothetical future command. '
+        'Loaded, generated, reviewed and clinically approved are different states. Never '
+        'describe existing needles/plans as approved without an explicit verified approval record. '
+        'Unknown approval is neither approval nor rejection. Never compare different version '
+        'counter namespaces; use explicit freshness/provenance or comparable saved values. '
+        'For a factual measurement question, fetch actual measurements; do not add guideline '
+        'searches unless interpretation against standards is requested or needed to avoid a safety claim. '
+        'Explain effects only from the actual dose-engine provenance or verified references; '
+        'do not invent attenuation, inter-seed shadowing or model-noise thresholds. '
+        'Do not rebrand a report write/regeneration as a harmless read or refresh to bypass a restriction. '
+        'ui_content normally schedules browser presentation. Its target=report with '
+        'analysis_basis=structured is a direct saved-report field read; use it for actual '
+        'report contents/freshness, not plan metrics as a substitute. '
+        'Respect field_read_contract and truncation: absence from a selected field projection '
+        'is not proof a value is absent everywhere in the report/document. Say exactly '
+        'which saved fields were inspected and which parts remain unverified. '
+        'Use query_metrics for actual numeric dose/OAR measurements. Explaining text, checking '
+        'report fields/version or comparing numbers is structured reasoning, not image analysis; '
+        'set ui_content analysis_basis=structured for those tasks. Only actual image/chart '
+        'interpretation uses analysis_basis=visual. If one read lacks a requested fact and a '
+        'suitable read capability is available, retrieve it now rather than asking permission '
+        'to finish answering the existing question. '
         'Before the final answer, cover EVERY requested outcome with returned evidence, '
         'a specific partial failure or an explicit missing datum; a read of one subject is not '
         'coverage of its siblings. Do not output a generic capabilities menu. '
@@ -118,6 +154,13 @@ WHOLE_REQUEST_INSTRUCTION = (
         'outcome-level goals with ALL passive-frame clause IDs (including constraints/context) '
         'alongside the evidence calls in the SAME batch. Do not make a separate planning call '
         'for a simple answer. A plan is a proposal, never permission or execution evidence. '
+        'Bind factual goals to evidence_requirements with the actual operation selectors '
+        '(metric_type, target, action, planning_id) and needed returned data fields/aspects. '
+        'Initially bind tool+params only. Do not guess output paths or contract aspect names; '
+        'add optional fields/covers only after observing their exact returned schema. '
+        'All tools/requirements listed for a goal are necessary, not alternatives. '
+        'A successful organ-volume query cannot satisfy organ-dose evidence; one generic '
+        'read cannot prove two independently selected subjects or report/version equality. '
         'When a call is refused, use its precise failure receipt to choose another safe read '
         'or ask one focused clarification. Never claim a refused operation succeeded.\n'
 )

@@ -228,24 +228,8 @@ class ContextPackBuilder:
 
     @staticmethod
     def _message_tokens(message: Mapping[str, Any]) -> int:
-        content = message.get("content")
-        if isinstance(content, list):
-            total = 0
-            for item in content:
-                if isinstance(item, Mapping) and (
-                    item.get("type") == "image_url" or "image_url" in item
-                ):
-                    # Multimodal content is billed as an image by the provider.
-                    # Counting its base64 transport string as text inflated a
-                    # single screenshot to hundreds of thousands of tokens and
-                    # defeated the pack budget; charge a flat image budget.
-                    total += IMAGE_TOKEN_ESTIMATE
-                elif isinstance(item, Mapping):
-                    total += _estimate_tokens(item.get("text", ""))
-                else:
-                    total += _estimate_tokens(item)
-            return total
-        return _estimate_tokens(str(content or ""))
+        from agent_runtime.context_window import estimate_message
+        return estimate_message(message)
 
     @staticmethod
     def _compact_tool_content(content: str) -> str:
@@ -260,7 +244,7 @@ class ContextPackBuilder:
         non_system = [item for item in source if item.get("role") != "system"]
         selected: List[Dict[str, Any]] = list(system)
         used = sum(self._message_tokens(item) for item in selected)
-        reserved_current = _estimate_tokens(current_user_content)
+        reserved_current = self._message_tokens({"role": "user", "content": current_user_content})
         available = max(0, self.input_budget - used - reserved_current)
 
         # Retain the most recent relevant turns in chronological order. Tool

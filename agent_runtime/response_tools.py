@@ -2861,13 +2861,10 @@ Output (JSON array of strings):"""
         get_action_plan = getattr(self, "_current_action_plan", None)
         action_plan = get_action_plan() if callable(get_action_plan) else None
         guard_memory = getattr(self, "memory", None)
-        guard_question = ""
-        for item in reversed(getattr(guard_memory, "conversation", []) or []):
-            if isinstance(item, dict) and str(item.get("role", "")).lower() == "user":
-                candidate = self._message_text(item.get("content", ""))
-                if candidate and not _request_parse.is_internal_tool_result_message(candidate):
-                    guard_question = candidate
-                    break
+        from agent_runtime.discourse import latest_human_message
+        current_human = getattr(self, '_current_human_message', None)
+        guard_question = (current_human() if callable(current_human) else
+                          latest_human_message(getattr(guard_memory, 'conversation', ())))
         if getattr(active_policy, "intent", None) == "ambiguous_visual_target_query":
             # Ambiguity is a clarification response, not a discovery request.
             # Do not let provider-selected captures bypass that decision.
@@ -3553,6 +3550,7 @@ Output (JSON array of strings):"""
                     presentation=p.get("presentation"),
                     selection=p.get("selection"),
                     analysis=p.get("analysis"),
+                    analysis_basis=p.get('analysis_basis', 'visual'),
                 ))
                 tc["params"] = p
             valid.append(tc)
@@ -3564,6 +3562,7 @@ Output (JSON array of strings):"""
         # provider selected its tool.  ui_controller is governed by the
         # action-level gate above.
         blocked_mutating: List[str] = []
+        blocked_proposals = []
         from agent_runtime.execution_authorization import tool_call_is_mutating
         from utils.tool_security import EXECUTION_TOOLS
         if (getattr(self, "config", None) or {}).get("_workspace_root"):
@@ -3586,7 +3585,9 @@ Output (JSON array of strings):"""
                     # "analyze" for characteristics) never write; blocking them
                     # turned inspection questions into "confirm to regenerate".
                     and not _request_parse.mutating_execution_authorized(
-                        guard_question, tool_name, conversation, params=call_params
+                        guard_question, tool_name, conversation, params=call_params,
+                        confirmed_calls=(self._current_confirmed_calls()
+                                         if callable(getattr(self, '_current_confirmed_calls', None)) else ()),
                     )
                 ):
                     logger.warning(
@@ -3595,6 +3596,7 @@ Output (JSON array of strings):"""
                         tool_name,
                     )
                     blocked_mutating.append(tool_name)
+                    blocked_proposals.append(call)
                     continue
                 allowed.append(call)
             valid = allowed
@@ -3602,4 +3604,9 @@ Output (JSON array of strings):"""
         # an explicit confirmation instead of the user seeing a generic
         # "no verifiable result".  Reset every call so it reflects one turn.
         self._blocked_mutating_tool_names = blocked_mutating
+        self._blocked_mutating_proposals = blocked_proposals
+        local = getattr(self, '_turn_local', None)
+        if local is not None:
+            local.blocked_names = list(blocked_mutating)
+            local.blocked_proposals = list(blocked_proposals)
         return valid + rejected_arguments

@@ -7873,6 +7873,9 @@ def register_planning_routes(
     def api_chat_context_compress():
         """Force a context compression (manual user command / button)."""
         data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict) or data.get('confirmed') is not True:
+            return jsonify(success=False, code='confirmation_required',
+                           error='Explicit context compression confirmation is required.'), 400
         agent, session_id, _store, _owner = _chat_agent_for_context()
         if agent is None:
             return jsonify({"success": False, "error": "Agent not available"}), 404
@@ -7880,7 +7883,14 @@ def register_planning_routes(
         if not callable(compress_fn):
             return jsonify({"success": False, "error": "Context compression unavailable"}), 501
         try:
-            result = compress_fn(aggressive=bool(data.get("aggressive", True)))
+            owner_id = _owner.get('id') if hasattr(_owner, 'get') else _owner
+            result = chat_tasks.run_idle_operation(owner_id, session_id,
+                lambda: compress_fn(aggressive=data.get('aggressive', True) is True))
+        except RuntimeError as exc:
+            if getattr(exc, 'code', '') == 'context_busy':
+                return jsonify(success=False, code='context_busy', error=str(exc)), 409
+            logger.warning('Manual context compression failed', exc_info=True)
+            return jsonify(success=False, error='Compression failed'), 500
         except Exception as exc:
             logger.warning("Manual context compression failed: %s", exc, exc_info=True)
             return jsonify({"success": False, "error": "Compression failed"}), 500

@@ -2052,6 +2052,17 @@ class ToolResultPipeline:
                 return "界面操作未执行：当前请求与可用控件能力不匹配。请说明是展开查看器、适配相机，还是调整图像缩放。"
             return "The UI action was not applied: the request did not match an available control capability. Specify whether to maximize the viewer, fit the camera, or change image magnification."
         if tool_name == "ui_controller":
+            if result.success and meta.get('execution_claim') == 'accepted_pending_browser':
+                count = meta.get('accepted', len(meta.get('actions') or []))
+                localized = meta.get('display_message_i18n') or {}
+                description = str(localized.get('zh' if lang == 'zh' else 'en') or '') if isinstance(localized, dict) else ''
+                if lang == 'zh':
+                    description = description.removeprefix('已')
+                return (
+                    f"已提交 {count} 项界面操作请求；等待浏览器执行回执，尚未确认完成。"
+                    if lang == 'zh' else
+                    f"Submitted {count} UI action request(s); waiting for browser execution receipts. Completion is not yet confirmed."
+                ) + (('\n请求内容（并非完成声明）：' if lang == 'zh' else '\nRequested result (not a completion claim): ') + description if description else '')
             localized = meta.get("display_message_i18n") if isinstance(meta, dict) else None
             if isinstance(localized, dict):
                 text = str(
@@ -2077,6 +2088,9 @@ class ToolResultPipeline:
                 )
 
         if tool_name in {"ui_screenshot", "ui_content"}:
+            if (tool_name == 'ui_content' and result.success
+                    and meta.get('structured_report_read') is True):
+                return result.display or '[Saved report read returned no factual payload]'
             if not result.success:
                 user_errors = meta.get("user_error_i18n") or {}
                 if isinstance(user_errors, dict):

@@ -1350,7 +1350,7 @@ const FOOTER_I18N = {
         tools: '工具',
         unit_s:'秒',
         unit_times:'次',
-        hint_context: '当前上下文占用 = 下次请求将发送的上下文大小（与左侧圆环同源）',
+        hint_context: '最新一次模型调用的输入＋输出（与圆环同源），不是本轮累计或全部聊天历史',
         hint_total: '本回合所有模型调用（含工具调用与多轮）的输入+输出累计，含工具轮重复计共享上下文',
         hint_input: '本回合所有模型调用的输入（prompt）累计',
         hint_output:'本回合所有模型调用的输出累计',
@@ -1364,7 +1364,7 @@ const FOOTER_I18N = {
         tools: 'Tools',
         unit_s:'s',
         unit_times:'×',
-        hint_context: 'Current context size = what the next request will send (same source as the ring)',
+        hint_context: 'Latest model call input + output (same source as the ring), not cumulative usage or all chat history',
         hint_total: 'Cumulative input+output across every model call this turn (incl. tool rounds); shared context is re-counted each round',
         hint_input: 'Cumulative input (prompt) across every model call this turn',
         hint_output:'Cumulative output across every model call this turn',
@@ -1379,7 +1379,7 @@ const FOOTER_I18N = {
         unit_s:'秒',
         unit_times:'回',
         hint_total: 'このターンの全モデル呼出しの入力+出力合計（ツール呼出しを含む）。共有コンテキストは各ラウンデ再計上されます',
-        hint_context: '現在のコンテキスト量 = 次のリクエストで送信されるサイズ（リングと同じソース）',
+        hint_context: '最新モデル呼び出しの入力＋出力（リングと同じ情報源）。累計使用量や全履歴ではありません',
         hint_input: 'このターンの全モデル呼び出しの入力合計',
         hint_output:'このターンの全モデル呼び出しの出力合計',
     },
@@ -1393,7 +1393,7 @@ const FOOTER_I18N = {
         unit_s:'초',
         unit_times:'회',
         hint_total: '이번 터의 모든 모델 호출 입력+출력 합계(도구 호출 포함). 공유 컨텍스트는 매 라운드마다 재계산됩니다',
-        hint_context: '현재 컨텍스트 크기 = 다음 요청에 전송될 크기(링과 동일 소스)',
+        hint_context: '최신 모델 호출의 입력+출력(링과 동일 소스). 누적 사용량이나 전체 대화가 아닙니다',
         hint_input: '이번 턴의 모든 모델 호출 입력 합계',
         hint_output:'이번 턴의 모든 모델 호출 출력 합계',
     },
@@ -1406,7 +1406,7 @@ const FOOTER_I18N = {
         tools: 'Инструментов',
         unit_s:'с',
         unit_times:'раз',
-        hint_context: 'Текущий размер контекста = что отправит следующий запрос (тот же источник, что и кольцо)',
+        hint_context: 'Вход + выход последнего вызова модели (как у кольца), не накопленный расход и не вся история',
         hint_total: 'Суммарный вход+выход всех вызовов модели за этот ход (включая инструменты); общий контекст пересчитывается каждый раунд',
         hint_input: 'Суммарный вход (prompt) всех вызовов модели за этот ход',
         hint_output:'Суммарный выход всех вызовов модели за этот ход',
@@ -1421,7 +1421,7 @@ const FOOTER_I18N = {
         unit_s:'ث',
         unit_times:'مرات',
         hint_total: 'إجمالي الإدخال+الإخراج لكل نداؤات النموذج في هذا الدور (بما فيها الأدوات)؛ السياق المشترك يُّعاد حسابه كل جولة',
-        hint_context: 'حجم السياق الحالي = ما سيُّرسله الطلب التالي (نفس مصدر الحلقة)',
+        hint_context: 'إدخال وإخراج آخر استدعاء للنموذج، وليس الاستخدام التراكمي أو سجل المحادثة الكامل',
         hint_input: 'إجمالي الإدخال لكل نداءات النموذج في هذا الدور',
         hint_output:'إجمالي الإخراج لكل نداءات النموذج في هذا الدور',
     },
@@ -1458,9 +1458,10 @@ function _buildResponseFooter(llmMeta) {
     const totalSec = (totalMs / 1000).toFixed(1);
 
     const usage = (llmMeta && llmMeta.usage) || {};
-    const promptT = usage.prompt_tokens || 0;
-    const compT = usage.completion_tokens || 0;
-    const totalT = usage.total_tokens || 0;
+    const promptT = Number(usage.prompt_tokens || 0);
+    const compT = Number(usage.completion_tokens || 0);
+    const totalT = usage.usage_complete === false || (!('prompt_tokens' in usage) && !('completion_tokens' in usage))
+        ? Number(usage.total_tokens || promptT + compT) : promptT + compT;
     const ctxStatus = (llmMeta && llmMeta.context_status) || {};
     const contextT = Number(ctxStatus.used_tokens || 0);
     const toolCalls = (window._todoTurnToolCount !== undefined)
@@ -1508,17 +1509,21 @@ function _buildResponseFooter(llmMeta) {
     // Build footer items in a fixed order:
     //   Time  Context  Turn-total (Input/Output)  Tools
     // "Context" and "Turn total" are two distinct metrics sharing one
-    // basis: Context = durable context size (what the next request sends,
-    // same as the ring); Turn total = cumulative input+output across every
+    // basis: Context = latest request input + output (same as the ring);
+    // Turn total = cumulative input+output across every
     // model call this turn (shared context re-counted each tool round).
     footer.appendChild(makeItem(t.time, totalSec, t.unit_s));
     footer.appendChild(sep());
     if (contextT > 0) {
-        footer.appendChild(makeItem(t.context, contextT.toLocaleString(), '', t.hint_context));
+        const contextHint = ctxStatus.accounting_version === 2 ? t.hint_context
+            : (effectiveUiLanguage() === 'zh'
+                ? '旧版记录的上下文统计；没有完整调用明细，不能还原为最新口径。'
+                : 'Legacy context record; without complete call details it cannot be reconstructed under the new accounting contract.');
+        footer.appendChild(makeItem(t.context, (ctxStatus.estimated ? '~' : '') + contextT.toLocaleString(), '', contextHint));
         footer.appendChild(sep());
     }
     if (totalT > 0) {
-        footer.appendChild(makeItem(t.tokens, totalT.toLocaleString(), '', t.hint_total));
+        footer.appendChild(makeItem(t.tokens, (usage.usage_complete === false ? '≥' : '') + totalT.toLocaleString(), '', t.hint_total));
         footer.appendChild(sep());
         if (promptT > 0) {
             footer.appendChild(makeItem(t.input, promptT.toLocaleString(), '', t.hint_input));
