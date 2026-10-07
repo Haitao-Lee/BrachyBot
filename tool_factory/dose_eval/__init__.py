@@ -97,6 +97,8 @@ class DoseEvaluationTool(BaseTool):
                     "description": "Prescribed physical dose in Gy",
                 },
                 "target_value": {"type": "number", "default": 1, "description": "CTV label value"},
+                "ctv_source": {"type": "string", "x-server-injected": True},
+                "target_semantics": {"type": "string", "x-server-injected": True},
                 "oar_constraints": {"type": "object", "description": "OAR dose constraints dict"},
                 "organ_names": {"type": "object", "description": "Mapping of OAR label IDs to anatomical names"},
                 "spacing": {"type": "array", "description": "Dose-grid voxel spacing [x, y, z] in mm"},
@@ -155,7 +157,14 @@ class DoseEvaluationTool(BaseTool):
             ctv_mask = np.asarray(ctv_mask)
             if ctv_mask.shape != dose_array.shape:
                 return ToolResult(success=False, error="ctv_mask shape must match dose_array")
-            masks["CTV"] = (ctv_mask == target_value).astype(np.uint8)
+            from utils.ctv_targets import project_target
+            try:
+                masks["CTV"] = project_target(
+                    ctv_mask, source=kwargs.get("ctv_source"),
+                    semantics=kwargs.get("target_semantics"), target_value=target_value,
+                )
+            except ValueError as exc:
+                return ToolResult(success=False, error=str(exc))
         if oar_mask is not None:
             oar_mask = np.asarray(oar_mask)
             if oar_mask.shape != dose_array.shape:

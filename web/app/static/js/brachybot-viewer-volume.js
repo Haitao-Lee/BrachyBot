@@ -883,6 +883,19 @@ async function hydrateOarDataTreeFromServer(
     }
 }
 
+function isCTVTargetLabel(labelId) {
+    const id = Number(labelId);
+    if (!Number.isInteger(id) || id <= 0) return false;
+    if (Array.isArray(ctvStructureCatalog) && ctvStructureCatalog.length) {
+        return ctvStructureCatalog.some(item => Number(item?.target_label) === id
+            && String(item?.classification || '').toLowerCase() === 'ctv');
+    }
+    if (Array.isArray(window._ctvTargetLabels)) return window._ctvTargetLabels.map(Number).includes(id);
+    // Compatibility for old payloads: GTV is target, vascular anatomy is not.
+    return id === 1 || /^gtv(?:p|n|nx|nd)?\b/i.test(String(window._ctvLabelMap?.[id] || '').trim());
+}
+window.isCTVTargetLabel = isCTVTargetLabel;
+
 async function loadLabelVolumes(options = {}) {
     const scope = _captureViewerDataScope(options.sessionId);
     const sid = scope.sessionId || (typeof activeSessionId !== 'undefined' ? String(activeSessionId) : '');
@@ -912,6 +925,7 @@ async function loadLabelVolumes(options = {}) {
     // names from the previously visible case while its own payload loads.
     organMetaFromServer = {};
     ctvStructureCatalog = [];
+    window._ctvTargetLabels = null;
     // A completed segmentation/upload replaces the authoritative server label
     // volume. Do not let an older IndexedDB entry hide that new Data Tree state.
     const forceFresh = options.forceFresh === true;
@@ -923,6 +937,7 @@ async function loadLabelVolumes(options = {}) {
     let cachedColorLUT = null, cachedCtvColorLUT = null, cachedOarColorLUT = null;
     let cachedCtvLabelMap = null, cachedCtvObjectMap = null;
     let cachedOrganMeta = null, cachedCtvStructureCatalog = null, cachedStructureVersion = 0;
+    let cachedCtvTargetLabels = null;
 
     // --- IndexedDB cache ---
     if (!forceFresh && sid && window.SessionCache) {
@@ -955,6 +970,7 @@ async function loadLabelVolumes(options = {}) {
                     cachedOrganMeta = hdr.organMeta || null;
                     cachedCtvStructureCatalog = Array.isArray(hdr.ctvStructureCatalog)
                         ? hdr.ctvStructureCatalog : null;
+                    cachedCtvTargetLabels = Array.isArray(hdr.ctvTargetLabels) ? hdr.ctvTargetLabels : null;
                     cachedStructureVersion = Number(hdr.structureVersion || 0);
                     // Cache format v1 stored OAR labels as uint8. Labels from
                     // nnUNet and uploaded volumes can be 201-203 or 10000, so
@@ -963,7 +979,9 @@ async function loadLabelVolumes(options = {}) {
                     // explicitly versioned uint16 format is safe to restore.
                     // v5 separates CTV and OAR namespaces and introduces the
                     // higher-chroma clinical structure palette.
-                    const cacheFormatCurrent = Number(hdr.formatVersion || 0) >= 5;
+                    // v6 also binds explicit CTV target identities; refresh
+                    // older payloads once rather than guessing from label 1.
+                    const cacheFormatCurrent = Number(hdr.formatVersion || 0) >= 6;
                     const oarEncodingCurrent = !hasOAR || oarBytesPerVoxel === 2;
                     if (shapeZ > 0 && shapeY > 0 && shapeX > 0
                             && cacheFormatCurrent && oarEncodingCurrent) {
@@ -1028,6 +1046,10 @@ async function loadLabelVolumes(options = {}) {
                 ctvStructureCatalog = [];
             }
             const structureVersion = Number(res.headers.get('X-Structure-Version') || 0);
+            try {
+                const ids = JSON.parse(res.headers.get('X-CTV-Target-Labels') || 'null');
+                window._ctvTargetLabels = Array.isArray(ids) ? ids : null;
+            } catch (_) { window._ctvTargetLabels = null; }
             window._structureVersion = structureVersion;
             try {
                 organMetaFromServer = JSON.parse(res.headers.get('X-Organ-Meta') || '{}');
@@ -1047,7 +1069,7 @@ async function loadLabelVolumes(options = {}) {
             // Async cache write
             if (sid && window.SessionCache) {
                 const hdr = JSON.stringify({
-                    formatVersion: 5,
+                    formatVersion: 6,
                     z: shapeZ, y: shapeY, x: shapeX,
                     hasCTV: hasCTV, hasOAR: hasOAR,
                     ctvSize: ctvSize, oarSize: oarSize,
@@ -1061,6 +1083,7 @@ async function loadLabelVolumes(options = {}) {
                     ctvObjectMap: window._ctvObjectMap || {},
                     organMeta: organMetaFromServer,
                     ctvStructureCatalog,
+                    ctvTargetLabels: window._ctvTargetLabels,
                     structureVersion,
                 });
                 const hdrBytes = new TextEncoder().encode(hdr);
@@ -1084,6 +1107,7 @@ async function loadLabelVolumes(options = {}) {
         labelColorLUT = oarLabelColorLUT;
         if (cachedCtvLabelMap) window._ctvLabelMap = cachedCtvLabelMap;
         if (cachedCtvObjectMap) window._ctvObjectMap = cachedCtvObjectMap;
+        window._ctvTargetLabels = cachedCtvTargetLabels;
         if (cachedOrganMeta) organMetaFromServer = cachedOrganMeta;
         if (Array.isArray(cachedCtvStructureCatalog)) {
             ctvStructureCatalog = cachedCtvStructureCatalog;
@@ -2824,7 +2848,25 @@ function updateLabelImage(view, options = {}) {
     state.labelImage[view] = {
         visible: showEl.checked,
         opacity: parseInt(opEl.value) / 100,
+        configured: true,
     };
+    if (view === '3d' && typeof scene3D !== 'undefined' && scene3D?.meshes) {
+        const setting = state.labelImage[view];
+        Object.entries(scene3D.meshes).forEach(([id, mesh]) => {
+            if (!mesh || !(/^(ctv$|ctv_|organ_|mask_)/.test(id) || window.isDataTreeMaskId?.(id))) return;
+            const appearance = window.getDataTreeAppearanceForMesh?.(id, mesh);
+            mesh.userData = mesh.userData || {};
+            mesh.userData.labelToolbarControlled = true;
+            if (!('labelToolbarBaseVisible' in mesh.userData)) {
+                mesh.userData.labelToolbarBaseVisible = mesh.visible !== false;
+                mesh.userData.labelToolbarBaseOpacity = Number(mesh.material?.opacity ?? 1);
+            }
+            const visible = appearance ? appearance.visible : mesh.userData.labelToolbarBaseVisible;
+            const opacity = appearance ? appearance.opacity : mesh.userData.labelToolbarBaseOpacity;
+            applyMeshOpacity(mesh, opacity, visible);
+        });
+        scene3D.requestRender?.(2);
+    }
 
     const overlay = document.getElementById('labelOverlay_' + view);
     if (overlay) {
@@ -4788,17 +4830,19 @@ function renderDataTree() {
             };
         };
 
-        // Tumor labels (label 1) → CTV group
-        const tumorLabels = ctvLabels.filter(l => l === 1);
+        // Classification comes from the server, not a universal label-1 rule.
+        const tumorLabels = ctvLabels.filter(l => isCTVTargetLabel(l));
+        const tumorLabelSet = new Set(tumorLabels);
         // Use semantic label names instead of assuming pancreas-specific label
         // numbers. Models for other tumor sites may assign labels 2/3 to
         // completely different structures.
         const nonTravLabels = ctvLabels.filter(labelId => {
+            if (tumorLabelSet.has(labelId)) return false;
             const name = String(labelNames[labelId] || '').toLowerCase();
             return /arter|vein|vessel/.test(name);
         });
         const nonTravSet = new Set(nonTravLabels);
-        const otherLabels = ctvLabels.filter(labelId => labelId !== 1 && !nonTravSet.has(labelId));
+        const otherLabels = ctvLabels.filter(labelId => !tumorLabelSet.has(labelId) && !nonTravSet.has(labelId));
         // CTV models may emit auxiliary structures (for example vessels) in
         // the same label volume. Keep those rows inside the CTV branch. They
         // are not OAR records and must never be appended to
@@ -4920,6 +4964,8 @@ function renderDataTree() {
                         : (dataTreeState.ctv.opacity ?? 0.7),
                     loaded: true,
                     objectId,
+                    category: 'target',
+                    source: 'ctv',
                 }, 'ctv_label', 'ctv');
                 dataTreeState.ctvLabels[`ctv_${labelId}`] = tumorState;
                 html += renderTreeItem(`ctv_${labelId}`, tumorState, volumeText);

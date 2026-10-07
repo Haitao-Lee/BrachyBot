@@ -130,6 +130,8 @@ def test_viewer_transports_both_gtv_labels_without_creating_artery(monkeypatch, 
     response = app.test_client().get('/api/viewer/label_volume')
     assert response.status_code == 200
     assert response.headers['X-Has-OAR'] == 'false'
+    import json
+    assert json.loads(response.headers['X-CTV-Target-Labels']) == [1, 2]
     length = int(response.headers['X-CTV-Size'])
     np.testing.assert_array_equal(np.frombuffer(response.data[:length], np.uint8).reshape(labels.shape), labels)
 

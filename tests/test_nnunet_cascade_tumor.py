@@ -90,6 +90,10 @@ def test_cascade_runner_preserves_geometry_and_passes_speed_controls(monkeypatch
     result = tool._run_cascade(image, gpu_index="0", availability=availability)
 
     assert result.success is True
+    assert result.metadata["ctv_source"] == "nnunet_liver_tumor"
+    assert result.metadata["target_semantics"] == "single_target"
+    assert result.metadata["inference_completed"] is True
+    np.testing.assert_array_equal(result.metadata["ctv_binary_array"], result.metadata["ctv_array"])
     assert result.metadata["cascade_folds_used"] == "0,1,2,3,4"
     assert result.metadata["cascade_tile_step_size"] == 0.5
     assert result.metadata["cascade_preprocess_workers"] == 2

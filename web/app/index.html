@@ -1314,9 +1314,10 @@
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="setViewerTool('zoombox')" id="toolZoombox">&#128269; Zoom</button>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="setViewerTool('annotate')" id="toolAnnotate">&#9998; Draw</button>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="setViewerTool('eraser')" id="toolEraser">&#9003; Erase</button>
-                <button hidden class="file-btn" style="padding:2px 6px;font-size:0.6rem;color:#4ade80;" onclick="setViewerTool('sat3d_positive')" id="toolSat3dPositive" title="SAT3D positive point">SAT3D +</button>
-                <button hidden class="file-btn" style="padding:2px 6px;font-size:0.6rem;color:#fb7185;" onclick="setViewerTool('sat3d_negative')" id="toolSat3dNegative" title="SAT3D negative point">SAT3D -</button>
-                <button hidden class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="clearSat3dPromptPoints()" id="toolSat3dClear" title="Clear SAT3D points">Clear pts</button>
+                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;color:#4ade80;" onclick="setViewerTool('sat3d_positive')" id="toolSat3dPositive" title="SAT3D positive point" data-i18n-title-zh="在肿瘤内放置正点" data-i18n-title-en="Place a positive point inside the tumor">SAT3D +</button>
+                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;color:#fb7185;" onclick="setViewerTool('sat3d_negative')" id="toolSat3dNegative" title="SAT3D negative point" data-i18n-title-zh="在需要排除的区域放置负点" data-i18n-title-en="Place a negative point in an excluded region">SAT3D -</button>
+                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="clearSat3dPromptPoints()" id="toolSat3dClear" title="Clear SAT3D points" data-i18n-zh="清除点" data-i18n-en="Clear pts">Clear pts</button>
+                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="prepareSat3dInteraction()" id="toolSat3dSettings" data-i18n-zh="交互分割" data-i18n-en="Segment…">Segment…</button>
                 <div class="ctrl-sep" style="height:16px;"></div>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="viewerFlipH()">&#8644; FlipH</button>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="viewerFlipV()">&#8645; FlipV</button>
@@ -1350,6 +1351,13 @@
                 <div id="huDisplay" style="margin-left:auto;font-size:0.65rem;color:var(--accent);font-family:monospace;">HU: —</div>
             </div>
 
+            <div id="sat3dInteractionPanel" hidden style="display:none;padding:9px 12px;background:var(--bg-2);border-bottom:1px solid var(--card-border);font-size:.68rem;align-items:center;gap:10px;flex-wrap:wrap;">
+                <strong data-i18n-zh="SAT3D 辅助分割" data-i18n-en="SAT3D assisted segmentation">SAT3D assisted segmentation</strong>
+                <select id="sat3dInteractiveSite" class="form-input" style="width:190px;" aria-label="SAT3D site"></select>
+                <span id="sat3dInteractionStatus" role="status" aria-live="polite" style="flex:1;min-width:190px;"></span>
+                <button id="sat3dRun" class="btn btn-primary" style="padding:5px 10px;font-size:.68rem;" onclick="runSat3dInteractive()" disabled data-i18n-zh="运行分割" data-i18n-en="Run segmentation">Run segmentation</button>
+                <button class="file-btn" onclick="closeSat3dInteraction()" aria-label="Close SAT3D controls">×</button>
+            </div>
             <div class="viewer-workspace" style="display:flex;flex:1;min-height:0;overflow:hidden;">
                 <!-- Data Tree Sidebar -->
                 <div class="data-tree-container" id="dataTreeContainer" style="position:relative;">
@@ -1599,17 +1607,18 @@
 -->
 <script src="static/js/brachybot-chat-core.js?v=40"></script>
 <script src="static/js/brachybot-chat-todo.js?v=75"></script>
-<script src="static/js/brachybot-ui-api.js?v=131"></script>
+<script src="static/js/brachybot-ui-api.js?v=132"></script>
 <link rel="stylesheet" href="static/css/brachybot-monitor-dashboard.css?v=8">
 <script src="static/js/brachybot-monitor-interaction.js?v=10"></script>
 <script src="static/js/brachybot-monitor-dashboard.js?v=9"></script>
 <script src="static/js/brachybot-auth.js?v=12"></script>
-<script src="static/js/brachybot-viewer-volume.js?v=87"></script>
-<script src="static/js/brachybot-viewer-layout.js?v=46"></script>
+<script src="static/js/brachybot-viewer-volume.js?v=89"></script>
+<script src="static/js/brachybot-viewer-layout.js?v=47"></script>
 <script src="static/js/brachybot-depth-peeling.js?v=2"></script>
-<script src="static/js/brachybot-3d-manual.js?v=120"></script>
+<script src="static/js/brachybot-3d-manual.js?v=122"></script>
 <script src="static/js/brachybot-manual-step-results.js?v=2"></script>
-<script src="static/js/brachybot-manual-annotation.js?v=30"></script>
+<script src="static/js/brachybot-manual-annotation.js?v=31"></script>
+<script src="static/js/brachybot-sat3d-interaction.js?v=1"></script>
 <script src="static/js/brachybot-surgical-guide.js?v=21"></script>
 <script src="static/js/brachybot-visual-annotation.js?v=9"></script>
 <script src="static/js/brachybot-dvh-planning.js?v=42"></script>

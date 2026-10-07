@@ -288,6 +288,11 @@ class NNUNetPancreaticTumorTool(BaseTool):
         return _validate(value)
 
     def _execute(self, **kwargs) -> ToolResult:
+        from .model_registry import validate_route_input
+        try:
+            validate_route_input("nnunet_pancreatic", image_modality=kwargs.get("image_modality"))
+        except ValueError as exc:
+            return ToolResult(success=False, error=str(exc), metadata={"code": "unsupported_modality"})
         image = kwargs.get("image")
         image_path = kwargs.get("image_path")
         requested_fast_mode = kwargs.get("fast_mode")
@@ -405,6 +410,7 @@ class NNUNetPancreaticTumorTool(BaseTool):
                     "voxel_count": vox_count,
                     "volume_mm3": round(vol_mm3, 1),
                     "volume_cm3": round(vol_mm3 / 1000, 2),
+                    "centroid_zyx": centroid_arr,
                     "centroid_world": [round(c, 1) for c in centroid_world],
                 }
 
@@ -430,6 +436,11 @@ class NNUNetPancreaticTumorTool(BaseTool):
             metadata={
                 "ctv_mask": ctv_mask,
                 "ctv_array": ctv_array,
+                "ctv_binary_array": ctv_array,
+                "ctv_source": "nnunet_pancreatic",
+                "tumor_type_used": "nnunet_pancreatic",
+                "target_semantics": "target_plus_anatomy",
+                "inference_completed": True,
                 "ctv_volume_mm3": float(ctv_volume),
                 "ctv_voxel_count": ctv_voxel_count,
                 "oar_mask": oar_mask,

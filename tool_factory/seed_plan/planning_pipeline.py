@@ -428,6 +428,16 @@ def _merge_embedded_hard_obstacles(oar_mask, agent):
 
     embedded = _memory_value(agent.memory, "ctv_embedded_oar_array")
     full_labels = _memory_value(agent.memory, "ctv_full_labels")
+    from utils.ctv_targets import canonical_semantics, label_array
+    semantics = canonical_semantics(
+        _memory_value(agent.memory, "ctv_source"), _memory_value(agent.memory, "target_semantics")
+    )
+    if semantics == "classified_union" and _memory_value(agent.memory, "structure_registry_initialized"):
+        # Effective OAR/catalog own classifications, not stale model anatomy.
+        return oar_mask, set()
+    target_ids = {1, 2} if semantics == "multi_target_gtv" else {1}
+    if semantics == "multi_target_gtv":
+        embedded = None  # Do not inherit a previous pancreatic vessel mask.
     label_map = _memory_value(agent.memory, "ctv_label_map") or {}
     hard_ids = set()
     if isinstance(label_map, dict):
@@ -468,13 +478,14 @@ def _merge_embedded_hard_obstacles(oar_mask, agent):
                 hard_ids.add(label_id)
 
     derived = None
+    hard_ids.difference_update(target_ids)
     if full_labels is not None and hard_ids:
-        full = np.asarray(full_labels)
+        full = label_array(full_labels)
         derived = np.where(np.isin(full, list(hard_ids)), 1, 0).astype(np.uint8)
     if embedded is None and derived is None:
         return oar_mask, set()
 
-    embedded_array = np.asarray(embedded) if embedded is not None else np.zeros_like(derived, dtype=np.uint8)
+    embedded_array = label_array(embedded) if embedded is not None else np.zeros_like(derived, dtype=np.uint8)
     if embedded_array.ndim != 3:
         logger.warning("[OAR filter] embedded hard-obstacle mask is not 3D; ignoring it")
         return oar_mask, set()
@@ -1431,6 +1442,7 @@ def _build_radiation_volume(
     obstacle_value=2,
     obstacle_labels=None,
     obstacle_source="default",
+    target_semantics="target_plus_anatomy",
 ):
     """Build radiation volume from CTV and OAR masks.
 
@@ -1446,11 +1458,13 @@ def _build_radiation_volume(
     they are physically traversable for a trans-abdominal / posterior needle.
     Only vessels, bowel, bone and a few critical soft structures become obstacles.
     """
-    radiation_volume = np.zeros_like(ctv_mask, dtype=np.int32)
-    # Only tumor (label 1) is the target
-    radiation_volume[ctv_mask == 1] = target_value
-    # Artery and vein are obstacles (non-traversable) — handled directly from CTV mask
-    radiation_volume[(ctv_mask == 2) | (ctv_mask == 3)] = obstacle_value
+    from utils.ctv_targets import project_target, embedded_obstacle_mask
+    # The default is solely for legacy standalone pancreatic callers. Live
+    # case entry points supply a binary union or explicit source semantics.
+    target = project_target(ctv_mask, semantics=target_semantics)
+    radiation_volume = np.zeros_like(target, dtype=np.int32)
+    radiation_volume[target > 0] = target_value
+    radiation_volume[embedded_obstacle_mask(ctv_mask, semantics=target_semantics)] = obstacle_value
     # OAR from TotalSegmentator (if provided): apply the current whitelist.
     if oar_mask is not None:
         selected_labels = set(
@@ -2153,6 +2167,32 @@ def build_needle_safety_context(ct_image, ctv_mask, oar_mask, obstacle_labels):
         return None
     try:
         return _NeedleSafetyContext(ct_image, ctv_mask, oar_mask, obstacle_labels)
+    except ValueError:
+        return None
+
+
+def build_source_aware_needle_safety_context(ct_image, ctv_mask, oar_mask, obstacle_labels, *, target_semantics):
+    """Project source labels before using the frozen physical sampler.
+
+    The legacy helper/sampler retain byte-frozen compatibility for pancreatic
+    callers. Current case paths use resolve_ctv_target; raw model-label callers
+    must declare semantics through this boundary instead of the legacy helper.
+    """
+    from utils.ctv_targets import project_target, embedded_obstacle_mask, label_array
+    try:
+        binary = project_target(ctv_mask, semantics=target_semantics)
+        embedded = embedded_obstacle_mask(ctv_mask, semantics=target_semantics)
+        labels = set(obstacle_labels or ())
+        if embedded is not None and np.any(embedded):
+            oar = label_array(oar_mask)
+            oar = np.zeros(binary.shape, dtype=np.int32) if oar is None else oar.astype(np.int32, copy=True)
+            if oar.shape != binary.shape:
+                return None
+            private_label = max(10000, int(oar.max()) + 1)
+            oar[embedded] = private_label
+            labels.add(private_label)
+            oar_mask = oar
+        return build_needle_safety_context(ct_image, binary, oar_mask, labels)
     except ValueError:
         return None
 
@@ -3477,58 +3517,30 @@ class PlanningPipelineTool(BaseTool):
                 # the raw label IDs in ctv_array where dose evaluation treats
                 # every positive voxel as target.
                 ctv_full_labels = np.asarray(ctv_mask)
-                ctv_binary = (ctv_full_labels > 0).astype(np.uint8)
+                from utils.ctv_targets import project_target
+                ctv_binary = project_target(
+                    ctv_full_labels, source=_memory_value(memory, "ctv_source"),
+                    semantics=_memory_value(memory, "target_semantics"),
+                )
                 if agent:
                     if np.unique(ctv_full_labels).size > 2 and memory.retrieve("ctv_full_labels") is None:
                         agent.memory.store("ctv_full_labels", ctv_full_labels)
                     agent.memory.store("ctv_array", ctv_binary)
                     agent.memory.store("ctv_mask", ctv_binary)
+                    agent.memory.store("ctv_binary_array", ctv_binary)
                 return ctv_binary
             except Exception as e:
                 logger.warning(f"Failed to load CTV mask from path '{ctv_mask_path}': {e}. Falling back to memory.")
 
         if agent:
-            # Try _get_label_array first (handles DICOMOrient)
-            if hasattr(agent, '_get_label_array'):
-                ctv_mask = agent._get_label_array("ctv_array")
-                logger.debug(
-                    "[LOAD_CTV] _get_label_array returned: %s, type=%s",
-                    "exists" if ctv_mask is not None else "None",
-                    type(ctv_mask).__name__ if ctv_mask is not None else "N/A",
-                )
-            else:
-                ctv_mask = agent.memory.retrieve("ctv_array")
-                logger.debug(
-                    "[LOAD_CTV] memory.retrieve returned: %s",
-                    "exists" if ctv_mask is not None else "None",
-                )
-
-            if ctv_mask is not None:
-                # Ensure it's a numpy array
-                if hasattr(ctv_mask, 'GetArrayFromImage'):
-                    ctv_mask = sitk.GetArrayFromImage(ctv_mask)
-                # Validate it has content
-                if hasattr(ctv_mask, 'shape'):
-                    logger.debug(
-                        "[LOAD_CTV] CTV from memory: shape=%s, non-zero=%s",
-                        ctv_mask.shape,
-                        int(np.count_nonzero(ctv_mask)),
-                    )
-                normalized = _normalize_mask_to_ct_grid(ctv_mask, ct_image, "CTV", agent)
-                if normalized is None:
-                    return None
-                # Memory may contain a legacy label-coded array.  Planning and
-                # DVH consume one merged binary target even when the Data Tree
-                # keeps multiple CTV labels for presentation.
-                return (np.asarray(normalized) > 0).astype(np.uint8)
-            else:
-                logger.debug("[LOAD_CTV] CTV mask not found in agent memory")
-                # Debug: check what's in planning_results
-                if hasattr(agent, 'memory') and hasattr(agent.memory, 'planning_results'):
-                    logger.debug(
-                        "[LOAD_CTV] planning_results keys: %s",
-                        list(agent.memory.planning_results.keys()),
-                    )
+            from utils.ctv_targets import resolve_ctv_target
+            try:
+                target = resolve_ctv_target(memory.retrieve)
+            except ValueError:
+                logger.exception("Invalid CTV target contract; refusing legacy fallback")
+                return None
+            if target is not None:
+                return _normalize_mask_to_ct_grid(target, ct_image, "CTV", agent)
 
         return None
 

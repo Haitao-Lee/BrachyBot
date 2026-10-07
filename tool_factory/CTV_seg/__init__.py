@@ -90,7 +90,7 @@ def _normalize_label_stats(value):
     return normalized
 
 
-def _label_stats_from_array(array, label_map, spacing):
+def _label_stats_from_array(array, label_map, spacing, reference=None):
     """Uniform per-label volume/centroid stats for every CTV engine."""
     import numpy as _np
     stats = {}
@@ -108,8 +108,12 @@ def _label_stats_from_array(array, label_map, spacing):
             "label_id": label,
             "voxel_count": int(count),
             "volume_mm3": float(count * voxel_volume),
+            "volume_cm3": float(count * voxel_volume / 1000.0),
             "centroid_zyx": centroid,
         }
+        if reference is not None and len(centroid) == 3:
+            stats[name]["centroid_world"] = list(reference.TransformContinuousIndexToPhysicalPoint(
+                tuple(reversed(centroid))))
     return stats
 
 # Removed VoCoProstateTool (was using wrong Amos-MR weights)
@@ -617,7 +621,17 @@ class CTVSegmentationTool(BaseTool):
                     )
                 tool = self._resolve_tool(tumor_type)
 
-            tool_kwargs = {"image": image, "target_value": target_value}
+            from .model_registry import validate_route_input
+            try:
+                validate_route_input(tumor_type, image_modality=kwargs.get("image_modality"), ct_phase=kwargs.get("ct_phase"))
+            except ValueError as exc:
+                return ToolResult(success=False, error=str(exc), metadata={
+                    "code": "unsupported_modality", "tumor_type_used": tumor_type,
+                    "clarification_required": True,
+                })
+            tool_kwargs = {"image": image, "target_value": target_value,
+                           "image_modality": kwargs.get("image_modality", "CT"),
+                           "ct_phase": kwargs.get("ct_phase")}
             if fast_mode is not None:
                 tool_kwargs["fast_mode"] = bool(fast_mode)
             if isinstance(tool, NNUNetPancreaticTumorTool):
@@ -721,7 +735,7 @@ class CTVSegmentationTool(BaseTool):
                     ctv_mask.CopyInformation(reference_lpi)
                 if result_meta.get("full_label_array") is not None:
                     result_meta["full_label_array"] = _align_output(
-                        result_meta["full_label_array"], fallback_dtype=np.uint16
+                        result_meta.get("full_label_mask", result_meta["full_label_array"]), fallback_dtype=np.uint16
                     )
                 if result_meta.get("oar_array") is not None:
                     result_meta["oar_array"] = _align_output(
@@ -757,6 +771,12 @@ class CTVSegmentationTool(BaseTool):
             normalize_metadata(getattr(result, "metadata", {}), source="CTV result")
             if result is not None else {}
         )
+        from utils.ctv_targets import project_target
+        ctv_array = project_target(ctv_array, source="manual_label" if from_label_path else tumor_type)
+        if ctv_mask is not None and hasattr(ctv_mask, "GetSpacing"):
+            binary_image = sitk.GetImageFromArray(ctv_array)
+            binary_image.CopyInformation(ctv_mask)
+            ctv_mask = binary_image
         voxel_count = int(np.sum(ctv_array > 0))
         if voxel_count <= 0 and not allow_empty:
             failure_meta = dict(res_meta)
@@ -786,20 +806,20 @@ class CTVSegmentationTool(BaseTool):
                     for name, count in label_counts.items()
                     if count and int(count) > 0
                 }
-                if found:
+                if (result is not None and result.success) or found or label_counts or res_meta.get("inference_completed"):
                     found_desc = ", ".join(
                         f"{name} ({count} vox)" for name, count in found.items()
                     )
                     diagnostic = (
                         f"The segmentation model completed inference but did NOT detect any "
-                        f"tumor region in this volume (labels it did find: {found_desc}). "
-                        f"This is usually a data problem rather than a missing model: the CT "
-                        f"may not cover the full tumor extent (too few slices / large slice "
-                        f"thickness), the tumor may be outside the scanned field, or too "
-                        f"subtle for this model. Verify the CT actually covers the tumor "
-                        f"(check slice count and spacing), or provide label_path for a "
-                        f"manual/clinical CTV."
+                        f"tumor region in this volume"
+                        + (f" (labels it did find: {found_desc}). " if found else ". ")
+                        + "Successful inference is not evidence that the disease is absent. "
+                        "Review scan coverage, modality, model applicability and contour "
+                        "sensitivity, or provide a reviewed manual/clinical CTV via label_path."
                     )
+                    failure_meta["code"] = "no_tumor_detected"
+                    failure_meta["inference_completed"] = True
                 else:
                     diagnostic = (
                         "CTV segmentation produced an empty mask. The model did not "
@@ -874,6 +894,7 @@ class CTVSegmentationTool(BaseTool):
         meta = {
             "ctv_mask": ctv_mask,
             "ctv_array": ctv_array,
+            "ctv_binary_array": (ctv_array > 0).astype(np.uint8),
             "ctv_volume_mm3": float(volume_mm3),
             # Full multi-label array for data tree display (if available from nnUNet)
             "full_label_array": res_meta.get("full_label_array"),
@@ -896,13 +917,15 @@ class CTVSegmentationTool(BaseTool):
             ),
             "model_catalog": filter_catalog(),
         }
-        if not from_label_path and not meta["label_stats"]:
+        if not from_label_path:
             stats_source = res_meta.get("full_label_array")
             if stats_source is None:
                 stats_source = ctv_array
-            meta["label_stats"] = _label_stats_from_array(
-                stats_source, meta["label_map"], ctv_mask.GetSpacing(),
+            canonical_stats = _label_stats_from_array(
+                stats_source, meta["label_map"], ctv_mask.GetSpacing(), ctv_mask,
             )
+            for name, values in canonical_stats.items():
+                meta["label_stats"][name] = {**meta["label_stats"].get(name, {}), **values}
         if from_label_path:
             meta.update({
                 "ctv_target_value": manual_label_selection.get("selected_target_value"),
@@ -952,13 +975,18 @@ class CTVSegmentationTool(BaseTool):
             "segmentation_task",
             "segmentation_label",
             "source_labels_exposed",
-            "target_semantics",
             "object_existence_confidence",
             "requested_tumor_type",
             "fallback_from_unavailable_model",
         ):
             if provenance_key in res_meta:
                 meta[provenance_key] = res_meta[provenance_key]
+        # Deprecated model aliases remain backward compatible, but callers
+        # must be able to observe which engine actually ran.
+        requested_route = str(kwargs.get("tumor_type") or kwargs.get("model") or "").strip()
+        meta["requested_tumor_type"] = requested_route or tumor_type
+        meta["resolved_tumor_type"] = tumor_type
+        meta["model_route_migrated"] = bool(requested_route and requested_route != tumor_type)
         # Pass through OAR data if present (e.g. artery/vein from nnUNet pancreatic)
         if "oar_array" in res_meta:
             meta["oar_array"] = res_meta["oar_array"]

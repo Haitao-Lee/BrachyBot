@@ -5011,10 +5011,10 @@ function _screenshot3DIdentityFor(id, mesh) {
     if (String(id).startsWith('ctv_')) {
         const labelId = String(id).replace('ctv_', '');
         identities.push(`structure:ctv:${labelId}`);
-        // CTV label 1 is the tumor target by the label-volume contract; other
-        // labels in the same model output can be vessels or auxiliary anatomy
-        // and must not be boxed when the user asks where the tumor is.
-        if (labelId === '1' || Number(mesh?.userData?.labelId) === 1) {
+        // Include nodal GTV and promoted CTV, not pancreatic auxiliary anatomy.
+        if (typeof window.isCTVTargetLabel === 'function'
+            ? window.isCTVTargetLabel(labelId)
+            : labelId === '1') {
             identities.push('structure:ctv:active');
         }
     }
@@ -5710,17 +5710,9 @@ window.applyRestoredViewerPresentationControls = applyRestoredViewerPresentation
 function toggle3DWireframe(on) {
     Object.values(scene3D.meshes).forEach(mesh => {
         if (!mesh) return;
-        if (mesh.material) {
-            // Add wireframe effect by changing material
-            if (on) {
-                mesh.material.wireframe = true;
-                applyMeshOpacity(mesh, 0.8, true);
-            } else {
-                mesh.material.wireframe = false;
-                const opVal = document.getElementById('meshOpacity3D')?.value || 70;
-                applyMeshOpacity(mesh, parseInt(opVal) / 100, true);
-            }
-        }
+        // Wire is a material mode, not a visibility/opacity command. It must
+        // never reveal hidden CTVs, OARs or guides, nor reset per-node opacity.
+        _forEachMaterial(mesh, material => { material.wireframe = !!on; material.needsUpdate = true; });
     });
     if (scene3D.requestRender) scene3D.requestRender(2);
     if (typeof window.scheduleWorkspaceSave === 'function') {

@@ -172,8 +172,12 @@ def main() -> int:
 
     model = _build_model(root).to(device)
     critic = Discriminator().to(device)
-    model_state = torch.load(args.model, map_location=device, weights_only=True)
-    critic_state = torch.load(args.critic, map_location=device, weights_only=True)
+    # Published, checksum-pinned checkpoints contain only one non-tensor
+    # metadata class: argparse.Namespace. Permit that concrete data container
+    # in this bounded context, never a weights_only=False fallback.
+    with torch.serialization.safe_globals([argparse.Namespace]):
+        model_state = torch.load(args.model, map_location=device, weights_only=True)
+        critic_state = torch.load(args.critic, map_location=device, weights_only=True)
     # Fail closed on any topology/artifact mismatch. A partial load can still
     # emit a plausible-looking tensor and must never be accepted as a valid
     # candidate from the pinned model.

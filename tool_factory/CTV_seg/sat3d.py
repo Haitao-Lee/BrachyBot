@@ -42,6 +42,13 @@ SAT3D_CRITIC_MD5 = "867286a0cf792693608509d0131834dc"
 # clinical indication.  OOD entries remain selectable only with an explicit
 # compatible modality and are clearly marked in provenance.
 SITE_SPECS: Dict[str, Dict[str, Any]] = {
+    "sat3d_generic_tumor": {
+        "site": "unspecified",
+        "label": "point-selected tumor",
+        "modalities": ("ct", "cta", "mri", "t1", "t1ce", "t2", "t2w"),
+        "evidence": "out_of_distribution",
+        "datasets": (),
+    },
     "sat3d_liver_tumor": {
         "site": "liver",
         "label": "liver tumor",
@@ -317,6 +324,20 @@ def _points_to_zyx(
     return converted
 
 
+def _run_worker(command, availability):
+    """Share the same device lease and cross-process GPU lock as other CTV models."""
+    from .site_model_runtime import on_gpu, inference_env
+
+    def run(gpu):
+        worker_command = list(command)
+        worker_command[worker_command.index("--device") + 1] = f"cuda:{gpu}"
+        return subprocess.run(worker_command, cwd=availability["root"],
+            check=False, capture_output=True, text=True, env=inference_env(),
+            timeout=float(os.environ.get("SAT3D_INFERENCE_TIMEOUT", "1800")))
+
+    return on_gpu("sat3d_interactive", run)
+
+
 class SAT3DCTVTool(BaseTool):
     """Run the official SAT3D model with explicit point prompts."""
 
@@ -494,6 +515,12 @@ class SAT3DCTVTool(BaseTool):
                 metadata={"code": "conflicting_sat3d_prompt", "tumor_type_used": tumor_type},
             )
 
+        is_ood = modality in tuple(spec.get("ood_modalities") or ()) or spec.get("evidence") == "out_of_distribution"
+        if is_ood and kwargs.get("allow_out_of_distribution") is not True:
+            return ToolResult(success=False,
+                error="This SAT3D site/modality is outside the validated route evidence. Explicit research-candidate consent is required.",
+                metadata={"code": "sat3d_ood_confirmation_required", "tumor_type_used": tumor_type})
+
         # Inference is the mutation boundary for the active clinical CTV.
         # Validate the required interaction contract first so a zero-prompt
         # request fails immediately instead of hashing two large checkpoints.
@@ -549,14 +576,7 @@ class SAT3DCTVTool(BaseTool):
                     "--device", str(os.environ.get("SAT3D_DEVICE", "cuda:0")),
                 ]
                 with _INFERENCE_LOCK:
-                    completed = subprocess.run(
-                        command,
-                        cwd=availability["root"],
-                        check=False,
-                        capture_output=True,
-                        text=True,
-                        timeout=float(os.environ.get("SAT3D_INFERENCE_TIMEOUT", "1800")),
-                    )
+                    completed = _run_worker(command, availability)
                 if completed.returncode != 0:
                     detail = (completed.stderr or completed.stdout or "").strip()[-6000:]
                     raise RuntimeError(

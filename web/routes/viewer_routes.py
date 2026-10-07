@@ -732,7 +732,8 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             # the old patient's arrays are still in memory after a session
             # switch or page refresh.
             for _key in (
-                "ctv_array", "ctv_mask", "ctv_full_labels", "ctv_label_map",
+                "ctv_array", "ctv_mask", "ctv_binary_array", "ctv_full_labels", "ctv_label_map",
+                "target_semantics",
                 "ctv_path", "ctv_source", "ctv_volume_mm3", "ctv_voxel_count",
                 # Standalone BiomedParse/open-segmentation results belong to
                 # the loaded CT. Never let a different patient inherit them.
@@ -1311,6 +1312,12 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 for item in (effective.structures if effective is not None else [])
                 if str(item.get("classification") or "").strip().lower() == "ctv"
             ])
+            # Every label in the emitted CTV volume is an actual target: the
+            # source/effective structure resolver removed auxiliary anatomy.
+            response.headers['X-CTV-Target-Labels'] = _json.dumps(
+                [int(v) for v in np.unique(ctv_array) if int(v) > 0]
+                if ctv_array is not None else []
+            )
 
             # Also return organ metadata for data tree
             organ_names = (
@@ -2822,11 +2829,8 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 # full multi-label CTV here made a restart validate against a
                 # different representation than the one that produced the
                 # persisted geometry.
-                candidate_ctv = agent._get_label_array("ctv_array")
-                if candidate_ctv is None:
-                    candidate_ctv = agent._get_label_array("ctv_label_data")
-                if candidate_ctv is None:
-                    candidate_ctv = agent._get_label_array("ctv_full_labels")
+                from utils.ctv_targets import resolve_ctv_target
+                candidate_ctv = resolve_ctv_target(agent.memory.retrieve)
                 candidate_oar = agent._get_label_array("oar_array")
                 safety_ctv = _original_grid_mask(candidate_ctv)
                 safety_oar = _original_grid_mask(candidate_oar)

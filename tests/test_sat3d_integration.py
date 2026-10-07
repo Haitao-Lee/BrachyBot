@@ -82,6 +82,7 @@ def test_prostate_route_rejects_ct_but_accepts_t2_modality_before_runtime_probe(
         tumor_type="sat3d_prostate_tumor",
         image_modality="T2w",
         positive_points=[[1, 2, 3]],
+        allow_out_of_distribution=True,
     )
     assert not result.success
     assert result.metadata["code"] == "sat3d_unavailable"
@@ -168,6 +169,7 @@ def test_sat3d_adapter_passes_prompts_and_preserves_lpi_geometry(monkeypatch, tm
         return Completed()
 
     monkeypatch.setattr(sat3d.subprocess, "run", fake_run)
+    monkeypatch.setattr(sat3d, "_run_worker", lambda command, availability: fake_run(command))
     image = sitk.GetImageFromArray(np.ones((5, 6, 7), dtype=np.float32))
     image.SetSpacing((0.8, 0.9, 2.0))
     image.SetOrigin((4.0, 5.0, 6.0))
@@ -224,7 +226,7 @@ def test_sat3d_thin_volume_padding_shifts_prompt_to_the_image_grid():
     assert shifted == [[63, 64, 36]]
 
 
-def test_frontend_exposes_biomedparse_automatic_routes_and_hides_sat3d_prompt_tools():
+def test_frontend_keeps_automatic_routes_separate_from_explicit_sat3d_workflow():
     root = Path(__file__).parents[1]
     html = (root / "web" / "app" / "index.html").read_text(encoding="utf-8")
     manual = (root / "web" / "app" / "static" / "js" / "brachybot-manual-annotation.js").read_text(encoding="utf-8")
@@ -242,7 +244,9 @@ def test_frontend_exposes_biomedparse_automatic_routes_and_hides_sat3d_prompt_to
     assert 'value="sat3d_liver_tumor"' not in html
     assert 'id="ctvImageModality"' in html
     assert 'id="ctvVolumeIndex"' in html
-    assert 'hidden class="file-btn"' in html
+    assert 'id="sat3dRun"' in html
+    assert 'onclick="runSat3dInteractive()"' in html
+    assert '<button hidden class="file-btn"' not in html
     assert "sat3d_positive" in html and "sat3d_negative" in html
     assert "startsWith('sat3d_interactive_')" in manual
     assert "point_coordinate_system: 'voxel_zyx'" in manual

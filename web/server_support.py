@@ -1305,9 +1305,8 @@ def _latest_plan_snapshot(
             ct_image = agent.memory.retrieve("ct_image")
             if ct_image is None:
                 ct_image = agent.memory.retrieve("image")
-            ctv_mask = agent.memory.retrieve("ctv_mask")
-            if ctv_mask is None:
-                ctv_mask = agent.memory.retrieve("ctv_label_data")
+            from utils.ctv_targets import resolve_ctv_target
+            ctv_mask = resolve_ctv_target(agent.memory.retrieve)
             oar_mask = agent.memory.retrieve("oar_mask")
             if oar_mask is None:
                 oar_mask = agent.memory.retrieve("oar_label_data")
@@ -1844,12 +1843,19 @@ def _validate_manual_needle_safety(agent, needles, ct_image, ctv_mask, oar_mask)
     import numpy as np
 
     from tool_factory.seed_plan.planning_pipeline import (
+        _merge_embedded_hard_obstacles,
         _resolve_data_tree_obstacle_labels,
         _world_segment_hits_obstacle,
         build_needle_safety_context,
     )
 
+    from utils.ctv_targets import resolve_ctv_target
+    resolved = resolve_ctv_target(agent.memory.retrieve, shape=tuple(reversed(ct_image.GetSize())))
+    if resolved is not None:
+        ctv_mask = resolved
+    oar_mask, embedded_labels = _merge_embedded_hard_obstacles(oar_mask, agent)
     obstacle_labels, _ = _resolve_data_tree_obstacle_labels(agent)
+    obstacle_labels.update(embedded_labels)
     # One precomputed obstacle volume serves every submitted needle; building
     # it per needle rescaled validation cost with plan size.
     safety_context = build_needle_safety_context(ct_image, ctv_mask, oar_mask, obstacle_labels)
@@ -2348,7 +2354,8 @@ def _compute_manual_ai_dose(
                 continue
         return None
 
-    ctv_mask = _mask_array("ctv_mask", "ctv_array", "ctv_label_data", "ctv_full_labels")
+    from utils.ctv_targets import resolve_ctv_target
+    ctv_mask = resolve_ctv_target(agent.memory.retrieve, shape=original_shape)
     if ctv_mask is None or not np.any(ctv_mask > 0):
         raise ValueError("CTV mask is required before manual AI dose recomputation.")
     oar_mask = _mask_array("oar_array", "oar_label_data")

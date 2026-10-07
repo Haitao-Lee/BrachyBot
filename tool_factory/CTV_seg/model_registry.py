@@ -154,3 +154,26 @@ def aliases() -> Dict[str, str]:
         for alias in r.aliases:
             table[str(alias).casefold()] = r.id
     return table
+
+
+def validate_route_input(route_id, *, image_modality=None, ct_phase=None):
+    """Reject known modality/phase conflicts before any model allocation.
+
+    Generic CT is allowed for an explicitly chosen CT route; an absent phase
+    is not inferred from intensities. A conflicting, supplied phase is an
+    error, including on direct engine calls and restored UI requests.
+    """
+    spec = route(route_id)
+    if spec is None:
+        return
+    modality = str(image_modality or 'CT').strip().upper().replace('-', '').replace('_', '')
+    if spec.modality == 'CT':
+        if modality not in {'CT', 'CTA', 'NCCT', 'CECT'}:
+            raise ValueError(f'{spec.id} requires CT, not {image_modality}.')
+    elif spec.modality == 'T2w' and modality not in {'T2W', 'T2', 'T2MRI'}:
+        raise ValueError(f'{spec.id} requires an explicitly identified T2-weighted MRI.')
+    phases = {'NCCT': 'ncct', 'CECT': 'cect', 'NONCONTRAST': 'ncct', 'CONTRAST': 'cect'}
+    explicit_phase = str(ct_phase or '').strip().upper().replace('-', '').replace('_', '')
+    phase = phases.get(explicit_phase, explicit_phase.lower()) if explicit_phase else phases.get(modality)
+    if spec.ct_phase and phase and phase != spec.ct_phase:
+        raise ValueError(f'{spec.id} requires {spec.ct_phase}; supplied phase is {phase}.')

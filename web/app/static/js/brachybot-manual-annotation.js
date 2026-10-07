@@ -836,12 +836,14 @@ async function showStepResults(step) {
 // (run_step), they're separate tool calls. We expose them as
 // Step-by-Step buttons 0 and "0.5" so the user can drive the
 // full workflow without going through the LLM.
-async function runSegmentationStep(kind) {
+async function runSegmentationStep(kind, options = {}) {
     if (kind !== 'ctv_segmentation' && kind !== 'oar_segmentation') {
         if (typeof addChat === 'function') addChat('error', `Unknown segmentation step: ${kind}`);
         return { success: false, error: `Unknown segmentation step: ${kind}` };
     }
-    const label = kind === 'ctv_segmentation' ? 'CTV segmentation' : 'OAR segmentation';
+    const labelZh = kind === 'ctv_segmentation' ? 'CTV 分割' : 'OAR 分割';
+    const labelEn = kind === 'ctv_segmentation' ? 'CTV segmentation' : 'OAR segmentation';
+    const label = _manualWorkflowLabel(labelZh, labelEn);
     const apiKind = kind === 'ctv_segmentation' ? 'ctv' : 'oar';
     // Capture the initiating case before asynchronous model work. Late
     // results may finish for a hidden case, but must never paint the active
@@ -858,14 +860,14 @@ async function runSegmentationStep(kind) {
     const ctReady = typeof state === 'undefined' || state.ctLoaded === true;
     if (!ctPath.trim()) {
         if (typeof addChat === 'function') {
-            addChat('error', '请先在 Image Data 区域加载 CT 图像,然后再运行分割。');
+            addChat('error', _manualWorkflowLabel('请先加载 CT 图像，然后再运行分割。', 'Load a CT image before running segmentation.'));
         }
         return { success: false, error: 'Load CT before running segmentation.' };
     }
     if (!ctReady) {
         const waiting = _manualWorkflowLabel('当前 CT 仍在加载，请等待加载完成后再分割。', 'The CT is still loading. Wait until it is ready before segmentation.');
         if (typeof addChat === 'function') addChat('system', waiting);
-        _manualWorkflowProgress(kind, 'error', label, label, waiting);
+        _manualWorkflowProgress(kind, 'error', labelZh, labelEn, waiting);
         return { success: false, error: 'CT is still loading.' };
     }
     const btn = document.getElementById('stepBtn_' + kind);
@@ -875,27 +877,27 @@ async function runSegmentationStep(kind) {
         if (numEl) numEl.textContent = '...';
     }
     if (typeof addChat === 'function') {
-        addChat('system', `▶ ${label} (${apiKind.toUpperCase()}) — running...`);
+        addChat('system', '▶ ' + _manualWorkflowLabel(`${labelZh}正在运行…`, `${labelEn} is running…`));
     }
     _saveManualState({ active_step: kind, active_step_started_at: Date.now() });
-    _manualWorkflowProgress(kind, 'running', label, label);
+    _manualWorkflowProgress(kind, 'running', labelZh, labelEn);
     try {
         reportUIEvent('segmentation.step', `${label} started`, { kind });
         const body = {
             kind: apiKind,
             image_path: ctPath.trim(),
-            ...(apiKind === 'ctv' && document.getElementById('ctvPath')?.value?.trim() ? {
+            ...(apiKind === 'ctv' && !options.tumor_type && document.getElementById('ctvPath')?.value?.trim() ? {
                 label_path: document.getElementById('ctvPath').value.trim(),
             } : {}),
             ...(apiKind === 'oar' && document.getElementById('oarPath')?.value?.trim() ? {
                 label_path: document.getElementById('oarPath').value.trim(),
             } : {}),
             ...(apiKind === 'ctv' ? {
-                tumor_type: document.getElementById('ctvModelSelect')?.value || 'nnunet_pancreatic',
+                tumor_type: options.tumor_type || document.getElementById('ctvModelSelect')?.value || 'nnunet_pancreatic',
                 image_modality: document.getElementById('ctvImageModality')?.value || 'CT',
                 volume_index: Math.max(0, Math.trunc(Number(document.getElementById('ctvVolumeIndex')?.value) || 0)),
-                ...(String(document.getElementById('ctvModelSelect')?.value || '').startsWith('sat3d_interactive_')
-                    ? sat3dPromptPayload()
+                ...(String(options.tumor_type || document.getElementById('ctvModelSelect')?.value || '').startsWith('sat3d_interactive_')
+                    ? { ...sat3dPromptPayload(), allow_out_of_distribution: options.allow_out_of_distribution === true }
                     : {}),
             } : {}),
         };
@@ -964,8 +966,8 @@ async function runSegmentationStep(kind) {
             _manualWorkflowProgress(
                 kind,
                 'staged',
-                label,
-                label,
+                labelZh,
+                labelEn,
                 _manualWorkflowLabel('上传掩膜已暂存，请在 Data Tree 中选择标签并移动到 CTV', 'Upload Mask staged; choose a label and Move to CTV'),
             );
             reportUIEvent('segmentation.step', `${label} upload staged`, {
@@ -1012,11 +1014,10 @@ async function runSegmentationStep(kind) {
             }).catch(error => console.warn('[CTV] validation acknowledgement failed:', error));
         }
         _saveManualState({ [kind]: true, active_step: null, active_step_started_at: null });
-        _manualWorkflowProgress(kind, 'done', label, label, _manualWorkflowLabel('\u5df2\u5b8c\u6210', 'Completed'));
+        _manualWorkflowProgress(kind, 'done', labelZh, labelEn, _manualWorkflowLabel('\u5df2\u5b8c\u6210', 'Completed'));
         reportUIEvent('segmentation.step', `${label} completed`, { kind, labels: n, status: 'done' });
         if (typeof addChat === 'function') {
-            const done = typeof window._t === 'function' ? window._t('\u5df2\u5b8c\u6210', 'Completed') : 'Completed';
-            addChat('system', `${done}: ${label} (${n} label(s)).`);
+            addChat('system', _manualWorkflowLabel(`${labelZh}已完成（${n} 个标签）。`, `${labelEn} completed (${n} label(s)).`));
         }
         return { success: true, kind, labels: n };
     } catch (e) {
@@ -1027,10 +1028,10 @@ async function runSegmentationStep(kind) {
             return { success: false, error: e.message, detached: true };
         }
         _saveManualState({ active_step: null, active_step_started_at: null });
-        _manualWorkflowProgress(kind, 'error', label, label, e.message || _manualWorkflowLabel('执行失败', 'Failed'));
+        _manualWorkflowProgress(kind, 'error', labelZh, labelEn, e.message || _manualWorkflowLabel('执行失败', 'Failed'));
         reportUIEvent('segmentation.error', `${label} failed`, { kind, error: e.message });
         if (typeof addChat === 'function') {
-            addChat('error', `${label} failed: ${e.message}`);
+            addChat('error', _manualWorkflowLabel(`${labelZh}失败：${e.message}`, `${labelEn} failed: ${e.message}`));
         }
         return { success: false, error: e.message };
     } finally {
@@ -2954,8 +2955,15 @@ function redrawAllAnnotations() {
         const ctx = annCanvas.getContext('2d');
         ctx.clearRect(0, 0, annCanvas.width, annCanvas.height);
 
-        state.annotations.filter(a => a.axis === axis).forEach(ann => {
+        state.annotations.filter(a => a.axis === axis
+            && (a.type !== 'sat3d_prompt' || a.imagePath === state.ctPath && a.imageShape === JSON.stringify(state.ctShape))
+            && (a.sliceIndex == null || a.sliceIndex === state.slices[axis])).forEach(ann => {
+            const scale = getSliceCanvas(axis)?._displayScale || 1;
+            const ratio = ann.displayScale ? scale / ann.displayScale : 1;
+            ctx.save();
+            ctx.scale(ratio, ratio);
             drawAnnotation(ctx, ann);
+            ctx.restore();
         });
     });
 }
@@ -3067,9 +3075,43 @@ function drawAnnotation(ctx, ann) {
     ctx.restore();
 }
 
+function _ensureAnnotationHistoryScope() {
+    const owner = `${typeof _activeApiSessionId === 'function' ? _activeApiSessionId() || '' : window.activeSessionId || ''}|${state.ctPath || ''}`;
+    if (state.annotationHistoryScope !== owner) {
+        state.annotationUndoStack = [];
+        state.annotationRedoStack = [];
+        state.annotationHistoryScope = owner;
+    }
+}
+
 function pushUndo(annotation) {
+    _ensureAnnotationHistoryScope();
+    annotation.undoId = annotation.undoId || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     state.annotationUndoStack.push(annotation);
     state.annotationRedoStack = [];
+    if (typeof window.scheduleWorkspaceSave === 'function') window.scheduleWorkspaceSave('viewer.annotation.edit');
+}
+
+function _refreshMaskEdit(ids) {
+    renderDataTree();
+    reloadOverlays();
+    requestViewerVisualRefresh('mask-edit');
+    for (const id of ids) {
+        if (typeof scene3D !== 'undefined' && scene3D?.meshes?.[id]) _reconstructMask3D(id, true);
+    }
+    if (typeof window.scheduleWorkspaceSave === 'function') window.scheduleWorkspaceSave('viewer.mask.edit');
+}
+
+function _applyMaskHistory(edit, reverse) {
+    for (const delta of edit.deltas || []) {
+        const mask = state.maskLabels?.[delta.id];
+        if (!mask?.voxels || typeof mask.voxels.add !== 'function') continue;
+        for (const key of delta.keys) {
+            if (delta.add !== reverse) mask.voxels.add(key);
+            else mask.voxels.delete(key);
+        }
+    }
+    _refreshMaskEdit((edit.deltas || []).map(delta => delta.id));
 }
 
 /******** MANUAL MASK DRAWING ********/
@@ -3107,8 +3149,9 @@ function createMaskFromFreehand(axis, points) {
 
     // Create a canvas to rasterize the polygon
     const sliceCanvas = getSliceCanvas(axis);
-    const w = sliceCanvas.width;
-    const h = sliceCanvas.height;
+    const geometry = _getMprGeometry(axis, state.ctShape, window.volumeSpacing || state.ctSpacing);
+    const w = geometry.width;
+    const h = geometry.height;
     const displayScale = sliceCanvas._displayScale || 1;
 
     const maskCanvas = document.createElement('canvas');
@@ -3162,22 +3205,24 @@ function createMaskFromFreehand(axis, points) {
 
     // Merge painted voxels into the (possibly newly created) mask.
     const mask = state.maskLabels[id];
-    for (const key of voxelSet) mask.voxels.add(key);
+    const added = [...voxelSet].filter(key => !mask.voxels.has(key));
+    for (const key of added) mask.voxels.add(key);
     mask.axis = axis;
-
-    renderDataTree();
-    reloadOverlays();
-    requestViewerVisualRefresh('mask-draw');
-    if (scene3D?.meshes?.[id]) _reconstructMask3D(id, true);
+    if (added.length) pushUndo({ type: 'mask_edit', deltas: [{ id, add: true, keys: added }] });
+    _refreshMaskEdit([id]);
     addChat('system', `Mask "${mask.name}" now has ${mask.voxels.size} voxels`);
 }
 
 function eraseMaskArea(axis, points) {
     if (!state.ctShape || points.length < 3) return;
+    const targetId = state.activeMaskId;
+    const target = state.maskLabels?.[targetId];
+    if (!target?.voxels || typeof target.voxels.delete !== 'function') return;
 
     const sliceCanvas = getSliceCanvas(axis);
-    const w = sliceCanvas.width;
-    const h = sliceCanvas.height;
+    const geometry = _getMprGeometry(axis, state.ctShape, window.volumeSpacing || state.ctSpacing);
+    const w = geometry.width;
+    const h = geometry.height;
     const displayScale = sliceCanvas._displayScale || 1;
 
     const maskCanvas = document.createElement('canvas');
@@ -3205,7 +3250,8 @@ function eraseMaskArea(axis, points) {
     const sagittalRatio = _getMprGeometry('sagittal', shape, spacing).resampleRatio;
     const coronalRatio = _getMprGeometry('coronal', shape, spacing).resampleRatio;
     let erased = 0;
-    for (const [id, mask] of Object.entries(state.maskLabels)) {
+    const removed = [];
+    for (const [id, mask] of [[targetId, target]]) {
         if (!mask.visible) continue;
         for (let py = 0; py < h; py++) {
             for (let px = 0; px < w; px++) {
@@ -3225,6 +3271,7 @@ function eraseMaskArea(axis, points) {
                     const key = `${volX},${volY},${volZ}`;
                     if (mask.voxels.has(key)) {
                         mask.voxels.delete(key);
+                        removed.push(key);
                         erased++;
                     }
                 }
@@ -3233,45 +3280,54 @@ function eraseMaskArea(axis, points) {
     }
 
     if (erased > 0) {
-        renderDataTree();
-        reloadOverlays();
-        requestViewerVisualRefresh('mask-erase');
-        for (const id of Object.keys(state.maskLabels)) {
-            if (scene3D?.meshes?.[id]) _reconstructMask3D(id, true);
-        }
+        pushUndo({ type: 'mask_edit', deltas: [{ id: targetId, add: false, keys: removed }] });
+        _refreshMaskEdit([targetId]);
         addChat('system', `Erased ${erased} voxels from masks`);
     }
 }
 
 function viewerUndo() {
+    _ensureAnnotationHistoryScope();
     if (state.annotationUndoStack.length === 0) return;
     const ann = state.annotationUndoStack.pop();
-    state.annotations = state.annotations.filter(a => a !== ann);
+    if (ann.type === 'mask_edit') _applyMaskHistory(ann, true);
+    else if (ann.type === 'prompt_clear') state.annotations.push(...ann.points);
+    else state.annotations = state.annotations.filter(a => a !== ann && a.undoId !== ann.undoId);
     state.annotationRedoStack.push(ann);
     redrawAllAnnotations();
+    _updateSat3dPromptHelp();
+    if (typeof window.scheduleWorkspaceSave === 'function') window.scheduleWorkspaceSave('viewer.undo');
 }
 
 function viewerRedo() {
+    _ensureAnnotationHistoryScope();
     if (state.annotationRedoStack.length === 0) return;
     const ann = state.annotationRedoStack.pop();
-    state.annotations.push(ann);
+    if (ann.type === 'mask_edit') _applyMaskHistory(ann, false);
+    else if (ann.type === 'prompt_clear') state.annotations = state.annotations.filter(a => !ann.points.includes(a));
+    else state.annotations.push(ann);
     state.annotationUndoStack.push(ann);
     redrawAllAnnotations();
+    _updateSat3dPromptHelp();
+    if (typeof window.scheduleWorkspaceSave === 'function') window.scheduleWorkspaceSave('viewer.redo');
 }
 
 function viewerFlipH() {
     state.viewerSettings.flipH = !state.viewerSettings.flipH;
     applyViewerTransform();
+    if (typeof window.scheduleWorkspaceSave === 'function') window.scheduleWorkspaceSave('viewer.flip');
 }
 
 function viewerFlipV() {
     state.viewerSettings.flipV = !state.viewerSettings.flipV;
     applyViewerTransform();
+    if (typeof window.scheduleWorkspaceSave === 'function') window.scheduleWorkspaceSave('viewer.flip');
 }
 
 function viewerRotate() {
     state.viewerSettings.rotation = (state.viewerSettings.rotation + 90) % 360;
     applyViewerTransform();
+    if (typeof window.scheduleWorkspaceSave === 'function') window.scheduleWorkspaceSave('viewer.rotate');
 }
 
 function applyViewerTransform(axis = null) {
@@ -3340,9 +3396,16 @@ function screenToImageCoords(axis, screenX, screenY) {
     const displayScale = sliceCanvas._displayScale || 1;
     const zoom = _viewerZoomForAxis(axis);
 
-    // Account for zoom scaling
-    const canvasX = (screenX - rect.left) / zoom;
-    const canvasY = (screenY - rect.top) / zoom;
+    // Invert the actual transform, including a dose transform host.
+    const width = sliceCanvas._displayW || sliceCanvas.offsetWidth || rect.width / zoom;
+    const height = sliceCanvas._displayH || sliceCanvas.offsetHeight || rect.height / zoom;
+    const dx = screenX - (rect.left + rect.width / 2);
+    const dy = screenY - (rect.top + rect.height / 2);
+    const theta = -(Number(state.viewerSettings.rotation) || 0) * Math.PI / 180;
+    const canvasX = (dx * Math.cos(theta) - dy * Math.sin(theta)) / zoom
+        * (state.viewerSettings.flipH ? -1 : 1) + width / 2;
+    const canvasY = (dx * Math.sin(theta) + dy * Math.cos(theta)) / zoom
+        * (state.viewerSettings.flipV ? -1 : 1) + height / 2;
 
     // Convert to image coordinates
     const imgX = canvasX / displayScale;
@@ -3370,7 +3433,8 @@ function _sliceImageCoordsToVoxel(axis, coords) {
 }
 
 function sat3dPromptPayload() {
-    const points = (state.annotations || []).filter(annotation => annotation.type === 'sat3d_prompt');
+    const points = (state.annotations || []).filter(annotation => annotation.type === 'sat3d_prompt'
+        && annotation.imagePath === state.ctPath && annotation.imageShape === JSON.stringify(state.ctShape));
     return {
         positive_points: points.filter(point => point.promptLabel !== 0).map(point => point.voxelZyx),
         negative_points: points.filter(point => point.promptLabel === 0).map(point => point.voxelZyx),
@@ -3387,9 +3451,12 @@ function _updateSat3dPromptHelp() {
     help.dataset.i18nZh = zh;
     help.dataset.i18nEn = en;
     help.textContent = typeof window._t === 'function' ? window._t(zh, en) : en;
+    if (typeof window.syncSat3dInteraction === 'function') window.syncSat3dInteraction();
 }
 
 function clearSat3dPromptPoints() {
+    const points = (state.annotations || []).filter(annotation => annotation.type === 'sat3d_prompt');
+    if (points.length) pushUndo({ type: 'prompt_clear', points });
     state.annotations = (state.annotations || []).filter(annotation => annotation.type !== 'sat3d_prompt');
     redrawAllAnnotations();
     _updateSat3dPromptHelp();
@@ -3422,6 +3489,9 @@ function setupAnnotationTool(axis) {
         if (e.button !== 0) return;
 
         const coords = screenToImageCoords(axis, e.clientX, e.clientY);
+        if (toolState.axis !== axis || toolState.sliceIndex !== state.slices[axis]) toolState.points = [];
+        toolState.axis = axis;
+        toolState.sliceIndex = state.slices[axis];
         toolState.active = true;
         toolState.startX = coords.displayX;
         toolState.startY = coords.displayY;
@@ -3433,7 +3503,9 @@ function setupAnnotationTool(axis) {
         }
 
         if (tool === 'annotate' || tool === 'eraser') {
-            annCanvas.style.pointerEvents = 'auto';
+            // The slice owns the complete stroke event sequence. Letting the
+            // overlay intercept events after mousedown lost move/up events.
+            annCanvas.style.pointerEvents = 'none';
         }
     });
 
@@ -3454,8 +3526,9 @@ function setupAnnotationTool(axis) {
         const ctx = annCanvas.getContext('2d');
         ctx.clearRect(0, 0, annCanvas.width, annCanvas.height);
 
-        // Redraw existing annotations for this axis
-        state.annotations.filter(a => a.axis === axis).forEach(ann => drawAnnotation(ctx, ann));
+        // The preview must use the same slice/image filter and display scale
+        // as the final annotation layer, not resurrect off-slice records.
+        redrawAllAnnotations();
 
         ctx.save();
         ctx.strokeStyle = '#00ff00';
@@ -3474,8 +3547,10 @@ function setupAnnotationTool(axis) {
                 const volSpacing = window.volumeSpacing || state.ctSpacing || [0.68, 0.68, 5.0];
                 let sx, sy;
                 if (axis === 'axial') { sx = volSpacing[0]; sy = volSpacing[1]; }
-                else if (axis === 'sagittal') { sx = volSpacing[1]; sy = volSpacing[2]; }
-                else { sx = volSpacing[0]; sy = volSpacing[2]; }
+                else if (axis === 'sagittal') { sx = volSpacing[1]; sy = volSpacing[2] / _getMprGeometry(axis, state.ctShape, volSpacing).resampleRatio; }
+                else { sx = volSpacing[0]; sy = volSpacing[2] / _getMprGeometry(axis, state.ctShape, volSpacing).resampleRatio; }
+                sx /= sliceCanvas._displayScale || 1;
+                sy /= sliceCanvas._displayScale || 1;
                 const distMm = Math.sqrt(Math.pow(dx * sx, 2) + Math.pow(dy * sy, 2)).toFixed(1);
                 const midX = (toolState.startX + toolState.currentX) / 2;
                 const midY = (toolState.startY + toolState.currentY) / 2;
@@ -3505,8 +3580,12 @@ function setupAnnotationTool(axis) {
             // Show angle preview if 2 points placed
             if (toolState.points.length === 2) {
                 const p = toolState.points;
-                const v1x = p[0].x - p[1].x, v1y = p[0].y - p[1].y;
-                const v2x = toolState.currentX - p[1].x, v2y = toolState.currentY - p[1].y;
+                const volSpacing = window.volumeSpacing || state.ctSpacing;
+                const geometry = _getMprGeometry(axis, state.ctShape, volSpacing);
+                const sx = axis === 'sagittal' ? volSpacing[1] : volSpacing[0];
+                const sy = axis === 'axial' ? volSpacing[1] : volSpacing[2] / geometry.resampleRatio;
+                const v1x = (p[0].x - p[1].x) * sx, v1y = (p[0].y - p[1].y) * sy;
+                const v2x = (toolState.currentX - p[1].x) * sx, v2y = (toolState.currentY - p[1].y) * sy;
                 const dot = v1x * v2x + v1y * v2y;
                 const mag1 = Math.sqrt(v1x * v1x + v1y * v1y);
                 const mag2 = Math.sqrt(v2x * v2x + v2y * v2y);
@@ -3551,16 +3630,23 @@ function setupAnnotationTool(axis) {
         // Get pixel spacing for this axis
         let pxSpacingX, pxSpacingY;
         if (axis === 'axial') { pxSpacingX = volSpacing[0]; pxSpacingY = volSpacing[1]; }
-        else if (axis === 'sagittal') { pxSpacingX = volSpacing[1]; pxSpacingY = volSpacing[2]; }
-        else { pxSpacingX = volSpacing[0]; pxSpacingY = volSpacing[2]; }
+        else if (axis === 'sagittal') { pxSpacingX = volSpacing[1]; pxSpacingY = volSpacing[2] / _getMprGeometry(axis, state.ctShape, volSpacing).resampleRatio; }
+        else { pxSpacingX = volSpacing[0]; pxSpacingY = volSpacing[2] / _getMprGeometry(axis, state.ctShape, volSpacing).resampleRatio; }
+        const displayScale = sliceCanvas._displayScale || 1;
+        pxSpacingX /= displayScale;
+        pxSpacingY /= displayScale;
         let annotation = null;
 
         if (tool === 'sat3d_positive' || tool === 'sat3d_negative') {
+            const geometry = _getMprGeometry(axis, state.ctShape, volSpacing);
+            if (coords.x < 0 || coords.y < 0 || coords.x >= geometry.width || coords.y >= geometry.height) return;
             const voxel = _sliceImageCoordsToVoxel(axis, coords);
             if (voxel) {
                 const promptLabel = tool === 'sat3d_negative' ? 0 : 1;
                 const duplicate = (state.annotations || []).some(item =>
                     item.type === 'sat3d_prompt'
+                    && item.imagePath === state.ctPath
+                    && item.imageShape === JSON.stringify(state.ctShape)
                     && item.promptLabel === promptLabel
                     && Array.isArray(item.voxelZyx)
                     && item.voxelZyx.join(',') === voxel.zyx.join(',')
@@ -3568,6 +3654,8 @@ function setupAnnotationTool(axis) {
                 if (!duplicate) {
                     annotation = {
                         type: 'sat3d_prompt',
+                        imagePath: state.ctPath,
+                        imageShape: JSON.stringify(state.ctShape),
                         axis,
                         x: coords.displayX,
                         y: coords.displayY,
@@ -3591,8 +3679,8 @@ function setupAnnotationTool(axis) {
             if (toolState.points.length >= 3) {
                 const p = toolState.points;
                 // Calculate angle at p1 between vectors p0->p1 and p2->p1
-                const v1x = p[0].x - p[1].x, v1y = p[0].y - p[1].y;
-                const v2x = p[2].x - p[1].x, v2y = p[2].y - p[1].y;
+                const v1x = (p[0].x - p[1].x) * pxSpacingX, v1y = (p[0].y - p[1].y) * pxSpacingY;
+                const v2x = (p[2].x - p[1].x) * pxSpacingX, v2y = (p[2].y - p[1].y) * pxSpacingY;
                 const dot = v1x * v2x + v1y * v2y;
                 const mag1 = Math.sqrt(v1x * v1x + v1y * v1y);
                 const mag2 = Math.sqrt(v2x * v2x + v2y * v2y);
@@ -3614,18 +3702,14 @@ function setupAnnotationTool(axis) {
                 axis: axis,
                 x1: toolState.startX, y1: toolState.startY,
                 x2: toolState.currentX, y2: toolState.currentY,
-                pixelSpacing: spacing,
+                spacingX: pxSpacingX,
+                spacingY: pxSpacingY,
                 color: '#00aaff',
             };
         } else if (tool === 'annotate') {
             if (toolState.points.length > 2) {
-                annotation = {
-                    type: 'freehand',
-                    axis: axis,
-                    points: [...toolState.points],
-                    color: '#ff00ff',
-                };
-                // Create mask from freehand
+                // The mask transaction itself owns Undo; a second decorative
+                // annotation would consume Undo while leaving voxels unchanged.
                 createMaskFromFreehand(axis, toolState.points);
             }
             toolState.points = [];
@@ -3647,8 +3731,10 @@ function setupAnnotationTool(axis) {
 
                 const zoomFactor = Math.min(containerW / dx, containerH / dy);
                 state.viewerSettings.zoom = Math.min(zoomFactor, 10);
-                state.viewerSettings.panX = (containerW / 2 - boxCenterX) * state.viewerSettings.zoom;
-                state.viewerSettings.panY = (containerH / 2 - boxCenterY) * state.viewerSettings.zoom;
+                // Translation is in unzoomed image pixels; the CSS transform
+                // scales it once. Multiplying here applied zoom twice.
+                state.viewerSettings.panX = containerW / 2 - boxCenterX;
+                state.viewerSettings.panY = containerH / 2 - boxCenterY;
                 // The toolbar zoom/box-fit tools remain intentionally global;
                 // copy their shared transform into each MPR viewport.
                 if (typeof resetMprViewTransforms === 'function') {
@@ -3661,10 +3747,13 @@ function setupAnnotationTool(axis) {
                 applyViewerTransform();
                 document.getElementById('viewerZoom').value = Math.round(state.viewerSettings.zoom * 100);
                 document.getElementById('zoomLabel').textContent = Math.round(state.viewerSettings.zoom * 100) + '%';
+                if (typeof window.scheduleWorkspaceSave === 'function') window.scheduleWorkspaceSave('viewer.zoombox');
             }
         }
 
         if (annotation) {
+            annotation.sliceIndex = state.slices[axis];
+            annotation.displayScale = displayScale;
             state.annotations.push(annotation);
             pushUndo(annotation);
             if (annotation.type === 'sat3d_prompt') {
@@ -3690,13 +3779,9 @@ function setupAnnotationTool(axis) {
 
 function _updateLinkedMprFromEvent(axis, canvas, event, { navigateSlices = false } = {}) {
     if (!state.ctShape) return null;
-    const rect = canvas.getBoundingClientRect();
-    const displayScale = canvas._displayScale || 1;
-    const zoom = _viewerZoomForAxis(axis);
-    const mouseX = (event.clientX - rect.left) / zoom;
-    const mouseY = (event.clientY - rect.top) / zoom;
-    const imgX = Math.floor(mouseX / displayScale);
-    const imgY = Math.floor(mouseY / displayScale);
+    const coords = screenToImageCoords(axis, event.clientX, event.clientY);
+    const imgX = Math.floor(coords.x);
+    const imgY = Math.floor(coords.y);
     const spacing = volumeSpacing || state.ctSpacing || [0.68, 0.68, 5.0];
     const voxel = typeof _viewerMprImageToVoxel === 'function'
         ? _viewerMprImageToVoxel(axis, imgX, imgY, {

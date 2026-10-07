@@ -6754,6 +6754,7 @@ class ChatWorkflowMixin:
         if result.success:
             self.memory.store("last_segmentation_success", True)
             self.memory.store("ctv_array", result.metadata["ctv_array"])
+            self.memory.store("ctv_binary_array", result.metadata.get("ctv_binary_array", result.metadata["ctv_array"]))
             self.memory.store("ctv_mask", result.metadata.get("ctv_mask"))
             if "label_stats" in result.metadata:
                 self.memory.store("ctv_label_stats", result.metadata["label_stats"])
@@ -6878,28 +6879,22 @@ class ChatWorkflowMixin:
         return f"Seed planning failed: {result.error}"
 
     def _handle_evaluation_request(self, message: str) -> str:
-        dose = self.memory.retrieve("dose_distribution")
-        ctv = self.memory.retrieve("ctv_array")
-        oar = self.memory.retrieve("oar_array")
-        if dose is None or ctv is None:
-            return "Please complete treatment plan generation first, then proceed with evaluation."
-        result = self.registry.execute(
-            "dose_evaluation", dose_array=dose, ctv_mask=ctv, oar_mask=oar,
-        )
+        from plans.dose_pre.evaluation_inputs import resolve_dose_evaluation_inputs
+        resolved = resolve_dose_evaluation_inputs(self.memory.retrieve)
+        if resolved["resolution_error"]:
+            return f"Dose evaluation unavailable: {resolved['resolution_error']}"
+        result = self.registry.execute("dose_evaluation", **resolved["params"])
         self.memory.log_tool_call("dose_evaluation", {}, result)
         if result.success:
             return result.message
         return f"Dose evaluation failed: {result.error}"
 
     def _handle_optimization_request(self, message: str) -> str:
-        dose = self.memory.retrieve("dose_distribution")
-        ctv = self.memory.retrieve("ctv_array")
-        oar = self.memory.retrieve("oar_array")
-        if dose is None:
-            return "No optimizable plan found. Please generate a treatment plan first."
-        eval_result = self.registry.execute(
-            "dose_evaluation", dose_array=dose, ctv_mask=ctv, oar_mask=oar,
-        )
+        from plans.dose_pre.evaluation_inputs import resolve_dose_evaluation_inputs
+        resolved = resolve_dose_evaluation_inputs(self.memory.retrieve)
+        if resolved["resolution_error"]:
+            return f"Dose evaluation unavailable: {resolved['resolution_error']}"
+        eval_result = self.registry.execute("dose_evaluation", **resolved["params"])
         if not eval_result.success:
             return f"Evaluation failed: {eval_result.error}"
         metrics = eval_result.metadata
@@ -7049,6 +7044,7 @@ class ChatWorkflowMixin:
             if ctv_array is None:
                 raise RuntimeError("CTV segmentation succeeded without a ctv_array result")
             self.memory.store("ctv_array", ctv_array)
+            self.memory.store("ctv_binary_array", ctv_metadata.get("ctv_binary_array", ctv_array))
             self.memory.store("ctv_voxels", ctv_metadata.get("ctv_voxel_count", 0))
             self.memory.store(
                 "tumor_type_used",
@@ -7429,7 +7425,8 @@ class ChatWorkflowMixin:
         del intra_op_image, original_plan  # Registration and matching were verified by the caller.
 
         ct_image = self.memory.retrieve("ct_image")
-        ctv_array = self.memory.retrieve("ctv_array")
+        from utils.ctv_targets import resolve_ctv_target
+        ctv_array = resolve_ctv_target(self.memory.retrieve)
         oar_array = self.memory.retrieve("oar_array")
         if ct_image is None or ctv_array is None:
             return {"success": False, "error": "Pre-operative CT and CTV are required for replanning"}

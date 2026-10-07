@@ -9,6 +9,7 @@ import os
 import re
 import threading
 import time
+from contextlib import nullcontext
 from datetime import datetime
 from functools import wraps
 from typing import Any, Dict, Mapping, Optional
@@ -3056,12 +3057,8 @@ def register_planning_routes(
         if image is None:
             raise ValueError('monitor_target_unavailable')
         shape = tuple(reversed(image.GetSize()))
-        mask = None
-        for key in ('ctv_array', 'ctv_mask', 'ctv_full_labels'):
-            value = agent.memory.retrieve(key)
-            if value is not None and np.asarray(value).shape == shape:
-                mask = np.asarray(value)
-                break
+        from utils.ctv_targets import resolve_ctv_target
+        mask = resolve_ctv_target(agent.memory.retrieve, shape=shape)
         if mask is None:
             raise ValueError('monitor_target_unavailable')
         settings = _manual_seed_geometry_settings(agent.memory)
@@ -3808,6 +3805,8 @@ def register_planning_routes(
         negative_points = data.get("negative_points") or []
         point_coordinate_system = data.get("point_coordinate_system", "voxel_zyx")
         volume_index = data.get("volume_index", 0)
+        interactive_request = str(tumor_type or "").startswith("sat3d_interactive_")
+        interactive_sources = tuple(agent.memory.retrieve(key) for key in ("ct_image", "ctv_array")) if interactive_request else ()
         if kind == "ctv":
             try:
                 from tool_factory.segmentation_alignment import normalize_positive_label_value
@@ -3908,6 +3907,7 @@ def register_planning_routes(
                     "negative_points": negative_points,
                     "point_coordinate_system": point_coordinate_system,
                     "volume_index": volume_index,
+                    "allow_out_of_distribution": data.get("allow_out_of_distribution") is True,
                 })
                 if label_path:
                     kwargs["label_path"] = label_path
@@ -3947,195 +3947,220 @@ def register_planning_routes(
                     "error": result.error or result.message or "Segmentation failed",
                 }), 422
 
-            # Store under the standard memory keys the rest of the
-            # system reads from (ctv_label_data, oar_label_data, etc.).
-            if kind == "ctv" and hasattr(agent, "memory"):
-                meta = getattr(result, "metadata", {}) or {}
-                mask = None
-                for key in ("ctv_array", "mask_array", "ctv_mask", "mask"):
-                    if meta.get(key) is not None:
-                        mask = meta[key]
-                        break
-                if mask is not None:
-                    try:
-                        agent.memory.store("ctv_label_data", mask)
-                        agent.memory.store("ctv_array", meta.get("ctv_array", mask))
-                        agent.memory.store("ctv_mask", meta.get("ctv_mask", mask))
-                        agent.memory.store("ctv_segmented", True)
-                        if meta.get("tumor_type_used"):
-                            agent.memory.store("tumor_type_used", meta["tumor_type_used"])
-                        # Always overwrite provenance, including ``None``.
-                        # A new uploaded CTV must not inherit full labels or
-                        # tumor metadata from the previous case/mask.
-                        agent.memory.store("ctv_source", meta.get("ctv_source"))
-                        agent.memory.store("ctv_target_value", meta.get("ctv_target_value"))
-                        agent.memory.store("ctv_requested_target_value", meta.get("ctv_requested_target_value"))
-                        agent.memory.store("ctv_source_labels", meta.get("ctv_source_labels") or [])
-                        agent.memory.store("ctv_source_label_counts", meta.get("ctv_source_label_counts") or {})
-                        agent.memory.store("ctv_normalized_binary", bool(meta.get("ctv_normalized_binary")))
-                        agent.memory.store("ctv_normalization_version", int(meta.get("ctv_normalization_version") or 0))
-                        agent.memory.store("label_grid_orientation", meta.get("label_grid_orientation") or "LPI")
-                        agent.memory.store("ctv_full_labels", meta.get("full_label_array"))
-                        agent.memory.store("ctv_embedded_oar_array", meta.get("oar_array"))
-                        if label_path:
-                            # Keep both historical and canonical memory keys
-                            # so auto-tool parameter preparation and manual
-                            # UI uploads resolve the same case-owned mask.
-                            agent.memory.store("ctv_path", label_path)
-                            agent.memory.store("ctv_mask_path", label_path)
-                        # Replacement semantics are authoritative even for an
-                        # empty metadata mapping.  Otherwise an uploaded CTV
-                        # inherits stale model labels/statistics from the
-                        # previous mask and looks semantically multi-label.
-                        agent.memory.store("ctv_label_map", meta.get("label_map") or {})
-                        agent.memory.store("ctv_label_stats", meta.get("label_stats") or {})
-                        if meta.get("ctv_volume_mm3") is not None:
-                            agent.memory.store("ctv_volume_mm3", meta["ctv_volume_mm3"])
-                        if meta.get("ctv_voxel_count") is not None:
-                            agent.memory.store("ctv_voxels", meta["ctv_voxel_count"])
-                        # Persist model identity and prompt provenance as one
-                        # authoritative result contract.  Session restore and
-                        # report generation must not infer these fields from a
-                        # legacy tumor_type string.
-                        for provenance_key in (
-                            "model_name", "repository", "model_url", "artifact_doi",
-                            "checkpoint", "checkpoint_md5", "critic_checkpoint",
-                            "critic_checkpoint_md5", "sat3d_commit", "sat3d_site",
-                            "sat3d_datasets", "sat3d_evidence", "sat3d_out_of_distribution",
-                            "sat3d_prompt_mode", "sat3d_positive_points_zyx",
-                            "sat3d_negative_points_zyx", "sat3d_requires_clinician_review",
-                            "image_modality", "volume_index", "target_semantics",
-                            "text_prompt", "object_existence_confidence",
-                            "model_validation", "inference_precision", "inference_script",
-                            "inference_gpu", "ct_phase",
-                        ):
-                            agent.memory.store(provenance_key, meta.get(provenance_key))
-                    except Exception as e:
-                        logger.warning(f"store ctv_label_data failed: {e}")
-            elif kind == "oar" and hasattr(agent, "memory"):
-                # OAR tool returns metadata["oar_array"], metadata["organ_names"], etc.
-                meta = getattr(result, "metadata", {}) or {}
-                oar_array = meta.get("oar_array")
-                if oar_array is not None:
-                    try:
-                        agent.memory.store("oar_array", oar_array)
-                        agent.memory.store("oar_label_data", oar_array)
-                        agent.memory.store("oar_segmented", True)
-                        if label_path:
-                            agent.memory.store("oar_path", label_path)
-                            agent.memory.store("oar_mask_path", label_path)
-                        # Replace names/counts even when the uploaded mask has
-                        # no anatomical ontology. The OAR tool deliberately
-                        # emits numbered names for that case.
-                        agent.memory.store("organ_names", meta.get("organ_names") or {})
-                        agent.memory.store("organ_counts", meta.get("organ_counts") or {})
-                        agent.memory.store(
-                            "oar_source",
-                            meta.get("oar_source") or ("uploaded_unknown" if label_path else "unknown_model"),
-                        )
-                        agent.memory.store(
-                            "oar_mask_provenance",
-                            meta.get("oar_mask_provenance") or ("uploaded_unknown" if label_path else "model"),
-                        )
-                        # A user-provided multi-label mask is a complete OAR
-                        # volume even when its labels have no anatomical
-                        # ontology.  Keeping this flag explicit prevents the
-                        # next chat turn or workspace restore from treating
-                        # the import as an incomplete result and silently
-                        # replacing it with a model/CTV fallback.
-                        agent.memory.store("oar_is_full", True)
-                        agent.memory.store("label_grid_orientation", meta.get("label_grid_orientation") or "LPI")
-                    except Exception as e:
-                        logger.warning(f"store oar data failed: {e}")
+            # Compare and publish under the case memory lock; no GPU work holds it.
+            with getattr(agent.memory, '_lock', None) or nullcontext():
+                if interactive_request and any(
+                    agent.memory.retrieve(key) is not before
+                    for key, before in zip(("ct_image", "ctv_array"), interactive_sources)
+                ):
+                    checkpoint_operation(agent, "interrupted", "Interactive segmentation source changed; candidate not applied")
+                    return jsonify({"success": False, "kind": kind,
+                        "code": "segmentation_source_changed",
+                        "error": "The image or active CTV changed during SAT3D inference. The candidate was not applied; place points on the current image and retry."}), 409
 
-            meta = getattr(result, "metadata", {}) or {}
-            label_counts = meta.get("organ_counts", {}) or meta.get("label_counts", {}) or meta.get("labels_found", {}) or {}
-            organ_names = {
-                str(key): str(value)
-                for key, value in (meta.get("organ_names") or {}).items()
-            } if kind == "oar" else {}
-            organ_counts = {
-                str(key): int(value)
-                for key, value in (meta.get("organ_counts") or {}).items()
-                if isinstance(value, (int, float))
-            } if kind == "oar" else {}
-            # Return the same normalized object consumed by /viewer/organs.
-            # This makes the upload response a complete control-plane update;
-            # the browser does not have to wait for a binary volume request or
-            # a later 3D reconstruction just to create Data Tree nodes.
-            if kind == "oar":
-                # Model tools historically keyed ``organ_counts`` by the
-                # anatomical name while ``organ_names`` is keyed by numeric
-                # label.  Uploaded masks use numeric keys for both.  Build
-                # this response from the label map and resolve either count
-                # convention so both paths expose the same contract.
-                label_ids = list(organ_names) or [
-                    key for key in organ_counts
-                    if str(key).lstrip("-").isdigit()
-                ]
-                organs = {}
-                for index, raw_label_id in enumerate(label_ids):
-                    label_id = str(raw_label_id)
-                    name = organ_names.get(label_id, f"OAR {index + 1}")
-                    count = organ_counts.get(label_id)
-                    if count is None:
-                        count = organ_counts.get(raw_label_id)
-                    if count is None:
-                        count = organ_counts.get(name, 0)
-                    organs[label_id] = {
-                        "name": name,
-                        "voxel_count": int(count or 0),
-                    }
-            else:
-                organs = {}
-            checkpoint_operation(
-                agent,
-                "ready",
-                f"Manual {kind.upper()} segmentation completed",
-                checkpoint={"kind": "segmentation", "segmentation_kind": kind, "completed": True},
-            )
-            if kind == "ctv" and str(tumor_type or "").startswith("biomedparse_"):
-                from tool_factory.CTV_seg.biomedparse_v2 import record_pipeline_validation
-                record_pipeline_validation(
-                    str(tumor_type),
-                    result_save_path_passed=True,
+                # Store under the standard memory keys the rest of the
+                # system reads from (ctv_label_data, oar_label_data, etc.).
+                if kind == "ctv" and hasattr(agent, "memory"):
+                    meta = getattr(result, "metadata", {}) or {}
+                    mask = None
+                    for key in ("ctv_array", "mask_array", "ctv_mask", "mask"):
+                        if meta.get(key) is not None:
+                            mask = meta[key]
+                            break
+                    if mask is not None:
+                        try:
+                            agent.memory.store("ctv_label_data", mask)
+                            agent.memory.store("ctv_array", meta.get("ctv_array", mask))
+                            agent.memory.store("ctv_binary_array", meta.get("ctv_binary_array", meta.get("ctv_array", mask)))
+                            agent.memory.store("ctv_mask", meta.get("ctv_mask", mask))
+                            agent.memory.store("ctv_segmented", True)
+                            if meta.get("tumor_type_used"):
+                                agent.memory.store("tumor_type_used", meta["tumor_type_used"])
+                            # Always overwrite provenance, including ``None``.
+                            # A new uploaded CTV must not inherit full labels or
+                            # tumor metadata from the previous case/mask.
+                            agent.memory.store("ctv_source", meta.get("ctv_source"))
+                            agent.memory.store("ctv_target_value", meta.get("ctv_target_value"))
+                            agent.memory.store("ctv_requested_target_value", meta.get("ctv_requested_target_value"))
+                            agent.memory.store("ctv_source_labels", meta.get("ctv_source_labels") or [])
+                            agent.memory.store("ctv_source_label_counts", meta.get("ctv_source_label_counts") or {})
+                            agent.memory.store("ctv_normalized_binary", bool(meta.get("ctv_normalized_binary")))
+                            agent.memory.store("ctv_normalization_version", int(meta.get("ctv_normalization_version") or 0))
+                            agent.memory.store("label_grid_orientation", meta.get("label_grid_orientation") or "LPI")
+                            agent.memory.store("ctv_full_labels", meta.get("full_label_array"))
+                            agent.memory.store("ctv_embedded_oar_array", meta.get("oar_array"))
+                            if label_path:
+                                # Keep both historical and canonical memory keys
+                                # so auto-tool parameter preparation and manual
+                                # UI uploads resolve the same case-owned mask.
+                                agent.memory.store("ctv_path", label_path)
+                                agent.memory.store("ctv_mask_path", label_path)
+                            # Replacement semantics are authoritative even for an
+                            # empty metadata mapping.  Otherwise an uploaded CTV
+                            # inherits stale model labels/statistics from the
+                            # previous mask and looks semantically multi-label.
+                            agent.memory.store("ctv_label_map", meta.get("label_map") or {})
+                            agent.memory.store("ctv_label_stats", meta.get("label_stats") or {})
+                            if meta.get("ctv_volume_mm3") is not None:
+                                agent.memory.store("ctv_volume_mm3", meta["ctv_volume_mm3"])
+                            if meta.get("ctv_voxel_count") is not None:
+                                agent.memory.store("ctv_voxels", meta["ctv_voxel_count"])
+                            # Persist model identity and prompt provenance as one
+                            # authoritative result contract.  Session restore and
+                            # report generation must not infer these fields from a
+                            # legacy tumor_type string.
+                            for provenance_key in (
+                                "model_name", "repository", "model_url", "artifact_doi",
+                                "checkpoint", "checkpoint_md5", "critic_checkpoint",
+                                "critic_checkpoint_md5", "sat3d_commit", "sat3d_site",
+                                "sat3d_datasets", "sat3d_evidence", "sat3d_out_of_distribution",
+                                "sat3d_prompt_mode", "sat3d_positive_points_zyx",
+                                "sat3d_negative_points_zyx", "sat3d_requires_clinician_review",
+                                "image_modality", "volume_index", "target_semantics",
+                                "text_prompt", "object_existence_confidence",
+                                "model_validation", "inference_precision", "inference_script",
+                                "inference_gpu", "ct_phase",
+                            ):
+                                agent.memory.store(provenance_key, meta.get(provenance_key))
+                        except Exception:
+                            logger.exception("Manual CTV source storage failed")
+                            raise
+                    else:
+                        raise ValueError("The successful CTV result has no mask to publish")
+                elif kind == "oar" and hasattr(agent, "memory"):
+                    # OAR tool returns metadata["oar_array"], metadata["organ_names"], etc.
+                    meta = getattr(result, "metadata", {}) or {}
+                    oar_array = meta.get("oar_array")
+                    if oar_array is not None:
+                        try:
+                            agent.memory.store("oar_array", oar_array)
+                            agent.memory.store("oar_label_data", oar_array)
+                            agent.memory.store("oar_segmented", True)
+                            if label_path:
+                                agent.memory.store("oar_path", label_path)
+                                agent.memory.store("oar_mask_path", label_path)
+                            # Replace names/counts even when the uploaded mask has
+                            # no anatomical ontology. The OAR tool deliberately
+                            # emits numbered names for that case.
+                            agent.memory.store("organ_names", meta.get("organ_names") or {})
+                            agent.memory.store("organ_counts", meta.get("organ_counts") or {})
+                            agent.memory.store(
+                                "oar_source",
+                                meta.get("oar_source") or ("uploaded_unknown" if label_path else "unknown_model"),
+                            )
+                            agent.memory.store(
+                                "oar_mask_provenance",
+                                meta.get("oar_mask_provenance") or ("uploaded_unknown" if label_path else "model"),
+                            )
+                            # A user-provided multi-label mask is a complete OAR
+                            # volume even when its labels have no anatomical
+                            # ontology.  Keeping this flag explicit prevents the
+                            # next chat turn or workspace restore from treating
+                            # the import as an incomplete result and silently
+                            # replacing it with a model/CTV fallback.
+                            agent.memory.store("oar_is_full", True)
+                            agent.memory.store("label_grid_orientation", meta.get("label_grid_orientation") or "LPI")
+                        except Exception:
+                            logger.exception("Manual OAR source storage failed")
+                            raise
+                    else:
+                        raise ValueError("The successful OAR result has no mask to publish")
+
+                # Use the same Structure Set transaction as the agent's
+                # segmentation path. Raw arrays alone leave an initialized
+                # registry pointing at the previous CTV/OAR and falsely keep
+                # its dose, guide and report current after a manual rerun.
+                from web.structure_service import replace_structure_source
+                replace_structure_source(agent.memory, kind)
+
+                meta = getattr(result, "metadata", {}) or {}
+                label_counts = meta.get("organ_counts", {}) or meta.get("label_counts", {}) or meta.get("labels_found", {}) or {}
+                organ_names = {
+                    str(key): str(value)
+                    for key, value in (meta.get("organ_names") or {}).items()
+                } if kind == "oar" else {}
+                organ_counts = {
+                    str(key): int(value)
+                    for key, value in (meta.get("organ_counts") or {}).items()
+                    if isinstance(value, (int, float))
+                } if kind == "oar" else {}
+                # Return the same normalized object consumed by /viewer/organs.
+                # This makes the upload response a complete control-plane update;
+                # the browser does not have to wait for a binary volume request or
+                # a later 3D reconstruction just to create Data Tree nodes.
+                if kind == "oar":
+                    # Model tools historically keyed ``organ_counts`` by the
+                    # anatomical name while ``organ_names`` is keyed by numeric
+                    # label.  Uploaded masks use numeric keys for both.  Build
+                    # this response from the label map and resolve either count
+                    # convention so both paths expose the same contract.
+                    label_ids = list(organ_names) or [
+                        key for key in organ_counts
+                        if str(key).lstrip("-").isdigit()
+                    ]
+                    organs = {}
+                    for index, raw_label_id in enumerate(label_ids):
+                        label_id = str(raw_label_id)
+                        name = organ_names.get(label_id, f"OAR {index + 1}")
+                        count = organ_counts.get(label_id)
+                        if count is None:
+                            count = organ_counts.get(raw_label_id)
+                        if count is None:
+                            count = organ_counts.get(name, 0)
+                        organs[label_id] = {
+                            "name": name,
+                            "voxel_count": int(count or 0),
+                        }
+                else:
+                    organs = {}
+                checkpoint_operation(
+                    agent,
+                    "ready",
+                    f"Manual {kind.upper()} segmentation completed",
+                    checkpoint={"kind": "segmentation", "segmentation_kind": kind, "completed": True},
                 )
-            return jsonify({
-                "success": True,
-                "kind": kind,
-                "tumor_type": tumor_type,
-                "target_value": meta.get("ctv_target_value") if kind == "ctv" else None,
-                "requested_target_value": meta.get("ctv_requested_target_value") if kind == "ctv" else None,
-                "ctv_normalized_binary": bool(meta.get("ctv_normalized_binary")) if kind == "ctv" else False,
-                "ctv_provenance": ({
-                    "source": meta.get("ctv_source"),
-                    "model_name": meta.get("model_name"),
-                    "repository": meta.get("repository"),
-                    "checkpoint_md5": meta.get("checkpoint_md5"),
-                    "prompt_mode": meta.get("sat3d_prompt_mode"),
-                    "text_prompt": meta.get("text_prompt"),
-                    "positive_points": meta.get("sat3d_positive_points_zyx") or [],
-                    "negative_points": meta.get("sat3d_negative_points_zyx") or [],
-                    "out_of_distribution": bool(meta.get("sat3d_out_of_distribution")),
-                    "requires_clinician_review": bool(
-                        meta.get("sat3d_requires_clinician_review")
-                        or str(meta.get("ctv_source") or "").startswith("biomedparse")
-                    ),
-                    "object_existence_confidence": meta.get("object_existence_confidence"),
-                    "image_modality": meta.get("image_modality"),
-                    "volume_index": meta.get("volume_index", 0),
-                } if kind == "ctv" else None),
-                "label_counts": label_counts,
-                "total_labels": len(label_counts),
-                # The browser can populate the Data Tree immediately from the
-                # authoritative import result while the binary label volume is
-                # fetched and cached in the background.
-                "organs": organs,
-                "organ_names": organ_names,
-                "organ_counts": organ_counts,
-                "oar_source": str(meta.get("oar_source") or "") if kind == "oar" else "",
-                "oar_mask_provenance": str(meta.get("oar_mask_provenance") or "") if kind == "oar" else "",
-            })
+                if kind == "ctv" and str(tumor_type or "").startswith("biomedparse_"):
+                    from tool_factory.CTV_seg.biomedparse_v2 import record_pipeline_validation
+                    record_pipeline_validation(
+                        str(tumor_type),
+                        result_save_path_passed=True,
+                    )
+                return jsonify({
+                    "success": True,
+                    "kind": kind,
+                    "tumor_type": tumor_type,
+                    "target_value": meta.get("ctv_target_value") if kind == "ctv" else None,
+                    "requested_target_value": meta.get("ctv_requested_target_value") if kind == "ctv" else None,
+                    "ctv_normalized_binary": bool(meta.get("ctv_normalized_binary")) if kind == "ctv" else False,
+                    "ctv_provenance": ({
+                        "source": meta.get("ctv_source"),
+                        "model_name": meta.get("model_name"),
+                        "repository": meta.get("repository"),
+                        "checkpoint_md5": meta.get("checkpoint_md5"),
+                        "prompt_mode": meta.get("sat3d_prompt_mode"),
+                        "text_prompt": meta.get("text_prompt"),
+                        "positive_points": meta.get("sat3d_positive_points_zyx") or [],
+                        "negative_points": meta.get("sat3d_negative_points_zyx") or [],
+                        "out_of_distribution": bool(meta.get("sat3d_out_of_distribution")),
+                        "requires_clinician_review": bool(
+                            meta.get("sat3d_requires_clinician_review")
+                            or str(meta.get("ctv_source") or "").startswith("biomedparse")
+                        ),
+                        "object_existence_confidence": meta.get("object_existence_confidence"),
+                        "image_modality": meta.get("image_modality"),
+                        "volume_index": meta.get("volume_index", 0),
+                    } if kind == "ctv" else None),
+                    "label_counts": label_counts,
+                    "total_labels": len(label_counts),
+                    # The browser can populate the Data Tree immediately from the
+                    # authoritative import result while the binary label volume is
+                    # fetched and cached in the background.
+                    "organs": organs,
+                    "organ_names": organ_names,
+                    "organ_counts": organ_counts,
+                    "oar_source": str(meta.get("oar_source") or "") if kind == "oar" else "",
+                    "oar_mask_provenance": str(meta.get("oar_mask_provenance") or "") if kind == "oar" else "",
+                })
         except Exception as e:
             logger.error(f"Manual segmentation ({kind}) failed: {e}")
             checkpoint_operation(
@@ -4164,6 +4189,9 @@ def register_planning_routes(
                 include_experimental=include_experimental,
                 for_ui=True,
             )
+            if request.args.get("interaction") == "point":
+                models = [item for item in filter_catalog(include_experimental=True)
+                          if str(item.get("tumor_type", "")).startswith("sat3d_interactive_")]
             return jsonify({"success": True, "models": models, "count": len(models)})
         except Exception as e:
             logger.error(f"CTV model catalog failed: {e}")

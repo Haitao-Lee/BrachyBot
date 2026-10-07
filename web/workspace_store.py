@@ -219,6 +219,7 @@ def _repair_restored_manual_ctv(
         return False
 
     planning_results["ctv_array"] = binary
+    planning_results["ctv_binary_array"] = binary
     planning_results["ctv_label_data"] = binary.copy()
     existing_mask = planning_results.get("ctv_mask")
     if existing_mask is not None:

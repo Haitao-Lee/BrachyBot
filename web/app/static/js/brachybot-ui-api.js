@@ -4010,7 +4010,9 @@ function _syncTumorTypeSelectorAppearance() {
     const sat3dSelected = String(selected?.value || '').startsWith('sat3d_interactive_');
     ['toolSat3dPositive', 'toolSat3dNegative', 'toolSat3dClear'].forEach(id => {
         const button = document.getElementById(id);
-        if (button) button.disabled = !sat3dSelected;
+        // SAT3D has its own explicit workflow, independent of this automatic
+        // selector. The tool validates image readiness when clicked.
+        if (button) button.disabled = false;
     });
     const promptHelp = document.getElementById('sat3dPromptHelp');
     if (promptHelp) promptHelp.style.display = sat3dSelected ? '' : 'none';

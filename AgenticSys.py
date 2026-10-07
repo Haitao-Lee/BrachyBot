@@ -1416,7 +1416,8 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         )
         from plans.config import setting
 
-        ctv_mask = self.memory.retrieve("ctv_array")
+        from utils.ctv_targets import resolve_ctv_target
+        ctv_mask = resolve_ctv_target(self.memory.retrieve)
         oar_mask = self.memory.retrieve("oar_array")
         ct_image = self.memory.retrieve("ct_image")
         if ctv_mask is None or ct_image is None:
@@ -1434,6 +1435,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             obstacle_value=obstacle_value,
             obstacle_labels=obstacle_labels,
             obstacle_source=obstacle_source,
+            target_semantics="single_target",
         )
         return {
             "ct_image": ct_image,
@@ -2010,20 +2012,19 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 for provenance_key in ("model_validation", "inference_precision", "inference_script", "inference_gpu", "ct_phase"):
                     self.memory.store(provenance_key, metadata.get(provenance_key))
                 self.memory.store("ctv_array", metadata["ctv_array"])
+                self.memory.store("ctv_binary_array", metadata.get("ctv_binary_array", metadata["ctv_array"]))
                 if "ctv_mask" in metadata:
                     self.memory.store("ctv_mask", metadata["ctv_mask"])
                 # Some CTV models emit additional hard structures (for
                 # example artery/vein) alongside the tumor label. Preserve
                 # that mask separately so a later full OAR segmentation
                 # cannot overwrite the model-specific obstacle source.
-                if metadata.get("oar_array") is not None:
-                    self.memory.store("ctv_embedded_oar_array", metadata["oar_array"])
+                self.memory.store("ctv_embedded_oar_array", metadata.get("oar_array"))
                 if "label_stats" in metadata:
                     self.memory.store("ctv_label_stats", metadata["label_stats"])
                 if "label_map" in metadata:
                     self.memory.store("ctv_label_map", metadata["label_map"])
-                if metadata.get("full_label_array") is not None:
-                    self.memory.store("ctv_full_labels", metadata["full_label_array"])
+                self.memory.store("ctv_full_labels", metadata.get("full_label_array"))
                 # Store ctv_voxels and ctv_volume directly so
                 # _build_planning_report can read them from memory.
                 _cv = metadata.get("ctv_voxel_count")
@@ -2695,16 +2696,21 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             # _get_label_array would reorient the array, causing a mismatch
             # between the array orientation and the metadata.
             self.memory.store("ctv_array", meta["ctv_array"])
+            self.memory.store("ctv_binary_array", meta.get("ctv_binary_array", meta["ctv_array"]))
+            self.memory.store("ctv_mask", meta.get("ctv_mask", meta["ctv_array"]))
+            self.memory.store("ctv_embedded_oar_array", meta.get("oar_array"))
             if "label_stats" in meta:
                 self.memory.store("ctv_label_stats", meta["label_stats"])
             if "label_map" in meta:
                 self.memory.store("ctv_label_map", meta["label_map"])
             # Store full multi-label array for data tree display
-            if "full_label_array" in meta and meta["full_label_array"] is not None:
+            if meta.get("full_label_array") is not None:
                 if ct_image is not None:
                     self._store_label_with_metadata(meta["full_label_array"], ct_image, "ctv_full_labels")
                 else:
                     self.memory.store("ctv_full_labels", meta["full_label_array"])
+            else:
+                self.memory.store("ctv_full_labels", None)
             # Store ctv_voxels and ctv_volume for report generation
             _cv = meta.get("ctv_voxel_count")
             if not _cv:

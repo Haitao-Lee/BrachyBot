@@ -1020,8 +1020,9 @@ def test_label_volume_cache_rejects_legacy_uint8_oar_entries():
     viewer = read("web/app/static/js/brachybot-viewer-volume.js")
     # v5 keeps independent CTV/OAR color namespaces in addition to the
     # uint16 OAR wire format introduced by v4.
-    assert "formatVersion: 5" in viewer
-    assert "Number(hdr.formatVersion || 0) >= 5" in viewer
+    assert "formatVersion: 6" in viewer
+    assert "Number(hdr.formatVersion || 0) >= 6" in viewer
+    assert "ctvTargetLabels: window._ctvTargetLabels" in viewer
     assert "oarBytesPerVoxel === 2" in viewer
     assert "ctvObjectMap" in viewer
     assert "organMeta" in viewer

@@ -104,9 +104,16 @@ def resolve_dose_evaluation_inputs(retrieve: Retrieve) -> Dict[str, Any]:
                 return value
         return None
 
-    ct_grid_ctv = _as_array(_first("ctv_mask", "ctv_array", "ctv_binary_array"))
+    from utils.ctv_targets import resolve_ctv_target, project_target
+    try:
+        ct_grid_ctv = resolve_ctv_target(retrieve)
+        plan_grid_ctv = project_target(
+            retrieve("resampled_ctv"), source=retrieve("ctv_source"),
+            semantics=retrieve("target_semantics"),
+        )
+    except ValueError as exc:
+        return {"resolution_error": str(exc), "params": {}}
     ct_grid_oar = _as_array(_first("oar_array", "oar_label_data"))
-    plan_grid_ctv = _as_array(retrieve("resampled_ctv"))
     plan_grid_oar = _as_array(retrieve("resampled_oar"))
     ct_spacing = retrieve("ct_spacing")
     try:
@@ -146,6 +153,7 @@ def resolve_dose_evaluation_inputs(retrieve: Retrieve) -> Dict[str, Any]:
             params: Dict[str, Any] = {
                 "dose_array": dose_gy,
                 "ctv_mask": ctv,
+                "target_semantics": "single_target",
                 "prescribed_dose": resolve_prescription_gy(
                     plan_config,
                     previous_metrics,

@@ -325,6 +325,14 @@ def _source_structures(memory: Any) -> list[Dict[str, Any]]:
             object_id = f"structure:embedded:{source_label}"
             if object_id in existing_ids or not np.any(full == source_label):
                 continue
+            # Only collapse exact duplicate anatomy from the same model's
+            # companion OAR. Equal names or partial overlap alone are not
+            # evidence that two clinical structures are the same object.
+            if any(item["source_classification"] == "oar"
+                   and str(item["name"]).strip().lower() == name
+                   and np.array_equal(item["mask"], full == source_label)
+                   for item in result):
+                continue
             result.append({
                 "object_id": object_id,
                 "source_classification": "oar",
@@ -796,6 +804,7 @@ def _commit_effective(memory: Any, effective: EffectiveStructures, reason: str) 
         "ctv_source_object_ids": ctv_source_object_ids,
         "ctv_label_map": effective.ctv_label_map,
         "ctv_source": "classified",
+        "target_semantics": "classified_union",
         "oar_array": effective.oar_array,
         "organ_names": effective.organ_names,
         "organ_counts": effective.organ_counts,

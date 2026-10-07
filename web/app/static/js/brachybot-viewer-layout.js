@@ -477,6 +477,9 @@ function setViewerLayout(layout, options = {}) {
 }
 
 function setViewerTool(tool) {
+    if (tool === 'sat3d_positive' || tool === 'sat3d_negative') {
+        if (typeof window.prepareSat3dInteraction === 'function' && !window.prepareSat3dInteraction()) return;
+    }
     // Clicking the already-active tool toggles it off (deselect + unhighlight).
     // This keeps the toolbar honest: pressing a highlighted tool again cancels
     // the mode instead of leaving it stuck on.
@@ -740,9 +743,8 @@ function resetViewer() {
         displayMode: 'ct',
     };
     resetMprViewTransforms(1, 0, 0);
-    state.annotations = [];
-    state.annotationUndoStack = [];
-    state.annotationRedoStack = [];
+    // Reset changes presentation, not clinical/manual contours or prompt
+    // evidence. Keep annotations and their undo history intact.
     document.getElementById('viewerWindow').value = 400;
     document.getElementById('viewerLevel').value = 40;
     document.getElementById('viewerThreshold').value = '';
@@ -750,6 +752,13 @@ function resetViewer() {
     document.getElementById('zoomLabel').textContent = '100%';
     document.getElementById('overlayCTV').checked = false;
     document.getElementById('overlayOAR').checked = false;
+    const displayMode = document.getElementById('displayMode');
+    if (displayMode) displayMode.value = 'ct';
+    const preset = document.getElementById('windowPreset');
+    if (preset) preset.value = '';
+    if (typeof applyRestoredViewerToolPresentation === 'function') applyRestoredViewerToolPresentation();
+    if (typeof _updateSat3dPromptHelp === 'function') _updateSat3dPromptHelp();
+    if (typeof window.scheduleWorkspaceSave === 'function') window.scheduleWorkspaceSave('viewer.reset');
     ['axial', 'sagittal', 'coronal'].forEach(axis => {
         const canvas = document.getElementById('sliceCanvas' + capitalize(axis));
         if (canvas) {
@@ -1842,6 +1851,14 @@ function _forEachMaterial(mesh, fn) {
 
 function applyMeshVisibility(mesh, visible, opacity = 1) {
     if (!mesh) return;
+    const labelSetting = typeof state !== 'undefined' ? state.labelImage?.['3d'] : null;
+    const meshId = String(mesh.userData?.id || mesh.userData?.nodeId || '');
+    const isLabel = mesh.userData?.labelToolbarControlled === true
+        || /^(ctv$|ctv_|organ_|mask_)/.test(meshId)
+        || (meshId && window.isDataTreeMaskId?.(meshId));
+    if (isLabel && labelSetting?.configured === true && !window.__reportCaptureActive) {
+        visible = visible && labelSetting.visible !== false && Number(labelSetting.opacity) > 0;
+    }
     mesh.visible = !!visible && opacity > 0.001;
     const surface = getMeshSurface(mesh);
     if (surface && surface !== mesh) surface.visible = mesh.visible;
@@ -1850,7 +1867,18 @@ function applyMeshVisibility(mesh, visible, opacity = 1) {
 
 function applyMeshOpacity(mesh, opacity, visible = true) {
     if (!mesh) return;
-    const op = Math.max(0, Math.min(1, Number(opacity) || 0));
+    let op = Math.max(0, Math.min(1, Number(opacity) || 0));
+    const labelSetting = typeof state !== 'undefined' ? state.labelImage?.['3d'] : null;
+    const meshId = String(mesh.userData?.id || mesh.userData?.nodeId || '');
+    const isLabel = mesh.userData?.labelToolbarControlled === true
+        || /^(ctv$|ctv_|organ_|mask_)/.test(meshId)
+        || (meshId && window.isDataTreeMaskId?.(meshId));
+    if (isLabel && labelSetting?.configured === true && !window.__reportCaptureActive) {
+        // Apply the group presentation constraint at the shared renderer
+        // boundary. A later tree edit or mesh hydration must not bypass it.
+        op *= Math.max(0, Math.min(1, Number(labelSetting.opacity) || 0));
+        visible = visible && labelSetting.visible !== false;
+    }
     _forEachMaterial(mesh, mat => {
         mat.transparent = op < 0.999;
         mat.opacity = op;

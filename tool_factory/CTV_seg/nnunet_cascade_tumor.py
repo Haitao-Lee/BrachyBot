@@ -278,6 +278,11 @@ class NNUNetCascadeTumorTool(BaseTool):
         }
 
     def _execute(self, **kwargs) -> ToolResult:
+        from .model_registry import validate_route_input
+        try:
+            validate_route_input(self.name, image_modality=kwargs.get("image_modality"), ct_phase=kwargs.get("ct_phase"))
+        except ValueError as exc:
+            return self._failure(str(exc), "unsupported_modality")
         fast_mode = bool(kwargs.get("fast_mode", False))
         image = kwargs.get("image")
         image_path = kwargs.get("image_path")
@@ -469,10 +474,12 @@ class NNUNetCascadeTumorTool(BaseTool):
             voxel_count = int(np.count_nonzero(mask_array))
             spacing = mask.GetSpacing()
             volume_mm3 = float(voxel_count * spacing[0] * spacing[1] * spacing[2])
-            source = f"nnunet_cascade_{self.SITE}"
+            source = self.name
             metadata = {
                 "ctv_mask": mask,
                 "ctv_array": mask_array,
+                "ctv_binary_array": mask_array,
+                "inference_completed": True,
                 "ctv_volume_mm3": volume_mm3,
                 "ctv_voxel_count": voxel_count,
                 "tumor_type_used": str(spec["tumor_type"]),
@@ -486,7 +493,7 @@ class NNUNetCascadeTumorTool(BaseTool):
                 "source_labels_exposed": [f"{self.SITE}_tumor"],
                 "label_counts": {1: voxel_count},
                 "label_map": {1: f"{self.SITE} tumor"},
-                "target_semantics": f"{self.SITE}_tumor_ctv_only",
+                "target_semantics": "single_target",
                 "cascade_folds": 5,
                 "cascade_margin_mm": 30.0,
                 "cascade_threshold": 0.5,

@@ -11,6 +11,7 @@ from utils.cancellation import OperationCancelled, raise_if_cancelled
 from .nnunet_cascade_tumor import NNUNetCascadeTumorTool
 from .site_models import SITE_MODELS, site_model_availability, inference_command
 from .site_model_runtime import inference_env, communicate_cancellable, on_gpu
+from .model_registry import target_semantics
 
 class SiteModelTumorTool(BaseTool):
     MODEL_TYPE = ''
@@ -40,6 +41,8 @@ class SiteModelTumorTool(BaseTool):
                 raise ValueError('This model requires a single-channel 3D CT.')
             if str(kwargs.get('image_modality') or 'CT').upper() not in ('CT', 'CTA', 'NCCT', 'CECT'):
                 raise ValueError('This model supports CT only, not PET/MRI.')
+            from .model_registry import validate_route_input
+            validate_route_input(self.name, image_modality=kwargs.get('image_modality'), ct_phase=kwargs.get('ct_phase'))
             availability = site_model_availability(self.MODEL_TYPE)
             if not availability['available']:
                 raise RuntimeError('; '.join(availability['missing']))
@@ -95,7 +98,8 @@ class SiteModelTumorTool(BaseTool):
         mask.CopyInformation(aligned)
         counts = {int(k): int(np.count_nonzero(labels == k)) for k in spec['labels']}
         return ToolResult(success=True, data=binary, message=f"{spec['label']} segmentation completed.", metadata={
-            'ctv_mask': mask, 'ctv_array': binary, 'full_label_array': aligned,
+            'ctv_mask': mask, 'ctv_array': binary, 'ctv_binary_array': binary,
+            'full_label_array': labels, 'full_label_mask': aligned,
             'label_map': dict(spec['labels']), 'label_counts': counts,
             'ctv_voxel_count': int(binary.sum()), 'ctv_volume_mm3': float(binary.sum()*np.prod(mask.GetSpacing())),
             'ctv_source': self.name, 'tumor_type_used': self.name, 'model_name': spec['label'],
@@ -103,7 +107,8 @@ class SiteModelTumorTool(BaseTool):
             'inference_precision': spec['precision'], 'inference_script': str(spec['script']),
             'inference_gpu': f'cuda:{gpu}', 'image_modality': 'CT', 'ct_phase': spec.get('ct_phase'),
             'source_labels_exposed': list(spec['labels'].values()), 'output_orientation': 'LPI',
-            'target_semantics': 'primary_and_nodal_gtv_union' if len(counts) > 1 else 'lung_tumor_only',
+            'target_semantics': target_semantics(self.name),
+            'inference_completed': True,
         })
 
 class VistaLungTumorTool(SiteModelTumorTool):
