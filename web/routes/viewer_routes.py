@@ -76,6 +76,33 @@ _label_color = _server_support._label_color
 _ctv_label_color = _server_support._ctv_label_color
 _validate_path = _server_support._validate_path
 
+
+def _overlay_opacity(value, default):
+    """Accept finite presentation alpha only; never wrap uint8 or paint NaN."""
+    try:
+        alpha = float(value)
+        if np.isfinite(alpha):
+            return max(0.0, min(1.0, alpha))
+    except (TypeError, ValueError, OverflowError):
+        pass
+    return default
+
+
+def _overlay_color(value, default):
+    if isinstance(value, str) and len(value) == 7 and value.startswith('#'):
+        try:
+            return [int(value[index:index + 2], 16) for index in (1, 3, 5)]
+        except ValueError:
+            return default
+    if isinstance(value, (list, tuple)) and len(value) == 3:
+        try:
+            channels = [float(channel) for channel in value]
+            if all(np.isfinite(channel) and 0 <= channel <= 255 for channel in channels):
+                return [round(channel) for channel in channels]
+        except (TypeError, ValueError, OverflowError):
+            pass
+    return default
+
 _UPLOADED_LABEL_SOURCES = {
     "manual_label",
     "uploaded_unknown",
@@ -188,6 +215,197 @@ def _crop_binary_surface_volume(binary_volume, margin=None):
         lower[0]:upper[0], lower[1]:upper[1], lower[2]:upper[2],
     ])
     return cropped, lower
+
+
+def _viewer_display_label_arrays(agent, ct_shape):
+    """Resolve one display Structure Set for binary MPR and PNG fallback.
+
+    Keep legacy source alignment, multi-target GTV and embedded anatomy
+    semantics identical. This read-only resolver never rewrites patient data.
+    """
+    from tool_factory.segmentation_alignment import align_label_to_reference
+
+    # Use full multi-label array for CTV (includes tumor, artery, vein, pancreas, etc.)
+    # Falls back to binary ctv_array if full labels not available
+    ctv_source = str(agent.memory.retrieve("ctv_source", "") or "").strip().lower()
+    # Structure reclassification intentionally exposes the effective
+    # source as ``classified``.  The original model provenance is
+    # still authoritative for deciding whether ctv_full_labels may be
+    # split into embedded anatomy nodes.
+    base_ctv_source = str(
+        agent.memory.retrieve("structure_base_ctv_source", "") or ""
+    ).strip().lower()
+    oar_source = str(agent.memory.retrieve("oar_source", "") or "").strip().lower()
+    ct_ref = agent.memory.retrieve("ct_image")
+
+    uploaded_sources = {
+        "manual_label",
+        "uploaded_unknown",
+        "uploaded",
+        "manual_upload",
+    }
+
+    def _uploaded_label_array(source, array_key, path_key):
+        """Reload uploaded labels on the current LPI CT grid.
+
+        Older snapshots may contain a same-shaped raw-grid array. If
+        the case still has the original uploaded path, use its physical
+        metadata instead of trusting the legacy array orientation.
+        """
+        path = agent.memory.retrieve(path_key)
+        # Older checkpoints used the explicit ``*_mask_path`` key.
+        # Prefer the canonical key, but keep the fallback so a mask
+        # uploaded before the workspace schema migration is still
+        # aligned from its physical metadata rather than a stale raw
+        # NumPy array.
+        if not path:
+            path = agent.memory.retrieve(
+                "ctv_mask_path" if array_key == "ctv_array" else "oar_mask_path"
+            )
+        if source in uploaded_sources and path and ct_ref is not None:
+            try:
+                return sitk.GetArrayFromImage(
+                    align_label_to_reference(str(path), ct_ref, "LPI")
+                )
+            except Exception as exc:
+                logger.warning("[label_volume] uploaded %s alignment failed: %s", array_key, exc)
+        return agent._get_label_array(array_key)
+
+    ctv_full_memory = agent._get_label_array("ctv_full_labels")
+    # Only model-produced multi-label CTV output may be split into
+    # embedded artery/vein/pancreas OAR labels. Uploaded CTV data is
+    # opaque user data and remains a foreground CTV mask. Historical
+    # BiomedParse/TotalSegmentator CTV outputs and current SAT3D
+    # outputs are model-produced, so restored payloads from those
+    # sources follow the model path rather than uploaded-label logic.
+    # Keep the former source token for old sessions created before the
+    # provenance field was simplified.
+    model_sources = {
+        "model",
+        "biomedparse_v2",
+        "biomedparse_v2_research_candidate",
+        "totalsegmentator",
+        "totalsegmentator_liver_tumor",
+        "sat3d",
+    }
+    # Keep model-produced multi-label CTV payloads intact across
+    # restore. The pancreatic nnUNet route uses a specific provenance
+    # token, so treating only the legacy `model` token as multi-label
+    # silently dropped pancreas/artery/vein when OAR was loaded later.
+    # The registry owns the source -> semantics mapping so a
+    # registered model such as vista3d_lung_tumor is never mistaken
+    # for an uploaded mask.
+    from tool_factory.CTV_seg.model_registry import (
+        is_registered_model_source as _registered_ctv_model,
+    )
+    is_model_ctv = (
+        _registered_ctv_model(ctv_source)
+        or _registered_ctv_model(base_ctv_source)
+    )
+    is_multitarget_gtv = is_multitarget_gtv_source(base_ctv_source or ctv_source)
+    if is_multitarget_gtv:
+        is_model_ctv = False  # GTVn is target, never embedded artery label 2.
+    ctv_full = ctv_full_memory if is_model_ctv or is_multitarget_gtv else None
+    if ctv_full is None:
+        ctv_full = _uploaded_label_array(ctv_source, "ctv_array", "ctv_path")
+    oar_array = _uploaded_label_array(oar_source, "oar_array", "oar_path")
+
+    # Reorganize labels for data tree:
+    # - CTV node: only tumor (label 1)
+    # - OAR non-traversable: artery (label 2), vein (label 3) from nnUNet
+    # - OAR traversable: pancreas (label 4) from nnUNet
+    ctv_array = None
+    if ctv_full is not None:
+        # Model output reserves label 1 for the tumor and may contain
+        # embedded anatomy labels.  An uploaded CTV is opaque user
+        # data, so every non-zero voxel is CTV even when its source
+        # label is 255 or another application-specific value.
+        if is_multitarget_gtv:
+            ctv_array = np.asarray(ctv_full, dtype=np.uint8)
+        elif is_model_ctv:
+            ctv_array = (
+                (ctv_full == 1).astype(np.uint8)
+                if np.any(ctv_full == 1)
+                else None
+            )
+        else:
+            ctv_array = (ctv_full > 0).astype(np.uint8)
+
+        # Merge embedded nnUNet vessel/organ labels only when no
+        # user-supplied OAR mask exists.  An uploaded unknown mask is
+        # an opaque, complete label volume: adding anatomy-derived
+        # labels would manufacture structures the user did not
+        # provide and would make the Data Tree disagree with the
+        # imported image.
+        nnunet_oar_labels = {
+            2: 201,   # artery -> OAR label 201
+            3: 202,   # vein -> OAR label 202
+            4: 203,   # pancreas -> OAR label 203
+        }
+        has_nnunet_oar = False
+        if is_model_ctv and oar_source not in uploaded_sources:
+            for src_label, dst_label in nnunet_oar_labels.items():
+                if np.any(ctv_full == src_label):
+                    has_nnunet_oar = True
+                    break
+
+        if has_nnunet_oar:
+            if oar_array is None:
+                # Embedded anatomy is remapped to IDs 201-203. Keep
+                # the working volume wide enough before assignment;
+                # uint8 wrapped those IDs before transport.
+                oar_array = np.zeros_like(ctv_full, dtype=np.uint16)
+            elif oar_array.shape != ctv_full.shape:
+                # Shape mismatch - likely orientation issue
+                # Skip merging to avoid IndexError
+                logger.warning(f"[label_volume] OAR shape {oar_array.shape} != CTV shape {ctv_full.shape}, skipping nnUNet label merge")
+                has_nnunet_oar = False  # Disable the merge below
+
+            if has_nnunet_oar:
+                # Restored NPY sidecars are often read-only memmaps.
+                # The embedded-label merge is a real in-memory
+                # mutation, so always detach a private writable buffer
+                # instead of relying on astype(copy=False).
+                oar_array = np.array(
+                    oar_array,
+                    dtype=np.uint16,
+                    copy=True,
+                    order="C",
+                )
+                for src_label, dst_label in nnunet_oar_labels.items():
+                    mask = ctv_full == src_label
+                    if np.any(mask):
+                        oar_array[mask] = dst_label
+
+    shape = ct_shape  # (Z, Y, X)
+
+    # Ensure label arrays have same shape as CT
+    if ctv_array is not None and ctv_array.shape != shape:
+        logger.warning(f"CTV shape mismatch: {ctv_array.shape} vs CT {shape}, resampling...")
+        ctv_array = _resample_legacy_label_array(ctv_array, ct_ref, shape)
+
+    if oar_array is not None and oar_array.shape != shape:
+        logger.warning(f"OAR shape mismatch: {oar_array.shape} vs CT {shape}, resampling...")
+        oar_array = _resample_legacy_label_array(oar_array, ct_ref, shape)
+
+    effective = None
+    ctv_object_map = {}
+    oar_object_map = {}
+    if agent.memory.retrieve("structure_registry_initialized"):
+        effective = build_effective_structures(agent.memory)
+        ctv_array = effective.ctv_array
+        oar_array = effective.oar_array
+        for item in effective.structures:
+            target_label = int(item["target_label"])
+            if item["classification"] == "ctv":
+                ctv_object_map[target_label] = str(item["object_id"])
+            else:
+                oar_object_map[target_label] = str(item["object_id"])
+    return ctv_array, oar_array, effective, ctv_object_map, oar_object_map, {
+        "ctv_source": ctv_source,
+        "has_model_full_labels": is_model_ctv and ctv_full_memory is not None,
+    }
+
 
 
 def _viewer_label_array(agent, array_key, path_key, source, reference_image, target_shape):
@@ -1053,182 +1271,8 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             import json as _json
             from tool_factory.segmentation_alignment import align_label_to_reference
 
-            # Use full multi-label array for CTV (includes tumor, artery, vein, pancreas, etc.)
-            # Falls back to binary ctv_array if full labels not available
-            ctv_source = str(agent.memory.retrieve("ctv_source", "") or "").strip().lower()
-            # Structure reclassification intentionally exposes the effective
-            # source as ``classified``.  The original model provenance is
-            # still authoritative for deciding whether ctv_full_labels may be
-            # split into embedded anatomy nodes.
-            base_ctv_source = str(
-                agent.memory.retrieve("structure_base_ctv_source", "") or ""
-            ).strip().lower()
-            oar_source = str(agent.memory.retrieve("oar_source", "") or "").strip().lower()
-            ct_ref = agent.memory.retrieve("ct_image")
-
-            uploaded_sources = {
-                "manual_label",
-                "uploaded_unknown",
-                "uploaded",
-                "manual_upload",
-            }
-
-            def _uploaded_label_array(source, array_key, path_key):
-                """Reload uploaded labels on the current LPI CT grid.
-
-                Older snapshots may contain a same-shaped raw-grid array. If
-                the case still has the original uploaded path, use its physical
-                metadata instead of trusting the legacy array orientation.
-                """
-                path = agent.memory.retrieve(path_key)
-                # Older checkpoints used the explicit ``*_mask_path`` key.
-                # Prefer the canonical key, but keep the fallback so a mask
-                # uploaded before the workspace schema migration is still
-                # aligned from its physical metadata rather than a stale raw
-                # NumPy array.
-                if not path:
-                    path = agent.memory.retrieve(
-                        "ctv_mask_path" if array_key == "ctv_array" else "oar_mask_path"
-                    )
-                if source in uploaded_sources and path and ct_ref is not None:
-                    try:
-                        return sitk.GetArrayFromImage(
-                            align_label_to_reference(str(path), ct_ref, "LPI")
-                        )
-                    except Exception as exc:
-                        logger.warning("[label_volume] uploaded %s alignment failed: %s", array_key, exc)
-                return agent._get_label_array(array_key)
-
-            ctv_full_memory = agent._get_label_array("ctv_full_labels")
-            # Only model-produced multi-label CTV output may be split into
-            # embedded artery/vein/pancreas OAR labels. Uploaded CTV data is
-            # opaque user data and remains a foreground CTV mask. Historical
-            # BiomedParse/TotalSegmentator CTV outputs and current SAT3D
-            # outputs are model-produced, so restored payloads from those
-            # sources follow the model path rather than uploaded-label logic.
-            # Keep the former source token for old sessions created before the
-            # provenance field was simplified.
-            model_sources = {
-                "model",
-                "biomedparse_v2",
-                "biomedparse_v2_research_candidate",
-                "totalsegmentator",
-                "totalsegmentator_liver_tumor",
-                "sat3d",
-            }
-            # Keep model-produced multi-label CTV payloads intact across
-            # restore. The pancreatic nnUNet route uses a specific provenance
-            # token, so treating only the legacy `model` token as multi-label
-            # silently dropped pancreas/artery/vein when OAR was loaded later.
-            # The registry owns the source -> semantics mapping so a
-            # registered model such as vista3d_lung_tumor is never mistaken
-            # for an uploaded mask.
-            from tool_factory.CTV_seg.model_registry import (
-                is_registered_model_source as _registered_ctv_model,
-            )
-            is_model_ctv = (
-                _registered_ctv_model(ctv_source)
-                or _registered_ctv_model(base_ctv_source)
-            )
-            is_multitarget_gtv = is_multitarget_gtv_source(base_ctv_source or ctv_source)
-            if is_multitarget_gtv:
-                is_model_ctv = False  # GTVn is target, never embedded artery label 2.
-            ctv_full = ctv_full_memory if is_model_ctv or is_multitarget_gtv else None
-            if ctv_full is None:
-                ctv_full = _uploaded_label_array(ctv_source, "ctv_array", "ctv_path")
-            oar_array = _uploaded_label_array(oar_source, "oar_array", "oar_path")
-
-            # Reorganize labels for data tree:
-            # - CTV node: only tumor (label 1)
-            # - OAR non-traversable: artery (label 2), vein (label 3) from nnUNet
-            # - OAR traversable: pancreas (label 4) from nnUNet
-            ctv_array = None
-            if ctv_full is not None:
-                # Model output reserves label 1 for the tumor and may contain
-                # embedded anatomy labels.  An uploaded CTV is opaque user
-                # data, so every non-zero voxel is CTV even when its source
-                # label is 255 or another application-specific value.
-                if is_multitarget_gtv:
-                    ctv_array = np.asarray(ctv_full, dtype=np.uint8)
-                elif is_model_ctv:
-                    ctv_array = (
-                        (ctv_full == 1).astype(np.uint8)
-                        if np.any(ctv_full == 1)
-                        else None
-                    )
-                else:
-                    ctv_array = (ctv_full > 0).astype(np.uint8)
-
-                # Merge embedded nnUNet vessel/organ labels only when no
-                # user-supplied OAR mask exists.  An uploaded unknown mask is
-                # an opaque, complete label volume: adding anatomy-derived
-                # labels would manufacture structures the user did not
-                # provide and would make the Data Tree disagree with the
-                # imported image.
-                nnunet_oar_labels = {
-                    2: 201,   # artery -> OAR label 201
-                    3: 202,   # vein -> OAR label 202
-                    4: 203,   # pancreas -> OAR label 203
-                }
-                has_nnunet_oar = False
-                if is_model_ctv and oar_source not in uploaded_sources:
-                    for src_label, dst_label in nnunet_oar_labels.items():
-                        if np.any(ctv_full == src_label):
-                            has_nnunet_oar = True
-                            break
-
-                if has_nnunet_oar:
-                    if oar_array is None:
-                        # Embedded anatomy is remapped to IDs 201-203. Keep
-                        # the working volume wide enough before assignment;
-                        # uint8 wrapped those IDs before transport.
-                        oar_array = np.zeros_like(ctv_full, dtype=np.uint16)
-                    elif oar_array.shape != ctv_full.shape:
-                        # Shape mismatch - likely orientation issue
-                        # Skip merging to avoid IndexError
-                        logger.warning(f"[label_volume] OAR shape {oar_array.shape} != CTV shape {ctv_full.shape}, skipping nnUNet label merge")
-                        has_nnunet_oar = False  # Disable the merge below
-
-                    if has_nnunet_oar:
-                        # Restored NPY sidecars are often read-only memmaps.
-                        # The embedded-label merge is a real in-memory
-                        # mutation, so always detach a private writable buffer
-                        # instead of relying on astype(copy=False).
-                        oar_array = np.array(
-                            oar_array,
-                            dtype=np.uint16,
-                            copy=True,
-                            order="C",
-                        )
-                        for src_label, dst_label in nnunet_oar_labels.items():
-                            mask = ctv_full == src_label
-                            if np.any(mask):
-                                oar_array[mask] = dst_label
-
-            shape = ct_data.shape  # (Z, Y, X)
-
-            # Ensure label arrays have same shape as CT
-            if ctv_array is not None and ctv_array.shape != shape:
-                logger.warning(f"CTV shape mismatch: {ctv_array.shape} vs CT {shape}, resampling...")
-                ctv_array = _resample_legacy_label_array(ctv_array, ct_ref, shape)
-
-            if oar_array is not None and oar_array.shape != shape:
-                logger.warning(f"OAR shape mismatch: {oar_array.shape} vs CT {shape}, resampling...")
-                oar_array = _resample_legacy_label_array(oar_array, ct_ref, shape)
-
-            effective = None
-            ctv_object_map = {}
-            oar_object_map = {}
-            if agent.memory.retrieve("structure_registry_initialized"):
-                effective = build_effective_structures(agent.memory)
-                ctv_array = effective.ctv_array
-                oar_array = effective.oar_array
-                for item in effective.structures:
-                    target_label = int(item["target_label"])
-                    if item["classification"] == "ctv":
-                        ctv_object_map[target_label] = str(item["object_id"])
-                    else:
-                        oar_object_map[target_label] = str(item["object_id"])
+            shape = ct_data.shape
+            ctv_array, oar_array, effective, ctv_object_map, oar_object_map, display_metadata = _viewer_display_label_arrays(agent, shape)
 
             # CTV and OAR volumes may both use label 1. Keep independent LUTs
             # so an OAR refresh cannot overwrite the primary target's red.
@@ -1345,7 +1389,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 except Exception:
                     pass
             # Add nnUNet-derived OAR label names
-            if is_model_ctv and ctv_full_memory is not None:
+            if display_metadata["has_model_full_labels"]:
                 nnunet_oar_names = {201: "artery", 202: "vein", 203: "pancreas"}
                 for lid, name in nnunet_oar_names.items():
                     if lid not in organ_names:
@@ -1368,7 +1412,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             response.headers['X-OAR-Source'] = str(
                 agent.memory.retrieve("oar_source", "") or ""
             )
-            response.headers['X-CTV-Source'] = ctv_source
+            response.headers['X-CTV-Source'] = display_metadata["ctv_source"]
             response.headers['X-Structure-Version'] = str(
                 int(agent.memory.retrieve("planning_version", 0) or 0)
             )
@@ -1509,6 +1553,20 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         organ_opacities = data.get("organ_opacities", None)  # {label_id: opacity 0-1}
         ctv_opacity = data.get("ctv_opacity", 0.7)
         oar_opacity = data.get("oar_opacity", 0.5)
+        # The browser's view-specific presentation is display-only. It never
+        # changes the clinical mask, Structure Set, or planning inputs.
+        visible_labels = data.get("visible_labels") if data.get("filter_labels") else None
+        label_opacities = data.get("label_opacities")
+        label_colors = data.get("label_colors")
+        label_opacities = label_opacities if isinstance(label_opacities, dict) else {}
+        label_colors = label_colors if isinstance(label_colors, dict) else {}
+        if visible_labels is not None and not isinstance(visible_labels, list):
+            return jsonify({"error": "visible_labels must be an array"}), 400
+        if visible_organs is not None and not isinstance(visible_organs, list):
+            return jsonify({"error": "visible_organs must be an array"}), 400
+        organ_opacities = organ_opacities if isinstance(organ_opacities, dict) else {}
+        if axis_name not in ("axial", "sagittal", "coronal") or overlay_type not in ("ctv", "oar"):
+            return jsonify({"error": "Unknown slice axis or overlay type"}), 400
 
         ct_data = agent.memory.retrieve("ct_data")
         if ct_data is None:
@@ -1528,18 +1586,9 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             )
 
             # Get the segmentation mask
-            ct_ref = agent.memory.retrieve("ct_image")
             ct_shape = np.asarray(ct_data).shape
-            ctv_source = str(agent.memory.retrieve("ctv_source", "") or "").strip().lower()
-            oar_source = str(agent.memory.retrieve("oar_source", "") or "").strip().lower()
-            if overlay_type == "ctv":
-                mask_data = _viewer_label_array(
-                    agent, "ctv_array", "ctv_path", ctv_source, ct_ref, ct_shape,
-                )
-            else:
-                mask_data = _viewer_label_array(
-                    agent, "oar_array", "oar_path", oar_source, ct_ref, ct_shape,
-                )
+            ctv_display, oar_display, _, _, _, _ = _viewer_display_label_arrays(agent, ct_shape)
+            mask_data = ctv_display if overlay_type == "ctv" else oar_display
 
             if mask_data is None:
                 img = Image.new('RGBA', (1, 1), (0, 0, 0, 0))
@@ -1577,29 +1626,34 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             overlay = np.zeros((*mask_slice.shape, 4), dtype=np.uint8)
 
             if overlay_type == "ctv":
-                alpha = int(ctv_opacity * 255)
                 unique_ctv_labels = np.unique(mask_slice[mask_slice > 0])
                 # Always use per-label colors (consistent with data tree display)
                 for label in unique_ctv_labels:
                     label_int = int(label)
-                    color = _ctv_label_color(label_int)
+                    if visible_labels is not None and label_int not in visible_labels:
+                        continue
+                    alpha = round(255 * _overlay_opacity(
+                        label_opacities.get(str(label_int), ctv_opacity), 0.7,
+                    ))
+                    color = _overlay_color(label_colors.get(str(label_int)), _ctv_label_color(label_int))
                     overlay[mask_slice == label] = [*color, alpha]
             else:
                 # OAR: per-organ colors with visibility/opacity filtering
                 unique_labels = np.unique(mask_slice[mask_slice > 0])
                 for label in unique_labels:
                     label_int = int(label)
+                    if visible_labels is not None and label_int not in visible_labels:
+                        continue
                     # Check visibility - use label_int (actual mask value) for filtering
                     if visible_organs is not None and label_int not in visible_organs:
                         continue
                     # Get opacity for this organ
-                    if organ_opacities and str(label_int) in organ_opacities:
-                        alpha = int(organ_opacities[str(label_int)] * 255)
-                    else:
-                        alpha = int(oar_opacity * 255)
+                    alpha = round(255 * _overlay_opacity(
+                        label_opacities.get(str(label_int), organ_opacities.get(str(label_int), oar_opacity)), 0.5,
+                    ))
                     # Use the shared Slicer-style palette for the Data Tree,
                     # 2D overlay and reconstructed 3D surface.
-                    color = _label_color(label_int)
+                    color = _overlay_color(label_colors.get(str(label_int)), _label_color(label_int))
                     overlay[mask_slice == label] = [*color, alpha]
 
             img = Image.fromarray(overlay, 'RGBA')

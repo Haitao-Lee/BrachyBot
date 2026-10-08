@@ -627,6 +627,15 @@ function _viewerVolumeZToAxialDisplay(volumeZ, zCount) {
     return Math.max(0, (Number(zCount) || 1) - 1 - _clampViewerIndex(volumeZ, zCount));
 }
 
+function _viewerSliceIndex(axis, value) {
+    const shape = volumeShape || state.ctShape;
+    const dimension = { axial: 0, sagittal: 2, coronal: 1 }[axis];
+    if (dimension === undefined) return 0;
+    const count = Number(shape?.[dimension]);
+    return count > 0 ? _clampViewerIndex(value, count)
+        : Math.max(0, Math.round(Number(value) || 0));
+}
+
 /**
  * Convert a pixel in an MPR canvas to a voxel in the canonical [Z,Y,X]
  * volume.  `imgX`/`imgY` are image-pixel coordinates, not CSS coordinates.
@@ -1961,6 +1970,59 @@ window.hydrateCompletedSegmentationArtifacts = function hydrateCompletedSegmenta
 let _pixelBuffer = null;
 let _imageDataBuffer = null;
 
+function _sliceSegmentationPresentation() {
+    // Resolve presentation once per frame, not once per voxel. Both the
+    // in-memory MPR and PNG fallback use these exact colors and view gates.
+    const mode = state.viewerSettings.displayMode || 'ct';
+    const enabled = mode === 'overlay' || mode === 'label';
+    const ctvVisible = enabled && state.viewerSettings.showCTV !== false
+        && isDataTreeNodeVisible2D(dataTreeState.ctv);
+    const oarVisible = enabled && state.viewerSettings.showOAR !== false
+        && isDataTreeNodeVisible2D(dataTreeState.oar);
+    const ctv = {};
+    const oar = {};
+    const ctvIds = new Set([
+        ...Object.keys(ctvLabelColorLUT || {}),
+        ...Object.values(dataTreeState.ctvLabels || {}).map(node => node.labelId ?? Number(String(node.id).replace('ctv_', ''))),
+    ]);
+    ctvIds.forEach(id => { if (Number.isInteger(Number(id)) && Number(id) > 0) ctv[id] = _ctvLabelPresentation(id); });
+    dataTreeState.organs.forEach(node => {
+        oar[node.labelId] = {
+            visible: isDataTreeNodeVisible2D(node),
+            opacity: Math.max(0, Math.min(1, Number(node.opacity ?? dataTreeState.oar.opacity ?? 0.5))),
+            color: _rgbForStructureColor(node.color, oarLabelColorLUT[node.labelId] || [200, 200, 200]),
+        };
+    });
+    return { mode, ctvVisible, oarVisible, ctv, oar, oarDefaultVisible: dataTreeState.organs.length === 0 };
+}
+
+function _enableSegmentation2DForNodes(nodes) {
+    // An explicit Show in 2D must open the toolbar gate as well. Do not
+    // rewrite master/3D visibility or any child's independent hide choice.
+    let changed = false;
+    (nodes || []).forEach(node => {
+        if (!node) return;
+        const id = String(node.id || node.nodeId || '');
+        const family = node === dataTreeState.ctv || id.startsWith('ctv_') || node.parentId === 'ctv'
+            || node.movedTo === 'ctv' ? 'CTV'
+            : node === dataTreeState.oar || id.startsWith('organ_') || node.parentId === 'oar'
+                || node.movedTo === 'oar' ? 'OAR' : null;
+        if (!family) return;
+        state.viewerSettings['show' + family] = true;
+        const checkbox = document.getElementById('overlay' + family);
+        if (checkbox) checkbox.checked = true;
+        changed = true;
+    });
+    if (changed) {
+        state.viewerSettings.userConfigured = true;
+        if (!['overlay', 'label'].includes(state.viewerSettings.displayMode)) {
+            state.viewerSettings.displayMode = 'overlay';
+            const select = document.getElementById('displayMode');
+            if (select) select.value = 'overlay';
+        }
+    }
+}
+
 function _sourceOverPackedRgba(bgR, bgG, bgB, bgA, fgR, fgG, fgB, fgOpacity) {
     // Keep the hot 512 x 512 raster path allocation-free.  The packed return
     // value represents straight-alpha RGBA in little-endian component order:
@@ -1982,13 +2044,14 @@ function _sourceOverPackedRgba(bgR, bgG, bgB, bgA, fgR, fgG, fgB, fgOpacity) {
 
 function renderOverlayFromVolume(axis, sliceIndex) {
     if (!volumeShape) return;
+    if (!['axial', 'sagittal', 'coronal'].includes(axis)) return;
+    sliceIndex = _viewerSliceIndex(axis, sliceIndex);
 
     const overlayCanvas = document.getElementById('labelOverlay_' + capitalize(axis));
     if (!overlayCanvas) return;
 
     const displayMode = state.viewerSettings.displayMode || 'ct';
-    const showCTV = state.viewerSettings.showCTV;
-    const showOAR = state.viewerSettings.showOAR;
+    const presentation = _sliceSegmentationPresentation();
     const ctCanvas = document.getElementById('sliceCanvas' + capitalize(axis));
 
     // Handle display mode
@@ -2006,8 +2069,7 @@ function renderOverlayFromVolume(axis, sliceIndex) {
         return;
     }
 
-    const ctvVisible = dataTreeState.ctv.visible && showCTV;
-    const oarVisible = dataTreeState.oar.visible && showOAR;
+    const { ctvVisible, oarVisible } = presentation;
 
     if (!oarVisible && !ctvVisible && displayMode !== 'label') {
         overlayCanvas.style.display = 'none';
@@ -2048,9 +2110,6 @@ function renderOverlayFromVolume(axis, sliceIndex) {
     const data = imageData.data;
     const sliceSize = Y * X;
 
-    // Get organ opacities from data tree
-    const organOpacities = {};
-    dataTreeState.organs.forEach(o => { organOpacities[o.labelId] = o.opacity; });
 
     for (let py = 0; py < height; py++) {
         for (let px = 0; px < width; px++) {
@@ -2080,11 +2139,10 @@ function renderOverlayFromVolume(axis, sliceIndex) {
             if (oarVisible && oarLabelData && oarLabelData.length > flatIdx) {
                 const oarVal = oarLabelData[flatIdx];
                 if (oarVal > 0) {
-                    const visible = !dataTreeState.organs.length ||
-                                    dataTreeState.organs.some(o => o.labelId === oarVal && o.visible);
-                    if (visible) {
-                        const color = oarLabelColorLUT[oarVal] || [200, 200, 200];
-                        const opacity = organOpacities[oarVal] !== undefined ? organOpacities[oarVal] : 0.5;
+                    const organ = presentation.oar[oarVal];
+                    if (organ ? organ.visible : presentation.oarDefaultVisible) {
+                        const color = organ?.color || oarLabelColorLUT[oarVal] || [200, 200, 200];
+                        const opacity = organ?.opacity ?? dataTreeState.oar.opacity ?? 0.5;
                         const composed = _sourceOverPackedRgba(r, g, b, a, color[0], color[1], color[2], opacity);
                         r = composed & 0xff;
                         g = (composed >>> 8) & 0xff;
@@ -2097,12 +2155,12 @@ function renderOverlayFromVolume(axis, sliceIndex) {
             if (ctvVisible && ctvLabelData && ctvLabelData.length > flatIdx) {
                 const ctvVal = ctvLabelData[flatIdx];
                 if (ctvVal > 0) {
-                    const presentation = _ctvLabelPresentation(ctvVal);
-                    if (presentation.visible && presentation.opacity > 0.001) {
-                        const color = presentation.color;
+                    const label = presentation.ctv[ctvVal] || _ctvLabelPresentation(ctvVal);
+                    if (label.visible && label.opacity > 0.001) {
+                        const color = label.color;
                         const composed = _sourceOverPackedRgba(
                             r, g, b, a,
-                            color[0], color[1], color[2], presentation.opacity,
+                            color[0], color[1], color[2], label.opacity,
                         );
                         r = composed & 0xff;
                         g = (composed >>> 8) & 0xff;
@@ -2146,6 +2204,16 @@ async function _retryLabelVolumeLoad(options, attempt) {
 
 function renderSliceFromVolume(axis, sliceIndex) {
     if (!volumeData || !volumeShape) return;
+    if (!['axial', 'sagittal', 'coronal'].includes(axis)) return;
+    const normalizedIndex = _viewerSliceIndex(axis, sliceIndex);
+    if (Number(sliceIndex) !== normalizedIndex) {
+        state.slices[axis] = normalizedIndex;
+        const slider = document.getElementById('slider' + capitalize(axis));
+        const label = document.getElementById('sliceLabel' + capitalize(axis));
+        if (slider) slider.value = String(normalizedIndex);
+        if (label) label.textContent = String(normalizedIndex);
+    }
+    sliceIndex = normalizedIndex;
 
     if (typeof window.mark2DViewerBaseSliceRequested === 'function') {
         window.mark2DViewerBaseSliceRequested(axis, sliceIndex);
@@ -2244,15 +2312,26 @@ function renderSliceFromVolume(axis, sliceIndex) {
     const data = imageData.data;
     const displayMode = state.viewerSettings.displayMode || 'ct';
     const isLabelOnly = displayMode === 'label';
-    const hasMasks2d = Object.keys(state.maskLabels || {}).some(id => _maskVisibleInTarget(state.maskLabels[id]));
+    const segmentation = _sliceSegmentationPresentation();
+    const masks2D = Object.values(state.maskLabels || {}).filter(mask =>
+        _maskVisibleInTarget(mask)
+        && (mask.movedTo !== 'ctv' || segmentation.ctvVisible)
+        && (mask.movedTo !== 'oar' || segmentation.oarVisible),
+    ).map(mask => ({
+        mask,
+        color: _rgbForStructureColor(mask.color, [139, 92, 246]),
+        opacity: Math.max(0, Math.min(1, Number(mask.opacity ?? 0.6))),
+        thresholdMask: mask.kind === 'threshold' && Number.isFinite(Number(mask.threshold)),
+        volume: _isGenericSegmentationMask(mask) ? genericMaskVolumeData[mask.id] : null,
+    }));
+    const hasMasks2d = masks2D.length > 0;
     const hasSkin2d = !!(skinSurfaceData && isDataTreeNodeVisible2D(dataTreeState.skin));
+    const skinColor = _rgbForStructureColor(dataTreeState.skin.color, [242, 160, 136]);
     const showOverlay = (ctvLabelData || oarLabelData || hasMasks2d || hasSkin2d) &&
                         (displayMode === 'overlay' || isLabelOnly || hasMasks2d || hasSkin2d) &&
-                        (((isDataTreeNodeVisible2D(dataTreeState.ctv) && state.viewerSettings.showCTV)) ||
-                         (isDataTreeNodeVisible2D(dataTreeState.oar) && state.viewerSettings.showOAR) ||
+                        (segmentation.ctvVisible || segmentation.oarVisible ||
                          hasMasks2d || hasSkin2d);
     const labelSliceSize = Y * X;
-    const organOpacities = showOverlay ? (() => { const m = {}; dataTreeState.organs.forEach(o => { m[o.labelId] = o.opacity; }); return m; })() : {};
     const thresholdRaw = state.viewerSettings.threshold;
     const thresholdEnabled = thresholdRaw !== null && Number.isFinite(Number(thresholdRaw));
     const thresholdValue = thresholdEnabled ? Number(thresholdRaw) : 0;
@@ -2276,7 +2355,7 @@ function renderSliceFromVolume(axis, sliceIndex) {
 
             let r, g, b, a = 255;
             const ctVal = pixels[py * width + px];
-            r = ctVal; g = ctVal; b = ctVal;
+            r = isLabelOnly ? 0 : ctVal; g = r; b = r;
 
             // Match the server-rendered fallback: thresholding is evaluated in
             // physical HU, then highlighted over the windowed CT image.
@@ -2299,10 +2378,7 @@ function renderSliceFromVolume(axis, sliceIndex) {
                         || volZ === 0 || volZ === Z - 1
                         || neighborOffsets.some(offset => !skinSurfaceData[flatIdx + offset]);
                     if (atBoundary) {
-                        const hex = dataTreeState.skin.color || '#f2a088';
-                        oR = parseInt(hex.slice(1, 3), 16) || 242;
-                        oG = parseInt(hex.slice(3, 5), 16) || 160;
-                        oB = parseInt(hex.slice(5, 7), 16) || 136;
+                        [oR, oG, oB] = skinColor;
                         oA = Math.round(Number(dataTreeState.skin.opacity ?? 0.10) * 255);
                     }
                 }
@@ -2311,33 +2387,24 @@ function renderSliceFromVolume(axis, sliceIndex) {
                 // visible mask paints its voxels with its own color/opacity.
                 const flatKeyBase = `${volX2},${volY2},${volZ}`;
                 if (hasMasks2d) {
-                    for (const mask of Object.values(state.maskLabels || {})) {
-                        if (!_maskVisibleInTarget(mask)) continue;
-                        if (mask.movedTo === 'ctv' && !(isDataTreeNodeVisible2D(dataTreeState.ctv) && state.viewerSettings.showCTV)) continue;
-                        if (mask.movedTo === 'oar' && !(isDataTreeNodeVisible2D(dataTreeState.oar) && state.viewerSettings.showOAR)) continue;
+                    for (const entry of masks2D) {
+                        const { mask, color, opacity, thresholdMask, volume: genericVolume } = entry;
                         // Threshold masks are represented by their source
                         // metadata instead of millions of string voxel keys.
                         // Evaluate them against the already loaded HU volume
                         // for the current pixel; hand-drawn masks continue to
                         // use their explicit voxel Set.
-                        const thresholdMask = mask.kind === 'threshold'
-                            && Number.isFinite(Number(mask.threshold));
-                        const genericVolume = _isGenericSegmentationMask(mask)
-                            ? genericMaskVolumeData[mask.id]
-                            : null;
                         const maskHit = thresholdMask
                             ? !!(volumeData && volumeData[flatIdx] > Number(mask.threshold))
                             : genericVolume
                                 ? !!(genericVolume.data && genericVolume.data[flatIdx] > 0)
                                 : !!(mask.voxels && mask.voxels.has(flatKeyBase));
                         if (!maskHit) continue;
-                        const hex = mask.color || '#8b5cf6';
-                        const mr = parseInt(hex.slice(1, 3), 16) || 139;
-                        const mg = parseInt(hex.slice(3, 5), 16) || 92;
-                        const mb = parseInt(hex.slice(5, 7), 16) || 246;
-                        const opacity = typeof mask.opacity === 'number' ? mask.opacity : 0.6;
-                        oR = mr; oG = mg; oB = mb; oA = Math.round(opacity * 255);
-                        break;
+                        const composed = _sourceOverPackedRgba(oR, oG, oB, oA, color[0], color[1], color[2], opacity);
+                        oR = composed & 0xff;
+                        oG = (composed >>> 8) & 0xff;
+                        oB = (composed >>> 16) & 0xff;
+                        oA = composed >>> 24;
                     }
                 }
 
@@ -2345,14 +2412,13 @@ function renderSliceFromVolume(axis, sliceIndex) {
                 // gets a second source-over pass immediately afterward so it
                 // cannot disappear simply because an OAR occupies the same
                 // voxel in the displayed slice.
-                if (isDataTreeNodeVisible2D(dataTreeState.oar) && state.viewerSettings.showOAR && oarLabelData && oarLabelData.length > flatIdx) {
+                if (segmentation.oarVisible && oarLabelData && oarLabelData.length > flatIdx) {
                     const oarVal = oarLabelData[flatIdx];
                     if (oarVal > 0) {
-                        const visible = !dataTreeState.organs.length ||
-                                        dataTreeState.organs.some(o => o.labelId === oarVal && isDataTreeNodeVisible2D(o));
-                        if (visible) {
-                            const color = oarLabelColorLUT[oarVal] || [200, 200, 200];
-                            const opacity = organOpacities[oarVal] !== undefined ? organOpacities[oarVal] : 0.5;
+                        const organ = segmentation.oar[oarVal];
+                        if (organ ? organ.visible : segmentation.oarDefaultVisible) {
+                            const color = organ?.color || oarLabelColorLUT[oarVal] || [200, 200, 200];
+                            const opacity = organ?.opacity ?? dataTreeState.oar.opacity ?? 0.5;
                             const composed = _sourceOverPackedRgba(oR, oG, oB, oA, color[0], color[1], color[2], opacity);
                             oR = composed & 0xff;
                             oG = (composed >>> 8) & 0xff;
@@ -2362,10 +2428,10 @@ function renderSliceFromVolume(axis, sliceIndex) {
                     }
                 }
 
-                if (isDataTreeNodeVisible2D(dataTreeState.ctv) && state.viewerSettings.showCTV && ctvLabelData && ctvLabelData.length > flatIdx) {
+                if (segmentation.ctvVisible && ctvLabelData && ctvLabelData.length > flatIdx) {
                     const ctvVal = ctvLabelData[flatIdx];
                     if (ctvVal > 0) {
-                        const presentation = _ctvLabelPresentation(ctvVal);
+                        const presentation = segmentation.ctv[ctvVal] || _ctvLabelPresentation(ctvVal);
                             if (presentation.visible && presentation.opacity > 0.001) {
                                 const color = presentation.color;
                                 const composed = _sourceOverPackedRgba(
@@ -2427,6 +2493,9 @@ function renderSliceFromVolume(axis, sliceIndex) {
         canvas._posContainerH = containerH;
     }
     canvas.style.display = 'block';
+    // Labels are baked into these pixels. A preceding Label Only PNG
+    // fallback may have hidden the CT canvas; that opacity is not reusable.
+    canvas.style.opacity = '1';
 
     const placeholder = container.querySelector('.viewer-no-data');
     if (placeholder) placeholder.style.display = 'none';
@@ -2486,160 +2555,142 @@ function renderSliceFromVolume(axis, sliceIndex) {
     if (overlayCanvas) {
         overlayCanvas.style.display = 'none';
     }
+    if (!ctvLabelData && !oarLabelData) void loadOverlay(axis, sliceIndex);
 }
+
+const _sliceOverlayJobs = Object.create(null);
 
 async function loadOverlay(axis, sliceIndex) {
-    // Skip server-based overlay when label volumes are loaded (inline compositing handles it)
-    if (ctvLabelData || oarLabelData) return;
-    const scope = _captureViewerDataScope();
-    const sliceIsCurrent = () => _viewerDataScopeIsCurrent(scope, true)
-        && Number(state?.slices?.[axis]) === Number(sliceIndex);
-
-    const overlayCanvas = document.getElementById('labelOverlay_' + capitalize(axis));
-    if (!overlayCanvas) return;
-
-    const ctCanvas = document.getElementById('sliceCanvas' + capitalize(axis));
-    const displayMode = state.viewerSettings.displayMode || 'ct';
-
-    const showOAR = state.viewerSettings.showOAR;
-    const showCTV = state.viewerSettings.showCTV;
-
-    // Label Only mode
-    if (displayMode === 'label') {
-        if (ctCanvas) ctCanvas.style.opacity = '0';
-        overlayCanvas.style.opacity = '1';
-        overlayCanvas.style.display = 'block';
-    } else if (displayMode === 'overlay') {
-        if (ctCanvas) ctCanvas.style.opacity = '1';
-        overlayCanvas.style.opacity = '1';  // Alpha is baked into RGBA from server
-        overlayCanvas.style.display = 'block';
-    } else {
-        // CT Only mode
-        if (ctCanvas) ctCanvas.style.opacity = '1';
-        overlayCanvas.style.display = 'none';
-        return;
-    }
-
-    const ctvVisible = dataTreeState.ctv.visible && showCTV;
-    const oarVisible = dataTreeState.oar.visible && showOAR;
-
-    if (!oarVisible && !ctvVisible) {
-        overlayCanvas.style.display = 'none';
-        if (displayMode === 'label' && ctCanvas) ctCanvas.style.opacity = '1';
-        return;
-    }
-
+    const previous = _sliceOverlayJobs[axis];
+    previous?.controller.abort();
+    const controller = new AbortController();
+    const job = { controller };
+    _sliceOverlayJobs[axis] = job;
+    viewerDataAbortControllers.add(controller);
     try {
-        // Set overlay canvas to CT canvas pixel dimensions (not display size)
-        const ctW = ctCanvas ? ctCanvas.width : 512;
-        const ctH = ctCanvas ? ctCanvas.height : 512;
-        // Only resize if pixel dimensions actually changed to prevent flicker
-        if (overlayCanvas.width !== ctW || overlayCanvas.height !== ctH) {
-            overlayCanvas.width = ctW;
-            overlayCanvas.height = ctH;
-        }
-
-        // Fetch CTV and OAR separately, draw onto one canvas
-        let hasAnyMask = false;
-        const ctx = overlayCanvas.getContext('2d');
-        ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-
-        if (ctvVisible) {
-            const ctvRequest = await window.fetchViewerJsonWithRetry(API + '/viewer/overlay', {
-                    method: 'POST',
-                    headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' }),
-                    body: JSON.stringify({ axis, slice_index: sliceIndex, overlay_type: 'ctv', ctv_opacity: dataTreeState.ctv.opacity }),
-                }, {
-                    requestTimeoutMs: 60000,
-                    maxWaitMs: 120000,
-                });
-            const resCtv = ctvRequest.response;
-            if (!sliceIsCurrent()) return;
-            if (resCtv?.ok) {
-                const d = ctvRequest.data || {};
-                if (!sliceIsCurrent()) return;
-                if (d.has_mask && d.data) {
-                    const img = new Image();
-                    await new Promise(r => { img.onload = r; img.src = d.data; });
-                    if (!sliceIsCurrent()) return;
-                    ctx.drawImage(img, 0, 0, overlayCanvas.width, overlayCanvas.height);
-                    hasAnyMask = true;
-                }
-            }
-        }
-
-        if (oarVisible && dataTreeState.organs.length > 0) {
-            const visibleOrgans = dataTreeState.organs.filter(o => o.visible).map(o => o.labelId);
-            const organOpacities = {};
-            dataTreeState.organs.forEach(o => { organOpacities[o.labelId] = o.opacity; });
-            const oarRequest = await window.fetchViewerJsonWithRetry(API + '/viewer/overlay', {
-                    method: 'POST',
-                    headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' }),
-                    body: JSON.stringify({ axis, slice_index: sliceIndex, overlay_type: 'oar', visible_organs: visibleOrgans, organ_opacities: organOpacities, oar_opacity: dataTreeState.oar.opacity }),
-                }, {
-                    requestTimeoutMs: 60000,
-                    maxWaitMs: 120000,
-                });
-            const resOar = oarRequest.response;
-            if (!sliceIsCurrent()) return;
-            if (resOar?.ok) {
-                const d = oarRequest.data || {};
-                if (!sliceIsCurrent()) return;
-                if (d.has_mask && d.data) {
-                    const img = new Image();
-                    await new Promise(r => { img.onload = r; img.src = d.data; });
-                    if (!sliceIsCurrent()) return;
-                    ctx.drawImage(img, 0, 0, overlayCanvas.width, overlayCanvas.height);
-                    hasAnyMask = true;
-                }
-            }
-        }
-
+        const scope = _captureViewerDataScope();
+        const presentation = _sliceSegmentationPresentation();
+        const signature = JSON.stringify(presentation);
+        const sliceIsCurrent = () => _sliceOverlayJobs[axis] === job
+            && !controller.signal.aborted && _viewerDataScopeIsCurrent(scope, true)
+            && Number(state.slices?.[axis]) === Number(sliceIndex)
+            && signature === JSON.stringify(_sliceSegmentationPresentation())
+            && !(volumeData && (ctvLabelData || oarLabelData));
+        const canvas = document.getElementById('labelOverlay_' + capitalize(axis));
+        const ct = document.getElementById('sliceCanvas' + capitalize(axis));
+        if (!canvas || !ct) return;
+        canvas.style.display = 'none';
+        ct.style.opacity = !volumeData && presentation.mode === 'label' ? '0' : '1';
+        if (!presentation.ctvVisible && !presentation.oarVisible) return;
         if (!sliceIsCurrent()) return;
-        if (hasAnyMask) {
-            if (ctCanvas) {
-                overlayCanvas.style.width = ctCanvas.style.width;
-                overlayCanvas.style.height = ctCanvas.style.height;
-                overlayCanvas.style.position = 'absolute';
-                overlayCanvas.style.left = ctCanvas.style.left;
-                overlayCanvas.style.top = ctCanvas.style.top;
-                overlayCanvas.style.right = 'auto';
-                overlayCanvas.style.bottom = 'auto';
-                overlayCanvas.style.display = 'block';
-                // Copy transform from CT canvas
-                if (ctCanvas.style.transform) {
-                    overlayCanvas.style.transform = ctCanvas.style.transform;
-                    overlayCanvas.style.transformOrigin = ctCanvas.style.transformOrigin || 'center center';
-                }
-            }
 
-        } else {
-            overlayCanvas.style.display = 'none';
-            if (displayMode === 'label' && ctCanvas) ctCanvas.style.opacity = '1';
+        const payloadFor = (kind, labels, opacity) => ({
+            axis, slice_index: sliceIndex, overlay_type: kind,
+            visible_labels: Object.keys(labels).filter(id => labels[id].visible).map(Number),
+            label_opacities: Object.fromEntries(Object.entries(labels).map(([id, p]) => [id, p.opacity])),
+            label_colors: Object.fromEntries(Object.entries(labels).map(([id, p]) => [id, p.color])),
+            // An absent catalog is different from a catalog with all labels hidden.
+            filter_labels: Object.keys(labels).length > 0,
+            [kind + '_opacity']: opacity,
+        });
+        const fetchLayer = async (kind, labels, opacity) => {
+            const result = await window.fetchViewerJsonWithRetry(API + '/viewer/overlay', {
+                method: 'POST', signal: controller.signal,
+                headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' }),
+                body: JSON.stringify(payloadFor(kind, labels, opacity)),
+            }, { requestTimeoutMs: 60000, maxWaitMs: 120000 });
+            if (!sliceIsCurrent() || !result.response?.ok || !result.data?.has_mask || !result.data?.data) return null;
+            const img = new Image();
+            await new Promise((resolve, reject) => {
+                img.onload = resolve;
+                img.onerror = () => reject(new Error('Segmentation overlay PNG decoding failed'));
+                img.src = result.data.data;
+            });
+            return sliceIsCurrent() ? img : null;
+        };
+        // Fetch concurrently, composite deterministically: OAR below CTV.
+        const layers = await Promise.all([
+            presentation.oarVisible ? fetchLayer('oar', presentation.oar, dataTreeState.oar.opacity ?? 0.5) : null,
+            presentation.ctvVisible ? fetchLayer('ctv', presentation.ctv, dataTreeState.ctv.opacity ?? 0.7) : null,
+        ]);
+        if (!sliceIsCurrent()) return;
+        const frame = document.createElement('canvas');
+        frame.width = ct.width; frame.height = ct.height;
+        const ctx = frame.getContext('2d');
+        layers.forEach(img => { if (img) ctx.drawImage(img, 0, 0, frame.width, frame.height); });
+        if (!sliceIsCurrent()) return;
+        canvas.width = frame.width; canvas.height = frame.height;
+        const destination = canvas.getContext('2d');
+        destination.clearRect(0, 0, canvas.width, canvas.height);
+        destination.drawImage(frame, 0, 0);
+        for (const key of ['width', 'height', 'left', 'top', 'transform', 'transformOrigin']) {
+            canvas.style[key] = ct.style[key];
         }
-    } catch (e) {
-        // Silently fail - don't hide overlay on error
+        canvas.style.position = 'absolute';
+        canvas.style.right = 'auto'; canvas.style.bottom = 'auto';
+        canvas.style.opacity = '1';
+        canvas.style.display = layers.some(Boolean) ? 'block' : 'none';
+        // The dose transform host can own the CT transform while the label
+        // canvas is its sibling. Reuse the common layer geometry/transform
+        // synchronizer instead of assuming CT.style.transform is sufficient.
+        if (typeof _syncExistingSliceLayer === 'function') _syncExistingSliceLayer(axis, canvas);
+        if (typeof applyViewerTransform === 'function') applyViewerTransform(axis);
+    } catch (error) {
+        if (error?.name !== 'AbortError' && !controller.signal.aborted) {
+            console.debug('[viewer] slice segmentation overlay unavailable:', error);
+        }
+    } finally {
+        viewerDataAbortControllers.delete(controller);
+        if (_sliceOverlayJobs[axis] === job) delete _sliceOverlayJobs[axis];
     }
 }
+
 
 function toggleOAROverlay() {
     state.viewerSettings.showOAR = !state.viewerSettings.showOAR;
+    const checkbox = document.getElementById('overlayOAR');
+    if (checkbox) checkbox.checked = state.viewerSettings.showOAR;
+    if (state.viewerSettings.showOAR) _enableSegmentation2DForNodes([dataTreeState.oar]);
+    state.viewerSettings.userConfigured = true;
     // Reload current slices to update overlay
     ['axial', 'sagittal', 'coronal'].forEach(axis => {
         renderSliceFromVolume(axis, state.slices[axis]);
     });
+    window.scheduleWorkspaceSave?.('viewer.overlay:oar');
 }
 
 function toggleCTVOverlay() {
     state.viewerSettings.showCTV = !state.viewerSettings.showCTV;
+    const checkbox = document.getElementById('overlayCTV');
+    if (checkbox) checkbox.checked = state.viewerSettings.showCTV;
+    if (state.viewerSettings.showCTV) _enableSegmentation2DForNodes([dataTreeState.ctv]);
+    state.viewerSettings.userConfigured = true;
     ['axial', 'sagittal', 'coronal'].forEach(axis => {
         renderSliceFromVolume(axis, state.slices[axis]);
     });
+    window.scheduleWorkspaceSave?.('viewer.overlay:ctv');
 }
 
 /******** VIEWER CONTROLS ********/
 const sliceCache = { axial: {}, sagittal: {}, coronal: {} };
 const sliceCacheOrder = { axial: [], sagittal: [], coronal: [] };
+
+function _viewerSliceRequestKey() {
+    return JSON.stringify([
+        _viewerDataSessionId(), viewerDataLoadGeneration, state.ctPath,
+        state.viewerSettings.window, state.viewerSettings.level, state.viewerSettings.threshold ?? null,
+    ]);
+}
+
+function _cacheViewerSlice(axis, index, data, key) {
+    if (key !== _viewerSliceRequestKey()) return;
+    const order = sliceCacheOrder[axis];
+    const position = order.indexOf(index);
+    if (position >= 0) order.splice(position, 1);
+    order.push(index);
+    sliceCache[axis][index] = { key, data };
+    while (order.length > 64) delete sliceCache[axis][order.shift()];
+}
 
 function clearSliceCache() {
     ['axial', 'sagittal', 'coronal'].forEach(axis => {
@@ -2650,8 +2701,8 @@ function clearSliceCache() {
 
 function renderCachedSlice(axis, sliceIndex) {
     const cached = sliceCache[axis][sliceIndex];
-    if (cached) {
-        renderSliceToCanvas(axis, cached, sliceIndex);
+    if (cached?.key === _viewerSliceRequestKey()) {
+        renderSliceToCanvas(axis, cached.data, sliceIndex);
         return true;
     }
     return false;
@@ -2660,10 +2711,11 @@ function renderCachedSlice(axis, sliceIndex) {
 async function loadSlice(axis, sliceIndex) {
     if (!state.ctPath) return;
     const scope = _captureViewerDataScope();
+    const requestKey = _viewerSliceRequestKey();
 
     const cached = sliceCache[axis][sliceIndex];
-    if (cached) {
-        renderSliceToCanvas(axis, cached, sliceIndex);
+    if (cached?.key === requestKey) {
+        renderSliceToCanvas(axis, cached.data, sliceIndex);
         return;
     }
 
@@ -2691,9 +2743,10 @@ async function loadSlice(axis, sliceIndex) {
 
         const data = request.data || {};
         if (!_viewerDataScopeIsCurrent(scope, true)
+            || requestKey !== _viewerSliceRequestKey()
             || Number(state?.slices?.[axis]) !== Number(sliceIndex)) return;
         if (data.success) {
-            sliceCache[axis][sliceIndex] = data.data;
+            _cacheViewerSlice(axis, sliceIndex, data.data, requestKey);
             renderSliceToCanvas(axis, data.data, sliceIndex);
         }
     } catch (e) {
@@ -2707,11 +2760,14 @@ async function preloadAxis(axis) {
     const slider = document.getElementById('slider' + capitalize(axis));
     if (!slider) return;
     const scope = _captureViewerDataScope();
-    const max = parseInt(slider.max) || 48;
+    const requestKey = _viewerSliceRequestKey();
+    const max = Math.max(0, Number(slider.max) || 0) + 1;
     sliceCache[axis] = {};
+    sliceCacheOrder[axis] = [];
 
     const batchSize = 10;
     for (let start = 0; start < max; start += batchSize) {
+        if (!_viewerDataScopeIsCurrent(scope, true) || requestKey !== _viewerSliceRequestKey()) return;
         const end = Math.min(start + batchSize, max);
         const promises = [];
         for (let i = start; i < end; i++) {
@@ -2733,8 +2789,9 @@ async function preloadAxis(axis) {
                 .then(request => request.response?.ok ? request.data : null)
                 .then(data => {
                     if (!_viewerDataScopeIsCurrent(scope, true)) return;
+                    if (requestKey !== _viewerSliceRequestKey()) return;
                     if (data && data.success) {
-                        sliceCache[axis][i] = data.data;
+                        _cacheViewerSlice(axis, i, data.data, requestKey);
                     }
                 })
                 .catch(() => {})
@@ -2760,7 +2817,8 @@ function resizeCanvas(axis) {
 }
 
 function updateSlice(view, val) {
-    const sliceIndex = parseInt(val);
+    if (!['axial', 'sagittal', 'coronal'].includes(view)) return;
+    const sliceIndex = _viewerSliceIndex(view, val);
     state.slices[view] = sliceIndex;
     // Slice position is a per-Session presentation setting.  Keep the save
     // debounced so a slider drag or mouse-wheel sequence produces one
@@ -3319,11 +3377,15 @@ function toggleOverlay() {
     if (state.viewerSettings) state.viewerSettings.userConfigured = true;
     state.viewerSettings.showCTV = document.getElementById('overlayCTV').checked;
     state.viewerSettings.showOAR = document.getElementById('overlayOAR').checked;
-    // Sync with data tree
-    dataTreeState.ctv.visible = state.viewerSettings.showCTV;
-    dataTreeState.oar.visible = state.viewerSettings.showOAR;
+    // These are slice-overlay controls, not all-view Data Tree master eyes.
+    // Turning off an MPR layer must not hide its 3D reconstruction.
+    _enableSegmentation2DForNodes([
+        ...(state.viewerSettings.showCTV ? [dataTreeState.ctv] : []),
+        ...(state.viewerSettings.showOAR ? [dataTreeState.oar] : []),
+    ]);
     renderDataTree();
     if (state.ctLoaded) loadAllSlices();
+    window.scheduleWorkspaceSave?.('viewer.overlay');
 }
 
 function setDisplayMode() {
@@ -3338,12 +3400,12 @@ function setDisplayMode() {
         if (oarCb && !oarCb.checked) {
             oarCb.checked = true;
             state.viewerSettings.showOAR = true;
-            dataTreeState.oar.visible = true;
         }
     }
 
     renderDataTree();
     if (state.ctLoaded) loadAllSlices();
+    window.scheduleWorkspaceSave?.('viewer.display_mode');
 }
 
 // Reload only overlays (for visibility/opacity changes) without re-rendering CT
@@ -7673,6 +7735,7 @@ function _allDataTreeVisualNodes() {
 function _setNodeViewVisibility(node, view, visible) {
     if (!node) return;
     node[view === '2d' ? 'visible2D' : 'visible3D'] = !!visible;
+    if (view === '2d' && visible) _enableSegmentation2DForNodes([node]);
 }
 
 function _apply3DNodeVisibility(node) {
@@ -7727,21 +7790,12 @@ function applyDataTreeViewVisibility() {
 }
 
 function batchSetViewVisibility(view, visible) {
-    const key = view === '2d' ? 'visible2D' : 'visible3D';
     getSelectedOrganIds().forEach(id => {
         const node = _findDataTreeNode(id);
         if (!node) return;
-        node[key] = !!visible;
-        // A group selection only propagates downward; it never changes a
-        // parent or a sibling selected by a different branch.
-        if (id === 'ctv') Object.values(dataTreeState.ctvLabels || {}).forEach(item => { item[key] = !!visible; });
-        if (id === 'oar') dataTreeState.organs.forEach(item => { item[key] = !!visible; });
-        const trajectory = _planningItems('trajectories').find(item => item.id === id);
-        if (trajectory) {
-            [..._planningItems('seeds'), ..._planningItems('needles')]
-                .filter(item => _trajectoryContains(item, trajectory))
-                .forEach(item => { item[key] = !!visible; });
-        }
+        _setNodeViewVisibility(node, view, visible);
+        // Like group context actions, this controls the selected owner only.
+        // Descendants inherit its gate without losing their own hide choices.
     });
     applyDataTreeViewVisibility();
     renderDataTree();
@@ -7805,7 +7859,8 @@ function _groupViewScopeNodes(category) {
         dataTreeState.ctv,
         dataTreeState.oar,
         dataTreeState.skin,
-        ...Object.values(state.maskLabels || {}).filter(mask => _isOpenGenericMask(mask)),
+        ...Object.values(state.maskLabels || {}).filter(mask =>
+            !_isGenericSegmentationMask(mask) || _isOpenGenericMask(mask)),
     ].filter(Boolean);
     if (category === 'ctv') return [dataTreeState.ctv].filter(Boolean);
     if (category === 'oar') return [dataTreeState.oar].filter(Boolean);
@@ -9487,11 +9542,11 @@ function _maskVisibleInTarget(mask) {
     const target = mask.movedTo;
     if (target === 'ctv') {
         const g = dataTreeState.ctv;
-        return g.visible !== false && (state.viewerSettings.showCTV !== false);
+        return isDataTreeNodeVisible2D(g) && (state.viewerSettings.showCTV !== false);
     }
     if (target === 'oar') {
         const g = dataTreeState.oar;
-        return g.visible !== false && (state.viewerSettings.showOAR !== false);
+        return isDataTreeNodeVisible2D(g) && (state.viewerSettings.showOAR !== false);
     }
     return true;
 }

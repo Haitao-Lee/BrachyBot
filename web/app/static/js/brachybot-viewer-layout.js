@@ -782,6 +782,11 @@ function resetViewer() {
 
 function renderSliceToCanvas(axis, sliceData, sliceIndex = state.slices?.[axis]) {
     const renderGeneration = window.__viewerRenderGeneration || 0;
+    const requestKey = typeof _viewerSliceRequestKey === 'function' ? _viewerSliceRequestKey() : null;
+    const sliceIsCurrent = () => renderGeneration === (window.__viewerRenderGeneration || 0)
+        && Number(state.slices?.[axis]) === Number(sliceIndex)
+        && (requestKey === null || requestKey === _viewerSliceRequestKey())
+        && !(typeof volumeData !== 'undefined' && volumeData && volumeShape);
     const canvasId = 'sliceCanvas' + capitalize(axis);
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
@@ -793,7 +798,7 @@ function renderSliceToCanvas(axis, sliceData, sliceIndex = state.slices?.[axis])
     if (typeof sliceData === 'string' && sliceData.startsWith('data:image/png;base64,')) {
         const img = new Image();
         img.onload = () => {
-            if (renderGeneration !== (window.__viewerRenderGeneration || 0)) return;
+            if (!sliceIsCurrent()) return;
             // PNG decoding is asynchronous. A result for an older slider
             // position must never replace the CT frame currently requested.
             if (Number(state.slices?.[axis]) !== Number(sliceIndex)) return;
@@ -801,6 +806,7 @@ function renderSliceToCanvas(axis, sliceData, sliceIndex = state.slices?.[axis])
             const containerRect = container.getBoundingClientRect();
             const containerW = containerRect.width;
             const containerH = containerRect.height;
+            if (containerW < 1 || containerH < 1) return;
             const imgW = img.width;
             const imgH = img.height;
 
@@ -897,6 +903,9 @@ function renderSliceToCanvas(axis, sliceData, sliceIndex = state.slices?.[axis])
             // Update annotation canvas size
             syncAnnotationCanvasSize(axis);
             redrawAllAnnotations();
+            // PNG-backed CT slices need the same label/dose/plan layers as
+            // the in-memory MPR. Reconciliation alone did not load labels.
+            if (typeof loadOverlay === 'function') void loadOverlay(axis, sliceIndex);
             if (typeof window.reconcile2DViewerLayers === 'function') {
                 window.reconcile2DViewerLayers({
                     reason: 'server-slice-decoded',
