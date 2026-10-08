@@ -205,6 +205,9 @@ def admitted_proposals(original, normalized, mounted_names, *, no_ct_tools=(), p
 def admission_error_text(call, language='en'):
     """Localize runtime-owned denials; do not reinterpret backend errors."""
     if str(language or '').lower().startswith('zh'):
+        if call.get('_admission_code') == 'request_scope':
+            return ('该操作超出了你本轮限定的范围，因此未执行；其余已授权任务仍按各自结果处理。'
+                    '不会要求你确认执行已明确排除的后续操作。')
         if call.get('_admission_code') == 'unavailable':
             return '该操作在本轮不可用，因此未执行。请使用当前可用的读取能力核实所需状态。'
         if call.get('_admission_code') == 'rejected':

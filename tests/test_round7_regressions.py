@@ -268,7 +268,7 @@ def test_local_replan_plan_wins_if_provider_overwrites_turn_ledger_with_guide_on
     assert calls[0]["params"]["step"] == "full"
 
 
-def test_short_replan_action_plan_builds_planning_and_guide_queue():
+def test_short_replan_action_plan_builds_only_the_planning_queue():
     from AgenticSys import BrachyAgent
     from agent_runtime.execution_authorization import TurnExecutionAuthorization
     from agent_runtime.turn_policy import classify_local_turn
@@ -304,7 +304,6 @@ def test_short_replan_action_plan_builds_planning_and_guide_queue():
 
     assert [call["tool"] for call in calls] == [
         "planning_pipeline",
-        "surgical_guide",
     ]
     assert calls[0]["params"]["step"] == "full"
 

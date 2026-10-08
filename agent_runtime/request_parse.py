@@ -180,6 +180,28 @@ _EXCLUSION_MARKERS = (
     "except", "excluding", "with the exception", "without",
 )
 
+# These are grammatical scope operators, not command/intent shortcuts. They
+# narrow a positive clause; they never select a tool or grant an operation.
+_EXCLUSIVE_MARKER = re.compile(r"(?:仅(?:仅)?|只(?:是)?|(?<![a-z0-9_])(?:only|just)(?![a-z0-9_]))", re.I)
+_PRESERVATION_FRAME = re.compile(
+    r"^\s*(?:请|帮我|并|同时|please\s+)?\s*(?:保留|保持|维持|留着|retain\b|preserve\b|keep\b|leave\b)|"
+    r"(?:保持|保留|维持|留着).*(?:原样|不变|不动|现有|当前)|"
+    r"(?:原样|不变|不动|不改动)\s*$|"
+    r"\b(?:leave|keep|retain|preserve)\b.*\b(?:unchanged|untouched|as[- ]is|existing|current)\b",
+    re.I,
+)
+
+
+def _target_exclusion_frame(text: str) -> bool:
+    """An exclusion modifies its following object, not every noun before it."""
+    for marker in _EXCLUSION_MARKERS:
+        for match in re.finditer(re.escape(marker), text, re.I):
+            if _find_targets(text[match.end():]):
+                return True
+            if marker in {'除外', '之外'} and not text[match.end():].strip():
+                return True
+    return False
+
 
 def is_negated(message: object) -> bool:
     """Return True when an explicit negation frame is present."""
@@ -211,6 +233,13 @@ _CONDITIONAL_MARKERS = (
     "条件", "前提", "在.*情况下",
     "if ", "unless", "suppose", "assuming", "in case",
 )
+_DEFERRED_CONSENT = re.compile(
+    r"(?:等|待|等待|经|得到|获得)(?:我|用户|医生|您|你)(?:的)?(?:确认|同意|批准|许可)|"
+    r"(?:确认|同意|批准)(?:以后|之后|后)(?:再|才)|"
+    r"\b(?:until|after|once|when)\s+(?:(?:I|you|the user|the clinician)\s+)?"
+    r"(?:confirm|approve|agree|give permission|say so)\b",
+    re.I,
+)
 
 
 def is_conditional(message: object) -> bool:
@@ -218,6 +247,8 @@ def is_conditional(message: object) -> bool:
     text = _clean(message)
     if not text:
         return False
+    if _DEFERRED_CONSENT.search(text):
+        return True
     for marker in _CONDITIONAL_MARKERS:
         if marker.startswith("在") and marker.endswith("情况下"):
             if re.search(marker, text):
@@ -560,6 +591,19 @@ def _find_targets(text: str) -> List[str]:
         for alias in matched["structure"]
     ) and len(matched) > 1:
         matched.pop("structure", None)
+    if 'planning' in matched and 'dose' in matched:
+        # A possessive/source noun phrase names the dose's owning plan, not a
+        # second requested re-planning operation. Mask just those phrases;
+        # a separately mentioned planning action remains a real goal.
+        plan_dose = re.compile(
+            r"(?:规划|计划)(?:方案|结果)?(?:中的|内的|的)?\s*(?:剂量|dvh)|"
+            r"\b(?:current\s+)?(?:plan|planning)(?:'s|’s)?\s+(?:dose|dvh)\b|"
+            r"\b(?:dose|dvh)\s+(?:of|for)\s+(?:the\s+)?(?:current\s+)?(?:plan|planning)\b",
+            re.I,
+        )
+        remaining = plan_dose.sub(' ', text)
+        if remaining != text and not any(_alias_matches(remaining, alias) for alias in matched['planning']):
+            matched.pop('planning', None)
     # “dose report” and “planning report” are report qualifiers, not two
     # independently requested objects. Explicit conjunctions remain compound.
     if "report" in matched:
@@ -751,6 +795,12 @@ def _subtask_clause_spans(text: str) -> List[Tuple[int, int, bool]]:
         r"以及|和|与|及|并(?=[\u4e00-\u9fff]))",
         re.IGNORECASE,
     )
+    restriction = re.compile(
+        r"(?<![a-z0-9_])(?:without|excluding|except(?:\s+for)?|rather\s+than)(?![a-z0-9_])|"
+        r"(?:不要|不用|无需|不必|不需要|不含|不包括|不包含|除了|除外|别(?=生成|更新|重算|规划|分割))|"
+        r"(?<![a-z0-9_])(?:leave|keep|retain|preserve)(?![a-z0-9_])|(?:保持|保留|维持)",
+        re.I,
+    )
 
     def trim_span(start: int, end: int) -> Optional[Tuple[int, int]]:
         while start < end and text[start].isspace():
@@ -764,6 +814,15 @@ def _subtask_clause_spans(text: str) -> List[Tuple[int, int, bool]]:
         return bool(_find_targets(fragment) and _find_actions(_mask_quoted_content(fragment)))
 
     def split_soft(start: int, end: int, inherited: bool) -> List[Tuple[int, int, bool]]:
+        # A trailing restriction has its own object even without a finite
+        # action verb ("replan without a new guide", "update report, leave
+        # dose unchanged"). Do not let it negate the preceding positive goal.
+        # Keep the marker on the right so its object remains excluded.
+        for match in restriction.finditer(boundary_text, start, end):
+            left = trim_span(start, match.start())
+            right = trim_span(match.start(), end)
+            if left and right and complete(*left) and _find_targets(text[right[0]:right[1]]):
+                return split_soft(*left, inherited) + split_soft(*right, inherited)
         for match in soft.finditer(boundary_text, start, end):
             left = trim_span(start, match.start())
             right = trim_span(match.end(), end)
@@ -874,8 +933,9 @@ def _parse_subtasks(text: str) -> Tuple["RequestSubtask", ...]:
             "ambiguous": ambiguous_pairing or (len(actions) > 1 and len(ordered_targets) > 1),
             "aggregate": _has_aggregate_scope(unquoted),
             "excluded": bool(ordered_targets) and (
-                any(marker in unquoted for marker in _EXCLUSION_MARKERS)
+                _target_exclusion_frame(unquoted)
                 or is_negated(unquoted)
+                or bool(_PRESERVATION_FRAME.search(unquoted))
             ),
             "source": "deterministic_lexicon",
         }
@@ -987,6 +1047,47 @@ class ParsedRequest:
     reason: str = ""
 
     @property
+    def exclusive_write_targets(self) -> Optional[FrozenSet[str]]:
+        """Finite upper bound on writes, not an execution grant.
+
+        An exclusive positive operation limits optional side effects. Other
+        separately authorized sibling goals remain valid ("only replan;
+        then generate the report"). Read/presentation/language modifiers and
+        quotations do not create a write boundary. Unknown objects are not
+        guessed by this structural projection.
+        """
+        positive = [task for task in self.subtasks
+                    if _subtask_can_authorize(task) and task.action in _WRITE_ACTIONS]
+        if not any(_EXCLUSIVE_MARKER.search(_mask_quoted_content(task.raw)) for task in positive):
+            return None
+        return frozenset(task.target for task in positive if task.target in _WRITABLE_TARGETS)
+
+    @property
+    def partial_write_targets(self) -> FrozenSet[str]:
+        """A named internal field/part cannot authorize whole-object rebuild.
+
+        This is a conservative grammatical ceiling, not a field-name router.
+        The semantic model/registered UI operations still resolve the actual
+        field. Unsupported partial writes must clarify rather than overwrite
+        the entire report/segmentation/plan as a convenient substitute.
+        """
+        targets = set()
+        for task in self.subtasks:
+            if not _subtask_can_authorize(task) or task.action not in _WRITE_ACTIONS:
+                continue
+            raw = _mask_quoted_content(task.raw)
+            for target, aliases in TARGET_ALIASES:
+                if target != task.target:
+                    continue
+                for alias in aliases:
+                    if re.search(re.escape(alias) + r"(?:中的|里的|内的)\s*\S", raw, re.I):
+                        targets.add(target)
+                    if alias.isascii() and re.search(
+                        r"\b" + re.escape(alias) + r"(?:'s|’s)\s+(?:[\w-]+\s+){0,4}(?:title|summary|section|table|field|paragraph)\b", raw, re.I):
+                        targets.add(target)
+        return frozenset(targets)
+
+    @property
     def has_write_intent(self) -> bool:
         return any(task.target and task.action in _WRITE_ACTIONS for task in self.subtasks)
 
@@ -1041,6 +1142,9 @@ class ParsedRequest:
             "actions": list(self.actions),
             "goals": [list(goal) for goal in self.goals],
             "excluded_targets": list(self.excluded_targets),
+            "exclusive_write_targets": (sorted(self.exclusive_write_targets)
+                                        if self.exclusive_write_targets is not None else None),
+            "partial_write_targets": sorted(self.partial_write_targets),
             "subtasks": [
                 {
                     "raw": task.raw,
@@ -1506,6 +1610,10 @@ def mutating_execution_authorized(
         "plan": {"plan"},
         "segment": {"segment", "plan", "generate"},
     }.get(expected_action, {expected_action})
+    if expected_target == 'dose' and expected_action == 'plan':
+        # "update/refresh dose" and "recompute dose" select the same
+        # dose-only capability; neither is permission to rerun geometry.
+        allowed_actions = allowed_actions | {'generate'}
     for task in parsed.subtasks:
         # The same predicate the aggregate scope resolver uses: one
         # authorization contract, so no second path can grant what this one

@@ -99,18 +99,15 @@ def test_surgical_replan_wording_keeps_the_planning_pipeline_first():
         "ctv_segmentation",
         "oar_segmentation",
         "planning_pipeline",
-        "surgical_guide",
     ]
     assert policy.action_plan.ordered_steps()[2].depends_on == (
         "ctv_segmentation",
         "oar_segmentation",
     )
-    assert policy.action_plan.ordered_steps()[3].depends_on == (
-        "planning_pipeline",
-    )
+    assert "surgical_guide" not in policy.execution_grants
 
 
-def test_short_replan_follow_up_queues_dependent_guide_generation():
+def test_short_replan_follow_up_does_not_imply_guide_generation():
     policy = classify_local_turn("我是让你重新规划")
 
     assert policy.intent == "semantic_action"
@@ -119,13 +116,9 @@ def test_short_replan_follow_up_queues_dependent_guide_generation():
         "ctv_segmentation",
         "oar_segmentation",
         "planning_pipeline",
-        "surgical_guide",
     )
     assert "planning_pipeline" in policy.execution_grants
-    assert "surgical_guide" in policy.execution_grants
-    assert policy.action_plan.ordered_steps()[3].depends_on == (
-        "planning_pipeline",
-    )
+    assert "surgical_guide" not in policy.execution_grants
 
 
 def test_action_plan_preserves_repeated_provider_steps_and_order_after_merge():

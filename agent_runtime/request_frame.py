@@ -81,11 +81,19 @@ def build_request_frame(message: Any, conversation=()) -> dict:
             continue
         prior.append({'role': role, 'text': content[-350:],
                       'authority': 'reference_only_not_execution_permission'})
+    full_parse = parse_request(raw)
     return {
         'version': 1, 'source': 'current_human_message',
         'request_sha256': hashlib.sha256(raw.encode('utf-8')).hexdigest(),
         'clauses': clauses, 'omitted_clause_count': max(0, len(spans) - len(clauses)),
         'prior_discourse': prior[-4:], 'grants_execution': False,
+        'structural_effect_ceiling': {
+            'excluded': list(full_parse.excluded_targets),
+            'exclusive': (sorted(full_parse.exclusive_write_targets)
+                          if full_parse.exclusive_write_targets is not None else None),
+            'partial': sorted(full_parse.partial_write_targets),
+            'grants_execution': False,
+        },
     }
 
 
@@ -124,6 +132,16 @@ WHOLE_REQUEST_INSTRUCTION = (
         'separate operations. Do not assume an optimizer reruns or seeds are redistributed '
         'merely because a needle moves. Describe actual transitions from operation schemas '
         'and receipts, not from a recommended workflow or hypothetical future command. '
+        'Treat only/just, exclusions and keep-unchanged clauses as an effect ceiling, '
+        'not a topic hint. Propose only the requested outcomes and their mandatory input '
+        'dependencies. A stale guide/report needs a stale marker, not automatic regeneration. '
+        'A replan produces its intrinsic trajectory/seed/dose/DVH results; it does not '
+        'authorize guide, report, export, UI rearrangement or other optional follow-ups. '
+        'Reuse valid existing masks unless replacing them was requested. If a prohibited '
+        'prerequisite is unavailable, explain the conflict instead of performing it anyway. '
+        'A request to change only a field/table/section is not permission to rewrite its '
+        'whole owning artifact. Use a registered field-targeted operation or explain the '
+        'missing capability; never substitute a full autofill for a partial report edit. '
         'Loaded, generated, reviewed and clinically approved are different states. Never '
         'describe existing needles/plans as approved without an explicit verified approval record. '
         'Unknown approval is neither approval nor rejection. Never compare different version '

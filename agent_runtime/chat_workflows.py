@@ -3165,6 +3165,7 @@ class ChatWorkflowMixin:
         # recovery and tool normalization must use this ledger instead of
         # re-reading keywords from the raw user message.
         authorization = TurnExecutionAuthorization(token)
+        authorization.bind_request(message)
         self._turn_execution_authorization = authorization
         local.authorization = authorization
         authorization.grant_tool_calls(local.confirmed_calls, source='server_bound_confirmation')
@@ -3204,8 +3205,18 @@ class ChatWorkflowMixin:
         from agent_runtime.confirmation import PendingConfirmation, proposal_preview
         from agent_runtime.llm_runtime import _blocked_mutation_message
         token = self._current_turn_token()
+        candidates = self._current_blocked_mutations()[1]
+        authorization = self._current_execution_authorization()
+        allowed_candidates = [call for call in candidates if authorization is None
+                              or authorization.effect_allowed(call.get('tool', ''), call.get('params') or {})]
+        if candidates and not allowed_candidates:
+            return ('超出你本轮范围的操作没有执行，也不会转成待确认任务。'
+                    '本轮未得到足以确认所请求任务已完成的结果。'
+                    if str(language).startswith('zh') else
+                    'Operations outside your current scope were not executed or queued for confirmation. '
+                    'This turn did not produce sufficient evidence to confirm the requested task completed.')
         proposal = PendingConfirmation.create(
-            self._current_blocked_mutations()[1], getattr(self, 'memory', None), token)
+            allowed_candidates, getattr(self, 'memory', None), token)
         if proposal is None:
             return ('该操作尚未获得明确的对象和执行范围，请说明要修改哪个对象以及如何修改。'
                     if str(language).startswith('zh') else
@@ -3326,6 +3337,8 @@ class ChatWorkflowMixin:
                 ledger.record_routing(routing_trace)
         authorization = self._current_execution_authorization()
         if authorization is not None:
+            if message:
+                authorization.bind_request(message)
             authorization.grant_policy(policy)
             if routing_trace:
                 authorization.events.append({
@@ -6320,7 +6333,7 @@ class ChatWorkflowMixin:
                                     authorization = self._current_execution_authorization()
                                     guide_authorized = bool(
                                         authorization is not None
-                                        and authorization.tool_allowed("surgical_guide")
+                                        and authorization.tool_allowed("surgical_guide", {"action": "generate"})
                                     )
                                     if guide_authorized and self.registry.get("surgical_guide"):
                                         try:

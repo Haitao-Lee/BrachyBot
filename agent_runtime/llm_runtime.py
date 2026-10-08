@@ -1192,13 +1192,15 @@ class LLMRuntimeMixin:
 
     def _record_ordered_action_plan(self, tool_calls, *, source: str = "llm") -> None:
         """Persist provider-selected tool order for this isolated chat turn."""
+        authorization = getattr(self, "_current_execution_authorization", lambda: None)()
+        from agent_runtime.execution_scope import check_call_scopes
+        tool_calls[:] = check_call_scopes(tool_calls, authorization)
         plan = ActionPlan.from_tool_calls(
             [call for call in (tool_calls or ()) if not call.get("_argument_error")
              and call.get("tool") != PLAN_TOOL], source=source,
         )
         if not plan.steps:
             return
-        authorization = getattr(self, "_current_execution_authorization", lambda: None)()
         if authorization is not None and hasattr(authorization, "set_action_plan"):
             accepted = authorization.set_action_plan(plan, source=source)
             if accepted is False:
@@ -1228,6 +1230,10 @@ class LLMRuntimeMixin:
         ordered = " -> ".join(step.tool for step in plan.ordered_steps())
         authorization = getattr(self, "_current_execution_authorization", lambda: None)()
         receipts = getattr(authorization, "execution_receipts", [])
+        scope = getattr(authorization, 'effect_scope', None)
+        scope_context = ('Current human effect ceiling (denial only): '
+                         + json.dumps(scope.to_dict(), ensure_ascii=False) + '\n'
+                         if scope is not None and (scope.excluded or scope.partial or scope.exclusive is not None) else '')
         return (
             "\n### ORDERED ACTION PLAN\n"
             "The current request contains an ordered business action plan. "
@@ -1237,6 +1243,7 @@ class LLMRuntimeMixin:
             "Pending/dispatched is not completed; failed dependencies leave downstream work unperformed. "
             "Answer each independent user request from its own evidence, and state partial results accurately.\n"
             + ("Execution receipts: " + json.dumps(receipts, ensure_ascii=False) + "\n" if receipts else "")
+            + scope_context
         )
 
     def _new_step_execution_state(self):

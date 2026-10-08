@@ -1357,7 +1357,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         )
         guide_authorized = bool(guide_call) or bool(
             authorization is not None
-            and authorization.tool_allowed("surgical_guide")
+            and authorization.tool_allowed("surgical_guide", {"action": "generate"})
         )
 
         if (
@@ -1508,6 +1508,12 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         Now the LLM receives a clear error message and must learn to follow
         the correct workflow: ctv_segmentation → oar_segmentation → planning.
         """
+        # A provider, normalizer, recovery branch or direct shortcut cannot
+        # widen the immutable current-human scope. Non-chat API callers have
+        # no turn ledger and keep their existing backend permission contract.
+        authorization = self._current_execution_authorization()
+        if authorization is not None and not authorization.effect_allowed(tool_name, params):
+            return ToolResult(success=False, error="Operation is outside the current request scope; it was not executed.")
         from utils.tool_security import validate_tool_paths
         try:
             validate_tool_paths(tool_name, params, config=getattr(self, "config", None))

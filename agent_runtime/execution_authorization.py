@@ -15,6 +15,7 @@ import json
 from typing import Dict, FrozenSet, Iterable, List, Mapping, Set
 
 from agent_runtime.action_plan import ActionPlan
+from agent_runtime.execution_scope import ExecutionScope
 
 
 PLANNING_WORKFLOW = "clinical_planning"
@@ -110,6 +111,19 @@ class TurnExecutionAuthorization:
     execution_receipts: List[Dict[str, object]] = field(default_factory=list)
     _name_grants: Set[str] = field(default_factory=set, repr=False)
     _call_grants: Dict[str, List[dict]] = field(default_factory=dict, repr=False)
+    effect_scope: ExecutionScope = field(default_factory=ExecutionScope)
+
+    def bind_request(self, message) -> bool:
+        """Freeze a denial-only ceiling before any routing/provider grants."""
+        incoming = ExecutionScope.from_request(message)
+        if self.effect_scope.request_sha256:
+            return self.effect_scope.request_sha256 == incoming.request_sha256
+        self.effect_scope = incoming
+        return True
+
+    def effect_allowed(self, tool_name, params=None) -> bool:
+        return (not tool_call_is_mutating(tool_name, params)
+                or self.effect_scope.allows(tool_name, params))
 
     def set_action_plan(self, plan: ActionPlan, *, source: str = "llm") -> bool:
         """Record the ordered action plan for this isolated turn.
@@ -144,6 +158,8 @@ class TurnExecutionAuthorization:
     def _record_grants(self, tools, *, source, name_grant):
         names = {str(name or "").strip() for name in tools}
         names.discard("")
+        if name_grant:
+            names = {name for name in names if self.effect_allowed(name)}
         if not names:
             return
         self.granted_tools.update(names)
@@ -181,6 +197,9 @@ class TurnExecutionAuthorization:
             except (TypeError, ValueError):
                 continue
             name = str(call.get('tool') or '')
+            if not self.effect_allowed(name, frozen):
+                self.events.append({'source': str(source), 'scope_denied_tool': name})
+                continue
             self._call_grants.setdefault(name, []).append(frozen)
             admitted.append(name)
         self._record_grants(admitted, source=source, name_grant=False)
@@ -202,6 +221,8 @@ class TurnExecutionAuthorization:
         )
         if PLANNING_WORKFLOW in workflows and not full_plan_granted:
             workflows.discard(PLANNING_WORKFLOW)
+        if not self.effect_allowed('planning_pipeline', {'step': 'full'}):
+            workflows.discard(PLANNING_WORKFLOW)
         if workflows:
             self.granted_workflows.update(workflows)
             self.events.append({
@@ -217,6 +238,8 @@ class TurnExecutionAuthorization:
         name = str(tool_name or "")
         if not tool_call_is_mutating(name, params):
             return True
+        if not self.effect_allowed(name, params):
+            return False
         if name in self.granted_tools:
             if params is None or name in self._name_grants:
                 return True  # legacy introspection or proved whole-command grant
@@ -247,5 +270,6 @@ class TurnExecutionAuthorization:
             "granted_tools": sorted(self.granted_tools),
             "granted_workflows": sorted(self.granted_workflows),
             "action_plan": self.action_plan.to_dict(),
+            "effect_scope": self.effect_scope.to_dict(),
             "events": list(self.events),
         }
