@@ -690,6 +690,7 @@ function _uiOperationActionFromElement(element) {
     if (/viewerRotate\s*\(/i.test(source)) return { target: 'viewer.transform', command: 'rotate', semantic_property: 'layout' };
     if (/viewerUndo\s*\(/i.test(source)) return { target: 'viewer.annotations', command: 'undo', semantic_property: 'annotations' };
     if (/viewerRedo\s*\(/i.test(source)) return { target: 'viewer.annotations', command: 'redo', semantic_property: 'annotations' };
+    if (/clearViewerMeasurements\s*\(/i.test(source)) return { target: 'viewer.annotations', command: 'clear_measurements', semantic_property: 'annotations' };
     if (/toggle3DWireframe\s*\(/i.test(source)) return { target: '3d.wireframe', command: 'toggle', value_source: 'control', semantic_property: 'visibility' };
     if (/toggle3DSkin\s*\(/i.test(source)) return { target: '3d.skin', command: 'toggle', value_source: 'control', semantic_property: 'visibility' };
     if (/updateLabelImage\s*\(/i.test(source)) return { target: '3d.labels', command: 'toggle', value_source: 'control', semantic_property: 'visibility' };
@@ -8381,6 +8382,9 @@ async function _executeUIActionRaw(a, options = {}) {
             if (typeof handler === 'function') {
                 const result = await Promise.resolve(handler());
                 if (result && result.success === false) return result;
+                if (['undo','redo'].includes(command) && result === false) {
+                    return {success:false,target,command,error:'No applicable annotation history is available, or annotations are being saved.'};
+                }
                 return { success: true, target, command, applied: result ?? command };
             }
             return { success: false, error: `Viewer transform is unavailable: ${command}` };
@@ -8389,6 +8393,13 @@ async function _executeUIActionRaw(a, options = {}) {
             if (typeof setViewerTool !== 'function') return { success: false, error: 'Viewer tool control is unavailable.' };
             await Promise.resolve(setViewerTool(value));
             return { success: true, target, command, tool: value };
+        }
+        if (target === 'viewer.annotations') {
+            const handler = {undo:window.viewerUndo,redo:window.viewerRedo,clear_measurements:window.clearViewerMeasurements}[command];
+            if (typeof handler !== 'function') return {success:false,error:'Annotation action is unavailable.'};
+            const result = await Promise.resolve(handler());
+            if (result && typeof result === 'object') return {...result,target,command};
+            return {success:result === true,target,command,applied:result === true};
         }
         // ── Manual / threshold masks ──
         if (target === 'mask.create') {

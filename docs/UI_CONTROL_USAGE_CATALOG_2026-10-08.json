@@ -1,9 +1,9 @@
 {
   "coverage": {
-    "version": "2026-10-08.1",
-    "interactive_controls": 219,
-    "reviewed_cards": 66,
-    "source_bound_controls": 219,
+    "version": "2026-10-08.2",
+    "interactive_controls": 220,
+    "reviewed_cards": 67,
+    "source_bound_controls": 220,
     "unknown_controls": [],
     "dynamic_controls": "Require live ui_operations stable refs; no invented bindings."
   },
@@ -723,6 +723,54 @@
           "id": null,
           "label": "↪ redo",
           "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "viewer.measurements.clear",
+      "control_ids": [
+        "toolClearMeasurements"
+      ],
+      "handlers": [
+        "clearViewerMeasurements"
+      ],
+      "panel": "Viewers",
+      "names": {
+        "zh": "清除测量",
+        "en": "Clear measurements"
+      },
+      "aliases": [
+        "清除测量",
+        "清掉测量",
+        "clear measurements"
+      ],
+      "purpose": {
+        "zh": "仅清除当前病例的线段、角度和矩形测量。",
+        "en": "Clear line, angle and rectangle measurements in the current case only."
+      },
+      "steps": {
+        "zh": "点击工具栏清除测量，核对数量和范围后确认；删除单项可在 Data Tree 标注行右键删除。",
+        "en": "Click Clear measurements, review the count and scope, then confirm; right-click an annotation row in Data Tree to delete one item."
+      },
+      "result": {
+        "zh": "画面和 Data Tree 同步清除，保存成功才确认完成；Undo 可整批恢复，Redo 可再次清除。",
+        "en": "The view and Data Tree update together; completion requires a successful save. Undo restores the batch; Redo clears it again."
+      },
+      "caution": {
+        "zh": "不删除手绘掩膜、SAT3D 提示点、针道或粒子；无测量时禁用。清除历史截图中的标注需重新截图。",
+        "en": "Preserves manual masks, SAT3D prompts, needles and seeds; disabled when no measurements exist. Existing screenshots require recapture."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/static/js/brachybot-manual-annotation.js:clearViewerMeasurements"
+      ],
+      "bindings": [
+        {
+          "id": "toolClearMeasurements",
+          "label": "Clear measurements",
+          "disabled_by_default": true,
           "tag": "button",
           "input_constraints": {}
         }

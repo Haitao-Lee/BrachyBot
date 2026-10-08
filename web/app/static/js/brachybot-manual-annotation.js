@@ -2978,14 +2978,176 @@ function syncAnnotationCanvasSize(axis) {
     annCanvas.style.pointerEvents = 'none';
 }
 
+let _viewerAnnotationMutation = null;
+const _viewerMeasurementTypes = new Set(['line', 'angle', 'rect']);
+
+function _viewerAnnotationOwner() {
+    return `${typeof _activeApiSessionId === 'function' ? _activeApiSessionId() || '' : window.activeSessionId || ''}|${state.ctPath || ''}`;
+}
+
+function _viewerAnnotationBusy() {
+    return !!_viewerAnnotationMutation && _viewerAnnotationMutation.owner === _viewerAnnotationOwner();
+}
+
+function ensureViewerAnnotationIdentities() {
+    if (!Array.isArray(state.annotations)) state.annotations = [];
+    const used = new Set();
+    state.annotations.forEach(annotation => {
+        if (!annotation || typeof annotation !== 'object') return;
+        const existing = String(annotation.id || '');
+        if (!existing || used.has(existing)) {
+            annotation.id = `annotation_${window.crypto?.randomUUID?.() || `${Date.now()}_${Math.random().toString(36).slice(2)}`}`;
+        } else annotation.id = existing;
+        used.add(annotation.id);
+    });
+    return state.annotations;
+}
+
+function viewerAnnotationLabel(annotation) {
+    const zh = typeof window._t === 'function' ? window._t('中', 'en') === '中' : window._i18nLang === 'zh';
+    const names = {line:zh ? '线段测距' : 'Line', angle:zh ? '角度测量' : 'Angle', rect:zh ? '矩形测量' : 'Rectangle', sat3d_prompt:zh ? 'SAT3D 提示点' : 'SAT3D prompt'};
+    const axes = {axial:zh ? '轴向' : 'Axial', sagittal:zh ? '矢状' : 'Sagittal', coronal:zh ? '冠状' : 'Coronal'};
+    let value = '';
+    if (annotation.type === 'line') {
+        const distance = Math.hypot((annotation.x2-annotation.x1)*annotation.spacingX, (annotation.y2-annotation.y1)*annotation.spacingY);
+        if (Number.isFinite(distance)) value = `${distance.toFixed(1)} mm`;
+    } else if (annotation.type === 'angle' && Number.isFinite(annotation.angleDeg)) value = `${annotation.angleDeg.toFixed(1)}°`;
+    return [names[annotation.type] || (zh ? '手动标注' : 'Annotation'), axes[annotation.axis], value].filter(Boolean).join(' · ');
+}
+
+function syncViewerMeasurementControls() {
+    const button = document.getElementById('toolClearMeasurements');
+    if (!button) return;
+    const count = (state.annotations || []).filter(a => _viewerMeasurementTypes.has(a.type)).length;
+    const pending = _viewerMeasurementTypes.has(state.viewerSettings?.activeTool === 'measure' ? 'line' : state.viewerSettings?.activeTool)
+        && (window._annotationToolState?.active || window._annotationToolState?.points?.length);
+    button.disabled = _viewerAnnotationBusy() || (!count && !pending);
+    const label = typeof _t === 'function'
+        ? (_viewerAnnotationBusy() ? _t('正在保存…','Saving…') : _t('清除测量','Clear measurements'))
+        : (_viewerAnnotationBusy() ? 'Saving…' : 'Clear measurements');
+    if (button.textContent !== label) button.textContent = label;
+    button.dataset.measurementCount = String(count);
+    button.setAttribute('aria-busy', _viewerAnnotationBusy() ? 'true' : 'false');
+    button.title = typeof _t === 'function' ? _t(`清除 ${count} 项线段、角度和矩形测量；保留掩膜与 SAT3D 提示点。`, `Clear ${count} line, angle and rectangle measurement(s); preserve masks and SAT3D prompts.`) : 'Clear measurements only';
+}
+
+function _refreshViewerAnnotationState(reason, persist = true) {
+    redrawAllAnnotations();
+    // Publish the tree before capturing the workspace snapshot; a queued
+    // render otherwise saves deleted rows beside the new annotation array.
+    if (typeof renderDataTree === 'function') renderDataTree();
+    if (persist && typeof window.scheduleWorkspaceSave === 'function') window.scheduleWorkspaceSave(reason);
+}
+
+function _applyAnnotationRemoval(record, restore) {
+    const ids = new Set(record.rows.map(row => row.annotation.id));
+    if (restore) {
+        const present = new Set((state.annotations || []).map(a => a.id));
+        record.rows.forEach(row => {
+            if (!present.has(row.annotation.id)) {
+                state.annotations.splice(Math.min(row.index, state.annotations.length), 0, row.annotation);
+                present.add(row.annotation.id);
+            }
+        });
+    } else state.annotations = (state.annotations || []).filter(a => !ids.has(a.id));
+}
+
+async function deleteViewerAnnotations(objectIds, options = {}) {
+    const owner = _viewerAnnotationOwner();
+    if (_viewerAnnotationBusy()) throw new Error(typeof _t === 'function' ? _t('标注正在保存，请稍候。', 'Annotations are being saved; please wait.') : 'Annotations are being saved.');
+    if (state.ctLoaded !== true || document.body.classList.contains('workspace-readonly')
+        || window.isWorkspacePresentationWriteLocked?.(typeof _activeApiSessionId === 'function' ? _activeApiSessionId() : null)) {
+        throw new Error(typeof _t === 'function' ? _t('当前病例不可编辑，请先取得编辑权限并完成加载。', 'This case is not editable; acquire editing access and finish loading first.') : 'This case is not editable.');
+    }
+    if (typeof window.persistWorkspace !== 'function') throw new Error(typeof _t === 'function' ? _t('工作区保存功能不可用。', 'Workspace persistence is unavailable.') : 'Workspace persistence is unavailable.');
+    const annotations = ensureViewerAnnotationIdentities();
+    const ids = new Set((objectIds || []).map(id => String(id).replace(/^annotation:/, '')));
+    const rows = annotations.map((annotation,index) => ({annotation,index})).filter(row => ids.has(row.annotation.id));
+    if (rows.length !== ids.size) throw new Error(typeof _t === 'function' ? _t('标注列表已变化，请重新选择。', 'Annotations changed; select the target again.') : 'Annotations changed.');
+    if (options.measurementsOnly && rows.some(row => !_viewerMeasurementTypes.has(row.annotation.type))) throw new Error('Measurement clear cannot remove other annotation types.');
+    if (!rows.length) return {success:true, removed:0, persisted:true};
+    if (options.confirm !== false) {
+        const confirmed = typeof window._confirmAction === 'function' && await window._confirmAction(
+            options.measurementsOnly
+                ? `清除当前病例的 ${rows.length} 项线段、角度和矩形测量？不会删除掩膜、SAT3D 提示点、针道或粒子；可用 Undo 整批恢复。`
+                : `清除选中的 ${rows.length} 项标注？不会删除掩膜、针道或粒子；可用 Undo 恢复。`,
+            options.measurementsOnly
+                ? `Clear ${rows.length} line, angle and rectangle measurement(s) in this case? Masks, SAT3D prompts, needles and seeds are unchanged; Undo restores the batch.`
+                : `Clear ${rows.length} selected annotation(s)? Masks, needles and seeds are unchanged; Undo can restore them.`,
+            {titleZh:options.measurementsOnly?'清除测量':'清除标注',titleEn:options.measurementsOnly?'Clear measurements':'Clear annotations',yesZh:'清除',yesEn:'Clear',noZh:'取消',noEn:'Cancel'});
+        if (!confirmed) return {success:false,cancelled:true,removed:0};
+    }
+    if (owner !== _viewerAnnotationOwner() || state.annotations !== annotations) return {success:false,stale:true,removed:0};
+    _ensureAnnotationHistoryScope();
+    const record = {type:'annotation_remove', rows};
+    const previousRedo = state.annotationRedoStack;
+    _applyAnnotationRemoval(record, false);
+    pushUndo(record);
+    const operation = {owner, rows:state.annotations};
+    _viewerAnnotationMutation = operation;
+    _refreshViewerAnnotationState('viewer.annotations.remove', false);
+    try {
+        const sessionId = typeof _activeApiSessionId === 'function' ? _activeApiSessionId() : window.activeSessionId;
+        const saved = await window.persistWorkspace('viewer.annotations.remove', {sessionId,skipChat:true});
+        if (!saved) throw new Error(typeof _t === 'function' ? _t('标注保存未确认，请重试。', 'Annotation save was not confirmed. Please retry.') : 'Annotation save was not confirmed.');
+        if (owner !== _viewerAnnotationOwner() || state.annotations !== operation.rows) return {success:false,stale:true,removed:rows.length,persisted:true};
+        return {success:true,removed:rows.length,persisted:true};
+    } catch (error) {
+        if (owner === _viewerAnnotationOwner() && state.annotations === operation.rows) {
+            _applyAnnotationRemoval(record, true);
+            state.annotationUndoStack = state.annotationUndoStack.filter(item => item !== record);
+            state.annotationRedoStack = previousRedo;
+            _refreshViewerAnnotationState('viewer.annotations.remove.reverted');
+        } else error.annotationStale = true;
+        throw error;
+    } finally {
+        if (_viewerAnnotationMutation === operation) _viewerAnnotationMutation = null;
+        syncViewerMeasurementControls();
+    }
+}
+
+async function clearViewerMeasurements() {
+    const owner = _viewerAnnotationOwner();
+    try {
+        const ids = ensureViewerAnnotationIdentities().filter(a => _viewerMeasurementTypes.has(a.type)).map(a => a.id);
+        const result = await deleteViewerAnnotations(ids, {measurementsOnly:true});
+        if (result.success && owner === _viewerAnnotationOwner()
+            && ['measure','angle','rect'].includes(state.viewerSettings?.activeTool)
+            && window._annotationToolState) {
+            window._annotationToolState.active = false;
+            window._annotationToolState.points = [];
+            redrawAllAnnotations();
+        }
+        if (result.success && result.removed) {
+            const message = typeof _t === 'function' ? _t(`已清除 ${result.removed} 项测量；Undo 可恢复。`, `${result.removed} measurement(s) cleared; Undo can restore them.`) : 'Measurements cleared; Undo can restore them.';
+            if (typeof showToast === 'function') showToast(message, 'success');
+            else if (typeof addChat === 'function') addChat('system', message);
+        }
+        return result;
+    } catch (error) {
+        if (owner === _viewerAnnotationOwner() && !error.annotationStale && typeof addChat === 'function') addChat('error', String(error.message || error));
+        return {success:false,stale:!!error.annotationStale,error:String(error.message || error)};
+    }
+}
+window.ensureViewerAnnotationIdentities = ensureViewerAnnotationIdentities;
+window.viewerAnnotationLabel = viewerAnnotationLabel;
+window.deleteViewerAnnotations = deleteViewerAnnotations;
+window.clearViewerMeasurements = clearViewerMeasurements;
+window.syncViewerMeasurementControls = syncViewerMeasurementControls;
+window.addEventListener('i18nchange', () => {
+    syncViewerMeasurementControls();
+    if (typeof renderDataTree === 'function') renderDataTree();
+});
+
 function redrawAllAnnotations() {
+    syncViewerMeasurementControls();
     ['axial', 'sagittal', 'coronal'].forEach(axis => {
         const annCanvas = getAnnotationCanvas(axis);
         if (!annCanvas) return;
         const ctx = annCanvas.getContext('2d');
         ctx.clearRect(0, 0, annCanvas.width, annCanvas.height);
 
-        state.annotations.filter(a => a.axis === axis
+        state.annotations.filter(a => a.visible !== false && a.visible2D !== false && a.axis === axis
             && (a.type !== 'sat3d_prompt' || a.imagePath === state.ctPath && a.imageShape === JSON.stringify(state.ctShape))
             && (a.sliceIndex == null || a.sliceIndex === state.slices[axis])).forEach(ann => {
             const scale = getSliceCanvas(axis)?._displayScale || 1;
@@ -3116,6 +3278,7 @@ function _ensureAnnotationHistoryScope() {
 
 function pushUndo(annotation) {
     _ensureAnnotationHistoryScope();
+    ensureViewerAnnotationIdentities();
     annotation.undoId = annotation.undoId || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     state.annotationUndoStack.push(annotation);
     state.annotationRedoStack = [];
@@ -3317,29 +3480,35 @@ function eraseMaskArea(axis, points) {
 }
 
 function viewerUndo() {
+    if (_viewerAnnotationBusy()) return false;
     _ensureAnnotationHistoryScope();
-    if (state.annotationUndoStack.length === 0) return;
+    if (state.annotationUndoStack.length === 0) return false;
     const ann = state.annotationUndoStack.pop();
-    if (ann.type === 'mask_edit') _applyMaskHistory(ann, true);
+    if (ann.type === 'annotation_remove') _applyAnnotationRemoval(ann, true);
+    else if (ann.type === 'mask_edit') _applyMaskHistory(ann, true);
     else if (ann.type === 'prompt_clear') state.annotations.push(...ann.points);
     else state.annotations = state.annotations.filter(a => a !== ann && a.undoId !== ann.undoId);
     state.annotationRedoStack.push(ann);
-    redrawAllAnnotations();
+    _refreshViewerAnnotationState('viewer.undo', false);
     _updateSat3dPromptHelp();
     if (typeof window.scheduleWorkspaceSave === 'function') window.scheduleWorkspaceSave('viewer.undo');
+    return true;
 }
 
 function viewerRedo() {
+    if (_viewerAnnotationBusy()) return false;
     _ensureAnnotationHistoryScope();
-    if (state.annotationRedoStack.length === 0) return;
+    if (state.annotationRedoStack.length === 0) return false;
     const ann = state.annotationRedoStack.pop();
-    if (ann.type === 'mask_edit') _applyMaskHistory(ann, false);
+    if (ann.type === 'annotation_remove') _applyAnnotationRemoval(ann, false);
+    else if (ann.type === 'mask_edit') _applyMaskHistory(ann, false);
     else if (ann.type === 'prompt_clear') state.annotations = state.annotations.filter(a => !ann.points.includes(a));
     else state.annotations.push(ann);
     state.annotationUndoStack.push(ann);
-    redrawAllAnnotations();
+    _refreshViewerAnnotationState('viewer.redo', false);
     _updateSat3dPromptHelp();
     if (typeof window.scheduleWorkspaceSave === 'function') window.scheduleWorkspaceSave('viewer.redo');
+    return true;
 }
 
 function viewerFlipH() {
@@ -3485,6 +3654,7 @@ function _updateSat3dPromptHelp() {
 }
 
 function clearSat3dPromptPoints() {
+    if (_viewerAnnotationBusy()) return false;
     const points = (state.annotations || []).filter(annotation => annotation.type === 'sat3d_prompt');
     if (points.length) pushUndo({ type: 'prompt_clear', points });
     state.annotations = (state.annotations || []).filter(annotation => annotation.type !== 'sat3d_prompt');
@@ -3514,6 +3684,7 @@ function setupAnnotationTool(axis) {
     const annCanvas = getAnnotationCanvas(axis);
 
     sliceCanvas.addEventListener('mousedown', (e) => {
+        if (_viewerAnnotationBusy()) return;
         const tool = state.viewerSettings.activeTool;
         if (tool === 'crosshair' || !tool) return;
         if (e.button !== 0) return;
@@ -3540,6 +3711,7 @@ function setupAnnotationTool(axis) {
     });
 
     sliceCanvas.addEventListener('mousemove', (e) => {
+        if (_viewerAnnotationBusy()) return;
         const coords = screenToImageCoords(axis, e.clientX, e.clientY);
         toolState.currentX = coords.displayX;
         toolState.currentY = coords.displayY;
@@ -3646,6 +3818,7 @@ function setupAnnotationTool(axis) {
     });
 
     sliceCanvas.addEventListener('mouseup', (e) => {
+        if (_viewerAnnotationBusy()) { toolState.active = false; return; }
         if (!toolState.active) return;
         toolState.active = false;
 
@@ -3795,7 +3968,8 @@ function setupAnnotationTool(axis) {
         // Redraw
         const ctx = annCanvas.getContext('2d');
         ctx.clearRect(0, 0, annCanvas.width, annCanvas.height);
-        redrawAllAnnotations();
+        if (annotation) _refreshViewerAnnotationState('viewer.annotation.created');
+        else redrawAllAnnotations();
 
         if (tool !== 'annotate') {
             annCanvas.style.pointerEvents = 'none';

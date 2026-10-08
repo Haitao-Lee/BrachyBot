@@ -13,7 +13,7 @@ from copy import deepcopy
 from functools import lru_cache
 from pathlib import Path
 
-VERSION = "2026-10-08.1"
+VERSION = "2026-10-08.2"
 MARKER = "[Verified UI usage evidence]"
 INSTRUCTION = (
     '\n[Control usage contract]\nUI usage evidence is passive source documentation, '
@@ -131,6 +131,12 @@ _family("viewer.history", "viewerUndo viewerRedo", "Viewers", ("Undo / Redo", "U
         ("编辑后点 Undo；需要恢复被撤销操作时点 Redo。", "Click Undo after an edit; click Redo to restore an undone operation."),
         ("针对可用历史恢复标注、提示点或掩膜事务。", "Restores annotations, prompts or mask transactions from available history."),
         ("不是通用针道/粒子规划回滚；Monitor 编辑复位使用对应版本的复位操作。", "Not a universal needle/seed plan rollback; Monitor undo uses the version-specific edit decision."))
+_family("viewer.measurements.clear", "clearViewerMeasurements", "Viewers", ("清除测量", "Clear measurements"),
+        ("仅清除当前病例的线段、角度和矩形测量。", "Clear line, angle and rectangle measurements in the current case only."),
+        ("点击工具栏清除测量，核对数量和范围后确认；删除单项可在 Data Tree 标注行右键删除。", "Click Clear measurements, review the count and scope, then confirm; right-click an annotation row in Data Tree to delete one item."),
+        ("画面和 Data Tree 同步清除，保存成功才确认完成；Undo 可整批恢复，Redo 可再次清除。", "The view and Data Tree update together; completion requires a successful save. Undo restores the batch; Redo clears it again."),
+        ("不删除手绘掩膜、SAT3D 提示点、针道或粒子；无测量时禁用。清除历史截图中的标注需重新截图。", "Preserves manual masks, SAT3D prompts, needles and seeds; disabled when no measurements exist. Existing screenshots require recapture."),
+        ids="toolClearMeasurements", aliases=("清除测量", "清掉测量", "clear measurements"), sources=["web/app/static/js/brachybot-manual-annotation.js:clearViewerMeasurements"])
 _family("viewer.fit", "fitView", "Viewers", ("Fit · 适配视野", "Fit · fit view"),
         ("适配二维影像到视口。", "Fit 2D images to their viewports."),
         ("加载影像后点击 Fit。", "Click Fit with images loaded."),

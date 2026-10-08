@@ -120,6 +120,10 @@ CONTROL_REGISTRY = {
         ],
         "description": "Activate a 2D viewer interaction tool"
     },
+    "viewer.annotations": {
+        "commands": ["undo", "redo", "clear_measurements"],
+        "description": "Undo/redo viewer annotation history, or clear only line, angle and rectangle measurements after confirmation. Clear preserves masks, SAT3D prompts and clinical planning data and uses the case-owned workspace persistence receipt."
+    },
     "mask.create": {
         "commands": ["run"],
         "description": "Start a new manual mask and enter the Draw tool. Paint on the 2D slices; the mask appears under Segmentation > Masks in the Data Tree."

@@ -1326,6 +1326,7 @@
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="viewerRotate()">&#8634; Rotate</button>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="viewerUndo()">&#8617; Undo</button>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="viewerRedo()">&#8618; Redo</button>
+                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" id="toolClearMeasurements" onclick="clearViewerMeasurements()" disabled title="Clear line, angle and rectangle measurements only; masks and SAT3D prompts are unchanged" data-i18n-zh="清除测量" data-i18n-en="Clear measurements">Clear measurements</button>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="fitView()">&#8981; Fit</button>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="resetViewer()">&#8635; Reset</button>
                 <div class="ctrl-sep" style="height:16px;"></div>
@@ -1609,20 +1610,20 @@
 -->
 <script src="static/js/brachybot-chat-core.js?v=41"></script>
 <script src="static/js/brachybot-chat-todo.js?v=75"></script>
-<script src="static/js/brachybot-ui-api.js?v=135"></script>
+<script src="static/js/brachybot-ui-api.js?v=136"></script>
 <link rel="stylesheet" href="static/css/brachybot-control-guide.css?v=1">
 <script src="static/js/brachybot-control-guide.js?v=1"></script>
 <link rel="stylesheet" href="static/css/brachybot-monitor-dashboard.css?v=8">
 <script src="static/js/brachybot-monitor-interaction.js?v=10"></script>
 <script src="static/js/brachybot-monitor-dashboard.js?v=9"></script>
 <script src="static/js/brachybot-auth.js?v=12"></script>
-<script src="static/js/brachybot-viewer-volume.js?v=91"></script>
+<script src="static/js/brachybot-viewer-volume.js?v=92"></script>
 <script src="static/js/brachybot-viewer-layout.js?v=49"></script>
 <script src="static/js/brachybot-depth-peeling.js?v=2"></script>
 <script src="static/js/brachybot-3d-manual.js?v=124"></script>
 <script src="static/js/brachybot-manual-step-results.js?v=2"></script>
 <script src="static/js/brachybot-input-actions.js?v=1"></script>
-<script src="static/js/brachybot-manual-annotation.js?v=32"></script>
+<script src="static/js/brachybot-manual-annotation.js?v=33"></script>
 <script src="static/js/brachybot-sat3d-interaction.js?v=1"></script>
 <script src="static/js/brachybot-surgical-guide.js?v=22"></script>
 <script src="static/js/brachybot-visual-annotation.js?v=9"></script>

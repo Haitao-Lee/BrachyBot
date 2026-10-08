@@ -1,5 +1,15 @@
 # UI Control Knowledge and Guided Usage Audit
 
+## Measurement cleanup follow-up
+
+The measurement cleanup follow-up adds **Clear measurements**, repairs
+annotation Tree identities/deletion and registers the same executor for natural
+conversation. Current manual version is `2026-10-08.2`, with **220 source-bound
+static controls and 67 cards** (60 usage contracts, 7 basic-input families).
+The initial 219/66 inventory and validation below are the earlier audit
+baseline, not current counts. See
+`MEASUREMENT_ANNOTATION_CLEANUP_2026-10-08.md` for the current repair and evidence.
+
 ## Scope and root cause
 
 The motivating request asks how to use **Line and Angle** in Viewers. It is a
@@ -38,7 +48,7 @@ prerequisites, observable outcome, cancellation/limits and source anchors.
 Deleted/unmounted static controls do not remain current knowledge. Dynamic Data
 Tree families describe usage but require live object refs for execution.
 
-The current static shell has **219 interactive button/input/select/textarea
+The initial audit snapshot had **219 interactive button/input/select/textarea
 elements**. All are bound to a manual contract; **66 cards** cover static control
 families and five dynamic Data Tree usage families. These counts are not the old
 Inspector's 279 action entries: action variants, status elements and controls

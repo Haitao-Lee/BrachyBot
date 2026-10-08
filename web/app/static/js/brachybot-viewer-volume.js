@@ -3603,8 +3603,8 @@ function ensureDataTreeNodeMetadata(node, type, parentId = null) {
         (typeof activeSessionId !== 'undefined' && activeSessionId)
         || state?.sessionId || 'web',
     );
-    const planningId = node.planningId ?? node.planning_id
-        ?? dataTreeState.planning?.id ?? null;
+    const planningId = type === 'manual_annotation' ? null : (node.planningId ?? node.planning_id
+        ?? dataTreeState.planning?.id ?? null);
     node.id = String(node.id || node.nodeId || `${type}_${sessionId}`);
     node.nodeId = String(node.nodeId || node.id);
     node.objectId = String(node.objectId || node.id);
@@ -3734,6 +3734,21 @@ function normalizeDoseIsoSurfaceLevel(level) {
 
 window.normalizeDoseIsoSurfaceLevel = normalizeDoseIsoSurfaceLevel;
 
+function reconcileViewerAnnotationNodes() {
+    const annotations = typeof window.ensureViewerAnnotationIdentities === 'function'
+        ? window.ensureViewerAnnotationIdentities()
+        : (Array.isArray(state?.annotations) ? state.annotations : []);
+    dataTreeState.annotations = annotations.map((annotation, index) => ensureDataTreeNodeMetadata({
+        ...annotation, id: annotation.id || `annotation_${index + 1}`,
+        objectId: `annotation:${annotation.id || `annotation_${index + 1}`}`,
+        annotationType: annotation.type, type: 'manual_annotation',
+        label: annotation.label || annotation.name || window.viewerAnnotationLabel?.(annotation) || `Annotation ${index + 1}`,
+        visible: annotation.visible !== false, opacity: annotation.opacity ?? 1,
+        color: annotation.color || '#60a5fa', loaded: true,
+    }, 'manual_annotation', 'annotations'));
+    return dataTreeState.annotations;
+}
+
 function reconcileDataTreeVisualNodes() {
     _migrateSegmentationMirrorsOutOfPlanning();
     const roots = [
@@ -3846,13 +3861,7 @@ function reconcileDataTreeVisualNodes() {
         }, 'dvh', 'planning')
         : null;
 
-    const annotations = Array.isArray(state?.annotations) ? state.annotations : [];
-    dataTreeState.annotations = annotations.map((annotation, index) => ensureDataTreeNodeMetadata({
-        ...annotation, id: annotation.id || `annotation_${index + 1}`,
-        label: annotation.label || annotation.name || `Annotation ${index + 1}`,
-        visible: annotation.visible !== false, opacity: annotation.opacity ?? 1,
-        color: annotation.color || '#60a5fa', loaded: true,
-    }, 'manual_annotation', 'annotations'));
+    reconcileViewerAnnotationNodes();
 
     // Manual edits are persisted as one authoritative artifact-status map on
     // the planning snapshot. Project those statuses back onto the concrete
@@ -7239,6 +7248,18 @@ async function deleteSelectedDataTreeItems(objectIds = null, options = {}) {
         : Array.from(objectIds))
         .map(id => _dataTreeObjectId(id, 'delete')).filter(Boolean))];
     if (!ids.length) return false;
+    // These are browser-owned working annotations, including unsaved strokes.
+    // Use the same authoritative workspace writer as drawing/Undo, not the
+    // file-object API that only knows the previous debounced snapshot.
+    if (ids.every(id => id.startsWith('annotation:')) && typeof window.deleteViewerAnnotations === 'function') {
+        const result = await window.deleteViewerAnnotations(ids);
+        if (result?.success) {
+            selectedItems.clear();
+            renderDataTree();
+            addChat('system', _dtText(`已清除 ${result.removed} 项标注；Undo 可恢复。`, `${result.removed} annotation(s) cleared; Undo can restore them.`));
+        }
+        return result?.success === true;
+    }
     const confirmed = typeof window._confirmAction === 'function'
         ? await window._confirmAction(
             `删除选中的 ${ids.length} 项真实数据？相关下游结果可能同时失效。`,
