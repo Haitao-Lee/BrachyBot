@@ -10,8 +10,12 @@ import mimetypes
 import os
 import re
 import time
-from functools import lru_cache
+import uuid
+import threading
+from contextlib import nullcontext
+from functools import lru_cache, wraps
 from brain.core.usage import normalize_usage
+from agent_runtime.context_accounting import ACCOUNTING_VERSION, COUNTERS, sanitize_accounting
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 from urllib.parse import unquote, urlparse
 
@@ -53,6 +57,24 @@ from agent_runtime.context_window import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _accounting_locked(method):
+    """Serialize numeric snapshots, not model execution or clinical operations."""
+    @wraps(method)
+    def guarded(self, *args, **kwargs):
+        memory = getattr(self, 'memory', None)
+        # Creation has a tiny memory-lock section, released before acquiring
+        # the accounting lock. Workspace snapshot writers need only memory's
+        # lock and never wait for a network/model call.
+        with getattr(memory, '_lock', nullcontext()):
+            lock = getattr(self, '_ctx_accounting_lock', None)
+            if lock is None:
+                lock = threading.RLock()
+                self._ctx_accounting_lock = lock
+        with lock:
+            return method(self, *args, **kwargs)
+    return guarded
 
 _RUNTIME_CONTEXT_MARKER = "[BrachyBot runtime context: data only]"
 
@@ -1393,6 +1415,7 @@ class LLMRuntimeMixin:
 
     def _context_window_manager(self) -> ContextWindowManager:
         """Return the per-agent window manager (model window + calibration)."""
+        self._restore_context_accounting()
         declared = 0
         model = ""
         try:
@@ -1431,6 +1454,9 @@ class LLMRuntimeMixin:
             trigger_ratio=ratio,
             reserve_output_tokens=reserve,
         )
+        durable = getattr(getattr(self, 'memory', None), 'context_accounting', {}) or {}
+        if list(signature) == durable.get('manager_signature'):
+            manager.calibration = durable.get('calibration', 1.0)
         self._ctx_window_manager_cache = manager
         self._ctx_window_manager_sig = signature
         logger.info(
@@ -1441,12 +1467,132 @@ class LLMRuntimeMixin:
         )
         return manager
 
+    @_accounting_locked
+    def _restore_context_accounting(self) -> None:
+        """Hydrate once per ledger epoch, including a cleared/replaced case."""
+        memory = getattr(self, 'memory', None)
+        stored = getattr(memory, 'context_accounting', {}) or {}
+        epoch = stored.get('epoch') if isinstance(stored, dict) else None
+        if getattr(self, '_ctx_accounting_loaded', False) and epoch == getattr(self, '_ctx_epoch', None):
+            return
+        explicitly_cleared = getattr(self, '_ctx_accounting_loaded', False) and not stored
+        state = sanitize_accounting(stored)
+        self._ctx_epoch = state.get('epoch') or uuid.uuid4().hex
+        self._ctx_accounting_loaded = True
+        self._ctx_state_revision = state.get('revision', 0)
+        self._ctx_updated_at_ms = state.get('updated_at_ms', 0)
+        self._ctx_observed_at_ms = state.get('observed_at_ms', 0)
+        self._ctx_coverage_started_at_ms = state.get('coverage_started_at_ms') or time.time() * 1000
+        self._ctx_conversation_reset_at_ms = state.get('conversation_reset_at_ms', 0)
+        self._ctx_preexisting_history = state.get('preexisting_history', bool(
+            getattr(memory, 'conversation', None) or getattr(memory, 'context_summary', None)))
+        self._ctx_turn_request_id = state.get('turn_request_id', '')
+        for key in COUNTERS:
+            setattr(self, '_ctx_' + key, state.get(key, 0))
+        self._ctx_current = state.get('snapshot')
+        self._ctx_last_components = state.get('components')
+        self._ctx_last_meta = state.get('compression')
+        self._ctx_accounting_turn = None
+        self._ctx_restored_snapshot = bool(state.get('snapshot'))
+        self._ctx_last_measured_snapshot = state.get('snapshot')
+        self._ctx_history_fold_event = None
+        self._ctx_retained_cache = None
+        self._ctx_window_manager_cache = None
+        self._ctx_window_manager_sig = None
+        # Install even an empty ledger, so a subsequent explicit clear can be
+        # distinguished from another read of the same freshly created agent.
+        if memory is not None:
+            memory.context_accounting = dict(state, version=ACCOUNTING_VERSION, epoch=self._ctx_epoch)
+        if explicitly_cleared:
+            self._persist_context_accounting('conversation_reset')
+
+    @_accounting_locked
+    def _persist_context_accounting(self, reason: str) -> None:
+        """Checkpoint bounded counters through the existing debounced writer."""
+        memory = getattr(self, 'memory', None)
+        if memory is None:
+            return
+        self._ctx_state_revision = int(getattr(self, '_ctx_state_revision', 0)) + 1
+        self._ctx_updated_at_ms = time.time() * 1000
+        state = {
+            'version': ACCOUNTING_VERSION, 'epoch': self._ctx_epoch,
+            'revision': self._ctx_state_revision,
+            'observed_at_ms': getattr(self, '_ctx_observed_at_ms', 0),
+            'updated_at_ms': self._ctx_updated_at_ms,
+            'coverage_started_at_ms': self._ctx_coverage_started_at_ms,
+            'conversation_reset_at_ms': self._ctx_conversation_reset_at_ms,
+            'preexisting_history': self._ctx_preexisting_history,
+            'turn_request_id': getattr(self, '_ctx_turn_request_id', ''),
+            'snapshot': getattr(self, '_ctx_current', None),
+            'components': getattr(self, '_ctx_last_components', None),
+            'compression': getattr(self, '_ctx_last_meta', None),
+        }
+        state.update({key: getattr(self, '_ctx_' + key, 0) for key in COUNTERS})
+        manager = getattr(self, '_ctx_window_manager_cache', None)
+        if manager is not None:
+            state.update(manager_signature=getattr(self, '_ctx_window_manager_sig', None), calibration=manager.calibration)
+        with getattr(memory, '_lock', nullcontext()):
+            memory.context_accounting = sanitize_accounting(state)
+        notify = getattr(memory, '_notify_persistence', None)
+        if callable(notify):
+            notify('context.accounting:' + reason)
+
+    def _retained_history_tokens(self) -> int:
+        """Raw retained-message/summary estimate; excludes facts and tool schemas.
+
+        Cache by the conversation revision so idle polling does not repeatedly
+        tokenize a large history. References/lengths also cover legacy callers.
+        """
+        memory = getattr(self, 'memory', None)
+        with getattr(memory, '_lock', nullcontext()):
+            conversation = getattr(memory, 'conversation', []) or []
+            summary = str(getattr(memory, 'context_summary', '') or '')
+            key = (getattr(memory, '_context_revision', 0), id(conversation), len(conversation), summary)
+            cached = getattr(self, '_ctx_retained_cache', None)
+            if cached and cached[0] == key:
+                return cached[1]
+            messages = list(conversation)
+        if summary:
+            messages.append({'role': 'user', 'content': summary})
+        tokens = estimate_messages(messages)
+        self._ctx_retained_cache = (key, tokens)
+        return tokens
+
+    @_accounting_locked
+    def _maybe_compact_retained_context(self) -> bool:
+        """Fold durable history for token pressure, never just message count."""
+        self._restore_context_accounting()
+        manager = self._context_window_manager()
+        retained = self._retained_history_tokens()
+        # The provider budget has a separate guard over the exact packed
+        # request. This guard bounds stored history using the same window.
+        if int((retained + getattr(self, '_ctx_overhead_tokens', 0)) * manager.calibration) < manager.trigger_tokens:
+            return False
+        before = len(getattr(self.memory, 'conversation', ()) or ())
+        self.memory.compact(keep_last=6)
+        folded = before - len(getattr(self.memory, 'conversation', ()) or ())
+        if folded <= 0:
+            return False
+        self._ctx_last_meta = dict(compressed=True, manual=False, folded_messages=folded,
+                                  before_tokens=retained, after_tokens=self._retained_history_tokens())
+        self._ctx_history_fold_event = dict(self._ctx_last_meta)
+        self._persist_context_accounting('automatic_history_fold')
+        return True
+
+    @_accounting_locked
     def _begin_context_turn(self) -> None:
         """Reset the turn ledger, retaining the last request until a new one is packed."""
+        self._restore_context_accounting()
+        turn = getattr(self, '_active_turn_context', {}) or {}
+        if (turn.get('internal_followup') and turn.get('parent_request_id')
+                and turn['parent_request_id'] == getattr(self, '_ctx_turn_request_id', '')):
+            self._ctx_accounting_turn = getattr(self, '_active_turn_token', None)
+            return  # A fenced visual child belongs to its human parent's bill.
         self._ctx_retry_used = False
         self._ctx_last_meta = None
         self._ctx_last_estimate = 0
         self._ctx_last_components = None
+        self._ctx_history_fold_event = None
         self._ctx_call_index = 0
         self._ctx_turn_prompt_sum = 0
         self._ctx_turn_completion_sum = 0
@@ -1454,7 +1600,9 @@ class LLMRuntimeMixin:
         self._ctx_missing_usage_calls = 0
         self._ctx_peak_tokens = 0
         self._ctx_accounting_turn = getattr(self, '_active_turn_token', None)
-        self._ctx_observed_at_ms = time.time() * 1000
+        self._ctx_turn_request_id = str(turn.get('request_id') or '')
+        # Beginning a turn is NOT a new context measurement.
+        self._persist_context_accounting('turn_started')
 
     def _ensure_context_turn(self) -> None:
         if (not hasattr(self, '_ctx_call_index') or
@@ -1466,15 +1614,14 @@ class LLMRuntimeMixin:
         result = dict(meta or {})
         status = self.context_status()
         result['context_status'] = status
-        if status['llm_calls']:
-            result['usage'] = {
-                'prompt_tokens': status['turn_input_tokens'],
-                'completion_tokens': status['turn_output_tokens'],
-                'total_tokens': status['turn_total_tokens'],
-                'usage_complete': not status['missing_usage_calls'],
-                'missing_usage_calls': status['missing_usage_calls'],
-            }
-            result['llm_calls'] = status['llm_calls']
+        result['usage'] = {
+            'prompt_tokens': status['turn_input_tokens'],
+            'completion_tokens': status['turn_output_tokens'],
+            'total_tokens': status['turn_total_tokens'],
+            'usage_complete': not status['missing_usage_calls'],
+            'missing_usage_calls': status['missing_usage_calls'],
+        }
+        result['llm_calls'] = status['llm_calls']
         return result
 
     def _cap_oversized_messages(self, messages: List[Dict]) -> List[Dict]:
@@ -1564,6 +1711,7 @@ class LLMRuntimeMixin:
         except Exception:
             logger.debug("Context audit failed", exc_info=True)
 
+    @_accounting_locked
     def _enforce_context_budget(
         self,
         messages: List[Dict],
@@ -1577,6 +1725,7 @@ class LLMRuntimeMixin:
         Returns the (possibly new) message list; the final snapshot is stored
         on ``self._ctx_last_meta`` for the context indicator and diagnostics.
         """
+        self._restore_context_accounting()
         try:
             manager = self._context_window_manager()
         except Exception:
@@ -1591,6 +1740,7 @@ class LLMRuntimeMixin:
         components = estimate_breakdown(messages, tools)
         self._ctx_last_components = components
         self._ctx_current = manager.snapshot(messages, tools)
+        self._ctx_current['change_reason'] = 'pending_request'
         self._ctx_observed_at_ms = time.time() * 1000
         if estimated >= _CTX_AUDIT_THRESHOLD_TOKENS:
             self._log_context_contributors(messages, tools, estimated)
@@ -1603,7 +1753,7 @@ class LLMRuntimeMixin:
             + int(components.get("runtime_context", 0))
         )
         if not aggressive and estimated < manager.trigger_tokens:
-            self._ctx_last_meta = manager.snapshot(messages, tools)
+            self._ctx_last_meta = getattr(self, '_ctx_history_fold_event', None) or manager.snapshot(messages, tools)
             return messages
         try:
             facts = build_case_facts(getattr(self, "memory", None))
@@ -1646,8 +1796,10 @@ class LLMRuntimeMixin:
             self._ctx_last_meta = manager.snapshot(messages, tools)
             return messages
 
+    @_accounting_locked
     def _record_context_usage(self, usage: Any) -> Dict[str, Any]:
         """Record ONE completed call. Streaming snapshots are merged by providers."""
+        self._restore_context_accounting()
         row = normalize_usage(usage)
         self._ctx_call_index = int(getattr(self, '_ctx_call_index', 0)) + 1
         for attribute, key in (('_ctx_turn_prompt_sum', 'prompt_tokens'),
@@ -1656,11 +1808,20 @@ class LLMRuntimeMixin:
             setattr(self, attribute, int(getattr(self, attribute, 0)) + row[key])
         if not row['usage_complete']:
             self._ctx_missing_usage_calls = int(getattr(self, '_ctx_missing_usage_calls', 0)) + 1
+        for attribute, key in (('_ctx_session_input_tokens', 'prompt_tokens'),
+                               ('_ctx_session_output_tokens', 'completion_tokens'),
+                               ('_ctx_session_total_tokens', 'total_tokens')):
+            setattr(self, attribute, int(getattr(self, attribute, 0)) + row[key])
+        self._ctx_session_calls += 1
+        if not row['usage_complete']:
+            self._ctx_session_missing_usage_calls += 1
         manager = self._context_window_manager()
         snapshot = dict(getattr(self, '_ctx_current', None) or manager.snapshot([]))
-        model = str(row.get('model') or snapshot.get('model') or '')
+        signature = getattr(self, '_ctx_window_manager_sig', None)
+        configured_model = signature[0] if signature else ''
+        model = str(row.get('model') or configured_model or '')
         declared = int(row.get('context_window') or 0)
-        window = resolve_context_window(model, declared) if (declared or model) else manager.window
+        window = resolve_context_window(str(row.get('model') or ''), declared) if (declared or row.get('model')) else manager.window
         request_manager = manager if window == manager.window else ContextWindowManager(
             window=window, trigger_ratio=manager.trigger_ratio,
             reserve_output_tokens=manager.reserve_output_tokens,
@@ -1693,9 +1854,24 @@ class LLMRuntimeMixin:
             snapshot['used_tokens'] = int(getattr(self, '_ctx_last_estimate', 0) * manager.calibration) + row['completion_tokens']
         snapshot['ratio'] = snapshot['used_tokens'] / float(snapshot['window'])
         snapshot['call_index'] = self._ctx_call_index
+        previous = getattr(self, '_ctx_last_measured_snapshot', None)
+        if not isinstance(previous, dict):
+            previous = (getattr(self.memory, 'context_accounting', {}) or {}).get('snapshot', {})
+        compactions = int(getattr(self.memory, 'compaction_count', 0) or 0)
+        snapshot['change_reason'] = (
+            'history_compaction' if compactions > self._ctx_history_compactions_at_measurement
+            else 'model_route_changed' if previous and (
+                previous.get('window') != snapshot['window']
+                or (previous.get('model') and model and previous.get('model') != model))
+            else 'request_selection' if previous and snapshot['used_tokens'] < previous.get('used_tokens', 0)
+            else 'new_request')
+        self._ctx_history_compactions_at_measurement = compactions
+        self._ctx_last_measured_snapshot = dict(snapshot)
         self._ctx_current = snapshot
         self._ctx_observed_at_ms = time.time() * 1000
         self._ctx_peak_tokens = max(int(getattr(self, '_ctx_peak_tokens', 0)), snapshot['used_tokens'])
+        self._ctx_restored_snapshot = False
+        self._persist_context_accounting('provider_usage')
         logger.info('Token accounting: call=%s input=%s output=%s context=%s window=%s source=%s complete=%s',
                     self._ctx_call_index, row['prompt_tokens'], row['completion_tokens'],
                     snapshot['used_tokens'], snapshot['window'], snapshot['source'], row['usage_complete'])
@@ -1709,19 +1885,16 @@ class LLMRuntimeMixin:
             conversation = list(getattr(memory, "conversation", []) or [])
             summary = str(getattr(memory, "context_summary", "") or "")
             if conversation or summary:
-                messages: List[Dict[str, Any]] = list(conversation)
-                if summary:
-                    messages.append({"role": "user", "content": summary})
                 facts = build_case_facts(memory)
-                if facts:
-                    messages.append({"role": "user", "content": facts})
+                fact_tokens = estimate_messages([{'role': 'user', 'content': facts}]) if facts else 0
                 overhead = int(getattr(self, "_ctx_overhead_tokens", 0) or 0)
                 calibration = float(getattr(manager, "calibration", 1.0) or 1.0)
-                live = int((estimate_messages(messages) + overhead) * calibration)
+                live = int((self._retained_history_tokens() + fact_tokens + overhead) * calibration)
         except Exception:
             live = 0
         return live
 
+    @_accounting_locked
     def context_status(self, messages: Optional[List[Dict]] = None) -> Dict[str, Any]:
         """One public contract for the ring, footer, SSE and status endpoint.
 
@@ -1733,6 +1906,7 @@ class LLMRuntimeMixin:
             manager = self._context_window_manager()
         except Exception:
             return {"window": 0, "used_tokens": 0, "ratio": 0.0}
+        self._restore_context_accounting()
         current = getattr(self, '_ctx_current', None)
         status = dict(current) if isinstance(current, dict) else {}
         if messages is not None:
@@ -1744,15 +1918,30 @@ class LLMRuntimeMixin:
         scope = ('latest_request' if status.get('source') == 'provider_usage'
                  else ('retained_context_estimate' if status.get('source') == 'retained_history_estimate'
                        else 'request_estimate'))
-        status.update(scope=scope, accounting_version=2,
+        status.update(scope=scope, accounting_version=ACCOUNTING_VERSION,
                       observed_at_ms=getattr(self, '_ctx_observed_at_ms', 0),
+                      updated_at_ms=getattr(self, '_ctx_updated_at_ms', 0),
+                      epoch=self._ctx_epoch, revision=self._ctx_state_revision,
+                      session_id=str(getattr(self.memory, 'session_id', '') or ''),
+                      restored_snapshot=getattr(self, '_ctx_restored_snapshot', False),
                       turn_total_tokens=int(getattr(self, '_ctx_turn_total_sum', 0)),
                       turn_input_tokens=int(getattr(self, '_ctx_turn_prompt_sum', 0)),
                       turn_output_tokens=int(getattr(self, '_ctx_turn_completion_sum', 0)),
                       llm_calls=int(getattr(self, '_ctx_call_index', 0)),
                       missing_usage_calls=int(getattr(self, '_ctx_missing_usage_calls', 0)),
                       turn_peak_context_tokens=int(getattr(self, '_ctx_peak_tokens', 0)),
-                      history_policy='relevance_selected_and_age_compacted')
+                      history_policy='relevance_selected_and_token_pressure_compacted',
+                      retained_history_tokens=self._retained_history_tokens(),
+                      retained_history_source='uncalibrated_text_and_image_estimate',
+                      session_input_tokens=self._ctx_session_input_tokens,
+                      session_output_tokens=self._ctx_session_output_tokens,
+                      session_total_tokens=self._ctx_session_total_tokens,
+                      session_calls=self._ctx_session_calls,
+                      session_missing_usage_calls=self._ctx_session_missing_usage_calls,
+                      session_usage_complete=self._ctx_session_missing_usage_calls == 0,
+                      session_usage_scope='recorded_calls_since_accounting_started',
+                      coverage_started_at_ms=self._ctx_coverage_started_at_ms,
+                      preexisting_history=self._ctx_preexisting_history)
         memory = getattr(self, 'memory', None)
         status['retained_messages'] = len(getattr(memory, 'conversation', ()) or ())
         status['history_compactions'] = int(getattr(memory, 'compaction_count', 0) or 0)
@@ -1767,6 +1956,7 @@ class LLMRuntimeMixin:
             status['components_source'] = 'estimated_input_before_generation'
         return status
 
+    @_accounting_locked
     def compress_context_now(self, aggressive: bool = True) -> Dict[str, Any]:
         """Manual/forced compression entry point (never calls the LLM).
 
@@ -1802,6 +1992,11 @@ class LLMRuntimeMixin:
         result["conversation_tokens_after"] = conversation_after + estimate_text(summary_after)
         self._ctx_last_meta = dict(result, before_tokens=result['conversation_tokens_before'],
                                    after_tokens=result['conversation_tokens_after'])
+        self._ctx_current = self._context_window_manager().snapshot([])
+        self._ctx_current.update(used_tokens=self._fallback_context_usage(self._context_window_manager()),
+                                 source='retained_history_estimate', change_reason='manual_compression')
+        self._ctx_last_measured_snapshot = None
+        self._persist_context_accounting('manual_compression')
         logger.warning(
             "Manual context compression: conversation_tokens %s -> %s "
             "(messages=%s, summary_chars %s -> %s)",
@@ -1829,9 +2024,7 @@ class LLMRuntimeMixin:
             if internal_followup
             else ""
         )
-        # Auto-compact conversation history if too long
-        if self.memory.needs_compaction():
-            self.memory.compact(keep_last=6)
+        self._maybe_compact_retained_context()
         self._ensure_context_turn()
 
         enhanced_context = ""
@@ -3295,9 +3488,7 @@ class LLMRuntimeMixin:
         def _cancelled():
             return self._is_turn_cancelled(_turn_token)
 
-        # Auto-compact conversation history if too long
-        if self.memory.needs_compaction():
-            self.memory.compact(keep_last=6)
+        self._maybe_compact_retained_context()
         self._ensure_context_turn()
 
         enhanced_context = ""

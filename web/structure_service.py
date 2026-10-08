@@ -77,6 +77,18 @@ _DOWNSTREAM_KEYS = (
     "plan_score",
     "radiation_volume",
     "manual_planning_preview",
+    "manual_step_outputs",
+    "manual_seeds",
+    "manual_needles",
+    "manual_plan_serialized",
+    "manual_plan_active",
+    "manual_plan_version",
+    "manual_geometry_only",
+    "manual_planning_id",
+    "algorithm_plan_snapshot",
+    "seed_positions",
+    "seeds",
+    "needles",
 )
 
 
@@ -812,7 +824,20 @@ def _commit_effective(memory: Any, effective: EffectiveStructures, reason: str) 
         "structure_catalog": effective.public_catalog(),
         **_stale_updates(memory, reason),
     }
-    _batch_memory_update(memory, updates, removals=_DOWNSTREAM_KEYS)
+    # Dropping only active aliases is insufficient: workspace hydration repairs
+    # missing aliases from the active namespaced plan snapshot. Retire that
+    # identity before changing its inputs, preserving its historical snapshot.
+    # The new draft cannot resurrect old seeds/dose after a restart.
+    from types import SimpleNamespace
+    from web.planning_runs import _has_current_plan, begin_planning_run, publish_planning_run
+    owner = SimpleNamespace(memory=memory)
+    with memory._lock:
+        new_draft = _has_current_plan(memory)
+        if new_draft:
+            begin_planning_run(owner, step='structure_revision', force_new=True)
+        _batch_memory_update(memory, updates, removals=_DOWNSTREAM_KEYS)
+        if new_draft:
+            publish_planning_run(owner, status='draft')
 
 
 def reclassify_structure(memory: Any, object_id: str, classification: str) -> EffectiveStructures:

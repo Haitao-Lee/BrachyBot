@@ -289,6 +289,14 @@ def _persist_agent_change(
     mutation routes wait for the ready barrier before changing Agent memory;
     UI-only changes use ``save_snapshot_patch`` and do not enter this callback.
     """
+    if str(reason or '').startswith('context.accounting:') or reason in {'conversation.cleared', 'case.cleared'}:
+        # Numeric bookkeeping is a bounded control-plane transaction. Do not
+        # queue it behind CT/mesh encoding, nor skip it during array hydration.
+        with agent.memory._lock:
+            accounting = dict(getattr(agent.memory, 'context_accounting', {}) or {})
+        workspace_store.save_context_accounting(owner_id, session_id, accounting)
+        if str(reason or '').startswith('context.accounting:'):
+            return
     # AgentMemory.set_ui_state() notifies the generic persistence observer for
     # historical compatibility. UI state is presentation/control-plane data,
     # however: /api/ui/state and /api/workspace/state persist it through their

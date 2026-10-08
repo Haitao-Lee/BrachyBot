@@ -1515,11 +1515,11 @@ function _buildResponseFooter(llmMeta) {
     footer.appendChild(makeItem(t.time, totalSec, t.unit_s));
     footer.appendChild(sep());
     if (contextT > 0) {
-        const contextHint = ctxStatus.accounting_version === 2 ? t.hint_context
+        const contextHint = Number(ctxStatus.accounting_version || 0) >= 2 ? t.hint_context
             : (effectiveUiLanguage() === 'zh'
                 ? '旧版记录的上下文统计；没有完整调用明细，不能还原为最新口径。'
                 : 'Legacy context record; without complete call details it cannot be reconstructed under the new accounting contract.');
-        footer.appendChild(makeItem(t.context, (ctxStatus.estimated ? '~' : '') + contextT.toLocaleString(), '', contextHint));
+        footer.appendChild(makeItem(t.context, (ctxStatus.estimated ? '~' : ctxStatus.context_complete === false && ctxStatus.measured ? '≥' : '') + contextT.toLocaleString(), '', contextHint));
         footer.appendChild(sep());
     }
     if (totalT > 0) {

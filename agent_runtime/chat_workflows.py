@@ -4535,6 +4535,12 @@ class ChatWorkflowMixin:
             finally:
                 memory._suppress_persistence = previous_suppression
                 self._restore_internal_turn_memory(snapshot)
+                # Child prompts are ephemeral, but their measured consumption
+                # is real. Checkpoint numeric accounting only after restoring
+                # the parent conversation, including on cancellation.
+                persist_accounting = getattr(self, '_persist_context_accounting', None)
+                if callable(persist_accounting) and getattr(self, '_ctx_accounting_loaded', False):
+                    persist_accounting('visual_child_finished')
 
     def _chat_with_stream_impl(self, message: str):
         """Streaming version of chat_with_trace. Yields SSE events."""

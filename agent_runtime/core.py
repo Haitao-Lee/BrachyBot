@@ -346,6 +346,10 @@ class AgentMemory:
         self._clean_context_cache_key = None
         self._clean_context_cache_value = ""
         self.compaction_count: int = 0
+        # Numeric-only accounting belongs to the durable conversation control
+        # plane, not process-local agent attributes or clinical plan results.
+        self.context_accounting: Dict = {}
+        self._context_revision: int = 0
         self.current_phase: PlanningPhase = PlanningPhase.IDLE
         self.deviation_threshold_mm: float = 2.0
         self._ui_state: Dict = {}
@@ -684,6 +688,7 @@ class AgentMemory:
         """Add a message with smart context tracking."""
         with self._lock:
             self.conversation.append({"role": role, "content": content})
+            self._context_revision += 1
 
         # Also add to smart context manager
         if self.smart_context:
@@ -962,6 +967,7 @@ class AgentMemory:
 
             self.conversation = self.conversation[-keep_last:]
             self.compaction_count += 1
+            self._context_revision += 1
 
             # REVIEW: previously the SmartContextManager was never notified,
             # so its `messages` list (and `entities`/`topics` dicts) grew
@@ -991,6 +997,9 @@ class AgentMemory:
             self._clean_context_cache_key = None
             self._clean_context_cache_value = ""
             self.compaction_count = 0
+            from agent_runtime.context_accounting import new_accounting_epoch
+            self.context_accounting = new_accounting_epoch()
+            self._context_revision += 1
             self.tool_results = []
 
         # Also clear smart context manager to prevent old context pollution

@@ -4939,6 +4939,9 @@
         cancelBackgroundWorkspaceRestore();
         activeSessionId = sessionId;
         if (typeof state !== 'undefined') state.sessionId = sessionId;
+        // Never display the previous case's token ring while resources for
+        // this case are loading. Its durable status is refreshed separately.
+        window.resetContextIndicatorForCase?.();
         if (typeof trainingMonitorState !== 'undefined') {
             // Background work remains attached to its original case, but its
             // live monitor UI must never bleed into the newly selected case.

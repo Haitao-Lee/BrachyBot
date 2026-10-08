@@ -2230,6 +2230,11 @@ class WorkspaceStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_case_sessions_user_status
                     ON case_sessions(user_id, status, updated_at DESC);
+                CREATE TABLE IF NOT EXISTS context_token_accounting (
+                    session_id TEXT PRIMARY KEY REFERENCES case_sessions(id) ON DELETE CASCADE,
+                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    state_json TEXT NOT NULL CHECK(length(state_json) <= 16384)
+                );
                 CREATE TABLE IF NOT EXISTS session_transfers (
                     id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -2576,6 +2581,60 @@ class WorkspaceStore:
 
     def _snapshot_path(self, user_id: str, session_id: str, *, trashed: bool = False) -> Path:
         return self.workspace_root(user_id, session_id, trashed=trashed) / "snapshot.json"
+
+    def save_context_accounting(self, user_id: str, session_id: str, state: Any) -> bool:
+        """Commit at most 16 KiB, without reading/encoding any clinical arrays.
+
+        Called only by server-owned memory observers, not a browser write API.
+        A completed provider call can therefore survive an immediate restart
+        even while the normal CT/plan checkpoint is deferred or still running.
+        """
+        from agent_runtime.context_accounting import newer_accounting, sanitize_accounting
+
+        clean = sanitize_accounting(state)
+        if not clean:
+            return False
+        payload = json.dumps(clean, ensure_ascii=True, separators=(',', ':'), allow_nan=False)
+        if len(payload) > 16384:
+            raise WorkspaceError('Context accounting metadata exceeds its bound')
+        with self._connection() as connection:
+            connection.execute('BEGIN IMMEDIATE')
+            owner = connection.execute(
+                "SELECT id FROM case_sessions WHERE id=? AND user_id=? AND status='active'",
+                (str(session_id), str(user_id)),
+            ).fetchone()
+            if owner is None:
+                connection.rollback()
+                raise WorkspaceNotFound('Case workspace is unavailable')
+            previous = connection.execute(
+                'SELECT state_json FROM context_token_accounting WHERE session_id=? AND user_id=?',
+                (str(session_id), str(user_id)),
+            ).fetchone()
+            prior = json.loads(previous['state_json']) if previous else {}
+            if not newer_accounting(clean, prior):
+                connection.rollback()
+                return False
+            connection.execute(
+                'INSERT INTO context_token_accounting(session_id,user_id,state_json) VALUES(?,?,?) '
+                'ON CONFLICT(session_id) DO UPDATE SET state_json=excluded.state_json',
+                (str(session_id), str(user_id), payload),
+            )
+            connection.commit()
+        return True
+
+    def load_context_accounting(self, user_id: str, session_id: str) -> Dict[str, Any]:
+        from agent_runtime.context_accounting import sanitize_accounting
+
+        with self._read_connection() as connection:
+            row = connection.execute(
+                'SELECT a.state_json FROM context_token_accounting a JOIN case_sessions c ON c.id=a.session_id '
+                "WHERE a.session_id=? AND a.user_id=? AND c.user_id=? AND c.status='active'",
+                (str(session_id), str(user_id), str(user_id)),
+            ).fetchone()
+        try:
+            return sanitize_accounting(json.loads(row['state_json'])) if row else {}
+        except (TypeError, json.JSONDecodeError):
+            return {}
 
     @staticmethod
     def _empty_snapshot(session_id: str) -> Dict[str, Any]:
@@ -3119,6 +3178,8 @@ class WorkspaceStore:
         """Read agent memory and encode large arrays to disk WITHOUT
         acquiring the per-case _case_guard.  The heavy npy I/O must not
         block concurrent save_snapshot_patch calls from a chat turn."""
+        from agent_runtime.context_accounting import sanitize_accounting
+
         self.get_session(user_id, session_id)
         memory = agent.memory
         with memory._lock:
@@ -3133,6 +3194,7 @@ class WorkspaceStore:
                 "tool_results": _safe_json(memory.tool_results),
                 "context_summary": str(memory.context_summary or ""),
                 "compaction_count": int(memory.compaction_count or 0),
+                "context_accounting": sanitize_accounting(getattr(memory, "context_accounting", {})),
                 "current_phase": getattr(memory.current_phase, "value", str(memory.current_phase)),
                 "conversation_state": _safe_json(memory.conversation_state),
                 "user_lang": str(memory.user_lang or "en"),
@@ -3776,11 +3838,26 @@ class WorkspaceStore:
             # passes. Fresh agents still restore every durable field below.
             background_pass = bool(getattr(agent, "_workspace_hydration_in_progress", False))
             if not background_pass:
+                from agent_runtime.context_accounting import newer_accounting, sanitize_accounting
+
                 memory.patient_data = patient_data
                 memory.conversation = conversation
                 memory.tool_results = tool_results
                 memory.context_summary = context_summary
                 memory.compaction_count = compaction_count
+                memory.context_accounting = sanitize_accounting(state.get("context_accounting", {}))
+                compact_ledger = self.load_context_accounting(user_id, session_id)
+                if newer_accounting(compact_ledger, memory.context_accounting):
+                    if compact_ledger.get('conversation_reset_at_ms', 0) > memory.context_accounting.get('conversation_reset_at_ms', 0):
+                        # A conversation clear may have committed its tiny
+                        # tombstone before the old heavy snapshot completed.
+                        # Never revive that explicitly cleared history.
+                        memory.conversation = []
+                        memory.tool_results = []
+                        memory.context_summary = ''
+                        memory.compaction_count = 0
+                    memory.context_accounting = compact_ledger
+                memory._context_revision = int(getattr(memory, "_context_revision", 0)) + 1
                 if not conversation_state:
                     conversation_state = _restore_json(memory.conversation_state)
                 memory.conversation_state = conversation_state

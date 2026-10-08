@@ -923,11 +923,23 @@
         manualPlanGuideRefreshRequested = false;
     };
 
-    window.resetSurgicalGuideControls = function resetSurgicalGuideControls() {
+    window.resetSurgicalGuideControls = function resetSurgicalGuideControls(options = {}) {
         applyGuideParameters(GUIDE_DEFAULTS);
         const needleSelection = document.getElementById(GUIDE_NEEDLE_SELECTION_ID);
-        if (needleSelection) needleSelection.replaceChildren();
-        populateGuideVersions([], null);
+        if (options.clearCatalog === true) {
+            if (needleSelection) needleSelection.replaceChildren();
+            lastGuideMetadata = {
+                needle_options: [], versions: [], planning_options: [],
+                activePlanningId: null, activeVersion: null, canGenerate: false,
+                guideMatchesCurrentPlan: false, currentPlanSignature: '', guideStatus: null,
+            };
+            populateGuideVersions([], null);
+            populatePlanningSelection([], null);
+        } else if (needleSelection) {
+            // Restore numeric defaults without forgetting saved guide versions
+            // or current needles; no selected subset means all current needles.
+            Array.from(needleSelection.options).forEach(option => { option.selected = false; });
+        }
         window.scheduleWorkspaceSave?.('surgical_guide.parameters.reset');
     };
 
@@ -943,6 +955,8 @@
     window.validateImportedSurgicalGuideSTL = async function validateImportedSurgicalGuideSTL(file) {
         const sessionId = activeSessionId();
         if (!file || !sessionId) return false;
+        const generation = window.__viewerRenderGeneration || 0;
+        const current = () => sessionId === activeSessionId() && generation === (window.__viewerRenderGeneration || 0);
         setValidationStatus(t('正在校验 STL 网格...', 'Validating STL mesh...'));
         try {
             const form = new FormData();
@@ -950,7 +964,7 @@
             const payload = await guideFetch('/api/surgical-guides/validate', {
                 method: 'POST', body: form,
             }, sessionId);
-            if (sessionId !== activeSessionId()) return false;
+            if (!current()) return false;
             const validation = payload.validation || {};
             const message = validation.watertight
                 ? t(
@@ -962,6 +976,7 @@
             notify(message, validation.watertight ? 'success' : 'error');
             return !!validation.watertight;
         } catch (error) {
+            if (!current()) return false;
             setValidationStatus(error.message, 'error');
             notify(error.message, 'error');
             return false;

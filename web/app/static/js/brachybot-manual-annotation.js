@@ -16,73 +16,74 @@ function _inputButtonProgress(key, status, zhLabel, enLabel, detail = '', option
 }
 
 async function exportDicomRT() {
+    let owner;
     const key = 'export_dicom_rt';
     _inputButtonProgress(key, 'running', '\u6b63\u5728\u5bfc\u51fa DICOM-RT', 'Exporting DICOM-RT');
     addChat('system', _manualWorkflowLabel('\u6b63\u5728\u5bfc\u51fa DICOM-RT\u2026', 'Exporting DICOM-RT...'));
     try {
-        const ctPath = (document.getElementById('ctPath')?.value || '').trim();
-        if (!ctPath) throw new Error(_manualWorkflowLabel('\u8bf7\u5148\u52a0\u8f7d CT \u56fe\u50cf\u3002', 'Load a CT image first.'));
-        const res = await fetch(API + '/export/dicom_rt', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ct_path: ctPath }),
-        });
-        const data = await res.json().catch(() => null);
-        if (!res.ok || !data || !data.success) throw new Error((data && (data.error || data.message)) || ('HTTP ' + res.status));
+        owner = window.beginInputAction(key, {image: true});
+        const data = await window.fetchInputJson(owner, '/export/dicom_rt', {ct_path: owner.ctPath});
+        if (!data) return {detached: true};
+        window.presentInputDownloads(owner, data.download_urls, 'DICOM-RT');
         _inputButtonProgress(key, 'done', '\u5bfc\u51fa DICOM-RT', 'Export DICOM-RT', _manualWorkflowLabel('\u5df2\u5b8c\u6210', 'Completed'));
         addChat('system', '\u2705 ' + _manualWorkflowLabel('\u5df2\u5bfc\u51fa DICOM-RT\uff1a', 'DICOM-RT exported to: ') + data.output_dir);
         return data;
     } catch (e) {
+        if (owner && !owner.current()) return {detached: true};
         const message = _manualWorkflowLabel('\u5bfc\u51fa\u5931\u8d25\uff1a', 'Export failed: ') + e.message;
         _inputButtonProgress(key, 'error', '\u5bfc\u51fa DICOM-RT', 'Export DICOM-RT', message);
         addChat('error', message);
         return { success: false, error: e.message };
+    } finally {
+        owner?.finish();
     }
 }
 
 async function exportSTL() {
+    let owner;
     const key = 'export_stl';
     _inputButtonProgress(key, 'running', '\u6b63\u5728\u5bfc\u51fa STL', 'Exporting STL');
     addChat('system', _manualWorkflowLabel('\u6b63\u5728\u5bfc\u51fa STL\u2026', 'Exporting STL files...'));
     try {
-        const res = await fetch(API + '/export/stl', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({}),
-        });
-        const data = await res.json().catch(() => null);
-        if (!res.ok || !data || !data.success) throw new Error((data && (data.error || data.message)) || ('HTTP ' + res.status));
+        owner = window.beginInputAction(key);
+        const data = await window.fetchInputJson(owner, '/export/stl', {});
+        if (!data) return {detached: true};
+        window.presentInputDownloads(owner, data.download_urls, _manualWorkflowLabel('粒子 STL（不是穿刺导板）', 'Seed STL (not the puncture guide)'));
         _inputButtonProgress(key, 'done', '\u5bfc\u51fa STL', 'Export STL', _manualWorkflowLabel('\u5df2\u5b8c\u6210', 'Completed'));
         addChat('system', '\u2705 ' + _manualWorkflowLabel('\u5df2\u5bfc\u51fa STL\uff1a', 'STL exported: ') + data.count);
         return data;
     } catch (e) {
+        if (owner && !owner.current()) return {detached: true};
         const message = _manualWorkflowLabel('\u5bfc\u51fa\u5931\u8d25\uff1a', 'Export failed: ') + e.message;
         _inputButtonProgress(key, 'error', '\u5bfc\u51fa STL', 'Export STL', message);
         addChat('error', message);
         return { success: false, error: e.message };
+    } finally {
+        owner?.finish();
     }
 }
 
 async function exportReport() {
+    let owner;
     const key = 'export_report';
     _inputButtonProgress(key, 'running', '\u6b63\u5728\u751f\u6210\u62a5\u544a', 'Generating treatment plan report');
     addChat('system', _manualWorkflowLabel('\u6b63\u5728\u751f\u6210\u62a5\u544a\u2026', 'Generating treatment plan report...'));
     try {
-        const res = await fetch(API + '/export/report', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({}),
-        });
-        const data = await res.json().catch(() => null);
-        if (!res.ok || !data || !data.success) throw new Error((data && (data.error || data.message)) || ('HTTP ' + res.status));
+        owner = window.beginInputAction(key);
+        const data = await window.fetchInputJson(owner, '/export/report', {format: 'html', language: window._i18nLang || 'en'});
+        if (!data) return {detached: true};
+        window.presentInputDownloads(owner, [data.download_url], _manualWorkflowLabel('已导出规划数据报告（HTML）；含图 PDF 请使用 Report 面板的 PDF 导出。', 'Planning-data report exported (HTML). Use the Report panel PDF export for the illustrated report.'));
         _inputButtonProgress(key, 'done', '\u751f\u6210\u62a5\u544a', 'Generate report', _manualWorkflowLabel('\u5df2\u5b8c\u6210', 'Completed'));
         addChat('system', '\u2705 ' + _manualWorkflowLabel('\u62a5\u544a\u5df2\u751f\u6210\uff1a', 'Report generated: ') + data.report_path);
         return data;
     } catch (e) {
+        if (owner && !owner.current()) return {detached: true};
         const message = _manualWorkflowLabel('\u62a5\u544a\u751f\u6210\u5931\u8d25\uff1a', 'Report generation failed: ') + e.message;
         _inputButtonProgress(key, 'error', '\u751f\u6210\u62a5\u544a', 'Generate report', message);
         addChat('error', message);
         return { success: false, error: e.message };
+    } finally {
+        owner?.finish();
     }
 }
 
@@ -329,7 +330,8 @@ function _num(id, fallback = null) {
     return Number.isFinite(v) ? v : fallback;
 }
 
-async function applyHyperparams() {
+async function applyHyperparams(owner = null) {
+    const ownsToken = !owner;
     _inputButtonProgress('apply_hyperparams', 'running', '\u6b63\u5728\u5e94\u7528\u53c2\u6570', 'Applying hyperparameters');
     const refAuto = !!document.getElementById('refDirecAuto')?.checked;
     const config = {
@@ -338,14 +340,12 @@ async function applyHyperparams() {
         seed_info: {
             radius: _num('seedRadius', 0.4),
             length: _num('seedLength', 4.5),
-            num_of_seeds: [Math.round(_num('seedCountMin', 5)), Math.round(_num('seedCountMax', 200))],
             margin_rate: _num('seedMarginRate', 1.0),
-            seed_avr_dose: _num('seedAvgDose', 50),
         },
         radiation_array_params: {
-            target_value: Math.round(_num('targetValue', 1)),
-            obstacle_value: Math.round(_num('obstacleValue', 2)),
-            background_value: Math.round(_num('backgroundValue', 0)),
+            // Source-specific label semantics belong to the Structure Set.
+            backlit_angle: _num('backlitAngle', 0.5),
+            maximum_candidate_trajectories: Math.round(_num('maxCandiTraj', 500)),
         },
         ref_direc_auto: refAuto,
         reference_direc_mode: refAuto ? 'auto' : 'manual',
@@ -369,51 +369,32 @@ async function applyHyperparams() {
             distance_rate: _num('distRate', 0.8),
             interval_rate: _num('intervalRate', 2),
         },
-        direc_resolution: [
-            Math.round(_num('direcResCone', 30)),
-            Math.round(_num('direcResStep', 3)),
-            Math.round(_num('direcResRings', 6)),
-        ],
-        dl_params: {
-            lr: _num('dlLR', 0.0004),
-            lr_decay: _num('dlLRDecay', 1.5),
-            epochs: Math.round(_num('dlEpochs', 1000)),
-            patience: Math.round(_num('dlPatience', 200)),
-            search_region: _num('dlSearchRegion', 0.5),
-            DVH_margin: _num('dlDVHMargin', 0.05),
-            infer_size: [
-                Math.round(_num('inferSizeX', 32)),
-                Math.round(_num('inferSizeY', 32)),
-                Math.round(_num('inferSizeZ', 32)),
-            ],
-        },
         rf_params: {
             max_episodes: Math.round(_num('rfMaxEpisodes', 200)),
             bandwidth: _num('rfBandwidth', 50),
         },
     };
     try {
-        const res = await fetch(API + '/config', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(config),
-        });
-        const data = await res.json().catch(() => null);
-        if (!res.ok || !data || data.error) throw new Error((data && data.error) || `HTTP ${res.status}`);
-        addChat('system', 'Hyperparameters applied to the server configuration.');
+        owner = owner || window.beginInputAction('apply_hyperparams', {mutation: true});
+        const data = await window.fetchInputJson(owner, '/config', config);
+        if (!data) return null;
+        addChat('system', _manualWorkflowLabel('参数已应用到当前病例。', 'Hyperparameters applied to the current case.'));
         _inputButtonProgress('apply_hyperparams', 'done', '\u5e94\u7528\u53c2\u6570', 'Apply hyperparameters', _manualWorkflowLabel('\u5df2\u5b8c\u6210', 'Completed'));
         reportUIEvent('planning.config', 'Hyperparameters applied', { mode: config.mode });
         return data;
     } catch (e) {
+        if (owner && !owner.current()) return null;
         _inputButtonProgress('apply_hyperparams', 'error', '\u5e94\u7528\u53c2\u6570', 'Apply hyperparameters', e.message || _manualWorkflowLabel('\u6267\u884c\u5931\u8d25', 'Failed'));
-        addChat('error', `Apply hyperparameters failed: ${e.message}`);
+        addChat('error', _manualWorkflowLabel(`参数应用失败：${e.message}`, `Apply hyperparameters failed: ${e.message}`));
         return null;
+    } finally {
+        if (ownsToken) owner?.finish();
     }
 }
 
 async function runPlanning() {
     const ctPath = ((document.getElementById('ctPath') || {}).value || '').trim();
-    const ctReady = typeof state === 'undefined' || state.ctLoaded === true;
+    const ctReady = typeof state === 'undefined' || (state.ctLoaded === true && state.ctPath === ctPath);
     if (!ctPath) {
         addChat('error', 'Load CT before running the full planning pipeline.');
         return { success: false, error: 'Load CT before running the full planning pipeline.' };
@@ -423,50 +404,56 @@ async function runPlanning() {
         addChat('system', waiting);
         return { success: false, error: 'CT is still loading.' };
     }
-    _inputButtonProgress('full_pipeline', 'running', '\u6b63\u5728\u6267\u884c\u5b8c\u6574\u89c4\u5212', 'Running full planning pipeline');
-    addChat('system', 'Full planning pipeline started...');
-    const applied = await applyHyperparams();
-    if (!applied) {
-        _inputButtonProgress('full_pipeline', 'error', '\u5b8c\u6574\u89c4\u5212', 'Full planning pipeline', _manualWorkflowLabel('\u53c2\u6570应\u7528\u5931\u8d25', 'Hyperparameter application failed'));
-        return { success: false, error: 'Hyperparameter application failed.' };
-    }
-    reportUIEvent('planning.step', 'Full pipeline started', { step: 'full' });
+    let owner;
     try {
-        const res = await fetch(API + '/planning/run_step', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ct_image_path: ctPath, step: 'full' }),
-        });
-        const data = await res.json().catch(() => null);
-        if (!res.ok || !data || !data.success) throw new Error((data && (data.error || data.message)) || `HTTP ${res.status}`);
-        _saveManualState({
-            ctv_segmentation: true,
-            oar_segmentation: true,
-            trajectory_init: true,
-            trajectory_refine: true,
-            seed_planning: true,
-            dose_calc: true,
-            dose_eval: true,
-            last_step: 'full',
-        });
-        addChat('system', 'Full planning pipeline completed.');
+        owner = window.beginInputAction('full_pipeline', {mutation: true, image: true});
+        _inputButtonProgress('full_pipeline', 'running', '正在执行完整规划', 'Running full planning pipeline');
+        addChat('system', _manualWorkflowLabel('完整规划已开始。', 'Full planning pipeline started.'));
+        const applied = await applyHyperparams(owner);
+        if (!owner.current()) return {detached: true};
+        if (!applied) throw new Error(_manualWorkflowLabel('参数应用失败。', 'Hyperparameter application failed.'));
+        const current = await window.fetchInputJson(owner, '/planning/show_step', {step: 'all'});
+        if (!current) return {detached: true};
+        for (const kind of ['ctv_segmentation', 'oar_segmentation']) {
+            if (current.workflow_state?.[kind]) continue;
+            const segmented = await runSegmentationStep(kind, {inputOwner: owner});
+            if (!owner.current()) return {detached: true};
+            if (!segmented.success || segmented.staged_only) throw new Error(segmented.error || _manualWorkflowLabel(
+                '上传掩膜仅已暂存，请在 Data Tree 中将肿瘤标签移动到 CTV 后再规划。',
+                'The uploaded mask is staged only. Move the tumor label to CTV in the Data Tree before planning.'));
+        }
+        reportUIEvent('planning.step', 'Full pipeline started', { step: 'full' });
+        const data = await window.fetchInputJson(owner, '/planning/run_step', {ct_image_path: ctPath, step: 'full'});
+        if (!data) return {detached: true};
+        if (data.workflow_state) _saveManualState({...data.workflow_state, last_step: 'full'});
+        if (!data.workflow_state?.seed_planning || !data.workflow_state?.dose_calc || !data.workflow_state?.dose_eval) {
+            throw new Error(_manualWorkflowLabel('后端未提供完整的粒子、剂量和评估结果，不能标记整条流程完成。',
+                'The saved seeds, dose and evaluation are incomplete; the full workflow cannot be marked completed.'));
+        }
+        const delivery = typeof refreshPlanningUI === 'function' ? await refreshPlanningUI({sessionId: owner.sessionId}) : null;
+        if (!owner.current()) return {detached: true};
+        if (!delivery?.success) throw new Error(_manualWorkflowLabel('计算已保存，但结果显示未完成；请查看结果，不必重复计算。', 'Calculation saved, but result delivery is incomplete. View the saved results instead of recalculating.'));
+        addChat('system', _manualWorkflowLabel('完整规划已完成。', 'Full planning pipeline completed.'));
         _inputButtonProgress('full_pipeline', 'done', '\u5b8c\u6574\u89c4\u5212', 'Full planning pipeline', _manualWorkflowLabel('\u5df2\u5b8c\u6210', 'Completed'));
         reportUIEvent('planning.step', 'Full pipeline completed', { step: 'full' });
         if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
-        if (typeof refreshPlanningUI === 'function') await refreshPlanningUI();
-        if (trainingMonitorState.active) await requestPlanningAdvice();
+        if (typeof trainingMonitorState !== 'undefined' && trainingMonitorState.active) void requestPlanningAdvice();
         return { success: true, step: 'full' };
     } catch (e) {
+        if (owner && !owner.current()) return {detached: true};
         _inputButtonProgress('full_pipeline', 'error', '\u5b8c\u6574\u89c4\u5212', 'Full planning pipeline', e.message || _manualWorkflowLabel('\u6267\u884c\u5931\u8d25', 'Failed'));
-        addChat('error', `Full planning pipeline failed: ${e.message}`);
+        addChat('error', _manualWorkflowLabel(`完整规划未完成：${e.message}`, `Full planning pipeline did not complete: ${e.message}`));
         reportUIEvent('planning.error', 'Full pipeline failed', { error: e.message });
         return { success: false, error: e.message };
+    } finally {
+        owner?.finish();
     }
 }
 
 async function runIntra() {
+    let owner;
     const ctPath = ((document.getElementById('ctPath') || {}).value || '').trim();
-    const ctReady = typeof state === 'undefined' || state.ctLoaded === true;
+    const ctReady = typeof state === 'undefined' || (state.ctLoaded === true && state.ctPath === ctPath);
     if (!ctPath) {
         addChat('error', 'Load intra-operative CT before running intraoperative replanning.');
         return;
@@ -476,87 +463,101 @@ async function runIntra() {
         addChat('system', waiting);
         return { success: false, error: 'CT is still loading.' };
     }
+    if (!_manualState().seed_planning && !(state.seeds?.length > 0)) {
+        const message = _manualWorkflowLabel('请先完成术前粒子规划，再选择独立的术中影像。', 'Complete the pre-operative seed plan before selecting a separate intraoperative image.');
+        addChat('error', message);
+        return {success: false, error: message};
+    }
     const threshold = _num('devThreshold', 2.0);
     _inputButtonProgress('intraop_replanning', 'running', '\u6b63\u5728\u6267\u884c\u672f\u4e2d\u91cd\u65b0\u89c4\u5212', 'Running intraoperative replanning');
     addChat('system', `Intraoperative replanning started (deviation threshold ${threshold} mm)...`);
     reportUIEvent('planning.step', 'Intraoperative replanning started', { threshold });
     try {
-        const res = await fetch(API + '/plan/intraoperative', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ct_path: ctPath, threshold }),
+        owner = window.beginInputAction('intraop_replanning', {mutation: true, image: true});
+        // Never infer that the loaded pre-op image is a new intra-op scan.
+        // Obtain a separately uploaded scan without replacing the case CT.
+        const input = document.createElement('input');
+        input.type = 'file'; input.accept = '.nii,.gz,.mha,.nrrd';
+        const scan = await new Promise(resolve => {
+            input.onchange = () => resolve(input.files?.[0] || null);
+            input.oncancel = () => resolve(null);
+            input.click();
         });
-        const data = await res.json().catch(() => null);
-        if (!res.ok || !data || data.error || data.success === false) throw new Error((data && data.error) || `HTTP ${res.status}`);
-        addChat('system', 'Intraoperative replanning completed.');
+        if (!owner.current()) return {detached: true};
+        if (!scan) {
+            _inputButtonProgress('intraop_replanning', 'done', '术中复核', 'Intraoperative review', _manualWorkflowLabel('已取消，未修改规划。', 'Cancelled; the plan was not changed.'));
+            return {cancelled: true};
+        }
+        const form = new FormData(); form.append('file', scan);
+        const upload = await fetch(API + '/upload', {method: 'POST', headers: {'X-BrachyBot-Session': owner.sessionId}, body: form});
+        const uploaded = await upload.json();
+        if (!owner.current()) return {detached: true};
+        if (!upload.ok || !uploaded.path) throw new Error(uploaded.error || 'Intraoperative upload failed');
+        const data = await window.fetchInputJson(owner, '/plan/intraoperative', {
+            ct_path: uploaded.path, use_current_plan: true, deviation_threshold_mm: threshold,
+        });
+        if (!data) return {detached: true};
+        if (data.automatic_replanning_blocked || data.requires_human_review) {
+            const message = _manualWorkflowLabel('检测结果需要人工复核，自动重新规划未执行。', 'Detection requires operator review; automatic replanning was not performed.');
+            addChat('system', message);
+            _inputButtonProgress('intraop_replanning', 'done', '术中复核', 'Intraoperative review', message);
+            return data;
+        }
+        addChat('system', _manualWorkflowLabel('术中复核已完成。', 'Intraoperative review completed.'));
         _inputButtonProgress('intraop_replanning', 'done', '\u672f\u4e2d\u91cd\u65b0\u89c4\u5212', 'Intraoperative replanning', _manualWorkflowLabel('\u5df2\u5b8c\u6210', 'Completed'));
         reportUIEvent('planning.step', 'Intraoperative replanning completed', {});
-        if (typeof refreshPlanningUI === 'function') await refreshPlanningUI();
+        if (typeof refreshPlanningUI === 'function') await refreshPlanningUI({sessionId: owner.sessionId});
+        return data;
     } catch (e) {
+        if (owner && !owner.current()) return {detached: true};
         _inputButtonProgress('intraop_replanning', 'error', '\u672f\u4e2d\u91cd\u65b0\u89c4\u5212', 'Intraoperative replanning', e.message || _manualWorkflowLabel('\u6267\u884c\u5931\u8d25', 'Failed'));
         addChat('error', `Intraoperative replanning failed: ${e.message}`);
+        return {success: false, error: e.message};
+    } finally {
+        owner?.finish();
     }
 }
 
 async function resetSession() {
-    _inputButtonProgress('planning_reset', 'running', '\u6b63\u5728\u91cd\u7f6e\u89c4\u5212\u72b6\u6001', 'Resetting planning state');
+    let owner;
     try {
-        const response = await fetch(API + '/planning/clear', { method: 'POST' });
-        if (!response.ok) {
-            const data = await response.json().catch(() => null);
-            throw new Error(data?.error || `HTTP ${response.status}`);
-        }
+        owner = window.beginInputAction('planning_reset', {mutation: true});
+        const confirmed = await _confirmAction('重置当前规划？将清除当前针道、粒子、剂量和导板显示；保留 CT、分割、对话和已保存的规划版本。',
+            'Reset the current plan? Clear its needles, seeds, dose and guide display. Keep the CT, segmentations, conversation and saved plan versions.');
+        if (!owner.current()) return {detached: true};
+        if (!confirmed) return {cancelled: true};
+        _inputButtonProgress('planning_reset', 'running', '正在重置规划', 'Resetting planning state');
+        const data = await window.fetchInputJson(owner, '/planning/clear', {});
+        if (!data) return {detached: true};
+        _saveManualState({...data.workflow_state, last_step: null, active_step: null, active_step_started_at: null});
+        window.clearManualStepPresentation?.();
+        window.cancelScheduledManualDoseRecompute?.();
+        window.invalidateSurgicalGuidePresentation?.();
+        if (typeof _invalidateDoseForPlanningRun === 'function') _invalidateDoseForPlanningRun({sessionId: owner.sessionId});
+        if (typeof refreshPlanningUI === 'function') await refreshPlanningUI({sessionId: owner.sessionId, preserveViewerState: true,
+            switchToViewers: false, preserveReport: true, suppressReportFigureCapture: true});
+        if (!owner.current()) return {detached: true};
+        _refreshManualStepUI();
+        renderDataTree();
+        reportUIEvent('planning.reset', 'Planning state reset', {});
+        addChat('system', _manualWorkflowLabel('当前规划已重置；CT、分割、对话和历史规划已保留。', 'Current planning reset; CT, segmentations, conversation and plan history are retained.'));
+        _inputButtonProgress('planning_reset', 'done', '重置规划', 'Reset planning state', _manualWorkflowLabel('已完成', 'Completed'));
+        return {success: true};
     } catch (error) {
+        if (owner && !owner.current()) return {detached: true};
         _inputButtonProgress('planning_reset', 'error', '\u91cd\u7f6e\u89c4\u5212', 'Reset planning state', error.message || _manualWorkflowLabel('\u6267\u884c\u5931\u8d25', 'Failed'));
         const message = `Planning reset failed: ${error.message}`;
         addChat('error', message);
         return { success: false, error: message };
+    } finally {
+        owner?.finish();
     }
-    _saveManualState({
-        ctv_segmentation: false,
-        oar_segmentation: false,
-        trajectory_init: false,
-        trajectory_refine: false,
-        seed_planning: false,
-        dose_calc: false,
-        dose_eval: false,
-        last_step: null,
-    });
-    dataTreeState.planning.trajectories = [];
-    dataTreeState.planning.trajectoriesLoaded = false;
-    dataTreeState.planning.seeds = [];
-    dataTreeState.planning.needles = [];
-    dataTreeState.planning.doseLevels = [];
-    dataTreeState.planning.meshes = [];
-    dataTreeState.seeds.loaded = false;
-    dataTreeState.needles.loaded = false;
-    state.seeds = [];
-    state.seedsOverlay = null;
-    state.doseOverlay = null;
-    state.dvhData = null;
-    state.metrics = {};
-    Object.keys(scene3D.meshes || {}).forEach(id => {
-        if (id.startsWith('seed_') || id.startsWith('needle_') || id.startsWith('dose_iso_')) {
-            const mesh = scene3D.meshes[id];
-            scene3D.scene?.remove(mesh);
-            try { mesh.geometry?.dispose(); } catch (_) {}
-            try { mesh.material?.dispose(); } catch (_) {}
-            delete scene3D.meshes[id];
-        }
-    });
-    if (typeof drawDVH === 'function') drawDVH._lastSig = null;
-    if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
-    renderDataTree();
-    if (state.ctLoaded) await loadAllSlices();
-    reportUIEvent('planning.reset', 'Planning state reset', {});
-    addChat('system', 'Planning state reset. CT remains loaded.');
-    _inputButtonProgress('planning_reset', 'done', '\u91cd\u7f6e\u89c4\u5212', 'Reset planning state', _manualWorkflowLabel('\u5df2\u5b8c\u6210', 'Completed'));
-    return { success: true };
 }
 
 // Run a single planning step manually. The user must have a CT
 // loaded first; we surface a clear error if not.
 async function runPlanningStep(step) {
+    if (window.inputMutationPending?.()) return {success: false, error: 'An Input operation is still running.'};
     const stepLabels = {
         trajectory_init:  { num: 1, label: 'Trajectory init',  i18n_zh: '轨迹初始化' },
         trajectory_refine:{ num: 2, label: 'Trajectory refine',i18n_zh: '轨迹优化' },
@@ -572,7 +573,7 @@ async function runPlanningStep(step) {
     }
     const ctPathEl = document.getElementById('ctPath');
     const ctPath = ctPathEl ? ctPathEl.value.trim() : '';
-    const ctReady = typeof state === 'undefined' || state.ctLoaded === true;
+    const ctReady = typeof state === 'undefined' || (state.ctLoaded === true && state.ctPath === ctPath);
     // Keep the asynchronous step attached to the case that started it. A
     // later session switch may let the server finish, but it must not paint
     // the newly selected case during the completion phase.
@@ -771,19 +772,15 @@ async function runPlanningStep(step) {
 // also switches the right panel to the Analysis tab so the user
 // sees DVH / metrics.
 async function showStepResults(step) {
+    let owner;
     _inputButtonProgress('show_results_' + step, 'running', '\u6b63\u5728\u8bfb\u53d6\u89c4\u5212\u7ed3\u679c', 'Reading planning results');
     if (typeof addChat === 'function') {
         addChat('system', `Fetching results for: ${step}...`);
     }
     try {
-        const res = await fetch(API + '/planning/show_step', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ step: step }),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        if (data.error) throw new Error(data.error);
+        owner = window.beginInputAction('show_results_' + step);
+        const data = await window.fetchInputJson(owner, '/planning/show_step', {step});
+        if (!data) return {detached: true};
         // Build a human-friendly summary.
         const lines = [];
         if (step === 'all' || step === 'trajectories') {
@@ -799,7 +796,8 @@ async function showStepResults(step) {
                 const [lo, hi] = data.dose_range || [0, 0];
                 const scaleGy = data.dose_scale_gy
                     || (typeof _getDoseScaleGy === 'function' ? _getDoseScaleGy() : 120);
-                lines.push(`**Dose**: normalized range [${lo.toFixed(2)}, ${hi.toFixed(2)}] (${(lo * scaleGy).toFixed(1)}-${(hi * scaleGy).toFixed(1)} Gy)`);
+                const physical = String(data.dose_units || '').toLowerCase() === 'gy';
+                lines.push(_manualWorkflowLabel('**剂量**', '**Dose**') + `: ${(lo * (physical ? 1 : scaleGy)).toFixed(1)}–${(hi * (physical ? 1 : scaleGy)).toFixed(1)} Gy`);
             } else {
                 lines.push(`**Dose**: not computed yet`);
             }
@@ -807,7 +805,7 @@ async function showStepResults(step) {
         if (step === 'all' || step === 'dvh' || step === 'dose_eval' || step === 'metrics') {
             const m = data.metrics || {};
             if (Object.keys(m).length) {
-                lines.push(`**Metrics**: V100=${m.v100 || '-'}, D90=${m.d90 || '-'}`);
+                lines.push(`**Metrics**: V100=${m.v100 ?? '-'}%, D90=${m.d90 ?? '-'} Gy`);
             } else {
                 lines.push(`**Metrics**: not evaluated yet`);
             }
@@ -815,20 +813,33 @@ async function showStepResults(step) {
         if (typeof addChat === 'function') {
             addChat('system', lines.join('\n') || 'No data yet — run the corresponding step first.');
         }
-        // Switch right panel to Analysis for visualization.
-        const analysisTab = document.querySelector('.panel-tab:nth-child(2)');
-        if (analysisTab && typeof switchPanel === 'function') {
-            try { switchPanel('metrics', analysisTab); } catch (_) {}
+        const panel = ['dvh', 'metrics', 'dose_eval'].includes(step) ? 'metrics' : 'viewers';
+        const tab = document.querySelector(`.panel-tab[data-panel="${panel}"]`);
+        if (tab && typeof switchPanel === 'function') switchPanel(panel, tab);
+        const delivery = typeof refreshPlanningUI === 'function' ? await refreshPlanningUI({sessionId: owner.sessionId,
+            preserveViewerState: true, switchToViewers: false, preserveReport: true, suppressReportFigureCapture: true}) : null;
+        if (!owner.current()) return {detached: true};
+        if (delivery?.success === false) throw new Error(_manualWorkflowLabel('读取成功，但显示资源尚未就绪。', 'Results were read, but display resources are not ready.'));
+        const stages = step === 'all' ? null : ({trajectories: ['trajectory_init', 'trajectory_refine'], seeds: ['seed_planning'],
+            dose: ['dose_calc'], dvh: ['dose_eval'], metrics: ['dose_eval']})[step];
+        for (const entry of window.manualStepPresentations?.() || []) {
+            if ((!stages || stages.includes(entry.step)) && !entry.visible) window.toggleManualStepPresentation(entry.step);
         }
-        if (typeof refreshPlanningUI === 'function') {
-            try { await refreshPlanningUI(); } catch (_) {}
-        }
+        if (dataTreeState?.planning) dataTreeState.planning.visible = true;
+        window.syncManualStepPresentationVisibility?.();
+        window.applyDataTreeViewVisibility?.();
+        window.renderDataTree?.();
         _inputButtonProgress('show_results_' + step, 'done', '\u8bfb\u53d6\u89c4\u5212\u7ed3\u679c', 'Read planning results', _manualWorkflowLabel('\u5df2\u5b8c\u6210', 'Completed'));
+        return data;
     } catch (e) {
+        if (owner && !owner.current()) return {detached: true};
         _inputButtonProgress('show_results_' + step, 'error', '\u8bfb\u53d6\u89c4\u5212\u7ed3\u679c', 'Read planning results', e.message || _manualWorkflowLabel('\u6267\u884c\u5931\u8d25', 'Failed'));
         if (typeof addChat === 'function') {
             addChat('error', `Show results failed: ${e.message}`);
         }
+        return {success: false, error: e.message};
+    } finally {
+        owner?.finish();
     }
 }
 
@@ -837,6 +848,7 @@ async function showStepResults(step) {
 // Step-by-Step buttons 0 and "0.5" so the user can drive the
 // full workflow without going through the LLM.
 async function runSegmentationStep(kind, options = {}) {
+    let inputOwner;
     if (kind !== 'ctv_segmentation' && kind !== 'oar_segmentation') {
         if (typeof addChat === 'function') addChat('error', `Unknown segmentation step: ${kind}`);
         return { success: false, error: `Unknown segmentation step: ${kind}` };
@@ -855,7 +867,7 @@ async function runSegmentationStep(kind, options = {}) {
         typeof _activeApiSessionId === 'function'
             ? _activeApiSessionId() || ''
             : (typeof activeSessionId !== 'undefined' ? activeSessionId || '' : ''),
-    );
+    ) && (!inputOwner || inputOwner.current());
     const ctPath = (document.getElementById('ctPath') || {}).value || '';
     const ctReady = typeof state === 'undefined' || state.ctLoaded === true;
     if (!ctPath.trim()) {
@@ -869,6 +881,12 @@ async function runSegmentationStep(kind, options = {}) {
         if (typeof addChat === 'function') addChat('system', waiting);
         _manualWorkflowProgress(kind, 'error', labelZh, labelEn, waiting);
         return { success: false, error: 'CT is still loading.' };
+    }
+    try {
+        inputOwner = options.inputOwner || window.beginInputAction?.(kind, {mutation: true});
+    } catch (error) {
+        addChat('system', error.message);
+        return {success: false, error: error.message};
     }
     const btn = document.getElementById('stepBtn_' + kind);
     if (btn) {
@@ -1013,7 +1031,14 @@ async function runSegmentationStep(kind, options = {}) {
                 }),
             }).catch(error => console.warn('[CTV] validation acknowledgement failed:', error));
         }
-        _saveManualState({ [kind]: true, active_step: null, active_step_started_at: null });
+        _saveManualState({ [kind]: true, trajectory_init: false, trajectory_refine: false, seed_planning: false,
+            dose_calc: false, dose_eval: false, last_step: null, active_step: null, active_step_started_at: null });
+        window.clearManualStepPresentation?.();
+        window.cancelScheduledManualDoseRecompute?.();
+        if (typeof _invalidateDoseForPlanningRun === 'function') _invalidateDoseForPlanningRun({sessionId: ownerSessionId});
+        if (typeof refreshPlanningUI === 'function') void refreshPlanningUI({sessionId: ownerSessionId,
+            preserveViewerState: true, switchToViewers: false, preserveReport: true, suppressReportFigureCapture: true})
+            .catch(error => console.warn('[segmentation] planning display refresh failed:', error));
         _manualWorkflowProgress(kind, 'done', labelZh, labelEn, _manualWorkflowLabel('\u5df2\u5b8c\u6210', 'Completed'));
         reportUIEvent('segmentation.step', `${label} completed`, { kind, labels: n, status: 'done' });
         if (typeof addChat === 'function') {
@@ -1035,6 +1060,7 @@ async function runSegmentationStep(kind, options = {}) {
         }
         return { success: false, error: e.message };
     } finally {
+        if (!options.inputOwner) inputOwner?.finish();
         if (btn && isCurrentOwner()) {
             btn.disabled = false;
             // The step number reflects state — re-render via _refreshManualStepUI.
@@ -1059,7 +1085,7 @@ function _refreshManualStepUI() {
     const hasCtPath = !!ctPath;
     // A path is only an intent. Wait for decoded volume publication so a
     // restart/upload hydration cannot make a button look like a no-op.
-    const ctReady = hasCtPath && (typeof state === 'undefined' || state.ctLoaded === true);
+    const ctReady = hasCtPath && (typeof state === 'undefined' || (state.ctLoaded === true && state.ctPath === ctPath));
     const ctLoading = hasCtPath && !ctReady;
     const ctvDone = !!s.ctv_segmentation;
     const oarDone = !!s.oar_segmentation;
@@ -1077,7 +1103,7 @@ function _refreshManualStepUI() {
         statusEl.dataset.workflowState = tone;
     };
     const setReason = (id, zh, en, tone) => {
-        const el = document.getElementById(id);
+        const el = typeof id === 'string' ? document.getElementById(id) : id;
         if (!el) return;
         const message = _manualWorkflowLabel(zh, en);
         el.title = message;
@@ -1088,7 +1114,7 @@ function _refreshManualStepUI() {
     const setButton = (id, enabled, number, done, readyZh, readyEn, blockedZh, blockedEn) => {
         // Only this live transaction owns the button lock. A persisted
         // active_step from an interrupted tab must not disable it forever.
-        enabled = enabled && window.manualStepRequestPending?.() !== true;
+        enabled = enabled && ctReady && window.manualStepRequestPending?.() !== true && window.inputMutationPending?.() !== true;
         const el = document.getElementById(id);
         if (!el) return;
         el.disabled = !enabled;
@@ -1132,10 +1158,14 @@ function _refreshManualStepUI() {
         .forEach(([onclick, zh, en]) => {
             const el = document.querySelector('button[onclick="' + onclick + '"]');
             if (!el) return;
-            el.disabled = !ctReady;
-            el.setAttribute('aria-disabled', ctReady ? 'false' : 'true');
-            setReason(onclick, ctReady ? '\u53ef\u5f00\u59cb\u6267\u884c' : zh,
-                ctReady ? 'Ready to run.' : en, ctReady ? 'ready' : 'blocked');
+            const enabled = ctReady && (onclick !== 'runIntra()' || seeds)
+                && window.inputMutationPending?.() !== true && window.manualStepRequestPending?.() !== true;
+            el.disabled = !enabled;
+            el.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+            const pending = window.inputMutationPending?.() === true || window.manualStepRequestPending?.() === true;
+            setReason(el, enabled ? '可开始执行' : (!ctReady ? zh : pending ? '当前操作仍在执行，请等待完成。' : '请先完成术前粒子规划。'),
+                enabled ? 'Ready to run.' : (!ctReady ? en : pending ? 'An operation is still running; wait for it to finish.' : 'Complete the pre-operative seed plan first.'),
+                enabled ? 'ready' : 'blocked');
         });
     const active = s.active_step;
     const activeLabels = {

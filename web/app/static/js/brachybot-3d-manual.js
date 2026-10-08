@@ -2898,20 +2898,18 @@ function _formatReadinessReport(data) {
 }
 
 async function checkSystemReadiness() {
+    let owner;
     if (typeof _inputButtonProgress === 'function') _inputButtonProgress('system_readiness', 'running', '\u6b63在\u68c0\u67e5\u7cfb\u7edf\u5c31绪\u72b6态', 'Checking system readiness');
     try {
-        const res = await fetch(API + '/readiness', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_id: _activeApiSessionId(), ui_state: collectUIState() }),
-        });
-        const data = await res.json().catch(() => null);
-        if (!res.ok || !data || !data.success) throw new Error((data && data.error) || `HTTP ${res.status}`);
+        owner = window.beginInputAction('system_readiness');
+        const data = await window.fetchInputJson(owner, '/readiness', {session_id: owner.sessionId});
+        if (!data) return null;
         addChat('bot-response', _formatReadinessReport(data));
         reportUIEvent('system.readiness', 'System readiness checklist requested', { ready: !!data.ready });
         if (typeof _inputButtonProgress === 'function') _inputButtonProgress('system_readiness', 'done', '\u7cfb\u7edf\u5c31\u7eea\u68c0\u67e5', 'System readiness check', _manualText('\u5df2\u5b8c\u6210', 'Completed'));
         return data;
     } catch (e) {
+        if (owner && !owner.current()) return null;
         const errorDetail = _manualErrorDetail(e);
         if (typeof _inputButtonProgress === 'function') _inputButtonProgress('system_readiness', 'error', '\u7cfb\u7edf\u5c31绪\u68c0查', 'System readiness check', errorDetail || _manualText('\u68c0查失败', 'Failed'));
         const failed = typeof window._t === 'function'
@@ -2919,6 +2917,8 @@ async function checkSystemReadiness() {
             : `系统就绪检查失败：${errorDetail}`;
         addChat('error', failed);
         return null;
+    } finally {
+        owner?.finish();
     }
 }
 
@@ -7284,11 +7284,25 @@ async function _fetchViewerJsonWithRetry(url, init = {}, options = {}) {
 }
 window.fetchViewerJsonWithRetry = _fetchViewerJsonWithRetry;
 
-// Explicit replan command for the edited manual geometry. This uses the same
-// trained dose_unet_spacing1mm path as seed/needle edits, but gives chat and the UI a
-// stable action name instead of silently treating a replan as a generic edit.
+// Replanning replaces geometry through the authoritative planner, not a
+// dose-only reprojection. Ask before replacing deliberate manual edits.
 async function replanManualPlan() {
-    return recomputeManualDose('manual_replan');
+    let owner;
+    try {
+        owner = window.beginInputAction('geometry_replan_confirmation', {mutation: true, image: true});
+        const yes = await _confirmAction(
+            '重新优化针道和粒子并重算剂量？当前手动几何会被新规划替代，旧规划保留为历史版本；这不是仅重投影关联粒子。',
+            'Optimize needles and seeds again and recompute dose? The new plan replaces the current manual geometry; the previous plan remains in history. This is not just seed reprojection.');
+        if (!owner.current()) return {detached: true};
+        if (!yes) return {cancelled: true};
+        owner.finish();
+        return await runPlanning();
+    } catch (error) {
+        if (!owner || owner.current()) addChat('error', String(error.message || error));
+        return {success: false};
+    } finally {
+        owner?.finish();
+    }
 }
 
 // Check whether a label ID exists in the currently loaded segmentation mask.

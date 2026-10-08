@@ -4588,7 +4588,7 @@ function clearClientWorkspace(options = {}) {
     // Reset them before hydrating the next case so its default UI never shows
     // dimensions from a guide created in the previously selected session.
     if (typeof window.resetSurgicalGuideControls === 'function') {
-        window.resetSurgicalGuideControls();
+        window.resetSurgicalGuideControls({clearCatalog: true});
     }
     if (typeof clearDoseOverlayRuntime === 'function') {
         clearDoseOverlayRuntime({ preserveDesired: false });
@@ -13752,9 +13752,21 @@ window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
         const { ring, fg, label } = _ringEls();
         if (!ring || !fg || !label) return;
         const ctx = context && typeof context === 'object' ? context : {};
-        const previous = _contextByCase.get(_contextCase());
-        if (Number(ctx.observed_at_ms || 0) > 0 && Number(previous?.observed_at_ms || 0) > Number(ctx.observed_at_ms)) return;
-        _contextByCase.set(_contextCase(), ctx);
+        const caseId = _contextCase();
+        if (ctx.session_id && String(ctx.session_id) !== caseId) return;
+        const previous = _contextByCase.get(caseId);
+        const timestamp = Number(ctx.updated_at_ms || ctx.observed_at_ms || 0);
+        const priorTimestamp = Number(previous?.updated_at_ms || previous?.observed_at_ms || 0);
+        if (ctx.epoch && ctx.epoch === previous?.epoch) {
+            if (Number(ctx.revision || 0) < Number(previous.revision || 0)) return;
+            if (Number(ctx.revision || 0) === Number(previous.revision || 0)
+                && Number(previous.observed_at_ms || 0) > Number(ctx.observed_at_ms || 0)) return;
+        } else if (priorTimestamp > timestamp) return;
+        // A cold/unavailable status is not a new smaller measurement. Allow
+        // an explicit, newer compression/reset ledger, not a zero-date probe.
+        if (!ctx.epoch && previous?.epoch) return;
+        _contextByCase.set(caseId, ctx);
+        ring.dataset.contextCase = caseId;
         const used = Number(ctx.used_tokens || 0);
         const windowSize = Number(ctx.window || 0);
         let ratio = windowSize > 0 ? used / windowSize : 0;
@@ -13765,7 +13777,7 @@ window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
         if (usedTokens > 0 && ratio < 0.01) {
             label.textContent = '<1%';
         } else if (ratio > 0) {
-            label.textContent = Math.round(ratio * 100) + '%';
+            label.textContent = String(Number((ratio * 100).toFixed(1))) + '%';
         } else {
             label.textContent = '–';
         }
@@ -13777,18 +13789,23 @@ window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
         // Ring and footer use the same server snapshot. Context is the latest
         // model call, not the cumulative input billed again on every round.
         const zh = _contextIndicatorZh();
-        const pct = usedTokens > 0 && ratio < 0.01 ? '<1' : String(Math.round(ratio * 100));
+        const pct = usedTokens > 0 && ratio < 0.01 ? '<1' : String(Number((ratio * 100).toFixed(1)));
         const basis = ctx.measured
             ? (ctx.context_complete === false
                 ? (zh ? '已返回用量下界' : 'reported usage lower bound')
                 : (zh ? '实测' : 'measured'))
             : (ctx.estimated ? (zh ? '估算' : 'estimated') : '');
         const turnTotal = Number(ctx.turn_total_tokens || 0);
+        const contextName = ctx.source === 'retained_history_estimate'
+            ? (zh ? '保留上下文估算' : 'Current context · retained estimate')
+            : ctx.source === 'request_estimate'
+                ? (zh ? '请求上下文估算' : 'Current context · request estimate')
+                : (zh ? '最近请求上下文' : 'Current context · latest request');
         let detail;
         if (windowTokens) {
             detail = zh
-                ? `当前上下文：${pct}%（${usedTokens.toLocaleString()} / ${windowTokens.toLocaleString()} tokens${basis ? '，' + basis : ''}）`
-                : `Current context: ${pct}% (${usedTokens.toLocaleString()} / ${windowTokens.toLocaleString()} tokens${basis ? ', ' + basis : ''})`;
+                ? `${contextName}：${pct}%（${usedTokens.toLocaleString()} / ${windowTokens.toLocaleString()} tokens${basis ? '，' + basis : ''}）`
+                : `${contextName}: ${pct}% (${usedTokens.toLocaleString()} / ${windowTokens.toLocaleString()} tokens${basis ? ', ' + basis : ''})`;
         } else {
             detail = usedTokens > 0
                 ? (zh ? `当前上下文：${usedTokens.toLocaleString()} tokens` : `Current context: ${usedTokens.toLocaleString()} tokens`)
@@ -13805,6 +13822,25 @@ window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
             : (zh ? '；最新一次模型调用的输入＋输出' : '; latest model call input + output');
         detail += zh ? '；不是全部聊天历史，历史会按相关性选择并自动折叠'
             : '; not all chat history; history is selected and compacted';
+        if ('retained_history_tokens' in ctx) {
+            detail += zh
+                ? `\n已保留对话：约 ${Number(ctx.retained_history_tokens).toLocaleString()} tokens（${Number(ctx.retained_messages || 0)} 条消息，含摘要；不含系统、工具定义和病例数据）`
+                : `\nRetained conversation: ~${Number(ctx.retained_history_tokens).toLocaleString()} tokens (${Number(ctx.retained_messages || 0)} messages plus summary; excludes system, tool schemas and case facts)`;
+        }
+        if ('session_total_tokens' in ctx) {
+            const missing = Number(ctx.session_missing_usage_calls || 0) > 0;
+            detail += zh
+                ? `\n本会话累计消耗：${missing ? '≥' : ''}${Number(ctx.session_total_tokens).toLocaleString()} tokens（${Number(ctx.session_calls || 0)} 次已记录调用）`
+                : `\nSession consumption: ${missing ? '≥' : ''}${Number(ctx.session_total_tokens).toLocaleString()} tokens (${Number(ctx.session_calls || 0)} recorded calls)`;
+            if (ctx.preexisting_history) detail += zh ? '；仅包含新版计数启用后的调用，旧记录不倒推' : '; since accounting was enabled; older usage is not inferred';
+        }
+        if (ctx.change_reason === 'request_selection') detail += zh
+            ? '\n本次请求较小：选取的历史和临时工具结果不同，不代表删除聊天或手动压缩。'
+            : '\nThis request is smaller: selected history/transient tool results differ; this does not mean chat was deleted or manually compressed.';
+        if (Number(ctx.history_compactions || 0) > 0) detail += zh
+            ? `\n本会话已折叠历史 ${Number(ctx.history_compactions)} 次。自动折叠按 token 压力触发。`
+            : `\nHistory folded ${Number(ctx.history_compactions)} times in this session. Automatic folding follows token pressure.`;
+        if (ctx.restored_snapshot) detail += zh ? '\n已恢复重启前的请求计数；不是重新估算。' : '\nRestored pre-restart request accounting; not re-estimated.';
         if (ctx.missing_usage_calls > 0) detail += zh ? '；部分调用未返回完整用量' : '; some calls omitted complete usage';
         if (ctx.compressed) {
             detail += zh ? '；已压缩历史' : '; history compressed';
@@ -13816,9 +13852,12 @@ window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
         const badge = document.getElementById('compactionBadge');
         if (badge) {
             const folds = Number(ctx.folded_messages || 0);
-            badge.style.display = ctx.compressed ? '' : 'none';
+            const compactions = Number(ctx.history_compactions || 0);
+            badge.style.display = ctx.compressed || compactions > 0 ? '' : 'none';
+            badge.title = zh ? `历史已折叠 ${compactions} 次；按 token 压力或显式确认触发`
+                : `History folded ${compactions} times; triggered by token pressure or explicit confirmation`;
             const countEl = document.getElementById('compactionCount');
-            if (countEl && folds > 0) countEl.textContent = String(folds);
+            if (countEl) countEl.textContent = String(compactions || folds);
         }
     }
     window.updateContextIndicator = updateContextIndicator;
@@ -13839,7 +13878,23 @@ window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
     }
 
     let _contextStatusRequestSeq = 0;
+    function resetContextIndicatorForCase() {
+        const { ring, fg, label } = _ringEls();
+        if (!ring || ring.dataset.contextCase === _contextCase()) return;
+        const cached = _contextByCase.get(_contextCase());
+        if (cached) { updateContextIndicator(cached); return; }
+        ring.dataset.contextCase = _contextCase();
+        fg.style.strokeDashoffset = String(RING_CIRCUMFERENCE);
+        label.textContent = '–';
+        ring.classList.remove('is-warn', 'is-high', 'is-critical');
+        ring.title = _contextIndicatorZh() ? '正在读取当前会话上下文；尚无新计数' : 'Loading this session’s context; no new measurement yet';
+        ring.setAttribute('aria-label', ring.title);
+        const badge = document.getElementById('compactionBadge');
+        if (badge) badge.style.display = 'none';
+    }
+    window.resetContextIndicatorForCase = resetContextIndicatorForCase;
     async function refreshContextStatus() {
+        resetContextIndicatorForCase();
         const requestSeq = ++_contextStatusRequestSeq;
         const { ring } = _ringEls();
         if (ring) ring.classList.add('is-busy');
@@ -13865,7 +13920,7 @@ window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
             const data = await res.json().catch(() => null);
             const currentCase = typeof window.activeSessionId === 'string' && window.activeSessionId
                 ? window.activeSessionId : (typeof activeSessionId !== 'undefined' ? String(activeSessionId || '') : '');
-            if (res.ok && requestSeq === _contextStatusRequestSeq && currentCase === sessionId && data && data.context) {
+            if (res.ok && requestSeq === _contextStatusRequestSeq && currentCase === sessionId && data && data.session_id === sessionId && data.context) {
                 updateContextIndicator(data.context);
                 _maybeNotifyCompression(data.context);
             }
@@ -13965,6 +14020,9 @@ window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
                 : (zh ? '实测' : 'measured')) : (zh ? '估算' : 'estimated');
             const usageText = win > 0 ? `${used.toLocaleString()} / ${win.toLocaleString()} tokens · ${(used / win * 100).toFixed(1)}% · ${basis}`
                 : (zh ? '用量信息正在加载；不影响确认或取消。' : 'Loading usage; you can still confirm or cancel.');
+            const historyNote = 'retained_history_tokens' in c
+                ? (zh ? `当前保留对话约 ${Number(c.retained_history_tokens).toLocaleString()} tokens；`
+                    : `Retained conversation is ~${Number(c.retained_history_tokens).toLocaleString()} tokens; `) : '';
             // Updating status/locale must not replace a button under a user's
             // pointer, interrupt a click, or move the keyboard focus.
             if (overlay.querySelector('.context-compress-dialog')) {
@@ -13974,8 +14032,8 @@ window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
                     : 'Older conversation will be summarized; some original details will no longer be sent to the model. Case data, planning results and reports will not be changed.';
                 overlay.querySelector('.context-compress-stats').textContent = usageText;
                 overlay.querySelector('.context-compress-note').textContent = zh
-                    ? '上下文显示最新一次模型调用的用量，不是本轮累计消耗，也不是全部聊天历史。'
-                    : 'Context shows the latest model call, not this turn’s accumulated consumption or the full chat history.';
+                    ? historyNote + '圆环区分请求实测与保留上下文估算；压缩不减少已经消耗的 token。'
+                    : historyNote + 'The ring distinguishes request measurements from retained-context estimates. Compression does not reduce already consumed tokens.';
                 overlay.querySelector('.context-compress-actions [data-act="cancel"]').textContent = zh ? '取消' : 'Cancel';
                 overlay.querySelector('[data-act="confirm"]').textContent = zh ? '是，确认压缩' : 'Yes, compress context';
                 overlay.querySelector('.rp-modal-close').setAttribute('aria-label', zh ? '关闭' : 'Close');
@@ -13987,7 +14045,7 @@ window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
                 <button type="button" class="rp-modal-close" data-act="cancel" aria-label="${zh ? '关闭' : 'Close'}">✕</button></div>
                 <div class="rp-modal-body"><p id="context-compress-description">${zh ? '旧对话将折叠为摘要，部分原文细节不再发送给模型。病例数据、规划结果和报告不会被修改。' : 'Older conversation will be summarized; some original details will no longer be sent to the model. Case data, planning results and reports will not be changed.'}</p>
                 <div class="context-compress-stats" aria-live="polite">${usageText}</div>
-                <p class="context-compress-note">${zh ? '上下文显示最新一次模型调用的用量，不是本轮累计消耗，也不是全部聊天历史。' : 'Context shows the latest model call, not this turn’s accumulated consumption or the full chat history.'}</p>
+                <p class="context-compress-note">${historyNote}${zh ? '圆环区分请求实测与保留上下文估算；压缩不减少已经消耗的 token。' : 'The ring distinguishes request measurements from retained-context estimates. Compression does not reduce already consumed tokens.'}</p>
                 <div class="context-compress-actions"><button type="button" class="btn" data-act="cancel">${zh ? '取消' : 'Cancel'}</button><button type="button" class="btn btn-primary" data-act="confirm">${zh ? '是，确认压缩' : 'Yes, compress context'}</button></div></div></section>`;
             overlay.querySelector(`.context-compress-actions [data-act="${focusedAction || 'cancel'}"]`)?.focus();
         }
@@ -14021,6 +14079,7 @@ window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;
         const context = _contextByCase.get(_contextCase());
         if (context) updateContextIndicator(context);
     });
+    window.addEventListener('brachybot:session-readiness', () => { void refreshContextStatus(); });
 
     if (typeof window !== 'undefined') {
         window.addEventListener('load', () => {
