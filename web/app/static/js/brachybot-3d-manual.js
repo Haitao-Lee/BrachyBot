@@ -2156,12 +2156,15 @@ async function _refreshManualDoseViews(data, wasDoseTextureEnabled, options = {}
 
     state.metrics = metrics;
     state.dvhData = metrics.dvh_data || data?.dvh_data || null;
+    state.dvhPlanningId = data?.planning_id || manualPlanningState.planningId || null;
     if (state.dvhData && typeof drawDVH === 'function') {
         try { await drawDVH(); } catch (error) { console.warn('[manual dose] DVH refresh failed:', error); }
     }
     if (typeof renderDataTree === 'function') renderDataTree();
 
     if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave('manual.dose.incremental');
+    // No inference or mesh rebuilding: complete curves from the saved dose.
+    void window.refreshStructureDvhAnalysis?.();
 
     // Dose overlay loading fetches only metadata and redraws the current
     // slices; it does not reconstruct OAR/CTV meshes.  It can nevertheless

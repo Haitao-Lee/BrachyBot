@@ -211,31 +211,28 @@ function renderReportEditor() {
     const oarRows = (f.oarDose || []).map((o, i) => `
         <tr>
             <td><input value="${escHtml(o.organ || '')}" oninput="updateOARDoseRow(${i}, 'organ', this.value)"/></td>
-            <td><input value="${o.d2cc ?? ''}" type="number" step="0.1" oninput="updateOARDoseRow(${i}, 'd2cc', this.value)"/></td>
-            <td><input value="${o.d1cc ?? ''}" type="number" step="0.1" oninput="updateOARDoseRow(${i}, 'd1cc', this.value)"/></td>
-            <td><input value="${o.d0_1cc ?? ''}" type="number" step="0.1" oninput="updateOARDoseRow(${i}, 'd0_1cc', this.value)"/></td>
-            <td><input value="${o.v100 ?? ''}" type="number" step="0.1" oninput="updateOARDoseRow(${i}, 'v100', this.value)"/></td>
+            ${['dmax','dmean','d0_1cc','d1cc','d2cc','d90','d95','v100','volume_cm3'].map(k => `<td><input value="${escHtml(o[k] == null ? '' : String(o[k]))}" type="number" step="0.01" oninput="updateOARDoseRow(${i}, '${k}', this.value)"/></td>`).join('')}
             <td style="text-align:center;">
                 <button onclick="removeOARDoseRow(${i})" class="btn btn-outline" style="height:22px;padding:0 6px;font-size:0.65rem;color:var(--danger);">✕</button>
             </td>
         </tr>
     `).join('');
     html += _formSection('🛡️ ' + s.section3, 'oarDose', `
-        <table class="rp-oar-table">
+        <p class="rp-field-hint">${escHtml(_reportTableText(_reportLang).priorityNote)}</p>
+        <div style="overflow-x:auto"><table class="rp-oar-table" style="min-width:1000px">
             <thead><tr>
                 <th>${s.organ}</th>
-                <th>D₂cc (Gy)</th>
-                <th>D₁cc (Gy)</th>
-                <th>D₀.₁cc (Gy)</th>
-                <th>V100 (%)</th>
+                ${['Dmax (Gy)','Dmean (Gy)','D₀.₁cc (Gy)','D₁cc (Gy)','D₂cc (Gy)','D90 (Gy)','D95 (Gy)','V100 (%)',_reportTableText(_reportLang).volume + ' (cm³)'].map(k => `<th>${escHtml(k)}</th>`).join('')}
                 <th></th>
             </tr></thead>
-            <tbody>${oarRows || `<tr><td colspan="6" class="rp-empty">—</td></tr>`}</tbody>
-        </table>
+            <tbody>${oarRows || `<tr><td colspan="11" class="rp-empty">—</td></tr>`}</tbody>
+        </table></div>
         <div class="rp-btn-row">
             <button class="btn btn-outline" onclick="addOARDoseRow()">${s.addButtonLabel || '+ Add'}</button>
         </div>
     `);
+    html += _formSection(_reportTableText(_reportLang).title, 'implantPlan',
+        `<div class="rp-implant-readonly">${_reportImplantSections({ ...f, language: _reportLang })}</div>`);
     // Narrative
     html += _formSection('📝 ' + s.section5 + ' / ' + s.section6, 'narrative', `
         ${_formField({key:'interpretation', label:s.section5 + editorLabels.markdown, value:f.interpretation, type:'textarea', rows:5, section:'narrative'})}
@@ -407,18 +404,29 @@ function onReportFieldEdit(key) {
 // ----- 9. OAR / Reference / Figure helpers -----
 function addOARDoseRow() {
     if (!window.reportForm.oarDose) window.reportForm.oarDose = [];
-    window.reportForm.oarDose.push({ organ: '', d2cc: null, d1cc: null, d0_1cc: null, v100: null });
+    window.reportForm.oarDose.push({ organ: '', d2cc: null, d1cc: null, d0_1cc: null, v100: null, importance_basis: 'manual_edit' });
+    window.reportForm.editedFields.add('oarDose');
     renderReportEditor();
     _updateReportPreview();
+    _scheduleReportAutoSave();
 }
 function updateOARDoseRow(idx, key, value) {
     const row = window.reportForm.oarDose[idx];
     if (!row) return;
     row[key] = (key !== 'organ' && value !== '') ? parseFloat(value) : value;
+    window.reportForm.editedFields.add('oarDose');
+    row.importance_basis = 'manual_edit';
+    row.reference_metric = null;
+    row.reference_limit_gy = null;
+    row.reference_sources = [];
+    row.constraint_utilization = null;
+    row.review_status = 'manual_edit';
     _scheduleReportAutoSave();
+    _scheduleReportPreviewRefresh();
 }
 function removeOARDoseRow(idx) {
     window.reportForm.oarDose.splice(idx, 1);
+    window.reportForm.editedFields.add('oarDose');
     renderReportEditor();
     _updateReportPreview();
     _scheduleReportAutoSave();
@@ -808,7 +816,7 @@ function _reportDvhFallbackSource(dvhData) {
         '#fb7185', '#34d399', '#60a5fa', '#fbbf24',
     ];
     const entries = Object.entries(dvhData)
-        .map(([name, curve]) => ({ name, pairs: _reportDvhCurvePairs(curve) }))
+        .map(([name, curve]) => ({ name, curve, pairs: _reportDvhCurvePairs(curve) }))
         .filter(entry => entry.pairs.length >= 2)
         .sort((a, b) => {
             const aTarget = /^(CTV|PTV|GTV)$/i.test(a.name) ? 1 : 0;
@@ -819,7 +827,7 @@ function _reportDvhFallbackSource(dvhData) {
     if (!entries.length) return null;
     const data = entries.map((entry, index) => {
         const color = typeof _getOrganColor === 'function'
-            ? (_getOrganColor(entry.name) || fallbackColors[index % fallbackColors.length])
+            ? (_getOrganColor(entry.name, entry.curve) || fallbackColors[index % fallbackColors.length])
             : fallbackColors[index % fallbackColors.length];
         const isTarget = /^(CTV|PTV|GTV)$/i.test(entry.name);
         return {
@@ -827,7 +835,8 @@ function _reportDvhFallbackSource(dvhData) {
             y: entry.pairs.map(pair => pair[1]),
             type: 'scatter',
             mode: 'lines',
-            name: entry.name,
+            name: typeof _analysisStructurePresentation === 'function'
+                ? _analysisStructurePresentation(entry.name, entry.curve).name : entry.name,
             line: { color, width: isTarget ? 2.6 : 1.4, shape: 'linear' },
             fill: isTarget ? 'tozeroy' : 'none',
             fillcolor: isTarget ? 'rgba(14,165,233,0.10)' : undefined,

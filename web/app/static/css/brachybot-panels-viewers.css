@@ -1360,3 +1360,21 @@
     margin-bottom: 0.5rem;
     color: var(--text-dim);
 }
+/* Identity-owned report detail tables: readable A4 print and themed editor. */
+.hp-table-note { display: block; font-size: 8pt; line-height: 1.4; color: #475569; margin-top: 2px; }
+.hp-implant-table, .hp-oar-detail-table { font-size: 9pt; line-height: 1.5; table-layout: fixed; }
+.hp-implant-table th, .hp-implant-table td, .hp-oar-detail-table th, .hp-oar-detail-table td { padding: 1mm; overflow-wrap: anywhere; }
+.hp-oar-detail-table th:first-child { width: 5%; }
+.hp-oar-detail-table th:nth-child(2) { width: 30%; }
+.hp-implant-table th:first-child { width: 14%; }
+.hp-implant-table th:nth-child(5) { width: 30%; }
+.hp-coordinate, .hp-needle-endpoints { font-variant-numeric: tabular-nums; }
+.hp-implant-table caption { caption-side: top; text-align: left; color: #334155; font-size: 9pt; font-weight: 600; padding: 1mm 0; }
+.rp-implant-readonly { overflow-x: auto; }
+.rp-implant-readonly .hp-section-title { font-size: .85rem; color: var(--text); margin: 12px 0 6px; }
+.rp-implant-readonly .hp-section-body { color: var(--text); font-size: .75rem; }
+.rp-implant-readonly .hp-table-note { color: var(--text-dim); }
+.rp-implant-readonly .hp-grid-table { width: 100%; min-width: 620px; border-collapse: collapse; font-size: .7rem; }
+.rp-implant-readonly .hp-grid-table td, .rp-implant-readonly .hp-grid-table th { border: 1px solid var(--border); padding: 5px; color: var(--text); background: transparent; }
+.rp-implant-readonly .hp-grid-table th { background: var(--primary-soft); }
+.rp-implant-readonly .hp-implant-table caption { color: var(--text-dim); }

@@ -40,6 +40,13 @@ Use this when:
 - You need to understand the current state
 - User asks 'how to do X' in the interface
 
+For usage questions, query='usage' with components=[stable IDs or exact names]
+and optional panel. Retrieve siblings in ONE call. Returned usage cards explain
+gestures, prerequisites, outcomes, cancellation and limits from reviewed source.
+If the first-pass context already has these cards, answer without re-reading
+them. This is a read, not permission to click or execute. Empty/unknown cards
+mean documentation is unavailable; never infer a gesture from a button label.
+
 For an actionable request, prefer the returned action_capabilities. Each
 capability is derived from the real DOM control or handler and contains the
 exact ui_controller target, command, value, and value semantics. Do not infer
@@ -72,7 +79,7 @@ selected row, a previous-turn object, or a semantically neighboring object."""
     input_schema = {
         "query": {
             "type": "string",
-            "description": "What to query: 'state', 'scan', 'component', 'help', 'workflows'"
+            "description": "What to query: 'usage', 'state', 'scan', 'component', 'help', 'workflows', 'coverage'"
         },
         "component": {
             "type": "string",
@@ -81,7 +88,11 @@ selected row, a previous-turn object, or a semantically neighboring object."""
         "keyword": {
             "type": "string",
             "description": "Keyword to search in UI elements"
-        }
+        },
+        "components": {"type": "array", "items": {"type": "string"}, "maxItems": 16,
+                       "description": "Batch exact control names or stable DOM IDs for usage questions"},
+        "panel": {"type": "string", "description": "Optional panel: Input, Analysis, Viewers, Report, Global"},
+        "language": {"type": "string", "enum": ["zh", "en"]}
     }
     output_schema = {
         "success": {"type": "boolean"},
@@ -659,10 +670,26 @@ selected row, a previous-turn object, or a semantically neighboring object."""
 
     def _search_component(self, keyword: str) -> List[Dict]:
         """Search for components matching keyword."""
+        from agent_runtime.ui_control_manual import lookup
+        documented = lookup(keyword)
+        scanned = self._scan_ui_elements()
+        identities = {i for card in documented for i in card['control_ids']}
+        exact = [item for item in scanned.get('action_capabilities', [])
+                 if item.get('id') in identities or keyword.casefold() == str(item.get('id') or '').casefold()
+                 or keyword.casefold() in {str(item.get(k) or '').strip().casefold()
+                                          for k in ('label', 'label_en', 'label_zh')}]
+        if exact:
+            return [{"type": "action_capability", **item} for item in exact[:16]]
+        # No whole-app JS scan: 'Line' must never match 'planning_pipeline'.
+        pattern = re.compile(r'(?<![\w])'+re.escape(keyword.casefold())+r'(?![\w])')
+        return [{"type": "action_capability", **item}
+                for item in scanned.get('action_capabilities', [])
+                if pattern.search(' '.join(str(item.get(k) or '') for k in ('id', 'label', 'label_en', 'label_zh', 'title')).casefold())][:16]
+
+    def _search_source_component(self, keyword: str) -> List[Dict]:
+        """Legacy developer-only source search, not normal UI help retrieval."""
         html = self._load_html()
         source = html + "\n" + self._load_app_scripts()
-        if not source.strip():
-            return []
 
         results = []
         keyword_lower = keyword.lower()
@@ -845,12 +872,13 @@ selected row, a previous-turn object, or a semantically neighboring object."""
             "layouts": [c for c in elements.get("controls", []) if c.get("type") == "layout"],
             "window_presets": [c for c in elements.get("controls", []) if c.get("type") == "window_preset"],
             "typical_workflow": [
-                "1. Upload CT image in Input tab",
-                "2. Type 'segment' to automatically segment CTV and OAR",
-                "3. Type 'plan' or wait for automatic trajectory and seed planning",
-                "4. View DVH and evaluation results in Analysis tab",
-                "5. Type 'export' to generate DICOM files"
+                "Load CT; classify/select uploaded target masks as CTV, or run a supported CTV model",
+                "Prepare required OARs; review alignment, site-specific prescription and parameters",
+                "Run planning or prerequisite-ordered manual stages; inspect actual completion receipts",
+                "Review dose/DVH, geometry and freshness; regenerate stale downstream artifacts",
+                "Review and export the report/guide; software checks are not clinical approval"
             ],
+            "usage_query": {"query": "usage", "components": ["toolMeasure", "toolAngle"], "panel": "Viewers"},
             "tips": [
                 "Drag and drop files into chat to send",
                 "Ctrl+V to paste images",
@@ -860,19 +888,65 @@ selected row, a previous-turn object, or a semantically neighboring object."""
             ]
         }
 
+    @staticmethod
+    def _evidence_display(payload: Dict) -> str:
+        from agent_runtime.ui_control_manual import bounded_evidence_json
+        return bounded_evidence_json(payload)
+
+    @staticmethod
+    def _bounded_ui_evidence(state: Dict) -> Dict:
+        """LLM-facing projection: facts, not only 'Getting current UI state'.
+
+        Keep a valid bounded JSON object and disclose catalogue truncation.
+        Never serialize control values, credentials, arrays or raw handlers.
+        """
+        projected = {key: state.get(key) for key in ('loaded_files', 'computed')}
+        projected['basis'] = 'memory_presence_and_last_browser_snapshot_not_completion'
+        for key in ('visual_targets', 'ui_operations'):
+            rows = state.get(key) or []
+            allowed = ('ref', 'id', 'object_id', 'label', 'kind', 'target_refs', 'supported_surfaces',
+                       'visible', 'enabled', 'available', 'loaded', 'panel', 'action')
+            selected = []
+            for row in rows[:6]:
+                item = {k: row[k] for k in allowed if k in row}
+                for field in ('label', 'ref', 'id', 'object_id'):
+                    if isinstance(item.get(field), str): item[field] = item[field][:100]
+                if isinstance(item.get('action'), dict):
+                    item['action'] = {k: v for k, v in item['action'].items()
+                                      if k in {'target', 'command', 'value', 'object_id', 'group'}}
+                selected.append(item)
+            projected[key] = {'total': len(rows), 'included': selected, 'truncated': len(rows) > len(selected)}
+        return projected
+
     def _execute(self, **kwargs) -> ToolResult:
-        query = kwargs.get("query", "state")
+        query = kwargs.get("query") or ("component" if kwargs.get("component") else "usage" if kwargs.get("components") else "state")
         component = kwargs.get("component", "")
         keyword = kwargs.get("keyword", "")
 
         # Try to get agent reference
         agent = kwargs.get("agent", None)
+        language = kwargs.get("language") or getattr(getattr(agent, "memory", None), "user_lang", "en")
+
+        if query in {"usage", "coverage"} or (query == "help" and (component or kwargs.get("components"))):
+            from agent_runtime.ui_control_manual import usage_packet, coverage, manual_index
+            if query == "coverage":
+                report = coverage()
+                return ToolResult(success=True, data=report, display=self._evidence_display(report),
+                                  message="Source-bound UI manual coverage; unknown controls are explicitly listed.")
+            packet = usage_packet(kwargs.get("components") or component or keyword,
+                                  panel=kwargs.get("panel", ""), language=language)
+            if not packet['cards']:
+                packet['manual_index'] = manual_index(kwargs.get('panel', ''), language)
+            return ToolResult(success=True, data=packet,
+                              display=self._evidence_display(packet),
+                              message=f"Read {len(packet['cards'])} verified control usage cards; no UI action executed.")
 
         if query == "state":
             state = self._get_ui_state(agent)
             return ToolResult(
                 success=True,
                 data={"state": state},
+                display=self._evidence_display(self._bounded_ui_evidence(state)),
                 message="Getting current UI state"
             )
 
@@ -881,9 +955,14 @@ selected row, a previous-turn object, or a semantically neighboring object."""
             elements = self._scan_ui_elements()
             if keyword:
                 elements["matched_actions"] = self._search_component(keyword)
+            projection = self._bounded_ui_evidence({'ui_operations':elements.get('action_capabilities', [])})
+            projection['tabs'] = [row.get('label', row.get('id')) for row in elements.get('tabs', [])]
+            if keyword:
+                projection['matched_actions'] = elements['matched_actions']
             return ToolResult(
                 success=True,
                 data=elements,
+                display=self._evidence_display(projection),
                 message=(
                     f"Scanned {len(elements.get('tabs', []))} tabs, "
                     f"{len(elements.get('buttons', []))} buttons, "
@@ -899,17 +978,36 @@ selected row, a previous-turn object, or a semantically neighboring object."""
                     message="Please provide component keyword to search"
                 )
             results = self._search_component(component)
+            # Exact live identities take precedence over static shell guesses.
+            live = self._get_ui_state(agent)
+            pattern = re.compile(r'(?<![\w])'+re.escape(str(component).casefold())+r'(?![\w])')
+            live_matches = [item for item in live.get('ui_operations', [])
+                            if any(str(item.get(k) or '').casefold() == str(component).casefold()
+                                   for k in ('ref', 'id', 'label'))
+                            or pattern.search(' '.join(str(item.get(k) or '') for k in ('label', 'label_en', 'label_zh')).casefold())][:6]
+            from agent_runtime.ui_control_manual import usage_packet
+            usage = usage_packet(component, panel=kwargs.get("panel", ""), language=language)
+            actions = [{k: item[k] for k in ('id', 'label', 'action') if k in item} for item in results[:6]]
+            evidence = self._bounded_ui_evidence({'ui_operations': live_matches})
+            evidence['static_actions_not_runtime_availability'] = actions
+            evidence['usage'] = usage
             return ToolResult(
                 success=True,
-                data={"keyword": component, "results": results},
+                data={"keyword": component, "results": results, 'live_matches': live_matches, **usage},
+                display=self._evidence_display(evidence),
                 message=f"Found {len(results)} matching items"
             )
 
         elif query == "help":
             help_info = self._get_help()
+            from agent_runtime.ui_control_manual import manual_index
+            help_info['manual_index'] = manual_index(kwargs.get('panel', ''), language)
             return ToolResult(
                 success=True,
                 data=help_info,
+                display=self._evidence_display({'workflow':help_info['typical_workflow'],
+                                    'manual_index':help_info['manual_index'],
+                                    'usage_query':help_info['usage_query']}),
                 message="Help information"
             )
 
@@ -944,6 +1042,7 @@ selected row, a previous-turn object, or a semantically neighboring object."""
             return ToolResult(
                 success=True,
                 data={"workflows": workflows},
+                display=self._evidence_display({'workflows':workflows, 'basis':'workflow_documentation_not_dispatch_or_completion'}),
                 message="Available workflows"
             )
 
@@ -958,6 +1057,7 @@ selected row, a previous-turn object, or a semantically neighboring object."""
             return ToolResult(
                 success=True,
                 data={"keyword": keyword, "results": results},
+                display=self._evidence_display({'keyword':keyword, 'static_actions_not_runtime_availability':results}),
                 message=f"Search for '{keyword}' found {len(results)} results"
             )
 

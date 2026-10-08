@@ -24,6 +24,7 @@ function reportCaptureFailureMessage(result, language = 'en') {
 }
 
 function _oarVolumePercent(value, units) {
+    if (value === null || value === undefined || value === '' || typeof value === 'boolean') return null;
     const n = Number(value);
     if (!Number.isFinite(n)) return null;
     const kind = String(units || '').toLowerCase();
@@ -476,19 +477,27 @@ window.Report = (function () {
     }
 
     async function _fetchServerReportPatch(scope, language, sessionId = '') {
+        const form = window.reportForm;
+        const owner = _activeReportSessionId(sessionId);
+        const context = _reportTableContext(form);
         const response = await fetch('/api/report/auto-fill', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-BrachyBot-Session': _activeReportSessionId(sessionId),
+                'X-BrachyBot-Session': owner,
             },
             body: JSON.stringify({
                 scope: scope || 'all',
                 language: language || 'en',
                 sources: ['nifti', 'dicom', 'planning'],
+                planning_id: context.planningId,
+                planning_version: context.version,
             }),
         });
         const payload = await response.json().catch(() => ({}));
+        if (!_reportSessionIsCurrent(owner, form) || JSON.stringify(_reportTableContext(form)) !== JSON.stringify(context)) {
+            throw new Error('Report owner or planning revision changed; retry the current report.');
+        }
         if (!response.ok || !payload.success) {
             throw new Error(payload.error || `HTTP ${response.status}`);
         }
@@ -695,7 +704,9 @@ window.Report = (function () {
                 // regeneration path.
                 f.planningId = expectedPlanningId;
             }
-            const isCurrent = () => _reportSessionIsCurrent(expectedSessionId, f);
+            const expectedTableContext = JSON.stringify(_reportTableContext(f));
+            const isCurrent = () => _reportSessionIsCurrent(expectedSessionId, f)
+                && JSON.stringify(_reportTableContext(f)) === expectedTableContext;
             // 1. DICOM
             try {
                 const tags = await _fetchHeader(expectedSessionId);
@@ -1035,29 +1046,10 @@ window.Report = (function () {
                 if ((!onlyKey || onlyKey === 'oarDose') && m.oar_metrics) {
                     if (!f.editedFields || !f.editedFields.has('oarDose')
                         || _reportValueIsBlank(_getByPath(f, 'oarDose'))) {
-                        // BUG FIX 2026-06-17: previously capped at 12
-                        // OARs, hiding many clinically relevant organs
-                        // (stomach, kidney, liver, lung, vessels). Now
-                        // we include ALL OARs that received any dose
-                        // (D2cc, D1cc, D0.1cc, OR Dmax > 5 Gy), sorted
-                        // by D2cc descending so the highest-dose
-                        // organs appear first. User can still mark
-                        // rows hidden via editedFields.
-                        f.oarDose = Object.entries(m.oar_metrics)
-                            .filter(([n, x]) => x && (
-                                x.d2cc || x.d1cc || x.d0_1cc ||
-                                (x.dmax && x.dmax > 5)
-                            ))
-                            .map(([n, x]) => ({
-                                organ: _resolveOARDisplayName(n, x),
-                                label_id: x.label_id ?? x.labelId ?? null,
-                                d2cc: x.d2cc || null,
-                                d1cc: x.d1cc || null,
-                                d0_1cc: x.d0_1cc || null,
-                                dmax: x.dmax || x.max_dose || null,
-                                v100: _oarVolumePercent(x.v100, state.metrics.volume_metric_units),
-                            }))
-                            .sort((a, b) => (b.d2cc || 0) - (a.d2cc || 0));
+                        // Offline fallback retains every measured structure,
+                        // including zero dose. Authoritative server completion
+                        // adds case-priority ordering and unavailable rows.
+                        f.oarDose = _reportOarRowsFromMetrics(m.oar_metrics, m.volume_metric_units);
                         sources.set('oarDose', 'auto');
                     }
                 }

@@ -1435,9 +1435,11 @@ def test_oar_report_paths_normalize_volume_percentage_once():
     export = read("web/app/static/js/brachybot-report-export.js")
     dvh = read("web/app/static/js/brachybot-dvh-planning.js")
     assert "function _oarVolumePercent(value, units)" in shell
-    assert "_oarVolumePercent(x.v100, state.metrics.volume_metric_units)" in shell
+    tables = read("web/app/static/js/brachybot-report-plan-tables.js")
+    assert "_reportOarRowsFromMetrics(m.oar_metrics, m.volume_metric_units)" in shell
+    assert "_oarVolumePercent(x.v100, x.volume_metric_units || units)" in tables
     assert "function _oarVolumePercent(value, units)" in export
-    assert "_oarVolumePercent(x.v100, state.metrics.volume_metric_units)" in export
+    assert "_reportOarRowsFromMetrics(state.metrics.oar_metrics, state.metrics.volume_metric_units)" in export
     assert "function _dvhOarVolumePercent(value, units)" in dvh
 
 
@@ -2232,10 +2234,10 @@ def test_report_restore_preserves_quality_cells_and_keeps_section_order():
     block = report.split("function _updateReportPreview()", 1)[1].split(
         "function _hpMetricRow", 1
     )[0]
-    assert "const reportTotalPages = 4 + oarPageCount" in block
+    assert "const reportTotalPages = 5 + oarPageCount" in block
     assert "const figure1Rows = _reportFiguresForGroup(f, 'figure1');" in block
     assert "const figure2Rows = _reportFiguresForGroup(f, 'figure2');" in block
-    assert "p1 + figure1Pages + p2 + figure2Pages + supplementalPages + p3Pages + p4 + p5" in block
+    assert "p1 + figure1Pages + p2 + figure2Pages + supplementalPages + p3Pages + implantPages + p4 + p5" in block
     assert block.index("secondaryTitle('Target & Prescription')") < block.index("secondaryTitle('Plan Quality Assessment')")
     assert block.index("secondaryTitle('Plan Quality Assessment')") < block.index("secondaryTitle('OAR Dose')")
     assert block.index("secondaryTitle('OAR Dose')") < block.index("secondaryTitle('Clinical Interpretation')")

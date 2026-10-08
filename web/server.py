@@ -2096,6 +2096,13 @@ def create_app(config: Optional[Dict] = None):
         data = request.get_json() or {}
         scope = data.get("scope", "all")
         language = data.get("language", "en")
+        if data.get("planning_id"):
+            from web.planning_runs import active_planning_id
+            if str(data["planning_id"]) != str(active_planning_id(agent.memory)):
+                return jsonify({"success": False, "error": "Planning changed; regenerate the current report"}), 409
+        if data.get("planning_version") is not None:
+            if data["planning_version"] != (agent.memory.retrieve("manual_plan_version") or 0):
+                return jsonify({"success": False, "error": "Planning geometry changed; regenerate the current report"}), 409
         sources = set(data.get("sources", ["nifti", "dicom", "planning"]))
         patch = {}
         provenance = {"dicom": [], "nifti": [], "planning": [], "derived": []}
@@ -2325,37 +2332,11 @@ def create_app(config: Optional[Dict] = None):
                 except Exception as e:
                     logger.warning(f"report context patch failed: {e}")
 
-                # OAR list
-                oar = agent.memory.retrieve("oar_metrics") or {}
-                if oar and scope in ("all", "oar"):
-                    dose_metric_units = None
-                    dose_metrics_for_units = agent.memory.retrieve("dose_metrics")
-                    if isinstance(dose_metrics_for_units, dict):
-                        dose_metric_units = dose_metrics_for_units.get("volume_metric_units")
-                    oar_list = []
-                    for n, v in oar.items():
-                        if not isinstance(v, dict):
-                            continue
-                        display_name = _server_support._canonical_oar_display_name(
-                            n,
-                            v.get("label_id"),
-                        )
-                        d2 = v.get("d2cc"); d1 = v.get("d1cc"); d0 = v.get("d0_1cc")
-                        if not (d2 or d1 or d0):
-                            continue
-                        oar_list.append({
-                            "organ": display_name,
-                            "d2cc": round(float(d2), 1) if d2 else None,
-                            "d1cc": round(float(d1), 1) if d1 else None,
-                            "d0_1cc": round(float(d0), 1) if d0 else None,
-                            "v100": _server_support._volume_metric_as_percent(
-                                v.get("v100"),
-                                units=dose_metric_units,
-                            ),
-                        })
-                    oar_list.sort(key=lambda x: (x.get("d2cc") or 0), reverse=True)
-                    patch["oarDose"] = oar_list[:12]
-                    provenance["planning"].append("oarDose")
+                if scope in ("all", "oar"):
+                    from web.report_plan_tables import report_table_patch
+                    tables = report_table_patch(agent, scope, patch.get("planning.prescriptionRationale"))
+                    patch.update(tables)
+                    provenance["derived"].extend(tables)
 
             # ---- Clinical interpretation / safety (LLM-style template) ----
             if scope in ("all", "interpretation"):
@@ -2373,6 +2354,8 @@ def create_app(config: Optional[Dict] = None):
                 "language": language,
                 "marker": "report-update",
             })
+        except ValueError as e:
+            return jsonify({"success": False, "error": str(e)}), 409
         except Exception as e:
             import traceback
             logger.error(f"Report auto-fill failed: {e}")

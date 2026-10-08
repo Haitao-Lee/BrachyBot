@@ -63,7 +63,7 @@
     <script src="static/js/html2canvas.min.js?v=2" onerror="console.error('Failed to load html2canvas.min.js')"></script>
     <link rel="stylesheet" href="static/css/brachybot-theme-layout.css?v=13">
     <link rel="stylesheet" href="static/css/brachybot-chat-status.css?v=21">
-    <link rel="stylesheet" href="static/css/brachybot-panels-viewers.css?v=16">
+    <link rel="stylesheet" href="static/css/brachybot-panels-viewers.css?v=17">
     <link rel="stylesheet" href="static/css/brachybot-report-controls.css?v=30">
     <link rel="stylesheet" href="static/css/brachybot-responsive.css?v=4">
     <link rel="stylesheet" href="static/css/brachybot-auth.css?v=9">
@@ -1016,6 +1016,7 @@
 
                 <div class="metrics-section" data-flex="grow" id="metricsDVH">
                     <div class="metrics-title">Dose-Volume Histogram</div>
+                    <div id="dvhCoverageStatus" role="status" aria-live="polite" style="color:var(--text-dim);font-size:0.65rem;line-height:1.4;padding:0 0.5rem 0.35rem;"></div>
                     <div class="dvh-container" id="dvhChart">
                         <div class="dvh-placeholder" id="dvhPlaceholder">
                             <div style="font-size:1.2rem;opacity:0.3;">&#128202;</div>
@@ -1608,27 +1609,30 @@
 -->
 <script src="static/js/brachybot-chat-core.js?v=41"></script>
 <script src="static/js/brachybot-chat-todo.js?v=75"></script>
-<script src="static/js/brachybot-ui-api.js?v=134"></script>
+<script src="static/js/brachybot-ui-api.js?v=135"></script>
+<link rel="stylesheet" href="static/css/brachybot-control-guide.css?v=1">
+<script src="static/js/brachybot-control-guide.js?v=1"></script>
 <link rel="stylesheet" href="static/css/brachybot-monitor-dashboard.css?v=8">
 <script src="static/js/brachybot-monitor-interaction.js?v=10"></script>
 <script src="static/js/brachybot-monitor-dashboard.js?v=9"></script>
 <script src="static/js/brachybot-auth.js?v=12"></script>
-<script src="static/js/brachybot-viewer-volume.js?v=90"></script>
-<script src="static/js/brachybot-viewer-layout.js?v=48"></script>
+<script src="static/js/brachybot-viewer-volume.js?v=91"></script>
+<script src="static/js/brachybot-viewer-layout.js?v=49"></script>
 <script src="static/js/brachybot-depth-peeling.js?v=2"></script>
-<script src="static/js/brachybot-3d-manual.js?v=123"></script>
+<script src="static/js/brachybot-3d-manual.js?v=124"></script>
 <script src="static/js/brachybot-manual-step-results.js?v=2"></script>
 <script src="static/js/brachybot-input-actions.js?v=1"></script>
 <script src="static/js/brachybot-manual-annotation.js?v=32"></script>
 <script src="static/js/brachybot-sat3d-interaction.js?v=1"></script>
 <script src="static/js/brachybot-surgical-guide.js?v=22"></script>
 <script src="static/js/brachybot-visual-annotation.js?v=9"></script>
-<script src="static/js/brachybot-dvh-planning.js?v=42"></script>
-<script src="static/js/brachybot-report-shell.js?v=34"></script>
-<script src="static/js/brachybot-report-editor.js?v=56"></script>
-<script src="static/js/brachybot-workspace.js?v=72"></script>
+<script src="static/js/brachybot-dvh-planning.js?v=43"></script>
+<script src="static/js/brachybot-report-shell.js?v=35"></script>
+<script src="static/js/brachybot-report-plan-tables.js?v=1"></script>
+<script src="static/js/brachybot-report-editor.js?v=58"></script>
+<script src="static/js/brachybot-workspace.js?v=73"></script>
 <script src="static/js/brachybot-session-cache.js?v=4"></script>
-<script src="static/js/brachybot-report-export.js?v=44"></script>
+<script src="static/js/brachybot-report-export.js?v=45"></script>
 <script src="static/js/brachybot-data-export.js?v=5"></script>
 <script src="static/js/brachybot-range-stepper.js?v=2"></script>
 <script src="static/js/brachybot-theme.js?v=1"></script>

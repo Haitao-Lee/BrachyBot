@@ -507,6 +507,7 @@ function setViewerTool(tool) {
         if (typeof window.scheduleWorkspaceSave === 'function') {
             window.scheduleWorkspaceSave('viewer.tool');
         }
+        window.refreshControlUsageGuide?.();
         return;
     }
     state.viewerSettings.activeTool = tool;
@@ -566,6 +567,7 @@ function setViewerTool(tool) {
     if (typeof window.scheduleWorkspaceSave === 'function') {
         window.scheduleWorkspaceSave('viewer.tool');
     }
+    window.refreshControlUsageGuide?.();
 }
 
 // Restore only the visual affordance of the active tool.  Calling

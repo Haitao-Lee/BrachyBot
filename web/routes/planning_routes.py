@@ -3513,6 +3513,38 @@ def register_planning_routes(
             logger.error(traceback.format_exc())
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/planning/structure-analysis", methods=["GET"])
+    @require_api_key
+    @rate_limit
+    def api_structure_analysis():
+        """Complete the classified Structure Set without inference or writes."""
+        agent = get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+        pending = dose_workspace_data_pending(agent)
+        if pending is not None:
+            return pending
+        planning_id = active_planning_id(agent.memory)
+        expected = request.args.get('planning_id')
+        if expected and str(expected) != str(planning_id):
+            return jsonify({"error": "Planning changed; refresh current analysis"}), 409
+        context = _dose_display_context(agent)
+        try:
+            from web.structure_dvh import complete_structure_analysis
+            from web.routes.viewer_routes import _viewer_display_label_arrays
+            result = complete_structure_analysis(
+                agent, context, _saved_dose_scale_gy(agent, context.get('metrics')),
+                label_resolver=_viewer_display_label_arrays,
+                dose_resolver=_dose_overlay_volume_array,
+            )
+            if active_planning_id(agent.memory) != planning_id:
+                return jsonify({"error": "Planning changed during analysis"}), 409
+            return jsonify({"success": True, "planning_id": planning_id,
+                            "dose_generation": _dose_data_generation(agent, context),
+                            **_dose_display_metadata(agent, context), **result})
+        except (ValueError, TypeError) as exc:
+            return jsonify({"success": False, "error": str(exc), "planning_id": planning_id}), 409
+
     @app.route("/api/planning/runs", methods=["GET"])
     @require_api_key
     @rate_limit
@@ -5174,6 +5206,15 @@ def register_planning_routes(
         except Exception as e:
             logger.error(f"Config update failed: {e}")
             return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/ui/manual", methods=["GET"])
+    @require_api_key
+    @rate_limit
+    def api_ui_manual():
+        """Read usage documentation without hydrating a case or exposing values."""
+        from agent_runtime.ui_control_manual import VERSION, catalog
+        return jsonify({"success": True, "manual_version": VERSION,
+                        "basis": "source_bound_usage_not_runtime_receipt", "cards": catalog()})
 
     @app.route("/api/ui/state", methods=["GET", "POST"])
     @require_api_key

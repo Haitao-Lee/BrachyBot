@@ -2480,7 +2480,8 @@
     const REPORT_FORM_KEYS = new Set([
         'version', 'language', 'templateKey', 'sessionId', 'planningId', 'planning_id', 'updatedAt', 'updated_at',
         'hospital', 'patient', 'study', 'case', 'imaging', 'segmentation',
-        'planning', 'metrics', 'qualityAssessment', 'oarDose', 'interpretation', 'safety', 'qaNotes',
+        'planning', 'metrics', 'qualityAssessment', 'oarDose', 'oarDoseOrdering', 'implantPlan',
+        'interpretation', 'safety', 'qaNotes',
         'references', 'figures', 'signature', 'editedFields',
     ]);
 

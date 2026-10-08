@@ -1,4 +1,5 @@
 function _oarVolumePercent(value, units) {
+    if (value === null || value === undefined || value === '' || typeof value === 'boolean') return null;
     const n = Number(value);
     if (!Number.isFinite(n)) return null;
     const kind = String(units || '').toLowerCase();
@@ -251,21 +252,27 @@ async function reportAutoFill(options = {}) {
         if (m.gi !== undefined) f.metrics.gi = m.gi;
         if (m.plan_score !== undefined) f.metrics.score = m.plan_score;
     }
-    if (state.metrics && state.metrics.oar_metrics) {
-        f.oarDose = Object.entries(state.metrics.oar_metrics)
-            .filter(([n, x]) => x && (x.d2cc || x.d1cc || x.d0_1cc))
-            .map(([n, x]) => ({
-                organ: _resolveOARDisplayName(n, x),
-                label_id: x.label_id ?? x.labelId ?? null,
-                d2cc: x.d2cc || null,
-                d1cc: x.d1cc || null,
-                d0_1cc: x.d0_1cc || null,
-                dmax: x.dmax || x.max_dose || null,
-                v100: _oarVolumePercent(x.v100, state.metrics.volume_metric_units),
-            }))
-            .sort((a, b) => (b.d2cc || 0) - (a.d2cc || 0)).slice(0, 12);
+    if (state.metrics && state.metrics.oar_metrics && !f.editedFields.has('oarDose')) {
+        f.oarDose = _reportOarRowsFromMetrics(state.metrics.oar_metrics, state.metrics.volume_metric_units);
     }
     if (dataTreeState && dataTreeState.organs) f.case.oarCount = dataTreeState.organs.length || f.case.oarCount;
+    // The legacy refresh path must use the same authoritative report tables
+    // as chat/server autofill. Fence replies to the original form and plan.
+    const tableContext = _reportTableContext(f);
+    try {
+        const response = await fetch('/api/report/auto-fill', {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'X-BrachyBot-Session': expectedSessionId },
+            body: JSON.stringify({ scope: 'all', language: window._i18nLang || f.language || 'en', sources: ['planning'], planning_id: tableContext.planningId, planning_version: tableContext.version }),
+        });
+        const payload = await response.json();
+        if (!isCurrentCase() || window.reportForm !== f || JSON.stringify(_reportTableContext(f)) !== JSON.stringify(tableContext)) return { stale: true };
+        if (response.ok && payload.success) {
+            for (const key of ['oarDose', 'oarDoseOrdering', 'implantPlan']) {
+                if (payload.patch?.[key] !== undefined && !f.editedFields.has(key)) f[key] = payload.patch[key];
+            }
+            if (f.implantPlan?.planning_id) f.planningId = f.implantPlan.planning_id;
+        }
+    } catch (error) { console.warn('[Report] Saved implant tables unavailable:', error); }
     // BUG FIX 2026-06-22: respect global UI language first
     if (typeof window._i18nLang === 'string') {
         f.language = window._i18nLang;
@@ -488,6 +495,8 @@ function _localizedEmptyReportForm(language) {
         // these cells from in-memory rationale loses them after restore.
         qualityAssessment: { version: 3, language: language, generatedAt: 0, inputFingerprint: '', metrics: {} },
         oarDose: [],
+        oarDoseOrdering: null,
+        implantPlan: null,
         interpretation: '',
         safety: '',
         qaNotes: '',
@@ -1282,6 +1291,7 @@ function _reportFlowSplitNode(node, documentRef, chunkSizeOverride = null) {
     for (let offset = 0; offset < children.length; offset += chunkSize) {
         const clone = node.cloneNode(false);
         if (tag === 'table') {
+            if (node.caption) clone.appendChild(node.caption.cloneNode(true));
             if (node.tHead) clone.appendChild(node.tHead.cloneNode(true));
             const tbody = documentRef.createElement('tbody');
             children.slice(offset, offset + chunkSize).forEach(row => {
@@ -1423,6 +1433,12 @@ function _paginateReportFlow(pagesEl, labels = {}) {
             const includeHeading = firstFragment;
             let fitCount = 0;
             const remaining = info.units.length - unitIndex;
+            // Do not strand a needle heading and its endpoint summary at a
+            // page bottom with the first seed table starting on the next page.
+            const firstSeedTable = firstFragment && info.key.startsWith('implant-channel-')
+                ? info.units.findIndex(unit => unit.classList?.contains('hp-implant-table')) : -1;
+            const minimumLead = current.body.children.length && firstSeedTable >= 0
+                ? firstSeedTable + 1 : 1;
             for (let count = 1; count <= Math.max(1, remaining); count += 1) {
                 const trialUnits = info.units.slice(unitIndex, unitIndex + count);
                 const trial = _reportFlowFragment(info, trialUnits, includeHeading, documentRef);
@@ -1437,7 +1453,7 @@ function _paginateReportFlow(pagesEl, labels = {}) {
                     return false;
                 }
                 if (!fits) break;
-                fitCount = count;
+                if (count >= minimumLead) fitCount = count;
             }
 
             if (fitCount > 0) {
@@ -1580,9 +1596,9 @@ function _updateReportPreview() {
     // A fixed A4 page cannot safely contain an unbounded OAR table. Keep the
     // table header on every continuation sheet instead of allowing row count
     // to expand the page beyond the physical paper boundary.
-    const reportOarRowsPerPage = 24;
+    const reportOarRowsPerPage = 10;
     const oarPageCount = Math.max(1, Math.ceil(reportOarRows.length / reportOarRowsPerPage));
-    const reportTotalPages = 4 + oarPageCount
+    const reportTotalPages = 5 + oarPageCount
         + figure1PageCount + figure2PageCount + supplementalPageCount;
     const pageFooter = (pageNo) =>
         `<div class="hp-page-footer"><span class="pageno">— ${escHtml(s.page)} ${pageNo} ${escHtml(s.pageOf)} ${reportTotalPages} —</span></div>`;
@@ -1786,22 +1802,7 @@ function _updateReportPreview() {
             );
             const headingSuffix = pageIndex > 0 ? ` (${pageIndex + 1})` : '';
             const table = reportOarRows.length > 0
-                ? `<table class="hp-grid-table">
-                    <thead><tr><th>${escHtml(s.organ)}</th><th>${d2ccLabel} (${U.Gy})</th><th>${d1ccLabel} (${U.Gy})</th><th>${d01ccLabel} (${U.Gy})</th><th>${v100Label} (${U.percent})</th></tr></thead>
-                    <tbody>
-                    ${pageRows.map(o => {
-                        const organName = _resolveOARDisplayName(o.organ, o);
-                        const oarV100 = _oarVolumePercent(o.v100, 'percent');
-                        return `<tr>
-                            <td>${escHtml(organName)}</td>
-                            <td>${o.d2cc !== null ? o.d2cc.toFixed(1) : ND}</td>
-                            <td>${o.d1cc !== null ? o.d1cc.toFixed(1) : ND}</td>
-                            <td>${o.d0_1cc !== null ? o.d0_1cc.toFixed(1) : ND}</td>
-                            <td>${oarV100 !== null ? oarV100.toFixed(1) : ND}</td>
-                        </tr>`;
-                    }).join('')}
-                    </tbody>
-                </table>`
+                ? _reportOarTables(pageRows, f.language)
                 : `<p class="no-indent">${escHtml(noOarDose)}</p>`;
             html += `<div class="report-page report-text-page report-flow-page" data-report-flow-page="true">
                 <div class="hp-running-header"><span>${escHtml(s.confidentiality)}</span><span class="right">${escHtml(oarSection)}${escHtml(headingSuffix)}</span></div>
@@ -1815,6 +1816,9 @@ function _updateReportPreview() {
                                     : 'The OAR values below are observed metrics. Interpret them against applicable site-specific guidance or a confirmed case protocol; the software does not infer pass/fail from defaults.')}</p>`
                                 : ''}
                             ${pageIndex > 0 ? `<p class="no-indent hp-continuation-note">${escHtml(continuationText)}</p>` : ''}
+                            ${pageIndex === 0 ? `<p class="hp-table-note">${escHtml(_reportTableText(f.language).priorityNote)}${f.oarDoseOrdering?.stale ? ' ' + escHtml(_reportTableText(f.language).stale) : ''}</p>` : ''}
+                            ${pageIndex === 0 && f.oarDoseOrdering?.coverage?.status && f.oarDoseOrdering.coverage.status !== 'complete'
+                                ? `<p class="hp-table-note">${escHtml(_reportTableText(f.language).incomplete)}</p>` : ''}
                             ${table}
                         </div>
                     </section>
@@ -1826,6 +1830,10 @@ function _updateReportPreview() {
     };
     const p3Pages = renderOarPages(nextPageNo);
     nextPageNo += oarPageCount;
+    const implantPages = `<div class="report-page report-flow-page" data-report-flow-page="true">
+        <div class="hp-running-header"><span>${escHtml(s.confidentiality)}</span><span class="right">${escHtml(_reportTableText(f.language).title)}</span></div>
+        <div class="report-flow-page-body">${_reportImplantSections(f)}</div>${pageFooter(nextPageNo)}</div>`;
+    nextPageNo += 1;
 
     // ============== PAGE 4: Clinical Interpretation ==============
     let p4 = `<div class="report-page report-flow-page" data-report-flow-page="true">
@@ -1899,7 +1907,7 @@ function _updateReportPreview() {
         </div></section>`;
     p5 += `</div>${pageFooter(nextPageNo)}</div>`;
 
-    pagesEl.innerHTML = p1 + figure1Pages + p2 + figure2Pages + supplementalPages + p3Pages + p4 + p5;
+    pagesEl.innerHTML = p1 + figure1Pages + p2 + figure2Pages + supplementalPages + p3Pages + implantPages + p4 + p5;
     _paginateReportFlow(pagesEl, { page: s.page, pageOf: s.pageOf });
     pagesEl.querySelectorAll('img[data-report-screenshot="true"]').forEach(image => {
         const candidate = String(image.getAttribute('src') || '').trim();
@@ -2158,6 +2166,7 @@ function exportReportMarkdown() {
             : 'Not observed';
         lines.push('| ' + row[0] + ' | ' + observed + ' | ' + _metricReferenceMarkdown(f, assessment) + ' | ' + (assessment.statusText || 'Not assessed') + ' |');
     });
+    lines.push(..._reportDetailedTablesMarkdown(f));
     if (f.interpretation) { lines.push(''); lines.push('## ' + s.section5); lines.push(f.interpretation); }
     lines.push('');
     lines.push('## ' + s.section7);
@@ -2304,6 +2313,15 @@ function _printableCss() {
         .hp-grid-table th, .hp-grid-table td { border: 1px solid #cbd5e1; padding: 1.2mm 2mm; text-align: left; }
         .hp-grid-table th { background: #e0f2fe; color: #0c4a6e; font-weight: 600; }
         .hp-grid-table tr:nth-child(even) td { background: #f8fafc; }
+        .hp-table-note { display: block; font-size: 8pt; line-height: 1.4; color: #475569; margin-top: 2px; }
+        .hp-implant-table, .hp-oar-detail-table { font-size: 9pt; line-height: 1.5; table-layout: fixed; }
+        .hp-implant-table th, .hp-implant-table td, .hp-oar-detail-table th, .hp-oar-detail-table td { padding: 1mm; overflow-wrap: anywhere; }
+        .hp-oar-detail-table th:first-child { width: 5%; }
+        .hp-oar-detail-table th:nth-child(2) { width: 30%; }
+        .hp-implant-table th:first-child { width: 14%; }
+        .hp-implant-table th:nth-child(5) { width: 30%; }
+        .hp-coordinate, .hp-needle-endpoints { font-variant-numeric: tabular-nums; }
+        .hp-implant-table caption { caption-side: top; text-align: left; color: #334155; font-size: 9pt; font-weight: 600; padding: 1mm 0; }
         .hp-key { color: #0c4a6e; font-weight: 600; }
         .hp-badge.pass { background: #dcfce7; color: #166534; padding: 0.5mm 2mm; border-radius: 1mm; font-size: 8.5pt; }
         .hp-badge.warn { background: #fef3c7; color: #92400e; padding: 0.5mm 2mm; border-radius: 1mm; font-size: 8.5pt; }

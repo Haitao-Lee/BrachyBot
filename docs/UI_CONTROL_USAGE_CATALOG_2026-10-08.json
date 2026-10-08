@@ -1,0 +1,4406 @@
+{
+  "coverage": {
+    "version": "2026-10-08.1",
+    "interactive_controls": 219,
+    "reviewed_cards": 66,
+    "source_bound_controls": 219,
+    "unknown_controls": [],
+    "dynamic_controls": "Require live ui_operations stable refs; no invented bindings."
+  },
+  "cards": [
+    {
+      "key": "viewer.line",
+      "control_ids": [
+        "toolMeasure"
+      ],
+      "handlers": [],
+      "panel": "Viewers",
+      "names": {
+        "zh": "Line · 线段测距",
+        "en": "Line · distance"
+      },
+      "aliases": [
+        "Line",
+        "线段测距",
+        "测距"
+      ],
+      "purpose": {
+        "zh": "测量同一二维切片上两点的物理距离。",
+        "en": "Measure physical distance between two points on one 2D slice."
+      },
+      "steps": {
+        "zh": "先加载 CT，并打开轴向、矢状或冠状二维切片。选择 Line，在起点按住鼠标左键，拖到终点后松开。",
+        "en": "Load CT and open an axial, sagittal or coronal 2D slice. Select Line, hold the left mouse button at the start, drag to the end and release."
+      },
+      "result": {
+        "zh": "切片上保留线段和 mm 距离，计算使用图像间距与显示缩放。",
+        "en": "The slice retains a line and distance in mm, using image spacing and display scaling."
+      },
+      "caution": {
+        "zh": "再点同一个工具可退出；切换工具会清除未完成的点。Undo 可撤销刚完成的标注。仅测当前切片，不是三维针道角度或临床结论。",
+        "en": "Click the active tool again to exit; switching tools clears unfinished points. Undo removes a completed annotation. This is a slice measurement, not a 3D needle angle or clinical conclusion."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/static/js/brachybot-viewer-layout.js:setViewerTool",
+        "web/app/static/js/brachybot-manual-annotation.js:setupAnnotationTool"
+      ],
+      "bindings": [
+        {
+          "id": "toolMeasure",
+          "label": "📏 line",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "viewer.angle",
+      "control_ids": [
+        "toolAngle"
+      ],
+      "handlers": [],
+      "panel": "Viewers",
+      "names": {
+        "zh": "Angle · 角度测量",
+        "en": "Angle · angle measurement"
+      },
+      "aliases": [
+        "Angle",
+        "角度测量",
+        "量角"
+      ],
+      "purpose": {
+        "zh": "测量同一二维切片上两条线段的夹角。",
+        "en": "Measure the angle between two segments on one 2D slice."
+      },
+      "steps": {
+        "zh": "先加载 CT，并打开轴向、矢状或冠状二维切片。选择 Angle，依次左键点第一条边上的点、顶点、第二条边上的点；第二个点是角的顶点。三个点必须在同一视图、同一切片。",
+        "en": "Load CT and open an axial, sagittal or coronal 2D slice. Select Angle and left-click a point on the first arm, the vertex, then a point on the second arm. The SECOND point is the vertex. Keep all three points in the same view and slice."
+      },
+      "result": {
+        "zh": "第三点完成后显示夹角（°）；按物理像素间距计算。",
+        "en": "After the third point, the angle in degrees is displayed, accounting for physical pixel spacing."
+      },
+      "caution": {
+        "zh": "再点同一个工具可退出；切换工具会清除未完成的点。Undo 可撤销刚完成的标注。仅测当前切片，不是三维针道角度或临床结论。",
+        "en": "Click the active tool again to exit; switching tools clears unfinished points. Undo removes a completed annotation. This is a slice measurement, not a 3D needle angle or clinical conclusion."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/static/js/brachybot-viewer-layout.js:setViewerTool",
+        "web/app/static/js/brachybot-manual-annotation.js:setupAnnotationTool"
+      ],
+      "bindings": [
+        {
+          "id": "toolAngle",
+          "label": "∠ angle",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "viewer.crosshair",
+      "control_ids": [
+        "toolCrosshair"
+      ],
+      "handlers": [],
+      "panel": "Viewers",
+      "names": {
+        "zh": "Crosshair · 十字定位",
+        "en": "Crosshair"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "联动三张二维切片定位。",
+        "en": "Locate a point across the three linked slices."
+      },
+      "steps": {
+        "zh": "加载 CT，选择 Crosshair，在二维切片中定位或拖动十字线。",
+        "en": "Load CT, select Crosshair and locate or drag the crosshair in a 2D slice."
+      },
+      "result": {
+        "zh": "其他切片联动到对应体素。",
+        "en": "The other slices move to the corresponding voxel."
+      },
+      "caution": {
+        "zh": "改变浏览位置，不改变分割或规划。",
+        "en": "Changes navigation, not segmentation or planning."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/static/js/brachybot-viewer-layout.js:setViewerTool",
+        "web/app/static/js/brachybot-manual-annotation.js:setupAnnotationTool"
+      ],
+      "bindings": [
+        {
+          "id": "toolCrosshair",
+          "label": "⨯ crosshair",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "viewer.rect",
+      "control_ids": [
+        "toolRect"
+      ],
+      "handlers": [],
+      "panel": "Viewers",
+      "names": {
+        "zh": "Rect · 矩形测量",
+        "en": "Rect · rectangle measurement"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "在二维切片画矩形测量标记。",
+        "en": "Draw a rectangular measurement annotation on a 2D slice."
+      },
+      "steps": {
+        "zh": "先加载 CT，并打开轴向、矢状或冠状二维切片。选择 Rect，按住左键拖出矩形后松开。",
+        "en": "Load CT and open an axial, sagittal or coronal 2D slice. Select Rect, hold the left button, drag a rectangle and release."
+      },
+      "result": {
+        "zh": "显示矩形测量标记，不自动生成 CTV。",
+        "en": "Displays a measurement rectangle; does not create a CTV."
+      },
+      "caution": {
+        "zh": "再点同一个工具可退出；切换工具会清除未完成的点。Undo 可撤销刚完成的标注。仅测当前切片，不是三维针道角度或临床结论。",
+        "en": "Click the active tool again to exit; switching tools clears unfinished points. Undo removes a completed annotation. This is a slice measurement, not a 3D needle angle or clinical conclusion."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/static/js/brachybot-viewer-layout.js:setViewerTool",
+        "web/app/static/js/brachybot-manual-annotation.js:setupAnnotationTool"
+      ],
+      "bindings": [
+        {
+          "id": "toolRect",
+          "label": "□ rect",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "viewer.zoombox",
+      "control_ids": [
+        "toolZoombox"
+      ],
+      "handlers": [],
+      "panel": "Viewers",
+      "names": {
+        "zh": "Zoom · 框选放大",
+        "en": "Zoom · box zoom"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "放大二维框选区域。",
+        "en": "Zoom into a selected 2D region."
+      },
+      "steps": {
+        "zh": "先加载 CT，并打开轴向、矢状或冠状二维切片。选择 Zoom，左键拖出足够大的矩形框后松开。",
+        "en": "Load CT and open an axial, sagittal or coronal 2D slice. Select Zoom, drag a sufficiently large rectangle and release."
+      },
+      "result": {
+        "zh": "调整二维缩放和平移。Fit 可重新适配视野。",
+        "en": "Adjusts 2D zoom and pan. Fit fits the view again."
+      },
+      "caution": {
+        "zh": "小于约 20 显示像素的框不会生效；不改变原图。",
+        "en": "Boxes smaller than about 20 display pixels do not apply; the image data is unchanged."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/static/js/brachybot-viewer-layout.js:setViewerTool",
+        "web/app/static/js/brachybot-manual-annotation.js:setupAnnotationTool"
+      ],
+      "bindings": [
+        {
+          "id": "toolZoombox",
+          "label": "🔍 zoom",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "viewer.draw",
+      "control_ids": [
+        "toolAnnotate"
+      ],
+      "handlers": [],
+      "panel": "Viewers",
+      "names": {
+        "zh": "Draw · 手绘掩膜",
+        "en": "Draw · manual mask"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "手绘分割掩膜，是真实体素编辑。",
+        "en": "Draw a segmentation mask; this edits actual voxels."
+      },
+      "steps": {
+        "zh": "先加载 CT，并打开轴向、矢状或冠状二维切片。选择 Draw 创建活动掩膜，在二维切片上按住左键画闭合轮廓。",
+        "en": "Load CT and open an axial, sagittal or coronal 2D slice. Select Draw to create an active mask, then hold the left button to draw a closed contour on a 2D slice."
+      },
+      "result": {
+        "zh": "轮廓填充到活动掩膜；可在 Data Tree 查看，再分类到 CTV/OAR。",
+        "en": "The contour is filled into the active mask, visible in Data Tree for subsequent CTV/OAR classification."
+      },
+      "caution": {
+        "zh": "再点 Draw 或切换到其他非 Erase 工具会结束活动掩膜；Undo 撤销体素编辑。手绘结果不是临床批准。",
+        "en": "Click Draw again or switch to a non-Erase tool to finalize the active mask. Undo reverts voxel edits. Drawing does not confer clinical approval."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/static/js/brachybot-viewer-layout.js:setViewerTool",
+        "web/app/static/js/brachybot-manual-annotation.js:setupAnnotationTool"
+      ],
+      "bindings": [
+        {
+          "id": "toolAnnotate",
+          "label": "✎ draw",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "viewer.erase",
+      "control_ids": [
+        "toolEraser"
+      ],
+      "handlers": [],
+      "panel": "Viewers",
+      "names": {
+        "zh": "Erase · 擦除掩膜",
+        "en": "Erase · mask eraser"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "擦除当前活动手绘掩膜的体素。",
+        "en": "Erase voxels from the active manual mask."
+      },
+      "steps": {
+        "zh": "先用 Draw 创建或绘制活动掩膜，再选择 Erase，左键圈出需要擦除的区域。",
+        "en": "Create or draw an active mask with Draw first, select Erase, then outline the region to erase with the left button."
+      },
+      "result": {
+        "zh": "活动掩膜中对应区域被擦除。",
+        "en": "The corresponding region is removed from the active mask."
+      },
+      "caution": {
+        "zh": "没有活动掩膜时不执行；不是删除 Line/Angle 的工具，撤销测量请用 Undo。",
+        "en": "Does nothing without an active mask. It does not delete Line/Angle annotations; use Undo for measurements."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/static/js/brachybot-viewer-layout.js:setViewerTool",
+        "web/app/static/js/brachybot-manual-annotation.js:setupAnnotationTool"
+      ],
+      "bindings": [
+        {
+          "id": "toolEraser",
+          "label": "⌫ erase",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "viewer.sat.true",
+      "control_ids": [
+        "toolSat3dPositive"
+      ],
+      "handlers": [],
+      "panel": "Viewers",
+      "names": {
+        "zh": "SAT3D+",
+        "en": "SAT3D+"
+      },
+      "aliases": [
+        "SAT3D+"
+      ],
+      "purpose": {
+        "zh": "记录前景正提示点。",
+        "en": "Record foreground positive prompts."
+      },
+      "steps": {
+        "zh": "先加载 CT，并打开轴向、矢状或冠状二维切片。选择此工具，在切片上左键点需要标记的位置。之后打开 Segment…，选择当前支持的部位并运行。",
+        "en": "Load CT and open an axial, sagittal or coronal 2D slice. Select this tool and left-click prompt locations. Then open Segment…, choose a supported site and run inference."
+      },
+      "result": {
+        "zh": "先产生提示点；运行成功才产生候选分割掩膜，之后需核对并分类到 CTV/OAR。",
+        "en": "Prompts appear first; successful inference produces a candidate mask for review and CTV/OAR classification."
+      },
+      "caution": {
+        "zh": "点按钮本身不会完成分割，不保证任意肿瘤可分割；Clear pts 只清提示点。",
+        "en": "Selecting the button does not segment anything and does not guarantee arbitrary tumor support. Clear pts clears prompts only."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/static/js/brachybot-viewer-layout.js:setViewerTool",
+        "web/app/static/js/brachybot-manual-annotation.js:setupAnnotationTool"
+      ],
+      "bindings": [
+        {
+          "id": "toolSat3dPositive",
+          "label": "sat3d +",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "viewer.sat.false",
+      "control_ids": [
+        "toolSat3dNegative"
+      ],
+      "handlers": [],
+      "panel": "Viewers",
+      "names": {
+        "zh": "SAT3D-",
+        "en": "SAT3D-"
+      },
+      "aliases": [
+        "SAT3D-"
+      ],
+      "purpose": {
+        "zh": "记录背景负提示点。",
+        "en": "Record background negative prompts."
+      },
+      "steps": {
+        "zh": "先加载 CT，并打开轴向、矢状或冠状二维切片。选择此工具，在切片上左键点需要标记的位置。之后打开 Segment…，选择当前支持的部位并运行。",
+        "en": "Load CT and open an axial, sagittal or coronal 2D slice. Select this tool and left-click prompt locations. Then open Segment…, choose a supported site and run inference."
+      },
+      "result": {
+        "zh": "先产生提示点；运行成功才产生候选分割掩膜，之后需核对并分类到 CTV/OAR。",
+        "en": "Prompts appear first; successful inference produces a candidate mask for review and CTV/OAR classification."
+      },
+      "caution": {
+        "zh": "点按钮本身不会完成分割，不保证任意肿瘤可分割；Clear pts 只清提示点。",
+        "en": "Selecting the button does not segment anything and does not guarantee arbitrary tumor support. Clear pts clears prompts only."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/static/js/brachybot-viewer-layout.js:setViewerTool",
+        "web/app/static/js/brachybot-manual-annotation.js:setupAnnotationTool"
+      ],
+      "bindings": [
+        {
+          "id": "toolSat3dNegative",
+          "label": "sat3d -",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "viewer.window",
+      "control_ids": [],
+      "handlers": [
+        "applyWindowPreset",
+        "applyViewerSettings"
+      ],
+      "panel": "Viewers",
+      "names": {
+        "zh": "窗宽窗位 / Preset",
+        "en": "Window/level and Preset"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "改变 CT 的灰度显示。",
+        "en": "Change CT grayscale presentation."
+      },
+      "steps": {
+        "zh": "选择 Preset，或输入 W/L 后应用；W 为窗宽，L 为窗位。",
+        "en": "Choose Preset or apply W/L values; W is window width and L is window level."
+      },
+      "result": {
+        "zh": "二维 CT 灰度随之更新。",
+        "en": "2D CT grayscale updates."
+      },
+      "caution": {
+        "zh": "仅调整显示，不改变原始影像、分割或剂量。",
+        "en": "Presentation only; does not change source images, masks or dose."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "windowPreset",
+          "label": "soft tissue bone lung brain custom",
+          "disabled_by_default": false,
+          "tag": "select",
+          "input_constraints": {}
+        },
+        {
+          "id": "viewerWindow",
+          "label": "viewerWindow",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "step": "10"
+          }
+        },
+        {
+          "id": "viewerLevel",
+          "label": "viewerLevel",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "step": "10"
+          }
+        }
+      ]
+    },
+    {
+      "key": "viewer.zoom",
+      "control_ids": [],
+      "handlers": [
+        "applyZoom"
+      ],
+      "panel": "Viewers",
+      "names": {
+        "zh": "二维缩放",
+        "en": "2D zoom"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "调整二维查看缩放。",
+        "en": "Change 2D viewing zoom."
+      },
+      "steps": {
+        "zh": "拖动 Zoom 滑块或两侧微调按钮；Fit 可适配视野。",
+        "en": "Drag the Zoom slider or use its steppers; Fit fits the view."
+      },
+      "result": {
+        "zh": "显示缩放百分比与切片视野更新。",
+        "en": "Zoom percentage and slice view update."
+      },
+      "caution": {
+        "zh": "仅调整显示，不改变原始影像、分割或剂量。",
+        "en": "Presentation only; does not change source images, masks or dose."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "viewerZoom",
+          "label": "viewerZoom",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "range",
+            "min": "50",
+            "max": "300",
+            "step": "10"
+          }
+        }
+      ]
+    },
+    {
+      "key": "viewer.display",
+      "control_ids": [],
+      "handlers": [
+        "setDisplayMode",
+        "toggleOverlay"
+      ],
+      "panel": "Viewers",
+      "names": {
+        "zh": "显示模式 / CTV / OAR",
+        "en": "Display mode / CTV / OAR"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "控制 CT、标签及二维叠加显示。",
+        "en": "Control CT, labels and 2D overlays."
+      },
+      "steps": {
+        "zh": "用 Display 选择 CT Only、CT+Label 或 Label Only；CTV/OAR 开关与 Data Tree 的二维显示状态共同决定叠加。",
+        "en": "Choose CT Only, CT+Label or Label Only in Display; CTV/OAR toggles and Data Tree 2D visibility together control overlays."
+      },
+      "result": {
+        "zh": "对应标签在切片上显示或隐藏。",
+        "en": "Corresponding slice labels are shown or hidden."
+      },
+      "caution": {
+        "zh": "需已加载标签且当前切片穿过结构；不出现不代表结构不存在。",
+        "en": "Requires loaded labels and a slice intersecting the structure; absence on one slice is not absence of the structure."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "displayMode",
+          "label": "ct only ct + label label only",
+          "disabled_by_default": false,
+          "tag": "select",
+          "input_constraints": {}
+        },
+        {
+          "id": "overlayCTV",
+          "label": "overlayCTV",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "checkbox"
+          }
+        },
+        {
+          "id": "overlayOAR",
+          "label": "overlayOAR",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "checkbox"
+          }
+        }
+      ]
+    },
+    {
+      "key": "viewer.threshold",
+      "control_ids": [],
+      "handlers": [
+        "applyThreshold"
+      ],
+      "panel": "Viewers",
+      "names": {
+        "zh": "Threshold / HU 阈值",
+        "en": "Threshold / HU"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "按 HU 条件创建候选掩膜。",
+        "en": "Create a candidate mask using an HU threshold."
+      },
+      "steps": {
+        "zh": "加载 CT，输入有效阈值后点 Apply，检查生成区域。",
+        "en": "Load CT, enter a valid threshold and click Apply; inspect the generated region."
+      },
+      "result": {
+        "zh": "生成可进一步管理的候选掩膜。",
+        "en": "Produces a candidate mask for subsequent management."
+      },
+      "caution": {
+        "zh": "阈值分割不是肿瘤诊断；使用前需检查并分类。",
+        "en": "Threshold segmentation is not a tumor diagnosis; review and classify it before use."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "viewerThresholdApply",
+          "label": "apply",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "viewer.transform",
+      "control_ids": [],
+      "handlers": [
+        "viewerFlipH",
+        "viewerFlipV",
+        "viewerRotate"
+      ],
+      "panel": "Viewers",
+      "names": {
+        "zh": "FlipH / FlipV / Rotate",
+        "en": "FlipH / FlipV / Rotate"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "变换二维浏览方向。",
+        "en": "Transform the 2D viewing orientation."
+      },
+      "steps": {
+        "zh": "点击对应按钮翻转或旋转显示。",
+        "en": "Click the corresponding button to flip or rotate the display."
+      },
+      "result": {
+        "zh": "二维画面方向改变。",
+        "en": "2D presentation orientation changes."
+      },
+      "caution": {
+        "zh": "仅调整显示，不改变原始影像、分割或剂量。",
+        "en": "Presentation only; does not change source images, masks or dose."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": null,
+          "label": "⇄ fliph",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "⇅ flipv",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "↺ rotate",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "viewer.history",
+      "control_ids": [],
+      "handlers": [
+        "viewerUndo",
+        "viewerRedo"
+      ],
+      "panel": "Viewers",
+      "names": {
+        "zh": "Undo / Redo",
+        "en": "Undo / Redo"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "撤销或重做查看器编辑历史。",
+        "en": "Undo or redo viewer editing history."
+      },
+      "steps": {
+        "zh": "编辑后点 Undo；需要恢复被撤销操作时点 Redo。",
+        "en": "Click Undo after an edit; click Redo to restore an undone operation."
+      },
+      "result": {
+        "zh": "针对可用历史恢复标注、提示点或掩膜事务。",
+        "en": "Restores annotations, prompts or mask transactions from available history."
+      },
+      "caution": {
+        "zh": "不是通用针道/粒子规划回滚；Monitor 编辑复位使用对应版本的复位操作。",
+        "en": "Not a universal needle/seed plan rollback; Monitor undo uses the version-specific edit decision."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": null,
+          "label": "↩ undo",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "↪ redo",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "viewer.fit",
+      "control_ids": [],
+      "handlers": [
+        "fitView"
+      ],
+      "panel": "Viewers",
+      "names": {
+        "zh": "Fit · 适配视野",
+        "en": "Fit · fit view"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "适配二维影像到视口。",
+        "en": "Fit 2D images to their viewports."
+      },
+      "steps": {
+        "zh": "加载影像后点击 Fit。",
+        "en": "Click Fit with images loaded."
+      },
+      "result": {
+        "zh": "二维缩放和平移重置到适配状态。",
+        "en": "2D zoom and pan change to fitted presentation."
+      },
+      "caution": {
+        "zh": "仅调整显示，不改变原始影像、分割或剂量。",
+        "en": "Presentation only; does not change source images, masks or dose."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": null,
+          "label": "⌕ fit",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "viewer.reset",
+      "control_ids": [],
+      "handlers": [
+        "resetViewer",
+        "reset3DView"
+      ],
+      "panel": "Viewers",
+      "names": {
+        "zh": "查看器 Reset",
+        "en": "Viewer Reset"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "恢复对应查看器显示设置或三维相机。",
+        "en": "Reset the corresponding viewer presentation or 3D camera."
+      },
+      "steps": {
+        "zh": "使用二维工具栏 Reset 或三维视图下的 Reset。",
+        "en": "Use Reset in the 2D toolbar or beneath the 3D view."
+      },
+      "result": {
+        "zh": "对应视野/显示复位。",
+        "en": "The corresponding view/presentation resets."
+      },
+      "caution": {
+        "zh": "与 Input 中清空病例的 Reset 不同；不能代替规划编辑复位。",
+        "en": "Different from Input's case Reset; does not undo planning edits."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": null,
+          "label": "↻ reset",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "↻ reset",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "viewer.layout",
+      "control_ids": [],
+      "handlers": [
+        "setViewerLayout",
+        "toggleViewerFullscreen"
+      ],
+      "panel": "Viewers",
+      "names": {
+        "zh": "Layout / 全屏",
+        "en": "Layout / fullscreen"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "排列或放大查看器视口。",
+        "en": "Arrange or maximize viewer panes."
+      },
+      "steps": {
+        "zh": "用 Layout 按钮选择布局，或点击视口右上角全屏按钮；再点可还原。",
+        "en": "Choose Layout buttons or click a pane's top-right fullscreen control; toggle again to restore."
+      },
+      "result": {
+        "zh": "面板布局改变，不是影像缩放。",
+        "en": "Pane layout changes; this is not image zoom."
+      },
+      "caution": {
+        "zh": "仅调整显示，不改变原始影像、分割或剂量。",
+        "en": "Presentation only; does not change source images, masks or dose."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": null,
+          "label": "☰",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "☷",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "▦",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "▲",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "▼",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "⛶",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "⛶",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "⛶",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "⛶",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "viewer.reconstruct",
+      "control_ids": [],
+      "handlers": [
+        "reconstruct3D"
+      ],
+      "panel": "Viewers",
+      "names": {
+        "zh": "3D · 重建",
+        "en": "3D · reconstruction"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "构建已加载分割的三维显示。",
+        "en": "Build 3D presentation of loaded segmentations."
+      },
+      "steps": {
+        "zh": "先加载 CT/标签，再点 3D，等待重建结果。",
+        "en": "Load CT/labels, click 3D and wait for reconstruction."
+      },
+      "result": {
+        "zh": "三维场景出现已加载对象。",
+        "en": "Loaded objects appear in the 3D scene."
+      },
+      "caution": {
+        "zh": "以步骤结果或错误为准；点击不等于完成，已有结果也不等于临床批准。",
+        "en": "Use completion/error receipts; a click is not completion and an existing result is not clinical approval."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "reconstruct3DButton",
+          "label": "▦ 3d",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "viewer.slice",
+      "control_ids": [],
+      "handlers": [
+        "updateSlice"
+      ],
+      "panel": "Viewers",
+      "names": {
+        "zh": "Slice · 切片滑块",
+        "en": "Slice slider"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "切换指定轴的切片。",
+        "en": "Navigate slices on the selected axis."
+      },
+      "steps": {
+        "zh": "拖动对应视口下的 Slice 滑块或使用微调按钮。",
+        "en": "Drag the Slice slider below the corresponding view or use its steppers."
+      },
+      "result": {
+        "zh": "该轴切片和定位信息更新。",
+        "en": "The axis slice and location information update."
+      },
+      "caution": {
+        "zh": "仅调整显示，不改变原始影像、分割或剂量。",
+        "en": "Presentation only; does not change source images, masks or dose."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "sliderAxial",
+          "label": "sliderAxial",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "range",
+            "min": "0",
+            "max": "100"
+          }
+        },
+        {
+          "id": "sliderSagittal",
+          "label": "sliderSagittal",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "range",
+            "min": "0",
+            "max": "100"
+          }
+        },
+        {
+          "id": "sliderCoronal",
+          "label": "sliderCoronal",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "range",
+            "min": "0",
+            "max": "100"
+          }
+        }
+      ]
+    },
+    {
+      "key": "viewer.surface",
+      "control_ids": [],
+      "handlers": [
+        "toggleDoseTextureMode"
+      ],
+      "panel": "Viewers",
+      "names": {
+        "zh": "Dose Surface",
+        "en": "Dose Surface"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "切换剂量表面显示方式。",
+        "en": "Switch dose surface presentation."
+      },
+      "steps": {
+        "zh": "加载剂量后点击按钮切换显示方式。",
+        "en": "Load dose and click the button to switch presentation."
+      },
+      "result": {
+        "zh": "剂量表面显示变化。",
+        "en": "Dose surface presentation changes."
+      },
+      "caution": {
+        "zh": "仅调整显示，不改变原始影像、分割或剂量。",
+        "en": "Presentation only; does not change source images, masks or dose."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "doseTextureToggle",
+          "label": "dose surface",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "viewer.colorbar",
+      "control_ids": [],
+      "handlers": [
+        "toggleDoseColorbarPanel",
+        "closeDoseColorbarPanel",
+        "resetDoseColorbarSettings",
+        "applyDoseColorbarSettings",
+        "syncDoseColorbarControls"
+      ],
+      "panel": "Viewers",
+      "names": {
+        "zh": "Dose Scale · 剂量色标",
+        "en": "Dose Scale"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "配置剂量显示色标范围和刻度。",
+        "en": "Configure dose colorbar range and ticks."
+      },
+      "steps": {
+        "zh": "打开 Dose Scale，修改显示设置后点 Apply；Reset 恢复显示默认值，关闭按钮仅关闭面板。",
+        "en": "Open Dose Scale, change display settings and click Apply; Reset restores presentation defaults and Close dismisses the panel."
+      },
+      "result": {
+        "zh": "二维/三维剂量色标按设置显示。",
+        "en": "2D/3D dose colorbars use the selected presentation."
+      },
+      "caution": {
+        "zh": "改变色标不会重算剂量，也不改变处方或 DVH 数值。",
+        "en": "Changing a colorbar does not recalculate dose or alter prescription/DVH values."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "doseColorbarButton",
+          "label": "dose scale",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "×",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {
+            "type": "button"
+          }
+        },
+        {
+          "id": "doseColorbarScope",
+          "label": "2d shared 3d surface",
+          "disabled_by_default": false,
+          "tag": "select",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "reset",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "apply",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "viewer.opacity",
+      "control_ids": [],
+      "handlers": [
+        "setDoseOverlayOpacity",
+        "update3DMeshOpacity",
+        "updateDoseOpacity",
+        "updateLabelImage",
+        "toggle3DWireframe",
+        "toggle3DSkin"
+      ],
+      "panel": "Viewers",
+      "names": {
+        "zh": "透明度 / Wire / Skin / Label",
+        "en": "Opacity / Wire / Skin / Label"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "调整剂量、网格、标签的可见性和透明度。",
+        "en": "Adjust dose, mesh and label visibility/opacity."
+      },
+      "steps": {
+        "zh": "使用对应滑块或复选框；Data Tree 的对象级状态与全局显示状态共同决定最终显示。",
+        "en": "Use the corresponding slider or checkbox; per-object Data Tree settings and global settings jointly determine presentation."
+      },
+      "result": {
+        "zh": "相应图层显示立即改变。",
+        "en": "The corresponding layer presentation changes."
+      },
+      "caution": {
+        "zh": "仅调整显示，不改变原始影像、分割或剂量。",
+        "en": "Presentation only; does not change source images, masks or dose."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "doseOverlayOpacity",
+          "label": "doseOverlayOpacity",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "range",
+            "min": "0",
+            "max": "100"
+          }
+        },
+        {
+          "id": "meshOpacity3D",
+          "label": "meshOpacity3D",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "range",
+            "min": "0",
+            "max": "100"
+          }
+        },
+        {
+          "id": "wireframe3D",
+          "label": "wireframe3D",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "checkbox"
+          }
+        },
+        {
+          "id": "skinToggle3D",
+          "label": "skinToggle3D",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "checkbox"
+          }
+        },
+        {
+          "id": "doseOpacity",
+          "label": "doseOpacity",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "range",
+            "min": "0",
+            "max": "100"
+          }
+        },
+        {
+          "id": "labelShow3d",
+          "label": "labelShow3d",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "checkbox"
+          }
+        },
+        {
+          "id": "labelOp3d",
+          "label": "labelOp3d",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "range",
+            "min": "0",
+            "max": "100"
+          }
+        }
+      ]
+    },
+    {
+      "key": "viewer.sat.run",
+      "control_ids": [],
+      "handlers": [
+        "prepareSat3dInteraction",
+        "runSat3dInteractive",
+        "closeSat3dInteraction",
+        "clearSat3dPromptPoints"
+      ],
+      "panel": "Viewers",
+      "names": {
+        "zh": "Segment… / SAT3D 提示管理",
+        "en": "Segment… / SAT3D prompt management"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "选择部位并运行 SAT3D 交互分割。",
+        "en": "Select a site and run SAT3D interactive segmentation."
+      },
+      "steps": {
+        "zh": "加载 CT，用 SAT3D+/- 放提示点，打开 Segment… 选择支持的部位后运行；Clear pts 清提示点。",
+        "en": "Load CT, place SAT3D+/- prompts, open Segment…, select a supported site and run; Clear pts clears prompts."
+      },
+      "result": {
+        "zh": "成功时返回候选掩膜；关闭面板不表示完成推理。",
+        "en": "Successful inference returns a candidate mask; closing the panel is not inference completion."
+      },
+      "caution": {
+        "zh": "受模型、部位和模态可用性限制，需人工检查并分类；不是任意肿瘤的保证。",
+        "en": "Limited by model, site and modality availability; review and classify the candidate. No arbitrary-tumor guarantee."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "toolSat3dClear",
+          "label": "Clear pts",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": "toolSat3dSettings",
+          "label": "Segment…",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": "sat3dRun",
+          "label": "Run segmentation",
+          "disabled_by_default": true,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "×",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "planning.segment",
+      "control_ids": [],
+      "handlers": [
+        "runSegmentationStep"
+      ],
+      "panel": "Input",
+      "names": {
+        "zh": "CTV Seg / OAR Seg",
+        "en": "CTV Seg / OAR Seg"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "执行选择的靶区或危及器官分割。",
+        "en": "Run selected target or organ-at-risk segmentation."
+      },
+      "steps": {
+        "zh": "加载 CT，确认部位/模态和模型可用性，再点击对应分割步骤。",
+        "en": "Load CT, confirm site/modality and model availability, then click the corresponding segmentation step."
+      },
+      "result": {
+        "zh": "完成后核对 Data Tree 标签与影像对齐。",
+        "en": "On completion, check Data Tree labels and image alignment."
+      },
+      "caution": {
+        "zh": "以步骤结果或错误为准；点击不等于完成，已有结果也不等于临床批准。",
+        "en": "Use completion/error receipts; a click is not completion and an existing result is not clinical approval."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "stepBtn_ctv_segmentation",
+          "label": "0 ctv seg",
+          "disabled_by_default": true,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": "stepBtn_oar_segmentation",
+          "label": "0 oar seg",
+          "disabled_by_default": true,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "planning.steps",
+      "control_ids": [],
+      "handlers": [
+        "runPlanningStep"
+      ],
+      "panel": "Input",
+      "names": {
+        "zh": "Trajectories / Refine / Seeds / Dose / Evaluate",
+        "en": "Trajectories / Refine / Seeds / Dose / Evaluate"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "逐步初始化轨迹、优化、布粒子、计算剂量和评估。",
+        "en": "Initialize trajectories, refine, place seeds, compute dose and evaluate step by step."
+      },
+      "steps": {
+        "zh": "按界面前置条件从上一步到下一步执行；未满足前置条件的按钮禁用。",
+        "en": "Execute in prerequisite order; unavailable prerequisite steps are disabled."
+      },
+      "result": {
+        "zh": "每步产物出现在 Data Tree/查看器；下一步可能隐藏前一步临时预览。",
+        "en": "Each stage publishes outputs in Data Tree/viewers; the next stage may hide the previous temporary preview."
+      },
+      "caution": {
+        "zh": "以步骤结果或错误为准；点击不等于完成，已有结果也不等于临床批准。",
+        "en": "Use completion/error receipts; a click is not completion and an existing result is not clinical approval."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "stepBtn_trajectory_init",
+          "label": "1 trajectories",
+          "disabled_by_default": true,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": "stepBtn_trajectory_refine",
+          "label": "2 refine",
+          "disabled_by_default": true,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": "stepBtn_seed_planning",
+          "label": "3 seeds",
+          "disabled_by_default": true,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": "stepBtn_dose_calc",
+          "label": "4 dose",
+          "disabled_by_default": true,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": "stepBtn_dose_eval",
+          "label": "5 evaluate",
+          "disabled_by_default": true,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "planning.run",
+      "control_ids": [],
+      "handlers": [
+        "runPlanning"
+      ],
+      "panel": "Input",
+      "names": {
+        "zh": "Start Plan",
+        "en": "Start Plan"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "执行自动规划流程。",
+        "en": "Run the automated planning workflow."
+      },
+      "steps": {
+        "zh": "准备 CT、已选择的 CTV 与所需 OAR，核对参数后点击 Start Plan。",
+        "en": "Prepare CT, a selected CTV and required OARs; review parameters and click Start Plan."
+      },
+      "result": {
+        "zh": "通过任务状态核对各阶段结果和失败信息。",
+        "en": "Check stage results and failures through task status."
+      },
+      "caution": {
+        "zh": "以步骤结果或错误为准；点击不等于完成，已有结果也不等于临床批准。",
+        "en": "Use completion/error receipts; a click is not completion and an existing result is not clinical approval."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": null,
+          "label": "▶ start plan",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "planning.intra",
+      "control_ids": [],
+      "handlers": [
+        "runIntra"
+      ],
+      "panel": "Input",
+      "names": {
+        "zh": "Intraop",
+        "en": "Intraop"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "执行术中更新工作流。",
+        "en": "Run the intraoperative update workflow."
+      },
+      "steps": {
+        "zh": "准备术中输入与当前规划，核对任务需要的输入再运行。",
+        "en": "Prepare intraoperative inputs and the current plan; verify required inputs before running."
+      },
+      "result": {
+        "zh": "以术中任务实际返回的阶段结果为准。",
+        "en": "Use the actual returned intraoperative stage results."
+      },
+      "caution": {
+        "zh": "以步骤结果或错误为准；点击不等于完成，已有结果也不等于临床批准。",
+        "en": "Use completion/error receipts; a click is not completion and an existing result is not clinical approval."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": null,
+          "label": "⚡ intraop",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "planning.results",
+      "control_ids": [],
+      "handlers": [
+        "showStepResults"
+      ],
+      "panel": "Input",
+      "names": {
+        "zh": "Show All / View Results",
+        "en": "Show All / View Results"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "查看已存在的阶段产物。",
+        "en": "View existing stage outputs."
+      },
+      "steps": {
+        "zh": "步骤完成后点对应 Trajectories、Seeds、Dose、DVH、Metrics 或 Show All。",
+        "en": "After a stage completes, select Trajectories, Seeds, Dose, DVH, Metrics or Show All."
+      },
+      "result": {
+        "zh": "显示对应已有结果，不自动计算缺失结果。",
+        "en": "Displays existing outputs; missing results are not computed automatically."
+      },
+      "caution": {
+        "zh": "以步骤结果或错误为准；点击不等于完成，已有结果也不等于临床批准。",
+        "en": "Use completion/error receipts; a click is not completion and an existing result is not clinical approval."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": null,
+          "label": "👁 show all",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "trajectories",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "seeds",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "dose",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "dvh",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "metrics",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "planning.edit",
+      "control_ids": [],
+      "handlers": [
+        "addManualNeedle",
+        "addManualSeed"
+      ],
+      "panel": "Input",
+      "names": {
+        "zh": "Add Needle / Add Seed",
+        "en": "Add Needle / Add Seed"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "进入手动添加针道或粒子的流程。",
+        "en": "Enter manual needle/seed creation."
+      },
+      "steps": {
+        "zh": "加载当前规划，点击对应按钮并按交互提示选择目标位置。",
+        "en": "Load the current plan, click the corresponding button and follow placement prompts."
+      },
+      "result": {
+        "zh": "提交成功后几何更新，剂量与后续产物可能过期。",
+        "en": "A successful commit updates geometry and may stale dose/downstream artifacts."
+      },
+      "caution": {
+        "zh": "以步骤结果或错误为准；点击不等于完成，已有结果也不等于临床批准。",
+        "en": "Use completion/error receipts; a click is not completion and an existing result is not clinical approval."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": null,
+          "label": "Add Needle",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "Add Seed",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "planning.dose",
+      "control_ids": [],
+      "handlers": [
+        "recomputeManualDose"
+      ],
+      "panel": "Input",
+      "names": {
+        "zh": "Recompute AI Dose",
+        "en": "Recompute AI Dose"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "用当前已提交几何重算 AI 剂量和 DVH。",
+        "en": "Recompute AI dose/DVH from committed geometry."
+      },
+      "steps": {
+        "zh": "完成并保存编辑后点击，等待剂量任务完成。",
+        "en": "Finish and save edits, click and wait for dose computation."
+      },
+      "result": {
+        "zh": "取得当前几何对应的剂量/DVH；不是独立物理验证。",
+        "en": "Produces dose/DVH for current geometry; not independent physics validation."
+      },
+      "caution": {
+        "zh": "以步骤结果或错误为准；点击不等于完成，已有结果也不等于临床批准。",
+        "en": "Use completion/error receipts; a click is not completion and an existing result is not clinical approval."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": null,
+          "label": "Recompute AI Dose",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "planning.replan",
+      "control_ids": [],
+      "handlers": [
+        "replanManualPlan"
+      ],
+      "panel": "Input",
+      "names": {
+        "zh": "Replan Geometry",
+        "en": "Replan Geometry"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "重新规划几何，而不只是刷新显示。",
+        "en": "Replan geometry rather than just refresh presentation."
+      },
+      "steps": {
+        "zh": "确认允许修改当前规划，核对参数后启动重规划。",
+        "en": "Confirm the current plan may be modified, review parameters and start replanning."
+      },
+      "result": {
+        "zh": "以任务完成后新几何和产物状态为准。",
+        "en": "Use resulting geometry and artifact status after task completion."
+      },
+      "caution": {
+        "zh": "以步骤结果或错误为准；点击不等于完成，已有结果也不等于临床批准。",
+        "en": "Use completion/error receipts; a click is not completion and an existing result is not clinical approval."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": null,
+          "label": "Replan Geometry",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "planning.guide",
+      "control_ids": [],
+      "handlers": [
+        "generateSurgicalGuide"
+      ],
+      "panel": "Input",
+      "names": {
+        "zh": "Generate guide",
+        "en": "Generate guide"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "依据当前针道与导板参数生成穿刺导板。",
+        "en": "Generate a puncture guide from current needles and guide parameters."
+      },
+      "steps": {
+        "zh": "完成针道编辑，核对导板参数再点击生成。",
+        "en": "Finish needle edits, review guide parameters and click Generate."
+      },
+      "result": {
+        "zh": "生成版本化导板与几何检查；针道变化后旧导板可能过期。",
+        "en": "Produces a versioned guide and geometry checks; needle edits may stale old guides."
+      },
+      "caution": {
+        "zh": "以步骤结果或错误为准；点击不等于完成，已有结果也不等于临床批准。",
+        "en": "Use completion/error receipts; a click is not completion and an existing result is not clinical approval."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "generateSurgicalGuideButton",
+          "label": "Generate Guide",
+          "disabled_by_default": true,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "planning.advice",
+      "control_ids": [],
+      "handlers": [
+        "requestPlanningAdvice",
+        "checkSystemReadiness"
+      ],
+      "panel": "Input",
+      "names": {
+        "zh": "Detailed Advice / Readiness",
+        "en": "Detailed Advice / Readiness"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "读取当前规划建议或系统就绪情况。",
+        "en": "Read current planning advice or system readiness."
+      },
+      "steps": {
+        "zh": "点击对应按钮，查看依据和缺失的前置条件。",
+        "en": "Click the corresponding button and inspect evidence and missing prerequisites."
+      },
+      "result": {
+        "zh": "给出检查结果，不代表临床放行。",
+        "en": "Returns checks, not clinical clearance."
+      },
+      "caution": {
+        "zh": "以步骤结果或错误为准；点击不等于完成，已有结果也不等于临床批准。",
+        "en": "Use completion/error receipts; a click is not completion and an existing result is not clinical approval."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": null,
+          "label": "Detailed Advice",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "Readiness",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "monitor.lifecycle",
+      "control_ids": [],
+      "handlers": [
+        "startTrainingMode",
+        "stopTrainingMode"
+      ],
+      "panel": "Input",
+      "names": {
+        "zh": "Monitor / Finish Monitor",
+        "en": "Monitor / Finish Monitor"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "启动或结束当前病例的操作监测。",
+        "en": "Start or finish operation monitoring for the current case."
+      },
+      "steps": {
+        "zh": "点 Monitor 启动；点 Finish Monitor 结束并查看总结。",
+        "en": "Click Monitor to start; click Finish Monitor to finish and read the summary."
+      },
+      "result": {
+        "zh": "运行状态与当前病例绑定；监测提供指导，不自动批准计划。",
+        "en": "The run belongs to the current case; monitoring guides but does not approve a plan."
+      },
+      "caution": {
+        "zh": "以服务端运行状态为准；反馈必须对应当前病例、运行和几何版本。",
+        "en": "Use server run status; feedback must match the current case, run and geometry version."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "monitorStartButton",
+          "label": "Monitor",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": "monitorStopButton",
+          "label": "Finish Monitor",
+          "disabled_by_default": true,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "input.parameters",
+      "control_ids": [],
+      "handlers": [
+        "applyHyperparams",
+        "resetSurgicalGuideControls",
+        "loadSelectedSurgicalGuideVersion"
+      ],
+      "panel": "Input",
+      "names": {
+        "zh": "规划 / 导板参数与版本",
+        "en": "Planning / guide parameters and versions"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "管理规划参数或导板显示版本。",
+        "en": "Manage planning parameters or the displayed guide version."
+      },
+      "steps": {
+        "zh": "展开对应参数栏，按字段范围修改并应用；导板版本选择用于查看指定版本。",
+        "en": "Expand the relevant parameters, change values within field ranges and apply; guide version selection displays a selected version."
+      },
+      "result": {
+        "zh": "参数或显示版本更新；是否重算取决于具体执行按钮。",
+        "en": "Updates parameters or the displayed version; recomputation depends on the execution control."
+      },
+      "caution": {
+        "zh": "显示默认值不是部位处方依据。旧版本不自动成为当前有效导板。",
+        "en": "Displayed defaults are not site-specific prescription authority. Old versions do not become current valid guides automatically."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": null,
+          "label": "✅ apply hyperparameters",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "Show Selected Version",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {
+            "type": "button"
+          }
+        },
+        {
+          "id": null,
+          "label": "Restore Default Parameters",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {
+            "type": "button"
+          }
+        }
+      ]
+    },
+    {
+      "key": "input.reset",
+      "control_ids": [],
+      "handlers": [
+        "resetSession"
+      ],
+      "panel": "Input",
+      "names": {
+        "zh": "Input Reset · 重置病例",
+        "en": "Input Reset · reset case"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "重置当前病例工作状态。",
+        "en": "Reset current case working state."
+      },
+      "steps": {
+        "zh": "先保存需要保留的内容，再使用 Input 的 Reset 并核对确认提示。",
+        "en": "Save needed content before using Input Reset and review confirmation prompts."
+      },
+      "result": {
+        "zh": "清理/重置当前工作状态。",
+        "en": "Clears/resets current working state."
+      },
+      "caution": {
+        "zh": "与查看器 Reset 不同，可能丢弃当前工作结果；不要仅为解释按钮而执行。",
+        "en": "Different from Viewer Reset; may discard working results. Never execute merely to explain it."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": null,
+          "label": "↻ reset",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "input.upload",
+      "control_ids": [
+        "fileCT",
+        "fileCTFolder",
+        "fileCTV",
+        "fileOAR",
+        "fileDicomRT",
+        "dicomRtImportButton"
+      ],
+      "handlers": [
+        "handleFileSelect",
+        "handleDicomRTImport"
+      ],
+      "panel": "Input",
+      "names": {
+        "zh": "Browse / Folder / DICOM-RT Import",
+        "en": "Browse / Folder / DICOM-RT Import"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "上传影像或掩膜，或导入 DICOM-RT。",
+        "en": "Upload images/masks or import DICOM-RT."
+      },
+      "steps": {
+        "zh": "用对应 Browse 选择文件，Folder 选择 DICOM 文件夹；DICOM-RT 使用 Import。",
+        "en": "Use the corresponding Browse for files, Folder for a DICOM directory, and Import for DICOM-RT."
+      },
+      "result": {
+        "zh": "上传结果与导入附件进入当前病例。",
+        "en": "Uploads/imported attachments enter the current case."
+      },
+      "caution": {
+        "zh": "上传 mask 仅暂存，不等于已选作 CTV；需在 Data Tree 分类/选择。DICOM-RT 需核对参考坐标系和配准。",
+        "en": "An uploaded mask is staged, not automatically selected as CTV; classify/select it in Data Tree. Check reference frames and registration for DICOM-RT."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": null,
+          "label": "📁 browse",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "🗁 folder",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": "fileCT",
+          "label": "fileCT",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "file"
+          }
+        },
+        {
+          "id": "fileCTFolder",
+          "label": "fileCTFolder",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "file"
+          }
+        },
+        {
+          "id": null,
+          "label": "📁 browse",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": "fileCTV",
+          "label": "fileCTV",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "file",
+            "accept": ".nii,.gz,.mha,.nrrd,.mhd,image/*"
+          }
+        },
+        {
+          "id": null,
+          "label": "📁 browse",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": "fileOAR",
+          "label": "fileOAR",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "file",
+            "accept": ".nii,.gz,.mha,.nrrd,.mhd,image/*"
+          }
+        },
+        {
+          "id": "dicomRtImportButton",
+          "label": "import",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {
+            "type": "button"
+          }
+        },
+        {
+          "id": "fileDicomRT",
+          "label": "fileDicomRT",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "file",
+            "accept": ".dcm,.dicom,application/dicom"
+          }
+        }
+      ]
+    },
+    {
+      "key": "export.artifacts",
+      "control_ids": [],
+      "handlers": [
+        "exportDicomRT",
+        "exportSTL",
+        "exportReport",
+        "exportSurgicalGuideSTL"
+      ],
+      "panel": "Input",
+      "names": {
+        "zh": "DICOM-RT / STL / Report / Export Guide STL",
+        "en": "DICOM-RT / STL / Report / Export Guide STL"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "导出对应已有产物。",
+        "en": "Export the corresponding existing artifact."
+      },
+      "steps": {
+        "zh": "先生成并核对当前产物，再点击对应导出按钮。",
+        "en": "Generate and review the current artifact, then click the corresponding export button."
+      },
+      "result": {
+        "zh": "成功时提供导出文件；读取失败或过期状态需单独处理。",
+        "en": "Successful export provides a file; missing/stale artifacts require separate handling."
+      },
+      "caution": {
+        "zh": "文件存在不代表临床可用；报告、剂量、网格、导板是不同产物。",
+        "en": "File existence is not clinical usability; reports, dose, meshes and guides are separate artifacts."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": null,
+          "label": "dicom-rt",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "stl",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "report",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "Export Guide STL",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "report.fill",
+      "control_ids": [],
+      "handlers": [
+        "Report.autoFill.fromAll"
+      ],
+      "panel": "Report",
+      "names": {
+        "zh": "Auto-fill · 报告回填",
+        "en": "Auto-fill report"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "将当前病例产物回填报告。",
+        "en": "Populate a report from current case artifacts."
+      },
+      "steps": {
+        "zh": "先核对剂量/规划版本，再点击回填并审核覆盖内容。",
+        "en": "Check dose/plan versions, populate the report and review overwritten content."
+      },
+      "result": {
+        "zh": "报告字段与图件更新。",
+        "en": "Updates report fields and figures."
+      },
+      "caution": {
+        "zh": "以步骤结果或错误为准；点击不等于完成，已有结果也不等于临床批准。",
+        "en": "Use completion/error receipts; a click is not completion and an existing result is not clinical approval."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": null,
+          "label": "✨ auto-fill",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "report.preview",
+      "control_ids": [],
+      "handlers": [
+        "Report.preview.refreshContent",
+        "Report.preview.zoomOut",
+        "Report.preview.zoomIn",
+        "Report.preview.zoomReset",
+        "Report.panels.layout2col",
+        "applyReportTemplate"
+      ],
+      "panel": "Report",
+      "names": {
+        "zh": "报告模板 / Preview / Zoom",
+        "en": "Report template / Preview / Zoom"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "管理报告模板、预览与显示缩放。",
+        "en": "Manage report templates, preview and presentation zoom."
+      },
+      "steps": {
+        "zh": "选择模板并核对字段；用 Preview 刷新预览，Zoom 调整显示。",
+        "en": "Choose a template and check fields; Preview refreshes presentation and Zoom changes display scale."
+      },
+      "result": {
+        "zh": "报告预览按当前编辑显示。",
+        "en": "Preview reflects current edits."
+      },
+      "caution": {
+        "zh": "预览刷新不等于重算剂量或重建导板；模板变更需检查保留字段。",
+        "en": "Preview refresh does not recompute dose or rebuild a guide; check retained fields after template changes."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": null,
+          "label": "↻ refresh preview",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": "reportTemplateSelect",
+          "label": "— template — pancreas prostate head & neck gynecology liver",
+          "disabled_by_default": false,
+          "tag": "select",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "−",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "+",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": null,
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "checkbox"
+          }
+        }
+      ]
+    },
+    {
+      "key": "report.export",
+      "control_ids": [],
+      "handlers": [
+        "Report.export.pdf",
+        "Report.export.html",
+        "Report.export.markdown",
+        "Report.export.json",
+        "Report._toggleExportMenu"
+      ],
+      "panel": "Report",
+      "names": {
+        "zh": "报告导出",
+        "en": "Report export"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "导出报告为所选格式。",
+        "en": "Export the report in the selected format."
+      },
+      "steps": {
+        "zh": "检查报告内容和版本，选择 PDF/HTML/Markdown/JSON 导出。",
+        "en": "Check report contents and versions, then export PDF/HTML/Markdown/JSON."
+      },
+      "result": {
+        "zh": "成功时生成对应格式文件；PDF 在浏览器排版。",
+        "en": "Successful export generates the selected format; PDF is laid out in the browser."
+      },
+      "caution": {
+        "zh": "以步骤结果或错误为准；点击不等于完成，已有结果也不等于临床批准。",
+        "en": "Use completion/error receipts; a click is not completion and an existing result is not clinical approval."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": null,
+          "label": "🖨️ pdf",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "📥 export ▾",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "report.review",
+      "control_ids": [],
+      "handlers": [
+        "Report.snapshots.save",
+        "Report.snapshots.openModal",
+        "Report.audit.openModal",
+        "Report.review.openModal",
+        "Report.validation.openModal"
+      ],
+      "panel": "Report",
+      "names": {
+        "zh": "报告快照 / 审计 / 审核 / 校验",
+        "en": "Report snapshots / audit / review / validation"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "保存版本或查看报告审核、溯源和校验。",
+        "en": "Save versions or inspect report review, provenance and validation."
+      },
+      "steps": {
+        "zh": "打开对应面板核对记录；保存快照时确认当前内容。",
+        "en": "Open the corresponding panel to inspect records; confirm current content when saving a snapshot."
+      },
+      "result": {
+        "zh": "显示对应记录，保存操作产生报告快照。",
+        "en": "Displays records; saving creates a report snapshot."
+      },
+      "caution": {
+        "zh": "自动校验不等于医师签署批准。",
+        "en": "Automated validation is not signed physician approval."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": null,
+          "label": "📸 snapshot",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "📜 history",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "🔍 audit",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "review",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "✅ validate",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "report.persist",
+      "control_ids": [],
+      "handlers": [
+        "Report.persist.clear",
+        "Report.persist.importJSON"
+      ],
+      "panel": "Report",
+      "names": {
+        "zh": "报告清空 / Import JSON",
+        "en": "Clear report / Import JSON"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "清空或导入报告编辑内容。",
+        "en": "Clear or import report editing content."
+      },
+      "steps": {
+        "zh": "备份当前内容，核对文件和确认提示后执行。",
+        "en": "Back up current content and review the file/confirmation before executing."
+      },
+      "result": {
+        "zh": "报告编辑状态可能被替换。",
+        "en": "Report editing state may be replaced."
+      },
+      "caution": {
+        "zh": "可能覆盖已有报告；不能为演示而自动执行。",
+        "en": "May overwrite a report; never execute automatically as a demonstration."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": null,
+          "label": "↺ reset",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "navigation",
+      "control_ids": [],
+      "handlers": [
+        "switchPanel",
+        "toggleSessionSidebar",
+        "closeSessionSidebar",
+        "newChat",
+        "toggleContextPanel",
+        "clearLocalChatData",
+        "importLegacyWorkspace",
+        "toggleHyperparams",
+        "toggleStepButtons"
+      ],
+      "panel": "Global",
+      "names": {
+        "zh": "面板 / 会话 / 上下文 / 参数折叠",
+        "en": "Panels / sessions / context / collapsible settings"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "导航面板或管理会话和上下文。",
+        "en": "Navigate panels or manage sessions/context."
+      },
+      "steps": {
+        "zh": "点击对应面板或会话按钮；清空、压缩、导入前核对确认与目标会话。",
+        "en": "Use the relevant panel/session control; review confirmation and the target session before clear, compact or import."
+      },
+      "result": {
+        "zh": "导航改变当前视图；管理操作按各自结果执行。",
+        "en": "Navigation changes the active view; management actions follow their own receipts."
+      },
+      "caution": {
+        "zh": "切换会话不是复制病例；压缩上下文不是减少累计用量。",
+        "en": "Switching sessions is not copying a case; context compaction does not reduce accumulated usage."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": null,
+          "label": "+ new",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "×",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {
+            "type": "button"
+          }
+        },
+        {
+          "id": null,
+          "label": "×",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "context",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "browser",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "☰",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "⚙ input",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {
+            "type": "button"
+          }
+        },
+        {
+          "id": null,
+          "label": "📈 analysis",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {
+            "type": "button"
+          }
+        },
+        {
+          "id": null,
+          "label": "▦ viewers",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {
+            "type": "button"
+          }
+        },
+        {
+          "id": null,
+          "label": "📋 report",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {
+            "type": "button"
+          }
+        }
+      ]
+    },
+    {
+      "key": "chat.compose",
+      "control_ids": [],
+      "handlers": [
+        "sendChat",
+        "handleChatInput",
+        "insertSlashCommand"
+      ],
+      "panel": "Global",
+      "names": {
+        "zh": "聊天输入 / 发送 / Slash command",
+        "en": "Chat input / Send / slash commands"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "发送当前自然语言请求。",
+        "en": "Send the current natural-language request."
+      },
+      "steps": {
+        "zh": "在输入框写需求，点击发送；Enter 换行，Ctrl+Enter 或 Shift+Enter 发送。",
+        "en": "Write a request and click Send; Enter inserts a newline, Ctrl+Enter or Shift+Enter sends."
+      },
+      "result": {
+        "zh": "执行追踪展示本轮读取或操作的实际结果。",
+        "en": "The trace shows actual reads/actions for the turn."
+      },
+      "caution": {
+        "zh": "解释按钮无需点击或修改病例；明确动作请求才走执行与授权校验。",
+        "en": "Explaining a control needs no click/case modification; action requests follow execution and authorization checks."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "chatInput",
+          "label": "chatInput",
+          "disabled_by_default": false,
+          "tag": "textarea",
+          "input_constraints": {}
+        },
+        {
+          "id": "chatSendBtn",
+          "label": "➤",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "account.login",
+      "control_ids": [
+        "authUsername",
+        "authPassword",
+        "authPasswordToggle",
+        "authRemember",
+        "authLogin",
+        "authDeploymentKey"
+      ],
+      "handlers": [],
+      "panel": "Global",
+      "names": {
+        "zh": "登录 / Sign in",
+        "en": "Sign in"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "验证账户并进入受保护工作区。",
+        "en": "Authenticate an account to enter the protected workspace."
+      },
+      "steps": {
+        "zh": "填写登录表单，按部署要求提供凭证，点击 Sign in；显示密码按钮仅切换本机显示。",
+        "en": "Fill in the sign-in form, supply credentials required by the deployment and click Sign in; the password visibility control only changes local display."
+      },
+      "result": {
+        "zh": "以认证结果为准；Remember me 受部署策略控制。",
+        "en": "Use authentication results; Remember me follows deployment policy."
+      },
+      "caution": {
+        "zh": "不要向聊天发送密码或部署密钥；BrachyBot 不能代替认证或绕过账户策略。",
+        "en": "Do not send passwords/deployment keys to chat; the agent cannot replace authentication or bypass account policy."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "authUsername",
+          "label": "authUsername",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "text"
+          }
+        },
+        {
+          "id": "authPassword",
+          "label": "authPassword",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "password"
+          }
+        },
+        {
+          "id": "authPasswordToggle",
+          "label": "Show password",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {
+            "type": "button"
+          }
+        },
+        {
+          "id": "authRemember",
+          "label": "authRemember",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "checkbox"
+          }
+        },
+        {
+          "id": "authLogin",
+          "label": "Sign in",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {
+            "type": "submit"
+          }
+        },
+        {
+          "id": "authDeploymentKey",
+          "label": "authDeploymentKey",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "password"
+          }
+        }
+      ]
+    },
+    {
+      "key": "account.management",
+      "control_ids": [
+        "authRegister",
+        "accountPassword",
+        "accountLogout",
+        "currentPassword",
+        "newPassword",
+        "newPasswordToggle",
+        "passwordSave",
+        "passwordCancel"
+      ],
+      "handlers": [],
+      "panel": "Global",
+      "names": {
+        "zh": "账户 / 密码 / Sign out",
+        "en": "Account / Password / Sign out"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "注册、修改密码或退出当前账户。",
+        "en": "Register, change a password or sign out."
+      },
+      "steps": {
+        "zh": "使用对应账户面板；修改密码填写当前和新密码，Save 保存，Cancel 取消。注册是否可用取决于部署。",
+        "en": "Use the corresponding account panel; enter current/new passwords to change a password, Save to apply and Cancel to dismiss. Registration depends on deployment."
+      },
+      "result": {
+        "zh": "以服务端账户操作结果为准。",
+        "en": "Use server account-operation results."
+      },
+      "caution": {
+        "zh": "不会通过聊天读取密码；登录、注销和编辑租约是不同机制。",
+        "en": "Passwords are not read through chat; login, logout and editing leases are separate mechanisms."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "authRegister",
+          "label": "Create a new account",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {
+            "type": "button"
+          }
+        },
+        {
+          "id": "currentPassword",
+          "label": "currentPassword",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "password"
+          }
+        },
+        {
+          "id": "newPassword",
+          "label": "newPassword",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "password"
+          }
+        },
+        {
+          "id": "newPasswordToggle",
+          "label": "Show new password",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {
+            "type": "button"
+          }
+        },
+        {
+          "id": "passwordSave",
+          "label": "Update password",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {
+            "type": "submit"
+          }
+        },
+        {
+          "id": "passwordCancel",
+          "label": "Cancel",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {
+            "type": "button"
+          }
+        },
+        {
+          "id": "accountPassword",
+          "label": "password",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {
+            "type": "button"
+          }
+        },
+        {
+          "id": "accountLogout",
+          "label": "sign out",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {
+            "type": "button"
+          }
+        }
+      ]
+    },
+    {
+      "key": "workspace.lease",
+      "control_ids": [
+        "workspaceLockTakeover",
+        "workspaceLockDismiss",
+        "workspaceRecoveryDismiss",
+        "importLegacyWorkspace"
+      ],
+      "handlers": [],
+      "panel": "Global",
+      "names": {
+        "zh": "接管编辑 / Take over editing",
+        "en": "Take over editing"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "处理工作区编辑租约冲突或关闭通知。",
+        "en": "Handle an editing-lease conflict or dismiss a notice."
+      },
+      "steps": {
+        "zh": "核对当前病例和其他标签页后再选择接管；x 仅关闭通知。",
+        "en": "Check the current case and other tabs before taking over; x only dismisses a notice."
+      },
+      "result": {
+        "zh": "接管是否成功以服务端租约结果为准。",
+        "en": "Takeover succeeds only with the server lease result."
+      },
+      "caution": {
+        "zh": "关闭通知不获得编辑权限，也不恢复病例。",
+        "en": "Dismissing a notice does not acquire editing permission or restore a case."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "importLegacyWorkspace",
+          "label": "import",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {
+            "type": "button"
+          }
+        },
+        {
+          "id": "workspaceLockTakeover",
+          "label": "Take over editing",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {
+            "type": "button"
+          }
+        },
+        {
+          "id": "workspaceLockDismiss",
+          "label": "x",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {
+            "type": "button"
+          }
+        },
+        {
+          "id": "workspaceRecoveryDismiss",
+          "label": "x",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {
+            "type": "button"
+          }
+        }
+      ]
+    },
+    {
+      "key": "global.language",
+      "control_ids": [],
+      "handlers": [
+        "window.setUiLanguage"
+      ],
+      "panel": "Global",
+      "names": {
+        "zh": "中英文切换",
+        "en": "UI language"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "切换全局显示语言。",
+        "en": "Switch the global presentation language."
+      },
+      "steps": {
+        "zh": "点击顶层 EN 或 中 按钮。",
+        "en": "Click the top-level EN or Chinese language button."
+      },
+      "result": {
+        "zh": "受全局管理的界面与监测用法提示使用所选语言。",
+        "en": "Globally managed UI and Monitor usage hints use the selected language."
+      },
+      "caution": {
+        "zh": "不会重算或修改病例。",
+        "en": "Does not recalculate or modify a case."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": null,
+          "label": "en",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {
+            "type": "button"
+          }
+        },
+        {
+          "id": null,
+          "label": "中",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {
+            "type": "button"
+          }
+        },
+        {
+          "id": null,
+          "label": "en",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        },
+        {
+          "id": null,
+          "label": "中",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "input.model",
+      "control_ids": [
+        "ctvModelSelect",
+        "ctvImageModality",
+        "ctvVolumeIndex"
+      ],
+      "handlers": [],
+      "panel": "Input",
+      "names": {
+        "zh": "Tumor type / Image modality / 4D volume index",
+        "en": "Tumor type / Image modality / 4D volume index"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "选择自动分割模型、影像模态与四维输入的体积索引。",
+        "en": "Select automatic segmentation model, image modality and the volume index of a 4D input."
+      },
+      "steps": {
+        "zh": "选择与实际影像相符的部位/模态；四维单模态文件选择有效索引，再执行分割。",
+        "en": "Choose site/modality matching the actual image; select a valid volume index for a 4D single-modality file before segmentation."
+      },
+      "result": {
+        "zh": "选择影响下一次模型调用，不会仅因选择自动完成推理。",
+        "en": "Selections affect the next model call; selecting does not finish inference."
+      },
+      "caution": {
+        "zh": "遵从模型可用性与模态要求；鼻咽 NCCT/CECT 不可混选。",
+        "en": "Respect model availability and modality requirements; do not interchange nasopharynx NCCT/CECT."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "ctvModelSelect",
+          "label": "pancreatic tumor liver tumor kidney tumor lung tumor colon tumor prostate lesion (t2 mri) head and neck gtv (ct) nasopharynx gtv (non-contrast ct) nasopharynx gtv (contrast-enhanced ct)",
+          "disabled_by_default": false,
+          "tag": "select",
+          "input_constraints": {}
+        },
+        {
+          "id": "ctvImageModality",
+          "label": "ct cta mri t2-weighted mri contrast-enhanced t1 mri",
+          "disabled_by_default": false,
+          "tag": "select",
+          "input_constraints": {}
+        },
+        {
+          "id": "ctvVolumeIndex",
+          "label": "ctvVolumeIndex",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "0",
+            "step": "1"
+          }
+        }
+      ]
+    },
+    {
+      "key": "input.paths",
+      "control_ids": [
+        "ctPath",
+        "ctvPath",
+        "oarPath",
+        "dicomRtPath"
+      ],
+      "handlers": [],
+      "panel": "Input",
+      "names": {
+        "zh": "CT / CTV / OAR / DICOM-RT 路径",
+        "en": "CT / CTV / OAR / DICOM-RT paths"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "显示或输入当前病例输入路径。",
+        "en": "Display or enter current case input paths."
+      },
+      "steps": {
+        "zh": "优先用 Browse/Folder 上传；已有服务器路径必须在授权范围内。",
+        "en": "Prefer Browse/Folder uploads; an existing server path must be within authorized scope."
+      },
+      "result": {
+        "zh": "显示输入来源，需检查对应资源是否成功加载。",
+        "en": "Displays input provenance; check the corresponding resource has loaded successfully."
+      },
+      "caution": {
+        "zh": "填入路径不等于上传、分类、分割或计算完成。",
+        "en": "Entering a path is not upload, classification, segmentation or calculation completion."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "ctPath",
+          "label": "ctPath",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "text"
+          }
+        },
+        {
+          "id": "ctvPath",
+          "label": "ctvPath",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "text"
+          }
+        },
+        {
+          "id": "oarPath",
+          "label": "oarPath",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "text"
+          }
+        },
+        {
+          "id": "dicomRtPath",
+          "label": "dicomRtPath",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "text"
+          }
+        }
+      ]
+    },
+    {
+      "key": "guide.import-validation",
+      "control_ids": [
+        "guideStlValidationFile"
+      ],
+      "handlers": [],
+      "panel": "Input",
+      "names": {
+        "zh": "Validate Imported STL",
+        "en": "Validate Imported STL"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "选择导入 STL 并进行网格校验。",
+        "en": "Select an imported STL for mesh validation."
+      },
+      "steps": {
+        "zh": "点击 Validate Imported STL，选择文件，再查看校验结果。",
+        "en": "Click Validate Imported STL, choose a file and inspect validation results."
+      },
+      "result": {
+        "zh": "返回导入网格检查结果，不替换成已批准导板。",
+        "en": "Returns imported-mesh checks, not an approved guide."
+      },
+      "caution": {
+        "zh": "以步骤结果或错误为准；点击不等于完成，已有结果也不等于临床批准。",
+        "en": "Use completion/error receipts; a click is not completion and an existing result is not clinical approval."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "guideStlValidationFile",
+          "label": "guideStlValidationFile",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "file",
+            "accept": ".stl,model/stl"
+          }
+        },
+        {
+          "id": null,
+          "label": "Validate Imported STL",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {
+            "type": "button"
+          }
+        }
+      ]
+    },
+    {
+      "key": "fields.seed",
+      "control_ids": [
+        "devThreshold",
+        "useRLToggle",
+        "seedRadius",
+        "seedLength",
+        "seedCountMin",
+        "seedCountMax",
+        "seedMarginRate",
+        "seedAvgDose"
+      ],
+      "handlers": [],
+      "panel": "Input",
+      "names": {
+        "zh": "粒子 / 规划模式参数",
+        "en": "Seed / planning-mode parameters"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "编辑对应表单设置；详细单位和允许范围以该字段说明为准。",
+        "en": "Edit the corresponding form settings; use each field's documented units and allowed range."
+      },
+      "steps": {
+        "zh": "在字段中输入值或选择选项，遵从 min/max/step；核对后使用相应 Apply、运行或生成按钮。",
+        "en": "Enter a value or select an option, respecting min/max/step; review it, then use the appropriate Apply, Run or Generate control."
+      },
+      "result": {
+        "zh": "先改变待应用设置；不把修改字段说成已经完成规划或重算。",
+        "en": "Changes pending settings; editing a field is not completed planning or dose recomputation."
+      },
+      "caution": {
+        "zh": "这是基础输入操作契约，不是已验证的临床推荐或参数最优值。",
+        "en": "This is a basic input-editing contract, not a validated clinical recommendation or optimal parameter value."
+      },
+      "level": "basic_input",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "devThreshold",
+          "label": "devThreshold",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "step": "0.1"
+          }
+        },
+        {
+          "id": "useRLToggle",
+          "label": "useRLToggle",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "checkbox"
+          }
+        },
+        {
+          "id": "seedRadius",
+          "label": "seedRadius",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "0.1",
+            "max": "2.0",
+            "step": "0.05"
+          }
+        },
+        {
+          "id": "seedLength",
+          "label": "seedLength",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "1.0",
+            "max": "20.0",
+            "step": "0.1"
+          }
+        },
+        {
+          "id": "seedCountMin",
+          "label": "seedCountMin",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "0",
+            "step": "1"
+          }
+        },
+        {
+          "id": "seedCountMax",
+          "label": "seedCountMax",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "1",
+            "step": "10"
+          }
+        },
+        {
+          "id": "seedMarginRate",
+          "label": "seedMarginRate",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "0.5",
+            "max": "5.0",
+            "step": "0.1"
+          }
+        },
+        {
+          "id": "seedAvgDose",
+          "label": "seedAvgDose",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "10",
+            "max": "200",
+            "step": "1"
+          }
+        }
+      ]
+    },
+    {
+      "key": "fields.labels",
+      "control_ids": [
+        "targetValue",
+        "obstacleValue",
+        "backgroundValue"
+      ],
+      "handlers": [],
+      "panel": "Input",
+      "names": {
+        "zh": "Target / Obstacle / Background 标签值",
+        "en": "Target / Obstacle / Background label values"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "编辑对应表单设置；详细单位和允许范围以该字段说明为准。",
+        "en": "Edit the corresponding form settings; use each field's documented units and allowed range."
+      },
+      "steps": {
+        "zh": "在字段中输入值或选择选项，遵从 min/max/step；核对后使用相应 Apply、运行或生成按钮。",
+        "en": "Enter a value or select an option, respecting min/max/step; review it, then use the appropriate Apply, Run or Generate control."
+      },
+      "result": {
+        "zh": "先改变待应用设置；不把修改字段说成已经完成规划或重算。",
+        "en": "Changes pending settings; editing a field is not completed planning or dose recomputation."
+      },
+      "caution": {
+        "zh": "这是基础输入操作契约，不是已验证的临床推荐或参数最优值。",
+        "en": "This is a basic input-editing contract, not a validated clinical recommendation or optimal parameter value."
+      },
+      "level": "basic_input",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "targetValue",
+          "label": "targetValue",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "step": "1"
+          }
+        },
+        {
+          "id": "obstacleValue",
+          "label": "obstacleValue",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "step": "1"
+          }
+        },
+        {
+          "id": "backgroundValue",
+          "label": "backgroundValue",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "step": "1"
+          }
+        }
+      ]
+    },
+    {
+      "key": "fields.direction",
+      "control_ids": [
+        "backlitAngle",
+        "maxCandiTraj",
+        "refDirecX",
+        "refDirecY",
+        "refDirecZ",
+        "refDirecAuto",
+        "direcResCone",
+        "direcResStep",
+        "direcResRings"
+      ],
+      "handlers": [],
+      "panel": "Input",
+      "names": {
+        "zh": "参考方向 / 轨迹候选参数",
+        "en": "Reference direction / trajectory candidates"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "编辑对应表单设置；详细单位和允许范围以该字段说明为准。",
+        "en": "Edit the corresponding form settings; use each field's documented units and allowed range."
+      },
+      "steps": {
+        "zh": "在字段中输入值或选择选项，遵从 min/max/step；核对后使用相应 Apply、运行或生成按钮。",
+        "en": "Enter a value or select an option, respecting min/max/step; review it, then use the appropriate Apply, Run or Generate control."
+      },
+      "result": {
+        "zh": "先改变待应用设置；不把修改字段说成已经完成规划或重算。",
+        "en": "Changes pending settings; editing a field is not completed planning or dose recomputation."
+      },
+      "caution": {
+        "zh": "这是基础输入操作契约，不是已验证的临床推荐或参数最优值。",
+        "en": "This is a basic input-editing contract, not a validated clinical recommendation or optimal parameter value."
+      },
+      "level": "basic_input",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "backlitAngle",
+          "label": "backlitAngle",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "0",
+            "max": "3.14",
+            "step": "0.1"
+          }
+        },
+        {
+          "id": "maxCandiTraj",
+          "label": "Maximum valid initial trajectories; default 500, sampled across positions and directions",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "1",
+            "max": "2000",
+            "step": "1"
+          }
+        },
+        {
+          "id": "refDirecX",
+          "label": "refDirecX",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "step": "1"
+          }
+        },
+        {
+          "id": "refDirecY",
+          "label": "refDirecY",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "step": "1"
+          }
+        },
+        {
+          "id": "refDirecZ",
+          "label": "refDirecZ",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "step": "1"
+          }
+        },
+        {
+          "id": "refDirecAuto",
+          "label": "refDirecAuto",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "checkbox"
+          }
+        },
+        {
+          "id": "direcResCone",
+          "label": "direcResCone",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "step": "5"
+          }
+        },
+        {
+          "id": "direcResStep",
+          "label": "direcResStep",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "step": "1"
+          }
+        },
+        {
+          "id": "direcResRings",
+          "label": "direcResRings",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "6",
+            "step": "1"
+          }
+        }
+      ]
+    },
+    {
+      "key": "fields.dose",
+      "control_ids": [
+        "inLowestEnergy",
+        "outHighestEnergy",
+        "dvhRate",
+        "maxIter"
+      ],
+      "handlers": [],
+      "panel": "Input",
+      "names": {
+        "zh": "剂量 / DVH 规划约束",
+        "en": "Dose / DVH planning constraints"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "编辑对应表单设置；详细单位和允许范围以该字段说明为准。",
+        "en": "Edit the corresponding form settings; use each field's documented units and allowed range."
+      },
+      "steps": {
+        "zh": "在字段中输入值或选择选项，遵从 min/max/step；核对后使用相应 Apply、运行或生成按钮。",
+        "en": "Enter a value or select an option, respecting min/max/step; review it, then use the appropriate Apply, Run or Generate control."
+      },
+      "result": {
+        "zh": "先改变待应用设置；不把修改字段说成已经完成规划或重算。",
+        "en": "Changes pending settings; editing a field is not completed planning or dose recomputation."
+      },
+      "caution": {
+        "zh": "这是基础输入操作契约，不是已验证的临床推荐或参数最优值。",
+        "en": "This is a basic input-editing contract, not a validated clinical recommendation or optimal parameter value."
+      },
+      "level": "basic_input",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "inLowestEnergy",
+          "label": "inLowestEnergy",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "0",
+            "step": "1"
+          }
+        },
+        {
+          "id": "outHighestEnergy",
+          "label": "outHighestEnergy",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "0",
+            "step": "1"
+          }
+        },
+        {
+          "id": "dvhRate",
+          "label": "dvhRate",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "0",
+            "max": "1",
+            "step": "0.05"
+          }
+        },
+        {
+          "id": "maxIter",
+          "label": "maxIter",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "1",
+            "max": "20",
+            "step": "1"
+          }
+        }
+      ]
+    },
+    {
+      "key": "fields.optimizer",
+      "control_ids": [
+        "distLowerBound",
+        "distUpperBound",
+        "distRate",
+        "intervalRate",
+        "iterRate",
+        "replanRate",
+        "dlLR",
+        "dlLRDecay",
+        "dlEpochs",
+        "dlPatience",
+        "dlSearchRegion",
+        "dlDVHMargin",
+        "inferSizeX",
+        "inferSizeY",
+        "inferSizeZ",
+        "rfMaxEpisodes",
+        "rfBandwidth"
+      ],
+      "handlers": [],
+      "panel": "Input",
+      "names": {
+        "zh": "优化 / 推理参数",
+        "en": "Optimization / inference parameters"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "编辑对应表单设置；详细单位和允许范围以该字段说明为准。",
+        "en": "Edit the corresponding form settings; use each field's documented units and allowed range."
+      },
+      "steps": {
+        "zh": "在字段中输入值或选择选项，遵从 min/max/step；核对后使用相应 Apply、运行或生成按钮。",
+        "en": "Enter a value or select an option, respecting min/max/step; review it, then use the appropriate Apply, Run or Generate control."
+      },
+      "result": {
+        "zh": "先改变待应用设置；不把修改字段说成已经完成规划或重算。",
+        "en": "Changes pending settings; editing a field is not completed planning or dose recomputation."
+      },
+      "caution": {
+        "zh": "这是基础输入操作契约，不是已验证的临床推荐或参数最优值。",
+        "en": "This is a basic input-editing contract, not a validated clinical recommendation or optimal parameter value."
+      },
+      "level": "basic_input",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "distLowerBound",
+          "label": "distLowerBound",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "0",
+            "step": "0.1"
+          }
+        },
+        {
+          "id": "distUpperBound",
+          "label": "distUpperBound",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "1",
+            "step": "0.5"
+          }
+        },
+        {
+          "id": "distRate",
+          "label": "distRate",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "0",
+            "max": "1",
+            "step": "0.05"
+          }
+        },
+        {
+          "id": "intervalRate",
+          "label": "intervalRate",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "0.5",
+            "step": "0.5"
+          }
+        },
+        {
+          "id": "iterRate",
+          "label": "iterRate",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "0.5",
+            "step": "0.5"
+          }
+        },
+        {
+          "id": "replanRate",
+          "label": "replanRate",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "0",
+            "max": "1",
+            "step": "0.1"
+          }
+        },
+        {
+          "id": "dlLR",
+          "label": "dlLR",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "0.00001",
+            "step": "0.0001"
+          }
+        },
+        {
+          "id": "dlLRDecay",
+          "label": "dlLRDecay",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "1",
+            "step": "0.1"
+          }
+        },
+        {
+          "id": "dlEpochs",
+          "label": "dlEpochs",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "100",
+            "step": "100"
+          }
+        },
+        {
+          "id": "dlPatience",
+          "label": "dlPatience",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "50",
+            "step": "50"
+          }
+        },
+        {
+          "id": "dlSearchRegion",
+          "label": "dlSearchRegion",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "0.1",
+            "max": "2",
+            "step": "0.1"
+          }
+        },
+        {
+          "id": "dlDVHMargin",
+          "label": "dlDVHMargin",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "0",
+            "max": "0.5",
+            "step": "0.01"
+          }
+        },
+        {
+          "id": "inferSizeX",
+          "label": "inferSizeX",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "step": "8"
+          }
+        },
+        {
+          "id": "inferSizeY",
+          "label": "inferSizeY",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "step": "8"
+          }
+        },
+        {
+          "id": "inferSizeZ",
+          "label": "inferSizeZ",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "step": "8"
+          }
+        },
+        {
+          "id": "rfMaxEpisodes",
+          "label": "rfMaxEpisodes",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "10",
+            "step": "10"
+          }
+        },
+        {
+          "id": "rfBandwidth",
+          "label": "rfBandwidth",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "1",
+            "step": "5"
+          }
+        }
+      ]
+    },
+    {
+      "key": "fields.guide",
+      "control_ids": [
+        "guideSkinThreshold",
+        "guideSkinClearance",
+        "guidePlateThickness",
+        "guidePatchMargin",
+        "guideChannelDiameter",
+        "guideSleeveOuterDiameter",
+        "guideSleeveOutward",
+        "guideSleeveInward",
+        "guideGeometryResolution",
+        "guideAuxiliaryHolesEnabled",
+        "guideAuxiliaryHoleDiameter",
+        "guideAuxiliaryHoleRingCount",
+        "guideAuxiliaryHolesPerRing",
+        "guideAuxiliaryHoleFirstOffset",
+        "guideAuxiliaryHoleRingSpacing",
+        "guideNeedleSelection",
+        "guideVersionSelect",
+        "surgicalGuidePlanningSelect"
+      ],
+      "handlers": [],
+      "panel": "Input",
+      "names": {
+        "zh": "导板参数 / 针道选择 / 版本",
+        "en": "Guide parameters / needle selection / version"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "编辑对应表单设置；详细单位和允许范围以该字段说明为准。",
+        "en": "Edit the corresponding form settings; use each field's documented units and allowed range."
+      },
+      "steps": {
+        "zh": "在字段中输入值或选择选项，遵从 min/max/step；核对后使用相应 Apply、运行或生成按钮。",
+        "en": "Enter a value or select an option, respecting min/max/step; review it, then use the appropriate Apply, Run or Generate control."
+      },
+      "result": {
+        "zh": "先改变待应用设置；不把修改字段说成已经完成规划或重算。",
+        "en": "Changes pending settings; editing a field is not completed planning or dose recomputation."
+      },
+      "caution": {
+        "zh": "这是基础输入操作契约，不是已验证的临床推荐或参数最优值。",
+        "en": "This is a basic input-editing contract, not a validated clinical recommendation or optimal parameter value."
+      },
+      "level": "basic_input",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "guideSkinThreshold",
+          "label": "guideSkinThreshold",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "-800",
+            "max": "100",
+            "step": "10"
+          }
+        },
+        {
+          "id": "guideSkinClearance",
+          "label": "guideSkinClearance",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "0",
+            "max": "5",
+            "step": "0.1"
+          }
+        },
+        {
+          "id": "guidePlateThickness",
+          "label": "guidePlateThickness",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "1",
+            "max": "10",
+            "step": "0.1"
+          }
+        },
+        {
+          "id": "guidePatchMargin",
+          "label": "guidePatchMargin",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "10",
+            "max": "80",
+            "step": "1"
+          }
+        },
+        {
+          "id": "guideChannelDiameter",
+          "label": "guideChannelDiameter",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "0.6",
+            "max": "12",
+            "step": "0.1"
+          }
+        },
+        {
+          "id": "guideSleeveOuterDiameter",
+          "label": "guideSleeveOuterDiameter",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "2",
+            "max": "24",
+            "step": "0.1"
+          }
+        },
+        {
+          "id": "guideSleeveOutward",
+          "label": "guideSleeveOutward",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "1",
+            "max": "30",
+            "step": "0.5"
+          }
+        },
+        {
+          "id": "guideSleeveInward",
+          "label": "guideSleeveInward",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "1",
+            "max": "30",
+            "step": "0.5"
+          }
+        },
+        {
+          "id": "guideGeometryResolution",
+          "label": "guideGeometryResolution",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "0.2",
+            "max": "2",
+            "step": "0.05"
+          }
+        },
+        {
+          "id": "guideAuxiliaryHolesEnabled",
+          "label": "guideAuxiliaryHolesEnabled",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "checkbox"
+          }
+        },
+        {
+          "id": "guideAuxiliaryHoleDiameter",
+          "label": "Derived from the primary channel diameter",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "0.6",
+            "max": "12.8",
+            "step": "0.1"
+          }
+        },
+        {
+          "id": "guideAuxiliaryHoleRingCount",
+          "label": "guideAuxiliaryHoleRingCount",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "1",
+            "max": "4",
+            "step": "1"
+          }
+        },
+        {
+          "id": "guideAuxiliaryHolesPerRing",
+          "label": "guideAuxiliaryHolesPerRing",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "4",
+            "max": "24",
+            "step": "1"
+          }
+        },
+        {
+          "id": "guideAuxiliaryHoleFirstOffset",
+          "label": "guideAuxiliaryHoleFirstOffset",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "2",
+            "max": "15",
+            "step": "0.1"
+          }
+        },
+        {
+          "id": "guideAuxiliaryHoleRingSpacing",
+          "label": "guideAuxiliaryHoleRingSpacing",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "min": "1.5",
+            "max": "10",
+            "step": "0.1"
+          }
+        },
+        {
+          "id": "guideNeedleSelection",
+          "label": "guideNeedleSelection",
+          "disabled_by_default": false,
+          "tag": "select",
+          "input_constraints": {}
+        },
+        {
+          "id": "guideVersionSelect",
+          "label": "guideVersionSelect",
+          "disabled_by_default": false,
+          "tag": "select",
+          "input_constraints": {}
+        },
+        {
+          "id": "surgicalGuidePlanningSelect",
+          "label": "surgicalGuidePlanningSelect",
+          "disabled_by_default": false,
+          "tag": "select",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "fields.display",
+      "control_ids": [
+        "viewerThreshold",
+        "doseColorbarMinInput",
+        "doseColorbarMaxInput",
+        "doseColorbarPalette",
+        "sat3dInteractiveSite"
+      ],
+      "handlers": [],
+      "panel": "Viewers",
+      "names": {
+        "zh": "阈值 / 色标 / SAT3D 部位输入",
+        "en": "Threshold / colorbar / SAT3D site inputs"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "编辑对应表单设置；详细单位和允许范围以该字段说明为准。",
+        "en": "Edit the corresponding form settings; use each field's documented units and allowed range."
+      },
+      "steps": {
+        "zh": "在字段中输入值或选择选项，遵从 min/max/step；核对后使用相应 Apply、运行或生成按钮。",
+        "en": "Enter a value or select an option, respecting min/max/step; review it, then use the appropriate Apply, Run or Generate control."
+      },
+      "result": {
+        "zh": "先改变待应用设置；不把修改字段说成已经完成规划或重算。",
+        "en": "Changes pending settings; editing a field is not completed planning or dose recomputation."
+      },
+      "caution": {
+        "zh": "这是基础输入操作契约，不是已验证的临床推荐或参数最优值。",
+        "en": "This is a basic input-editing contract, not a validated clinical recommendation or optimal parameter value."
+      },
+      "level": "basic_input",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": "viewerThreshold",
+          "label": "viewerThreshold",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "step": "10"
+          }
+        },
+        {
+          "id": "doseColorbarMinInput",
+          "label": "doseColorbarMinInput",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "step": "0.1"
+          }
+        },
+        {
+          "id": "doseColorbarMaxInput",
+          "label": "doseColorbarMaxInput",
+          "disabled_by_default": false,
+          "tag": "input",
+          "input_constraints": {
+            "type": "number",
+            "step": "0.1"
+          }
+        },
+        {
+          "id": "doseColorbarPalette",
+          "label": "pet rainbow surface rainbow viridis hot grayscale",
+          "disabled_by_default": false,
+          "tag": "select",
+          "input_constraints": {}
+        },
+        {
+          "id": "sat3dInteractiveSite",
+          "label": "sat3dInteractiveSite",
+          "disabled_by_default": false,
+          "tag": "select",
+          "input_constraints": {}
+        }
+      ]
+    },
+    {
+      "key": "global.theme",
+      "control_ids": [],
+      "handlers": [],
+      "panel": "Global",
+      "names": {
+        "zh": "主题 / Theme",
+        "en": "Theme"
+      },
+      "aliases": [],
+      "purpose": {
+        "zh": "切换明暗显示主题。",
+        "en": "Switch light/dark presentation theme."
+      },
+      "steps": {
+        "zh": "点击顶层主题图标。",
+        "en": "Click the top-level theme icon."
+      },
+      "result": {
+        "zh": "界面显示主题更新。",
+        "en": "The presentation theme updates."
+      },
+      "caution": {
+        "zh": "仅调整显示，不改变原始影像、分割或剂量。",
+        "en": "Presentation only; does not change source images, masks or dose."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/index.html"
+      ],
+      "bindings": [
+        {
+          "id": null,
+          "label": "Switch to light theme",
+          "disabled_by_default": false,
+          "tag": "button",
+          "input_constraints": {
+            "type": "button"
+          }
+        }
+      ]
+    },
+    {
+      "key": "tree.visibility",
+      "control_ids": [],
+      "handlers": [],
+      "panel": "Viewers",
+      "names": {
+        "zh": "Data Tree · 显示 / 隐藏",
+        "en": "Data Tree · show / hide"
+      },
+      "aliases": [
+        "眼睛图标",
+        "Show in 2D",
+        "Show in 3D",
+        "二维显示"
+      ],
+      "purpose": {
+        "zh": "控制对应对象显示。",
+        "en": "Control presentation of the corresponding object."
+      },
+      "steps": {
+        "zh": "核对目标行后点击眼睛图标；二维显示使用右键菜单 Show in 2D，三维使用对应显示项。",
+        "en": "Check the target row, then click its eye icon; use Show in 2D in its context menu for slices, or the corresponding 3D visibility action."
+      },
+      "result": {
+        "zh": "对应维度可见性更新，受上级组、全局叠加和切片位置共同影响。",
+        "en": "Visibility updates on the corresponding surface, subject to group/global overlays and slice location."
+      },
+      "caution": {
+        "zh": "隐藏不等于删除；二维切片需与结构相交。动作需绑定当前对象稳定 ref。",
+        "en": "Hidden is not deleted; a 2D slice must intersect the structure. Actions require the current object's stable ref."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/static/js/brachybot-ui-api.js:collectUIOperationCatalog",
+        "web/app/static/js/brachybot-viewer-volume.js"
+      ],
+      "bindings": []
+    },
+    {
+      "key": "tree.opacity",
+      "control_ids": [],
+      "handlers": [],
+      "panel": "Viewers",
+      "names": {
+        "zh": "Data Tree · 对象透明度",
+        "en": "Data Tree · object opacity"
+      },
+      "aliases": [
+        "data tree opacity",
+        "数据树透明度",
+        "透明度滑块"
+      ],
+      "purpose": {
+        "zh": "调整指定对象或组的显示透明度。",
+        "en": "Adjust presentation opacity for a specified object or group."
+      },
+      "steps": {
+        "zh": "在目标行拖动透明度滑块，或点两侧三角形微调。",
+        "en": "Drag the target row's opacity slider or use its triangular steppers."
+      },
+      "result": {
+        "zh": "查看器相应对象显示变化；不重算剂量。",
+        "en": "The corresponding viewer object's presentation changes; dose is not recalculated."
+      },
+      "caution": {
+        "zh": "仅调整显示，不改变原始影像、分割或剂量。",
+        "en": "Presentation only; does not change source images, masks or dose."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/static/js/brachybot-ui-api.js:collectUIOperationCatalog",
+        "web/app/static/js/brachybot-viewer-volume.js"
+      ],
+      "bindings": []
+    },
+    {
+      "key": "tree.color",
+      "control_ids": [],
+      "handlers": [],
+      "panel": "Viewers",
+      "names": {
+        "zh": "Data Tree · 颜色",
+        "en": "Data Tree · color"
+      },
+      "aliases": [
+        "data tree color",
+        "数据树颜色",
+        "更改颜色"
+      ],
+      "purpose": {
+        "zh": "修改对应结构的显示颜色。",
+        "en": "Change a structure's presentation color."
+      },
+      "steps": {
+        "zh": "在目标行点击颜色按钮，选择颜色并确认。",
+        "en": "Click the target row's color control, choose a color and confirm."
+      },
+      "result": {
+        "zh": "结构显示及已关联的 DVH/Analysis 呈现应采用同一颜色。",
+        "en": "Structure presentation and linked DVH/Analysis presentation should use the same color."
+      },
+      "caution": {
+        "zh": "仅调整显示，不改变原始影像、分割或剂量。",
+        "en": "Presentation only; does not change source images, masks or dose."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/static/js/brachybot-ui-api.js:collectUIOperationCatalog",
+        "web/app/static/js/brachybot-viewer-volume.js"
+      ],
+      "bindings": []
+    },
+    {
+      "key": "tree.classify",
+      "control_ids": [],
+      "handlers": [],
+      "panel": "Viewers",
+      "names": {
+        "zh": "Data Tree · 掩膜分类",
+        "en": "Data Tree · mask classification"
+      },
+      "aliases": [
+        "move to CTV",
+        "move to OAR",
+        "掩膜分类",
+        "移到CTV",
+        "移至CTV"
+      ],
+      "purpose": {
+        "zh": "将上传/手绘候选掩膜分类为 CTV 或 OAR。",
+        "en": "Classify uploaded/manual candidate masks as CTV or OAR."
+      },
+      "steps": {
+        "zh": "核对掩膜与 CT 对齐、标签含义和目标行，在右键菜单选择对应分类。",
+        "en": "Verify CT alignment, label semantics and the target row, then select the corresponding classification in its context menu."
+      },
+      "result": {
+        "zh": "结构语义和规划输入改变；仅上传不等于 CTV 就绪。",
+        "en": "Changes structure semantics and planning inputs; upload alone is not CTV readiness."
+      },
+      "caution": {
+        "zh": "可能使规划产物过期；不能把不同来源的 label 2 统一解释为障碍物。",
+        "en": "May stale planning artifacts; label 2 from different sources must not be universally interpreted as an obstacle."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/static/js/brachybot-ui-api.js:collectUIOperationCatalog",
+        "web/app/static/js/brachybot-viewer-volume.js"
+      ],
+      "bindings": []
+    },
+    {
+      "key": "tree.manage",
+      "control_ids": [],
+      "handlers": [],
+      "panel": "Viewers",
+      "names": {
+        "zh": "Data Tree · 重命名 / 删除 / 组管理",
+        "en": "Data Tree · rename / delete / groups"
+      },
+      "aliases": [
+        "数据树重命名",
+        "data tree rename",
+        "数据树删除",
+        "data tree delete"
+      ],
+      "purpose": {
+        "zh": "管理指定对象的名称、归组或移除。",
+        "en": "Manage a specified object's name, group or removal."
+      },
+      "steps": {
+        "zh": "右键目标行，选择对应操作并核对确认；组操作影响其成员。",
+        "en": "Right-click the target row, select the operation and review confirmation; group operations affect members."
+      },
+      "result": {
+        "zh": "以对应对象的实际操作结果为准。",
+        "en": "Use the actual result for the specified object."
+      },
+      "caution": {
+        "zh": "删除与隐藏不同；自然语言执行必须解析当前稳定对象 ID 和授权范围。",
+        "en": "Deletion differs from hiding; natural-language execution requires the current stable object ID and authorized scope."
+      },
+      "level": "reviewed",
+      "sources": [
+        "web/app/static/js/brachybot-ui-api.js:collectUIOperationCatalog",
+        "web/app/static/js/brachybot-viewer-volume.js"
+      ],
+      "bindings": []
+    }
+  ]
+}

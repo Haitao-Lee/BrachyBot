@@ -331,6 +331,7 @@ function _clampDvhVolume(v) {
 }
 
 function _volumeMetricPercent(value, units) {
+    if (value == null || value === '') return null;
     const n = Number(value);
     if (!Number.isFinite(n)) return null;
     const normalized = String(units || 'fraction').trim().toLowerCase();
@@ -368,7 +369,7 @@ function _getCurrentPrescriptionGyForDvh() {
         : 120;
 }
 
-function _buildDvhSignature(dvhData, rxGy) {
+function _buildDvhSignature(dvhData, rxGy, includePresentation = true) {
     if (!dvhData || typeof dvhData !== 'object') return '';
     const sortedNames = Object.keys(dvhData).sort();
     return sortedNames.map(name => {
@@ -377,6 +378,7 @@ function _buildDvhSignature(dvhData, rxGy) {
             name,
             dvh.dose_bins || [],
             dvh.volume_pcts || [],
+            includePresentation ? _analysisStructurePresentation(name, dvh) : null,
         ]);
     }).join('|') + `|rx:${Number(rxGy || 0).toFixed(4)}`;
 }
@@ -539,7 +541,10 @@ function drawDVH() {
     // (e.g. once per SSE step event during planning).
     const rxGy = _getCurrentPrescriptionGyForDvh();
     const _newSig = _buildDvhSignature(state.dvhData, rxGy);
+    const dataSig = _buildDvhSignature(state.dvhData, rxGy, false);
+    const viewOwner = `${typeof activeSessionId === 'undefined' ? '' : activeSessionId}:${state.dvhPlanningId || ''}`;
     const chartHasData = Array.isArray(dvhEl.data) && dvhEl.data.length > 0;
+    const keepView = chartHasData && drawDVH._lastDataSig === dataSig && drawDVH._lastViewOwner === viewOwner;
     if (drawDVH._lastSig === _newSig && chartHasData) {
         uiDebugLog('[drawDVH] Same signature, chart already rendered; resizing only');
         _setupDvhResponsiveResize(dvhEl);
@@ -587,7 +592,8 @@ function drawDVH() {
         }
         // Use the SAME color as the data tree (and OAR Dose Metrics
         // table) so the user can visually trace an OAR across panels.
-        const treeColor = _getOrganColor(name);
+        const presentation = _analysisStructurePresentation(name, dvh);
+        const treeColor = presentation.color;
         const color = treeColor || fallbackColors[i % fallbackColors.length];
         // Use legendgroup = name so Plotly's legend click toggles
         // the trace visibility (the data tree can also call
@@ -603,12 +609,14 @@ function drawDVH() {
         traces.push({
             x: smoothX,
             y: smoothY,
-            type: 'scatter', mode: 'lines', name: name,
+            type: 'scatter', mode: 'lines', name: presentation.name,
+            uid: presentation.objectId || name,
+            meta: { structureKey: name, objectId: presentation.objectId },
             line: { color, width: name === ctvName ? 2.6 : 1.4, shape: 'linear' },
             fill: name === ctvName ? 'tozeroy' : 'none',
             fillcolor: name === ctvName ? 'rgba(14,165,233,0.10)' : undefined,
             hoverinfo: 'none',
-            legendgroup: name,
+            legendgroup: presentation.objectId || name,
             showlegend: true,
         });
         i++;
@@ -625,6 +633,11 @@ function drawDVH() {
     // time and the Rx line moved around. The reset button restores
     // this 0–400 Gy default.
     const xRange = [0, DVH_DEFAULT_X_MAX];
+    const yRange = [0, DVH_DEFAULT_Y_MAX];
+    if (keepView) {
+        if (Array.isArray(dvhEl._fullLayout?.xaxis?.range)) xRange.splice(0, 2, ...dvhEl._fullLayout.xaxis.range);
+        if (Array.isArray(dvhEl._fullLayout?.yaxis?.range)) yRange.splice(0, 2, ...dvhEl._fullLayout.yaxis.range);
+    }
     // BUG FIX 2026-06-16: user wants x-axis to default to 20 Gy
     // tick spacing (so 0, 20, 40, 60, ..., 400 — 21 ticks) and
     // y-axis to default to 10% (0, 10, 20, ..., 100 — 11 ticks).
@@ -701,6 +714,7 @@ function drawDVH() {
 
     const responsiveLayout = _getDvhResponsiveRelayout(dvhEl);
     return Plotly.react(dvhEl, traces, {
+        uirevision: viewOwner,
         paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
         font: { color: '#cbd5e1', size: 11, family: 'Inter, sans-serif' },
         margin: responsiveLayout.margin,
@@ -723,7 +737,7 @@ function drawDVH() {
             gridcolor: '#334155', linecolor: '#475569', tickcolor: '#475569',
             titlefont: { color: '#cbd5e1', size: 10 },
             tickfont: { size: 9, color: '#cbd5e1' },
-            range: [0, DVH_DEFAULT_Y_MAX],
+            range: yRange,
             rangemode: 'tozero',
             fixedrange: false,
             // User requested 10% ticks (0, 10, 20, ..., 100). The
@@ -772,6 +786,8 @@ function drawDVH() {
         displaylogo: false,
     }).then(() => {
         drawDVH._lastSig = _newSig;
+        drawDVH._lastDataSig = dataSig;
+        drawDVH._lastViewOwner = viewOwner;
         // Force Plotly to re-measure container after render completes
         _setupDvhResponsiveResize(dvhEl);
         _setupDvhAxisInteraction(dvhEl);
@@ -819,6 +835,8 @@ function _normalizeRenderableDvhPayload(value) {
         if (!direct || !Array.isArray(direct.dose_bins) || !Array.isArray(direct.volume_pcts)
             || direct.dose_bins.length < 2 || direct.volume_pcts.length < 2) return;
         normalized[name] = {
+            ...curve,
+            ...direct,
             dose_bins: direct.dose_bins.slice(),
             volume_pcts: direct.volume_pcts.slice(),
         };
@@ -1493,6 +1511,7 @@ async function refreshPlanningUI(options = {}) {
         }
 
         // 4. Seeds (state.seeds) + 3D mesh re-render + dose overlay
+        void refreshStructureDvhAnalysis();
         if (data.seeds) {
             updateSeeds(data.seeds);
         }
@@ -2451,59 +2470,160 @@ function _extractGenericOARLabelId(name) {
     return m ? parseInt(m[2], 10) : null;
 }
 
+// Names are presentation, not identity. CTV and OAR may share a numeric label;
+// left/right organs or two structures with the same name must never be joined
+// by a substring. Preserve meaningful saved names while metadata is loading.
+function _analysisStructurePresentation(name, metric = {}) {
+    const tree = typeof dataTreeState === 'undefined' ? {} : dataTreeState;
+    const raw = String(metric.display_name || name || '').trim();
+    const objectId = String(metric.object_id || metric.objectId || '');
+    const family = String(metric.classification || (/^(CTV|PTV|GTV)$/i.test(name) ? 'ctv' : 'oar'));
+    const rawLabel = metric.label_id ?? metric.labelId ?? metric.organ_label ?? metric.organLabel;
+    const parsed = rawLabel != null && rawLabel !== '' ? Number(rawLabel) : _extractGenericOARLabelId(name);
+    const labelId = Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+    const nodes = family === 'ctv' ? Object.values(tree.ctvLabels || {}) : (tree.organs || []);
+    let node = objectId ? nodes.find(o => String(o.objectId || o.object_id || '') === objectId) : null;
+    if (!node && !objectId && labelId !== null) node = nodes.find(o => Number(o.labelId ?? o.label_id) === labelId);
+    if (!node && !objectId && labelId === null) {
+        const normalize = s => String(s || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+        const matches = nodes.filter(o => normalize(o.label || o.name) === normalize(raw));
+        if (matches.length === 1) node = matches[0];
+    }
+    if (!node && family === 'ctv' && /^(CTV|PTV|GTV)$/i.test(name)) {
+        node = nodes.length === 1 ? nodes[0] : tree.ctv;
+    }
+    const meta = family !== 'oar' || typeof organMetaFromServer === 'undefined' ? null : organMetaFromServer?.[labelId];
+    const generic = s => /^(?:(?:oar|organ|label|structure)[_\s-]?\d+|unmapped structure(?:\s*\(label \d+\))?)$/i.test(String(s || ''));
+    let displayName = node?.label || node?.name || (!generic(raw) ? raw : '')
+        || (family === 'oar' ? meta?.name : '') || raw;
+    if (metric.is_union) displayName = `${tree.ctv?.label || 'CTV'} (${String(window._i18nLang || '').startsWith('zh') ? '并集' : 'union'})`;
+    if (!displayName && labelId !== null) {
+        const lang = String(window._i18nLang || 'en').toLowerCase();
+        displayName = lang.startsWith('zh') ? `未映射结构（标签 ${labelId}）` : `Unmapped structure (label ${labelId})`;
+    }
+    const candidate = node?.color || (Array.isArray(meta?.color) ? `rgb(${meta.color.join(',')})` : meta?.color);
+    const color = typeof candidate === 'string' && /^(#[\da-f]{3,8}|rgb\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\))$/i.test(candidate) ? candidate : null;
+    return { name: displayName, color, objectId: objectId || node?.objectId || node?.object_id || null };
+}
+
 function _resolveOARDisplayName(name, metric = {}) {
-    const metricLabel = metric && (metric.label_id ?? metric.labelId ?? metric.organ_label ?? metric.organLabel);
-    const labelId = Number.isFinite(Number(metricLabel))
-        ? Number(metricLabel)
-        : _extractGenericOARLabelId(name);
+    return _analysisStructurePresentation(name, metric).name;
+}
 
-    if (labelId !== null && Number.isFinite(labelId)) {
-        const meta = organMetaFromServer && (organMetaFromServer[labelId] || organMetaFromServer[String(labelId)]);
-        if (meta && meta.name && !/^(oar|organ|label)[_\s-]?\d+$/i.test(meta.name)) return meta.name;
-        const fallback = _FALLBACK_OAR_LABEL_NAMES[labelId];
-        if (fallback) return fallback;
-        if (dataTreeState && dataTreeState.organs) {
-            const match = dataTreeState.organs.find(o =>
-                Number(o.labelId) === labelId ||
-                Number(String(o.id || '').replace(/\D+/g, '')) === labelId
-            );
-            if (match && match.label && !/^(oar|organ|label)[_\s-]?\d+$/i.test(match.label)) return match.label;
+function _getOrganColor(name, metric = {}) {
+    return _analysisStructurePresentation(name, metric).color;
+}
+
+// Repaint presentation only: no dose inference, mask request or mesh reload.
+// Coalesce color/group/hydration events and fence callbacks to their case.
+function refreshAnalysisStructurePresentation() {
+    const sessionId = typeof activeSessionId === 'undefined' ? '' : String(activeSessionId || '');
+    const generation = typeof viewerDataLoadGeneration === 'undefined' ? 0 : viewerDataLoadGeneration;
+    clearTimeout(refreshAnalysisStructurePresentation._timer);
+    refreshAnalysisStructurePresentation._timer = setTimeout(() => {
+        if (sessionId !== (typeof activeSessionId === 'undefined' ? '' : String(activeSessionId || ''))
+            || generation !== (typeof viewerDataLoadGeneration === 'undefined' ? 0 : viewerDataLoadGeneration)) return;
+        updateOARTable(_currentStructureAnalysis()?.oar_metrics || state.metrics?.oar_metrics || {});
+        if (state.dvhData) void drawDVH();
+        _updateDvhCoverageStatus();
+    }, 30);
+}
+window.refreshAnalysisStructurePresentation = refreshAnalysisStructurePresentation;
+
+function _structureAnalysisOwner() {
+    return {
+        sessionId: typeof activeSessionId === 'undefined' ? '' : String(activeSessionId || ''),
+        generation: typeof viewerDataLoadGeneration === 'undefined' ? 0 : viewerDataLoadGeneration,
+        planningId: String(state.dvhPlanningId || dataTreeState?.planning?.activePlanningId || dataTreeState?.planning?.id || ''),
+        metrics: state.metrics,
+    };
+}
+
+function _structureAnalysisOwnerCurrent(owner) {
+    const current = _structureAnalysisOwner();
+    return owner && owner.sessionId === current.sessionId && owner.generation === current.generation
+        && owner.planningId === current.planningId && owner.metrics === current.metrics;
+}
+
+function _currentStructureAnalysis() {
+    return _structureAnalysisOwnerCurrent(refreshStructureDvhAnalysis._owner) ? state.structureAnalysis : null;
+}
+
+function _updateDvhCoverageStatus() {
+    const host = document.getElementById('dvhCoverageStatus');
+    if (!host) return;
+    const analysis = _currentStructureAnalysis();
+    const coverage = analysis?.coverage;
+    const text = (zh, en) => typeof window._t === 'function' ? window._t(zh, en) : en;
+    if (!coverage) {
+        host.textContent = refreshStructureDvhAnalysis._pending
+            ? text('正在核对 CTV/OAR 曲线完整性…', 'Checking CTV/OAR curve completeness…')
+            : text('曲线完整性尚未核验', 'Curve completeness not verified');
+        return;
+    }
+    const suffix = coverage.status === 'complete'
+        ? text('全部已分类结构；不含尚未归入 CTV/OAR 的上传掩膜', 'All classified structures; unclassified uploaded masks excluded')
+        : coverage.status === 'stale' ? text('剂量已过期，请重算', 'Dose is stale; recompute required')
+        : text('部分结构未评估，不以零剂量替代', 'Some structures unassessed; missing values are not zero dose');
+    if (coverage.status === 'unavailable') {
+        host.textContent = text('CT/结构数据尚未就绪；保留已有结果，完整性未核验', 'CT/structures not ready; saved results retained, completeness unverified');
+        return;
+    }
+    host.textContent = `${text('CTV/OAR 曲线', 'CTV/OAR curves')}: ${coverage.available}/${coverage.expected} · ${suffix}`;
+    host.title = (coverage.structures || []).filter(row => !row.available || row.reason)
+        .map(row => `${_analysisStructurePresentation(row.display_name, row).name}: ${row.reason || 'unavailable'}`).join('\n');
+}
+
+async function refreshStructureDvhAnalysis() {
+    const owner = _structureAnalysisOwner();
+    if (!owner.sessionId || !owner.planningId || !state.ctLoaded) return false;
+    if (refreshStructureDvhAnalysis._pending && _structureAnalysisOwnerCurrent(refreshStructureDvhAnalysis._requestOwner)) {
+        return refreshStructureDvhAnalysis._promise;
+    }
+    refreshStructureDvhAnalysis._controller?.abort();
+    const controller = new AbortController();
+    refreshStructureDvhAnalysis._controller = controller;
+    refreshStructureDvhAnalysis._requestOwner = owner;
+    refreshStructureDvhAnalysis._pending = true;
+    _updateDvhCoverageStatus();
+    const promise = (async () => {
+        try {
+            const params = new URLSearchParams({ session_id: owner.sessionId, planning_id: owner.planningId });
+            const response = await fetch(`${API}/planning/structure-analysis?${params}`, {
+                headers: typeof _viewerDataHeaders === 'function' ? _viewerDataHeaders() : {}, signal: controller.signal,
+            });
+            if (!response.ok) throw new Error(`Structure analysis HTTP ${response.status}`);
+            const data = await response.json();
+            if (controller.signal.aborted || !_structureAnalysisOwnerCurrent(owner)
+                || String(data.planning_id || '') !== owner.planningId || data.success !== true) return false;
+            state.structureAnalysis = data;
+            refreshStructureDvhAnalysis._owner = owner;
+            const curves = _normalizeRenderableDvhPayload(data.dvh);
+            if (Object.keys(curves).length) state.dvhData = curves;
+            updateOARTable(data.oar_metrics || state.metrics?.oar_metrics || {});
+            await drawDVH();
+            return true;
+        } catch (error) {
+            if (error.name !== 'AbortError' && _structureAnalysisOwnerCurrent(owner)) {
+                console.warn('[Analysis] Structure completeness unavailable:', error);
+            }
+            return false;
+        } finally {
+            if (refreshStructureDvhAnalysis._controller === controller) {
+                refreshStructureDvhAnalysis._pending = false;
+                _updateDvhCoverageStatus();
+            }
         }
-        // Do not turn an unknown numeric label into a plausible anatomical
-        // name. The label id is useful for debugging, but its anatomy must
-        // come from model metadata or the Data Tree. Keep this explicit and
-        // localizable so an unmapped structure cannot be mistaken for a real
-        // clinical organ in the report.
-        const lang = String(window._i18nLang || (window.reportForm && window.reportForm.language) || 'en').toLowerCase();
-        return lang.startsWith('zh')
-            ? `未映射结构（标签 ${labelId}）`
-            : `Unmapped structure (label ${labelId})`;
-    }
-
-    return String(name || '');
+    })();
+    refreshStructureDvhAnalysis._promise = promise;
+    return promise;
 }
-
-function _getOrganColor(name) {
-    if (!dataTreeState || !dataTreeState.organs) return null;
-    const displayName = _resolveOARDisplayName(name);
-    // Direct match (label may be canonical)
-    for (const o of dataTreeState.organs) {
-        if (o.label === displayName || o.label === name) return o.color;
-    }
-    // Fuzzy match: data tree names sometimes have "(...)" suffixes or
-    // differ by case from DVH/OAR names.
-    const ln = displayName.toLowerCase().replace(/[^a-z0-9]/g, '');
-    for (const o of dataTreeState.organs) {
-        const lo = (o.label || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (lo === ln) return o.color;
-        if (lo.includes(ln) || ln.includes(lo)) return o.color;
-    }
-    return null;
-}
+window.refreshStructureDvhAnalysis = refreshStructureDvhAnalysis;
 
 function _dvhOarVolumePercent(value, units) {
+    if (value == null || value === '') return null;
     const n = Number(value);
-    if (!Number.isFinite(n)) return 0;
+    if (!Number.isFinite(n)) return null;
     const kind = String(units || '').toLowerCase();
     if (['fraction', 'ratio', '0-1'].includes(kind)) {
         return n >= 0 && n <= 1 ? n * 100 : null;
@@ -2516,6 +2636,7 @@ function _dvhOarVolumePercent(value, units) {
 
 function updateOARTable(oarMetrics) {
     const tbody = document.getElementById('oarTableBody');
+    if (!tbody) return;
     if (!oarMetrics || Object.keys(oarMetrics).length === 0) {
         const noOarText = typeof window._t === 'function' ? window._t('暂无 OAR 数据', 'No OAR data') : 'No OAR data';
         tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--text-dim);padding:0.75rem;">${escHtml(noOarText)}</td></tr>`;
@@ -2523,31 +2644,32 @@ function updateOARTable(oarMetrics) {
     }
     tbody.innerHTML = Object.entries(oarMetrics).map(([name, m]) => {
         const displayName = _resolveOARDisplayName(name, m);
-        const d01 = m.d0_1cc || 0;
-        const d1 = m.d1cc || 0;
-        const d2 = m.d2cc || 0;
-        const d90 = m.d90 || 0;
-        const d95 = m.d95 || 0;
-        const v100 = _dvhOarVolumePercent(m.v100);
+        const fmt = v => v != null && v !== '' && Number.isFinite(Number(v)) ? Number(v).toFixed(1) : '--';
+        const d01 = m.d0_1cc;
+        const d1 = m.d1cc;
+        const d2 = m.d2cc;
+        const d90 = m.d90;
+        const d95 = m.d95;
+        const v100 = _dvhOarVolumePercent(m.v100, m.volume_metric_units || state.metrics?.volume_metric_units);
         const vol = m.volume_cm3 ?? null;
         // Color code: highlight high dose values
         const d2ccClass = d2 > 100 ? 'style="color:var(--danger);font-weight:600;"' : '';
         // Color the organ name with the SAME color used in the data tree
         // and DVH curve, so the user can visually trace each OAR across
         // all 3 panels.
-        const organColor = _getOrganColor(displayName);
+        const organColor = _getOrganColor(name, m);
         const nameStyle = organColor
-            ? `style="max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;border-left:3px solid ${organColor};padding-left:6px;color:${organColor};"`
-            : `style="max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"`;
-        return `<tr>
+            ? `style="min-width:150px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;border-left:3px solid ${organColor};padding-left:6px;color:${organColor};"`
+            : `style="min-width:150px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"`;
+        return `<tr data-structure-id="${escHtml(m.object_id || '')}">
             <td ${nameStyle} title="${escHtml(displayName)}">${escHtml(displayName)}</td>
-            <td>${d01.toFixed(1)}</td>
-            <td>${d1.toFixed(1)}</td>
-            <td ${d2ccClass}>${d2.toFixed(1)}</td>
-            <td>${d90.toFixed(1)}</td>
-            <td>${d95.toFixed(1)}</td>
+            <td>${fmt(d01)}</td>
+            <td>${fmt(d1)}</td>
+            <td ${d2ccClass}>${fmt(d2)}</td>
+            <td>${fmt(d90)}</td>
+            <td>${fmt(d95)}</td>
             <td>${v100 == null ? '--' : v100.toFixed(1)}</td>
-            <td style="color:var(--text-dim);">${typeof vol === 'number' ? vol.toFixed(1) : vol}</td>
+            <td style="color:var(--text-dim);">${fmt(vol)}</td>
         </tr>`;
     }).join('');
 }
@@ -3249,5 +3371,6 @@ if (!window._clinicalEvaluationI18nListener) {
     window._clinicalEvaluationI18nListener = true;
     window.addEventListener('i18nchange', () => {
         try { updateClinicalEvaluation(); } catch (_) {}
+        refreshAnalysisStructurePresentation();
     });
 }

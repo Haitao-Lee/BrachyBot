@@ -372,6 +372,9 @@ def test_empty_llm_reply_fallback_keeps_the_current_viewer_question_and_language
         "zh",
         user_message="\u7c92\u5b50\u5462\uff0c\u600e\u4e48\u6d88\u5931\u4e86",
     )
-    assert "Viewer/Data Tree" in response
-    assert "\u6ca1\u6709\u6267\u884c\u4efb\u4f55\u5220\u9664" in response
+    # A failed answer is not a visibility diagnosis or a no-mutation receipt.
+    assert "\u7c92\u5b50\u5462\uff0c\u600e\u4e48\u6d88\u5931\u4e86" in response
+    assert "\u6267\u884c\u8ffd\u8e2a" in response
+    assert "Viewer/Data Tree" not in response
+    assert "\u6ca1\u6709\u6267\u884c\u4efb\u4f55\u5220\u9664" not in response
     assert "\u63d0\u4f9b\u66f4\u660e\u786e\u7684\u5206\u6790\u76ee\u6807" not in response

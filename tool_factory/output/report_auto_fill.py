@@ -413,47 +413,10 @@ class ReportAutoFillTool(BaseTool):
                 )
 
         if scope in ("all", "oar"):
-            oar = self._retrieve(agent, "oar_metrics", {}) or dose.get("oar_metrics") or {}
-            if isinstance(oar, dict) and oar:
-                oar_list = []
-                for name, values in oar.items():
-                    if not isinstance(values, dict):
-                        continue
-                    # Do not expose legacy placeholders such as
-                    # ``Organ 10000`` as if they were anatomical structures.
-                    # The shared resolver maps known labels and explicitly
-                    # marks unknown labels as unmapped.
-                    try:
-                        from web.server_support import _canonical_oar_display_name
-                        display_name = _canonical_oar_display_name(name, values.get("label_id"))
-                    except (ImportError, AttributeError, TypeError):
-                        display_name = str(name)
-                    row = {"organ": display_name}
-                    has_value = False
-                    for metric_key in ("d2cc", "d1cc", "d0_1cc", "dmax"):
-                        value = values.get(metric_key)
-                        if value is not None:
-                            try:
-                                row[metric_key] = round(float(value), 1)
-                                has_value = True
-                            except Exception:
-                                pass
-                    if values.get("v100") is not None:
-                        try:
-                            v100 = float(values.get("v100"))
-                            normalized_v100 = _volume_metric_as_percent(
-                                v100, dose.get("volume_metric_units")
-                            )
-                            if normalized_v100 is not None:
-                                row["v100"] = round(normalized_v100, 1)
-                                has_value = True
-                        except Exception:
-                            pass
-                    if has_value:
-                        oar_list.append(row)
-                oar_list.sort(key=lambda row: (row.get("d2cc") or row.get("dmax") or 0), reverse=True)
-                patch["oarDose"] = oar_list[:12]
-                provenance["planning"].append("oarDose")
+            from web.report_plan_tables import report_table_patch
+            tables = report_table_patch(agent, scope)
+            patch.update(tables)
+            provenance["derived"].extend(tables)
 
         if scope in ("all", "interpretation", "safety"):
             interp, safety = self._build_interpretation(language, dose, total_seeds, num_trajectories)
@@ -485,7 +448,15 @@ class ReportAutoFillTool(BaseTool):
             try:
                 patch, provenance = self._build_patch_from_agent(agent, scope, language)
             except Exception as e:
-                err = f"agent-memory: {e}"
+                # An explicit owner is authoritative. Never fall back to an
+                # unscoped local/HTTP agent after a version fence or data error.
+                return ToolResult(
+                    success=False, error=f"Owned report auto-fill failed: {e}",
+                    message="Could not build the current case report patch.",
+                    display=("报告数据或规划版本已变化，本轮未生成报告补丁；请在当前病例重新生成。"
+                             if language == "zh" else
+                             "Report data or planning revision changed. No report patch was produced; retry the current case."),
+                )
         try:
             if patch is None:
                 patch, provenance = self._in_process_call(payload)

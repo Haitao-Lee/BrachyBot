@@ -189,7 +189,9 @@ def test_native_report_images_use_one_bounded_portrait_a4_page_each():
     assert "const figure1PageCount = figure1Rows.length;" in source
     assert "const figure2PageCount = figure2Rows.length;" in source
     assert "const supplementalPageCount = supplementalRows.length;" in source
-    assert "const reportOarRowsPerPage = 24;" in source
+    # Wider, complete OAR detail is pre-chunked and then measured on A4.
+    assert "const reportOarRowsPerPage = 10;" in source
+    assert "_reportOarTables(pageRows, f.language)" in source
     assert "const oarPageCount = Math.max(1" in source
     assert "for (let offset = 0; offset < rows.length; offset += 1)" in source
     assert "const pageRows = rows.slice(offset, offset + 1);" in source

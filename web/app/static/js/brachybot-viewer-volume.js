@@ -70,6 +70,7 @@ function switchPanel(name, el) {
     }
     if (name === 'metrics') {
         _resizeDVHChartSoon();
+        void window.refreshStructureDvhAnalysis?.();
         // Planning can finish while Analysis is hidden. In that case the
         // initial Plotly call is intentionally deferred until this panel has
         // a real flex height. Reuse the same guarded renderer here so the
@@ -5721,6 +5722,7 @@ function renderDataTree() {
     _restoreTreeGroupExpansionState(body);
     body.scrollTop = previousScrollTop;
     body.scrollLeft = previousScrollLeft;
+    window.refreshAnalysisStructurePresentation?.();
     requestViewerVisualRefresh('data-tree-render');
 }
 

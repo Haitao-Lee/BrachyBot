@@ -2059,6 +2059,7 @@ function setTrainingMonitorPhase(phase) {
     if (normalized !== 'active') trainingMonitorState.captureQueue = [];
     setMonitorPresentation(normalized);
     window.refreshMonitorCheckpointPresentation?.(normalized);
+    window.refreshControlUsageGuide?.();
 }
 window.setTrainingMonitorPhase = setTrainingMonitorPhase;
 
