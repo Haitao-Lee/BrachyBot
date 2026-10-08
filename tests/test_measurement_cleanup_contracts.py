@@ -38,7 +38,7 @@ def test_clear_button_uses_versioned_existing_styles_and_preserves_other_delete_
     markup=(root/'web/app/index.html').read_text()
     assert 'id="toolClearMeasurements"' in markup
     assert 'data-i18n-zh="清除测量"' in markup
-    assert 'brachybot-manual-annotation.js?v=33' in markup
+    assert 'brachybot-manual-annotation.js?v=34' in markup
     source=(root/'web/app/static/js/brachybot-viewer-volume.js').read_text()
     assert "ids.every(id => id.startsWith('annotation:'))" in source
     assert "'/data/objects/batch-delete'" in source

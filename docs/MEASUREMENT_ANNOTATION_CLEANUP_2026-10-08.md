@@ -1,5 +1,17 @@
 # Measurement Annotation Deletion and Clear-All Repair
 
+## Follow-up: save-queue and feedback repair
+
+The original implementation was functionally validated, but a later user log
+revealed that duplicate Tree clicks during annotation persistence produced red
+errors and that full-workspace saves could delay a small clear operation. The
+subsequent repair is documented in
+[Annotation Save Queue and Data Tree Feedback Audit](ANNOTATION_SAVE_UX_AUDIT_2026-10-08.md).
+It adds scoped persistence, queue-content ownership, bounded response consumption,
+neutral ticking pending feedback, and explicit case-owned missing-object handling.
+The validation counts and source versions below describe the original delivery,
+not a claim that its full user experience was already complete.
+
 ## Scope and baseline
 
 Repair Data Tree deletion of Line/Angle annotations and add **Clear

@@ -2988,6 +2988,7 @@ function _viewerAnnotationOwner() {
 function _viewerAnnotationBusy() {
     return !!_viewerAnnotationMutation && _viewerAnnotationMutation.owner === _viewerAnnotationOwner();
 }
+window.isViewerAnnotationSavePending = _viewerAnnotationBusy;
 
 function ensureViewerAnnotationIdentities() {
     if (!Array.isArray(state.annotations)) state.annotations = [];
@@ -3016,19 +3017,34 @@ function viewerAnnotationLabel(annotation) {
 }
 
 function syncViewerMeasurementControls() {
+    const busy = _viewerAnnotationBusy();
+    document.querySelectorAll('[onclick="viewerUndo()"], [onclick="viewerRedo()"], #toolSat3dClear').forEach(control => {
+        if (busy && !control.dataset.annotationSaveDisabled) {
+            control.dataset.annotationSaveDisabled = control.disabled ? 'disabled' : 'enabled';
+            control.disabled = true;
+        } else if (!busy && control.dataset.annotationSaveDisabled) {
+            control.disabled = control.dataset.annotationSaveDisabled === 'disabled';
+            delete control.dataset.annotationSaveDisabled;
+        }
+    });
     const button = document.getElementById('toolClearMeasurements');
     if (!button) return;
     const count = (state.annotations || []).filter(a => _viewerMeasurementTypes.has(a.type)).length;
     const pending = _viewerMeasurementTypes.has(state.viewerSettings?.activeTool === 'measure' ? 'line' : state.viewerSettings?.activeTool)
         && (window._annotationToolState?.active || window._annotationToolState?.points?.length);
     button.disabled = _viewerAnnotationBusy() || (!count && !pending);
+    const seconds = busy ? Math.floor((Date.now() - _viewerAnnotationMutation.startedAt) / 1000) : 0;
+    const elapsed = seconds >= 2 ? ` ${seconds}s` : '';
     const label = typeof _t === 'function'
-        ? (_viewerAnnotationBusy() ? _t('正在保存…','Saving…') : _t('清除测量','Clear measurements'))
-        : (_viewerAnnotationBusy() ? 'Saving…' : 'Clear measurements');
+        ? (busy ? _t(`正在保存…${elapsed}`,`Saving…${elapsed}`) : _t('清除测量','Clear measurements'))
+        : (busy ? `Saving…${elapsed}` : 'Clear measurements');
     if (button.textContent !== label) button.textContent = label;
     button.dataset.measurementCount = String(count);
     button.setAttribute('aria-busy', _viewerAnnotationBusy() ? 'true' : 'false');
     button.title = typeof _t === 'function' ? _t(`清除 ${count} 项线段、角度和矩形测量；保留掩膜与 SAT3D 提示点。`, `Clear ${count} line, angle and rectangle measurement(s); preserve masks and SAT3D prompts.`) : 'Clear measurements only';
+    if (busy) button.title = typeof _t === 'function'
+        ? _t('画面已更新，正在等待服务器保存确认；无需重复点击。', 'The view is updated; waiting for the server to confirm the save. No need to click again.')
+        : 'Waiting for server save confirmation; no need to click again.';
 }
 
 function _refreshViewerAnnotationState(reason, persist = true) {
@@ -3054,7 +3070,8 @@ function _applyAnnotationRemoval(record, restore) {
 
 async function deleteViewerAnnotations(objectIds, options = {}) {
     const owner = _viewerAnnotationOwner();
-    if (_viewerAnnotationBusy()) throw new Error(typeof _t === 'function' ? _t('标注正在保存，请稍候。', 'Annotations are being saved; please wait.') : 'Annotations are being saved.');
+    // A duplicate click is an in-progress receipt, not a failed mutation.
+    if (_viewerAnnotationBusy()) return {success:false,pending:true,removed:0};
     if (state.ctLoaded !== true || document.body.classList.contains('workspace-readonly')
         || window.isWorkspacePresentationWriteLocked?.(typeof _activeApiSessionId === 'function' ? _activeApiSessionId() : null)) {
         throw new Error(typeof _t === 'function' ? _t('当前病例不可编辑，请先取得编辑权限并完成加载。', 'This case is not editable; acquire editing access and finish loading first.') : 'This case is not editable.');
@@ -3082,13 +3099,16 @@ async function deleteViewerAnnotations(objectIds, options = {}) {
     const record = {type:'annotation_remove', rows};
     const previousRedo = state.annotationRedoStack;
     _applyAnnotationRemoval(record, false);
-    pushUndo(record);
-    const operation = {owner, rows:state.annotations};
+    // The scoped transaction below owns this save. Do not also schedule a
+    // full workspace write merely for recording its Undo history.
+    pushUndo(record, {persist:false});
+    const operation = {owner, rows:state.annotations, startedAt:Date.now()};
     _viewerAnnotationMutation = operation;
     _refreshViewerAnnotationState('viewer.annotations.remove', false);
+    const statusTimer = setInterval(syncViewerMeasurementControls, 1000);
     try {
         const sessionId = typeof _activeApiSessionId === 'function' ? _activeApiSessionId() : window.activeSessionId;
-        const saved = await window.persistWorkspace('viewer.annotations.remove', {sessionId,skipChat:true});
+        const saved = await window.persistWorkspace('viewer.annotations.remove', {sessionId,skipChat:true,annotationsOnly:true});
         if (!saved) throw new Error(typeof _t === 'function' ? _t('标注保存未确认，请重试。', 'Annotation save was not confirmed. Please retry.') : 'Annotation save was not confirmed.');
         if (owner !== _viewerAnnotationOwner() || state.annotations !== operation.rows) return {success:false,stale:true,removed:rows.length,persisted:true};
         return {success:true,removed:rows.length,persisted:true};
@@ -3101,6 +3121,7 @@ async function deleteViewerAnnotations(objectIds, options = {}) {
         } else error.annotationStale = true;
         throw error;
     } finally {
+        clearInterval(statusTimer);
         if (_viewerAnnotationMutation === operation) _viewerAnnotationMutation = null;
         syncViewerMeasurementControls();
     }
@@ -3276,13 +3297,13 @@ function _ensureAnnotationHistoryScope() {
     }
 }
 
-function pushUndo(annotation) {
+function pushUndo(annotation, options = {}) {
     _ensureAnnotationHistoryScope();
     ensureViewerAnnotationIdentities();
     annotation.undoId = annotation.undoId || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     state.annotationUndoStack.push(annotation);
     state.annotationRedoStack = [];
-    if (typeof window.scheduleWorkspaceSave === 'function') window.scheduleWorkspaceSave('viewer.annotation.edit');
+    if (options.persist !== false && typeof window.scheduleWorkspaceSave === 'function') window.scheduleWorkspaceSave('viewer.annotation.edit');
 }
 
 function _refreshMaskEdit(ids) {

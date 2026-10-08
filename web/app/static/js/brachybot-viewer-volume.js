@@ -3498,7 +3498,7 @@ const dataTreeState = {
 let _dataTreeArtifactCatalogSession = '';
 let _dataTreeArtifactCatalogPromise = null;
 
-async function hydrateDataTreeArtifactCatalog({ force = false } = {}) {
+async function hydrateDataTreeArtifactCatalog({ force = false, strict = false } = {}) {
     const sessionId = _viewerDataSessionId();
     if (!sessionId) {
         dataTreeState.exportArtifacts = [];
@@ -3581,6 +3581,7 @@ async function hydrateDataTreeArtifactCatalog({ force = false } = {}) {
             if (sessionId === _viewerDataSessionId()) {
                 console.warn('[data-tree] artifact catalog hydration failed', error);
             }
+            if (strict) throw error;
             return [];
         } finally {
             if (_dataTreeArtifactCatalogPromise?.sessionId === sessionId) {
@@ -7150,7 +7151,7 @@ async function moveSelectedStructures(classification, objectIds = null) {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload.success === false) {
-        throw new Error(payload.error || _dtText('结构分类更新失败', 'Structure classification failed'));
+        throw _dataTreeRequestError(response, payload, expectedSessionId, _dtText('结构分类更新失败', 'Structure classification failed'));
     }
     // Ask the user whether to replan with the new structure masks. Choosing
     // "No" (or dismissing) keeps the moved structures visible under their new
@@ -7248,12 +7249,13 @@ async function deleteSelectedDataTreeItems(objectIds = null, options = {}) {
         : Array.from(objectIds))
         .map(id => _dataTreeObjectId(id, 'delete')).filter(Boolean))];
     if (!ids.length) return false;
+    if (ids.some(id => id.startsWith('annotation:')) && window.isViewerAnnotationSavePending?.()) return false;
     // These are browser-owned working annotations, including unsaved strokes.
     // Use the same authoritative workspace writer as drawing/Undo, not the
     // file-object API that only knows the previous debounced snapshot.
     if (ids.every(id => id.startsWith('annotation:')) && typeof window.deleteViewerAnnotations === 'function') {
         const result = await window.deleteViewerAnnotations(ids);
-        if (result?.success) {
+        if (result?.success && expectedSessionId === _viewerDataSessionId()) {
             selectedItems.clear();
             renderDataTree();
             addChat('system', _dtText(`已清除 ${result.removed} 项标注；Undo 可恢复。`, `${result.removed} annotation(s) cleared; Undo can restore them.`));
@@ -7299,7 +7301,7 @@ async function deleteSelectedDataTreeItems(objectIds = null, options = {}) {
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || payload.success === false) {
-            throw new Error(payload.error || _dtText('删除失败', 'Delete failed'));
+            throw _dataTreeRequestError(response, payload, expectedSessionId, _dtText('删除失败', 'Delete failed'));
         }
         const returnedIds = (payload.results || [])
             .map(result => String(result?.object_id || ''))
@@ -7340,13 +7342,17 @@ async function _refreshDataTreeAfterMissingObject(expectedSessionId) {
     // request whose visual refresh was interrupted.  Treat a known 404 as a
     // reconciliation event, not as a clinical-operation failure.
     invalidateViewerDataLoads();
+    const backgroundTasks = [];
     const refreshes = [
         loadLabelVolumes({
             sessionId: expectedSessionId,
             forceFresh: true,
             preserveViewerState: true,
+            registerBackgroundTask: task => backgroundTasks.push(Promise.resolve(task).then(
+                value => ({status:'fulfilled',value}), reason => ({status:'rejected',reason}),
+            )),
         }),
-        hydrateDataTreeArtifactCatalog({ force: true }),
+        hydrateDataTreeArtifactCatalog({ force: true, strict: true }),
     ];
     if (typeof refreshPlanningUI === 'function') {
         refreshes.push(refreshPlanningUI({
@@ -7358,7 +7364,10 @@ async function _refreshDataTreeAfterMissingObject(expectedSessionId) {
             autoGenerateGuide: false,
         }));
     }
-    await Promise.allSettled(refreshes);
+    const results = await Promise.allSettled(refreshes);
+    results.push(...await Promise.all(backgroundTasks));
+    if (results.some(result => result.status !== 'fulfilled' || result.value === false
+        || result.value?.success === false)) return false;
     if (String(expectedSessionId || '') !== _viewerDataSessionId()) return false;
     reconcileSegmentationViewerState({
         sessionId: expectedSessionId,
@@ -7368,28 +7377,49 @@ async function _refreshDataTreeAfterMissingObject(expectedSessionId) {
     return true;
 }
 
+function _dataTreeRequestError(response, payload, sessionId, fallback) {
+    const error = new Error(payload?.error || fallback);
+    error.status = response.status;
+    error.dataTreeSessionId = String(sessionId || '');
+    return error;
+}
+
 async function _runDataTreeAction(action) {
+    const owner = _viewerDataSessionId();
     try {
         return await Promise.resolve(action);
     } catch (error) {
         console.error('[data-tree] action failed', error);
         const message = String(error?.message || error || '');
-        if (/not found|no longer exists|missing/i.test(message)) {
-            const reconciled = await _refreshDataTreeAfterMissingObject(_viewerDataSessionId());
+        if (owner !== _viewerDataSessionId()
+            || (error?.dataTreeSessionId && error.dataTreeSessionId !== owner)
+            || error?.annotationStale) return false;
+        if (error?.status === 404 && error?.dataTreeSessionId === owner) {
+            const reconciled = await _refreshDataTreeAfterMissingObject(owner).catch(() => false);
             if (reconciled) {
                 addChat('system', _dtText(
-                    '该数据已不在服务器中，已按最新状态刷新 Data Tree 和查看器。',
-                    'This data no longer exists on the server. The Data Tree and viewers were refreshed to the latest state.',
+                    '服务器未找到所选数据，已重新加载当前病例的数据。若该项仍显示，请重新选择后再试。',
+                    'The server could not find the selected data. Current case data was reloaded; if the item remains, select it again and retry.',
                 ));
                 return false;
             }
         }
+        if (owner !== _viewerDataSessionId()) return false;
         addChat('error', _dtText(
             `数据操作失败：${message}`,
             `Data operation failed: ${message}`,
         ));
         return false;
     }
+}
+
+function _dataTreeDeleteMenuItem() {
+    const pending = window.isViewerAnnotationSavePending?.()
+        && getSelectedDataTreeIds().some(id => _dataTreeObjectId(id, 'delete')?.startsWith('annotation:'));
+    if (pending) return `<div class="ctx-menu-item" aria-disabled="true" style="opacity:0.6;cursor:default;">
+        <span class="ctx-icon">&#8987;</span> ${_dtText('正在保存标注…', 'Saving annotations…')}</div>`;
+    return `<div class="ctx-menu-item ctx-menu-danger" onclick="hideContextMenu();_runDataTreeAction(deleteSelectedDataTreeItems())">
+        <span class="ctx-icon">&#128465;</span> ${_dtText('删除真实数据', 'Delete data')}</div>`;
 }
 
 function showContextMenu(x, y) {
@@ -7555,8 +7585,7 @@ function showContextMenu(x, y) {
     if (isNonVisualArtifact) {
         items += `<div class="ctx-menu-item" onclick="hideContextMenu();_runDataTreeAction(exportSelectedDataTreeItems())">
             <span class="ctx-icon">&#8681;</span> ${_dtText('导出', 'Export')}</div>`;
-        items += `<div class="ctx-menu-item ctx-menu-danger" onclick="hideContextMenu();_runDataTreeAction(deleteSelectedDataTreeItems())">
-            <span class="ctx-icon">&#128465;</span> ${_dtText('删除真实数据', 'Delete data')}</div>`;
+        items += _dataTreeDeleteMenuItem();
         items += `<div class="ctx-menu-sep"></div>`;
         items += `<div class="ctx-menu-item" onclick="hideContextMenu();selectedItems.clear();renderDataTree();">
             <span class="ctx-icon">&#10005;</span> ${_dtText('清除选择', 'Clear selection')}</div>`;
@@ -7616,8 +7645,7 @@ function showContextMenu(x, y) {
 
     items += `<div class="ctx-menu-item" onclick="hideContextMenu();_runDataTreeAction(exportSelectedDataTreeItems())">
         <span class="ctx-icon">&#8681;</span> ${_dtText('导出', 'Export')}</div>`;
-    items += `<div class="ctx-menu-item ctx-menu-danger" onclick="hideContextMenu();_runDataTreeAction(deleteSelectedDataTreeItems())">
-        <span class="ctx-icon">&#128465;</span> ${_dtText('删除真实数据', 'Delete data')}</div>`;
+    items += _dataTreeDeleteMenuItem();
     items += `<div class="ctx-menu-sep"></div>`;
 
     // Show all
@@ -8004,7 +8032,7 @@ async function moveSelectedOrganTraversability(category, objectIds = null) {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload.success === false) {
-        throw new Error(payload.error || _dtText(
+        throw _dataTreeRequestError(response, payload, expectedSessionId, _dtText(
             'OAR 穿刺属性更新失败',
             'OAR traversability update failed',
         ));
@@ -9471,7 +9499,7 @@ async function moveSelectedMasks(classification, objectIds = null) {
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || payload.success === false) {
-            throw new Error(payload.error || _dtText('掩膜分类更新失败', 'Mask classification failed'));
+            throw _dataTreeRequestError(response, payload, expectedSessionId, _dtText('掩膜分类更新失败', 'Mask classification failed'));
         }
 
         ids.forEach(id => {

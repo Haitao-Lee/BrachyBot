@@ -38,6 +38,7 @@ def measurements(page):
     source = (JS/'brachybot-viewer-volume.js').read_text()
     page.add_script_tag(content='\n'.join(function(source,n) for n in (
         'ensureDataTreeNodeMetadata','reconcileViewerAnnotationNodes','_dataTreeObjectId',
+        '_dataTreeDeleteMenuItem','_dataTreeRequestError',
         'deleteSelectedDataTreeItems','handleTreeItemRightClick','showContextMenu')))
     return page
 
@@ -83,8 +84,10 @@ def test_clear_toolbar_only_removes_measurements_and_is_one_undo_transaction(mea
       state.activeMaskId='keep';state.seeds=[{id:'seed'}];state.needles=[{id:'needle'}];
       renderDataTree();redrawAllAnnotations();''')
     before=page.evaluate('state.annotations.map(a=>a.id)')
+    scheduled=page.evaluate('saved.length')
     page.locator('#toolClearMeasurements').click()
     page.wait_for_function('savedMeasurements.length===1')
+    assert page.evaluate('saved.length')==scheduled, 'Scoped removal must not queue a redundant full snapshot'
     assert page.evaluate('state.annotations.map(a=>a.id)')==['prompt','other']
     assert page.evaluate('state.maskLabels.keep.voxels.size')==1
     assert page.evaluate('state.activeMaskId')=='keep'
@@ -237,6 +240,95 @@ def test_clear_saving_state_is_visible_and_duplicate_actions_are_blocked(measure
     assert page.locator('#toolClearMeasurements').inner_text()=='Saving…'
     assert page.locator('#toolClearMeasurements').is_disabled()
     result=page.evaluate('clearViewerMeasurements()')
-    assert not result['success']
+    assert not result['success'] and result['pending']
+    assert not page.evaluate('chats.length')
+    assert page.evaluate('deleteViewerAnnotations(["duplicate"])')['pending']
+    assert not page.evaluate('deleteSelectedDataTreeItems(["annotation:duplicate"])')
+    assert not page.evaluate('chats.length')
     assert page.evaluate('state.annotationUndoStack.filter(x=>x.type==="annotation_remove").length')==1
     page.evaluate('resolveSave(true)');assert page.evaluate('clearPromise')['success']
+
+
+def test_pending_status_ticks_and_context_delete_is_disabled_not_an_error(measurements,tmp_path):
+    page=measurements;target=line(page)
+    page.evaluate('''() => {
+        persistWorkspace=()=>new Promise(resolve=>window.resolveSave=resolve);
+        window.clearPromise=clearViewerMeasurements();
+    }''')
+    page.wait_for_function('!!window.resolveSave')
+    page.wait_for_function('document.querySelector("#toolClearMeasurements").textContent.includes("2s")')
+    assert 'No need to click again' in page.locator('#toolClearMeasurements').get_attribute('title')
+    page.evaluate("id=>selectedItems.add(id)",target)
+    assert 'aria-disabled="true"' in page.evaluate('_dataTreeDeleteMenuItem()')
+    assert 'ctx-menu-danger' not in page.evaluate('_dataTreeDeleteMenuItem()')
+    for filename in ('brachybot-theme-layout.css','brachybot-panels-viewers.css','brachybot-data-export.css'):
+        page.add_style_tag(path=str(ROOT/'web/app/static/css'/filename))
+    page.locator('#panelViewers').evaluate("el=>{el.style.display='block';el.scrollIntoView();}")
+    page.locator('#toolClearMeasurements').scroll_into_view_if_needed()
+    page.screenshot(path=str(tmp_path/'annotation-save-pending.png'))
+    page.evaluate("_i18nLang='zh';dispatchEvent(new Event('i18nchange'))")
+    assert '正在保存' in page.locator('#toolClearMeasurements').inner_text()
+    page.evaluate('resolveSave(true)');assert page.evaluate('clearPromise')['success']
+    assert page.evaluate('chats.every(row=>row[0]!=="error")')
+
+
+def test_failed_refresh_and_missing_words_do_not_claim_data_was_deleted(measurements):
+    page=measurements
+    source=(JS/'brachybot-viewer-volume.js').read_text()
+    page.add_script_tag(content=function(source,'_runDataTreeAction'))
+    page.evaluate('''() => {window._refreshDataTreeAfterMissingObject=async()=>{window.refreshCount=(window.refreshCount||0)+1;return false;};}''')
+    page.evaluate("_runDataTreeAction(Promise.reject(new Error('missing save acknowledgement')))")
+    assert page.evaluate('window.refreshCount||0')==0
+    assert page.evaluate('chats.at(-1)[0]')=='error'
+    page.evaluate("_runDataTreeAction(Promise.reject(_dataTreeRequestError({status:404},{error:'not found'},activeSessionId,'failed')))")
+    assert page.evaluate('refreshCount')==1
+    assert page.evaluate('chats.at(-1)[0]')=='error'
+    page.evaluate('() => {window._refreshDataTreeAfterMissingObject=async()=>true;}')
+    page.evaluate("_runDataTreeAction(Promise.reject(_dataTreeRequestError({status:404},{error:'not found'},activeSessionId,'failed')))")
+    assert 'could not find' in page.evaluate('chats.at(-1)[1]')
+    assert 'no longer exists' not in page.evaluate('chats.at(-1)[1]')
+
+
+def test_late_data_error_is_not_reconciled_or_reported_in_another_case(measurements):
+    page=measurements;source=(JS/'brachybot-viewer-volume.js').read_text()
+    page.add_script_tag(content=function(source,'_runDataTreeAction'))
+    page.evaluate('''() => {
+        window._refreshDataTreeAfterMissingObject=async()=>{throw new Error('must not refresh');};
+        window.actionPromise=_runDataTreeAction(new Promise((resolve,reject)=>window.rejectAction=reject));
+    }''')
+    page.evaluate("activeSessionId='other';rejectAction(_dataTreeRequestError({status:404},{error:'not found'},'case','failed'))")
+    assert not page.evaluate('actionPromise')
+    assert not page.evaluate('chats.length')
+
+
+def test_real_missing_refresh_does_not_claim_success_when_a_loader_fails(measurements):
+    page=measurements;source=(JS/'brachybot-viewer-volume.js').read_text()
+    page.add_script_tag(content=function(source,'_refreshDataTreeAfterMissingObject'))
+    page.evaluate('''() => {
+        window.invalidateViewerDataLoads=()=>{};
+        window.loadLabelVolumes=async()=>{throw Error('offline');};
+        window.hydrateDataTreeArtifactCatalog=async()=>true;
+        window.reconcileSegmentationViewerState=()=>{};
+    }''')
+    assert not page.evaluate('_refreshDataTreeAfterMissingObject(activeSessionId)')
+    page.evaluate('() => {window.loadLabelVolumes=async()=>true;}')
+    assert page.evaluate('_refreshDataTreeAfterMissingObject(activeSessionId)')
+    page.evaluate('''() => {
+        window.refreshPlanningUI=async()=>({success:false,stage:'planning_results_http'});
+    }''')
+    assert not page.evaluate('_refreshDataTreeAfterMissingObject(activeSessionId)')
+    page.evaluate('''() => {
+        window.refreshPlanningUI=async()=>({success:true});
+        window.loadLabelVolumes=async options=>{options.registerBackgroundTask(Promise.resolve(false));return true;};
+    }''')
+    assert not page.evaluate('_refreshDataTreeAfterMissingObject(activeSessionId)')
+
+
+def test_catalog_failure_is_observable_only_for_strict_reconciliation(measurements):
+    page=measurements;source=(JS/'brachybot-viewer-volume.js').read_text()
+    page.add_script_tag(content='''let _dataTreeArtifactCatalogSession='';let _dataTreeArtifactCatalogPromise=null;
+        window._viewerDataHeaders=()=>({});'''+function(source,'hydrateDataTreeArtifactCatalog'))
+    page.route('**/api/data/catalog',lambda route:route.fulfill(status=503,json={'error':'offline'}))
+    page.evaluate("window.API='https://synthetic.invalid/api'")
+    assert page.evaluate('hydrateDataTreeArtifactCatalog({force:true})')==[]
+    assert page.evaluate('hydrateDataTreeArtifactCatalog({force:true,strict:true}).then(()=>false,()=>true)')

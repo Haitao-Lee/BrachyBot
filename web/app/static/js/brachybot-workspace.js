@@ -4657,14 +4657,24 @@
     }
 
     function workspaceSavePayload(ownerSessionId, reason, options = {}) {
+        if (options.annotationsOnly === true) {
+            return {
+                session_id: ownerSessionId,
+                reason,
+                viewer_annotations: {
+                    annotations: jsonClone(state.annotations || []),
+                    data_tree_annotations: jsonClone(typeof dataTreeState !== 'undefined' ? dataTreeState.annotations || [] : []),
+                },
+            };
+        }
         const payload = {
             session_id: ownerSessionId,
             revision: options.ignoreRevision === true
                 ? null
                 : (sessionRevisions[ownerSessionId] ?? revision),
-            report: reportState(ownerSessionId),
             reason,
         };
+        if (options.skipReport !== true) payload.report = reportState(ownerSessionId);
         if (options.skipChat !== true) {
             payload.chat = chatState(ownerSessionId);
         }
@@ -4677,18 +4687,26 @@
     }
 
     async function postWorkspaceSave(ownerSessionId, payload) {
-        const response = await workspaceFetch('/api/workspace/state', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-BrachyBot-Session': ownerSessionId,
-            },
-            body: JSON.stringify({ ...payload, response_mode: 'ack' }),
-        });
-        return {
-            response,
-            data: await response.json().catch(() => null),
-        };
+        // Keep the deadline alive through JSON consumption, not just headers.
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), WORKSPACE_REQUEST_TIMEOUT_MS);
+        try {
+            const response = await workspaceFetch('/api/workspace/state', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-BrachyBot-Session': ownerSessionId,
+                },
+                body: JSON.stringify({ ...payload, response_mode: 'ack' }),
+                signal: controller.signal,
+            });
+            return {
+                response,
+                data: await response.json().catch(() => null),
+            };
+        } finally {
+            clearTimeout(timer);
+        }
     }
 
     async function _waitForWorkspaceSaveReady(ownerSessionId, options = {}) {
@@ -4711,13 +4729,12 @@
         }
     }
 
-    async function _writeWorkspaceSnapshot(ownerSessionId, reason, options = {}) {
+    async function _writeWorkspaceSnapshot(ownerSessionId, reason, options, initialPayload) {
         // Capture the old case's complete payload before any asynchronous
         // retry or Session transition can change the global UI state. A
         // retry must update only its compare-and-swap revision; rebuilding
         // the payload from workspaceSavePayload() after a switch would send
         // the newly selected case's report/chat under the old session_id.
-        const initialPayload = workspaceSavePayload(ownerSessionId, reason, options);
         return (async () => {
             // A server-side checkpoint can advance the revision between a
             // browser render and its debounced save. The route returns that
@@ -4730,6 +4747,24 @@
                         revision: sessionRevisions[ownerSessionId] ?? initialPayload.revision,
                     });
                 const { response, data } = await postWorkspaceSave(ownerSessionId, payload);
+                if (initialPayload.viewer_annotations && response.ok && data?.success
+                    && data.saved_scope !== 'viewer_annotations') {
+                    // An already-running old server ignores unknown fields.
+                    // Never mistake its generic ACK for annotation persistence.
+                    // A compatibility write is safe only while the same case
+                    // still owns the browser; the modern path needs no large UI.
+                    if (ownerSessionId !== String(activeSessionId || '')) return false;
+                    const legacy = workspaceSavePayload(ownerSessionId, reason, {skipChat:true,skipReport:true});
+                    legacy.ui_state.viewer.annotations = initialPayload.viewer_annotations.annotations;
+                    legacy.ui_state.data_tree.annotations = initialPayload.viewer_annotations.data_tree_annotations;
+                    const result = await postWorkspaceSave(ownerSessionId, legacy);
+                    if (result.response.ok && result.data?.success) {
+                        sessionRevisions[ownerSessionId] = result.data.revision;
+                        if (ownerSessionId === String(activeSessionId || '')) revision = result.data.revision;
+                        return true;
+                    }
+                    return false;
+                }
                 if (response.status === 409) {
                     if (data?.code === 'workspace_locked' && ownerSessionId === String(activeSessionId || '')) {
                         document.body.classList.add('workspace-readonly');
@@ -4746,11 +4781,11 @@
                     console.debug('[workspace] save skipped after revision conflict');
                     return false;
                 }
-                if (data?.success) {
+                if (response.ok && data?.success) {
                     sessionRevisions[ownerSessionId] = data.revision;
                     if (ownerSessionId === String(activeSessionId || '')) revision = data.revision;
                 }
-                return !!data?.success;
+                return response.ok && !!data?.success;
             }
             return false;
         })();
@@ -4788,6 +4823,7 @@
                     && window.workspaceHasSavedPresentation(workspace);
             })();
         const skipUiState = options.skipUiState === true
+            || ownerSessionId !== String(activeSessionId || '')
             || (!options.allowDuringRestore
                 && ((typeof isWorkspacePresentationWriteLocked === 'function'
                     && isWorkspacePresentationWriteLocked(ownerSessionId))
@@ -4797,11 +4833,22 @@
             skipUiState,
             skipChat: options.skipChat === true,
             ignoreRevision: options.ignoreRevision === true,
+            annotationsOnly: options.annotationsOnly === true,
         };
+        if (writeOptions.annotationsOnly && (skipUiState || ownerSessionId !== String(activeSessionId || ''))) return false;
+        // Snapshot now, before a queued save yields. A delayed write must not
+        // serialize a newly-selected case under this caller's old owner ID.
+        let initialPayload;
+        try {
+            initialPayload = workspaceSavePayload(ownerSessionId, reason, writeOptions);
+        } catch (error) {
+            console.debug('[workspace] snapshot capture deferred:', error);
+            return false;
+        }
         const save = prior
             ? Promise.resolve(prior).catch(() => false)
-                .then(() => _writeWorkspaceSnapshot(ownerSessionId, reason, writeOptions))
-            : _writeWorkspaceSnapshot(ownerSessionId, reason, writeOptions);
+                .then(() => _writeWorkspaceSnapshot(ownerSessionId, reason, writeOptions, initialPayload))
+            : _writeWorkspaceSnapshot(ownerSessionId, reason, writeOptions, initialPayload);
         workspaceSaveInFlight[ownerSessionId] = save;
         try {
             return await save;

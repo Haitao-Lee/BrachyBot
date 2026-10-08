@@ -2730,6 +2730,26 @@ class WorkspaceStore:
                 expected_revision=expected_revision, reason=reason,
             )
 
+    def save_viewer_annotations(
+        self, user_id: str, session_id: str, annotations: Any, tree_annotations: Any,
+    ) -> Dict[str, Any]:
+        """Replace annotation arrays only, preserving all other workspace data."""
+        for rows in (annotations, tree_annotations):
+            if not isinstance(rows, list) or len(rows) > 10000:
+                raise WorkspaceError("Annotation records must be arrays of at most 10000 items")
+            if any(not isinstance(row, Mapping) for row in rows):
+                raise WorkspaceError("Each annotation record must be an object")
+            ids = [str(row.get("id") or "") for row in rows]
+            if any(not value for value in ids) or len(ids) != len(set(ids)):
+                raise WorkspaceError("Annotation records require unique stable IDs")
+        if {str(row["id"]) for row in annotations} != {str(row["id"]) for row in tree_annotations}:
+            raise WorkspaceError("Annotation geometry and Data Tree identities do not match")
+        return self.save_snapshot_patch(user_id, session_id, {
+            "viewer_annotations": {
+                "annotations": annotations, "data_tree_annotations": tree_annotations,
+            },
+        }, reason="workspace.viewer_annotations_saved")
+
     def save_agent_results_patch(
         self,
         user_id: str,
@@ -2907,6 +2927,19 @@ class WorkspaceStore:
             raise WorkspaceLeaseConflict("This case was updated in another browser; reload it before editing")
         root = self.workspace_root(user_id, session_id, create=True)
         snapshot = self.load_snapshot(user_id, session_id)
+        annotation_patch = patch.get("viewer_annotations")
+        if isinstance(annotation_patch, Mapping):
+            # The existing UI patch is shallow at `ui.state`. Never send a
+            # miniature ui_state there: it would erase masks/settings. Merge
+            # these two array replacements under the same case guard instead.
+            ui = dict(snapshot.get("ui") or {})
+            ui_state = dict(ui.get("state") if isinstance(ui.get("state"), Mapping) else ui)
+            viewer = dict(ui_state.get("viewer") or {})
+            tree = dict(ui_state.get("data_tree") or {})
+            viewer["annotations"] = _safe_json(annotation_patch["annotations"])
+            tree["annotations"] = _safe_json(annotation_patch["data_tree_annotations"])
+            ui_state.update({"viewer": viewer, "data_tree": tree})
+            snapshot["ui"] = {**ui, "state": ui_state}
         for key in ("ui", "report", "chat", "operation"):
             if key in patch and isinstance(patch[key], Mapping):
                 current = snapshot.get(key) if isinstance(snapshot.get(key), Mapping) else {}

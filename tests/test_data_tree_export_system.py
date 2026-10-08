@@ -449,8 +449,9 @@ def test_missing_data_tree_objects_trigger_authoritative_reconciliation():
 
     assert "async function _refreshDataTreeAfterMissingObject(expectedSessionId)" in viewer
     assert "data-tree-missing-object-reconcile" in viewer
-    assert "/not found|no longer exists|missing/i.test(message)" in viewer
-    assert "The Data Tree and viewers were refreshed to the latest state." in viewer
+    assert "error?.status === 404 && error?.dataTreeSessionId === owner" in viewer
+    assert "Current case data was reloaded" in viewer
+    assert "/not found|no longer exists|missing/i.test(message)" not in viewer
 
 
 def test_model_ctv_anatomy_survives_an_oar_source_refresh():

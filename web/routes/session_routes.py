@@ -414,6 +414,13 @@ def register_session_routes(
         if error:
             return error
         data = request.get_json(silent=True) or {}
+        annotation_patch = data.get("viewer_annotations")
+        if "viewer_annotations" in data and (
+            not isinstance(annotation_patch, dict)
+            or set(annotation_patch) != {"annotations", "data_tree_annotations"}
+            or any(key in data for key in ("ui", "ui_state", "report", "chat", "operation"))
+        ):
+            return jsonify({"success": False, "error": "Invalid scoped annotation save"}), 400
         session_id = ""
         patch: Dict[str, Any] = {}
         for key in ("ui", "report", "chat", "operation"):
@@ -435,6 +442,22 @@ def register_session_routes(
                 except (TypeError, ValueError):
                     expected_revision = None
             snapshot = None
+            if isinstance(annotation_patch, dict):
+                with store._case_guard(user["id"], session_id):
+                    snapshot = store.save_viewer_annotations(
+                        user["id"], session_id, annotation_patch["annotations"],
+                        annotation_patch["data_tree_annotations"],
+                    )
+                    agent = get_cached_agent(session_id) if callable(get_cached_agent) else None
+                    if agent is not None:
+                        # Merge only changed leaves into memory as well. The
+                        # memory patch API replaces supplied top-level keys.
+                        # Keep this ordered with the durable case transaction.
+                        current = agent.memory.get_ui_state()
+                        agent.memory.set_ui_state({
+                            "viewer": {**(current.get("viewer") or {}), "annotations": annotation_patch["annotations"]},
+                            "data_tree": {**(current.get("data_tree") or {}), "annotations": annotation_patch["data_tree_annotations"]},
+                        })
             chat_patch = patch.pop("chat", None)
             if isinstance(chat_patch, dict):
                 snapshot = store.save_snapshot_patch(
@@ -453,7 +476,7 @@ def register_session_routes(
             # snapshot is already durable; update memory only when the case
             # is already cached in this process — never create a full GPU
             # agent just to write a UI field.
-            if callable(get_cached_agent):
+            if callable(get_cached_agent) and not isinstance(annotation_patch, dict):
                 agent = get_cached_agent(session_id)
                 if agent is not None and isinstance(data.get("ui_state"), dict):
                     agent.memory.set_ui_state(data["ui_state"])
@@ -479,6 +502,8 @@ def register_session_routes(
         except WorkspaceError as exc:
             return jsonify({"error": str(exc)}), 400
         result = {"success": True, "revision": snapshot["session"]["revision"]}
+        if isinstance(annotation_patch, dict):
+            result["saved_scope"] = "viewer_annotations"
         # Modern save callers consume only the acknowledgement. Keep the
         # complete response for old clients; never change the durable save.
         if data.get("response_mode") != "ack":
