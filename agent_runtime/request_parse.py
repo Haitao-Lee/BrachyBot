@@ -361,7 +361,7 @@ _ACTION_ALIASES: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
         "reset", "wipe", "erase",
     )),
     ("export", (
-        "\u5bfc\u51fa", "export",
+        "\u5bfc\u51fa", "export", "另存为", "保存为", "save as", "download", "下载",
     )),
     ("generate", (
         "\u91cd\u65b0\u751f\u6210", "\u518d\u751f\u6210", "\u751f\u6210", "\u91cd\u5efa",

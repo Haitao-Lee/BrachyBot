@@ -607,10 +607,10 @@ function _uiOperationActionFromElement(element) {
     if (/recomputeManualDose\s*\(/i.test(source)) return { target: 'manual.dose.recompute', command: 'run', semantic_property: 'action' };
     if (/replanManualPlan\s*\(/i.test(source)) return { target: 'manual.plan.replan', command: 'run', semantic_property: 'action' };
     if (/generateSurgicalGuide\s*\(/i.test(source)) return { target: 'ui.control', command: 'click', semantic_property: 'action' };
-    if (/exportSurgicalGuideSTL\s*\(/i.test(source)) return { target: 'ui.control', command: 'click', semantic_property: 'action' };
-    if (/exportDicomRT\s*\(/i.test(source)) return { target: 'ui.control', command: 'click', semantic_property: 'action' };
-    if (/exportSTL\s*\(/i.test(source)) return { target: 'ui.control', command: 'click', semantic_property: 'action' };
-    if (/exportReport\s*\(/i.test(source)) return { target: 'report.export', command: 'run', value: 'pdf', semantic_property: 'report' };
+    if (/exportSurgicalGuideSTL\s*\(/i.test(source)) return { target: 'data.export', command: 'run', value: { data_types: ['surgical_guide'], format: 'stl' }, semantic_property: 'export' };
+    if (/exportDicomRT\s*\(/i.test(source)) return { target: 'data.export', command: 'run', value: { data_types: ['dicom_rt'], format: 'dicom_rt' }, semantic_property: 'export' };
+    if (/exportSTL\s*\(/i.test(source)) return { target: 'data.export', command: 'run', value: { data_types: ['needle', 'seed'], format: 'stl' }, semantic_property: 'export' };
+    if (/exportReport\s*\(/i.test(source)) return { target: 'report.export', command: 'run', value: 'html', semantic_property: 'report' };
     let reportExportMatch = source.match(/Report\.export\.(pdf|html|markdown|json)\s*\(/i);
     if (reportExportMatch) return {
         target: 'report.export', command: 'run', value: reportExportMatch[1].toLowerCase(), semantic_property: 'report',
@@ -7396,6 +7396,7 @@ function _uiActionResultState(result) {
     if (result.cancelled === true) return 'cancelled';
     if (result.success === false) return 'failed';
     const status = String(result.status || '').trim().toLowerCase();
+    if (status === 'awaiting_user_confirmation') return status;
     const running = _UI_ACTION_RUNNING_STATES.has(status) ? status : '';
     if (result.completed === true) return 'completed';
     if (result.completed === false) {
@@ -7525,7 +7526,20 @@ async function _executeUIActionsWithProgress(actions, options = {}) {
             break;
         }
         try {
-            const result = await _executeUIAction(action, { sessionId: ownerSessionId });
+            let exportReceipt = null;
+            const onExportState = receipt => {
+                if (exportReceipt) Object.assign(exportReceipt, receipt,
+                    { success: receipt.status !== 'failed', cancelled: receipt.status === 'cancelled' });
+                // Keep actual saving separate from a download/print request.
+                // A late callback updates its original owner, never a new turn.
+                ledger.set(stepKey, receipt.status === 'saved' && !receipt.partial ? 'completed' : receipt.status);
+                _emitUIActionProgress({ ...base,
+                    status: receipt.status === 'failed' ? 'error' : receipt.status === 'cancelled' ? 'cancelled' : 'done',
+                    result: receipt.message,
+                    metadata: { exportState: receipt.status, saved: receipt.saved, partial: receipt.partial || false } });
+            };
+            const result = await _executeUIAction(action, { sessionId: ownerSessionId, onExportState });
+            exportReceipt = result;
             if (!_uiActionSessionIsCurrent(ownerSessionId)) {
                 // A case switch is a global abort, not a local failure: stop,
                 // because the remaining actions no longer have an owner.
@@ -7564,7 +7578,7 @@ async function _executeUIActionsWithProgress(actions, options = {}) {
             // finished, and its dependants must not run.
             _emitUIActionProgress({
                 ...base,
-                status: state === 'completed' ? 'done' : 'running',
+                status: state === 'completed' ? 'done' : state === 'awaiting_user_confirmation' ? 'pending' : 'running',
                 result: doneText,
                 metadata: { executionState: state },
             });
@@ -9043,12 +9057,14 @@ async function _executeUIActionRaw(a, options = {}) {
                 }
             }
         }
-        if (target === 'report.export') {
-            if (typeof Report !== 'undefined' && Report.export) {
-                const fn = Report.export[value];
-                if (fn) return fn();
+        if (target === 'data.export' || target === 'report.export') {
+            if (typeof window.openSessionExportDialog !== 'function') {
+                return { success: false, error: 'The Save Data dialog is unavailable.' };
             }
-            return { success: false, error: 'The requested report export is unavailable.' };
+            const exportOptions = target === 'report.export'
+                ? { data_types: ['report'], format: value || 'pdf' } : (value || {});
+            return window.openSessionExportDialog({ ...exportOptions, sessionId: options.sessionId,
+                requireCurrentSession: true, onState: options.onExportState });
         }
         if (target === 'report.import') {
             if (typeof Report !== 'undefined' && Report.persist) return Report.persist.importJSON();

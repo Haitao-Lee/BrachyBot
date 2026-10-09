@@ -16,6 +16,7 @@ function _inputButtonProgress(key, status, zhLabel, enLabel, detail = '', option
 }
 
 async function exportDicomRT() {
+    if (window.openSessionExportDialog) return window.openSessionExportDialog({ data_types: ['dicom_rt'], format: 'dicom_rt' });
     let owner;
     const key = 'export_dicom_rt';
     _inputButtonProgress(key, 'running', '\u6b63\u5728\u5bfc\u51fa DICOM-RT', 'Exporting DICOM-RT');
@@ -40,6 +41,7 @@ async function exportDicomRT() {
 }
 
 async function exportSTL() {
+    if (window.openSessionExportDialog) return window.openSessionExportDialog({ data_types: ['needle', 'seed'], format: 'stl' });
     let owner;
     const key = 'export_stl';
     _inputButtonProgress(key, 'running', '\u6b63\u5728\u5bfc\u51fa STL', 'Exporting STL');
@@ -64,6 +66,7 @@ async function exportSTL() {
 }
 
 async function exportReport() {
+    if (window.openSessionExportDialog) return window.openSessionExportDialog({ data_types: ['report'], format: 'html' });
     let owner;
     const key = 'export_report';
     _inputButtonProgress(key, 'running', '\u6b63\u5728\u751f\u6210\u62a5\u544a', 'Generating treatment plan report');

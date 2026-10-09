@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import logging
@@ -33,11 +34,20 @@ from web.structure_service import EffectiveStructures, build_effective_structure
 
 
 EXPORT_SCHEMA_VERSION = 1
+EXPORT_MAX_SELECTIONS = 10000
 logger = logging.getLogger(__name__)
 
 
 class ExportError(ValueError):
     """Raised when an export request cannot be fulfilled."""
+
+
+def ensure_export_resources(agent):
+    """Seal exports only after restoration; metadata readers stay available."""
+    if getattr(agent, '_workspace_hydration_in_progress', False) or not getattr(agent, '_workspace_data_ready', True):
+        raise ExportError("Case resources are still restoring; wait for loading to complete before exporting")
+    if getattr(agent, '_workspace_hydration_error', None):
+        raise ExportError("Case resource restoration failed; export cannot claim a complete data selection")
 
 
 def _utc_now() -> str:
@@ -52,7 +62,99 @@ def _safe_name(value: Any, fallback: str = "data") -> str:
     return text[:64] or fallback
 
 
-def _resolved_surgical_guide(agent: Any) -> tuple[Dict[str, Any], Dict[str, Any]]:
+def export_filename(value: Any, extension: str = "") -> str:
+    """Validate a user-controlled *leaf*, never a server filesystem path."""
+    if not isinstance(value, str) or not value or len(value) > 120:
+        raise ExportError("A filename must contain 1 to 120 characters")
+    if re.search(r'[<>:"/\\|?*\x00-\x1f]', value) or value.endswith((" ", ".")) or value in {".", ".."}:
+        raise ExportError("Use a filename, not a path; special filesystem characters are not allowed")
+    if re.match(r"^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)", value, re.I):
+        raise ExportError("This filename is reserved by the operating system")
+    if extension and not value.lower().endswith(extension.lower()):
+        raise ExportError(f"The filename must end with {extension}")
+    return value
+
+
+def validate_export_selections(catalog, selections):
+    """Reject the whole invalid proposal, rather than exporting a wider subset."""
+    if not isinstance(selections, list) or not selections or len(selections) > EXPORT_MAX_SELECTIONS:
+        raise ExportError(f"Select between 1 and {EXPORT_MAX_SELECTIONS} export objects")
+    available = {item.object_id: item for item in catalog}
+    seen = set()
+    destinations = set()
+    output = []
+    for row in selections:
+        if not isinstance(row, Mapping):
+            raise ExportError("Each export selection must be an object")
+        item = available.get(str(row.get("object_id") or ""))
+        if item is None:
+            raise ExportError("A selected object is no longer available; refresh the save dialog")
+        if item.object_id in seen:
+            raise ExportError("An export object was selected more than once")
+        seen.add(item.object_id)
+        key = row.get("format") or item.default_format
+        spec = next((fmt for fmt in item.formats if fmt.key == key), None)
+        if spec is None:
+            raise ExportError(f"{item.name} does not support {key}")
+        selection = {"object_id": item.object_id, "format": key}
+        if "filename" in row:
+            selection["filename"] = export_filename(row["filename"], spec.extension)
+            destination = (item.relative_dir + '/' + selection['filename']).casefold()
+            if destination in destinations:
+                raise ExportError("Selected objects have duplicate destination filenames")
+            destinations.add(destination)
+        output.append(selection)
+    return output
+
+
+def _cylinder_mesh(start, end, radius, sides=16):
+    """Closed visualization cylinder in patient LPS millimetres."""
+    start, end = np.asarray(start, dtype=float), np.asarray(end, dtype=float)
+    if start.shape != (3,) or end.shape != (3,) or not np.isfinite([start, end]).all():
+        raise ExportError("Model coordinates must be finite 3D patient coordinates")
+    length = float(np.linalg.norm(end - start))
+    if not math.isfinite(radius) or radius <= 0 or length < 1e-6:
+        raise ExportError("Model radius and length must be finite and positive")
+    axis = (end - start) / length
+    helper = np.eye(3)[int(np.argmin(np.abs(axis)))]
+    u = np.cross(axis, helper)
+    u /= np.linalg.norm(u)
+    v = np.cross(axis, u)
+    angles = np.arange(sides) * 2 * np.pi / sides
+    ring = radius * (np.cos(angles)[:, None] * u + np.sin(angles)[:, None] * v)
+    vertices = np.vstack((start + ring, end + ring, start, end))
+    faces = []
+    for index in range(sides):
+        nxt = (index + 1) % sides
+        faces.extend(((index, nxt, index + sides), (nxt, nxt + sides, index + sides),
+                      (2 * sides, nxt, index), (2 * sides + 1, index + sides, nxt + sides)))
+    return vertices, np.asarray(faces, dtype=np.int64)
+
+
+def _write_planning_stl(record, kind, path):
+    if kind == "seed":
+        position = np.asarray(record["position"], dtype=float)
+        direction = np.asarray(record["direction"], dtype=float)
+        norm = float(np.linalg.norm(direction))
+        if direction.shape != (3,) or not np.isfinite(direction).all() or norm <= 0:
+            raise ExportError("Seed orientation is missing or invalid")
+        length = float(record["length_mm"])
+        if not math.isfinite(length) or length <= 0:
+            raise ExportError("Seed length is invalid")
+        delta = direction / norm * length / 2
+        parts = [_cylinder_mesh(position - delta, position + delta, float(record["diameter_mm"]) / 2)]
+    else:
+        points = record["points"]
+        parts = [_cylinder_mesh(a, b, float(record["display_radius_mm"])) for a, b in zip(points, points[1:])]
+    vertices, faces, offset = [], [], 0
+    for verts, tris in parts:
+        vertices.extend(verts)
+        faces.extend(tris + offset)
+        offset += len(verts)
+    path.write_bytes(_ascii_stl(np.asarray(vertices), np.asarray(faces), kind))
+
+
+def _resolved_surgical_guide(agent: Any, version=None) -> tuple[Dict[str, Any], Dict[str, Any]]:
     """Resolve the active guide through the hydration-safe status contract.
 
     The export catalog is another Data Tree consumer. Reading only the
@@ -71,13 +173,15 @@ def _resolved_surgical_guide(agent: Any) -> tuple[Dict[str, Any], Dict[str, Any]
     try:
         from web.surgical_guide import guide_state_for_version, guide_status_payload
 
-        status = guide_status_payload(agent)
-        state = guide_state_for_version(agent)
+        status = guide_status_payload(agent, version)
+        state = guide_state_for_version(agent, version)
         return (
             dict(state) if isinstance(state, Mapping) else {},
             dict(status) if isinstance(status, Mapping) else {},
         )
     except Exception:
+        if version is not None:
+            raise ExportError("The requested saved guide version could not be resolved")
         # Preserve compatibility for lightweight export tests/agents that do
         # not load the guide module. This fallback is intentionally only used
         # when the resolver itself is unavailable; a normal runtime always
@@ -148,6 +252,8 @@ def _write_nifti(array: Any, path: Path, memory: Any, *, unit: str = "") -> None
         raise ExportError("The requested volume is empty")
     image = sitk.GetImageFromArray(data)
     reference = _reference_image(memory, tuple(int(value) for value in data.shape))
+    if tuple(data.shape) != tuple(reversed(reference.GetSize())):
+        raise ExportError("Volume and CT reference grids differ; export requires verified geometry")
     image.SetSpacing(reference.GetSpacing())
     image.SetOrigin(reference.GetOrigin())
     image.SetDirection(reference.GetDirection())
@@ -285,10 +391,14 @@ def _normalized_needles(memory: Any) -> list[Dict[str, Any]]:
             direction = direction / length
         records.append({
             "needle_id": str(needle.get("id") or f"needle_{index}"),
+            "trajectory_id": str(needle.get("trajectory_id") or ""),
             "name": str(needle.get("name") or f"Needle {index + 1}"),
             "index": index,
             "start_point": start.tolist(),
             "end_point": end.tolist(),
+            "points": np.asarray(points, dtype=float).tolist(),
+            "display_radius_mm": 0.28,
+            "geometry_role": "viewer_model_not_manufacturing_specification",
             "direction": direction.tolist(),
             "length_mm": length,
             "planning_id": planning_id,
@@ -371,13 +481,24 @@ CSV_FORMAT = ExportFormat("csv", "CSV (.csv)", ".csv")
 XLSX_FORMAT = ExportFormat("xlsx", "Excel Workbook (.xlsx)", ".xlsx")
 PNG = ExportFormat("png", "PNG (.png)", ".png")
 PDF = ExportFormat("pdf", "PDF (.pdf)", ".pdf")
+DICOM_RT = ExportFormat("dicom_rt", "Linked DICOM-RT set (.zip)", ".zip")
 
 
 class ExportService:
     """Maps durable objects to serializers used at every export level."""
 
-    def __init__(self, store: Any):
+    def __init__(self, store: Any, *, snapshot_structures: bool = False):
         self.store = store
+        self._snapshot_structures = snapshot_structures
+        self._structures = None
+
+    def effective_structures(self, memory):
+        if self._snapshot_structures and self._structures is not None:
+            return self._structures
+        structures = build_effective_structures(memory)
+        if self._snapshot_structures:
+            self._structures = structures
+        return structures
 
     def catalog(
         self, user_id: str, session_id: str, agent: Any,
@@ -390,7 +511,7 @@ class ExportService:
                 (NIFTI,), "nifti",
             ))
 
-        structures = build_effective_structures(memory)
+        structures = self.effective_structures(memory)
         for item in structures.structures:
             classification = item["classification"].upper()
             objects.append(ExportObject(
@@ -463,6 +584,8 @@ class ExportService:
                     {
                         "mask_id": mask_id,
                         "classification": str(raw_entry.get("classification") or "unclassified"),
+                        "source_label": raw_entry.get("source_label"),
+                        "source_filename": raw_entry.get("source_filename"),
                         "data_tree_node_id": str(
                             raw_entry.get("data_tree_node_id") or mask_id
                         ),
@@ -490,13 +613,15 @@ class ExportService:
             objects.append(ExportObject(
                 f"needle:{needle['needle_id']}", "group:planning:needles",
                 needle["name"], "needle", "Planning/Needles",
-                (JSON_FORMAT,), "json", {"needle_id": needle["needle_id"]},
+                (JSON_FORMAT, STL), "json", {"needle_id": needle["needle_id"],
+                "geometry_role": "viewer_model_not_manufacturing_specification", "unit": "mm"},
             ))
         for seed in seeds:
             objects.append(ExportObject(
                 f"seed:{seed['seed_id']}", "group:planning:seeds",
                 seed["seed_id"], "seed", "Planning/Seeds",
-                (JSON_FORMAT,), "json", {"seed_id": seed["seed_id"]},
+                (JSON_FORMAT, STL), "json", {"seed_id": seed["seed_id"],
+                "geometry_role": "viewer_model_not_manufacturing_specification", "unit": "mm"},
             ))
         if needles or seeds or memory.retrieve("plan_config"):
             objects.append(ExportObject(
@@ -508,6 +633,12 @@ class ExportService:
         if dose is None:
             dose = memory.retrieve("dose_distribution")
         if dose is not None:
+            if needles and seeds and _ct_array(memory) is not None:
+                objects.append(ExportObject(
+                    "dicom_rt:plan", "group:planning", "Linked DICOM-RT plan",
+                    "dicom_rt", "DICOM-RT", (DICOM_RT,), "dicom_rt",
+                    {"clinical_status": "research_interoperability_export_requires_review"},
+                ))
             objects.append(ExportObject(
                 "dose:volume", "group:dose", "Dose volume", "dose",
                 "Dose", (NIFTI,), "nifti",
@@ -569,6 +700,24 @@ class ExportService:
             ))
 
         snapshot = self.store.load_snapshot(user_id, session_id)
+        from web.surgical_guide import guide_version_summaries
+        for summary in guide_version_summaries(agent):
+            version = int(summary.get('version') or 0)
+            if version <= 0 or version == int(guide.get('version') or 0):
+                continue
+            saved, status = _resolved_surgical_guide(agent, version)
+            if status.get('mesh_loaded'):
+                objects.append(ExportObject(
+                    f'surgical_guide:version:{version}', 'group:surgical_guide',
+                    f'Surgical guide v{version}', 'surgical_guide', 'SurgicalGuide', (STL,), 'stl',
+                    {'version': version, 'requested_version': version, 'status': status.get('state'),
+                     'planning_id': status.get('planning_id')},
+                ))
+        objects.append(ExportObject(
+            "session:settings", None, "Session settings", "session_settings",
+            "Session", (JSON_FORMAT,), "json",
+            {"restoration": "exchange_bundle_not_a_native_workspace_backup"},
+        ))
         report = snapshot.get("report") if isinstance(snapshot.get("report"), Mapping) else {}
         if report:
             objects.append(ExportObject(
@@ -738,6 +887,8 @@ class ExportService:
             public_objects.append(row)
         return {
             "session_id": str(session_id),
+            "resources_ready": not (getattr(agent, '_workspace_hydration_in_progress', False)
+                or not getattr(agent, '_workspace_data_ready', True) or getattr(agent, '_workspace_hydration_error', None)),
             "groups": self.groups(objects),
             "objects": public_objects,
         }
@@ -750,6 +901,7 @@ class ExportService:
         item: ExportObject,
         format_key: str,
         destination_root: Path,
+        filename: Optional[str] = None,
     ) -> Path:
         format_spec = next((fmt for fmt in item.formats if fmt.key == format_key), None)
         if format_spec is None:
@@ -759,9 +911,12 @@ class ExportService:
         # Without a collision probe the second write silently overwrote the
         # first while the manifest still listed both objects.
         base_name = _safe_name(item.name)
-        path = destination_root / item.relative_dir / (base_name + format_spec.extension)
+        leaf = export_filename(filename, format_spec.extension) if filename is not None else base_name + format_spec.extension
+        path = destination_root / item.relative_dir / leaf
         probe = 0
         while path.exists():
+            if filename is not None:
+                raise ExportError("Two selected files have the same destination filename")
             probe += 1
             path = destination_root / item.relative_dir / f"{base_name}_{probe}{format_spec.extension}"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -770,7 +925,7 @@ class ExportService:
         if item.data_type == "image":
             _write_nifti(_ct_array(memory), path, memory)
         elif item.data_type in {"ctv", "oar"}:
-            effective = build_effective_structures(memory)
+            effective = self.effective_structures(memory)
             structure = next(
                 (row for row in effective.structures if row["object_id"] == item.object_id),
                 None,
@@ -812,7 +967,12 @@ class ExportService:
         elif item.data_type == "needle":
             needle_id = item.metadata["needle_id"]
             records = [row for row in _normalized_needles(memory) if row["needle_id"] == needle_id]
-            self._write_json(path, records[0] if records else None)
+            if format_key == "stl":
+                if not records:
+                    raise ExportError("The selected needle no longer exists")
+                _write_planning_stl(records[0], "needle", path)
+            else:
+                self._write_json(path, records[0] if records else None)
         elif item.data_type == "trajectory":
             records = [
                 row
@@ -824,7 +984,12 @@ class ExportService:
         elif item.data_type == "seed":
             seed_id = item.metadata["seed_id"]
             records = [row for row in _normalized_seeds(memory) if row["seed_id"] == seed_id]
-            self._write_json(path, records[0] if records else None)
+            if format_key == "stl":
+                if not records:
+                    raise ExportError("The selected seed no longer exists")
+                _write_planning_stl(records[0], "seed", path)
+            else:
+                self._write_json(path, records[0] if records else None)
         elif item.data_type == "planning_parameters":
             self._write_json(path, {
                 "planning_id": str(memory.retrieve("manual_planning_id") or memory.retrieve("planning_id") or ""),
@@ -833,6 +998,49 @@ class ExportService:
                 "needles": _normalized_needles(memory),
                 "seeds": _normalized_seeds(memory),
             })
+        elif item.data_type == "dicom_rt":
+            from tool_factory.output.dicom_rt_exporter import DicomRTExporterTool
+            from utils.dose_units import workspace_physical_dose
+            reference = _reference_image(memory)
+            shape = tuple(reversed(reference.GetSize()))
+            structures = self.effective_structures(memory).structures
+            masks = {}
+            for index, structure in enumerate(structures):
+                if tuple(np.asarray(structure['mask']).shape) != shape:
+                    raise ExportError("DICOM-RT structure and reference grids differ; no implicit resampling is allowed")
+                masks[f"{structure['name']}_{index + 1}"] = structure['mask']
+            needles, seeds = _normalized_needles(memory), _normalized_seeds(memory)
+            channels, used = [], set()
+            for needle in needles:
+                channel = []
+                owners = {needle['needle_id'], needle['trajectory_id']} - {''}
+                for seed in seeds:
+                    if seed['needle_id'] in owners:
+                        if seed['seed_id'] in used:
+                            raise ExportError("A seed has ambiguous channel ownership")
+                        used.add(seed['seed_id'])
+                        channel.append([seed['position'], seed['direction']])
+                if channel:
+                    channels.append({'trajectory': needle, 'seeds': channel})
+            if len(used) != len(seeds):
+                raise ExportError("Some seeds lack verified needle ownership; DICOM-RT export was not generated")
+            temporary = path.parent / f".dicom-{uuid.uuid4().hex}"
+            temporary.mkdir()
+            try:
+                result = DicomRTExporterTool()._execute(ct_image=reference, structures=masks,
+                    dose_array=workspace_physical_dose(memory.retrieve), dose_units='physical_gy',
+                    seed_plan=channels, output_dir=str(temporary),
+                    dicom_tags=memory.retrieve('ct_dicom_tags') or {},
+                    prescription_gy=self._prescription_gy(memory))
+                if not result.success:
+                    raise ExportError(result.error or "DICOM-RT export failed")
+                with zipfile.ZipFile(path, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+                    for generated in sorted(temporary.rglob('*')):
+                        if generated.is_file():
+                            archive.write(generated, generated.relative_to(temporary).as_posix())
+            finally:
+                # Only this newly created private staging subtree is removed.
+                shutil.rmtree(temporary)
         elif item.data_type == "dose":
             from utils.dose_units import workspace_physical_dose
             dose_gy = workspace_physical_dose(memory.retrieve)
@@ -854,7 +1062,7 @@ class ExportService:
         elif item.data_type == "dvh_curve":
             self._write_dvh_png(path, self._dvh_payload(memory))
         elif item.data_type == "surgical_guide":
-            guide, guide_status = _resolved_surgical_guide(agent)
+            guide, guide_status = _resolved_surgical_guide(agent, item.metadata.get('requested_version'))
             guide_lifecycle = str(guide_status.get("state") or "").lower()
             if guide_lifecycle in {"restoring", "persisted_not_loaded", "generating", "unavailable"}:
                 raise ExportError(
@@ -870,7 +1078,14 @@ class ExportService:
             faces = np.asarray([] if raw_faces is None else raw_faces, dtype=int)
             if vertices.size == 0 or faces.size == 0:
                 raise ExportError("The surgical guide mesh is empty")
-            path.write_bytes(_ascii_stl(vertices, faces, "surgical_guide"))
+            from web.surgical_guide import mesh_to_ascii_stl, guide_bore_quality_ready
+            if not guide_bore_quality_ready(guide):
+                raise ExportError("This guide lacks the current bore-wall QA; regenerate it explicitly before export")
+            path.write_bytes(mesh_to_ascii_stl(vertices, faces, "surgical_guide"))
+        elif item.data_type == "session_settings":
+            snapshot = self.store.load_snapshot(user_id, session_id)
+            self._write_json(path, {"session_id": session_id, "ui": snapshot.get("ui") or {},
+                "exchange_format": "BrachyBot scene export", "native_backup": False})
         elif item.data_type == "report_data":
             snapshot = self.store.load_snapshot(user_id, session_id)
             self._write_json(path, snapshot.get("report") or {})
@@ -962,7 +1177,12 @@ class ExportService:
     def _write_json(path: Path, value: Any) -> None:
         if value is None:
             raise ExportError("The requested object no longer exists")
-        path.write_text(json.dumps(value, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+        def encode(item):
+            if isinstance(item, np.ndarray): return item.tolist()
+            if isinstance(item, np.generic): return item.item()
+            if isinstance(item, (Path, datetime)): return str(item)
+            raise TypeError(f"Unsupported JSON data type: {type(item).__name__}")
+        path.write_text(json.dumps(value, ensure_ascii=False, indent=2, default=encode, allow_nan=False), encoding="utf-8")
 
     @staticmethod
     def _dvh_payload(memory: Any) -> Dict[str, Any]:
@@ -1319,7 +1539,7 @@ class ExportJobManager:
     RETENTION_SECONDS = 3600
     MAX_ACTIVE_JOBS = 4
     MAX_ACCOUNT_ACTIVE_JOBS = 1
-    MAX_SELECTIONS = 512
+    MAX_SELECTIONS = EXPORT_MAX_SELECTIONS
     _ACTIVE_STATES = frozenset({"queued", "preparing", "running", "packaged"})
 
     def __init__(self, store: Any, get_agent_for_owner: Callable[..., Any]):
@@ -1357,14 +1577,20 @@ class ExportJobManager:
         session_id: str,
         selections: list[Mapping[str, Any]],
         session_name: str,
+        bundle_name: Optional[str] = None,
     ) -> ExportJob:
         with self._lock:
             self._purge_locked()
             active = [job for job in self._jobs.values() if job.status in self._ACTIVE_STATES]
             if len(active) >= self.MAX_ACTIVE_JOBS or sum(job.user_id == str(user["id"]) for job in active) >= self.MAX_ACCOUNT_ACTIVE_JOBS:
                 raise ExportError("Another export is running; wait for it to finish or cancel it")
-            if not selections or len(selections) > self.MAX_SELECTIONS:
-                raise ExportError("Select between 1 and 512 export objects")
+            if bundle_name is not None:
+                bundle_name = export_filename(bundle_name)
+            agent = self.get_agent_for_owner(dict(user), session_id)
+            if agent is None:
+                raise ExportError("The case workspace could not be loaded")
+            ensure_export_resources(agent)
+            selections = validate_export_selections(ExportService(self.store).catalog(str(user['id']), session_id, agent), selections)
             self.store.require_local_session(str(user["id"]), str(session_id))
             job = ExportJob(
                 job_id=uuid.uuid4().hex,
@@ -1376,7 +1602,7 @@ class ExportJobManager:
         owner = dict(user)
         worker = threading.Thread(
             target=self._run,
-            args=(job, owner, list(selections), session_name),
+            args=(job, owner, list(selections), bundle_name or f"BrachyBot_{_safe_name(session_name)[:32]}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"),
             daemon=True,
             name=f"export-{job.job_id[:8]}",
         )
@@ -1403,6 +1629,8 @@ class ExportJobManager:
         ctv = memory.retrieve("ctv_array")
         oar = memory.retrieve("oar_array")
         return {
+            "planning_id": str(memory.retrieve('active_planning_id') or memory.retrieve('manual_planning_id') or memory.retrieve('planning_id') or ''),
+            "guide_version": (memory.retrieve('surgical_guide') or {}).get('version') if isinstance(memory.retrieve('surgical_guide'), Mapping) else None,
             "planning_version": int(memory.retrieve("planning_version") or 0),
             "manual_plan_version": int(memory.retrieve("manual_plan_version") or 0),
             "ct_path": str(
@@ -1429,6 +1657,7 @@ class ExportJobManager:
             agent = self.get_agent_for_owner(dict(user), job.session_id)
             if agent is None:
                 raise ExportError("The case workspace could not be loaded")
+            ensure_export_resources(agent)
             arrays = (agent.memory.retrieve(key) for key in ("ctv_array", "oar_array", "dose_distribution_gy"))
             estimate = 65536 + 2 * sum(getattr(value, "nbytes", 0) for value in arrays if value is not None)
             with self.store.workspace_output_transaction(job.user_id, job.session_id, "scene_export", additional_bytes=estimate, staging_job_id=job.job_id) as job_root:
@@ -1456,13 +1685,19 @@ class ExportJobManager:
             agent = self.get_agent_for_owner(dict(user), job.session_id)
             if agent is None:
                 raise ExportError("The case workspace could not be loaded")
-            service = ExportService(self.store)
+            source_version = self._version_vector(agent.memory)
+            ensure_export_resources(agent)
+            # One job owns its projected masks; do not rebuild all OAR volumes
+            # for every exported row. Version checks fence this projection.
+            service = ExportService(self.store, snapshot_structures=True)
             catalog = {
                 item.object_id: item
                 for item in service.catalog(job.user_id, job.session_id, agent)
             }
+            if self._version_vector(agent.memory) != source_version:
+                raise ExportError("Session data changed while the export catalog was being prepared")
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            folder = f"BrachyBot_{_safe_name(session_name, job.session_id)[:32]}_{stamp}"
+            folder = export_filename(session_name) if len(session_name) <= 120 and session_name else f"BrachyBot_{job.session_id[:8]}_{stamp}"
             # Scene exports are transient downloadable bundles. Building them
             # below the already-deep user/session workspace can exceed Win32
             # path limits once the stable directory tree is appended. The
@@ -1474,10 +1709,10 @@ class ExportJobManager:
             export_root.mkdir(parents=True, exist_ok=True)
             job.export_root = str(export_root)
             manifest_files = []
-            source_version = self._version_vector(agent.memory)
             source_changed = False
             job.status = "running"
             for selection in selections:
+                ensure_export_resources(agent)
                 if job.cancel_requested:
                     job.status = "packaged"
                     break
@@ -1500,6 +1735,7 @@ class ExportJobManager:
                 try:
                     path = service.export_object(
                         job.user_id, job.session_id, agent, item, format_key, export_root,
+                        **({"filename": selection["filename"]} if "filename" in selection else {}),
                     )
                     if self._version_vector(agent.memory) != source_version:
                         path.unlink(missing_ok=True)
@@ -1510,6 +1746,9 @@ class ExportJobManager:
                     relative = path.relative_to(export_root).as_posix()
                     record = {
                         "object_id": item.object_id,
+                        "name": item.name,
+                        "parent_id": item.parent_id,
+                        "metadata": {key: value for key, value in item.metadata.items() if key != 'source_path'},
                         "data_type": item.data_type,
                         "format": format_key,
                         "relative_path": relative,
@@ -1525,7 +1764,14 @@ class ExportJobManager:
                         ),
                         "version_vector": source_version,
                         "coordinate_system": "LPS",
+                        "unit": "mm" if format_key == "stl" else item.metadata.get("unit"),
+                        "geometry_role": item.metadata.get("geometry_role"),
                     }
+                    digest = hashlib.sha256()
+                    with path.open("rb") as stream:
+                        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                            digest.update(chunk)
+                    record["sha256"] = digest.hexdigest()
                     job.files.append(record)
                     manifest_files.append(record)
                 except Exception as exc:
@@ -1548,6 +1794,8 @@ class ExportJobManager:
                 ),
                 "version_vector": source_version,
                 "coordinate_system": "LPS",
+                "native_workspace_backup": False,
+                "scope": "selected_available_data_and_settings; not models, credentials or runtime database",
                 "files": manifest_files,
                 "failures": job.failures,
                 "skipped": job.skipped,

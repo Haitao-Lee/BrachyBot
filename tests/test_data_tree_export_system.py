@@ -110,6 +110,7 @@ class _Memory:
             ],
             "surgical_guide": {
                 "status": "ready",
+                "validation": {"bore_quality": {"wall_policy": "global_primary_csg_drilling_and_analytic_cylindrical_projection_v2"}},
                 "version": 2,
                 "vertices": [
                     [0.0, 0.0, 0.0],
@@ -804,7 +805,7 @@ def test_frontend_exposes_three_export_levels_and_real_mutations():
     assert "hydrateDataTreeArtifactCatalog" in viewer
     assert "openSessionExportDialog" in scene_export
     assert "showDirectoryPicker" in scene_export
-    assert "Structured ZIP" in scene_export
+    assert "File / ZIP (Save As or browser download)" in scene_export
     assert "data-export-progress" in scene_export
     assert "data-export-disclosure" in scene_export
     assert "collapsedGroups" in scene_export

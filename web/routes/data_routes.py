@@ -576,32 +576,22 @@ def register_data_routes(
     def api_create_export():
         try:
             user, session_id, agent = context()
+            from web.export_service import ensure_export_resources
+            ensure_export_resources(agent)
             payload = request.get_json(silent=True) or {}
             service = ExportService(store)
             catalog = service.catalog(user["id"], session_id, agent)
-            available = {item.object_id: item for item in catalog}
             raw_selections = payload.get("selections")
-            if not isinstance(raw_selections, list):
+            if raw_selections is None:
                 raw_selections = [
                     {"object_id": item.object_id, "format": item.default_format}
                     for item in catalog
                 ]
-            selections = []
-            for row in raw_selections:
-                if not isinstance(row, Mapping):
-                    continue
-                object_key = str(row.get("object_id") or "")
-                item = available.get(object_key)
-                if item is None:
-                    continue
-                selections.append({
-                    "object_id": object_key,
-                    "format": str(row.get("format") or item.default_format),
-                })
-            if not selections:
-                raise ExportError("Select at least one available data object")
+            from web.export_service import validate_export_selections
+            selections = validate_export_selections(catalog, raw_selections)
             session_record = store.get_session(user["id"], session_id)
-            job = export_jobs.create(user, session_id, selections, session_record.title)
+            job = export_jobs.create(user, session_id, selections, session_record.title,
+                bundle_name=payload.get("bundle_name"))
             store._audit(user["id"], session_id, "export.started", {
                 "job_id": job.job_id,
                 "objects": [row["object_id"] for row in selections],
@@ -657,6 +647,8 @@ def register_data_routes(
             user = request_user()
             job = export_jobs.get(user["id"], job_id)
             root = Path(job.export_root).resolve()
+            if job.status not in {"completed", "completed_with_errors"} or not job.export_root:
+                raise ExportError("Exported files are not ready")
             candidate = (root / relative_path).resolve()
             candidate.relative_to(root)
             if not candidate.is_file():

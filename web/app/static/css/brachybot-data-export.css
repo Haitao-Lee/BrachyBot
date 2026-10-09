@@ -10,7 +10,7 @@
 }
 
 .scene-export-dialog {
-    width: min(980px, 96vw);
+    width: min(1120px, 96vw);
     max-height: min(820px, 92vh);
     display: grid;
     grid-template-rows: auto auto minmax(220px, 1fr) auto;
@@ -196,6 +196,28 @@
     background: var(--bg-1);
     color: var(--text);
 }
+
+.scene-export-filename {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    min-height: 30px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--bg-1);
+    color: var(--text);
+    padding: 5px 8px;
+    font: inherit;
+}
+.scene-export-location label { min-width: 230px; font-size: .74rem; }
+.scene-export-location small { flex-basis: 100%; line-height: 1.5; }
+.scene-export-warning { color: var(--warning, #e5b85c); font-size: .72rem; line-height: 1.5; }
+.scene-export-table th:nth-child(5) { width: 235px; }
+.scene-export-table th:nth-child(3) { width: 100px; }
+.scene-export-table th:nth-child(4) { width: 160px; }
+.scene-export-table-wrap { overscroll-behavior: contain; }
+.scene-export-footer { flex-wrap: wrap; }
+.scene-export-dialog :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
 .scene-export-progress {
     display: none;

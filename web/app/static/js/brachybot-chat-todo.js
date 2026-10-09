@@ -2067,6 +2067,35 @@ async function _executeJsonUIActions(steps, sessionId) {
     };
 }
 
+function _verifiedExportDialogReply(steps, results, responseLanguage) {
+    const calls = (steps || []).filter(step => step?.tool && !step.parent_tool && step?.type !== 'tool_result');
+    const submitted = calls.flatMap(step => step.metadata?.actions || step.data?.metadata?.actions || step.data?.actions || []);
+    let receipt = (results || []).find(result => result?.export_dialog === true || result?.status === 'awaiting_user_confirmation');
+    if (!receipt && submitted.some(action => ['data.export', 'report.export'].includes(action.target))) {
+        const failure = (results || []).find(result => result?.success === false || result?.stale || result?.cancelled);
+        if (failure) receipt = { ...failure, status: failure.cancelled ? 'cancelled' : 'failed' };
+    }
+    if (!receipt) return null;
+    const chinese = String(responseLanguage || '').toLowerCase().startsWith('zh');
+    let text = chinese
+        ? '已打开保存数据窗口，请确认要导出的数据、格式、文件名和保存方式，然后点击“导出”。目前尚未生成或保存文件。'
+        : 'The Save Data dialog is open. Confirm the data, format, filenames and save destination, then click Export. No files have been generated or saved yet.';
+    if (receipt.status === 'saved') text = receipt.partial
+        ? (chinese ? '部分文件已保存；失败或跳过的项目请查看保存窗口的详情。' : 'Some files were saved; review failures or skipped items in the Save Data dialog.')
+        : (chinese ? '导出文件已写入你选择的位置。' : 'Export files were written to your selected destination.');
+    if (receipt.status === 'download_requested') text = chinese ? '已把导出文件交给浏览器下载；请在下载列表确认最终保存位置。' : 'The export was handed to the browser for download; confirm the final location in your downloads list.';
+    if (receipt.status === 'print_dialog_opened') text = chinese ? '已打开打印窗口，请选择保存为 PDF；网页无法确认你是否已经保存。' : 'The print dialog is open; choose Save as PDF. The page cannot verify that you saved it.';
+    if (receipt.status === 'cancelled') text = chinese ? '保存已取消；未确认文件保存完成。' : 'Saving was cancelled; no completed file save was confirmed.';
+    if (receipt.status === 'failed') text = (chinese ? '导出或保存未完成；' : 'Export or saving did not complete; ')
+        + (receipt.error || (chinese ? '请查看保存窗口中的错误详情。' : 'review the error details in the Save Data dialog.'));
+    const otherFailures = (results || []).filter(result => result !== receipt && (result?.success === false || result?.stale));
+    if (otherFailures.length) text += '\n' + (chinese ? '其他导出未提交或未完成：' : 'Other exports were not submitted or completed: ')
+        + otherFailures.map(result => result.error || (chinese ? '请查看对应执行步骤。' : 'review the corresponding trace step.')).join('; ');
+    const onlyChoosers = calls.length && calls.every(step => step.tool === 'ui_controller')
+        && submitted.length && submitted.every(action => ['data.export', 'report.export'].includes(action.target));
+    return { text, onlyChoosers: !!onlyChoosers, success: receipt.status !== 'failed' && !otherFailures.length };
+}
+
 function _verifiedTreeVisibilityReply(steps, results, uiState, responseLanguage) {
     // A server-side ui_controller success only validates an action plan. The
     // user's confirmation must reflect the browser's actual applied result.
@@ -4270,12 +4299,14 @@ async function sendChat(prefill, options) {
                 ...(screenshotPresentation.attachments || []),
             ];
             const uiActions = await _executeJsonUIActions(data?.steps, turnSessionId);
+            const exportOutcome = _verifiedExportDialogReply(data?.steps, uiActions.results || [], turnIdentity.responseLanguage);
             const uiOutcome = data?.llm_meta?.route === 'direct_ui_operation'
                 ? _verifiedTreeVisibilityReply(
                     data?.steps, uiActions.results || [], uiState, turnIdentity.responseLanguage,
                 ) : null;
             const uiFailure = uiActions.failed
-                ? (uiOutcome?.success === false ? uiOutcome.text
+                ? (exportOutcome?.onlyChoosers ? exportOutcome.text
+                    : uiOutcome?.success === false ? uiOutcome.text
                     : _hasReportGenerationAction(data?.steps)
                     ? _reportGenerationFailureMessage(turnSessionId)
                     : _chatUserVisibleFailure(turnSessionId, 'request'))
@@ -4291,12 +4322,14 @@ async function sendChat(prefill, options) {
             const responseBody = String(data?.response || data?.reply || data?.content || '');
             const screenshotFailure = String(screenshotPresentation.userMessage || '').trim();
             const failureAndReadResults = screenshotFailure || '';
-            const reply = uiFailure
+            const replyBase = uiFailure
                 || uiOutcome?.text
                 || failureAndReadResults
                 || (visualAnalysisContinuation ? '' : presentation.userMessage)
                 || (visualAnalysisContinuation ? '' : responseBody)
                 || (visualAnalysisContinuation ? '' : _chatUserVisibleFailure(turnSessionId, 'response'));
+            const reply = exportOutcome && !uiFailure
+                ? (exportOutcome.onlyChoosers ? exportOutcome.text : `${replyBase}\n\n${exportOutcome.text}`) : replyBase;
             if (reply && typeof addChat === 'function') {
                 addChat('bot-response', reply, true, Date.now(), false, turnSessionId, Object.assign(
                     {},
@@ -5366,6 +5399,12 @@ async function sendChat(prefill, options) {
             }
         }
         if (String(activeSessionId || '') !== turnSessionId) return;
+        const saveDialogOutcome = _verifiedExportDialogReply(steps, uiActionResults, turnIdentity.responseLanguage);
+        if (saveDialogOutcome) {
+            responseText = saveDialogOutcome.onlyChoosers ? saveDialogOutcome.text : `${responseText || ''}\n\n${saveDialogOutcome.text}`;
+            if (saveDialogOutcome.success === false) turnFailed = true;
+            finalResponseReceived = true;
+        }
         if (!isInternalFollowup) {
             finalResponseStep = _ensureFinalResponseTraceStep(
                 steps,

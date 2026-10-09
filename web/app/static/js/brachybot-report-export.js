@@ -541,10 +541,11 @@ async function _persistGeneratedReportArtifact(blob, filename) {
     }
 }
 
-function reportSaveJSON() {
+function reportSaveJSON(options = {}) {
+    if (!options.returnBlob && window.openSessionExportDialog) return window.openSessionExportDialog({ data_types: ['report'], format: 'json' });
     const f = window.reportForm;
-    f.editedFields = Array.from(f.editedFields);
-    const blob = new Blob([JSON.stringify(f, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify({ ...f, editedFields: Array.from(f.editedFields || []) }, null, 2)], { type: 'application/json' });
+    if (options.returnBlob) return blob;
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     const filename = `brachybot-report-${(f.case.patientId || 'form')}-${new Date().toISOString().slice(0, 10)}.json`;
@@ -2077,7 +2078,8 @@ async function _waitForReportPrintAssets(printWindow, timeoutMs = 15000) {
     )));
 }
 
-async function exportReportPDF() {
+async function exportReportPDF(options = {}) {
+    if (!options.confirmed && window.openSessionExportDialog) return window.openSessionExportDialog({ data_types: ['report'], format: 'pdf' });
     // Export must never re-capture. The operator already approved the figures
     // that are on screen; a late recapture mutates the report and, because
     // the print window can only be opened inside the click gesture, awaiting
@@ -2089,25 +2091,52 @@ async function exportReportPDF() {
     const css = _printableCss();
     const pagesHtml = Array.from(pages).map(p => p.outerHTML).join('');
     const printWindow = window.open('', '_blank');
-    if (!printWindow) { _setReportStatus('Popup blocked', 'warn'); return; }
+    if (!printWindow) { _setReportStatus('Popup blocked', 'warn'); return { success: false, error: 'Popup blocked; allow the report print window and retry.' }; }
     printWindow.document.write(`<!DOCTYPE html><html><head><title>${_tr('reportTitle')}</title><style>${css}</style></head><body class="report-print">${pagesHtml}</body></html>`);
     printWindow.document.close();
+    if (options.filename) printWindow.document.title = String(options.filename);
     await _waitForReportPrintAssets(printWindow);
     if (!printWindow.closed) {
         printWindow.focus();
         printWindow.print();
     }
-    _setReportStatus('Saved PDF', 'ok');
+    _setReportStatus('Print dialog opened', 'ok');
+    return { success: true, status: 'print_dialog_opened', saved: false };
 }
 
-function exportReportHTML() {
+async function _inlineOwnedReportImage(source) {
+        if (!source || source.startsWith('data:')) return source || '';
+        const url = new URL(source, location.href);
+        if (url.origin !== location.origin || !/^\/(api\/sessions\/|_assets\/|static\/)/.test(url.pathname)) {
+            throw new Error('Report image is not a trusted case asset; export was not saved.');
+        }
+        const response = await fetch(url.href);
+        if (!response.ok) throw new Error(`Report image could not be embedded: HTTP ${response.status}`);
+        const blob = await response.blob();
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader(); reader.onload = () => resolve(reader.result);
+            reader.onerror = reject; reader.readAsDataURL(blob);
+        });
+}
+
+async function _standaloneReportHtml(html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    for (const image of doc.querySelectorAll('img[src]')) {
+        image.setAttribute('src', await _inlineOwnedReportImage(image.getAttribute('src')));
+    }
+    return '<!doctype html>\n' + doc.documentElement.outerHTML;
+}
+
+async function exportReportHTML(options = {}) {
+    if (!options.returnBlob && window.openSessionExportDialog) return window.openSessionExportDialog({ data_types: ['report'], format: 'html' });
     const pages = document.querySelectorAll('#reportPages .report-page');
     if (!pages.length) return;
     const f = window.reportForm;
     const css = _printableCss();
     const pagesHtml = Array.from(pages).map(p => p.outerHTML).join('');
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${_tr('reportTitle')}</title><style>${css}</style></head><body class="report-print">${pagesHtml}</body></html>`;
-    const blob = new Blob([html], { type: 'text/html' });
+    const blob = new Blob([options.returnBlob ? await _standaloneReportHtml(html) : html], { type: 'text/html' });
+    if (options.returnBlob) return blob;
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     const filename = `brachybot-report-${(f.case.patientId || 'form')}-${new Date().toISOString().slice(0, 10)}.html`;
@@ -2118,8 +2147,10 @@ function exportReportHTML() {
     _setReportStatus('Saved HTML', 'ok');
 }
 
-function exportReportMarkdown() {
-    const f = window.reportForm;
+async function exportReportMarkdown(options = {}) {
+    if (!options.returnBlob && window.openSessionExportDialog) return window.openSessionExportDialog({ data_types: ['report'], format: 'markdown' });
+    const f = typeof structuredClone === 'function' ? structuredClone(window.reportForm)
+        : JSON.parse(JSON.stringify({ ...window.reportForm, editedFields: Array.from(window.reportForm.editedFields || []) }));
     syncReportQualityAssessment(f, { preserveStored: true });
     _syncReportReferencesFromRationale(f);
     const s = (typeof REPORT_STRINGS !== 'undefined') ? REPORT_STRINGS[f.language] : null;
@@ -2180,11 +2211,13 @@ function exportReportMarkdown() {
     if (f.figures && f.figures.length > 0) {
         lines.push('');
         lines.push('## Figures');
-        f.figures.forEach(fig => {
+        for (const fig of f.figures) {
             const display = _reportFigureDisplayText(fig, f.language);
-            lines.push('![' + (display.title || 'Report figure') + '](' + (fig.dataUrl || '') + ')');
+            const source = fig.dataUrl || fig._serverUrl || '';
+            const embedded = options.returnBlob ? await _inlineOwnedReportImage(source) : source;
+            lines.push('![' + (display.title || 'Report figure') + '](' + embedded + ')');
             if (display.caption) lines.push('*' + display.caption + '*');
-        });
+        }
     }
     lines.push('');
     lines.push('---');
@@ -2192,6 +2225,7 @@ function exportReportMarkdown() {
     lines.push('**' + s.physicianReviewer + '**: ' + valueOr(f.signature.name, 'Not recorded') + ' | ' + valueOr(f.signature.title, 'Not recorded') + ' | ' + valueOr(f.signature.date, 'Not recorded'));
     const md = lines.join('\n');
     const blob = new Blob([md], { type: 'text/markdown' });
+    if (options.returnBlob) return blob;
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     const filename = 'brachybot-report-' + (f.case.patientId || 'form') + '-' + new Date().toISOString().slice(0, 10) + '.md';

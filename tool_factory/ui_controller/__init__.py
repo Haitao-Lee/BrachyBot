@@ -455,6 +455,10 @@ CONTROL_REGISTRY = {
         "description": "Run a deterministic readiness checklist for the current case and surface missing workflow items"
     },
     # ── Report actions ──
+    "data.export": {
+        "commands": ["run"],
+        "description": "Open the unified Save Data dialog; NEVER export until the user confirms. value is an object: all=true for the entire available Session, or object_ids/group_ids/data_types/names arrays for any subset; format is optional (stl/json/nifti/csv/xlsx/png, dicom_rt for the linked research RTSTRUCT/RTPLAN/RTDOSE ZIP, or browser report pdf/html/markdown/json), filenames maps object IDs to leaf filenames, bundle_name is a folder/ZIP name. Examples of data_types: needle, seed, surgical_guide, ctv, oar, dose, dvh_data, annotation, dicom_rt, report. Names must match actual catalog objects exactly. Missing/ambiguous objects or unsupported formats must be resolved in the dialog, never widened or silently converted. Exports existing data only; no regeneration. STL needle/seed models use patient LPS mm. This is an exchange bundle, not a native workspace backup.",
+    },
     "report.autofill": {
         "commands": ["run"],
         "description": "Auto-fill the report form from planning data"
@@ -462,7 +466,7 @@ CONTROL_REGISTRY = {
     "report.export": {
         "commands": ["run"],
         "values": ["pdf", "html", "markdown", "json"],
-        "description": "Export the report in the specified format"
+        "description": "Open the report Save Data dialog in the specified format. User confirms filename and destination; PDF uses browser Print/Save as PDF, not proof of a saved PDF. Never autofill or recapture implicitly."
     },
     "report.import": {
         "commands": ["run"],
@@ -955,7 +959,7 @@ class UIControllerTool(BaseTool):
                                 "description": "Action command (e.g., 'switch', 'set', 'show', 'toggle')",
                             },
                             "value": {
-                                "description": "Value for the command (number, string, or null)",
+                                "description": "Value for the command (number, string, object, or null). data.export takes {all, object_ids, group_ids, data_types, names, exclude_object_ids, exclude_group_ids, exclude_data_types, exclude_names, format, formats_by_object, formats_by_type, filenames, bundle_name, guide_version}. Prefer one chooser for compound exports: formats_by_type={'oar':'stl','dose':'nifti'} or formats_by_object map exact IDs to formats. all=true with exclusions exports the available Session except those objects. For the current guide use object_ids=['surgical_guide:active']; guide_version selects an exact saved version. Do not pass server or local paths.",
                             },
                         },
                         "required": ["target", "command"],
@@ -997,6 +1001,14 @@ class UIControllerTool(BaseTool):
                 continue
 
             reg = CONTROL_REGISTRY[target]
+            if target == "data.export":
+                try:
+                    from agent_runtime.export_request import validate_export_dialog_options
+                    action = dict(action, value=validate_export_dialog_options(value))
+                    value = action["value"]
+                except ValueError as exc:
+                    errors.append(f"Action {i}: {exc}")
+                    continue
             if command not in reg["commands"]:
                 errors.append(f"Action {i}: unknown command '{command}' for '{target}'. Valid: {reg['commands']}")
                 repair_hints.append({
@@ -1607,7 +1619,8 @@ class UIControllerTool(BaseTool):
 
         # Report
         if target == "report.autofill": return "Report auto-filled from planning data"
-        if target == "report.export": return f"Report exported as {value}"
+        if target == "report.export": return f"Report save dialog requested ({value}); awaiting user confirmation"
+        if target == "data.export": return "Save Data dialog requested; awaiting selection and confirmation"
         if target == "report.import": return "Report JSON file picker opened"
         if target == "report.snapshot.save": return "Report snapshot saved"
         if target == "report.snapshot.open": return "Snapshot manager opened"

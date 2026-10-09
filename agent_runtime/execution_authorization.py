@@ -80,6 +80,13 @@ def tool_call_is_mutating(tool_name: str, params: object = None) -> bool:
     name = str(tool_name or "")
     if name not in MUTATING_TOOLS:
         return False
+    if name == "ui_controller" and isinstance(params, Mapping):
+        from agent_runtime.export_request import is_export_dialog_action
+        actions = params.get("actions")
+        if isinstance(actions, list) and actions and all(is_export_dialog_action(action) for action in actions):
+            # A chooser cannot write until a separate browser gesture. This
+            # exemption never includes arbitrary UI or mixed mutation batches.
+            return False
     if name == "case_memory" and params is None:
         return False
     if name in READ_ONLY_ACTIONS and isinstance(params, Mapping):

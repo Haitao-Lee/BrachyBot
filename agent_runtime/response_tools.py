@@ -3295,6 +3295,7 @@ Output (JSON array of strings):"""
                     _ui_action_signature(item) for item in expected_actions
                 }
                 safe_actions = []
+                from agent_runtime.export_request import export_dialog_requested, is_export_dialog_action
                 for action in p.get("actions") or []:
                     if not isinstance(action, dict):
                         continue
@@ -3305,7 +3306,8 @@ Output (JSON array of strings):"""
                             target,
                         )
                         continue
-                    if not current_turn or _ui_action_signature(action) not in allowed_ui_signatures:
+                    dialog_proposal = is_export_dialog_action(action) and export_dialog_requested(current_turn)
+                    if not current_turn or (not dialog_proposal and _ui_action_signature(action) not in allowed_ui_signatures):
                         logger.warning(
                             "Blocking ui_controller action %r: it does not match a "
                             "positive current-turn UI subtask",

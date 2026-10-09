@@ -451,8 +451,8 @@ def test_figure_one_is_always_normal_surface_and_export_never_recaptures():
     assert "if (state.doseTexture?.enabled) {" not in figure1
     assert "if (normalMode?.stale) return { stale: true };" in editor
 
-    pdf = export.split("async function exportReportPDF()", 1)[1].split(
-        "function exportReportHTML()", 1
+    pdf = export.split("async function exportReportPDF(options = {})", 1)[1].split(
+        "function exportReportHTML(options = {})", 1
     )[0]
     assert "autoCaptureReportFigures" not in pdf
     open_index = pdf.index("window.open('', '_blank')")

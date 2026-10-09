@@ -870,6 +870,9 @@
     };
 
     window.exportSurgicalGuideSTL = async function exportSurgicalGuideSTL() {
+        if (window.openSessionExportDialog) return window.openSessionExportDialog(selectedGuideVersion()
+            ? { data_types: ['surgical_guide'], guide_version: selectedGuideVersion(), format: 'stl' }
+            : { object_ids: ['surgical_guide:active'], format: 'stl' });
         const sessionId = activeSessionId();
         if (typeof _inputButtonProgress === 'function') _inputButtonProgress('surgical_guide_export', 'running', '正在导出导板 STL', 'Exporting guide STL');
         if (typeof addChat === 'function') addChat('system', t('正在导出已校验的导板 STL…', 'Exporting the validated guide STL...'));
