@@ -138,6 +138,73 @@ def test_automatic_snapshot_retains_seed_without_direction_and_malformed_positio
     assert table['channels'][0]['seeds'][1]['position_world_mm'] is None
 
 
+@pytest.mark.parametrize('array_points', [False, True])
+def test_checkpoint_roundtrip_keeps_automatic_needle_axis_and_tip_distances(tmp_path, array_points):
+    from web.workspace_store import _ArtifactEncoder, _decode_artifacts
+    points = [[0., 0., 40.], [0., 0., -20.]]
+    payload = {
+        'seed_plan_serialized': [{'seeds': [
+            {'position': np.array([0., 0., 25.])},
+            {'position': [0., 0., 20.]},
+        ]}],
+        'verified_needle_geometry': {'0': np.asarray(points) if array_points else points},
+    }
+    restored = _decode_artifacts(_ArtifactEncoder(tmp_path).encode(payload, 'memory'), tmp_path)
+    assert 0 in restored['verified_needle_geometry']
+    table = build_implant_table(report_snapshot(Memory(**restored)))
+    channel = table['channels'][0]
+    assert channel['tip_world_mm'] == [0., 0., 40.]
+    assert [s['tip_distance_mm'] for s in channel['seeds']] == [15., 20.]
+    assert [s['axis_offset_mm'] for s in channel['seeds']] == [0., 0.]
+    assert channel['seeds'][1]['distance_from_previous_mm'] == 5.
+    assert channel['seeds'][0]['spacing_status'] == 'not_applicable_first'
+    assert channel['seeds'][1]['spacing_status'] == 'measured'
+    assert all('needle_axis_unavailable' not in s['flags'] for s in channel['seeds'])
+
+
+@pytest.mark.parametrize('container', [list, tuple, np.asarray])
+def test_manual_axis_accepts_saved_numeric_endpoint_containers(container):
+    memory = Memory(manual_plan_active=True,
+                    manual_needles=[{'id': 'n', 'points': container([[0, 0, 40], [0, 0, -20]])}],
+                    manual_seeds=[{'id': 's', 'needle_id': 'n', 'position': [0, 0, 25]}])
+    table = build_implant_table(report_snapshot(memory))
+    assert table['channels'][0]['tip_world_mm'] == [0., 0., 40.]
+    assert table['channels'][0]['seeds'][0]['tip_distance_mm'] == 15.
+
+
+def test_current_string_key_geometry_repair_wins_over_old_integer_key():
+    memory = Memory(seed_plan_serialized=[{'seeds': [{'position': [0, 0, 25]}]}],
+                    verified_needle_geometry={0: [[0, 0, 50], [0, 0, -20]],
+                                              '0': [[0, 0, 40], [0, 0, -20]]})
+    channel = build_implant_table(report_snapshot(memory))['channels'][0]
+    assert channel['tip_world_mm'] == [0., 0., 40.]
+    assert channel['seeds'][0]['tip_distance_mm'] == 15.
+
+
+@pytest.mark.parametrize('points', [None, np.array(1), np.array([0, 0, 40]),
+                                  [[0, 0, 40], [0, 0]],
+                                  [[0, 0, 40], [0, 0, np.nan]],
+                                  [[0, 0, True], [0, 0, -20]],
+                                  [[0, 0, 40], [0, 0, 40]]])
+def test_invalid_endpoint_payloads_stay_unavailable_not_invented(points):
+    data = {'needles': [{'id': 'n', 'points': points}],
+            'seeds': [{'id': 's', 'needle_id': 'n', 'position': [0, 0, 25]}]}
+    channel = build_implant_table(data)['channels'][0]
+    assert channel['entry_reason'] == 'invalid_needle_geometry'
+    assert channel['seeds'][0]['tip_distance_mm'] is None
+    assert channel['seeds'][0]['spacing_status'] == 'unavailable'
+    assert channel['seeds'][0]['position_world_mm'] == [0., 0., 25.]
+
+
+def test_missing_geometry_does_not_use_stale_automatic_baseline():
+    memory = Memory(seed_plan_serialized=[{'seeds': [{'position': [0, 0, 25]}]}],
+                    algorithm_plan_snapshot={'needles': [{'id': 'old', 'trajectory_id': 'traj_1',
+                                                       'points': [[0, 0, 50], [0, 0, -20]]}]})
+    channel = build_implant_table(report_snapshot(memory))['channels'][0]
+    assert channel['tip_world_mm'] is None
+    assert channel['seeds'][0]['position_world_mm'] == [0., 0., 25.]
+
+
 def test_saved_skin_entry_uses_physical_direction_spacing_and_origin():
     body = np.zeros((50,50,50), np.uint8)
     body[10:40,10:40,10:40] = 1
@@ -194,13 +261,20 @@ def test_direct_tool_uses_shared_complete_tables(monkeypatch):
     assert set(patch).issubset(provenance['derived'])
 
 
-def test_authenticated_report_api_uses_complete_tables_and_rejects_old_revision(tmp_path, monkeypatch):
+@pytest.mark.parametrize('restored_automatic', [False, True])
+def test_authenticated_report_api_uses_complete_tables_and_rejects_old_revision(tmp_path, monkeypatch, restored_automatic):
     from web.server import create_app
     app = create_app({'runtime_dir': str(tmp_path / 'runtime'), 'secret_key': 'synthetic-test-key',
                       'workspace_maintenance': False})
     memory = Memory(manual_plan_active=True, manual_plan_version=3,
                     manual_needles=[{'id': 'n', 'points': [[0,0,40],[0,0,-20]]}],
                     manual_seeds=[{'id': 's', 'needle_id': 'n', 'position': [0,0,25]}])
+    if restored_automatic:
+        from web.workspace_store import _ArtifactEncoder, _decode_artifacts
+        payload = {'manual_plan_version': 3, 'seed_plan_serialized': [{'seeds': [{'position': [0,0,25]}]}],
+                   'verified_needle_geometry': {'0': np.array([[0,0,40],[0,0,-20]])}}
+        root = tmp_path / 'checkpoint'
+        memory = Memory(**_decode_artifacts(_ArtifactEncoder(root).encode(payload, 'memory'), root))
     agent = SimpleNamespace(memory=memory, config={})
     # Substitute only this isolated app's agent provider; retain real routing,
     # authentication/CSRF, report handler, and shared numerical table builder.
@@ -223,6 +297,8 @@ def test_authenticated_report_api_uses_complete_tables_and_rejects_old_revision(
     patch = response.get_json()['patch']
     assert len(patch['oarDose']) == 53
     assert patch['implantPlan']['channels'][0]['seeds'][0]['tip_distance_mm'] == 15
+    assert patch['implantPlan']['channels'][0]['seeds'][0]['axis_offset_mm'] == 0
+    assert patch['implantPlan']['channels'][0]['seeds'][0]['spacing_status'] == 'not_applicable_first'
     conflict = client.post('/api/report/auto-fill', json={'planning_id': 'plan',
                             'planning_version': 2}, headers=headers)
     assert conflict.status_code == 409

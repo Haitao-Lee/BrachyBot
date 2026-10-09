@@ -3083,6 +3083,12 @@ async function deleteViewerAnnotations(objectIds, options = {}) {
     const annotations = ensureViewerAnnotationIdentities();
     const ids = new Set((objectIds || []).map(id => String(id).replace(/^annotation:/, '')));
     const rows = annotations.map((annotation,index) => ({annotation,index})).filter(row => ids.has(row.annotation.id));
+    if (rows.some(row => row.annotation.type === 'planning_distance')) {
+        throw new Error(typeof _t === 'function' ? _t(
+            '自动距离标注随规划生成；请使用显示/隐藏控制，不删除其几何来源。',
+            'Automatic distances accompany the plan; use Show/Hide without deleting their geometry source.',
+        ) : 'Use Show/Hide for automatic distance annotations.');
+    }
     if (rows.length !== ids.size) throw new Error(typeof _t === 'function' ? _t('标注列表已变化，请重新选择。', 'Annotations changed; select the target again.') : 'Annotations changed.');
     if (options.measurementsOnly && rows.some(row => !_viewerMeasurementTypes.has(row.annotation.type))) throw new Error('Measurement clear cannot remove other annotation types.');
     if (!rows.length) return {success:true, removed:0, persisted:true};
@@ -3126,6 +3132,7 @@ async function deleteViewerAnnotations(objectIds, options = {}) {
     } finally {
         clearInterval(statusTimer);
         if (_viewerAnnotationMutation === operation) _viewerAnnotationMutation = null;
+        window.flushPendingPlanningDistanceAnnotations?.();
         syncViewerMeasurementControls();
     }
 }

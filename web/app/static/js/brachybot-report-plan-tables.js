@@ -25,6 +25,7 @@ function _reportTableText(language) {
         title: '针道与粒子位置明细', start: '起点：皮肤入点', end: '终点：针道末端',
         length: '皮肤至末端的轴向长度', channel: '针道', seed: '粒子', depth: '距针尖末端',
         gap: '轴向间距', offset: '离轴偏差', position: '实际位置 XYZ', status: '几何记录',
+        noPrevious: '不适用', noPreviousNote: '最靠近针尖的首颗粒子没有上一颗粒子，间距不适用。',
         empty: '尚无已保存的针道/粒子几何。生成或保存规划后重新填充报告。',
         missingEntry: '未能确认皮肤入点；不以外部拖拽端点代替。针轴有效时，距针尖的距离仍可记录。',
         mismatch: '本表属于其他规划版本，请重新生成报告；未展示旧位置为当前结果。',
@@ -42,6 +43,7 @@ function _reportTableText(language) {
         title: 'Needle and Seed Position Schedule', start: 'Start: skin entry', end: 'End: needle tip',
         length: 'Axial skin-to-tip length', channel: 'Needle', seed: 'Seed', depth: 'From needle tip',
         gap: 'Axial spacing', offset: 'Axis offset', position: 'Actual XYZ position', status: 'Geometry record',
+        noPrevious: 'N/A', noPreviousNote: 'The first seed nearest the tip has no preceding seed; spacing is not applicable.',
         empty: 'No saved needle/seed geometry is available. Generate or save the plan and refill the report.',
         missingEntry: 'Skin entry could not be confirmed. External drag handles are not substituted. Tip distances remain available when the needle axis is valid.',
         mismatch: 'This table belongs to another planning revision. Regenerate the report; old positions are not shown as current.',
@@ -96,7 +98,7 @@ function _reportSeedTable(seeds, language, owner = '') {
     return `<table class="hp-grid-table hp-implant-table">${owner ? `<caption>${escHtml(owner)}</caption>` : ''}<thead><tr><th>${escHtml(t.seed)}</th><th>${escHtml(t.depth)}<br>(mm)</th>
         <th>${escHtml(t.gap)}<br>(mm)</th><th>${escHtml(t.offset)}<br>(mm)</th><th>${escHtml(t.position)}<br>(mm)</th><th>${escHtml(t.status)}</th></tr></thead><tbody>
         ${(seeds || []).map(s => `<tr data-seed-id="${escHtml(s.seed_id)}"><td>${escHtml(s.seed_id)}</td><td>${_reportTableNumber(s.tip_distance_mm)}</td>
-            <td>${_reportTableNumber(s.distance_from_previous_mm)}</td><td>${_reportTableNumber(s.axis_offset_mm)}</td><td class="hp-coordinate">${escHtml(_reportTablePoint(s.position_world_mm))}</td>
+            <td${s.spacing_status === 'not_applicable_first' ? ` title="${escHtml(t.noPreviousNote)}"` : ''}>${s.spacing_status === 'not_applicable_first' ? escHtml(t.noPrevious) : _reportTableNumber(s.distance_from_previous_mm)}</td><td>${_reportTableNumber(s.axis_offset_mm)}</td><td class="hp-coordinate">${escHtml(_reportTablePoint(s.position_world_mm))}</td>
             <td>${escHtml((s.flags || []).map(f => t.flags[f] || f).join('; ') || t.recorded)}</td></tr>`).join('')}</tbody></table>`;
 }
 
@@ -106,7 +108,7 @@ function _reportImplantSections(form) {
     const header = content => `<section class="report-flow-section" data-report-flow-key="implant"><h2 class="hp-section-title">${escHtml(t.title)}</h2><div class="hp-section-body">${content}</div></section>`;
     if (!plan || !Array.isArray(plan.channels) || (!plan.channels.length && !plan.unassigned_seeds?.length)) return header(`<p>${escHtml(t.empty)}</p>`);
     if (form.planningId && plan.planning_id && String(form.planningId) !== String(plan.planning_id)) return header(`<p>${escHtml(t.mismatch)}</p>`);
-    let html = header(`<p>${escHtml(t.note)}</p><p class="hp-table-note">${escHtml(t.sampled)} ${escHtml(t.coordinates[plan.coordinate_system] || plan.coordinate_system || '')}</p>`);
+    let html = header(`<p>${escHtml(t.note)} ${escHtml(t.noPreviousNote)}</p><p class="hp-table-note">${escHtml(t.sampled)} ${escHtml(t.coordinates[plan.coordinate_system] || plan.coordinate_system || '')}</p>`);
     for (const [i, channel] of plan.channels.entries()) {
         html += `<section class="report-flow-section" data-report-flow-key="implant-channel-${i}"><h3 class="hp-section-title">${escHtml(t.channel)} ${i + 1} · ${escHtml(channel.needle_id)} / ${escHtml(channel.trajectory_id)}</h3><div class="hp-section-body">
             <p class="hp-needle-endpoints"><b>${escHtml(t.start)}</b> ${escHtml(_reportTablePoint(channel.entry_world_mm))} mm<br>
@@ -128,14 +130,14 @@ function _reportDetailedTablesMarkdown(form) {
     if (form.oarDoseOrdering?.stale) lines.splice(5, 0, t.stale, '');
     if (form.oarDoseOrdering?.coverage?.status && form.oarDoseOrdering.coverage.status !== 'complete') lines.splice(5, 0, t.incomplete, '');
     for (const [i, row] of (form.oarDose || []).entries()) lines.push('| ' + [row.review_order ?? i + 1, cell(row.organ), ...['dmax','dmean','d0_1cc','d1cc','d2cc','d90','d95','v100','volume_cm3'].map(k => _reportTableNumber(row[k])), cell(t.basis[row.importance_basis] || t.basis.observed_dose)].join(' | ') + ' |');
-    lines.push('', '## ' + t.title, '', t.note, '', t.sampled);
+    lines.push('', '## ' + t.title, '', t.note + ' ' + t.noPreviousNote, '', t.sampled);
     const plan = form.implantPlan;
     if (!plan) { lines.push(t.empty); return lines; }
     lines.push(t.coordinates[plan.coordinate_system] || plan.coordinate_system || '');
     if (form.planningId && plan.planning_id && String(form.planningId) !== String(plan.planning_id)) { lines.push(t.mismatch); return lines; }
     const seedRows = seeds => {
         lines.push('', `| ${t.seed} | ${t.depth} (mm) | ${t.gap} (mm) | ${t.offset} (mm) | ${t.position} (mm) | ${t.status} |`, '|---|---:|---:|---:|---|---|');
-        for (const s of seeds || []) lines.push('| ' + [cell(s.seed_id), _reportTableNumber(s.tip_distance_mm), _reportTableNumber(s.distance_from_previous_mm), _reportTableNumber(s.axis_offset_mm), _reportTablePoint(s.position_world_mm), cell((s.flags || []).map(f => t.flags[f] || f).join('; ') || t.recorded)].join(' | ') + ' |');
+        for (const s of seeds || []) lines.push('| ' + [cell(s.seed_id), _reportTableNumber(s.tip_distance_mm), s.spacing_status === 'not_applicable_first' ? t.noPrevious : _reportTableNumber(s.distance_from_previous_mm), _reportTableNumber(s.axis_offset_mm), _reportTablePoint(s.position_world_mm), cell((s.flags || []).map(f => t.flags[f] || f).join('; ') || t.recorded)].join(' | ') + ' |');
     };
     for (const c of plan.channels || []) {
         lines.push('', '### ' + cell(c.needle_id), '', `${t.start}: ${_reportTablePoint(c.entry_world_mm)} mm; ${t.end}: ${_reportTablePoint(c.tip_world_mm)} mm; ${t.length}: ${_reportTableNumber(c.insertion_length_mm)} mm`);

@@ -528,8 +528,16 @@ def test_export_service_serializes_true_units_geometry_and_types(tmp_path):
     for item in public_catalog["objects"]:
         assert item["session_id"] == session.id
         assert item["case_id"] == session.id
-        assert item["planning_id"] == "planning-7"
-        assert isinstance(item["data_version"], int)
+        if item['data_type'] in {'report_data','report','report_figure','screenshot','annotation'}:
+            # Historical/unknown capture ownership must not be fabricated
+            # from whichever Planning happens to be active during listing.
+            assert item['planning_id'] is None
+        else:
+            assert item["planning_id"] == "planning-7"
+        if item['data_type'] == 'screenshot':
+            assert item['data_version'] is None
+        else:
+            assert isinstance(item["data_version"], int)
         assert item["status"]
         assert "error" in item
 

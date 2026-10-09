@@ -1070,7 +1070,7 @@ function _uiOperationVirtualTreeActions(nodes) {
                     object_ids: [id], object_id: id, source: 'data-tree', ...item };
             add(`published:${index}`, publishedAction, actionLabel, item.semantic_property || 'action');
         });
-        if (isMask || isStructure || isDose || isNeedle || isTrajectory || isPlanning || node.type === 'manual_annotation') {
+        if (isMask || isStructure || isDose || isNeedle || isTrajectory || isPlanning || ['manual_annotation','planning_annotation'].includes(node.type)) {
             addContext('rename-any', 'node_rename', 'Rename');
         }
         if (isNonVisualArtifact) {
@@ -4363,6 +4363,7 @@ function resetAllState(options = {}) {
     dataTreeState.planning.meshes = [];
     dataTreeState.annotations = [];
     dataTreeState.exportArtifacts = [];
+    dataTreeState.artifactBrowser = {query:'',expansion:{}};
     if (typeof _dataTreeArtifactCatalogSession !== 'undefined') {
         _dataTreeArtifactCatalogSession = '';
     }
@@ -4370,6 +4371,7 @@ function resetAllState(options = {}) {
         _dataTreeArtifactCatalogPromise = null;
     }
     state.annotations = [];
+    window.clearPlanningDistanceAnnotationPresentation?.();
 
     // Manual/threshold masks are case data; clear them so a previous case's
     // masks cannot leak into a newly selected session.

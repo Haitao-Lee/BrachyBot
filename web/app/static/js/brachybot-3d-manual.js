@@ -732,6 +732,9 @@ function _applyAuthoritativeManualSeeds(data) {
     if (typeof window.applyDataTreeViewVisibility === 'function') window.applyDataTreeViewVisibility();
     renderDataTree();
     if (scene3D.requestRender) scene3D.requestRender(3);
+    // Refresh only after an authoritative commit. Drag previews deliberately
+    // keep old distances suppressed and never launch a read per pointer move.
+    void window.refreshPlanningDistanceAnnotations?.({sessionId:_activeApiSessionId()});
 }
 
 async function _commitManualSeeds(reason, rollbackSeeds, rollbackNeedles = null, options = {}) {
@@ -3358,6 +3361,7 @@ function init3DScene() {
             interactive: !!controlsChanged || scene3D.peelingInteraction === true,
             capture: scene3D.peelingCapture === true,
         });
+        window.renderPlanningDistanceAnnotations?.();
 
         // Render axes in bottom-left corner (transparent background)
         const axisSizeCss = Math.min(100, Math.min(cssWidth, cssHeight) * 0.2);
@@ -6080,6 +6084,7 @@ async function _loadSeeds3D(requestScope) {
         dataTreeState.planning.safetyCheck = data.safety_check || 'verified';
         dataTreeState.planning.safetyWarning = manualPlanningState.safetyWarning;
         dataTreeState.planning.needsReplan = data.plan_needs_replan === true;
+        window.acceptPlanningDistanceAnnotations?.(data.distance_annotations);
 
         // Capture the accepted automatic geometry before endpoint dragging
         // mutates the live Data Tree. This is the reference used for seed

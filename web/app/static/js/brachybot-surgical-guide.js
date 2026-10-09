@@ -506,6 +506,7 @@
         // requiring the user to move a slice slider.
         try { window.loadAllSlices?.(); } catch (_) {}
         try { window.requestRender?.(); } catch (_) {}
+        void window.refreshPlanningDistanceAnnotations?.({sessionId:activeSessionId()});
         return true;
     }
 

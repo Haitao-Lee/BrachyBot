@@ -3216,6 +3216,8 @@
 
     function applyDataTreePresentation(savedTree) {
         if (!savedTree || typeof savedTree !== 'object' || typeof dataTreeState === 'undefined') return;
+        if (savedTree.artifactBrowser && typeof savedTree.artifactBrowser === 'object'
+            && !Array.isArray(savedTree.artifactBrowser)) dataTreeState.artifactBrowser=jsonClone(savedTree.artifactBrowser);
         // Expansion belongs to the current session's UI presentation. Restore
         // it independently of clinical arrays so a compact snapshot cannot
         // reopen unrelated groups during asynchronous tree hydration.

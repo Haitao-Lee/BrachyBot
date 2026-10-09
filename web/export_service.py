@@ -719,18 +719,22 @@ class ExportService:
             {"restoration": "exchange_bundle_not_a_native_workspace_backup"},
         ))
         report = snapshot.get("report") if isinstance(snapshot.get("report"), Mapping) else {}
+        report_form = report.get("form") if isinstance(report.get("form"), Mapping) else report
         if report:
             objects.append(ExportObject(
                 "report:data", "group:report", "Report data", "report_data",
                 "Report", (JSON_FORMAT,), "json",
-                {"status": str(report.get("status") or "ready")},
+                {"status": str(report.get("status") or "ready"), "artifact_family":"report_document",
+                 "planning_id": report_form.get("planningId"),
+                 "created_at": report_form.get("updatedAt")},
             ))
         report_pdf = self._latest_artifact(user_id, session_id, "artifacts/reports", "*.pdf")
         report_is_stale = str(report.get("status") or "").lower() == "stale"
         if report_pdf and not report_is_stale:
             objects.append(ExportObject(
                 "report:pdf", "group:report", "Report", "report",
-                "Report", (PDF,), "pdf", {"source_path": str(report_pdf)},
+                "Report", (PDF,), "pdf", {"source_path": str(report_pdf), "artifact_family":"report_document",
+                                          "created_at": report_pdf.stat().st_mtime},
             ))
 
         screenshot_root = self.store.workspace_root(user_id, session_id) / "screenshots"
@@ -751,6 +755,8 @@ class ExportService:
                 "report_figure", "Figures", (PNG,), "png",
                 {
                     "source_path": str(source_path),
+                    "artifact_family": "report_figure",
+                    "planning_id": figure.get("planningId") or report_form.get("planningId"),
                     "axis": figure.get("axis"),
                     "captured_at": figure.get("capturedAt"),
                     "view_metadata": {
@@ -791,13 +797,16 @@ class ExportService:
             ))
 
         if screenshot_root.is_dir():
+            from web.artifact_catalog import screenshot_attachment_index, legacy_screenshot_metadata
+            screenshot_metadata = screenshot_attachment_index(snapshot, session_id)
             for path in sorted(screenshot_root.glob("*.png")):
                 if path.name in report_figure_files:
                     continue
                 objects.append(ExportObject(
                     f"screenshot:{path.name}", "group:chat:screenshots",
                     path.stem, "screenshot", "Chat/Screenshots", (PNG,), "png",
-                    {"source_path": str(path)},
+                    {"source_path": str(path), "created_at": path.stat().st_mtime,
+                     **screenshot_metadata.get(path.name, legacy_screenshot_metadata(path.name))},
                 ))
         ui = snapshot.get("ui") if isinstance(snapshot.get("ui"), Mapping) else {}
         ui_state = ui.get("state") if isinstance(ui.get("state"), Mapping) else ui
@@ -879,8 +888,9 @@ class ExportService:
             row.update({
                 "session_id": str(session_id),
                 "case_id": str(session_id),
-                "planning_id": planning_id or None,
-                "data_version": data_version,
+                "planning_id": (item.metadata.get("planning_id") if item.data_type in
+                                {"report_data","report","report_figure","screenshot","annotation"} else planning_id) or None,
+                "data_version": item.metadata.get("data_version") if item.data_type == "screenshot" else data_version,
                 "status": str(item.metadata.get("status") or "ready"),
                 "error": item.metadata.get("error"),
             })

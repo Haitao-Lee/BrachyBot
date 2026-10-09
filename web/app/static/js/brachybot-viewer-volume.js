@@ -3528,6 +3528,12 @@ async function hydrateDataTreeArtifactCatalog({ force = false, strict = false } 
                 throw new Error(payload.error || 'Data catalog is unavailable');
             }
             if (sessionId !== _viewerDataSessionId()) return [];
+            const previousArtifactLabels = new Map((dataTreeState.exportArtifacts || []).map(row=>[row.objectId,row]));
+            const artifactAlias = item => {
+                const previous = previousArtifactLabels.get(String(item.object_id))
+                    || window.getWorkspacePresentationForNode?.({objectId:String(item.object_id),family:String(item.data_type)});
+                return previous?.customLabel || (previous?.label && previous.label !== item.name ? previous.label : null);
+            };
             const rows = (payload.objects || [])
                 .filter(item => ['report_data', 'report', 'report_figure', 'screenshot'].includes(
                     String(item?.data_type || ''),
@@ -3544,10 +3550,12 @@ async function hydrateDataTreeArtifactCatalog({ force = false, strict = false } 
                     return !owner || owner === sessionId;
                 })
                 .map((item, index) => ensureDataTreeNodeMetadata({
-                    id: `artifact_${index + 1}`,
+                    id: `artifact_${encodeURIComponent(String(item.object_id))}`,
                     objectId: String(item.object_id),
                     label: String(item.name || item.object_id),
+                    customLabel: artifactAlias(item),
                     dataType: String(item.data_type),
+                    artifactMetadata: item.metadata || {},
                     parentId: 'artifacts',
                     loaded: true,
                     visible: true,
@@ -3742,11 +3750,13 @@ function reconcileViewerAnnotationNodes() {
     dataTreeState.annotations = annotations.map((annotation, index) => ensureDataTreeNodeMetadata({
         ...annotation, id: annotation.id || `annotation_${index + 1}`,
         objectId: `annotation:${annotation.id || `annotation_${index + 1}`}`,
-        annotationType: annotation.type, type: 'manual_annotation',
-        label: annotation.label || annotation.name || window.viewerAnnotationLabel?.(annotation) || `Annotation ${index + 1}`,
+        annotationType: annotation.type, type: annotation.type === 'planning_distance' ? 'planning_annotation' : 'manual_annotation',
+        label: annotation.type === 'planning_distance' ? window.planningDistanceAnnotationLabel?.(annotation,true)
+            : annotation.label || annotation.name || window.viewerAnnotationLabel?.(annotation) || `Annotation ${index + 1}`,
         visible: annotation.visible !== false, opacity: annotation.opacity ?? 1,
         color: annotation.color || '#60a5fa', loaded: true,
-    }, 'manual_annotation', 'annotations'));
+    }, annotation.type === 'planning_distance' ? 'planning_annotation' : 'manual_annotation',
+       annotation.type === 'planning_distance' ? `annotations:${annotation.kind}:${annotation.needle_id}` : 'annotations'));
     return dataTreeState.annotations;
 }
 
@@ -5712,12 +5722,10 @@ function renderDataTree() {
                 <span>(${annotations.length + exportArtifacts.length})</span>
             </div>
             <div class="tree-group-items">`;
-        annotations.forEach(item => {
-            html += renderTreeItem(item.id, item, _dtText('手动标注', 'Manual annotation'));
-        });
-        exportArtifacts.forEach(item => {
-            html += renderArtifactTreeItem(item);
-        });
+        html += window.renderStructuredArtifactTree
+            ? window.renderStructuredArtifactTree(annotations,exportArtifacts,renderTreeItem,renderArtifactTreeItem)
+            : annotations.map(item=>renderTreeItem(item.id,item,_dtText('手动标注','Manual annotation'))).join('')
+                + exportArtifacts.map(renderArtifactTreeItem).join('');
         html += `</div></div>`;
     }
 
@@ -5728,6 +5736,7 @@ function renderDataTree() {
     const previousScrollTop = Number(body.scrollTop) || 0;
     const previousScrollLeft = Number(body.scrollLeft) || 0;
     body.innerHTML = html;
+    window.bindStructuredArtifactTree?.(body);
     _bindDataTreeOpacityControls(body);
     _restoreTreeGroupExpansionState(body);
     body.scrollTop = previousScrollTop;
@@ -5816,7 +5825,7 @@ function renderTreeItem(id, itemState, info) {
         oncontextmenu="event.preventDefault();event.stopPropagation();handleTreeItemRightClick(${brachybotInlineArgument(id)}, event)">
         <button class="eye-btn ${eyeClass}" onclick="event.stopPropagation();toggleDataVisibility(${brachybotInlineArgument(id)})" ${disabledAttr}>${eyeIcon}</button>
         <span class="color-swatch" style="background:${itemState.color};" onclick="event.stopPropagation();openColorPicker(${brachybotInlineArgument(id)}, this)" title="Click to change color"></span>
-        <span class="item-label">${escHtml(itemState.label || '')}</span>
+        <span class="item-label" title="${escHtml(itemState.fullLabel || itemState.label || '')}">${escHtml(itemState.label || '')}</span>
         <span class="item-info">${escHtml(info || '')}</span>${ctWindowLevelControls}${statusLabel}
         ${recon3dBtn}
         <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(itemState.opacity * 100)}"
@@ -5830,13 +5839,13 @@ function renderArtifactTreeItem(itemState) {
     const id = String(itemState.id);
     const selectedClass = selectedItems.has(id) ? 'selected' : '';
     const typeLabel = itemState.dataType === 'screenshot'
-        ? _dtText('截图', 'Screenshot')
-        : _dtText('报告', 'Report');
+        ? (itemState.artifactMetadata?.capture_variant === 'annotated' ? _dtText('已标注','Annotated') : _dtText('截图', 'Screenshot'))
+        : itemState.dataType === 'report_figure' ? _dtText('插图','Figure') : _dtText('报告', 'Report');
     return `<div class="tree-item ${selectedClass}" data-node-id="${escHtml(itemState.nodeId || id)}" data-object-id="${escHtml(itemState.objectId || id)}" data-node-type="${escHtml(itemState.type || 'artifact')}" data-source="${escHtml(itemState.source || 'artifact')}" data-live-node="true" data-visual-target="true" data-status="${escHtml(itemState.status || 'ready')}" data-visible="${itemState.visible !== false}" data-visible-2d="${itemState.visible2D !== false}" data-visible-3d="${itemState.visible3D !== false}"
         onclick="handleTreeItemClick(${brachybotInlineArgument(id)}, event)"
         oncontextmenu="event.preventDefault();event.stopPropagation();handleTreeItemRightClick(${brachybotInlineArgument(id)}, event)">
         <span class="color-swatch" style="background:${itemState.color};pointer-events:none;"></span>
-        <span class="item-label">${escHtml(itemState.label || '')}</span>
+        <span class="item-label" title="${escHtml(itemState.fullLabel || itemState.label || '')}">${escHtml(itemState.label || '')}</span>
         <span class="item-info">${escHtml(typeLabel)}</span>
     </div>`;
 }
@@ -5880,6 +5889,7 @@ function openColorPicker(id, swatchEl) {
     } else {
         const organ = dataTreeState.organs.find(o => o.id === id);
         if (organ) itemState = organ;
+        else itemState = (dataTreeState.annotations || []).find(a => a.id === id);
     }
     if (!itemState) return;
 
@@ -6053,6 +6063,11 @@ function openColorPicker(id, swatchEl) {
     });
 
     function applyColor() {
+        if (window.isPlanningDistanceAnnotationId?.(id)) {
+            window.setPlanningDistanceAnnotationPresentation(id,{color:pendingColor});
+            closeDialog();
+            return;
+        }
         itemState.color = pendingColor;
         syncCtvWorkspaceColor(id, pendingColor);
         if (swatchEl) swatchEl.style.background = pendingColor;
@@ -6128,6 +6143,7 @@ function openColorPicker(id, swatchEl) {
 // existing CTV, OAR, mask, planning, and dose visual nodes. Refreshes 2D
 // overlays and the 3D mesh.
 function setDataTreeItemColor(id, color) {
+    if (window.isPlanningDistanceAnnotationId?.(id)) return window.setPlanningDistanceAnnotationPresentation(id,{color});
     if (!/^#[0-9a-f]{6}$/i.test(String(color || ''))) return false;
     let itemState;
     if (id === 'ctv') itemState = dataTreeState.ctv;
@@ -6248,6 +6264,7 @@ function handleTreeItemClick(id, event) {
         selectedItems.add(id);
     }
     lastClickedId = id;
+    window.focusPlanningDistanceAnnotation?.(id);
     renderDataTree();
 }
 
@@ -6286,7 +6303,12 @@ function showGroupContextMenu(x, y, category) {
 
     // Determine group info based on category
     let catInfo, count;
-    if (category === 'image') {
+    const structuredArtifact = window.getStructuredArtifactGroup?.(category);
+    if (structuredArtifact) return window.showStructuredArtifactContextMenu?.(x,y,category);
+    if (structuredArtifact) {
+        catInfo = {label:structuredArtifact.title,icon:'A'};
+        count = structuredArtifact.objectIds.length;
+    } else if (category === 'image') {
         catInfo = { label: _dtText('影像', 'Image'), icon: 'I' };
         count = state.ctLoaded ? 1 : 0;
     } else if (category === 'segmentation') {
@@ -6686,6 +6708,8 @@ function _dataTreeObjectId(id, purpose = 'export') {
 }
 
 function _dataTreeGroupObjectIds(category) {
+    const structured = window.getStructuredArtifactGroup?.(category);
+    if (structured) return [...structured.objectIds];
     if (category === 'image') return state.ctLoaded ? ['image:ct'] : [];
     if (category === 'segmentation') {
         return [
@@ -7239,6 +7263,13 @@ async function exportDataTreeGroup(category) {
 }
 
 async function deleteSelectedDataTreeItems(objectIds = null, options = {}) {
+    const requested = objectIds == null ? getSelectedDataTreeIds() : Array.from(objectIds);
+    const autoIds = new Set((state.annotations || []).filter(a=>a.type==='planning_distance')
+        .flatMap(a=>[String(a.id),`annotation:${a.id}`]));
+    if (requested.some(id=>autoIds.has(String(id)))) throw new Error(_dtText(
+        '选项包含自动距离标注；请使用显示/隐藏。不会删除它们的针道或粒子来源。',
+        'Selection contains automatic distance annotations; use Show/Hide. Their needle/seed sources are unchanged.',
+    ));
     const expectedSessionId = _viewerDataSessionId();
     const appearance = _structureAppearanceMap();
     // Resolve one detached batch snapshot. A session hydration/render callback
@@ -7414,6 +7445,11 @@ async function _runDataTreeAction(action) {
 }
 
 function _dataTreeDeleteMenuItem() {
+    const selected = getSelectedDataTreeIds();
+    if (selected.some(id => window.isPlanningDistanceAnnotationId?.(id))) {
+        if (!selected.every(id => window.isPlanningDistanceAnnotationId?.(id))) return `<div class="ctx-menu-item" aria-disabled="true">${_dtText('自动距离标注请用显示/隐藏控制', 'Use Show/Hide for automatic distances')}</div>`;
+        return `<div class="ctx-menu-item" onclick="hideContextMenu();getSelectedDataTreeIds().forEach(id=>setPlanningDistanceAnnotationPresentation(id,{visible:false}))">${_dtText('隐藏自动距离标注', 'Hide automatic distance annotations')}</div>`;
+    }
     const pending = window.isViewerAnnotationSavePending?.()
         && getSelectedDataTreeIds().some(id => _dataTreeObjectId(id, 'delete')?.startsWith('annotation:'));
     if (pending) return `<div class="ctx-menu-item" aria-disabled="true" style="opacity:0.6;cursor:default;">
@@ -7784,6 +7820,10 @@ function _allDataTreeVisualNodes() {
 }
 
 function _setNodeViewVisibility(node, view, visible) {
+    if (node?.annotationType === 'planning_distance') {
+        if (view === '2d') return false;
+        return window.setPlanningDistanceAnnotationPresentation?.(node.id,{visible3D:!!visible});
+    }
     if (!node) return;
     node[view === '2d' ? 'visible2D' : 'visible3D'] = !!visible;
     if (view === '2d' && visible) _enableSegmentation2DForNodes([node]);
@@ -8725,6 +8765,10 @@ window.setTreeGroupExpansion = setTreeGroupExpansion;
 window.setAllTreeGroupsExpansion = setAllTreeGroupsExpansion;
 
 function toggleDataVisibility(id) {
+    if (window.isPlanningDistanceAnnotationId?.(id)) {
+        const row = (state.annotations || []).find(r => r.id === id);
+        return window.setPlanningDistanceAnnotationPresentation(id,{visible:row.visible === false});
+    }
     const stageNode = _findDataTreeNode(id);
     if (stageNode && window.manualStepNodeVisible?.(stageNode) === false) {
         window.revealManualStepNodes?.([stageNode]);
@@ -8909,6 +8953,7 @@ function toggleDataVisibility(id) {
 }
 
 function setDataItemVisibility(id, visible) {
+    if (window.isPlanningDistanceAnnotationId?.(id)) return window.setPlanningDistanceAnnotationPresentation(id,{visible:!!visible});
     let current = null;
     if (id.startsWith('organ_')) current = dataTreeState.organs.find(o => o.id === id)?.visible;
     else if (id.startsWith('ctv_')) current = dataTreeState.ctvLabels?.[id]?.visible;
@@ -8965,6 +9010,7 @@ function _queueDataTreeOpacitySeedRefresh(reason) {
 }
 
 function setDataOpacity(id, value) {
+    if (window.isPlanningDistanceAnnotationId?.(id)) return window.setPlanningDistanceAnnotationPresentation(id,{opacity:Number(value)/100});
     // Each branch below updates the affected mesh using its effective
     // visibility and schedules only the required overlay refresh. Reapplying
     // visibility to every Data Tree node here caused a full 2D/3D refresh for
@@ -9180,6 +9226,11 @@ function renameDataTreeMask(id, providedName) {
 // dose iso-surface, planning mesh, annotation) is renamed generically by
 // updating its persisted `label`/`name` field, then re-rendering.
 function renameDataTreeNode(id, providedName) {
+    if (window.isPlanningDistanceAnnotationId?.(id)) {
+        const row = (state.annotations || []).find(r => r.id === id);
+        const name = typeof providedName === 'string' ? providedName : window.prompt(_dtText('标注别名（距离仍由规划计算）', 'Annotation alias (distance remains plan-derived)'), row.custom_name || '');
+        return name !== null && window.setPlanningDistanceAnnotationPresentation(id,{custom_name:String(name)});
+    }
     let node = _findDataTreeNode(id);
     let current = '';
     let setLabel = null;
@@ -9226,6 +9277,9 @@ function renameDataTreeNode(id, providedName) {
     const trimmed = String(next).trim();
     if (!trimmed) return;
     setLabel(trimmed);
+    if (node.dataType) node.customLabel=trimmed;
+    const annotation = (state.annotations || []).find(row=>row.id===id);
+    if (annotation) {annotation.label=trimmed;annotation.name=trimmed;}
     renderDataTree();
     // Organ/CTV 3D mesh labels read the data-tree label directly, so a rename
     // propagates to the 3D scene on the next appearance sync.

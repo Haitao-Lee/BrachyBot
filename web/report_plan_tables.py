@@ -147,11 +147,19 @@ def report_snapshot(memory):
         # because its direction/position is malformed. The report must account
         # for every saved record and expose unassessed geometry.
         geometry = _get(memory, 'verified_needle_geometry', {})
+        geometry = geometry if isinstance(geometry, Mapping) else {}
         snapshot = {'seeds': [], 'needles': []}
         for i, entry in enumerate(serialized):
             entry = entry if isinstance(entry, Mapping) else {}
             tid = f'traj_{i + 1}'
-            snapshot['needles'].append({'id': f'needle_{i + 1}', 'trajectory_id': tid, 'points': geometry.get(str(i))})
+            # JSON checkpoint decoding restores numeric keys to integers.
+            # Match the Viewer: a newer string-keyed repair takes precedence,
+            # then read the restored integer key. Never infer endpoints from
+            # seed centers or substitute another planning revision.
+            points = geometry.get(str(i))
+            if points is None:
+                points = geometry.get(i)
+            snapshot['needles'].append({'id': f'needle_{i + 1}', 'trajectory_id': tid, 'points': points})
             for j, seed in enumerate(entry.get('seeds') or []):
                 if isinstance(seed, Mapping):
                     position = seed.get('position') if seed.get('position') is not None else seed.get('pos')
@@ -186,8 +194,14 @@ def build_implant_table(snapshot, *, entry_resolver=None, coordinate_system='pat
         nid = str(needle.get('id') or f'unnamed_needle_{index + 1}')
         tid = str(needle.get('trajectory_id') or nid)
         points = needle.get('points')
-        tip = _point(points[0]) if isinstance(points, (list, tuple)) and len(points) >= 2 else None
-        external = _point(points[-1]) if isinstance(points, (list, tuple)) and len(points) >= 2 else None
+        # Restored small coordinate artifacts legitimately remain ndarrays.
+        # Check their shape rather than their truth value; invalid/scalar
+        # arrays still produce an explicitly unavailable axis.
+        has_endpoints = (isinstance(points, (list, tuple, np.ndarray))
+                         and (not isinstance(points, np.ndarray) or points.ndim == 2)
+                         and len(points) >= 2)
+        tip = _point(points[0]) if has_endpoints else None
+        external = _point(points[-1]) if has_endpoints else None
         channel = {'needle_id': nid, 'trajectory_id': tid, 'tip_world_mm': tip.tolist() if tip is not None else None,
                    'external_world_mm': external.tolist() if external is not None else None,
                    'entry_world_mm': None, 'insertion_length_mm': None, 'entry_status': 'unavailable',
@@ -226,6 +240,7 @@ def build_implant_table(snapshot, *, entry_resolver=None, coordinate_system='pat
         pos = _point(value)
         row = {'seed_id': sid, 'position_world_mm': pos.tolist() if pos is not None else None,
                'tip_distance_mm': None, 'axis_offset_mm': None, 'distance_from_previous_mm': None,
+               'spacing_status': 'unavailable',
                'flags': [], '_index': index}
         if pos is None:
             row['flags'].append('invalid_position')
@@ -259,6 +274,9 @@ def build_implant_table(snapshot, *, entry_resolver=None, coordinate_system='pat
             if row['tip_distance_mm'] is not None:
                 if previous is not None:
                     row['distance_from_previous_mm'] = row['tip_distance_mm'] - previous
+                    row['spacing_status'] = 'measured'
+                else:
+                    row['spacing_status'] = 'not_applicable_first'
                 previous = row['tip_distance_mm']
     for row in [*channels, *unassigned, *(s for c in channels for s in c['seeds'])]:
         row.pop('_index', None)

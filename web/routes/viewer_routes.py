@@ -2753,6 +2753,28 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             logger.error(f"CT skin reconstruction failed: {e}")
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/planning/distance-annotations", methods=["GET"])
+    @require_api_key
+    @rate_limit
+    def api_planning_distance_annotations():
+        agent = get_agent()
+        if agent is None:
+            return jsonify({"success": False, "error": "Case agent is unavailable"}), 503
+        pending = workspace_data_pending(agent)
+        if pending is not None:
+            return pending
+        from web.planning_distance_annotations import distance_annotation_packet
+        try:
+            version = request.args.get('guide_version')
+            if version is not None:
+                if not version.isdigit() or int(version) <= 0:
+                    return jsonify({"success": False, "error": "Guide version must be a positive integer"}), 400
+                version = int(version)
+            packet = distance_annotation_packet(agent, guide_version=version)
+            return jsonify({"success": True, "distance_annotations": packet})
+        except ValueError as exc:
+            return jsonify({"success": False, "error": str(exc)}), 409
+
     @app.route("/api/planning/seeds_3d", methods=["GET"])
     @require_api_key
     @rate_limit
@@ -2806,11 +2828,16 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 or manual_seeds
             )
             if seed_plan is None and not seed_plan_serialized and not manual_plan_serialized:
+                from web.planning_distance_annotations import distance_annotation_packet
+                annotation_packet = distance_annotation_packet(agent, {"seeds": [], "needles": []})
                 return jsonify({
                     "success": True,
                     "seeds": [],
                     "needles": [],
                     "seed_geometry": seed_geometry,
+                    "planning_id": annotation_packet["planning_id"],
+                    "planning_version": annotation_packet["planning_version"],
+                    "distance_annotations": annotation_packet,
                     "message": "No seed plan available",
                 })
 
@@ -3458,6 +3485,11 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     )
 
             logger.info(f"[seeds_3d] returning {len(seeds)} seeds, {len(needles)} needles")
+            from web.planning_distance_annotations import distance_annotation_packet
+            try:
+                distance_annotations = distance_annotation_packet(agent, {"seeds": seeds, "needles": needles})
+            except ValueError as exc:
+                return jsonify({"success": False, "error": str(exc)}), 409
             artifact_status = {}
             for status_source in (
                 agent.memory.retrieve("structure_artifact_status"),
@@ -3476,6 +3508,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 "seed_geometry": seed_geometry,
                 "total_seeds": len(seeds),
                 "total_needles": len(needles),
+                "distance_annotations": distance_annotations,
                 "planning_id": (
                     agent.memory.retrieve("manual_planning_id")
                     or agent.memory.retrieve("active_planning_id")

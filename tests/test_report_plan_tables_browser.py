@@ -84,6 +84,43 @@ def test_fallback_retains_zero_missing_and_explicit_units(page):
     assert page.evaluate('_reportTablePoint([false,1,2])') == '—'
 
 
+@pytest.mark.parametrize('language', ['en', 'zh'])
+def test_restored_backend_geometry_renders_tip_offsets_and_spacing(page, tmp_path, language):
+    import numpy as np
+    from web.report_plan_tables import report_snapshot, build_implant_table
+    from web.workspace_store import _ArtifactEncoder, _decode_artifacts
+    from test_report_plan_tables import Memory
+    tip = np.array([60., 70., 80.])
+    external = np.array([-60., -50., -40.])
+    axis = (tip - external) / np.linalg.norm(tip - external)
+    payload = {'seed_plan_serialized': [{'seeds': [
+        {'position': tip - axis * i * 5} for i in range(1, 13)
+    ]}], 'verified_needle_geometry': {'0': np.array([tip, external])}}
+    restored = _decode_artifacts(_ArtifactEncoder(tmp_path).encode(payload, 'memory'), tmp_path)
+    table = build_implant_table(report_snapshot(Memory(**restored)),
+                               entry_resolver=lambda *_: ([-30., -20., -10.], {'source': 'synthetic'}))
+    table.update(planning_id='plan', planning_version=1)
+    page.evaluate('''({table,language}) => {
+        reportForm.implantPlan=table; reportForm.language=language; window._i18nLang=language;
+        _updateReportPreview();
+    }''', {'table': table, 'language': language})
+    page.evaluate('window._reflowReportPages()')
+    rows = page.locator('#reportPages [data-seed-id]')
+    assert rows.count() == 12
+    assert rows.first.locator('td').all_text_contents()[1:4] == ['5.00', 'N/A' if language == 'en' else '不适用', '0.00']
+    assert rows.nth(11).locator('td').all_text_contents()[1:4] == ['60.00', '5.00', '0.00']
+    text = page.locator('#reportPages').inner_text()
+    assert '[60.00, 70.00, 80.00]' in text and '155.88' in text
+    assert 'Needle axis unconfirmed' not in text and '针轴未确认' not in text
+    markdown = page.evaluate('_reportDetailedTablesMarkdown(reportForm).join("\\n")')
+    assert '| seed_1_12 | 60.00 | 5.00 | 0.00 |' in markdown
+    assert ('N/A' if language == 'en' else '不适用') in markdown
+    assert page.evaluate('''() => Array.from(document.querySelectorAll('#reportPages .hp-grid-table'))
+        .every(t=>t.scrollWidth<=t.clientWidth+1)''')
+    # A synthetic evidence image only; no patient resource is read or altered.
+    page.locator('#reportPages').screenshot(path=str(tmp_path / f'restored-seed-table-{language}.png'))
+
+
 def test_report_table_strings_escape_html_and_use_global_language(page):
     synthetic_form(page)
     page.evaluate("reportForm.implantPlan.channels[0].seeds[0].seed_id='<img src=x onerror=alert(1)>';reportForm.oarDose[0].organ='<script>alert(1)</script>';_updateReportPreview()")
