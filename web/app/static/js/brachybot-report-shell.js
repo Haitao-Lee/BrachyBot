@@ -95,14 +95,19 @@ window.Report = (function () {
         return typeof window._t === 'function' ? window._t(zh, en) : (stateProxy.language === 'zh' ? zh : en);
     }
     async function _reportRequest(path, init = {}) {
+        const ownerScope = window.BrachyBotTimepointWorkspace?.captureRequestScope?.();
         const controller = typeof AbortController === 'function' ? new AbortController() : null;
         const timer = controller ? setTimeout(() => controller.abort(), 15000) : null;
         try {
-            const response = await fetch(path, { ...init, ...(controller ? { signal: controller.signal } : {}) });
+            const options = { ...init, ...(controller ? { signal: controller.signal } : {}) };
+            const response = ownerScope ? await window.BrachyBotTimepointWorkspace.fetchOwned(ownerScope,path,options)
+                : await fetch(path,options);
             const payload = await response.json().catch(() => ({}));
+            window.BrachyBotTimepointWorkspace?.assertCurrent(ownerScope);
             if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
             return payload;
         } catch (error) {
+            if (ownerScope && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(ownerScope)) throw error;
             if (error?.name === 'AbortError') {
                 throw new Error(_reportText('请求超时，请检查服务器连接。', 'Request timed out. Check the server connection.'));
             }
@@ -253,7 +258,7 @@ window.Report = (function () {
             // browser has computed the new grid dimensions before preview
             // fit-to-panel measurement runs.
             try { _scheduleReport2colLayout(); } catch (_) {}
-            if (persist && !window.isWorkspacePresentationRestoreActive?.()
+            if (persist && !window.__pendingWorkspacePresentation?.active && !window.isWorkspacePresentationWriteLocked?.()
                 && typeof window.scheduleWorkspaceSave === 'function') {
                 window.scheduleWorkspaceSave('report.layout.2col');
             }
@@ -269,19 +274,31 @@ window.Report = (function () {
         let _fitScale = 1.0;
         let _resizeObserver = null;
         let _updateFrame = 0;
+        let _availableWidth = null;
+        let _observedPaper = null;
+        let _paperObserver = null;
+        let _imageGeometryToken = null;
+        const _imageGeometry = new Map();
         const MIN = 0.5, MAX = 2.0, STEP = 0.1;
 
         function _measureFitScale() {
             const host = document.getElementById('reportPreview');
-            const pages = Array.from(document.querySelectorAll('#reportPages .report-page'));
-            if (!host || !pages.length) return 1.0;
-            const style = window.getComputedStyle(host);
-            const horizontalPadding = (parseFloat(style.paddingLeft) || 0)
-                + (parseFloat(style.paddingRight) || 0);
-            const availableWidth = Math.max(0, host.clientWidth - horizontalPadding - 2);
+            const root = document.getElementById('reportPages');
+            if (!host || !root) return 1.0;
+            let availableWidth = _availableWidth;
+            if (availableWidth === null) {
+                const style = window.getComputedStyle(host);
+                availableWidth = Math.max(0, host.clientWidth - (parseFloat(style.paddingLeft) || 0)
+                    - (parseFloat(style.paddingRight) || 0) - 2);
+            }
             // Reports may contain both portrait and landscape A4 sheets. Fit
             // against the widest physical page so no later page is clipped.
-            const pageWidth = Math.max(...pages.map(page => page.offsetWidth || 0));
+            let pageWidth = root._reportPreviewPaperWidth;
+            if (!(pageWidth > 0)) {
+                const pages = Array.from(root.querySelectorAll('.report-page'));
+                pageWidth = pages.length ? Math.max(...pages.map(page => page.offsetWidth || 0)) : 0;
+                if (pageWidth > 0) root._reportPreviewPaperWidth = pageWidth;
+            }
             if (availableWidth <= 0 || pageWidth <= 0) return 1.0;
             return Math.min(1.0, availableWidth / pageWidth);
         }
@@ -292,6 +309,13 @@ window.Report = (function () {
             const ind = document.getElementById('rpZoomIndicator');
             _fitScale = _measureFitScale();
             const effectiveZoom = Math.max(0.2, Math.min(MAX, _zoom * _fitScale));
+            // Read layout before writing transforms/styles. Reading scrollHeight
+            // after a transform write forced synchronous layout on every wheel tick.
+            if (pages && !(pages._reportPreviewHeight > 0)) {
+                const height = pages.scrollHeight;
+                if (height > 0) pages._reportPreviewHeight = height;
+            }
+            const scaledHeight = pages ? `${Math.ceil((pages._reportPreviewHeight || 0) * effectiveZoom)}px` : '';
             if (wrap) {
                 // Keep preview scaling anchored to the page's top center.
                 // Without an explicit inline origin, a late stylesheet/theme
@@ -303,9 +327,7 @@ window.Report = (function () {
                 // Transforms do not affect normal-flow height. Reserve the
                 // scaled height explicitly to avoid a large blank area below
                 // the preview or overlap with the status bar.
-                wrap.style.height = pages
-                    ? `${Math.ceil(pages.scrollHeight * effectiveZoom)}px`
-                    : '';
+                wrap.style.height = scaledHeight;
                 wrap.dataset.fitScale = String(_fitScale);
                 wrap.dataset.effectiveZoom = String(effectiveZoom);
             }
@@ -318,16 +340,37 @@ window.Report = (function () {
             }
         }
 
+        function _observePaper() {
+            const pages = document.getElementById('reportPages');
+            const paper = pages?.querySelector('.report-flow-page');
+            if (paper === _observedPaper || typeof ResizeObserver === 'undefined') return;
+            _paperObserver?.disconnect(); _observedPaper = paper;
+            if (!paper) return;
+            _paperObserver = new ResizeObserver(entries => {
+                const entry = entries.find(row => row.target === _observedPaper);
+                if (!entry) return;
+                const box = entry.borderBoxSize?.[0];
+                const width = box?.inlineSize ?? paper.offsetWidth, height = box?.blockSize ?? paper.offsetHeight;
+                if (width < 10 || height < 10) return;
+                if (`${Math.round(width)}:${Math.round(height)}` === pages._reportFlowGeometryKey) return;
+                pages._reportFlowPaginationReady = false;
+                pages._reportPreviewPaperWidth = null; pages._reportPreviewHeight = null;
+                refresh();
+            });
+            _paperObserver.observe(paper);
+        }
+
         function refresh() {
-            if (_updateFrame) window.cancelAnimationFrame(_updateFrame);
+            if (_updateFrame) return;
             _updateFrame = window.requestAnimationFrame(() => {
                 _updateFrame = 0;
-                // A hidden Report tab has no measurable A4 geometry during
-                // boot. Reflow flowable text now that the tab/viewport is
-                // visible, before recalculating the preview scale.
+                // Zoom and split width are presentation, not physical A4 layout.
+                // Only unfinished/invalidated content needs measured pagination;
+                // retry after a hidden tab opens, never rebuild on every drag.
                 try { window._reflowReportPages?.(); } catch (error) {
                     console.warn('[report] deferred pagination failed:', error);
                 }
+                _observePaper();
                 _update();
             });
         }
@@ -374,7 +417,7 @@ window.Report = (function () {
             refresh();
             if (options?.persist !== false) {
                 _persist();
-                if (!window.isWorkspacePresentationRestoreActive?.()
+                if (!window.__pendingWorkspacePresentation?.active && !window.isWorkspacePresentationWriteLocked?.()
                     && typeof window.scheduleWorkspaceSave === 'function') {
                     window.scheduleWorkspaceSave('report.preview.zoom');
                 }
@@ -398,16 +441,42 @@ window.Report = (function () {
             host._rpZoomWired = true;
 
             if (!host._rpImageLoadWired) {
-                host.addEventListener('load', refresh, true);
+                host.addEventListener('load', (event) => {
+                    const pages = document.getElementById('reportPages');
+                    // Full-page evidence figures have fixed paper geometry.
+                    // Cloning them during flow pagination can fire load again;
+                    // only intrinsic-size images inside flow text invalidate it.
+                    if (pages && event.target?.closest?.('.report-flow-page-body')) {
+                        if (_imageGeometryToken !== window._reportPaginationToken) {
+                            _imageGeometry.clear(); _imageGeometryToken = window._reportPaginationToken;
+                        }
+                        const image = event.target, source = image.currentSrc || image.getAttribute('src');
+                        const size = `${image.naturalWidth}:${image.naturalHeight}`;
+                        if (source && _imageGeometry.get(source) !== size) {
+                            _imageGeometry.set(source, size); pages._reportFlowPaginationReady = false;
+                        }
+                    }
+                    refresh();
+                }, true);
                 host._rpImageLoadWired = true;
             }
             if (typeof ResizeObserver !== 'undefined') {
                 if (_resizeObserver) _resizeObserver.disconnect();
-                _resizeObserver = new ResizeObserver(refresh);
+                _availableWidth = null;
+                _resizeObserver = new ResizeObserver(entries => {
+                    const entry = entries.find(row => row.target === host);
+                    if (entry) _availableWidth = Math.max(0, entry.contentRect.width - 2);
+                    refresh();
+                });
                 _resizeObserver.observe(host);
             }
             refresh();
         }
+        document.fonts?.addEventListener?.('loadingdone', () => {
+            const pages = document.getElementById('reportPages');
+            if (pages) pages._reportFlowPaginationReady = false;
+            refresh();
+        });
         _restore();
         refresh();
         // Re-install when preview element is re-created (preview re-renders)
@@ -461,22 +530,29 @@ window.Report = (function () {
     }
 
     async function _fetchHeader(sessionId = '') {
+        const ownerScope = window.BrachyBotTimepointWorkspace?.captureRequestScope?.();
         try {
             const ws = window.state || {};
-            if (!ws.ctPath) return {};
+            const images = window.BrachyBotTimepointWorkspace?.resourceState?.()?.images;
+            const reference = images?.images?.find(image=>image.id===images.planning_reference_image_id);
+            const path = reference?.path || ws.ctPath;
+            if (!path) return {};
             const r = await fetch('/api/header/info', {
                 method: 'POST', headers: {
                     'Content-Type': 'application/json',
                     'X-BrachyBot-Session': _activeReportSessionId(sessionId),
+                    ...(ownerScope ? {'X-BrachyBot-Timepoint':ownerScope.timepointId} : {}),
                 },
-                body: JSON.stringify({ ct_path: ws.ctPath }),
+                body: JSON.stringify({ ct_path: path }),
             });
             const j = await r.json();
+            window.BrachyBotTimepointWorkspace?.assertCurrent(ownerScope);
             return (j && j.success && j.tags) || {};
         } catch (e) { return {}; }
     }
 
     async function _fetchServerReportPatch(scope, language, sessionId = '') {
+        const ownerScope = window.BrachyBotTimepointWorkspace?.captureRequestScope?.();
         const form = window.reportForm;
         const owner = _activeReportSessionId(sessionId);
         const context = _reportTableContext(form);
@@ -485,6 +561,7 @@ window.Report = (function () {
             headers: {
                 'Content-Type': 'application/json',
                 'X-BrachyBot-Session': owner,
+                ...(ownerScope ? {'X-BrachyBot-Timepoint':ownerScope.timepointId} : {}),
             },
             body: JSON.stringify({
                 scope: scope || 'all',
@@ -495,6 +572,7 @@ window.Report = (function () {
             }),
         });
         const payload = await response.json().catch(() => ({}));
+        window.BrachyBotTimepointWorkspace?.assertCurrent(ownerScope);
         if (!_reportSessionIsCurrent(owner, form) || JSON.stringify(_reportTableContext(form)) !== JSON.stringify(context)) {
             throw new Error('Report owner or planning revision changed; retry the current report.');
         }
@@ -687,6 +765,7 @@ window.Report = (function () {
 
     const autoFill = {
         async fromAll(opts = {}) {
+            const ownerScope = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(opts.timepointScope);
             const actionLanguage = String(opts.language || window._i18nLang || 'en');
             const onlyKey = opts.onlyKey || null;
             const f = window.reportForm;
@@ -705,7 +784,8 @@ window.Report = (function () {
                 f.planningId = expectedPlanningId;
             }
             const expectedTableContext = JSON.stringify(_reportTableContext(f));
-            const isCurrent = () => _reportSessionIsCurrent(expectedSessionId, f)
+            const isCurrent = () => (!ownerScope || window.BrachyBotTimepointWorkspace.scopeIsCurrent(ownerScope))
+                && _reportSessionIsCurrent(expectedSessionId, f)
                 && JSON.stringify(_reportTableContext(f)) === expectedTableContext;
             // 1. DICOM
             try {
@@ -1384,8 +1464,12 @@ window.Report = (function () {
                 )
                 : false;
             if (!confirmed) return false;
-            const clone = JSON.parse(JSON.stringify(snap.form));
-            clone.editedFields = new Set(clone.editedFields || []);
+            const clone = window.cloneWorkspaceJSON
+                ? window.cloneWorkspaceJSON(snap.form)
+                : JSON.parse(JSON.stringify(snap.form, (_key, value) => value instanceof Set ? [...value] : value));
+            clone.editedFields = window.normalizeReportEditedFields
+                ? window.normalizeReportEditedFields(clone.editedFields)
+                : new Set(Array.isArray(clone.editedFields) ? clone.editedFields : []);
             const f = window.reportForm;
             if (f) {
                 Object.keys(f).forEach(k => delete f[k]);
@@ -1567,7 +1651,13 @@ window.Report = (function () {
     const persist = {
         autoSave() {
             if (_autoSaveTimer) clearTimeout(_autoSaveTimer);
-            _autoSaveTimer = setTimeout(() => this._save(), 800);
+            if (window.BrachyBotTimepoints?.enabled?.() && !window.BrachyBotTimepointWorkspace?.requestReady?.()) return;
+            const ownerScope = window.BrachyBotTimepointWorkspace?.captureRequestScope?.();
+            const form = window.reportForm;
+            _autoSaveTimer = setTimeout(() => {
+                if (form !== window.reportForm || ownerScope && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(ownerScope)) return;
+                this._save();
+            }, 800);
             const t = document.getElementById('reportAutoSaveText');
             if (t) t.textContent = 'Auto-save: pending…';
         },
@@ -1803,7 +1893,12 @@ window.Report = (function () {
     function _setReportSplitRatio(value, { persist = false, refresh = true } = {}) {
         _reportSplitRatio = _clampReportSplitRatio(value);
         try {
-            document.body.style.setProperty('--rp-editor-width', `${(_reportSplitRatio * 100).toFixed(2)}%`);
+            // An inherited custom property on body invalidated styles for the
+            // whole chat, Data Tree and Viewer on every pointer move. Change
+            // only this grid's non-inherited track definition instead.
+            const body = document.querySelector('#panelReport .rp-body');
+            if (body) body.style.gridTemplateColumns =
+                `minmax(260px, min(${(_reportSplitRatio * 100).toFixed(2)}%, calc(100% - 312px))) 12px minmax(0, 1fr)`;
         } catch (_) {}
         const splitter = document.getElementById('reportLayoutSplitter');
         if (splitter) {
@@ -1813,7 +1908,7 @@ window.Report = (function () {
         }
         if (persist) {
             _persistReportSplitRatio();
-            if (!window.isWorkspacePresentationRestoreActive?.()
+            if (!window.__pendingWorkspacePresentation?.active && !window.isWorkspacePresentationWriteLocked?.()
                 && typeof window.scheduleWorkspaceSave === 'function') {
                 window.scheduleWorkspaceSave('report.layout.split');
             }
@@ -1834,7 +1929,7 @@ window.Report = (function () {
         document.body.style.removeProperty('user-select');
         document.body.style.removeProperty('-webkit-user-select');
         _persistReportSplitRatio();
-        if (!window.isWorkspacePresentationRestoreActive?.()
+        if (!window.__pendingWorkspacePresentation?.active && !window.isWorkspacePresentationWriteLocked?.()
             && typeof window.scheduleWorkspaceSave === 'function') {
             window.scheduleWorkspaceSave('report.layout.split');
         }

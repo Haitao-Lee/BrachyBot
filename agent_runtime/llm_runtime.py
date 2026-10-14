@@ -87,6 +87,17 @@ _CT_DEPENDENT_MUTATIONS = frozenset({
     "seed_planning", "seed_segmentation", "trajectory_planning",
     "planning_pipeline", "dose_engine", "dose_evaluation",
 })
+
+
+def _schemas_without_ct(schemas):
+    """Unavailable acquisition blocks image mutations, not catalog/fact reads.
+
+    Plain and streaming chat must expose the same registered capabilities.
+    Scope, policy and action authorization still run after this projection;
+    metadata tools cannot start clinical work merely because they are visible.
+    """
+    return [item for item in schemas or ()
+            if item.get('function', {}).get('name') not in _CT_DEPENDENT_MUTATIONS]
 _NO_CT_CONTEXT_NOTE = (
     "\n### Workspace image state\n"
     "No CT image is currently verified as loaded. Do not start an image-dependent "
@@ -297,13 +308,13 @@ def _tool_fallback_message(
     if has_failures:
         if detail:
             return f"{detail}\n\nThe action was not completed. Retry using the capability described above."
-        return "Some processing steps did not complete, and no user-facing answer was generated. Review the execution trace and retry or refine the request."
+        return "Some processing steps did not complete, and no user-facing answer was generated. Review the Execution Trace and retry or refine the request."
     if current_request:
         return (
             f'This turn did not produce a complete answer to "{current_request}". '
-            "Use the execution trace for completed/failed steps; an answer failure does not undo completed operations."
+            "Use the Execution Trace for completed/failed steps; an answer failure does not undo completed operations."
         )
-    return "This turn did not produce a valid answer; use the execution trace for completed/failed steps."
+    return "This turn did not produce a valid answer; use the Execution Trace for completed/failed steps."
 
 
 def _blocked_mutation_message(lang: str, tool_names: List[str]) -> str:
@@ -1135,15 +1146,19 @@ def _tool_call_signature(tool_name: str, params: Dict) -> str:
 
 
 class LLMRuntimeMixin:
-    def _provider_schemas_for_turn(self, schemas):
+    def _provider_schemas_for_turn(self, schemas, decision_state=None):
         """Unified capability projection after CT/workspace/child safety filters."""
+        from web.timepoint_chat import project_timepoint_schemas
+        schemas = project_timepoint_schemas(schemas, (getattr(self, "_active_turn_context", {}) or {}).get("timepoint_scope"))
         policy = getattr(self, "_active_turn_policy", None)
         if not is_semantic_first(policy):
             return filter_tool_schemas(schemas, policy)
         metadata_reader = getattr(getattr(self, "registry", None), "conversation_capability_metadata", None)
         metadata = metadata_reader() if callable(metadata_reader) else {}
         projected = project_provider_schemas(schemas, policy, metadata)
-        projected.append(request_plan_schema())
+        projected.append(request_plan_schema(
+            mounted_names={row.get('function', {}).get('name') for row in projected},
+            clause_ids=[row['id'] for row in decision_state.frame['clauses']] if decision_state is not None else None))
         return projected
 
     @staticmethod
@@ -1290,6 +1305,38 @@ class LLMRuntimeMixin:
         # Shared by plain and streaming execution; no separate classifier call.
         # Add trusted instructions, never promote user text into system policy.
         semantic_contract = WHOLE_REQUEST_INSTRUCTION
+        captured_target = (getattr(self, "_active_turn_context", {}) or {}).get("timepoint_scope")
+        if captured_target is not None:
+            from web.timepoint_chat import ChatTimepointScope
+            if isinstance(captured_target, ChatTimepointScope):
+                semantic_contract += (
+                    "\n[Submission-owned workspace target]\n"
+                    "For every request that does not explicitly name another timepoint, use the "
+                    "timepoint captured when the human submitted this turn: " + captured_target.timepoint_id
+                    + ". This applies equally to reads, segmentation, planning, guides, reports and "
+                    "exports. Switching tabs later cannot retarget the turn. A target name, UI label, "
+                    "historical answer or file basename is not a stable identity. Use timepoint_inspector "
+                    "to resolve explicit references within this same Session; ask for clarification if "
+                    "ambiguous. Do not change the default of sibling calls when one clause names a "
+                    "different timepoint. Saved facts from other timepoints are historical evidence, "
+                    "not the current target state. Unsupported scoped operations must be reported as "
+                    "unavailable, never retried on the default Session workspace. A noncurrent "
+                    "clinical mutation requires human target confirmation; supplying a tool ID "
+                    "alone is not confirmation. The boundary checks an exact unique title/ID "
+                    "in the current human message or an authenticated exact-call confirmation. "
+                    "Use timepoint_controller for catalog metadata, create, rename, delete impact, "
+                    "recoverable delete, restore, selection and workflow explanation. Use "
+                    "timepoint_images list for actual image IDs, then show/hide, grouping, "
+                    "appearance, explicit reference selection or recoverable image removal. "
+                    "Displaying an image is not authorizing it as the planning reference. Use "
+                    "timepoint_inspector compare for saved cross-timepoint facts; never add doses "
+                    "across scans. Selection is pending until the browser acknowledges a mount; "
+                    "sibling tool calls retain this turn's submission target."
+                )
+                from agent_runtime.timepoint_capabilities import compiled_capability_catalog
+                catalog = compiled_capability_catalog(self.registry,
+                    browser_ready=(self.config or {}).get("_workspace_scoped_browser_delivery") is True)
+                semantic_contract += "\n[Registered scope capability catalog; server metadata]\n" + json.dumps(catalog)
         policy = getattr(self, "_active_turn_policy", None)
         parsed_goals = getattr(policy, "parsed_goals", ()) or ()
         if parsed_goals:
@@ -2481,7 +2528,9 @@ class LLMRuntimeMixin:
                     "status": "done",
                 }
                 steps.append(cancel_step)
-                return "已停止本次响应。请修改输入后重新发送，我会按新的请求重新执行。"
+                return ("已停止本次响应。请修改输入后重新发送，我会按新的请求重新执行。"
+                        if _trace_zh else
+                        "This response was stopped. Edit the request and send it again to run a new turn.")
             iteration += 1
 
             # The authorization ledger is updated after every provider tool
@@ -2501,12 +2550,11 @@ class LLMRuntimeMixin:
             messages = _bound_followup_messages(messages, base_message_count)
             tools_for_llm = self.registry.to_openai_tools()
             if _no_files_loaded:
-                tools_for_llm = [item for item in tools_for_llm
-                                 if item.get("function", {}).get("name") not in _CT_DEPENDENT_MUTATIONS]
+                tools_for_llm = _schemas_without_ct(tools_for_llm)
             if internal_followup:
                 tools_for_llm = [item for item in tools_for_llm
                                  if item.get("function", {}).get("name") in {"case_memory", "doc_reader", "dvh_curve", "query_metrics"}]
-            tools_for_llm = self._provider_schemas_for_turn(tools_for_llm)
+            tools_for_llm = self._provider_schemas_for_turn(tools_for_llm, decision_state)
             messages = self._enforce_context_budget(messages, tools_for_llm, current_user_content=message)
             try:
                 response = _chat_messages_with_retry(
@@ -2783,7 +2831,11 @@ class LLMRuntimeMixin:
                             "clinical.tumor_site_required",
                             tool="ctv_segmentation",
                         )
-                    result_text = "请告知肿瘤部位，例如胰腺、肝脏、前列腺等，以便选择正确的CTV分割模型。"
+                    result_text = (
+                        "请告知肿瘤部位，例如胰腺、肝脏、前列腺等，以便选择正确的 CTV 分割模型。"
+                        if _lang == "zh" else
+                        "Please specify the tumor site (for example pancreatic, liver, or prostate) so the correct CTV segmentation model can be selected."
+                    )
                     tool_succeeded = False
                 elif tool_name == PLAN_TOOL:
                     tool_result = self._execute_request_plan(
@@ -3939,17 +3991,7 @@ class LLMRuntimeMixin:
                     or bool(self.memory.retrieve("ct_path"))
                 )
                 if not ct_loaded and tools_for_llm is not None:
-                    _allowed_without_ct = {
-                        "report_generator", "clinical_kb", "doc_reader", "case_memory",
-                        "dose_recompute",
-                        "tool_creator", "env_manager", "shell_executor", "code_executor",
-                        "ui_inspector", "ui_controller", "ui_screenshot", "ui_content", "ui_annotate",
-                        "filesystem_browser", "safety_validator",
-                        "plan_comparator", "dicom_rt_exporter",
-                        "web_search", "web_fetch", "web_access"  # Allow web tools (no CT dependency)
-                    }
-                    tools_for_llm = [t for t in tools_for_llm
-                                      if t.get("function", {}).get("name", "") in _allowed_without_ct]
+                    tools_for_llm = _schemas_without_ct(tools_for_llm)
 
                 if _external_project_query and tools_for_llm is not None:
                     _external_tools = {"web_search", "web_fetch", "web_access"}
@@ -3981,7 +4023,7 @@ class LLMRuntimeMixin:
                 # The local turn policy is deliberately applied after the
                 # safety filters above. It narrows the provider schema but
                 # cannot re-enable tools that the CT/session state removed.
-                tools_for_llm = self._provider_schemas_for_turn(tools_for_llm)
+                tools_for_llm = self._provider_schemas_for_turn(tools_for_llm, decision_state)
 
                 # Keep the request inside the model window before every call.
                 messages = self._enforce_context_budget(
@@ -4604,12 +4646,16 @@ class LLMRuntimeMixin:
                             "clinical.tumor_site_required",
                             tool="ctv_segmentation",
                         )
-                    result_text = "请告知肿瘤部位，例如胰腺、肝脏、前列腺等，以便选择正确的CTV分割模型。"
+                    result_text = (
+                        "请告知肿瘤部位，例如胰腺、肝脏、前列腺等，以便选择正确的 CTV 分割模型。"
+                        if _trace_zh else
+                        "Please specify the tumor site (for example pancreatic, liver, or prostate) so the correct CTV segmentation model can be selected."
+                    )
                     _input_missing = True
                     final_response = result_text
                     tool_step["requires_input"] = True
                     tool_step["status"] = "error"
-                    tool_step["content"] = "需要肿瘤部位信息"
+                    tool_step["content"] = "需要肿瘤部位信息" if _trace_zh else "Tumor site required"
                     tool_step["result"] = result_text[:200]
                     yield yield_event("step", tool_step)
                     execution_state.record(tc, success=False, attempted=False)
@@ -4658,7 +4704,8 @@ class LLMRuntimeMixin:
                                     )
                             except Exception as _te:
                                 _tool_exc_box[0] = _te
-                        _tool_thread = _thr.Thread(target=_run_tool, daemon=True)
+                        from web.timepoint_http import scoped_callable
+                        _tool_thread = _thr.Thread(target=scoped_callable(_run_tool), daemon=True)
                         _tool_thread.start()
                         _hb_count = 0
                         import time as _tool_clock
@@ -4679,7 +4726,9 @@ class LLMRuntimeMixin:
                                 yield yield_event("step", tool_step)
                                 yield {
                                     "type": "_result",
-                                    "response": "已停止本次响应。当前长耗时工具若已经进入底层推理，可能会在后台自然结束，但不会继续触发后续规划步骤。",
+                                    "response": ("已停止本次响应。当前长耗时工具若已经进入底层推理，可能会在后台自然结束，但不会继续触发后续规划步骤。"
+                                                 if _trace_zh else
+                                                 "This response was stopped. Any long-running tool that already entered inference may finish in the background, but no downstream planning steps will run."),
                                     "llm_meta": {"usage": total_usage, "latency_ms": total_latency_ms, "llm_calls": llm_calls, "phase_timings_ms": dict(getattr(self, "_turn_timings", {}) or {}), "response_contract": response_contract.as_dict()},
                                 }
                                 return

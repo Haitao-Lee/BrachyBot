@@ -1672,8 +1672,8 @@ const state = {
         window: 400,
         level: 40,
         threshold: null,
-        showCTV: false,
-        showOAR: false,
+        showCTV: true,
+        showOAR: true,
         displayMode: 'ct',
         // False means the controls are still at their case defaults.  A
         // freshly generated/imported mask may therefore enable its normal
@@ -1702,7 +1702,7 @@ const state = {
         axial:   { visible: true, opacity: 0.6 },
         sagittal: { visible: true, opacity: 0.6 },
         coronal:  { visible: true, opacity: 0.6 },
-        '3d':     { visible: true, opacity: 0.6 },
+        '3d':     { visible: false, opacity: 0.6 },
     },
 };
 
@@ -1791,6 +1791,8 @@ function _clearMonitorFeedbackTimer() {
 }
 
 function _flushMonitorFeedback(ownerSessionId, ownerRunId, options = {}) {
+    const capturedScope = options.timepointScope || trainingMonitorState.timepointScope;
+    if (capturedScope && !window.BrachyBotTimepointWorkspace?.scopeIsCurrent(capturedScope)) return;
     _clearMonitorFeedbackTimer();
     const ownsRun = trainingMonitorState.sessionId === ownerSessionId
         && trainingMonitorState.runId === ownerRunId;
@@ -1888,6 +1890,7 @@ function _attachMonitorEditChoices(messageId, evidence, sessionId, runId) {
 }
 
 function _queueMonitorFeedback(message, type, label, ownerSessionId, ownerRunId, evidence = null, localeCopies = null) {
+    const timepointScope = trainingMonitorState.timepointScope || window.BrachyBotTimepointWorkspace?.captureRequestScope?.();
     if (!message || !trainingMonitorState.active) return false;
     const immediate = type === 'manual.dose'
         || (/^(planning|segmentation)\.step$/i.test(type)
@@ -1925,7 +1928,8 @@ function _queueMonitorFeedback(message, type, label, ownerSessionId, ownerRunId,
     trainingMonitorState.pendingFeedback.push({ message, type, label, evidence, localeCopies, at: Date.now() });
     _clearMonitorFeedbackTimer();
     trainingMonitorState.feedbackTimer = setTimeout(() => {
-        _flushMonitorFeedback(ownerSessionId, ownerRunId);
+        if (timepointScope && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope)) return;
+        _flushMonitorFeedback(ownerSessionId, ownerRunId, { timepointScope });
     }, 2500);
     return true;
 }
@@ -2066,6 +2070,24 @@ window.setTrainingMonitorPhase = setTrainingMonitorPhase;
 
 function restoreTrainingMonitorSnapshot(training, sessionId) {
     const snapshot = training && typeof training === 'object' ? training : {};
+    const timepointScope = window.BrachyBotTimepointWorkspace?.captureRequestScope?.();
+    if (timepointScope) {
+        trainingMonitorState.timepointScope = timepointScope;
+        trainingMonitorState.sessionId = sessionId;
+        trainingMonitorState.runId = snapshot.run_id || snapshot.runId || null;
+        trainingMonitorState.goal = snapshot.goal || '';
+        trainingMonitorState.pendingFeedback = []; _clearMonitorFeedbackTimer();
+        setTrainingMonitorPhase('inactive');
+        void _readTrainingMonitorStatus(5000, timepointScope).then(live => {
+            if (!window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope)) return;
+            trainingMonitorState.runId = live.monitor_run_id || null;
+            trainingMonitorState.goal = live.goal || snapshot.goal || '';
+            setTrainingMonitorPhase(live.active ? 'active' : live.closing ? 'stop_error' : 'inactive');
+        }).catch(() => {
+            if (window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope) && trainingMonitorState.runId) setTrainingMonitorPhase('stop_error');
+        });
+        return;
+    }
     const staleRunId = snapshot.run_id || snapshot.runId || null;
     if (trainingMonitorState.sessionId === sessionId
         && trainingMonitorState.phase === 'active') return;
@@ -2212,6 +2234,12 @@ function _nextUiStateSeq() {
     return window._uiStateSeq;
 }
 async function syncUIBridgeState(reason = 'snapshot') {
+    if (window.BrachyBotTimepoints?.enabled?.() && !window.BrachyBotTimepointWorkspace?.requestReady?.()) {
+        return { success: false, skipped: true, code: 'timepoint_workspace_switching' };
+    }
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     // Self-contained: the version record is created lazily so this function
     // cannot depend on load order and can be exercised in isolation.
     const windowRef = (typeof window !== 'undefined' && window) ? window : globalThis;
@@ -2226,7 +2254,7 @@ async function syncUIBridgeState(reason = 'snapshot') {
     windowRef._uiBrowserInstanceId = windowRef._uiBrowserInstanceId
         || (() => windowRef._uiBrowserInstanceIdValue);
     try {
-        const response = await fetch(API + '/ui/state', {
+        const response = await __tpAwait(() => (fetch(API + '/ui/state', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -2240,8 +2268,8 @@ async function syncUIBridgeState(reason = 'snapshot') {
                 plan_revision: _currentPlanRevision(),
                 state: (typeof collectUIState === 'function') ? collectUIState() : {},
             }),
-        });
-        const payload = await response.json().catch(() => null);
+        })));
+        const payload = await __tpAwait(() => (response.json().catch(() => null)));
         // A non-2xx response is a failed sync even when the body parses, and a
         // 2xx that does not acknowledge the write is one too. Reporting
         // success here is how a failed save still produced 'UI state
@@ -2261,6 +2289,7 @@ async function syncUIBridgeState(reason = 'snapshot') {
         if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave(reason);
         return { success: true, accepted_revision: status.revision };
     } catch (e) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
         // A network failure leaves the state unsynced. Later operations must
         // not assume this write reached durable storage.
         status.synced = false;
@@ -2419,12 +2448,14 @@ window.handleMonitorConversation = async function(text) {
 
 async function reportUIEvent(type, label, detail = {}, options = {}) {
     const ownerSessionId = _activeApiSessionId();
+    const timepointScope = options.timepointScope || window.BrachyBotTimepointWorkspace?.captureRequestScope?.();
+    const ownsTimepoint = () => !timepointScope || window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope);
     const language = monitorConversationLanguage(ownerSessionId);
     const ownerRunId = trainingMonitorState.runId;
     try {
         const res = options.cachedCheckpoint ? null : await fetch(API + '/ui/event', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: window.BrachyBotTimepointWorkspace?.headers(timepointScope, { 'Content-Type': 'application/json' }) || { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 session_id: ownerSessionId,
                 type,
@@ -2449,13 +2480,13 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
             }),
         });
         const data = options.cachedCheckpoint || await res.json().catch(() => null);
-        if (ownerSessionId !== _activeApiSessionId()) return null;
+        if (ownerSessionId !== _activeApiSessionId() || !ownsTimepoint()) return null;
         if (ownerRunId && data?.monitor_run_id && ownerRunId !== data.monitor_run_id) return null;
         if (ownerRunId !== trainingMonitorState.runId) return null;
         window.monitorDashboardEvent?.(data?.event);
         if (!options.cachedCheckpoint && data?.interaction
             && typeof window.receiveMonitorCheckpoint === 'function') {
-            return window.receiveMonitorCheckpoint(data);
+            return window.receiveMonitorCheckpoint(data, timepointScope);
         }
         const feedbackText = !options.cachedCheckpoint && data && (data.feedback_by_language?.[monitorConversationLanguage(ownerSessionId)]
             || data.feedback_localized || data.feedback);
@@ -2517,6 +2548,7 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                 // ``description`` is kept as a compatibility fallback for
                 // older servers; current training payloads use ``question``.
                 setTimeout(() => {
+                    if (!ownsTimepoint()) return;
                     // A delayed checkpoint must not outlive the monitor run or
                     // leak into a newly selected case.
                     if (!trainingMonitorState.active
@@ -2542,6 +2574,7 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                     // Every edit owns an immutable evidence message. A later
                     // seed/needle checkpoint must not replace an earlier image.
                     const monitorScreenshotContext = {
+                            timepointScope,
                             keys: new Set(),
                             items: [],
                             sessionId: ownerSessionId,
@@ -2565,6 +2598,7 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                         {
                             sessionId: ownerSessionId,
                             requestId: monitorScreenshotContext.requestId,
+                            timepointScope,
                             messageId: monitorScreenshotContext.messageId,
                             mode: 'monitor',
                             monitorOnly: true,
@@ -2600,6 +2634,7 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                             },
                         },
                     ).then(result => {
+                        if (!ownsTimepoint()) return;
                         if (!trainingMonitorState.active
                             || ownerRunId !== trainingMonitorState.runId
                             || ownerSessionId !== _activeApiSessionId()) return;
@@ -2798,6 +2833,9 @@ function _resolveUIControlElement(payload) {
 }
 
 async function executeGenericUIControl(command, value) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const payload = _parseUIControlPayload(value);
     // Gesture coordinates/options may be supplied either at the top level or
     // as the semantic value produced by the resolver (for example
@@ -2915,8 +2953,9 @@ async function executeGenericUIControl(command, value) {
         }
         let result;
         try {
-            result = await Promise.resolve(handler(...args.values));
+            result = await __tpAwait(() => (Promise.resolve(handler(...args.values))));
         } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
             return {
                 handled: true,
                 failure: {
@@ -2954,7 +2993,7 @@ async function executeGenericUIControl(command, value) {
     // A command-button click goes through the mounted business handler first.
     // `dispatched` is the only claim a plain DOM click can make.
     const clickControl = async () => {
-        const invoked = await invokeMountedHandler();
+        const invoked = await __tpAwait(() => (invokeMountedHandler()));
         if (invoked.failure) return invoked.failure;
         if (!invoked.handled) el.click();
         return null;
@@ -3000,7 +3039,7 @@ async function executeGenericUIControl(command, value) {
             if (typeof el.requestSubmit === 'function') el.requestSubmit();
             else el.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
         } else {
-            const failure = await clickControl();
+            const failure = await __tpAwait(() => (clickControl()));
             if (failure) return failure;
         }
         applied = 'run';
@@ -3016,7 +3055,7 @@ async function executeGenericUIControl(command, value) {
             // value-bearing form field.  Treating every reset request as a
             // defaultValue assignment used to make these controls report
             // failure even though a human can click them.
-            const failure = await clickControl();
+            const failure = await __tpAwait(() => (clickControl()));
             if (failure) return failure;
             applied = 'reset';
         } else if ('value' in el && el.defaultValue !== undefined) {
@@ -3036,7 +3075,7 @@ async function executeGenericUIControl(command, value) {
         // With an explicit aria-expanded state, avoid a second click when the
         // requested state is already present. This makes retries idempotent.
         if (currentExpanded === null || currentExpanded !== desired) {
-            const failure = await clickControl();
+            const failure = await __tpAwait(() => (clickControl()));
             if (failure) return failure;
         }
         applied = el.getAttribute('aria-expanded') || desired;
@@ -3071,7 +3110,7 @@ async function executeGenericUIControl(command, value) {
             // whose semantic operation is exposed as next/prev/first/last.
             // The live element remains the source of truth; clicking it is
             // exactly the browser operation available to the user.
-            const failure = await clickControl();
+            const failure = await __tpAwait(() => (clickControl()));
             if (failure) return failure;
             applied = cmd;
         } else {
@@ -3088,7 +3127,7 @@ async function executeGenericUIControl(command, value) {
             || payload.x !== undefined || payload.clientX !== undefined) {
             dispatchMouse('click', { detail: 1 });
         } else {
-            const failure = await clickControl();
+            const failure = await __tpAwait(() => (clickControl()));
             if (failure) return failure;
         }
     } else if (cmd === 'toggle') {
@@ -3099,7 +3138,7 @@ async function executeGenericUIControl(command, value) {
             applied = !!el.checked;
             dispatchValueEvents();
         } else {
-            const failure = await clickControl();
+            const failure = await __tpAwait(() => (clickControl()));
             if (failure) return failure;
         }
     } else if (cmd === 'set') {
@@ -3117,8 +3156,8 @@ async function executeGenericUIControl(command, value) {
                     normalized = '';
                 } else if (!Number.isFinite(parsed)) {
                     const error = typeof window._t === 'function'
-                        ? window._t('数值控件需要一个有效数值。', 'A numeric control requires a finite number.')
-                        : 'A numeric control requires a finite number.';
+                        ? window._t('数值控件需要一个有效数值。', 'A numeric control requires a valid number.')
+                        : 'A numeric control requires a valid number.';
                     return { success: false, error, requested: nextValue };
                 } else {
                     normalized = clamp(parsed);
@@ -3450,6 +3489,8 @@ function instrumentUIControls() {
         if (requestSessionId && !controlPlaneRequest && !headers.has('X-BrachyBot-Session')) {
             headers.set('X-BrachyBot-Session', requestSessionId);
         }
+        // The timepoint bridge captures a stable target; Session identity stays separate.
+        window.BrachyBotTimepoints?.addRequestHeaders(headers, pathname, requestSessionId);
         nextInit.headers = headers;
         return nativeFetch(input, nextInit);
     };
@@ -3490,6 +3531,7 @@ function _uploadProgressElements(targetId) {
 }
 
 async function handleFileSelect(input, targetId) {
+    const timepointScope = window.BrachyBotTimepointWorkspace?.captureRequestScope?.();
     const files = input.files ? Array.from(input.files) : [];
     if (files.length === 0) return;
     let ownerSessionId = '';
@@ -3497,7 +3539,8 @@ async function handleFileSelect(input, targetId) {
     let ownerTumorType = null;
     let ownerTargetValue = 1;
     const isCurrentOwner = () => !!ownerSessionId
-        && ownerSessionId === String(_activeApiSessionId());
+        && ownerSessionId === String(_activeApiSessionId())
+        && (!timepointScope || window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope));
 
     const pathInput = document.getElementById(targetId);
     const { overlay, progressText, progressFilename } = _uploadProgressElements(targetId);
@@ -3526,12 +3569,14 @@ async function handleFileSelect(input, targetId) {
                 : 'The case workspace is still starting. Please wait a moment and retry.');
         }
         ownerSessionId = String(await window.awaitActiveSessionReady());
+        if (timepointScope) ownerSessionId = timepointScope.sessionId;
+        if (timepointScope && !isCurrentOwner()) return;
         if (!/^[a-f0-9]{32}$/.test(ownerSessionId)) {
             throw new Error(uploadLanguage === 'zh'
                 ? '当前病例不可用。'
                 : 'The selected case is unavailable.');
         }
-        if (typeof window.reconcileActiveSession === 'function') {
+        if (!timepointScope && typeof window.reconcileActiveSession === 'function') {
             const requestedSessionId = ownerSessionId;
             const reconciledSessionId = String(await window.reconcileActiveSession(ownerSessionId));
             ownerSessionId = reconciledSessionId;
@@ -3560,7 +3605,8 @@ async function handleFileSelect(input, targetId) {
 
         const res = await fetch(API + '/upload', {
             method: 'POST',
-            headers: { 'X-BrachyBot-Session': ownerSessionId },
+            headers: window.BrachyBotTimepointWorkspace?.headers(timepointScope, { 'X-BrachyBot-Session': ownerSessionId })
+                || { 'X-BrachyBot-Session': ownerSessionId },
             body: formData,
         });
 
@@ -3570,6 +3616,11 @@ async function handleFileSelect(input, targetId) {
         }
 
         const data = await res.json();
+        if (targetId === 'ctPath' && timepointScope) {
+            const uploadedImageName=data.original_filename || (files.length===1?files[0].name:
+                files[0].webkitRelativePath?.split('/')[0]) || data.filename || files[0].name;
+            await window.BrachyBotTimepointWorkspace.registerImage(data.path, { name: uploadedImageName }, timepointScope);
+        }
         if (!ownerSessionId || isCurrentOwner()) {
             pathInput.value = data.path;
             pathInput.disabled = false;
@@ -3590,6 +3641,7 @@ async function handleFileSelect(input, targetId) {
                     ? `Uploaded DICOM folder (${data.file_count} files) → ${data.path}`
                     : `Uploaded ${data.filename} (${(data.size / 1024 / 1024).toFixed(2)} MB)`);
             await loadCTToViewers(data.path, {
+                timepointScope,
                 sessionId: ownerSessionId,
                 announce: isCurrentOwner(),
                 // Explicit CT uploads may have a CTV/OAR file selected first;
@@ -3599,8 +3651,10 @@ async function handleFileSelect(input, targetId) {
                 // output path as if it were an uploaded mask.
                 restoreUploadedMasks: true,
             });
+            if (timepointScope && isCurrentOwner()) await window.BrachyBotTimepointWorkspace.reloadImages(timepointScope);
         } else if (targetId === 'ctvPath' || targetId === 'oarPath') {
             await importUploadedMask(targetId === 'ctvPath' ? 'ctv' : 'oar', data.path, {
+                timepointScope,
                 sessionId: ownerSessionId,
                 ctPath: ownerCtPath,
                 tumorType: ownerTumorType,
@@ -3643,6 +3697,8 @@ function _segmentationHydrationRequestKey(body, sessionId, scopeKey = '') {
 }
 
 async function _postSegmentationWithHydrationRetry(body, sessionId, options = {}) {
+    const timepointScope = options.timepointScope || window.BrachyBotTimepointWorkspace?.captureRequestScope?.();
+    options = { ...options, timepointScope, scopeKey: timepointScope ? JSON.stringify([timepointScope.timepointId, timepointScope.generation, options.scopeKey]) : options.scopeKey };
     const key = _segmentationHydrationRequestKey(body, sessionId, options.scopeKey);
     const existing = _segmentationHydrationInFlight.get(key);
     if (existing) return existing;
@@ -3656,6 +3712,9 @@ async function _postSegmentationWithHydrationRetry(body, sessionId, options = {}
 }
 
 async function _postSegmentationWithHydrationRetryCore(body, sessionId, options = {}) {
+    const requestHeaders = window.BrachyBotTimepointWorkspace?.headers(options.timepointScope, {
+        'Content-Type': 'application/json', 'X-BrachyBot-Session': sessionId,
+    });
     const maxPendingAttempts = 240;
     const shouldContinue = typeof options.isCurrent === 'function'
         ? options.isCurrent
@@ -3666,7 +3725,7 @@ async function _postSegmentationWithHydrationRetryCore(body, sessionId, options 
         if (!shouldContinue()) return { stale: true, response: null, payload: {} };
         response = await fetch(API + '/segmentation', {
             method: 'POST',
-            headers: {
+            headers: requestHeaders || {
                 'Content-Type': 'application/json',
                 'X-BrachyBot-Session': sessionId,
             },
@@ -3702,11 +3761,13 @@ window._postSegmentationWithHydrationRetry = _postSegmentationWithHydrationRetry
 
 /** Import a user-provided label into the session-scoped agent memory. */
 async function importUploadedMask(kind, labelPath, options = {}) {
+    const timepointScope = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(options.timepointScope);
     const ownerSessionId = String(options.sessionId || _activeApiSessionId());
     const ownerRenderGeneration = Number(
         options.renderGeneration ?? window.__viewerRenderGeneration ?? 0,
     );
     const isCurrentOwner = () => ownerSessionId === String(_activeApiSessionId())
+        && (!timepointScope || window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope))
         && ownerRenderGeneration === Number(window.__viewerRenderGeneration || 0);
     const ctPath = String(
         options.ctPath
@@ -3859,13 +3920,16 @@ function renderDicomRTImportStatus(imports, options = {}) {
 }
 
 async function refreshDicomRTImportStatus(options = {}) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(options?.timepointScope);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const ownerSessionId = String(options.sessionId || _activeApiSessionId());
     const isCurrentOwner = () => ownerSessionId === String(_activeApiSessionId());
     try {
-        const response = await fetch(API + '/import/dicom_rt', {
+        const response = await __tpAwait(() => (fetch(API + '/import/dicom_rt', {
             headers: { 'X-BrachyBot-Session': ownerSessionId },
-        });
-        const payload = await response.json().catch(() => ({}));
+        })));
+        const payload = await __tpAwait(() => (response.json().catch(() => ({}))));
         if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
         if (!isCurrentOwner()) return [];
         const records = Array.isArray(payload.imports) ? payload.imports : [];
@@ -3873,6 +3937,7 @@ async function refreshDicomRTImportStatus(options = {}) {
         renderDicomRTImportStatus(records, { silent: true });
         return records;
     } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
         if (isCurrentOwner() && !options.silent) {
             showBrachyBotNotice(error.message || String(error), 'error');
         }
@@ -3881,6 +3946,9 @@ async function refreshDicomRTImportStatus(options = {}) {
 }
 
 async function handleDicomRTImport(input) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const file = input?.files?.[0];
     if (!file) return;
     const button = document.getElementById('dicomRtImportButton');
@@ -3898,12 +3966,12 @@ async function handleDicomRTImport(input) {
     try {
         const formData = new FormData();
         formData.append('file', file, file.name);
-        const response = await fetch(API + '/import/dicom_rt', {
+        const response = await __tpAwait(() => (fetch(API + '/import/dicom_rt', {
             method: 'POST',
             headers: { 'X-BrachyBot-Session': sessionAtStart },
             body: formData,
-        });
-        const payload = await response.json().catch(() => ({}));
+        })));
+        const payload = await __tpAwait(() => (response.json().catch(() => ({}))));
         if (!response.ok || !payload.success) throw new Error(payload.error || `HTTP ${response.status}`);
         if (!isCurrentOwner()) return payload;
         state.dicomRtImports = [...(Array.isArray(state.dicomRtImports) ? state.dicomRtImports : []), payload.import];
@@ -3917,6 +3985,7 @@ async function handleDicomRTImport(input) {
             clinical_status: payload.clinical_status,
         });
     } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
         if (isCurrentOwner() && status) {
             status.hidden = false;
             status.className = 'dicom-rt-status is-error';
@@ -4390,8 +4459,8 @@ function resetAllState(options = {}) {
             window: 400,
             level: 40,
             threshold: null,
-            showCTV: false,
-            showOAR: false,
+            showCTV: true,
+            showOAR: true,
             displayMode: 'ct',
             userConfigured: false,
             zoom: 1.0,
@@ -4410,7 +4479,7 @@ function resetAllState(options = {}) {
         axial: { visible: true, opacity: 0.6 },
         sagittal: { visible: true, opacity: 0.6 },
         coronal: { visible: true, opacity: 0.6 },
-        '3d': { visible: true, opacity: 0.6 },
+        '3d': { visible: false, opacity: 0.6 },
     };
     if (state.doseTexture) {
         Object.assign(state.doseTexture, {
@@ -4445,15 +4514,15 @@ function resetAllState(options = {}) {
     resetViewerControl('viewerZoom', 100);
     resetViewerControl('viewerThreshold', '');
     resetViewerControl('displayMode', 'ct');
-    resetViewerControl('overlayCTV', undefined, false);
-    resetViewerControl('overlayOAR', undefined, false);
+    resetViewerControl('overlayCTV', undefined, true);
+    resetViewerControl('overlayOAR', undefined, true);
     resetViewerControl('overlaySeeds', undefined, false);
     resetViewerControl('doseOverlayOpacity', 40);
     resetViewerControl('meshOpacity3D', 70);
     resetViewerControl('wireframe3D', undefined, false);
     resetViewerControl('skinToggle3D', undefined, false);
     resetViewerControl('doseOpacity', 40);
-    resetViewerControl('labelShow3d', undefined, true);
+    resetViewerControl('labelShow3d', undefined, false);
     resetViewerControl('labelOp3d', 60);
     const zoomLabel = document.getElementById('zoomLabel');
     if (zoomLabel) zoomLabel.textContent = '100%';
@@ -4464,7 +4533,7 @@ function resetAllState(options = {}) {
     const doseTextureButton = document.getElementById('doseTextureToggle');
     if (doseTextureButton) {
         doseTextureButton.disabled = false;
-        doseTextureButton.textContent = 'Dose Surface';
+        doseTextureButton.textContent = window._t?.('剂量着色','Dose coloring') || 'Dose coloring';
         doseTextureButton.classList.remove('active');
     }
     if (typeof window.setDoseColorbarState === 'function') {
@@ -4706,6 +4775,7 @@ async function pullHeaderInfo(ctPath, options = {}) {
     // memory proxies, and re-render the Analysis panel.
     // Idempotent: safe to call multiple times for the same path.
     if (!ctPath) return;
+    const timepointScope = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(options.timepointScope);
     const expectedSessionId = String(
         options.sessionId
         || state.sessionId
@@ -4714,6 +4784,7 @@ async function pullHeaderInfo(ctPath, options = {}) {
     );
     const expectedPath = String(ctPath);
     const ownsResponse = () => {
+        if (timepointScope && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope)) return false;
         const selected = String(
             (typeof activeSessionId !== 'undefined' ? activeSessionId : '')
             || state.sessionId
@@ -4727,10 +4798,9 @@ async function pullHeaderInfo(ctPath, options = {}) {
     try {
         const res = await fetch(API + '/header/info', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                ...(expectedSessionId ? { 'X-BrachyBot-Session': expectedSessionId } : {}),
-            },
+            headers: window.BrachyBotTimepointWorkspace?.headers(timepointScope, {
+                'Content-Type': 'application/json', ...(expectedSessionId ? { 'X-BrachyBot-Session': expectedSessionId } : {}),
+            }) || { 'Content-Type': 'application/json', 'X-BrachyBot-Session': expectedSessionId },
             body: JSON.stringify({ ct_path: ctPath }),
         });
         if (!res.ok) return;
@@ -4914,7 +4984,7 @@ function updateImageAnalysis() {
         if (m.d90 != null) seg.push([t('D90 (CTV 覆盖)', 'D90 (CTV coverage)'), `${m.d90.toFixed(2)} Gy`]);
         if (m.v100 != null) seg.push([t('V100 (CTV 覆盖)', 'V100 (CTV coverage)'), `${(m.v100 * 100).toFixed(1)}%`]);
         if (m.v150 != null) seg.push([t('V150', 'V150'), `${(m.v150 * 100).toFixed(1)}%`]);
-        if (m.d2 != null)   seg.push([t('D2 (最高剂量)', 'D2 (max dose)'), `${m.d2.toFixed(2)} Gy`]);
+        if (m.d2 != null)   seg.push([t('D2（最高受照 2% 体积的剂量）', 'D2 (dose to the hottest 2%)'), `${m.d2.toFixed(2)} Gy`]);
         if (m.dmean != null) seg.push([t('Dmean', 'Dmean'), `${m.dmean.toFixed(2)} Gy`]);
         if (m.plan_score != null) seg.push([t('计划评分', 'Plan score'), `${m.plan_score.toFixed(0)}/100`]);
         if (state.seeds && state.seeds.length) {
@@ -4944,6 +5014,10 @@ function updateImageAnalysis() {
 
 async function loadCTToViewers(ctPath, options = {}) {
     if (!ctPath) return;
+    const timepointScope = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(options.timepointScope);
+    const requestHeaders = window.BrachyBotTimepointWorkspace?.headers(timepointScope, {
+        'Content-Type': 'application/json', 'X-BrachyBot-Session': String(options.sessionId || _activeApiSessionId()),
+    });
 
     const ownerSessionId = String(options.sessionId || _activeApiSessionId());
 
@@ -4952,7 +5026,10 @@ async function loadCTToViewers(ctPath, options = {}) {
         window.SessionCache.invalidateSession(ownerSessionId).catch(function(){});
     }
 
-    const isCurrentOwner = () => ownerSessionId === String(_activeApiSessionId());
+    let ownerDataGeneration = null;
+    const isCurrentOwner = () => ownerSessionId === String(_activeApiSessionId())
+        && (!timepointScope || window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope))
+        && (ownerDataGeneration == null || ownerDataGeneration === viewerDataLoadGeneration);
     const announce = options.announce !== false;
     const { overlay, progressText } = _uploadProgressElements('ctPath');
     const windowCenter = Number.isFinite(Number(options.windowCenter))
@@ -4970,6 +5047,7 @@ async function loadCTToViewers(ctPath, options = {}) {
         if (!options.skipReset) resetAllState();
     }
     const renderGeneration = window.__viewerRenderGeneration || 0;
+    ownerDataGeneration = typeof viewerDataLoadGeneration === 'undefined' ? null : viewerDataLoadGeneration;
 
     // Per-patient memory isolation on the FRONTEND. The server
     // also clears its memory if the CT path changed (see
@@ -5016,14 +5094,17 @@ state.dvhPlanningId = null;
     try {
         let data = null;
         for (let attempt = 0; attempt < 360; attempt += 1) {
+            if (!isCurrentOwner()) return { stale: true };
             const res = await fetch(API + '/viewer/load', {
                 method: 'POST',
-                headers: {
+                headers: requestHeaders || {
                     'Content-Type': 'application/json',
                     'X-BrachyBot-Session': ownerSessionId,
                 },
                 body: JSON.stringify({
                     ct_path: ctPath,
+                    ...(options.imageId ? { image_id: options.imageId, display_only: options.displayOnly === true,
+                        geometry_only: options.geometryOnly === true } : {}),
                     window_center: windowCenter,
                     window_width: windowWidth,
                 }),
@@ -5084,11 +5165,17 @@ state.dvhPlanningId = null;
             });
 
             // Load CT volume for client-side rendering
-            await loadVolumeData({ sessionId: ownerSessionId });
+            await loadVolumeData({ sessionId: ownerSessionId, timepointScope, imageId: options.imageId });
             if (!isCurrentOwner() || renderGeneration !== window.__viewerRenderGeneration) {
                 return { ...data, stale: true };
             }
             state.ctLoaded = true;
+            if (timepointScope && data.image_id) {
+                state.displayImageId = data.image_id;
+                const displayImage = window.BrachyBotTimepointWorkspace.resourceState()?.images?.images?.find(image=>image.id===data.image_id);
+                if (displayImage) {dataTreeState.ct.label = displayImage.name || displayImage.id;
+                    window.applyTimepointImageAppearance?.(displayImage,timepointScope);}
+            }
 
             // Render initial slices from volume
             ['axial', 'sagittal', 'coronal'].forEach(axis => {
@@ -5343,6 +5430,12 @@ function _workspaceNeedsClinicalRestore(workspace, status) {
 
 async function _restoreActiveSessionWorkspace(options = {}) {
     const sessionAtStart = _activeApiSessionId();
+    const timepointScope = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(options.timepointScope);
+    const ownsWorkspace = () => _activeApiSessionId() === sessionAtStart
+        && (!timepointScope || window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope));
+    if (!ownsWorkspace()) return null;
+    const requestHeaders = window.BrachyBotTimepointWorkspace?.headers(timepointScope, { 'X-BrachyBot-Session': sessionAtStart })
+        || { 'X-BrachyBot-Session': sessionAtStart };
     const initialWorkspace = options.workspace || window._activeWorkspaceSnapshot || null;
     const preserveVisibleClinicalState = options.preserveVisibleClinicalState === true
         || (options.background === true
@@ -5381,7 +5474,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
             let workspaceResponse;
             try {
                 workspaceResponse = await fetch(API + '/workspace/snapshot', {
-                    headers: { 'X-BrachyBot-Session': sessionAtStart },
+                    headers: requestHeaders,
                     signal: wsCtrl.signal,
                 });
             } finally { clearTimeout(wsTimer); }
@@ -5408,7 +5501,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         let response;
         try {
             response = await fetch(API + '/status?lightweight=1', {
-                headers: { 'X-BrachyBot-Session': sessionAtStart },
+                headers: requestHeaders,
                 signal: stCtrl.signal,
             });
         } finally { clearTimeout(stTimer); }
@@ -5416,7 +5509,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         status = await response.json();
         recordStage('restore.status', statusStartedAt);
     }
-    if (_activeApiSessionId() !== sessionAtStart) return null;
+    if (!ownsWorkspace()) return null;
     // Preserve the complete display snapshot outside the clinical reset.
     // CT/label/planning resources are restored asynchronously and may rebuild
     // Data Tree rows several times; their loaders consult this session-scoped
@@ -5466,11 +5559,11 @@ async function _restoreActiveSessionWorkspace(options = {}) {
             let uiResponse;
             try {
                 uiResponse = await fetch(API + '/ui/state', {
-                    headers: { 'X-BrachyBot-Session': sessionAtStart },
+                    headers: requestHeaders,
                     signal: uiCtrl.signal,
                 });
             } finally { clearTimeout(uiTimer); }
-            if (uiResponse.ok && _activeApiSessionId() === sessionAtStart) {
+            if (uiResponse.ok && ownsWorkspace()) {
                 const uiData = await uiResponse.json();
                 const training = uiData.training || {};
                 restoredTraining = training;
@@ -5579,7 +5672,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     };
     restoreCaseInputPath('ctv', savedInputPath('ctv'));
     restoreCaseInputPath('oar', savedInputPath('oar'));
-    if (_activeApiSessionId() !== sessionAtStart) return null;
+    if (!ownsWorkspace()) return null;
     const storedKeys = new Set(Array.isArray(status.stored_keys) ? status.stored_keys : []);
     // The authenticated workspace snapshot is authoritative when the
     // lightweight status shell was read before the Agent finished decoding
@@ -5599,6 +5692,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         if (workspace && typeof applyWorkspaceSnapshot === 'function') {
             await applyWorkspaceSnapshot(workspace, {
                 preserveClinicalData: true,
+                timepointScope,
                 // Switching restores chat/task presentation from the small
                 // control-plane snapshot first. Do not create a competing
                 // replay subscription during background resource hydration.
@@ -5649,10 +5743,12 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         resetAllState({ deferDisposal: true });
         // Let the reset paint before initiating network I/O.
         await _yield();
+        if (!ownsWorkspace()) return null;
         ctTask = (async () => {
             const ctStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
             try {
                 ctVolumeResult = await loadCTToViewers(ctPath, {
+                    timepointScope, imageId: options.imageId, displayOnly: options.displayOnly, geometryOnly: options.geometryOnly,
                     announce: false, sessionId: sessionAtStart, skipReset: true,
                     restoreUploadedMasks,
                     timeoutMs: options.background === true ? 45000 : 60000,
@@ -5688,7 +5784,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     // Agent hydration and can leave Data Tree/Planning empty.
     // CT is the base layer for every subsequent restore request.
     await ctTask;
-    if (_activeApiSessionId() !== sessionAtStart) return null;
+    if (!ownsWorkspace()) return null;
     // A restored Data Tree entry is not proof that the CT is usable. The old
     // path swallowed /viewer/load or /viewer/volume failures and continued to
     // labels/planning, then announced a fully interactive workspace with blank
@@ -5714,8 +5810,10 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     // Bind interactions synchronously once all three canvases have real voxel
     // data. The delayed load-time binding remains a resize fallback, but is no
     // longer the only opportunity to install double-click navigation.
+    const requestScope = _captureViewerDataScope(sessionAtStart, timepointScope);
     if (typeof setupViewerInteractions === 'function') setupViewerInteractions();
     await _yield();
+    if (!ownsWorkspace() || !_viewerDataScopeIsCurrent(requestScope, true)) return null;
 
     // Labels and planning results share the CT grid but are otherwise
     // independent restore products. Start both after CT is ready so OAR/CTV
@@ -5724,6 +5822,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     const labelsStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
     const labelTask = (typeof loadLabelVolumes === 'function')
         ? Promise.resolve(loadLabelVolumes({
+            timepointScope,
             sessionId: sessionAtStart,
             preserveViewerState: true,
             registerBackgroundTask: options.registerBackgroundTask,
@@ -5735,11 +5834,15 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         hasPlanning
             ? (typeof refreshPlanningUI === 'function'
                 ? Promise.resolve(refreshPlanningUI({
+                    timepointScope,
                     switchToViewers: false,
                     sessionId: sessionAtStart,
                     preserveViewerState: true,
                     skipLabelLoad: true,
                     backgroundRestore: options.background === true,
+                    hydrationScope: options.hydrationScope,
+                    onHydrationProgress: options.onHydrationProgress,
+                    preserveReport: true,
                     retryPending: true,
                     // Restoring a saved case must not manufacture a missing
                     // guide or launch screenshots against a partial scene.
@@ -5762,8 +5865,10 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     // Planning owns the reconstruction. The mesh work remains progressive and
     // does not block CT/2D interaction readiness.
     const segmentationMeshTask = labelTask.then(labelsLoaded => {
+        if (!ownsWorkspace()) return null;
         if (!labelsLoaded || hasPlanning || typeof loadCTVAndObstacleMeshes !== 'function') return null;
         return loadCTVAndObstacleMeshes({
+            timepointScope,
             sessionId: sessionAtStart,
             showLoading: !options.hydrationScope,
             batchSize: options.hydrationScope ? 6 : undefined,
@@ -5774,7 +5879,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         console.warn('[session restore] segmentation mesh reconstruction failed:', error));
 
     const restoreResults = await Promise.allSettled([labelTask, planningTask]);
-    if (_activeApiSessionId() !== sessionAtStart) return null;
+    if (!ownsWorkspace()) return null;
     const [labelResult, planningResult] = restoreResults;
     if (labelResult.status === 'rejected') throw labelResult.reason;
     if (planningResult.status === 'rejected') throw planningResult.reason;
@@ -5798,14 +5903,16 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     // overwrite the complete planning history just restored above.
     if (typeof window.refreshPlanningRunCatalog === 'function') {
         await window.refreshPlanningRunCatalog({
+            timepointScope,
             sessionId: sessionAtStart,
             retryPending: true,
             silent: true,
         });
-        if (_activeApiSessionId() !== sessionAtStart) return null;
+        if (!ownsWorkspace()) return null;
     }
     const expectsLabels = ['ctv_array', 'ctv_mask', 'oar_array'].some(key => storedKeys.has(key));
     if (expectsLabels && labelResult.value !== true) {
+        options.registerBackgroundTask?.(Promise.resolve(false), { kind: 'labels' });
         // Labels and planning are independent products. A transient label
         // failure must not erase a valid plan or prevent seeds/dose/guide from
         // becoming interactive; the next session restore can retry labels.
@@ -5820,13 +5927,15 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     // lightweight snapshot has painted. Reapply only presentation state now
     // that those entries exist; never replace their arrays, labels, geometry,
     // or coordinate metadata with a browser snapshot.
+    if (!ownsWorkspace() || !_viewerDataScopeIsCurrent(requestScope, true)) return null;
     if (workspace && typeof applyWorkspaceSnapshot === 'function') {
         await applyWorkspaceSnapshot(workspace, {
+            timepointScope,
             preserveClinicalData: true,
             skipChat: true,
             skipTaskResume: true,
         });
-        if (_activeApiSessionId() !== sessionAtStart) return null;
+        if (!ownsWorkspace()) return null;
     }
 
     // --- manual state from stored keys ---
@@ -5860,7 +5969,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         });
         if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
     }
-    if (_activeApiSessionId() !== sessionAtStart) return null;
+    if (!ownsWorkspace()) return null;
 
     // Yield a frame so label volumes / dose meshes are painted before
     // the final snapshot merge and slice re-render.
@@ -5872,9 +5981,11 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         // plan, dose and Data Tree. Reapply only display preferences; a full
         // snapshot merge here can overwrite freshly restored OAR metadata
         // with an older empty tree and blank Input paths.
-        await applyWorkspaceSnapshot(workspace, { preserveClinicalData: true, skipChat: true });
+        if (!ownsWorkspace()) return null;
+        await applyWorkspaceSnapshot(workspace, { preserveClinicalData: true, skipChat: true, timepointScope, persist: false });
         recordStage('restore.report_and_presentation', reportStartedAt);
     }
+    if (!ownsWorkspace() || !_viewerDataScopeIsCurrent(requestScope, true)) return null;
     // Re-render after the saved slice indices, visibility, and material state
     // have been applied.  This avoids a transient old-case frame on switch.
     ['axial', 'sagittal', 'coronal'].forEach(axis => {
@@ -5910,6 +6021,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
                     || finiteArray(savedScene?.camera_quaternion, 4));
             await window.fitAllViewersAfterWorkspaceRestore({
                 sessionId: sessionAtStart,
+                requestScope,
                 reason: 'workspace-hydration-fit',
                 preserveSavedView,
             });
@@ -5930,6 +6042,9 @@ function _workspaceVisualReadinessStore() {
     }
     return window.__workspaceVisualReadiness;
 }
+function _workspaceVisualReadinessKey(sessionId, scope = null) {
+    return scope ? JSON.stringify([sessionId, scope.timepointId, scope.generation]) : sessionId || '__no_session__';
+}
 
 function _workspaceVisualReadinessSleep(delayMs) {
     return new Promise(resolve => setTimeout(resolve, Math.max(0, Number(delayMs) || 0)));
@@ -5942,20 +6057,30 @@ function _workspaceVisualReadinessSleep(delayMs) {
 // Validate ownership without applying catalog metadata or reloading a scene.
 // A report command must not turn a read into destructive workspace hydration.
 async function prepareReportSceneRead(sessionId) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const planning = typeof dataTreeState !== 'undefined' ? dataTreeState.planning : null;
     const planningId = String(planning?.activePlanningId || planning?.id || '');
     const version = Number(planning?.dataVersion || 0);
     const fail = (stage, error) => ({ success: false, stage, error });
+    const images = window.BrachyBotTimepointWorkspace?.resourceState?.()?.images;
+    if (images && images.display_image_id !== images.planning_reference_image_id) {
+        return fail('report_image_reference_not_displayed', typeof _t === 'function'
+            ? _t('报告截图要求显示当前规划参考图像。请在图像集合中显示规划参考后重试，现有图片已保留。',
+                'Report capture requires the current planning reference image. Display that reference in the image collection and retry; existing figures are retained.')
+            : 'Display the current planning reference image before capturing report figures.');
+    }
     if (!sessionId || !planningId || String(_activeApiSessionId()) !== String(sessionId)) {
         return fail('report_session_not_ready', '当前病例的规划尚未恢复，未改动当前显示。请等待病例加载完成。');
     }
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30000);
+    const timer = setTimeout(window.BrachyBotTimepointWorkspace?.callbackOwned(__tpOwner, () => controller.abort()) || (() => controller.abort()), 30000);
     try {
-        const response = await fetch(API + '/planning/runs', {
+        const response = await __tpAwait(() => (fetch(API + '/planning/runs', {
             headers: _planningRunHeaders(sessionId), signal: controller.signal,
-        });
-        const catalog = await response.json();
+        })));
+        const catalog = await __tpAwait(() => (response.json()));
         if (!response.ok || response.status === 202 || catalog.success !== true
             || catalog.hydration_pending === true) {
             return fail('report_catalog_not_ready', '服务器正在恢复规划记录，暂未生成报告；当前显示已保留。请待恢复完成后重试。');
@@ -5981,6 +6106,7 @@ async function prepareReportSceneRead(sessionId) {
         }
         return { success: true, planningId, dataVersion: version };
     } catch (_) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
         return fail('report_validation_failed', '暂时无法核对服务器的规划记录，未清空当前显示或报告。请检查服务器连接后重试。');
     } finally {
         clearTimeout(timer);
@@ -5994,20 +6120,23 @@ async function prepareReportSceneRead(sessionId) {
 // read must therefore validate the live scene as well, with a short bounded
 // retry, instead of treating the historical promise result as authoritative.
 async function prepareReportSceneReadWithRetry(sessionId, options = {}) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(options?.timepointScope);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const rawTimeout = Number(options.timeoutMs ?? 15000);
     const timeoutMs = Math.max(0, Math.min(60000, Number.isFinite(rawTimeout) ? rawTimeout : 15000));
     const delayMs = Math.max(50, Math.min(1000, Number(options.delayMs ?? 250)));
     const deadline = Date.now() + timeoutMs;
     let last = null;
     do {
-        last = await prepareReportSceneRead(sessionId);
+        last = await __tpAwait(() => (prepareReportSceneRead(sessionId)));
         if (last?.success) return last;
         const stage = String(last?.stage || '');
         if (!['report_scene_not_ready', 'report_catalog_not_ready', 'report_validation_failed'].includes(stage)) {
             return last;
         }
         if (Date.now() >= deadline) return last;
-        await _workspaceVisualReadinessSleep(Math.min(delayMs, Math.max(1, deadline - Date.now())));
+        await __tpAwait(() => (_workspaceVisualReadinessSleep(Math.min(delayMs, Math.max(1, deadline - Date.now())))));
     } while (Date.now() < deadline);
     return last || {
         success: false,
@@ -6021,6 +6150,8 @@ window.awaitWorkspaceVisualReady = async function awaitWorkspaceVisualReady(
     options = {},
 ) {
     const requestedSession = String(sessionId || _activeApiSessionId() || '');
+    const timepointScope = options.timepointScope || window.BrachyBotTimepointWorkspace?.captureRequestScope?.();
+    const readinessKey = _workspaceVisualReadinessKey(requestedSession, timepointScope);
     const rawTimeout = Number(options.timeoutMs ?? 300000);
     const timeoutMs = Math.max(0, Math.min(600000, Number.isFinite(rawTimeout) ? rawTimeout : 300000));
     const startedAt = Date.now();
@@ -6028,12 +6159,13 @@ window.awaitWorkspaceVisualReady = async function awaitWorkspaceVisualReady(
     if (!requestedSession) return { ready: true, reason: 'no_session' };
 
     const store = _workspaceVisualReadinessStore();
-    let entry = store[requestedSession] || null;
+    let entry = store[readinessKey] || null;
     while (!entry) {
+        if (timepointScope && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope)) return { ready: false, cancelled: true };
         const scheduledSession = String(window.__workspaceRestoreScheduledSessionId || '');
         const hydrationRun = Number(window.__workspaceHydrationRunId || 0);
         if (scheduledSession !== requestedSession || !hydrationRun) {
-            return { ready: true, sessionId: requestedSession, reason: 'no_pending_restore' };
+            return { ready: !timepointScope, sessionId: requestedSession, reason: 'no_pending_restore' };
         }
         if (Date.now() >= deadline) {
             return {
@@ -6044,7 +6176,7 @@ window.awaitWorkspaceVisualReady = async function awaitWorkspaceVisualReady(
             };
         }
         await _workspaceVisualReadinessSleep(Math.min(50, Math.max(1, deadline - Date.now())));
-        entry = store[requestedSession] || null;
+        entry = store[readinessKey] || null;
     }
 
     if (options.waitForCompletion === true) {
@@ -6064,7 +6196,7 @@ window.awaitWorkspaceVisualReady = async function awaitWorkspaceVisualReady(
     try {
         const result = await Promise.race([entry.promise, timeout]);
         const settled = Object.assign({ ready: true, session_id: requestedSession }, result || {});
-        if (settled.ready === false
+        if (!timepointScope && settled.ready === false
             && String(settled.reason || '') === 'visual_restore_partial'
             && _workspaceHasLiveVisibleClinicalState(
                 window._activeWorkspaceSnapshot, requestedSession)) {
@@ -6091,10 +6223,25 @@ window.awaitWorkspaceVisualReady = async function awaitWorkspaceVisualReady(
 
 let _workspaceRestoreTransaction = null;
 function restoreActiveSessionWorkspace(options = {}) {
+    if (options.timepointScope
+        && (!window.BrachyBotTimepointWorkspace.scopeIsCurrent(options.timepointScope)
+            || String(options.timepointScope.sessionId) !== String(_activeApiSessionId() || ''))) {
+        return Promise.resolve({ ready: false, cancelled: true, reason: 'stale_owner' });
+    }
+    if (!options.timepointScope && window.BrachyBotTimepoints && window.BrachyBotTimepointWorkspace) {
+        // Installing the new model revokes the Session-only clinical loader
+        // before its catalog probe finishes. Otherwise a startup /status
+        // fallback can race the first timepoint mount, invalidate its mesh
+        // generation, and report a perfectly valid CT as a partial restore.
+        if (window.BrachyBotTimepoints.enabled()) return window.BrachyBotTimepointWorkspace.restoreActive(options);
+        return Promise.resolve({ready:false,deferred:true,reason:'awaiting_owned_timepoint_mount'});
+    }
     const sessionId = String(_activeApiSessionId() || '');
     const active = _workspaceRestoreTransaction;
-    if (active?.sessionId === sessionId) return active.promise;
-    const transaction = { sessionId, promise: null };
+    const timepointScope = options.timepointScope || null;
+    if (active?.sessionId === sessionId && active?.timepointScope?.generation === timepointScope?.generation
+        && active?.timepointScope?.timepointId === timepointScope?.timepointId) return active.promise;
+    const transaction = { sessionId, timepointScope, promise: null };
     _workspaceRestoreTransaction = transaction;
     // Keep the saved ui.state authoritative for the whole restore. The lock is
     // released only when the restore actually finishes; an interrupted restore
@@ -6104,8 +6251,9 @@ function restoreActiveSessionWorkspace(options = {}) {
     let coreFailed = false;
     let visualResult = null;
     transaction.promise = Promise.resolve().then(() => _runWorkspaceRestoreTransaction(options));
-    transaction.promise.then(async () => {
-        const entry = _workspaceVisualReadinessStore()[sessionId || '__no_session__'];
+    transaction.completion = transaction.promise.then(async () => {
+        const entry = _workspaceVisualReadinessStore()[_workspaceVisualReadinessKey(sessionId, timepointScope)];
+        transaction.hydrationRunId = entry?.hydrationRunId;
         if (entry) visualResult = await entry.promise;
         // All registered late resources (OAR/CTV meshes, seeds/needles, dose
         // surfaces, guide, masks and report read dependencies) are settled at
@@ -6113,11 +6261,12 @@ function restoreActiveSessionWorkspace(options = {}) {
         // fence so the last loader cannot leave a default colour, visibility,
         // opacity, camera, layout, or dose mode on screen.
         if (String(_activeApiSessionId() || '') === sessionId
+            && (!timepointScope || window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope))
             && typeof window.reconcileWorkspacePresentation === 'function') {
             try {
                 window.reconcileWorkspacePresentation({
                     sessionId,
-                    snapshot: window._activeWorkspaceSnapshot,
+                    snapshot: options.workspace || window._activeWorkspaceSnapshot,
                     reason: 'workspace.restore.visual-barrier-settled',
                 });
             } catch (error) {
@@ -6141,9 +6290,9 @@ function restoreActiveSessionWorkspace(options = {}) {
         const persistRestoredPresentation = !coreFailed
             && visualResult != null
             && visualResult.ready !== false;
-        window.finalizeWorkspacePresentationRestore?.(
+        if (!timepointScope || window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope)) window.finalizeWorkspacePresentationRestore?.(
             sessionId,
-            window.__workspaceHydrationRunId || null,
+            transaction.hydrationRunId || null,
             { persistDeferred: persistRestoredPresentation },
         );
         // Always release the write fence. finalizeWorkspacePresentationRestore
@@ -6160,11 +6309,18 @@ function restoreActiveSessionWorkspace(options = {}) {
 
 async function _runWorkspaceRestoreTransaction(options = {}) {
     const sessionAtStart = String(_activeApiSessionId() || '');
+    const timepointScope = options.timepointScope || null;
+    const ownsResources = () => String(_activeApiSessionId() || '') === sessionAtStart
+        && (!timepointScope || window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope));
+    if (!ownsResources()) return null;
     window.__workspaceHydrationRunId = (window.__workspaceHydrationRunId || 0) + 1;
     const hydrationRunId = window.__workspaceHydrationRunId;
-    const hydrationScope = { sessionId: sessionAtStart, runId: hydrationRunId };
+    const hydrationScope = { sessionId: sessionAtStart, runId: hydrationRunId,
+        timepointId: timepointScope?.timepointId, generation: timepointScope?.generation,
+        allowAfterCompleted: !!timepointScope };
     const backgroundTasks = [];
     const backgroundTaskFailures = new Set();
+    const backgroundFailureDetails = new Map();
     const pendingBackgroundKinds = new Map();
     let backgroundTaskSequence = 0;
     let backgroundNoticeTransferred = false;
@@ -6175,12 +6331,18 @@ async function _runWorkspaceRestoreTransaction(options = {}) {
         const kind = String(metadata?.kind || 'viewer_3d');
         pendingBackgroundKinds.set(token, kind);
         const tracked = Promise.resolve(task).then(result => {
-            if (result?.success === false || result?.stale === true || result?.error) {
+            if (result === false || result?.success === false || result?.stale === true || result?.error) {
                 backgroundTaskFailures.add(token);
+                backgroundFailureDetails.set(token, {kind, stale: result?.stale === true,
+                    error: String(result === false ? 'resource_not_restored' : result?.error || '').slice(0, 200),
+                    resources: (Array.isArray(result?.failed) ? result.failed : []).slice(0, 12)
+                        .map(row => ({kind:row.kind,object_id:row.object_id,mask_id:row.mask_id,
+                            status:row.status,error:String(row.error || '').slice(0,200)}))});
             }
             return result;
         }).catch(error => {
             backgroundTaskFailures.add(token);
+            backgroundFailureDetails.set(token, {kind, error: String(error?.message || error).slice(0, 200)});
             // Drain failures here; readiness reports them after all producers
             // settle, without an early unhandled rejection or a new rebuild.
             return { success: false, error: error?.message || String(error) };
@@ -6195,7 +6357,7 @@ async function _runWorkspaceRestoreTransaction(options = {}) {
     };
     const updateHydrationProgress = detail => {
         if (suppressVisibleNotice) return;
-        if (String(_activeApiSessionId() || '') !== sessionAtStart
+        if (!ownsResources()
             || window.__workspaceHydrationRunId !== hydrationRunId) return;
         const phase = String(detail?.phase || 'viewer');
         const current = Number(detail?.current);
@@ -6219,7 +6381,7 @@ async function _runWorkspaceRestoreTransaction(options = {}) {
         );
     };
     const readinessStore = _workspaceVisualReadinessStore();
-    const readinessKey = sessionAtStart || '__no_session__';
+    const readinessKey = _workspaceVisualReadinessKey(sessionAtStart, timepointScope);
     const previousReadiness = readinessStore[readinessKey];
     if (previousReadiness?.resolveReady && !previousReadiness.settled) {
         previousReadiness.resolveReady({
@@ -6235,6 +6397,7 @@ async function _runWorkspaceRestoreTransaction(options = {}) {
     });
     const readinessEntry = {
         sessionId: sessionAtStart,
+        timepointScope,
         hydrationRunId,
         startedAt: Date.now(),
         state: 'restoring',
@@ -6252,10 +6415,10 @@ async function _runWorkspaceRestoreTransaction(options = {}) {
         );
         resolveVisualReady(readinessEntry.result);
         if ((readinessEntry.result.ready === true || readinessEntry.result.reason === 'visual_restore_partial')
-            && !readinessEntry.result.cancelled && _activeApiSessionId() === sessionAtStart
+            && !readinessEntry.result.cancelled && ownsResources()
             && window.__workspaceHydrationRunId === hydrationRunId) {
             window.dispatchEvent(new CustomEvent('brachybot:monitor-resources-ready', {
-                detail:{session_id:sessionAtStart},
+                detail:{session_id:sessionAtStart, timepoint_id:timepointScope?.timepointId, generation:timepointScope?.generation},
             }));
         }
     };
@@ -6307,7 +6470,7 @@ async function _runWorkspaceRestoreTransaction(options = {}) {
         window.showCaseResourceLoading?.(hydrationScope);
     }
     const slowNoticeTimer = suppressVisibleNotice ? null : setTimeout(() => {
-        if (String(_activeApiSessionId() || '') !== sessionAtStart
+        if (!ownsResources()
             || window.__workspaceHydrationRunId !== hydrationRunId) return;
         const notice = document.getElementById('workspaceHydrationNotice');
         const message = document.getElementById('workspaceHydrationMessage');
@@ -6330,7 +6493,7 @@ async function _runWorkspaceRestoreTransaction(options = {}) {
             onHydrationProgress: updateHydrationProgress,
         });
         if (backgroundTasks.length > 0
-            && String(_activeApiSessionId() || '') === sessionAtStart
+            && ownsResources()
             && window.__workspaceHydrationRunId === hydrationRunId) {
             backgroundNoticeTransferred = true;
             const genericPending = [...pendingBackgroundKinds.values()].includes('generic_masks');
@@ -6343,19 +6506,24 @@ async function _runWorkspaceRestoreTransaction(options = {}) {
             // producer has settled.
             Promise.allSettled(backgroundTasks).finally(() => {
                 const failedCount = backgroundTaskFailures.size;
+                if (failedCount && ownsResources()) console.warn('[session restore] failed visual producers',
+                    JSON.stringify([...backgroundFailureDetails.values()]));
+                const current = ownsResources() && window.__workspaceHydrationRunId === hydrationRunId;
                 settleVisualReady({
-                    ready: failedCount === 0,
+                    ready: current && failedCount === 0,
+                    cancelled: !current,
                     partial: failedCount > 0,
                     failed_tasks: failedCount,
+                    failures: [...backgroundFailureDetails.values()],
                     reason: failedCount ? 'visual_restore_partial' : 'visual_restore_complete',
                 });
-                if (String(_activeApiSessionId() || '') !== sessionAtStart
+                if (!ownsResources()
                     || window.__workspaceHydrationRunId !== hydrationRunId) return;
                 if (!suppressVisibleNotice) {
                     window.setWorkspaceHydrationState?.(false, '', hydrationScope);
                 }
             });
-        } else if (String(_activeApiSessionId() || '') === sessionAtStart
+        } else if (ownsResources()
             && window.__workspaceHydrationRunId === hydrationRunId) {
             settleVisualReady({ ready: true, reason: 'visual_restore_complete' });
         } else {
@@ -6377,6 +6545,65 @@ async function _runWorkspaceRestoreTransaction(options = {}) {
     }
 }
 window.restoreActiveSessionWorkspace = restoreActiveSessionWorkspace;
+window.hydrateTimepointWorkspace = async function hydrateTimepointWorkspace(workspace, scope, images) {
+    // Every later restore pass must use the same migrated presentation as the
+    // synchronous mount; raw legacy controls must not overwrite it mid-load.
+    workspace = window.normalizePlanningPresentationSnapshot?.(workspace) || workspace;
+    const image = images.images.find(row => row.id === (images.display_image_id || images.planning_reference_image_id));
+    const status = _statusFromWorkspaceSnapshot(workspace, scope.sessionId);
+    if (image) status.ct_path = image.path || image.url;
+    await restoreActiveSessionWorkspace({ workspace, timepointScope: scope, status, background: true,
+        skipClientClear: true, skipChat: true, imageId: image?.id, displayOnly: true,
+        geometryOnly: !images.display_image_id && !!image });
+    if (!window.BrachyBotTimepointWorkspace.scopeIsCurrent(scope)) return { ready: false, cancelled: true };
+    // An empty legacy catalog is not a human request to hide an already
+    // restored CT. Only a populated collection can express explicit no-display.
+    const result = await window.awaitWorkspaceVisualReady(scope.sessionId, { timepointScope: scope, waitForCompletion: true });
+    if (!window.BrachyBotTimepointWorkspace.scopeIsCurrent(scope)) return { ready: false, cancelled: true };
+    const transaction = _workspaceRestoreTransaction;
+    if (transaction?.timepointScope?.generation === scope.generation
+        && transaction.timepointScope.timepointId === scope.timepointId
+        && transaction.sessionId === scope.sessionId) await transaction.completion;
+    if (!window.BrachyBotTimepointWorkspace.scopeIsCurrent(scope)) return { ready: false, cancelled: true };
+    // Apply intentional image hiding AFTER the last saved-presentation merge.
+    // Otherwise a late merge makes the hidden reference appear again.
+    if (images.images.length && !images.display_image_id) await window.displayTimepointImage(null,scope);
+    return result;
+};
+window.applyTimepointImageAppearance = (image, scope) => {
+    if (!image || !window.BrachyBotTimepointWorkspace.scopeIsCurrent(scope) || state.displayImageId !== image.id) return false;
+    dataTreeState.ct.opacity = Number.isFinite(image.opacity) ? image.opacity : 1;
+    if (/^#[0-9a-fA-F]{6}$/.test(image.color || '')) dataTreeState.ct.color = image.color;
+    if (image.wwl && Number.isFinite(image.wwl.width) && Number.isFinite(image.wwl.level)) {
+        state.viewerSettings.window = image.wwl.width; state.viewerSettings.level = image.wwl.level;
+        _syncWindowLevelControls();
+    }
+    applyDataTreeViewVisibility(); refreshAllViewerCanvases('image-presentation'); return true;
+};
+window.displayTimepointImage = async (image, scope) => {
+    if (!window.BrachyBotTimepointWorkspace.scopeIsCurrent(scope)) return Promise.resolve({ stale: true });
+    if (!image) {
+        // Hide only the image layer; do not erase label masks, planning facts,
+        // dose, annotations or reference geometry because a background is off.
+        if (typeof dataTreeState !== 'undefined') dataTreeState.ct.visible = false;
+        state.displayImageId = null;
+        applyDataTreeViewVisibility(); refreshAllViewerCanvases('image-background-hidden'); renderDataTree();
+        return { success: true, imageHidden: true };
+    }
+    invalidateViewerDataLoads(); window.BrachyBotImplants?.suspend?.();
+    const result = await loadCTToViewers(image.path || image.url, {
+    sessionId: scope.sessionId, timepointScope: scope, imageId: image?.id, displayOnly: true,
+    skipReset: true, announce: false,
+    });
+    if (!window.BrachyBotTimepointWorkspace.scopeIsCurrent(scope)) return { stale: true };
+    state.displayImageId = image.id;
+    dataTreeState.ct.label = image.name || image.id;
+    dataTreeState.ct.visible = true; dataTreeState.ct.visible2D = true;
+    window.applyTimepointImageAppearance(image, scope);
+    applyDataTreeViewVisibility(); refreshAllViewerCanvases('image-presentation'); renderDataTree();
+    return result;
+};
+window.__timepointFrontendContracts = { ...window.__timepointFrontendContracts, restore: 1 };
 
 // Small global helpers used directly by static HTML attributes. Planning,
 // export, and reset handlers are implemented in their dedicated modules and
@@ -6678,7 +6905,13 @@ state.dvhPlanningId = null;
             banner.id = 'assetVersionNotice';
             banner.setAttribute('role', 'status');
             banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#dc2626;color:white;padding:12px 20px;font-size:14px;text-align:center;font-family:system-ui;box-shadow:0 2px 8px rgba(0,0,0,0.2);';
-            banner.innerHTML = '⚠️ 您的浏览器加载了 <b>旧版</b> BrachyBot 页面（' + reason + '）。请按 <kbd style="background:#fff;color:#dc2626;padding:2px 6px;border-radius:3px;font-family:monospace;">Ctrl+Shift+R</kbd>（Mac: <kbd style="background:#fff;color:#dc2626;padding:2px 6px;border-radius:3px;font-family:monospace;">Cmd+Shift+R</kbd>）强刷。';
+            const _reloadKeys = '<kbd style="background:#fff;color:#dc2626;padding:2px 6px;border-radius:3px;font-family:monospace;">Ctrl+Shift+R</kbd> <span style="color:#fecaca;">/ Mac:</span> <kbd style="background:#fff;color:#dc2626;padding:2px 6px;border-radius:3px;font-family:monospace;">Cmd+Shift+R</kbd>';
+            const _outdatedBanner = (typeof window._t === 'function'
+                ? window._t(
+                    '⚠️ 您的浏览器加载了 <b>旧版</b> BrachyBot 页面（' + reason + '）。请按 ' + _reloadKeys + ' 强刷。',
+                    '⚠️ Your browser loaded an <b>outdated</b> BrachyBot page (' + reason + '). Press ' + _reloadKeys + ' to hard-refresh.')
+                : '⚠️ Your browser loaded an <b>outdated</b> BrachyBot page (' + reason + '). Press ' + _reloadKeys + ' to hard-refresh.');
+            banner.innerHTML = _outdatedBanner;
             const close = document.createElement('button');
             close.type = 'button';
             close.textContent = 'x';
@@ -6698,6 +6931,7 @@ state.dvhPlanningId = null;
 
 // Load default hyperparameters from server config and populate UI
 async function loadDefaultParams() {
+    if (window.BrachyBotInputPlanningConfig) return window.BrachyBotInputPlanningConfig.loadCurrent();
     try {
         const res = await fetch(API + '/config');
         if (!res.ok) return;
@@ -7291,7 +7525,9 @@ function _confirmAction(msgZh, msgEn, options = {}) {
             && String(trainingMonitorState.sessionId || '') === String(_activeApiSessionId() || '')
             && (trainingMonitorState.active
                 || ['starting', 'active', 'stopping'].includes(String(trainingMonitorState.phase || '').toLowerCase()));
-        const t = monitorOwnsLocale && typeof window.monitorConversationLanguage === 'function'
+        const t = ['zh','en'].includes(options.language)
+            ? ((zh,en)=>options.language === 'zh' ? zh:en)
+            : monitorOwnsLocale && typeof window.monitorConversationLanguage === 'function'
             ? ((zh, en) => window.monitorConversationLanguage(trainingMonitorState.sessionId) === 'zh' ? zh : en)
             : (window._t || ((zh) => zh));
         const yesZh = options.yesZh || '确认';
@@ -7352,6 +7588,10 @@ function _uiActionSessionIsCurrent(sessionId) {
 const _reportAutoFillInFlight = new Map();
 
 async function _executeUIAction(a, options = {}) {
+    const __tpOwner = a?.target === 'timepoint' ? null : window.BrachyBotTimepointWorkspace?.captureRequestScope?.(options?.timepointScope);
+    options = { ...options, timepointScope: __tpOwner || options.timepointScope };
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const ownerSessionId = String(options.sessionId || '');
     if (!_uiActionSessionIsCurrent(ownerSessionId)) {
         return { success: false, stale: true, target: a?.target || '', command: a?.command || '' };
@@ -7449,6 +7689,9 @@ function _emitUIActionProgress(step) {
 }
 
 async function _executeUIActionsWithProgress(actions, options = {}) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(options?.timepointScope);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const ownerSessionId = String(options.sessionId || '');
     const ownerRequestId = String(options.requestId || window._brachyLiveTrace?.requestId || '');
     const results = [];
@@ -7519,7 +7762,7 @@ async function _executeUIActionsWithProgress(actions, options = {}) {
         _emitUIActionProgress({ ...base, status: 'pending', content: 'Applying UI action' });
         // Yield once so the live Execution Trace can paint its breathing state
         // before a synchronous control handler starts doing work.
-        await new Promise(resolve => setTimeout(resolve, 0));
+        await __tpAwait(() => (new Promise(resolve => setTimeout(resolve, 0))));
         if (cancelled()) {
             const aborted = { success: false, cancelled: true, error: 'The request was cancelled before this UI action ran.' };
             results.push(aborted);
@@ -7540,7 +7783,7 @@ async function _executeUIActionsWithProgress(actions, options = {}) {
                     result: receipt.message,
                     metadata: { exportState: receipt.status, saved: receipt.saved, partial: receipt.partial || false } });
             };
-            const result = await _executeUIAction(action, { sessionId: ownerSessionId, onExportState });
+            const result = await __tpAwait(() => (_executeUIAction(action, { sessionId: ownerSessionId, onExportState })));
             exportReceipt = result;
             if (!_uiActionSessionIsCurrent(ownerSessionId)) {
                 // A case switch is a global abort, not a local failure: stop,
@@ -7585,6 +7828,7 @@ async function _executeUIActionsWithProgress(actions, options = {}) {
                 metadata: { executionState: state },
             });
         } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
             const failure = { success: false, error: String(error) };
             results.push(failure);
             ledger.set(stepKey, 'failed');
@@ -7608,6 +7852,9 @@ window._executeUIActionsWithProgress = _executeUIActionsWithProgress;
 // abort signal and the case switch.
 window._uiActionBatchTails = window._uiActionBatchTails || new Map();
 async function _queueUIActionBatch(actions, options = {}) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(options?.timepointScope);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const ownerSessionId = String(options.sessionId || _activeApiSessionId() || '');
     const tails = window._uiActionBatchTails;
     const previous = tails.get(ownerSessionId) || Promise.resolve();
@@ -7795,6 +8042,9 @@ async function _uiContextWithSelection(ids, callback) {
 }
 
 async function executeUIContextAction(value, options = {}) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(options?.timepointScope);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const payload = _uiContextPayload(value);
     const actionId = String(payload.action_id || payload.actionId || payload.operation || '').trim().toLowerCase();
     if (!actionId) return _uiContextFailure(
@@ -7824,52 +8074,52 @@ async function executeUIContextAction(value, options = {}) {
         if (actionId === 'group_show' || actionId === 'group_hide') {
             if (typeof setGroupVisibility !== 'function') return _uiContextFailure('组可见性执行器不可用。', 'The group visibility executor is unavailable.');
             const visible = actionId === 'group_show';
-            const result = await Promise.resolve(setGroupVisibility(category, visible));
+            const result = await __tpAwait(() => (Promise.resolve(setGroupVisibility(category, visible))));
             return _uiContextApplied(actionId, result, { category, visible }, '组可见性未能应用。', 'The group visibility change could not be applied.');
         }
         if (/^group_(show|hide)_(2d|3d)$/.test(actionId)) {
             if (typeof setGroupViewVisibility !== 'function') return _uiContextFailure('组视图可见性执行器不可用。', 'The group view-visibility executor is unavailable.');
             const [, verb, view] = actionId.match(/^group_(show|hide)_(2d|3d)$/);
             const visible = verb === 'show';
-            const result = await Promise.resolve(setGroupViewVisibility(category, view, visible));
+            const result = await __tpAwait(() => (Promise.resolve(setGroupViewVisibility(category, view, visible))));
             return _uiContextApplied(actionId, result, { category, view, visible }, '组视图可见性未能应用。', 'The group view-visibility change could not be applied.');
         }
         if (actionId === 'group_opacity') {
             const percent = _uiContextPercent(payload, null);
             if (percent === null) return _uiContextFailure('组透明度操作需要 0–100 的数值。', 'Group opacity requires a number from 0 to 100.');
             if (typeof setGroupOpacityValue !== 'function') return _uiContextFailure('组透明度执行器不可用。', 'The group opacity executor is unavailable.');
-            const result = await Promise.resolve(setGroupOpacityValue(category, percent));
+            const result = await __tpAwait(() => (Promise.resolve(setGroupOpacityValue(category, percent))));
             return _uiContextApplied(actionId, result, { category, opacity: percent }, '组透明度未能应用。', 'The group opacity change could not be applied.');
         }
             if (actionId === 'group_solo') {
             if (typeof soloGroup !== 'function') return _uiContextFailure('组独显执行器不可用。', 'The group-solo executor is unavailable.');
-            const result = await Promise.resolve(soloGroup(category));
+            const result = await __tpAwait(() => (Promise.resolve(soloGroup(category))));
             return _uiContextApplied(actionId, result, { category }, '组独显未能应用。', 'The group-solo operation could not be applied.');
         }
         if (actionId === 'group_rename') {
             const name = String(payload.name ?? payload.new_name ?? payload.text ?? '').trim();
             if (!name) return _uiContextFailure('重命名需要提供新的名称。', 'Renaming requires a new name.');
             if (typeof renameDataTreeNode !== 'function') return _uiContextFailure('数据树重命名执行器不可用。', 'The Data Tree rename executor is unavailable.');
-            const result = await Promise.resolve(renameDataTreeNode(category, name));
+            const result = await __tpAwait(() => (Promise.resolve(renameDataTreeNode(category, name))));
             return _uiContextApplied(actionId, result, { category, name }, '组重命名未能应用。', 'The group rename could not be applied.');
         }
         if (actionId === 'group_color') {
             const color = _uiContextNormalizeColor(payload.color ?? payload.value);
             if (!color) return _uiContextFailure('组颜色需要十六进制颜色值或标准颜色名。', 'Group color requires a hexadecimal color or a supported color name.');
             if (typeof setGroupColor !== 'function') return _uiContextFailure('组颜色执行器不可用。', 'The group color executor is unavailable.');
-            const result = await Promise.resolve(setGroupColor(category, color));
+            const result = await __tpAwait(() => (Promise.resolve(setGroupColor(category, color))));
             return _uiContextApplied(actionId, result, { category, color }, '组颜色未能应用。', 'The group color change could not be applied.');
         }
         if (actionId === 'group_export') {
             if (typeof exportDataTreeGroup !== 'function') return _uiContextFailure('组导出执行器不可用。', 'The group export executor is unavailable.');
-            const result = await exportDataTreeGroup(category);
+            const result = await __tpAwait(() => (exportDataTreeGroup(category)));
             return result === false
                 ? _uiContextFailure('当前组没有可导出的数据。', 'The group has no exportable data.')
                 : _uiContextSuccess(actionId, { category });
         }
         if (actionId === 'group_delete') {
             if (typeof deleteDataTreeGroup !== 'function') return _uiContextFailure('组删除执行器不可用。', 'The group delete executor is unavailable.');
-            const result = await deleteDataTreeGroup(category);
+            const result = await __tpAwait(() => (deleteDataTreeGroup(category)));
             return result === false
                 ? _uiContextFailure('组删除已取消或没有可删除的数据。', 'Group deletion was cancelled or there is no deletable data.')
                 : _uiContextSuccess(actionId, { category });
@@ -7877,18 +8127,18 @@ async function executeUIContextAction(value, options = {}) {
         if (actionId === 'group_move_ctv' || actionId === 'group_move_oar') {
             const destination = actionId.endsWith('_ctv') ? 'ctv' : 'oar';
             if (typeof moveDataTreeGroup !== 'function') return _uiContextFailure('组分类移动执行器不可用。', 'The group classification executor is unavailable.');
-            const result = await moveDataTreeGroup(category, destination);
+            const result = await __tpAwait(() => (moveDataTreeGroup(category, destination)));
             return result === false
                 ? _uiContextFailure('组移动未执行或已取消。', 'The group move was cancelled or could not be applied.')
                 : _uiContextSuccess(actionId, { category, destination });
         }
         if (actionId === 'group_reconstruct3d') {
             if (typeof groupReconstruct3D !== 'function') return _uiContextFailure('组 3D 重建执行器不可用。', 'The group 3D reconstruction executor is unavailable.');
-            return _uiContextApplied(actionId, await groupReconstruct3D(category), { category }, '组 3D 重建未能完成。', 'The group 3D reconstruction could not be completed.');
+            return _uiContextApplied(actionId, await __tpAwait(() => (groupReconstruct3D(category))), { category }, '组 3D 重建未能完成。', 'The group 3D reconstruction could not be completed.');
         }
         if (actionId === 'group_reconstruct_dose') {
             if (typeof reconstructDoseIsosurfaces3D !== 'function') return _uiContextFailure('等剂量面重建执行器不可用。', 'The dose-surface reconstruction executor is unavailable.');
-            return _uiContextApplied(actionId, await reconstructDoseIsosurfaces3D(), { category }, '等剂量面重建未能完成。', 'The dose-surface reconstruction could not be completed.');
+            return _uiContextApplied(actionId, await __tpAwait(() => (reconstructDoseIsosurfaces3D())), { category }, '等剂量面重建未能完成。', 'The dose-surface reconstruction could not be completed.');
         }
         if (actionId === 'clear_planning') {
             if (typeof clearPlanningVisualization !== 'function') return _uiContextFailure('规划显示清除执行器不可用。', 'The planning-display clear executor is unavailable.');
@@ -7906,7 +8156,7 @@ async function executeUIContextAction(value, options = {}) {
             const name = String(payload.name ?? payload.new_name ?? payload.text ?? '').trim();
             if (!name) return _uiContextFailure('重命名需要提供新的名称。', 'Renaming requires a new name.');
             if (typeof renameDataTreeNode !== 'function') return _uiContextFailure('数据树重命名执行器不可用。', 'The Data Tree rename executor is unavailable.');
-            const result = await Promise.resolve(renameDataTreeNode(nodeId, name));
+            const result = await __tpAwait(() => (Promise.resolve(renameDataTreeNode(nodeId, name))));
             return _uiContextApplied(actionId, result, { node_id: nodeId, name }, '节点重命名未能应用。', 'The node rename could not be applied.');
         }
         if (actionId === 'node_move_ctv' || actionId === 'node_move_oar') {
@@ -7919,8 +8169,8 @@ async function executeUIContextAction(value, options = {}) {
                 || String(canonicalNodeId || '').startsWith('mask:');
             const result = isGenericMaskNode
                 ? (typeof moveSelectedMasks === 'function'
-                    ? await moveSelectedMasks(destination, [canonicalNodeId]) : false)
-                : (typeof moveSelectedStructures === 'function' ? await moveSelectedStructures(destination, [nodeId]) : false);
+                    ? await __tpAwait(() => (moveSelectedMasks(destination, [canonicalNodeId]))) : false)
+                : (typeof moveSelectedStructures === 'function' ? await __tpAwait(() => (moveSelectedStructures(destination, [nodeId]))) : false);
             return result === false
                 ? _uiContextFailure('节点移动未执行或已取消。', 'The node move was cancelled or could not be applied.')
                 : _uiContextSuccess(actionId, { node_id: nodeId, destination });
@@ -7928,33 +8178,33 @@ async function executeUIContextAction(value, options = {}) {
         if (actionId === 'node_move_non_traversable' || actionId === 'node_move_traversable') {
             const destination = actionId.endsWith('_non_traversable') ? 'non_traversable' : 'traversable';
             if (typeof batchMoveToCategory !== 'function') return _uiContextFailure('OAR 穿刺分类执行器不可用。', 'The OAR traversability executor is unavailable.');
-            const result = await _uiContextWithSelection([nodeId], () =>
+            const result = await __tpAwait(() => (_uiContextWithSelection([nodeId], () =>
                 batchMoveToCategory(destination)
-            );
+            )));
             return result === false
                 ? _uiContextFailure('节点分类移动未执行或已取消。', 'The node classification move was cancelled or could not be applied.')
                 : _uiContextSuccess(actionId, { node_id: nodeId, destination });
         }
         if (actionId === 'node_delete') {
             if (typeof deleteSelectedDataTreeItems !== 'function') return _uiContextFailure('数据树删除执行器不可用。', 'The Data Tree delete executor is unavailable.');
-            const result = await deleteSelectedDataTreeItems([nodeId]);
+            const result = await __tpAwait(() => (deleteSelectedDataTreeItems([nodeId])));
             return result === false
                 ? _uiContextFailure('节点删除已取消或失败。', 'Node deletion was cancelled or failed.')
                 : _uiContextSuccess(actionId, { node_id: nodeId });
         }
         if (actionId === 'node_export') {
             if (typeof exportSelectedDataTreeItems !== 'function') return _uiContextFailure('数据树导出执行器不可用。', 'The Data Tree export executor is unavailable.');
-            const result = await exportSelectedDataTreeItems([nodeId]);
+            const result = await __tpAwait(() => (exportSelectedDataTreeItems([nodeId])));
             return result === false
                 ? _uiContextFailure('节点没有可导出的数据。', 'The node has no exportable data.')
                 : _uiContextSuccess(actionId, { node_id: nodeId });
         }
         if (actionId === 'node_solo') {
-            const result = await _uiContextWithSelection([nodeId], () => {
+            const result = await __tpAwait(() => (_uiContextWithSelection([nodeId], () => {
                 if (typeof batchSolo !== 'function') return false;
                 batchSolo();
                 return true;
-            });
+            })));
             return result === false
                 ? _uiContextFailure('节点独显执行器不可用。', 'The node-solo executor is unavailable.')
                 : _uiContextSuccess(actionId, { node_id: nodeId });
@@ -7975,7 +8225,7 @@ async function executeUIContextAction(value, options = {}) {
             const percent = _uiContextPercent(payload, null);
             if (percent === null) return _uiContextFailure('节点透明度操作需要 0–100 的数值。', 'Node opacity requires a number from 0 to 100.');
             if (typeof setDataOpacity !== 'function') return _uiContextFailure('节点透明度执行器不可用。', 'The node opacity executor is unavailable.');
-            const result = await Promise.resolve(setDataOpacity(nodeId, percent));
+            const result = await __tpAwait(() => (Promise.resolve(setDataOpacity(nodeId, percent))));
             return _uiContextApplied(actionId, result, { node_id: nodeId, opacity: percent }, '节点透明度未能应用。', 'The node opacity change could not be applied.');
         }
         if (actionId === 'node_color') {
@@ -7986,20 +8236,20 @@ async function executeUIContextAction(value, options = {}) {
         }
         if (actionId === 'node_reconstruct3d') {
             if (typeof reconstructOrgan3D !== 'function') return _uiContextFailure('节点 3D 重建执行器不可用。', 'The node 3D reconstruction executor is unavailable.');
-            return _uiContextApplied(actionId, await reconstructOrgan3D(nodeId), { node_id: nodeId }, '节点 3D 重建未能完成。', 'The node 3D reconstruction could not be completed.');
+            return _uiContextApplied(actionId, await __tpAwait(() => (reconstructOrgan3D(nodeId))), { node_id: nodeId }, '节点 3D 重建未能完成。', 'The node 3D reconstruction could not be completed.');
         }
         if (actionId === 'node_reconstruct_dose') {
             if (typeof reconstructDoseIsosurface3D !== 'function') return _uiContextFailure('等剂量面重建执行器不可用。', 'The dose-surface reconstruction executor is unavailable.');
-            return _uiContextApplied(actionId, await reconstructDoseIsosurface3D(nodeId), { node_id: nodeId }, '节点等剂量面重建未能完成。', 'The node dose-surface reconstruction could not be completed.');
+            return _uiContextApplied(actionId, await __tpAwait(() => (reconstructDoseIsosurface3D(nodeId))), { node_id: nodeId }, '节点等剂量面重建未能完成。', 'The node dose-surface reconstruction could not be completed.');
         }
         if (actionId === 'node_add_seed') {
             if (typeof addManualSeedToPlanningNode !== 'function') return _uiContextFailure('针道添加粒子执行器不可用。', 'The add-seed executor is unavailable.');
-            const result = await addManualSeedToPlanningNode(nodeId, { source: 'ui_controller' });
+            const result = await __tpAwait(() => (addManualSeedToPlanningNode(nodeId, { source: 'ui_controller' })));
             return result === false ? _uiContextFailure('无法在当前针道添加粒子。', 'A seed could not be added to the current needle.') : _uiContextSuccess(actionId, result, { node_id: nodeId });
         }
         if (actionId === 'node_restore_algorithm') {
             if (typeof restoreNeedleToAlgorithm !== 'function') return _uiContextFailure('恢复算法针道执行器不可用。', 'The restore-algorithm-needle executor is unavailable.');
-            const result = await restoreNeedleToAlgorithm(nodeId);
+            const result = await __tpAwait(() => (restoreNeedleToAlgorithm(nodeId)));
             return result === false ? _uiContextFailure('无法恢复当前算法针道。', 'The current algorithm needle could not be restored.') : _uiContextSuccess(actionId, result, { node_id: nodeId });
         }
         if (actionId === 'node_colorbar_2d' || actionId === 'node_colorbar_3d') {
@@ -8027,7 +8277,7 @@ async function executeUIContextAction(value, options = {}) {
         }
         if (actionId === 'scene_seed_restore_plan') {
             if (typeof restoreAlgorithmPlan !== 'function') return _uiContextFailure('恢复算法规划执行器不可用。', 'The restore-algorithm-plan executor is unavailable.');
-            const result = await restoreAlgorithmPlan();
+            const result = await __tpAwait(() => (restoreAlgorithmPlan()));
             return result === false ? _uiContextFailure('算法规划恢复已取消或失败。', 'Restoring the algorithm plan was cancelled or failed.') : _uiContextSuccess(actionId, result, { object_id: nodeId });
         }
         if (actionId === 'scene_needle_show_seeds') {
@@ -8059,22 +8309,22 @@ async function executeUIContextAction(value, options = {}) {
         }
         if (actionId === 'scene_seed_delete') {
             if (typeof deleteSeed3D !== 'function') return _uiContextFailure('粒子删除执行器不可用。', 'The seed-delete executor is unavailable.');
-            const result = await deleteSeed3D(nodeId);
+            const result = await __tpAwait(() => (deleteSeed3D(nodeId)));
             return result === false ? _uiContextFailure('粒子删除已取消或失败。', 'Seed deletion was cancelled or failed.') : _uiContextSuccess(actionId, { object_id: nodeId });
         }
         if (actionId === 'scene_needle_delete') {
             if (typeof deleteNeedle3D !== 'function') return _uiContextFailure('针道删除执行器不可用。', 'The needle-delete executor is unavailable.');
-            const result = await deleteNeedle3D(nodeId);
+            const result = await __tpAwait(() => (deleteNeedle3D(nodeId)));
             return result === false ? _uiContextFailure('针道删除已取消或失败。', 'Needle deletion was cancelled or failed.') : _uiContextSuccess(actionId, { object_id: nodeId });
         }
         if (actionId === 'scene_needle_add_seed') {
             if (typeof addManualSeedToPlanningNode !== 'function') return _uiContextFailure('针道添加粒子执行器不可用。', 'The add-seed executor is unavailable.');
-            const result = await addManualSeedToPlanningNode(nodeId, { source: 'scene_3d_context' });
+            const result = await __tpAwait(() => (addManualSeedToPlanningNode(nodeId, { source: 'scene_3d_context' })));
             return result === false ? _uiContextFailure('无法在当前针道添加粒子。', 'A seed could not be added to the current needle.') : _uiContextSuccess(actionId, result, { object_id: nodeId });
         }
         if (actionId === 'scene_needle_restore_algorithm') {
             if (typeof restoreNeedleToAlgorithm !== 'function') return _uiContextFailure('恢复算法针道执行器不可用。', 'The restore-algorithm-needle executor is unavailable.');
-            const result = await restoreNeedleToAlgorithm(nodeId);
+            const result = await __tpAwait(() => (restoreNeedleToAlgorithm(nodeId)));
             return result === false ? _uiContextFailure('无法恢复当前算法针道。', 'The current algorithm needle could not be restored.') : _uiContextSuccess(actionId, result, { object_id: nodeId });
         }
         return _uiContextFailure(
@@ -8083,6 +8333,7 @@ async function executeUIContextAction(value, options = {}) {
             { action_id: actionId },
         );
     } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
         console.warn('[ui-context] action failed:', actionId, error);
         return _uiContextFailure(
             `界面操作“${actionId}”执行失败：${error?.message || error}`,
@@ -8170,9 +8421,16 @@ function _resolveOverlayOpacityPercent(target, command, value) {
     return { error: `Unsupported opacity command: ${mode}` };
 }
 async function _executeUIActionRaw(a, options = {}) {
+    const __tpOwner = a?.target === 'timepoint' ? null : window.BrachyBotTimepointWorkspace?.captureRequestScope?.(options?.timepointScope);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const ownerSessionId = String(options.sessionId || _activeApiSessionId());
     const { target, command, value } = a;
     try {
+        if (target === 'timepoint') return window.BrachyBotTimepoints.executeCommand(command, value, options.timepointScope);
+        if (['dose.source_set', 'dose.sources', 'viewer.dose_source'].includes(target)) {
+            return { success: await __tpAwait(() => window.BrachyBotTimepointWorkspace.selectDose(String(value?.source_set || value))), source_set: value?.source_set || value };
+        }
         if (target === 'ui.context_action') {
             return executeUIContextAction(value, { sessionId: ownerSessionId });
         }
@@ -8198,7 +8456,7 @@ async function _executeUIActionRaw(a, options = {}) {
             if (typeof refreshPlanningUI !== 'function') {
                 return { success: false, error: 'Planning result refresh is unavailable.' };
             }
-            const refreshResult = await refreshPlanningUI({
+            const refreshResult = await __tpAwait(() => (refreshPlanningUI({
                 sessionId: ownerSessionId || _activeApiSessionId(),
                 retryPending: true,
                 backgroundRestore: true,
@@ -8206,7 +8464,7 @@ async function _executeUIActionRaw(a, options = {}) {
                 preserveViewerState: false,
                 autoGenerateGuide: false,
                 switchToViewers: true,
-            });
+            })));
             if (!refreshResult || refreshResult.success !== true) {
                 return {
                     success: false,
@@ -8227,7 +8485,7 @@ async function _executeUIActionRaw(a, options = {}) {
             if (typeof reconstruct3D !== 'function') {
                 return { success: false, error: '3D reconstruction is unavailable.' };
             }
-            const reconstruction = await Promise.resolve(reconstruct3D());
+            const reconstruction = await __tpAwait(() => (Promise.resolve(reconstruct3D())));
             if (reconstruction?.stale === true) return reconstruction;
             return {
                 success: true,
@@ -8248,7 +8506,7 @@ async function _executeUIActionRaw(a, options = {}) {
             else if (command === 'increase') v += Number.isFinite(requested) ? requested : 50;
             else if (command === 'decrease') v -= Number.isFinite(requested) ? requested : 50;
             el.value = v; state.viewerSettings.window = v;
-            if (state.ctLoaded) await Promise.resolve(loadAllSlices());
+            if (state.ctLoaded) await __tpAwait(() => (Promise.resolve(loadAllSlices())));
             return { success: true, target, command, applied: v };
         }
         if (target === 'viewer.level') {
@@ -8260,7 +8518,7 @@ async function _executeUIActionRaw(a, options = {}) {
             else if (command === 'increase') v += Number.isFinite(requested) ? requested : 20;
             else if (command === 'decrease') v -= Number.isFinite(requested) ? requested : 20;
             el.value = v; state.viewerSettings.level = v;
-            if (state.ctLoaded) await Promise.resolve(loadAllSlices());
+            if (state.ctLoaded) await __tpAwait(() => (Promise.resolve(loadAllSlices())));
             return { success: true, target, command, applied: v };
         }
         if (target === 'viewer.zoom') {
@@ -8297,23 +8555,23 @@ async function _executeUIActionRaw(a, options = {}) {
             if (!el) return { success: false, error: 'Viewer threshold control is unavailable.' };
             el.value = value;
             if (typeof applyThreshold !== 'function') return { success: false, error: 'Viewer threshold action is unavailable.' };
-            await Promise.resolve(applyThreshold());
+            await __tpAwait(() => (Promise.resolve(applyThreshold())));
             return { success: true, target, command, applied: el.value };
         }
         if (target === 'viewer.fullscreen') {
             if (typeof toggleViewerFullscreen !== 'function') return { success: false, error: 'Viewer fullscreen control is unavailable.' };
-            const result = await Promise.resolve(toggleViewerFullscreen(value));
+            const result = await __tpAwait(() => (Promise.resolve(toggleViewerFullscreen(value))));
             if (result && result.success === false) return result;
             return { success: true, target, command, viewer: value, applied: result ?? value };
         }
         if (target === 'viewer.reset') {
             if (typeof resetViewer !== 'function') return { success: false, error: 'Viewer reset action is unavailable.' };
-            await Promise.resolve(resetViewer());
+            await __tpAwait(() => (Promise.resolve(resetViewer())));
             return { success: true, target, command };
         }
         if (target === 'viewer.fit_all') {
             if (typeof fitView !== 'function') return { success: false, error: 'Viewer fit action is unavailable.' };
-            await Promise.resolve(fitView());
+            await __tpAwait(() => (Promise.resolve(fitView())));
             return { success: true, target, command };
         }
         if (target === 'viewer.preset') {
@@ -8321,7 +8579,7 @@ async function _executeUIActionRaw(a, options = {}) {
             if (!pp) return { success: false, error: 'Viewer window preset control is unavailable.' };
             pp.value = value;
             if (typeof applyWindowPreset !== 'function') return { success: false, error: 'Viewer window preset action is unavailable.' };
-            await Promise.resolve(applyWindowPreset());
+            await __tpAwait(() => (Promise.resolve(applyWindowPreset())));
             return { success: true, target, command, applied: pp.value };
         }
         // ── Overlay controls ──
@@ -8330,7 +8588,7 @@ async function _executeUIActionRaw(a, options = {}) {
             if (!cb) return { success: false, error: 'CTV overlay control is unavailable.' };
             cb.checked = command === 'show' || (command === 'toggle' && !cb.checked);
             if (typeof toggleOverlay !== 'function') return { success: false, error: 'Overlay action is unavailable.' };
-            await Promise.resolve(toggleOverlay());
+            await __tpAwait(() => (Promise.resolve(toggleOverlay())));
             return { success: true, target, command, visible: !!cb.checked };
         }
         if (target === 'overlay.oar') {
@@ -8338,14 +8596,14 @@ async function _executeUIActionRaw(a, options = {}) {
             if (!cb) return { success: false, error: 'OAR overlay control is unavailable.' };
             cb.checked = command === 'show' || (command === 'toggle' && !cb.checked);
             if (typeof toggleOverlay !== 'function') return { success: false, error: 'Overlay action is unavailable.' };
-            await Promise.resolve(toggleOverlay());
+            await __tpAwait(() => (Promise.resolve(toggleOverlay())));
             return { success: true, target, command, visible: !!cb.checked };
         }
         if (target === 'overlay.dose.opacity') {
             if (typeof setDoseOverlayOpacity !== 'function') return { success: false, error: 'Dose overlay opacity is unavailable.' };
             const resolvedOpacity = _resolveOverlayOpacityPercent(target, command, value);
             if (resolvedOpacity.error) return { success: false, error: resolvedOpacity.error };
-            await Promise.resolve(setDoseOverlayOpacity(resolvedOpacity.percent));
+            await __tpAwait(() => (Promise.resolve(setDoseOverlayOpacity(resolvedOpacity.percent))));
             return {
                 success: true,
                 target,
@@ -8360,7 +8618,7 @@ async function _executeUIActionRaw(a, options = {}) {
             if (typeof setGroupOpacity !== 'function') return { success: false, error: 'Overlay opacity is unavailable.' };
             const resolvedOpacity = _resolveOverlayOpacityPercent(target, command, value);
             if (resolvedOpacity.error) return { success: false, error: resolvedOpacity.error };
-            await Promise.resolve(setGroupOpacity(axis, resolvedOpacity.percent));
+            await __tpAwait(() => (Promise.resolve(setGroupOpacity(axis, resolvedOpacity.percent))));
             return {
                 success: true,
                 target,
@@ -8375,12 +8633,12 @@ async function _executeUIActionRaw(a, options = {}) {
             if (!dm) return { success: false, error: 'Display mode control is unavailable.' };
             dm.value = value;
             if (typeof setDisplayMode !== 'function') return { success: false, error: 'Display mode action is unavailable.' };
-            await Promise.resolve(setDisplayMode());
+            await __tpAwait(() => (Promise.resolve(setDisplayMode())));
             return { success: true, target, command, mode: dm.value };
         }
         if (target === 'viewer.dose_peak' && command === 'run') {
             if (typeof navigateToDosePeakSlices !== 'function') return { success: false, error: 'Dose-peak navigation is unavailable.' };
-            const result = await Promise.resolve(navigateToDosePeakSlices());
+            const result = await __tpAwait(() => (Promise.resolve(navigateToDosePeakSlices())));
             if (result && result.success === false) return result;
             return { success: true, target, command, applied: result ?? 'dose_peak' };
         }
@@ -8396,7 +8654,7 @@ async function _executeUIActionRaw(a, options = {}) {
             };
             const handler = handlers[command];
             if (typeof handler === 'function') {
-                const result = await Promise.resolve(handler());
+                const result = await __tpAwait(() => (Promise.resolve(handler())));
                 if (result && result.success === false) return result;
                 if (['undo','redo'].includes(command) && result === false) {
                     return {success:false,target,command,error:'No applicable annotation history is available, or annotations are being saved.'};
@@ -8407,26 +8665,26 @@ async function _executeUIActionRaw(a, options = {}) {
         }
         if (target === 'viewer.tool') {
             if (typeof setViewerTool !== 'function') return { success: false, error: 'Viewer tool control is unavailable.' };
-            await Promise.resolve(setViewerTool(value));
+            await __tpAwait(() => (Promise.resolve(setViewerTool(value))));
             return { success: true, target, command, tool: value };
         }
         if (target === 'viewer.annotations') {
             const handler = {undo:window.viewerUndo,redo:window.viewerRedo,clear_measurements:window.clearViewerMeasurements}[command];
             if (typeof handler !== 'function') return {success:false,error:'Annotation action is unavailable.'};
-            const result = await Promise.resolve(handler());
+            const result = await __tpAwait(() => (Promise.resolve(handler())));
             if (result && typeof result === 'object') return {...result,target,command};
             return {success:result === true,target,command,applied:result === true};
         }
         // ── Manual / threshold masks ──
         if (target === 'mask.create') {
             if (typeof setViewerTool !== 'function') return { success: false, error: 'Mask drawing tool is unavailable.' };
-            await Promise.resolve(setViewerTool('annotate'));
+            await __tpAwait(() => (Promise.resolve(setViewerTool('annotate'))));
             return { success: true, target, command, tool: 'annotate' };
         }
         if (target === 'mask.finalize') {
             if (!state.activeMaskId) return { success: false, error: 'There is no active manual mask to finalize.' };
             if (typeof setViewerTool !== 'function') return { success: false, error: 'Mask drawing tool is unavailable.' };
-            await Promise.resolve(setViewerTool('annotate'));
+            await __tpAwait(() => (Promise.resolve(setViewerTool('annotate'))));
             return { success: true, target, command, mask_id: state.activeMaskId };
         }
         if (target === 'mask.threshold') {
@@ -8434,7 +8692,7 @@ async function _executeUIActionRaw(a, options = {}) {
             if (!el) return { success: false, error: 'Viewer threshold control is unavailable.' };
             el.value = String(value);
             if (typeof applyThreshold !== 'function') return { success: false, error: 'Threshold-mask action is unavailable.' };
-            await Promise.resolve(applyThreshold());
+            await __tpAwait(() => (Promise.resolve(applyThreshold())));
             return { success: true, target, command, threshold: el.value };
         }
         if (target === 'mask.rename') {
@@ -8443,7 +8701,7 @@ async function _executeUIActionRaw(a, options = {}) {
             const name = String(cfg?.name ?? cfg?.label ?? '').trim();
             if (!id || !name) return { success: false, error: 'mask.rename requires JSON {"id":"...","name":"..."}.' };
             if (typeof renameDataTreeMask !== 'function') return { success: false, error: 'Data Tree mask rename is unavailable.' };
-            const result = await Promise.resolve(renameDataTreeMask(String(id), name));
+            const result = await __tpAwait(() => (Promise.resolve(renameDataTreeMask(String(id), name))));
             if (result && result.success === false) return result;
             return { success: true, target, command, mask_id: String(id), name, applied: result ?? name };
         }
@@ -8456,7 +8714,7 @@ async function _executeUIActionRaw(a, options = {}) {
             const targetCls = cls === 'oar' ? 'oar' : 'ctv';
             if (typeof moveSelectedMasks !== 'function') return { success: false, error: 'Data Tree mask move is unavailable.' };
             if (!(id || state.activeMaskId)) return { success: false, error: 'No mask is selected for moving.' };
-            const result = await Promise.resolve(moveSelectedMasks(targetCls, id ? [String(id)] : null));
+            const result = await __tpAwait(() => (Promise.resolve(moveSelectedMasks(targetCls, id ? [String(id)] : null))));
             if (result && result.success === false) return result;
             return { success: true, target, command, mask_id: id ? String(id) : state.activeMaskId, classification: targetCls, applied: result ?? targetCls };
         }
@@ -8465,14 +8723,14 @@ async function _executeUIActionRaw(a, options = {}) {
             const id = cfg?.id || value || null;
             if (!id) return { success: false, error: 'mask.delete requires a mask id.' };
             if (typeof deleteDataTreeMask !== 'function') return { success: false, error: 'Data Tree mask deletion is unavailable.' };
-            const result = await Promise.resolve(deleteDataTreeMask(String(id)));
+            const result = await __tpAwait(() => (Promise.resolve(deleteDataTreeMask(String(id)))));
             if (result && result.success === false) return result;
             return { success: true, target, command, mask_id: String(id), applied: result ?? 'deleted' };
         }
         if (target === 'viewer.colorbar' || target === 'viewer.dose_scale') {
             if (command === 'reset') {
                 if (typeof resetDoseColorbarSettings !== 'function') return { success: false, error: 'Dose colorbar reset is unavailable.' };
-                const result = await Promise.resolve(resetDoseColorbarSettings());
+                const result = await __tpAwait(() => (Promise.resolve(resetDoseColorbarSettings())));
                 if (result && result.success === false) return result;
                 return { success: true, target, command, applied: result ?? 'reset' };
             }
@@ -8489,7 +8747,7 @@ async function _executeUIActionRaw(a, options = {}) {
             if (cfg.maxGy !== undefined && maxEl) maxEl.value = cfg.maxGy;
             if (cfg.palette !== undefined && paletteEl) paletteEl.value = cfg.palette;
             if (typeof applyDoseColorbarSettings !== 'function') return { success: false, error: 'Dose colorbar settings are unavailable.' };
-            const result = await Promise.resolve(applyDoseColorbarSettings());
+            const result = await __tpAwait(() => (Promise.resolve(applyDoseColorbarSettings())));
             if (result && result.success === false) return result;
             return { success: true, target, command, scope, settings: cfg, applied: result ?? scope };
         }
@@ -8512,13 +8770,13 @@ async function _executeUIActionRaw(a, options = {}) {
             v = Math.max(0, Math.min(max, Math.round(v)));
             slider.value = v;
             if (typeof updateSlice !== 'function') return { success: false, error: `Slice action is unavailable: ${axis}` };
-            await Promise.resolve(updateSlice(axis, v));
+            await __tpAwait(() => (Promise.resolve(updateSlice(axis, v))));
             return { success: true, target, command, axis, slice: v };
         }
         // ── Layout ──
         if (target === 'layout') {
             if (typeof setViewerLayout !== 'function') return { success: false, error: 'Viewer layout control is unavailable.' };
-            await Promise.resolve(setViewerLayout(value));
+            await __tpAwait(() => (Promise.resolve(setViewerLayout(value))));
             return { success: true, target, command, layout: value };
         }
         // ── Data tree ──
@@ -8582,7 +8840,7 @@ async function _executeUIActionRaw(a, options = {}) {
         if (target === 'tree.reconstruct3d') {
             // Use the same function as right-click → 3D reconstruction
             if (typeof reconstructOrgan3D !== 'function') return { success: false, error: 'Data Tree 3D reconstruction is unavailable.' };
-            const result = await Promise.resolve(reconstructOrgan3D(value));
+            const result = await __tpAwait(() => (Promise.resolve(reconstructOrgan3D(value))));
             if (result && result.success === false) return result;
             return { success: true, target, command, object_id: value, applied: result ?? 'reconstructed' };
         }
@@ -8642,20 +8900,21 @@ async function _executeUIActionRaw(a, options = {}) {
                     if (typeof dataTreeState === 'undefined') return;
                     if (Array.isArray(dataTreeState.organs) && dataTreeState.organs.length) return;
                     try {
-                        const response = await fetch(API + '/viewer/organs', {
+                        const response = await __tpAwait(() => (fetch(API + '/viewer/organs', {
                             headers: { 'X-BrachyBot-Session': ownerSessionId },
-                        });
+                        })));
                         if (!response.ok) return;
-                        const payload = await response.json();
+                        const payload = await __tpAwait(() => (response.json()));
                         if (!_uiActionSessionIsCurrent(ownerSessionId)) return;
                         if (payload.organs && typeof updateOrganList === 'function') {
                             updateOrganList(payload.organs, payload.oar_source || '');
                         }
                     } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
                         console.warn('[viewer] OAR metadata hydration failed', error);
                     }
                 };
-                await hydrateOrgans();
+                await __tpAwait(() => (hydrateOrgans()));
                 if (!_uiActionSessionIsCurrent(ownerSessionId)) {
                     return { success: false, stale: true, error: 'The selected case changed during reconstruction.' };
                 }
@@ -8672,9 +8931,9 @@ async function _executeUIActionRaw(a, options = {}) {
                 }
                 // One malformed label must not prevent valid OAR meshes from
                 // rendering; report partial completion to the caller.
-                const results = await Promise.allSettled(
+                const results = await __tpAwait(() => (Promise.allSettled(
                     organs.map(o => reconstructOrgan3D(o.id, true))
-                );
+                )));
                 const values = results.map(r => r.status === 'fulfilled'
                     ? r.value
                     : { success: false, error: r.reason?.message || String(r.reason || 'unknown error') });
@@ -8693,7 +8952,7 @@ async function _executeUIActionRaw(a, options = {}) {
         if (target === 'tree.dose.visibility') {
             if (!state.doseOverlay) return { success: false, error: 'Dose overlay is unavailable.' };
             state.doseOverlay.visible = value === 'on';
-            if (state.ctLoaded && typeof loadAllSlices === 'function') await Promise.resolve(loadAllSlices());
+            if (state.ctLoaded && typeof loadAllSlices === 'function') await __tpAwait(() => (Promise.resolve(loadAllSlices())));
             return { success: true, target, command, visible: state.doseOverlay.visible };
         }
         if (target === 'tree.trajectories.visibility') {
@@ -8718,6 +8977,8 @@ async function _executeUIActionRaw(a, options = {}) {
         }
         // ── Session management ──
         if (target === 'session.new') return window.newChat();
+        if (target === 'session.import') return {success:window.importCompleteWorkspace?.() === true,
+            accepted_pending_user_file:true,completed:false};
         if (target === 'session.switch') return window.switchSession(value);
         if (target === 'session.rename') {
             const title = String(value || '').trim();
@@ -8997,7 +9258,8 @@ async function _executeUIActionRaw(a, options = {}) {
             // report.figures empty and makes the whole UI action appear to
             // fail even though the numeric report data exists.
             if (typeof window.awaitWorkspaceVisualReady === 'function') {
-                const visualReady = await window.awaitWorkspaceVisualReady(reportSessionId, {
+                const visualReady = await __tpAwait(() => (window.awaitWorkspaceVisualReady(reportSessionId, {
+                    timepointScope: __tpOwner,
                     // The live scene validation below is the authoritative
                     // readiness check for an explicit report command.  Do
                     // not inherit the five-minute cold-restore barrier used
@@ -9006,8 +9268,10 @@ async function _executeUIActionRaw(a, options = {}) {
                     // long after the report is already visible.
                     timeoutMs: 15000,
                     reason: 'report-regeneration',
-                });
+                })));
                 if (visualReady?.ready === false) {
+                    if (__tpOwner) return { success: false, stage: 'report_workspace_not_ready',
+                        error: 'workspace_visual_restore_incomplete', readiness: visualReady };
                     visualBarrierResult = visualReady;
                 }
             }
@@ -9017,9 +9281,9 @@ async function _executeUIActionRaw(a, options = {}) {
             // Always validate the current live renderer after the scheduler
             // barrier. This also recovers from a stale partial-restore result
             // when the meshes and dose are already usable.
-            const preparation = await prepareReportSceneReadWithRetry(reportSessionId, {
+            const preparation = await __tpAwait(() => (prepareReportSceneReadWithRetry(reportSessionId, {
                 timeoutMs: visualBarrierResult ? 20000 : 15000,
-            });
+            })));
             if (visualBarrierResult && preparation?.success) {
                 console.info('[report] visual restore barrier was partial, but live scene validation passed; continuing with current scene');
             }
@@ -9029,7 +9293,7 @@ async function _executeUIActionRaw(a, options = {}) {
                 reportPlanningId = reportPlanningId
                     || (typeof activeReportPlanningId === 'function'
                         ? String(activeReportPlanningId() || '') : '');
-                const result = await Report.autoFill.fromAll({
+                const result = await __tpAwait(() => (Report.autoFill.fromAll({
                     sessionId: reportSessionId,
                     language: (typeof conversationLanguageForSession === 'function'
                         ? conversationLanguageForSession(reportSessionId) : '')
@@ -9037,7 +9301,7 @@ async function _executeUIActionRaw(a, options = {}) {
                     planningId: reportPlanningId,
                     captureFigures: true,
                     allowTerminalPlanning: true,
-                });
+                })));
                 if (result?.success === false) {
                     return {
                         ...result,
@@ -9052,7 +9316,7 @@ async function _executeUIActionRaw(a, options = {}) {
             })();
             if (autoFillKey) _reportAutoFillInFlight.set(autoFillKey, autoFillTask);
             try {
-                return await autoFillTask;
+                return await __tpAwait(() => (autoFillTask));
             } finally {
                 if (autoFillKey && _reportAutoFillInFlight.get(autoFillKey) === autoFillTask) {
                     _reportAutoFillInFlight.delete(autoFillKey);
@@ -9074,35 +9338,35 @@ async function _executeUIActionRaw(a, options = {}) {
         }
         if (target === 'report.snapshot.save') {
             if (typeof Report !== 'undefined' && Report.snapshots?.save) {
-                await Promise.resolve(Report.snapshots.save());
+                await __tpAwait(() => (Promise.resolve(Report.snapshots.save())));
                 return { success: true, target, command };
             }
             return { success: false, error: 'Report snapshot save is unavailable.' };
         }
         if (target === 'report.snapshot.open') {
             if (typeof Report !== 'undefined' && Report.snapshots?.openModal) {
-                await Promise.resolve(Report.snapshots.openModal());
+                await __tpAwait(() => (Promise.resolve(Report.snapshots.openModal())));
                 return { success: true, target, command };
             }
             return { success: false, error: 'Report snapshot browser is unavailable.' };
         }
         if (target === 'report.audit.open') {
             if (typeof Report !== 'undefined' && Report.audit?.openModal) {
-                await Promise.resolve(Report.audit.openModal());
+                await __tpAwait(() => (Promise.resolve(Report.audit.openModal())));
                 return { success: true, target, command };
             }
             return { success: false, error: 'Report audit view is unavailable.' };
         }
         if (target === 'report.review.open') {
             if (typeof Report !== 'undefined' && Report.review?.openModal) {
-                await Promise.resolve(Report.review.openModal());
+                await __tpAwait(() => (Promise.resolve(Report.review.openModal())));
                 return { success: true, target, command };
             }
             return { success: false, error: 'Report review view is unavailable.' };
         }
         if (target === 'report.validation.open') {
             if (typeof Report !== 'undefined' && Report.validation?.openModal) {
-                await Promise.resolve(Report.validation.openModal());
+                await __tpAwait(() => (Promise.resolve(Report.validation.openModal())));
                 return { success: true, target, command };
             }
             return { success: false, error: 'Report validation view is unavailable.' };
@@ -9120,29 +9384,29 @@ async function _executeUIActionRaw(a, options = {}) {
         }
         if (target === 'report.layout') {
             if (typeof Report !== 'undefined' && Report.panels?.layout2col) {
-                await Promise.resolve(Report.panels.layout2col(value === '2col'));
+                await __tpAwait(() => (Promise.resolve(Report.panels.layout2col(value === '2col'))));
                 return { success: true, target, command, layout: value };
             }
             return { success: false, error: 'Report layout control is unavailable.' };
         }
         if (target === 'report.section.toggle') {
             if (typeof toggleReportSection !== 'function') return { success: false, error: 'Report section control is unavailable.' };
-            await Promise.resolve(toggleReportSection(value));
+            await __tpAwait(() => (Promise.resolve(toggleReportSection(value))));
             return { success: true, target, command, section: value };
         }
         if (target === 'report.reference.add') {
             if (typeof addReportReferenceFromCatalog !== 'function') return { success: false, error: 'Report reference control is unavailable.' };
-            await Promise.resolve(addReportReferenceFromCatalog(value));
+            await __tpAwait(() => (Promise.resolve(addReportReferenceFromCatalog(value))));
             return { success: true, target, command, reference: value };
         }
         if (target === 'report.reference.remove') {
             if (typeof removeReportReference !== 'function') return { success: false, error: 'Report reference control is unavailable.' };
-            await Promise.resolve(removeReportReference(parseInt(value)));
+            await __tpAwait(() => (Promise.resolve(removeReportReference(parseInt(value)))));
             return { success: true, target, command, reference: value };
         }
         if (target === 'report.clear') {
             if (typeof Report !== 'undefined' && Report.persist?.clear) {
-                await Promise.resolve(Report.persist.clear());
+                await __tpAwait(() => (Promise.resolve(Report.persist.clear())));
                 return { success: true, target, command };
             }
             return { success: false, error: 'Report clear action is unavailable.' };
@@ -9151,7 +9415,7 @@ async function _executeUIActionRaw(a, options = {}) {
         if (target === '3d.reconstruct') {
             // Use the same function as right-click → 3D reconstruction
             if (typeof reconstructOrgan3D !== 'function') return { success: false, error: '3D reconstruction is unavailable.' };
-            const result = await Promise.resolve(reconstructOrgan3D(value));
+            const result = await __tpAwait(() => (Promise.resolve(reconstructOrgan3D(value))));
             if (result && result.success === false) return result;
             return { success: true, target, command, object_id: value, applied: result ?? 'reconstructed' };
         }
@@ -9160,7 +9424,7 @@ async function _executeUIActionRaw(a, options = {}) {
             const cb = document.getElementById('wireframe3D');
             if (!cb || typeof toggle3DWireframe !== 'function') return { success: false, error: '3D wireframe control is unavailable.' };
             cb.checked = on;
-            await Promise.resolve(toggle3DWireframe(on));
+            await __tpAwait(() => (Promise.resolve(toggle3DWireframe(on))));
             return { success: true, target, command, visible: on };
         }
         if (target === '3d.skin') {
@@ -9168,14 +9432,14 @@ async function _executeUIActionRaw(a, options = {}) {
             const cb = document.getElementById('skinToggle3D');
             if (!cb || typeof toggle3DSkin !== 'function') return { success: false, error: '3D skin control is unavailable.' };
             cb.checked = on;
-            await Promise.resolve(toggle3DSkin(on));
+            await __tpAwait(() => (Promise.resolve(toggle3DSkin(on))));
             return { success: true, target, command, visible: on };
         }
         if (target === '3d.dose_opacity') {
             const sl = document.getElementById('doseOpacity');
             if (!sl || typeof updateDoseOpacity !== 'function') return { success: false, error: '3D dose opacity control is unavailable.' };
             sl.value = value;
-            await Promise.resolve(updateDoseOpacity(value));
+            await __tpAwait(() => (Promise.resolve(updateDoseOpacity(value))));
             return { success: true, target, command, opacity: sl.value };
         }
         if (target === '3d.dose_surface') {
@@ -9198,7 +9462,7 @@ async function _executeUIActionRaw(a, options = {}) {
             const on = value === 'on' || (value === undefined && !checkbox?.checked);
             if (!checkbox || typeof updateLabelImage !== 'function') return { success: false, error: '3D label control is unavailable.' };
             checkbox.checked = on;
-            await Promise.resolve(updateLabelImage('3d'));
+            await __tpAwait(() => (Promise.resolve(updateLabelImage('3d'))));
             return { success: true, target, command, visible: on };
         }
         if (target === '3d.label_opacity') {
@@ -9223,7 +9487,7 @@ async function _executeUIActionRaw(a, options = {}) {
         }
         if (target === '3d.show_all') {
             if (typeof showAllOrgans !== 'function') return { success: false, error: 'Show-all-organ action is unavailable.' };
-            await Promise.resolve(showAllOrgans());
+            await __tpAwait(() => (Promise.resolve(showAllOrgans())));
             return { success: true, target, command };
         }
         if (target === '3d.hide_all') {
@@ -9253,7 +9517,7 @@ async function _executeUIActionRaw(a, options = {}) {
         }
         if (target === 'chat.sidebar.toggle') {
             if (typeof toggleSessionSidebar !== 'function') return { success: false, error: 'Session sidebar control is unavailable.' };
-            await Promise.resolve(toggleSessionSidebar());
+            await __tpAwait(() => (Promise.resolve(toggleSessionSidebar())));
             return { success: true, target, command };
         }
         // ── Screenshot ──
@@ -9263,12 +9527,13 @@ async function _executeUIActionRaw(a, options = {}) {
         // ── Tools ──
         if (target === 'tool') {
             if (typeof setViewerTool !== 'function') return { success: false, error: 'Viewer tool control is unavailable.' };
-            const result = await Promise.resolve(setViewerTool(value));
+            const result = await __tpAwait(() => (Promise.resolve(setViewerTool(value))));
             if (result && result.success === false) return result;
             return { success: true, target, command, tool: value, applied: result ?? value };
         }
         return { success: false, error: `No browser dispatcher is available for ${target}.` };
     } catch (e) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
         console.warn('[UIAction] Error executing:', target, command, value, e);
         return { success: false, error: String(e && e.message ? e.message : e) };
     }
@@ -9276,14 +9541,17 @@ async function _executeUIActionRaw(a, options = {}) {
 
 // Screenshot capture — uses unified target map
 async function _captureScreenshot(view) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     // Normalize legacy short names to full target names
     const ALIAS = { 'axial': 'viewer-axial', 'sagittal': 'viewer-sagittal',
                     'coronal': 'viewer-coronal', '3d': 'viewer-3d', 'dvh': 'dvh',
                     'dose': 'dose-overview', 'dose-overview': 'dose-overview',
                     'data': 'data-tree', 'tree': 'data-tree' };
     const target = ALIAS[view] || view;
-    const preparedEl = await _prepareScreenshotTarget(target);
-    const dataUrl = await _captureScreenshotDataUrl(target, preparedEl);
+    const preparedEl = await __tpAwait(() => (_prepareScreenshotTarget(target)));
+    const dataUrl = await __tpAwait(() => (_captureScreenshotDataUrl(target, preparedEl)));
     if (dataUrl) {
         const link = document.createElement('a');
         link.download = `brachybot_${view}_${Date.now()}.png`;
@@ -9373,6 +9641,9 @@ function _waitScreenshotFrames(n = 2) {
 }
 
 async function _prepareScreenshotTarget(target) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const panelName = _SCREENSHOT_PANEL_MAP[target];
     const tab = panelName ? document.querySelector(`.panel-tab[data-panel="${panelName}"]`) : null;
     const switchedPanel = !!(tab && !tab.classList.contains('active'));
@@ -9382,14 +9653,14 @@ async function _prepareScreenshotTarget(target) {
     // Panel switches, canvas resizes, Plotly relayouts, and Three.js renders
     // complete on different animation frames. Waiting on frames rather than a
     // fixed timer makes capture deterministic on both fast and slow clients.
-    await _waitScreenshotFrames(switchedPanel ? 4 : 2);
+    await __tpAwait(() => (_waitScreenshotFrames(switchedPanel ? 4 : 2)));
     if (target === 'dvh' && typeof _resizeDVHChartSoon === 'function') {
         _resizeDVHChartSoon();
-        await _waitScreenshotFrames(3);
+        await __tpAwait(() => (_waitScreenshotFrames(3)));
     }
     if (target === 'viewer-3d' && typeof scene3D !== 'undefined' && scene3D.requestRender) {
         scene3D.requestRender(2);
-        await _waitScreenshotFrames(2);
+        await __tpAwait(() => (_waitScreenshotFrames(2)));
     }
     return el;
 }
@@ -9426,6 +9697,9 @@ function _drawScreenshotColorbar(ctx, x, y, w, h) {
 }
 
 async function _captureDoseOverviewDataUrl() {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const panelTab = document.querySelector('.panel-tab[data-panel="viewers"]');
     if (panelTab && !panelTab.classList.contains('active')) switchPanel('viewers', panelTab);
     const origSlices = {
@@ -9469,9 +9743,9 @@ async function _captureDoseOverviewDataUrl() {
                 if (slider) slider.value = clamped;
                 updateSlice(cfg.ax, clamped);
             });
-            await _waitScreenshotFrames(6);
+            await __tpAwait(() => (_waitScreenshotFrames(6)));
         } else {
-            await _waitScreenshotFrames(3);
+            await __tpAwait(() => (_waitScreenshotFrames(3)));
         }
 
         const imgs = [
@@ -9493,9 +9767,10 @@ async function _captureDoseOverviewDataUrl() {
         if (dvhEl && typeof Plotly !== 'undefined' && typeof Plotly.toImage === 'function') {
             try {
                 dvhUrl = typeof window.captureReportDvhFigure === 'function'
-                    ? await window.captureReportDvhFigure(dvhEl, { width: 2000, height: 1250 })
-                    : await Plotly.toImage(dvhEl, { format: 'png', width: 1180, height: 340 });
-            } catch (e) { console.warn('[screenshot] DVH export for dose overview failed:', e); }
+                    ? await __tpAwait(() => (window.captureReportDvhFigure(dvhEl, { width: 2000, height: 1250 })))
+                    : await __tpAwait(() => (Plotly.toImage(dvhEl, { format: 'png', width: 1180, height: 340 })));
+            } catch (e) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true }; console.warn('[screenshot] DVH export for dose overview failed:', e); }
         }
 
         const W = 1320, topH = 420, bottomH = dvhUrl ? 390 : 0;
@@ -9533,17 +9808,17 @@ async function _captureDoseOverviewDataUrl() {
             img.onerror = () => resolve();
             img.src = entry.dataUrl;
         });
-        for (let i = 0; i < imgs.length; i++) await drawImage(imgs[i], i);
+        for (let i = 0; i < imgs.length; i++) await __tpAwait(() => (drawImage(imgs[i], i)));
         _drawScreenshotColorbar(ctx, W - pad - colorbarW, 50, colorbarW, panelH);
         if (dvhUrl) {
-            await drawImage({ dataUrl: dvhUrl, label: 'DVH' }, 3, topH + 18, W - pad * 2, bottomH);
+            await __tpAwait(() => (drawImage({ dataUrl: dvhUrl, label: 'DVH' }, 3, topH + 18, W - pad * 2, bottomH)));
         }
         return out.toDataURL('image/png');
     } finally {
         // Always restore the user's slices and dose visibility, including
         // capture failures or an empty viewer. Screenshot capture must not
         // mutate the live treatment view.
-        restore();
+        if (!__tpOwner || window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) restore();
     }
 }
 
@@ -9786,6 +10061,9 @@ function _normalizeDataTreeEvidenceStatus(value) {
 }
 
 async function _prepareLiveDataTreeForScreenshot(plan = {}) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const body = document.getElementById('dataTreeBody');
     const container = document.getElementById('dataTreeContainer');
     if (!body || !container) return { restoreFocus: null, focusResult: null };
@@ -9852,7 +10130,7 @@ async function _prepareLiveDataTreeForScreenshot(plan = {}) {
             group = group.parentElement?.closest?.('.tree-group') || null;
         }
     });
-    await _waitScreenshotFrames(3);
+    await __tpAwait(() => (_waitScreenshotFrames(3)));
 
     const bodyRect = body.getBoundingClientRect();
     const firstRow = targetRows[0];
@@ -9872,7 +10150,7 @@ async function _prepareLiveDataTreeForScreenshot(plan = {}) {
         ? hierarchyTop - 10
         : targetTop - Math.min(availableHeight * 0.52, 280);
     body.scrollTop = Math.max(0, Math.min(body.scrollHeight - body.clientHeight, desiredScroll));
-    await _waitScreenshotFrames(3);
+    await __tpAwait(() => (_waitScreenshotFrames(3)));
 
     const finalBodyRect = body.getBoundingClientRect();
     const matchedRows = targetRows.filter(row => {
@@ -9912,18 +10190,21 @@ async function _prepareLiveDataTreeForScreenshot(plan = {}) {
 }
 
 async function _captureDataTreeEvidenceBundle(plan = {}) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     if (typeof html2canvas === 'undefined') return { dataUrl: null, groundingManifest: null };
     const container = document.getElementById('dataTreeContainer');
     const body = document.getElementById('dataTreeBody');
     if (!container || !body) return { dataUrl: null, groundingManifest: null };
-    await _waitScreenshotFrames(2);
-    const canvas = await html2canvas(container, {
+    await __tpAwait(() => (_waitScreenshotFrames(2)));
+    const canvas = await __tpAwait(() => (html2canvas(container, {
         backgroundColor: null,
         scale: 2,
         useCORS: true,
         allowTaint: true,
         logging: false,
-    });
+    })));
     const rootRect = container.getBoundingClientRect();
     const evidence = _dataTreeEvidenceRows(plan);
     const refs = _screenshotTargetRefs(plan);
@@ -10001,11 +10282,17 @@ async function _captureDataTreeEvidenceBundle(plan = {}) {
 }
 
 async function _captureDataTreeEvidenceDataUrl(plan = {}) {
-    const bundle = await _captureDataTreeEvidenceBundle(plan);
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
+    const bundle = await __tpAwait(() => (_captureDataTreeEvidenceBundle(plan)));
     return bundle?.dataUrl || null;
 }
 
 async function _captureScreenshotDataUrl(target, el, plan = {}) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     if (target === 'dose-overview') return _captureDoseOverviewDataUrl();
     if (target === 'data-tree') return _captureDataTreeEvidenceDataUrl(plan);
     if (target === 'viewer-axial' || target === 'viewer-sagittal' || target === 'viewer-coronal') {
@@ -10017,16 +10304,17 @@ async function _captureScreenshotDataUrl(target, el, plan = {}) {
         const dvhEl = el || _resolveScreenshotTarget('dvh');
         if (dvhEl && typeof Plotly !== 'undefined' && typeof Plotly.toImage === 'function') {
             try {
-                await _waitScreenshotFrames(2);
+                await __tpAwait(() => (_waitScreenshotFrames(2)));
                 if (typeof window.captureReportDvhFigure === 'function') {
-                    return await window.captureReportDvhFigure(dvhEl, { width: 2000, height: 1250 });
+                    return await __tpAwait(() => (window.captureReportDvhFigure(dvhEl, { width: 2000, height: 1250 })));
                 }
-                return await Plotly.toImage(dvhEl, {
+                return await __tpAwait(() => (Plotly.toImage(dvhEl, {
                     format: 'png',
                     width: Math.max(900, dvhEl.clientWidth || 900),
                     height: Math.max(420, dvhEl.clientHeight || 420),
-                });
+                })));
             } catch (e) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
                 console.warn('[screenshot] Plotly DVH export failed:', e);
             }
         }
@@ -10040,11 +10328,11 @@ async function _captureScreenshotDataUrl(target, el, plan = {}) {
     const uiEvidenceScale = target === 'overlay-controls' && _screenshotTargetRefs(plan).length
         ? 2
         : 1;
-    const canvas = await html2canvas(targetEl, {
+    const canvas = await __tpAwait(() => (html2canvas(targetEl, {
         useCORS: true,
         allowTaint: true,
         scale: uiEvidenceScale,
-    });
+    })));
     return canvas.toDataURL('image/png');
 }
 
@@ -10238,12 +10526,15 @@ function _domScreenshotGroundingManifest(target, captureRoot, plan, imageDimensi
 }
 
 async function _captureScreenshotEvidenceBundle(target, element, plan = {}) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     if (target === 'data-tree') {
         return _captureDataTreeEvidenceBundle(plan);
     }
-    const dataUrl = await _captureScreenshotDataUrl(target, element, plan);
+    const dataUrl = await __tpAwait(() => (_captureScreenshotDataUrl(target, element, plan)));
     if (!dataUrl) return { dataUrl: null, groundingManifest: null };
-    const imageDimensions = await _screenshotImageDimensions(dataUrl);
+    const imageDimensions = await __tpAwait(() => (_screenshotImageDimensions(dataUrl)));
     let groundingManifest;
     if (target === 'viewer-3d' && typeof window.get3DScreenshotGroundingManifest === 'function') {
         groundingManifest = window.get3DScreenshotGroundingManifest(_screenshotTargetRefs(plan));
@@ -10420,6 +10711,9 @@ function _restoreScreenshotPanel(panelName) {
 // and display the image in the chat. This bridges the gap between the
 // LLM's ui_screenshot tool call and the frontend's actual capture.
 async function _interceptScreenshotLegacy(target, question, galleryContext, options = {}) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(options?.timepointScope);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     // Older cached callers retain this name. Route all of them through the
     // structured executor so the owning reply, Session checks, viewer-state
     // restoration, and localized failure handling cannot diverge.
@@ -10474,7 +10768,7 @@ function _openScreenshotModal(url, label, index = 0, total = 1, options = {}) {
     const updateToggle = () => {
         toggle.textContent = showingAnnotated
             ? (language === 'zh' ? '\u67e5\u770b\u539f\u56fe' : 'View original')
-            : (language === 'zh' ? '\u67e5\u770b\u6807\u6ce8\u56fe' : 'View annotation');
+            : (language === 'zh' ? '\u67e5\u770b\u6807\u6ce8\u56fe' : 'View annotated image');
         toggle.setAttribute('aria-pressed', showingAnnotated ? 'true' : 'false');
         image.src = showingAnnotated ? currentAnnotated : currentOriginal;
     };
@@ -10753,6 +11047,9 @@ function _sessionContentSelectionMetadata(selection, analysis) {
 }
 
 async function _appendPersistedReportFigures(plan, galleryContext, ownerSessionId) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const context = galleryContext || {};
     let form = window.reportForm;
     const requestedPlanningId = String(
@@ -10773,9 +11070,10 @@ async function _appendPersistedReportFigures(plan, galleryContext, ownerSessionI
     ) {
         try {
             window.restoreReportForPlanning(requestedPlanningId, { persist: false });
-            await _waitScreenshotFrames(1);
+            await __tpAwait(() => (_waitScreenshotFrames(1)));
             form = window.reportForm;
         } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
             console.debug('[report-content] Unable to restore persisted report form', error);
         }
     }
@@ -10808,9 +11106,10 @@ async function _appendPersistedReportFigures(plan, galleryContext, ownerSessionI
     if (typeof hydrateDataTreeArtifactCatalog === 'function'
         && String(ownerSessionId) === String(_activeApiSessionId())) {
         try {
-            const hydrated = await hydrateDataTreeArtifactCatalog();
+            const hydrated = await __tpAwait(() => (hydrateDataTreeArtifactCatalog()));
             if (Array.isArray(hydrated)) catalogArtifacts = hydrated;
-        } catch (_) {}
+        } catch (_) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };}
     }
     if (!Array.isArray(catalogArtifacts)) catalogArtifacts = [];
 
@@ -11022,10 +11321,14 @@ function _sessionScreenshotArtifacts(ownerSessionId, activePlanningId, options =
 }
 
 async function _appendPersistedSessionScreenshots(command, galleryContext, ownerSessionId) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const context = galleryContext || {};
     if (typeof hydrateDataTreeArtifactCatalog === 'function'
         && String(ownerSessionId) === String(_activeApiSessionId())) {
-        try { await hydrateDataTreeArtifactCatalog(); } catch (_) {}
+        try { await __tpAwait(() => (hydrateDataTreeArtifactCatalog())); } catch (_) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };}
     }
     const activePlanningId = String(
         command?.planning_id
@@ -11061,7 +11364,7 @@ async function _appendPersistedSessionScreenshots(command, galleryContext, owner
             : _safeSessionScreenshotUrl(artifact.url, ownerSessionId);
         if (!url) return;
         const title = artifact.isReport
-            ? (language === 'zh' ? '\u62a5\u544a\u622a\u56fe' : 'Report figure')
+            ? (language === 'zh' ? '\u62a5\u544a\u622a\u56fe' : 'Report screenshot')
             : (language === 'zh' ? '\u5df2\u4fdd\u5b58\u622a\u56fe' : 'Saved screenshot');
         const attachment = _appendScreenshotToGallery(url, 'report', command?.question || '', context, {
             id: artifact.id,
@@ -11125,6 +11428,9 @@ function _safeReferencedReplyAttachmentUrl(candidate, ownerSessionId) {
 }
 
 async function _appendReferencedReplyAttachments(command, galleryContext, ownerSessionId) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const context = galleryContext || {};
     const language = _screenshotLanguage(ownerSessionId, context.responseLanguage);
     const source = _mostRecentVisibleReplyAttachments(ownerSessionId, context.messageId);
@@ -11182,16 +11488,19 @@ async function _appendReferencedReplyAttachments(command, galleryContext, ownerS
 }
 
 async function _readPlanningResultsForPresentation(ownerSessionId) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     let response = null;
     for (let attempt = 0; attempt < 3; attempt += 1) {
-        response = await fetch(API + '/planning/results', {
+        response = await __tpAwait(() => (fetch(API + '/planning/results', {
             headers: { 'X-BrachyBot-Session': String(ownerSessionId || '') },
-        });
+        })));
         if (response.status !== 202 || attempt === 2) break;
         const retryAfter = Number(response.headers.get('Retry-After-Ms') || 250);
-        await new Promise(resolve => setTimeout(resolve, Math.max(100, Math.min(800, retryAfter))));
+        await __tpAwait(() => (new Promise(resolve => setTimeout(resolve, Math.max(100, Math.min(800, retryAfter))))));
     }
-    const payload = await response?.json().catch(() => ({}));
+    const payload = await __tpAwait(() => (response?.json().catch(() => ({}))));
     if (!response?.ok || payload?.success === false) {
         const error = String(payload?.error || response?.status || 'planning_results_unavailable');
         throw new Error(error);
@@ -11200,6 +11509,9 @@ async function _readPlanningResultsForPresentation(ownerSessionId) {
 }
 
 async function _readSurgicalGuideStatusForPresentation(ownerSessionId) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     // A Data Tree snapshot is a presentation cache. After a Session switch it
     // can legitimately lag behind the durable Planning snapshot, so guide
     // questions must consult the same source-backed status endpoint as the
@@ -11208,11 +11520,11 @@ async function _readSurgicalGuideStatusForPresentation(ownerSessionId) {
     let payload = {};
     const maxAttempts = 8;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-        response = await fetch(API + '/surgical-guides', {
+        response = await __tpAwait(() => (fetch(API + '/surgical-guides', {
             cache: 'no-store',
             headers: { 'X-BrachyBot-Session': String(ownerSessionId || '') },
-        });
-        payload = await response.json().catch(() => ({}));
+        })));
+        payload = await __tpAwait(() => (response.json().catch(() => ({}))));
         const status = payload?.guide_status;
         const pending = response.status === 202
             || payload?.pending === true
@@ -11220,10 +11532,10 @@ async function _readSurgicalGuideStatusForPresentation(ownerSessionId) {
             || ['restoring', 'persisted_not_loaded'].includes(String(status?.state || '').toLowerCase());
         if (!pending || attempt === maxAttempts - 1) break;
         const retryAfter = Number(response.headers.get('Retry-After-Ms') || 250);
-        await new Promise(resolve => setTimeout(
+        await __tpAwait(() => (new Promise(resolve => setTimeout(
             resolve,
             Math.max(100, Math.min(1000, Number.isFinite(retryAfter) ? retryAfter : 250)),
-        ));
+        ))));
     }
     if (!response || (!response.ok && response.status !== 202)) {
         throw new Error(payload?.error || `surgical_guide_status_unavailable:${response?.status || 'network'}`);
@@ -11456,6 +11768,9 @@ function _sessionContentVisibilityText(item, language) {
 }
 
 async function _focusSessionContentObjects(objectIds) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const { matches } = _sessionContentObjectMatches(objectIds);
     if (!matches.length) return [];
     // Selection is a view-only operation.  It never changes a node's
@@ -11469,7 +11784,7 @@ async function _focusSessionContentObjects(objectIds) {
             });
         });
     }
-    await _waitScreenshotFrames(1);
+    await __tpAwait(() => (_waitScreenshotFrames(1)));
     const rows = Array.from(document.querySelectorAll('#dataTreeBody .tree-item'));
     const matchedNodeIds = new Set(matches.map(item => String(item.nodeId)));
     const matchedLocalIds = new Set(matches.map(item => String(item.localId)));
@@ -11534,7 +11849,7 @@ function _sessionContentSummary(target, planning, tree, language, command = {}) 
     if (target === 'planning' || target === 'session_summary') {
         lines.push(zh
             ? `\u5f53\u524d\u89c4\u5212${prefix}\uff1a${seedCount}\u9897\u7c92\u5b50\uff0c${needleCount}\u6761\u9488\u9053\u3002`
-            : `Current planning${prefix}: ${seedCount} seed(s) across ${needleCount} needle path(s).`);
+            : `Current plan${prefix}: ${seedCount} seed(s) across ${needleCount} needle path(s).`);
     }
     if (target === 'dose' || target === 'metrics' || target === 'session_summary') {
         if (planning?.has_dose) {
@@ -11588,7 +11903,7 @@ function _sessionContentSummary(target, planning, tree, language, command = {}) 
                 } else {
                     lines.push(zh
                         ? '\u5f53\u524d Planning \u4e2d\u6ca1\u6709\u4fdd\u5b58\u53ef\u7528\u7684\u5173\u952e\u6307\u6807\uff0c\u8bf7\u4ee5\u56fe\u4e2d\u66f2\u7ebf\u548c\u539f\u59cb\u6570\u636e\u4e3a\u51c6\u3002'
-                        : 'The current planning has no persisted summary metrics; use the chart and source data for interpretation.');
+                        : 'No saved summary metrics are available for the current plan; use the chart and source data for interpretation.');
                 }
                 lines.push(zh
                     ? '\u8fd9\u4e9b\u6570\u503c\u6765\u81ea\u5f53\u524d Planning \u7684\u771f\u5b9e\u5242\u91cf\u7ed3\u679c\uff1b\u662f\u5426\u6ee1\u8db3\u4e34\u5e8a\u6807\u51c6\u4ecd\u9700\u7ed3\u5408\u75c5\u4f8b\u9002\u7528\u6807\u51c6\u548c\u4e13\u4e1a\u5ba1\u6838\uff0c\u7cfb\u7edf\u4e0d\u4f1a\u4ec5\u51ed\u66f2\u7ebf\u5ba3\u79f0\u901a\u8fc7\u6216\u8d85\u9650\u3002'
@@ -11725,17 +12040,17 @@ function _sessionContentSelectionUnavailableMessage(selection, language) {
     if (normalized.kind === 'index') {
         return language === 'zh'
             ? `当前 Session 中没有可呈现的第 ${normalized.index} 项内容。`
-            : `The current Session does not contain a presentable item ${normalized.index}.`;
+            : `Item ${normalized.index} is not available for display in the current session.`;
     }
     if (normalized.kind === 'first') {
         return language === 'zh'
             ? '当前 Session 中没有可呈现的第一项内容。'
-            : 'The current Session does not contain a presentable first item.';
+            : 'No first item is available for display in the current session.';
     }
     if (normalized.kind === 'last') {
         return language === 'zh'
             ? '当前 Session 中没有可呈现的最后一项内容。'
-            : 'The current Session does not contain a presentable last item.';
+            : 'No last item is available for display in the current session.';
     }
     return _sessionContentUnavailableMessage('', language);
 }
@@ -11811,40 +12126,46 @@ function _sessionContentDvhData(planning) {
 }
 
 async function _ensureSessionDvhChart(planning) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const curves = _sessionContentDvhCurves(planning);
     if (!curves.length) return null;
     const dvhData = _sessionContentDvhData(planning);
     if (typeof state !== 'undefined' && state) state.dvhData = dvhData;
     _openSessionContentPanel('dvh');
-    await _waitScreenshotFrames(3);
+    await __tpAwait(() => (_waitScreenshotFrames(3)));
     let renderResult = null;
     if (typeof window.ensureDvhChartRendered === 'function') {
-        renderResult = await window.ensureDvhChartRendered(dvhData);
+        renderResult = await __tpAwait(() => (window.ensureDvhChartRendered(dvhData)));
         if (!renderResult?.success) {
             console.warn('[session-content] DVH chart was not rendered:', renderResult?.error);
             return null;
         }
     } else if (typeof drawDVH === 'function') {
         renderResult = drawDVH();
-        if (renderResult && typeof renderResult.then === 'function') await renderResult;
+        if (renderResult && typeof renderResult.then === 'function') await __tpAwait(() => (renderResult));
     }
-    await _waitScreenshotFrames(3);
+    await __tpAwait(() => (_waitScreenshotFrames(3)));
     const chart = document.getElementById('dvhChart');
     const hasPlotlyData = Array.isArray(chart?.data) && chart.data.length > 0;
     return hasPlotlyData ? chart : null;
 }
 
 async function _captureSessionContentVisual(target, planning, command, context, ownerSessionId) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const capability = _sessionContentVisualCapability(target, command?.presentation);
     if (!capability) return { success: false, error: 'visual_presentation_not_requested', attachments: [] };
     const snapshot = _snapshotScreenshotViewerState();
     try {
         const element = capability.screenshotTarget === 'dvh'
-            ? await _ensureSessionDvhChart(planning)
+            ? await __tpAwait(() => (_ensureSessionDvhChart(planning)))
             : null;
         if (!element) throw new Error(`${capability.screenshotTarget}_chart_unavailable`);
-        const dataUrl = await _captureScreenshotDataUrl(capability.screenshotTarget, element);
-        if (!await _validateScreenshotDataUrl(dataUrl)) {
+        const dataUrl = await __tpAwait(() => (_captureScreenshotDataUrl(capability.screenshotTarget, element)));
+        if (!await __tpAwait(() => (_validateScreenshotDataUrl(dataUrl)))) {
             throw new Error(`blank_or_invalid:${capability.screenshotTarget}`);
         }
         const attachmentId = String(
@@ -11863,7 +12184,7 @@ async function _captureSessionContentVisual(target, planning, command, context, 
             context.responseLanguage,
         );
         const planningId = String(command?.planning_id || planning?.planning_id || '');
-        const response = await fetch(API + '/screenshot', {
+        const response = await __tpAwait(() => (fetch(API + '/screenshot', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -11892,10 +12213,11 @@ async function _captureSessionContentVisual(target, planning, command, context, 
                     planning_id: planningId,
                 },
             }),
-        });
-        const bodyText = await response.text();
+        })));
+        const bodyText = await __tpAwait(() => (response.text()));
         let payload = {};
-        try { payload = bodyText ? JSON.parse(bodyText) : {}; } catch (_) {}
+        try { payload = bodyText ? JSON.parse(bodyText) : {}; } catch (_) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };}
         if (!response.ok) throw new Error(payload.error || `upload_failed:${response.status}`);
         const screenshotUrl = payload.url || payload.screenshot_url || payload.path;
         if (!screenshotUrl) throw new Error('missing_screenshot_url');
@@ -11938,10 +12260,13 @@ async function _captureSessionContentVisual(target, planning, command, context, 
         returnedAttachment.visual_analysis = true;
         return { success: true, attachments: [returnedAttachment], target: capability.screenshotTarget };
     } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
         console.warn('[session-content] Native visual capture failed:', error);
         return { success: false, error: error?.message || String(error), attachments: [] };
     } finally {
-        await _restoreScreenshotViewerState(snapshot, null);
+        if (!__tpOwner || window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) {
+            await __tpAwait(() => (_restoreScreenshotViewerState(snapshot, null)));
+        }
     }
 }
 
@@ -12113,7 +12438,7 @@ window.presentSessionContent = async function presentSessionContent(command = {}
                 : analyze
                     ? (language === 'zh'
                         ? `\u5df2\u8bfb\u53d6\u5e76\u9644\u4e0a ${attachments.length} \u4e2a\u9009\u4e2d\u7684\u5df2\u4fdd\u5b58\u56fe\u50cf\uff0c\u6b63\u5728\u7ed3\u5408\u56fe\u50cf\u548c\u5f53\u524d Session \u6570\u636e\u8fdb\u884c\u89e3\u8bfb\u3002`
-                        : `Loaded ${attachments.length} selected saved image attachment(s) and preparing an evidence-grounded interpretation.`)
+                        : `Loaded ${attachments.length} selected image attachment(s); preparing an interpretation based on the saved evidence.`)
                 : (language === 'zh'
                     ? `\u5df2\u4ece\u5f53\u524d Session \u4e2d\u8bfb\u53d6 ${attachments.length} \u4e2a\u5df2\u4fdd\u5b58\u7684\u56fe\u50cf\u9644\u4ef6\u3002`
                     : `Loaded ${attachments.length} saved image attachment(s) from the current Session.`)
@@ -12417,10 +12742,14 @@ function _snapshotScreenshotViewerState() {
 }
 
 async function _restoreScreenshotViewerState(snapshot, restoreFocus) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const viewerState = typeof state !== 'undefined' && state ? state : {};
     try {
         if (typeof restoreFocus === 'function') restoreFocus();
     } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
         console.debug('[screenshot] object focus restore skipped:', error);
     }
     if (!snapshot) return;
@@ -12447,7 +12776,7 @@ async function _restoreScreenshotViewerState(snapshot, restoreFocus) {
     if (snapshot.panel && _activeScreenshotPanel() !== snapshot.panel) {
         _restoreScreenshotPanel(snapshot.panel);
     }
-    await _waitScreenshotFrames(3);
+    await __tpAwait(() => (_waitScreenshotFrames(3)));
     _restoreDataTreeUiState(snapshot.dataTree);
 }
 
@@ -12549,6 +12878,9 @@ function _monitorReturnPositionOverlay(evidence) {
 }
 
 async function _applyStructuredScreenshotPlan(plan, viewTarget) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     // Locate captures document the live presentation; never rewrite overlays for them.
     if (plan.visual_purpose !== 'locate') _applyScreenshotOverlayPlan(plan);
     const targetRefs = _screenshotTargetRefs(plan);
@@ -12588,7 +12920,7 @@ async function _applyStructuredScreenshotPlan(plan, viewTarget) {
         if (Number.isFinite(sliceIndex)) {
             sliceIndex = Math.round(sliceIndex);
             updateSlice(axis, sliceIndex);
-            const renderStable = await _wait2DScreenshotSliceStable(axis, sliceIndex);
+            const renderStable = await __tpAwait(() => (_wait2DScreenshotSliceStable(axis, sliceIndex)));
             focusResult = Object.assign({
                 version: 1,
                 status: 'resolved',
@@ -12620,7 +12952,7 @@ async function _applyStructuredScreenshotPlan(plan, viewTarget) {
             editEvidence: plan.monitor_edit_evidence || null,
         });
         if (typeof restoreFocus === 'function') {
-            await _waitScreenshotFrames(3);
+            await __tpAwait(() => (_waitScreenshotFrames(3)));
             return {
                 restoreFocus,
                 focusResult: restoreFocus.focusResult || {
@@ -12733,6 +13065,9 @@ function _screenshotFailureMessage(galleryContext, errorCode) {
 }
 
 async function _annotateRequiredScreenshotBeforeDisplay(attachment, context = {}) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const policy = String(
         attachment?.annotation_policy
         || attachment?.view_metadata?.annotation_policy
@@ -12755,7 +13090,7 @@ async function _annotateRequiredScreenshotBeforeDisplay(attachment, context = {}
         // source image is rendered into chat. A hidden multimodal response
         // may arrive later, but it must not decide whether a locating mark
         // exists at all.
-        const result = await window.applyVisualResponseAnnotations(
+        const result = await __tpAwait(() => (window.applyVisualResponseAnnotations(
             null,
             [attachment],
             {
@@ -12764,7 +13099,7 @@ async function _annotateRequiredScreenshotBeforeDisplay(attachment, context = {}
                 messageId: context.messageId || attachment.message_id || '',
                 responseLanguage: context.responseLanguage || attachment.response_language || '',
             },
-        );
+        )));
         const attachmentId = String(attachment.id || attachment.attachment_id || '');
         const updated = (Array.isArray(result?.updated) ? result.updated : []).find(item =>
             String(item?.id || item?.attachment_id || '') === attachmentId
@@ -12782,6 +13117,7 @@ async function _annotateRequiredScreenshotBeforeDisplay(attachment, context = {}
             console.warn('[screenshot] required locate annotation was not persisted:', result.skipped);
         }
     } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
         // Keep the immutable source available for diagnostics. The visual
         // child will report the unmarked/temporarily unavailable state rather
         // than fabricating a coordinate after a failed state check.
@@ -13020,8 +13356,13 @@ function _monitorEvidenceMatchesLiveGeometry(evidence) {
 }
 
 async function _interceptScreenshot(target, question, galleryContext, options = {}) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(options?.timepointScope);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     window.clearMonitorFocus?.();
     const context = galleryContext || {};
+    const timepointScope = options.timepointScope || context.timepointScope || __tpOwner;
+    context.timepointScope = timepointScope;
     const ownerSessionId = String(options.sessionId || context.sessionId || _activeApiSessionId());
     context.sessionId = ownerSessionId;
     context.requestId = String(options.requestId || context.requestId || '');
@@ -13041,6 +13382,7 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
     context.mode = plan.mode;
     context.layout = context._multiLocateSideBySide ? 'side-by-side' : plan.layout;
     const ownerStillActive = () => ownerSessionId === String(_activeApiSessionId())
+        && (!timepointScope || window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope))
         && (!options.monitorOnly || (trainingMonitorState.active
             && (!options.monitorRunId || options.monitorRunId === trainingMonitorState.runId)));
     const monitorCheckpointCurrent = () => !options.monitorOnly
@@ -13068,13 +13410,14 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
     const visualReadiness = uiOnlyCapture
         ? { ready: true, reason: 'ui_dom_capture' }
         : (typeof window.awaitWorkspaceVisualReady === 'function'
-            ? await window.awaitWorkspaceVisualReady(ownerSessionId, {
+            ? await __tpAwait(() => (window.awaitWorkspaceVisualReady(ownerSessionId, {
+                timepointScope,
                 timeoutMs: options.monitorOnly ? 10000 : 300000,
                 reason: 'screenshot-capture',
-            })
+            })))
             : { ready: true, legacy: true });
     if (visualReadiness?.ready === false) {
-        const liveUsable = _workspaceHasLiveVisibleClinicalState(
+        const liveUsable = !timepointScope && _workspaceHasLiveVisibleClinicalState(
             window._activeWorkspaceSnapshot, ownerSessionId);
         if (!liveUsable) {
             return {
@@ -13099,7 +13442,7 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
     const previousCapture = window._viewerCaptureTail || Promise.resolve();
     let releaseCapture;
     window._viewerCaptureTail = new Promise(resolve => { releaseCapture = resolve; });
-    await previousCapture.catch(() => {});
+    await __tpAwait(() => (previousCapture.catch(() => {})));
     if (!ownerStillActive() || !monitorCheckpointCurrent()) {
         releaseCapture();
         return {success:false, error:'monitor_checkpoint_superseded'};
@@ -13121,7 +13464,7 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
     let uploadedCount = 0;
     try {
         if (reportViews.length) {
-            const reportAttachments = await _appendPersistedReportFigures(plan, context, ownerSessionId);
+            const reportAttachments = await __tpAwait(() => (_appendPersistedReportFigures(plan, context, ownerSessionId)));
             if (!reportAttachments.length) throw new Error('report_figures_unavailable');
             attachments.push(...reportAttachments);
         }
@@ -13149,8 +13492,8 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                             if (!ownerStillActive() || !monitorCheckpointCurrent()) {
                                 throw new Error('monitor_checkpoint_superseded');
                             }
-                            await _waitScreenshotFrames(3);
-                            await new Promise(resolve => setTimeout(resolve, 250));
+                            await __tpAwait(() => (_waitScreenshotFrames(3)));
+                            await __tpAwait(() => (new Promise(resolve => setTimeout(resolve, 250))));
                             liveRefs = _monitorLiveCaptureRefs(requested);
                         }
                         requested.filter(ref => !liveRefs.includes(ref))
@@ -13166,11 +13509,11 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                         throw new Error('target_object_not_loaded_in_live_data_tree');
                     }
                     captureSpec.annotation_policy = plan.annotation_policy === 'none' ? 'none' : 'required';
-                    await _waitScreenshotFrames(3);
+                    await __tpAwait(() => (_waitScreenshotFrames(3)));
                 }
                 const element = viewTarget === 'dose-overview'
                     ? document.body
-                    : await _prepareScreenshotTarget(viewTarget, captureSpec);
+                    : await __tpAwait(() => (_prepareScreenshotTarget(viewTarget, captureSpec)));
                 if (!element) throw new Error(`target_not_found:${viewTarget}`);
                 if (['chat', 'monitor'].includes(plan.mode) && plan.visual_purpose === 'locate'
                     && viewTarget === 'viewer-3d' && _screenshotTargetRefs(plan).length) {
@@ -13188,19 +13531,19 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                 // target frames only after its canvas has a real aspect.  The
                 // previous implementation applied one global camera change
                 // before panel layout and reused it for unrelated captures.
-                const viewTransaction = await _applyStructuredScreenshotPlan(captureSpec, viewTarget);
+                const viewTransaction = await __tpAwait(() => (_applyStructuredScreenshotPlan(captureSpec, viewTarget)));
                 activeViewRestore = viewTransaction?.restoreFocus || null;
                 captureSpec.__focusResult = viewTransaction?.focusResult || null;
                 if (['chat', 'monitor'].includes(plan.mode) && plan.visual_purpose === 'locate'
                     && viewTarget === 'viewer-3d') {
                     restoreOccluders = _hideGuideOccludingCtvCapture(captureSpec, ownerStillActive);
-                    if (restoreOccluders) await _waitScreenshotFrames(3);
+                    if (restoreOccluders) await __tpAwait(() => (_waitScreenshotFrames(3)));
                 }
                 if (options.monitorOnly && viewTarget === 'viewer-3d' && options.monitorEditEvidence) {
                     const restoreArrows = _monitorReturnPositionOverlay(options.monitorEditEvidence);
                     const restoreCamera = activeViewRestore;
                     activeViewRestore = () => { try { restoreArrows?.(); } finally { restoreCamera?.(); } };
-                    await _waitScreenshotFrames(2);
+                    await __tpAwait(() => (_waitScreenshotFrames(2)));
                 }
                 if (['chat', 'monitor'].includes(plan.mode)
                     && plan.visual_purpose === 'locate'
@@ -13213,13 +13556,13 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                     );
                 }
                 if (viewTarget !== 'dose-overview') {
-                    await _prepareScreenshotTarget(viewTarget, captureSpec);
+                    await __tpAwait(() => (_prepareScreenshotTarget(viewTarget, captureSpec)));
                 }
-            const evidenceBundle = await _captureScreenshotEvidenceBundle(
+            const evidenceBundle = await __tpAwait(() => (_captureScreenshotEvidenceBundle(
                 viewTarget,
                 element,
                 captureSpec,
-            );
+            )));
             if (!monitorCheckpointCurrent()) return { success: false, error: 'monitor_checkpoint_superseded' };
             if (['chat', 'monitor'].includes(plan.mode)
                 && plan.visual_purpose === 'locate'
@@ -13250,7 +13593,7 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
             }
             const dataUrl = evidenceBundle?.dataUrl || null;
             if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
-            if (!await _validateScreenshotDataUrl(dataUrl)) {
+            if (!await __tpAwait(() => (_validateScreenshotDataUrl(dataUrl)))) {
                 throw new Error(`blank_or_invalid:${viewTarget}`);
             }
             if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
@@ -13297,7 +13640,7 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                     restoreVisibility = null;
                     restoreOccluders = null;
                     if (ownerSessionId === String(_activeApiSessionId())) {
-                        await _restoreScreenshotViewerState(snapshot, activeViewRestore);
+                        await __tpAwait(() => (_restoreScreenshotViewerState(snapshot, activeViewRestore)));
                         restoreMonitorAnnotations?.();
                     }
                     activeViewRestore = null;
@@ -13323,7 +13666,7 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                 ownerSessionId,
                 context.responseLanguage,
             );
-            const response = await fetch(API + '/screenshot', {
+            const response = await __tpAwait(() => (fetch(API + '/screenshot', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -13371,10 +13714,11 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                         monitor_spatial_labels:options.monitorOnly ? options.monitorSpatialLabels || [] : [],
                     },
                 }),
-            });
-            const bodyText = await response.text();
+            })));
+            const bodyText = await __tpAwait(() => (response.text()));
             let payload = {};
-            try { payload = bodyText ? JSON.parse(bodyText) : {}; } catch (_) {}
+            try { payload = bodyText ? JSON.parse(bodyText) : {}; } catch (_) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };}
             if (!response.ok) throw new Error(payload.error || `upload_failed:${response.status}`);
             const screenshotUrl = payload.url || payload.screenshot_url || payload.path;
             if (!screenshotUrl) throw new Error('missing_screenshot_url');
@@ -13443,10 +13787,10 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                         || captureSpec.preserveCurrentView === true,
                 },
             );
-            const displayAttachment = await _annotateRequiredScreenshotBeforeDisplay(
+            const displayAttachment = await __tpAwait(() => (_annotateRequiredScreenshotBeforeDisplay(
                 uploadedAttachment,
                 context,
-            );
+            )));
             const attachment = _appendScreenshotToGallery(
                 screenshotUrl,
                 viewTarget,
@@ -13456,17 +13800,18 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
             );
             if (attachment) attachments.push(attachment);
             } finally {
-                if (ownerSessionId === String(_activeApiSessionId()) && typeof activeViewRestore === 'function') {
+                if (ownerStillActive() && typeof activeViewRestore === 'function') {
                     try { activeViewRestore(); } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
                         console.debug('[screenshot] per-view focus restore skipped:', error);
                     }
                 }
                 activeViewRestore = null;
                 try {
-                    if (restoreVisibility) restoreVisibility();
+                    if (ownerStillActive() && restoreVisibility) restoreVisibility();
                 } finally {
                     restoreVisibility = null;
-                    if (restoreOccluders) restoreOccluders();
+                    if (ownerStillActive() && restoreOccluders) restoreOccluders();
                     restoreOccluders = null;
                 }
             }
@@ -13481,6 +13826,7 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
             plan,
         };
     } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
         if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
         const errorCode = error?.message || String(error);
         console.warn('[screenshot] capture failed for the owning reply:', errorCode);
@@ -13495,11 +13841,11 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
     } finally {
         // Never apply the previous case's camera/slices/DOM to a new Session.
         try {
-            if (!presentationRestored && ownerSessionId === String(_activeApiSessionId())) {
-                await _restoreScreenshotViewerState(snapshot, activeViewRestore);
+            if (!presentationRestored && ownerStillActive()) {
+                await __tpAwait(() => (_restoreScreenshotViewerState(snapshot, activeViewRestore)));
             }
         } finally {
-            restoreMonitorAnnotations?.();
+            if (ownerStillActive()) restoreMonitorAnnotations?.();
             if (!presentationRestored && presentationToken !== null) window.unlockWorkspacePresentationWrites?.(presentationToken);
             releaseCapture();
         }

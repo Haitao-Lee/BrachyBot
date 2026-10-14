@@ -32,7 +32,7 @@
         const n = ordinal(row.needle_id), s = ordinal(row.source_object_id);
         const identity = row.kind === 'seed_tip_distance'
             ? text(`针 ${n} · 粒 ${s}`, `N${n} · S${s}`)
-            : text(`针 ${n} · 导板入口`, `N${n} · Guide mouth`);
+            : text(`针 ${n} · 导板入口`, `N${n} · Guide channel entry`);
         const caution=(row.geometry_flags||[]).some(f=>['off_axis','outside_insertion_span','beyond_needle_tip'].includes(f)) ? '⚠ ' : '';
         return `${caution}${row.custom_name || identity}${full ? text(' · 距针尖 ', ' · From tip ') : '  '}${Number(row.tip_distance_mm).toFixed(1)} mm`;
     }
@@ -67,8 +67,12 @@
                 id:source.id,objectId:`annotation:${source.id}`,family:'annotation',sessionId:c.session,
             });
             const previous = restored ? {...local,...restored} : local;
+            // These derived labels exist only in 3D. Migrate old snapshots
+            // conservatively, then keep master and per-view state coherent.
+            const visible = previous.visible !== false && previous.visible3D !== false
+                && (previous.visible === true || previous.visible3D === true);
             accepted.push({...source, session_id:c.session,
-                visible:previous.visible ?? true, visible3D:previous.visible3D ?? true, visible2D:false,
+                visible, visible3D:visible, visible2D:false,
                 opacity:Number.isFinite(previous.opacity) ? Math.max(0,Math.min(1,previous.opacity)) : 1,
                 color:color(previous.color || source.color), ...(previous.custom_name ? {custom_name:previous.custom_name} : {})});
         }
@@ -97,8 +101,14 @@
     function setPresentation(id, patch) {
         const row = rows().find(r=>r.id === String(id));
         if (!row) return false;
-        if (typeof patch.visible === 'boolean') row.visible = patch.visible;
-        if (typeof patch.visible3D === 'boolean') row.visible3D = patch.visible3D;
+        if (typeof patch.visible === 'boolean' || typeof patch.visible3D === 'boolean') {
+            const visible = patch.visible !== false && patch.visible3D !== false;
+            setVisibility(row,visible);
+            // Show the requested label even when other eligible labels have
+            // been clustered. Do not move the camera or reveal its geometry.
+            if (visible) focusId=row.id;
+            else if (focusId===row.id) focusId='';
+        }
         if (Number.isFinite(patch.opacity)) row.opacity = Math.max(0,Math.min(1,patch.opacity));
         if (patch.color && /^#[0-9a-f]{6}$/i.test(patch.color)) row.color = patch.color;
         if (typeof patch.custom_name === 'string') row.custom_name=patch.custom_name.trim().slice(0,80);
@@ -106,13 +116,19 @@
         persist('viewer.planning_distance_presentation');
         return true;
     }
+    function setVisibility(row, visible) {
+        row.visible=!!visible;
+        row.visible3D=!!visible;
+        row.visible2D=false;
+    }
     function rememberPresentation(row) {
         window.updateWorkspacePresentationForNode?.({id:row.id,objectId:`annotation:${row.id}`,family:'annotation',sessionId:session()},
             {visible:row.visible,visible3D:row.visible3D,visible2D:false,color:row.color,opacity:row.opacity});
     }
     function batch(kind, needleId, visible) {
         rows().filter(r=>r.kind === kind && (!needleId || r.needle_id === needleId)).forEach(r=>{
-            r.visible = visible; rememberPresentation(r);
+            setVisibility(r,visible); rememberPresentation(r);
+            if (!visible && focusId===r.id) focusId='';
         });
         persist('viewer.planning_distance_group');
     }
@@ -171,11 +187,11 @@
         close.setAttribute('aria-label',text('关闭','Close')); close.onclick=()=>{panel.remove();panel=null;};
         header.append(heading,close); panel.append(header);
         const note=document.createElement('p');note.className='planning-distance-list-note';
-        note.textContent=text('针尖为 0；粒子按中心轴向投影计距，导板按外侧孔口轴心计距。','Tip = 0. Seed distances use axial centre projections; guide distances use outer-mouth axis centres.');
+        note.textContent=text('针尖为 0；粒子按中心轴向投影计距，导板按外侧孔口轴心计距。','The needle tip is the zero reference. Seed distances are axial projections to the seed centers. Guide distances are measured from the center of the outer channel opening.');
         panel.append(note);
         rows().filter(r=>!needleId || r.needle_id === needleId).sort((a,b)=>a.needle_id.localeCompare(b.needle_id,undefined,{numeric:true}) || a.tip_distance_mm-b.tip_distance_mm).forEach(row=>{
             const item=document.createElement('div'); item.className='planning-distance-list-row';
-            const check=document.createElement('input'); check.type='checkbox'; check.checked=row.visible !== false;
+            const check=document.createElement('input'); check.type='checkbox'; check.checked=row.visible !== false && row.visible3D !== false;
             check.setAttribute('aria-label',label(row,true)); check.onchange=()=>setPresentation(row.id,{visible:check.checked});
             const select=document.createElement('button'); select.type='button'; select.textContent=label(row,true);
             select.onclick=()=>{focus(row.id);window.handleTreeItemClick?.(row.id,{shiftKey:false,ctrlKey:false,metaKey:false});};
@@ -230,15 +246,15 @@
             }
             if (!box) { const list=hidden.get(p.row.needle_id)||[];list.push(p);hidden.set(p.row.needle_id,list);continue; }
             placed.push(box);
-            const g=element('g',{class:'planning-distance-tag',role:'button',tabindex:0,'aria-label':label(p.row,true),opacity:p.row.opacity});
+            const g=element('g',{class:'planning-distance-tag',role:'button',tabindex:0,'aria-label':label(p.row,true),'data-annotation-id':p.row.id,opacity:p.row.opacity});
             g.append(element('path',{d:`M ${p.x} ${p.y} L ${box.x+box.w/2} ${box.y+box.h/2}`,stroke:color(p.row.color),fill:'none','stroke-width':1.2,opacity:.82,class:'planning-distance-leader'}));
             g.append(element('circle',{cx:p.x,cy:p.y,r:p.row.id===focusId?6:3,fill:color(p.row.color),stroke:p.row.id===focusId?'#fff':'none'}));
             g.append(element('rect',{x:box.x,y:box.y,width:box.w,height:box.h,rx:5,class:'planning-distance-label-bg',stroke:color(p.row.color)}));
             g.append(element('text',{x:box.x+9,y:box.y+17,fill:'#f8fafc'},content));
             const tooltip=element('title',{},label(p.row,true)+(p.row.kind==='guide_entry_tip_distance'
-                ? text('；生成套筒外端孔口轴心，非皮肤入点。','; generated sleeve outer-mouth axis centre, not the skin entry.')
+                ? text('；生成套筒外端孔口轴心，非皮肤入点。','; center of the outer opening of the generated guide sleeve, not the skin entry point.')
                 : text(`；粒子中心的轴向投影距离；离轴 ${Number(p.row.axis_offset_mm||0).toFixed(2)} mm。`,
-                       `; axial projection to seed centre; axis offset ${Number(p.row.axis_offset_mm||0).toFixed(2)} mm.`)));
+                       `; axial distance to the seed center; off-axis distance ${Number(p.row.axis_offset_mm||0).toFixed(2)} mm.`)));
             g.append(tooltip);g.onclick=()=>{focus(p.row.id);openList(p.row.needle_id);};g.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();focus(p.row.id);openList(p.row.needle_id);}};
             overlay.append(g);layout.push({row:p.row,box,anchor:{x:p.x,y:p.y},text:content});
         }
@@ -265,7 +281,7 @@
         for (const kind of ['guide_entry_tip_distance','seed_tip_distance']) {
             const family=records.filter(r=>r.kind===kind); if(!family.length)continue;
             const title=kind==='seed_tip_distance'?text('粒子距针尖','Seeds · From needle tip')
-                : text('导板入口距针尖','Guide mouths · From needle tip')+` · v${family[0].guide_version}`;
+                : text('导板入口距针尖','Guide channel entries · Distance to needle tip')+` · v${family[0].guide_version}`;
             html+=detail(kind,'planning-distance-tree')+`<summary>${escape(title)} <span>(${family.length})</span></summary><div class="planning-distance-tree-actions">`;
             for(const visible of [true,false])html+=`<button type="button" onclick="setPlanningDistanceAnnotationGroup('${kind}',null,${visible})">${text(visible?'全部显示':'全部隐藏',visible?'Show all':'Hide all')}</button>`;
             html+='</div>';
@@ -273,7 +289,7 @@
                 const children=family.filter(r=>r.needle_id===needleId);
                 html+=detail(kind+'|'+needleId)+`<summary>${escape(text('针道 ','Needle ')+ordinal(needleId))} <span>(${children.length})</span></summary>`;
                 children.forEach(row=>{
-                    const name=row.custom_name || (row.kind==='seed_tip_distance' ? text('粒子 ','Seed ')+ordinal(row.source_object_id) : text('导板入口','Guide mouth'));
+                    const name=row.custom_name || (row.kind==='seed_tip_distance' ? text('粒子 ','Seed ')+ordinal(row.source_object_id) : text('导板入口','Guide channel entry'));
                     html+=`<div class="artifact-tree-leaf" data-artifact-search="${escape([label(row,true),row.needle_id,row.source_object_id,row.id].join(' ').toLowerCase())}">`
                         +renderItem(row.id,{...row,label:name,fullLabel:label(row,true)},`${Number(row.tip_distance_mm).toFixed(1)} mm`)+`</div>`;
                 }); html+='</details>';

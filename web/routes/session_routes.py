@@ -12,6 +12,7 @@ from web.server_support import require_api_key
 from web.workspace_store import (
     SESSION_ARCHIVE_AFTER_DAYS,
     WorkspaceArchived,
+    WorkspaceArchiveUnavailable,
     WorkspaceError,
     WorkspaceLeaseConflict,
     WorkspaceNotFound,
@@ -34,6 +35,19 @@ def register_session_routes(
     from the signed cookie and verifies ownership before touching workspace
     metadata or files.
     """
+
+    from web.routes.timepoint_routes import register_timepoint_routes
+    register_timepoint_routes(app, store)
+    from web.routes.implant_routes import register_implant_routes
+    register_implant_routes(app, store)
+    from web.routes.timepoint_image_routes import register_timepoint_image_routes
+    register_timepoint_image_routes(app, store)
+    from web.routes.guide_registration_routes import register_guide_registration_routes
+    register_guide_registration_routes(app, getattr(store, "raw", store))
+    from web.routes.intraoperative_routes import register_intraoperative_routes
+    register_intraoperative_routes(app, store)
+    from web.routes.timepoint_bundle_routes import register_timepoint_bundle_routes
+    register_timepoint_bundle_routes(app, store)
 
     def user_or_error():
         user = current_user(store)
@@ -215,6 +229,10 @@ def register_session_routes(
             snapshot = _snapshot_with_newest_bridge(
                 user["id"], entry.id, store.load_snapshot(user["id"], entry.id),
             )
+        except WorkspaceArchiveUnavailable:
+            from web.timepoint_messages import request_timepoint_language, timepoint_message
+            packet = timepoint_message('archive_storage_unavailable', request_timepoint_language())
+            return jsonify(error=packet['message'], **packet), 503
         except WorkspaceLeaseConflict as exc:
             return jsonify({"error": str(exc), "code": "workspace_locked"}), 409
         except WorkspaceArchived as exc:
@@ -378,10 +396,11 @@ def register_session_routes(
         except WorkspaceError as exc:
             return jsonify({"error": str(exc)}), 413 if "quota" in str(exc).lower() else 400
         relative = path.relative_to(store.workspace_root(user["id"], session_id) / "artifacts").as_posix()
+        from web.timepoint_http import scoped_download_url
         return jsonify({
             "success": True,
             "path": str(path),
-            "download_url": f"/api/sessions/{session_id}/artifacts/{relative}",
+            "download_url": scoped_download_url(f"/api/sessions/{session_id}/artifacts/{relative}"),
         }), 201
 
     @app.route("/api/workspace/snapshot", methods=["GET"])

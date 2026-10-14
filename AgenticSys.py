@@ -737,6 +737,12 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         from tool_factory.dose_eval import DoseEvaluationTool
         from tool_factory.seed_plan import SeedPlanningTool
         from tool_factory.seed_seg import SeedSegmentationTool
+        from tool_factory.timepoint_inspector import TimepointInspectorTool
+        self.registry.register(TimepointInspectorTool(self))
+        from tool_factory.timepoint_controller import TimepointControllerTool
+        self.registry.register(TimepointControllerTool(self))
+        from tool_factory.timepoint_images import TimepointImagesTool
+        self.registry.register(TimepointImagesTool(self))
         from tool_factory.traj_plan import TrajectoryPlanningTool
 
         try:
@@ -1171,7 +1177,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 return tool_calls
             allowed_params = {
                 key: provider_params[key]
-                for key in ("planning_id", "reason", "compare_with_previous")
+                for key in ("planning_id", "reason", "compare_with_previous", "source_set", "expected_observation_revision_id")
                 if key in provider_params
             }
             return [{
@@ -1180,6 +1186,12 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 "params": allowed_params,
             }]
 
+        if any(isinstance(call, dict) and call.get("tool") == "planning_pipeline"
+               and isinstance(call.get("params"), dict) and call["params"].get("timepoint_id") for call in tool_calls):
+            # The detached target checks its own prerequisites. Injecting
+            # default-session segmentation/guide calls here would change the
+            # wrong timepoint while claiming to recover the named one.
+            return tool_calls
         if not tool_calls:
             return tool_calls
 
@@ -1478,6 +1490,69 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         return candidates, context
 
     def _execute_tool_with_memory(
+        self, tool_name: str, params: Dict, progress_callback=None,
+        step_callback=None, preview_callback=None,
+    ) -> Any:
+        """Keep every clinical tool on its submission-owned target."""
+        from web.timepoint_chat import run_scoped_tool
+        from web.timepoints import TimepointError
+        from web.workspace_store import WorkspaceError
+        from utils.tool_security import tool_scope
+        runtime = getattr(self, "_workspace_scoped_chat_runtime", None)
+        try:
+            from agent_runtime.timepoint_tools import owned_execution_active
+            authorization = self._current_execution_authorization()
+            if runtime is not None and authorization is not None and not owned_execution_active(self) \
+                    and not authorization.tool_allowed(tool_name, params):
+                return runtime.result_envelope(ToolResult(False,
+                    error="This operation has no execution grant for the current human turn.",
+                    metadata={"code": "timepoint_execution_not_authorized", "published_to_timepoint": False}))
+            dispatched = run_scoped_tool(self, tool_name, params,
+                lambda view, name, arguments, **callbacks: BrachyAgent._execute_tool_with_memory(
+                    view, name, arguments, **callbacks), progress_callback=progress_callback,
+                step_callback=step_callback, preview_callback=preview_callback)
+            if dispatched is not None:
+                return dispatched
+            arguments = dict(params) if runtime is not None else params
+            if runtime is not None:
+                if tool_name != "timepoint_controller" and not (tool_name == "surgical_guide" and
+                        arguments.get("action") in {"manifest", "estimate_placement", "validate_placement"}):
+                    arguments.pop("timepoint_id", None)
+                runtime.before_tool(tool_name, arguments)
+                from agent_runtime.timepoint_tools import owned_tool_arguments
+                arguments = owned_tool_arguments(self, tool_name, arguments)
+                # A legacy browser preview knows Session identity only. Never
+                # paint a different timepoint into that same scene.
+                if preview_callback and getattr(preview_callback, "supports_timepoint_scope", False) is not True:
+                    preview_callback = None
+            from agent_runtime.timepoint_tools import owned_tool_execution
+            from web.timepoint_http import HttpTimepointBinding, bound_request
+            from contextlib import nullcontext
+            binding = (HttpTimepointBinding(runtime.scope.owner_id, runtime.scope.session_id,
+                       runtime.scope.timepoint_id) if runtime is not None else None)
+            with tool_scope(getattr(self, "config", None)), owned_tool_execution(self), \
+                    (bound_request(binding) if binding is not None else nullcontext()):
+                result = BrachyAgent._execute_tool_with_memory_unscoped(self, tool_name, arguments,
+                    progress_callback=progress_callback, step_callback=step_callback,
+                    preview_callback=preview_callback)
+            if runtime is not None and tool_name == "timepoint_controller":
+                # A soft delete deliberately ends this captured lifecycle. It
+                # is a catalog operation, not a clinical-memory checkpoint.
+                return runtime.result_envelope(result)
+            return runtime.commit_tool(result) if runtime is not None else result
+        except (TimepointError, WorkspaceError) as exc:
+            if runtime is not None:
+                runtime.rollback_tool()
+            from web.timepoint_messages import timepoint_error
+            scope = (getattr(self, "_active_turn_context", None) or {}).get("timepoint_scope")
+            packet, _ = timepoint_error(exc, getattr(scope, "ui_language", "en"))
+            result = ToolResult(success=False, error=packet["error"], message=packet["error"],
+                metadata={"code": packet["code"], "message_code": packet["message_code"],
+                    "timepoint_id": params.get("timepoint_id") or getattr(scope, "timepoint_id", None),
+                    "target_confirmation": getattr(exc, "confirmation", None), "published_to_timepoint": False})
+            return runtime.result_envelope(result) if runtime is not None else result
+
+    def _execute_tool_with_memory_unscoped(
         self,
         tool_name: str,
         params: Dict,
@@ -1511,6 +1586,17 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         # A provider, normalizer, recovery branch or direct shortcut cannot
         # widen the immutable current-human scope. Non-chat API callers have
         # no turn ledger and keep their existing backend permission contract.
+        runtime = getattr(self, "_workspace_scoped_chat_runtime", None)
+        captured = (getattr(self, "_active_turn_context", None) or {}).get("timepoint_scope")
+        if captured is not None and runtime is None:
+            from web.timepoints import TimepointConflict
+            raise TimepointConflict("Clinical execution requires the captured detached target view")
+        if runtime is not None:
+            runtime.admit_tool(tool_name, params)
+            from agent_runtime.timepoint_tools import execute_owned_planning_steps, DIRECT_PLANNING_STEPS
+            if tool_name in DIRECT_PLANNING_STEPS:
+                return execute_owned_planning_steps(self, tool_name, params,
+                    step_callback=step_callback, preview_callback=preview_callback)
         authorization = self._current_execution_authorization()
         if authorization is not None and not authorization.effect_allowed(tool_name, params):
             return ToolResult(success=False, error="Operation is outside the current request scope; it was not executed.")
@@ -1519,6 +1605,33 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             validate_tool_paths(tool_name, params, config=getattr(self, "config", None))
         except (PermissionError, ValueError, OSError) as exc:
             return ToolResult(success=False, error=str(exc))
+        if tool_name in {"timepoint_inspector", "timepoint_controller"} and runtime is not None:
+            from tool_factory.timepoint_inspector import TimepointInspectorTool
+            from tool_factory.timepoint_controller import TimepointControllerTool
+            tool = TimepointInspectorTool(self) if tool_name == "timepoint_inspector" else TimepointControllerTool(self)
+            result = self.tool_gateway.execute(self.registry, tool_name, params,
+                lambda: tool.execute(**params))
+            self.memory.log_tool_call(tool_name, params, result)
+            return result
+        if (tool_name == "seed_segmentation" and getattr(self, "_workspace_store", None) is not None
+                and params.get("method") != "legacy_threshold"):
+            from web.implant_workspace import execute_bound_implant
+            arguments = {key: value for key, value in params.items() if key not in {"implant_service", "implant_input", "review_request", "image"}}
+            result = self.tool_gateway.execute(self.registry, tool_name, arguments,
+                lambda: execute_bound_implant(self, arguments))
+            self.memory.log_tool_call(tool_name, arguments, result)
+            return result
+        if tool_name == "planning_pipeline" and params.get("timepoint_id"):
+            # A named workspace has its own detached clinical inputs and
+            # publication. Do not inject mounted/default CT, mutate default
+            # aliases, or run legacy root-memory recovery after it returns.
+            from tool_factory.seed_plan.planning_pipeline import PlanningPipelineTool
+            result = self.tool_gateway.execute(self.registry, tool_name, params,
+                lambda: PlanningPipelineTool().execute(_agent=self, **dict(params),
+                    step_callback=step_callback, preview_callback=preview_callback),
+                workspace_revision=(self.memory.get_ui_state() or {}).get("workspace_revision"))
+            self.memory.log_tool_call(tool_name, params, result)
+            return result
         # Gate on the selected tool's real data dependencies BEFORE injecting
         # arrays. A read-only dose/report question can use saved metadata while
         # clinical computation waits on the task-owned, cancellable waiter.
@@ -1826,7 +1939,9 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 injected.pop("oar_mask", None)
             for key, value in injected.items():
                 params.setdefault(key, value)
-        elif tool_name == "seed_segmentation" and "image" not in params:
+        elif (tool_name == "seed_segmentation" and "image" not in params
+              and params.get("method", "legacy_threshold") == "legacy_threshold"
+              and params.get("action", "detect") == "detect"):
             if ct_image is not None:
                 params["image"] = ct_image
 
@@ -2186,108 +2301,12 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 # DVH, and metric aliases itself.  Keep the conversation state
                 # explicit so the Viewer/session refresh path can react even
                 # when the request came from chat instead of a manual route.
-                self.memory.conversation_state["planning_completed"] = True
+                if metadata.get("source_set") != "implanted":
+                    self.memory.conversation_state["planning_completed"] = True
                 self.memory.store("last_dose_recompute_source", "chat")
             elif tool_name == "dose_evaluation":
-                # BUG FIX 2026-06-16 (clinical eval scaling): the
-                # dose_evaluation result has metadata shaped like
-                #   {metrics: {CTV: {V100, V150, D90, D2, Dmean, ...},
-                #            colon: {Dmax, D2cc, ...}, ...},
-                #    plan_score: 73, prescribed_dose: 1.0, ...}
-                # but state.metrics was being set to result.metadata
-                # directly, which means the nested CTV metrics were
-                # at state.metrics.metrics.CTV.V100 — NOT at
-                # state.metrics.v100. The clinical eval panel
-                # reads state.metrics.v100 etc., so it found
-                # nothing for the top-level fields and instead
-                # rendered organ-level data (e.g. colon.Dmax=127)
-                # as if it were a plan metric — producing the
-                # wildly wrong values the user reported (Score
-                # 7307 instead of 73, D2 2874 Gy instead of 280,
-                # HI 93.64 instead of 0.42).
-                #
-                # FIX: store a FLAT dict at state.metrics so the
-                # clinical eval can read top-level v100/d90/d2/etc.
-                # directly. We pull:
-                #   - plan_score, prescribed_dose from metadata
-                #   - V100/V150/D90/D2/Dmean/ci/hi from the CTV
-                #     sub-dict (the target structure)
-                #   - oar_metrics map (organ name → {Dmax, D2cc, ...})
-                _flat = {}
-                _meta = result.metadata or {}
-                # Top-level scalars
-                for k in ("plan_score", "prescribed_dose", "voxel_volume_cc"):
-                    if k in _meta:
-                        _flat[k] = _meta[k]
-                # Nested structure metrics: find the target structure
-                # (the one with type=="target") and flatten its keys.
-                _nested = _meta.get("metrics", {}) or {}
-                _target_name = None
-                # If result.data has structure_type info, use it;
-                # otherwise default to 'CTV' (the most common target).
-                if isinstance(result.data, dict):
-                    _stype = (result.data.get("structure_type") or {})
-                    for _n, _t in _stype.items():
-                        if (_t or "").lower() == "target":
-                            _target_name = _n
-                            break
-                if not _target_name:
-                    _target_name = "CTV" if "CTV" in _nested else (next(iter(_nested), None))
-                _target = _nested.get(_target_name, {}) if _target_name else {}
-                # Map nested metric names (V100, D90, D2cc, ...) to
-                # the keys the clinical eval panel expects (v100, d90,
-                # d2cc, ...). D90 → d90, V100 → v100, etc.
-                for _n_k, _v in _target.items():
-                    if _n_k in ("dvh", "total_voxels", "volume_cc", "error"):
-                        continue
-                    _flat[_n_k.lower()] = _v
-                # Build oar_metrics map: name → {Dmax, D2cc, ...}
-                _oar = {}
-
-                def _oar_volume_fraction(value):
-                    """Return one canonical OAR volume fraction (0..1).
-
-                    The dose evaluator contract stores Vx as a fraction. Older
-                    evaluators occasionally returned percentages, so normalize
-                    those at this boundary and never multiply an already
-                    normalized value into an impossible percentage later.
-                    Values above 100% are invalid physical data, not a new
-                    unit; preserve them as missing and retain a warning in
-                    the server log rather than inventing a clinical value.
-                    """
-                    try:
-                        number = float(value or 0.0)
-                    except (TypeError, ValueError):
-                        return 0.0
-                    if not math.isfinite(number) or number < 0.0:
-                        return 0.0
-                    if number <= 1.0:
-                        return number
-                    if number <= 100.0:
-                        return number / 100.0
-                    logger.warning("Invalid OAR Vx value %.4f; omitting from metrics", number)
-                    return None
-
-                for _n, _m in _nested.items():
-                    if _n == _target_name:
-                        continue
-                    if not isinstance(_m, dict) or "error" in _m:
-                        continue
-                    _oar[_n] = {
-                        "dmax": _m.get("Dmax"),
-                        "d2cc": _m.get("D2cc"),
-                        "d1cc": _m.get("D1cc"),
-                        "d0_1cc": _m.get("D0.1cc"),
-                        "dmean": _m.get("Dmean"),
-                        "v100": _oar_volume_fraction(_m.get("V100")),
-                        "v150": _oar_volume_fraction(_m.get("V150")),
-                        "v200": _oar_volume_fraction(_m.get("V200")),
-                    }
-                _flat["oar_metrics"] = _oar
-                # Keep the same explicit contract as planning_pipeline and
-                # manual AI dose recomputation: Vx values are fractions.
-                _flat["volume_metric_units"] = "fraction"
-                self.memory.store("metrics", _flat)
+                from web.dose_evaluation_state import store_agent_dose_evaluation
+                store_agent_dose_evaluation(self.memory, result)
 
             # This execution path is the canonical owner of successful LLM
             # tool-call state. Callers must not store the same result again:
@@ -2415,6 +2434,14 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         # Execute
         result = self.registry.execute(tool_name, **params)
         meta = result.metadata or {}
+        if meta.get("timepoint_id") is not None:
+            # The scoped executor already committed to the addressed state.
+            # The shared conversation must not turn that into default-plan
+            # aliases or a duplicate Planning run.
+            from web.timepoints import default_timepoint_id
+            current = (getattr(self, "config", {}) or {}).get("_workspace_timepoint_id") or default_timepoint_id(self.memory.session_id)
+            if meta["timepoint_id"] != current:
+                return result
 
         # Validate
         validator = self._VALIDATORS.get(tool_name)
@@ -2650,6 +2677,11 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             logger.debug("[STORE] Skipping %s: not successful", tool_name)
             return
         meta = result.metadata or {}
+        if meta.get("timepoint_id") is not None:
+            from web.timepoints import default_timepoint_id
+            current = (getattr(self, "config", {}) or {}).get("_workspace_timepoint_id") or default_timepoint_id(self.memory.session_id)
+            if meta["timepoint_id"] != current:
+                return
         logger.debug("[STORE] %s: metadata keys=%s", tool_name, list(meta.keys()))
         ct_image = self.memory.retrieve("ct_image")
         if (
@@ -2829,6 +2861,9 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 self.memory.store("dose_distribution", meta["dose_distribution"])
         elif tool_name == "trajectory_planning" and "trajectories" in meta:
             self.memory.store("trajectories", meta["trajectories"])
+        elif tool_name == "dose_evaluation":
+            from web.dose_evaluation_state import store_agent_dose_evaluation
+            store_agent_dose_evaluation(self.memory, result)
 
         # Keep every planning invocation in its own session-owned run.  The
         # active legacy aliases above remain available to existing consumers,

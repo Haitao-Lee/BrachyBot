@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "scope": "Synthetic isolated dependency replay only; not real-case, browser or clinical validation",
+  "dependencies": {
+    "tool_factory/seed_plan/planning_pipeline.py": "4fc4b4669f58b724a5a916255609bcc2bfd6bddcb88fc9cb7351b34487df0cd9",
+    "plans/guide_geometry.py": "fbd6d7531a1e060988e730899f530882010d9cb5fb0350fd672ea97f675de770",
+    "web/planning_runs.py": "4c331c6fe0d2fd77d619d0f70361e203b759ebc9ccc9b82c2360c92c308df54d",
+    "web/surgical_guide.py": "fa66ef5c67ef9cc76fc62e64341f75c458d0b0a01ff5037877e0a3eca9eefc06"
+  },
+  "before_pipeline_sha256": "4999ca8ad44d549cae91e861e9090c8d2f282857e77486953b2a64e31d8e6949",
+  "direct_guide_dependency_function": {
+    "before_sha256": "66973a3ede02a03fbfea7d560a1f96b88ca94071b84a666f579cc1f1c2602466",
+    "after_sha256": "66973a3ede02a03fbfea7d560a1f96b88ca94071b84a666f579cc1f1c2602466"
+  },
+  "runner_sha256": "4c4c9410ae2462fa5844689bca77bfc0fa5d6a3731de3806b7383e0f216bde15",
+  "python": "3.12.2 | packaged by conda-forge | (main, Feb 16 2024, 20:50:58) [GCC 12.3.0]",
+  "pairs": [
+    {
+      "needle_count": 1,
+      "resolution_mm": 0.2,
+      "repeat": 0,
+      "geometry_and_qa_match": true,
+      "before": {
+        "dependency_sha256": "4999ca8ad44d549cae91e861e9090c8d2f282857e77486953b2a64e31d8e6949",
+        "seconds": 20.82422088016756,
+        "input_sha256": "1860a310fff53a14b6786bd17a73e2244eb6468c7d3757e17633ee08cdbb1363",
+        "hashes": {
+          "vertices": "d65c081ce83d7abe23ce01df51fe8ef163a9b3359ce4e3339be88238ab3f139c",
+          "faces": "20b99ad42b7b19a176f9e1d84f0fe0b77bb36965d0595ae21dd1cc7930dc2fd2",
+          "needle_paths": "ad41789581e0c13452cd4496d3795fb57b0bad2b4a829314de99b51923d9e5e5",
+          "auxiliary_holes": "8d651491e0cfb7d3e24845be3eb976f2d04b1a7d443f43658080e229e88a5fac"
+        },
+        "qa_sha256": "7db38b36defe190b3c129033440a42dc99854f41f82dcb8de9c01f48703c72e0",
+        "watertight": true,
+        "selected_needle_count": 1
+      },
+      "after": {
+        "dependency_sha256": "4fc4b4669f58b724a5a916255609bcc2bfd6bddcb88fc9cb7351b34487df0cd9",
+        "seconds": 21.00321245798841,
+        "input_sha256": "1860a310fff53a14b6786bd17a73e2244eb6468c7d3757e17633ee08cdbb1363",
+        "hashes": {
+          "vertices": "d65c081ce83d7abe23ce01df51fe8ef163a9b3359ce4e3339be88238ab3f139c",
+          "faces": "20b99ad42b7b19a176f9e1d84f0fe0b77bb36965d0595ae21dd1cc7930dc2fd2",
+          "needle_paths": "ad41789581e0c13452cd4496d3795fb57b0bad2b4a829314de99b51923d9e5e5",
+          "auxiliary_holes": "8d651491e0cfb7d3e24845be3eb976f2d04b1a7d443f43658080e229e88a5fac"
+        },
+        "qa_sha256": "7db38b36defe190b3c129033440a42dc99854f41f82dcb8de9c01f48703c72e0",
+        "watertight": true,
+        "selected_needle_count": 1
+      }
+    },
+    {
+      "needle_count": 1,
+      "resolution_mm": 0.2,
+      "repeat": 1,
+      "geometry_and_qa_match": true,
+      "before": {
+        "dependency_sha256": "4999ca8ad44d549cae91e861e9090c8d2f282857e77486953b2a64e31d8e6949",
+        "seconds": 22.30870226211846,
+        "input_sha256": "1860a310fff53a14b6786bd17a73e2244eb6468c7d3757e17633ee08cdbb1363",
+        "hashes": {
+          "vertices": "d65c081ce83d7abe23ce01df51fe8ef163a9b3359ce4e3339be88238ab3f139c",
+          "faces": "20b99ad42b7b19a176f9e1d84f0fe0b77bb36965d0595ae21dd1cc7930dc2fd2",
+          "needle_paths": "ad41789581e0c13452cd4496d3795fb57b0bad2b4a829314de99b51923d9e5e5",
+          "auxiliary_holes": "8d651491e0cfb7d3e24845be3eb976f2d04b1a7d443f43658080e229e88a5fac"
+        },
+        "qa_sha256": "7db38b36defe190b3c129033440a42dc99854f41f82dcb8de9c01f48703c72e0",
+        "watertight": true,
+        "selected_needle_count": 1
+      },
+      "after": {
+        "dependency_sha256": "4fc4b4669f58b724a5a916255609bcc2bfd6bddcb88fc9cb7351b34487df0cd9",
+        "seconds": 22.422477019950747,
+        "input_sha256": "1860a310fff53a14b6786bd17a73e2244eb6468c7d3757e17633ee08cdbb1363",
+        "hashes": {
+          "vertices": "d65c081ce83d7abe23ce01df51fe8ef163a9b3359ce4e3339be88238ab3f139c",
+          "faces": "20b99ad42b7b19a176f9e1d84f0fe0b77bb36965d0595ae21dd1cc7930dc2fd2",
+          "needle_paths": "ad41789581e0c13452cd4496d3795fb57b0bad2b4a829314de99b51923d9e5e5",
+          "auxiliary_holes": "8d651491e0cfb7d3e24845be3eb976f2d04b1a7d443f43658080e229e88a5fac"
+        },
+        "qa_sha256": "7db38b36defe190b3c129033440a42dc99854f41f82dcb8de9c01f48703c72e0",
+        "watertight": true,
+        "selected_needle_count": 1
+      }
+    },
+    {
+      "needle_count": 4,
+      "resolution_mm": 0.5,
+      "repeat": 0,
+      "geometry_and_qa_match": true,
+      "before": {
+        "dependency_sha256": "4999ca8ad44d549cae91e861e9090c8d2f282857e77486953b2a64e31d8e6949",
+        "seconds": 7.836980855092406,
+        "input_sha256": "b7348b4099aaebeabacaf59fd043ddabd979b3ae3a9a025e38028af5758db86c",
+        "hashes": {
+          "vertices": "d912035323c7b3b819a6f036fd4cbb5aa58789456a4421261fa89bbf3fdbb19e",
+          "faces": "b220bcc2f8b785516c73e159b1a17f745f084e10c32d8f45ade669a08f325b26",
+          "needle_paths": "cc2e4612840c6fef06f205c797b49db60ff1e7bfcb74f0af17d5f14650cb5533",
+          "auxiliary_holes": "ef38880c7984b8833682a17b77a3c37727c878082493b980288b5066125ad1d7"
+        },
+        "qa_sha256": "b51868cd9c4b636b9d4c8688812bb2e2a17fcc49405af2da5668e591154d9b08",
+        "watertight": true,
+        "selected_needle_count": 4
+      },
+      "after": {
+        "dependency_sha256": "4fc4b4669f58b724a5a916255609bcc2bfd6bddcb88fc9cb7351b34487df0cd9",
+        "seconds": 7.825625632889569,
+        "input_sha256": "b7348b4099aaebeabacaf59fd043ddabd979b3ae3a9a025e38028af5758db86c",
+        "hashes": {
+          "vertices": "d912035323c7b3b819a6f036fd4cbb5aa58789456a4421261fa89bbf3fdbb19e",
+          "faces": "b220bcc2f8b785516c73e159b1a17f745f084e10c32d8f45ade669a08f325b26",
+          "needle_paths": "cc2e4612840c6fef06f205c797b49db60ff1e7bfcb74f0af17d5f14650cb5533",
+          "auxiliary_holes": "ef38880c7984b8833682a17b77a3c37727c878082493b980288b5066125ad1d7"
+        },
+        "qa_sha256": "b51868cd9c4b636b9d4c8688812bb2e2a17fcc49405af2da5668e591154d9b08",
+        "watertight": true,
+        "selected_needle_count": 4
+      }
+    },
+    {
+      "needle_count": 4,
+      "resolution_mm": 0.5,
+      "repeat": 1,
+      "geometry_and_qa_match": true,
+      "before": {
+        "dependency_sha256": "4999ca8ad44d549cae91e861e9090c8d2f282857e77486953b2a64e31d8e6949",
+        "seconds": 7.905769834993407,
+        "input_sha256": "b7348b4099aaebeabacaf59fd043ddabd979b3ae3a9a025e38028af5758db86c",
+        "hashes": {
+          "vertices": "d912035323c7b3b819a6f036fd4cbb5aa58789456a4421261fa89bbf3fdbb19e",
+          "faces": "b220bcc2f8b785516c73e159b1a17f745f084e10c32d8f45ade669a08f325b26",
+          "needle_paths": "cc2e4612840c6fef06f205c797b49db60ff1e7bfcb74f0af17d5f14650cb5533",
+          "auxiliary_holes": "ef38880c7984b8833682a17b77a3c37727c878082493b980288b5066125ad1d7"
+        },
+        "qa_sha256": "b51868cd9c4b636b9d4c8688812bb2e2a17fcc49405af2da5668e591154d9b08",
+        "watertight": true,
+        "selected_needle_count": 4
+      },
+      "after": {
+        "dependency_sha256": "4fc4b4669f58b724a5a916255609bcc2bfd6bddcb88fc9cb7351b34487df0cd9",
+        "seconds": 7.686859566019848,
+        "input_sha256": "b7348b4099aaebeabacaf59fd043ddabd979b3ae3a9a025e38028af5758db86c",
+        "hashes": {
+          "vertices": "d912035323c7b3b819a6f036fd4cbb5aa58789456a4421261fa89bbf3fdbb19e",
+          "faces": "b220bcc2f8b785516c73e159b1a17f745f084e10c32d8f45ade669a08f325b26",
+          "needle_paths": "cc2e4612840c6fef06f205c797b49db60ff1e7bfcb74f0af17d5f14650cb5533",
+          "auxiliary_holes": "ef38880c7984b8833682a17b77a3c37727c878082493b980288b5066125ad1d7"
+        },
+        "qa_sha256": "b51868cd9c4b636b9d4c8688812bb2e2a17fcc49405af2da5668e591154d9b08",
+        "watertight": true,
+        "selected_needle_count": 4
+      }
+    }
+  ],
+  "all_pairs_match": true
+}

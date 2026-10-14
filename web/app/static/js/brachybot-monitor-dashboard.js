@@ -14,9 +14,13 @@
         if (className) node.className = className;
         return node;
     };
-    const own = () => `${_activeApiSessionId()}:${trainingMonitorState.runId || ''}`;
+    const own = () => {
+        const scope = window.BrachyBotTimepointWorkspace?.mountedScope?.();
+        return `${_activeApiSessionId()}:${trainingMonitorState.runId || ''}:${scope?.timepointId || ''}:${scope?.generation ?? ''}`;
+    };
     const planIdentity = () => `${own()}:${manualPlanningState.planningId}:${manualPlanningState.planningVersion}:${!!manualPlanningState.monitorInteractionActive}`;
     const ownedCards = () => cards.filter(card => card.sessionId === _activeApiSessionId()
+        && (!card.timepointScope || window.BrachyBotTimepointWorkspace?.scopeIsCurrent(card.timepointScope))
         && card.runId === trainingMonitorState.runId);
     const latest = () => ownedCards().filter(card => !card.superseded).at(-1);
     const button = (label, action, disabled = false, control = '') => {
@@ -110,8 +114,8 @@
             'manual.seed.add':t('添加粒子','Add seed'),'manual.seed.delete':t('删除粒子','Delete seed'),
             'manual.needle.add':t('添加针道','Add needle'),'manual.needle.delete':t('删除针道','Delete needle'),
             'manual.dose':t('剂量重算','Dose recomputation'),'planning.step':t('规划步骤','Planning step'),
-            'segmentation.step':t('分割步骤','Segmentation step'),'training.start':t('监测启动','Monitor started'),
-            'training.stop':t('监测结束','Monitor finished')};
+            'segmentation.step':t('分割步骤','Segmentation step'),'training.start':t('监测启动','Monitoring started'),
+            'training.stop':t('监测结束','Monitoring stopped')};
         const steps = {ctv:'CTV',oar:'OAR',trajectory_init:t('轨迹初始化','Trajectory initialization'),
             trajectory_refine:t('轨迹细化','Trajectory refinement'),seed_planning:t('粒子布源','Seed placement'),
             dose_calc:t('剂量计算','Dose calculation'),dose_eval:t('剂量评估','Dose evaluation'),full:t('全流程','Full workflow')};
@@ -234,7 +238,7 @@
             && item.data.interaction?.decision_required !== false
             && Number(item.evidence.after_version) === currentVersion && String(item.evidence.planning_id) === String(planId));
         const pending = el('div',undefined,'monitor-pending');
-        if(decisions.length || pendingImages.length) pending.append(el('span',t(`${decisions.length} 项编辑待选择 · ${pendingImages.length} 项截图准备中`,`${decisions.length} edit decisions · ${pendingImages.length} captures preparing`)));
+        if(decisions.length || pendingImages.length) pending.append(el('span',t(`${decisions.length} 项编辑待选择 · ${pendingImages.length} 项截图准备中`,`${decisions.length} edits awaiting a decision · ${pendingImages.length} captures in progress`)));
         if (unread.length) pending.append(button(t(`${unread.length} 项图像证据未查看`,`${unread.length} unseen image records`), () => showEvidence(unread[0])));
         body.append(pending);
         if (!card) body.append(el('p', t('照常拖动并保存针道或粒子。我会标出刚编辑的对象，先反馈几何问题；剂量需要你确认重算，不会偷偷计算。',
@@ -260,9 +264,9 @@
             const stages = el('div',undefined,'monitor-edit-stages');
             for (const label of [t('✓ 编辑已保存','✓ Edit saved'), t('✓ 几何已检查','✓ Geometry checked'),
                 info.dose_comparable ? t('✓ 剂量可比较','✓ Dose comparable') : info.dose_current
-                    ? t('剂量已更新 · 缺前值','Dose current · baseline missing') : t('剂量待更新','Dose pending'),
+                    ? t('剂量已更新 · 缺前值','Dose up to date · baseline unavailable') : t('剂量待更新','Dose pending'),
                 ({ready:t('图像已交付','Images delivered'),partial:t('部分图像已交付','Partial images delivered'),
-                    pending:t('截图准备中','Images preparing'),deferred:t('截图暂缓','Capture deferred'),
+                    pending:t('截图准备中','Preparing images'),deferred:t('截图暂缓','Capture deferred'),
                     failed:t('截图未完成','Capture incomplete'),none:t('本次未安排截图','No image scheduled')})[card.captureState] || t('截图状态未核实','Image status unverified')])
                 stages.append(el('span',label));
             record.append(stages);
@@ -296,7 +300,7 @@
             body.append(finding);
             const capture = el('div', undefined, 'monitor-capture-status');
             capture.dataset.state = card.captureState;
-            const captureLabels = {pending:t('截图正在准备，文字反馈已保存。', 'Images are preparing; text feedback is saved.'),
+            const captureLabels = {pending:t('截图正在准备，文字反馈已保存。', 'Images are being prepared; text feedback has been saved.'),
                 deferred:t('截图已暂缓；页面可见且版本仍有效时重试。', 'Capture deferred; retries require a visible page and a current revision.'),
                 ready:t('已交付图像证据。', 'Image evidence delivered.'),
                 partial:t('部分图像已交付；未核验对象不能据图定位。', 'Partial images delivered; unverified objects cannot be located from them.'),
@@ -348,7 +352,7 @@
                 () => window.runMonitorCheckpointAction(card.id,'apply',{candidateId:card.previewCandidate.candidate_id}), !cardCurrent || !!card.previewBusy));
             if (info.decision_required === false) {
                 const more = el('details',undefined,'monitor-secondary-actions');
-                more.append(el('summary',t('更多操作（无需每次确认保留）','More actions (no routine keep confirmation required)')));
+                more.append(el('summary',t('更多操作（无需每次确认保留）','More actions (saved edits do not require confirmation)')));
                 more.firstChild.dataset.brachyControlRef = `monitor:${card.runId}:${card.id}:more`;
                 const secondary = [...actions.children].filter(node => /恢复编辑前|保留编辑|Restore pre-edit|Keep edit/.test(node.textContent));
                 secondary.forEach(node => more.append(node)); actions.append(more);
@@ -373,7 +377,7 @@
                     preview.append(el('p',t('紫色位置是只读预览，规划尚未改变。先看位置，再确认操作。','Purple geometry is a read-only preview; the plan has not changed. Inspect it before confirming.')));
                     if(card.previewCandidate && !guidancePanel.querySelector('[data-guide-action="apply"]'))preview.append(button(t('确认应用几何候选（剂量待重算）','Confirm geometric candidate (dose needs updating)'),
                         ()=>window.runMonitorCheckpointAction(card.id,'apply',{candidateId:card.previewCandidate.candidate_id}),!cardCurrent || !!card.previewBusy,'confirm-preview'));
-                    else if(!card.previewCandidate && card.evidence.restore_token && !card.decision && !guidancePanel.querySelector('[data-guide-action="restore"]'))preview.append(button(t('确认恢复编辑前位置','Confirm restore pre-edit position'),
+                    else if(!card.previewCandidate && card.evidence.restore_token && !card.decision && !guidancePanel.querySelector('[data-guide-action="restore"]'))preview.append(button(t('确认恢复编辑前位置','Confirm restoration of pre-edit position'),
                         ()=>window.runMonitorCheckpointAction(card.id,'restore'),!cardCurrent || !!card.busy,'confirm-restore'));
                     // The live guide already owns confirmation and dismissal.
                     // Preserve alternatives in the disclosure, not a second CTA.
@@ -414,7 +418,7 @@
                 row.dataset.severity = event.severity; events.append(row);
             }
             events.append(el('small',t(`显示最近 ${timeline.returned_event_count} 个事件；${timeline.dropped_event_count} 个旧事件已超出保留范围。`,
-                `Showing ${timeline.returned_event_count} recent events; ${timeline.dropped_event_count} earlier events exceeded retention.`)));
+                `Showing the ${timeline.returned_event_count} most recent events; ${timeline.dropped_event_count} older events were dropped by the retention limit.`)));
             body.append(events);
         }
         body.scrollTop = scrollTop;
@@ -423,11 +427,13 @@
     async function refreshOverview() {
         if (trainingMonitorState.phase !== 'active' || typeof fetch !== 'function') return;
         const ownership = own(), sid = _activeApiSessionId(), sequence = ++requestSequence;
+        const scope = window.BrachyBotTimepointWorkspace?.captureRequestScope?.();
+        const headers = window.BrachyBotTimepointWorkspace?.headers(scope, {'X-BrachyBot-Session':sid}) || {'X-BrachyBot-Session':sid};
         overviewAbort?.abort(); const abort = new AbortController(); overviewAbort = abort;
         const timeout = setTimeout(() => abort.abort(), 5000);
         try {
             const read = async url => {
-                const response = await fetch(url,{signal:abort.signal,headers:{'X-BrachyBot-Session':sid}});
+                const response = await fetch(url,{signal:abort.signal,headers});
                 if (!response.ok) throw new Error('monitor_overview_unavailable');
                 return response.json();
             };
@@ -711,8 +717,8 @@
             const exactSurface = measurement.clearance_basis === 'finite_parallel_cylinders';
             const label = Number.isFinite(measurement.surface_clearance_mm)
                 ? t(`轴线 ${measurement.value_mm.toFixed(2)} mm · ${exactSurface ? '实体表面间隙' : '轴线模型间隙下界'} ${measurement.surface_clearance_mm.toFixed(2)} mm`,
-                    `Axis ${measurement.value_mm.toFixed(2)} mm · ${exactSurface ? 'finite surface gap' : 'axis-model clearance bound'} ${measurement.surface_clearance_mm.toFixed(2)} mm`)
-                : t(`针道最短轴线距离 ${measurement.value_mm.toFixed(2)} mm`,`Needle-axis distance ${measurement.value_mm.toFixed(2)} mm`);
+                    `Axis separation ${measurement.value_mm.toFixed(2)} mm · ${exactSurface ? 'surface-to-surface clearance' : 'surface-clearance lower bound (axis model)'} ${measurement.surface_clearance_mm.toFixed(2)} mm`)
+                : t(`针道最短轴线距离 ${measurement.value_mm.toFixed(2)} mm`,`Distance between needle axes ${measurement.value_mm.toFixed(2)} mm`);
             ctx.fillStyle = '#172030'; ctx.fillRect(0,0,640,80); ctx.fillStyle = '#ffffff'; ctx.font = '24px sans-serif';
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(label,320,40,620);
             const sprite = new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(canvas),depthTest:false}));
@@ -781,8 +787,8 @@
                 const m=item.measurement,exact=item.exactSurface;
                 label=Number.isFinite(m.surface_clearance_mm)
                     ? t(`轴线 ${m.value_mm.toFixed(2)} mm · ${exact?'实体表面间隙':'轴线模型间隙下界'} ${m.surface_clearance_mm.toFixed(2)} mm`,
-                        `Axis ${m.value_mm.toFixed(2)} mm · ${exact?'finite surface gap':'axis-model clearance bound'} ${m.surface_clearance_mm.toFixed(2)} mm`)
-                    : t(`针道最短轴线距离 ${m.value_mm.toFixed(2)} mm`,`Needle-axis distance ${m.value_mm.toFixed(2)} mm`);
+                        `Axis separation ${m.value_mm.toFixed(2)} mm · ${exact?'surface-to-surface clearance':'surface-clearance lower bound (axis model)'} ${m.surface_clearance_mm.toFixed(2)} mm`)
+                    : t(`针道最短轴线距离 ${m.value_mm.toFixed(2)} mm`,`Distance between needle axes ${m.value_mm.toFixed(2)} mm`);
                 ctx.fillStyle='#172030';ctx.fillRect(0,0,640,80);ctx.fillStyle='#ffffff';ctx.font='24px sans-serif';
                 ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(label,320,40,620);
             }else{
@@ -820,7 +826,7 @@
         });
     };
     window.queueMonitorStopRecovery = (sessionId, runId) => {
-        const key = `${sessionId}:${runId}`;
+        const key = own();
         if (stopRecovery?.key === key) return true;
         const job = {key, attempt:0}; stopRecovery = job;
         const retry = async () => {
@@ -840,6 +846,11 @@
     // Plan selection can change without a Monitor edit event. Observe only a
     // compact identity tuple; never poll geometry or call the model here.
     let visibleIdentity = '';
+    window.suspendTimepointMonitorDashboard = () => {
+        requestSequence++; overviewAbort?.abort(); clearTimeout(overviewTimer);
+        stopRecovery = null; cards = []; overview = timeline = null; overviewOwner = timelineOwner = '';
+        visibleIdentity = ''; window.clearMonitorFocus?.(); draw();
+    };
     if (typeof setInterval === 'function') setInterval(() => {
         if (document.hidden || trainingMonitorState.phase !== 'active') return;
         const identity = planIdentity();

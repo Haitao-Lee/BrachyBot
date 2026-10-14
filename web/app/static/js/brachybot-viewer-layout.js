@@ -218,6 +218,13 @@ function _clearViewerResizeOverrides(panel) {
 }
 
 function syncViewerGeometry({ resetPositions = false, settleMs = 0, viewportSnapshot = null } = {}) {
+    let requestScope = null;
+    try {
+        requestScope = typeof _captureViewerDataScope === 'function' ? _captureViewerDataScope() : null;
+    } catch (_) { return false; }
+    const ownsLayout = () => !requestScope || (typeof _viewerDataScopeIsCurrent === 'function'
+        && _viewerDataScopeIsCurrent(requestScope, true));
+    if (!ownsLayout()) return false;
     const generation = ++_viewerGeometrySync.generation;
     // A ResizeObserver callback may arrive between the immediate fullscreen
     // pass and its delayed settle pass. Do not let that harmless callback
@@ -228,6 +235,7 @@ function syncViewerGeometry({ resetPositions = false, settleMs = 0, viewportSnap
         _viewerGeometrySync.timer = null;
     }
     const render = (acceptNewerGeneration = false) => {
+        if (!ownsLayout()) return;
         if (!acceptNewerGeneration && generation !== _viewerGeometrySync.generation) return;
         if (resetPositions) {
             ['axial', 'sagittal', 'coronal'].forEach(axis => {
@@ -650,17 +658,30 @@ function fitView() {
 // dose/contour layers, and the WebGL scene become ready in separate async
 // phases.  Keep their final framing in one transaction so a restored case
 // cannot leave the MPR panes black or leave an overlay at the previous case's
-// pixel offset.  This helper is intentionally session-scoped and idempotent;
-// a late pass from an older restore must never fit the currently active case.
+// pixel offset. Capture the scan/mount as well as the Session; two acquisitions
+// in one patient must not change each other's saved camera or MPR transforms.
 let _workspaceViewerFitGeneration = 0;
 async function fitAllViewersAfterWorkspaceRestore({
     sessionId = null,
     reason = 'workspace-restore-fit',
     preserveSavedView = false,
+    requestScope = null,
 } = {}) {
+    const ownerScope = requestScope || (typeof _captureViewerDataScope === 'function'
+        ? _captureViewerDataScope(sessionId) : null);
+    const ownerIsCurrent = () => {
+        if (!ownerScope) return true; // legacy boot without the scoped bridge
+        try {
+            return typeof _viewerDataScopeIsCurrent === 'function'
+                && _viewerDataScopeIsCurrent(ownerScope, true);
+        } catch (_) { return false; }
+    };
+    // A stale caller cannot even supersede the current scan's queued fit.
+    if (!ownerIsCurrent()) return false;
     const generation = ++_workspaceViewerFitGeneration;
     const requestedSessionId = String(sessionId || '');
     const isCurrent = () => {
+        if (!ownerIsCurrent()) return false;
         if (generation !== _workspaceViewerFitGeneration) return false;
         if (!requestedSessionId) return true;
         // `activeSessionId` is a global lexical binding in chat-core.js, not
@@ -738,7 +759,7 @@ window.fitAllViewersAfterWorkspaceRestore = fitAllViewersAfterWorkspaceRestore;
 function resetViewer() {
     state.viewerSettings = {
         window: 400, level: 40, threshold: null,
-        showCTV: false, showOAR: false, zoom: 1.0,
+        showCTV: true, showOAR: true, zoom: 1.0,
         userConfigured: false,
         activeTool: null, panX: 0, panY: 0, mprViewports: {},
         flipH: false, flipV: false, rotation: 0,
@@ -752,8 +773,8 @@ function resetViewer() {
     document.getElementById('viewerThreshold').value = '';
     document.getElementById('viewerZoom').value = 100;
     document.getElementById('zoomLabel').textContent = '100%';
-    document.getElementById('overlayCTV').checked = false;
-    document.getElementById('overlayOAR').checked = false;
+    document.getElementById('overlayCTV').checked = true;
+    document.getElementById('overlayOAR').checked = true;
     const displayMode = document.getElementById('displayMode');
     if (displayMode) displayMode.value = 'ct';
     const preset = document.getElementById('windowPreset');
@@ -2514,7 +2535,9 @@ async function setDoseTextureMode(enabled, opts = {}) {
     const btn = document.getElementById('doseTextureToggle');
     if (btn) {
         btn.disabled = true;
-        btn.textContent = requestedEnabled ? 'Mapping...' : 'Dose Surface';
+        btn.textContent = requestedEnabled
+            ? (window._t?.('正在映射剂量…','Mapping dose…') || 'Mapping dose…')
+            : (window._t?.('剂量着色','Dose coloring') || 'Dose coloring');
     }
     // Safety timer: if the operation hangs (network timeout, server stall),
     // reset the button after 60 seconds so the user can retry.
@@ -2523,7 +2546,7 @@ async function setDoseTextureMode(enabled, opts = {}) {
         state.doseTexture.applying = false;
         if (btn) {
             btn.disabled = false;
-            btn.textContent = 'Dose Surface';
+            btn.textContent = window._t?.('剂量着色','Dose coloring') || 'Dose coloring';
             btn.classList.remove('active');
         }
     }, 60000);
@@ -2614,7 +2637,9 @@ async function setDoseTextureMode(enabled, opts = {}) {
             state.doseTexture.applying = false;
             if (btn) {
                 btn.disabled = false;
-                btn.textContent = state.doseTexture.enabled ? 'Normal Surface' : 'Dose Surface';
+                btn.textContent = state.doseTexture.enabled
+                    ? (window._t?.('结构颜色','Structure colors') || 'Structure colors')
+                    : (window._t?.('剂量着色','Dose coloring') || 'Dose coloring');
                 btn.classList.toggle('active', state.doseTexture.enabled);
             }
         }
@@ -2696,7 +2721,7 @@ function _makeSeedMesh(seed) {
     const length = Math.max(0.1, Number(seed.length || configured.length || 4.5));
     const geometry = new THREE.CylinderGeometry(radius, radius, length, 16);
     const material = new THREE.MeshPhysicalMaterial({
-        color: 0xe6e64d,
+        color: seed.color || '#FBBF24',
         // Use the transparent planning queue even at opacity 1 so the
         // Surgical Guide depth pass runs before seeds and needles. The
         // physical seed remains fully opaque and depth-writing.

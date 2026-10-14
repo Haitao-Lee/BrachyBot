@@ -41,6 +41,7 @@ def _ct_grid_case():
         "ctv_array": ctv,
         "oar_array": oar,
         "dose_scale_gy": 190.8,
+        "dose_unit_metadata": {"dose_distribution_gy": "normalized_model", "dose_distribution": "normalized_model"},
         "metrics": {"prescription_gy": 120.0, "dose_scale_gy": 190.8},
         "ct_spacing": [0.5, 0.5, 5.0],
         "organ_names": {3: "Bladder"},
@@ -86,6 +87,7 @@ def test_planning_grid_pair_uses_the_resampled_masks():
         "ctv_array": np.zeros((2, 4, 4), dtype=np.uint8),  # CT grid: no dose match below
         "resampled_ctv": np.ones((2, 8, 8), dtype=np.uint8),
         "dose_scale_gy": 2.0,
+        "dose_unit_metadata": {"dose_distribution_gy": "normalized_model", "dose_distribution": "normalized_model"},
         "metrics": {"prescription_gy": 120.0},
     }
     # Make the CT-grid candidate shapes disagree so the planning-grid pair wins

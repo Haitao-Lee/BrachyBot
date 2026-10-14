@@ -62,6 +62,7 @@ def _viewer_geometry_signature(agent, shape):
             return []
 
     return {
+        "timepoint_id": (getattr(agent, "config", {}) or {}).get("_workspace_timepoint_id"),
         "shape_zyx": [int(item) for item in tuple(shape or ())],
         "spacing_xyz": values(agent.memory.retrieve("ct_spacing"), 3),
         "origin_xyz": values(agent.memory.retrieve("ct_origin"), 3),
@@ -715,6 +716,42 @@ def _generic_mask_entry(agent, mask_id):
 
 
 def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
+    clinical_get_agent = get_agent
+
+    def get_agent(*args, **kwargs):
+        """Viewer backgrounds may differ; numerical tools retain the reference."""
+        agent = clinical_get_agent(*args, **kwargs)
+        from web.timepoint_http import current_binding
+        binding = current_binding()
+        if agent is None or binding is None or not request.path.startswith("/api/viewer/"):
+            return agent
+        from web.timepoint_images import TimepointImageService
+        raw = getattr(agent._workspace_store, "raw", agent._workspace_store)
+        service = TimepointImageService(raw)
+        collection = service.list_images(binding.owner_id, binding.session_id, binding.timepoint_id)
+        if not collection["images"]:
+            return agent
+        identifier = collection["display_image_id"]
+        if identifier is None or identifier == collection["planning_reference_image_id"]:
+            # Hiding all backgrounds does not delete the owned reference grid
+            # or its mask/dose geometry. The client keeps CT pixels hidden.
+            return agent
+        from types import SimpleNamespace
+        from agent_runtime.core import AgentMemory
+        import copy
+        view = copy.copy(agent)
+        memory = AgentMemory(binding.session_id)
+        if identifier is not None:
+            display = service.display_image_bridge(binding.owner_id, binding.session_id, binding.timepoint_id)
+            memory.planning_results = {key: value for key, value in display.items() if key.startswith("ct_")}
+            memory.planning_results["ct_axis_map"] = {"axial": 0, "sagittal": 2, "coronal": 1}
+        view.memory = memory
+        view._workspace_data_ready = True
+        view._workspace_ct_ready = identifier is not None
+        view._workspace_hydration_in_progress = False
+        # No writable callback and no clinical arrays from another image.
+        # This is solely the background display projection for this request.
+        return view
     def request_case_context():
         """Resolve the case that originated this viewer request.
 
@@ -729,7 +766,8 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         if store is None or user is None or not session_id:
             raise ValueError("Authenticated case session is required")
         entry = store.get_session(user["id"], session_id)
-        return store, user, entry.id
+        from web.timepoint_http import ScopedWorkspaceStore
+        return (store.for_binding() if isinstance(store, ScopedWorkspaceStore) else store), user, entry.id
 
     def owned_case_path(path: str) -> bool:
         try:
@@ -815,6 +853,54 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
     @rate_limit
     def api_viewer_load():
         """Load CT image and return slice metadata (no pixel data)."""
+        from web.timepoint_http import current_binding
+        binding = current_binding()
+        if binding is not None:
+            from web.timepoint_images import TimepointImageService
+            from utils.display_paths import roots_from_workspace, resolve_user_path
+            from agent_runtime.core import AgentMemory
+            from types import SimpleNamespace
+            store, user, session_id = request_case_context()
+            raw = getattr(store, "raw", store)
+            service = TimepointImageService(raw)
+            data = request.get_json(silent=True) or {}
+            service.adopt_saved_reference(binding.owner_id, session_id, binding.timepoint_id)
+            collection = service.list_images(binding.owner_id, session_id, binding.timepoint_id)
+            image_id = data.get("image_id")
+            geometry_only = data.get('geometry_only') is True
+            if geometry_only and (not image_id or image_id != collection['planning_reference_image_id']):
+                raise ValueError('Geometry-only loading requires the owned planning reference')
+            if image_id:
+                if not geometry_only and image_id != collection["display_image_id"]:
+                    collection = service.update_image(binding.owner_id, session_id, binding.timepoint_id, image_id,
+                        {"display": True}, expected_collection_revision=collection["collection_revision"],
+                        editor_token=request.headers.get("X-BrachyBot-Editor", ""))
+            elif data.get("ct_path"):
+                path = resolve_user_path(data["ct_path"], roots_from_workspace(str(raw.workspace_root(binding.owner_id, session_id))))
+                collection = service.register_owned_source(binding.owner_id, session_id, binding.timepoint_id, path,
+                    modality=data.get("image_modality", "CT"), frame_index=data.get("volume_index"),
+                    expected_collection_revision=collection["collection_revision"],
+                    editor_token=request.headers.get("X-BrachyBot-Editor", ""), select_first_reference=True,
+                    role="intraop" if raw.list_timepoints(binding.owner_id, session_id)["items"][binding.timepoint_id]["stage"] == "intraoperative" else "preop")
+            elif not collection["display_image_id"]:
+                return jsonify(success=True, available=False, session_id=session_id, timepoint_id=binding.timepoint_id)
+            bridge = service.display_image_bridge(binding.owner_id, session_id, binding.timepoint_id)
+            if geometry_only:
+                bridge = service.planning_reference_bridge(binding.owner_id,session_id,binding.timepoint_id)
+                bridge.update(available=True,display_image_receipt=bridge['planning_reference_receipt'],clinical_visible=True)
+            if not bridge["available"]:
+                return jsonify(success=True, available=False, session_id=session_id, timepoint_id=binding.timepoint_id)
+            memory = AgentMemory(session_id)
+            memory.planning_results = {key: value for key, value in bridge.items() if key.startswith("ct_")}
+            memory.planning_results["ct_axis_map"] = {"axial": 0, "sagittal": 2, "coronal": 1}
+            payload = loaded_ct_response(SimpleNamespace(memory=memory))
+            payload.update(session_id=session_id, timepoint_id=binding.timepoint_id,
+                image_id=image_id if geometry_only else bridge["display_image_id"],
+                display_image_id=collection['display_image_id'],geometry_only=geometry_only,
+                planning_reference_image_id=bridge["planning_reference_image_id"],
+                clinical_visible=bridge["clinical_visible"], available=True,
+                geometry_signature=bridge["display_image_receipt"]["geometry_signature"])
+            return jsonify(payload)
         # Install a lightweight agent immediately; large case artifacts are
         # decoded by the server's background hydration worker.
         agent = get_agent(_lightweight=True)

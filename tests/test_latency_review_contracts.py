@@ -34,7 +34,8 @@ def test_shared_helper_drift_fails_even_when_both_replay_sides_use_it(tmp_path):
         verify_dependencies(tmp_path, frozen)
 
 
-def test_zero_trial_repair_reports_real_elapsed_not_allocated_quota():
+@pytest.mark.parametrize("continuation_options", [{}, {"continuation": "captured-fixed-baseline"}])
+def test_zero_trial_repair_reports_real_elapsed_not_allocated_quota(continuation_options):
     source = (ROOT / MODULE_PATHS['planning_pipeline']).read_text()
     node = next(n for n in ast.walk(ast.parse(source))
                 if isinstance(n, ast.FunctionDef) and n.name == '_run_repair_pass')
@@ -44,13 +45,18 @@ def test_zero_trial_repair_reports_real_elapsed_not_allocated_quota():
                                        'in_lowest_model', 'out_highest_model', '_repair_infer',
                                        '_repair_validate', '_repair_generate')}
     ticks = iter((100.0, 100.002))
+    received = []
+    def repair(*args, **kwargs):
+        received.append(kwargs)
+        return 'unchanged', {'stop_reason': 'target_reached', 'trials': 0}
     namespace.update(args=args, time=SimpleNamespace(perf_counter=lambda: next(ticks)),
-                     repair_coverage=lambda *a, **kw: ('unchanged', {'stop_reason': 'target_reached', 'trials': 0}))
+                     continuation_kwargs=continuation_options, repair_coverage=repair)
     exec(compile(ast.Module(body=[node], type_ignores=[]), '<repair-wrapper>', 'exec'), namespace)
     plan, status = namespace['_run_repair_pass']([], 60.0, 24)
     assert plan == 'unchanged'
     assert status['budget_allocated_seconds'] == 60.0
     assert status['elapsed_seconds'] == pytest.approx(0.002)
+    assert received[0].get('continuation') == continuation_options.get('continuation')
 
 
 def test_both_final_geometry_checks_receive_same_local_faces():

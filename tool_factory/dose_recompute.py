@@ -141,7 +141,7 @@ def _ensure_ct_runtime(agent: Any) -> None:
 
 
 class CurrentPlanDoseRecomputeTool(BaseTool):
-    """Recompute Dose and DVH for the active persisted Planning."""
+    """Recompute a selected, owned source set without creating a new plan."""
 
     @property
     def name(self) -> str:
@@ -150,16 +150,23 @@ class CurrentPlanDoseRecomputeTool(BaseTool):
     @property
     def description(self) -> str:
         return (
-            "Recompute the dose distribution and DVH for the current active "
-            "Planning using the authoritative persisted Needle/Seed geometry. "
-            "Use this high-level tool when the user asks to recalculate, "
-            "recompute, update, or refresh the current dose after Planning "
-            "or manual geometry edits. Do not request raw CT or seed arrays: "
-            "the server resolves them from the active Session and Planning. "
-            "This does not rerun CTV/OAR segmentation or choose new needle "
-            "paths. A successful recomputation updates Dose, DVH, metrics, "
-            "Viewer state, and Session persistence; dependent Report and "
-            "Surgical Guide artifacts are marked stale until regenerated."
+            "Recompute dose for the user's intended source_set in the submission-captured "
+            "Table Viewer. Choose source_set='implanted' for existing detected/implanted "
+            "observations, including after false-positive exclusion, missed-seed addition "
+            "or center refinement. This uses only the current included observations and "
+            "the existing CNN, persists a separate estimated physical-Gy source-dose grid, "
+            "and never changes future planned seeds or their Dose/DVH, chooses new needle "
+            "paths, or generates a guide/report. Implanted-source dose is projected source "
+            "dose, not elapsed dose already delivered. Choose source_set='planned' for "
+            "Dose/DVH/metrics of the active persisted Planning from saved Needle/Seed geometry; "
+            "that branch updates its Viewer/state and marks dependent artifacts stale. "
+            "Choose source_set='both' or 'total' to refresh changed components and evaluate "
+            "implanted plus supplemental physical Gy exactly once on the current CT. "
+            "Unchanged components are reused by their clinical dependency fingerprints. "
+            "An unqualified recompute refreshes both components and their total when "
+            "current implanted observations or an intraoperative workspace exist. An "
+            "explicit source_set limits computation to that set. Do not request raw CT or source arrays. "
+            "Neither branch reruns segmentation, replans or regenerates downstream artifacts."
         )
 
     @property
@@ -167,6 +174,9 @@ class CurrentPlanDoseRecomputeTool(BaseTool):
         return {
             "type": "object",
             "properties": {
+                "source_set": {"type":"string","enum":["planned","implanted","both","total"],
+                    "description":"Select planned, implanted-only or both/total. Omit for both on an intraoperative workspace or when current implanted observations exist; otherwise use the current preoperative plan. No new sources, replanning or guides/reports are triggered."},
+                "expected_observation_revision_id": {"type":"string","description":"Optional exact current implant observation revision from seed_segmentation get_reconstruction."},
                 "planning_id": {
                     "type": "string",
                     "description": "Optional active Planning ID; omit to use the currently displayed Planning.",
@@ -188,6 +198,13 @@ class CurrentPlanDoseRecomputeTool(BaseTool):
         return {
             "type": "object",
             "properties": {
+                "source_set": {"type":"string","enum":["planned","implanted","both","total"]},
+                "observation_revision_id": {"type":"string"},
+                "dose_min_gy": {"type":"number"},
+                "dose_max_gy": {"type":"number"},
+                "estimated_axis_count": {"type":"integer"},
+                "dose_basis": {"type":"string"},
+                "clinical_use_ready": {"type":"boolean"},
                 "planning_id": {"type": "string"},
                 "total_seeds": {"type": "integer"},
                 "num_trajectories": {"type": "integer"},
@@ -208,6 +225,23 @@ class CurrentPlanDoseRecomputeTool(BaseTool):
             )
 
         memory = agent.memory
+        source_set=kwargs.get("source_set")
+        if source_set == "implanted":
+            from web.implanted_dose import recompute_implanted_dose
+            return recompute_implanted_dose(agent,expected_revision_id=kwargs.get("expected_observation_revision_id"))
+        if source_set not in (None,"planned","both","total"):
+            return ToolResult(False,error="Invalid source_set")
+        context = memory.retrieve("timepoint_context") or {}
+        captured = getattr(agent, '_workspace_timepoint_context', None)
+        intraoperative = getattr(getattr(captured, 'target', None), 'stage', context.get('stage')) == 'intraoperative'
+        if source_set is None and (intraoperative or memory.retrieve('implanted_seed_reconstruction')):
+            source_set = 'both'
+        if (source_set in {"both", "total"} or (source_set == "planned" and (
+                intraoperative or memory.retrieve("continuation_baseline_record") is not None
+                or memory.retrieve("dose_components") is not None))):
+            from web.dose_components import recompute_timepoint_dose
+            return recompute_timepoint_dose(agent,source_set=source_set,
+                planning_id=kwargs.get("planning_id"), expected_revision_id=kwargs.get("expected_observation_revision_id"))
         language = str(getattr(memory, "user_lang", "en") or "en").lower()
         is_zh = language.startswith("zh")
 

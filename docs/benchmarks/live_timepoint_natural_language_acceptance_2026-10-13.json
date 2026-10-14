@@ -1,0 +1,1550 @@
+{
+  "kind": "live_provider_fictional_metadata_only",
+  "runtime": "/tmp/brachybot-timepoints-stage-20261010-E1Rvjz/live-nl-fictional-5vvp_hk8",
+  "rows": [
+    {
+      "status": 200,
+      "seconds": 62.84117983374745,
+      "response": "当前 Table Viewer 已保存的两个值：\n\n| 指标 | 数值 |\n|---|---:|\n| 处方剂量 | 145.00 Gy |\n| D90 | 222.00 Gy |\n\n仅做只读读取，未进行任何规划、剂量计算或修改。",
+      "steps": [
+        {
+          "content": "开始本次对话前正在恢复病例资源。",
+          "id": "workspace-hydration-3cc9b7940e3e4d82aeae81519d927ede",
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "pending",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "加载病例资源",
+          "tool": "workspace_hydration",
+          "type": "tool"
+        },
+        {
+          "content": "病例资源已恢复。",
+          "id": "workspace-hydration-3cc9b7940e3e4d82aeae81519d927ede",
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "加载病例资源",
+          "tool": "workspace_hydration",
+          "type": "tool"
+        },
+        {
+          "content": "这是合成软件验收数据。请读取当前 Table Viewer 已保存的处方剂量和 D90，只报告这两个值，不进行任何规划、剂量计算或修改。",
+          "id": 1,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "用户输入",
+          "type": "user"
+        },
+        {
+          "content": "意图: semantic_action; 复杂度: high; 复核: 需要",
+          "id": 2,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "本地意图识别",
+          "type": "thinking"
+        },
+        {
+          "content": "等待 AI 回复...",
+          "id": 3,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "pending",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "LLM 调用 1",
+          "type": "thinking"
+        },
+        {
+          "content": "已识别 2 个工具调用",
+          "id": 3,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "LLM 调用 1",
+          "type": "thinking"
+        },
+        {
+          "content": "{\"metric_type\": \"dose_metrics\"}",
+          "id": 4,
+          "params": {
+            "metric_type": "dose_metrics"
+          },
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "pending",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "调用 query_metrics",
+          "tool": "query_metrics",
+          "type": "tool"
+        },
+        {
+          "content": "{\"metric_type\": \"dose_metrics\"}",
+          "execution_status": "succeeded",
+          "id": 4,
+          "metadata": {
+            "internal_only": false,
+            "metric_type": "dose_metrics",
+            "response_contract": {
+              "covers": [
+                "dose"
+              ],
+              "mode": "direct_read",
+              "requires_review": false,
+              "requires_synthesis": false,
+              "resource": "session_metrics:dose_metrics",
+              "source": "active_session"
+            },
+            "trace_summary_i18n": {
+              "en": "Loaded the saved structured metrics from the active session.",
+              "zh": "已读取当前 Session 中保存的结构化指标。"
+            },
+            "user_visible": true
+          },
+          "params": {
+            "metric_type": "dose_metrics"
+          },
+          "result": "## 当前病例剂量指标\n\n以下数值直接读取当前 Session 已保存的剂量/DVH 结果。\n\n| 指标 | 数值 |\n|---|---:|\n| 处方剂量 | 145.00 Gy |\n| V100 | 80.00% |\n| D90 | 222.00 Gy |",
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "调用 query_metrics",
+          "tool": "query_metrics",
+          "type": "tool"
+        },
+        {
+          "content": "{}",
+          "id": 5,
+          "params": {},
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "pending",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "调用 record_request_plan",
+          "tool": "record_request_plan",
+          "type": "tool"
+        },
+        {
+          "content": "{}",
+          "execution_status": "succeeded",
+          "id": 5,
+          "metadata": {
+            "completed": true,
+            "grants_execution": false,
+            "internal_only": true,
+            "user_visible": false
+          },
+          "params": {},
+          "result": "{\"accepted\": true, \"requested_outcomes\": 2, \"grants_execution\": false, \"request_sha256\": \"01cc63172ef451f9c02365c8d0d0762c04893e731a72445fcd34fe92ed415bcf\"}",
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "调用 record_request_plan",
+          "tool": "record_request_plan",
+          "type": "tool"
+        },
+        {
+          "content": "等待 AI 回复...",
+          "id": 6,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "pending",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "LLM 调用 2",
+          "type": "thinking"
+        },
+        {
+          "content": "补全请求中的证据",
+          "id": 6,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "LLM 调用 2",
+          "type": "thinking"
+        },
+        {
+          "content": "等待 AI 回复...",
+          "id": 7,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "pending",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "LLM 调用 3",
+          "type": "thinking"
+        },
+        {
+          "content": "已生成回复",
+          "id": 7,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "LLM 调用 3",
+          "type": "thinking"
+        },
+        {
+          "content": "Checking requirement coverage...",
+          "id": 8,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "pending",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "Completeness Check",
+          "tool": "completeness_checker",
+          "type": "tool"
+        },
+        {
+          "content": "Checked",
+          "id": 8,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "Completeness Check",
+          "tool": "completeness_checker",
+          "type": "tool"
+        },
+        {
+          "content": "正在整理回复...",
+          "id": 9,
+          "phase": "final_response",
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "pending",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "最终回复",
+          "type": "assistant"
+        },
+        {
+          "content": "Response delivered",
+          "id": 9,
+          "phase": "final_response",
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "最终回复",
+          "type": "assistant"
+        }
+      ],
+      "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+      "brain_available": true,
+      "error": null,
+      "llm_meta": {
+        "context_status": {
+          "accounting_version": 3,
+          "calibration": 0.9013,
+          "call_index": 3,
+          "change_reason": "new_request",
+          "components": {
+            "conversation": 1555,
+            "facts": 0,
+            "history": 0,
+            "images": 0,
+            "other": 0,
+            "runtime_context": 1603,
+            "system": 12300,
+            "tool_results": 132,
+            "tools": 23451,
+            "total": 39041
+          },
+          "components_source": "estimated_input_before_generation",
+          "context_complete": true,
+          "coverage_started_at_ms": 1791874947076.7793,
+          "epoch": "c88ce49ec9e34f0fa6188d853505e08b",
+          "estimated": false,
+          "history_compactions": 0,
+          "history_policy": "relevance_selected_and_token_pressure_compacted",
+          "input_reported": true,
+          "input_tokens": 28442,
+          "llm_calls": 3,
+          "measured": true,
+          "message_count": 14,
+          "missing_usage_calls": 0,
+          "model": "mimo-v2.5",
+          "observed_at_ms": 1791875002928.9602,
+          "output_reported": true,
+          "output_tokens": 147,
+          "preexisting_history": false,
+          "provider": "generic",
+          "ratio": 0.21811676025390625,
+          "reserve_output_tokens": 8192,
+          "restored_snapshot": false,
+          "retained_history_source": "uncalibrated_text_and_image_estimate",
+          "retained_history_tokens": 308,
+          "retained_messages": 6,
+          "revision": 4,
+          "scope": "latest_request",
+          "session_calls": 3,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "session_input_tokens": 83803,
+          "session_missing_usage_calls": 0,
+          "session_output_tokens": 518,
+          "session_total_tokens": 84321,
+          "session_usage_complete": true,
+          "session_usage_scope": "recorded_calls_since_accounting_started",
+          "source": "provider_usage",
+          "target_tokens": 114688,
+          "trigger_ratio": 0.85,
+          "trigger_tokens": 97484,
+          "turn_input_tokens": 83803,
+          "turn_output_tokens": 518,
+          "turn_peak_context_tokens": 28589,
+          "turn_total_tokens": 84321,
+          "updated_at_ms": 1791875002928.9644,
+          "used_tokens": 28589,
+          "window": 131072,
+          "window_source": "model_registry"
+        },
+        "decision_contract": {
+          "denied_call_count": 0,
+          "focused_clarification_available": false,
+          "goals_awaiting_browser_receipts": [],
+          "goals_without_read_receipts": [
+            "g1"
+          ],
+          "operations_awaiting_completion_receipts": [],
+          "outcome_plan_recorded": true,
+          "outcome_plan_required": true,
+          "plan_validation_errors": [],
+          "planned_goal_count": 2,
+          "proposal_is_authorization": false,
+          "reduced_ui_batch_count": 0,
+          "request_sha256": "01cc63172ef451f9c02365c8d0d0762c04893e731a72445fcd34fe92ed415bcf",
+          "semantic_accuracy_verified": false,
+          "unbound_read_goals": []
+        },
+        "latency_ms": 55589.9,
+        "llm_calls": 3,
+        "phase_timings_ms": {
+          "checker_ms": 6534.5,
+          "context_build_ms": 154.5,
+          "llm_first_token_ms": 35826.3,
+          "llm_generation_ms": 16129.0,
+          "router_ms": 0.1,
+          "saved_evidence_ms": 0.2,
+          "sse_push_ms": 62358.5
+        },
+        "response_contract": {
+          "act": "statement",
+          "evidence_supplemental": false,
+          "language": "zh",
+          "presentation_mode": "answer_with_evidence",
+          "source": "runtime_request_contract",
+          "text_required": true,
+          "version": 1
+        },
+        "usage": {
+          "completion_tokens": 518,
+          "missing_usage_calls": 0,
+          "prompt_tokens": 83803,
+          "total_tokens": 84321,
+          "usage_complete": true
+        },
+        "visual_analysis_pending": false
+      }
+    },
+    {
+      "status": 200,
+      "seconds": 60.66075212601572,
+      "response": "重命名已完成。\n\n- 当前时间点（3dc3ca50…）标题已由原名改为 **Natural Language Review**，目录版本号更新为 10。\n- 另一时间点 \"Fictional A\" 的标题及临床版本号（clinical_revision 2）均未变动。\n- 本次操作仅为标题重命名，未修改任何临床数据。",
+      "steps": [
+        {
+          "content": "请把当前 Table Viewer 的时间点标题重命名为 Natural Language Review。只修改该标题，不要修改其他时间点或任何临床数据。",
+          "id": 1,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "用户输入",
+          "type": "user"
+        },
+        {
+          "content": "意图: semantic_action; 复杂度: medium; 复核: 需要",
+          "id": 2,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "本地意图识别",
+          "type": "thinking"
+        },
+        {
+          "content": "等待 AI 回复...",
+          "id": 3,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "pending",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "LLM 调用 1",
+          "type": "thinking"
+        },
+        {
+          "content": "已识别 2 个工具调用",
+          "id": 3,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "LLM 调用 1",
+          "type": "thinking"
+        },
+        {
+          "content": "{\"action\": \"rename\"}",
+          "id": 4,
+          "params": {
+            "action": "rename"
+          },
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "pending",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "调用 timepoint_controller",
+          "tool": "timepoint_controller",
+          "type": "tool"
+        },
+        {
+          "content": "{\"action\": \"rename\"}",
+          "execution_status": "succeeded",
+          "id": 4,
+          "metadata": {
+            "catalog": {
+              "capabilities": {
+                "catalog": true,
+                "chat_target_binding": true,
+                "durable_states": true,
+                "execution_scope": true,
+                "explicit_pipeline_tool": true
+              },
+              "catalog_revision": 10,
+              "default_timepoint_id": "744adb56e1a451a1833e550e68294361",
+              "items": {
+                "3dc3ca508f03419085f61de27b08e3b3": {
+                  "auto_title": false,
+                  "clinical_revision": 1,
+                  "created_at": 1791874946.645835,
+                  "deleted_at": null,
+                  "episode_id": null,
+                  "id": "3dc3ca508f03419085f61de27b08e3b3",
+                  "legacy_default": false,
+                  "lifecycle_revision": 0,
+                  "preoperative_timepoint_id": null,
+                  "presentation_revision": 4,
+                  "previous_intraoperative_timepoint_id": null,
+                  "revision": 1,
+                  "stage": "preoperative",
+                  "state_revision": 5,
+                  "status": "active",
+                  "title": "Natural Language Review",
+                  "updated_at": 1791875028.3628058
+                },
+                "744adb56e1a451a1833e550e68294361": {
+                  "auto_title": false,
+                  "clinical_revision": 2,
+                  "created_at": 1791874946.589252,
+                  "deleted_at": null,
+                  "episode_id": null,
+                  "id": "744adb56e1a451a1833e550e68294361",
+                  "legacy_default": false,
+                  "lifecycle_revision": 1,
+                  "preoperative_timepoint_id": null,
+                  "presentation_revision": 0,
+                  "previous_intraoperative_timepoint_id": null,
+                  "revision": 1,
+                  "stage": "preoperative",
+                  "state_revision": 2,
+                  "status": "active",
+                  "title": "Fictional A",
+                  "updated_at": 1791874946.6677191
+                }
+              },
+              "metadata_signature": "8f14de190afedd84509c3ea3ace3f1b7dc94951683538d9242afd3a35d32b6f4",
+              "order": [
+                "744adb56e1a451a1833e550e68294361",
+                "3dc3ca508f03419085f61de27b08e3b3"
+              ],
+              "runtime_migration_version": 1,
+              "schema_version": 1,
+              "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+              "timepoints": [
+                {
+                  "auto_title": false,
+                  "clinical_revision": 2,
+                  "created_at": 1791874946.589252,
+                  "deleted_at": null,
+                  "episode_id": null,
+                  "id": "744adb56e1a451a1833e550e68294361",
+                  "legacy_default": false,
+                  "lifecycle_revision": 1,
+                  "preoperative_timepoint_id": null,
+                  "presentation_revision": 0,
+                  "previous_intraoperative_timepoint_id": null,
+                  "revision": 1,
+                  "stage": "preoperative",
+                  "state_revision": 2,
+                  "status": "active",
+                  "title": "Fictional A",
+                  "updated_at": 1791874946.6677191
+                },
+                {
+                  "auto_title": false,
+                  "clinical_revision": 1,
+                  "created_at": 1791874946.645835,
+                  "deleted_at": null,
+                  "episode_id": null,
+                  "id": "3dc3ca508f03419085f61de27b08e3b3",
+                  "legacy_default": false,
+                  "lifecycle_revision": 0,
+                  "preoperative_timepoint_id": null,
+                  "presentation_revision": 4,
+                  "previous_intraoperative_timepoint_id": null,
+                  "revision": 1,
+                  "stage": "preoperative",
+                  "state_revision": 5,
+                  "status": "active",
+                  "title": "Natural Language Review",
+                  "updated_at": 1791875028.3628058
+                }
+              ]
+            },
+            "catalog_changed": true,
+            "catalog_revision": 10,
+            "clinical_computation_performed": false,
+            "code": "timepoint_updated",
+            "created_timepoint_id": null,
+            "execution_scope": "captured_timepoint",
+            "language": "zh",
+            "message": "已更新时间点元数据。",
+            "message_code": "timepoint_updated",
+            "message_params": {},
+            "published_to_timepoint": false,
+            "read_only": false,
+            "readset": [
+              {
+                "clinical_revision": 1,
+                "lifecycle_revision": 0,
+                "stage": "preoperative",
+                "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3"
+              }
+            ],
+            "recoverable": false,
+            "scope": {
+              "clinical_revision": 1,
+              "lifecycle_revision": 0,
+              "readset": [
+                {
+                  "clinical_revision": 1,
+                  "lifecycle_revision": 0,
+                  "stage": "preoperative",
+                  "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3"
+                }
+              ],
+              "request_id": "2849699851924b10b765cee0f7b33f0b",
+              "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+              "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+              "ui_language": "zh"
+            },
+            "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+            "timepoint_clinical_revision": 1,
+            "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+            "timepoint_ids": [
+              "3dc3ca508f03419085f61de27b08e3b3"
+            ],
+            "viewer_mounted": false
+          },
+          "params": {
+            "action": "rename"
+          },
+          "result": "已更新时间点元数据。\n```json\n{\"catalog_revision\": 10, \"default_timepoint_id\": \"744adb56e1a451a1833e550e68294361\", \"timepoints\": [{\"id\": \"744adb56e1a451a1833e550e68294361\", \"title\": \"Fictional A\", \"stage\": \"preoperative\", \"status\": \"active\", \"clinical_revision\": 2, \"lifecycle_revision\": 1, \"preoperative_timepo",
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "调用 timepoint_controller",
+          "tool": "timepoint_controller",
+          "type": "tool"
+        },
+        {
+          "content": "{}",
+          "id": 5,
+          "params": {},
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "pending",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "调用 record_request_plan",
+          "tool": "record_request_plan",
+          "type": "tool"
+        },
+        {
+          "content": "{}",
+          "execution_status": "succeeded",
+          "id": 5,
+          "metadata": {
+            "completed": true,
+            "grants_execution": false,
+            "internal_only": true,
+            "user_visible": false
+          },
+          "params": {},
+          "result": "{\"accepted\": true, \"requested_outcomes\": 2, \"grants_execution\": false, \"request_sha256\": \"59b7bc2ef88e63ef80f4010fa0b7c587e52d1856715d2cd114307ab2e82d8833\"}",
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "调用 record_request_plan",
+          "tool": "record_request_plan",
+          "type": "tool"
+        },
+        {
+          "content": "等待 AI 回复...",
+          "id": 6,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "pending",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "LLM 调用 2",
+          "type": "thinking"
+        },
+        {
+          "content": "已生成回复",
+          "id": 6,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "LLM 调用 2",
+          "type": "thinking"
+        },
+        {
+          "content": "Checking requirement coverage...",
+          "id": 7,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "pending",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "Completeness Check",
+          "tool": "completeness_checker",
+          "type": "tool"
+        },
+        {
+          "content": "Checked",
+          "id": 7,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "Completeness Check",
+          "tool": "completeness_checker",
+          "type": "tool"
+        },
+        {
+          "content": "正在整理回复...",
+          "id": 8,
+          "phase": "final_response",
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "pending",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "最终回复",
+          "type": "assistant"
+        },
+        {
+          "content": "Response delivered",
+          "id": 8,
+          "phase": "final_response",
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "最终回复",
+          "type": "assistant"
+        }
+      ],
+      "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+      "brain_available": true,
+      "error": null,
+      "llm_meta": {
+        "context_status": {
+          "accounting_version": 3,
+          "calibration": 0.9448,
+          "call_index": 2,
+          "change_reason": "new_request",
+          "components": {
+            "conversation": 2140,
+            "facts": 0,
+            "history": 0,
+            "images": 0,
+            "other": 0,
+            "runtime_context": 2461,
+            "system": 12035,
+            "tool_results": 296,
+            "tools": 23449,
+            "total": 40381
+          },
+          "components_source": "estimated_input_before_generation",
+          "context_complete": true,
+          "coverage_started_at_ms": 1791874947076.7793,
+          "epoch": "c88ce49ec9e34f0fa6188d853505e08b",
+          "estimated": false,
+          "history_compactions": 0,
+          "history_policy": "relevance_selected_and_token_pressure_compacted",
+          "input_reported": true,
+          "input_tokens": 30540,
+          "llm_calls": 2,
+          "measured": true,
+          "message_count": 16,
+          "missing_usage_calls": 0,
+          "model": "mimo-v2.5",
+          "observed_at_ms": 1791875054675.0022,
+          "output_reported": true,
+          "output_tokens": 451,
+          "preexisting_history": false,
+          "provider": "generic",
+          "ratio": 0.23644256591796875,
+          "reserve_output_tokens": 8192,
+          "restored_snapshot": false,
+          "retained_history_source": "uncalibrated_text_and_image_estimate",
+          "retained_history_tokens": 753,
+          "retained_messages": 12,
+          "revision": 7,
+          "scope": "latest_request",
+          "session_calls": 5,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "session_input_tokens": 141575,
+          "session_missing_usage_calls": 0,
+          "session_output_tokens": 1348,
+          "session_total_tokens": 142923,
+          "session_usage_complete": true,
+          "session_usage_scope": "recorded_calls_since_accounting_started",
+          "source": "provider_usage",
+          "target_tokens": 114688,
+          "trigger_ratio": 0.85,
+          "trigger_tokens": 97484,
+          "turn_input_tokens": 57772,
+          "turn_output_tokens": 830,
+          "turn_peak_context_tokens": 30991,
+          "turn_total_tokens": 58602,
+          "updated_at_ms": 1791875054675.0073,
+          "used_tokens": 30991,
+          "window": 131072,
+          "window_source": "model_registry"
+        },
+        "decision_contract": {
+          "denied_call_count": 0,
+          "focused_clarification_available": false,
+          "goals_awaiting_browser_receipts": [],
+          "goals_without_read_receipts": [],
+          "operations_awaiting_completion_receipts": [],
+          "outcome_plan_recorded": true,
+          "outcome_plan_required": true,
+          "plan_validation_errors": [],
+          "planned_goal_count": 2,
+          "proposal_is_authorization": false,
+          "reduced_ui_batch_count": 0,
+          "request_sha256": "59b7bc2ef88e63ef80f4010fa0b7c587e52d1856715d2cd114307ab2e82d8833",
+          "semantic_accuracy_verified": false,
+          "unbound_read_goals": []
+        },
+        "latency_ms": 44856.0,
+        "llm_calls": 2,
+        "phase_timings_ms": {
+          "checker_ms": 15426.3,
+          "context_build_ms": 67.4,
+          "llm_first_token_ms": 11910.7,
+          "llm_generation_ms": 26286.4,
+          "router_ms": 0.2,
+          "saved_evidence_ms": 0.2,
+          "sse_push_ms": 60446.9
+        },
+        "response_contract": {
+          "act": "command",
+          "evidence_supplemental": false,
+          "language": "zh",
+          "presentation_mode": "status_with_evidence",
+          "source": "runtime_request_contract",
+          "text_required": true,
+          "version": 1
+        },
+        "usage": {
+          "completion_tokens": 830,
+          "missing_usage_calls": 0,
+          "prompt_tokens": 57772,
+          "total_tokens": 58602,
+          "usage_complete": true
+        },
+        "visual_analysis_pending": false
+      }
+    },
+    {
+      "status": 200,
+      "seconds": 80.74109187815338,
+      "response": "两个时间点已保存数据的比较结果（仅读取已有数据，未运行规划或重算剂量）：\n\n| 时间点 | 处方剂量 | D90 |\n|---|---:|---:|\n| Fictional A | 130.00 Gy | 111.00 Gy |\n| Natural Language Review | 145.00 Gy | 222.00 Gy |\n\n差异（Natural Language Review − Fictional A）：\n- 处方剂量：+15.00 Gy\n- D90：+111.00 Gy\n\n说明：以上均为各自时间点已保存的剂量/DVH 快照数值，单位为 Gy。两个时间点的临床版本号分别为 clinical_revision 2 和 1，属于彼此独立的保存结果，不构成对任一计划的临床批准结论。",
+      "steps": [
+        {
+          "content": "这是合成软件验收数据。请比较同一 Session 的 Fictional A 和 Natural Language Review 已保存的处方和 D90。只读取已有数据，不运行规划或重算剂量。",
+          "id": 1,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "用户输入",
+          "type": "user"
+        },
+        {
+          "content": "意图: semantic_action; 复杂度: high; 复核: 需要",
+          "id": 2,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "本地意图识别",
+          "type": "thinking"
+        },
+        {
+          "content": "等待 AI 回复...",
+          "id": 3,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "pending",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "LLM 调用 1",
+          "type": "thinking"
+        },
+        {
+          "content": "已识别 2 个工具调用",
+          "id": 3,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "LLM 调用 1",
+          "type": "thinking"
+        },
+        {
+          "content": "{\"action\": \"list\"}",
+          "id": 4,
+          "params": {
+            "action": "list"
+          },
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "pending",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "调用 timepoint_inspector",
+          "tool": "timepoint_inspector",
+          "type": "tool"
+        },
+        {
+          "content": "{\"action\": \"list\"}",
+          "execution_status": "succeeded",
+          "id": 4,
+          "metadata": {
+            "capabilities": {
+              "catalog": true,
+              "chat_target_binding": true,
+              "durable_states": true,
+              "execution_scope": true,
+              "explicit_pipeline_tool": true
+            },
+            "code": "timepoint_inspector_listed",
+            "execution_scope": "captured_timepoint",
+            "language": "zh",
+            "message": "已读取当前会话的 2 个时间点目录。",
+            "message_code": "timepoint_inspector_listed",
+            "message_params": {
+              "count": 2
+            },
+            "published_to_timepoint": false,
+            "read_only": true,
+            "readset": [
+              {
+                "clinical_revision": 2,
+                "lifecycle_revision": 1,
+                "stage": "preoperative",
+                "status": "active",
+                "timepoint_id": "744adb56e1a451a1833e550e68294361"
+              },
+              {
+                "clinical_revision": 1,
+                "lifecycle_revision": 0,
+                "stage": "preoperative",
+                "status": "active",
+                "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3"
+              }
+            ],
+            "registered_tool_catalog": {
+              "missing_scope_adapters": [],
+              "registered_count": 40,
+              "tools": [
+                {
+                  "available": true,
+                  "implementation": "tool_factory.timepoint_inspector.TimepointInspectorTool",
+                  "limitation": null,
+                  "name": "timepoint_inspector",
+                  "scope_contract": "shared_read_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.timepoint_controller.TimepointControllerTool",
+                  "limitation": null,
+                  "name": "timepoint_controller",
+                  "scope_contract": "catalog_action_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.timepoint_images.TimepointImagesTool",
+                  "limitation": null,
+                  "name": "timepoint_images",
+                  "scope_contract": "owned_clinical_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.output.dicom_rt_exporter.DicomRTExporterTool",
+                  "limitation": null,
+                  "name": "dicom_rt_exporter",
+                  "scope_contract": "owned_clinical_adapter"
+                },
+                {
+                  "available": false,
+                  "implementation": "tool_factory.code_executor.CodeExecutorTool",
+                  "limitation": null,
+                  "name": "code_executor",
+                  "scope_contract": "disabled_developer_execution"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.filesystem_browser.FilesystemBrowserTool",
+                  "limitation": null,
+                  "name": "filesystem_browser",
+                  "scope_contract": "owned_file_read"
+                },
+                {
+                  "available": false,
+                  "implementation": "tool_factory.env_manager.EnvManagerTool",
+                  "limitation": null,
+                  "name": "env_manager",
+                  "scope_contract": "disabled_developer_execution"
+                },
+                {
+                  "available": false,
+                  "implementation": "tool_factory.tool_creator.ToolCreatorTool",
+                  "limitation": null,
+                  "name": "tool_creator",
+                  "scope_contract": "disabled_developer_execution"
+                },
+                {
+                  "available": false,
+                  "implementation": "tool_factory.shell_executor.ShellExecutorTool",
+                  "limitation": null,
+                  "name": "shell_executor",
+                  "scope_contract": "disabled_developer_execution"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.doc_reader.DocumentReaderTool",
+                  "limitation": null,
+                  "name": "doc_reader",
+                  "scope_contract": "shared_read_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.ui_inspector.UIInspectorTool",
+                  "limitation": null,
+                  "name": "ui_inspector",
+                  "scope_contract": "owned_clinical_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.ui_controller.UIControllerTool",
+                  "limitation": null,
+                  "name": "ui_controller",
+                  "scope_contract": "scoped_browser_delivery"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.ui_screenshot.UIScreenshotTool",
+                  "limitation": null,
+                  "name": "ui_screenshot",
+                  "scope_contract": "scoped_browser_delivery"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.ui_content.UISessionContentTool",
+                  "limitation": null,
+                  "name": "ui_content",
+                  "scope_contract": "scoped_browser_delivery"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.ui_annotate.UIAnnotateTool",
+                  "limitation": null,
+                  "name": "ui_annotate",
+                  "scope_contract": "owned_screenshot_annotation"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.viewer_command.query_metrics.QueryMetricsTool",
+                  "limitation": null,
+                  "name": "query_metrics",
+                  "scope_contract": "owned_clinical_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.CTV_seg.CTVSegmentationTool",
+                  "limitation": null,
+                  "name": "ctv_segmentation",
+                  "scope_contract": "owned_clinical_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.CTV_seg.biomedparse_v2.BiomedParseV2GenericSegmentationTool",
+                  "limitation": null,
+                  "name": "biomedparse_segmentation",
+                  "scope_contract": "owned_clinical_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.CTV_seg.model_catalog.CTVModelCatalogTool",
+                  "limitation": null,
+                  "name": "ctv_model_catalog",
+                  "scope_contract": "shared_read_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.OAR_seg.OARSegmentationTool",
+                  "limitation": null,
+                  "name": "oar_segmentation",
+                  "scope_contract": "owned_clinical_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.dose_engine.DoseEngineTool",
+                  "limitation": null,
+                  "name": "dose_engine",
+                  "scope_contract": "owned_clinical_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.dose_recompute.CurrentPlanDoseRecomputeTool",
+                  "limitation": null,
+                  "name": "dose_recompute",
+                  "scope_contract": "owned_clinical_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.dose_eval.DoseEvaluationTool",
+                  "limitation": null,
+                  "name": "dose_evaluation",
+                  "scope_contract": "owned_clinical_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.seed_plan.seed_planning.SeedPlanningTool",
+                  "limitation": null,
+                  "name": "seed_planning",
+                  "scope_contract": "owned_clinical_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.seed_seg.SeedSegmentationTool",
+                  "limitation": null,
+                  "name": "seed_segmentation",
+                  "scope_contract": "owned_clinical_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.traj_plan.TrajectoryPlanningTool",
+                  "limitation": null,
+                  "name": "trajectory_planning",
+                  "scope_contract": "owned_clinical_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.seed_plan.planning_pipeline.PlanningPipelineTool",
+                  "limitation": null,
+                  "name": "planning_pipeline",
+                  "scope_contract": "owned_clinical_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.case_memory.CaseMemoryTool",
+                  "limitation": null,
+                  "name": "case_memory",
+                  "scope_contract": "owned_experience_read"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.surgical_guide.SurgicalGuideTool",
+                  "limitation": null,
+                  "name": "surgical_guide",
+                  "scope_contract": "owned_clinical_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.clinical_kb.ClinicalKnowledgeBaseTool",
+                  "limitation": null,
+                  "name": "clinical_kb",
+                  "scope_contract": "shared_read_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.plan_comparator.PlanComparatorTool",
+                  "limitation": null,
+                  "name": "plan_comparator",
+                  "scope_contract": "owned_clinical_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.safety_validator.SafetyValidatorTool",
+                  "limitation": null,
+                  "name": "safety_validator",
+                  "scope_contract": "owned_clinical_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.plan_quality.plan_quality_scorer.PlanQualityScorerTool",
+                  "limitation": null,
+                  "name": "plan_quality_scorer",
+                  "scope_contract": "owned_clinical_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.plan_quality.oar_constraint_checker.OARConstraintCheckerTool",
+                  "limitation": null,
+                  "name": "oar_constraint_checker",
+                  "scope_contract": "owned_clinical_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.plan_quality.plan_refinement.PlanRefinementTool",
+                  "limitation": null,
+                  "name": "plan_refinement",
+                  "scope_contract": "owned_clinical_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.report_generator.ReportGeneratorTool",
+                  "limitation": null,
+                  "name": "report_generator",
+                  "scope_contract": "owned_clinical_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.output.report_auto_fill.ReportAutoFillTool",
+                  "limitation": null,
+                  "name": "report_auto_fill",
+                  "scope_contract": "owned_clinical_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.web_search.WebSearchTool",
+                  "limitation": null,
+                  "name": "web_search",
+                  "scope_contract": "shared_read_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.web_fetch.WebFetchTool",
+                  "limitation": null,
+                  "name": "web_fetch",
+                  "scope_contract": "shared_read_adapter"
+                },
+                {
+                  "available": true,
+                  "implementation": "tool_factory.web_access.WebAccessTool",
+                  "limitation": null,
+                  "name": "web_access",
+                  "scope_contract": "shared_read_adapter"
+                }
+              ]
+            },
+            "scope": {
+              "clinical_revision": 1,
+              "lifecycle_revision": 0,
+              "readset": [
+                {
+                  "clinical_revision": 1,
+                  "lifecycle_revision": 0,
+                  "stage": "preoperative",
+                  "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3"
+                }
+              ],
+              "request_id": "e1d293765f914e38b969ada1e09ee51b",
+              "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+              "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+              "ui_language": "zh"
+            },
+            "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+            "timepoint_clinical_revision": 1,
+            "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+            "timepoint_ids": [
+              "744adb56e1a451a1833e550e68294361",
+              "3dc3ca508f03419085f61de27b08e3b3"
+            ],
+            "timepoints": [
+              {
+                "auto_title": false,
+                "clinical_revision": 2,
+                "created_at": 1791874946.589252,
+                "deleted_at": null,
+                "episode_id": null,
+                "id": "744adb56e1a451a1833e550e68294361",
+                "legacy_default": false,
+                "lifecycle_revision": 1,
+                "preoperative_timepoint_id": null,
+                "presentation_revision": 0,
+                "previous_intraoperative_timepoint_id": null,
+                "revision": 1,
+                "stage": "preoperative",
+                "state_revision": 2,
+                "status": "active",
+                "title": "Fictional A",
+                "updated_at": 1791874946.6677191
+              },
+              {
+                "auto_title": false,
+                "clinical_revision": 1,
+                "created_at": 1791874946.645835,
+                "deleted_at": null,
+                "episode_id": null,
+                "id": "3dc3ca508f03419085f61de27b08e3b3",
+                "legacy_default": false,
+                "lifecycle_revision": 0,
+                "preoperative_timepoint_id": null,
+                "presentation_revision": 7,
+                "previous_intraoperative_timepoint_id": null,
+                "revision": 1,
+                "stage": "preoperative",
+                "state_revision": 8,
+                "status": "active",
+                "title": "Natural Language Review",
+                "updated_at": 1791875070.2739735
+              }
+            ],
+            "viewer_mounted": false
+          },
+          "params": {
+            "action": "list"
+          },
+          "result": "已读取当前会话的 2 个时间点目录。\n```json\n{\"catalog_revision\": 13, \"default_timepoint_id\": \"744adb56e1a451a1833e550e68294361\", \"timepoints\": [{\"id\": \"744adb56e1a451a1833e550e68294361\", \"title\": \"Fictional A\", \"stage\": \"preoperative\", \"status\": \"active\", \"clinical_revision\": 2, \"lifecycle_revision\": 1, \"preoperativ",
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "调用 timepoint_inspector",
+          "tool": "timepoint_inspector",
+          "type": "tool"
+        },
+        {
+          "content": "{}",
+          "id": 5,
+          "params": {},
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "pending",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "调用 record_request_plan",
+          "tool": "record_request_plan",
+          "type": "tool"
+        },
+        {
+          "content": "{}",
+          "execution_status": "succeeded",
+          "id": 5,
+          "metadata": {
+            "completed": true,
+            "grants_execution": false,
+            "internal_only": true,
+            "user_visible": false
+          },
+          "params": {},
+          "result": "{\"accepted\": true, \"requested_outcomes\": 2, \"grants_execution\": false, \"request_sha256\": \"4c18c60f80e52b4082cea47dcc4e4c503d6fbb485fd0a97c26dfbabdd29f3be8\"}",
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "调用 record_request_plan",
+          "tool": "record_request_plan",
+          "type": "tool"
+        },
+        {
+          "content": "等待 AI 回复...",
+          "id": 6,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "pending",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "LLM 调用 2",
+          "type": "thinking"
+        },
+        {
+          "content": "已识别 2 个工具调用",
+          "id": 6,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "LLM 调用 2",
+          "type": "thinking"
+        },
+        {
+          "content": "{\"metric_type\": \"dose_metrics\"}",
+          "id": 7,
+          "params": {
+            "metric_type": "dose_metrics"
+          },
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "pending",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "调用 query_metrics",
+          "tool": "query_metrics",
+          "type": "tool"
+        },
+        {
+          "content": "{\"metric_type\": \"dose_metrics\"}",
+          "execution_status": "succeeded",
+          "id": 7,
+          "metadata": {
+            "internal_only": false,
+            "metric_type": "dose_metrics",
+            "response_contract": {
+              "covers": [
+                "dose"
+              ],
+              "mode": "direct_read",
+              "requires_review": false,
+              "requires_synthesis": false,
+              "resource": "session_metrics:dose_metrics",
+              "source": "active_session"
+            },
+            "trace_summary_i18n": {
+              "en": "Loaded the saved structured metrics from the active session.",
+              "zh": "已读取当前 Session 中保存的结构化指标。"
+            },
+            "user_visible": true
+          },
+          "params": {
+            "metric_type": "dose_metrics"
+          },
+          "result": "## 当前病例剂量指标\n\n以下数值直接读取当前 Session 已保存的剂量/DVH 结果。\n\n| 指标 | 数值 |\n|---|---:|\n| 处方剂量 | 130.00 Gy |\n| V100 | 80.00% |\n| D90 | 111.00 Gy |",
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "调用 query_metrics",
+          "tool": "query_metrics",
+          "type": "tool"
+        },
+        {
+          "content": "{\"metric_type\": \"dose_metrics\"}",
+          "id": 8,
+          "params": {
+            "metric_type": "dose_metrics"
+          },
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "pending",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "调用 query_metrics",
+          "tool": "query_metrics",
+          "type": "tool"
+        },
+        {
+          "content": "{\"metric_type\": \"dose_metrics\"}",
+          "execution_status": "succeeded",
+          "id": 8,
+          "metadata": {
+            "internal_only": false,
+            "metric_type": "dose_metrics",
+            "response_contract": {
+              "covers": [
+                "dose"
+              ],
+              "mode": "direct_read",
+              "requires_review": false,
+              "requires_synthesis": false,
+              "resource": "session_metrics:dose_metrics",
+              "source": "active_session"
+            },
+            "trace_summary_i18n": {
+              "en": "Loaded the saved structured metrics from the active session.",
+              "zh": "已读取当前 Session 中保存的结构化指标。"
+            },
+            "user_visible": true
+          },
+          "params": {
+            "metric_type": "dose_metrics"
+          },
+          "result": "## 当前病例剂量指标\n\n以下数值直接读取当前 Session 已保存的剂量/DVH 结果。\n\n| 指标 | 数值 |\n|---|---:|\n| 处方剂量 | 145.00 Gy |\n| V100 | 80.00% |\n| D90 | 222.00 Gy |",
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "调用 query_metrics",
+          "tool": "query_metrics",
+          "type": "tool"
+        },
+        {
+          "content": "等待 AI 回复...",
+          "id": 9,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "pending",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "LLM 调用 3",
+          "type": "thinking"
+        },
+        {
+          "content": "补全请求中的证据",
+          "id": 9,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "LLM 调用 3",
+          "type": "thinking"
+        },
+        {
+          "content": "等待 AI 回复...",
+          "id": 10,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "pending",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "LLM 调用 4",
+          "type": "thinking"
+        },
+        {
+          "content": "已生成回复",
+          "id": 10,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "LLM 调用 4",
+          "type": "thinking"
+        },
+        {
+          "content": "Checking requirement coverage...",
+          "id": 11,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "pending",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "Completeness Check",
+          "tool": "completeness_checker",
+          "type": "tool"
+        },
+        {
+          "content": "Checked",
+          "id": 11,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "Completeness Check",
+          "tool": "completeness_checker",
+          "type": "tool"
+        },
+        {
+          "content": "正在整理回复...",
+          "id": 12,
+          "phase": "final_response",
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "pending",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "最终回复",
+          "type": "assistant"
+        },
+        {
+          "content": "Response delivered",
+          "id": 12,
+          "phase": "final_response",
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "status": "done",
+          "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+          "title": "最终回复",
+          "type": "assistant"
+        }
+      ],
+      "timepoint_id": "3dc3ca508f03419085f61de27b08e3b3",
+      "brain_available": true,
+      "error": null,
+      "llm_meta": {
+        "context_status": {
+          "accounting_version": 3,
+          "calibration": 0.8766,
+          "call_index": 4,
+          "change_reason": "request_selection",
+          "components": {
+            "conversation": 3192,
+            "facts": 0,
+            "history": 0,
+            "images": 0,
+            "other": 0,
+            "runtime_context": 2961,
+            "system": 15564,
+            "tool_results": 152,
+            "tools": 23449,
+            "total": 45318
+          },
+          "components_source": "estimated_input_before_generation",
+          "context_complete": true,
+          "coverage_started_at_ms": 1791874947076.7793,
+          "epoch": "c88ce49ec9e34f0fa6188d853505e08b",
+          "estimated": false,
+          "history_compactions": 0,
+          "history_policy": "relevance_selected_and_token_pressure_compacted",
+          "input_reported": true,
+          "input_tokens": 34390,
+          "llm_calls": 4,
+          "measured": true,
+          "message_count": 20,
+          "missing_usage_calls": 0,
+          "model": "mimo-v2.5",
+          "observed_at_ms": 1791875132688.9421,
+          "output_reported": true,
+          "output_tokens": 262,
+          "preexisting_history": false,
+          "provider": "generic",
+          "ratio": 0.264373779296875,
+          "reserve_output_tokens": 8192,
+          "restored_snapshot": false,
+          "retained_history_source": "uncalibrated_text_and_image_estimate",
+          "retained_history_tokens": 1497,
+          "retained_messages": 22,
+          "revision": 12,
+          "scope": "latest_request",
+          "session_calls": 9,
+          "session_id": "fe9eb4e9f5324dd4be0e2c1319362234",
+          "session_input_tokens": 274025,
+          "session_missing_usage_calls": 0,
+          "session_output_tokens": 2546,
+          "session_total_tokens": 276571,
+          "session_usage_complete": true,
+          "session_usage_scope": "recorded_calls_since_accounting_started",
+          "source": "provider_usage",
+          "target_tokens": 114688,
+          "trigger_ratio": 0.85,
+          "trigger_tokens": 97484,
+          "turn_input_tokens": 132450,
+          "turn_output_tokens": 1198,
+          "turn_peak_context_tokens": 34736,
+          "turn_total_tokens": 133648,
+          "updated_at_ms": 1791875132688.9468,
+          "used_tokens": 34652,
+          "window": 131072,
+          "window_source": "model_registry"
+        },
+        "decision_contract": {
+          "denied_call_count": 0,
+          "focused_clarification_available": false,
+          "goals_awaiting_browser_receipts": [],
+          "goals_without_read_receipts": [
+            "g1"
+          ],
+          "operations_awaiting_completion_receipts": [],
+          "outcome_plan_recorded": true,
+          "outcome_plan_required": true,
+          "plan_validation_errors": [],
+          "planned_goal_count": 2,
+          "proposal_is_authorization": false,
+          "reduced_ui_batch_count": 0,
+          "request_sha256": "4c18c60f80e52b4082cea47dcc4e4c503d6fbb485fd0a97c26dfbabdd29f3be8",
+          "semantic_accuracy_verified": false,
+          "unbound_read_goals": []
+        },
+        "latency_ms": 62125.2,
+        "llm_calls": 4,
+        "phase_timings_ms": {
+          "checker_ms": 18002.1,
+          "context_build_ms": 73.8,
+          "llm_first_token_ms": 45966.6,
+          "llm_generation_ms": 10738.5,
+          "router_ms": 0.2,
+          "saved_evidence_ms": 0.2,
+          "sse_push_ms": 80353.4
+        },
+        "response_contract": {
+          "act": "statement",
+          "evidence_supplemental": false,
+          "language": "zh",
+          "presentation_mode": "answer_with_evidence",
+          "source": "runtime_request_contract",
+          "text_required": true,
+          "version": 1
+        },
+        "usage": {
+          "completion_tokens": 1198,
+          "missing_usage_calls": 0,
+          "prompt_tokens": 132450,
+          "total_tokens": 133648,
+          "usage_complete": true
+        },
+        "visual_analysis_pending": false
+      }
+    }
+  ],
+  "titles": {
+    "744adb56e1a451a1833e550e68294361": "Fictional A",
+    "3dc3ca508f03419085f61de27b08e3b3": "Natural Language Review"
+  }
+}

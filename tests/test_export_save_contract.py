@@ -336,7 +336,8 @@ def test_late_chat_save_dialog_does_not_open_in_another_case(save_page):
 
 def test_large_real_scene_has_no_old_512_object_ceiling(tmp_path):
     store, user, session, agent = _case(tmp_path)
-    item = ExportService(store).catalog(user['id'], session.id, agent)[0]
+    item = next(item for item in ExportService(store).catalog(user['id'], session.id, agent)
+                if any(format.key == 'nifti' for format in item.formats))
     from dataclasses import replace
     catalog = [replace(item, object_id=f'image:{i}') for i in range(600)]
     selections = [{'object_id': item.object_id, 'format': 'nifti'} for item in catalog]

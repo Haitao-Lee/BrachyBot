@@ -26,5 +26,5 @@ def test_traversability_move_is_metadata_only_and_replan_is_conditional():
     # A move-only decision keeps the current clinical presentation visible,
     # while an actual traversability replan can skip redundant label loading.
     assert "preservePlanningPresentation: shouldReplan !== true" in viewer
-    assert "replanAfterStructureChange(expectedSessionId, { skipLabelLoad: true });" in viewer
+    assert "replanAfterStructureChange(expectedSessionId, { skipLabelLoad: true, timepointScope: mutationScope.timepointScope });" in viewer
 

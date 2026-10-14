@@ -74,6 +74,91 @@ def synthetic_form(page, language='en'):
     page.evaluate('window._reflowReportPages()')
 
 
+def install_preview(page):
+    page.evaluate('''() => {
+        const pages=document.getElementById('reportPages');
+        const host=document.createElement('div');host.id='reportPreview';host.style.width='700px';
+        const wrap=document.createElement('div');wrap.id='reportPagesWrapper';
+        pages.replaceWith(host);host.append(wrap);wrap.append(pages);
+        window.panels={preview(){}};window._legacy=name=>window[name];
+        window.paginationCalls=0; const original=window._paginateReportFlow;
+        window._paginateReportFlow=(...args)=>{paginationCalls++;return original(...args);};
+    }''')
+    shell=(JS/'brachybot-report-shell.js').read_text(encoding='utf-8')
+    preview=shell[shell.index('    const preview = (function() {'):shell.index('    // Ctrl+0 reset shortcut')]
+    page.add_script_tag(content=preview.replace('const preview =', 'window.perfPreview =', 1))
+    page.wait_for_timeout(100)
+
+
+def test_zoom_and_split_preserve_pagination_dom_and_physical_print(page):
+    synthetic_form(page)
+    install_preview(page)
+    result=page.evaluate('''async () => {
+        window.paginationCalls=0;
+        const pages=document.getElementById('reportPages');
+        const first=pages.querySelector('.report-flow-page'), text=pages.textContent;
+        const count=pages.children.length;
+        for(let i=0;i<20;i++) {
+            perfPreview.setZoom(.6+(i%10)*.1,{persist:false});
+            document.getElementById('reportPreview').style.width=(550+i%5*30)+'px';
+            await new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
+        }
+        return {calls:paginationCalls, stable:pages.contains(first),
+            textStable:text===pages.textContent,countStable:count===pages.children.length,
+            transform:document.getElementById('reportPagesWrapper').style.transform};
+    }''')
+    assert result['calls'] == 0
+    assert result['stable'] and result['textStable'] and result['countStable']
+    assert 'scale(' in result['transform']
+    assert page.evaluate("document.querySelector('.report-page').offsetWidth") > 700
+
+
+def test_hidden_report_retries_then_stops_until_content_font_or_paper_change(page):
+    install_preview(page)
+    page.evaluate("document.getElementById('reportPreview').style.display='none'")
+    synthetic_form(page)
+    assert not page.evaluate("document.getElementById('reportPages')._reportFlowPaginationReady")
+    page.evaluate("document.getElementById('reportPreview').style.display='block';perfPreview.refresh()")
+    page.wait_for_timeout(100)
+    assert page.evaluate("document.getElementById('reportPages')._reportFlowPaginationReady")
+    page.evaluate("paginationCalls=0;document.fonts.dispatchEvent(new Event('loadingdone'))")
+    page.wait_for_timeout(100)
+    assert page.evaluate('paginationCalls') == 1
+    page.add_style_tag(content='.report-flow-page { width: 820px !important; min-width: 820px !important; max-width: 820px !important; }')
+    page.evaluate('perfPreview.refresh()')
+    page.wait_for_timeout(100)
+    assert page.evaluate('paginationCalls') == 2
+    page.evaluate("reportForm.signature.notes='new report content';_updateReportPreview();perfPreview.refresh()")
+    page.wait_for_timeout(100)
+    assert 'new report content' in page.locator('#reportPages').inner_text()
+
+
+def test_fixed_evidence_image_load_does_not_repaginate_text(page):
+    synthetic_form(page)
+    install_preview(page)
+    page.evaluate('''() => {
+        paginationCalls=0;
+        const image=document.createElement('img');document.querySelector('.report-page').append(image);
+        image.dispatchEvent(new Event('load'));
+    }''')
+    page.wait_for_timeout(100)
+    assert page.evaluate('paginationCalls') == 0
+
+
+def test_finalized_read_registry_does_not_suppress_user_zoom_save(page):
+    synthetic_form(page)
+    install_preview(page)
+    page.evaluate('''() => {
+        window.saveCalls=0;window.scheduleWorkspaceSave=()=>saveCalls++;
+        window.isWorkspacePresentationRestoreActive=()=>true;
+        window.__pendingWorkspacePresentation={active:false,finalized:true};
+        perfPreview.setZoom(1.2);
+    }''')
+    assert page.evaluate('saveCalls') == 1
+    page.evaluate("__pendingWorkspacePresentation.active=true;perfPreview.setZoom(1.3)")
+    assert page.evaluate('saveCalls') == 1
+
+
 def test_fallback_retains_zero_missing_and_explicit_units(page):
     rows = page.evaluate("_reportOarRowsFromMetrics({zero:{d2cc:0,dmax:0,v100:0},missing:{v100:null},pct:{v100:.5,volume_metric_units:'percent'}},'fraction')")
     assert len(rows) == 3
@@ -129,7 +214,7 @@ def test_report_table_strings_escape_html_and_use_global_language(page):
     page.evaluate("window._i18nLang='zh';reportForm.language='zh';_updateReportPreview();renderReportEditor()")
     assert '距针尖末端' in page.locator('#reportPages').inner_text()
     assert '针道与粒子位置明细' in page.locator('#reportFormHost').inner_text()
-    assert 'From needle tip' not in page.locator('#reportPages').inner_text()
+    assert 'Distance from needle tip' not in page.locator('#reportPages').inner_text()
 
 
 def test_plan_mismatch_never_labels_old_seed_positions_current(page):
@@ -160,7 +245,7 @@ def test_real_pdf_all_organs_seeds_headings_and_pages_are_readable(page, languag
     assert page.evaluate("""() => Array.from(document.querySelectorAll('.hp-grid-table')).every(t=>t.scrollWidth<=t.clientWidth+1)""")
     markdown = page.evaluate('_reportDetailedTablesMarkdown(reportForm).join("\\n")')
     assert 'S060' in markdown and 'UNASSIGNED' in markdown
-    assert 'From needle tip' in markdown if language == 'en' else '距针尖末端' in markdown
+    assert 'Distance from needle tip' in markdown if language == 'en' else '距针尖末端' in markdown
     output = ROOT / 'tmp/pdfs'
     output.mkdir(parents=True, exist_ok=True)
     pdf = output / f'report-plan-tables-{language}.pdf'

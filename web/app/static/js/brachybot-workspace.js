@@ -75,7 +75,7 @@
     // Dose controls are persisted in physical Gy. Legacy snapshots that
     // explicitly used model units are converted with their saved calibration.
     const GY_VALUE_IDS = new Set(['inLowestEnergy', 'outHighestEnergy']);
-    const WORKSPACE_REQUEST_TIMEOUT_MS = 15000;
+    const WORKSPACE_REQUEST_TIMEOUT_MS = 60000;
     const WORKSPACE_RECOVERY_TIMEOUT_MS = 5000;
     // Activating an archived case is a cold-storage restore: the server copies
     // and checksum-verifies the case tree from NAS before it can answer, which
@@ -332,7 +332,7 @@
         return generation === workspaceTransitionGeneration;
     }
 
-    function cancelBackgroundWorkspaceRestore() {
+    function cancelBackgroundWorkspaceRestore({ legacyOnly = false } = {}) {
         // Wake any screenshot/report capture that is waiting on the previous
         // case's visual restore barrier.  Without this, a session switch
         // could leave a hidden awaiter blocked until its five-minute timeout.
@@ -341,6 +341,7 @@
             Object.keys(readiness).forEach(key => {
                 const entry = readiness[key];
                 if (!entry || entry.settled || typeof entry.resolveReady !== 'function') return;
+                if (legacyOnly && entry.timepointScope) return;
                 entry.resolveReady({
                     ready: false,
                     cancelled: true,
@@ -353,7 +354,7 @@
         // Invalidate the clinical restore wrapper as well as this module's
         // scheduling generation. A new/selected case must never inherit the
         // previous case's delayed spinner or resource callbacks.
-        window.__workspaceHydrationRunId = (window.__workspaceHydrationRunId || 0) + 1;
+        if (!legacyOnly) window.__workspaceHydrationRunId = (window.__workspaceHydrationRunId || 0) + 1;
         if (backgroundRestoreTimer) {
             clearTimeout(backgroundRestoreTimer);
             backgroundRestoreTimer = null;
@@ -367,6 +368,9 @@
             clearTimeout(backgroundRestoreNoticeTimer);
             backgroundRestoreNoticeTimer = null;
         }
+        // A late Session-only startup notification revokes its own scheduler,
+        // not the timepoint restore that has already mounted on the same page.
+        if (legacyOnly) return;
         window.__workspaceRestoreScheduledSessionId = null;
         window.__workspaceRestoreCompletedSessionId = null;
         document.body.classList.remove('workspace-hydrating');
@@ -379,6 +383,18 @@
         const scopedSession = String(scope?.sessionId || '');
         const scopedRun = String(scope?.runId || '');
         const immediate = scope?.immediate === true;
+        // Reject obsolete producers before touching the shared elapsed clock,
+        // animation or message. A late task belongs to its captured workspace,
+        // not whichever Session/timepoint happens to be open now.
+        if (scopedSession && activeSessionId && scopedSession !== String(activeSessionId)) return false;
+        if (scope?.timepointId && window.BrachyBotTimepointWorkspace?.scopeIsCurrent
+            && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(scope)) return false;
+        if (active && scopedSession
+            && String(window.__workspaceRestoreCompletedSessionId || '') === scopedSession
+            && scope?.allowAfterCompleted !== true) return false;
+        if (!active && scope && !immediate
+            && ((scopedSession && notice.dataset.sessionId !== scopedSession)
+                || (scopedRun && notice.dataset.runId !== scopedRun))) return false;
         // Any update other than the activation ticker clears the elapsed clock;
         // showCaseActivationLoading re-enables it right after this returns.
         const elapsedNode = document.getElementById('workspaceHydrationElapsed');
@@ -392,15 +408,6 @@
         if (!active && caseActivationTimer) {
             clearInterval(caseActivationTimer);
             caseActivationTimer = null;
-        }
-        if (active && scopedSession
-            && String(window.__workspaceRestoreCompletedSessionId || '') === scopedSession
-            && scope?.allowAfterCompleted !== true) {
-            return false;
-        }
-        if (!active && scope && !immediate) {
-            if ((scopedSession && notice.dataset.sessionId !== scopedSession)
-                || (scopedRun && notice.dataset.runId !== scopedRun)) return;
         }
         const target = document.getElementById('workspaceHydrationMessage');
         if (target && message) target.textContent = message;
@@ -539,6 +546,11 @@
     function activationFailureMessage(data) {
         const raw = String(data?.error || '').trim();
         const zh = typeof window._i18nLang === 'string' && window._i18nLang === 'zh';
+        if (data?.code === 'archive_storage_unavailable') {
+            return zh
+                ? '归档存储暂时不可用，病例数据未删除或替换。请恢复存储连接后重试激活。'
+                : 'Archive storage is temporarily unavailable; case data was not deleted or replaced. Restore the storage connection, then retry activation.';
+        }
         if (/missing from NAS|cold.storage|archive[^.]*missing/i.test(raw)) {
             return zh
                 ? '冷存储中找不到该病例的恢复数据，无法激活。请联系管理员。'
@@ -637,6 +649,13 @@
     window.workspacePresentationTree = workspacePresentationTree;
 
     function scheduleBackgroundWorkspaceRestore(workspace, sessionId, restoreOptions = {}) {
+        if (!restoreOptions.timepointScope && window.BrachyBotTimepoints && window.BrachyBotTimepointWorkspace) {
+            // The mounted timepoint bridge is the sole clinical restoration
+            // owner. A second Session-wide restore can finish after a switch
+            // and regenerate a report or replace presentation on the new view.
+            cancelBackgroundWorkspaceRestore({ legacyOnly: true });
+            return;
+        }
         if (String(sessionId || '') !== String(activeSessionId || '')
             || !workspaceSnapshotHasClinicalResources(workspace)) {
             cancelBackgroundWorkspaceRestore();
@@ -1047,7 +1066,7 @@
                 if (pendingSwitchSessionId !== null) {
                     const queued = pendingSwitchSessionId;
                     pendingSwitchSessionId = null;
-                    setTimeout(() => window.switchSession(queued), 0);
+                    setTimeout(() => window.switchSession(queued, { force: true }), 0);
                 }
             }
         })();
@@ -1063,6 +1082,57 @@
             return item;
         }));
     }
+    window.cloneWorkspaceJSON = jsonClone;
+    function reportEditedFieldSet(value) {
+        const entries = value instanceof Set || Array.isArray(value) ? [...value]
+            : value && typeof value === 'object' ? Object.keys(value).filter(key => value[key] === true) : [];
+        return new Set(entries.filter(entry => typeof entry === 'string' && entry.length > 0));
+    }
+    window.normalizeReportEditedFields = reportEditedFieldSet;
+
+    function normalizePlanningPresentationSnapshot(snapshot) {
+        if (!snapshot || typeof snapshot !== 'object') return snapshot;
+        const ui = snapshot.ui || {}, saved = ui.state || ui;
+        if (saved.planning_presentation_defaults_version === 1) return snapshot;
+        const normalized = jsonClone(saved);
+        normalized.planning_presentation_defaults_version = 1;
+        normalized.controls = normalized.controls || {};
+        for (const [id, checked] of [['overlayCTV', true], ['overlayOAR', true], ['labelShow3d', false]]) {
+            normalized.controls[id] = { ...(normalized.controls[id] || {}), checked };
+        }
+        normalized.viewer = normalized.viewer || {};
+        normalized.viewer.settings = { ...(normalized.viewer.settings || {}), showCTV:true, showOAR:true };
+        normalized.viewer.labelImage = { ...(normalized.viewer.labelImage || {}),
+            '3d': { ...(normalized.viewer.labelImage?.['3d'] || {}), visible:false } };
+        const hideGenerated = rows => Array.isArray(rows) ? rows.map(row => row?.type === 'planning_distance'
+            ? { ...row, visible:false, visible3D:false, visible2D:false } : row) : rows;
+        normalized.viewer.annotations = hideGenerated(normalized.viewer.annotations);
+        const presentationTree = workspacePresentationTree(snapshot);
+        if (Array.isArray(presentationTree.annotations)) {
+            normalized.data_tree = jsonClone(presentationTree);
+            normalized.data_tree.annotations = hideGenerated(normalized.data_tree.annotations);
+        }
+        return { ...snapshot, ui:ui.state ? { ...ui, state:normalized } : normalized };
+    }
+    window.normalizePlanningPresentationSnapshot = normalizePlanningPresentationSnapshot;
+    window.applyPlanningPresentationDefaults = () => {
+        if (typeof state === 'undefined') return;
+        state.viewerSettings = { ...(state.viewerSettings || {}), showCTV:true, showOAR:true };
+        state.labelImage = { ...(state.labelImage || {}),
+            '3d': { ...(state.labelImage?.['3d'] || {}), visible:false } };
+        for (const [id, checked] of [['overlayCTV', true], ['overlayOAR', true], ['labelShow3d', false]]) {
+            const node = document.getElementById(id); if (node) node.checked = checked;
+        }
+        for (const row of state.annotations || []) if (row?.type === 'planning_distance') {
+            row.visible = false; row.visible3D = false; row.visible2D = false;
+            window.updateWorkspacePresentationForNode?.({
+                id:row.id, objectId:`annotation:${row.id}`, family:'annotation', sessionId:state.sessionId,
+            }, { visible:false, visible3D:false, visible2D:false });
+        }
+        const overlay = document.getElementById('labelOverlay_3d'); if (overlay) overlay.style.display = 'none';
+        window.reconcileViewerAnnotationNodes?.();
+        window.renderPlanningDistanceAnnotations?.();
+    };
 
     function workspaceSnapshotSessionId(snapshot) {
         return String(snapshot?.session_id || snapshot?.session?.id || '');
@@ -1188,6 +1258,7 @@
     }
 
     function stageWorkspacePresentation(snapshotOrTree, sessionId = '', restoreToken = null) {
+        if (snapshotOrTree?.ui) snapshotOrTree = normalizePlanningPresentationSnapshot(snapshotOrTree);
         const sid = String(sessionId || workspaceSnapshotSessionId(snapshotOrTree)
             || (typeof activeSessionId !== 'undefined' ? activeSessionId : '') || '').trim();
         if (!sid || !snapshotOrTree || typeof snapshotOrTree !== 'object') {
@@ -1526,7 +1597,7 @@
     function controlState() {
         const values = {};
         document.querySelectorAll('input[id], select[id], textarea[id]').forEach(el => {
-            if (el.type === 'password' || /(?:api[_-]?key|token|secret)/i.test(el.id)) return;
+            if (el.type === 'file' || el.type === 'password' || /(?:api[_-]?key|token|secret)/i.test(el.id)) return;
             if (el.tagName === 'SELECT' && el.multiple) {
                 // A guide can intentionally target a subset of planned
                 // needles. Preserve every selected channel, rather than the
@@ -1733,6 +1804,11 @@
     // during the fast snapshot pass and again at the visual restore barrier.
     function restoreWorkspaceChrome(chrome, options = {}) {
         if (!chrome || typeof chrome !== 'object') return false;
+        if (!options.timepointScope && window.BrachyBotTimepoints?.enabled?.()
+            && !window.BrachyBotTimepointWorkspace?.requestReady?.()) return false;
+        const timepointScope = options.timepointScope || window.BrachyBotTimepointWorkspace?.captureRequestScope?.();
+        const ownsTimepoint = () => !timepointScope || window.BrachyBotTimepointWorkspace?.scopeIsCurrent(timepointScope);
+        if (!ownsTimepoint()) return false;
         const sessionId = String(options.sessionId || '').trim();
         if (!_workspaceChromeSessionIsCurrent(sessionId)) return false;
         const validPanels = new Set(['input', 'metrics', 'viewers', 'report']);
@@ -1816,6 +1892,7 @@
         _restoreWorkspaceViewerGeometry(chrome);
 
         const applyScroll = () => {
+            if (!ownsTimepoint()) return;
             if (!_workspaceChromeSessionIsCurrent(sessionId)) return;
             const panelScroll = chrome.panelScroll && typeof chrome.panelScroll === 'object'
                 ? chrome.panelScroll : {};
@@ -1854,6 +1931,7 @@
                 : !!state.doseTexture.enabled)
             : false;
         return {
+            planning_presentation_defaults_version: 1,
             dose_value_unit: 'gy',
             prescription_base_gy: 120,
             dose_model_scale_gy: (
@@ -2012,7 +2090,7 @@
             captureRole: 'planning_overview',
             captureContract: 'figure1-global-overview-v10-framed-hires',
             captureProfile: 'global_overview',
-            title: 'Reference-direction plan overview',
+            title: 'Plan overview (needle reference direction)',
             caption: 'Global view along the needle reference direction, showing the CTV, selected OARs, needle paths, and seeds.',
             titleZh: '针道参考方向计划总览',
             captionZh: '沿针道参考方向展示全局计划，包括 CTV、选定的危及器官、针道和粒子。',
@@ -2068,7 +2146,7 @@
             captureRole: 'dvh',
             captureContract: 'dvh-readable-report-v3',
             title: 'Dose-volume histogram',
-            caption: 'Dose-volume curves for the CTV and available OAR structures in the current Planning run.',
+            caption: 'Dose-volume curves for the CTV and available organs at risk in the current plan.',
             titleZh: '剂量体积直方图',
             captionZh: '当前规划运行中 CTV 及可用危及器官结构的剂量体积曲线。',
         },
@@ -2489,10 +2567,15 @@
         if (!reportSection || typeof reportSection !== 'object') return null;
         if (reportSection.form && typeof reportSection.form === 'object'
             && !Array.isArray(reportSection.form)) {
-            return reportSection.form;
+            const form = jsonClone(reportSection.form);
+            form.editedFields = [...reportEditedFieldSet(form.editedFields)];
+            return form;
         }
         const hasDirectFormField = Object.keys(reportSection).some(key => REPORT_FORM_KEYS.has(key));
-        return hasDirectFormField ? reportSection : null;
+        if (!hasDirectFormField) return null;
+        const form = jsonClone(reportSection);
+        form.editedFields = [...reportEditedFieldSet(form.editedFields)];
+        return form;
     }
 
     function reportSectionForPlanning(reportSection, planningId) {
@@ -2874,6 +2957,11 @@
             if (options.preserveClinicalData && CASE_DATA_CONTROL_IDS.has(id)) return;
             const element = document.getElementById(id);
             if (!element || !saved || typeof saved !== 'object') return;
+            // File chooser handles are browser-local, transient capabilities.
+            // Ignore even legacy fake-path values: assigning them throws and
+            // aborts the entire clinical mount. Never restore credentials either.
+            if (element.type === 'file' || element.type === 'password'
+                || /(?:api[_-]?key|token|secret)/i.test(element.id)) return;
             if (Object.prototype.hasOwnProperty.call(saved, 'checked')) element.checked = !!saved.checked;
             if (Array.isArray(saved.values) && element.tagName === 'SELECT' && element.multiple) {
                 const selected = new Set(saved.values.map(value => String(value)));
@@ -3002,7 +3090,7 @@
         if (!sid || typeof window.isWorkspacePresentationRestoreActive !== 'function'
             || !window.isWorkspacePresentationRestoreActive(sid)) return false;
 
-        const workspace = snapshot || window._activeWorkspaceSnapshot || null;
+        const workspace = normalizePlanningPresentationSnapshot(snapshot || window._activeWorkspaceSnapshot || null);
         const ui = workspace?.ui || {};
         const uiState = ui.state || ui;
         const viewer = uiState.viewer || {};
@@ -3139,7 +3227,9 @@
         const doseButton = document.getElementById('doseTextureToggle');
         if (doseButton && typeof state !== 'undefined' && !state.doseTexture?.applying) {
             const desiredDoseSurface = state.doseTexture?.desiredEnabled === true;
-            doseButton.textContent = desiredDoseSurface ? 'Normal Surface' : 'Dose Surface';
+            doseButton.textContent = desiredDoseSurface
+                ? (window._t?.('结构颜色','Structure colors') || 'Structure colors')
+                : (window._t?.('剂量着色','Dose coloring') || 'Dose coloring');
             doseButton.classList.toggle('active', !!state.doseTexture?.enabled);
             doseButton.disabled = false;
         }
@@ -4014,7 +4104,7 @@
         const report = reportFormFromSnapshot(section);
         if (report && typeof report === 'object') {
             const restored = jsonClone(report);
-            restored.editedFields = new Set(restored.editedFields || []);
+            restored.editedFields = reportEditedFieldSet(restored.editedFields);
             restored.sessionId = String(activeSessionId || restored.sessionId || '');
             restored.planningId = target || restored.planningId || '__unassigned__';
             sanitizeReportFiguresForSession(
@@ -4068,8 +4158,19 @@
         return !!report;
     }
 
-    async function applyWorkspaceSnapshot(snapshot, options = {}) {
+    function applyWorkspaceSnapshot(snapshot, options = {}) {
+        // A Session snapshot owns shared conversation, not the clinical view.
+        // The timepoint bridge below supplies the explicit, captured snapshot
+        // for the four panels. A startup/status race must not repaint the old
+        // root clinical aliases while that bridge is probing or mounting.
+        if (!options.timepointScope && window.BrachyBotTimepoints && window.BrachyBotTimepointWorkspace) {
+            if (!options.skipChat) applyChatSnapshotFast(snapshot);
+            return true;
+        }
         if (!snapshot) return;
+        snapshot = normalizePlanningPresentationSnapshot(snapshot);
+        const timepointScope = options.timepointScope || null;
+        if (timepointScope && !window.BrachyBotTimepointWorkspace?.scopeIsCurrent(timepointScope)) return false;
         const sessionId = workspaceSnapshotSessionId(snapshot);
         if (!sessionId || sessionId !== String(activeSessionId || '')) return false;
         const currentReportPlanningId = String(
@@ -4279,10 +4380,12 @@
                         });
                     }
                     if (skippedUploadedMaskLabels > 0) {
-                        window.showBrachyBotNotice?.(
-                            `已跳过 ${skippedUploadedMaskLabels} 个异常上传掩膜标签，避免浏览器卡顿。请确认上传的是离散 mask 而不是 CT。`,
-                            'warning',
-                        );
+                        const _skipNotice = (typeof window._t === 'function'
+                            ? window._t(
+                                `已跳过 ${skippedUploadedMaskLabels} 个异常上传掩膜标签，避免浏览器卡顿。请确认上传的是离散 mask 而不是 CT。`,
+                                `Skipped ${skippedUploadedMaskLabels} invalid uploaded mask labels to keep the browser responsive. Confirm that you uploaded a discrete mask, not CT.`)
+                            : `Skipped ${skippedUploadedMaskLabels} invalid uploaded mask labels to keep the browser responsive. Confirm that you uploaded a discrete mask, not CT.`);
+                        window.showBrachyBotNotice?.(_skipNotice, 'warning');
                     }
                     if (!preserveClinicalData || !state.maskLabelCounter) {
                         state.maskLabelCounter = Number(uiState.viewer.masks.counter) || 0;
@@ -4311,6 +4414,7 @@
                 window.restoreManualWorkflowProgress();
             }
             if (typeof trainingMonitorState !== 'undefined'
+                && !timepointScope
                 && !(trainingMonitorState.sessionId === sessionId
                     && ['starting', 'active', 'stopping', 'stop_error'].includes(trainingMonitorState.phase))) {
                 // The browser snapshot keeps presentation details while the
@@ -4431,7 +4535,7 @@
                     },
                 );
                 if (!keepCurrentReport) {
-                    report.editedFields = new Set(report.editedFields || []);
+                    report.editedFields = reportEditedFieldSet(report.editedFields);
                     report.sessionId = sessionId;
                     report.planningId = targetPlanningId || report.planningId || '__unassigned__';
                     window.reportForm = report;
@@ -4582,7 +4686,7 @@
             try {
                 restoreWorkspaceChrome(
                     uiState.viewer?.chrome || uiState.chrome,
-                    { sessionId, settleMs: 220 },
+                    { sessionId, settleMs: 220, timepointScope },
                 );
             } catch (error) {
                 console.debug('[workspace] UI chrome restore deferred:', error);
@@ -4639,6 +4743,7 @@
             if (typeof window.loadSurgicalGuideMesh === 'function') {
                 const guideSessionId = sessionId;
                 setTimeout(() => {
+                    if (timepointScope && !window.BrachyBotTimepointWorkspace?.scopeIsCurrent(timepointScope)) return;
                     if (String(activeSessionId || '') === guideSessionId) {
                         void window.loadSurgicalGuideMesh({ sessionId: guideSessionId });
                     }
@@ -4794,6 +4899,22 @@
     }
 
     async function persistWorkspace(reason, options = {}) {
+        if (window.BrachyBotTimepoints?.enabled?.() && !options.sharedChatOnly) {
+            if (!options.timepointScope && !window.BrachyBotTimepointWorkspace?.requestReady?.()) {
+                if (options.skipChat !== true) await postWorkspaceSave(String(options.sessionId || activeSessionId || ''), {
+                    reason, chat: chatState(options.sessionId || activeSessionId), revision: null,
+                });
+                return false; // No empty clinical presentation is published.
+            }
+            const scope = options.timepointScope || window.BrachyBotTimepointWorkspace?.captureRequestScope?.();
+            const owner = String(options.sessionId || activeSessionId || '');
+            const chatPayload = options.skipChat === true ? null : chatState(owner);
+            const saved = await window.BrachyBotTimepointWorkspace.persistPresentation({ ...options, timepointScope: scope });
+            if (chatPayload) await postWorkspaceSave(owner, {
+                session_id: owner, reason, chat: chatPayload, revision: null,
+            });
+            return saved;
+        }
         const ownerSessionId = String(options.sessionId || activeSessionId || '');
         if (!ownerSessionId) return false;
         if (options.waitUntilReady) {
@@ -4865,6 +4986,15 @@
     }
 
     function scheduleWorkspaceSave(reason, options = {}) {
+        if (window.BrachyBotTimepointWorkspace?.handlePresentationSave(options)) {
+            // Shared chat retains its own Session save; clinical presentation
+            // goes through the captured timepoint controller, including reports.
+            if (String(reason || '').startsWith('chat.')) {
+                const owner = String(options.sessionId || activeSessionId || ''), chat = chatState(owner);
+                void postWorkspaceSave(owner, { session_id: owner, reason, chat, revision: null });
+            }
+            return;
+        }
         const requestedSessionId = String(options?.sessionId || '').trim();
         const ownerSessionId = requestedSessionId || String(activeSessionId || '');
         const presentationRestore = window.__pendingWorkspacePresentation;
@@ -5209,6 +5339,9 @@
             sessionId: String(activeSessionId || ''),
             startedAt: listStartedAt,
         });
+        window.dispatchEvent(new CustomEvent('brachybot:timepoint-session-ready', {
+            detail: { sessionId: String(activeSessionId || '') },
+        }));
         if (!activeSessionId) {
             window._activeWorkspaceSnapshot = null;
             window.setWorkspaceHydrationState?.(false);
@@ -5286,7 +5419,7 @@
             persist: false,
         });
         if (!workspaceSnapshotHasClinicalResources(workspace)) {
-            cancelBackgroundWorkspaceRestore();
+            cancelBackgroundWorkspaceRestore({ legacyOnly: !!window.BrachyBotTimepoints && !!window.BrachyBotTimepointWorkspace });
         } else {
             scheduleBackgroundWorkspaceRestore(workspace, activeSessionId, {
                 reason: options.reason || 'background-scheduled',
@@ -5326,6 +5459,10 @@
             const createStartedAt = workspaceNow();
             if (!await prepareSessionChange()) return { success: false, cancelled: true };
             const previousSessionId = String(activeSessionId || '');
+            const previousCaseFlush = typeof flushActiveReportState === 'function'
+                ? Promise.resolve(flushActiveReportState({ sessionId: previousSessionId, allowDetached: true }))
+                : Promise.resolve(persistWorkspace('session.switching', { sessionId: previousSessionId, allowDetached: true }));
+            void previousCaseFlush.catch(error => console.debug('[workspace] previous case flush deferred:', error));
             if (previousSessionId && typeof window.releaseTrainingMonitorForSession === 'function') {
                 void window.releaseTrainingMonitorForSession(previousSessionId, 'new_session', { forceRequest: true });
             }
@@ -5347,21 +5484,14 @@
             // New cases are an empty control-plane shell.  Do not show an
             // opening-case resource spinner and do not schedule hydration;
             // the old case's server task remains detached and case-owned.
-            paintSessionShell(optimisticId, { blank: true, clearWorkspace: false });
+            paintSessionShell(optimisticId, { blank: true, clearWorkspace: true });
             recordWorkspacePerformance('create.shell_first_paint', {
                 sessionId: optimisticId,
                 startedAt: createStartedAt,
             });
             await yieldWorkspaceShellPaint();
-            // The old form/viewer is still intact while this synchronous
-            // snapshot is captured. Explicit ownership prevents it from
-            // inheriting the optimistic Session id painted above.
-            const previousCaseFlush = typeof flushActiveReportState === 'function'
-                ? Promise.resolve(flushActiveReportState({ sessionId: previousSessionId }))
-                : Promise.resolve(persistWorkspace('session.switching', { sessionId: previousSessionId }));
-            void previousCaseFlush.catch(error => {
-                console.debug('[workspace] previous case flush deferred:', error);
-            });
+            // The captured old-case save continues independently; the new
+            // blank shell must not be read back into the outgoing snapshot.
             if (typeof clearClientWorkspace === 'function') {
                 clearClientWorkspace({ clearReport: true, deferDisposal: true });
             }
@@ -5433,9 +5563,9 @@
         });
     };
 
-    window.switchSession = async function switchSession(id) {
+    window.switchSession = async function switchSession(id, options = {}) {
         document.getElementById('sessionSidebar')?.classList.remove('mobile-open');
-        if (id === activeSessionId
+        if (options.force !== true && id === activeSessionId
             && (sessions[id]?.storageStatus !== 'archived' || activatingSessionIds.has(id))) {
             return { success: true, session_id: id, unchanged: true };
         }
@@ -5460,6 +5590,7 @@
                 _switchAbortController = null;
             }
             pendingSwitchSessionId = id;
+            paintSessionShell(id, { clearWorkspace: true });
             return { success: true, queued: true, session_id: id };
         }
         return runWorkspaceTransition(async () => {
@@ -5478,11 +5609,18 @@
                 window.showCaseResourceLoading?.({ sessionId: id });
             }
             document.body.classList.add('workspace-hydrating');
-            if (!(await prepareSessionChange())) {
+            const previousSessionId = activeSessionId;
+            const outgoingFlush = options.force === true ? Promise.resolve(false) : typeof flushActiveReportState === 'function'
+                ? Promise.resolve(flushActiveReportState({ sessionId: previousSessionId, allowDetached: true }))
+                : Promise.resolve(persistWorkspace('session.switching', { sessionId: previousSessionId, allowDetached: true }));
+            const preparation = prepareSessionChange();
+            void outgoingFlush.catch(error => console.debug('[workspace] previous case flush deferred:', error));
+            paintSessionShell(id, { clearWorkspace: true });
+            await yieldWorkspaceShellPaint();
+            if (!(await preparation)) {
                 cancelTransitionUi();
                 return { success: false, cancelled: true };
             }
-            const previousSessionId = activeSessionId;
             if (previousSessionId && typeof window.releaseTrainingMonitorForSession === 'function') {
                 void window.releaseTrainingMonitorForSession(previousSessionId, 'session_switch', { forceRequest: true });
             }
@@ -5498,15 +5636,12 @@
             // Keep the old clinical projection in memory for one paint only.
             // The detached, explicitly owned checkpoint below captures it
             // after the new sidebar/title/transcript have become visible.
-            paintSessionShell(id, { clearWorkspace: false });
             recordWorkspacePerformance('switch.shell_first_paint', {
                 sessionId: id,
                 startedAt: switchStartedAt,
             });
             await yieldWorkspaceShellPaint();
-            const previousCaseFlush = typeof flushActiveReportState === 'function'
-                ? Promise.resolve(flushActiveReportState({ sessionId: previousSessionId }))
-                : Promise.resolve(persistWorkspace('session.switching', { sessionId: previousSessionId }));
+            const previousCaseFlush = outgoingFlush;
             void previousCaseFlush.catch(error => {
                 console.debug('[workspace] previous case flush deferred:', error);
             });
@@ -5547,7 +5682,9 @@
                 }
                 throw error;
             }
+            if (aborter.signal.aborted || pendingSwitchSessionId !== null) return { success: false, replaced: true };
             let data = await response.json();
+            if (aborter.signal.aborted || pendingSwitchSessionId !== null) return { success: false, replaced: true };
             // A stale sidebar can learn about archival between the list
             // request and this click. Ask exactly once, then use the same
             // activation endpoint as the normal archived-case path.
@@ -5723,7 +5860,10 @@
             return { success: true, alreadyArchived: true };
         }
         if (id === activeSessionId) {
-            const message = '当前病例正在使用，请先切换到其他病例后再归档。';
+            const message = (typeof window._t === 'function'
+                ? window._t('当前病例正在使用，请先切换到其他病例后再归档。',
+                    'This case is currently in use. Switch to another case before archiving it.')
+                : 'This case is currently in use. Switch to another case before archiving it.');
             if (typeof addChat === 'function') addChat('error', message);
             return { success: false, error: message };
         }
@@ -5936,9 +6076,82 @@
         await window.openRecycleBin();
     };
 
+    let importingWorkspace = false;
+    window.importCompleteWorkspace = () => {
+        if (importingWorkspace) return false;
+        const input = document.getElementById('importWorkspaceFile');
+        if (!input) return false;
+        input.value = '';
+        input._importOwner = String(window.brachybotAuth?.user?.id || '');
+        input._importSourceSession = String(activeSessionId || '');
+        input.click(); return true;
+    };
+    const importWorkspaceFile = document.getElementById('importWorkspaceFile');
+    importWorkspaceFile?.addEventListener('change', async () => {
+        const file = importWorkspaceFile.files?.[0]; if (!file || importingWorkspace) return;
+        const owner = importWorkspaceFile._importOwner, sourceSession = importWorkspaceFile._importSourceSession;
+        const owns = () => owner && owner === String(window.brachybotAuth?.user?.id || '');
+        if (!owns()) return;
+        const confirmed = await window._confirmAction(
+            '导入此完整病例包并创建新的对话？当前病例不会被覆盖。粒子复核和导板定位需在恢复后重新确认。',
+            'Import this complete workspace into a new chat? This case will not be overwritten. Reconfirm source review and guide placement after restoration.',
+            {titleZh:'导入病例包',titleEn:'Import workspace',yesZh:'导入',yesEn:'Import',language:window._i18nLang === 'zh' ? 'zh':'en'});
+        if (!confirmed || !owns()) return;
+        const button = document.getElementById('importWorkspaceButton');
+        importingWorkspace = true; if (button) button.disabled = true;
+        let importedSessionId = null;
+        try {
+            const data = new FormData(); data.append('file',file,file.name);
+            const response = await workspaceFetch('/api/workspace/import-bundle',{method:'POST',body:data,
+                headers:{'X-BrachyBot-Language':window._i18nLang === 'zh' ? 'zh':'en'}},300000);
+            const result = await response.json();
+            if (!response.ok || result.success !== true) throw new Error(result.message || result.error || 'workspace_import_failed');
+            importedSessionId = result.session.id;
+            if (!owns()) return;
+            await loadServerSessions();
+            if (owns() && sourceSession === String(activeSessionId || '')) await window.switchSession(result.session.id);
+            window.dispatchEvent(new CustomEvent('brachybot:workspace-imported',{detail:{sessionId:result.session.id,
+                reviewsRequireRevalidation:result.reviews_require_revalidation === true}}));
+        } catch (error) {
+            if (owns()) window.addChat?.('system',importedSessionId ? (window._i18nLang === 'zh'
+                ? '病例包已保存为新的对话，但显示恢复未完成。原病例未被覆盖，请从对话列表打开已导入的病例，避免重复导入。'
+                : 'The workspace was saved as a new chat, but display restoration did not finish. Existing cases were not overwritten. Open the imported chat from the list instead of importing it again.') : (window._i18nLang === 'zh'
+                ? '病例包未完成导入。原有病例未被覆盖，请检查文件完整性、存储空间和服务器连接后重试。'
+                : 'Workspace import did not complete. Existing cases were not overwritten. Check archive integrity, storage and the server connection before retrying.'));
+            console.warn('[workspace import]',error);
+        } finally {importingWorkspace = false; if (button) button.disabled = false;}
+    });
     window.scheduleWorkspaceSave = scheduleWorkspaceSave;
     window.persistWorkspace = persistWorkspace;
     window.applyWorkspaceSnapshot = applyWorkspaceSnapshot;
+    // Presentation only: the timepoint bridge must keep shared chat at Session scope.
+    window.captureTimepointWorkspacePresentation = workspaceUiState;
+    window.captureTimepointWorkspaceReport = scope => reportState(scope.sessionId);
+    window.applyTimepointWorkspaceSnapshot = (snapshot, scope) => {
+        snapshot = normalizePlanningPresentationSnapshot(snapshot);
+        window._activeWorkspaceSnapshot = snapshot;
+        window.stageWorkspacePresentation(snapshot, scope.sessionId, window.__workspaceHydrationRunId || null);
+        return applyWorkspaceSnapshot(snapshot, { timepointScope: scope, skipChat: true, skipTaskResume: true,
+            preserveClinicalData: true, persist: false });
+    };
+    window.suspendTimepointWorkspace = () => {
+        window._monitorTurnAbort?.abort();
+        window.suspendTimepointMonitor?.();
+        window.suspendTimepointMonitorDashboard?.();
+        if (typeof _clearMonitorFeedbackTimer === 'function') _clearMonitorFeedbackTimer();
+        if (typeof trainingMonitorState !== 'undefined') {
+            Object.assign(trainingMonitorState, { active: false, phase: 'inactive', runId: null,
+                timepointScope: null, pendingFeedback: [], captureQueue: [], screenshotGalleryContext: null,
+                screenshotPendingRunId: null, lastFeedbackAt: 0, lastScreenshotAt: 0 });
+            window.setMonitorPresentation?.('inactive');
+        }
+        clearScheduledWorkspaceSave(); invalidateDeferredWorkspaceRestore();
+        window._cancelWorkspaceDoseSurfaceRestore?.();
+        window.clearWorkspacePresentationRestore?.();
+        window.__workspaceHydrationRunId = (window.__workspaceHydrationRunId || 0) + 1;
+        window.clearClientWorkspace({ clearReport: true });
+    };
+    window.__timepointFrontendContracts = { ...window.__timepointFrontendContracts, persistence: 1 };
     window.captureReportForPlanning = function captureReportForPlanning() {
         // reportState() performs the same lightweight cache/upload handling as
         // normal workspace persistence and records the current form under the

@@ -1,0 +1,87 @@
+// Actual observation UI + THREE geometry/raycast; in-memory HTTP fixture only.
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+const root=path.resolve(__dirname,'../web/app/static/js');
+let browser;
+(async()=>{browser=await chromium.launch({headless:true,args:['--no-sandbox']});
+ const page=await browser.newPage({viewport:{width:1200,height:800}}),errors=[];page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.message));
+ await page.setContent('<section><div id="implantObservationActions"></div><div id="implantObservationStatus"></div></section><div id="dataTreeBody"></div><div style="position:relative"><canvas id="axial" width="300" height="300" style="width:300px;height:300px"></canvas></div><canvas id="threeCanvas" width="400" height="300" style="width:400px;height:300px"></canvas>');
+ await page.addScriptTag({path:path.join(root,'three.min.js')});
+ await page.evaluate(()=>{
+   window.tid='a'.repeat(32);window.sid='1'.repeat(32);window._i18nLang='en';window.calls=[];
+   window.rev='10000000-0000-0000-0000-000000000001';window.ob='20000000-0000-0000-0000-000000000001';
+   window.BrachyBotTimepoints={captureSubmission:()=>({sessionId:sid,timepointId:tid,legacyDefault:true}),getCatalog:()=>({})};
+   window.scene3D={scene:new THREE.Scene(),camera:new THREE.PerspectiveCamera(45,4/3,.1,200),renderer:{domElement:document.getElementById('threeCanvas')},controls:{enabled:true},meshes:{},requestRender:()=>{}};
+   scene3D.camera.position.set(5,5,40);scene3D.camera.lookAt(5,5,5);scene3D.camera.updateMatrixWorld();
+   window.init3DScene=()=>{};window.hideContextMenu=()=>{};window.positionBrachyContextMenu=()=>{};window.switchPanel=()=>{};
+   window._confirmAction=async()=>true;window.sendChat=text=>{calls.push({chat:text});};
+   window.state={ctShape:[10,10,10],ctSpacing:[1,1,1],ctOrigin:[0,0,0],ctDirection:[1,0,0,0,1,0,0,0,1],slices:{axial:4,sagittal:5,coronal:5}};
+   window.getSliceCanvas=axis=>axis==='axial'?document.getElementById('axial'):null;
+   window._getMprGeometry=()=>({height:10,resampleRatio:1});window._volumeZToDisplayY=v=>v;
+   window._syncLayerToSliceCanvas=(axis,canvas)=>{canvas.width=300;canvas.height=300;canvas.style.left='0';canvas.style.top='0';};
+   window._worldToIndex=(x,y,z)=>[z,y,x];window.screenToImageCoords=(axis,x,y)=>{const box=getSliceCanvas(axis).getBoundingClientRect();return{x:(x-box.left)/30,y:(y-box.top)/30};};
+   window._sliceImageCoordsToVoxel=(axis,coords)=>({x:Math.round(coords.x),y:Math.round(coords.y),z:9-state.slices.axial});
+   window.legacyMutations=0;
+   document.getElementById('axial').addEventListener('pointerdown',()=>{if(window.BrachyBotImplants?.interactionMode())return;legacyMutations++;},true);
+   document.getElementById('threeCanvas').addEventListener('pointerdown',event=>{if(window.BrachyBotImplants?.owns3DPointer(event))return;legacyMutations++;},true);
+   window.view={session_id:sid,timepoint_id:tid,observation_revision_id:rev,revision:1,presentation_revision:0,active_count:1,group:{visible:true,opacity:1},nodes:[{id:'implanted_seed_'+ob.replaceAll('-',''),object_id:'implant:'+ob,observation_id:ob,ordinal:1,position:[5,5,5],axis:null,glyph:'point_halo',color:'#22D3EE',opacity:1,visible:true,visible2D:true,visible3D:true,review_status:'review_needed',excluded:false}]};
+   window.fetch=async(url,init={})=>{let data=init.body?JSON.parse(init.body):null;calls.push({url,headers:Object.fromEntries(new Headers(init.headers)),data});
+     if(String(url).endsWith('/dose-source'))return new Response(JSON.stringify({success:true,profile:{seed_info:{length:3.7,radius:.4}},dose_scale_gy:190.8,state_revision:2}),{headers:{'Content-Type':'application/json'}});
+     if(String(url).endsWith('/presentation')){if(data.expected_presentation_revision!==view.presentation_revision)return new Response(JSON.stringify({success:false,code:'implant_presentation_conflict'}),{status:409});
+       for(const row of view.nodes)Object.assign(row,data.patches[row.observation_id]||{});Object.assign(view.group,data.group);view.presentation_revision++;}
+     if(String(url).endsWith('/corrections')){if(data.expected_revision_id!==view.observation_revision_id)return new Response(JSON.stringify({success:false,code:'implant_revision_conflict'}),{status:409});
+       rev='10000000-0000-0000-0000-'+String(++window.nextRev).padStart(12,'0');view.observation_revision_id=rev;
+       if(data.action==='add'){const copy={...view.nodes[0],observation_id:'30000000-0000-0000-0000-000000000001',id:'implanted_seed_30000000000000000000000000000001',position:data.center_lps_mm,ordinal:2,excluded:false,visible:true};view.nodes.push(copy);}
+       if(data.action==='move')view.nodes.find(row=>data.observation_ids.includes(row.observation_id)).position=data.center_lps_mm;
+       if(data.action==='exclude')view.nodes.find(row=>data.observation_ids.includes(row.observation_id)).excluded=true;
+       view.active_count=view.nodes.filter(row=>!row.excluded).length;}
+     return new Response(JSON.stringify({success:true,view:JSON.parse(JSON.stringify(view))}),{headers:{'Content-Type':'application/json'}});};window.nextRev=1;
+ });
+ await page.addScriptTag({path:path.join(root,'brachybot-implant-observations.js')});
+ await page.waitForFunction(()=>BrachyBotImplants.snapshot()?.active_count===1);
+ console.log('initial per-seed reconstruction ready');
+ const id=await page.evaluate(()=>view.nodes[0].id);
+ assert.equal(await page.locator('[data-node-type="implanted_observation"]').count(),1);
+ await page.getByRole('button',{name:'Source & dose settings',exact:true}).click();
+ await page.getByLabel('Source length (mm)',{exact:true}).fill('4.2');
+ await page.evaluate(()=>{_i18nLang='zh';dispatchEvent(new CustomEvent('i18nchange'));});
+ assert.equal(await page.getByLabel('粒子长度（mm）',{exact:true}).inputValue(),'4.2');
+ assert.match(await page.getByRole('dialog').innerText(),/190.8/);
+ await page.keyboard.press('Escape');
+ await page.evaluate(()=>{_i18nLang='en';dispatchEvent(new CustomEvent('i18nchange'));});
+ assert.equal(await page.evaluate(id=>scene3D.meshes[id].userData.type,id),'implanted_observation');
+ await page.evaluate(id=>BrachyBotImplants.changePresentation(id,{visible:false,color:'#00FFCC',opacity:.3}),id);
+ assert.equal(await page.evaluate(id=>scene3D.meshes[id].visible,id),false);
+ await page.waitForTimeout(300);await page.evaluate(()=>BrachyBotImplants.reload());
+ assert.equal(await page.evaluate(()=>BrachyBotImplants.snapshot().nodes[0].opacity),.3);
+ assert.equal(await page.evaluate(()=>BrachyBotImplants.snapshot().nodes[0].color),'#00FFCC');
+ await page.evaluate(id=>BrachyBotImplants.changePresentation(id,{visible:true,opacity:1}),id);await page.waitForTimeout(300);
+ await page.getByRole('button',{name:'Add missed seed',exact:true}).click();
+ const box=await page.locator('#axial').boundingBox();await page.mouse.click(box.x+60,box.y+90);
+ assert.deepEqual(await page.evaluate(()=>scene3D.meshes.implant_draft.position.toArray()),[2,3,5]);
+ assert.equal(await page.evaluate(()=>calls.filter(row=>row.data?.action==='add').length),0);
+ await page.getByRole('button',{name:'Save correction',exact:true}).click();await page.waitForFunction(()=>BrachyBotImplants.snapshot().active_count===2);
+ console.log('2D source addition persisted');
+ assert.deepEqual(await page.evaluate(()=>BrachyBotImplants.snapshot().nodes[1].position),[2,3,5]);
+ // Real THREE raycast starts a draft, controls freeze, drag is preview-only.
+ await page.evaluate(id=>{BrachyBotImplants.startMove(id);scene3D.scene.updateMatrixWorld(true);},id);
+ const point=await page.evaluate(()=>{const p=scene3D.meshes.implant_draft.position.clone().project(scene3D.camera),b=scene3D.renderer.domElement.getBoundingClientRect();return{x:b.left+(p.x+1)/2*b.width,y:b.top+(1-p.y)/2*b.height};});
+ await page.mouse.move(point.x,point.y);await page.mouse.down();await page.mouse.move(point.x+30,point.y+10,{steps:3});await page.mouse.up();
+ assert.equal(await page.evaluate(()=>scene3D.controls.enabled),true);
+ assert.equal(await page.evaluate(()=>legacyMutations),0);
+ assert.equal(await page.evaluate(()=>calls.filter(row=>row.data?.action==='move').length),0);
+ const moved=await page.evaluate(()=>scene3D.meshes.implant_draft.position.toArray());assert.notDeepEqual(moved,[5,5,5]);
+ console.log('dragged draft',moved);
+ await page.getByRole('button',{name:'Save correction',exact:true}).click();await page.waitForFunction(()=>calls.some(row=>row.data?.action==='move')
+   && !document.querySelector('#implantObservationActions button:nth-child(2)').disabled);
+ await page.evaluate(()=>{_i18nLang='zh';dispatchEvent(new CustomEvent('i18nchange'));});
+ assert.equal(await page.getByRole('button',{name:'补充漏检粒子',exact:true}).count(),1);
+ await page.evaluate(id=>BrachyBotImplants.exclude(id),id);await page.waitForFunction(()=>BrachyBotImplants.snapshot().active_count===1);
+ assert.equal(await page.evaluate(id=>!!scene3D.meshes[id],id),false);
+ const before=await page.evaluate(()=>Object.keys(scene3D.meshes));
+ const late=await page.evaluate(()=>{const old=JSON.parse(JSON.stringify(view));tid='b'.repeat(32);return BrachyBotImplants.applyTool({implant_command:{action:'display',session_id:sid,timepoint_id:old.timepoint_id},implant_view:old});});assert.equal(late,false);
+ assert.deepEqual(await page.evaluate(()=>Object.keys(scene3D.meshes)),before);
+ assert.deepEqual(errors,[]);
+ console.log('implant browser: per-seed nodes, appearance persistence, 2D add, 3D draft drag, save, exclude, language and late-target fences passed');
+ await browser.close();
+})().catch(async error=>{console.error(error);await browser?.close();process.exitCode=1;});

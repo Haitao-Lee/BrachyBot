@@ -1,3 +1,10 @@
+function _reportEditedFieldSet(value) {
+    if (typeof window.normalizeReportEditedFields === 'function') return window.normalizeReportEditedFields(value);
+    const entries = value instanceof Set || Array.isArray(value) ? [...value]
+        : value && typeof value === 'object' ? Object.keys(value).filter(key => value[key] === true) : [];
+    return new Set(entries.filter(entry => typeof entry === 'string' && entry.length > 0));
+}
+
 function _oarVolumePercent(value, units) {
     if (value === null || value === undefined || value === '' || typeof value === 'boolean') return null;
     const n = Number(value);
@@ -352,10 +359,10 @@ function _autoFillInterpretation() {
     lines.push(zh ? '**建议的下一步**：' : '**Recommended next steps**:');
     lines.push(zh
         ? '- 依据适用的部位特异性指南复核处方剂量、V100/D90/V150/V200 指标和 OAR 限值，并在报告参考文献中保留真实链接。'
-        : '- Verify prescription dose, V100/D90/V150/V200 criteria, and OAR limits against applicable site-specific guidance; include real links in report references.');
+        : '- Verify prescription dose, V100/D90/V150/V200 criteria, and OAR limits against applicable site-specific guidance; include source links in the report references.');
     lines.push(zh
         ? '- 放射肿瘤科医师和医学物理师应结合来源支持的阈值、图像配准、针道可行性和独立剂量复核共同审核。'
-        : '- Radiation oncologist and physicist review should combine sourced thresholds, image registration, trajectory feasibility, and independent dose verification.');
+        : '- A radiation oncologist and a medical physicist should jointly review the cited dose limits, image registration, needle-trajectory feasibility, and independent dose verification.');
     lines.push('');
     lines.push(zh
         ? '_本段由 BrachyBot 自动生成，不替代已签署的临床治疗计划。_'
@@ -384,7 +391,7 @@ function _scheduleReportAutoSave() {
     if (_reportAutoSaveTimer) clearTimeout(_reportAutoSaveTimer);
     _reportAutoSaveTimer = setTimeout(_reportAutoSave, 800);
     const t = document.getElementById('reportAutoSaveText');
-    if (t) t.textContent = 'Auto-save: pending…';
+    if (t) t.textContent = window._t?.('自动保存：等待中…','Auto-save: pending…') || 'Auto-save: pending…';
 }
 function _reportAutoSave(options = {}) {
     try {
@@ -400,8 +407,7 @@ function _reportAutoSave(options = {}) {
         syncReportQualityAssessment(f, { preserveStored: true });
         if (ownerSessionId) f.sessionId = ownerSessionId;
         f.updatedAt = Date.now();
-        f.editedFields = Array.from(f.editedFields || []);
-        f.editedFields = new Set(f.editedFields);
+        f.editedFields = _reportEditedFieldSet(f.editedFields);
         const t = document.getElementById('reportAutoSaveText');
         if (t) t.textContent = 'Auto-save: ' + new Date().toLocaleTimeString();
         // An explicit old-session flush runs after the new shell has painted.
@@ -440,6 +446,7 @@ function flushActiveReportState(options = {}) {
         writes.push(Promise.resolve(window.persistWorkspace('report.flush', {
             allowDuringRestore: true,
             sessionId: ownerSessionId,
+            allowDetached: options.allowDetached === true,
         })));
     }
     const activeId = String((typeof activeSessionId !== 'undefined' ? activeSessionId : '') || '');
@@ -544,7 +551,7 @@ async function _persistGeneratedReportArtifact(blob, filename) {
 function reportSaveJSON(options = {}) {
     if (!options.returnBlob && window.openSessionExportDialog) return window.openSessionExportDialog({ data_types: ['report'], format: 'json' });
     const f = window.reportForm;
-    const blob = new Blob([JSON.stringify({ ...f, editedFields: Array.from(f.editedFields || []) }, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify({ ...f, editedFields: [..._reportEditedFieldSet(f.editedFields)] }, null, 2)], { type: 'application/json' });
     if (options.returnBlob) return blob;
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -553,7 +560,7 @@ function reportSaveJSON(options = {}) {
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
     void _persistGeneratedReportArtifact(blob, filename);
-    f.editedFields = new Set(f.editedFields);
+    f.editedFields = _reportEditedFieldSet(f.editedFields);
     _setReportStatus('Saved JSON', 'ok');
 }
 function reportLoadJSON() {
@@ -565,7 +572,7 @@ function reportLoadJSON() {
         reader.onload = (ev) => {
             try {
                 const parsed = JSON.parse(ev.target.result);
-                parsed.editedFields = new Set(parsed.editedFields || []);
+                parsed.editedFields = _reportEditedFieldSet(parsed.editedFields);
                 window.reportForm = parsed;
                 renderReportEditor(); _updateReportPreview();
                 _setReportStatus('Loaded JSON', 'ok');
@@ -1539,14 +1546,29 @@ function _paginateReportFlow(pagesEl, labels = {}) {
 // expose a small, read-only relayout hook for the shell's resize/tab-refresh
 // path.  It never rebuilds report content or touches persisted form values.
 window._reflowReportPages = function _reflowReportPages() {
+    const pages = document.getElementById('reportPages');
+    // Pagination is tied to content and physical paper geometry, not the
+    // preview transform or container width. Keep DOM identity (and scroll/
+    // selection) stable while zooming. Failed hidden-tab layout stays dirty.
+    if (!pages) return false;
+    if (pages._reportFlowPaginationReady === true) return false;
+    const paper = pages.querySelector('.report-flow-page');
+    if (!paper || !paper.offsetWidth || !paper.offsetHeight) return false;
+    const geometryKey = `${paper.offsetWidth}:${paper.offsetHeight}`;
     const form = window.reportForm || {};
     const strings = (typeof REPORT_STRINGS !== 'undefined')
         ? REPORT_STRINGS[form.language]
         : null;
-    return _paginateReportFlow(
-        document.getElementById('reportPages'),
+    const done = _paginateReportFlow(
+        pages,
         { page: strings?.page || 'Page', pageOf: strings?.pageOf || 'of' },
     );
+    pages._reportFlowPaginationReady = done;
+    if (done) {
+        pages._reportFlowGeometryKey = geometryKey;
+        pages._reportPreviewPaperWidth = null; pages._reportPreviewHeight = null;
+    }
+    return done;
 };
 
 function _updateReportPreview() {
@@ -1651,8 +1673,8 @@ function _updateReportPreview() {
     // BUG FIX 2026-06-17 (real logos): SJTU and Ruijin logos are
     // the real high-res PNGs in _assets/sjtu-real.png and
     // _assets/ruijin-real.png.
-    const bylineLine1 = f.language === 'zh' ? 'BrachyBot 智能近距离放疗规划' : 'Powered by BrachyBot';
-    const bylineLine2 = f.language === 'zh' ? '上海交通大学医学院附属瑞金医院联合开发' : 'Developed by SJTU && Ruijin Hospital';
+    const bylineLine1 = f.language === 'zh' ? 'BrachyBot 智能近距离放疗规划' : 'BrachyBot — Intelligent Brachytherapy Planning';
+    const bylineLine2 = f.language === 'zh' ? '上海交通大学医学院附属瑞金医院联合开发' : 'Developed by Shanghai Jiao Tong University and Ruijin Hospital';
     const githubUrl = 'https://github.com/Haitao-Lee/BrachyBot.git';
     let p1 = `
         <div class="report-page">
@@ -1710,7 +1732,7 @@ function _updateReportPreview() {
     const figure1Pages = renderFigurePages(
         figure1Rows,
         1,
-        f.language === 'zh' ? '粒子植入方案' : 'Seed Implant Plan',
+        f.language === 'zh' ? '粒子植入方案' : 'Seed Implantation Plan',
         nextPageNo,
     );
     nextPageNo += figure1PageCount;
@@ -1908,8 +1930,14 @@ function _updateReportPreview() {
         </div></section>`;
     p5 += `</div>${pageFooter(nextPageNo)}</div>`;
 
+    pagesEl._reportFlowPaginationReady = false;
+    pagesEl._reportPreviewPaperWidth = null; pagesEl._reportPreviewHeight = null;
     pagesEl.innerHTML = p1 + figure1Pages + p2 + figure2Pages + supplementalPages + p3Pages + implantPages + p4 + p5;
-    _paginateReportFlow(pagesEl, { page: s.page, pageOf: s.pageOf });
+    pagesEl._reportFlowPaginationReady = _paginateReportFlow(pagesEl, { page: s.page, pageOf: s.pageOf });
+    const physicalPage = pagesEl.querySelector('.report-flow-page');
+    if (pagesEl._reportFlowPaginationReady && physicalPage) {
+        pagesEl._reportFlowGeometryKey = `${physicalPage.offsetWidth}:${physicalPage.offsetHeight}`;
+    }
     pagesEl.querySelectorAll('img[data-report-screenshot="true"]').forEach(image => {
         const candidate = String(image.getAttribute('src') || '').trim();
         const markUnavailable = () => {
@@ -1941,12 +1969,16 @@ function _updateReportPreview() {
     window._reportPaginationToken = paginationToken;
     const repaginate = () => {
         if (window._reportPaginationToken !== paginationToken) return;
-        _paginateReportFlow(pagesEl, { page: s.page, pageOf: s.pageOf });
+        window._reflowReportPages();
         window.Report?.preview?.refresh?.();
     };
     window.requestAnimationFrame(repaginate);
-    if (document.fonts?.ready) {
-        document.fonts.ready.then(repaginate).catch(() => undefined);
+    if (document.fonts?.ready && document.fonts.status === 'loading') {
+        document.fonts.ready.then(() => {
+            if (window._reportPaginationToken !== paginationToken) return;
+            pagesEl._reportFlowPaginationReady = false;
+            repaginate();
+        }).catch(() => undefined);
     }
 }
 
@@ -2019,7 +2051,7 @@ function _setReportStatus(text, kind = 'info') {
     const colors = { ok: '#16a34a', warn: '#d97706', error: '#dc2626', info: '#64748b' };
     el.textContent = text;
     el.style.color = colors[kind] || colors.info;
-    setTimeout(() => { if (el.textContent === text) el.textContent = 'Ready'; }, 3000);
+    setTimeout(() => { if (el.textContent === text) el.textContent = window._t?.('就绪','Ready') || 'Ready'; }, 3000);
 }
 function _updateReportStatusbar() {
     const f = window.reportForm;
@@ -2031,10 +2063,11 @@ function _updateReportStatusbar() {
     if (!f.patient.id && !f.case.patientId) missing.push('ID');
     if (!f.study.diagnosis) missing.push('Diagnosis');
     if (missing.length === 0) {
-        el.textContent = 'All required fields complete';
+        el.textContent = window._t?.('必填字段已完整','All required fields are complete') || 'All required fields are complete';
         el.style.color = '#16a34a';
     } else {
-        el.textContent = `Missing: ${missing.join(', ')}`;
+        const missingFields = missing.map(name=>({Name:window._t?.('姓名','Name'),Gender:window._t?.('性别','Sex'),ID:window._t?.('编号','ID'),Diagnosis:window._t?.('诊断','Diagnosis')})[name] || name);
+        el.textContent = (window._t?.('缺少：','Missing: ') || 'Missing: ') + missingFields.join(', ');
         el.style.color = '#d97706';
     }
 }
@@ -2150,7 +2183,7 @@ async function exportReportHTML(options = {}) {
 async function exportReportMarkdown(options = {}) {
     if (!options.returnBlob && window.openSessionExportDialog) return window.openSessionExportDialog({ data_types: ['report'], format: 'markdown' });
     const f = typeof structuredClone === 'function' ? structuredClone(window.reportForm)
-        : JSON.parse(JSON.stringify({ ...window.reportForm, editedFields: Array.from(window.reportForm.editedFields || []) }));
+        : JSON.parse(JSON.stringify({ ...window.reportForm, editedFields: [..._reportEditedFieldSet(window.reportForm.editedFields)] }));
     syncReportQualityAssessment(f, { preserveStored: true });
     _syncReportReferencesFromRationale(f);
     const s = (typeof REPORT_STRINGS !== 'undefined') ? REPORT_STRINGS[f.language] : null;
@@ -2459,7 +2492,7 @@ function initReportPanel() {
     // then loads that session's scoped report, preventing cross-patient data
     // from appearing while preserving report edits across refreshes.
     if (!window.reportForm) window.reportForm = _newEmptyReportForm();
-    if (!window.reportForm.editedFields) window.reportForm.editedFields = new Set();
+    window.reportForm.editedFields = _reportEditedFieldSet(window.reportForm.editedFields);
     // BUG FIX 2026-06-17: sync report language with global UI language
     // on boot. Previously defaulted to 'zh' unconditionally, causing
     // Chinese report preview when the global toggle was English.

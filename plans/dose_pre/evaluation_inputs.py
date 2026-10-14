@@ -1,8 +1,8 @@
 """Assemble one grid-consistent ``dose_evaluation`` input tuple from memory.
 
 The workspace keeps dose arrays on several grids and in two unit systems:
-``dose_distribution_gy`` is *normalized model output* (a historical key name),
-``dose_distribution_physical_gy`` is true Gy, and ``dose_distribution`` is the
+``dose_distribution_gy`` and ``dose_distribution_physical_gy`` are physical Gy
+in schema 2; historical fields require explicit units/provenance. ``dose_distribution`` is the
 planning-grid model output.  Masks live either on the CT grid (``ctv_array`` /
 ``oar_array``) or on the resampled planning grid (``resampled_ctv`` /
 ``resampled_oar``).  Pairing the stale planning-grid dose alias with CT-grid
@@ -32,13 +32,12 @@ MISSING_INPUT_ERROR = (
 )
 
 # Workspace dose keys paired with the factor that converts them to Gy.
-# ``dose_distribution_gy`` stays normalized model output by contract (see the
-# store sites in chat_workflows/server_support), so it carries the plan's
-# calibration; the physical-Gy grid is already Gy.
+# Historical poorly named fields cross the explicit units adapter.
 _DOSE_SOURCES_GY = (
     ("dose_distribution_physical_gy", "physical"),
-    ("dose_distribution_gy", "normalized"),
-    ("dose_distribution", "normalized"),
+    ("dose_distribution_gy", "declared"),
+    ("dose_distribution_current_normalized", "normalized_model"),
+    ("dose_distribution", "declared"),
 )
 
 
@@ -86,13 +85,41 @@ def resolve_dose_evaluation_inputs(retrieve: Retrieve) -> Dict[str, Any]:
     if not callable(retrieve):
         return {"resolution_error": MISSING_INPUT_ERROR, "params": {}}
 
-    plan_config = retrieve("plan_config") or {}
-    if not isinstance(plan_config, dict):
-        plan_config = {}
+    from web.planning_config import current_evaluation_config
+    plan_config = current_evaluation_config(retrieve)
+    # QA may be stale after changing Rx while the physical dose is reusable.
+    # A source/geometry edit, however, invalidates dose itself; evaluating a
+    # retained array would falsely restore clinical authority.
+    from collections.abc import Mapping
+    from utils.resource_status import resource_is_stale
+    for key in ("manual_artifact_status", "artifact_status"):
+        status = retrieve(key)
+        if isinstance(status, Mapping) and resource_is_stale(status.get("dose")):
+            return {"resolution_error": "Current source dose is stale; recompute dose before evaluation", "params": {}}
+    bundle = retrieve("dose_components")
+    total = None
+    if bundle is not None:
+        try:
+            from web.timepoint_resources import capture_resources, component_current, fingerprint
+            from web.dose_components import total_component
+            image = retrieve("ct_image")
+            if not isinstance(bundle, Mapping) or image is None:
+                raise ValueError("Missing current-image dose components")
+            resources = (retrieve("timepoint_resource_state") or {}).get("fingerprints") or {}
+            if resources.get("image") != capture_resources(retrieve, image)["image"]:
+                raise ValueError("The dose acquisition is no longer current")
+            if not all(component_current(bundle.get(name), name, resources, image)
+                       for name in ("implanted", "planned")):
+                raise ValueError("Source dose components are stale for the current inputs")
+            total = total_component(bundle["implanted"], bundle["planned"], resources)
+            if fingerprint(total) != fingerprint(bundle.get("total")):
+                raise ValueError("Total dose differs from its current source components")
+        except (ValueError, TypeError, KeyError, AttributeError) as exc:
+            return {"resolution_error": f"Current source dose is stale; recompute dose before evaluation: {exc}", "params": {}}
     previous_metrics = retrieve("dose_metrics") or retrieve("metrics") or {}
     if not isinstance(previous_metrics, dict):
         previous_metrics = {}
-    from utils.dose_units import calibrated_scale, physical_volume
+    from utils.dose_units import calibrated_scale, physical_volume, workspace_field_units, MODEL_UNITS
     dose_scale = None
 
     def _first(*keys: str) -> Any:
@@ -130,8 +157,9 @@ def resolve_dose_evaluation_inputs(retrieve: Retrieve) -> Dict[str, Any]:
 
     seen_shapes = []
     oar_mismatch = False
-    for dose_key, unit in _DOSE_SOURCES_GY:
-        dose = _as_array(retrieve(dose_key))
+    sources = (("dose_components.total", "physical"),) if total is not None else _DOSE_SOURCES_GY
+    for dose_key, unit in sources:
+        dose = _as_array(total["dose_distribution_physical_gy"] if total is not None else retrieve(dose_key))
         if dose is None:
             continue
         seen_shapes.append((dose_key, dose.shape))
@@ -143,11 +171,13 @@ def resolve_dose_evaluation_inputs(retrieve: Retrieve) -> Dict[str, Any]:
                 oar_mismatch = True
                 continue
             try:
-                if unit == "normalized":
-                    dose_scale = calibrated_scale(previous_metrics, plan_config, explicit=retrieve("dose_scale_gy"))
-                dose_gy = physical_volume(dose, units=unit if unit == "normalized" else "physical_gy", scale=dose_scale)
                 if spacing is None or len(spacing) != 3 or not np.isfinite(spacing).all() or np.any(np.asarray(spacing) <= 0):
                     raise ValueError("Valid dose-grid spacing is required for volume and Dxcc evaluation")
+                field_unit = workspace_field_units(retrieve, dose_key) if unit == "declared" else (
+                    "physical_gy" if unit == "physical" else unit)
+                if field_unit in MODEL_UNITS:
+                    dose_scale = calibrated_scale(previous_metrics, plan_config, explicit=retrieve("dose_scale_gy"))
+                dose_gy = physical_volume(dose, units=field_unit, scale=dose_scale)
             except (ValueError, TypeError) as exc:
                 return {"resolution_error": str(exc), "params": {}}
             params: Dict[str, Any] = {
@@ -162,8 +192,9 @@ def resolve_dose_evaluation_inputs(retrieve: Retrieve) -> Dict[str, Any]:
                 ),
                 "organ_names": retrieve("organ_names") or {},
                 "tumor_type": str(
-                    retrieve("tumor_type_used") or retrieve("tumor_type") or ""
+                    plan_config.get("tumor_type") or retrieve("tumor_type_used") or retrieve("tumor_type") or ""
                 ),
+                "oar_constraints": plan_config.get("oar_constraints") or {},
             }
             if not isinstance(params["organ_names"], dict):
                 params["organ_names"] = {}

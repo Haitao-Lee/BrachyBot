@@ -42,6 +42,9 @@ STALE_PLANNING_VALUE_KEYS = (
     "dose_distribution_gy",
     "algorithm_plan_dose_distribution_gy",
     "dose_distribution_physical_gy",
+    "dose_distribution_current_normalized",
+    "algorithm_plan_dose_distribution_current_normalized",
+    "total_dose_evaluation",
     "dose_metrics",
     "algorithm_plan_dose_metrics",
     "metrics",
@@ -73,6 +76,7 @@ PLANNING_VALUE_KEYS = (
     "total_seeds",
     "num_trajectories",
     "plan_config",
+    "current_dose_evaluation_config",
     # RL execution telemetry is kept separately from the large clinical
     # arrays so a failed/interrupted attempt remains auditable after the
     # previous completed plan is restored.
@@ -98,6 +102,16 @@ PLANNING_VALUE_KEYS = (
     "manual_ai_dose",
     "manual_artifact_status",
     "dose_distribution_physical_gy",
+    # Dose components/receipts belong to this exact future Planning. Actual
+    # implanted observations and their standalone dose remain acquisition-owned.
+    "dose_components",
+    "timepoint_resource_state",
+    "total_dose_evaluation",
+    "dose_distribution_current_normalized",
+    "algorithm_plan_dose_distribution_current_normalized",
+    "dose_unit_schema_version",
+    "dose_unit_metadata",
+    "dose_unit_provenance",
     "dose_engine",
     "dose_recompute_provenance",
     "metrics",
@@ -178,6 +192,14 @@ def _write_runs(memory: Any, runs: Iterable[Mapping[str, Any]], *, reason: str) 
 
 
 def _has_current_plan(memory: Any) -> bool:
+    if memory.retrieve('implanted_seed_reconstruction') is not None:
+        # Reconstructing observed-source dose is not a future Planning run.
+        # Empty explicit seed_plan remains a real zero-addition plan; absent
+        # geometry plus dose/scale/config metadata must not invent Planning_1.
+        geometry=('trajectories','refined_trajectories','seed_plan','seed_plan_serialized','seed_positions',
+            'verified_needle_geometry','algorithm_plan_snapshot','manual_seeds','manual_needles',
+            'manual_plan_serialized','manual_planning_preview','surgical_guide')
+        if not any(memory.retrieve(key) is not None for key in geometry):return False
     return any(memory.retrieve(key) is not None for key in PLANNING_VALUE_KEYS if key not in {
         "manual_plan_active", "manual_geometry_only", "artifact_status",
         "dose_recompute_provenance", "rl_status", "manual_step_outputs",
@@ -753,7 +775,25 @@ def activate_planning_run(agent: Any, planning_id: str) -> Dict[str, Any]:
         memory._planning_versions[PLANNING_RUN_ID_KEY] = int(
             memory._planning_versions.get(PLANNING_RUN_ID_KEY, 0)
         ) + 1
-        memory.conversation_state["planning_completed"] = str(run.get("status")) == "completed"
+        inputs_current = run.get('clinical_inputs_current') is not False
+        if not inputs_current:
+            # Geometry remains available as history. Activating it cannot undo
+            # an upstream observation/image edit or revive historical total QA.
+            status = dict(memory.planning_results.get('manual_artifact_status') or {})
+            status.update(dose='stale', dvh='stale', report='stale', quality_check='stale',
+                          reason='historical planning inputs are no longer current')
+            memory.planning_results.update(manual_artifact_status=status,
+                manual_geometry_only=True, total_dose_evaluation=None)
+            components = memory.planning_results.get('dose_components')
+            if isinstance(components, dict):
+                for component in components.values():
+                    if isinstance(component, dict):
+                        component.update(status='stale', stale_reason='historical_planning_inputs_changed')
+        memory.conversation_state["planning_completed"] = inputs_current and str(run.get("status")) == "completed"
+        from web.planning_config import evaluation_inputs_current, stale_evaluation_updates
+        if not evaluation_inputs_current(memory.retrieve, snapshot):
+            memory.planning_results.update(stale_evaluation_updates(memory.retrieve))
+            memory.conversation_state['planning_completed'] = False
         memory.conversation_state["data_available"] = sorted(memory.planning_results.keys())
     _write_runs(memory, updated_runs, reason="planning.run.visibility")
     _notify(memory, "planning.run.activated")
@@ -775,6 +815,10 @@ def restore_active_planning_aliases(memory: Any) -> List[str]:
     snapshot = memory.retrieve(PLANNING_RUN_PREFIX + str(planning_id))
     if not isinstance(snapshot, Mapping):
         return []
+    run = _find_run(memory, planning_id) or {}
+    inputs_current = run.get('clinical_inputs_current') is not False
+    from web.planning_config import evaluation_inputs_current
+    evaluation_current = evaluation_inputs_current(memory.retrieve, snapshot)
 
     restored: List[str] = []
     with memory._lock:
@@ -782,6 +826,11 @@ def restore_active_planning_aliases(memory: Any) -> List[str]:
         run_version = int(versions.get(PLANNING_RUN_PREFIX + str(planning_id), 0))
         available = set(memory.conversation_state.get("data_available", []))
         for key in PLANNING_VALUE_KEYS:
+            if not evaluation_current and key in ('dose_metrics','algorithm_plan_dose_metrics',
+                    'metrics','dvh_data','algorithm_plan_dvh_data','total_dose_evaluation'):
+                continue
+            if not inputs_current and key in (*STALE_PLANNING_VALUE_KEYS, 'dose_components', 'timepoint_resource_state'):
+                continue
             if memory.planning_results.get(key) is not None:
                 continue
             value = snapshot.get(key)
@@ -1178,7 +1227,26 @@ def current_planning_context(memory: Any) -> Dict[str, Any]:
             if isinstance(snapshot.get(key), Mapping) and snapshot.get(key)
         ]
     metrics = merge_dose_metric_sources(*metric_sources)
+    from web.planning_config import evaluation_inputs_current
+    if not evaluation_inputs_current(memory.retrieve, None if prefer_live else snapshot):
+        metrics = {}
+    component_state = read('dose_components',default=None)
+    artifact_state = read('manual_artifact_status',default={}) or read('artifact_status',default={})
+    # Reference/algorithm metrics remain useful historical evidence, but are
+    # never a substitute for an invalidated current total. In particular an
+    # edited implant journal clears current metrics while retaining the old
+    # automatic plan's comparison values.
+    from utils.resource_status import resource_is_stale
+    if (isinstance(artifact_state,Mapping) and any(resource_is_stale(artifact_state.get(key))
+            for key in ('dose','dvh','quality_check'))):
+        metrics = {}
+    if isinstance(component_state,Mapping):
+        total = component_state.get('total')
+        if not isinstance(total,Mapping) or total.get('status') == 'stale' or total.get('dose_status') == 'stale':
+            metrics = {}
     plan_config = read("plan_config", default={})
+    seed_count_recorded = read('total_seeds',default=None) is not None
+    trajectory_count_recorded = read('num_trajectories',default=None) is not None
     total_seeds = read("total_seeds", default=0)
     num_trajectories = read("num_trajectories", default=0)
     try:
@@ -1190,7 +1258,7 @@ def current_planning_context(memory: Any) -> Dict[str, Any]:
     except (TypeError, ValueError):
         num_trajectories = 0
 
-    if total_seeds <= 0:
+    if not seed_count_recorded:
         serialized = read("seed_plan_serialized", default={})
         seeds = serialized.get("seeds") if isinstance(serialized, Mapping) else None
         if isinstance(seeds, (list, tuple)):
@@ -1199,7 +1267,7 @@ def current_planning_context(memory: Any) -> Dict[str, Any]:
             manual_seeds = read("manual_seeds", default=[])
             if isinstance(manual_seeds, (list, tuple)):
                 total_seeds = len(manual_seeds)
-    if num_trajectories <= 0:
+    if not trajectory_count_recorded:
         for key in ("manual_needles", "refined_trajectories", "trajectories"):
             value = read(key, default=[])
             if isinstance(value, (list, tuple)) and value:

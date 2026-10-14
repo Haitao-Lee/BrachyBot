@@ -44,9 +44,9 @@ Data Tree hierarchy:
 
 ```text
 Artifacts & Annotations
-  Guide mouths · From needle tip · vN
+  Guide channel entries · Distance to needle tip · vN
     Needle 1
-      Guide mouth                 50.0 mm
+      Guide channel entry         50.0 mm
   Seeds · From needle tip
     Needle 1
       Seed 1                      15.0 mm

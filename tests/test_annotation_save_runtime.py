@@ -21,7 +21,11 @@ global.activeSessionId='a';global.sessions={a:{id:'a',messages:[]},b:{id:'b',mes
 global.state={ctLoaded:true,ctPath:'/synthetic/a.nii.gz',annotations:[{id:'a-line',type:'line'}],viewerSettings:{marker:'a'},maskLabels:{}};
 global.dataTreeState={annotations:[{id:'a-line',type:'manual_annotation'}],organs:[]};
 let source=fs.readFileSync(BRIDGE,'utf8');
-if(SHORT_DEADLINE)source=source.replace('const WORKSPACE_REQUEST_TIMEOUT_MS = 15000;','const WORKSPACE_REQUEST_TIMEOUT_MS = 30;');
+if(SHORT_DEADLINE){
+ const declaration=/const WORKSPACE_REQUEST_TIMEOUT_MS = \d+;/g;
+ assert.strictEqual((source.match(declaration)||[]).length,1,'deadline override must target exactly one declaration');
+ source=source.replace(declaration,'const WORKSPACE_REQUEST_TIMEOUT_MS = 30;');
+}
 vm.runInThisContext(source);
 (async()=>{ BODY })().then(()=>process.exit(0)).catch(e=>{console.error(e);process.exit(1);});
 '''.replace('BRIDGE', json.dumps(str(BRIDGE))).replace('SHORT_DEADLINE', str(short_deadline).lower()).replace('BODY', body)

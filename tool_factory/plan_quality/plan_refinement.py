@@ -11,7 +11,9 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from tool_factory import BaseTool, ToolResult
-from typing import Dict, List, Optional, Tuple
+from typing import Dict
+import copy
+from collections.abc import Mapping
 import numpy as np
 
 
@@ -24,6 +26,11 @@ class PlanRefinementTool(BaseTool):
     trained dose_unet_spacing1mm dose path.
     """
 
+    def __init__(self, agent=None):
+        # ToolRegistry.bind_workspace replaces this binding on the detached
+        # executor. Provider kwargs cannot downgrade its proposal policy.
+        self._agent = agent
+
     @property
     def name(self) -> str:
         return "plan_refinement"
@@ -32,11 +39,14 @@ class PlanRefinementTool(BaseTool):
     def description(self) -> str:
         return (
             "Iteratively refine seed placement based on dose evaluation feedback. "
-            "Suggests seed additions in under-dosed CTV regions. "
-            "It does not use an analytical/Gaussian dose approximation; run "
-            "dose_engine or planning_pipeline afterward to recompute dose with dose_unet_spacing1mm. "
+            "Owned timepoint calls read current total dose in Gy and return unvalidated "
+            "advisory under-dose ZYX voxel locations, with the current plan unmodified. "
+            "No feasible seed or channel is accepted. Guide-first path admission, fixed-implant "
+            "capsule collision checks and dose evaluation require separately authorized canonical planning. "
+            "Legacy preoperative calls may suggest unvalidated seeds using an existing explicit axis. "
+            "It does not compute a plan, dose or segmentation. "
             "Input: current plan, dose distribution, target metrics. "
-            "Output: candidate refined plan plus current metrics."
+            "Output: advisory locations or legacy candidates, validation limits and current metrics."
         )
 
     @property
@@ -59,7 +69,7 @@ class PlanRefinementTool(BaseTool):
                     "maximum": 1,
                     "description": "Source-backed or explicitly configured target V100 fraction",
                 },
-                "max_iterations": {"type": "integer", "default": 3},
+                "max_iterations": {"type": "integer", "minimum": 1, "maximum": 128, "default": 3},
             },
             "required": [
                 "current_plan",
@@ -77,6 +87,10 @@ class PlanRefinementTool(BaseTool):
             "properties": {
                 "refined_plan": {"type": "array", "description": "Refined seed plan"},
                 "candidate_seeds": {"type": "array", "description": "Seed candidates proposed for the next dose_unet_spacing1mm recalculation"},
+                "advisory_locations": {"type": "array", "description": "Under-dose array ZYX voxels; not physical seed positions or admitted channels"},
+                "channel_proposals": {"type": "array", "description": "Always empty: this tool does not admit feasible channels"},
+                "proposal_kind": {"type": "string"},
+                "feasibility_validated": {"type": "boolean"},
                 "metrics_before": {"type": "object", "description": "Metrics measured on the input dose distribution"},
                 "requires_dose_recalculation": {"type": "boolean", "description": "Always true when candidates are proposed"},
                 "improved_metrics": {"type": "object", "description": "Backward-compatible metrics object; final metrics are null until dose_unet_spacing1mm is rerun"},
@@ -85,6 +99,7 @@ class PlanRefinementTool(BaseTool):
         }
 
     def _execute(self, **kwargs) -> ToolResult:
+        candidate_only = self._candidate_only(kwargs)
         current_plan = kwargs["current_plan"]
         dose_distribution = np.asarray(kwargs["dose_distribution"], dtype=np.float32)
         ctv_mask = np.asarray(kwargs["ctv_mask"])
@@ -93,12 +108,20 @@ class PlanRefinementTool(BaseTool):
         target_v100 = kwargs.get("target_v100")
         max_iterations = kwargs.get("max_iterations", 3)
 
-        if prescribed_dose is None or float(prescribed_dose) <= 0:
+        try:
+            prescribed_dose = float(prescribed_dose)
+        except (TypeError, ValueError, OverflowError):
+            prescribed_dose = np.nan
+        if not np.isfinite(prescribed_dose) or prescribed_dose <= 0:
             return ToolResult(
                 success=False,
                 error="prescribed_dose must be explicitly provided and greater than zero",
             )
-        if target_v100 is None or not 0.0 <= float(target_v100) <= 1.0:
+        try:
+            target_v100 = float(target_v100)
+        except (TypeError, ValueError, OverflowError):
+            target_v100 = np.nan
+        if not np.isfinite(target_v100) or not 0.0 <= target_v100 <= 1.0:
             return ToolResult(
                 success=False,
                 error=(
@@ -106,8 +129,13 @@ class PlanRefinementTool(BaseTool):
                     "fraction between 0 and 1"
                 ),
             )
-        prescribed_dose = float(prescribed_dose)
-        target_v100 = float(target_v100)
+        if type(max_iterations) is not int or not 1 <= max_iterations <= 128:
+            return ToolResult(success=False, error="max_iterations must be an integer between 1 and 128")
+        if not isinstance(current_plan, list):
+            return ToolResult(success=False, error="current_plan must be a list")
+        if (dose_distribution.ndim != 3 or not dose_distribution.size
+                or not np.isfinite(dose_distribution).all() or np.any(dose_distribution < 0)):
+            return ToolResult(success=False, error="dose_distribution must be finite nonnegative nonempty 3D dose")
 
         if dose_distribution.shape != ctv_mask.shape:
             return ToolResult(
@@ -117,6 +145,8 @@ class PlanRefinementTool(BaseTool):
                     f"{dose_distribution.shape} vs {ctv_mask.shape}"
                 ),
             )
+        if not np.isfinite(ctv_mask).all() or np.any(ctv_mask < 0):
+            return ToolResult(success=False, error="ctv_mask must contain finite nonnegative labels")
         oar_clearance = None
         if oar_mask is not None:
             oar_mask = np.asarray(oar_mask)
@@ -128,7 +158,9 @@ class PlanRefinementTool(BaseTool):
                         f"{dose_distribution.shape} vs {oar_mask.shape}"
                     ),
                 )
-            if np.any(oar_mask > 0):
+            if not np.isfinite(oar_mask).all() or np.any(oar_mask < 0):
+                return ToolResult(success=False, error="oar_mask must contain finite nonnegative labels")
+            if not candidate_only and np.any(oar_mask > 0):
                 from scipy.ndimage import distance_transform_edt
 
                 oar_clearance = distance_transform_edt(oar_mask == 0)
@@ -146,24 +178,36 @@ class PlanRefinementTool(BaseTool):
         current_v200 = np.sum(target_doses >= 2.0 * prescribed_dose) / len(target_doses)
         current_d90 = float(np.percentile(target_doses, 10)) if target_doses.size else 0.0
 
-        refined_plan = list(current_plan) if isinstance(current_plan, list) else []
+        refined_plan = copy.deepcopy(current_plan)
         candidate_centers = []
         if current_v100 < target_v100:
             under_dosed = ctv_voxels & (dose_distribution < prescribed_dose)
+            # Clearance ranking cannot authorize a seed in an OAR voxel.
+            if oar_mask is not None:
+                under_dosed &= oar_mask == 0
             candidate_centers = self._candidate_centers_from_underdosed(
                 under_dosed,
                 dose_distribution,
-                refined_plan,
-                max(1, int(max_iterations)),
+                [] if candidate_only else refined_plan,
+                max_iterations,
                 oar_clearance=oar_clearance,
             )
 
         candidate_seeds = []
-        for center in candidate_centers:
-            seed = self._suggest_seed_position(center, refined_plan)
-            if seed is not None:
-                refined_plan.append(seed)
-                candidate_seeds.append(seed)
+        if not candidate_only:
+            for center in candidate_centers:
+                seed = self._suggest_seed_position(center, refined_plan)
+                if seed is not None:
+                    refined_plan.append(seed)
+                    candidate_seeds.append(seed)
+
+        # These coordinates belong only to the input dose array. Its shape
+        # does not prove a physical frame, and existing seeds may be LPS-mm.
+        # Do not invent a transform, an axis, a bore or a safety acceptance.
+        advisory_locations = [{"index_zyx": center.tolist(),
+            "dose": float(dose_distribution[tuple(center.astype(int))]),
+            "coordinate_frame": "dose_array_zyx", "is_seed": False,
+            "validation_status": "unvalidated_advisory"} for center in candidate_centers]
 
         iterations = len(candidate_seeds)
 
@@ -176,7 +220,7 @@ class PlanRefinementTool(BaseTool):
             "current_d90": current_d90,
             "final_v100": None,
             "requires_dose_recalculation": iterations > 0,
-            "dose_engine_required": "dose_unet_spacing1mm",
+            "dose_engine_required": "dose_unet_spacing1mm" if iterations else None,
         }
 
         metrics_before = {
@@ -186,13 +230,26 @@ class PlanRefinementTool(BaseTool):
             "d90": current_d90,
             "prescribed_dose": float(prescribed_dose),
             "target_v100": float(target_v100),
+            "dose_units": kwargs.get("_dose_units", "same_as_input"),
         }
 
-        if iterations:
+        if candidate_only or (candidate_centers and not candidate_seeds):
+            message = (
+                f"Plan refinement identified {len(advisory_locations)} advisory under-dose voxel location(s). "
+                f"Input V100: {current_v100:.1%}. No feasible seed or channel proposal was accepted or added; "
+                "the current plan is unmodified. "
+                + ("Input is current total dose in Gy. " if kwargs.get("_dose_units") == "physical_gy" else "") +
+                "Locations are dose-array ZYX indices, not physical implant positions. "
+                "Fixed-implant capsules, needle paths, OAR clearance and guide-first admission "
+                "have not been validated; separately authorized canonical planning is required "
+                "to obtain feasible channel proposals."
+            )
+        elif iterations:
             message = (
                 f"Plan refinement proposed {iterations} seed candidate(s). "
                 f"Input V100: {current_v100:.1%}. Recompute dose with dose_unet_spacing1mm "
-                "before accepting the refined plan."
+                "before accepting the refined plan. These legacy voxel candidates are unvalidated: "
+                "needle paths, physical capsule separation and OAR clearance also require validation."
             )
         else:
             message = (
@@ -203,25 +260,61 @@ class PlanRefinementTool(BaseTool):
             success=True,
             data=refined_plan,
             message=message,
+            display=message,
             metadata={
                 "refined_plan": refined_plan,
                 "candidate_seeds": candidate_seeds,
+                "advisory_locations": advisory_locations,
+                "channel_proposals": [],
+                "proposal_kind": "unvalidated_legacy_seed_candidates" if iterations else "unvalidated_advisory_locations",
+                "candidate_only": candidate_only,
+                "feasibility_validated": False,
+                "clinical_use_approved": False,
+                "plan_changed": False,
+                "refined_plan_is_accepted": False,
+                "unvalidated_checks": ["physical_grid", "fixed_implant_capsules", "needle_path",
+                                       "oar_clearance", "guide_first_admission", "post_change_dose"],
+                "advisory_count": len(advisory_locations),
+                "advisory_spacing_units": "voxels",
+                "dose_units": kwargs.get("_dose_units", "same_as_input"),
+                "dose_basis": "current_total" if kwargs.get("_dose_units") == "physical_gy" else "input",
+                "outside_guide_attempted": False,
                 "metrics_before": metrics_before,
                 "improved_metrics": improvements,
                 "requires_dose_recalculation": iterations > 0,
                 "dose_engine": "dose_unet_spacing1mm",
                 "oar_aware_ranking": oar_clearance is not None,
+                "oar_overlap_excluded": oar_mask is not None,
                 "iterations_used": iterations,
             },
         )
+
+    def _candidate_only(self, kwargs):
+        if kwargs.get("_candidate_only"):
+            return True
+        agent = self._agent if self._agent is not None else kwargs.get("_agent")
+        if agent is None:
+            return False
+        if getattr(agent, "_workspace_scoped_chat_runtime", None) is not None:
+            return True
+        # Defense for older server callers retaining an Agent binding outside
+        # the owned adapter. A continuation/observed implant must never enter
+        # the preoperative voxel-seed proposal path.
+        retrieve = getattr(getattr(agent, "memory", None), "retrieve", lambda *_: None)
+        scope = retrieve("timepoint_context")
+        captured = getattr(agent, "_workspace_timepoint_context", None)
+        stage = captured.target.stage if captured is not None else scope.get("stage") if isinstance(scope, Mapping) else None
+        return (stage == "intraoperative" or retrieve("continuation_baseline_record") is not None
+                or retrieve("implanted_seed_reconstruction") is not None)
 
     def _suggest_seed_position(self, centroid, current_plan):
         if isinstance(current_plan, list) and len(current_plan) > 0:
             last_seed = current_plan[-1]
             if isinstance(last_seed, (list, tuple)) and len(last_seed) >= 2:
-                direc = last_seed[1] if len(last_seed) > 1 else [0, 0, 1]
-                return [centroid.tolist(), direc]
-        return [centroid.tolist(), [0, 0, 1]]
+                direc = np.asarray(last_seed[1], dtype=float).reshape(-1)
+                if direc.shape == (3,) and np.isfinite(direc).all() and np.linalg.norm(direc) > 0:
+                    return [centroid.tolist(), direc.tolist()]
+        return None
 
     def _candidate_centers_from_underdosed(
         self,
@@ -264,8 +357,6 @@ class PlanRefinementTool(BaseTool):
                 if len(selected) >= max_candidates:
                     break
 
-        if not selected:
-            selected.append(np.mean(coords, axis=0).astype(np.float32))
         return selected[:max_candidates]
 
     @staticmethod
@@ -276,7 +367,9 @@ class PlanRefinementTool(BaseTool):
         for item in plan:
             pos = None
             if isinstance(item, dict):
-                pos = item.get("position") or item.get("pos")
+                pos = item.get("position")
+                if pos is None:
+                    pos = item.get("pos")
             elif isinstance(item, (list, tuple)) and item:
                 pos = item[0]
             try:

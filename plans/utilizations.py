@@ -35,6 +35,9 @@ from .guide_geometry import (
 )
 from .rl_status import finish_rl_status, new_rl_status, set_outcome, update_best
 from .planning_preview import safe_preview
+from .continuation import (validate_continuation, initial_radiation,
+                           continuation_candidates, continuation_slots,
+                           continuation_preview_context, finalize_continuation)
 try:
     from . import reinforcement
 except ImportError:
@@ -2791,6 +2794,7 @@ def get_direction_conditioned_close_points_for_directions(
     max_point_num=20000,
     max_surface_points=_CLOSE_POINT_MAX_SURFACE_POINTS,
     surface_spacing_mm=_CLOSE_POINT_PREFERRED_SPACING_MM,
+    deadline=None,
 ):
     """Return trajectory entry anchors and far/exit preview points."""
     del extract_angle
@@ -2849,6 +2853,8 @@ def get_direction_conditioned_close_points_for_directions(
     projected_counts = []
     all_exits = []
     for direction in directions:
+        if deadline is not None and time.monotonic() >= deadline:
+            raise TimeoutError("Directional entry sampling reached its time budget")
         physical_direction = _physical_unit_direction(dose_image, direction)
         projected_length = float(
             geometry.projection_length(
@@ -2987,6 +2993,7 @@ def get_shared_close_points_for_directions(
     max_point_num=20000,
     max_surface_points=_CLOSE_POINT_MAX_SURFACE_POINTS,
     surface_spacing_mm=_CLOSE_POINT_PREFERRED_SPACING_MM,
+    deadline=None,
 ):
     """Compatibility wrapper returning spatially complete far endpoints.
 
@@ -3008,6 +3015,7 @@ def get_shared_close_points_for_directions(
         max_point_num=max_point_num,
         max_surface_points=max_surface_points,
         surface_spacing_mm=surface_spacing_mm,
+        **({"deadline": deadline} if deadline is not None else {}),
     )
     return (
         projected["preview_close_points"],
@@ -3330,6 +3338,7 @@ def init_trajectories_with_depth(
     max_length,
     entry_body_mask=None,
     truncated_boundary_faces=None,
+    deadline=None,
 ):
     """
     Compute the depth of potential trajectories from specified points in a 3D radiation array along a given direction.
@@ -3372,6 +3381,8 @@ def init_trajectories_with_depth(
     """
     res = []
     for c_p in close_points:
+        if deadline is not None and time.monotonic() >= deadline:
+            raise TimeoutError("Trajectory depth tracing reached its time budget")
         if entry_body_mask is not None and not trajectory_entry_is_valid(
             c_p,
             ref_direc,
@@ -4114,6 +4125,7 @@ def generate_hierarchical_state_spaces(
     deadline: float | None = None,
     parallel_min_distance_mm: float | None = None,
     parallel_angle_tolerance_deg: float | None = None,
+    continuation=None,
 ):
     """
     Generate hierarchical non-interfering trajectory combinations.
@@ -4197,6 +4209,8 @@ def generate_hierarchical_state_spaces(
         selected_list = traj_with_seeds[i][0]  # e.g. [[idx, traj, seeds, radiations, acc_radiation]]
         dvh_rate = traj_with_seeds[i][1]
         combined_vec = target_vectors[i]  # 1D array of length target_v
+        if continuation is not None:
+            combined_vec = combined_vec + continuation.dose_model[mask_idx]
         prev_items.append((selected_list, dvh_rate, combined_vec))
     
 
@@ -4352,6 +4366,7 @@ def hierarchical_planning_rf(
     parallel_min_distance_mm=None, parallel_angle_tolerance_deg=None,
     diagnostics=None,
     preview_callback=None,
+    continuation=None,
 ):
     """
     Hierarchical reinforcement-learning driver for catheter/needle selection
@@ -4401,6 +4416,8 @@ def hierarchical_planning_rf(
     optimal_reward : float
         Best cumulative return achieved.
     """
+    validate_continuation(continuation, radiation_volume, dose_image, target_value)
+    candidate_trajectories = continuation_candidates(continuation, candidate_trajectories, dose_image)
     rf_params = dict(rf_params or {})
     # The full safety-validated pool feeds deterministic plan construction;
     # only the hierarchical learning stage is budget-capped below.  Confining
@@ -4429,6 +4446,19 @@ def hierarchical_planning_rf(
         })
 
     def _finish(plan, reward, *, execution=None, stop_reason=None):
+        if continuation is not None:
+            # Empty, failed, and deadline branches still have a valid fixed
+            # dose. Keep a better constructed supplemental incumbent too.
+            contenders = [[], plan or [], construction_incumbent[0] or []]
+            contenders = [[entry for entry in p if entry[1]] for p in contenders]
+            scored = [(reinforcement.evaluate_plan_objective(
+                p, radiation_volume, target_value, in_lowest_dose,
+                out_highest_dose, DVH_rate, continuation=continuation), p)
+                for p in contenders]
+            (reward, coverage), plan = max(scored, key=lambda item: item[0][0])
+            finalize_continuation(plan, continuation, radiation_volume, dose_image,
+                                  target_value, seed_info, in_lowest_dose, out_highest_dose, DVH_rate)
+            update_best(rl_status, coverage, reward)
         if rl_status is not None:
             if stop_reason:
                 set_outcome(rl_status, execution=execution, stop_reason=stop_reason)
@@ -4475,6 +4505,11 @@ def hierarchical_planning_rf(
         if np.isfinite(max_wall_seconds) and max_wall_seconds > 0.0
         else None
     )
+    construction_incumbent = [None]
+    if continuation is not None:
+        fixed_coverage = float(np.mean(continuation.dose_model[continuation.complete_target_mask] > in_lowest_dose))
+        if fixed_coverage >= DVH_rate:
+            return _finish([], 0., execution="completed", stop_reason="target_reached")
     model_device = next(dose_cal_model.parameters()).device
     logger.info(
         "[rl] interactive budget: device=%s, wall=%.1fs, candidates=%d, "
@@ -4527,7 +4562,7 @@ def hierarchical_planning_rf(
                 dose_cal_model, dose_image, radiation_volume, target_value,
                 in_lowest_dose, out_highest_dose, infer_img_size, seed_info,
                 image_normalize_min, image_normalize_max, image_normalize_scale,
-                DVH_rate, deadline=deadline,
+                DVH_rate, deadline=deadline, continuation=continuation,
             )
             construction_plan = reinforcement.construct_plan_over_candidates(
                 shared_reward,
@@ -4544,16 +4579,18 @@ def hierarchical_planning_rf(
                 parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
                 preview_callback=preview_callback,
             )
+            construction_incumbent[0] = construction_plan
             if construction_plan:
                 construction_plan = reinforcement.consolidate_plan_needles(
                     shared_reward, construction_plan, dose_image, distance_map,
                     seed_info, deadline=deadline, protect_OAR=protect_oar,
                 )
+                construction_incumbent[0] = construction_plan
                 construction_seeds, construction_needles = reinforcement.plan_cost_counts(
                     construction_plan)
                 construction_score, construction_coverage = reinforcement.evaluate_plan_objective(
                     construction_plan, radiation_volume, target_value,
-                    in_lowest_dose, out_highest_dose, DVH_rate,
+                    in_lowest_dose, out_highest_dose, DVH_rate, continuation=continuation,
                 )
                 logger.info(
                     "[rl] construction-first incumbent: objective=%.4f coverage=%.4f "
@@ -4601,7 +4638,7 @@ def hierarchical_planning_rf(
             break
         try:
             
-            radiation = np.zeros_like(radiation_volume, dtype=float)
+            radiation = initial_radiation(radiation_volume, continuation, dtype=float)
             point = np.array(traj[0]).reshape(-1) 
             direction = np.array(traj[1]).reshape(-1)  
             max_index = np.argmax(np.abs(direction))
@@ -4609,6 +4646,7 @@ def hierarchical_planning_rf(
             dense_seeds = []
             throttled_process_events()  
             effective_range = get_available_position(traj, dense_seeds, seed_info, dose_image, distance_map)
+            effective_range = continuation_slots(continuation, traj, effective_range, dose_image, seed_info)
             throttled_process_events()  
             target_v = np.sum(mask_volume)
             dense_iterations = 0
@@ -4635,6 +4673,7 @@ def hierarchical_planning_rf(
                 dense_seeds.append((cur_point, direction))
                 radiation = cur_radiation
                 effective_range = get_available_position(traj, dense_seeds, seed_info, dose_image, distance_map)
+                effective_range = continuation_slots(continuation, traj, effective_range, dose_image, seed_info)
                 throttled_process_events()  
                 dense_iterations += 1
                 # A selected candidate must be excluded by the new seed.  This
@@ -4664,7 +4703,8 @@ def hierarchical_planning_rf(
                     time.perf_counter() - dense_started,
                 )
                 cur_seeds_radiations = sum(cur_single_seed_radiations)
-                cur_DVH_rate = np.sum(cur_seeds_radiations*mask_volume > in_lowest_dose) / target_v
+                total_dense = cur_seeds_radiations + initial_radiation(radiation_volume, continuation, dtype=float)
+                cur_DVH_rate = np.sum(total_dense*mask_volume > in_lowest_dose) / target_v
 
                 if cur_DVH_rate > DVH_rate:
                     target_level = 1
@@ -4677,6 +4717,7 @@ def hierarchical_planning_rf(
                     "coverage": cur_DVH_rate,
                     "coordinate_space": "voxel",
                     "plan": [[traj, dense_seeds, cur_single_seed_radiations]],
+                    **continuation_preview_context(continuation),
                     "detail": (
                         f"Dense candidate {idx + 1}/{len(candidate_trajectories)}; "
                         f"{len(dense_seeds)} seeds"
@@ -4732,6 +4773,7 @@ def hierarchical_planning_rf(
             max_levels=max_hierarchy_depth, deadline=deadline,
             parallel_min_distance_mm=parallel_min_distance_mm,
             parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
+            continuation=continuation,
         )
         
         # if not DVH_res:
@@ -4785,6 +4827,7 @@ def hierarchical_planning_rf(
         effective_ranges = []
         for _, traj, _, _, _ in elem:
             ranges = get_available_position(traj, [], seed_info, dose_image, distance_map)
+            ranges = continuation_slots(continuation, traj, ranges, dose_image, seed_info)
             effective_ranges.append(ranges)
             range_length.append(len(ranges))
             high_level_state_spaces.extend(ranges)
@@ -4832,6 +4875,7 @@ def hierarchical_planning_rf(
         parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
         reward_calculator=shared_reward,
         construction_plan=construction_plan,
+        continuation=continuation,
     )
 
     if rl_status is not None:
@@ -4851,7 +4895,7 @@ def hierarchical_planning_rf(
     return optimal_plan, optimal_reward
     
     
-def put_seeds(radiation_volume, dose_image, dose_cal_model, infer_img_size, radiation, target_value, in_lowest_dose, trajectory, seed_info, DVH_rate, distance_map, image_normalize_min, image_normalize_max, image_normalize_scale, dose_context=None, deadline=None):
+def put_seeds(radiation_volume, dose_image, dose_cal_model, infer_img_size, radiation, target_value, in_lowest_dose, trajectory, seed_info, DVH_rate, distance_map, image_normalize_min, image_normalize_max, image_normalize_scale, dose_context=None, deadline=None, continuation=None):
     """Optimize and place radioactive seeds along a predefined trajectory.
 
     Places seeds within a treatment volume to ensure a desired dose
@@ -4895,6 +4939,7 @@ def put_seeds(radiation_volume, dose_image, dose_cal_model, infer_img_size, radi
     single_seed_radiations = []
 
     effective_range = get_available_position(trajectory, seeds, seed_info, dose_image, distance_map)
+    effective_range = continuation_slots(continuation, trajectory, effective_range, dose_image, seed_info)
     target_v = np.sum(mask_volume)
     if target_v <= 0:
         logger.warning("[put_seeds] Target mask is empty; no seeds can be placed")
@@ -4946,6 +4991,7 @@ def put_seeds(radiation_volume, dose_image, dose_cal_model, infer_img_size, radi
         if cur_DVH_rate >= DVH_rate:
             break
         effective_range = get_available_position(trajectory, seeds, seed_info, dose_image, distance_map)
+        effective_range = continuation_slots(continuation, trajectory, effective_range, dose_image, seed_info)
         iterations += 1
         if selected_length in effective_range or len(effective_range) >= len(previous_range):
             logger.error(
@@ -5023,10 +5069,23 @@ def get_available_position(trajectory, seeds, seed_info, dose_image, distance_ma
     effective_range = []
 
     # Compute the valid positions (effective range) based on the target and background depths.
+    try:
+        target_depths = [float(value) for value in target_depths]
+        background_depths = [float(value) for value in background_depths]
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Trajectory intervals must be finite nonnegative voxel-step depths") from exc
+    depths = target_depths + background_depths
+    if (not np.isfinite(depths).all() or any(value < 0 for value in depths)
+            or sum(depths) > sum(dose_image.GetSize()) + 1):
+        raise ValueError("Trajectory intervals exceed the bounded planning grid")
     for i in range(len(target_depths)):
+        offset = sum(background_depths[:i]) + sum(target_depths[:i])
+        # Serialized and registered physical paths may carry integral floats
+        # or fractional depths. Keep historical integer sampling exactly;
+        # never round a candidate past a target interval's distal boundary.
         effective_range += list(range(
-            1 + sum(background_depths[:i]) + sum(target_depths[:i]),
-            target_depths[i] + 1 + sum(background_depths[:i]) + sum(target_depths[:i])
+            int(np.ceil(1 + offset)),
+            int(np.floor(target_depths[i] + offset)) + 1,
         ))
 
     import logging as _log
@@ -5261,7 +5320,7 @@ def remove_seed_sequentially(traj_seed_radiations, all_seeds, itera, radiation):
                         
 def add_proper_seed(traj_seed_radiations, radiation_volume, radiation, dose_image, dose_cal_model, infer_img_size, 
                     in_lowest_dose, out_highest_dose, target_value, background_value, obstacle_value, 
-                    DVH_rate, seed_info, distance_map, image_normalize_min, image_normalize_max, image_normalize_scale, dose_context=None, deadline=None):
+                    DVH_rate, seed_info, distance_map, image_normalize_min, image_normalize_max, image_normalize_scale, dose_context=None, deadline=None, continuation=None):
     """Strategically add a radioactive seed to improve dose coverage.
 
     Evaluates potential seed placements along predefined trajectories to
@@ -5308,7 +5367,8 @@ def add_proper_seed(traj_seed_radiations, radiation_volume, radiation, dose_imag
 
     effective_ranges = []
     for res in traj_seed_radiations:
-        effective_ranges.append(get_available_position(res[0], res[1], seed_info, dose_image, distance_map, 2))
+        slots = get_available_position(res[0], res[1], seed_info, dose_image, distance_map, 2)
+        effective_ranges.append(continuation_slots(continuation, res[0], slots, dose_image, seed_info))
 
     cur_dangerous_num = float('inf')
     chosen_index = 0
@@ -5369,7 +5429,7 @@ def add_proper_seed(traj_seed_radiations, radiation_volume, radiation, dose_imag
 
 
 def replan(traj_seed_radiations, radiation_volume, radiation, dose_image, dose_cal_model, infer_img_size, in_lowest_dose, target_value,
-           background_value, obstacle_value, seed_info, distance_map, image_normalize_min, image_normalize_max, image_normalize_scale, dose_context=None, deadline=None):
+           background_value, obstacle_value, seed_info, distance_map, image_normalize_min, image_normalize_max, image_normalize_scale, dose_context=None, deadline=None, continuation=None):
     """Optimize and replan radioactive seed placements along trajectories.
 
     Evaluates potential seed placements along each trajectory, selects optimal
@@ -5416,7 +5476,8 @@ def replan(traj_seed_radiations, radiation_volume, radiation, dose_image, dose_c
     effective_ranges = []
     for idx_res, res in enumerate(traj_seed_radiations):
         
-        effective_ranges.append(get_available_position(res[0], res[1], seed_info, dose_image, distance_map, 2))
+        slots = get_available_position(res[0], res[1], seed_info, dose_image, distance_map, 2)
+        effective_ranges.append(continuation_slots(continuation, res[0], slots, dose_image, seed_info))
         
 
     chosen_index = 0

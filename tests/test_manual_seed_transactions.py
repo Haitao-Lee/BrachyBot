@@ -548,10 +548,10 @@ def test_manual_needle_mutations_use_authoritative_backend_transactions():
     manual = (root / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
     routes = (root / "web/routes/planning_routes.py").read_text(encoding="utf-8")
 
-    assert "await _persistNeedleGeometryOnly({" in manual
+    assert "await __tpAwait(() => (_persistNeedleGeometryOnly({" in manual
     assert "reason: 'needle_add'" in manual
     assert "API + '/manual_planning/delete_needle'" in manual
-    assert "await _deleteNeedleAuthoritatively(requestedNeedleId)" in manual
+    assert "await __tpAwait(() => (_deleteNeedleAuthoritatively(requestedNeedleId)" in manual
     assert "scheduleManualDoseRecompute('needle_delete')" not in manual
     assert "expected_version: payload.planning_version" in manual
     assert '"artifact_status": artifact_status' in routes
@@ -733,7 +733,7 @@ def test_seed_interference_offers_restore_or_keep_and_preserves_geometry_on_dose
     assert "allowUnsafe: true" in manual
     assert "preserve_geometry_on_failure" in manual
     assert "geometryPreserved" in manual
-    assert "All seeds and needles were kept" in manual
+    assert "All seeds and needles were retained" in manual
     assert "dismissAsYes: true" in manual
     assert "resolve(options.dismissAsYes === true)" in ui_api
     assert "_manual_safety_override_requested" in routes

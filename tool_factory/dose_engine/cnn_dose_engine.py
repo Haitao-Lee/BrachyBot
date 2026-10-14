@@ -163,7 +163,17 @@ class CNNDoseEngineTool(BaseTool):
             seed_info, norm_min, norm_max, norm_scale
         )
 
-        cumulative_dose = np.sum(np.asarray(per_seed_doses), axis=0)
+        cumulative_dose = np.zeros(tuple(dose_image.GetSize()[::-1]), dtype=np.float32)
+        if len(per_seed_doses) != len(seed_tuples):
+            return ToolResult(False,error="The CNN returned an incomplete source-dose set")
+        for contribution in per_seed_doses:
+            contribution = np.asarray(contribution,dtype=np.float32)
+            if (contribution.shape != cumulative_dose.shape or not np.isfinite(contribution).all()
+                    or np.any(contribution < 0)):
+                return ToolResult(False,error="The CNN returned an invalid source-dose contribution")
+            cumulative_dose += contribution
+        if not np.isfinite(cumulative_dose).all():
+            return ToolResult(False,error="CNN dose accumulation overflowed")
         contract = getattr(dose_model, "_brachybot_dose_contract", None)
         if contract is None:
             contract = getattr(getattr(dose_model, "module", None), "_brachybot_dose_contract", {})
@@ -178,6 +188,8 @@ class CNNDoseEngineTool(BaseTool):
                 "max_dose": float(np.max(cumulative_dose)),
                 "mean_dose": float(np.mean(cumulative_dose[cumulative_dose > 0])) if np.any(cumulative_dose > 0) else 0.0,
                 "engine": "dose_unet_spacing1mm",
+                "dose_units": "normalized_model_output",
+                "dose_unit_metadata": {"cumulative_dose": "normalized_model", "per_seed_doses": "normalized_model"},
                 "model_name": contract.get("name", "dose_unet_spacing1mm"),
                 "num_seeds": len(per_seed_doses),
             },

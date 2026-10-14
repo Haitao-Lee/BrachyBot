@@ -44,6 +44,7 @@ from plans.guide_geometry import (
 )
 from plans.rl_status import finish_rl_status, new_rl_status, set_outcome
 from tool_factory.dose_eval.dvh_utils import build_cumulative_dvh
+from tool_factory.seed_plan.continuation_support import pipeline_baseline, realized_candidates, baseline_reaches_target
 
 logger = logging.getLogger(__name__)
 
@@ -2678,9 +2679,10 @@ def _prune_unsafe_plan_entries(plan_res, unsafe_indices):
     return retained, removed_indices, removed_seed_count
 
 
-def _sum_plan_seed_doses(plan_res, reference_volume):
+def _sum_plan_seed_doses(plan_res, reference_volume, continuation=None):
     """Rebuild cumulative dose from exactly the entries being published."""
-    total = np.zeros_like(reference_volume, dtype=np.float32)
+    from plans.continuation import initial_radiation
+    total = initial_radiation(reference_volume, continuation, dtype=np.float32)
     for entry in plan_res or []:
         if isinstance(entry, dict):
             dose_maps = entry.get("dose_maps") or entry.get("single_seed_radiations") or []
@@ -2694,7 +2696,11 @@ def _sum_plan_seed_doses(plan_res, reference_volume):
                 raise ValueError(
                     "plan contains a dose map whose geometry differs from the planning grid"
                 )
+            if not np.isfinite(dose).all() or np.any(dose < 0):
+                raise ValueError("plan contains invalid supplemental dose values")
             total += dose
+    if not np.isfinite(total).all():
+        raise ValueError("cumulative dose overflowed")
     return total
 
 
@@ -2745,24 +2751,14 @@ def _build_algorithm_plan_snapshot(seed_plan_serialized, verified_needle_geometr
     return {"seeds": seeds, "needles": needles}
 
 
-def _plan_target_coverage(plan_res, radiation_volume, target_value, dose_threshold):
+def _plan_target_coverage(plan_res, radiation_volume, target_value, dose_threshold, continuation=None):
     """Compute the target coverage of a plan from the AI dose maps it contains."""
     try:
         target = np.asarray(radiation_volume) == target_value
         target_count = int(np.count_nonzero(target))
         if target_count <= 0:
             return 0.0
-        accumulated = np.zeros_like(np.asarray(radiation_volume), dtype=np.float32)
-        for entry in plan_res or []:
-            if not isinstance(entry, (list, tuple)) or len(entry) < 3:
-                continue
-            for dose_map in entry[2] or []:
-                arr = np.asarray(dose_map)
-                if arr.shape != accumulated.shape:
-                    raise ValueError("Plan dose map does not share the target grid")
-                if not np.all(np.isfinite(arr)):
-                    raise ValueError("Plan dose map contains non-finite values")
-                accumulated += arr
+        accumulated = _sum_plan_seed_doses(plan_res, radiation_volume, continuation)
         if not np.all(np.isfinite(accumulated)) or not np.isfinite(float(dose_threshold)):
             raise ValueError("Plan coverage inputs are non-finite")
         return float(np.count_nonzero(accumulated[target] >= float(dose_threshold))) / target_count
@@ -2829,6 +2825,9 @@ class PlanningPipelineTool(BaseTool):
             "Supports full pipeline or individual steps: "
             "trajectory_init, trajectory_refine, seed_planning, dose_calc, dose_eval. "
             "Each step auto-checks prerequisites and attempts recovery."
+            " For a saved non-default workspace in the same patient Session, supply its explicit timepoint_id "
+            "from timepoint_inspector. Execution reads and commits that workspace only. Current CTV/OAR "
+            "and a reviewed intraoperative baseline must already be present; a tab selection is not an input identity."
         )
 
     @property
@@ -2836,6 +2835,8 @@ class PlanningPipelineTool(BaseTool):
         return {
             "type": "object",
             "properties": {
+                "timepoint_id": {"type": "string", "pattern": "^[0-9a-f]{32}$",
+                    "description": "Explicit owned timepoint from timepoint_inspector; omit for the existing default workspace."},
                 "ct_image_path": {
                     "type": "string",
                     "description": "Path to CT image file (.nii.gz). If not provided, uses CT from agent memory.",
@@ -2932,6 +2933,23 @@ class PlanningPipelineTool(BaseTool):
                     "Invoke it through BrachyAgent or /api/planning/run_step."
                 ),
             )
+        target_id = kwargs.pop("timepoint_id", None)
+        if target_id is not None:
+            try:
+                from web.timepoints import timepoint_id
+                timepoint_id(target_id)
+                store = getattr(agent, "_workspace_store", None)
+                config = getattr(agent, "config", {}) or {}
+                catalog = store.list_timepoints(config["_workspace_owner_id"], config["_workspace_session_id"])
+                if target_id != catalog["default_timepoint_id"]:
+                    allowed = {"step", "mode", "planning_params", "ref_direc", "seed_info", "step_callback", "preview_callback"}
+                    if set(kwargs) - allowed:
+                        raise ValueError("Scoped planning uses only that timepoint's saved image/masks; mixed legacy input paths or runtime overrides are refused")
+                    from web.timepoint_execution import ScopedPipelineExecutor
+                    return ScopedPipelineExecutor(agent).execute(target_id, **kwargs)
+            except (ValueError, KeyError, AttributeError, RuntimeError) as exc:
+                return ToolResult(success=False, error=f"Scoped planning was not executed: {exc}",
+                                  metadata={"timepoint_id": target_id, "published_to_timepoint": False})
 
         # step_callback: optional, called for each sub-step with
         #   (substep_name, status) where status is 'pending' or 'done'.
@@ -2945,6 +2963,7 @@ class PlanningPipelineTool(BaseTool):
         # Ephemeral viewer observations use a separate callback and never
         # enter the tool schema, AgentMemory, or an immutable Planning run.
         preview_callback = kwargs.pop("preview_callback", None)
+        continuation_input = kwargs.pop("_continuation_baseline", None)
         reference_direction_user_override = bool(
             kwargs.pop("_reference_direction_user_override", False)
         )
@@ -3016,6 +3035,31 @@ class PlanningPipelineTool(BaseTool):
         # Build an invocation-local configuration. Planning overrides belong to
         # this tool call and must never mutate the session-wide agent config.
         agent_config = copy.deepcopy(getattr(agent, 'config', {}) or {}) if agent else {}
+        try:
+            if agent is not None and continuation_input is None:
+                from web.intraoperative_workflow import ensure_intraoperative_baseline
+                pause = ensure_intraoperative_baseline(agent, planning_config=agent_config)
+                if pause is not None:
+                    return pause
+            from tool_factory.seed_plan.continuation_support import resolve_baseline
+            continuation = resolve_baseline(agent, current_image=ct_image, explicit=continuation_input)
+            if continuation is not None:
+                agent_config["_continuation_baseline"] = continuation
+                source_seed_info = _memory_value(agent.memory, "continuation_input_seed_info")
+                if source_seed_info is not None:
+                    from tool_factory.seed_plan.continuation_support import same_continuation_source_geometry, ContinuationSourceGeometryMismatch
+                    if kwargs.get("seed_info") is not None and not same_continuation_source_geometry(kwargs["seed_info"], source_seed_info):
+                        raise ContinuationSourceGeometryMismatch("Supplemental source geometry cannot change independently of the reviewed fixed baseline")
+                    agent_config["seed_info"] = dict(source_seed_info)
+                from tool_factory.seed_plan.continuation_search import resolve_guide_search
+                agent_config["_guide_search"] = resolve_guide_search(agent, ct_image, continuation)
+        except (TypeError, ValueError) as exc:
+            if getattr(exc, 'code', None) == 'continuation_source_geometry_mismatch':
+                from web.timepoint_messages import timepoint_message
+                language = (getattr(agent, '_active_turn_context', None) or {}).get('ui_language') or getattr(agent.memory, 'user_lang', 'en')
+                packet = timepoint_message(exc.code, language)
+                return ToolResult(success=False, error=packet['message'], message=packet['message'], metadata=packet)
+            return ToolResult(success=False, error=f"Invalid continuation input: {exc}")
         seed_info = kwargs.get("seed_info")
         if seed_info is not None:
             if not isinstance(seed_info, dict):
@@ -3124,6 +3168,22 @@ class PlanningPipelineTool(BaseTool):
             # multi-label file.
             "ctv_effective": _planning_ctv_provenance(agent, ctv_mask),
         }
+        if continuation is not None:
+            input_paths["continuation"] = {
+                "baseline_dose_sha256": continuation.baseline_dose_sha256,
+                "grid_signature": continuation.baseline_grid_signature,
+                "dose_contract_id": continuation.dose_contract_id,
+                "dose_scale_gy": continuation.dose_scale_gy,
+                "fixed_seed_ids": [s.physical_seed_id for s in continuation.fixed_seeds],
+                "candidate_ids": [p.candidate_id for p in continuation.candidate_paths or ()],
+                "restricted_channels": continuation.candidate_paths is not None,
+            }
+            if agent_config.get("_guide_search") is not None:
+                search_policy, guide_obstacle = agent_config["_guide_search"]
+                input_paths["continuation"]["guide_search_policy"] = {
+                    "policy_id": search_policy.policy_id, "outside_guide_enabled": search_policy.outside_guide_enabled,
+                    "guide_obstacle_sha256": guide_obstacle.signature,
+                }
         planning_provenance, planning_fingerprint = build_planning_request_provenance(
             provenance_args,
             mode=mode,
@@ -3726,7 +3786,18 @@ class PlanningPipelineTool(BaseTool):
                 force=bool(event.get("force")),
             )
         try:
-            trajectories = init_plan(
+            continuation = pipeline_baseline(agent_config, agent, ct_image)
+            baseline_only = baseline_reaches_target(continuation, agent_config)
+            from tool_factory.seed_plan.continuation_search import resolve_guide_search
+            guide_search = agent_config.get("_guide_search") or resolve_guide_search(agent, ct_image, continuation)
+            outside_enabled = bool(guide_search is not None and guide_search[0].outside_guide_enabled)
+            if continuation is not None:
+                continuation.validate_context(radiation_volume, resampled_ct, args.radiation_array_params['target_value'])
+            trajectories = realized_candidates(continuation, resampled_ct)
+            if baseline_only:
+                trajectories = []
+            elif trajectories is None:
+                trajectories = init_plan(
                 resampled_ct,
                 radiation_volume,
                 voxel_direc,
@@ -3740,7 +3811,10 @@ class PlanningPipelineTool(BaseTool):
                 preview_callback=_trajectory_preview_observer,
                 entry_body_mask=entry_body_mask,
                 entry_boundary_faces=entry_boundary_faces,
-            )
+                )
+            if continuation is not None:
+                from plans.continuation import continuation_candidates
+                trajectories = continuation_candidates(continuation, trajectories, resampled_ct)
             logger.info(f"init_plan returned {len(trajectories)} trajectories")
         except Exception as e:
             logger.error(f"init_plan failed: {e}")
@@ -3749,7 +3823,7 @@ class PlanningPipelineTool(BaseTool):
             return ToolResult(success=False, error=f"[trajectory_init] init_plan failed: {e}")
 
         # Check if trajectories were generated
-        if not trajectories:
+        if not trajectories and not (baseline_only or outside_enabled):
             if preview_emitter is not None:
                 preview_emitter.complete("trajectory_init", status="error")
             logger.error("init_plan returned 0 trajectories")
@@ -3774,7 +3848,7 @@ class PlanningPipelineTool(BaseTool):
             obstacle_labels,
             body_mask=body_mask,
         )
-        if not trajectories:
+        if not trajectories and not (baseline_only or outside_enabled):
             if preview_emitter is not None:
                 preview_emitter.complete("trajectory_init", status="error")
             return ToolResult(
@@ -3846,12 +3920,20 @@ class PlanningPipelineTool(BaseTool):
         Auto-recovery:
         - If trajectories missing, runs step 1 first
         """
+        try:
+            continuation = pipeline_baseline(agent_config, agent, ct_image)
+            baseline_only = baseline_reaches_target(continuation, agent_config)
+            from tool_factory.seed_plan.continuation_search import resolve_guide_search
+            guide_search = agent_config.get("_guide_search") or resolve_guide_search(agent, ct_image, continuation)
+            outside_enabled = bool(guide_search is not None and guide_search[0].outside_guide_enabled)
+        except (TypeError, ValueError) as exc:
+            return ToolResult(success=False, error=f"[trajectory_refine] Invalid continuation: {exc}")
         # Check trajectories
         trajectories = None
         if agent:
             trajectories = agent.memory.retrieve("trajectories")
 
-        if not trajectories:
+        if not trajectories and not (baseline_only or outside_enabled):
             logger.info("No trajectories found, running trajectory_init first...")
             agent_config_current = agent_config or getattr(agent, "config", {}) or {}
             if agent_config_current.get("ref_direc_auto") is True or agent_config_current.get("reference_direc_mode") in {"auto", "auto_detect"}:
@@ -3868,8 +3950,9 @@ class PlanningPipelineTool(BaseTool):
                 return ToolResult(success=False, error=f"[trajectory_refine] Cannot generate trajectories: {init_result.error}")
             trajectories = init_result.metadata.get("trajectories", [])
 
-        if not trajectories:
+        if not trajectories and not (baseline_only or outside_enabled):
             return ToolResult(success=False, error="[trajectory_refine] No trajectories generated. Check CTV mask.")
+        trajectories = trajectories or []
 
         if preview_emitter is not None:
             preview_emitter.start(
@@ -3923,6 +4006,14 @@ class PlanningPipelineTool(BaseTool):
         # Filter trajectories by depth
         from plans.config import setting
         args = _apply_planning_overrides(setting(), agent_config)
+        try:
+            continuation = pipeline_baseline(agent_config, agent, ct_image)
+            if continuation is not None:
+                continuation.validate_context(radiation_volume, resampled_ct, args.radiation_array_params['target_value'])
+                from plans.continuation import continuation_candidates
+                trajectories = continuation_candidates(continuation, trajectories, resampled_ct)
+        except (TypeError, ValueError) as exc:
+            return ToolResult(success=False, error=f"[trajectory_refine] Invalid continuation: {exc}")
         min_depth = args.radiation_array_params.get('min_depth_rate', 5)
 
         # Keep short peripheral paths when they contain a physically usable
@@ -3960,7 +4051,7 @@ class PlanningPipelineTool(BaseTool):
             )
         else:
             refined = depth_candidates
-        if not refined:
+        if not refined and not (baseline_only or outside_enabled):
             if preview_emitter is not None:
                 preview_emitter.complete("trajectory_refine", status="error")
             return ToolResult(
@@ -4028,12 +4119,21 @@ class PlanningPipelineTool(BaseTool):
         if err:
             return ToolResult(success=False, error=f"[seed_planning] {err}")
 
+        try:
+            continuation = pipeline_baseline(agent_config, agent, ct_image)
+            baseline_only = baseline_reaches_target(continuation, agent_config)
+            from tool_factory.seed_plan.continuation_search import resolve_guide_search
+            guide_search = agent_config.get("_guide_search") or resolve_guide_search(agent, ct_image, continuation)
+            outside_enabled = bool(guide_search is not None and guide_search[0].outside_guide_enabled)
+        except (TypeError, ValueError) as exc:
+            return ToolResult(success=False, error=f"[seed_planning] Invalid continuation: {exc}")
+
         # Check trajectories
         trajectories = None
         if agent:
             trajectories = agent.memory.retrieve("refined_trajectories") or agent.memory.retrieve("trajectories")
 
-        if not trajectories:
+        if not trajectories and not (baseline_only or outside_enabled):
             logger.info("No trajectories found, running trajectory_init + refine first...")
             # Use the configured or organ-aware direction resolution.
             ref_direc_input = None
@@ -4058,8 +4158,9 @@ class PlanningPipelineTool(BaseTool):
                 return ToolResult(success=False, error=f"[seed_planning] Cannot refine trajectories: {refine_result.error}")
             trajectories = refine_result.metadata.get("refined_trajectories", [])
 
-        if not trajectories:
+        if not trajectories and not (baseline_only or outside_enabled):
             return ToolResult(success=False, error="[seed_planning] No trajectories available. Check CTV mask.")
+        trajectories = trajectories or []
 
         # Get resampled data
         resampled_ct = agent.memory.retrieve("resampled_ct") if agent else None
@@ -4163,20 +4264,47 @@ class PlanningPipelineTool(BaseTool):
                 obstacle_labels,
                 body_mask=body_mask,
             )
-            if not trajectories:
+            if not trajectories and not (baseline_only or outside_enabled):
                 return ToolResult(
                     success=False,
                     error="[seed_planning] No trajectories remain after non-traversable obstacle validation.",
                 )
 
         # Load dose model
-        dose_model, model_err = _load_dose_model()
-        if dose_model is None:
+        try:
+            from tool_factory.seed_plan.continuation_support import load_continuation_model
+            calibrated_model = load_continuation_model(agent, continuation) if continuation is not None and not baseline_only else None
+            dose_model, model_err = (None, None) if baseline_only else (calibrated_model or _load_dose_model())
+        except (TypeError, ValueError, OSError) as exc:
+            return ToolResult(success=False, error=f"[seed_planning] Source/model binding failed: {exc}")
+        if dose_model is None and not baseline_only:
             return ToolResult(success=False, error=f"[seed_planning] {model_err}")
 
         # Get config
         from plans.config import setting
         args = _apply_planning_overrides(setting(), agent_config)
+        try:
+            continuation = pipeline_baseline(agent_config, agent, ct_image)
+            if continuation is not None:
+                continuation.validate_context(radiation_volume, resampled_ct, args.radiation_array_params['target_value'])
+        except (TypeError, ValueError) as exc:
+            return ToolResult(success=False, error=f"[seed_planning] Invalid continuation: {exc}")
+        continuation_kwargs = {"continuation": continuation} if continuation is not None else {}
+        dose_scale = continuation.dose_scale_gy if continuation is not None else DOSE_MODEL_SCALE_GY
+        if continuation is not None and agent:
+            pinned_seed_info = agent.memory.retrieve("continuation_input_seed_info")
+            pinned_dl = agent.memory.retrieve("continuation_dl_params") or {}
+            if pinned_seed_info:
+                requested_seed_info = agent_config.get("seed_info") or {}
+                if any(key in requested_seed_info and float(requested_seed_info[key]) != float(pinned_seed_info[key])
+                       for key in ("length", "radius")):
+                    return ToolResult(success=False, error="[seed_planning] Source dimensions differ from the reviewed baseline; rebuild it before planning")
+                args.seed_info = dict(pinned_seed_info)
+            if pinned_dl.get("image_normalize") is not None:
+                args.image_normalize = list(pinned_dl["image_normalize"])
+            if pinned_dl.get("infer_img_size") is not None:
+                args.radiation_array_params['infer_img_size'] = list(pinned_dl["infer_img_size"])
+            args.dl_params.update(pinned_dl)
         dose_value_unit = getattr(args, "dose_value_unit", None)
         in_lowest_gy = planning_dose_value_to_gy(
             args.in_lowest_energy,
@@ -4189,12 +4317,12 @@ class PlanningPipelineTool(BaseTool):
         in_lowest_model = planning_dose_value_to_model(
             in_lowest_gy,
             value_unit="gy",
-            dose_scale_gy=DOSE_MODEL_SCALE_GY,
+            dose_scale_gy=dose_scale,
         )
         out_highest_model = planning_dose_value_to_model(
             out_highest_gy,
             value_unit="gy",
-            dose_scale_gy=DOSE_MODEL_SCALE_GY,
+            dose_scale_gy=dose_scale,
         )
 
         # Run planning using core.init_plan + core.optimal_plan directly.
@@ -4226,7 +4354,7 @@ class PlanningPipelineTool(BaseTool):
         # Keep the trajectory list already validated against the current
         # Data-tree obstacle whitelist. Re-reading the unfiltered memory
         # entry here would silently reintroduce paths through bones/vessels.
-        if not trajectories:
+        if not trajectories and not (baseline_only or outside_enabled):
             logger.warning("[seed_planning] No trajectories found in memory, running trajectory_init...")
             if agent_config.get("ref_direc_auto") is True or agent_config.get("reference_direc_mode") in {"auto", "auto_detect"}:
                 ref_input = "auto"
@@ -4240,7 +4368,7 @@ class PlanningPipelineTool(BaseTool):
             if init_result.success:
                 trajectories = init_result.metadata.get("trajectories", [])
 
-        if not trajectories:
+        if not trajectories and not (baseline_only or outside_enabled):
             return ToolResult(success=False, error="[seed_planning] No trajectories available.")
 
         logger.info(f"[seed_planning] Using {len(trajectories)} trajectories from pipeline")
@@ -4318,7 +4446,9 @@ class PlanningPipelineTool(BaseTool):
         # RL fallback and residual coverage repair remain separately bounded.
         rule_based_deadline = _rule_based_deadline(rf_params) if mode != "rl" else None
         try:
-            if mode == "rl":
+            if baseline_only or (outside_enabled and not trajectories):
+                plan_res = []
+            elif mode == "rl":
                 # RL uses the same filtered trajectories and radiation volume
                 # as rule-based planning, so changing mode cannot bypass the
                 # resolved reference direction or obstacle policy.
@@ -4344,6 +4474,7 @@ class PlanningPipelineTool(BaseTool):
                     parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
                     diagnostics=rl_status,
                     preview_callback=_seed_preview_observer,
+                    **continuation_kwargs,
                 )
             else:
                 plan_res = core.optimal_plan(
@@ -4372,6 +4503,7 @@ class PlanningPipelineTool(BaseTool):
                     parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
                     preview_callback=_seed_preview_observer,
                     deadline=rule_based_deadline,
+                    **continuation_kwargs,
                 )
             # Conservative telemetry: a return at/after the deadline is not
             # eligible for a same-result latency claim, even if target reached.
@@ -4393,6 +4525,7 @@ class PlanningPipelineTool(BaseTool):
                     radiation_volume,
                     args.radiation_array_params['target_value'],
                     in_lowest_model,
+                    continuation=continuation,
                 )
                 if rl_status is not None:
                     rl_status["best_coverage"] = max(
@@ -4440,12 +4573,14 @@ class PlanningPipelineTool(BaseTool):
                         parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
                         preview_callback=_seed_preview_observer,
                         deadline=fallback_deadline,
+                        **continuation_kwargs,
                     )
                     fallback_coverage = _plan_target_coverage(
                         fallback_plan,
                         radiation_volume,
                         args.radiation_array_params['target_value'],
                         in_lowest_model,
+                        continuation=continuation,
                     )
                     rl_fallback_coverage = fallback_coverage
                     if rule_based_fallback_is_strictly_better(
@@ -4484,7 +4619,7 @@ class PlanningPipelineTool(BaseTool):
                 for entry in (plan_res or [])
                 if isinstance(entry, (list, tuple)) and len(entry) >= 2
             )
-            if not plan_res or raw_seed_count <= 0:
+            if (not plan_res or raw_seed_count <= 0) and not (baseline_only or outside_enabled):
                 target_voxels = int(
                     np.count_nonzero(
                         np.asarray(radiation_volume)
@@ -4519,7 +4654,7 @@ class PlanningPipelineTool(BaseTool):
             # Shared, bounded coverage repair for both rule and RL plans.
             # Trials reuse the full world-space needle validator and dose model.
             from plans.coverage_repair import repair_coverage
-            repair_context = utilizations.DoseImageContext(
+            repair_context = None if baseline_only else utilizations.DoseImageContext(
                 dose_image, args.image_normalize[0], args.image_normalize[1], dose_model
             )
             repair_geometry_cache = {}
@@ -4528,6 +4663,8 @@ class PlanningPipelineTool(BaseTool):
 
             def _repair_validate(trajectory, selected):
                 nonlocal repair_needle_context, repair_boundary_faces
+                if continuation is not None and not continuation.path_allowed(trajectory, dose_image):
+                    return False
                 spacing_safe = utilizations.get_trajectory_spacing_safety_mask(
                     [trajectory], selected, dose_image,
                     base_min_distance_mm=args.distance_filtter['lower_bound'],
@@ -4564,6 +4701,9 @@ class PlanningPipelineTool(BaseTool):
                 )
 
             def _repair_generate(cold, deadline):
+                if continuation is not None and continuation.candidate_paths is not None:
+                    # A printed guide cannot acquire a newly invented channel.
+                    return []
                 # Move a cold-region anchor back to its CTV segment boundary,
                 # then reuse the ordinary initializer and all safety checks.
                 target = radiation_volume == args.radiation_array_params['target_value']
@@ -4630,6 +4770,7 @@ class PlanningPipelineTool(BaseTool):
                     _repair_infer, _repair_validate, _repair_generate,
                     seconds=seconds, rounds=rounds, shortlist=3,
                     candidate_limit=args.radiation_array_params['maximum_candidate_trajectories'],
+                    **continuation_kwargs,
                 )
                 status = dict(status)
                 status['elapsed_seconds'] = time.perf_counter() - repair_started
@@ -4730,10 +4871,35 @@ class PlanningPipelineTool(BaseTool):
             logger.info('[coverage_repair] %s', repair_status)
             if agent:
                 agent.memory.store('coverage_repair_status', repair_status)
+            guide_search_status = None
+            if guide_search is not None and continuation is not None:
+                from tool_factory.seed_plan.continuation_search import search_outside_guide
+                plan_res, continuation, guide_search_status = search_outside_guide(
+                    plan_res, continuation, guide_search, ct_image=ct_image, planning_image=dose_image,
+                    ctv_mask=ctv_mask, oar_mask=oar_mask, planning_oar=resampled_oar,
+                    volume=radiation_volume, obstacle_labels=obstacle_labels, body_mask=body_mask,
+                    args=args, reference_direction=_resolve_ref_direc(
+                        agent_config.get('reference_direc', 'auto'), ct_image, ctv_mask, agent),
+                    prescription_model=in_lowest_model, outside_limit_model=out_highest_model,
+                    dose_model=dose_model, infer_dose=_repair_infer,
+                    parallel_min_distance_mm=parallel_min_distance_mm,
+                    parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
+                    preview_callback=_seed_preview_observer,
+                )
+                if agent:
+                    agent.memory.store('continuation_search_status', guide_search_status)
+            if continuation is not None and not plan_res and not baseline_only:
+                return ToolResult(success=False,
+                    error="[seed_planning] Existing dose is below the requested coverage and no safe supplemental placement was found. Fixed implants were not moved and no empty completed plan was published.",
+                    metadata={"step_executed": "seed_planning", "baseline_retained": True,
+                              "target_coverage": _plan_target_coverage([], radiation_volume,
+                                  args.radiation_array_params['target_value'], in_lowest_model, continuation),
+                              "continuation_search_status": guide_search_status,
+                              "clinical_use_approved": False})
             # Compute dose from exactly the plan that survived optimization
             # and coverage repair. This is repeated after any late safety
             # pruning below.
-            sum_image = _sum_plan_seed_doses(plan_res, radiation_volume)
+            sum_image = _sum_plan_seed_doses(plan_res, radiation_volume, continuation)
         except Exception as e:
             logger.error(
                 "Planning failed: %s (planning_grid_ct=%s, ctv_grid=%s, "
@@ -4818,7 +4984,7 @@ class PlanningPipelineTool(BaseTool):
                 )
 
             plan_res = safe_plan
-            sum_image = _sum_plan_seed_doses(plan_res, radiation_volume)
+            sum_image = _sum_plan_seed_doses(plan_res, radiation_volume, continuation)
             verified_needle_geometry, remaining_unsafe_indices = _validated_needle_geometry(
                 plan_res, ct_image, resampled_ct, ctv_mask, oar_mask, obstacle_labels,
                 body_mask=body_mask,
@@ -4856,6 +5022,30 @@ class PlanningPipelineTool(BaseTool):
             )
 
         # Extract results
+        continuation_metadata = {}
+        if continuation is not None:
+            try:
+                from tool_factory.seed_plan.model_support import continuation_result_metadata
+                # Check the actual committed skin-to-tip segment, not only
+                # the optimizer's target-depth interval.
+                for points in verified_needle_geometry.values():
+                    if not continuation._clear(np.asarray(points[0]), np.asarray(points[1]), continuation.needle_radius_mm):
+                        raise ValueError("Final supplemental needle intersects fixed implanted material")
+                original = pipeline_baseline(agent_config, agent, ct_image)
+                guide_keys = {p.geometry for p in original.candidate_paths or ()}
+                if guide_search is not None:
+                    from plans.continuation import trajectory_key
+                    for index, entry in enumerate(plan_res):
+                        if trajectory_key(entry[0]) not in guide_keys and guide_search[1].blocks_segment(
+                                verified_needle_geometry.get(str(index))):
+                            raise ValueError("Final outside-guide needle intersects the positioned manufactured guide")
+                continuation_metadata = continuation_result_metadata(
+                    plan_res, continuation, radiation_volume, dose_image,
+                    args.radiation_array_params['target_value'], args.seed_info,
+                    in_lowest_model, out_highest_model, args.DVH_rate,
+                )
+            except (TypeError, ValueError) as exc:
+                return ToolResult(success=False, error=f"[seed_planning] Continuation publication rejected: {exc}")
         total_seeds = 0
         num_trajectories = len(plan_res) if plan_res else 0
         seed_plan = []
@@ -4912,11 +5102,19 @@ class PlanningPipelineTool(BaseTool):
                 # Keep the planning pipeline importable in non-web tools.
                 pass
             agent.memory.store("dose_distribution", sum_image)
+            if continuation is not None:
+                agent.memory.store("continuation_evaluation", continuation_metadata["continuation_evaluation"])
+                agent.memory.store("additional_dose_distribution", continuation_metadata["additional_dose_distribution"])
+                agent.memory.store("supplemental_only", True)
+            else:
+                agent.memory.store("supplemental_only", False)
             # Preserve the automatic dose field separately from later manual
             # edits so a single-needle restore can be instantaneous.
             agent.memory.store("algorithm_plan_dose_distribution", np.array(sum_image, copy=True))
             agent.memory.store("total_seeds", total_seeds)
             agent.memory.store("num_trajectories", num_trajectories)
+            agent.memory.store('planning_inputs_status', 'ready')
+            agent.memory.store('planning_inputs_stale_reason', None)
             # Store actual config used — so reviewer agents can read real thresholds
             agent.memory.store("plan_config", {
                 "mode": mode,
@@ -4946,7 +5144,13 @@ class PlanningPipelineTool(BaseTool):
                 "in_lowest_dose_gy": float(in_lowest_gy),
                 "out_highest_dose_gy": float(out_highest_gy),
                 "prescription_model_threshold": float(in_lowest_model),
-                "dose_scale_gy": DOSE_MODEL_SCALE_GY,
+                "dose_scale_gy": dose_scale,
+                "dl_params": {**dict(args.dl_params), "image_normalize": list(args.image_normalize),
+                              "infer_img_size": list(args.radiation_array_params['infer_img_size'])},
+                "supplemental_only": continuation is not None,
+                "continuation_search": guide_search_status,
+                "fixed_seed_count": len(continuation.fixed_seeds) if continuation is not None else 0,
+                "continuation_input": agent_config.get("_planning_provenance", {}).get("input_paths", {}).get("continuation"),
                 "DVH_rate": float(args.DVH_rate),
                 "needle_spacing": {
                     "parallel_min_distance_mm": float(parallel_min_distance_mm),
@@ -4975,6 +5179,7 @@ class PlanningPipelineTool(BaseTool):
             radiation_volume,
             args.radiation_array_params['target_value'],
             in_lowest_model,
+            continuation=continuation,
         )
         summary = (
             f"Step 3/5: Seed planning completed. "
@@ -5015,6 +5220,9 @@ class PlanningPipelineTool(BaseTool):
                 "dose_distribution": sum_image,
                 "total_seeds": total_seeds,
                 "num_trajectories": num_trajectories,
+                "implanted_seed_count": len(continuation.fixed_seeds) if continuation is not None else 0,
+                "supplemental_seed_count": total_seeds if continuation is not None else None,
+                "total_source_count": total_seeds + (len(continuation.fixed_seeds) if continuation is not None else 0),
                 "mode": mode,
                 "requested_mode": mode,
                 "effective_mode": effective_mode,
@@ -5027,6 +5235,8 @@ class PlanningPipelineTool(BaseTool):
                 "planning_fingerprint": agent_config.get("_planning_fingerprint"),
                 "safety_pruned_trajectory_indices": list(safety_pruned_trajectory_indices),
                 "safety_pruned_seed_count": int(safety_pruned_seed_count),
+                "continuation_search_status": guide_search_status,
+                **continuation_metadata,
             },
         )
 
@@ -5046,7 +5256,13 @@ class PlanningPipelineTool(BaseTool):
         if agent:
             seed_plan = agent.memory.retrieve("seed_plan")
 
-        if not seed_plan:
+        plan_config = agent.memory.retrieve("plan_config") or {} if agent else {}
+        try:
+            continuation = pipeline_baseline(agent_config, agent, ct_image, allow_unplaced_guide=True)
+            baseline_only = baseline_reaches_target(continuation, agent_config)
+        except (TypeError, ValueError) as exc:
+            return ToolResult(success=False, error=f"[dose_calc] Invalid continuation: {exc}")
+        if not seed_plan and not baseline_only:
             return ToolResult(
                 success=False,
                 error="[dose_calc] No seed plan available. Please run seed_planning first:\n"
@@ -5096,6 +5312,16 @@ class PlanningPipelineTool(BaseTool):
         )
         dose_array = dose_distribution.copy()
 
+        # Keep the two clinical source sets independent through interpolation.
+        # The planning-grid field is already TOTAL; never add baseline to it.
+        implanted_model = continuation.dose_model if continuation is not None else np.zeros_like(dose_distribution)
+        planned_model = (agent.memory.retrieve("additional_dose_distribution") if continuation is not None and agent else dose_distribution)
+        if planned_model is None:
+            planned_model = _sum_plan_seed_doses(seed_plan, dose_distribution)
+        if (np.asarray(planned_model).shape != np.asarray(dose_distribution).shape
+                or not np.allclose(implanted_model + planned_model, dose_distribution, rtol=1e-6, atol=1e-6)):
+            return ToolResult(success=False, error="[dose_calc] Source components differ from accepted total dose; no current-image dose was published")
+
         if resampled_ct is not None and ct_image is not None:
             try:
                 # Create SimpleITK image from dose array
@@ -5109,14 +5335,33 @@ class PlanningPipelineTool(BaseTool):
                 original_dose = resampler.Execute(dose_sitk)
                 dose_array = sitk.GetArrayFromImage(original_dose)
             except Exception as e:
-                logger.warning(f"Failed to resample dose to original space: {e}")
+                # A planning-grid array must never be published as an
+                # acquisition-grid array after a failed interpolation.
+                return ToolResult(success=False, error=f"[dose_calc] Dose resampling failed; no current-image dose was published: {e}")
 
+        component_updates = {}
+        if agent and ct_image is not None:
+            try:
+                from web.dose_components import pipeline_components
+                component_updates = pipeline_components(agent, ct_image, resampled_ct if resampled_ct is not None else ct_image,
+                    implanted_model, planned_model, DOSE_SCALE, continuation)
+            except (TypeError, ValueError, RuntimeError) as exc:
+                return ToolResult(success=False, error=f"[dose_calc] Source component publication failed: {exc}")
         # Store in normalized units
         if agent:
-            agent.memory.store("dose_distribution_gy", dose_array)
-            agent.memory.store("algorithm_plan_dose_distribution_gy", np.array(dose_array, copy=True))
+            agent.memory.store("dose_distribution_current_normalized", dose_array)
+            # Both Gy names now carry physical Gy; old normalized records must
+            # cross the explicit field-unit/provenance adapter when restored.
+            from utils.dose_units import physical_volume
+            agent.memory.store("dose_distribution_physical_gy", physical_volume(
+                dose_array, units="normalized_model", scale=DOSE_SCALE))
+            agent.memory.store("algorithm_plan_dose_distribution_current_normalized", np.array(dose_array, copy=True))
+            agent.memory.store("algorithm_plan_dose_distribution_gy", physical_volume(
+                dose_array, units="normalized_model", scale=DOSE_SCALE))
             agent.memory.store("dose_units", "normalized_model_output")
             agent.memory.store("dose_scale_gy", DOSE_SCALE)
+            for key, value in component_updates.items():
+                agent.memory.store(key, value)
 
         max_dose = float(np.max(dose_array))
         mean_dose = float(np.mean(dose_array[dose_array > 0])) if np.any(dose_array > 0) else 0
@@ -5128,6 +5373,9 @@ class PlanningPipelineTool(BaseTool):
             metadata={
                 "step_executed": "dose_calc",
                 "dose_distribution": dose_array,
+                "dose_units": "normalized_model",
+                "dose_unit_metadata": component_updates.get("dose_unit_metadata"),
+                "evaluation_source_set": "total",
                 "max_dose": max_dose,
                 "mean_dose": mean_dose,
             },
@@ -5257,7 +5505,8 @@ class PlanningPipelineTool(BaseTool):
         # DoseUNet output remains raw model data. The calibration saved with
         # the plan converts it to Gy; prescription is a separate physical-Gy
         # value (120 Gy by default). Current model output 1.0 is 190.8 Gy.
-        plan_config = agent.memory.retrieve("plan_config") or {} if agent else {}
+        from web.planning_config import current_evaluation_config
+        plan_config = current_evaluation_config(agent.memory.retrieve) if agent else {}
         previous_metrics = agent.memory.retrieve("dose_metrics") or {} if agent else {}
         DOSE_SCALE = resolve_dose_scale_gy(
             plan_config,
@@ -5451,6 +5700,9 @@ class PlanningPipelineTool(BaseTool):
                         )
 
         metrics = {
+            # The evaluated field includes the immutable implanted baseline.
+            # This is never a supplemental-only plan score.
+            "source_set": "total",
             # V100/V150/V200 are ratios in the shared planning contract. Keep
             # the declaration beside the values so UI training feedback never
             # has to guess whether a payload uses 0-1 or 0-100 units.
@@ -5506,6 +5758,16 @@ class PlanningPipelineTool(BaseTool):
             agent.memory.store("dose_metrics", metrics)
             agent.memory.store("algorithm_plan_dose_metrics", copy.deepcopy(metrics))
             agent.memory.store("algorithm_plan_dvh_data", copy.deepcopy(metrics.get("dvh_data") or {}))
+            for status_key in ('manual_artifact_status', 'artifact_status'):
+                status = dict(agent.memory.retrieve(status_key) or {})
+                status.update(dose='ready', dvh='ready', quality_check='ready', report='stale')
+                status.pop('reason', None)
+                agent.memory.store(status_key, status)
+            agent.memory.store('manual_geometry_only', False)
+            agent.memory.store('quality_check_status', 'ready')
+            agent.memory.store('report_status', 'stale')
+            from web.planning_config import current_evaluation_config
+            agent.memory.store('current_dose_evaluation_config', current_evaluation_config(agent.memory.retrieve))
             if resolved_organ_names:
                 agent.memory.store("organ_names", resolved_organ_names)
 
@@ -5636,6 +5898,8 @@ class PlanningPipelineTool(BaseTool):
             "rl_fallback_reason",
             "rl_status",
             "planning_fingerprint",
+            "implanted_seed_count", "supplemental_seed_count", "total_source_count",
+            "continuation_search_status", "continuation_evaluation", "supplemental_only",
         ):
             if key in seed_result.metadata:
                 results[key] = seed_result.metadata[key]
@@ -5657,6 +5921,8 @@ class PlanningPipelineTool(BaseTool):
         _notify("dose_calc", dose_status, dose_content)
         if dose_result.success:
             results["dose_distribution"] = dose_result.data
+        else:
+            return dose_result
 
         # Step 5: Dose evaluation
         logger.info("Step 5/5: Dose evaluation...")
@@ -5668,6 +5934,8 @@ class PlanningPipelineTool(BaseTool):
                 f"elapsed_ms={int(substep_timings['dose_eval']*1000)}")
         if eval_result.success:
             results["dose_metrics"] = eval_result.metadata
+        else:
+            return eval_result
 
         # Build summary
         # BUG FIX 2026-06-17 (None format): metrics.get(k, 0) returns None
@@ -5717,6 +5985,12 @@ class PlanningPipelineTool(BaseTool):
                 "rl_fallback_reason": results.get("rl_fallback_reason"),
                 "rl_status": results.get("rl_status"),
                 "planning_fingerprint": results.get("planning_fingerprint"),
+                "implanted_seed_count": results.get("implanted_seed_count", 0),
+                "supplemental_seed_count": results.get("supplemental_seed_count"),
+                "total_source_count": results.get("total_source_count", total_seeds),
+                "supplemental_only": results.get("supplemental_only", False),
+                "continuation_search_status": results.get("continuation_search_status"),
+                "continuation_evaluation": results.get("continuation_evaluation"),
                 "summary": summary,
                 # Per-substep wall-clock timings in seconds. Used by the
                 # frontend pipeline progress box to show per-step timers

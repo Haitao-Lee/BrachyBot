@@ -1,0 +1,41 @@
+{
+  "kind": "actual_chat_cnn_post_edit_fictional_inputs",
+  "input_assumptions": "Generated CT; two manual known-axis inputs; assumed source dimensions; no clinical approval",
+  "model_sha256": "d73d19f22c846ee989786eabd9336fba80b8c9658881a6e878aca846861b5681",
+  "dose_scale_gy": 190.8,
+  "rows": [
+    {
+      "turn": 1,
+      "seconds": 76.86672218888998,
+      "status": 200,
+      "source_count": 2,
+      "observation_revision_id": "5a66d416-6795-4b6f-8662-87e239aef08c",
+      "dose_sha256": "844faffdc7bcc13bf04d620b06c6bcc7ed6782094f2459b9d04e75cb92fabfc9",
+      "dose_max_gy": 2490.958984375,
+      "response": "已完成——**仅重新计算了当前 Table Viewer 中已植入粒子的剂量**：\n\n| 项目 | 结果 |\n|---|---|\n| 已植入粒子数 | 2 颗 |\n| 剂量范围（CNN 估计） | 2.75 – 2490.96 Gy |\n| 时间点临床修订号 | 4 |\n\n说明：\n\n- **未新增或重新规划**任何粒子、针道；\n- **未生成**导板或报告；\n- **未操作**其他时间点，所有处理均限于当前提交的 Table Viewer 时间点。\n- 该结果是基于当前源项设置及**估计方向**（估计轴数量为 0，方向为推断所得）计算的**投影总剂量**，并不代表实际已释放的剂量，且最高剂量值显著偏高，需人工复核粒子方向、位置及源活度设置后再作判读。",
+      "tool_names": [
+        "completeness_checker",
+        "dose_recompute",
+        "record_request_plan",
+        "workspace_hydration"
+      ]
+    },
+    {
+      "turn": 2,
+      "seconds": 85.83544773608446,
+      "status": 200,
+      "source_count": 1,
+      "observation_revision_id": "5e630bcb-3039-432f-8414-8281f01d60d6",
+      "dose_sha256": "010009937359270533db323e750e0b45fad1952e6f187741d5d16d40100056c7",
+      "dose_max_gy": 2409.572998046875,
+      "response": "已完成——**仅重新计算了当前 Table Viewer 中已植入粒子的剂量**（本次结果与前次不同，以本次工具返回为准）：\n\n| 项目 | 结果 |\n|---|---|\n| 体内已植入粒子数 | 1 颗 |\n| 剂量范围（CNN 估计） | 1.04 – 2409.57 Gy |\n| 时间点临床修订号 | 6 |\n\n说明：\n\n- **未新增或重新规划**任何粒子、针道；**未生成**导板或报告；**未操作**其他时间点，所有处理均限于当前提交的 Table Viewer 时间点。\n- 该结果是基于当前源设置及**估计方向**（估计轴数量为 0）计算的**投影总源剂量**，并非已经实际释放的剂量。\n- 最高剂量值（约 2409.57 Gy）显著异常偏高，**仍需人工复核**粒子位置、方向及源活度设置后再作判读。",
+      "tool_names": [
+        "completeness_checker",
+        "dose_recompute",
+        "record_request_plan"
+      ]
+    }
+  ],
+  "sibling_unchanged": true,
+  "planned_geometry_created": false
+}

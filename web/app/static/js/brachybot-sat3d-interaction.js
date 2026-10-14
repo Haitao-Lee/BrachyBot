@@ -110,7 +110,7 @@
         try {
             const confirmed = await _confirmAction(
                 'SAT3D 将根据提示点生成需人工复核的候选轮廓，并替换当前 CTV（如有）。其他部位或未验证模态属于研究性使用，不保证任意肿瘤的准确性。继续吗？',
-                'SAT3D will create a review-required candidate from your points and replace the current CTV, if any. Unvalidated sites/modalities are research use; accuracy for every tumor is not guaranteed. Continue?',
+                'SAT3D will generate a candidate segmentation from your points and replace the current CTV, if present. The result requires clinical review. Use on unvalidated tumor sites or imaging modalities is for research only; accuracy cannot be guaranteed for every tumor. Continue?',
                 { titleZh:'生成候选轮廓', titleEn:'Generate a candidate contour', yesZh:'运行分割', yesEn:'Run segmentation' });
             if (!confirmed || owner !== scope()) return { success: false, code: 'cancelled_or_changed_case' };
             confirming = false;

@@ -917,18 +917,24 @@ window.ensureDvhChartRendered = ensureDvhChartRendered;
 // fetch + render will actually run. This prevents the DVH "flashing"
 // and 3D viewer "sinking" effects.
 let _refreshDebounce = null;
+let _refreshDebounceResolve = null;
 let _refreshInflight = null;
 let _refreshGeneration = 0;
+
+function _cancelPlanningRefreshDebounce(reason) {
+    if (_refreshDebounce != null) clearTimeout(_refreshDebounce);
+    _refreshDebounce = null;
+    const resolve = _refreshDebounceResolve;
+    _refreshDebounceResolve = null;
+    resolve?.({ success: false, stale: true, cancelled: true, stage: 'refresh_cancelled', reason });
+}
 
 // Workspace changes must invalidate every deferred planning render. The
 // backend task can continue for its original case, but its results must never
 // paint into whichever case the user selected afterwards.
 window.invalidatePlanningRefresh = function invalidatePlanningRefresh() {
     _refreshGeneration += 1;
-    if (_refreshDebounce) {
-        clearTimeout(_refreshDebounce);
-        _refreshDebounce = null;
-    }
+    _cancelPlanningRefreshDebounce('workspace_changed');
     if (_refreshInflight) {
         try { _refreshInflight.abort(); } catch (_) {}
         _refreshInflight = null;
@@ -969,8 +975,10 @@ function _planningRunSessionId() {
     );
 }
 
-function _planningRunHeaders(sessionId) {
-    return sessionId ? { 'X-BrachyBot-Session': sessionId } : {};
+function _planningRunHeaders(sessionId, capturedScope = null) {
+    const scope = capturedScope || window.BrachyBotTimepointWorkspace?.captureRequestScope?.();
+    const values = sessionId ? { 'X-BrachyBot-Session': sessionId } : {};
+    return window.BrachyBotTimepointWorkspace?.headers(scope, values) || values;
 }
 
 /**
@@ -980,8 +988,11 @@ function _planningRunHeaders(sessionId) {
  */
 async function refreshPlanningRunCatalog(options = {}) {
     const sessionId = String(options.sessionId || _planningRunSessionId());
+    const timepointScope = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(options.timepointScope);
+    const requestHeaders = _planningRunHeaders(sessionId, timepointScope);
+    const catalogOwner = timepointScope ? JSON.stringify([sessionId, timepointScope.timepointId, timepointScope.generation]) : sessionId;
     if (!sessionId) return [];
-    if (_planningRunCatalogPromise && _planningRunCatalogPromise.sessionId === sessionId) {
+    if (_planningRunCatalogPromise && _planningRunCatalogPromise.sessionId === catalogOwner) {
         return _planningRunCatalogPromise.promise;
     }
     const promise = (async () => {
@@ -992,6 +1003,7 @@ async function refreshPlanningRunCatalog(options = {}) {
             let latestRuns = null;
 
             const applyCatalog = (payload) => {
+                if (timepointScope && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope)) return false;
                 if (String(_planningRunSessionId()) !== sessionId) return false;
                 const incomingRuns = Array.isArray(payload.runs) ? payload.runs : null;
                 const planning = (typeof dataTreeState !== 'undefined' && dataTreeState.planning)
@@ -1050,7 +1062,7 @@ async function refreshPlanningRunCatalog(options = {}) {
 
             while (true) {
                 const response = await fetch(API + '/planning/runs', {
-                    headers: _planningRunHeaders(sessionId),
+                    headers: requestHeaders,
                 });
                 const payload = await response.json().catch(() => ({}));
                 if (response.status === 202) {
@@ -1086,16 +1098,18 @@ async function refreshPlanningRunCatalog(options = {}) {
             if (_planningRunCatalogPromise?.promise === promise) _planningRunCatalogPromise = null;
         }
     })();
-    _planningRunCatalogPromise = { sessionId, promise };
+    _planningRunCatalogPromise = { sessionId: catalogOwner, promise };
     return promise;
 }
 
-async function _postPlanningRunActivation(sessionId, planningId) {
+async function _postPlanningRunActivation(sessionId, planningId, timepointScope = null) {
+    const requestHeaders = { ..._planningRunHeaders(sessionId, timepointScope), 'Content-Type': 'application/json' };
     const url = API + '/planning/runs/' + encodeURIComponent(String(planningId)) + '/activate';
     for (let attempt = 0; attempt < 120; attempt += 1) {
+        if (timepointScope && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope)) throw Error('stale_timepoint_action');
         const response = await fetch(url, {
             method: 'POST',
-            headers: { ..._planningRunHeaders(sessionId), 'Content-Type': 'application/json' },
+            headers: requestHeaders,
             body: '{}',
         });
         if (response.status !== 202) {
@@ -1116,6 +1130,7 @@ async function _postPlanningRunActivation(sessionId, planningId) {
 
 async function activatePlanningRun(planningId, options = {}) {
     const sessionId = String(options.sessionId || _planningRunSessionId());
+    const timepointScope = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(options.timepointScope);
     const target = String(planningId || '');
     if (!sessionId || !target) return false;
     const current = String(dataTreeState?.planning?.id || '');
@@ -1144,7 +1159,8 @@ async function activatePlanningRun(planningId, options = {}) {
         if (typeof window.flushActiveReportState === 'function') {
             await Promise.resolve(window.flushActiveReportState());
         }
-        const payload = await _postPlanningRunActivation(sessionId, target);
+        const payload = await _postPlanningRunActivation(sessionId, target, timepointScope);
+        if (timepointScope && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope)) return false;
         if (_planningRunSessionId() !== sessionId) return false;
         // Remove the previous run's geometry before the new result arrives.
         // This prevents old seeds/needles/dose from being visible during the
@@ -1161,6 +1177,7 @@ async function activatePlanningRun(planningId, options = {}) {
         }
         if (typeof refreshPlanningUI === 'function') {
             await refreshPlanningUI({
+                timepointScope,
                 sessionId,
                 retryPending: true,
                 resetPlanVisuals: true,
@@ -1200,6 +1217,14 @@ window.activatePlanningRunFromTree = function activatePlanningRunFromTree(planni
 };
 
 async function refreshPlanningUI(options = {}) {
+    const timepointScope = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(options.timepointScope);
+    const requestedSessionId = String(options.sessionId || _planningRunSessionId() || '');
+    if ((timepointScope && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope))
+        || (requestedSessionId && _planningRunSessionId() && requestedSessionId !== _planningRunSessionId())
+        || (requestedSessionId && state.sessionId && requestedSessionId !== String(state.sessionId))) {
+        return { success: false, stale: true, cancelled: true, stage: 'refresh_cancelled', reason: 'stale_owner' };
+    }
+    const requestHeaders = _planningRunHeaders(options.sessionId || _planningRunSessionId(), timepointScope);
     uiDebugLog('[refreshPlanningUI] CALLED, ctLoaded:', state.ctLoaded, 'stack:', new Error().stack?.split('\n').slice(1,3).join(' | '));
     const generation = ++_refreshGeneration;
     const expectedSessionId = String(
@@ -1214,12 +1239,14 @@ async function refreshPlanningUI(options = {}) {
     // the first cold restore as well as after a normal refresh.
     if (expectedSessionId && typeof refreshPlanningRunCatalog === 'function') {
         void refreshPlanningRunCatalog({
+            timepointScope,
             sessionId: expectedSessionId,
             retryPending: options.retryPending === true,
             silent: true,
         });
     }
     const isCurrentCase = () => {
+        if (timepointScope && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope)) return false;
         if (generation !== _refreshGeneration) return false;
         const selected = (typeof activeSessionId !== 'undefined' && activeSessionId)
             ? String(activeSessionId) : '';
@@ -1229,11 +1256,14 @@ async function refreshPlanningUI(options = {}) {
     };
     // Cancel any in-flight fetch — we'll issue a fresh one.
     if (_refreshInflight) { try { _refreshInflight.abort(); } catch (_) {} }
-    if (_refreshDebounce) clearTimeout(_refreshDebounce);
+    _cancelPlanningRefreshDebounce('refresh_replaced');
     return new Promise((resolve) => {
+        _refreshDebounceResolve = resolve;
         _refreshDebounce = setTimeout(async () => {
             _refreshDebounce = null;
-            if (!isCurrentCase()) return resolve();
+            _refreshDebounceResolve = null;
+            if (!isCurrentCase()) return resolve({ success: false, stale: true, cancelled: true,
+                stage: 'refresh_cancelled', reason: 'stale_owner' });
             try {
                 if (options.resetPlanVisuals === true
                     && typeof clearPlanningVisualization === 'function') {
@@ -1255,9 +1285,7 @@ async function refreshPlanningUI(options = {}) {
                     do {
                         res = await fetch(API + '/planning/results', {
                             signal: ctrl.signal,
-                            headers: expectedSessionId
-                                ? { 'X-BrachyBot-Session': expectedSessionId }
-                                : {},
+                            headers: requestHeaders,
                         });
                         if (res.status !== 202 || pendingPoll >= maxPendingPolls) break;
                         const pending = await res.json().catch(() => ({}));
@@ -1526,6 +1554,10 @@ async function refreshPlanningUI(options = {}) {
         }
         if (!isCurrentCase()) return resolve();
 
+        // Apply completion defaults independently of asynchronous dose/mesh
+        // loading. Restoration retains the user's versioned presentation.
+        if (options.preserveViewerState !== true) window.applyPlanningPresentationDefaults?.();
+
                 // Guide restoration/generation is independent of WebGL mesh
                 // loading. Start it as soon as authoritative planning data is
                 // available so a cold restart cannot lose the guide merely
@@ -1533,6 +1565,7 @@ async function refreshPlanningUI(options = {}) {
                 let guideRestorePromise = typeof window.ensureSurgicalGuideForCurrentPlan === 'function'
                     ? Promise.resolve().then(() => window.ensureSurgicalGuideForCurrentPlan({
                         sessionId: expectedSessionId,
+                        timepointScope,
                         autoGenerate: options.autoGenerateGuide === true,
                     }))
                     : null;
@@ -1635,7 +1668,12 @@ async function refreshPlanningUI(options = {}) {
         function _collectViewerMeshFailures(results) {
             const failures = [];
             (Array.isArray(results) ? results : []).forEach(result => {
+                if (result === false) {
+                    failures.push({ stage: 'viewer_resource', error: 'resource_not_restored' });
+                    return;
+                }
                 if (!result) return;
+                const previousCount = failures.length;
                 if (result.stale === true) {
                     failures.push({ stage: 'stale', result });
                     return;
@@ -1650,6 +1688,9 @@ async function refreshPlanningUI(options = {}) {
                 }
                 if (result.error) {
                     failures.push({ stage: 'viewer_resource', error: result.error });
+                }
+                if ((result.success === false || result.complete === false) && failures.length === previousCount) {
+                    failures.push({ stage: 'viewer_resource', error: 'resource_not_restored' });
                 }
             });
             return failures;
@@ -1694,6 +1735,7 @@ async function refreshPlanningUI(options = {}) {
         _meshPromises.push(
             _withTimeout(loadCTVAndObstacleMeshes({
                 sessionId: expectedSessionId,
+                timepointScope,
                 // Cold restore starts CT/labels and planning in parallel for
                 // responsiveness.  The structural mesh loader must wait for
                 // that label transaction before freezing its OAR target set;
@@ -1704,7 +1746,10 @@ async function refreshPlanningUI(options = {}) {
                 batchSize: options.hydrationScope ? 6 : undefined,
                 onProgress: options.onHydrationProgress,
             }), 'CTV/OAR meshes', 300000)
-                .then(() => uiDebugLog('[3D auto-load] CTV/obstacle done. Meshes:', Object.keys(scene3D.meshes).length))
+                .then(result => {
+                    uiDebugLog('[3D auto-load] CTV/obstacle done. Meshes:', Object.keys(scene3D.meshes).length);
+                    return result;
+                })
         );
         // Seeds + needles. The authoritative 3D geometry lives behind
         // /planning/seeds_3d, while /planning/results may omit the flat
@@ -1785,6 +1830,7 @@ async function refreshPlanningUI(options = {}) {
                 : (needsSourceBackedReport && window.Report?.autoFill?.fromAll)
                 ? Promise.resolve().then(() => window.Report.autoFill.fromAll({
                     sessionId: expectedSessionId,
+                    timepointScope,
                     // Existing figures are hydrated from durable attachments.
                     // Source/quality repair must not race a second capture pass
                     // while meshes are still reconstructing.
@@ -1851,8 +1897,27 @@ async function refreshPlanningUI(options = {}) {
                 try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
                 try { if (typeof forceRender3DViewer === 'function') forceRender3DViewer(); } catch (_) {}
                 if (guideRestorePromise) {
-                    await guideRestorePromise.catch(error => console.warn('[guide] background restore:', error));
+                    let guideRestored = await guideRestorePromise.catch(error => {
+                        console.warn('[guide] background restore:', error); return false;
+                    });
                     if (!isCurrentCase()) return { stale: true };
+                    // The early read may precede legacy plan normalization or
+                    // be superseded by another same-owner guide request. Check
+                    // once against the final captured plan; never generate a
+                    // replacement guide during resource restoration.
+                    // A preserved historical guide explicitly mismatched to
+                    // the active plan is not a missing current-plan mesh.
+                    // Keep its stale record; never promote or regenerate it.
+                    if (data.has_guide === true && data.guide_status?.plan_matches_current !== false && guideRestored !== true
+                        && typeof window.ensureSurgicalGuideForCurrentPlan === 'function') {
+                        guideRestored = await window.ensureSurgicalGuideForCurrentPlan({
+                            sessionId:expectedSessionId, timepointScope, autoGenerate:false,
+                        }).catch(() => false);
+                        if (!isCurrentCase()) return { stale:true };
+                    }
+                    if (data.has_guide === true && data.guide_status?.plan_matches_current !== false && guideRestored !== true) completion.failures.push({
+                        kind: 'guide', object_id: 'surgical_guide:active', status: 'failed', error: 'saved_guide_not_restored',
+                    });
                     try { if (typeof reconcileDataTreeVisualNodes === 'function') reconcileDataTreeVisualNodes(); } catch (_) {}
                     try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
                     try { if (typeof forceRender3DViewer === 'function') forceRender3DViewer(); } catch (_) {}
@@ -1977,8 +2042,23 @@ async function refreshPlanningUI(options = {}) {
         // from the background case-owned task; it guarantees that the guide
         // node and mesh are present before the final tree/report repaint.
         if (guideRestorePromise) {
-            await guideRestorePromise.catch(error => console.warn('[guide] restore:', error));
+            let guideRestored = await guideRestorePromise.catch(error => {
+                console.warn('[guide] restore:', error); return false;
+            });
             if (!isCurrentCase()) return resolve();
+            if (data.has_guide === true && data.guide_status?.plan_matches_current !== false && guideRestored !== true
+                && typeof window.ensureSurgicalGuideForCurrentPlan === 'function') {
+                guideRestored = await window.ensureSurgicalGuideForCurrentPlan({
+                    sessionId:expectedSessionId, timepointScope, autoGenerate:false,
+                }).catch(() => false);
+                if (!isCurrentCase()) return resolve();
+            }
+            if (data.has_guide === true && data.guide_status?.plan_matches_current !== false && guideRestored !== true) {
+                meshCompletion.failures.push({kind:'guide', object_id:'surgical_guide:active',
+                    status:'failed', error:'saved_guide_not_restored'});
+                refreshOutcome.success = false; refreshOutcome.viewerReady = false;
+                refreshOutcome.stage = 'viewer_partial';
+            }
             try { if (typeof reconcileDataTreeVisualNodes === 'function') reconcileDataTreeVisualNodes(); } catch (_) {}
             try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
             try { if (typeof forceRender3DViewer === 'function') forceRender3DViewer(); } catch (_) {}
@@ -2037,7 +2117,7 @@ async function refreshPlanningUI(options = {}) {
             const lang = (typeof window._i18nLang === 'string') ? window._i18nLang : 'en';
             const _ctvTitle = lang === 'zh' ? 'CTV 与粒子分布特写' : 'CTV and Seed Distribution Close-up';
             const _ctvCap = lang === 'zh' ? '半透明 CTV 内部粒子分布特写；针道不要求完整入镜' : 'Close-up of internal seed distribution within the translucent CTV; needle paths need not be fully in frame';
-            const _seedTitle = lang === 'zh' ? '粒子植入方案' : 'Seed Implant Plan';
+            const _seedTitle = lang === 'zh' ? '粒子植入方案' : 'Seed Implantation Plan';
             const _seedCap = lang === 'zh' ? '穿刺针道（红色）、放射性粒子（黄色）与 CTV（半透明红色）三维重建' : 'Needle paths (red), radioactive seeds (yellow), and CTV (translucent red) 3D view';
 
             forceRender3DViewer();
@@ -2280,7 +2360,7 @@ async function refreshPlanningUI(options = {}) {
                     if (imgData && imgData.length > 1000) {
                         const dvhIdx = window.reportForm.figures.findIndex(f => f && f.axis === 'report_fig2_dvh');
                         const dvhEntry = {
-                            type: 'screenshot', title: lang === 'zh' ? 'DVH 剂量体积直方图' : 'DVH — Dose Volume Histogram',
+                            type: 'screenshot', title: lang === 'zh' ? 'DVH 剂量体积直方图' : 'DVH — Dose-Volume Histogram',
                             dataUrl: imgData, axis: 'report_fig2_dvh', sliceIdx: null,
                             caption: lang === 'zh' ? 'CTV 及各 OAR 的剂量-体积曲线' : 'Dose–volume curves for CTV and all OARs',
                             capturedAt: new Date().toISOString(), figureGroup: 'figure2',
@@ -2380,7 +2460,8 @@ async function refreshPlanningUI(options = {}) {
         try {
             if (options.preserveReport !== true
                 && typeof Report !== 'undefined' && Report.autoFill && Report.autoFill.fromAll) {
-                await Report.autoFill.fromAll({ sessionId: expectedSessionId, captureFigures: false });
+                if (!timepointScope || window.BrachyBotTimepointWorkspace?.scopeIsCurrent?.(timepointScope))
+                    await Report.autoFill.fromAll({ sessionId: expectedSessionId, timepointScope, captureFigures: false });
             }
         } catch (_) {}
 
@@ -2532,6 +2613,7 @@ window.refreshAnalysisStructurePresentation = refreshAnalysisStructurePresentati
 
 function _structureAnalysisOwner() {
     return {
+        timepointScope: window.BrachyBotTimepointWorkspace?.captureRequestScope?.(),
         sessionId: typeof activeSessionId === 'undefined' ? '' : String(activeSessionId || ''),
         generation: typeof viewerDataLoadGeneration === 'undefined' ? 0 : viewerDataLoadGeneration,
         planningId: String(state.dvhPlanningId || dataTreeState?.planning?.activePlanningId || dataTreeState?.planning?.id || ''),
@@ -2540,6 +2622,8 @@ function _structureAnalysisOwner() {
 }
 
 function _structureAnalysisOwnerCurrent(owner) {
+    if (!owner || window.BrachyBotTimepoints?.enabled?.() && !window.BrachyBotTimepointWorkspace?.requestReady?.()) return false;
+    if (owner?.timepointScope && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(owner.timepointScope)) return false;
     const current = _structureAnalysisOwner();
     return owner && owner.sessionId === current.sessionId && owner.generation === current.generation
         && owner.planningId === current.planningId && owner.metrics === current.metrics;
@@ -2590,7 +2674,7 @@ async function refreshStructureDvhAnalysis() {
         try {
             const params = new URLSearchParams({ session_id: owner.sessionId, planning_id: owner.planningId });
             const response = await fetch(`${API}/planning/structure-analysis?${params}`, {
-                headers: typeof _viewerDataHeaders === 'function' ? _viewerDataHeaders() : {}, signal: controller.signal,
+                headers: _planningRunHeaders(owner.sessionId, owner.timepointScope), signal: controller.signal,
             });
             if (!response.ok) throw new Error(`Structure analysis HTTP ${response.status}`);
             const data = await response.json();
@@ -2619,6 +2703,7 @@ async function refreshStructureDvhAnalysis() {
     return promise;
 }
 window.refreshStructureDvhAnalysis = refreshStructureDvhAnalysis;
+window.__timepointFrontendContracts = { ...window.__timepointFrontendContracts, planning: 1 };
 
 function _dvhOarVolumePercent(value, units) {
     if (value == null || value === '') return null;
@@ -2734,12 +2819,12 @@ function updateClinicalEvaluation() {
         ['V100', v100Pct !== null ? `${v100Pct.toFixed(1)} %` : '--'],
         ['V150', v150Pct !== null ? `${v150Pct.toFixed(1)} %` : '--'],
         ['V200', v200Pct !== null ? `${v200Pct.toFixed(1)} %` : '--'],
-        [ui('D2（最大剂量）', 'D2 (max)'), metrics.d2 != null ? `${Number(metrics.d2).toFixed(2)} Gy` : '--'],
+        [ui('D2（最高受照 2% 体积的剂量）', 'D2 (dose to the hottest 2%)'), metrics.d2 != null ? `${Number(metrics.d2).toFixed(2)} Gy` : '--'],
         [ui('平均剂量', 'Dmean'), metrics.dmean != null ? `${Number(metrics.dmean).toFixed(2)} Gy` : '--'],
         [ui('适形指数', 'CI'), metrics.ci != null ? Number(metrics.ci).toFixed(2) : '--'],
         [ui('均匀指数', 'HI'), metrics.hi != null ? Number(metrics.hi).toFixed(2) : '--'],
         [ui('粒子数', 'Seeds'), state.seeds ? state.seeds.length : '--'],
-        [ui('处方剂量', 'Prescription'), `${Number(rxGy).toFixed(0)} Gy`],
+        [ui('处方剂量', 'Prescribed dose'), `${Number(rxGy).toFixed(0)} Gy`],
     ];
 
     const observations = [];
@@ -2757,7 +2842,7 @@ function updateClinicalEvaluation() {
     ));
     if (metrics.plan_score != null) observations.push(ui(
         `计划评分为 ${Number(metrics.plan_score).toFixed(0)}/100。该分数仅用于质量排序和复核提示，不代表临床批准。`,
-        `Plan score is ${Number(metrics.plan_score).toFixed(0)}/100. Treat this as an advisory QA ranking signal only.`,
+        `Plan score is ${Number(metrics.plan_score).toFixed(0)}/100. This score is for quality ranking and review triage only; it is not clinical approval.`,
     ));
 
     const topOars = Object.entries(oarMetrics)
@@ -3089,7 +3174,7 @@ const REPORT_TEMPLATES = {
         i125: true,
         prescriptionGy: 145,
         interpretation: {
-            zh: 'Prostate seed brachytherapy plan. Dose and OAR review require source-backed prostate constraints before any pass/fail statement.',
+            zh: '前列腺放射性粒子植入计划。剂量与 OAR 复核需依据有来源支持的前列腺限值，方可作出通过/不通过结论。',
             en: 'Prostate seed brachytherapy plan. Dose and OAR review require source-backed prostate constraints before any pass/fail statement.',
         },
         defaultReferences: ['PROSTATE', 'ICRU_DOSE', 'AAPM_DOSE', 'ESTRO_DVH'],
@@ -3099,7 +3184,7 @@ const REPORT_TEMPLATES = {
         prescriptionGy: 60,
         interpretation: {
             zh: '头颈部近距离放疗计划。危及器官限值应依据头颈部适用的临床指南或已确认的病例方案。',
-            en: 'Head and neck brachytherapy plan. Critical-structure limits must come from applicable head-and-neck guidance or confirmed case-protocol settings.',
+            en: 'Head and neck brachytherapy plan. Organ-at-risk limits must come from applicable head-and-neck guidance or confirmed case-protocol settings.',
         },
         defaultReferences: ['HEAD_NECK', 'ICRU_DOSE', 'AAPM_DOSE'],
     },
@@ -3107,7 +3192,7 @@ const REPORT_TEMPLATES = {
         i125: false,
         prescriptionGy: 85,
         interpretation: {
-            zh: 'Gynecologic brachytherapy plan. EQD2 and OAR interpretation require protocol-specific, source-backed criteria.',
+            zh: '妇科近距离放疗计划。EQD2 与 OAR 判读需依据方案特异性、有来源支持的判据。',
             en: 'Gynecologic brachytherapy plan. EQD2 and OAR interpretation require protocol-specific, source-backed criteria.',
         },
         defaultReferences: ['GYN_GUIDE', 'ASTRO', 'ICRU_DOSE', 'ESTRO_DVH'],
@@ -3319,7 +3404,7 @@ const REPORT_STRINGS = {
         stampSuffix: 'Official Seal',
         statusPass: 'Pass',
         statusWarn: 'Acceptable',
-        statusFail: 'Above',
+        statusFail: 'Elevated',
         section1: '1. Patient Summary',
         section2: '2. Plan Quality Assessment',
         section3: '3. Organ-at-Risk Dose',

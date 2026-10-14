@@ -61,7 +61,7 @@ function harness() {
     assert.equal(card.captureRecords.length,2,'independent view delivery is additive');
 
     const skew = h.ctx.window.monitorConflictText({kind:'needle_pairs',surface_clearance_mm:-.2,clearance_basis:'axis_lower_bound'},'en');
-    assert.match(skew,/needle axis-model clearance bound/); assert.doesNotMatch(skew,/surface gap/);
+    assert.match(skew,/needle surface-clearance lower bound \(axis model\)/); assert.doesNotMatch(skew,/surface-to-surface clearance/);
     assert.match(h.ctx.window.monitorConflictText({},'zh'),/未核实/);
     assert.doesNotMatch(h.ctx.window.monitorConflictText({},'zh'),/NaN|0.00/);
 

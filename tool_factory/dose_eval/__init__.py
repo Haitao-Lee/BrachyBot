@@ -213,6 +213,7 @@ class DoseEvaluationTool(BaseTool):
             data=metrics,
             message=f"Dose evaluation completed. V100={ctv_metrics.get('V100', 0):.1%}, D90={ctv_metrics.get('D90', 0):.2f}Gy, Score={score_display}",
             metadata={
+                **result.metadata,
                 "v100": ctv_metrics.get("V100", 0),
                 "v150": ctv_metrics.get("V150", 0),
                 "v200": ctv_metrics.get("V200", 0),
@@ -224,6 +225,8 @@ class DoseEvaluationTool(BaseTool):
                 "oar_metrics": oar_metrics,
                 "oar_violations": result.metadata.get("oar_violations", []),
                 "dvh_data": ctv_metrics.get("dvh", {}),
+                "evaluation_basis": {"prescribed_dose": prescribed_dose,
+                    "tumor_type": tumor_type, "oar_constraints": oar_constraints},
             },
         )
 

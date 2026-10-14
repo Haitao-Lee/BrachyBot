@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from copy import deepcopy
+import json
+from typing import Any, Dict, Mapping
 
 from tool_factory import BaseTool, ToolResult
 
@@ -25,8 +27,16 @@ class SurgicalGuideTool(BaseTool):
             "uses the same physical patient coordinates as planning, records QA, "
             "and can be exported as STL via ui_controller data.export (data_types=['surgical_guide'], format='stl'). "
             "For export/save of an existing guide, open that save dialog; do NOT generate a guide. It includes optional non-protruding "
-            "auxiliary puncture holes around each primary channel for patient-motion "
-            "robustness. Use only after a CT and needle plan exist. This tool is "
+            "auxiliary puncture holes around each primary channel for "
+            "alternate-path coverage, without a clinical robustness claim. "
+            "New guide designs default to continuation_dense_v1; standard_v1 retains "
+            "the older two-ring layout. Reuse never redesigns a printed guide. The manifest action reads "
+            "the final-STL bore inventory, including skipped/unverified candidates. "
+            "estimate_placement stores a review-pending rigid candidate in an explicitly "
+            "named intraoperative timepoint; validate_placement checks that saved "
+            "candidate without approving physical placement or clinical use. "
+            "Neither placement action regenerates the printed guide. "
+            "Use only after a CT and needle plan exist. This tool is "
             "for a printable GUIDE (导板/guide) only. A request to generate a "
             "report (报告/report, including 手术报告 or surgical report) is not a "
             "guide request; use the report capability (ui_controller with "
@@ -41,7 +51,7 @@ class SurgicalGuideTool(BaseTool):
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["generate", "status", "analyze"],
+                    "enum": ["generate", "status", "analyze", "manifest", "estimate_placement", "validate_placement"],
                     "default": "generate",
                     "description": (
                         "Generate a new guide, inspect its lifecycle state ('status'), "
@@ -55,6 +65,38 @@ class SurgicalGuideTool(BaseTool):
                     "items": {"type": "string"},
                     "description": "Optional subset of current plan needle IDs.",
                 },
+                "timepoint_id": {
+                    "type": "string", "pattern": "^[0-9a-f]{32}$",
+                    "description": "Optional generation/status target within the bound Session. Omit to use the captured Table Viewer. Placement actions require an explicit target and source.",
+                },
+                "source_timepoint_id": {
+                    "type": "string", "pattern": "^[0-9a-f]{32}$",
+                    "description": "Owned preoperative source for placement, or owned guide workspace for manifest lookup.",
+                },
+                "guide_version": {"type": "integer", "minimum": 1,
+                                  "description": "Exact frozen source guide version; required for cross-timepoint manifest and placement calls."},
+                "bore_offset": {"type": "integer", "minimum": 0, "default": 0},
+                "bore_limit": {"type": "integer", "minimum": 1, "maximum": 32, "default": 20},
+                "placement_id": {"type": "string", "description": "Saved candidate identity returned by estimate_placement."},
+                "placement": {
+                    "type": "object", "additionalProperties": False,
+                    "properties": {
+                        "method": {"type": "string", "enum": ["manual_rigid", "landmarks"]},
+                        "manufactured_guide_id": {"type": "string", "minLength": 1, "maxLength": 160,
+                                                  "description": "Declared physical guide identifier. Candidate creation does not confirm manufacture."},
+                        "expected_state_revision": {"type": "integer", "minimum": 0},
+                        "matrix": {"type": "array", "minItems": 4, "maxItems": 4,
+                                   "items": {"type": "array", "minItems": 4, "maxItems": 4, "items": {"type": "number"}}},
+                        "source_landmarks": {"type": "array", "minItems": 3, "maxItems": 64,
+                                             "items": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "number"}}},
+                        "target_landmarks": {"type": "array", "minItems": 3, "maxItems": 64,
+                                             "items": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "number"}}},
+                        "max_residual_mm": {"type": "number", "exclusiveMinimum": 0,
+                                            "description": "Explicit landmark-fit tolerance; no clinical default is supplied."},
+                        "evidence_source": {"type": "string", "minLength": 1, "maxLength": 500},
+                    },
+                    "required": ["method", "manufactured_guide_id", "expected_state_revision"],
+                },
                 "parameters": {
                     "type": "object",
                     "description": (
@@ -63,6 +105,11 @@ class SurgicalGuideTool(BaseTool):
                         "panel values (or defaults)."
                     ),
                     "properties": {
+                        "auxiliary_density_profile": {
+                            "type": "string", "enum": ["standard_v1", "continuation_dense_v1"],
+                            "default": "continuation_dense_v1",
+                            "description": "New designs default to four staggered candidate rings. Explicit standard_v1 preserves the two-ring layout. Final STL wall/spacing/guidance gates and 5 mm truncation apply. No mechanical commissioning is implied.",
+                        },
                         "skin_threshold_hu": {
                             "type": "number", "minimum": -800, "maximum": 100,
                             "description": "CT HU threshold defining the skin surface.",
@@ -132,6 +179,102 @@ class SurgicalGuideTool(BaseTool):
             "required": [],
         }
 
+    @property
+    def output_schema(self) -> Dict[str, Any]:
+        return {"type": "object", "properties": {
+            "manufactured_guide_metadata": {"type": "object",
+                "description": "Recorded final-STL identity, eligible/skipped/unverified bore counts, density profile, and explicit manufacture/placement evidence limits."},
+            "guide_manifest": {"type": "object", "description": "Bounded recorded bore page with next_offset; excludes large mesh arrays."},
+            "guide_placement_candidate": {"type": "object", "description": "Durably saved, review-pending candidate; no clinical approval."},
+            "guide_placement_validation": {"type": "object", "description": "Read-only rigid/geometry/current-image verification of a saved candidate."},
+        }}
+
+    @staticmethod
+    def _execution_scope(agent, kwargs, *, mutating=False):
+        """Use a typed detached owner; retain strict fencing for legacy callers."""
+        from web.guide_placement import GuidePlacementError
+
+        if kwargs.get("source_timepoint_id") is not None:
+            raise GuidePlacementError("Use manifest or a placement action for source-timepoint lookup")
+        config = getattr(agent, "config", {}) or {}
+        store = getattr(agent, "_workspace_store", None)
+        requested = kwargs.get("timepoint_id")
+        if store is None:
+            if requested is not None:
+                raise GuidePlacementError("A scoped timepoint requires an authenticated workspace")
+            return {"execution_scope": "legacy_single_workspace"}
+        owner, sid = config.get("_workspace_owner_id"), config.get("_workspace_session_id")
+        if not owner or not sid:
+            raise GuidePlacementError("Authenticated workspace owner and Session are required")
+        catalog = store.list_timepoints(owner, sid)
+        from web.timepoint_context import TimepointContext
+        context = getattr(agent, '_workspace_timepoint_context', None)
+        if isinstance(context, TimepointContext):
+            identifier = context.target.timepoint_id
+            if (context.owner_id, context.session_id, identifier) != (
+                    owner, sid, config.get('_workspace_timepoint_id')):
+                raise GuidePlacementError('Guide context differs from the authenticated captured workspace')
+            if requested is not None and requested != identifier:
+                raise GuidePlacementError('Guide target differs from the captured Table Viewer')
+            raw = getattr(store, 'raw', store)
+            context.assert_current(owner, sid, raw._timepoint_catalog(owner, sid),
+                legacy_revision=raw.get_session(owner, sid).revision)
+            return {'session_id':sid,'timepoint_id':identifier,'execution_scope':'captured_timepoint'}
+        identifier = catalog["default_timepoint_id"]
+        if mutating and requested is None and len(catalog["timepoints"]) > 1:
+            raise GuidePlacementError("Generation in a multi-timepoint Session requires an explicit target")
+        if requested is not None and requested != identifier:
+            raise GuidePlacementError("Guide generation/status runtime is bound to the legacy default timepoint; use manifest for other saved guides")
+        return {"session_id": sid, "timepoint_id": identifier, "execution_scope": "legacy_default_timepoint"}
+
+    @staticmethod
+    def _manifest_result(page):
+        summary = page["summary"]
+        return ToolResult(success=True, data=page,
+                          message="Read the recorded final-STL bore inventory without generation or clinical approval.",
+                          display=json.dumps(page, ensure_ascii=False, sort_keys=True),
+                          metadata={"manufactured_guide_metadata": summary, "guide_manifest": page, "read_only": True})
+
+    def _execute_guide_service(self, agent, action, kwargs):
+        from web.guide_placement import GuidePlacementError
+        from web.guide_service import GuidePlacementService, guide_manifest_page
+
+        if action == "manifest" and kwargs.get("source_timepoint_id") is None:
+            from web.surgical_guide import guide_state_for_version
+            scope = self._execution_scope(agent, kwargs)
+            page = guide_manifest_page(guide_state_for_version(agent, kwargs.get("guide_version")),
+                                       offset=kwargs.get("bore_offset", 0), limit=kwargs.get("bore_limit", 20))
+            page["scope"] = scope
+            return self._manifest_result(page)
+        service = GuidePlacementService(agent)
+        source_id, target_id = kwargs.get("source_timepoint_id"), kwargs.get("timepoint_id")
+        version = kwargs.get("guide_version")
+        if not source_id:
+            raise GuidePlacementError("An explicit source_timepoint_id is required")
+        if action == "manifest":
+            if target_id is not None:
+                raise GuidePlacementError("Manifest lookup selects its source_timepoint_id only")
+            return self._manifest_result(service.manifest(source_timepoint_id=source_id, guide_version=version,
+                                                         offset=kwargs.get("bore_offset", 0), limit=kwargs.get("bore_limit", 20)))
+        if not target_id:
+            raise GuidePlacementError("An explicit target timepoint_id is required")
+        if action == "estimate_placement":
+            request = kwargs.get("placement")
+            if not isinstance(request, Mapping):
+                raise GuidePlacementError("A placement request is required")
+            result = service.estimate(source_timepoint_id=source_id, target_timepoint_id=target_id,
+                                       guide_version=version, **dict(request))
+            return ToolResult(success=True, data=result, metadata={"guide_placement_candidate": result},
+                              message="Stored a rigid placement candidate; physical placement and clinical use remain unapproved.",
+                              display=json.dumps(result, ensure_ascii=False, sort_keys=True))
+        if not kwargs.get("placement_id"):
+            raise GuidePlacementError("A saved placement_id is required")
+        result = service.validate(source_timepoint_id=source_id, target_timepoint_id=target_id,
+                                  guide_version=version, placement_id=kwargs["placement_id"])
+        return ToolResult(success=True, data=result, metadata={"guide_placement_validation": result, "read_only": True},
+                          message="Validated the saved candidate's rigid transform and exact guide/current-image identities; review is pending.",
+                          display=json.dumps(result, ensure_ascii=False, sort_keys=True))
+
     def _execute(self, **kwargs: Any) -> ToolResult:
         from web.surgical_guide import (
             SurgicalGuideError,
@@ -146,6 +289,20 @@ class SurgicalGuideTool(BaseTool):
         if agent is None:
             return ToolResult(success=False, error="Case agent is unavailable")
         action = str(kwargs.get("action") or "generate").strip().lower()
+        from web.guide_service import guide_manifest_summary
+        try:
+            allowed = set(self.input_schema["properties"]) | {"_agent"}
+            if set(kwargs) - allowed:
+                raise ValueError("Unsupported surgical_guide fields")
+            if action in {"manifest", "estimate_placement", "validate_placement"}:
+                if kwargs.get("parameters") is not None or kwargs.get("needle_ids") is not None:
+                    raise ValueError("Manifest and placement actions cannot change guide design parameters or needles")
+                return self._execute_guide_service(agent, action, kwargs)
+            if any(kwargs.get(key) is not None for key in ("placement", "placement_id", "bore_offset", "bore_limit", "guide_version")):
+                raise ValueError("Placement/manifest inputs require their explicit action")
+            scope = self._execution_scope(agent, kwargs, mutating=action == "generate")
+        except (ValueError, TypeError, KeyError, RuntimeError) as exc:
+            return ToolResult(success=False, error=str(exc), metadata={"guide_action": action})
         if action == "analyze":
             from agent_runtime.artifact_analysis import build_guide_characteristics_facts
 
@@ -153,6 +310,8 @@ class SurgicalGuideTool(BaseTool):
             facts = build_guide_characteristics_facts(
                 status.get("guide") if isinstance(status, dict) else {}
             )
+            manufactured = guide_manifest_summary(status.get("guide"))
+            facts["manufactured_guide_metadata"] = deepcopy(manufactured)
             turn_context = getattr(agent, "_active_turn_context", {}) or {}
             lang = str(
                 getattr(agent.memory, "user_lang", "")
@@ -171,8 +330,8 @@ class SurgicalGuideTool(BaseTool):
                 message = (
                     f"已读取手术导板 {version_text} 的设计与校验特征，可供分析。"
                     if lang == "zh" else
-                    f"Read the design and validation characteristics of puncture guide "
-                    f"{version_text or 'current'} for analysis."
+                    f"Read the design and validation characteristics of the "
+                    f"{version_text or 'current'} puncture guide for analysis."
                 )
             return ToolResult(
                 success=True,
@@ -181,6 +340,8 @@ class SurgicalGuideTool(BaseTool):
                     "guide_characteristics": facts,
                     "guide_status": status,
                     "analysis_action": "analyze",
+                    "manufactured_guide_metadata": manufactured,
+                    "execution_scope": scope,
                 },
             )
         if action == "status":
@@ -217,7 +378,7 @@ class SurgicalGuideTool(BaseTool):
                 message = (
                     f"已核验：手术导板 {version_text or '当前版本'} 已持久化，但{restoring_text}；这不表示导板未生成。"
                     if lang == "zh" else
-                    f"Verified: puncture guide {version_text or 'current version'} is persisted, but {restoring_text_en}; it has not been treated as missing."
+                    f"Verified: puncture guide {version_text or 'current version'} is persisted, but {restoring_text_en}; this does not mean the guide was not generated."
                 )
             elif state == "generating":
                 message = (
@@ -255,6 +416,8 @@ class SurgicalGuideTool(BaseTool):
                 metadata={
                     **guide_public_payload(guide),
                     "guide_status": status,
+                    "manufactured_guide_metadata": guide_manifest_summary(guide),
+                    "execution_scope": scope,
                 },
             )
         if action != "generate":
@@ -288,6 +451,8 @@ class SurgicalGuideTool(BaseTool):
                 metadata={
                     **guide_public_payload(state),
                     "guide_status": guide_status_payload(agent),
+                    "manufactured_guide_metadata": guide_manifest_summary(state),
+                    "execution_scope": scope,
                 },
             )
         except SurgicalGuideError as exc:

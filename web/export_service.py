@@ -42,6 +42,37 @@ class ExportError(ValueError):
     """Raised when an export request cannot be fulfilled."""
 
 
+def _total_dose_is_stale(memory):
+    """Generic dose exports have the same freshness requirement as total dose."""
+    from utils.resource_status import resource_is_stale
+    for key in ('manual_artifact_status', 'artifact_status'):
+        status = memory.retrieve(key)
+        if isinstance(status, Mapping) and resource_is_stale(status.get('dose')):
+            return True
+    bundle = memory.retrieve('dose_components')
+    if isinstance(bundle, Mapping):
+        total = bundle.get('total')
+        if (not isinstance(total, Mapping) or resource_is_stale(total)
+                or total.get('dose_status') in {'stale', 'invalidated'}
+                or total.get('dose_units') != 'physical_gy'):
+            return True
+        fingerprints = (memory.retrieve('timepoint_resource_state') or {}).get('fingerprints', {})
+        if (not total.get('dependency_fingerprint')
+                or total.get('dependency_fingerprint') != fingerprints.get('total_dose')):
+            return True
+    return False
+
+
+def _require_current_total_dose(memory):
+    if _total_dose_is_stale(memory):
+        from flask import has_request_context
+        from web.timepoint_messages import request_timepoint_language, timepoint_message
+        language = request_timepoint_language() if has_request_context() else getattr(memory, 'user_lang', 'en')
+        error = ExportError(timepoint_message('total_dose_export_stale', language)['message'])
+        error.code = 'total_dose_export_stale'
+        raise error
+
+
 def ensure_export_resources(agent):
     """Seal exports only after restoration; metadata readers stay available."""
     if getattr(agent, '_workspace_hydration_in_progress', False) or not getattr(agent, '_workspace_data_ready', True):
@@ -80,6 +111,9 @@ def validate_export_selections(catalog, selections):
     if not isinstance(selections, list) or not selections or len(selections) > EXPORT_MAX_SELECTIONS:
         raise ExportError(f"Select between 1 and {EXPORT_MAX_SELECTIONS} export objects")
     available = {item.object_id: item for item in catalog}
+    for item in catalog:
+        if item.data_type == 'image' and item.metadata.get('planning_reference'):
+            available['image:ct'] = item # Legacy selector, canonical owned UUID output.
     seen = set()
     destinations = set()
     output = []
@@ -482,6 +516,7 @@ XLSX_FORMAT = ExportFormat("xlsx", "Excel Workbook (.xlsx)", ".xlsx")
 PNG = ExportFormat("png", "PNG (.png)", ".png")
 PDF = ExportFormat("pdf", "PDF (.pdf)", ".pdf")
 DICOM_RT = ExportFormat("dicom_rt", "Linked DICOM-RT set (.zip)", ".zip")
+WORKSPACE_BUNDLE = ExportFormat("workspace_bundle", "Complete patient workspace (.zip)", ".zip")
 
 
 class ExportService:
@@ -505,11 +540,47 @@ class ExportService:
     ) -> list[ExportObject]:
         memory = agent.memory
         objects: list[ExportObject] = []
-        if _ct_array(memory) is not None:
+        objects.append(ExportObject("session:complete", None, "Complete patient workspace", "session_bundle",
+            "Session", (WORKSPACE_BUNDLE,), "workspace_bundle",
+            {"scope": "all_owned_timepoints_and_shared_conversation", "restoration": "checksummed_owned_workspace_graph"}))
+        target = (getattr(agent,'config',{}) or {}).get('_workspace_timepoint_id')
+        collection = None
+        if target:
+            from web.timepoint_images import TimepointImageService
+            collection = TimepointImageService(self.store).list_images(user_id,session_id,target)
+            for image in collection['images']:
+                suffix = '.nii.gz' if image['source_path'].lower().endswith('.nii.gz') else Path(image['source_path']).suffix
+                objects.append(ExportObject('image:'+image['id'],'group:images',image['name'],'image','Images',
+                    (NIFTI,ExportFormat('original','Original acquisition ('+suffix+')',suffix)),'nifti',
+                    {'image_id':image['id'],'timepoint_id':target,'modality':image['modality'],
+                     'planning_reference':image['planning_reference'],'frame_index':image['frame_index'],
+                     'geometry_signature':image['geometry_signature']}))
+        if not collection and _ct_array(memory) is not None:
             objects.append(ExportObject(
                 "image:ct", "group:images", "CT", "image", "Images",
                 (NIFTI,), "nifti",
             ))
+        if target:
+            observations = memory.retrieve('implanted_seed_reconstruction') or {}
+            reconstruction = ((observations.get('by_timepoint',{}).get(target) or {}).get('current') or {}).get('reconstruction') or {}
+            for row in reconstruction.get('observations',[]):
+                if row.get('review_status') == 'rejected':
+                    continue
+                axis = row.get('axis_lps'); dimensions = row.get('dimensions')
+                formats = (JSON_FORMAT,STL) if axis is not None and dimensions else (JSON_FORMAT,)
+                objects.append(ExportObject('implant:'+row['observation_id'],'group:implants',
+                    row.get('physical_seed_id') or row['observation_id'],'implanted_observation','Implanted sources',formats,'json',
+                    {'observation_id':row['observation_id'],'timepoint_id':target,
+                     'axis_source':row.get('axis_source'),'review_status':row.get('review_status'),
+                     'geometry_role':'observed_source_model_not_manufacturing_specification','unit':'mm'}))
+        if memory.retrieve('dose_components') and getattr(agent,'_workspace_timepoint_context',None):
+            from web.routes.dose_component_routes import dose_view_packet
+            for source_set,label in [('implanted','Implanted-source dose'),('planned','Supplemental planned-source dose'),('total','Total dose')]:
+                packet,_ = dose_view_packet(agent,source_set,evaluate_component=False)
+                if packet['available'] and not packet['stale']:
+                    objects.append(ExportObject('dose:'+source_set,'group:dose',label,'dose_component','Dose',
+                        (NIFTI,),'nifti',{'source_set':source_set,'dose_units':'physical_gy','clinical_use_ready':False,
+                        'timepoint_id':target,'dose_sha256':packet.get('dose_sha256'),'source_count':packet.get('source_count')}))
 
         structures = self.effective_structures(memory)
         for item in structures.structures:
@@ -632,7 +703,7 @@ class ExportService:
         dose = memory.retrieve("dose_distribution_gy")
         if dose is None:
             dose = memory.retrieve("dose_distribution")
-        if dose is not None:
+        if dose is not None and not _total_dose_is_stale(memory):
             if needles and seeds and _ct_array(memory) is not None:
                 objects.append(ExportObject(
                     "dicom_rt:plan", "group:planning", "Linked DICOM-RT plan",
@@ -800,6 +871,16 @@ class ExportService:
             from web.artifact_catalog import screenshot_attachment_index, legacy_screenshot_metadata
             screenshot_metadata = screenshot_attachment_index(snapshot, session_id)
             for path in sorted(screenshot_root.glob("*.png")):
+                if target:
+                    # One Session shares conversation, not every screenshot
+                    # object in every timepoint's Data Tree/export selection.
+                    prefix = re.match(r'^([0-9a-f]{32})_',path.name)
+                    if prefix and prefix[1] != target:
+                        continue
+                    if prefix is None:
+                        catalog = self.store.list_timepoints(user_id,session_id)
+                        if target != catalog['default_timepoint_id']:
+                            continue
                 if path.name in report_figure_files:
                     continue
                 objects.append(ExportObject(
@@ -832,6 +913,7 @@ class ExportService:
             "group:chat": (None, "Chat & Agent History"),
             "group:chat:screenshots": ("group:chat", "Screenshots"),
             "group:images": (None, "Medical Images"),
+            "group:implants": (None, "Observed implanted sources"),
             "group:structures": (None, "Structures"),
             "group:structures:ctv": ("group:structures", "CTV"),
             "group:structures:oar": ("group:structures", "OAR"),
@@ -916,6 +998,10 @@ class ExportService:
         format_spec = next((fmt for fmt in item.formats if fmt.key == format_key), None)
         if format_spec is None:
             raise ExportError(f"{item.name} does not support {format_key}")
+        # A selection can outlive an edit. Recheck before any serialization,
+        # including generic volume, iso-surface and linked DICOM-RT exports.
+        if item.data_type in {'dose', 'dose_isosurface', 'dicom_rt'}:
+            _require_current_total_dose(agent.memory)
         # Sanitization plus the 64-character cap is lossy, so two distinct
         # catalog objects in one directory can map to the same filename.
         # Without a collision probe the second write silently overwrote the
@@ -932,8 +1018,38 @@ class ExportService:
         path.parent.mkdir(parents=True, exist_ok=True)
         memory = agent.memory
 
-        if item.data_type == "image":
+        if item.data_type == "session_bundle":
+            from web.timepoint_bundle import export_bundle
+            export_bundle(self.store, user_id, session_id, path)
+        elif item.data_type == 'image' and item.metadata.get('image_id'):
+            from web.timepoint_images import TimepointImageService
+            source,_ = TimepointImageService(self.store).source_file(user_id,session_id,item.metadata['timepoint_id'],
+                item.metadata['image_id'],original=format_key == 'original')
+            shutil.copyfile(source,path)
+        elif item.data_type == "image":
             _write_nifti(_ct_array(memory), path, memory)
+        elif item.data_type == 'implanted_observation':
+            target = item.metadata['timepoint_id']
+            catalog = memory.retrieve('implanted_seed_reconstruction') or {}
+            reconstruction = ((catalog.get('by_timepoint',{}).get(target) or {}).get('current') or {}).get('reconstruction') or {}
+            observation = next((row for row in reconstruction.get('observations',[]) if row.get('observation_id') == item.metadata['observation_id']),None)
+            if observation is None or observation.get('review_status') == 'rejected':
+                raise ExportError('The source observation changed or was excluded')
+            if format_key == 'json':
+                self._write_json(path,{'observation':observation,'image_ref':reconstruction.get('image_ref'),
+                    'coordinate_system':'LPS','unit':'mm','clinical_use_ready':False})
+            else:
+                dimensions = observation.get('dimensions') or {}
+                if observation.get('axis_lps') is None or not dimensions:
+                    raise ExportError('An observed source mesh requires its actual axis and dimensions')
+                _write_planning_stl({'position':observation['center_lps_mm'],'direction':observation['axis_lps'],
+                    'length_mm':dimensions['capsule_length_mm'],'diameter_mm':dimensions['capsule_diameter_mm']},'seed',path)
+        elif item.data_type == 'dose_component':
+            from web.routes.dose_component_routes import dose_view_packet
+            packet,dose = dose_view_packet(agent,item.metadata['source_set'],evaluate_component=False)
+            if not packet['available'] or packet['stale'] or packet.get('dose_sha256') != item.metadata.get('dose_sha256'):
+                raise ExportError('The selected dose component changed; reload the export selection')
+            _write_nifti(dose,path,memory,unit='Gy')
         elif item.data_type in {"ctv", "oar"}:
             effective = self.effective_structures(memory)
             structure = next(
@@ -1250,6 +1366,7 @@ class ExportService:
         threshold_gy: float,
         name: str,
     ) -> None:
+        _require_current_total_dose(memory)
         if not threshold_gy > 0:
             raise ExportError("The dose iso-surface threshold is invalid")
         from utils.dose_units import workspace_physical_dose
@@ -1496,10 +1613,18 @@ class ExportService:
     def _latest_artifact(
         self, user_id: str, session_id: str, relative: str, pattern: str,
     ) -> Optional[Path]:
-        root = self.store.workspace_root(user_id, session_id) / relative
-        if not root.is_dir():
-            return None
-        files = [path for path in root.glob(pattern) if path.is_file()]
+        root = self.store.workspace_root(user_id, session_id)
+        from web.timepoint_http import current_binding
+        binding = getattr(self.store, "binding", None) or current_binding()
+        roots = [root / relative]
+        if binding is not None:
+            category = Path(relative).name
+            roots = [root / "timepoints" / binding.timepoint_id / relative,
+                root / "artifacts" / (category + "_tp_" + binding.timepoint_id)]
+            saved = self.store.load_timepoint_snapshot(user_id, session_id, binding.timepoint_id)
+            if saved.get("migration", {}).get("source_schema") == 1:
+                roots.append(root / relative)
+        files = [path for folder in roots if folder.is_dir() for path in folder.glob(pattern) if path.is_file()]
         return max(files, key=lambda path: path.stat().st_mtime) if files else None
 
 
@@ -1519,12 +1644,15 @@ class ExportJob:
     export_root: str = ""
     created_at: float = field(default_factory=time.time)
     cancel_requested: bool = False
+    timepoint_id: Optional[str] = None
+    execution_context: Any = None
 
     def public_dict(self) -> Dict[str, Any]:
         folder_name = Path(self.export_root).name if self.export_root else ""
         return {
             "job_id": self.job_id,
             "session_id": self.session_id,
+            "timepoint_id": self.timepoint_id,
             "status": self.status,
             "completed": self.completed,
             "total": self.total,
@@ -1607,11 +1735,15 @@ class ExportJobManager:
                 user_id=str(user["id"]),
                 session_id=str(session_id),
                 total=len(selections),
+                timepoint_id=getattr(getattr(agent, "_workspace_timepoint_context", None), "target", None).timepoint_id
+                    if getattr(agent, "_workspace_timepoint_context", None) is not None else None,
+                execution_context=getattr(agent, "_workspace_timepoint_context", None),
             )
             self._jobs[job.job_id] = job
         owner = dict(user)
+        from web.timepoint_http import scoped_callable
         worker = threading.Thread(
-            target=self._run,
+            target=scoped_callable(self._run),
             args=(job, owner, list(selections), bundle_name or f"BrachyBot_{_safe_name(session_name)[:32]}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"),
             daemon=True,
             name=f"export-{job.job_id[:8]}",
@@ -1625,6 +1757,15 @@ class ExportJobManager:
             job = self._jobs.get(str(job_id))
         if job is None or job.user_id != str(user_id):
             raise ExportError("Export job was not found")
+        from web.timepoint_http import current_binding
+        binding = current_binding()
+        if binding is not None:
+            target = job.timepoint_id
+            if not target and binding.session_id == job.session_id:
+                raw = getattr(self.store,'raw',self.store)
+                target = raw.list_timepoints(str(user_id),job.session_id)['default_timepoint_id']
+            if (job.user_id,job.session_id,target) != (binding.owner_id,binding.session_id,binding.timepoint_id):
+                raise ExportError('Export job was not found in this captured workspace')
         return job
 
     def cancel(self, user_id: str, job_id: str) -> ExportJob:
@@ -1722,6 +1863,11 @@ class ExportJobManager:
             source_changed = False
             job.status = "running"
             for selection in selections:
+                if job.execution_context is not None:
+                    raw = getattr(self.store, "raw", self.store)
+                    job.execution_context.assert_current(job.user_id, job.session_id,
+                        raw._timepoint_catalog(job.user_id, job.session_id),
+                        legacy_revision=raw.get_session(job.user_id, job.session_id).revision)
                 ensure_export_resources(agent)
                 if job.cancel_requested:
                     job.status = "packaged"
@@ -1834,6 +1980,17 @@ class ExportJobManager:
                 for path in sorted(export_root.rglob("*")):
                     if path.is_file():
                         archive.write(path, f"{folder}/{path.relative_to(export_root).as_posix()}")
+            if job.execution_context is not None:
+                raw = getattr(self.store, "raw", self.store)
+                job.execution_context.assert_current(job.user_id, job.session_id,
+                    raw._timepoint_catalog(job.user_id, job.session_id),
+                    legacy_revision=raw.get_session(job.user_id, job.session_id).revision)
+            if self._version_vector(agent.memory) != source_version:
+                raise ExportError("Source data changed before the completed export could be published")
+            if job.cancel_requested:
+                job.zip_path = ""
+                job.current = ""
+                return
             job.zip_path = str(zip_path)
             job.status = "packaged"
             job.current = ""

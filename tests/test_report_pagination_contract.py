@@ -23,7 +23,9 @@ def test_report_text_pages_use_measured_flow_pagination():
     assert "(strong|b)" in source
     assert "const includeHeading = firstFragment;" in source
     assert "_paginateReportFlow(pagesEl, { page: s.page, pageOf: s.pageOf });" in source
-    assert "document.fonts.ready.then(repaginate)" in source
+    assert "document.fonts.status === 'loading'" in source
+    assert "document.fonts.ready.then(() =>" in source
+    assert "pagesEl._reportFlowPaginationReady = false;" in source
     assert ".report-flow-page-body" in screen_css
     assert ".report-flow-section" in screen_css
 

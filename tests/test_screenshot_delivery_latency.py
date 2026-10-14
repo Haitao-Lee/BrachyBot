@@ -185,6 +185,9 @@ def test_real_chat_route_receipt_gate_and_durable_reply(receipt, monkeypatch, tm
         assert verified is not None, json.dumps(saved, ensure_ascii=False)
     calls = []
     agent = SimpleNamespace(memory=AgentMemory(case), brain_available=False, config={}, _workspace_data_ready=True)
+    agent._workspace_store = store
+    agent.config.update(_workspace_owner_id=owner, _workspace_session_id=case,
+        _workspace_root=str(store.workspace_root(owner, case)))
     def chat(message):
         calls.append(message)
         yield 'event: response\ndata: {"response":"model analysis"}\n\n'

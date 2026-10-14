@@ -82,6 +82,42 @@ def test_full_pipeline_no_duplicate_and_no_success_from_incomplete_products(inpu
     assert not any(x[1] == 'Full planning pipeline completed.' for x in p.evaluate('chats'))
 
 
+def test_owned_intraoperative_entry_uses_mounted_pipeline_without_second_upload(input_page):
+    p=input_page
+    p.evaluate('''() => {
+        window.pipelineCalls=0;window.runPlanning=async()=>{pipelineCalls++;return {success:true};};
+        window.BrachyBotTimepoints={enabled:()=>true,captureSubmission:()=>({timepointId:'current'}),
+            getCatalog:()=>({timepoints:[{id:'current',stage:'intraoperative'}]})};
+    }''')
+    p.add_script_tag(content=function((JS/'brachybot-manual-annotation.js').read_text(),'_refreshManualStepUI'))
+    p.evaluate('_saveManualState({seed_planning:false});_refreshManualStepUI()')
+    assert not p.locator('button[onclick="runIntra()"]').is_disabled()
+    assert p.evaluate('runIntra()')['success']
+    assert p.evaluate('pipelineCalls')==1
+    assert p.evaluate('calls.length')==0
+    p.evaluate("BrachyBotTimepoints.getCatalog=()=>({timepoints:[{id:'current',stage:'preoperative'}]})")
+    assert p.evaluate('runIntra()')['code']=='intraoperative_timepoint_required'
+    assert p.evaluate('pipelineCalls')==1
+
+
+def test_review_pause_restores_saved_sources_without_claiming_plan_completion(input_page):
+    p=input_page
+    p.evaluate('''() => {
+        window.reviewRestores=0;
+        window.BrachyBotTimepointWorkspace={restoreActive:async()=>{reviewRestores++;}};
+        window.fetch=async(url,opts)=>({ok:true,status:url==='/api/planning/run_step'?202:200,
+            json:async()=>url==='/api/planning/run_step'
+                ? {success:false,pending_review:true,requires_human_review:true,phase:'awaiting_observation_review',
+                    message:'Review the saved observations',error:'Review the saved observations'}
+                : {success:true,workflow_state:{ctv_segmentation:true,oar_segmentation:true}}});
+    }''')
+    result=p.evaluate('runPlanning()')
+    assert not result['success'] and result['pending_review']
+    assert p.evaluate('reviewRestores')==1
+    assert not p.evaluate('chats.some(row=>row[1]==="Full planning pipeline completed.")')
+    assert p.evaluate('inputMutationPending()') is False
+
+
 @pytest.mark.parametrize('action', ['runPlanning()', 'applyHyperparams()', 'showStepResults("all")', 'exportReport()'])
 def test_late_response_never_repaints_a_new_case_or_a_returned_old_case(input_page, action):
     p = input_page

@@ -20,6 +20,11 @@ class SeedSegmentationTool(BaseTool):
     Applies intensity thresholding and connected component analysis to identify seeds,
     then computes their physical coordinates for comparison with planned positions.
     """
+
+    def __init__(self, implant_service=None):
+        # A captured service may also be injected per call. Never resolve it
+        # from a mutable active-timepoint pointer during an asynchronous job.
+        self._implant_service = implant_service
     
     @property
     def name(self) -> str:
@@ -32,6 +37,9 @@ class SeedSegmentationTool(BaseTool):
             "Uses intensity thresholding and connected component analysis to identify individual seeds. "
             "Returns detected seed positions in both voxel and physical coordinates. "
             "Can compare detected positions against planned positions to compute deviation metrics."
+            " For supplied SeedFinder, explicitly use method='seedfinder' or action='reconstruct' with "
+            "server-injected owned timepoint inputs. Read saved revisions with get_reconstruction. "
+            "Review requires an authenticated human-review request; detection never establishes clinical acceptance."
         )
     
     @property
@@ -39,6 +47,19 @@ class SeedSegmentationTool(BaseTool):
         return {
             "type": "object",
             "properties": {
+                "_agent": {"type":"object","x-server-injected":True,"description":"Authenticated scope-bound Agent; never a model argument."},
+                "method": {"type": "string", "enum": ["legacy_threshold", "seedfinder"], "default": "legacy_threshold"},
+                "action": {"type": "string", "enum": ["detect", "reconstruct", "get_reconstruction", "review_reconstruction",
+                    "start_add", "start_review", "exclude_observations", "restore_observations", "move_observation", "add_observation"],
+                    "description": "In a web workspace, reconstruct continuously detects and prepares per-seed Viewer nodes. start_add opens 2D-click then 3D-drag correction; start_review opens observation controls. Exclude/restore require exact observation_ids from get_reconstruction. Move/add require explicit physical LPS mm coordinates. These correct observations, never perform surgery or approve dose."},
+                "observation_ids": {"type": "array", "items": {"type": "string"}},
+                "center_lps_mm": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "number"}},
+                "request_id": {"type": "string", "description": "Explicit reconstruction request UUID; reuse only for the same inputs."},
+                "expected_revision_id": {"type": ["string", "null"], "description": "Current observation revision UUID; null only for the first reconstruction."},
+                "revision_id": {"type": "string", "description": "Optional saved revision UUID for historical reads."},
+                "implant_service": {"type": "object", "x-server-injected": True, "description": "Authenticated captured ImplantService."},
+                "implant_input": {"type": "object", "x-server-injected": True, "description": "Owned typed intraoperative CT image revision."},
+                "review_request": {"type": "object", "x-server-injected": True, "description": "Typed authenticated human-review decisions and evidence."},
                 "image": {
                     "type": "object",
                     "description": "SimpleITK Image of the intra-operative CT/CBCT scan",
@@ -80,6 +101,10 @@ class SeedSegmentationTool(BaseTool):
         return {
             "type": "object",
             "properties": {
+                "implanted_seed_reconstruction": {"type": "object", "description": "Immutable scoped observation revision, physical LPS mm and explicit review state."},
+                "observation_revision_id": {"type": "string"},
+                "review_required": {"type": "boolean"},
+                "baseline_accepted": {"type": "boolean", "description": "False: this tool never accepts a continuation baseline."},
                 "detected_seeds": {
                     "type": "array",
                     "description": "List of detected seed positions (voxel and physical coords)",
@@ -100,6 +125,23 @@ class SeedSegmentationTool(BaseTool):
         }
     
     def _execute(self, **kwargs) -> ToolResult:
+        method = kwargs.get("method", "legacy_threshold")
+        if method not in ("legacy_threshold", "seedfinder"):
+            raise ValueError("Unknown seed detection method")
+        action = kwargs.get("action", "reconstruct" if method == "seedfinder" else "detect")
+        if action in {'start_add','start_review','exclude_observations','restore_observations','move_observation','add_observation'}:
+            agent=kwargs.get('_agent')
+            if agent is not None:
+                from web.implant_workspace import execute_bound_implant
+                return execute_bound_implant(agent,{key:value for key,value in kwargs.items() if key!='_agent'})
+            return ToolResult(False,error='This observation interaction requires a scope-bound web Agent.',metadata={'code':'implant_service_not_bound'})
+        if action not in ("detect", "reconstruct", "get_reconstruction", "review_reconstruction"):
+            raise ValueError("Unknown seed detection action")
+        if method == "seedfinder" and action == "detect":
+            action = "reconstruct"
+        if action != "detect":
+            from web.implant_service import execute_implant_tool
+            return execute_implant_tool(kwargs.get("implant_service", self._implant_service), action, kwargs)
         image = kwargs.get("image")
         image_path = kwargs.get("image_path")
         seed_threshold = kwargs.get("seed_threshold", 2000)

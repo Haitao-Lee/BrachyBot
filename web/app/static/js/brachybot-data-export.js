@@ -18,6 +18,7 @@
         saveAbort: null,
         exportRequested: false,
         terminalOutcome: null,
+        ownerScope: null,
     };
 
     function text(zh, en) {
@@ -35,11 +36,20 @@
             ? _viewerDataHeaders(sessionId)
             : { 'X-BrachyBot-Session': sessionId };
         if (json) headers['Content-Type'] = 'application/json';
+        if (state.ownerScope && state.ownerScope.sessionId === sessionId) {
+            headers['X-BrachyBot-Session'] = state.ownerScope.sessionId;
+            headers['X-BrachyBot-Timepoint'] = state.ownerScope.timepointId;
+        }
         return headers;
     }
 
+    function ownedFetch(url, options = {}) {
+        return state.ownerScope && window.BrachyBotTimepoints?.request
+            ? window.BrachyBotTimepoints.request(state.ownerScope, url, options) : fetch(url, options);
+    }
+
     async function fetchJson(url, options = {}) {
-        const response = await fetch(url, options);
+        const response = await ownedFetch(url, options);
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || payload.success === false) {
             throw new Error(payload.error || `${response.status} ${response.statusText}`);
@@ -61,11 +71,12 @@
             'group:structures:skin': ['皮肤表面', 'Skin surface'], 'group:structures:masks': ['其他掩膜', 'Additional masks'],
             'group:planning': ['规划', 'Planning'], 'group:planning:trajectories': ['候选轨迹', 'Trajectories'],
             'group:planning:needles': ['针道', 'Needles'], 'group:planning:seeds': ['粒子', 'Seeds'],
-            'group:dose': ['剂量', 'Dose'], 'group:dose:isosurfaces': ['等剂量面', 'Dose iso-surfaces'],
+            'group:dose': ['剂量', 'Dose'], 'group:dose:isosurfaces': ['等剂量面', 'Isodose surfaces'],
             'group:dvh': ['DVH', 'DVH'], 'group:surgical_guide': ['手术导板', 'Surgical Guide'],
             'group:report': ['报告', 'Report'], 'group:figures': ['图件', 'Figures'],
             'group:annotations': ['测量与标注', 'Annotations'], 'group:chat': ['对话与执行记录', 'Chat & Agent History'],
             'group:chat:screenshots': ['截图', 'Screenshots'],
+            'group:implants': ['体内实际粒子','Observed implanted sources'],
         };
         return labels[group.object_id] ? text(...labels[group.object_id]) : group.name;
     }
@@ -74,12 +85,20 @@
         const labels = { image: ['影像', 'Image'], ctv: ['靶区', 'CTV'], oar: ['危及器官', 'OAR'],
             generic_mask: ['掩膜', 'Mask'], skin_surface: ['皮肤表面', 'Skin surface'], needle: ['针道', 'Needle'],
             seed: ['粒子', 'Seed'], trajectory: ['候选轨迹', 'Trajectory'], planning_parameters: ['规划参数', 'Parameters'],
-            dose: ['剂量', 'Dose'], dose_isosurface: ['等剂量面', 'Iso-surface'], dvh_data: ['DVH 数据', 'DVH data'],
+            dose: ['剂量', 'Dose'], dose_isosurface: ['等剂量面', 'Isodose surface'], dvh_data: ['DVH 数据', 'DVH data'],
             dvh_curve: ['DVH 曲线', 'DVH curve'], report: ['报告', 'Report'], report_data: ['报告数据', 'Report data'],
             report_figure: ['报告图件', 'Report figure'], surgical_guide: ['导板', 'Guide'], annotation: ['测量标注', 'Annotation'],
             screenshot: ['截图', 'Screenshot'], chat_messages: ['对话', 'Chat'], execution_trace: ['执行追踪', 'Execution trace'],
             tool_history: ['工具记录', 'Tool history'], session_settings: ['会话设置', 'Session settings'] };
+        labels.owned_image = ['影像','Image']; labels.implanted_observation = ['体内粒子记录','Implanted observation'];
+        labels.dose_component = ['剂量分量','Dose component']; labels.session_bundle = ['完整病例包','Complete patient workspace'];
         return labels[type] ? text(...labels[type]) : type;
+    }
+    function objectTitle(object) {
+        if (object.data_type === 'session_bundle') return text('完整病例包（所有时间点）','Complete patient workspace (all timepoints)');
+        const labels = {implanted:['体内实际粒子剂量','Implanted-source dose'],planned:['新增规划粒子剂量','Supplemental planned-source dose'],total:['总剂量','Total dose']};
+        if (object.data_type === 'dose_component') return text(...labels[object.metadata.source_set]);
+        return object.name;
     }
 
     function close() {
@@ -104,8 +123,10 @@
     function assertReportOwner() {
         const active = String(typeof activeSessionId !== 'undefined' ? activeSessionId : window.activeSessionId);
         const owner = String(window.reportForm?.sessionId || window.__reportWorkspaceSessionId || active);
-        if (active !== state.sessionId || owner !== state.sessionId) {
-            throw new Error(text('报告不属于当前请求的病例，未保存；请等待正确报告加载后重试。', 'The report does not belong to this request case; nothing was saved. Wait for the correct report to load and retry.'));
+        const mounted = window.BrachyBotTimepoints?.captureSubmission?.();
+        if (active !== state.sessionId || owner !== state.sessionId || state.ownerScope &&
+                (mounted?.sessionId !== state.ownerScope.sessionId || mounted?.timepointId !== state.ownerScope.timepointId)) {
+            throw new Error(text('报告不属于当前请求的病例，未保存；请等待正确报告加载后重试。', 'The report does not belong to the case specified in this request; nothing was saved. Wait for the correct report to load and retry.'));
         }
     }
 
@@ -133,7 +154,7 @@
         const count = selectedRows().length;
         node.textContent = text(
             `已选择 ${count} 项真实数据`,
-            `${count} real data item${count === 1 ? '' : 's'} selected`,
+            `${count} data item${count === 1 ? '' : 's'} selected`,
         );
         const start = state.overlay.querySelector('[data-export-start]');
         if (start) start.disabled = !count || state.busy;
@@ -298,7 +319,8 @@
             while (!state.options.filenames?.[value.object_id] && suggestedNames.has(`${value.parent_id}/${filename}`.toLocaleLowerCase())) filename = `${basename}_${++duplicate}${extension}`;
             suggestedNames.add(`${value.parent_id}/${filename}`.toLocaleLowerCase());
             const formats = (value.formats || []).map(format =>
-                `<option value="${escHtml(format.key)}" ${format.key === chosen ? 'selected' : ''}>${escHtml(format.label)}</option>`
+                `<option value="${escHtml(format.key)}" ${format.key === chosen ? 'selected' : ''}>${escHtml(format.key === 'original'
+                    ? text('原始采集文件','Original acquisition') + ' (' + format.extension + ')' : format.label)}</option>`
             ).join('');
             return `<tr data-object-id="${escHtml(value.object_id)}"
                 data-export-ancestors="${escHtml((row.ancestors || []).join('|'))}"
@@ -306,11 +328,11 @@
                 <td><input type="checkbox" ${state.selectedIds?.has(value.object_id) && !unsupported ? 'checked' : ''} aria-label="${escHtml(value.name)}"></td>
                 <td><div class="scene-export-name">
                     <span class="scene-export-indent" style="width:${row.depth * 18}px"></span>
-                    <span title="${escHtml(value.name)}">${escHtml(value.name)}</span>
+                    <span data-export-object-name title="${escHtml(objectTitle(value))}">${escHtml(objectTitle(value))}</span>
                     ${value.status === 'stale' ? `<small class="scene-export-warning">${text('过期', 'Stale')}</small>` : ''}
                 </div></td>
                 <td data-export-type="${escHtml(value.data_type)}">${escHtml(typeTitle(value.data_type))}</td>
-                <td><select class="scene-export-format" ${value.formats?.length <= 1 ? 'disabled' : ''}>${formats}</select>${unsupported ? `<small class="scene-export-warning">${escHtml(text(`不支持 ${requestedFormat}；请明确选择`, `Unsupported ${requestedFormat}; choose explicitly`))}</small>` : ''}</td>
+                <td><select class="scene-export-format" ${value.formats?.length <= 1 ? 'disabled' : ''}>${formats}</select>${unsupported ? `<small class="scene-export-warning">${escHtml(text(`不支持 ${requestedFormat}；请明确选择`, `${requestedFormat} is not supported; select another format`))}</small>` : ''}</td>
                 <td><input class="scene-export-filename" data-export-filename data-format="${escHtml(chosen)}" maxlength="120" aria-label="${escHtml(text('文件名', 'Filename'))}" value="${escHtml(filename)}"></td>
             </tr>`;
         }).join('');
@@ -423,8 +445,8 @@
             await assertNewFolder(folderName);
             const folder = await state.directoryHandle.getDirectoryHandle(folderName, { create: true });
             for (const file of job.files || []) {
-                const response = await fetch(
-                    `/api/data/exports/${encodeURIComponent(job.job_id)}/files/${encodedRelativePath(file.relative_path)}`,
+                const response = await ownedFetch(
+                    file.download_url || `/api/data/exports/${encodeURIComponent(job.job_id)}/files/${encodedRelativePath(file.relative_path)}`,
                     { signal: state.saveAbort?.signal },
                 );
                 if (!response.ok) throw new Error(`${file.relative_path}: ${response.statusText}`);
@@ -441,8 +463,8 @@
         const regular = (job.files || []).filter(file => file.object_id !== 'session:manifest');
         if (!regular.length) throw new Error(text('没有成功导出的数据。请检查失败详情。', 'No data was exported successfully. Review the failure details.'));
         const single = regular.length === 1 && selectedRows().length === 1;
-        const response = await fetch(single
-            ? `/api/data/exports/${encodeURIComponent(job.job_id)}/files/${encodedRelativePath(regular[0].relative_path)}`
+        const response = await ownedFetch(single
+            ? (regular[0].download_url || `/api/data/exports/${encodeURIComponent(job.job_id)}/files/${encodedRelativePath(regular[0].relative_path)}`)
             : (job.download_url || `/api/data/exports/${encodeURIComponent(job.job_id)}/download`), { signal: state.saveAbort?.signal });
         if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
         if (state.fileHandle && response.body) {
@@ -573,7 +595,7 @@
                 if (!fn) throw new Error(text('该报告格式尚不可用。', 'This report format is unavailable.'));
                 const blob = await fn({ returnBlob: true });
                 assertReportOwner();
-                if (!(blob instanceof Blob)) throw new Error(text('未取得可保存的报告。', 'No saveable report was returned.'));
+                if (!(blob instanceof Blob)) throw new Error(text('未取得可保存的报告。', 'No report suitable for export was returned.'));
                 const outcome = await saveBlob(blob, browserReport.filename);
                 state.overlay.querySelector('[data-export-summary]').textContent = outcome === 'saved' ? text('文件已保存。', 'File saved.') : text('已交给浏览器下载，请在下载列表确认位置。', 'Download requested; confirm the location in your browser downloads.');
                 publishOutcome(outcome, state.overlay.querySelector('[data-export-summary]').textContent);
@@ -683,6 +705,16 @@
         state.previousFocus = document.activeElement;
         state.overlay?.remove();
         state.sessionId = sessionId;
+        const submitted = options.timepointScope || window.BrachyBotTimepoints?.captureSubmission?.();
+        state.ownerScope = submitted?.sessionId === sessionId ? Object.freeze({ ...submitted }) : null;
+        if (!state.ownerScope && window.BrachyBotTimepoints?.enabled?.()) {
+            // Explicit export of an unmounted patient uses its actual catalog
+            // default, never the currently mounted other patient's scan.
+            const catalog = await fetchJson('/api/sessions/' + encodeURIComponent(sessionId) + '/timepoints', {
+                headers: { 'X-BrachyBot-Session':sessionId } });
+            state.ownerScope = Object.freeze({sessionId,timepointId:catalog.default_timepoint_id,
+                uiLanguage:document.documentElement.lang?.startsWith('zh') ? 'zh' : 'en'});
+        }
         state.directoryHandle = null;
         state.activeJobId = '';
         state.cancelled = false;
@@ -692,6 +724,12 @@
             headers: sessionHeaders(sessionId),
         });
         if (generation !== state.generation) return { success: false, error: 'Save dialog was superseded.' };
+        const mountedNow = window.BrachyBotTimepoints?.captureSubmission?.();
+        if (state.ownerScope && sessionId === String(currentSessionId) &&
+                (mountedNow?.sessionId !== state.ownerScope.sessionId || mountedNow?.timepointId !== state.ownerScope.timepointId)) {
+            return {success:false,stale:true,error:text('时间点已切换，未打开旧请求的保存窗口。',
+                'The timepoint changed; the old request did not open a save dialog.')};
+        }
         if (payload.resources_ready === false) throw new Error(text('病例资源尚未恢复完成，请等待加载结束后再导出。', 'Case resources are still restoring; wait for loading to finish before exporting.'));
         const activeNow = String(typeof activeSessionId !== 'undefined' ? activeSessionId : window.activeSessionId);
         if (options.requireCurrentSession && activeNow !== sessionId) return { success: false, stale: true, error: text('病例已切换，未打开旧请求的保存窗口。', 'The case changed; the old request did not open a save dialog.') };
@@ -878,6 +916,8 @@
             if (group && node) node.textContent = groupTitle(group);
         });
         overlay.querySelectorAll('[data-export-type]').forEach(node => { node.textContent = typeTitle(node.dataset.exportType); });
+        overlay.querySelectorAll('tr[data-object-id]').forEach(row=>{const item=state.catalog.objects.find(item=>item.object_id===row.dataset.objectId);
+            const node=row.querySelector('[data-export-object-name]'); if (item && node) node.textContent=objectTitle(item);});
         if (!state.busy) syncSummary();
     });
     window.openSessionContextMenu = openSessionContextMenu;

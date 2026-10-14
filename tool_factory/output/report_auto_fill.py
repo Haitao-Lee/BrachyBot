@@ -319,15 +319,13 @@ class ReportAutoFillTool(BaseTool):
                 except Exception:
                     pass
 
-        dose = self._retrieve(agent, "dose_metrics", {}) or self._retrieve(agent, "metrics", {}) or {}
-        if isinstance(dose, dict) and isinstance(dose.get("metrics"), dict):
-            dose = dose.get("metrics") or {}
-
         facts = resolve_report_facts(
             getattr(agent, "memory", None),
             getattr(agent, "config", {}) or {},
         )
-        dose = facts.get("dose") or dose
+        # Explicit absence is authoritative after source/geometry/Rx edits.
+        # Neither the HTTP fallback nor standalone tool may revive old aliases.
+        dose = facts.get("dose") or {}
         total_seeds = facts.get("total_seeds")
         num_trajectories = facts.get("num_trajectories")
 
@@ -421,6 +419,10 @@ class ReportAutoFillTool(BaseTool):
         if scope in ("all", "interpretation", "safety"):
             interp, safety = self._build_interpretation(language, dose, total_seeds, num_trajectories)
             if scope in ("all", "interpretation"):
+                from tool_factory.report_facts import format_source_components_markdown
+                source_summary = format_source_components_markdown(facts.get('source_components'),language)
+                if source_summary:
+                    interp += '\n\n'+source_summary
                 patch["interpretation"] = interp
                 provenance["derived"].append("interpretation")
             if scope in ("all", "safety"):

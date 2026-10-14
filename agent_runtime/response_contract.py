@@ -203,4 +203,4 @@ def presentation_fallback_message(
         )
     if has_visual:
         return "A screenshot was requested; use only images actually shown in this reply, since the server tool record alone does not confirm an attachment."
-    return "No user-facing text was generated in this turn; the case and Planning were not changed. Please retry."
+    return "No user-facing text was generated in this turn; the case and planning were not changed. Please retry."

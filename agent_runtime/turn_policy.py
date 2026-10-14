@@ -44,7 +44,7 @@ CLINICAL_TOOLS: FrozenSet[str] = frozenset({
     "ctv_model_catalog", "ctv_segmentation", "oar_segmentation",
     "biomedparse_segmentation",
     "trajectory_init", "trajectory_refine", "trajectory_planning",
-    "seed_planning", "seed_planning_rule_based", "seed_planning_rl",
+    "seed_planning", "seed_planning_rule_based", "seed_planning_rl", "seed_segmentation",
     "dose_engine", "dose_recompute", "dose_evaluation", "planning_pipeline",
     "surgical_guide",
     "clinical_kb", "safety_validator", "plan_quality_scorer",
@@ -61,7 +61,8 @@ SEMANTIC_TOOLS: FrozenSet[str] = frozenset(
     set(KNOWLEDGE_TOOLS)
     | set(UI_TOOLS)
     | set(CLINICAL_TOOLS)
-    | {"case_memory", "plan_comparator", "safety_validator"}
+    | {"case_memory", "plan_comparator", "safety_validator", "timepoint_inspector", "timepoint_controller",
+       "timepoint_images", "dicom_rt_exporter"}
 )
 
 

@@ -34,7 +34,7 @@ def build_distance_annotations(snapshot, *, planning_id, planning_version=0, gui
                 'anchor_world_mm': list(map(float, anchor)), 'tip_distance_mm': float(distance),
                 'tip_world_mm': channel['tip_world_mm'], 'external_world_mm': channel['external_world_mm'],
                 'reference': 'needle_tip', 'units': 'mm', 'coordinate_system': 'patient_world_mm',
-                'visible': True, 'visible3D': True, 'visible2D': False, 'opacity': 1.,
+                'visible': False, 'visible3D': False, 'visible2D': False, 'opacity': 1.,
                 'color': '#fde68a' if kind == 'seed_tip_distance' else '#67e8f9', **extra}
 
     for channel in table['channels']:

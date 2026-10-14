@@ -1498,9 +1498,9 @@ def test_report_generation_executes_and_persists_the_full_report_transaction():
     assert "function _uiActionResultState" in ui_api
     assert "result?.success === false" in chat
     assert "result?.stale === true" in chat
-    assert "await window.awaitWorkspaceVisualReady(reportSessionId" in ui_api
+    assert "await __tpAwait(() => (window.awaitWorkspaceVisualReady(reportSessionId" in ui_api
     assert "async function prepareReportSceneReadWithRetry" in ui_api
-    assert "last = await prepareReportSceneRead(sessionId)" in ui_api
+    assert "last = await __tpAwait(() => (prepareReportSceneRead(sessionId)" in ui_api
     # Readiness is proven by the loaded scene (meshes + dose overlay), not by a
     # lifecycle word: a manually-adjusted draft with a current dose must remain
     # capturable instead of being reported as "still planning".

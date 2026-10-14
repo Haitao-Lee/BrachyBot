@@ -28,7 +28,8 @@ def packet(data=None, **kwargs):
 def test_seed_depths_are_signed_axial_millimetres_and_not_skin_based():
     result=packet()
     assert [r['tip_distance_mm'] for r in result['records']] == [15,20]
-    assert all(r['units']=='mm' and r['visible'] and r['reference']=='needle_tip' for r in result['records'])
+    assert all(r['units']=='mm' and not r['visible'] and not r['visible3D']
+               and r['reference']=='needle_tip' for r in result['records'])
     assert result['records'][0]['anchor_world_mm']==[0,0,25]
 
 

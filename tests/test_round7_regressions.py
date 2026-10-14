@@ -550,8 +550,8 @@ def test_needle_drag_requires_explicit_replan_confirmation():
     # Replan. Repeated edits share one prompt and the latest geometry wins.
     assert "_confirmNeedleReplan" in manual
     assert "manualPlanningState.needleReplanPrompt" in manual
-    assert "Needle ${needleId} position kept. Replanning skipped." in manual
-    assert "await recomputeManualDose('needle_drag'" in manual
+    assert "The position of needle ${needleId} was retained. No replanning was performed." in manual
+    assert "await __tpAwait(() => (recomputeManualDose('needle_drag'" in manual
     assert "lastDoseNeedles = _cloneNeedleGeometry" in manual
     assert "function _confirmAction(msgZh, msgEn, options = {})" in ui_api
     assert "options.yesEn" in ui_api and "options.noEn" in ui_api
@@ -570,7 +570,7 @@ def test_position_only_needle_edit_has_a_safe_persistence_endpoint():
     assert '"dose_recomputed": False' in routes
     assert "_persistNeedleGeometryOnly" in manual
     assert "manual_planning/update_geometry" in manual
-    assert "await _persistNeedleGeometryOnly({" in manual
+    assert "await __tpAwait(() => (_persistNeedleGeometryOnly({" in manual
     assert "reason: 'needle_drag'" in manual
 
 
@@ -643,7 +643,8 @@ def test_needle_render_scheduler_survives_mixed_static_asset_revisions():
     # Keep this contract aligned with the actual cache-busting revisions in
     # index.html. A stale assertion here falsely reports a deployment bug and
     # hides whether the endpoint interaction bundle is really versioned.
-    assert "brachybot-viewer-layout.js?v=49" in index
+    revision = re.search(r"brachybot-viewer-layout\.js\?v=(\d+)", index)
+    assert revision and int(revision[1]) >= 49
     assert 'src="static/js/brachybot-3d-manual.js?v=' in index
     assert "scene3D.requestRender(1)" in layout
     assert "scene3D.requestRender(2)" in layout

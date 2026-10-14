@@ -124,7 +124,8 @@ def project_provider_schemas(schemas, policy, metadata=None):
     from utils.tool_security import EXECUTION_TOOLS
     for name, item in (metadata or {}).items():
         if (name not in MUTATING_TOOLS and name not in EXECUTION_TOOLS
-                and isinstance(item, Mapping) and item.get('conversation_access') == 'read'):
+                and isinstance(item, Mapping) and (item.get('conversation_access') == 'read'
+                                                   or item.get('timepoint_access') == 'pure')):
             allowed.add(name)
     selected = [deepcopy(item) for item in schemas
                 if item.get('function', {}).get('name') in allowed]
@@ -232,9 +233,9 @@ def partial_batch_notice(call, language='en'):
             'rejected, consolidated or unresolved parts.')
 
 
-def request_plan_schema():
+def request_plan_schema(*, mounted_names=None, clause_ids=None):
     """Small optional plan, emitted alongside evidence calls in the SAME round."""
-    return {'type': 'function', 'function': {
+    schema = {'type': 'function', 'function': {
         'name': PLAN_TOOL,
         'description': ('Record requested outcomes for EVERY non-trivial semantic request, including '
                         'short factual requests and corrections. Include ALL '
@@ -280,6 +281,18 @@ def request_plan_schema():
             }},
         }, 'required': ['goals']},
     }}
+    goal = schema['function']['parameters']['properties']['goals']['items']['properties']
+    if mounted_names is not None:
+        names = sorted(name for name in mounted_names if isinstance(name,str) and name != PLAN_TOOL)
+        if names:
+            goal['tools']['items']['enum'] = names
+            goal['evidence_requirements']['items']['properties']['tool']['enum'] = names
+        else:
+            goal['tools']['maxItems'] = 0
+            goal['evidence_requirements']['maxItems'] = 0
+    if clause_ids:
+        goal['clauses']['items']['enum'] = list(clause_ids)
+    return schema
 
 
 class SemanticDecisionState:

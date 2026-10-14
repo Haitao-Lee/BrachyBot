@@ -26,6 +26,7 @@ def measurements(page):
         window.dataTreeState={annotations:[],exportArtifacts:[],planning:{id:'plan',version:2}};
         window.selectedItems=new Set();window.pendingDataTreeDeleteIds=new Set();
         window._viewerDataSessionId=()=>activeSessionId;window._structureAppearanceMap=()=>({});
+        window.viewerDataLoadGeneration=0;
         window._isDataTreeMaskId=()=>false;window._planningItems=()=>[];
         window._findDataTreeNode=id=>dataTreeState.annotations.find(a=>a.id===id);
         window.getSelectedDataTreeIds=()=>[...selectedItems];window.getSelectedOrganIds=window.getSelectedDataTreeIds;
@@ -38,6 +39,7 @@ def measurements(page):
     source = (JS/'brachybot-viewer-volume.js').read_text()
     page.add_script_tag(content='\n'.join(function(source,n) for n in (
         'ensureDataTreeNodeMetadata','reconcileViewerAnnotationNodes','_dataTreeObjectId',
+        '_captureViewerDataScope','_dataTreeMutationIsCurrent','_dataTreePendingMutationKey',
         '_dataTreeDeleteMenuItem','_dataTreeRequestError',
         'deleteSelectedDataTreeItems','handleTreeItemRightClick','showContextMenu')))
     return page
@@ -327,7 +329,8 @@ def test_real_missing_refresh_does_not_claim_success_when_a_loader_fails(measure
 def test_catalog_failure_is_observable_only_for_strict_reconciliation(measurements):
     page=measurements;source=(JS/'brachybot-viewer-volume.js').read_text()
     page.add_script_tag(content='''let _dataTreeArtifactCatalogSession='';let _dataTreeArtifactCatalogPromise=null;
-        window._viewerDataHeaders=()=>({});'''+function(source,'hydrateDataTreeArtifactCatalog'))
+        let viewerDataLoadGeneration=0;window._viewerDataHeaders=()=>({});'''
+        + '\n'.join(function(source,name) for name in ('_captureViewerDataScope','_viewerDataScopeIsCurrent','hydrateDataTreeArtifactCatalog')))
     page.route('**/api/data/catalog',lambda route:route.fulfill(status=503,json={'error':'offline'}))
     page.evaluate("window.API='https://synthetic.invalid/api'")
     assert page.evaluate('hydrateDataTreeArtifactCatalog({force:true})')==[]

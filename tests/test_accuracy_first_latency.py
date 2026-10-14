@@ -99,7 +99,7 @@ def memory_agent():
         "dose_metrics": {"v100": 0.9031, "d90": 120.63, "dmax": float("nan"),
             "oar_metrics": {f"oar_{i}": {"dmax": i + 1, "d2cc": i} for i in range(12)}},
         "total_seeds": 181, "num_trajectories": 24,
-        "artifact_status": {"report": {"stale": True, "status": "stale", "reason": "private"}, "dose": "stale"},
+        "artifact_status": {"report": {"stale": True, "status": "stale", "reason": "private"}, "dose": "ready"},
         "ct_data": SimpleNamespace(secret="arrays must not be serialized"),
     })
     agent.memory.patient_data = {"patient_id": "do-not-send", "patient_name": "private"}
@@ -136,6 +136,14 @@ def test_prefetch_does_not_resurrect_an_old_or_different_plan():
     data = packet(agent)
     assert data["dose_metrics"]["d90"] == 999
     assert data["artifact_status"]["report"] == "current"
+
+
+def test_saved_prefetch_cannot_present_invalidated_dose_as_current_quality():
+    agent=memory_agent()
+    agent.memory.planning_results['artifact_status']['dose']='stale'
+    data=packet(agent)
+    assert data['dose_metrics']=={}
+    assert '120.63' not in saved_case_evidence(agent)
 
 
 def test_packet_refreshes_in_place_after_write_without_fake_receipts():
@@ -269,30 +277,44 @@ def test_real_chat_route_uses_tool_dependencies_not_domain_words(tmp_path, monke
     case_id = auth["active_session_id"]
     memory = AgentMemory(case_id)
     memory.store("ct_path", "/synthetic/current-ct.nii.gz")
-    agent = SimpleNamespace(memory=memory, brain_available=False, config={},
-        _workspace_data_ready=mode == "after_explicit_import",
-        _workspace_hydration_superseded=mode == "after_explicit_import",
-        _workspace_hydration_in_progress=True,
-        _workspace_hydration_error="synthetic decode failure" if mode in {"read_failed", "full_failed"} else "")
+    from AgenticSys import BrachyAgent
+    from agent_runtime.contracts import RunLedger, ToolCallGateway
+    from web.timepoint_chat import ScopedChatRuntime
+    import numpy as np
+    agent = object.__new__(BrachyAgent)
+    agent.memory, agent.config, agent._brain_available = memory, {}, False
+    agent.registry = ToolRegistry()
+    agent.run_ledger = RunLedger(); agent.tool_gateway = ToolCallGateway(agent.run_ledger)
+    agent._workspace_data_ready = mode == 'after_explicit_import'
+    store = app.extensions["brachybot_workspace_store"]
+    agent._workspace_store = store
+    agent.config.update(_workspace_owner_id=auth["user"]["id"], _workspace_session_id=case_id,
+        _workspace_root=str(store.workspace_root(auth["user"]["id"], case_id)))
+    raw = getattr(store, 'raw', store)
+    raw.save_agent_results_delta(auth['user']['id'],case_id,{'ct_data':np.zeros((4,4,4),np.int16),
+        'ct_spacing':[1.,1.,1.], 'ct_origin':[0.,0.,0.], 'ct_direction':[1.,0.,0.,0.,1.,0.,0.,0.,1.]},
+        expected_revision=raw.get_session(auth['user']['id'],case_id).revision,reason='synthetic-owned-resource-fixture')
     ready_calls, executed = [], []
-    def await_ready(current, report, **kwargs):
-        assert current is agent
-        ready_calls.append(mode)
-        if mode == "full_failed":
-            raise ChatTaskError("synthetic decode failure", code="workspace_hydration_failed")
-        assert report("ct")
-        current._workspace_data_ready = True
-        current._workspace_hydration_in_progress = False
-    monkeypatch.setattr(planning_routes, "await_chat_case_resources", await_ready)
-    def chat(message):
+    original_waiter = ScopedChatRuntime._waiter
+    def checked_waiter(runtime, required):
+        if required:
+            assert runtime.view is not agent and runtime.scope.session_id == case_id
+            ready_calls.append(mode)
+            if mode == 'full_failed':
+                raise ChatTaskError('synthetic scoped decode failure',code='workspace_hydration_failed')
+        return original_waiter(runtime, required)
+    monkeypatch.setattr(ScopedChatRuntime, '_waiter', checked_waiter)
+    def chat(view, message):
         if mode == "changed_input":
-            memory.store("ct_path", "/synthetic/replaced-ct.nii.gz")
+            runtime = view._workspace_scoped_chat_runtime
+            raw.save_timepoint_results(auth['user']['id'],case_id,runtime.scope.timepoint_id,
+                {'changed_clinical_input':True},expected_clinical_revision=runtime.context.target.clinical_revision)
         full = mode in {"full_cold", "full_failed", "after_explicit_import", "changed_input"}
-        ensure_workspace_ready(agent, "dose_recompute" if full else "query_metrics", {} if full else {"metric_type": "dose_metrics"})
+        ensure_workspace_ready(view, "dose_recompute" if full else "query_metrics", {} if full else {"metric_type": "dose_metrics"})
         executed.append(mode)
         yield 'event: response\ndata: {"response":"synthetic saved result"}\n\n'
         yield 'event: done\ndata: {}\n\n'
-    agent.chat_with_stream = chat
+    monkeypatch.setattr(BrachyAgent,'chat_with_stream',chat)
     sessions, timestamps, lock = app.extensions["brachybot_agent_cache"]
     with lock:
         sessions[(auth["user"]["id"], case_id)] = agent
@@ -303,8 +325,8 @@ def test_real_chat_route_uses_tool_dependencies_not_domain_words(tmp_path, monke
     body = response.get_data(as_text=True)
     if mode in {"full_failed", "changed_input"}:
         assert executed == []
-        assert ("workspace_hydration_failed" if mode == "full_failed" else "workspace_hydration_cancelled") in body
+        assert ("workspace_hydration_failed" if mode == "full_failed" else "timepoint_conflict") in body
     else:
         assert executed == [mode] and "synthetic saved result" in body
-    assert bool(ready_calls) == (mode in {"full_cold", "full_failed"})
+    assert bool(ready_calls) == (mode in {"full_cold", "full_failed", 'after_explicit_import', 'changed_input'})
     assert not hasattr(agent, "_workspace_resource_waiter")

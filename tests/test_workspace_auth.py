@@ -439,6 +439,13 @@ def test_session_screenshot_requires_api_key_or_case_bound_signature(
     )
     assert other_registered.status_code == 201
     assert other_client.get(signed_url).status_code == 403
+    for language in ('en', 'zh'):
+        denied = other_client.get(signed_url,headers={'X-BrachyBot-Language':language})
+        assert denied.status_code == 403
+        packet = denied.get_json()
+        assert packet['language'] == language
+        assert packet['code'] == 'file_access_denied'
+        assert session_id not in packet['error']
 
 
 def test_workspace_upload_honors_owned_request_session_header(tmp_path):

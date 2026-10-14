@@ -25,6 +25,7 @@ async function main() {
     const ctx = vm.createContext({
         window: {}, _activeApiSessionId: () => 'case',
         _workspaceVisualReadinessStore: () => store,
+        _workspaceVisualReadinessKey: () => 'case',
         _runWorkspaceRestoreTransaction: () => {calls++; return core.promise;},
         setTimeout: fn => {timers.push(fn); return timers.length;},
         clearTimeout() {}, Date, console,
@@ -65,7 +66,7 @@ async function main() {
     assert(workspace.includes('error.visualRestoreFailure !== true'));
     assert(workspace.includes("(typeof state === 'undefined' || state.ctLoaded !== true)"));
     assert(workspace.includes("typeof state !== 'undefined' && state.ctLoaded === true) return"));
-    assert(api.includes('ready: failedCount === 0'));
+    assert(api.includes('ready: current && failedCount === 0'));
     console.log('PASS: shared restore survives core completion and caller timeout; cold restore does not capture reports or generate guides; failed visual producers are not reported ready');
 }
 main().catch(error => {console.error(error); process.exitCode = 1;});

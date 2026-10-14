@@ -3,13 +3,89 @@ from collections.abc import Mapping
 import copy
 import numpy as np
 
+from web.timepoints import TimepointError
+
+
+# Input settings are owned by the acquisition, not by a historical plan or the
+# Session control Agent. Never persist provider credentials/workspace paths here.
+PLANNING_CONFIG_KEYS = (
+    'seed_info', 'radiation_array_params', 'reference_direc', 'ref_direc_auto',
+    'reference_direc_mode', 'tumor_type', 'dose_value_unit', 'in_lowest_energy',
+    'out_highest_energy', 'in_lowest_dose_gy', 'out_highest_dose_gy', 'DVH_rate',
+    'max_iter', 'rf_params', 'distance_filter', 'direc_resolution', 'dl_params',
+    'iter_rate', 'replan_rate', 'mode',
+)
+
+
+def planning_config_values(config):
+    """An independently mutable, allowlisted Input configuration."""
+    return {key: copy.deepcopy(config[key]) for key in PLANNING_CONFIG_KEYS
+            if isinstance(config, Mapping) and key in config}
+
+
+def restore_owned_planning_config(base, saved_agent):
+    """Use the captured snapshot, including legacy migration, never a sibling.
+
+    Schema-1 snapshots saved config on the Agent itself. New snapshots store the
+    Input settings in clinical memory so normal CAS publishing/bundle recovery
+    preserves them even when a detached request has ended.
+    """
+    restored = copy.deepcopy(base or {})
+    restored.update(planning_config_values((saved_agent or {}).get('config')))
+    results = (saved_agent or {}).get('planning_results') or {}
+    restored.update(planning_config_values(results.get('timepoint_planning_config')))
+    return restored
+
+
+class PlanningReferenceInputError(TimepointError):
+    code = 'planning_reference_input_mismatch'
+
+
+def resolve_owned_reference_path(agent, value, image_id=None):
+    """Translate only aliases of this request's registered planning image.
+
+    Public collection paths are workspace-relative. They are not filenames
+    relative to the server checkout, and a displayed sibling image is not a
+    substitute for the explicitly selected numerical reference.
+    """
+    from pathlib import Path
+    context=getattr(agent,'_workspace_timepoint_context',None)
+    if context is None:
+        return value
+    raw=getattr(agent._workspace_store,'raw',agent._workspace_store)
+    from web.timepoint_images import TimepointImageService
+    service=TimepointImageService(raw)
+    collection=service.list_images(context.owner_id,context.session_id,context.target.timepoint_id)
+    reference=collection['planning_reference_image_id']
+    if not reference:
+        if not context.target.legacy_default:
+            raise PlanningReferenceInputError('Select an owned planning reference before executing clinical work')
+        return value
+    if image_id is not None and image_id != reference:
+        raise PlanningReferenceInputError('The submitted image is not the owned planning reference')
+    row=next(item for item in collection['images'] if item['id']==reference)
+    canonical, _ = service.source_file(context.owner_id,context.session_id,context.target.timepoint_id,reference)
+    root=raw.workspace_root(context.owner_id,context.session_id)
+    aliases={str(canonical), row['url']}
+    for key in ('volume_path','source_path','ingest_source_path'):
+        path=row.get(key)
+        if path:
+            aliases.update((str(path),str(root/Path(path))))
+    if (not value and image_id==reference) or isinstance(value,str) and value in aliases:
+        return str(canonical)
+    raise PlanningReferenceInputError('The submitted path is not an alias of the owned planning reference')
+
 
 def workflow_state(memory):
     """Completion comes from saved products, never a clicked button."""
     def present(key):
         value = memory.retrieve(key)
         if isinstance(value, np.ndarray):
-            return value.size > 0 and bool(np.any(value > 0) if key in ('ctv_binary_array', 'ctv_array', 'oar_array') else np.all(np.isfinite(value)))
+            if key == 'oar_array':
+                source=str(memory.retrieve('oar_source') or '').strip().lower()
+                return value.size > 0 and bool(np.all(np.isfinite(value))) and (
+                    bool(np.any(value>0)) or source not in {'','none','unknown','not_available'})
+            return value.size > 0 and bool(np.any(value > 0) if key in ('ctv_binary_array', 'ctv_array') else np.all(np.isfinite(value)))
         if isinstance(value, (Mapping, list, tuple)):
             return bool(value)
         return value is not None

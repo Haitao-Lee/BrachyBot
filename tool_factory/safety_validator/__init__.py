@@ -8,6 +8,7 @@ Runtime thresholds are generated from the curated clinical standards mirror. Leg
 """
 
 import logging
+import math
 import importlib.util
 from pathlib import Path
 from typing import Dict, Any, Optional, List
@@ -18,6 +19,42 @@ from plans.dose_pre.model_loader import resolve_prescription_gy
 logger = logging.getLogger(__name__)
 
 _CLINICAL_STANDARDS_MODULE = None
+
+
+def _measured(values, *keys):
+    for key in keys:
+        if key in values:
+            value=values[key]
+            if isinstance(value,bool):
+                return None
+            try:
+                number=float(value)
+            except (TypeError,ValueError,OverflowError):
+                return None
+            return number if math.isfinite(number) and number >= 0 else None
+    return None
+
+
+def _prescription(plan, metrics):
+    config=plan.get('current_dose_evaluation_config')
+    if not isinstance(config,dict):
+        config=plan.get('plan_config') if isinstance(plan.get('plan_config'),dict) else {}
+    keys=('prescription_gy','prescribed_dose','in_lowest_dose_gy','prescription_dose','in_lowest_energy')
+    if not any(config.get(key) is not None or metrics.get(key) is not None for key in keys):
+        return None  # Do not use the model loader's legacy default as observed Rx.
+    return resolve_prescription_gy(config, metrics)
+
+
+def _d90_ratio(plan, metrics):
+    value=_measured(metrics,'d90','D90')
+    if value is None:
+        return None
+    # Explicit physical units outrank the old unlabelled ratio compatibility.
+    physical=str(metrics.get('d90_units') or metrics.get('dose_units') or '').lower() in {'gy','physical_gy'}
+    if physical or value > 5:
+        prescription=_prescription(plan,metrics)
+        return value/prescription if prescription and prescription > 0 else None
+    return value
 
 
 def _load_clinical_standards_module():
@@ -348,19 +385,14 @@ Capabilities:
         # normalize them once here before applying any source-backed rule.
         rule_metrics = dict(metrics)
         for key in ("v100", "v150", "v200"):
-            if rule_metrics.get(key) is not None:
-                rule_metrics[key] = normalized_fraction(rule_metrics[key])
-        d90 = rule_metrics.get("d90")
-        if isinstance(d90, (int, float)) and d90 > 5:
-            prescription = resolve_prescription_gy(
-                plan.get("plan_config") if isinstance(plan.get("plan_config"), dict) else {},
-                metrics,
-            )
-            rule_metrics["d90"] = (
-                d90 / prescription
-                if isinstance(prescription, (int, float)) and prescription > 0
-                else None
-            )
+            value=_measured(metrics,key,key.upper())
+            fraction=normalized_fraction(value) if value is not None else None
+            rule_metrics[key]=fraction if fraction is not None and 0 <= fraction <= 1 else None
+        rule_metrics['d90']=_d90_ratio(plan,metrics)
+        for key in dict.fromkeys(rule[0] for rule in rules):
+            if rule_metrics.get(key) is None:
+                warnings.append({'metric':key,'severity':'WARNING','measurement_available':False,
+                    'message':f'{key} was not measured; this check is unverified.'})
 
         for rule in rules:
             result = self._check_rule(rule_metrics, rule, strict)
@@ -372,36 +404,30 @@ Capabilities:
 
         # Check OAR constraints (per-site)
         oar_metrics = metrics.get("oar_metrics", {})
+        if oar_limits and not oar_metrics:
+            warnings.append({'metric':'oar_measurements','severity':'WARNING','measurement_available':False,
+                'message':'No OAR dose measurements are available; OAR safety is unverified.'})
         if isinstance(oar_metrics, dict):
             for organ_name, oar_data in oar_metrics.items():
                 matched_name = match_constraint_name(organ_name, oar_limits)
                 organ_key = matched_name or organ_name.lower().replace(" ", "_")
                 limits = oar_limits.get(matched_name, {}) if matched_name else {}
                 if not limits:
+                    warnings.append({'metric':str(organ_name),'severity':'WARNING','standards_available':False,
+                        'message':f'No source-backed constraint matches {organ_name}; OAR safety is unverified.'})
                     continue
-                dmax = oar_data.get("dmax")
-                if dmax is None:
-                    dmax = oar_data.get("Dmax")
-                d2cc = oar_data.get("d2cc")
-                if d2cc is None:
-                    d2cc = oar_data.get("D2cc")
-                # Check absolute Gy limits
-                if dmax is not None and "dmax_gy" in limits and dmax > limits["dmax_gy"]:
-                    violations.append({
-                        "metric": f"{organ_key}_dmax",
-                        "value": dmax,
-                        "threshold": limits["dmax_gy"],
-                        "severity": "CRITICAL",
-                        "message": f"{organ_name} Dmax = {dmax:.1f} Gy exceeds limit {limits['dmax_gy']} Gy",
-                    })
-                if d2cc is not None and "d2cc_gy" in limits and d2cc > limits["d2cc_gy"]:
-                    violations.append({
-                        "metric": f"{organ_key}_d2cc",
-                        "value": d2cc,
-                        "threshold": limits["d2cc_gy"],
-                        "severity": "CRITICAL",
-                        "message": f"{organ_name} D2cc = {d2cc:.1f} Gy exceeds limit {limits['d2cc_gy']} Gy",
-                    })
+                if not isinstance(oar_data,dict):
+                    warnings.append({'metric':organ_name,'severity':'WARNING','measurement_available':False,
+                        'message':f'{organ_name} dose measurements are invalid.'})
+                    continue
+                for limit_key, limit in limits.items():
+                    actual=self._organ_measurement(plan,metrics,oar_data,organ_key,limit_key)
+                    if actual is None:
+                        warnings.append({'metric':f'{organ_key}_{limit_key}','severity':'WARNING',
+                            'measurement_available':False,'message':f'{organ_name} {limit_key} was not measured.'})
+                    elif actual > limit:
+                        violations.append({'metric':f'{organ_key}_{limit_key}','value':actual,
+                            'threshold':limit,'severity':'CRITICAL','message':f'{organ_name} {limit_key} exceeds its source-backed limit.'})
 
         # Also check legacy oar_violations list
         oar_violations = metrics.get("oar_violations", [])
@@ -413,6 +439,19 @@ Capabilities:
                 "severity": "CRITICAL",
                 "message": f"OAR violation: {ov.get('organ', 'unknown')} exceeds dose limit",
             })
+        if plan.get('current_oar_constraints'):
+            from tool_factory.plan_quality.oar_constraint_checker import OARConstraintCheckerTool
+            from agent_runtime.timepoint_tools import _require_oar_measurements
+            try:
+                _require_oar_measurements(oar_metrics,tumor_type,plan['current_oar_constraints'],_prescription(plan,metrics))
+                checked=OARConstraintCheckerTool().execute(oar_metrics=oar_metrics,tumor_type=tumor_type,
+                    custom_constraints=plan['current_oar_constraints'],prescribed_dose=_prescription(plan,metrics))
+                if not checked.success or not checked.data.get('all_checked_pass'):
+                    violations.append({'metric':'current_oar_constraints','severity':'CRITICAL',
+                        'message':'Current configured OAR constraints did not pass.'})
+            except (ValueError,TypeError):
+                warnings.append({'metric':'current_oar_constraints','severity':'WARNING',
+                    'measurement_available':False,'message':'Current OAR constraints could not be assessed.'})
 
         # A warning means the plan remains conditional.  Calling that state
         # "safe" allowed downstream language models to turn an advisory dose
@@ -444,6 +483,22 @@ Capabilities:
             ),
         )
 
+    @staticmethod
+    def _organ_measurement(plan, metrics, row, organ, key):
+        aliases={'dmax_gy':('max_dose','dmax','Dmax'), 'd2cc_gy':('D2cc','d2cc'),
+            'dmean_gy':('mean_dose','dmean','Dmean')}
+        flat=_measured(metrics,f'{organ}_{key}')
+        if flat is not None:
+            return normalized_fraction(flat) if key == 'dmax_pct' else flat
+        if key == 'dmax_pct':
+            value=_measured(row,'max_dose_pct','dmax_pct')
+            if value is not None:
+                return normalized_fraction(value)
+            absolute=_measured(row,'max_dose','dmax','Dmax')
+            rx=_prescription(plan,metrics)
+            return absolute/rx if absolute is not None and rx and rx>0 else None
+        return _measured(row,*aliases.get(key,()))
+
     def _check_dose(self, plan: Dict, organ: str, tumor_type: str = "") -> ToolResult:
         """Check dose constraints for a specific organ using per-site limits."""
         metrics = plan.get("metrics", plan)
@@ -452,25 +507,29 @@ Capabilities:
             tumor_type = metrics.get("tumor_type", "") or plan.get("tumor_type", "")
 
         oar_limits = self._get_oar_limits_for_site(tumor_type)
+        organ_lower=match_constraint_name(organ,oar_limits) or organ_lower
         limits = oar_limits.get(organ_lower, {})
         if not limits:
             return ToolResult(
                 success=True,
-                data={"organ": organ, "limits": None, "message": f"No specific limits for '{organ}'"},
+                data={"organ": organ, "limits": None, "all_passed":False,"message": f"No specific limits for '{organ}'"},
                 message=f"No limits defined for {organ}"
             )
 
+        rows=metrics.get('oar_metrics') or {}
+        row=next((value for name,value in rows.items() if match_constraint_name(name,{organ_lower:limits})),{})
+        if not isinstance(row,dict):row={}
         results = {}
         for metric_key, limit_val in limits.items():
-            actual = metrics.get(f"{organ_lower}_{metric_key}")
-            if actual is not None:
-                results[metric_key] = {
+            actual = self._organ_measurement(plan,metrics,row,organ_lower,metric_key)
+            results[metric_key] = {
                     "actual": actual,
                     "limit": limit_val,
-                    "passed": actual <= limit_val,
+                    "passed": actual is not None and actual <= limit_val,
+                    "measurement_available": actual is not None,
                 }
 
-        all_passed = all(r["passed"] for r in results.values()) if results else True
+        all_passed = bool(results) and all(r["passed"] for r in results.values())
 
         return ToolResult(
             success=True,
@@ -483,8 +542,7 @@ Capabilities:
         metrics = plan.get("metrics", plan)
         if not tumor_type:
             tumor_type = metrics.get("tumor_type", "") or plan.get("tumor_type", "")
-        v100 = metrics.get("v100", 0)
-        d90 = metrics.get("d90", 0)
+        v100 = _measured(metrics,'v100','V100')
 
         site = _normalize_tumor_type(tumor_type)
         target_std = _target_standard(site)
@@ -499,17 +557,11 @@ Capabilities:
         min_d90_pct = target_std.get("d90_min_pct")
 
         v100 = normalized_fraction(v100)
-        d90_ratio = d90
-        prescribed = resolve_prescription_gy(
-            plan.get("plan_config") if isinstance(plan.get("plan_config"), dict) else {},
-            metrics,
-        )
-        if d90 is not None and d90 > 5:
-            d90_ratio = d90 / prescribed if prescribed and prescribed > 0 else None
+        d90_ratio = _d90_ratio(plan,metrics)
 
         checks = {
-            "v100": {"value": v100, "min": min_v100, "passed": min_v100 is None or (v100 is not None and v100 >= min_v100)},
-            "d90": {"value": d90_ratio, "min_pct": min_d90_pct, "passed": min_d90_pct is None or (d90_ratio is not None and d90_ratio >= min_d90_pct)},
+            "v100": {"value": v100, "min": min_v100, "passed": v100 is not None and (min_v100 is None or v100 >= min_v100)},
+            "d90": {"value": d90_ratio, "min_pct": min_d90_pct, "passed": d90_ratio is not None and (min_d90_pct is None or d90_ratio >= min_d90_pct)},
         }
 
         all_passed = all(c["passed"] for c in checks.values())
@@ -525,8 +577,8 @@ Capabilities:
         metrics = plan.get("metrics", plan)
         if not tumor_type:
             tumor_type = metrics.get("tumor_type", "") or plan.get("tumor_type", "")
-        v150 = metrics.get("v150", 0)
-        v200 = metrics.get("v200", 0)
+        v150 = _measured(metrics,'v150','V150')
+        v200 = _measured(metrics,'v200','V200')
 
         site = _normalize_tumor_type(tumor_type)
         target_std = _target_standard(site)
@@ -543,8 +595,8 @@ Capabilities:
         v200 = normalized_fraction(v200)
 
         checks = {
-            "v150": {"value": v150, "max": max_v150, "passed": max_v150 is None or (v150 is not None and v150 <= max_v150)},
-            "v200": {"value": v200, "max": max_v200, "passed": max_v200 is None or (v200 is not None and v200 <= max_v200)},
+            "v150": {"value": v150, "max": max_v150, "passed": v150 is not None and (max_v150 is None or v150 <= max_v150)},
+            "v200": {"value": v200, "max": max_v200, "passed": v200 is not None and (max_v200 is None or v200 <= max_v200)},
         }
         all_passed = all(c["passed"] for c in checks.values())
 
@@ -561,8 +613,9 @@ Capabilities:
         if data.get("safe"):
             return ToolResult(
                 success=True,
-                data={"approved": True, "message": "Plan approved for export"},
-                message="✅ Plan passed all safety checks — approved for export"
+                data={"approved": True, "message": "Dosimetric checks passed for export",
+                    "assessment_scope":"dosimetric_plan_review","clinical_use_approved":False},
+                message="Dosimetric checks passed for export. This is not clinical approval or surgical-feasibility validation."
             )
         else:
             critical = data.get("critical_violations", [])

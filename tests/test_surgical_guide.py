@@ -442,6 +442,7 @@ def test_auxiliary_holes_are_real_plate_only_alternate_paths():
     guide = generate_surgical_guide(_synthetic_agent(), {
         "geometry_resolution_mm": 0.5,
         "auxiliary_holes_enabled": True,
+        "auxiliary_density_profile": "standard_v1",
     })
     auxiliary = guide["auxiliary_holes"]
     assert auxiliary["enabled"] is True
@@ -947,14 +948,16 @@ def test_surgical_guide_defaults_to_generate_when_action_is_omitted():
 
 def test_surgical_guide_has_manual_and_chat_entry_points():
     schema = SurgicalGuideTool().input_schema
-    assert schema["properties"]["action"]["enum"] == ["generate", "status", "analyze"]
+    assert schema["properties"]["action"]["enum"] == [
+        "generate", "status", "analyze", "manifest", "estimate_placement", "validate_placement",
+    ]
     index = open("web/app/index.html", encoding="utf-8").read()
     script = open("web/app/static/js/brachybot-surgical-guide.js", encoding="utf-8").read()
     prompt = open("config/prompts/system_prompt.md", encoding="utf-8").read()
     assert "generateSurgicalGuideButton" in index
     assert "function generateSurgicalGuide" in script
     assert "ensureSurgicalGuideForCurrentPlan" in script
-    assert "autoGenerateGuide: true" in open(
+    assert "autoGenerateGuide: false" in open(
         "web/app/static/js/brachybot-chat-todo.js", encoding="utf-8"
     ).read()
     assert "surgical_guide" in prompt

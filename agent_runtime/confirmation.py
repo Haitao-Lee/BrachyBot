@@ -17,7 +17,8 @@ def workspace_fence(memory):
             str(retrieve('ct_path') or ''),
             str(planning.get('active_planning_id') or planning.get('planning_run_id') or ''),
             str(planning.get('planning_version', '')),
-            tuple(sorted((str(key), str(value)) for key, value in versions.items())))
+            tuple(sorted((str(key), str(value)) for key, value in versions.items())),
+            str(getattr(memory, '_workspace_timepoint_id', '') or ''))
 
 
 @dataclass(frozen=True)

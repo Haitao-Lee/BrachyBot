@@ -1,0 +1,222 @@
+{
+  "schema_version": 1,
+  "scope": "Synthetic isolated dependency replay only; not real-case, browser or clinical validation",
+  "dependencies": {
+    "tool_factory/seed_plan/planning_pipeline.py": "289348877fb2c3d80b3696fe6ab8f4d9fd6548884e3bfa0a7345a9634be8ed87",
+    "plans/guide_geometry.py": "fbd6d7531a1e060988e730899f530882010d9cb5fb0350fd672ea97f675de770",
+    "web/planning_runs.py": "4c331c6fe0d2fd77d619d0f70361e203b759ebc9ccc9b82c2360c92c308df54d",
+    "web/surgical_guide.py": "23df4746a3c6b74737c006a3a00854be42a03e3a7fd18da68a09e305ddf0ce62",
+    "web/guide_placement.py": "a6ebb30df0250c1ac7372f365fbfeb656b081d18b7767e73ed7bc1a5d29061d7",
+    "utils/guide_manufacturing.py": "eb0c473f6d61cc42868c303641148f63e9d0ec1d6d1870a77d5fea0f4dc42526"
+  },
+  "before_pipeline_sha256": "4999ca8ad44d549cae91e861e9090c8d2f282857e77486953b2a64e31d8e6949",
+  "direct_guide_dependency_function": {
+    "before_sha256": "66973a3ede02a03fbfea7d560a1f96b88ca94071b84a666f579cc1f1c2602466",
+    "after_sha256": "66973a3ede02a03fbfea7d560a1f96b88ca94071b84a666f579cc1f1c2602466"
+  },
+  "runner_sha256": "460a6540eb1a94774ba207a8b25687c5b56e8f621b282d02ebff5643116d4ad7",
+  "python": "3.12.2 | packaged by conda-forge | (main, Feb 16 2024, 20:50:58) [GCC 12.3.0]",
+  "pairs": [
+    {
+      "needle_count": 1,
+      "resolution_mm": 0.2,
+      "repeat": 0,
+      "geometry_and_qa_match": true,
+      "before": {
+        "dependency_sha256": "4999ca8ad44d549cae91e861e9090c8d2f282857e77486953b2a64e31d8e6949",
+        "seconds": 50.05397719005123,
+        "guide_sources": {
+          "plans/guide_geometry.py": "fbd6d7531a1e060988e730899f530882010d9cb5fb0350fd672ea97f675de770",
+          "web/planning_runs.py": "4c331c6fe0d2fd77d619d0f70361e203b759ebc9ccc9b82c2360c92c308df54d",
+          "web/surgical_guide.py": "23df4746a3c6b74737c006a3a00854be42a03e3a7fd18da68a09e305ddf0ce62",
+          "web/guide_placement.py": "a6ebb30df0250c1ac7372f365fbfeb656b081d18b7767e73ed7bc1a5d29061d7",
+          "utils/guide_manufacturing.py": "eb0c473f6d61cc42868c303641148f63e9d0ec1d6d1870a77d5fea0f4dc42526"
+        },
+        "manifest_sha256": "63f82c250cbe51472211baeccb135618a2c81933345161cf9dc34e8f6420f026",
+        "input_sha256": "1860a310fff53a14b6786bd17a73e2244eb6468c7d3757e17633ee08cdbb1363",
+        "hashes": {
+          "vertices": "12fe058f423c19e2d428e3a9af5e9feb50389e941b5392b3a83a071c44ff1b9f",
+          "faces": "468727beeab8d0ab74e0b4cd425bc168b2cd8d62817a5dd940e9542662162625",
+          "needle_paths": "7e69cd9d0f4cd2b176417179cd7f7b1a133fcf44e7c86824c1d42c4ab8585e9f",
+          "auxiliary_holes": "879402ad774cd4492bdf8b2dc7daac2eced97cca1783760d90ca3b3e43279979"
+        },
+        "qa_sha256": "89a04f2715268cbab6dfc77aa786414488f7e0dd8839e817bcb0d01775042cfd",
+        "watertight": true,
+        "selected_needle_count": 1
+      },
+      "after": {
+        "dependency_sha256": "289348877fb2c3d80b3696fe6ab8f4d9fd6548884e3bfa0a7345a9634be8ed87",
+        "seconds": 51.017125346232206,
+        "guide_sources": {
+          "plans/guide_geometry.py": "fbd6d7531a1e060988e730899f530882010d9cb5fb0350fd672ea97f675de770",
+          "web/planning_runs.py": "4c331c6fe0d2fd77d619d0f70361e203b759ebc9ccc9b82c2360c92c308df54d",
+          "web/surgical_guide.py": "23df4746a3c6b74737c006a3a00854be42a03e3a7fd18da68a09e305ddf0ce62",
+          "web/guide_placement.py": "a6ebb30df0250c1ac7372f365fbfeb656b081d18b7767e73ed7bc1a5d29061d7",
+          "utils/guide_manufacturing.py": "eb0c473f6d61cc42868c303641148f63e9d0ec1d6d1870a77d5fea0f4dc42526"
+        },
+        "manifest_sha256": "63f82c250cbe51472211baeccb135618a2c81933345161cf9dc34e8f6420f026",
+        "input_sha256": "1860a310fff53a14b6786bd17a73e2244eb6468c7d3757e17633ee08cdbb1363",
+        "hashes": {
+          "vertices": "12fe058f423c19e2d428e3a9af5e9feb50389e941b5392b3a83a071c44ff1b9f",
+          "faces": "468727beeab8d0ab74e0b4cd425bc168b2cd8d62817a5dd940e9542662162625",
+          "needle_paths": "7e69cd9d0f4cd2b176417179cd7f7b1a133fcf44e7c86824c1d42c4ab8585e9f",
+          "auxiliary_holes": "879402ad774cd4492bdf8b2dc7daac2eced97cca1783760d90ca3b3e43279979"
+        },
+        "qa_sha256": "89a04f2715268cbab6dfc77aa786414488f7e0dd8839e817bcb0d01775042cfd",
+        "watertight": true,
+        "selected_needle_count": 1
+      }
+    },
+    {
+      "needle_count": 1,
+      "resolution_mm": 0.2,
+      "repeat": 1,
+      "geometry_and_qa_match": true,
+      "before": {
+        "dependency_sha256": "4999ca8ad44d549cae91e861e9090c8d2f282857e77486953b2a64e31d8e6949",
+        "seconds": 51.035085103008896,
+        "guide_sources": {
+          "plans/guide_geometry.py": "fbd6d7531a1e060988e730899f530882010d9cb5fb0350fd672ea97f675de770",
+          "web/planning_runs.py": "4c331c6fe0d2fd77d619d0f70361e203b759ebc9ccc9b82c2360c92c308df54d",
+          "web/surgical_guide.py": "23df4746a3c6b74737c006a3a00854be42a03e3a7fd18da68a09e305ddf0ce62",
+          "web/guide_placement.py": "a6ebb30df0250c1ac7372f365fbfeb656b081d18b7767e73ed7bc1a5d29061d7",
+          "utils/guide_manufacturing.py": "eb0c473f6d61cc42868c303641148f63e9d0ec1d6d1870a77d5fea0f4dc42526"
+        },
+        "manifest_sha256": "63f82c250cbe51472211baeccb135618a2c81933345161cf9dc34e8f6420f026",
+        "input_sha256": "1860a310fff53a14b6786bd17a73e2244eb6468c7d3757e17633ee08cdbb1363",
+        "hashes": {
+          "vertices": "12fe058f423c19e2d428e3a9af5e9feb50389e941b5392b3a83a071c44ff1b9f",
+          "faces": "468727beeab8d0ab74e0b4cd425bc168b2cd8d62817a5dd940e9542662162625",
+          "needle_paths": "7e69cd9d0f4cd2b176417179cd7f7b1a133fcf44e7c86824c1d42c4ab8585e9f",
+          "auxiliary_holes": "879402ad774cd4492bdf8b2dc7daac2eced97cca1783760d90ca3b3e43279979"
+        },
+        "qa_sha256": "89a04f2715268cbab6dfc77aa786414488f7e0dd8839e817bcb0d01775042cfd",
+        "watertight": true,
+        "selected_needle_count": 1
+      },
+      "after": {
+        "dependency_sha256": "289348877fb2c3d80b3696fe6ab8f4d9fd6548884e3bfa0a7345a9634be8ed87",
+        "seconds": 52.97240247903392,
+        "guide_sources": {
+          "plans/guide_geometry.py": "fbd6d7531a1e060988e730899f530882010d9cb5fb0350fd672ea97f675de770",
+          "web/planning_runs.py": "4c331c6fe0d2fd77d619d0f70361e203b759ebc9ccc9b82c2360c92c308df54d",
+          "web/surgical_guide.py": "23df4746a3c6b74737c006a3a00854be42a03e3a7fd18da68a09e305ddf0ce62",
+          "web/guide_placement.py": "a6ebb30df0250c1ac7372f365fbfeb656b081d18b7767e73ed7bc1a5d29061d7",
+          "utils/guide_manufacturing.py": "eb0c473f6d61cc42868c303641148f63e9d0ec1d6d1870a77d5fea0f4dc42526"
+        },
+        "manifest_sha256": "63f82c250cbe51472211baeccb135618a2c81933345161cf9dc34e8f6420f026",
+        "input_sha256": "1860a310fff53a14b6786bd17a73e2244eb6468c7d3757e17633ee08cdbb1363",
+        "hashes": {
+          "vertices": "12fe058f423c19e2d428e3a9af5e9feb50389e941b5392b3a83a071c44ff1b9f",
+          "faces": "468727beeab8d0ab74e0b4cd425bc168b2cd8d62817a5dd940e9542662162625",
+          "needle_paths": "7e69cd9d0f4cd2b176417179cd7f7b1a133fcf44e7c86824c1d42c4ab8585e9f",
+          "auxiliary_holes": "879402ad774cd4492bdf8b2dc7daac2eced97cca1783760d90ca3b3e43279979"
+        },
+        "qa_sha256": "89a04f2715268cbab6dfc77aa786414488f7e0dd8839e817bcb0d01775042cfd",
+        "watertight": true,
+        "selected_needle_count": 1
+      }
+    },
+    {
+      "needle_count": 4,
+      "resolution_mm": 0.5,
+      "repeat": 0,
+      "geometry_and_qa_match": true,
+      "before": {
+        "dependency_sha256": "4999ca8ad44d549cae91e861e9090c8d2f282857e77486953b2a64e31d8e6949",
+        "seconds": 17.498940968886018,
+        "guide_sources": {
+          "plans/guide_geometry.py": "fbd6d7531a1e060988e730899f530882010d9cb5fb0350fd672ea97f675de770",
+          "web/planning_runs.py": "4c331c6fe0d2fd77d619d0f70361e203b759ebc9ccc9b82c2360c92c308df54d",
+          "web/surgical_guide.py": "23df4746a3c6b74737c006a3a00854be42a03e3a7fd18da68a09e305ddf0ce62",
+          "web/guide_placement.py": "a6ebb30df0250c1ac7372f365fbfeb656b081d18b7767e73ed7bc1a5d29061d7",
+          "utils/guide_manufacturing.py": "eb0c473f6d61cc42868c303641148f63e9d0ec1d6d1870a77d5fea0f4dc42526"
+        },
+        "manifest_sha256": "e5c03496210a7b0e49c091a22af9ba73dd0bcc821602a9f3e8d059a76d01c38f",
+        "input_sha256": "b7348b4099aaebeabacaf59fd043ddabd979b3ae3a9a025e38028af5758db86c",
+        "hashes": {
+          "vertices": "07fff66b2bf19f0de68bf462d858856d93751abe65cacd6dbd14238845f5f7e2",
+          "faces": "43d4f7a7913bcf5ab7ea743006dc3cd48b7634fbfa9a09a2013831cad019ace0",
+          "needle_paths": "68204eb1121f935e602cde1f958b902cfb2dd18d4e0fca3f581786d623d3bd65",
+          "auxiliary_holes": "c3f674c6990c4811ba030ea15fb5806b0e76277dedad33984ed1df709ca9b1bf"
+        },
+        "qa_sha256": "b95fe5e295c9cce11db6c3171d104dcbe23db47c23d53ad12f5fa4a7c09106c6",
+        "watertight": true,
+        "selected_needle_count": 4
+      },
+      "after": {
+        "dependency_sha256": "289348877fb2c3d80b3696fe6ab8f4d9fd6548884e3bfa0a7345a9634be8ed87",
+        "seconds": 17.77336225286126,
+        "guide_sources": {
+          "plans/guide_geometry.py": "fbd6d7531a1e060988e730899f530882010d9cb5fb0350fd672ea97f675de770",
+          "web/planning_runs.py": "4c331c6fe0d2fd77d619d0f70361e203b759ebc9ccc9b82c2360c92c308df54d",
+          "web/surgical_guide.py": "23df4746a3c6b74737c006a3a00854be42a03e3a7fd18da68a09e305ddf0ce62",
+          "web/guide_placement.py": "a6ebb30df0250c1ac7372f365fbfeb656b081d18b7767e73ed7bc1a5d29061d7",
+          "utils/guide_manufacturing.py": "eb0c473f6d61cc42868c303641148f63e9d0ec1d6d1870a77d5fea0f4dc42526"
+        },
+        "manifest_sha256": "e5c03496210a7b0e49c091a22af9ba73dd0bcc821602a9f3e8d059a76d01c38f",
+        "input_sha256": "b7348b4099aaebeabacaf59fd043ddabd979b3ae3a9a025e38028af5758db86c",
+        "hashes": {
+          "vertices": "07fff66b2bf19f0de68bf462d858856d93751abe65cacd6dbd14238845f5f7e2",
+          "faces": "43d4f7a7913bcf5ab7ea743006dc3cd48b7634fbfa9a09a2013831cad019ace0",
+          "needle_paths": "68204eb1121f935e602cde1f958b902cfb2dd18d4e0fca3f581786d623d3bd65",
+          "auxiliary_holes": "c3f674c6990c4811ba030ea15fb5806b0e76277dedad33984ed1df709ca9b1bf"
+        },
+        "qa_sha256": "b95fe5e295c9cce11db6c3171d104dcbe23db47c23d53ad12f5fa4a7c09106c6",
+        "watertight": true,
+        "selected_needle_count": 4
+      }
+    },
+    {
+      "needle_count": 4,
+      "resolution_mm": 0.5,
+      "repeat": 1,
+      "geometry_and_qa_match": true,
+      "before": {
+        "dependency_sha256": "4999ca8ad44d549cae91e861e9090c8d2f282857e77486953b2a64e31d8e6949",
+        "seconds": 17.58017915999517,
+        "guide_sources": {
+          "plans/guide_geometry.py": "fbd6d7531a1e060988e730899f530882010d9cb5fb0350fd672ea97f675de770",
+          "web/planning_runs.py": "4c331c6fe0d2fd77d619d0f70361e203b759ebc9ccc9b82c2360c92c308df54d",
+          "web/surgical_guide.py": "23df4746a3c6b74737c006a3a00854be42a03e3a7fd18da68a09e305ddf0ce62",
+          "web/guide_placement.py": "a6ebb30df0250c1ac7372f365fbfeb656b081d18b7767e73ed7bc1a5d29061d7",
+          "utils/guide_manufacturing.py": "eb0c473f6d61cc42868c303641148f63e9d0ec1d6d1870a77d5fea0f4dc42526"
+        },
+        "manifest_sha256": "e5c03496210a7b0e49c091a22af9ba73dd0bcc821602a9f3e8d059a76d01c38f",
+        "input_sha256": "b7348b4099aaebeabacaf59fd043ddabd979b3ae3a9a025e38028af5758db86c",
+        "hashes": {
+          "vertices": "07fff66b2bf19f0de68bf462d858856d93751abe65cacd6dbd14238845f5f7e2",
+          "faces": "43d4f7a7913bcf5ab7ea743006dc3cd48b7634fbfa9a09a2013831cad019ace0",
+          "needle_paths": "68204eb1121f935e602cde1f958b902cfb2dd18d4e0fca3f581786d623d3bd65",
+          "auxiliary_holes": "c3f674c6990c4811ba030ea15fb5806b0e76277dedad33984ed1df709ca9b1bf"
+        },
+        "qa_sha256": "b95fe5e295c9cce11db6c3171d104dcbe23db47c23d53ad12f5fa4a7c09106c6",
+        "watertight": true,
+        "selected_needle_count": 4
+      },
+      "after": {
+        "dependency_sha256": "289348877fb2c3d80b3696fe6ab8f4d9fd6548884e3bfa0a7345a9634be8ed87",
+        "seconds": 17.35400283616036,
+        "guide_sources": {
+          "plans/guide_geometry.py": "fbd6d7531a1e060988e730899f530882010d9cb5fb0350fd672ea97f675de770",
+          "web/planning_runs.py": "4c331c6fe0d2fd77d619d0f70361e203b759ebc9ccc9b82c2360c92c308df54d",
+          "web/surgical_guide.py": "23df4746a3c6b74737c006a3a00854be42a03e3a7fd18da68a09e305ddf0ce62",
+          "web/guide_placement.py": "a6ebb30df0250c1ac7372f365fbfeb656b081d18b7767e73ed7bc1a5d29061d7",
+          "utils/guide_manufacturing.py": "eb0c473f6d61cc42868c303641148f63e9d0ec1d6d1870a77d5fea0f4dc42526"
+        },
+        "manifest_sha256": "e5c03496210a7b0e49c091a22af9ba73dd0bcc821602a9f3e8d059a76d01c38f",
+        "input_sha256": "b7348b4099aaebeabacaf59fd043ddabd979b3ae3a9a025e38028af5758db86c",
+        "hashes": {
+          "vertices": "07fff66b2bf19f0de68bf462d858856d93751abe65cacd6dbd14238845f5f7e2",
+          "faces": "43d4f7a7913bcf5ab7ea743006dc3cd48b7634fbfa9a09a2013831cad019ace0",
+          "needle_paths": "68204eb1121f935e602cde1f958b902cfb2dd18d4e0fca3f581786d623d3bd65",
+          "auxiliary_holes": "c3f674c6990c4811ba030ea15fb5806b0e76277dedad33984ed1df709ca9b1bf"
+        },
+        "qa_sha256": "b95fe5e295c9cce11db6c3171d104dcbe23db47c23d53ad12f5fa4a7c09106c6",
+        "watertight": true,
+        "selected_needle_count": 4
+      }
+    }
+  ],
+  "all_pairs_match": true
+}

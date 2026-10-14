@@ -1480,7 +1480,7 @@ def test_preoperative_pipeline_forwards_declared_parameters(monkeypatch, tmp_pat
                     success=True,
                     metadata={
                         "optimal_plan": [],
-                        "dose_distribution": np.zeros((2, 2, 2), dtype=np.float32),
+                        "dose_distribution": np.full((2, 2, 2), .5, dtype=np.float32),
                         "total_seeds": 0,
                     },
                     error=None,
@@ -1535,6 +1535,15 @@ def test_preoperative_pipeline_forwards_declared_parameters(monkeypatch, tmp_pat
     assert seed_kwargs["lower_bound"] == pytest.approx(1.2)
     assert evaluation_kwargs["prescribed_dose"] == pytest.approx(150.0)
     assert evaluation_kwargs["tumor_type"] == "nnunet_pancreatic"
+    # Explicit nonzero fixture catches both unscaled Gy and double calibration.
+    from utils.dose_units import workspace_physical_dose, workspace_normalized_dose
+    expected_physical = .5 * workflows.DOSE_MODEL_SCALE_GY
+    assert agent.memory.retrieve('dose_unit_schema_version') == 2
+    assert agent.memory.retrieve('dose_unit_metadata')['dose_distribution_gy'] == 'physical_gy'
+    assert np.allclose(agent.memory.retrieve('dose_distribution_gy'), expected_physical)
+    assert np.allclose(evaluation_kwargs['dose_array'], expected_physical)
+    assert np.allclose(workspace_physical_dose(agent.memory.retrieve), expected_physical)
+    assert np.allclose(workspace_normalized_dose(agent.memory.retrieve), .5)
 
 
 def test_preoperative_api_requires_tumor_type_when_no_ctv_label_is_supplied():
@@ -1858,7 +1867,7 @@ def test_geometry_surface_points_exclude_target_interior():
     assert len(point_set) == 26
 
 
-def test_intraoperative_replanning_combines_delivered_and_supplemental_ai_dose(
+def test_intraoperative_replanning_uses_captured_baseline_main_pipeline(
     tmp_path, monkeypatch
 ):
     from types import SimpleNamespace
@@ -1932,20 +1941,31 @@ def test_intraoperative_replanning_combines_delivered_and_supplemental_ai_dose(
         "iter_rate": 1,
     }
 
-    monkeypatch.setattr(model_support, "resolve_dose_model", lambda *_args, **_kwargs: (object(), None))
-    monkeypatch.setattr(
-        model_support,
-        "compute_world_seed_dose_grid",
-        lambda seeds, *_args, **_kwargs: (
-            np.full((4, 4, 4), 0.25, dtype=np.float32),
-            [{"id": seeds[0]["id"], "position": seeds[0]["position"], "direction": seeds[0]["direction"]}],
-        ),
-    )
-    monkeypatch.setattr(
-        planning_pipeline,
-        "_resolve_ref_direc",
-        lambda *_args, **_kwargs: np.array([0.0, 1.0, 0.0]),
-    )
+    from plans.continuation import ContinuationBaseline, FixedSeed, grid_signature, array_sha256
+    from tool_factory.seed_plan.continuation_support import baseline_record
+    from tool_factory import ToolResult
+    from plans.dose_pre.model_loader import DOSE_MODEL_SCALE_GY
+    fixed_dose = np.full((4, 4, 4), .25)
+    baseline = ContinuationBaseline.create(fixed_dose, image,
+        baseline_unit="normalized_model", baseline_grid_signature=grid_signature(image),
+        baseline_dose_sha256=array_sha256(fixed_dose), complete_target_mask=np.ones((4, 4, 4), bool),
+        dose_scale_gy=DOSE_MODEL_SCALE_GY, dose_contract_id="synthetic-reviewed-source-v1",
+        needle_radius_mm=.2, clearance_mm=0.,
+        fixed_seeds=[FixedSeed("actual-implant-1", (1, 1, 1), (0, 0, 1), 1., .2)])
+    workflow.memory.store("continuation_baseline_record", baseline_record(baseline, image))
+    called = []
+    def main_pipeline(_tool, **kwargs):
+        assert kwargs["_agent"] is workflow
+        assert kwargs["step"] == "full"
+        assert kwargs["_continuation_baseline"].fixed_seeds[0].physical_seed_id == "actual-implant-1"
+        called.append(kwargs)
+        workflow.memory.store("dose_distribution", np.full((4, 4, 4), .75))
+        workflow.memory.store("dose_distribution_gy", np.full((4, 4, 4), .75))
+        workflow.memory.store("dose_distribution_physical_gy", np.full((4, 4, 4), .75 * DOSE_MODEL_SCALE_GY))
+        workflow.memory.store("total_seeds", 1)
+        workflow.memory.store("seed_plan", supplemental_plan)
+        return ToolResult(success=True, metadata={"planning_id": "synthetic-continuation"})
+    monkeypatch.setattr(planning_pipeline.PlanningPipelineTool, "_execute", main_pipeline)
 
     result = workflow._trigger_replanning(
         image,
@@ -1958,5 +1978,13 @@ def test_intraoperative_replanning_combines_delivered_and_supplemental_ai_dose(
     assert result["implanted_seed_count"] == 1
     assert result["supplemental_seed_count"] == 1
     assert result["dose_engine"] == "dose_unet_spacing1mm"
+    assert len(called) == 1
     assert np.allclose(workflow.memory.values["dose_distribution"], 0.75)
-    assert len(workflow.memory.values["seed_plan"]) == 2
+    from plans.dose_pre.model_loader import DOSE_MODEL_SCALE_GY
+    assert np.allclose(workflow.memory.values["dose_distribution_gy"], 0.75)
+    from utils.dose_units import workspace_physical_dose
+    assert np.allclose(
+        workspace_physical_dose(workflow.memory.retrieve),
+        workflow.memory.values["dose_distribution_physical_gy"],
+    )
+    assert len(workflow.memory.values["seed_plan"]) == 1  # implants are not editable plan entries

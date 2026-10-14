@@ -55,7 +55,8 @@ class Round9RegressionTests(unittest.TestCase):
         core = self.read("web/app/static/js/brachybot-chat-core.js")
         self.assertIn("window.renderQueuedChatTurns = _renderQueuedChatTurns", source)
         self.assertIn("const dock = document.getElementById('chatQueueDock')", source)
-        self.assertIn("_queueChatTurn(activeSessionId, queuedText)", source)
+        self.assertIn("_queueChatTurn(activeSessionId, queuedText, submittedTarget, opts)", source)
+        self.assertIn("timepointScope: next.timepointScope", source)
         self.assertIn("queuedTurn: true", source)
         self.assertIn("turnCompleted || turnFailed || turnCancelled", source)
         # A queued prompt must not be inserted into the durable transcript or

@@ -29,9 +29,10 @@ from plans.dose_pre.model_loader import (
 from memory.language import detect as detect_language, normalize_language
 from web.auth import current_user
 from web.chat_tasks import ChatTask, ChatTaskCancelled, ChatTaskError, ChatTaskManager
-from web.workspace_store import WorkspaceError, WorkspaceQuotaExceeded, WorkspaceNotFound
+from web.timepoint_http import scoped_callable
+from web.workspace_store import WorkspaceError, WorkspaceQuotaExceeded, WorkspaceNotFound, WorkspaceArchived
 from web.uploaded_mask_service import UploadedMaskError, stage_uploaded_ctv_mask
-from web.input_workflow import reset_current_plan, validated_config, workflow_state
+from web.input_workflow import reset_current_plan, validated_config, workflow_state, resolve_owned_reference_path
 from web.viewer_cache import (
     load_viewer_cache,
     schedule_viewer_cache_write,
@@ -474,6 +475,15 @@ def _dose_display_context(agent) -> Dict[str, Any]:
     ).strip().lower()
     geometry_only = bool(memory.retrieve("manual_geometry_only"))
     baseline_gy = memory.retrieve("algorithm_plan_dose_distribution_gy")
+    # New producers name physical Gy honestly. Legacy contour/surface readers
+    # still consume model units, so convert at this explicit declaration boundary
+    # rather than applying the calibration again to a physical array.
+    declarations = memory.retrieve("dose_unit_metadata") or memory.retrieve("dose_unit_provenance") or {}
+    scale = _saved_dose_scale_gy(agent, current_metrics)
+    if current_gy is not None and str(declarations.get("dose_distribution_gy", memory.retrieve("dose_units") or "")).lower() in {"gy", "physical_gy"}:
+        current_gy = np.asarray(current_gy, dtype=np.float32) / scale
+    if baseline_gy is not None and str(declarations.get("algorithm_plan_dose_distribution_gy", "")).lower() in {"gy", "physical_gy"}:
+        baseline_gy = np.asarray(baseline_gy, dtype=np.float32) / scale
     baseline_raw = memory.retrieve("algorithm_plan_dose_distribution")
     baseline_allowed = geometry_only or dose_status in {"stale", "expired"}
     current_array = current_gy if current_gy is not None else current_raw
@@ -1055,7 +1065,7 @@ def _persist_closed_ui_bridge(session_id: str, bridge: dict) -> None:
             if owner is None:
                 return
             store, user_id, selected = owner
-            key = (str(user_id), str(selected))
+            key = (str(user_id), str(selected), getattr(getattr(store, "binding", None), "timepoint_id", None))
             timer = _UI_BRIDGE_CHECKPOINT_TIMERS.pop(key, None)
             if timer:
                 timer.cancel()
@@ -1900,7 +1910,8 @@ def register_planning_routes(
         if not store or not user or not session_id:
             raise WorkspaceError("Authentication required")
         entry = store.get_session(user["id"], session_id)
-        return store, user, entry.id
+        from web.timepoint_http import ScopedWorkspaceStore
+        return (store.for_binding() if isinstance(store, ScopedWorkspaceStore) else store), user, entry.id
 
     def workspace_data_pending(agent):
         """Return a fast retry response while cold-case arrays are decoding."""
@@ -2029,7 +2040,8 @@ def register_planning_routes(
         """Return the authenticated download route for an active-case artifact."""
         _, _, session_id = request_case_context()
         safe_path = "/".join(part for part in str(relative_path).replace("\\", "/").split("/") if part and part not in {".", ".."})
-        return f"/api/sessions/{session_id}/artifacts/{safe_path}"
+        from web.timepoint_http import scoped_download_url
+        return scoped_download_url(f"/api/sessions/{session_id}/artifacts/{safe_path}")
 
     def checkpoint_operation(agent: Any, state: str, message: str, *, checkpoint: Optional[Dict[str, Any]] = None) -> None:
         """Record a recoverable long-operation state without blocking planning."""
@@ -2204,6 +2216,7 @@ def register_planning_routes(
                     "id": str(message_id or uuid4().hex),
                     "request_id": str(request_id or task.request_id),
                     "message_kind": message_kind,
+                    "timepoint_id": getattr(task.timepoint_scope, "timepoint_id", None),
                     "turn_sequence": sequence,
                 }
                 response_language = str(getattr(task, "response_language", "") or "")[:8]
@@ -2712,7 +2725,7 @@ def register_planning_routes(
                         )
 
             checkpoint_thread = threading.Thread(
-                target=persist_agent_checkpoint,
+                target=scoped_callable(persist_agent_checkpoint),
                 name=f"brachy-checkpoint-{task.task_id[:8]}",
                 daemon=True,
             )
@@ -3173,7 +3186,9 @@ def register_planning_routes(
             _, user, session_id = request_case_context()
         except WorkspaceError:
             return None
-        return f"{user['id']}:{session_id}"
+        from web.timepoint_http import current_binding
+        binding = current_binding()
+        return f"{user['id']}:{session_id}" + (f":{binding.timepoint_id}" if binding else "")
 
     def checkpoint_ui_bridge(session_id: str, reason: str) -> None:
         """Persist UI-controller events that do not live in AgentMemory.
@@ -3205,9 +3220,10 @@ def register_planning_routes(
                 "state_seq": bucket.get("state_seq"),
                 "plan_revision": bucket.get("plan_revision"),
             }
-        key = (str(user["id"]), str(selected))
+        key = (str(user["id"]), str(selected), getattr(getattr(store, "binding", None), "timepoint_id", None))
         with _UI_BRIDGE_CHECKPOINT_LOCK:
-            _UI_BRIDGE_CHECKPOINT_OWNERS[str(session_id)] = (store, user["id"], selected)
+            from web.timepoint_http import bucket_key
+            _UI_BRIDGE_CHECKPOINT_OWNERS[bucket_key(session_id)] = (store, user["id"], selected)
             _UI_BRIDGE_CHECKPOINT_PENDING[key] = (
                 store,
                 user["id"],
@@ -3222,6 +3238,8 @@ def register_planning_routes(
                 timer.start()
 
     def record_read_time_monitor_expiry(session_id: str, bucket: dict) -> None:
+        if isinstance(session_id, tuple):
+            session_id = session_id[1]
         training = bucket.get("training") or {}
         run_id = training.get("last_run_id")
         _server_support._append_ui_event(session_id, {
@@ -3832,7 +3850,7 @@ def register_planning_routes(
 
         data = request.get_json() or {}
         kind = data.get("kind", "ctv")
-        image_path = data.get("image_path", "")
+        image_path = resolve_owned_reference_path(agent,data.get("image_path", ""),data.get('planning_reference_image_id'))
         tumor_type = data.get("tumor_type")
         label_path = data.get("label_path")
         target_value = data.get("target_value", 1)
@@ -4280,12 +4298,18 @@ def register_planning_routes(
             return jsonify({"error": "Agent not available"}), 500
 
         data = request.get_json() or {}
-        ct_image_path = data.get("ct_image_path")
+        ct_image_path = resolve_owned_reference_path(agent,data.get("ct_image_path",data.get('ct_path')),data.get('planning_reference_image_id'))
         step = data.get("step", "full")
 
         if not ct_image_path:
             return jsonify({"error": "ct_image_path is required"}), 400
-        if not _validate_path(ct_image_path, purpose="read") or not owned_case_path(ct_image_path):
+        readable=_validate_path(ct_image_path, purpose="read")
+        owned=owned_case_path(ct_image_path)
+        if not readable or not owned:
+            from web.timepoint_http import current_binding
+            logger.warning('Planning image access rejected: readable=%s owned=%s binding=%s typed_context=%s absolute=%s',
+                readable,owned,current_binding() is not None,getattr(agent,'_workspace_timepoint_context',None) is not None,
+                os.path.isabs(ct_image_path))
             return jsonify({"error": "Invalid ct_image_path"}), 400
 
         try:
@@ -4322,7 +4346,7 @@ def register_planning_routes(
             planning_state = planning_state if isinstance(planning_state, dict) else {}
             live_ref = resolve_reference_direction_input(
                 planning_state,
-                {**config, **_default_cfg},
+                {**_default_cfg, **config},
                 default="auto",
             )
 
@@ -4359,12 +4383,8 @@ def register_planning_routes(
                 # Sanitize metadata for JSON serialization (strip non-scalar fields
                 # like trajectory lists / numpy arrays — callers can read them via
                 # /api/planning/show_step).
-                import numpy as _np
-                _meta = {}
-                for _k, _v in (result.metadata or {}).items():
-                    if isinstance(_v, (_np.ndarray, list, tuple)):
-                        continue  # skip heavy / non-serializable
-                    _meta[_k] = _v
+                from web.planning_response import planning_response_metadata
+                _meta = planning_response_metadata(result.metadata or {})
                 # Return a small, durable UI projection as part of every
                 # manual-step response.  The large arrays stay in the
                 # workspace sidecars, but the client can immediately rebuild
@@ -4404,18 +4424,30 @@ def register_planning_routes(
                     "success": True,
                     "step": step,
                     "message": result.message,
-                    "metadata": _meta,
+                    "metadata": planning_response_metadata(_meta),
                     "visualization": step_visualization,
                     "manual_step_outputs": step_outputs,
                     "workflow_state": workflow_state(agent.memory),
                 })
             else:
+                metadata = dict(result.metadata or {})
+                phase = str(metadata.get('phase') or '')
+                if metadata.get('requires_human_review') is True or phase.startswith('awaiting_'):
+                    checkpoint_operation(agent, 'ready', 'Planning paused for operator review',
+                        checkpoint={'kind':'planning','step':step,'phase':phase,'requires_human_review':True})
+                    return jsonify(success=False, pending_review=True, requires_human_review=True,
+                        planning_completed=False, error=result.error, message=result.message or result.error,
+                        phase=phase, code=metadata.get('code'), metadata=metadata), 202
                 checkpoint_operation(
                     agent,
                     "interrupted",
                     f"Planning step '{step}' did not complete",
                     checkpoint={"kind": "planning", "step": step, "error": str(result.error or "unknown error")},
                 )
+                if metadata.get('code') == 'continuation_source_geometry_mismatch':
+                    from web.timepoint_messages import request_timepoint_language, timepoint_message
+                    packet = timepoint_message(metadata['code'], request_timepoint_language())
+                    return jsonify(success=False, error=packet['message'], **packet), 400
                 return jsonify({"success": False, "error": result.error}), 400
 
         except Exception as e:
@@ -4425,7 +4457,7 @@ def register_planning_routes(
                 f"Planning step '{step}' failed",
                 checkpoint={"kind": "planning", "step": step, "error": str(e)},
             )
-            logger.error(f"Run planning step failed: {e}")
+            logger.exception("Run planning step failed: %s", e)
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/planning/config", methods=["GET"])
@@ -5130,15 +5162,34 @@ def register_planning_routes(
     @require_api_key
     @rate_limit
     def api_config_get():
-        """Get default hyperparameters from config file."""
+        """Get defaults and the captured timepoint's current Input settings."""
         try:
             import json
             config_path = os.path.join(PROJECT_ROOT, "config", "default_params.json")
             with open(config_path, 'r', encoding="utf-8") as f:
                 defaults = json.load(f)
+            from web.input_workflow import planning_config_values
+            binding = getattr(g, 'brachybot_timepoint_binding', None)
+            if binding is not None:
+                # Input settings are durable metadata. Constructing a scoped
+                # clinical Agent here tokenizes/decodes every old plan and can
+                # stall the entire four-panel mount for a large cooled case.
+                store = current_app.extensions['brachybot_workspace_store']
+                store = getattr(store, 'raw', store)
+                snapshot = store.load_timepoint_snapshot(binding.owner_id, binding.session_id, binding.timepoint_id)
+                saved = snapshot.get('agent') or {}
+                # Defaults have a separate response field. Returning them as
+                # owned values makes a GET/POST round trip invent clinical
+                # changes and disagree with the persisted execution config.
+                values = {**planning_config_values(saved.get('config') or {}),
+                    **planning_config_values((saved.get('planning_results') or {}).get('timepoint_planning_config') or {})}
+            else:
+                agent = get_agent(_lightweight=True)
+                values = planning_config_values(getattr(agent, 'config', {}))
             return jsonify({
                 "success": True,
                 "defaults": defaults,
+                "config": values,
                 # Planning defaults are physical Gy. This separate scale
                 # describes the raw DoseUNet output calibration.
                 "dose_scale_gy": DOSE_MODEL_SCALE_GY,
@@ -5172,37 +5223,36 @@ def register_planning_routes(
     @serialize_input_mutation
     def api_config():
         """Update agent configuration (hyperparameters)."""
-        agent = get_agent()
+        agent = get_agent(_lightweight=True)
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
 
-        data = request.get_json() or {}
+        data = request.get_json(silent=True)
 
         try:
             # Store all parameter groups
-            param_keys = [
-                "seed_info", "radiation_array_params", "reference_direc",
-                "ref_direc_auto", "reference_direc_mode",
-                "tumor_type",
-                "dose_value_unit",
-                "in_lowest_energy", "out_highest_energy",
-                "in_lowest_dose_gy", "out_highest_dose_gy", "DVH_rate",
-                "max_iter", "rf_params", "distance_filter",
-                "direc_resolution", "dl_params", "iter_rate", "replan_rate",
-                "mode",
-            ]
+            from web.input_workflow import PLANNING_CONFIG_KEYS, planning_config_values
             if not isinstance(data, dict):
                 raise ValueError("Configuration must be a JSON object")
-            patch = {key: data[key] for key in param_keys if key in data}
+            patch = {key: data[key] for key in PLANNING_CONFIG_KEYS if key in data}
             with agent.memory._lock:
                 candidate = validated_config(getattr(agent, 'config', {}), patch)
                 candidate['dose_scale_gy'] = DOSE_MODEL_SCALE_GY
+                from web.planning_config import input_config_invalidation
+                updates = input_config_invalidation(agent.memory.retrieve,
+                    getattr(agent, 'config', {}), candidate)
                 agent.config = candidate
+                for key, value in updates.items():
+                    agent.memory.store(key, value)
+                agent.memory.store('timepoint_planning_config', planning_config_values(candidate))
             agent.memory._notify_persistence('planning.config.updated')
 
-            return jsonify({"success": True, "config": agent.config})
+            return jsonify({"success": True, "config": planning_config_values(agent.config)})
         except (ValueError, TypeError) as e:
-            return jsonify({"error": str(e)}), 400
+            from web.timepoint_messages import request_timepoint_language, timepoint_message
+            logger.warning('Invalid owned planning config: %s', e)
+            packet = timepoint_message('planning_config_invalid', request_timepoint_language())
+            return jsonify(success=False, error=packet['message'], **packet), 400
         except Exception as e:
             logger.error(f"Config update failed: {e}")
             return jsonify({"error": str(e)}), 500
@@ -7355,14 +7405,22 @@ def register_planning_routes(
     @app.route("/api/plan/preoperative", methods=["POST"])
     @require_api_key
     @rate_limit
+    @serialize_input_mutation
     def api_preoperative_plan():
         """Run pre-operative planning."""
         agent = get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
 
+        context = getattr(agent, '_workspace_timepoint_context', None)
+        if context is not None and context.target.stage != 'preoperative':
+            from web.timepoints import TimepointError
+            error = TimepointError('Preoperative planning requires a preoperative timepoint')
+            error.code = 'preoperative_timepoint_required'
+            raise error
+
         data = request.get_json() or {}
-        ct_path = data.get("ct_path")
+        ct_path = resolve_owned_reference_path(agent,data.get("ct_path"),data.get('planning_reference_image_id'))
         ctv_path = data.get("ctv_path")
         oar_path = data.get("oar_path")
         mode = data.get("mode", "rule_based")
@@ -7370,11 +7428,11 @@ def register_planning_routes(
         if not ct_path:
             return jsonify({"error": "ct_path is required"}), 400
 
-        if not _validate_path(ct_path) or not owned_case_path(ct_path):
+        if not _validate_path(ct_path, purpose="read") or not owned_case_path(ct_path):
             return jsonify({"error": "Invalid ct_path"}), 400
-        if ctv_path and (not _validate_path(ctv_path) or not owned_case_path(ctv_path)):
+        if ctv_path and (not _validate_path(ctv_path, purpose="read") or not owned_case_path(ctv_path)):
             return jsonify({"error": "Invalid ctv_path"}), 400
-        if oar_path and (not _validate_path(oar_path) or not owned_case_path(oar_path)):
+        if oar_path and (not _validate_path(oar_path, purpose="read") or not owned_case_path(oar_path)):
             return jsonify({"error": "Invalid oar_path"}), 400
         if mode not in ("rule_based", "rl", "auto"):
             return jsonify({"error": "Invalid mode. Use 'rule_based', 'rl', or 'auto'"}), 400
@@ -7423,11 +7481,12 @@ def register_planning_routes(
                     rf_params=rf_params,
                     output_dir=str(output_dir),
                 )
+            completed = result.get('success') is True
             checkpoint_operation(
                 agent,
-                "ready",
-                "Pre-operative planning completed",
-                checkpoint={"kind": "preoperative_plan", "mode": plan_mode, "completed": True},
+                "ready" if completed else "interrupted",
+                "Pre-operative planning completed" if completed else "Pre-operative planning did not complete",
+                checkpoint={"kind": "preoperative_plan", "mode": plan_mode, "completed": completed},
             )
             return jsonify(result)
         except WorkspaceQuotaExceeded as exc:
@@ -7459,6 +7518,19 @@ def register_planning_routes(
         agent = get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
+
+        context=getattr(agent,'_workspace_timepoint_context',None)
+        if context is not None:
+            if context.target.stage != 'intraoperative':
+                from web.timepoints import TimepointError
+                error=TimepointError('Select the linked current intraoperative timepoint')
+                error.code='intraoperative_timepoint_required'
+                raise error
+            # Authentication, CSRF, rate limiting and the scoped mutation lock
+            # were enforced by this route. Reuse the *same* planning handler,
+            # without reacquiring middleware or retaining Session-wide matching.
+            from inspect import unwrap
+            return unwrap(api_planning_run_step)()
 
         data = request.get_json() or {}
         ct_path = data.get("ct_path")
@@ -7910,14 +7982,17 @@ def register_planning_routes(
             _store, _owner, session_id = request_case_context()
         except WorkspaceError:
             return None, None, None, None
-        agent = None
-        if callable(get_cached_agent):
-            agent = get_cached_agent(session_id)
-        if agent is None:
-            try:
-                agent = get_agent(session_id)
-            except TypeError:
-                agent = get_agent()
+        # Context accounting/compression belongs to shared Session dialogue,
+        # not to one clinical timepoint. Polling the indicator must not create
+        # a full CT/DVH/history runtime or queue behind its resource loads.
+        from web.timepoint_http import bound_request
+        with bound_request(None):
+            agent = get_cached_agent(session_id) if callable(get_cached_agent) else None
+            if agent is None:
+                try:
+                    agent = get_agent(session_id, _lightweight=True)
+                except TypeError:
+                    agent = get_agent()
         return agent, session_id, _store, _owner
 
     @app.route("/api/chat/context", methods=["GET"])
@@ -8003,7 +8078,10 @@ def register_planning_routes(
         data = request.get_json() or {}
         message = str(data.get("message") or "")
         ui_state = data.get("ui_state", {})
-        stream = data.get("stream", True)  # Default to streaming
+        # Both transports use the same detached, serialized task. JSON callers
+        # join its journal; they must not reach the old root-Agent executor.
+        wants_stream = data.get("stream", True) is not False
+        stream = True
         image_path = data.get("image_path", None)  # Optional image path
         clear_context = data.get("clear_context", False)  # Optional: clear conversation history
         ui_language = normalize_language(data.get("ui_language"), default="en") or "en"
@@ -8089,6 +8167,42 @@ def register_planning_routes(
             if agent is None:
                 return jsonify({"error": "Agent not available"}), 500
 
+        # Capture the mounted default before hydration/queueing. Tool-specific
+        # explicit targets can override it; navigation cannot. Legacy clients
+        # omit a timepoint and retain the single-workspace default.
+        from web.request_identity import explicit_timepoint_id
+        from web.timepoint_chat import capture_chat_scope, ChatTimepointScope
+        from web.timepoint_messages import timepoint_error
+        try:
+            if not stream:
+                store, owner, session_id = request_case_context()
+            parent_scope = None
+            if internal_followup and parent_request_id:
+                parent_scope = chat_tasks.request_scope(owner["id"], session_id, parent_request_id)
+                if parent_scope is None:
+                    saved = store.load_snapshot(owner["id"], session_id)
+                    parent = next((row for row in (saved.get("chat") or {}).get("messages", [])
+                        if isinstance(row, dict) and row.get("request_id") == parent_request_id
+                        and row.get("timepoint_id")), None)
+                    if parent is not None:
+                        parent_scope = ChatTimepointScope(owner["id"], session_id, parent["timepoint_id"], ui_language)
+            timepoint_scope = capture_chat_scope(store, owner["id"], session_id,
+                explicit_timepoint_id(), ui_language=ui_language, parent_scope=parent_scope)
+        except WorkspaceArchived as exc:
+            # Keep the legacy task/SSE protocol for an archived default-only
+            # request. The supplier rejects it immediately with session_archived;
+            # no clinical state is loaded or modified by this compatibility path.
+            from web.timepoints import default_timepoint_id
+            expected_default = default_timepoint_id(session_id)
+            if stream and explicit_timepoint_id() in (None, expected_default):
+                timepoint_scope = ChatTimepointScope(owner["id"], session_id, expected_default, ui_language, True)
+            else:
+                packet, status = timepoint_error(exc, ui_language)
+                return jsonify(packet), status
+        except (WorkspaceError, ValueError, TypeError) as exc:
+            packet, status = timepoint_error(exc, ui_language)
+            return jsonify(packet), status
+
         # New clients send a typed visual envelope instead of serializing the
         # parent request and screenshot URLs into the chat message.  Validate
         # it only after the authenticated case Session is known, so a child
@@ -8148,6 +8262,28 @@ def register_planning_routes(
             full_message = build_visual_evidence_prompt(visual_context, response_language)
         elif image_path:
             full_message = f"{message}\n\n[Uploaded image path: {image_path}]"
+
+        editor_token = request.headers.get("X-BrachyBot-Editor", "")
+        human_confirmation = None
+        receipt_id = data.get("target_confirmation_receipt_id")
+        if receipt_id is not None:
+            try:
+                if internal_followup or data.get("target_confirmation_confirmed") is not True:
+                    from web.timepoints import TimepointConflict
+                    raise TimepointConflict("Target confirmation requires an explicit human response")
+                store.assert_editable(owner["id"], session_id, editor_token)
+                if agent is None:
+                    # Confirmation is a small control-plane operation, not an
+                    # excuse to hydrate all clinical arrays on the HTTP thread.
+                    from web.timepoint_http import bound_request
+                    with bound_request(None):
+                        agent = get_agent_for_owner(owner, session_id, _lightweight=True)
+                from agent_runtime.timepoint_targets import confirm_pending_timepoint_call
+                human_confirmation = confirm_pending_timepoint_call(agent, receipt_id,
+                    owner_id=owner["id"], session_id=session_id, request_id=request_id)
+            except (WorkspaceError, ValueError, TypeError) as exc:
+                packet, status = timepoint_error(exc, ui_language)
+                return jsonify(packet), status
 
         if stream:
             def agent_supplier(progress=None):
@@ -8326,6 +8462,9 @@ def register_planning_routes(
                     internal_followup=internal_followup,
                     response_language=response_language,
                     ui_language=ui_language,
+                    timepoint_scope=timepoint_scope,
+                    editor_token=editor_token,
+                    human_timepoint_confirmation=human_confirmation,
                 )
                 # Set before start_gate is released. The durable finalizer
                 # must not persist ungrounded model prose and resurrect it
@@ -8415,6 +8554,7 @@ def register_planning_routes(
                             "id": task.user_message_id,
                             "request_id": task.request_id,
                             "message_kind": "user_message",
+                            "timepoint_id": timepoint_scope.timepoint_id,
                             "turn_sequence": 0,
                             "response_language": str(getattr(task, "response_language", "") or "")[:8],
                             "trace_language": str(getattr(task, "response_language", "") or "")[:8],
@@ -8468,7 +8608,7 @@ def register_planning_routes(
 
             try:
                 threading.Thread(
-                    target=persist_chat_task_start,
+                    target=scoped_callable(persist_chat_task_start),
                     name=f"brachy-chat-start-{task.task_id[:12]}",
                     daemon=True,
                 ).start()
@@ -8497,6 +8637,27 @@ def register_planning_routes(
                     logger.info("Chat SSE detached for task %s; task continues", task_to_stream.task_id)
                     raise
 
+            if not wants_stream:
+                # Drain exactly the same durable task stream, retaining only
+                # the aggregate response (never an unbounded duplicate log).
+                from web.chat_tasks import _event_parts
+                packet, failure = {}, {}
+                for event in task.iter_events():
+                    name, value = _event_parts(event)
+                    if name == "response":
+                        packet = value
+                    elif name == "error":
+                        failure = value
+                if task.status != "completed":
+                    return jsonify(success=False, error=failure.get("message") or task.error,
+                        code=failure.get("code", "chat_task_failed"), task=task.public_state(),
+                        session_id=session_id, timepoint_id=timepoint_scope.timepoint_id), 409 if task.status == "cancelled" else 500
+                return jsonify({**packet, "response": task.response, "steps": task.steps,
+                    "llm_meta": packet.get("llm_meta", {}), "session_id": session_id,
+                    "timepoint_id": timepoint_scope.timepoint_id, "task": task.public_state(),
+                    "brain_available": bool(getattr(task.agent, "brain_available", False)),
+                    "brain_state": getattr(task.agent, "brain_state", None)})
+
             resp = Response(
                 stream_with_context(generate_task(task)),
                 mimetype='text/event-stream',
@@ -8509,89 +8670,6 @@ def register_planning_routes(
             )
             resp.direct_passthrough = True
             return resp
-        else:
-            try:
-                # Legacy non-streaming callers have no task-owned progress or
-                # cancellation observer. Keep their conservative ready barrier;
-                # do not let this transport run a mutation on a cold shell.
-                if not getattr(agent, "_workspace_data_ready", True):
-                    await_chat_case_resources(agent, lambda phase: True,
-                        session_id=str(getattr(agent.memory, "session_id", "") or ""))
-                operation_message = (
-                    "聊天回复进行中"
-                    if response_language == "zh"
-                    else "Chat response is in progress"
-                )
-                checkpoint_operation(
-                    agent,
-                    "running",
-                    operation_message,
-                    checkpoint={"kind": "chat", "user_message": message[:500]},
-                )
-                agent.memory.set_ui_state(ui_state)
-                previous_turn_context = getattr(agent, "_active_turn_context", None)
-                agent._active_turn_context = {
-                    "internal_followup": internal_followup,
-                    "request_id": request_id,
-                    "parent_request_id": parent_request_id,
-                    "parent_user_message_id": parent_user_message_id,
-                    "parent_assistant_message_id": parent_assistant_message_id,
-                    "response_language": response_language,
-                    "ui_language": ui_language,
-                }
-                try:
-                    result = agent.chat_with_trace(full_message)
-                finally:
-                    if previous_turn_context is None:
-                        try:
-                            delattr(agent, "_active_turn_context")
-                        except AttributeError:
-                            pass
-                    else:
-                        agent._active_turn_context = previous_turn_context
-
-                # Sanitize result to make it JSON-serializable (remove numpy arrays, etc.)
-                def _sanitize_for_json(obj):
-                    """Recursively sanitize objects to make them JSON-serializable."""
-                    import numpy as np
-                    if isinstance(obj, dict):
-                        return {k: _sanitize_for_json(v) for k, v in obj.items()}
-                    elif isinstance(obj, (list, tuple)):
-                        return [_sanitize_for_json(item) for item in obj]
-                    elif isinstance(obj, np.ndarray):
-                        return f"<ndarray shape={obj.shape} dtype={obj.dtype}>"
-                    elif isinstance(obj, (np.integer, np.int64)):
-                        return int(obj)
-                    elif isinstance(obj, (np.floating, np.float64)):
-                        return float(obj)
-                    elif isinstance(obj, np.bool_):
-                        return bool(obj)
-                    elif hasattr(obj, '__dict__'):
-                        return f"<{type(obj).__name__} object>"
-                    else:
-                        return obj
-
-                sanitized_result = _sanitize_for_json(result)
-
-                checkpoint_operation(agent, "ready", "Chat response completed", checkpoint={"kind": "chat"})
-                return jsonify({
-                    "response": sanitized_result["response"],
-                    "steps": sanitized_result["steps"],
-                    "llm_meta": sanitized_result.get("llm_meta", {}),
-                    "context": {
-                        "summary": agent.memory.context_summary or None,
-                        "compaction_count": agent.memory.compaction_count,
-                        "message_count": len(agent.memory.conversation),
-                        "ui_state": agent.memory.get_ui_state(),
-                    },
-                    "session_id": agent.memory.session_id,
-                    "brain_available": agent.brain_available,
-                    "brain_state": getattr(agent, "brain_state", None),
-                })
-            except Exception as e:
-                checkpoint_operation(agent, "interrupted", "Chat response failed", checkpoint={"kind": "chat"})
-                logger.error(f"Chat failed: {e}")
-                return jsonify({"error": str(e)}), 500
 
     @app.route("/api/chat/task", methods=["GET"])
     @require_api_key
@@ -9116,6 +9194,7 @@ def register_planning_routes(
                     "surgical_guide": None,
                 }
             filepath = store.write_screenshot(user["id"], session_id, filename, img_bytes)
+            filename = filepath.name
             # Browser image elements cannot attach X-API-Key.  In API-key
             # deployments, persist a short-lived case-bound signed URL rather
             # than publishing an unauthenticated session screenshot path.
@@ -9369,9 +9448,10 @@ def register_planning_routes(
         stem = re.sub(r"[^A-Za-z0-9_-]", "_", os.path.splitext(source_filename)[0])[:100]
         annotated_filename = f"annotated_{stem}_{annotation_sha256[:12]}.png"
         try:
-            store.write_screenshot(
+            annotated_path = store.write_screenshot(
                 user["id"], session_id, annotated_filename, annotated_bytes
             )
+            annotated_filename = annotated_path.name
             annotated_url = _server_support._make_session_screenshot_url(
                 session_id, annotated_filename, version=annotation_sha256[:16]
             )
@@ -9471,7 +9551,7 @@ def register_planning_routes(
             store, user, session_id = request_case_context()
             filepath = str(store.session_artifact_path(user["id"], session_id, "screenshots", filename))
         except (WorkspaceError, ValueError, OSError) as exc:
-            return jsonify({"error": str(exc)}), 400
+            return jsonify({"error": str(exc)}), 403 if isinstance(exc,WorkspaceError) else 400
         if not os.path.exists(filepath):
             return jsonify({"error": "File not found"}), 404
         response = send_file(filepath, mimetype="image/png")

@@ -13,6 +13,8 @@ from agent_runtime.request_parse import parse_request, tool_authorization_target
 
 def operation_effects(tool, params=None):
     """Server-owned capability effects, not a natural-language command list."""
+    if tool == 'timepoint_images':
+        return frozenset({'structure'} if (params or {}).get('action') in {'set_reference','delete'} else {'viewer'})
     goal = tool_authorization_target(tool)
     if goal:
         return frozenset({goal[0]})

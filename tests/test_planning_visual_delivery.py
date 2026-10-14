@@ -106,14 +106,17 @@ def test_cold_restore_keeps_one_loading_owner_until_parallel_viewer_work_finishe
     assert "reportProgress({ phase: 'oar', current: completed, total: oarIds.length })" in manual
 
 
-def test_terminal_planning_refresh_delivers_all_downstream_products():
+def test_terminal_planning_refresh_displays_results_without_authorizing_other_products():
     chat = read("web/app/static/js/brachybot-chat-todo.js")
     planning = read("web/app/static/js/brachybot-dvh-planning.js")
 
     schedule = chat.split("function _scheduleCasePlanningRefresh", 1)[1].split(
         "function _sessionChatQueue", 1
     )[0]
-    assert "autoGenerateGuide: true" in schedule
+    assert "autoGenerateGuide: false" in schedule
+    assert "captureReportFigures: false" in schedule
+    assert "preserveReport: true" in schedule
+    assert "timepointScope: owner" in schedule
     assert "retryPending: true" in schedule
     for required in (
         "await loadLabelVolumes({",

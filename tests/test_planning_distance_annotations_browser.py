@@ -66,13 +66,46 @@ def page(browser):
     context.close();assert not errors,errors
 
 
-def install(page,dense=0):
+def install(page,dense=0,*,visible=True):
     data=snapshot()
     if dense:
         data['seeds']=[{'id':f'seed_1_{i+1}','trajectory_id':'traj_1','position':[0,0,10+i*.12]} for i in range(dense)]
     result=packet(data,guide=guide(),guide_current=True)
     page.evaluate('p=>{configureGeometry(p);acceptPlanningDistanceAnnotations(p);}',result)
+    if visible:
+        # Interaction tests explicitly opt in through the production controls.
+        # Newly generated automatic annotations must remain hidden by default.
+        page.evaluate('''()=>{
+            setPlanningDistanceAnnotationGroup('seed_tip_distance',null,true);
+            setPlanningDistanceAnnotationGroup('guide_entry_tip_distance',null,true);
+        }''')
     return result
+
+
+def test_new_automatic_annotations_default_hidden_without_hiding_manual_annotations(page):
+    packet=install(page,visible=False)
+    assert page.locator('.planning-distance-tag').count()==0
+    records=page.evaluate('state.annotations.filter(r=>r.type==="planning_distance")')
+    assert len(records)==3
+    assert all(r['visible'] is False and r['visible3D'] is False for r in records)
+    assert page.evaluate('state.annotations.find(a=>a.id==="manual_line").visible') is True
+    page.evaluate('p=>acceptPlanningDistanceAnnotations(p)',packet)
+    assert page.locator('.planning-distance-tag').count()==0
+
+
+def test_default_hidden_annotation_can_be_shown_and_hidden_using_the_actual_eye(page):
+    packet=install(page,visible=False)
+    sid=packet['records'][0]['id']
+    page.locator('#dataTreeBody details').evaluate_all('(nodes)=>nodes.forEach(e=>e.open=true)')
+    eye=page.locator(f'[data-node-id="{sid}"] .eye-btn')
+    assert 'Show this annotation' in eye.get_attribute('aria-label')
+    eye.click()
+    assert page.locator('.planning-distance-tag').count()==1
+    assert 'Hide this annotation' in eye.get_attribute('aria-label')
+    eye.click()
+    page.evaluate('p=>acceptPlanningDistanceAnnotations(p)',packet)
+    assert page.locator('.planning-distance-tag').count()==0
+    assert page.evaluate('id=>state.annotations.find(r=>r.id===id).visible',sid) is False
 
 
 def test_default_records_tree_and_fixed_screen_font(page):

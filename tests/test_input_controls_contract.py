@@ -66,6 +66,17 @@ def test_zero_observed_metrics_and_zero_dose_are_not_treated_as_missing(agent):
     assert flags['dose_calc'] and flags['dose_eval']
 
 
+def test_completed_empty_oar_is_reused_but_missing_oar_is_not_invented(agent):
+    from web.input_workflow import workflow_state
+    agent.memory.store('oar_array',np.zeros((8,8,8),np.uint8))
+    agent.memory.store('oar_source',None)
+    assert workflow_state(agent.memory)['oar_segmentation'] is False
+    agent.memory.store('oar_source','uploaded_mask')
+    assert workflow_state(agent.memory)['oar_segmentation'] is True
+    agent.memory.store('oar_array',None)
+    assert workflow_state(agent.memory)['oar_segmentation'] is False
+
+
 @pytest.mark.parametrize('key, value, dose_ready', [
     ('manual_artifact_status', {'dose': 'stale', 'dvh': 'stale'}, False),
     ('manual_artifact_status', {'dose': 'ready', 'dvh': 'expired'}, True),

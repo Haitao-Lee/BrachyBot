@@ -79,9 +79,9 @@
         const angle = sameSlice && !points ? (state.annotations || []).findLast(ann =>
             ann.type === 'angle' && ann.axis === tool.axis && ann.sliceIndex === tool.sliceIndex
             && Number.isFinite(ann.angleDeg)) : null;
-        text(progress, !ready ? t('请先加载 CT；提示不代表工具已经完成操作。', 'Load CT first; this hint is not an operation receipt.')
+        text(progress, !ready ? t('请先加载 CT；提示不代表工具已经完成操作。', 'Load the CT first. This instruction does not mean the tool has already been used.')
             : owner.mode === 'angle' && angle ? t(`当前切片最近记录的角度：${angle.angleDeg.toFixed(1)}°；继续点选可开始下一次测量。`, `Latest recorded angle on this slice: ${angle.angleDeg.toFixed(1)}°; click to begin another measurement.`)
-            : owner.mode === 'angle' ? t(`当前待完成角度：${Math.min(points, 2)}/3 个点；第二点是顶点。`, `Pending angle: ${Math.min(points, 2)}/3 points; the second is the vertex.`)
+            : owner.mode === 'angle' ? t(`当前待完成角度：${Math.min(points, 2)}/3 个点；第二点是顶点。`, `Angle measurement in progress: ${Math.min(points, 2)} of 3 points placed; the second point is the vertex.`)
             : card.result[lang]);
     }
     async function show() {

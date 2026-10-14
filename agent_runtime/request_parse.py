@@ -681,6 +681,19 @@ def _target_mentions(text: str) -> List[Tuple[int, int, str]]:
                 matches = re.finditer(re.escape(alias), text)
             for match in matches:
                 mentions.append((match.start(), match.end(), target))
+    # A mounted workspace is the location of the requested artifact, not
+    # necessarily the object being changed. Nearest-noun pairing used to turn
+    # "recompute the dose in the current Table Viewer" into a Viewer action.
+    # Remove only explicit locative selector occurrences and only when another
+    # real target remains. A separate actual Viewer command keeps its mention.
+    selectors = list(re.finditer(
+        r'(?:当前|本)(?:正在打开的)?\s*(?:table\s*)?(?:viewer|查看器|窗口)\s*(?:中(?:的)?|内(?:的)?|下(?:的)?|里(?:的)?|的)'
+        r'|\b(?:in|within|of)\s+(?:the\s+)?(?:current|mounted|active)\s+(?:table\s*)?viewer\b',
+        text, re.IGNORECASE))
+    if any(target != 'viewer' for _, _, target in mentions):
+        mentions = [mention for mention in mentions if not (
+            mention[2] == 'viewer' and any(selector.start() <= mention[0]
+                and mention[1] <= selector.end() for selector in selectors))]
     mentions.sort(key=lambda item: (item[0], -(item[1] - item[0])))
     # Prefer the longest alias at a shared start offset, then one mention per
     # semantic target; duplicated synonyms must not look like two objects.
@@ -1595,9 +1608,20 @@ def mutating_execution_authorized(
     from agent_runtime.execution_authorization import tool_call_is_mutating
     if not tool_call_is_mutating(tool_name, params):
         return True
+    if tool_name == 'timepoint_controller':
+        from agent_runtime.timepoint_catalog_authorization import explicit_timepoint_title_change
+        if explicit_timepoint_title_change(message, params):
+            return True
+    if tool_name == 'seed_segmentation':
+        from agent_runtime.timepoint_catalog_authorization import requested_implant_observation_operation
+        if requested_implant_observation_operation(message,params if isinstance(params,Mapping) else {}):
+            return True
     goal = tool_authorization_target(tool_name)
     if goal is None:
         from agent_runtime.execution_authorization import MUTATING_TOOLS
+        if confirmed_calls and is_affirmative_acknowledgement(message):
+            from agent_runtime.confirmation import confirmed_operation_allowed
+            return confirmed_operation_allowed(tool_name,params,confirmed_calls)
         return tool_name not in MUTATING_TOOLS
     parsed = parse_request(message)
     expected_target, expected_action = goal

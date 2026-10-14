@@ -64,6 +64,7 @@ try:
     from web.routes.surgical_guide_routes import register_surgical_guide_routes
     from web.routes.data_routes import register_data_routes
     from web.workspace_store import (
+        WorkspaceArchived,
         WorkspaceError,
         WorkspaceLeaseConflict,
         WorkspaceNotFound,
@@ -89,6 +90,7 @@ except ImportError:  # pragma: no cover - supports direct script execution.
     from web.routes.surgical_guide_routes import register_surgical_guide_routes
     from web.routes.data_routes import register_data_routes
     from web.workspace_store import (
+        WorkspaceArchived,
         WorkspaceError,
         WorkspaceLeaseConflict,
         WorkspaceNotFound,
@@ -413,7 +415,9 @@ def create_app(config: Optional[Dict] = None):
     CORS(app, origins=_allowed_origins, supports_credentials=True)
     app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500MB max upload
 
-    workspace_store = WorkspaceStore(config.get("runtime_dir"))
+    from web.timepoint_http import ScopedWorkspaceStore
+    raw_workspace_store = WorkspaceStore(config.get("runtime_dir"))
+    workspace_store = ScopedWorkspaceStore(raw_workspace_store)
     # Defer scheduled full checkpoints while a case owns a running heavy
     # task (planning/guide/segmentation). The extension is looked up lazily
     # because register_planning_routes installs the task registry later.
@@ -559,6 +563,64 @@ def create_app(config: Optional[Dict] = None):
         workspace_store.get_session(user["id"], session_id)
         return user, session_id
 
+    @app.before_request
+    def reject_unscoped_timepoint_execution():
+        """Capture the owned scan before an old route or worker can use it."""
+        from web.routes.timepoint_routes import TIMEPOINT_CONTROL_ENDPOINTS
+        from web.routes.implant_routes import SCOPED_IMPLANT_ENDPOINTS
+        from web.routes.timepoint_image_routes import SCOPED_IMAGE_ENDPOINTS
+        from web.routes.guide_registration_routes import SCOPED_GUIDE_REGISTRATION_ENDPOINTS
+        from web.routes.intraoperative_routes import SCOPED_INTRAOPERATIVE_ENDPOINTS
+        if request.endpoint == 'import_timepoint_bundle':
+            return None # Account-owned new Session, never the mounted clinical state.
+        if not request.path.startswith("/api/") or request.endpoint in TIMEPOINT_CONTROL_ENDPOINTS | SCOPED_IMPLANT_ENDPOINTS | SCOPED_IMAGE_ENDPOINTS | SCOPED_GUIDE_REGISTRATION_ENDPOINTS | SCOPED_INTRAOPERATIVE_ENDPOINTS:
+            return None
+        try:
+            from web.request_identity import explicit_case_id, explicit_timepoint_id
+            identifier = explicit_timepoint_id()
+            user = current_user(workspace_store)
+            if not user:
+                return None  # The ordinary auth/API-key gate returns its own response.
+            url_session = ((request.view_args or {}).get('session_id') if request.endpoint in {
+                'download_case_artifact', 'api_serve_screenshot'} else None)
+            sid = explicit_case_id(url_session) or str(flask_session.get("bb_session_id") or "").strip()
+            if not sid:
+                return None
+            # Session selection/creation/deletion and account endpoints operate
+            # on the patient control plane, never on a remembered scan header.
+            if request.path.startswith("/api/auth/") or request.path == "/api/sessions" or (
+                    request.path.startswith("/api/sessions/") and not any(part in request.path for part in
+                    ("/screenshots/", "/artifacts/", "/timepoints/"))):
+                return None
+            catalog = raw_workspace_store.migrate_default_timepoint(user["id"], sid)
+            identifier = identifier or catalog["default_timepoint_id"]
+            if identifier not in catalog["items"] or catalog['items'][identifier].get('status') != 'active':
+                from web.timepoint_messages import timepoint_http_error, request_timepoint_language
+                return jsonify(timepoint_http_error(404, request_timepoint_language(), code="timepoint_not_found")), 404
+            from web.timepoint_http import HttpTimepointBinding
+            g.brachybot_timepoint_binding = HttpTimepointBinding(user["id"], sid, identifier)
+        except WorkspaceArchived as exc:
+            if request.endpoint == 'api_chat':
+                # The chat supplier returns the existing fast, replayable
+                # session_archived error. No archived clinical view is opened.
+                return None
+            from web.timepoint_messages import timepoint_error, request_timepoint_language
+            packet, status = timepoint_error(exc, request_timepoint_language())
+            return jsonify(packet), status
+        except WorkspaceNotFound:
+            from web.timepoint_messages import timepoint_http_error, request_timepoint_language
+            if request.endpoint in {'download_case_artifact', 'api_serve_screenshot', 'api_serve_legacy_screenshot'}:
+                # A signed URL authenticates the filename, never another
+                # account's Session. Preserve the file API's access-denied
+                # contract without disclosing whether that Session exists.
+                return jsonify(timepoint_http_error(403, request_timepoint_language(),
+                    code="file_access_denied", message_code="access_denied")), 403
+            return jsonify(timepoint_http_error(400, request_timepoint_language(), code="invalid_timepoint_scope")), 400
+        except (WorkspaceError, ValueError) as exc:
+            from web.timepoint_messages import timepoint_http_error, request_timepoint_language
+            return jsonify(timepoint_http_error(400, request_timepoint_language(), code="invalid_timepoint_scope")), 400
+        return None
+
     def _request_display_roots() -> DisplayRoots:
         """Resolve path tokens for the current request without side effects.
 
@@ -606,7 +668,7 @@ def create_app(config: Optional[Dict] = None):
         """Recursively turn browser-facing tokens back into server paths."""
         return restore_value_in_place(value, roots)
 
-    def get_agent(
+    def _get_control_agent(
         session_id: str = None,
         *,
         _owner: Optional[Dict[str, Any]] = None,
@@ -722,8 +784,11 @@ def create_app(config: Optional[Dict] = None):
             # never from the legacy shared uploads directory or another case.
             agent_config["_workspace_root"] = str(workspace_root)
             agent_config["_workspace_session_id"] = resolved_session_id
+            agent_config["_workspace_owner_id"] = user["id"]
+            agent_config["_workspace_scoped_browser_delivery"] = True
             construct_started = time.perf_counter()
             agent = BrachyAgent(session_id=resolved_session_id, config=agent_config)
+            agent._workspace_store = workspace_store
             logger.info(
                 "Case agent constructed session=%s duration_ms=%.1f",
                 resolved_session_id,
@@ -802,6 +867,16 @@ def create_app(config: Optional[Dict] = None):
             # selected before this server process started; persist it so the
             # idle-archive sweep cannot move an in-use case to cold storage.
             _persist_case_access(user["id"], resolved_session_id)
+            if raw_workspace_store._timepoint_catalog(user["id"], resolved_session_id).get("runtime_migration_version"):
+                # The shared Agent owns dialogue only. Hydrating the old frozen
+                # schema-1 CT here wastes memory and delays unrelated scans;
+                # each addressed clinical view has its own bounded loader.
+                agent._workspace_control_plane_only = True
+                agent._workspace_data_ready = True
+                agent._workspace_hydration_in_progress = False
+                agent._workspace_hydration_phase = "ready"
+                agent._workspace_ready_event.set()
+                return agent
             def _complete_workspace_hydration(
                     current_agent=agent,
                     owner_id=user["id"],
@@ -996,6 +1071,30 @@ def create_app(config: Optional[Dict] = None):
                 if event is not None:
                     event.set()
 
+    def get_agent(session_id=None, *, _owner=None, _lightweight=False):
+        from web.timepoint_http import bound_request, current_binding, ScopedHttpRuntime
+        binding = current_binding()
+        # The detached chat worker receives the shared conversational control
+        # Agent and constructs its own submission-captured clinical runtime.
+        shared_chat = has_request_context() and request.endpoint == "api_chat"
+        with bound_request(None):
+            control = _get_control_agent(session_id, _owner=_owner, _lightweight=True if binding else _lightweight)
+        if control is None or binding is None or shared_chat:
+            return control
+        if binding.session_id != str(control.config.get("_workspace_session_id") or ""):
+            raise WorkspaceError("The request Agent belongs to a different Session")
+        runtime = getattr(g, "brachybot_http_runtime", None) if has_request_context() else None
+        if runtime is None or runtime.binding != binding:
+            runtime = ScopedHttpRuntime(control, binding, lightweight=_lightweight)
+            if has_request_context():
+                g.brachybot_http_runtime = runtime
+        elif not _lightweight and not runtime.view._workspace_data_ready:
+            runtime.clinical._waiter(True)
+        if has_request_context():
+            g.brachybot_agent = runtime.view
+            g.brachybot_workspace = (binding.owner_id, binding.session_id)
+        return runtime.view
+
     def _cleanup_old_sessions():
         """Remove sessions that have exceeded the timeout."""
         nonlocal _sessions, _session_timestamps
@@ -1038,12 +1137,22 @@ def create_app(config: Optional[Dict] = None):
                 if has_request_context():
                     g.brachybot_agent = agent
                     g.brachybot_workspace = (user["id"], resolved_session_id)
+            if agent is not None:
+                from web.timepoint_http import current_binding
+                if current_binding() is not None and request.endpoint != "api_chat":
+                    return get_agent(resolved_session_id, _owner=user, _lightweight=True)
             return agent
 
     def get_agent_for_owner(
         user: Dict[str, Any], session_id: str, *, _lightweight: bool = False,
     ):
         """Hydrate a case from a detached worker without a browser cookie."""
+        if not has_request_context():
+            from web.timepoint_http import bound_request, current_binding, ScopedHttpRuntime
+            binding = current_binding()
+            with bound_request(None):
+                control = _get_control_agent(session_id, _owner=user, _lightweight=_lightweight)
+            return ScopedHttpRuntime(control, binding, lightweight=_lightweight).view if control is not None and binding is not None else control
         return get_agent(session_id, _owner=user, _lightweight=_lightweight)
 
     def _drop_cached_agent_for_owner(
@@ -1202,6 +1311,13 @@ def create_app(config: Optional[Dict] = None):
     def _workspace_unavailable(_error):
         return jsonify({"error": "The requested case is unavailable", "code": "workspace_unavailable"}), 403
 
+    from web.timepoints import TimepointError
+    @app.errorhandler(TimepointError)
+    def _timepoint_unavailable(error):
+        from web.timepoint_messages import request_timepoint_language, timepoint_error
+        packet, status = timepoint_error(error, request_timepoint_language())
+        return jsonify(packet), status
+
     if config.get("expose_internal_seams"):
         # Deterministic hooks for the archive sweep regression tests. They are
         # opt-in so production callers never expose cache internals.
@@ -1257,7 +1373,10 @@ def create_app(config: Optional[Dict] = None):
                 # guide, and report artifacts.  UI bridge patches are saved
                 # separately, so defer the full Agent checkpoint until the
                 # hydration worker has published a ready Agent.
-                if getattr(agent, "_workspace_hydration_in_progress", False):
+                runtime = getattr(agent, "_workspace_scoped_http_runtime", None)
+                if runtime is not None:
+                    runtime.mark_dirty()
+                elif getattr(agent, "_workspace_hydration_in_progress", False):
                     logger.debug(
                         "Deferring request checkpoint during workspace hydration "
                         "session=%s path=%s",
@@ -1267,6 +1386,44 @@ def create_app(config: Optional[Dict] = None):
                     workspace_store.schedule_agent_checkpoint(
                         workspace[0], workspace[1], agent, "request.completed",
                     )
+        runtime = getattr(g, "brachybot_http_runtime", None)
+        binding = getattr(g, "brachybot_timepoint_binding", None)
+        if response.is_streamed and binding is not None:
+            from web.timepoint_http import scoped_iterator
+            original = response.response
+            def complete_stream():
+                succeeded = False
+                try:
+                    for chunk in scoped_iterator(original, binding):
+                        # A result/completion acknowledgement must follow the
+                        # authoritative scoped commit, not precede it.
+                        text_chunk = chunk.decode("utf-8", errors="replace") if isinstance(chunk, bytes) else str(chunk)
+                        if runtime is not None and runtime.dirty and any(marker in text_chunk for marker in
+                                ("event: done", "event: result", "event: complete")):
+                            runtime.checkpoint()
+                        yield chunk
+                    succeeded = True
+                except (WorkspaceError, ValueError) as exc:
+                    import json
+                    from web.timepoint_messages import timepoint_error
+                    packet, _ = timepoint_error(exc, getattr(runtime.view.memory, "user_lang", "en") if runtime else "en")
+                    yield "event: error\ndata: " + json.dumps(packet, ensure_ascii=False) + "\n\n"
+                finally:
+                    if runtime is not None:
+                        runtime.close(commit=succeeded)
+            response.response = complete_stream()
+        elif runtime is not None:
+            try:
+                runtime.close(commit=response.status_code < 400)
+            except (WorkspaceError, ValueError) as exc:
+                from web.timepoint_messages import timepoint_error
+                packet, status = timepoint_error(exc, getattr(runtime.view.memory, "user_lang", "en"))
+                runtime.close(commit=False)
+                response = jsonify(packet)
+                response.status_code = status
+        if binding is not None:
+            response.headers["X-BrachyBot-Session"] = binding.session_id
+            response.headers["X-BrachyBot-Timepoint"] = binding.timepoint_id
         return response
 
     @app.before_request
@@ -1562,7 +1719,10 @@ def create_app(config: Optional[Dict] = None):
                 raise
             if saved == 0:
                 return jsonify({"error": "No files saved"}), 400
-            abs_dir = workspace_store.workspace_root(user["id"], session_id) / "inputs" / sub_dir_name
+            from web.timepoint_http import current_binding
+            upload_binding = current_binding()
+            input_root = workspace_store.workspace_root(user["id"], session_id) / "inputs"
+            abs_dir = input_root / (f"timepoints/{upload_binding.timepoint_id}/" if upload_binding else "") / sub_dir_name
             return jsonify({
                 "success": True,
                 "path": str(abs_dir),
@@ -2364,6 +2524,8 @@ def create_app(config: Optional[Dict] = None):
 
 
     register_viewer_routes(app, get_agent, _load_ct_image, _extract_dicom_tags)
+    from web.routes.dose_component_routes import register_dose_component_routes
+    register_dose_component_routes(app, get_agent)
     register_planning_routes(
         app,
         get_agent,

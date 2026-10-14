@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
-from typing import Any, Dict, Tuple
+from numbers import Real
+from typing import Any, Dict, Optional, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -33,14 +35,22 @@ def _norm(value: str) -> str:
     return (value or "").strip().lower().replace(" ", "_").replace("-", "_")
 
 
-def _metric(metrics: Dict[str, Any], *names: str) -> float:
+def _nonnegative_number(value: Any) -> Optional[float]:
+    """Keep missing/invalid values distinct from a measured zero."""
+    if isinstance(value, bool) or not isinstance(value, (Real, str)):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if math.isfinite(number) and number >= 0 else None
+
+
+def _metric(metrics: Dict[str, Any], *names: str) -> Optional[float]:
     for name in names:
-        if name in metrics and metrics[name] is not None:
-            try:
-                return float(metrics[name])
-            except (TypeError, ValueError):
-                return 0.0
-    return 0.0
+        if name in metrics:
+            return _nonnegative_number(metrics[name])
+    return None
 
 
 class OARConstraintCheckerTool(BaseTool):
@@ -66,7 +76,7 @@ class OARConstraintCheckerTool(BaseTool):
             "properties": {
                 "oar_metrics": {
                     "type": "object",
-                    "description": "Dict of OAR name -> {max_dose/dmax, d2cc, d1cc, mean_dose}",
+                    "description": "Dict of OAR name -> physical Gy {max_dose/dmax, d2cc, d1cc, mean_dose}; optional measured max_dose_pct/dmax_pct is a Dmax/Rx ratio (1.2 = 120%).",
                 },
                 "tumor_type": {
                     "type": "string",
@@ -78,7 +88,11 @@ class OARConstraintCheckerTool(BaseTool):
                 },
                 "custom_constraints": {
                     "type": "object",
-                    "description": "Explicit OAR constraints. Values may include max_dose, dmax, d2cc, d1cc, mean_dose.",
+                    "description": "Explicit OAR constraints. Values may include physical Gy max_dose, dmax, d2cc, d1cc, mean_dose, or normalized max_dose_pct ratio (1.2 = 120%).",
+                },
+                "prescribed_dose": {
+                    "type": "number",
+                    "description": "Current prescription in physical Gy, finite and positive. Required to derive Dmax/Rx for max_dose_pct when no measured ratio is supplied.",
                 },
             },
             "required": ["oar_metrics"],
@@ -91,11 +105,11 @@ class OARConstraintCheckerTool(BaseTool):
             "properties": {
                 "all_checked_pass": {
                     "type": "boolean",
-                    "description": "True only if every checked constraint passes. Unchecked OARs do not count as pass.",
+                    "description": "True only if at least one OAR is present and every OAR passes; any NOT_CHECKED result prevents a pass.",
                 },
                 "violations": {"type": "array", "description": "Source-backed constraint violations"},
                 "oar_status": {"type": "object", "description": "Per-OAR status: PASS, FAIL, or NOT_CHECKED"},
-                "unchecked": {"type": "array", "description": "OARs with no source-backed constraints"},
+                "unchecked": {"type": "array", "description": "OARs with no supported source-backed constraints or unavailable required measurements"},
                 "constraint_source": {"type": "string"},
             },
         }
@@ -104,6 +118,7 @@ class OARConstraintCheckerTool(BaseTool):
         oar_metrics = kwargs.get("oar_metrics") or {}
         tumor_type = _norm(kwargs.get("tumor_type") or kwargs.get("organ") or "")
         custom_constraints = kwargs.get("custom_constraints") or {}
+        prescribed_dose = kwargs.get("prescribed_dose")
 
         constraints, source = self._build_constraints(tumor_type, custom_constraints)
         violations = []
@@ -123,15 +138,24 @@ class OARConstraintCheckerTool(BaseTool):
                 unchecked.append(raw_oar_name)
                 continue
 
-            status, oar_violations = self._check_oar(raw_oar_name, metrics, oar_constraints)
+            status, oar_violations = self._check_oar(
+                raw_oar_name, metrics, oar_constraints, prescribed_dose=prescribed_dose,
+            )
             oar_status[raw_oar_name] = {
                 "status": status,
                 "constraints": oar_constraints,
             }
+            if status == "NOT_CHECKED":
+                unchecked.append(raw_oar_name)
+                oar_status[raw_oar_name]["reason"] = (
+                    "No supported constraint, or a required measurement/limit is missing or invalid; "
+                    "relative Dmax requires a measured Dmax/Rx ratio or positive physical Gy prescription."
+                )
             violations.extend(oar_violations)
 
-        checked_count = len(oar_metrics) - len(unchecked)
-        all_checked_pass = checked_count > 0 and not violations
+        all_checked_pass = bool(oar_status) and all(
+            row["status"] == "PASS" for row in oar_status.values()
+        )
         message = (
             f"OAR constraint check: {len(violations)} violation(s), "
             f"{len(unchecked)} unchecked OAR(s), source={source}."
@@ -183,31 +207,55 @@ class OARConstraintCheckerTool(BaseTool):
                 return standard
         return {}
 
-    def _check_oar(self, oar_name: str, metrics: Dict[str, Any], constraints: Dict[str, Any]) -> Tuple[str, list]:
+    def _check_oar(self, oar_name: str, metrics: Dict[str, Any], constraints: Dict[str, Any],
+                   prescribed_dose: Any = None) -> Tuple[str, list]:
         violations = []
+        unavailable = False
+        checked_count = 0
+        if not isinstance(metrics, dict):
+            return "NOT_CHECKED", violations
         checks = [
-            ("max_dose", _metric(metrics, "max_dose", "dmax"), constraints.get("max_dose") or constraints.get("dmax")),
-            ("d2cc", _metric(metrics, "d2cc", "D2cc"), constraints.get("d2cc")),
-            ("d1cc", _metric(metrics, "d1cc", "D1cc"), constraints.get("d1cc")),
-            ("mean_dose", _metric(metrics, "mean_dose", "dmean", "Dmean"), constraints.get("mean_dose") or constraints.get("dmean_max")),
+            ("max_dose", ("max_dose", "dmax", "Dmax"), ("max_dose", "dmax")),
+            ("d2cc", ("d2cc", "D2cc"), ("d2cc",)),
+            ("d1cc", ("d1cc", "D1cc"), ("d1cc",)),
+            ("mean_dose", ("mean_dose", "dmean", "Dmean"), ("mean_dose", "dmean_max")),
+            ("max_dose_pct", ("max_dose_pct", "dmax_pct"), ("max_dose_pct",)),
         ]
 
-        for constraint_type, actual, limit in checks:
-            if limit is None:
+        for constraint_type, metric_names, limit_names in checks:
+            limit_key = next((name for name in limit_names if name in constraints), None)
+            if limit_key is None:
                 continue
-            try:
-                limit_f = float(limit)
-            except (TypeError, ValueError):
+            limit_f = _nonnegative_number(constraints[limit_key])
+            actual = _metric(metrics, *metric_names)
+            relative = constraint_type == "max_dose_pct"
+            if relative and not any(name in metrics for name in metric_names):
+                dmax = _metric(metrics, "max_dose", "dmax", "Dmax")
+                rx = _nonnegative_number(prescribed_dose)
+                actual = dmax / rx if dmax is not None and rx is not None and rx > 0 else None
+            if limit_f is None or actual is None or not math.isfinite(actual):
+                unavailable = True
                 continue
+            checked_count += 1
             if actual > limit_f:
-                violations.append({
+                violation = {
                     "oar": oar_name,
                     "constraint_type": constraint_type,
                     "actual": float(actual),
                     "limit": limit_f,
                     "excess_pct": float((actual - limit_f) / limit_f * 100.0) if limit_f else None,
-                })
+                }
+                if relative:
+                    # The KB already normalizes percentages to ratios. Convert
+                    # explicitly for display, never relabel these values as Gy.
+                    violation.update(
+                        units="ratio", actual_unit="ratio", limit_unit="ratio",
+                        actual_pct=actual * 100.0, limit_pct=limit_f * 100.0,
+                    )
+                violations.append(violation)
 
+        if unavailable or checked_count == 0:
+            return "NOT_CHECKED", violations
         return ("FAIL" if violations else "PASS"), violations
 
 
@@ -216,6 +264,7 @@ def main():
     parser.add_argument("--oar_metrics", required=True, help="JSON dict of OAR metrics")
     parser.add_argument("--tumor_type", default="", help="Tumor site used for curated KB mirror constraints")
     parser.add_argument("--custom_constraints", default="{}", help="JSON dict of explicit constraints")
+    parser.add_argument("--prescribed_dose", type=float, default=None, help="Current prescription in physical Gy")
     args = parser.parse_args()
 
     tool = OARConstraintCheckerTool()
@@ -223,12 +272,14 @@ def main():
         oar_metrics=json.loads(args.oar_metrics),
         tumor_type=args.tumor_type,
         custom_constraints=json.loads(args.custom_constraints or "{}"),
+        prescribed_dose=args.prescribed_dose,
     )
     print(result.message)
     for violation in result.metadata["violations"]:
         print(
             f"  - {violation['oar']}: {violation['constraint_type']}="
             f"{violation['actual']:.2f} > {violation['limit']:.2f}"
+            f" {violation.get('units', 'Gy')}"
         )
 
 

@@ -35,8 +35,15 @@ def verify_reference(repo=None):
                 raise AssertionError("Guide paired evidence does not bind current dependencies")
         if evidence["before_pipeline_sha256"] != renewal["before_pipeline_sha256"]:
             raise AssertionError("Guide renewal pre-patch evidence is not the audited baseline")
+        if renewal.get('before_planning_runs_sha256') is not None and (
+                evidence.get('before_planning_runs_sha256') != renewal['before_planning_runs_sha256']):
+            raise AssertionError('Guide replay did not bind the earlier planning history dependency')
         for pair in pairs:
             old, new = pair["before"], pair["after"]
+            if renewal.get('before_planning_runs_sha256') is not None and (
+                    old.get('guide_sources',{}).get('web/planning_runs.py') != renewal['before_planning_runs_sha256']
+                    or new.get('guide_sources',{}).get('web/planning_runs.py') != manifest['dependencies']['web/planning_runs.py']):
+                raise AssertionError('Guide replay loaded the wrong planning history variant')
             if (pair.get("geometry_and_qa_match") is not True
                     or old["dependency_sha256"] != evidence["before_pipeline_sha256"]
                     or new["dependency_sha256"] != manifest["dependencies"]["tool_factory/seed_plan/planning_pipeline.py"]

@@ -426,7 +426,7 @@ def test_screenshot_autoframing_is_target_derived_verified_and_reversible():
     # Framing runs after the target panel is laid out, once per attachment;
     # every temporary 3D pose is restored even if capture/upload throws.
     assert "_applyStructuredScreenshotPlan(captureSpec, viewTarget)" in ui_api
-    assert ui_api.index("await _prepareScreenshotTarget(viewTarget, captureSpec)") < ui_api.index(
+    assert ui_api.index("await __tpAwait(() => (_prepareScreenshotTarget(viewTarget, captureSpec)") < ui_api.index(
         "_applyStructuredScreenshotPlan(captureSpec, viewTarget)"
     )
     assert "per-view focus restore skipped" in ui_api

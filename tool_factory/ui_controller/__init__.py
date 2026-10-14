@@ -297,6 +297,10 @@ CONTROL_REGISTRY = {
         "commands": ["run"],
         "description": "Create a new chat session"
     },
+    'session.import': {
+        'commands':['run'],
+        'description':'Open the real complete-workspace ZIP file chooser. The user must choose a local file and confirm import. Creates a NEW owned Session, never overwrites the mounted case. Prior source and guide reviews require revalidation. Do not claim a case was imported merely because the chooser was requested.',
+    },
     "session.switch": {
         "commands": ["run"],
         "value_type": "string",
@@ -457,7 +461,7 @@ CONTROL_REGISTRY = {
     # ── Report actions ──
     "data.export": {
         "commands": ["run"],
-        "description": "Open the unified Save Data dialog; NEVER export until the user confirms. value is an object: all=true for the entire available Session, or object_ids/group_ids/data_types/names arrays for any subset; format is optional (stl/json/nifti/csv/xlsx/png, dicom_rt for the linked research RTSTRUCT/RTPLAN/RTDOSE ZIP, or browser report pdf/html/markdown/json), filenames maps object IDs to leaf filenames, bundle_name is a folder/ZIP name. Examples of data_types: needle, seed, surgical_guide, ctv, oar, dose, dvh_data, annotation, dicom_rt, report. Names must match actual catalog objects exactly. Missing/ambiguous objects or unsupported formats must be resolved in the dialog, never widened or silently converted. Exports existing data only; no regeneration. STL needle/seed models use patient LPS mm. This is an exchange bundle, not a native workspace backup.",
+        "description": "Open the unified Save Data dialog; NEVER export until the user confirms. value is an object: all=true for the current timepoint's available data, or object_ids/group_ids/data_types/names arrays for any subset. For a RESTORABLE complete Session with ALL timepoints choose object_ids=['session:complete'] and format='workspace_bundle'. This is distinct from selecting all current-scene exports. format is optional (stl/json/nifti/original/csv/xlsx/png, dicom_rt for the linked research RTSTRUCT/RTPLAN/RTDOSE ZIP, or browser report pdf/html/markdown/json); filenames maps object IDs to leaf filenames; bundle_name is a folder/ZIP name. Types include image, implanted_observation, dose_component, needle, seed, surgical_guide, ctv, oar, dose, dvh_data, annotation, dicom_rt, report. Per-source dose IDs are dose:implanted, dose:planned and dose:total. Names must match actual catalog objects exactly. Resolve missing/ambiguous objects or unsupported formats in the dialog, never widen or silently convert. Exports existing data only; no regeneration. STL models use patient LPS mm. Import complete bundles through session.import; it creates a new Session with clinical review authority invalidated.",
     },
     "report.autofill": {
         "commands": ["run"],
@@ -1346,7 +1350,7 @@ class UIControllerTool(BaseTool):
                 payload = {}
             if not isinstance(payload, dict):
                 payload = {}
-            label = str(payload.get("label") or payload.get("name") or payload.get("ref") or "界面控件").strip()[:120]
+            label = str(payload.get("label") or payload.get("name") or payload.get("ref") or "UI control").strip()[:120]
             value_text = payload.get("value", "")
             if command in {"click", "doubleclick", "dblclick"}:
                 zh_verb = "双击" if command in {"doubleclick", "dblclick"} else "点击"
@@ -1445,7 +1449,7 @@ class UIControllerTool(BaseTool):
                 "scene_seed_show": ("显示粒子", "showing the seed"),
                 "scene_seed_hide": ("隐藏粒子", "hiding the seed"),
                 "scene_seed_delete": ("删除粒子", "deleting the seed"),
-                "scene_needle_show_seeds": ("显示针道上的粒子", "showing the needle seeds"),
+                "scene_needle_show_seeds": ("显示针道上的粒子", "showing the seeds on the needle"),
                 "scene_needle_show": ("显示针道", "showing the needle"),
                 "scene_needle_hide": ("隐藏针道", "hiding the needle"),
                 "scene_needle_delete": ("删除针道", "deleting the needle"),
@@ -1543,7 +1547,7 @@ class UIControllerTool(BaseTool):
         if target.startswith("slice."):
             axis = target.split(".")[1]
             if command == "set": return f"Navigated to {axis} slice {value}"
-            if command in ("next", "prev"): return f"Moved to {command} {axis} slice"
+            if command in ("next", "prev"): return f"Moved to {'previous' if command == 'prev' else 'next'} {axis} slice"
             if command in ("first", "last"): return f"Navigated to {command} {axis} slice"
             return f"{axis} slice: {command}"
 
@@ -1553,7 +1557,7 @@ class UIControllerTool(BaseTool):
         # Data tree
         if target == "data_tree":
             if command in ("expand_all", "collapse_all"):
-                return f"All data tree groups {command.replace('_', ' ')}"
+                return f"All data tree groups {'expanded' if command == 'expand_all' else 'collapsed'}"
             if command == "toggle":
                 return f"Toggled data tree group '{value}'"
             return f"Data tree '{value}' group {command}ed"
@@ -1640,7 +1644,7 @@ class UIControllerTool(BaseTool):
         if target == "tool":
             tool_names = {
                 "crosshair": "crosshair", "measure": "measurement",
-                "angle": "angle measurement", "rect": "rectangle ROI",
+                "angle": "angle measurement", "rect": "rectangle measurement",
                 "zoombox": "zoom box", "annotate": "annotation", "eraser": "eraser",
             }
             return f"Activated {tool_names.get(value, value)} tool"

@@ -242,7 +242,9 @@ def schedule_viewer_cache_write(
             return
         if len(_PENDING_WRITES) >= 32:
             return
-        future = _WRITE_EXECUTOR.submit(_save_owned_viewer_cache, Path(root), namespace, key, dict(payload), owner)
+        from web.timepoint_http import scoped_callable
+        future = _WRITE_EXECUTOR.submit(scoped_callable(_save_owned_viewer_cache),
+            Path(root), namespace, key, dict(payload), owner)
         _PENDING_WRITES[identity] = future
 
         def _finished(done: Future) -> None:

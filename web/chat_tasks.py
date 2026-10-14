@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Deque, Dict, Iterable, List, Optional, Tuple
 
 from utils.display_paths import DisplayRoots, relativize_value, roots_from_config
+from web.timepoint_http import HttpTimepointBinding, bound_request, scoped_callable
 
 # Long or repetitive agent workflows can publish tens of thousands of raw
 # events (tool payloads, text chunks) into one task journal. Retaining every
@@ -163,6 +164,8 @@ class ChatTask:
     # it is deliberately kept separate from response_language so a Chinese
     # user message in an English UI remains a Chinese chat/trace turn.
     ui_language: str = ""
+    # Typed server-owned target; never resolve a navigation default in a worker.
+    timepoint_scope: Any = None
     created_at: float = field(default_factory=time.time)
     status: str = "running"
     finished_at: Optional[float] = None
@@ -247,6 +250,11 @@ class ChatTask:
         if not text:
             return
         event_name, data = _event_parts(text)
+        if self.timepoint_scope is not None:
+            metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+            data.setdefault("session_id", self.session_id)
+            data.setdefault("timepoint_id", metadata.get("timepoint_id") or self.timepoint_scope.timepoint_id)
+            text = self.encode_event(event_name, data)
         # Workspace persistence is an internal durability concern, not a
         # workflow step.  Older agents and recovery paths may still emit the
         # legacy ``workspace_checkpoint`` event; suppress it at the task
@@ -402,6 +410,8 @@ class ChatTask:
                 "response_language": self.response_language or None,
                 "ui_language": self.ui_language or None,
                 "session_id": self.session_id,
+                "timepoint_id": getattr(self.timepoint_scope, "timepoint_id", None),
+                "timepoint_legacy_default": getattr(self.timepoint_scope, "legacy_default", None),
                 # Lightweight Session status deliberately reports unknown.
                 # Once this task owns a hydrated Agent, expose the real model
                 # availability so the header cannot remain falsely Offline.
@@ -496,6 +506,14 @@ class ChatTaskManager:
                 return None
             return task
 
+    def request_scope(self, user_id, session_id, request_id):
+        """Read a retained parent's target without exposing its hidden prompt."""
+        with self._lock:
+            item = next((item for item in self._tasks.values() if (
+                item.user_id, item.session_id, item.request_id) == (str(user_id), str(session_id), str(request_id))
+                and not item.internal_followup), None)
+            return item.timepoint_scope if item is not None else None
+
     def start(
         self,
         app: Any,
@@ -516,6 +534,9 @@ class ChatTaskManager:
         internal_followup: bool = False,
         response_language: str = "",
         ui_language: str = "",
+        timepoint_scope: Any = None,
+        editor_token: str = "",
+        human_timepoint_confirmation: Any = None,
         resource_waiter_factory: Optional[Callable[..., Any]] = None,
         response_factory: Optional[Callable[..., Any]] = None,
     ) -> ChatTask:
@@ -539,6 +560,8 @@ class ChatTaskManager:
                     and bool(task.internal_followup) == bool(internal_followup)
                 ), None)
                 if duplicate is not None:
+                    if duplicate.timepoint_scope != timepoint_scope or duplicate.message != str(message):
+                        raise RuntimeError("This request ID is already bound to a different target or message")
                     return duplicate
             # ``active`` only represents the public running state.  A task
             # that was just cancelled can still be executing its generator
@@ -546,6 +569,18 @@ class ChatTaskManager:
             # predecessor too, otherwise a new user turn can enter the same
             # Agent concurrently and inherit the old screenshot prompt.
             live = self.live(user_id, session_id)
+            if timepoint_scope is not None:
+                from web.timepoint_chat import ChatTimepointScope
+                if not isinstance(timepoint_scope, ChatTimepointScope) or (
+                        timepoint_scope.owner_id, timepoint_scope.session_id) != (str(user_id), str(session_id)):
+                    raise RuntimeError("The chat target belongs to another owner or Session")
+                if internal_followup:
+                    parent = next((item for item in self._tasks.values() if (
+                        item.user_id, item.session_id, item.request_id) == (str(user_id), str(session_id), str(parent_request_id))
+                        and not item.internal_followup), None)
+                    if parent is not None and parent.timepoint_scope is not None and (
+                            parent.timepoint_scope.timepoint_id != timepoint_scope.timepoint_id):
+                        raise RuntimeError("The visual child must retain its parent's timepoint")
             if live is not None:
                 # A visual-analysis child may be submitted as soon as the
                 # browser receives the parent's terminal SSE event. The
@@ -619,13 +654,51 @@ class ChatTaskManager:
                 internal_followup=bool(internal_followup),
                 response_language=str(response_language or ""),
                 ui_language=str(ui_language or ""),
+                timepoint_scope=timepoint_scope,
             )
             self._tasks[task.task_id] = task
 
+        binding = (HttpTimepointBinding(task.timepoint_scope.owner_id, task.timepoint_scope.session_id,
+                    task.timepoint_scope.timepoint_id) if task.timepoint_scope is not None else None)
+        # Every retained callback captures the task's submission binding. A
+        # copied context or later mounted tab must not retarget finalization.
+        if on_finish is not None:
+            on_finish = scoped_callable(on_finish, binding)
+        if response_factory is not None:
+            response_factory = scoped_callable(response_factory, binding)
+        if resource_waiter_factory is not None:
+            resource_waiter_factory = scoped_callable(resource_waiter_factory, binding)
+
         def worker() -> None:
+            target_runtime = None
+            control_agent = None
+            def release_target_runtime():
+                nonlocal target_runtime
+                if target_runtime is not None:
+                    target_runtime.close()
+                    task.agent = control_agent
+                    target_runtime = None
             finalized = False
             terminal_event = ""
             hydration_step_published = False
+            operation_store = None
+
+            def journal_operation(state, phase):
+                if operation_store is None or task.timepoint_scope is None or task._skip_finalization:
+                    return
+                if task.timepoint_scope.legacy_default and getattr(
+                        operation_store.get_session(task.user_id, task.session_id), 'storage_status', None) == 'archived':
+                    return  # Compatibility error transport must not open an archive for a task journal.
+                runtime = getattr(task.agent, "_workspace_scoped_chat_runtime", None)
+                from agent_runtime.timepoint_targets import readset_dict
+                operation_store.save_timepoint_operation(task.user_id, task.session_id,
+                    task.timepoint_scope.timepoint_id, task.task_id,
+                    {"state": state, "phase": phase, "task_id": task.task_id,
+                     "request_id": task.request_id[:160], "parent_request_id": task.parent_request_id[:160],
+                     "checkpoint": {"clinical_revision": runtime.context.target.clinical_revision if runtime else None,
+                                    "readset": readset_dict(runtime.context) if runtime else [],
+                                    "result_committed": bool(task.result_committed)},
+                     "resume_policy": "explicit_retry_from_saved_resources"})
 
             def fail_hydration_step(message: str) -> None:
                 """Keep the visible loading row honest when the turn fails."""
@@ -657,6 +730,13 @@ class ChatTaskManager:
                 # application extensions; install an app context, but never a
                 # browser session cookie. The task's owner/case is explicit.
                 with app.app_context():
+                    candidate_store = getattr(task.agent, "_workspace_store", None)
+                    if candidate_store is None:
+                        candidate_store = (getattr(app, "extensions", {}) or {}).get("brachybot_workspace_store")
+                    operation_store = getattr(candidate_store, "raw", candidate_store)
+                    if not callable(getattr(operation_store, "save_timepoint_operation", None)):
+                        operation_store = None
+                    journal_operation("running", "preparing")
                     hydrated_agent_now = False
                     if task.agent is None and agent_supplier is not None:
                         trace_zh = _trace_is_zh(task)
@@ -703,10 +783,14 @@ class ChatTaskManager:
                             task.publish(task.encode_event("step", update))
                             return True
 
-                        if _supplier_accepts_progress(agent_supplier):
-                            task.agent = agent_supplier(report_hydration_progress)
-                        else:
-                            task.agent = agent_supplier()
+                        # The supplier returns shared conversation/control.
+                        # Clinical ownership is installed by ScopedChatRuntime,
+                        # never by the general HTTP Agent runtime.
+                        with bound_request(None):
+                            if _supplier_accepts_progress(agent_supplier):
+                                task.agent = agent_supplier(scoped_callable(report_hydration_progress, binding))
+                            else:
+                                task.agent = agent_supplier()
                         hydrated_agent_now = True
                         if task.agent is None:
                             raise ChatTaskError(
@@ -737,6 +821,18 @@ class ChatTaskManager:
                     if task.agent is None:
                         raise RuntimeError("Agent not available")
                     agent = task.agent
+                    if task.timepoint_scope is not None:
+                        from web.timepoint_chat import ScopedChatRuntime
+                        control_agent = agent
+                        target_runtime = ScopedChatRuntime(agent, task.timepoint_scope)
+                        agent = target_runtime.view
+                        task.agent = agent
+                        if operation_store is None:
+                            candidate_store = getattr(agent, "_workspace_store", None)
+                            candidate_store = getattr(candidate_store, "raw", candidate_store)
+                            if callable(getattr(candidate_store, "save_timepoint_operation", None)):
+                                operation_store = candidate_store
+                        journal_operation("running", "executing")
                     # A cold task needs a status event as soon as hydration
                     # resolves the Agent.  A pre-hydrated task normally gets
                     # the same value through task_meta, but lightweight
@@ -755,6 +851,8 @@ class ChatTaskManager:
                     agent.memory.set_ui_state(ui_state or {})
                     previous_turn_context = getattr(agent, "_active_turn_context", None)
                     agent._active_turn_context = {
+                        "editor_token": str(editor_token or ""),
+                        "human_timepoint_confirmation": human_timepoint_confirmation,
                         "internal_followup": bool(task.internal_followup),
                         "request_id": task.request_id,
                         "parent_request_id": task.parent_request_id,
@@ -766,6 +864,7 @@ class ChatTaskManager:
                         # global UI language while it is being rendered.
                         "response_language": task.response_language,
                         "ui_language": task.ui_language,
+                        "timepoint_scope": task.timepoint_scope,
                     }
                     turn_stream = None
                     provider_start_seen = False
@@ -795,7 +894,7 @@ class ChatTaskManager:
                             return True
 
                     try:
-                        if callable(resource_waiter_factory):
+                        if callable(resource_waiter_factory) and (target_runtime is None or target_runtime.legacy):
                             agent._workspace_resource_waiter = resource_waiter_factory(agent, report_tool_resources)
                         # Receipt-only visual delivery is still a case-owned,
                         # cancellable task with the same durable finalizer. A
@@ -890,6 +989,8 @@ class ChatTaskManager:
                                 pass
                         else:
                             agent._workspace_resource_waiter = previous_resource_waiter
+                        if target_runtime is not None:
+                            target_runtime.synchronize_conversation()
                     if task.is_running():
                         task.completion_status = "completed"
                         # The final response is gated by the lightweight chat
@@ -961,10 +1062,15 @@ class ChatTaskManager:
             except Exception as exc:  # pragma: no cover - exercised by integration tests
                 logger.exception("Chat task %s failed", task.task_id)
                 task.completion_status = "failed"
-                fail_hydration_step(str(exc))
+                failure, failure_code = str(exc), "chat_task_failed"
+                if task.timepoint_scope is not None:
+                    from web.timepoint_messages import timepoint_error
+                    packet, _ = timepoint_error(exc, task.timepoint_scope.ui_language)
+                    failure, failure_code = packet["error"], packet["code"]
+                fail_hydration_step(failure)
                 task.publish(
                     "event: error\ndata: "
-                    + json.dumps({"message": str(exc), "code": "chat_task_failed"})
+                    + json.dumps({"message": failure, "code": failure_code})
                     + "\n\n"
                 )
                 if (
@@ -978,7 +1084,7 @@ class ChatTaskManager:
                             finalized = True
                     except Exception:
                         logger.exception("Chat task %s finalization failed", task.task_id)
-                task.finish("failed", str(exc))
+                task.finish("failed", failure)
             finally:
                 # A deleted case must not be checkpointed after its workspace
                 # has moved to trash. Explicit cancellation owns that terminal
@@ -994,9 +1100,18 @@ class ChatTaskManager:
                             on_finish(task)
                     except Exception:
                         logger.exception("Chat task %s finalization failed", task.task_id)
+                try:
+                    with app.app_context():
+                        state = "ready" if task.status == "completed" else "cancelled" if task.status == "cancelled" else "failed"
+                        journal_operation(state, task.completion_status or state)
+                except Exception:
+                    logger.exception("Chat task %s operation journal finalization failed", task.task_id)
+                    task.persistence_status = "failed"
+                    task.persistence_error = "The scoped operation journal could not be saved."
+                release_target_runtime()
                 task._worker_done.set()
 
-        thread = threading.Thread(target=worker, name=f"brachy-chat-{task.task_id[:8]}", daemon=True)
+        thread = threading.Thread(target=scoped_callable(worker, binding), name=f"brachy-chat-{task.task_id[:8]}", daemon=True)
         thread.start()
         return task
 

@@ -50,7 +50,7 @@ async function exportSTL() {
         owner = window.beginInputAction(key);
         const data = await window.fetchInputJson(owner, '/export/stl', {});
         if (!data) return {detached: true};
-        window.presentInputDownloads(owner, data.download_urls, _manualWorkflowLabel('粒子 STL（不是穿刺导板）', 'Seed STL (not the puncture guide)'));
+        window.presentInputDownloads(owner, data.download_urls, _manualWorkflowLabel('粒子 STL（不是穿刺导板）', 'Seed STL model (not the needle guide)'));
         _inputButtonProgress(key, 'done', '\u5bfc\u51fa STL', 'Export STL', _manualWorkflowLabel('\u5df2\u5b8c\u6210', 'Completed'));
         addChat('system', '\u2705 ' + _manualWorkflowLabel('\u5df2\u5bfc\u51fa STL\uff1a', 'STL exported: ') + data.count);
         return data;
@@ -335,6 +335,7 @@ function _num(id, fallback = null) {
 
 async function applyHyperparams(owner = null) {
     const ownsToken = !owner;
+    let endConfigMutation = null;
     _inputButtonProgress('apply_hyperparams', 'running', '\u6b63\u5728\u5e94\u7528\u53c2\u6570', 'Applying hyperparameters');
     const refAuto = !!document.getElementById('refDirecAuto')?.checked;
     const config = {
@@ -379,8 +380,13 @@ async function applyHyperparams(owner = null) {
     };
     try {
         owner = owner || window.beginInputAction('apply_hyperparams', {mutation: true});
+        if (owner.timepointScope)
+            endConfigMutation = await window.BrachyBotTimepointWorkspace?.beginPlanningConfig?.(owner.timepointScope);
         const data = await window.fetchInputJson(owner, '/config', config);
         if (!data) return null;
+        window.BrachyBotInputPlanningConfig?.accepted(data.config, owner);
+        if (owner.timepointScope) await window.BrachyBotTimepointWorkspace?.awaitPlanningConfig?.(owner.timepointScope);
+        if (!owner.current()) return null;
         addChat('system', _manualWorkflowLabel('参数已应用到当前病例。', 'Hyperparameters applied to the current case.'));
         _inputButtonProgress('apply_hyperparams', 'done', '\u5e94\u7528\u53c2\u6570', 'Apply hyperparameters', _manualWorkflowLabel('\u5df2\u5b8c\u6210', 'Completed'));
         reportUIEvent('planning.config', 'Hyperparameters applied', { mode: config.mode });
@@ -388,9 +394,10 @@ async function applyHyperparams(owner = null) {
     } catch (e) {
         if (owner && !owner.current()) return null;
         _inputButtonProgress('apply_hyperparams', 'error', '\u5e94\u7528\u53c2\u6570', 'Apply hyperparameters', e.message || _manualWorkflowLabel('\u6267\u884c\u5931\u8d25', 'Failed'));
-        addChat('error', _manualWorkflowLabel(`参数应用失败：${e.message}`, `Apply hyperparameters failed: ${e.message}`));
+        addChat('error', _manualWorkflowLabel(`参数应用失败：${e.message}`, `Failed to apply hyperparameters: ${e.message}`));
         return null;
     } finally {
+        endConfigMutation?.();
         if (ownsToken) owner?.finish();
     }
 }
@@ -426,16 +433,28 @@ async function runPlanning() {
                 'The uploaded mask is staged only. Move the tumor label to CTV in the Data Tree before planning.'));
         }
         reportUIEvent('planning.step', 'Full pipeline started', { step: 'full' });
-        const data = await window.fetchInputJson(owner, '/planning/run_step', {ct_image_path: ctPath, step: 'full'});
+        const data = await window.fetchInputJson(owner, '/planning/run_step', {ct_image_path: owner.ctPath, step: 'full'});
         if (!data) return {detached: true};
+        if (data.pending_review === true) {
+            const message = data.message || _manualWorkflowLabel('当前结果已保存；请完成术中复核后继续规划。',
+                'Current results were saved. Complete the intraoperative review before continuing planning.');
+            _inputButtonProgress('full_pipeline', 'done', '等待术中复核', 'Awaiting intraoperative review', message);
+            addChat('system', message);
+            // Observe the saved clinical version and restore the actual
+            // observations/pose controls; never repeat detection just to paint.
+            await window.BrachyBotTimepointWorkspace?.restoreActive?.();
+            return {success:false, pending_review:true, phase:data.phase};
+        }
         if (data.workflow_state) _saveManualState({...data.workflow_state, last_step: 'full'});
         if (!data.workflow_state?.seed_planning || !data.workflow_state?.dose_calc || !data.workflow_state?.dose_eval) {
             throw new Error(_manualWorkflowLabel('后端未提供完整的粒子、剂量和评估结果，不能标记整条流程完成。',
                 'The saved seeds, dose and evaluation are incomplete; the full workflow cannot be marked completed.'));
         }
-        const delivery = typeof refreshPlanningUI === 'function' ? await refreshPlanningUI({sessionId: owner.sessionId}) : null;
+        const delivery = typeof refreshPlanningUI === 'function' ? await refreshPlanningUI({sessionId: owner.sessionId,
+            timepointScope: owner.timepointScope, autoGenerateGuide: false, preserveReport: true,
+            captureReportFigures: false, suppressReportFigureCapture: true}) : null;
         if (!owner.current()) return {detached: true};
-        if (!delivery?.success) throw new Error(_manualWorkflowLabel('计算已保存，但结果显示未完成；请查看结果，不必重复计算。', 'Calculation saved, but result delivery is incomplete. View the saved results instead of recalculating.'));
+        if (!delivery?.success) throw new Error(_manualWorkflowLabel('计算已保存，但结果显示未完成；请查看结果，不必重复计算。', 'Calculation saved, but the results were not fully displayed. View the saved results instead of recalculating.'));
         addChat('system', _manualWorkflowLabel('完整规划已完成。', 'Full planning pipeline completed.'));
         _inputButtonProgress('full_pipeline', 'done', '\u5b8c\u6574\u89c4\u5212', 'Full planning pipeline', _manualWorkflowLabel('\u5df2\u5b8c\u6210', 'Completed'));
         reportUIEvent('planning.step', 'Full pipeline completed', { step: 'full' });
@@ -454,6 +473,19 @@ async function runPlanning() {
 }
 
 async function runIntra() {
+    if (window.BrachyBotTimepoints?.enabled?.()) {
+        const scope = window.BrachyBotTimepoints.captureSubmission();
+        const row = window.BrachyBotTimepoints.getCatalog()?.timepoints?.find(item=>item.id===scope.timepointId);
+        if (row?.stage !== 'intraoperative') {
+            const message = _manualWorkflowLabel('请先新建或选择术中时间点、关联术前方案并上传术中影像，再执行术中规划。当前时间点的数据未改动。',
+                'Create or select an intraoperative timepoint, link its preoperative plan and upload the current image before intraoperative planning. The current timepoint was not changed.');
+            addChat('system', message);
+            return {success:false, code:'intraoperative_timepoint_required', error:message};
+        }
+        // The owned full pipeline is stage-aware. Do not ask for another CT
+        // or execute the retired Session-wide plan-matching path.
+        return runPlanning();
+    }
     let owner;
     const ctPath = ((document.getElementById('ctPath') || {}).value || '').trim();
     const ctReady = typeof state === 'undefined' || (state.ctLoaded === true && state.ctPath === ctPath);
@@ -576,6 +608,8 @@ async function runPlanningStep(step) {
     }
     const ctPathEl = document.getElementById('ctPath');
     const ctPath = ctPathEl ? ctPathEl.value.trim() : '';
+    const imageCollection = window.BrachyBotTimepointWorkspace?.resourceState?.()?.images;
+    const referenceImage = imageCollection?.images?.find(image=>image.id===imageCollection.planning_reference_image_id);
     const ctReady = typeof state === 'undefined' || (state.ctLoaded === true && state.ctPath === ctPath);
     // Keep the asynchronous step attached to the case that started it. A
     // later session switch may let the server finish, but it must not paint
@@ -592,7 +626,9 @@ async function runPlanningStep(step) {
     );
     if (!ctPath) {
         if (typeof addChat === 'function') {
-            addChat('error', '请先在 Image Data 区域加载 CT 图像,然后再运行规划步骤。');
+            addChat('error', _manualWorkflowLabel(
+                '请先在 Image Data 区域加载 CT 图像，然后再运行规划步骤。',
+                'Load a CT image in the Image Data area before running planning steps.'));
         }
         return { success: false, error: 'Load CT before running a planning step.' };
     }
@@ -614,7 +650,9 @@ async function runPlanningStep(step) {
     const prereq = prerequisites[step];
     if (prereq && !st[prereq.needs]) {
         if (typeof addChat === 'function') {
-            addChat('error', `请先完成前置步骤: ${prereq.label} (${prereq.needs})`);
+            addChat('error', _manualWorkflowLabel(
+                `请先完成前置步骤：${prereq.label} (${prereq.needs})`,
+                `Complete the prerequisite step first: ${prereq.label} (${prereq.needs})`));
         }
         return { success: false, error: `Complete ${prereq.label} before ${info.label}.` };
     }
@@ -642,7 +680,8 @@ async function runPlanningStep(step) {
         const res = await fetch(API + '/planning/run_step', {
             method: 'POST',
             headers: planningHeaders,
-            body: JSON.stringify({ ct_image_path: ctPath, step: step }),
+            body: JSON.stringify({ ct_image_path: referenceImage?.path || ctPath, step: step,
+                ...(referenceImage ? {planning_reference_image_id:referenceImage.id} : {}) }),
         });
         if (!res.ok) {
             const errText = await res.text();
@@ -734,7 +773,7 @@ async function runPlanningStep(step) {
                     || data.visualization?.shown_trajectories > 0);
             _manualWorkflowProgress(step, displayReady ? 'done' : 'error', localizedInfoLabel, info.label,
                 displayReady ? _manualWorkflowLabel('已完成', 'Completed')
-                    : _manualWorkflowLabel('计算已保存，但显示结果未完整载入', 'Calculation saved, but visual delivery is incomplete'));
+                    : _manualWorkflowLabel('计算已保存，但显示结果未完整载入', 'Calculation saved, but the results did not finish loading'));
             reportUIEvent('planning.step', `${info.label} completed`, { step, status: 'done' });
             if (typeof addChat === 'function') {
                 addChat(displayReady ? 'system' : 'error', displayReady
@@ -906,7 +945,7 @@ async function runSegmentationStep(kind, options = {}) {
         reportUIEvent('segmentation.step', `${label} started`, { kind });
         const body = {
             kind: apiKind,
-            image_path: ctPath.trim(),
+            image_path: inputOwner?.ctPath || ctPath.trim(),
             ...(apiKind === 'ctv' && !options.tumor_type && document.getElementById('ctvPath')?.value?.trim() ? {
                 label_path: document.getElementById('ctvPath').value.trim(),
             } : {}),
@@ -1161,13 +1200,21 @@ function _refreshManualStepUI() {
         .forEach(([onclick, zh, en]) => {
             const el = document.querySelector('button[onclick="' + onclick + '"]');
             if (!el) return;
-            const enabled = ctReady && (onclick !== 'runIntra()' || seeds)
+            const ownedModel = window.BrachyBotTimepoints?.enabled?.() === true;
+            let ownedIntraoperative = false;
+            if (ownedModel) {
+                try {
+                    const target = window.BrachyBotTimepoints.captureTarget?.() || window.BrachyBotTimepoints.captureSubmission();
+                    ownedIntraoperative = window.BrachyBotTimepoints.getCatalog()?.timepoints?.find(row=>row.id===target.timepointId)?.stage==='intraoperative';
+                } catch (_) { /* transition: keep clinical entry disabled */ }
+            }
+            const enabled = ctReady && (onclick !== 'runIntra()' || (ownedModel ? ownedIntraoperative : seeds))
                 && window.inputMutationPending?.() !== true && window.manualStepRequestPending?.() !== true;
             el.disabled = !enabled;
             el.setAttribute('aria-disabled', enabled ? 'false' : 'true');
             const pending = window.inputMutationPending?.() === true || window.manualStepRequestPending?.() === true;
-            setReason(el, enabled ? '可开始执行' : (!ctReady ? zh : pending ? '当前操作仍在执行，请等待完成。' : '请先完成术前粒子规划。'),
-                enabled ? 'Ready to run.' : (!ctReady ? en : pending ? 'An operation is still running; wait for it to finish.' : 'Complete the pre-operative seed plan first.'),
+            setReason(el, enabled ? '可开始执行' : (!ctReady ? zh : pending ? '当前操作仍在执行，请等待完成。' : ownedModel ? '请选择关联术前方案的术中时间点。' : '请先完成术前粒子规划。'),
+                enabled ? 'Ready to run.' : (!ctReady ? en : pending ? 'An operation is still running; wait for it to finish.' : ownedModel ? 'Select an intraoperative timepoint linked to its preoperative plan.' : 'Complete the pre-operative seed plan first.'),
                 enabled ? 'ready' : 'blocked');
         });
     const active = s.active_step;
@@ -2286,6 +2333,7 @@ function _ensureSeed2DInteraction(sliceCanvas, view) {
             .sort((a, b) => a.distance - b.distance)[0] || null;
     };
     sliceCanvas.addEventListener('pointerdown', event => {
+        if(window.BrachyBotImplants?.interactionMode())return;
         if (event.button !== 0 || _seed2DDrag) return;
         const hit = hitSeed(event);
         if (!hit) return;
@@ -2354,6 +2402,7 @@ function _ensureSeed2DInteraction(sliceCanvas, view) {
 // Product overlay: finite needle projection + true seed-cylinder contour.
 // This is the canonical seed/needle overlay implementation.
 function renderSeedsOverlay(axis, sliceIndex) {
+    window.BrachyBotImplants?.draw2D(axis);
     if ((!state.seedsOverlay && !hasSurgicalGuideProjection()) || !state.ctShape) return;
     const sliceCanvas = getSliceCanvas(axis);
     if (!sliceCanvas) return;

@@ -16,9 +16,15 @@ def guided(page):
         headers={'Access-Control-Allow-Origin':'*'}, body=json.dumps({'success':True,'manual_version':VERSION,'cards':catalog()})))
     page.add_script_tag(content="window.API='http://control.test/api';window.trainingMonitorState={active:true,runId:'synthetic-run'};window._i18nLang='en';")
     page.add_style_tag(path=str(ROOT/'web/app/static/css/brachybot-control-guide.css'))
+    page.add_style_tag(path=str(ROOT/'web/app/static/css/brachybot-theme-layout.css'))
+    page.add_style_tag(path=str(ROOT/'web/app/static/css/brachybot-panels-viewers.css'))
+    page.add_style_tag(path=str(ROOT/'web/app/static/css/brachybot-timepoints.css'))
+    page.evaluate('''() => {
+        document.querySelectorAll('.panel-content').forEach(node => node.classList.toggle('active', node.id === 'panelViewers'));
+    }''')
     page.add_style_tag(content='''
         :root {--bg-2:#141c30;--border-default:#28344d;--text:#dfe7f5;--text-secondary:#9daac0;--accent-ink:#638cff;}
-        #panelViewers {position:fixed;inset:0;display:flex;flex-direction:column;background:#0d1424;color:#dfe7f5;overflow:auto;font-family:Arial;padding:12px;}
+        #panelViewers {display:flex;flex-direction:column;overflow:auto;font-family:Arial;padding:12px;}
         #panelViewers .viewer-workspace {min-height:500px!important;}
         .control-usage-guide {flex-shrink:0;}
     ''')
@@ -52,11 +58,11 @@ def test_angle_points_language_and_completion_use_actual_tool_state(guided):
         page.mouse.click(box['x']+x, box['y']+y)
         page.wait_for_timeout(400)
         if index < 2:
-            assert f'{index+1}/3' in page.locator('[data-usage-part="progress"]').inner_text()
+            assert f'{index+1} of 3 points placed' in page.locator('[data-usage-part="progress"]').inner_text()
     assert page.evaluate('state.annotations[0].angleDeg') == pytest.approx(116.56505117707799)
     assert '116.6°' in page.locator('[data-usage-part="progress"]').inner_text()
     page.evaluate('viewerUndo()'); page.wait_for_timeout(400)
-    assert '0/3' in page.locator('[data-usage-part="progress"]').inner_text()
+    assert '0 of 3 points placed' in page.locator('[data-usage-part="progress"]').inner_text()
     page.evaluate("window._i18nLang='zh';window.dispatchEvent(new Event('i18nchange'))")
     page.wait_for_timeout(100)
     assert '第二个点是角的顶点' in page.locator('#controlUsageGuide').inner_text()

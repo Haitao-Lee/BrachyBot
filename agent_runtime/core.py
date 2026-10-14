@@ -3,6 +3,7 @@
 import copy
 import json
 import logging
+import math
 import os
 import re
 import threading
@@ -164,6 +165,23 @@ class ToolRegistry:
         self._tools[tool.name] = tool
         self._openai_tools_cache_key = None
 
+    def bind_workspace(self, agent):
+        """Fork executor bindings without sharing the root Agent or schema cache."""
+        import copy
+        registry = copy.copy(self)
+        registry.workspace_agent = agent
+        registry.security_config = agent.config
+        registry._tools = {}
+        for name, tool in self._tools.items():
+            bound = copy.copy(tool)
+            for attr in ("_agent", "agent", "workspace_agent"):
+                if hasattr(bound, attr):
+                    setattr(bound, attr, agent)
+            registry._tools[name] = bound
+        registry._openai_tools_cache_key = None
+        registry._openai_tools_cache = []
+        return registry
+
     def unregister(self, name: str) -> bool:
         """Remove a runtime-generated tool without exposing registry internals."""
         removed = self._tools.pop(name, None) is not None
@@ -207,11 +225,24 @@ class ToolRegistry:
         tool = self.get(tool_name)
         workspace_agent = getattr(self, "workspace_agent", None)
         if workspace_agent is not None:
+            runtime = getattr(workspace_agent, "_workspace_scoped_chat_runtime", None)
+            captured = (getattr(workspace_agent, "_active_turn_context", None) or {}).get("timepoint_scope")
+            if runtime is not None:
+                runtime.admit_tool(tool_name, kwargs)
+                from agent_runtime.timepoint_tools import owned_execution_active
+                if not owned_execution_active(workspace_agent):
+                    # Route old direct callers through input injection and CAS,
+                    # rather than trusting their arrays or tool-retained Agent.
+                    return workspace_agent._execute_tool_with_memory(tool_name, kwargs)
+            elif captured is not None:
+                from web.timepoints import TimepointConflict
+                raise TimepointConflict("Clinical registry execution requires a detached target view")
             from agent_runtime.workspace_readiness import ensure_workspace_ready
             ensure_workspace_ready(workspace_agent, tool_name, kwargs)
         from utils.tool_security import tool_scope
         with tool_scope(getattr(self, "security_config", None)):
-            return tool.execute(**kwargs)
+            result = tool.execute(**kwargs)
+        return runtime.result_envelope(result) if workspace_agent is not None and runtime is not None else result
 
     @property
     def tool_names(self) -> List[str]:
@@ -284,7 +315,8 @@ class ToolRegistry:
         does not automatically make an unknown tool safe.
         """
         return {
-            name: {"conversation_access": getattr(tool, "conversation_access", None)}
+            name: {"conversation_access": getattr(tool, "conversation_access", None),
+                   "timepoint_access": getattr(tool, "timepoint_access", None)}
             for name, tool in self._tools.items() if self.is_available(name)
         }
 
@@ -652,6 +684,8 @@ class AgentMemory:
                 "message": result.message,
                 "execution_time": result.execution_time,
             }
+            if getattr(self, "_workspace_timepoint_id", None):
+                entry["timepoint_id"] = self._workspace_timepoint_id
             # Key-fact summary so the execution trajectory stays visible to
             # the model on later turns (mode/fallback/count facts).  The raw
             # result message alone rarely carries them.
@@ -1234,7 +1268,7 @@ class ToolResultPipeline:
         "biomedparse_segmentation",
         "planning_pipeline", "seed_planning", "trajectory_planning",
         "trajectory_init", "trajectory_refine", "dose_engine", "dose_calc",
-        "dose_recompute", "dose_evaluation", "query_metrics", "surgical_guide",
+        "dose_recompute", "dose_evaluation", "query_metrics", "timepoint_inspector", "timepoint_controller", "timepoint_images", "surgical_guide",
         "report_generator", "report_auto_fill", "ui_controller",
         "ui_screenshot", "ui_content", "ui_annotate", "doc_reader",
     }
@@ -1276,6 +1310,20 @@ class ToolResultPipeline:
         # to the normal LLM synthesis path.
         if tool_name == "surgical_guide" and isinstance(meta.get("guide_status"), dict):
             return ToolResultPipeline._format_surgical_guide(result, meta, lang)
+
+        if tool_name in {'timepoint_inspector','timepoint_controller','timepoint_images'}:
+            # A localized "catalog loaded" sentence is not an evidence payload.
+            # In particular, the model must see actual titles and stable IDs
+            # to resolve a sibling scan instead of guessing them from the UI.
+            data = getattr(result,'data',None)
+            if isinstance(data,dict) and isinstance(data.get('timepoints'),list):
+                fields=('id','title','stage','status','clinical_revision','lifecycle_revision',
+                        'preoperative_timepoint_id','previous_intraoperative_timepoint_id')
+                data = {key:data[key] for key in ('catalog_revision','default_timepoint_id') if key in data} | {
+                    'timepoints':[{key:row[key] for key in fields if key in row} for row in data['timepoints']]}
+            from tool_factory.timepoint_inspector import _bounded_json
+            return (result.message or '') + '\n```json\n' + json.dumps(
+                _bounded_json(data),ensure_ascii=False,allow_nan=False) + '\n```'
 
         # 1. Use tool's own display if set
         if result.display:
@@ -1370,7 +1418,7 @@ class ToolResultPipeline:
             "unavailable": "temporarily unavailable",
         }
         lines = [
-            "## Puncture-guide status",
+            "## Surgical guide status",
             "",
             f"- State: {state_labels.get(state, state)}",
             f"- Persisted record: {'yes' if persisted else 'no confirmed record'}",
@@ -2372,34 +2420,43 @@ class ToolResultPipeline:
             metrics = meta.get("dose_metrics", {})
 
             if step == "full":
+                def value(key, spec):
+                    raw = metrics.get(key)
+                    return format(raw, spec) if isinstance(raw, (int, float)) and not isinstance(raw, bool) and math.isfinite(raw) else ("未提供" if lang == "zh" else "Unavailable")
+                count = meta.get("total_source_count", total_seeds)
+                target_reached = meta.get("target_coverage_met")
                 if lang == "zh":
                     lines = [
-                        "## 📋 近距离放疗规划完成",
+                        "## 📋 近距离放疗规划计算结果",
                         "",
                         "| 指标 | 数值 |",
                         "|--------|-------|",
-                        f"| 粒子总数 | {total_seeds} |",
+                        f"| 粒子总数（已植入 + 本次规划） | {count} |" if meta.get("supplemental_only") else f"| 规划粒子数 | {total_seeds} |",
                         f"| 轨迹数 | {num_traj} |",
-                        f"| V100 | {metrics.get('v100', 0):.1%} |",
-                        f"| D90 | {metrics.get('d90', 0):.2f} |",
-                        f"| 计划评分 | {metrics.get('plan_score', 0):.0f}/100 |",
+                        f"| V100 | {value('v100', '.1%')} |",
+                        f"| D90 (Gy) | {value('d90', '.2f')} |",
+                        f"| 计划评分 | {value('plan_score', '.0f')} |",
                         "",
-                        "✅ 粒子、针道和剂量已显示在 3D 查看器中。",
+                        "结果已计算并保存；是否可见需由对应 Viewer 的加载状态核实。计算完成不等于临床批准。",
                     ]
                 else:
                     lines = [
-                        "## 📋 Brachytherapy Planning Complete",
+                        "## 📋 Brachytherapy planning computation",
                         "",
                         "| Metric | Value |",
                         "|--------|-------|",
-                        f"| Total Seeds | {total_seeds} |",
+                        f"| Sources (implanted + newly planned) | {count} |" if meta.get("supplemental_only") else f"| Planned seeds | {total_seeds} |",
                         f"| Trajectories | {num_traj} |",
-                        f"| V100 | {metrics.get('v100', 0):.1%} |",
-                        f"| D90 | {metrics.get('d90', 0):.2f} |",
-                        f"| Plan Score | {metrics.get('plan_score', 0):.0f}/100 |",
+                        f"| V100 | {value('v100', '.1%')} |",
+                        f"| D90 (Gy) | {value('d90', '.2f')} |",
+                        f"| Plan score | {value('plan_score', '.0f')} |",
                         "",
-                        "✅ Seeds, needles, and dose displayed in 3D viewer.",
+                        "Results were computed and saved. Visibility depends on the corresponding Viewer's load state; computation is not clinical approval.",
                     ]
+                if meta.get("timepoint_title"):
+                    lines.insert(2, ("时间点：" if lang == "zh" else "Timepoint: ") + str(meta["timepoint_title"]))
+                if target_reached is False:
+                    lines.append("当前覆盖尚未达到配置目标；请复核未覆盖区域与约束。" if lang == "zh" else "Coverage remains below the configured objective; review residual regions and constraints.")
                 return "\n".join(lines)
             else:
                 if lang == "zh":
@@ -2464,6 +2521,15 @@ class ToolResultPipeline:
             return "\n".join(lines)
 
         elif tool_name == "dose_recompute":
+            if meta.get('source_set') == 'implanted':
+                count=meta.get('total_seeds',0)
+                lo,hi=meta.get('dose_min_gy'),meta.get('dose_max_gy')
+                interval=f'{lo:.2f}–{hi:.2f} Gy' if isinstance(lo,(int,float)) and isinstance(hi,(int,float)) else ('未提供' if lang=='zh' else 'Unavailable')
+                axes=meta.get('estimated_axis_count')
+                axes_note=(f' 该剂量记录的方向补估计数为 {axes}；此计数不等于原始方向证据或临床复核状态。'
+                    if lang=='zh' else f' Axis completion count for this dose record: {axes}; this count does not establish original axis evidence or clinical review status.') if isinstance(axes,int) and not isinstance(axes,bool) else ''
+                return (f'已重算当前识别记录中 {count} 颗体内粒子的 CNN 剂量，范围 {interval}。未新增粒子、未重新规划针道，未生成导板或报告。此为基于当前源设置及当前方向输入（可能含估计量）的投影总剂量，不是已经实际释放的剂量；仍需复核。'
+                    if lang=='zh' else f'CNN dose recomputed for {count} currently observed implanted sources: {interval}. No new sources, needle planning, guide or report generation ran. This is projected total source dose based on current source settings and current axis inputs (which may include estimates), not dose already delivered; review remains required.') + axes_note
             # This formatter is deliberately independent from the full plan
             # report. A dose refresh is a focused operation, so it must still
             # produce a useful user-facing answer when synthesis is skipped.
@@ -2635,6 +2701,8 @@ class ToolResultPipeline:
             v100 = meta.get("v100", 0)
             d90 = meta.get("d90", 0)
             score = meta.get("plan_score", 0)
+            score_text = f'{score:.0f}/100' if isinstance(score,(int,float)) and math.isfinite(score) else (
+                '未经验证' if lang == 'zh' else 'UNVERIFIED')
             if lang == "zh":
                 lines = [
                     "## 📊 剂量评估",
@@ -2643,7 +2711,7 @@ class ToolResultPipeline:
                     "|--------|-------|",
                     f"| V100 | {v100:.1%} |",
                     f"| D90 | {d90:.2f} |",
-                    f"| 计划评分 | {score:.0f}/100 |",
+                    f"| 计划评分 | {score_text} |",
                 ]
             else:
                 lines = [
@@ -2653,7 +2721,7 @@ class ToolResultPipeline:
                     "|--------|-------|",
                     f"| V100 | {v100:.1%} |",
                     f"| D90 | {d90:.2f} |",
-                    f"| Plan Score | {score:.0f}/100 |",
+                    f"| Plan Score | {score_text} |",
                 ]
             return "\n".join(lines)
 
@@ -2915,7 +2983,7 @@ class ToolResultPipeline:
                     "## 5. Dose Distribution\n"
                     "- Prescription dose\n"
                     "- CTV coverage: V100, V150, V200 (as percentages)\n"
-                    "- D90, Dmean, D2 (max dose in Gy)\n"
+                    "- D90, Dmean, D2 (dose to the hottest 2% of the target volume, in Gy); Dmax is a separate maximum-dose metric\n"
                     "- Conformity Index (CI), Homogeneity Index (HI)\n"
                     "- Plan score (0-100)\n\n"
                     "## 6. OAR Dose Analysis — MUST INCLUDE TABLE\n"

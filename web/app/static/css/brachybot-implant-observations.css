@@ -1,0 +1,19 @@
+.implant-toolbar { margin: 8px 0; border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; background: var(--bg-2); }
+.implant-toolbar h3 { margin:0 0 6px; font-size:.78rem; color:var(--text); }
+#implantObservationActions, .implant-tree-actions { display:flex; flex-wrap:wrap; gap:6px; }
+#implantObservationStatus { margin-top:6px; font-size:.72rem; line-height:1.5; color:var(--text-secondary); }
+#implantObservationStatus[data-state="error"] { color:var(--danger); }
+.implant-tree-group { margin:6px 0; padding:6px 8px; border-left:2px solid #22D3EE; }
+.implant-tree-item.tree-item { display:grid; grid-template-columns:22px 24px minmax(0,1fr); gap:4px; min-width:0; }
+.implant-tree-item > .item-label { grid-column:3; min-width:0; width:100%; overflow:hidden; text-overflow:ellipsis; }
+.implant-tree-item > .implant-review-tag { grid-column:1 / 3; grid-row:2; }
+.implant-tree-item > .opacity-slider { grid-column:3; grid-row:2; width:100%; min-width:0; margin:0; }
+.implant-tree-item > .implant-color { width:24px; min-width:24px; margin:0; }
+.implant-tree-group > summary { cursor:pointer; font-size:.75rem; font-weight:600; color:var(--text); }
+.implant-tree-actions { margin:7px 0; }
+.implant-tree-item .implant-color { width:15px;height:15px;border:0;padding:0;background:transparent;flex:none;cursor:pointer; }
+.implant-review-tag { font-size:.62rem;color:var(--text-secondary);white-space:nowrap; }
+.implant-tree-item { gap:6px; }
+.implant-tree-item .item-label { min-width:0;overflow:hidden;text-overflow:ellipsis; }
+.implant-tree-item .opacity-slider { max-width:80px; }
+.implant-tree-group details > summary { font-size:.7rem;color:var(--text-secondary);margin:5px 0; }

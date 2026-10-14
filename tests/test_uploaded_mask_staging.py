@@ -601,5 +601,7 @@ def test_uploaded_mask_label_ids_use_registry_for_all_tree_controls():
     assert "mask.kind === 'uploaded_mask_label'" in layout
     assert "window.isDataTreeMaskId" in manual_3d
     assert 'src="static/js/brachybot-viewer-volume.js?v=' in index
-    assert "brachybot-viewer-layout.js?v=49" in index
+    import re
+    revision = re.search(r"brachybot-viewer-layout\.js\?v=(\d+)", index)
+    assert revision and int(revision[1]) >= 49
     assert 'src="static/js/brachybot-3d-manual.js?v=' in index

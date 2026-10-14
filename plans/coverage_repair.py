@@ -5,6 +5,8 @@ distance scores only order trials; acceptance always uses full dose arrays.
 """
 import time
 import numpy as np
+from .continuation import (validate_continuation, continuation_candidates,
+                           continuation_slots, sum_plan_dose, finalize_continuation)
 
 
 def dose_gain(dose, addition, target, organs, prescription, outside_limit):
@@ -28,30 +30,35 @@ def dose_gain(dose, addition, target, organs, prescription, outside_limit):
 def repair_coverage(plan, candidates, volume, image, target_value, organs,
                     prescription, outside_limit, target_coverage, seed_info,
                     infer_dose, validate, generate=None, *, seconds=60.0,
-                    rounds=3, shortlist=5, candidate_limit=500, clock=time.monotonic):
+                    rounds=3, shortlist=5, candidate_limit=500, clock=time.monotonic,
+                    continuation=None):
     from . import utilizations as util
     from .core import seed_plan_to_world_coordinates, sample_spatial_trajectories
     from scipy.ndimage import distance_transform_edt
 
     started = clock()
+    validate_continuation(continuation, volume, image, target_value)
     deadline = started + max(0.0, float(seconds))
     # Copy mutable containers: a rejected/failed repair must not mutate the
     # caller's accepted plan while appending seeds to an existing needle.
     result = [[e[0], list(e[1]), list(e[2])] for e in plan]
     target = volume == target_value
-    dose = np.zeros(volume.shape, dtype=np.float32)
-    for entry in result:
-        for contribution in entry[2]:
-            dose += contribution
-    coverage = lambda: float(np.mean(dose[target] > prescription)) if target.any() else 0.0
+    dose = sum_plan_dose(result, volume, continuation)
+    coverage = lambda: float(np.mean(dose[target] >= prescription)) if target.any() else 0.0
     info = dict(initial_coverage=coverage(), final_coverage=coverage(),
                 trials=0, added_needles=0, added_seeds=0, generated=0, stop_reason='no_improvement')
+    def finish():
+        if continuation is not None:
+            info['continuation_evaluation'] = finalize_continuation(
+                result, continuation, volume, image, target_value, seed_info,
+                prescription, outside_limit, target_coverage)
+        return result, info
     if not target.any() or coverage() >= target_coverage or seconds <= 0:
         info['stop_reason'] = 'target_reached' if target.any() and coverage() >= target_coverage else 'disabled_or_empty'
-        return result, info
+        return finish()
     spacing = np.asarray(image.GetSpacing()[::-1], dtype=float)
     distance = distance_transform_edt(target)
-    pool = sample_spatial_trajectories(candidates, candidate_limit, spacing)
+    pool = sample_spatial_trajectories(continuation_candidates(continuation, candidates, image), candidate_limit, spacing)
     generated_once = False
     available_cache = {}
     for iteration in range(rounds):
@@ -61,7 +68,7 @@ def repair_coverage(plan, candidates, volume, image, target_value, organs,
         if coverage() >= target_coverage:
             info['stop_reason'] = 'target_reached'
             break
-        cold = np.argwhere(target & (dose <= prescription))
+        cold = np.argwhere(target & (dose < prescription))
         if not len(cold):
             info['stop_reason'] = 'no_residual'
             break
@@ -73,6 +80,7 @@ def repair_coverage(plan, candidates, volume, image, target_value, organs,
         if generate is not None and not generated_once and clock() < deadline:
             generated_once = True
             extra = list(generate(cold, min(deadline, clock() + max(0.1, seconds * 0.2))))
+            extra = continuation_candidates(continuation, extra, image)
             info['generated'] += len(extra)
             extra = sample_spatial_trajectories(extra, min(48, candidate_limit), spacing)
             pool = (sample_spatial_trajectories(pool, candidate_limit-len(extra), spacing)
@@ -99,7 +107,7 @@ def repair_coverage(plan, candidates, volume, image, target_value, organs,
             if cache_key not in available_cache:
                 available_cache[cache_key] = util.get_available_position(
                     trajectory, placed, seed_info, image, distance)
-            available = available_cache[cache_key]
+            available = continuation_slots(continuation, trajectory, available_cache[cache_key], image, seed_info)
             if not available:
                 continue
             direction = np.asarray(trajectory[1], dtype=float)
@@ -161,4 +169,4 @@ def repair_coverage(plan, candidates, volume, image, target_value, organs,
     if coverage() >= target_coverage:
         info['stop_reason'] = 'target_reached'
     info['elapsed_seconds'] = clock() - started
-    return result, info
+    return finish()

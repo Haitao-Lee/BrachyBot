@@ -5,15 +5,16 @@
   "module_sha256": "dad562e79d2036fb836c2656f487658bf3344675bd09f8bf08186b839f1f06ff",
   "dependencies": {
     "plans/guide_geometry.py": "fbd6d7531a1e060988e730899f530882010d9cb5fb0350fd672ea97f675de770",
-    "tool_factory/seed_plan/planning_pipeline.py": "4999ca8ad44d549cae91e861e9090c8d2f282857e77486953b2a64e31d8e6949",
-    "web/planning_runs.py": "4c331c6fe0d2fd77d619d0f70361e203b759ebc9ccc9b82c2360c92c308df54d"
+    "tool_factory/seed_plan/planning_pipeline.py": "261f3db426a963fd3cda0aa19801f888783e14845255af61454671f57990cc3c",
+    "web/planning_runs.py": "7746ad6262aa7ab5bda358b744d235ccb3affc66bb267dae81bad18dbe46435d"
   },
   "renewal": {
-    "date": "2026-10-07",
-    "before_pipeline_sha256": "b2158617f31f03347e0baa2b659898cb16d4772d98b03bc601d0755f20acff72",
-    "evidence_path": "docs/benchmarks/surgical_guide_dependency_renewal_2026-10-07-ctv-final.json",
-    "evidence_sha256": "995827c1b580560ed353008f2510c7c276d4734c998be9e9e6ace38b8fc5cb1b",
-    "note": "CTV target projection and embedded-obstacle semantics changed. The guide's imported canonical needle helper AST is unchanged. Four isolated pre/post synthetic pairs preserve input, mesh, needle-path, auxiliary-hole and QA hashes with recorded timings. This is fixture-level dependency evidence, not real-case/browser or clinical performance validation. Prior evidence remains preserved."
+    "date": "2026-10-13",
+    "before_pipeline_sha256": "289348877fb2c3d80b3696fe6ab8f4d9fd6548884e3bfa0a7345a9634be8ed87",
+    "evidence_path": "docs/benchmarks/surgical_guide_dependency_renewal_2026-10-13-owned-input-quality.json",
+    "evidence_sha256": "470bd3467cd5806c426b7ca23557a49888803661b4b9240f2268a3c17e48a152",
+    "before_planning_runs_sha256": "5ca2ef963bfdd5b4443103d64ea5aa730a46ef0bdc3b724df9afd56811ca73aa",
+    "note": "Four alternating fresh-process pairs explicitly loaded the earlier planning and history modules on the before side and the current owned Input/evaluation modules on the after side. The direct guide geometry helper AST is unchanged. Input, final triangles, needle paths, auxiliary holes, realized bore manifests and every non-timing QA field matched exactly. Actual loaded module and runner hashes are bound in the new evidence; prior evidence is retained. This renews manufacturing dependency equivalence only, not printed strength, significant speedup or clinical fit."
   },
   "validation_environment": {"numpy": "2.4.6", "scipy": "1.15.3", "skimage": "0.26.0", "SimpleITK": "2.5.0"}
 }

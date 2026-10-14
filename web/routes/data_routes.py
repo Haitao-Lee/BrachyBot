@@ -609,8 +609,15 @@ def register_data_routes(
             job = export_jobs.get(user["id"], job_id)
             payload = job.public_dict()
             if job.zip_path:
-                payload["download_url"] = f"/api/data/exports/{job_id}/download"
+                from web.timepoint_http import scoped_download_url
+                from urllib.parse import quote
+                payload["download_url"] = scoped_download_url(f"/api/data/exports/{job_id}/download")
                 payload["file_base_url"] = f"/api/data/exports/{job_id}/files/"
+                # Each plain file link must retain ownership too. A base URL
+                # with query parameters cannot safely be joined with a path.
+                payload["files"] = [{**row, "download_url": scoped_download_url(
+                    f"/api/data/exports/{job_id}/files/" + quote(row["relative_path"], safe="/"))}
+                    for row in payload.get("files", [])]
             return jsonify({"success": True, "job": payload})
         except Exception as exc:
             return error_response(exc)

@@ -27,7 +27,7 @@ def monitor(monkeypatch):
         return client.post('/api/' + path, json=data, headers={'X-BrachyBot-Session': sid})
     post.get = lambda path: client.get('/api/' + path, headers={'X-BrachyBot-Session': sid})
     yield post, sid, writes
-    routes._flush_ui_bridge_checkpoint(('test-user', sid))
+    routes._flush_ui_bridge_checkpoint(('test-user', sid, None))
     support._drop_ui_bucket(sid)
 
 
@@ -106,7 +106,7 @@ def test_read_time_expiry_writes_inactive_summary(monitor):
     # selecting its default language, which is the expiry trigger under test.
     response = post('training/advice', {}).get_json()
     assert response['hydration_pending']
-    routes._flush_ui_bridge_checkpoint(('test-user', sid))
+    routes._flush_ui_bridge_checkpoint(('test-user', sid, None))
     persisted = writes[-1][0][2]['training']
     assert persisted['active'] is False
     assert persisted['last_summary']['closed_reason'] == 'monitor_timeout'

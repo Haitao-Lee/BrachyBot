@@ -273,8 +273,22 @@ def build_tumor_imaging_assessment(memory: Any) -> Dict[str, Any]:
     }
 
 
-def _prescription_gy(memory: Any) -> Tuple[float, str]:
+def _prescription_gy(memory: Any, *, evaluation_basis: str = "current") -> Tuple[float, str]:
+    if evaluation_basis not in {"current", "historical"}:
+        raise ValueError("Report evaluation basis must be current or historical")
     plan_config = _retrieve(memory, "plan_config", {}) or {}
+    saved_evaluation = _retrieve(memory, "current_dose_evaluation_config", {}) or {}
+    historical_origin = "plan_config"
+    if evaluation_basis == "historical" and isinstance(saved_evaluation, dict) and saved_evaluation:
+        plan_config = saved_evaluation
+        historical_origin = "current_dose_evaluation_config"
+    owned_config = {}
+    if evaluation_basis == "current":
+        from web.planning_config import current_evaluation_config
+        plan_config = current_evaluation_config(lambda key: _retrieve(memory, key))
+        owned_config = _retrieve(memory, "timepoint_planning_config", {}) or {}
+        if not isinstance(owned_config, dict):
+            owned_config = {}
     dose_metrics = _retrieve(memory, "dose_metrics", {}) or _retrieve(memory, "metrics", {}) or {}
     saved_scale = (
         dose_metrics.get("dose_scale_gy")
@@ -287,23 +301,32 @@ def _prescription_gy(memory: Any) -> Tuple[float, str]:
         dose_metrics,
         dose_scale_gy=saved_scale,
     )
-    if any(
+    if any(owned_config.get(key) is not None for key in (
+        "in_lowest_dose_gy", "in_lowest_energy", "prescription_dose_gy", "rx_gy", "prescribed_dose_gy")):
+        source = "timepoint_planning_config prescription (physical Gy)"
+    elif any(
         plan_config.get(key) is not None
         for key in ("in_lowest_dose_gy", "prescription_dose_gy", "rx_gy", "prescribed_dose_gy")
     ):
-        source = "plan_config physical Gy"
+        source = historical_origin + " physical Gy"
     elif dose_metrics.get("prescription_gy") is not None:
         source = "dose_metrics.prescription_gy"
     elif str(plan_config.get("dose_value_unit") or "").lower() == "gy":
-        source = "plan_config.in_lowest_energy (Gy)"
+        source = historical_origin + ".in_lowest_energy (Gy)"
     else:
-        source = "legacy plan_config prescription multiplier converted with 120 Gy/Rx"
+        source = "legacy " + historical_origin + " prescription multiplier converted with 120 Gy/Rx"
     return value, source
 
 
-def build_prescription_rationale(memory: Any) -> Dict[str, Any]:
+def build_prescription_rationale(memory: Any, *, evaluation_basis: str = "current") -> Dict[str, Any]:
+    owned_config = _retrieve(memory, "timepoint_planning_config", {}) if evaluation_basis == "current" else {}
+    owned_config = owned_config if isinstance(owned_config, dict) else {}
+    saved_evaluation = _retrieve(memory, "current_dose_evaluation_config", {}) if evaluation_basis == "historical" else {}
+    saved_evaluation = saved_evaluation if isinstance(saved_evaluation, dict) else {}
     tumor_type = str(
-        _retrieve(memory, "tumor_type_used", "")
+        owned_config.get("tumor_type")
+        or saved_evaluation.get("tumor_type")
+        or _retrieve(memory, "tumor_type_used", "")
         or _retrieve(memory, "tumor_type", "")
         or _retrieve(memory, "cancer_type", "")
         or _retrieve(memory, "organ", "")
@@ -311,7 +334,7 @@ def build_prescription_rationale(memory: Any) -> Dict[str, Any]:
     )
     site = _site_from_tumor_type(tumor_type)
     plan_config = _retrieve(memory, "plan_config", {}) or {}
-    rx_gy, rx_source = _prescription_gy(memory)
+    rx_gy, rx_source = _prescription_gy(memory, evaluation_basis=evaluation_basis)
 
     explicit_reason = (
         plan_config.get("prescription_rationale")
@@ -374,6 +397,7 @@ def build_prescription_rationale(memory: Any) -> Dict[str, Any]:
     source_records = [item for item in (_source_link_item(url) for url in sources) if item]
     return {
         "prescription_gy": rx_gy,
+        "evaluation_basis": evaluation_basis,
         "prescription_source": rx_source,
         "site": standard_site,
         "rationale": rationale,
@@ -390,10 +414,10 @@ def build_prescription_rationale(memory: Any) -> Dict[str, Any]:
     }
 
 
-def build_report_context(memory: Any) -> Dict[str, Any]:
+def build_report_context(memory: Any, *, evaluation_basis: str = "current") -> Dict[str, Any]:
     return {
         "tumor_imaging": build_tumor_imaging_assessment(memory),
-        "prescription_rationale": build_prescription_rationale(memory),
+        "prescription_rationale": build_prescription_rationale(memory, evaluation_basis=evaluation_basis),
     }
 
 

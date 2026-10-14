@@ -65,7 +65,7 @@ def test_conservative_needle_bound_does_not_claim_exact_overlap_or_offer_seed_se
     evidence['conflicts'][0].update(kind='needle_pairs', clearance_basis='axis_distance_bound')
     evidence['changed_objects'][0].update(kind='needles')
     guide = guided_feedback(evidence, 'en')
-    assert 'axis-model clearance bound' in guide['meaning']
+    assert 'surface-clearance lower bound (axis model)' in guide['meaning']
     assert 'physical overlap' not in guide['meaning']
     assert 'spacing' not in [step['action'] for step in guide['steps']]
 

@@ -37,10 +37,12 @@ from urllib.parse import unquote, urlsplit
 
 import numpy as np
 
+from web.timepoints import TimepointStoreMixin
+
 
 WORKSPACE_SCHEMA_VERSION = 1
 DEFAULT_USER_QUOTA_BYTES = int(
-    os.environ.get("BRACHYBOT_USER_STORAGE_QUOTA_BYTES", str(40 * 1024 ** 3))
+    os.environ.get("BRACHYBOT_USER_STORAGE_QUOTA_BYTES", str(160 * 1024 ** 3))
 )
 SESSION_ARCHIVE_AFTER_DAYS = max(
     1,
@@ -543,6 +545,10 @@ class WorkspaceArchived(WorkspaceError):
     """Raised when a case exists but its data is currently in cold storage."""
 
 
+class WorkspaceArchiveUnavailable(WorkspaceError):
+    """The configured cold-store mount is unavailable, not proof of data loss."""
+
+
 class WorkspaceIntegrityError(WorkspaceError):
     """Raised when a workspace transfer cannot be proven byte-for-byte safe."""
 
@@ -754,6 +760,8 @@ def _safe_json(value: Any) -> Any:
 def _restore_json(value: Any) -> Any:
     """Restore numeric label-map keys that JSON necessarily converted to text."""
     if isinstance(value, list):
+        if not any(isinstance(item, (dict, list)) for item in value):
+            return value.copy()
         return [_restore_json(item) for item in value]
     if not isinstance(value, dict):
         return value
@@ -882,6 +890,8 @@ class _ArtifactEncoder:
 
 def _decode_artifacts(value: Any, root: Path) -> Any:
     if isinstance(value, list):
+        if not any(isinstance(item, (dict, list)) for item in value):
+            return value.copy()
         return [_decode_artifacts(item, root) for item in value]
     if not isinstance(value, dict):
         return value
@@ -916,7 +926,18 @@ def _decode_artifacts(value: Any, root: Path) -> Any:
         return tuple(_decode_artifacts(item, root) for item in value["$tuple"])
     if "$image" in value or "$unsupported" in value:
         return None
-    return _restore_json({key: _decode_artifacts(item, root) for key, item in value.items()})
+    # Children are already decoded: a second recursive restore at every
+    # dictionary level repeatedly copied all historical DVH/Planning lists.
+    restored = {}
+    for key, item in value.items():
+        restored_key = key
+        if isinstance(key, str) and key.lstrip("-").isdigit():
+            try:
+                restored_key = int(key)
+            except ValueError:
+                pass
+        restored[restored_key] = _decode_artifacts(item, root)
+    return restored
 
 
 def _restore_hydration_metadata(value: Any) -> Any:
@@ -927,6 +948,8 @@ def _restore_hydration_metadata(value: Any) -> Any:
     lightweight agent from exposing a fake, partially decoded clinical result.
     """
     if isinstance(value, list):
+        if not any(isinstance(item, (dict, list)) for item in value):
+            return value.copy()
         return [_restore_hydration_metadata(item) for item in value]
     if not isinstance(value, dict):
         return _restore_json(value)
@@ -1833,7 +1856,46 @@ def _atomic_npy(path: Path, array: np.ndarray) -> None:
             temp.unlink(missing_ok=True)
 
 
-class WorkspaceStore:
+def _archive_storage_config(runtime_dir):
+    """Runtime-owned storage identity survives direct launches and environment loss.
+
+    Never discover another account/deployment's archive or guess a NAS location.
+    An explicit environment override remains authoritative for isolated tests.
+    """
+    if "BRACHYBOT_ARCHIVE_ROOT" in os.environ:
+        value = os.environ["BRACHYBOT_ARCHIVE_ROOT"].strip()
+        if not value:
+            raise WorkspaceError("Explicit archive root must not be empty")
+        return value, os.environ.get("BRACHYBOT_ARCHIVE_MOUNTPOINT") or None
+    config = Path(runtime_dir) / "storage-config.json"
+    if not config.exists():
+        return DEFAULT_ARCHIVE_ROOT, None
+    try:
+        with config.open("rb") as handle:
+            data = handle.read(65537)
+        if len(data) > 65536:
+            raise ValueError("Storage configuration is too large")
+        values = json.loads(data)
+        if (not isinstance(values, dict) or values.get("schema_version") != 1
+                or set(values) - {"schema_version", "archive_root", "archive_mountpoint"}):
+            raise ValueError("Unsupported storage configuration")
+        root = values.get("archive_root")
+        mount = values.get("archive_mountpoint")
+        if not isinstance(root, str) or not root.strip() or not Path(root).is_absolute():
+            raise ValueError("Persisted archive root must be an absolute path")
+        if mount is not None and (not isinstance(mount, str) or not Path(mount).is_absolute()):
+            raise ValueError("Archive mountpoint must be an absolute path")
+        if mount is not None:
+            parent = Path(mount).resolve()
+            target = Path(root).resolve()
+            if target != parent and parent not in target.parents:
+                raise ValueError("Archive root must be within its required mountpoint")
+        return root, mount
+    except (OSError, ValueError, TypeError) as exc:
+        raise WorkspaceError("Persistent archive storage configuration is invalid; no fallback was selected") from exc
+
+
+class WorkspaceStore(TimepointStoreMixin):
     """SQLite metadata plus filesystem artifacts for account-owned sessions."""
 
     def __init__(self, runtime_dir: Optional[os.PathLike[str] | str] = None):
@@ -1847,7 +1909,8 @@ class WorkspaceStore:
         self.workspaces_dir = self.runtime_dir / "workspaces"
         self.trash_dir = self.runtime_dir / "trash"
         self.staging_dir = self.runtime_dir / ".staging"
-        archive_config = os.environ.get("BRACHYBOT_ARCHIVE_ROOT", DEFAULT_ARCHIVE_ROOT)
+        archive_config, archive_mountpoint = _archive_storage_config(self.runtime_dir)
+        self.archive_required_mountpoint = Path(archive_mountpoint).resolve() if archive_mountpoint else None
         self.archive_root = Path(archive_config).expanduser().resolve()
         self.archive_users_dir = self.archive_root / "users"
         self.archive_available = False
@@ -1915,6 +1978,7 @@ class WorkspaceStore:
         except Exception:
             logger.debug("Startup staging cleanup failed", exc_info=True)
         self._initialize_database()
+        self._initialize_timepoints()
         self.purge_expired_trash()
         self.mark_running_sessions_interrupted()
 
@@ -2077,6 +2141,8 @@ class WorkspaceStore:
                 raise OSError(
                     "Archive root must not overlap the local runtime directory"
                 )
+            if self.archive_required_mountpoint is not None and not os.path.ismount(self.archive_required_mountpoint):
+                raise OSError("Required archive mountpoint is unavailable")
             self.archive_users_dir.mkdir(parents=True, exist_ok=True)
             for directory in (self.archive_root, self.archive_users_dir):
                 try:
@@ -2317,6 +2383,13 @@ class WorkspaceStore:
                 "WHERE storage_quota_bytes IS NULL OR storage_quota_bytes <= 0",
                 (DEFAULT_USER_QUOTA_BYTES,),
             )
+            # Upgrade the known old default only, preserving custom quotas
+            # and installations with an explicit environment storage policy.
+            if "BRACHYBOT_USER_STORAGE_QUOTA_BYTES" not in os.environ:
+                connection.execute(
+                    "UPDATE users SET storage_quota_bytes = ? WHERE storage_quota_bytes = ?",
+                    (DEFAULT_USER_QUOTA_BYTES, 40 * 1024 ** 3),
+                )
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_case_sessions_activity "
                 "ON case_sessions(user_id, status, storage_status, last_accessed_at DESC)"
@@ -2476,6 +2549,11 @@ class WorkspaceStore:
         """
         if record.storage_status != "archived":
             return record
+        if (self.archive_required_mountpoint is not None
+                and not os.path.ismount(self.archive_required_mountpoint)):
+            # An inaccessible authoritative NAS is not evidence that a local
+            # leftover is the newest surviving copy. Do not heal to stale data.
+            return record
         try:
             with self._connection() as connection:
                 pending = connection.execute(
@@ -2563,8 +2641,10 @@ class WorkspaceStore:
         create: bool = False,
     ) -> Path:
         """Return the NAS path for one account-owned archived case."""
-        if not self.archive_available:
-            raise WorkspaceError(
+        if (not self.archive_available or
+                (self.archive_required_mountpoint is not None
+                 and not os.path.ismount(self.archive_required_mountpoint))):
+            raise WorkspaceArchiveUnavailable(
                 f"Session archive storage is unavailable at {self.archive_root}"
             )
         root = (
@@ -2655,11 +2735,11 @@ class WorkspaceStore:
             "operation": {"state": "idle", "checkpoint": None},
         }
 
-    def load_snapshot(self, user_id: str, session_id: str) -> Dict[str, Any]:
+    def load_snapshot(self, user_id: str, session_id: str, *, shared_only=False) -> Dict[str, Any]:
         with self._case_guard(user_id, session_id):
-            return self._load_snapshot_locked(user_id, session_id)
+            return self._load_snapshot_locked(user_id, session_id, shared_only=shared_only)
 
-    def _load_snapshot_locked(self, user_id: str, session_id: str) -> Dict[str, Any]:
+    def _load_snapshot_locked(self, user_id: str, session_id: str, *, shared_only=False) -> Dict[str, Any]:
         record = self.get_session(user_id, session_id)
         record = self._recover_archived_without_remote(user_id, session_id, record)
         if record.storage_status == "archived":
@@ -2677,14 +2757,30 @@ class WorkspaceStore:
                 with self._lock:
                     cached = self._snapshot_cache.get(cache_key)
                 if cached is not None and cached[:2] == identity:
-                    snapshot = copy.deepcopy(cached[2])
+                    if shared_only:
+                        from web.timepoints import _SHARED_AGENT_KEYS
+                        source = cached[2]
+                        snapshot = copy.deepcopy({key: source[key] for key in
+                            ("schema_version", "session_id", "saved_at", "chat") if key in source})
+                        snapshot["agent"] = copy.deepcopy({key: source.get("agent", {})[key]
+                            for key in _SHARED_AGENT_KEYS if key in source.get("agent", {})})
+                    else:
+                        from web.timepoint_chat import _detached
+                        snapshot = _detached(cached[2])
                 else:
                     with open(path, "r", encoding="utf-8") as handle:
                         snapshot = json.load(handle)
+                    from web.timepoint_chat import _detached
                     with self._lock:
                         self._snapshot_cache[cache_key] = (
-                            identity[0], identity[1], copy.deepcopy(snapshot),
+                            identity[0], identity[1], _detached(snapshot),
                         )
+                    if shared_only:
+                        from web.timepoints import _SHARED_AGENT_KEYS
+                        snapshot = {key: value for key, value in snapshot.items()
+                                    if key in {"schema_version", "session_id", "saved_at", "chat", "agent"}}
+                        snapshot["agent"] = {key: value for key, value in snapshot.get("agent", {}).items()
+                                             if key in _SHARED_AGENT_KEYS}
             except (OSError, json.JSONDecodeError) as exc:
                 raise WorkspaceError("Case workspace snapshot is unreadable") from exc
         if snapshot.get("schema_version") != WORKSPACE_SCHEMA_VERSION:
@@ -2697,6 +2793,15 @@ class WorkspaceStore:
             snapshot["chat"] = _strip_internal_visual_records(
                 _reconcile_chat_attachment_registry(snapshot["chat"])
             )
+        shared_path = self.workspace_root(user_id, session_id) / "shared_agent_control.json"
+        if shared_path.exists():
+            try:
+                shared_control = json.loads(shared_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                raise WorkspaceError("Shared conversation control state is unreadable") from exc
+            if not isinstance(shared_control, dict) or shared_control.get("session_id") != session_id:
+                raise WorkspaceError("Shared conversation control belongs to another Session")
+            snapshot.setdefault("agent", {}).update(shared_control.get("agent") or {})
         if isinstance(snapshot.get("report"), Mapping):
             # Read-time defense-in-depth: an older snapshot may already carry
             # a screenshot URL from the Session that was active before a
@@ -2713,6 +2818,30 @@ class WorkspaceStore:
             "revision": record.revision,
         }
         return snapshot
+
+    def save_shared_agent_control(self, user_id, session_id, values, *, reason="conversation.control"):
+        """Publish only conversation/accounting fields, never clinical arrays."""
+        allowed = {"conversation", "context_summary", "compaction_count", "context_accounting", "user_lang"}
+        if not isinstance(values, Mapping) or set(values) - allowed:
+            raise WorkspaceError("Unsupported shared conversation fields")
+        with self._case_guard(user_id, session_id):
+            self.require_local_session(user_id, session_id)
+            root = self.workspace_root(user_id, session_id)
+            path = _safe_workspace_child(root, "shared_agent_control.json")
+            current = {}
+            if path.exists():
+                current = json.loads(path.read_text(encoding="utf-8"))
+                if current.get("session_id") != session_id:
+                    raise WorkspaceError("Shared conversation state has a foreign identity")
+            payload = {"session_id": session_id, "saved_at": time.time(),
+                "agent": {**(current.get("agent") or {}), **_safe_json(dict(values))}}
+            data = json.dumps(payload, ensure_ascii=True, allow_nan=False, separators=(",", ":")).encode("utf-8")
+            with self._quota_commit_lock(user_id):
+                self._ensure_replacement_capacity(user_id, path, len(data))
+                _atomic_bytes(path, data)
+                self._invalidate_storage_usage(user_id)
+            self._audit(user_id, session_id, reason, {"shared_fields": sorted(values)})
+        return self.load_snapshot(user_id, session_id)
 
     def save_snapshot_patch(
         self,
@@ -2758,6 +2887,7 @@ class WorkspaceStore:
         removals: Optional[Iterable[str]] = None,
         *,
         reason: str = "agent.results.patch",
+        expected_revision: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Durably patch small Agent planning state without encoding arrays.
 
@@ -2786,6 +2916,8 @@ class WorkspaceStore:
             self._checkpoint_generations[key] = generation
 
         with self._case_guard(str(user_id), str(session_id)):
+            if expected_revision is not None and expected_revision != self.get_session(user_id, session_id).revision:
+                raise WorkspaceLeaseConflict("This case was updated; reload it before publishing results")
             root = self.workspace_root(user_id, session_id, create=True)
             snapshot = self.load_snapshot(user_id, session_id)
             agent_state = (
@@ -2858,6 +2990,34 @@ class WorkspaceStore:
                 },
             )
             return self.load_snapshot(user_id, session_id)
+
+    def save_agent_results_delta(
+        self, user_id: str, session_id: str, updates: Mapping[str, Any], *,
+        expected_revision: int, reason: str = "agent.results.delta",
+    ) -> Dict[str, Any]:
+        """Encode only changed numerical keys, preserving all other saved state.
+
+        Server-only counterpart to the small JSON patch. A caller must capture
+        the current revision and check its clinical inputs under the case guard.
+        Unique sidecars cannot overwrite arrays referenced by an older result.
+        No full-Agent snapshot or in-memory clinical aliases are copied here.
+        """
+        if type(expected_revision) is not int or expected_revision < 0 or not isinstance(updates, Mapping):
+            raise WorkspaceError("A current revision and result mapping are required")
+        with self._case_guard(user_id, session_id), self._quota_commit_lock(user_id):
+            if self.get_session(user_id, session_id).revision != expected_revision:
+                raise WorkspaceLeaseConflict("This case was updated; recompute from current inputs")
+            root = self.workspace_root(user_id, session_id, create=True)
+            encoder = _ArtifactEncoder(root, ensure_capacity=lambda path, size:
+                self._ensure_replacement_capacity(user_id, path, size))
+            nonce = uuid.uuid4().hex
+            encoded = {}
+            for key, value in updates.items():
+                key = str(key)
+                encoded[key] = encoder.encode(value, f"delta_{nonce}_{key}", key)
+                self._invalidate_storage_usage(user_id)
+            return self.save_agent_results_patch(user_id, session_id, encoded,
+                expected_revision=expected_revision, reason=reason)
 
     def replace_snapshot_section(
         self,
@@ -3572,7 +3732,10 @@ class WorkspaceStore:
             raise
 
         prune_started = time.perf_counter()
-        referenced_arrays = _array_references(encoded_results)
+        referenced_arrays = (
+            _array_references(encoded_results)
+            | self.timepoint_array_references(user_id, session_id)
+        )
         arrays_dir = root / "arrays"
         for path in arrays_dir.glob("*.npy"):
             relative = path.relative_to(root).as_posix()
@@ -5252,7 +5415,7 @@ class WorkspaceStore:
     ) -> WorkspaceSession:
         """Restore a cold case to local storage and restart its activity clock."""
         if not self.archive_available:
-            raise WorkspaceError(
+            raise WorkspaceArchiveUnavailable(
                 f"Session archive storage is unavailable at {self.archive_root}"
             )
         size = 0

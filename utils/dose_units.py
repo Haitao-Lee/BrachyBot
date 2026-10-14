@@ -50,13 +50,56 @@ def workspace_physical_dose(retrieve):
         return physical_volume(physical, units="physical_gy")
     normalized = retrieve("dose_distribution_gy")
     if normalized is not None:
-        # Despite its historical name this key is normalized by contract.
-        units = "normalized"
+        units = workspace_field_units(retrieve, "dose_distribution_gy")
     else:
         normalized = retrieve("dose_distribution")
-        units = retrieve("dose_units")
+        units = workspace_field_units(retrieve, "dose_distribution")
     if normalized is None:
         raise ValueError("No dose distribution is available")
     scale = None if str(units).lower() in PHYSICAL_UNITS else calibrated_scale(
         retrieve("dose_metrics"), retrieve("plan_config"), explicit=retrieve("dose_scale_gy"))
     return physical_volume(normalized, units=units, scale=scale)
+
+
+def workspace_field_units(retrieve, key):
+    """Read a field declaration or explicit historical provenance, never size."""
+    if key == "dose_distribution_physical_gy":
+        return "physical_gy"
+    if key in {"dose_distribution_current_normalized", "dose_distribution_legacy_normalized",
+               "algorithm_plan_dose_distribution_current_normalized"}:
+        return "normalized_model"
+    declared = (retrieve("dose_unit_metadata") or {}).get(key)
+    if declared is None:
+        declared = (retrieve("dose_unit_provenance") or {}).get(key)
+    if declared is None and key == 'dose_distribution_gy' and retrieve('dose_unit_schema_version') in (None, 1):
+        # This is a documented schema-1 field contract, not an amplitude
+        # heuristic: the historical `_gy` alias stored model output even when
+        # the generic scene units said Gy. A saved calibration is still
+        # mandatory. Schema-2 writers declare this field as physical Gy.
+        return 'normalized_model'
+    if declared is None:
+        declared = retrieve("dose_units")
+    unit = str(declared or "").strip().lower()
+    if unit not in PHYSICAL_UNITS | MODEL_UNITS:
+        raise ValueError("Explicit dose units and calibration/provenance are required for " + key)
+    return unit
+
+
+def workspace_normalized_dose(retrieve, *, grid="current"):
+    """Compatibility readers use model output only through this unit boundary."""
+    if grid not in {"current", "planning"}:
+        raise ValueError("Dose grid must be current or planning")
+    keys = (("dose_distribution_current_normalized", "dose_distribution_physical_gy", "dose_distribution_gy")
+            if grid == "current" else ("dose_distribution",))
+    for key in keys:
+        dose = retrieve(key)
+        if dose is None:
+            continue
+        units = workspace_field_units(retrieve, key)
+        if units in MODEL_UNITS:
+            # Validate without converting an already normalized model field.
+            return physical_volume(dose, units="physical_gy")
+        scale = calibrated_scale(retrieve("dose_metrics"), retrieve("plan_config"),
+                                 explicit=retrieve("dose_scale_gy"))
+        return physical_volume(dose, units="physical_gy") / scale
+    raise ValueError("No dose distribution is available on the requested grid")

@@ -139,6 +139,7 @@ DEFAULT_GUIDE_PARAMETERS: Dict[str, Any] = {
     "auxiliary_holes_per_ring": 12.0,
     "auxiliary_hole_first_offset_mm": 6.0,
     "auxiliary_hole_ring_spacing_mm": 3.0,
+    "minimum_guiding_length_mm": 1.0,
     # 0.2 mm is the default manufacturing grid.  It gives the primary bore
     # enough radial samples for a smooth STL even before the analytic wall
     # projection pass, while remaining bounded to the local guide patch.  A
@@ -389,6 +390,7 @@ _PARAMETER_LIMITS = {
     "auxiliary_holes_per_ring": (4.0, 24.0),
     "auxiliary_hole_first_offset_mm": (2.0, 15.0),
     "auxiliary_hole_ring_spacing_mm": (1.5, 10.0),
+    "minimum_guiding_length_mm": (0.25, 20.0),
     "geometry_resolution_mm": (0.2, 2.0),
     "minimum_component_voxels": (1.0, 10000.0),
     "truncation_margin_mm": (0.0, 40.0),
@@ -811,7 +813,27 @@ def _finite_integer(value: Any, name: str, lower: float, upper: float) -> float:
 def normalize_guide_parameters(raw: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
     """Validate guide parameters and enforce one physical bore diameter."""
     raw = raw if isinstance(raw, Mapping) else {}
+    # This opt-in profile designs a new guide only. Reusing a manufactured
+    # guide consumes its frozen bore manifest and never normalizes or rebuilds
+    # the physical STL. Four staggered rings enlarge alternate corridor
+    # coverage; unchanged full-cylinder wall/support checks still select the
+    # useful subset. Mechanical commissioning remains a separate prerequisite.
+    legacy_keys = {"skin_threshold_hu", "skin_clearance_mm", "plate_thickness_mm", "patch_margin_mm",
+                   "channel_radius_mm", "sleeve_outer_radius_mm", "sleeve_outward_mm", "sleeve_inward_mm"}
+    auxiliary_keys = {"auxiliary_density_profile", "auxiliary_holes_enabled", "auxiliary_hole_radius_mm",
+                      "auxiliary_hole_ring_count", "auxiliary_holes_per_ring", "auxiliary_hole_first_offset_mm",
+                      "auxiliary_hole_ring_spacing_mm"}
+    legacy_request = bool(legacy_keys.intersection(raw) and not auxiliary_keys.intersection(raw))
+    density_profile = str(raw.get("auxiliary_density_profile", "standard_v1" if legacy_request else "continuation_dense_v1"))
+    if density_profile not in {"standard_v1", "continuation_dense_v1"}:
+        raise SurgicalGuideError("Unknown auxiliary_density_profile")
+    if density_profile == "continuation_dense_v1":
+        raw = dict(raw)
+        raw.setdefault("auxiliary_holes_enabled", True)
+        raw.setdefault("auxiliary_hole_ring_count", 4.0)
+        raw.setdefault("auxiliary_holes_per_ring", 12.0)
     auxiliary_parameter_names = {
+        "auxiliary_density_profile",
         "auxiliary_holes_enabled",
         "auxiliary_hole_radius_mm",
         "auxiliary_hole_ring_count",
@@ -896,6 +918,7 @@ def normalize_guide_parameters(raw: Optional[Mapping[str, Any]] = None) -> Dict[
                 raise SurgicalGuideError(
                     "auxiliary hole rings must fit inside patch_margin_mm"
                 )
+    params["auxiliary_density_profile"] = density_profile
     return params
 
 
@@ -4524,11 +4547,77 @@ def _generate_surgical_guide(
     )
     planning_version = int(memory.retrieve("manual_plan_version") or 0)
     path_checks = _planned_path_deviation(paths)
+    # Candidate cylinders are construction tools, not proof of an actual
+    # manufactured channel. Audit the exact final export after every repair,
+    # projection and finite-FOV clip, without modifying a single mesh vertex.
+    from utils.guide_manufacturing import build_production_bore_manifest
+
+    bore_candidates = []
+    for path, cutter in zip(paths, primary_bore_specs):
+        bore_candidates.append({
+            "candidate_id": f"primary_{path.needle_id}",
+            "kind": "primary",
+            "source_needle_id": str(path.needle_id),
+            "source_trajectory_id": str(path.trajectory_id),
+            "center_local_mm": path.entry.astype(float).tolist(),
+            "axis_local": path.inward_direction.astype(float).tolist(),
+            "requested_radius_mm": float(cutter["radius_mm"]),
+            "construction_endpoints_local_mm": [
+                np.asarray(cutter["end"], dtype=float).tolist(),
+                np.asarray(cutter["start"], dtype=float).tolist(),
+            ],
+            "provenance": "final_primary_csg_cutter_from_source_needle",
+        })
+    for spec in auxiliary_specs:
+        axis = np.asarray(spec["end"]) - np.asarray(spec["start"])
+        axis /= np.linalg.norm(axis)
+        bore_candidates.append({
+            "candidate_id": str(spec["id"]),
+            "kind": "auxiliary",
+            "source_needle_id": str(spec["needle_id"]),
+            "source_trajectory_id": str(spec["trajectory_id"]),
+            "center_local_mm": np.asarray(spec["center"], dtype=float).tolist(),
+            "axis_local": axis.tolist(),
+            "requested_radius_mm": float(spec["radius_mm"]),
+            "construction_endpoints_local_mm": [
+                np.asarray(spec["start"], dtype=float).tolist(),
+                np.asarray(spec["end"], dtype=float).tolist(),
+            ],
+            "skip_reason": spec.get("skip_reason") if spec.get("skipped") else None,
+            "provenance": "staggered_plate_only_auxiliary_csg_candidate",
+        })
+    bore_manifest = build_production_bore_manifest(
+        vertices, faces, bore_candidates,
+        minimum_wall_mm=GUIDE_MINIMUM_WALL_MM, parameters=params,
+        minimum_guiding_length_mm=float(params.get("minimum_guiding_length_mm", 1.0)),
+        source_provenance={
+            "source_plan_signature": signature,
+            "planning_id": planning_id or None,
+            "planning_version": planning_version,
+            "guide_version": version,
+            "selected_needle_ids": [path.needle_id for path in paths],
+        },
+    )
+    bore_by_candidate = {record["candidate_id"]: record for record in bore_manifest["bores"]}
+    for check in path_checks:
+        check["bore_id"] = bore_by_candidate[f"primary_{check['needle_id']}"]["bore_id"]
+    attempted_auxiliary_count = len(realized_auxiliary_specs)
+    for spec in realized_auxiliary_specs:
+        record = bore_by_candidate[str(spec["id"])]
+        if not record["eligible"]:
+            spec["skipped"] = True
+            spec["skip_reason"] = record["reason"]
+    realized_auxiliary_specs = [spec for spec in realized_auxiliary_specs if not spec.get("skipped")]
+    finish_stage("final_bore_manifest", realized=bore_manifest["realized_count"],
+                 candidates=bore_manifest["candidate_count"])
     auxiliary_holes = {
         "enabled": bool(params.get("auxiliary_holes_enabled", False)),
         "requested_count": len(auxiliary_specs),
         "realized_count": len(realized_auxiliary_specs),
         "skipped_count": len(auxiliary_specs) - len(realized_auxiliary_specs),
+        "construction_subtracted_count": attempted_auxiliary_count,
+        "density_profile": params["auxiliary_density_profile"],
+        "mechanical_validation": "not_established_for_density_profile",
         "ring_count": int(params["auxiliary_hole_ring_count"]),
         "holes_per_ring": int(params["auxiliary_holes_per_ring"]),
         "radius_mm": float(params["auxiliary_hole_radius_mm"]),
@@ -4552,6 +4641,8 @@ def _generate_surgical_guide(
                 "angle_degrees": float(spec["angle_degrees"]),
                 "radial_offset_mm": float(spec["radial_offset_mm"]),
                 "center_world_mm": np.asarray(spec["center"], dtype=float).tolist(),
+                "bore_id": bore_by_candidate[str(spec["id"])]["bore_id"],
+                "realized_bore": bore_by_candidate[str(spec["id"])],
             }
             for spec in realized_auxiliary_specs
         ],
@@ -4613,6 +4704,10 @@ def _generate_surgical_guide(
         "skin_surface_data_version": skin_surface["data_version"],
         "needle_paths": path_checks,
         "auxiliary_holes": auxiliary_holes,
+        "bore_manifest": bore_manifest,
+        "geometry_id": bore_manifest["geometry_id"],
+        "mesh_sha256": bore_manifest["mesh_sha256"],
+        "stl_sha256": bore_manifest["stl_sha256"],
         "vertices": vertices,
         "faces": faces,
         "validation": {
@@ -4636,6 +4731,12 @@ def _generate_surgical_guide(
             "grid_budget": dict(grid_budget),
             "stage_timings_seconds": stage_timings,
             "bore_quality": bore_quality,
+            "bore_manifest_audit": {
+                "manifest_sha256": bore_manifest["manifest_sha256"],
+                "realized_count": bore_manifest["realized_count"],
+                "candidate_count": bore_manifest["candidate_count"],
+                "mechanical_validation": "not_established",
+            },
             "component_cleanup": component_cleanup,
             "primary_sleeve_support": primary_sleeve_support,
             "needle_spacing": needle_spacing,
@@ -4712,7 +4813,7 @@ def mesh_to_ascii_stl(vertices: Any, faces: Any, name: str = "brachybot_puncture
     return ("\n".join(lines) + "\n").encode("ascii")
 
 
-def parse_stl(payload: bytes) -> Tuple[np.ndarray, np.ndarray]:
+def parse_stl(payload: bytes, *, vertex_dtype: Any = np.float32) -> Tuple[np.ndarray, np.ndarray]:
     """Parse the project-owned ASCII or binary STL used for round-trip QA."""
     if not isinstance(payload, (bytes, bytearray)) or len(payload) < 6:
         raise SurgicalGuideError("STL payload is empty")
@@ -4737,7 +4838,7 @@ def parse_stl(payload: bytes) -> Tuple[np.ndarray, np.ndarray]:
                         vertices.append(vertex)
                     face.append(lookup[vertex])
                 faces.append(tuple(face))
-            return np.asarray(vertices, dtype=np.float32), np.asarray(faces, dtype=np.int32)
+            return np.asarray(vertices, dtype=vertex_dtype), np.asarray(faces, dtype=np.int32)
     text = raw.decode("utf-8", errors="strict")
     values = re.findall(
         r"^\s*vertex\s+([-+0-9.eE]+)\s+([-+0-9.eE]+)\s+([-+0-9.eE]+)\s*$",
@@ -4760,7 +4861,7 @@ def parse_stl(payload: bytes) -> Tuple[np.ndarray, np.ndarray]:
                 vertices.append(vertex)
             face.append(lookup[vertex])
         faces.append(tuple(face))
-    return np.asarray(vertices, dtype=np.float32), np.asarray(faces, dtype=np.int32)
+    return np.asarray(vertices, dtype=vertex_dtype), np.asarray(faces, dtype=np.int32)
 
 
 def validate_exported_stl(payload: bytes) -> Dict[str, Any]:

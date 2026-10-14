@@ -14,6 +14,9 @@ import time
 
 from .planning_preview import safe_preview
 from .performance import timed, record_timing
+from .continuation import (validate_continuation, initial_radiation,
+                           continuation_candidates, continuation_preview_context,
+                           finalize_continuation, sum_plan_dose)
 
 try:
     import slicer
@@ -206,7 +209,7 @@ def sample_anchor_covering_trajectories(trajectories, limit, spacing=(1, 1, 1)):
 def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract_angle,
               target_value, background_value, obstacle_value, maximum_candidate_trajectories, progressDialog=None,
               min_depth=2, preview_callback=None, entry_body_mask=None,
-              entry_boundary_faces=None):
+              entry_boundary_faces=None, deadline=None):
     """
     Generate an initial set of candidate needle/catheter trajectories within a 3-D radiation volume.
 
@@ -259,6 +262,9 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
     """
     if progressDialog is None:
         progressDialog = _mock_progress
+    deadline_options = {"deadline": deadline} if deadline is not None else {}
+    if deadline is not None and time.monotonic() >= deadline:
+        raise TimeoutError("Trajectory initialization reached its time budget")
 
     # ``dose_image`` is the resampled CT in the production pipeline.  Infer a
     # body envelope when callers do not provide one so the standalone
@@ -312,6 +318,7 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
             extract_angle,
             max_surface_points=min(256, candidate_limit),
             surface_spacing_mm=2.5,
+            **deadline_options,
         )
         direction_entries_by_direction = directional_result[
             "entry_points_by_direction"
@@ -328,6 +335,7 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
             extract_angle,
             max_surface_points=min(256, candidate_limit),
             surface_spacing_mm=2.5,
+            **deadline_options,
         )
     else:
         # Preserve the lightweight/legacy integration contract used by tools
@@ -349,6 +357,8 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
     entry_rejected = 0
     last_preview_at = 0.0
     for i, direc in enumerate(candidate_dirs):
+        if deadline is not None and time.monotonic() >= deadline:
+            raise TimeoutError("Trajectory initialization reached its time budget")
         progressDialog.setValue(45)
         progressDialog.setLabelText("Initial Planning...")
         if (
@@ -383,6 +393,7 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
                 obstacle_value,
                 min_depth,
                 max_length,
+                **deadline_options,
             )
         else:
             # Keep the guard inside the utility as well: other callers can
@@ -400,6 +411,7 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
                 max_length,
                 entry_body_mask=entry_body_mask,
                 truncated_boundary_faces=entry_boundary_faces,
+                **deadline_options,
             )
         # Keep all valid anchors for each direction until the final
         # surface-covering sampler. Applying the global path budget here would
@@ -470,7 +482,8 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
                  target_value, background_value, obstacle_value, infer_img_size, in_lowest_dose, out_highest_dose,
                  DVH_rate, seed_info, iter_rate, image_normalize_min, image_normalize_max, image_normalize_scale,
                  progressDialog=None, parallel_min_distance_mm=None,
-                 parallel_angle_tolerance_deg=None, preview_callback=None, deadline=None):
+                 parallel_angle_tolerance_deg=None, preview_callback=None, deadline=None,
+                 continuation=None):
     """
     Generate an optimized radiation treatment plan by selecting seed trajectories, placing seeds, and refining the plan
     to ensure effective tumor coverage while minimizing radiation exposure to healthy tissues.
@@ -484,10 +497,14 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
         progressDialog = _mock_progress
 
     # --- Initialize Variables ---
-    candidate_trajectories = copy.deepcopy(init_trajectories)
+    validate_continuation(continuation, radiation_volume, dose_image, target_value)
+    candidate_trajectories = copy.deepcopy(continuation_candidates(continuation, init_trajectories, dose_image))
     init_planned_res = []
-    cur_DVH_rate = 0
-    cur_radiation = np.zeros_like(radiation_volume).astype(float)
+    cur_radiation = initial_radiation(radiation_volume, continuation, dtype=float)
+    target_mask = radiation_volume == target_value
+    cur_DVH_rate = float(np.mean(cur_radiation[target_mask] >= in_lowest_dose)) if target_mask.any() else 0.0
+    if continuation is not None and cur_DVH_rate >= DVH_rate:
+        return []
     distance_map = distance_transform_edt((radiation_volume == target_value))
 
     dose_context = utilizations.DoseImageContext(
@@ -500,10 +517,15 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
 
     def _emit_plan_preview(plan, phase, iteration, coverage=None, force=False):
         nonlocal last_preview_at
+        if not callable(preview_callback):
+            return
         now = time.monotonic()
         if not force and now - last_preview_at < 0.20:
             return
         last_preview_at = now
+        if continuation is not None and coverage is None:
+            total = sum_plan_dose(plan, radiation_volume, continuation, dtype=float)
+            coverage = float(np.mean(total[target_mask] >= in_lowest_dose))
         safe_preview(preview_callback, {
             "phase": phase,
             "iteration": iteration,
@@ -511,6 +533,7 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
             "coordinate_space": "voxel",
             "plan": plan,
             "force": bool(force),
+            **continuation_preview_context(continuation),
         })
 
     # --- Stage 1: Trajectory Selection and Initial Planning ---
@@ -566,7 +589,7 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
             image_normalize_min,
             image_normalize_max,
             image_normalize_scale,
-            dose_context=dose_context, deadline=deadline
+            dose_context=dose_context, deadline=deadline, continuation=continuation
         )
 
         if len(optimal_seeds) == 0:
@@ -601,8 +624,8 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
     for i in range(len(minus_res)):
         minus_res[i] = [minus_res[i][0], [], []]
 
-    cur_DVH_rate = 0
-    minus_radiation = np.zeros_like(radiation_volume)
+    minus_radiation = initial_radiation(radiation_volume, continuation, dtype=float)
+    cur_DVH_rate = float(np.mean(minus_radiation[target_mask] >= in_lowest_dose)) if target_mask.any() else 0.0
     # Stage 2 evaluates a full dose-model sweep for every replan attempt.
     # Keep the loop finite even when the target is unreachable or a candidate
     # is reported as successful without improving the coverage metric.
@@ -644,7 +667,7 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
                 image_normalize_min,
                 image_normalize_max,
                 image_normalize_scale,
-                dose_context=dose_context, deadline=deadline
+                dose_context=dose_context, deadline=deadline, continuation=continuation
             )
         except Exception as e:
             minus_res = copy.deepcopy(init_planned_res)
@@ -676,7 +699,7 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
 
     # A stalled rebuilding sweep must not replace a better complete seed set.
     target_mask = radiation_volume == target_value
-    if np.count_nonzero(minus_radiation[target_mask] > in_lowest_dose) < np.count_nonzero(cur_radiation[target_mask] > in_lowest_dose):
+    if np.count_nonzero(minus_radiation[target_mask] >= in_lowest_dose) < np.count_nonzero(cur_radiation[target_mask] >= in_lowest_dose):
         minus_res = copy.deepcopy(init_planned_res)
         minus_radiation = cur_radiation.copy()
 
@@ -726,7 +749,7 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
                 image_normalize_min,
                 image_normalize_max,
                 image_normalize_scale,
-                dose_context=dose_context, deadline=deadline
+                dose_context=dose_context, deadline=deadline, continuation=continuation
             )
         except Exception as e:
             sign = False
@@ -759,7 +782,7 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
     # Retain the better coverage/deficit result if seed removal degraded it.
     initial_values = minus_radiation[target_mask]
     final_values = opti_radiation[target_mask]
-    if (np.count_nonzero(final_values > in_lowest_dose) < np.count_nonzero(initial_values > in_lowest_dose)
+    if (np.count_nonzero(final_values >= in_lowest_dose) < np.count_nonzero(initial_values >= in_lowest_dose)
             or np.maximum(in_lowest_dose-final_values, 0).sum() > np.maximum(in_lowest_dose-initial_values, 0).sum() + 1e-6):
         opti_res = minus_res
         opti_radiation = minus_radiation
@@ -771,6 +794,10 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
         force=True,
     )
     final_res = seed_plan_to_world_coordinates(opti_res, dose_image)
+    if continuation is not None:
+        final_res = [entry for entry in final_res if entry[1]]
+        finalize_continuation(final_res, continuation, radiation_volume, dose_image,
+                              target_value, seed_info, in_lowest_dose, out_highest_dose, DVH_rate)
     final_seed_counts = [len(entry[1]) for entry in opti_res]
     _logger.info(
         "[optimal_plan] Final seed distribution: needles=%d single_seed=%d multi_seed=%d max_seeds_per_needle=%d",
@@ -811,6 +838,7 @@ def optimal_plan_rf(
     parallel_angle_tolerance_deg=None,
     diagnostics=None,
     preview_callback=None,
+    continuation=None,
 ):
     """
     Hierarchical reinforcement-learning pipeline for prostate/LDR brachytherapy.
@@ -818,6 +846,7 @@ def optimal_plan_rf(
     if progressDialog is None:
         progressDialog = _mock_progress
 
+    validate_continuation(continuation, radiation_volume, dose_image, target_value)
     distance_map = distance_transform_edt(radiation_volume == target_value)
 
     progressDialog.setValue(50)
@@ -851,7 +880,13 @@ def optimal_plan_rf(
         planning_kwargs["diagnostics"] = diagnostics
     if preview_callback is not None:
         planning_kwargs["preview_callback"] = preview_callback
+    if continuation is not None:
+        planning_kwargs["continuation"] = continuation
     optimal_res, _ = utilizations.hierarchical_planning_rf(**planning_kwargs)
+    if continuation is not None:
+        optimal_res = [entry for entry in optimal_res or [] if entry[1]]
+        finalize_continuation(optimal_res, continuation, radiation_volume, dose_image,
+                              target_value, seed_info, in_lowest_dose, out_highest_dose, DVH_rate)
 
     # The hierarchical RL utility already converts both seed positions and
     # directions to patient-world coordinates while it builds the plan:

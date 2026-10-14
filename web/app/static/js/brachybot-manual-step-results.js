@@ -5,7 +5,7 @@
     'use strict';
     const order = ['trajectory_init', 'trajectory_refine', 'seed_planning', 'dose_calc', 'dose_eval'];
     const labels = [
-        ['轨迹初始化：轨迹及 Close Points', 'Trajectory init: paths and close points'],
+        ['轨迹初始化：轨迹与靶区边界点', 'Trajectory initialization: paths and target boundary points'],
         ['轨迹优化结果', 'Refined trajectories'], ['粒子布源结果', 'Seed planning result'],
         ['剂量计算结果', 'Dose calculation result'], ['剂量评估结果', 'Dose evaluation result'],
     ];

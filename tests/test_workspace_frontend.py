@@ -25,6 +25,12 @@ def test_authenticated_boot_uses_server_session_loader():
     assert 'id="workspaceRecoveryDismiss"' in index
 
 
+def test_file_chooser_and_credentials_are_not_persistable_workspace_controls():
+    workspace=read('web/app/static/js/brachybot-workspace.js')
+    assert "el.type === 'file' || el.type === 'password'" in workspace
+    assert "element.type === 'file' || element.type === 'password'" in workspace
+
+
 def test_chat_ui_state_capture_and_workspace_conflicts_are_non_blocking():
     """Optional UI context cannot block chat, and stale saves have one repair path."""
     ui_api = read("web/app/static/js/brachybot-ui-api.js")
@@ -269,7 +275,7 @@ def test_report_restore_does_not_erase_newer_generated_text():
     assert "workspaceSavePayload(ownerSessionId, reason" in workspace
     assert "reportState(ownerSessionId)" in workspace
     assert "const previousCaseFlush = typeof flushActiveReportState === 'function'" in workspace
-    assert "flushActiveReportState({ sessionId: previousSessionId })" in workspace
+    assert "flushActiveReportState({ sessionId: previousSessionId, allowDetached: true })" in workspace
     assert "ownerSessionId !== String(activeSessionId || '')" in workspace
     assert "function reportFormFromSnapshot" in workspace
     assert "const reportSection = snapshot.report" in workspace
@@ -428,7 +434,7 @@ def test_planning_completion_refresh_is_not_tied_to_one_trace_shape():
     assert "turnSawPlanningWork" in chat
     assert "if (_planningToolsInSteps.length > 0 || turnSawPlanningWork)" in chat
     assert "retryPending: true" in chat
-    assert "autoGenerateGuide: true" in chat
+    assert "autoGenerateGuide: false" in chat
     assert "await guideRestorePromise" in planning
     assert "reconcileDataTreeVisualNodes" in planning
 
@@ -593,12 +599,13 @@ def test_new_case_creation_avoids_empty_workspace_hydration_and_redundant_round_
     new_case = workspace.split("window.newChat =", 1)[1].split("window.switchSession =", 1)[0]
     assert "await loadServerSessions()" not in new_case
     assert "previousCaseFlush = typeof flushActiveReportState === 'function'" in new_case
-    assert "flushActiveReportState({ sessionId: previousSessionId })" in new_case
+    assert "flushActiveReportState({ sessionId: previousSessionId, allowDetached: true })" in new_case
     assert "void previousCaseFlush.catch" in new_case
     assert "window.awaitActiveSessionReady" in workspace
     assert "The optimistic shell" in workspace
     assert "void persistWorkspace('session.switching')" not in new_case
-    assert "paintSessionShell(optimisticId, { blank: true, clearWorkspace: false })" in new_case
+    assert "paintSessionShell(optimisticId, { blank: true, clearWorkspace: true })" in new_case
+    assert new_case.index("flushActiveReportState({") < new_case.index("paintSessionShell(optimisticId,")
     assert "await yieldWorkspaceShellPaint()" in new_case
     assert "function paintSessionShell(sessionId, { clearWorkspace = true, blank = false } = {})" in workspace
     assert "if (blank)" in workspace
@@ -667,7 +674,7 @@ def test_case_owned_api_requests_never_use_presentation_placeholders():
     )[0]
     assert "await window.awaitActiveSessionReady()" in upload
     assert "await window.reconcileActiveSession(ownerSessionId)" in upload
-    assert "headers: { 'X-BrachyBot-Session': ownerSessionId }" in upload
+    assert "headers(timepointScope, { 'X-BrachyBot-Session': ownerSessionId })" in upload
 
     assert "window.reconcileActiveSession" in workspace
 
@@ -700,7 +707,9 @@ def test_clinical_restore_can_only_close_its_own_hydration_notice():
     restore = ui_api.split(
         "async function _runWorkspaceRestoreTransaction(options = {})", 1
     )[1].split("window.restoreActiveSessionWorkspace =", 1)[0]
-    assert "const hydrationScope = { sessionId: sessionAtStart, runId: hydrationRunId }" in restore
+    assert "const hydrationScope = { sessionId: sessionAtStart, runId: hydrationRunId," in restore
+    assert "timepointId: timepointScope?.timepointId, generation: timepointScope?.generation" in restore
+    assert "allowAfterCompleted: !!timepointScope" in restore
     assert "window.setWorkspaceHydrationState?.(false, '', hydrationScope)" in restore
     assert "window.setWorkspaceHydrationState?.(false);" not in restore
 
@@ -869,7 +878,7 @@ def test_running_chat_persists_the_user_turn_before_a_browser_refresh():
     assert '"task_status": "running"' in started
     assert '"operation": operation' in started
     assert 'reason="chat.task.started"' in started
-    assert "target=persist_chat_task_start" in stream
+    assert "target=scoped_callable(persist_chat_task_start)" in stream
     assert "start_gate.set()" in started
     # The request must be able to emit task_meta before slow snapshot I/O
     # completes; the stream path must not call the request-context helper.
@@ -913,7 +922,9 @@ def test_case_transitions_do_not_block_on_control_plane_cleanup():
         "window.deleteSession =", 1
     )[0]
     delete_block = workspace.split("window.deleteSession =", 1)[1]
-    assert "const previousCaseFlush = typeof flushActiveReportState === 'function'" in switch_block
+    assert "const previousCaseFlush = outgoingFlush;" in switch_block
+    assert "flushActiveReportState({ sessionId: previousSessionId, allowDetached: true })" in switch_block
+    assert switch_block.index("const outgoingFlush =") < switch_block.index("await yieldWorkspaceShellPaint()")
     assert "void previousCaseFlush.catch" in switch_block
     assert "await Promise.resolve(flushActiveReportState())" not in switch_block
     assert "await persistWorkspace('session.switching')" not in switch_block
@@ -931,9 +942,9 @@ def test_session_switch_paints_the_selected_shell_before_snapshot_request():
         "window.deleteSession =", 1
     )[0]
     assert "function paintSessionShell" in workspace
-    assert "paintSessionShell(id, { clearWorkspace: false });" in switch_block
+    assert "paintSessionShell(id, { clearWorkspace: true });" in switch_block
     assert "await yieldWorkspaceShellPaint()" in switch_block
-    assert switch_block.index("paintSessionShell(id, { clearWorkspace: false });") < switch_block.index(
+    assert switch_block.index("paintSessionShell(id, { clearWorkspace: true });") < switch_block.index(
         "response = await workspaceFetch("
     )
     # Failure must NOT roll back to the previous shell (the "jump back" bug).
@@ -1163,7 +1174,7 @@ def test_oar_tree_hydrates_when_binary_labels_arrive_without_metadata_header():
     viewer = read("web/app/static/js/brachybot-viewer-volume.js")
     assert "async function hydrateOarDataTreeFromServer" in viewer
     assert "fetch(API + '/viewer/organs', {" in viewer
-    assert "headers: _viewerDataHeaders(sessionId)" in viewer
+    assert "headers: _viewerDataHeaders(sessionId, {}, scope.timepointScope)" in viewer
     assert "void hydrateOarDataTreeFromServer(scope.dataGeneration, scope.sessionId);" in viewer
     assert "Invalid OAR metadata header" in viewer
     assert "const generation = Number.isFinite(generationValue)" in viewer
@@ -1315,7 +1326,8 @@ def test_workspace_network_failures_cannot_leave_case_controls_stuck():
     auth = read("web/app/static/js/brachybot-auth.js")
 
     assert "async function workspaceFetch" in workspace
-    assert "WORKSPACE_REQUEST_TIMEOUT_MS = 15000" in workspace
+    timeout = re.search(r"const WORKSPACE_REQUEST_TIMEOUT_MS = (\d+);", workspace)
+    assert timeout and 15000 <= int(timeout[1]) <= 60000
     assert "WORKSPACE_RECOVERY_TIMEOUT_MS = 5000" in workspace
     assert "new Promise(resolve => setTimeout(resolve, WORKSPACE_RECOVERY_TIMEOUT_MS))" in workspace
     assert "if (!isCurrentTransition(generation)) return;" in workspace
@@ -1633,10 +1645,11 @@ def test_volume_labels_slices_and_planning_results_pin_the_origin_case():
     assert "function _captureViewerDataScope" in volume
     assert "function _viewerDataScopeIsCurrent" in volume
     assert "headers: _viewerDataHeaders(scope.sessionId)" in volume
-    assert "headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' })" in volume
+    assert "headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' }, scope.timepointScope)" in volume
     assert "if (!sliceIsCurrent()) return;" in volume
     assert "Number(state?.slices?.[axis]) !== Number(sliceIndex)" in volume
-    assert "'X-BrachyBot-Session': expectedSessionId" in planning
+    assert "_planningRunHeaders(sessionId, timepointScope)" in planning
+    assert "{ 'X-BrachyBot-Session': sessionId }" in planning
     assert "loadLabelVolumes({ sessionId: expectedSessionId })" in planning
     assert "'X-BrachyBot-Session': ownerSessionId" in report_export
 
@@ -1733,7 +1746,7 @@ def test_generic_segmentation_masks_keep_a_real_tree_and_structure_contract():
     # label-volume download. The latter is intentionally background work.
     assert "pendingDataTreeMoveIds" in volume
     assert "_scheduleGenericMaskViewerRefresh" in volume
-    assert "void _scheduleGenericMaskViewerRefresh(expectedSessionId)" in volume
+    assert "void _scheduleGenericMaskViewerRefresh(expectedSessionId, mutationScope.timepointScope)" in volume
     move_start = volume.index("async function moveSelectedMasks")
     move_end = volume.index("// Parse a \"x,y,z\" voxel key.", move_start)
     move_function = volume[move_start:move_end]
@@ -1917,7 +1930,7 @@ def test_ui_controller_waits_for_async_viewer_and_manual_planning_actions():
     volume = read("web/app/static/js/brachybot-viewer-volume.js")
 
     assert "navigateToDosePeakSlices()" in ui_api
-    assert "await hydrateOrgans();" in ui_api
+    assert "await __tpAwait(() => (hydrateOrgans()))" in ui_api
     assert "Promise.allSettled(" in ui_api
     assert "async function groupReconstruct3D(category)" in volume
     assert "payload.organs, payload.oar_source || ''" in volume

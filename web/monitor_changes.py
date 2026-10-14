@@ -304,13 +304,15 @@ def describe(evidence, language='en'):
         if pair['kind'] == 'seed_pairs':
             exact = pair.get('clearance_basis') == 'finite_parallel_cylinders'
             label = ('实体表面间隙' if exact else '轴线模型间隙下界') if zh else (
-                'finite surface gap' if exact else 'axis-model clearance bound')
+                'surface-to-surface clearance' if exact else 'surface-clearance lower bound (axis model)')
         else:
             exact = pair.get('clearance_basis') == 'finite_parallel_cylinders'
             label = ('针道实体表面间隙' if exact else '针道轴线模型间隙下界') if zh else (
                 'finite needle surface gap' if exact else 'needle-axis clearance bound')
+        en_status = {'new': 'New violation', 'worsened': 'Worsened violation',
+                     'improved': 'Improved but still violating', 'existing': 'Existing violation'}[pair['change']]
         lines.append(f"{status}：{pair['first_id']} ↔ {pair['second_id']}，{label} {value:.2f} mm。" if zh
-                     else f"{pair['change']}: {pair['first_id']} ↔ {pair['second_id']}, {label} {value:.2f} mm.")
+                     else f"{en_status}: {pair['first_id']} ↔ {pair['second_id']}, {label} {value:.2f} mm.")
     if evidence.get('existing_conflict_count'):
         count = evidence['existing_conflict_count']
         lines.append(f"另有 {count} 组相关间距违规在编辑前已存在，未归因于本次操作。" if zh
@@ -331,7 +333,7 @@ def describe(evidence, language='en'):
         for row in dose.get('oar_changes', []):
             lines.append(f"OAR {row['organ']} {row['metric']}: {row['before']:.2f} → {row['after']:.2f} ({row['delta']:+.2f} Gy)")
         if not dose.get('oar_changes'):
-            lines.append('缺少可比较的 OAR 前后结果。' if zh else 'Comparable before/after OAR results are missing.')
+            lines.append('缺少可比较的 OAR 前后结果。' if zh else 'Comparable OAR dose results before and after the edit are unavailable.')
         lines.append('以上是同一监测编辑链的实测变化；覆盖、热点、OAR 和评分须分别看，不能仅凭分数认定整体变好。' if zh
                      else 'Measured changes in this edit sequence. Coverage, hot spots, OAR dose and score must be considered separately; score alone does not establish overall improvement.')
     else:
@@ -439,7 +441,7 @@ def _interaction(evidence, language='en'):
     resolved = int(evidence.get('resolved_conflicts', 0))
     if new or worse:
         headline = (f'这次编辑新增 {new} 组、加重 {worse} 组间距问题。' if zh
-                    else f'This edit introduced {new} and worsened {worse} spacing conflicts.')
+                    else f'This edit introduced {new} new spacing conflicts and worsened {worse} existing ones.')
         priority = 'attention'
     elif resolved:
         headline = (f'这次编辑消除了 {resolved} 组已记录的间距问题。' if zh
@@ -497,7 +499,7 @@ def _interaction(evidence, language='en'):
         'anatomy_changed': ('分割或影像基线已改变', 'the segmentation or image baseline changed'),
         'configuration_changed': ('处方或计算配置已改变', 'prescription or calculation configuration changed'),
         'baseline_dose_unavailable': ('编辑前剂量不可用或已过期', 'pre-edit dose is unavailable or stale'),
-        'current_dose_unavailable': ('本次几何尚无有效重算结果', 'current geometry has no valid recomputed dose'),
+        'current_dose_unavailable': ('本次几何尚无有效重算结果', 'no valid recalculated dose is available for the current geometry'),
     }
     if not dose.get('comparable') and dose.get('comparison_reason') in reasons:
         why = reasons[dose['comparison_reason']][0 if zh else 1]
@@ -613,7 +615,7 @@ def guided_feedback(evidence, language='en'):
                 title = t(f'间距有改善但还需复核：{subject}。', f'Spacing improved but still needs review: {subject}.') if pair.get('change') == 'improved' else t(f'本次未新增这个问题，但原有间距仍需处理：{subject}。', f'This is not a new problem; the existing spacing still needs review: {subject}.')
             exact = pair.get('clearance_basis') == 'finite_parallel_cylinders'
             gap, minimum = pair.get('surface_clearance_mm'), pair.get('minimum_clearance_mm')
-            label = t('实体表面间隙', 'finite surface gap') if exact else t('轴线模型间隙下界', 'axis-model clearance bound')
+            label = t('实体表面间隙', 'surface-to-surface clearance') if exact else t('轴线模型间隙下界', 'surface-clearance lower bound (axis model)')
             measure = f'{label} {gap:.2f} mm' if number(gap) else t('当前间隙尚不可量化', 'the current gap cannot be quantified')
             prior = pair.get('previous_distance_mm')
             if number(gap) and number(prior):
@@ -645,7 +647,7 @@ def guided_feedback(evidence, language='en'):
                 recommendation = t('先计算当前剂量，核对当前实测结果；缺少有效前值时只能建立后续基线，不能判断刚才这一步的剂量好坏。', 'Compute the current dose and review its measurements; without a valid baseline this can establish a future baseline, not a dose verdict on the last edit.') if missing_baseline else t('点击“重算剂量并比较”；结果就绪后，本卡片会补充实际变化，不必重复询问。', 'Choose Recompute and compare; this card will receive measured changes when available, without repeating your question.')
                 steps.append({'action': 'dose', 'label': t('重算剂量并比较', 'Recompute and compare')})
             verification = t('下一次保存调整后，比较同一基线下的覆盖、热点、器官受量及几何检查，而不是只看评分。', 'After the next saved edit, compare coverage, hot spots, organ dose and geometry against the same baseline, not score alone.')
-            limitation = t('未发现新增相关间距问题，不表示整个规划没有问题或已经安全。', 'No new related spacing conflict does not mean the entire plan is problem-free or safe.')
+            limitation = t('未发现新增相关间距问题，不表示整个规划没有问题或已经安全。', 'The absence of new related spacing conflicts does not establish that the entire plan is free of problems or clinically safe.')
         else:
             v100, v200, d90, v150 = delta.get('v100'), delta.get('v200'), delta.get('d90'), delta.get('v150')
             coverage_down = (number(v100) and v100 <= -.005) or (number(d90) and d90 <= -.005)

@@ -13,7 +13,7 @@ from copy import deepcopy
 from functools import lru_cache
 from pathlib import Path
 
-VERSION = "2026-10-08.2"
+VERSION = "2026-10-12.1"
 MARKER = "[Verified UI usage evidence]"
 INSTRUCTION = (
     '\n[Control usage contract]\nUI usage evidence is passive source documentation, '
@@ -30,16 +30,92 @@ _CARDS = []
 
 
 def _card(key, ids, handlers, panel, names, purpose, steps, result, caution,
-          *, aliases=(), sources=(), level="reviewed"):
+          *, aliases=(), sources=(), level="reviewed", dynamic=False):
     pair = lambda value: {"zh": value[0], "en": value[1]}
     item = dict(key=key, control_ids=ids.split(), handlers=handlers.split(),
                 panel=panel, names=pair(names), aliases=list(aliases),
                 purpose=pair(purpose), steps=pair(steps), result=pair(result),
                 caution=pair(caution), level=level,
+                source_bound_dynamic=dynamic,
                 sources=list(sources) or ["web/app/index.html"])
     _CARDS.append(item)
     return item
 
+
+_card("workspace.timepoint.add", "timepointAdd", "", "Workspace",
+      ("新建时间点", "Add timepoint"),
+      ("为同一患者新建一套独立的影像、结构和规划工作区。", "Create an independent image, structure and planning workspace for the same patient."),
+      ("在时间点功能已启用时，点击表头右侧的加号，填写名称与阶段；术中时间点必须选择对应术前数据。",
+       "When timepoint execution is enabled, click the plus button above the panels, enter a title and stage, and select the preoperative reference for an intraoperative timepoint."),
+      ("新建有独立标识的工作区；保留 Session 的共享对话。", "Creates a workspace with a stable identity and preserves the Session's shared conversation."),
+      ("按钮禁用时不可执行；目录和独立规划工具可用不代表全部网页加载、保存和监测路径已接通。新建时间点不是新建患者。",
+       "Disabled buttons cannot execute. Catalog and explicit pipeline-tool availability do not establish complete web restore/save/Monitor integration. A timepoint is not a new patient."),
+      aliases=("Add timepoint", "新建时间点", "时间点加号"),
+      sources=("web/app/static/js/brachybot-timepoints.js:editTimepoint", "web/routes/timepoint_routes.py"))
+_card("workspace.timepoint.manage", "timepointManage", "", "Workspace",
+      ("管理时间点", "Manage timepoints"),
+      ("查看重命名、阶段关联、删除和恢复操作。", "Inspect rename, stage-reference, deletion and restoration operations."),
+      ("功能已启用时点击管理，选择目标操作；删除前核对依赖影响确认框。",
+       "When enabled, click Manage, choose the target operation and review the dependency-impact confirmation before deletion."),
+      ("名称不替代稳定 ID；符合条件的删除进入可恢复状态。", "Names do not replace stable IDs; eligible deletions enter a recoverable state."),
+      ("已有临床数据的阶段转换和默认工作区删除仍有迁移限制；被引用或任务未停止时不能强制删除。不可把源导板依赖一并静默抹掉。",
+       "Stage changes for populated clinical data and deletion of the legacy default remain migration-gated. Referenced timepoints or running tasks cannot be force-deleted; source-guide dependencies are never silently removed."),
+      aliases=("Manage timepoints", "管理时间点", "时间点重命名"),
+      sources=("web/app/static/js/brachybot-timepoints.js:manageTimepoints", "web/timepoints.py:timepoint_delete_impact"))
+
+_card('workspace.import','importWorkspaceButton importWorkspaceFile','importCompleteWorkspace','Workspace',
+    ('导入完整病例包','Import complete workspace'),
+    ('恢复同一患者的全部时间点、资源和共享对话，创建新的独立 Session。','Restore all timepoints, resources and shared dialogue into a new independent Session.'),
+    ('点击对话侧栏的导入病例包，选择已导出的完整 ZIP，核对确认框后导入；完成后打开新对话。','Use Import workspace in the chat sidebar, select an exported complete ZIP in the native file chooser, review the confirmation and import, then open the new chat.'),
+    ('服务器校验归属、文件摘要与资源结构；原 Session 不被覆盖。','The server validates ownership, checksums and resource structure; the original Session is not overwritten.'),
+    ('文件选择不是导入完成；失败会明确区分未保存与已保存但恢复失败。导入后的粒子复核、导板定位需重新确认，不能继承临床批准。','Selecting a file is not import completion. Errors distinguish an unsaved import from a saved workspace whose display failed. Reconfirm implanted-source review and guide fit after import; clinical approval is never inherited.'),
+    aliases=('导入病例包','Import workspace','导入整个session'),
+    sources=('web/app/static/js/brachybot-workspace.js:importCompleteWorkspace','web/timepoint_bundle.py'))
+
+
+_card('viewer.implants.detect','implantDetect','BrachyBotImplants.detect','Viewers',
+    ('识别并重建体内粒子','Detect and reconstruct implanted seeds'),
+    ('在当前时间点 CT 中识别体内粒子，并连续重建逐颗可控的识别节点。','Detect implanted sources in the current timepoint CT and continuously reconstruct individually controlled observation nodes.'),
+    ('加载当前 CT 后点击识别并重建；完成后在 Data Tree 逐颗核对。','Load the current CT, click Detect & reconstruct, then review individual Data Tree observations.'),
+    ('识别粒子为青色，后续规划粒子为金色；各节点可显示、改色和调透明度。','Detected sources default to cyan and newly planned sources to gold; nodes support visibility, color and opacity.'),
+    ('颜色不是临床批准；源尺寸未知时显示定位点，不伪造胶囊几何。依赖已配置的模型。','Color is not clinical approval. Unknown dimensions render as location glyphs, not invented capsules. A configured model is required.'),
+    aliases=('体内粒子识别','Detect & reconstruct'),sources=('web/app/static/js/brachybot-implant-observations.js:detect','web/routes/implant_routes.py:implant_detect'),dynamic=True)
+_card('viewer.implants.add','implantAddMissed','BrachyBotImplants.startAdd','Viewers',
+    ('补充漏检粒子','Add missed seed'),
+    ('修正识别记录中的漏检，不添加物理植入或未来计划粒子。','Correct a missed observation, not a physical implantation or future-plan source.'),
+    ('点击补充漏检粒子，在 2D 中点击中心，再拖拽 3D 粉红草稿点微调；点击保存修正。','Click Add missed seed, select its center in 2D, refine the pink draft point in 3D, then Save correction.'),
+    ('保存后产生新的识别修订；位置是患者 LPS 毫米坐标。','Saving creates a new observation revision in patient LPS millimeters.'),
+    ('Escape 或取消保留原记录；新增方向和范围需复核。原剂量随识别修订失效。','Escape/Cancel retains the old record. New axes and coverage need review; prior dose becomes stale.'),
+    aliases=('补充漏检','识别位置微调'),sources=('web/app/static/js/brachybot-implant-observations.js:startAdd','web/implant_service.py:correct'),dynamic=True)
+_card('viewer.implants.dose','implantRecomputeDose','dose_recompute','Viewers',
+    ('只重算体内粒子剂量','Recompute implanted dose only'),
+    ('只用当前修订的未排除体内粒子计算 CNN 剂量。','Compute CNN dose from nonexcluded sources in the current observation revision only.'),
+    ('完成位置修正后点击按钮或在聊天中明确要求只计算体内已有粒子的剂量。','After position corrections, use this button or request dose from existing implanted sources only in chat.'),
+    ('保存与识别修订绑定的估计剂量，不启动针道规划或导板、报告生成。','Saves revision-bound estimated dose without needle planning or guide/report generation.'),
+    ('需当前时间点源尺寸与标定；未确认方向使用明确标记的估计。此为投影总剂量，不是已释放剂量。','Current source dimensions and calibration are required; inferred axes remain explicit estimates. This is projected total dose, not dose delivered so far.'),
+    aliases=('体内已有粒子剂量','implanted dose only'),sources=('tool_factory/dose_recompute.py:_execute','web/implanted_dose.py:recompute_implanted_dose'),dynamic=True)
+
+_card('viewer.implants.source','implantSourceSettings','BrachyBotImplants.configureSource','Viewers',
+    ('源与剂量设置','Source & dose settings'),
+    ('确认当前时间点实际粒子的尺寸及现有 CNN 标定。','Confirm current implanted-source dimensions and the existing CNN calibration.'),
+    ('打开源与剂量设置，核对长度、半径与显示的标定值，确认当前源设置。','Open Source & dose settings, check length, radius and displayed calibration, then confirm current source settings.'),
+    ('参数保存到当前时间点；显示恢复完成后可重算剂量。','Settings are saved to the current timepoint; dose can be recomputed after display restoration.'),
+    ('不借用术前尺寸、不猜测源强。参数确认不等于重算剂量或临床批准。','Preoperative dimensions and guessed source strengths are not substituted. Parameter confirmation is not dose computation or clinical approval.'),
+    sources=('web/app/static/js/brachybot-implant-observations.js:configureSource','web/implanted_dose.py'),dynamic=True)
+_card('viewer.implants.review','implantReviewObservations','BrachyBotImplants.reviewObservations','Viewers',
+    ('复核体内粒子','Review implanted observations'),
+    ('人工确认当前识别记录的包含粒子、位置、估计方向和扫描范围。','Human review of included sources, centers, estimated axes and scan coverage.'),
+    ('先在二维／三维逐颗检查，排除误检、补充漏检；打开复核界面，核对两项确认和说明后保存。','Inspect sources in 2D/3D, exclude false positives and add misses; open Review implanted observations and save the two confirmations and note after checking.'),
+    ('产生当前修订的人工复核记录；不会自动执行后续规划。','Creates human review evidence for the current revision without automatically running a subsequent plan.'),
+    ('Agent 不能代替人工勾选或批准；位置修正会使旧复核和依赖剂量失效。','The Agent cannot check or approve on a human behalf; position changes invalidate old review and dependent dose.'),
+    sources=('web/app/static/js/brachybot-implant-observations.js:reviewObservations','web/implant_workspace.py:review'),dynamic=True)
+_card('viewer.implants.correction','implantSaveCorrection implantCancelCorrection implantReload','BrachyBotImplants.saveDraft BrachyBotImplants.cancelDraft BrachyBotImplants.reload','Viewers',
+    ('粒子修正保存／取消／刷新','Save / cancel / reload observation corrections'),
+    ('管理当前时间点的识别草稿及已保存记录。','Manage observation drafts and saved records in the current timepoint.'),
+    ('定位后在三维拖拽微调，保存修正才提交；取消或 Escape 放弃草稿。刷新重新读取当前识别记录。','After 2D placement, drag in 3D to refine; Save correction commits. Cancel or Escape discards the draft; Reload observations reads the current saved record.'),
+    ('修正使用患者 LPS 毫米，保留原始检测证据与修订历史。','Corrections use patient LPS millimeters and retain original detection evidence and revision history.'),
+    ('删除误检是排除识别记录，不是取出体内粒子。隐藏不影响剂量源集合；排除或修改后需重新复核与重算。','Excluding a false positive removes an observation, not a physical implant. Hiding does not change dose sources; exclusion or correction requires review and recomputation.'),
+    sources=('web/app/static/js/brachybot-implant-observations.js:correction','web/implant_service.py:correct'),dynamic=True)
 
 _SLICE = ("先加载 CT，并打开轴向、矢状或冠状二维切片。", "Load CT and open an axial, sagittal or coronal 2D slice.")
 _EXIT = ("再点同一个工具可退出；切换工具会清除未完成的点。Undo 可撤销刚完成的标注。仅测当前切片，不是三维针道角度或临床结论。",
@@ -73,7 +149,7 @@ for key, dom, name, purpose, steps, result, caution in [
     ("zoombox", "toolZoombox", ("Zoom · 框选放大", "Zoom · box zoom"),
      ("放大二维框选区域。", "Zoom into a selected 2D region."),
      (_SLICE[0]+"选择 Zoom，左键拖出足够大的矩形框后松开。", _SLICE[1]+" Select Zoom, drag a sufficiently large rectangle and release."),
-     ("调整二维缩放和平移。Fit 可重新适配视野。", "Adjusts 2D zoom and pan. Fit fits the view again."),
+     ("调整二维缩放和平移。Fit 可重新适配视野。", "Adjusts 2D zoom and pan. Fit restores the image to fit the viewport."),
      ("小于约 20 显示像素的框不会生效；不改变原图。", "Boxes smaller than about 20 display pixels do not apply; the image data is unchanged.")),
     ("draw", "toolAnnotate", ("Draw · 手绘掩膜", "Draw · manual mask"),
      ("手绘分割掩膜，是真实体素编辑。", "Draw a segmentation mask; this edits actual voxels."),
@@ -93,8 +169,8 @@ for positive, dom in [(True, "toolSat3dPositive"), (False, "toolSat3dNegative")]
           (("记录前景正提示点。" if positive else "记录背景负提示点。"), "Record foreground positive prompts." if positive else "Record background negative prompts."),
           (_SLICE[0]+"选择此工具，在切片上左键点需要标记的位置。之后打开 Segment…，选择当前支持的部位并运行。",
            _SLICE[1]+" Select this tool and left-click prompt locations. Then open Segment…, choose a supported site and run inference."),
-          ("先产生提示点；运行成功才产生候选分割掩膜，之后需核对并分类到 CTV/OAR。", "Prompts appear first; successful inference produces a candidate mask for review and CTV/OAR classification."),
-          ("点按钮本身不会完成分割，不保证任意肿瘤可分割；Clear pts 只清提示点。", "Selecting the button does not segment anything and does not guarantee arbitrary tumor support. Clear pts clears prompts only."),
+          ("先产生提示点；运行成功才产生候选分割掩膜，之后需核对并分类到 CTV/OAR。", "Prompts appear first; successful inference produces a candidate segmentation mask for review and CTV/OAR classification."),
+          ("点按钮本身不会完成分割，不保证任意肿瘤可分割；Clear pts 只清提示点。", "Selecting the button does not segment anything and does not guarantee arbitrary tumor support. Clear points removes prompts only."),
           aliases=(name,), sources=_GESTURES)
 
 
@@ -103,14 +179,14 @@ def _family(key, handlers, panel, names, purpose, steps, result, caution, ids=""
 
 
 _VIEW_ONLY = ("仅调整显示，不改变原始影像、分割或剂量。", "Presentation only; does not change source images, masks or dose.")
-_RECEIPT = ("以步骤结果或错误为准；点击不等于完成，已有结果也不等于临床批准。", "Use completion/error receipts; a click is not completion and an existing result is not clinical approval.")
+_RECEIPT = ("以步骤结果或错误为准；点击不等于完成，已有结果也不等于临床批准。", "Check the completion or error status: clicking a control does not confirm completion, and an existing result does not establish clinical approval.")
 _family("viewer.window", "applyWindowPreset applyViewerSettings", "Viewers", ("窗宽窗位 / Preset", "Window/level and Preset"),
         ("改变 CT 的灰度显示。", "Change CT grayscale presentation."),
         ("选择 Preset，或输入 W/L 后应用；W 为窗宽，L 为窗位。", "Choose Preset or apply W/L values; W is window width and L is window level."),
         ("二维 CT 灰度随之更新。", "2D CT grayscale updates."), _VIEW_ONLY)
 _family("viewer.zoom", "applyZoom", "Viewers", ("二维缩放", "2D zoom"),
         ("调整二维查看缩放。", "Change 2D viewing zoom."),
-        ("拖动 Zoom 滑块或两侧微调按钮；Fit 可适配视野。", "Drag the Zoom slider or use its steppers; Fit fits the view."),
+        ("拖动 Zoom 滑块或两侧微调按钮；Fit 可适配视野。", "Drag the Zoom slider or use its steppers; Fit adjusts the image to the viewport."),
         ("显示缩放百分比与切片视野更新。", "Zoom percentage and slice view update."), _VIEW_ONLY)
 _family("viewer.display", "setDisplayMode toggleOverlay", "Viewers", ("显示模式 / CTV / OAR", "Display mode / CTV / OAR"),
         ("控制 CT、标签及二维叠加显示。", "Control CT, labels and 2D overlays."),
@@ -130,7 +206,7 @@ _family("viewer.history", "viewerUndo viewerRedo", "Viewers", ("Undo / Redo", "U
         ("撤销或重做查看器编辑历史。", "Undo or redo viewer editing history."),
         ("编辑后点 Undo；需要恢复被撤销操作时点 Redo。", "Click Undo after an edit; click Redo to restore an undone operation."),
         ("针对可用历史恢复标注、提示点或掩膜事务。", "Restores annotations, prompts or mask transactions from available history."),
-        ("不是通用针道/粒子规划回滚；Monitor 编辑复位使用对应版本的复位操作。", "Not a universal needle/seed plan rollback; Monitor undo uses the version-specific edit decision."))
+        ("不是通用针道/粒子规划回滚；Monitor 编辑复位使用对应版本的复位操作。", "Not a universal needle/seed plan rollback; Monitor undo uses the version-specific reset operation."))
 _family("viewer.measurements.clear", "clearViewerMeasurements", "Viewers", ("清除测量", "Clear measurements"),
         ("仅清除当前病例的线段、角度和矩形测量。", "Clear line, angle and rectangle measurements in the current case only."),
         ("点击工具栏清除测量，核对数量和范围后确认；删除单项可在 Data Tree 标注行右键删除。", "Click Clear measurements, review the count and scope, then confirm; right-click an annotation row in Data Tree to delete one item."),
@@ -151,17 +227,17 @@ _family("viewer.layout", "setViewerLayout toggleViewerFullscreen", "Viewers", ("
         ("用 Layout 按钮选择布局，或点击视口右上角全屏按钮；再点可还原。", "Choose Layout buttons or click a pane's top-right fullscreen control; toggle again to restore."),
         ("面板布局改变，不是影像缩放。", "Pane layout changes; this is not image zoom."), _VIEW_ONLY)
 _family("viewer.reconstruct", "reconstruct3D", "Viewers", ("3D · 重建", "3D · reconstruction"),
-        ("构建已加载分割的三维显示。", "Build 3D presentation of loaded segmentations."),
+        ("构建已加载分割的三维显示。", "Reconstruct 3D surfaces from the loaded segmentations."),
         ("先加载 CT/标签，再点 3D，等待重建结果。", "Load CT/labels, click 3D and wait for reconstruction."),
         ("三维场景出现已加载对象。", "Loaded objects appear in the 3D scene."), _RECEIPT)
 _family("viewer.slice", "updateSlice", "Viewers", ("Slice · 切片滑块", "Slice slider"),
         ("切换指定轴的切片。", "Navigate slices on the selected axis."),
         ("拖动对应视口下的 Slice 滑块或使用微调按钮。", "Drag the Slice slider below the corresponding view or use its steppers."),
         ("该轴切片和定位信息更新。", "The axis slice and location information update."), _VIEW_ONLY)
-_family("viewer.surface", "toggleDoseTextureMode", "Viewers", ("Dose Surface", "Dose Surface"),
-        ("切换剂量表面显示方式。", "Switch dose surface presentation."),
-        ("加载剂量后点击按钮切换显示方式。", "Load dose and click the button to switch presentation."),
-        ("剂量表面显示变化。", "Dose surface presentation changes."), _VIEW_ONLY)
+_family("viewer.surface", "toggleDoseTextureMode", "Viewers", ("剂量着色 / 结构颜色", "Dose coloring / Structure colors"),
+        ("在三维结构表面的剂量着色与结构颜色之间切换。", "Switch 3D structure surfaces between dose coloring and structure colors."),
+        ("加载剂量后点击剂量着色；需要恢复结构原有颜色时点击结构颜色。", "With dose loaded, click Dose coloring. Click Structure colors to restore the structures' original colors."),
+        ("三维表面的颜色映射改变，不重算剂量。", "The color mapping on 3D surfaces changes; dose is not recalculated."), _VIEW_ONLY)
 _family("viewer.colorbar", "toggleDoseColorbarPanel closeDoseColorbarPanel resetDoseColorbarSettings applyDoseColorbarSettings syncDoseColorbarControls", "Viewers", ("Dose Scale · 剂量色标", "Dose Scale"),
         ("配置剂量显示色标范围和刻度。", "Configure dose colorbar range and ticks."),
         ("打开 Dose Scale，修改显示设置后点 Apply；Reset 恢复显示默认值，关闭按钮仅关闭面板。", "Open Dose Scale, change display settings and click Apply; Reset restores presentation defaults and Close dismisses the panel."),
@@ -173,9 +249,9 @@ _family("viewer.opacity", "setDoseOverlayOpacity update3DMeshOpacity updateDoseO
         ("相应图层显示立即改变。", "The corresponding layer presentation changes."), _VIEW_ONLY)
 _family("viewer.sat.run", "prepareSat3dInteraction runSat3dInteractive closeSat3dInteraction clearSat3dPromptPoints", "Viewers", ("Segment… / SAT3D 提示管理", "Segment… / SAT3D prompt management"),
         ("选择部位并运行 SAT3D 交互分割。", "Select a site and run SAT3D interactive segmentation."),
-        ("加载 CT，用 SAT3D+/- 放提示点，打开 Segment… 选择支持的部位后运行；Clear pts 清提示点。", "Load CT, place SAT3D+/- prompts, open Segment…, select a supported site and run; Clear pts clears prompts."),
+        ("加载 CT，用 SAT3D+/- 放提示点，打开 Segment… 选择支持的部位后运行；Clear pts 清提示点。", "Load CT, place SAT3D+/- prompts, open Segment…, select a supported site and run; Clear points removes prompts."),
         ("成功时返回候选掩膜；关闭面板不表示完成推理。", "Successful inference returns a candidate mask; closing the panel is not inference completion."),
-        ("受模型、部位和模态可用性限制，需人工检查并分类；不是任意肿瘤的保证。", "Limited by model, site and modality availability; review and classify the candidate. No arbitrary-tumor guarantee."))
+        ("受模型、部位和模态可用性限制，需人工检查并分类；不是任意肿瘤的保证。", "Availability depends on the model, tumor site, and imaging modality. Review and classify the candidate segmentation; accuracy is not guaranteed for every tumor."))
 
 # Workflow contracts describe actual stages, not default clinical prescriptions.
 for key, handlers, names, purpose, steps, outcome in [
@@ -202,7 +278,7 @@ for key, handlers, names, purpose, steps, outcome in [
     ("edit", "addManualNeedle addManualSeed", ("Add Needle / Add Seed", "Add Needle / Add Seed"),
      ("进入手动添加针道或粒子的流程。", "Enter manual needle/seed creation."),
      ("加载当前规划，点击对应按钮并按交互提示选择目标位置。", "Load the current plan, click the corresponding button and follow placement prompts."),
-     ("提交成功后几何更新，剂量与后续产物可能过期。", "A successful commit updates geometry and may stale dose/downstream artifacts.")),
+     ("提交成功后几何更新，剂量与后续产物可能过期。", "A successful commit updates geometry and may make dose/downstream artifacts stale.")),
     ("dose", "recomputeManualDose", ("Recompute AI Dose", "Recompute AI Dose"),
      ("用当前已提交几何重算 AI 剂量和 DVH。", "Recompute AI dose/DVH from committed geometry."),
      ("完成并保存编辑后点击，等待剂量任务完成。", "Finish and save edits, click and wait for dose computation."),
@@ -212,9 +288,9 @@ for key, handlers, names, purpose, steps, outcome in [
      ("确认允许修改当前规划，核对参数后启动重规划。", "Confirm the current plan may be modified, review parameters and start replanning."),
      ("以任务完成后新几何和产物状态为准。", "Use resulting geometry and artifact status after task completion.")),
     ("guide", "generateSurgicalGuide", ("Generate guide", "Generate guide"),
-     ("依据当前针道与导板参数生成穿刺导板。", "Generate a puncture guide from current needles and guide parameters."),
+     ("依据当前针道与导板参数生成穿刺导板。", "Generate a needle guide from the current needle trajectories and guide parameters."),
      ("完成针道编辑，核对导板参数再点击生成。", "Finish needle edits, review guide parameters and click Generate."),
-     ("生成版本化导板与几何检查；针道变化后旧导板可能过期。", "Produces a versioned guide and geometry checks; needle edits may stale old guides.")),
+     ("生成版本化导板与几何检查；针道变化后旧导板可能过期。", "Produces a versioned guide and geometry checks; needle edits may make old guides stale.")),
     ("advice", "requestPlanningAdvice checkSystemReadiness", ("Detailed Advice / Readiness", "Detailed Advice / Readiness"),
      ("读取当前规划建议或系统就绪情况。", "Read current planning advice or system readiness."),
      ("点击对应按钮，查看依据和缺失的前置条件。", "Click the corresponding button and inspect evidence and missing prerequisites."),
@@ -230,7 +306,7 @@ _family("input.parameters", "applyHyperparams resetSurgicalGuideControls loadSel
         ("管理规划参数或导板显示版本。", "Manage planning parameters or the displayed guide version."),
         ("展开对应参数栏，按字段范围修改并应用；导板版本选择用于查看指定版本。", "Expand the relevant parameters, change values within field ranges and apply; guide version selection displays a selected version."),
         ("参数或显示版本更新；是否重算取决于具体执行按钮。", "Updates parameters or the displayed version; recomputation depends on the execution control."),
-        ("显示默认值不是部位处方依据。旧版本不自动成为当前有效导板。", "Displayed defaults are not site-specific prescription authority. Old versions do not become current valid guides automatically."))
+        ("显示默认值不是部位处方依据。旧版本不自动成为当前有效导板。", "Displayed defaults are not a basis for site-specific prescription. Old versions do not automatically become the current valid guide."))
 _family("input.reset", "resetSession", "Input", ("Input Reset · 重置病例", "Input Reset · reset case"),
         ("重置当前病例工作状态。", "Reset current case working state."),
         ("先保存需要保留的内容，再使用 Input 的 Reset 并核对确认提示。", "Save needed content before using Input Reset and review confirmation prompts."),
@@ -244,7 +320,7 @@ _family("input.upload", "handleFileSelect handleDicomRTImport", "Input", ("Brows
 _family("export.artifacts", "exportDicomRT exportSTL exportReport exportSurgicalGuideSTL", "Input", ("DICOM-RT / STL / Report / Export Guide STL", "DICOM-RT / STL / Report / Export Guide STL"),
         ("导出对应已有产物。", "Export the corresponding existing artifact."),
         ("先生成并核对当前产物，再点击对应导出按钮。", "Generate and review the current artifact, then click the corresponding export button."),
-        ("成功时提供导出文件；读取失败或过期状态需单独处理。", "Successful export provides a file; missing/stale artifacts require separate handling."),
+        ("成功时提供导出文件；读取失败或过期状态需单独处理。", "On success the exported file is provided; read failures or outdated states must be handled separately."),
         ("文件存在不代表临床可用；报告、剂量、网格、导板是不同产物。", "File existence is not clinical usability; reports, dose, meshes and guides are separate artifacts."))
 
 for key, handlers, names, purpose, steps, result, caution in [
@@ -282,7 +358,7 @@ _family("navigation", "switchPanel toggleSessionSidebar closeSessionSidebar newC
 _family("chat.compose", "sendChat handleChatInput insertSlashCommand", "Global", ("聊天输入 / 发送 / Slash command", "Chat input / Send / slash commands"),
         ("发送当前自然语言请求。", "Send the current natural-language request."),
         ("在输入框写需求，点击发送；Enter 换行，Ctrl+Enter 或 Shift+Enter 发送。", "Write a request and click Send; Enter inserts a newline, Ctrl+Enter or Shift+Enter sends."),
-        ("执行追踪展示本轮读取或操作的实际结果。", "The trace shows actual reads/actions for the turn."),
+        ("执行追踪展示本轮读取或操作的实际结果。", "The Execution Trace shows the actual reads and actions for the turn."),
         ("解释按钮无需点击或修改病例；明确动作请求才走执行与授权校验。", "Explaining a control needs no click/case modification; action requests follow execution and authorization checks."))
 
 # Event-bound controls have no inline handler. Bind their stable identity,
@@ -374,7 +450,7 @@ for key, names, purpose, steps, result, caution, aliases in [
      ("将上传/手绘候选掩膜分类为 CTV 或 OAR。", "Classify uploaded/manual candidate masks as CTV or OAR."),
      ("核对掩膜与 CT 对齐、标签含义和目标行，在右键菜单选择对应分类。", "Verify CT alignment, label semantics and the target row, then select the corresponding classification in its context menu."),
      ("结构语义和规划输入改变；仅上传不等于 CTV 就绪。", "Changes structure semantics and planning inputs; upload alone is not CTV readiness."),
-     ("可能使规划产物过期；不能把不同来源的 label 2 统一解释为障碍物。", "May stale planning artifacts; label 2 from different sources must not be universally interpreted as an obstacle."),
+     ("可能使规划产物过期；不能把不同来源的 label 2 统一解释为障碍物。", "May make planning artifacts stale; label 2 from different sources must not be universally interpreted as an obstacle."),
      ("move to CTV", "move to OAR", "掩膜分类", "移到CTV", "移至CTV")),
     ("manage", ("Data Tree · 重命名 / 删除 / 组管理", "Data Tree · rename / delete / groups"),
      ("管理指定对象的名称、归组或移除。", "Manage a specified object's name, group or removal."),
@@ -446,7 +522,7 @@ def _catalog(stamp):
     cards = []
     for index, source in enumerate(_CARDS):
         bound = [row for row in rows if _bound(source, row)]
-        if not bound and index < _STATIC_COUNT:
+        if not bound and index < _STATIC_COUNT and not source.get('source_bound_dynamic'):
             continue  # Deleted/unmounted documentation is not current UI evidence.
         item = dict(source)
         item["bindings"] = [{"id": row.get("id"), "label": row.get("data-i18n-en") or _normal(row.get("text")) or row.get("title") or row.get("id"),

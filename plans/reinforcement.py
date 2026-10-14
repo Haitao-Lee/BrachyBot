@@ -13,6 +13,9 @@ from .dose_pre.inference import DoseInferenceDeadlineExceeded
 from .reward_metrics import normalized_oar_damage, plan_objective
 from .rl_status import new_rl_status, set_outcome, update_best
 from .planning_preview import safe_preview
+from .continuation import (validate_continuation, initial_radiation,
+                           continuation_candidates, continuation_slots, sum_plan_dose,
+                           continuation_preview_context)
 try:
     from . import _reward_core
 except ImportError:
@@ -175,6 +178,7 @@ class SeedPlacementReward:
                  image_normalize_scale: float,
                  DVH_rate: float,
                  deadline=None,
+                 continuation=None,
                  ) -> None:
 
         self.dose_cal_model = dose_cal_model
@@ -190,6 +194,8 @@ class SeedPlacementReward:
         self.image_normalize_scale = image_normalize_scale
         self.DVH_rate = DVH_rate
         self.deadline = deadline
+        validate_continuation(continuation, radiation_volume, dose_image, target_value)
+        self.continuation = continuation
         self.last_coverage = 0.0
         self.last_out_damage = 0.0
 
@@ -209,6 +215,8 @@ class SeedPlacementReward:
         self.target_v = self.target_idx.size
         self.non_target_idx = np.where(self.mask_volume.ravel() == 0)[0].astype(np.int32)
         self.non_target_v = self.non_target_idx.size
+        if continuation is not None:
+            self.last_coverage, self.last_out_damage = self._metrics(continuation.dose_model.ravel())
         
         
 
@@ -349,6 +357,10 @@ class SeedPlacementReward:
         A failed dose prediction returns ``(0.0, dose, previous coverage,
         None)``: the caller must not fabricate a zero-dose seed in the plan.
         """
+        if self.continuation is not None and not self.continuation.seed_allowed(
+                traj[1], seed_point, direction, self.dose_image, self.seed_info):
+            old_coverage, _ = self._metrics(np.asarray(cur_radiation).ravel())
+            return 0.0, cur_radiation, old_coverage, None
         try:
             key = self.cache_key_for(seed_point, direction)
             cur_seed_radiation = self._lookup_seed_dose(traj, seed_point, direction, key)
@@ -357,7 +369,8 @@ class SeedPlacementReward:
                 self.cache_misses += 1
                 inference_started = time.perf_counter()
                 cur_seed_radiation = utilizations.single_seed_dose_calculation_dl(
-                    np.asarray(seed_point).astype(int).reshape(-1),
+                    (np.asarray(seed_point, dtype=float) if self.continuation is not None
+                     else np.asarray(seed_point).astype(int)).reshape(-1),
                     direction,
                     self.dose_image,
                     self.dose_cal_model,
@@ -371,6 +384,9 @@ class SeedPlacementReward:
                 self.model_inference_seconds += time.perf_counter() - inference_started
                 self.seed_cache[key] = cur_seed_radiation
 
+            dose = np.asarray(cur_seed_radiation)
+            if dose.shape != cur_radiation.shape or not np.isfinite(dose).all() or np.any(dose < 0):
+                raise ValueError("Invalid supplemental CNN dose map")
             if cur_radiation.dtype != cur_seed_radiation.dtype:
                 cur_radiation = cur_radiation.astype(cur_seed_radiation.dtype)
 
@@ -422,6 +438,8 @@ class SeedPlacementReward:
         """
         current = np.ascontiguousarray(cur_radiation, dtype=np.float32)
         addition = np.ascontiguousarray(seed_dose_map, dtype=np.float32)
+        if addition.shape != current.shape or not np.isfinite(addition).all() or np.any(addition < 0):
+            return -np.inf
         old_coverage, old_damage = self._metrics(
             np.ascontiguousarray(current.ravel(), dtype=np.float64))
         trial = current + addition
@@ -627,9 +645,11 @@ class HighLevelEnv(gym.Env):
         self.planned_positions = [[] for _ in range(self.level)]
         self.planned_seed_radiations = [[] for _ in range(self.level)]
         self.planned_directions = [np.array([0, 0, 1]) for _ in range(self.level)]
-        self.cur_radiation = np.zeros_like(radiation_volume, dtype=np.float32)
-        self.cur_DVH_rate = 0.0
         self.reward_calculator = reward_calculator
+        self.continuation = getattr(reward_calculator, "continuation", None)
+        self.cur_radiation = initial_radiation(radiation_volume, self.continuation)
+        self.cur_DVH_rate = float(np.mean(self.cur_radiation[radiation_volume == reward_calculator.target_value]
+                                         >= reward_calculator.in_lowest_dose)) if self.continuation is not None else 0.0
         self.max_actions_per_episode = max_actions_per_episode
         self.deadline = deadline
         # One low-level policy per trajectory group.  The nested agents used to
@@ -684,9 +704,11 @@ class HighLevelEnv(gym.Env):
         self.planned_positions = [[] for _ in range(self.level)]
         self.planned_seed_radiations = [[] for _ in range(self.level)]
         self.planned_directions = [np.array([0, 0, 1]) for _ in range(self.level)]
-        self.cur_radiation[:] = 0.0
-        self.cur_DVH_rate = 0.0
-        return np.array([0.0], dtype=np.float32)
+        self.cur_radiation = initial_radiation(self.reward_calculator.radiation_volume, self.continuation)
+        self.cur_DVH_rate, damage = self.reward_calculator._metrics(self.cur_radiation.ravel())
+        self.reward_calculator.last_coverage = self.cur_DVH_rate
+        self.reward_calculator.last_out_damage = damage
+        return np.array([self.cur_DVH_rate], dtype=np.float32)
 
     # ------------------------------------------------------
     def generate_low_level_state_space(self, action):
@@ -718,6 +740,11 @@ class HighLevelEnv(gym.Env):
 
             # start all True
             lv_mask = np.ones(len(effective_range), dtype=bool)
+            if self.continuation is not None:
+                direction = np.asarray(cur_traj[1])
+                lv_mask &= np.array([self.continuation.seed_allowed(
+                    cur_traj, p, direction, self.dose_image, self.seed_info)
+                    for p in self.candidate_img_positions[(self.group_idx, lv)]], dtype=bool)
 
             # If there are existing planned positions at this lv, vectorize distance checks
             if self.planned_positions[lv]:
@@ -928,6 +955,10 @@ class HighLevelEnv(gym.Env):
     def evaluate_action_marginal(self, action):
         """Non-committing objective gain of one low-level action (greedy ranking)."""
         lv, img_position, direction, _ = self._action_geometry(action, high_level=False)
+        if self.continuation is not None and not self.continuation.seed_allowed(
+                self.target_level_traj[self.group_idx][lv][1], img_position, direction,
+                self.dose_image, self.seed_info):
+            return -np.inf
         key = SeedPlacementReward.cache_key_for(img_position, direction)
         dose_map = self.reward_calculator.seed_cache.get(key)
         if dose_map is None:
@@ -983,7 +1014,7 @@ class HighLevelEnv(gym.Env):
         budget = n_actions if not self.max_actions_per_episode else min(
             n_actions, int(self.max_actions_per_episode))
         total_reward = 0.0
-        cur_DVH_rate = 0.0
+        cur_DVH_rate = self.cur_DVH_rate
         placed = 0
         forced = None
         if restart > 0:
@@ -1106,6 +1137,7 @@ def evaluate_plan_objective(
     in_lowest_dose,
     out_highest_dose,
     DVH_rate,
+    *, continuation=None,
 ):
     """Return the final RL objective and V100-style coverage for a full plan.
 
@@ -1115,8 +1147,15 @@ def evaluate_plan_objective(
     deliberately based on the stored AI dose maps, so selection uses the same
     final dose representation that downstream DVH evaluation receives.
     """
-    total_radiation = np.zeros_like(radiation_volume, dtype=np.float32)
+    if continuation is not None:
+        if not np.array_equal(radiation_volume == target_value, continuation.complete_target_mask):
+            raise ValueError("RL evaluation requires the complete target")
+        total_radiation = sum_plan_dose(plan_res, radiation_volume, continuation)
+    else:
+        total_radiation = np.zeros_like(radiation_volume, dtype=np.float32)
     for entry in plan_res or []:
+        if continuation is not None:
+            break
         if not isinstance(entry, (list, tuple)) or len(entry) < 3:
             continue
         for single_seed_radiation in entry[2] or []:
@@ -1133,7 +1172,7 @@ def evaluate_plan_objective(
         return -np.inf, 0.0
 
     coverage = float(
-        np.count_nonzero(total_radiation[target_mask] > float(in_lowest_dose))
+        np.count_nonzero(total_radiation[target_mask] >= float(in_lowest_dose))
     ) / target_count
     non_target_mask = ~target_mask
     out_damage = normalized_oar_damage(
@@ -1221,7 +1260,9 @@ def construct_plan_over_candidates(
     form; an expired deadline returns whatever was built so far (``[]`` when
     nothing was accepted).
     """
-    candidates = list(candidate_trajectories or [])
+    continuation = getattr(reward_calculator, "continuation", None)
+    validate_continuation(continuation, radiation_volume, dose_image, target_value)
+    candidates = continuation_candidates(continuation, candidate_trajectories or [], dose_image)
     if not candidates:
         return []
     if deadline is not None and time.monotonic() >= deadline:
@@ -1245,6 +1286,7 @@ def construct_plan_over_candidates(
             return []
         steps = list(utilizations.get_available_position(
             traj, [], seed_info, dose_image, distance_map))
+        steps = continuation_slots(continuation, traj, steps, dose_image, seed_info)
         _, direction, _ = _trajectory_advance(traj)
         slot_steps.append(steps)
         slot_points.append(_slot_positions(traj, steps))
@@ -1254,8 +1296,8 @@ def construct_plan_over_candidates(
     planned = []
     plan_entries = []
     used = np.zeros(len(candidates), dtype=bool)
-    cur_radiation = np.zeros_like(radiation_volume, dtype=np.float32)
-    cur_coverage = 0.0
+    cur_radiation = initial_radiation(radiation_volume, continuation)
+    cur_coverage = float(np.mean(cur_radiation[radiation_volume == target_value] >= in_lowest_dose)) if continuation is not None else 0.0
     total_seeds = 0
 
     while not _expired() and cur_coverage < target_coverage:
@@ -1342,6 +1384,7 @@ def construct_plan_over_candidates(
             steps = list(utilizations.get_available_position(
                 traj, [(p, direction) for p in placed_points],
                 seed_info, dose_image, distance_map))
+            steps = continuation_slots(continuation, traj, steps, dose_image, seed_info)
             points = _slot_positions(traj, steps)
             if cur_coverage >= target_coverage:
                 break
@@ -1359,6 +1402,7 @@ def construct_plan_over_candidates(
             "coordinate_space": "world",
             "plan": [plan_entries[-1]],
             "force": False,
+            **continuation_preview_context(continuation),
         })
 
     return plan_entries
@@ -1393,6 +1437,7 @@ def consolidate_plan_needles(
     """
     entries = [[entry[0], list(entry[1] or []), list(entry[2] or [])]
                for entry in (plan_entries or [])]
+    continuation = getattr(reward_calculator, "continuation", None)
     entries = [entry for entry in entries if entry[1] and entry[2]]
     if len(entries) < 2:
         return entries
@@ -1408,6 +1453,7 @@ def consolidate_plan_needles(
             reward_calculator.in_lowest_dose,
             reward_calculator.out_highest_dose,
             reward_calculator.DVH_rate,
+            continuation=continuation,
         )[0]
 
     def _voxel_seed_points(entry):
@@ -1425,6 +1471,7 @@ def consolidate_plan_needles(
                   for point in voxel_points]
         steps = utilizations.get_available_position(
             entry[0], placed, seed_info, dose_image, distance_map)
+        steps = continuation_slots(continuation, entry[0], steps, dose_image, seed_info)
         base_point, direction, advance = _trajectory_advance(entry[0])
         return [(np.asarray(base_point + float(step) * advance, dtype=np.float64).reshape(-1),
                  direction) for step in steps]
@@ -1450,10 +1497,7 @@ def consolidate_plan_needles(
                 [(point, direction) for _, point, direction in survivor_slots])
 
             trial = [[entry[0], list(entry[1]), list(entry[2])] for entry in survivors]
-            cur_radiation = np.zeros_like(reward_calculator.radiation_volume, dtype=np.float32)
-            for entry in trial:
-                for dose_map in entry[2]:
-                    cur_radiation += np.asarray(dose_map, dtype=np.float32)
+            cur_radiation = sum_plan_dose(trial, reward_calculator.radiation_volume, continuation)
             total_seeds = sum(len(entry[1]) for entry in trial)
             needle_count = len(trial)
 
@@ -1565,15 +1609,19 @@ def reinforcement_planning(
         parallel_min_distance_mm=None,
         parallel_angle_tolerance_deg=None,
         reward_calculator=None,
-        construction_plan=None):
+        construction_plan=None,
+        continuation=None):
     """
     Hierarchical reinforcement learning driver for a single patient case.
     Logic preserved; internal calls use optimized env and caches.
     """
     # Initialize the recovery state before any model access so the exception
     # path can always return a valid result instead of masking the root error.
-    best_plan = None
-    best_reward = -np.inf
+    validate_continuation(continuation, radiation_volume, dose_image, target_value)
+    best_plan = [] if continuation is not None else None
+    best_reward = (evaluate_plan_objective([], radiation_volume, target_value, in_lowest_dose,
+                                         out_highest_dose, DVH_rate, continuation=continuation)[0]
+                   if continuation is not None else -np.inf)
     rl_status = diagnostics if isinstance(diagnostics, dict) else None
     if rl_status is not None and "schema_version" not in rl_status:
         initial = new_rl_status(DVH_rate)
@@ -1590,6 +1638,7 @@ def reinforcement_planning(
             "coordinate_space": "world",
             "plan": plan or [],
             "force": bool(force),
+            **continuation_preview_context(continuation),
         })
 
     def _status_counter(key, amount=1):
@@ -1652,8 +1701,10 @@ def reinforcement_planning(
                 dose_cal_model, dose_image, radiation_volume, target_value,
                 in_lowest_dose, out_highest_dose, infer_img_size, seed_info,
                 image_normalize_min, image_normalize_max,
-                image_normalize_scale, DVH_rate, deadline=deadline
+                image_normalize_scale, DVH_rate, deadline=deadline, continuation=continuation
             )
+        elif getattr(reward_calculator, "continuation", None) is not continuation:
+            raise ValueError("RL reward calculator has a different continuation baseline")
 
         env = HighLevelEnv(
             target_level_traj, high_level_state_spaces, low_level_state_spaces,
@@ -1679,12 +1730,12 @@ def reinforcement_planning(
                 progressDialog.setLabelText("Learning-based Planning...")
                 slicer.app.processEvents()
                 
-                trajs_radiations = np.zeros_like(radiation_volume, dtype=np.float32)
+                trajs_radiations = initial_radiation(radiation_volume, continuation)
                 dense_seed_count = 0
                 for entry in elem:
                     trajs_radiations += entry[4]
                     dense_seed_count += len(entry[2] or [])
-                target_sum = np.sum(trajs_radiations * reward_calculator.mask_volume > in_lowest_dose)
+                target_sum = np.sum(trajs_radiations * reward_calculator.mask_volume >= in_lowest_dose)
                 cur_DVH_rate = target_sum / reward_calculator.target_v
                 non_target_sum = np.count_nonzero(
                     (trajs_radiations * reward_calculator.non_target_mask > out_highest_dose)
@@ -1701,13 +1752,16 @@ def reinforcement_planning(
                 )
                 group_objectives[idx] = float(cur_reward)
 
+                if best_group_idx is None or cur_reward > group_objectives[best_group_idx]:
+                    # Search group choice is independent of the fixed-dose
+                    # incumbent: a dense layout can lose on OAR/cost while a
+                    # sparse episode on that same group can still improve it.
+                    best_group_idx = idx
+                    best_low_level_state_space = generate_baseline_state_space(
+                        low_level_state_spaces, target_level, idx)
                 if cur_reward > best_reward:
                     best_reward = cur_reward
                     best_plan = generate_plan_res(dose_image, elem)
-                    best_group_idx = idx
-                    best_low_level_state_space = generate_baseline_state_space(
-                        low_level_state_spaces, target_level, idx
-                    )
                     _emit_preview(
                         best_plan, "rl_baseline_selection", idx + 1,
                         cur_DVH_rate, cur_reward,
@@ -1725,6 +1779,8 @@ def reinforcement_planning(
                 execution="failed",
                 stop_reason="no_available_action",
             )
+            if continuation is not None:
+                return best_plan, best_reward
             return [], -np.inf
 
         best_low_env = LowLevelEnv(
@@ -1761,6 +1817,7 @@ def reinforcement_planning(
                 in_lowest_dose,
                 out_highest_dose,
                 DVH_rate,
+                continuation=continuation,
             )
             if greedy_score > best_reward:
                 best_reward = greedy_score
@@ -1787,6 +1844,7 @@ def reinforcement_planning(
                 in_lowest_dose,
                 out_highest_dose,
                 DVH_rate,
+                continuation=continuation,
             )
             construction_seeds, construction_needles = plan_cost_counts(constructed)
             logger.info(
@@ -1933,6 +1991,7 @@ def reinforcement_planning(
                         in_lowest_dose,
                         out_highest_dose,
                         DVH_rate,
+                        continuation=continuation,
                     )
                     if plan_score > best_reward:
                         best_plan = plan
@@ -2021,8 +2080,9 @@ def reinforcement_planning(
                     planned_positions = [[] for _ in range(target_level)]
                     planned_seed_radiations = [[] for _ in range(target_level)]
 
-                    cur_radiation = np.zeros_like(radiation_volume, dtype=np.float32)
-                    cur_DVH_rate = 0.0
+                    cur_radiation = initial_radiation(radiation_volume, continuation)
+                    cur_DVH_rate, damage = reward_calculator._metrics(cur_radiation.ravel())
+                    reward_calculator.last_out_damage = damage
                     best_low_env.reset()
                     state = np.zeros(POLICY_STATE_DIM, dtype=np.float32)
 
@@ -2038,6 +2098,13 @@ def reinforcement_planning(
                             for lv in range(target_level):
                                 _, _, _, update_dir, world_p, effective_range = traj_cache[lv]
                                 lv_mask = np.ones(len(effective_range), dtype=bool)
+                                if continuation is not None:
+                                    traj = traj_cache[lv][0][1]
+                                    direction = traj_cache[lv][2]
+                                    lv_mask &= np.array([continuation.seed_allowed(
+                                        traj, traj_cache[lv][1] + float(s) * update_dir,
+                                        direction, dose_image, seed_info)
+                                        for s in effective_range], dtype=bool)
 
                                 if planned_positions[lv]:
                                     all_pos = np.array([pos_cache[(lv, x)] for x in effective_range])
@@ -2127,6 +2194,7 @@ def reinforcement_planning(
                         in_lowest_dose,
                         out_highest_dose,
                         DVH_rate,
+                        continuation=continuation,
                     )
                     if plan_score > best_reward:
                         best_reward = plan_score
@@ -2193,6 +2261,7 @@ def reinforcement_planning(
                         in_lowest_dose,
                         out_highest_dose,
                         DVH_rate,
+                        continuation=continuation,
                     )
                     if plan_score > best_reward:
                         best_reward = plan_score

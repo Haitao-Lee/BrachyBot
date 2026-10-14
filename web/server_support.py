@@ -242,7 +242,8 @@ def _manual_dose_transaction_lock(session_id: Any) -> threading.RLock:
     prevents two equal-version mutations from forking/publishing out of order;
     different cases remain fully concurrent.
     """
-    key = str(session_id or "").strip() or "__anonymous__"
+    from web.timepoint_http import bucket_key
+    key = bucket_key(str(session_id or "").strip() or "__anonymous__")
     with _MANUAL_DOSE_TRANSACTION_LOCK:
         lock = _MANUAL_DOSE_SESSION_LOCKS.get(key)
         if lock is None:
@@ -374,9 +375,11 @@ def _ui_session_id(session_id: Optional[str] = None) -> str:
 
 def _ui_bucket(session_id: Optional[str] = None) -> Dict[str, Any]:
     sid = _ui_session_id(session_id)
+    from web.timepoint_http import bucket_key
+    key = bucket_key(sid)
     stale_closed = False
     with _UI_BRIDGE_LOCK:
-        bucket = _UI_BRIDGE.setdefault(sid, {
+        bucket = _UI_BRIDGE.setdefault(key, {
             "state": {},
             "events": [],
             "training": {
@@ -395,7 +398,7 @@ def _ui_bucket(session_id: Optional[str] = None) -> Dict[str, Any]:
             stale_closed = True
     if stale_closed and callable(_UI_BRIDGE_STALE_HANDLER) and has_request_context():
         try:
-            _UI_BRIDGE_STALE_HANDLER(sid, bucket)
+            _UI_BRIDGE_STALE_HANDLER(key, bucket)
         except Exception:
             logger.warning("Unable to checkpoint stale monitor close for %s", sid, exc_info=True)
     return bucket
@@ -495,11 +498,14 @@ def _ui_bridge_snapshot(session_id: Optional[str] = None) -> Dict[str, Any]:
     """Copy one case-owned UI bridge without exposing mutable live state."""
     bucket = _ui_bucket(session_id)
     with _UI_BRIDGE_LOCK:
+        from web.timepoint_http import current_binding
+        binding = current_binding()
         return {
             "state": dict(bucket.get("state") or {}),
             "events": list(bucket.get("events") or []),
             "training": copy.deepcopy(bucket.get("training") or {}),
             "updated_at": bucket.get("updated_at"),
+            **({"session_id": binding.session_id, "timepoint_id": binding.timepoint_id} if binding else {}),
         }
 
 
@@ -520,13 +526,13 @@ def _close_live_training_snapshots(
         for session_id, bucket in _UI_BRIDGE.items():
             training = bucket.get("training") or {}
             if not training.get("active"):
-                snapshots.append((str(session_id), copy.deepcopy(bucket)))
+                snapshots.append((session_id, copy.deepcopy(bucket)))
                 continue
             run_id = str(training.get("run_id") or training.get("runId") or "").strip()
             bucket["training"] = _close_stale_training_snapshot(training, reason=reason)
             bucket["updated_at"] = now
             closed.append((str(session_id), run_id))
-            snapshots.append((str(session_id), copy.deepcopy(bucket)))
+            snapshots.append((session_id, copy.deepcopy(bucket)))
     from web.routes.planning_routes import _persist_closed_ui_bridge
     for session_id, bridge in snapshots:
         _persist_closed_ui_bridge(session_id, bridge)
@@ -536,15 +542,21 @@ def _close_live_training_snapshots(
 def _drop_ui_bucket(session_id: Optional[str]) -> None:
     """Remove UI/training state when the owning agent session is deleted."""
     sid = _ui_session_id(session_id)
+    from web.timepoint_http import bucket_key, current_binding
+    scoped = current_binding()
+    snapshots = []
     with _UI_BRIDGE_LOCK:
-        bucket = _UI_BRIDGE.pop(sid, None)
-        if bucket is not None:
-            bucket["training"] = _close_stale_training_snapshot(bucket.get("training"), reason="cache_eviction")
-            bucket["updated_at"] = time.time()
-            bucket = copy.deepcopy(bucket)
-    if bucket is not None:
-        from web.routes.planning_routes import _persist_closed_ui_bridge
-        _persist_closed_ui_bridge(sid, bucket)
+        keys = [bucket_key(sid)] if scoped else [key for key in _UI_BRIDGE
+            if key == sid or isinstance(key, tuple) and key[1] == sid]
+        for key in keys:
+            bucket = _UI_BRIDGE.pop(key, None)
+            if bucket is not None:
+                bucket["training"] = _close_stale_training_snapshot(bucket.get("training"), reason="cache_eviction")
+                bucket["updated_at"] = time.time()
+                snapshots.append((key, copy.deepcopy(bucket)))
+    from web.routes.planning_routes import _persist_closed_ui_bridge
+    for key, bucket in snapshots:
+        _persist_closed_ui_bridge(key, bucket)
 
 
 def _append_ui_event(
@@ -1384,13 +1396,14 @@ def _latest_plan_snapshot(
     }
 
 
-def _source_backed_target_context(agent) -> Dict[str, Any]:
+def _source_backed_target_context(agent, *, evaluation_config=None) -> Dict[str, Any]:
     """Resolve case criteria without falling back to a generic disease site."""
     if agent is None or not hasattr(agent, "memory"):
         return {}
     memory = agent.memory
     tumor_type = str(
-        memory.retrieve("tumor_type_used")
+        (evaluation_config or {}).get("tumor_type")
+        or memory.retrieve("tumor_type_used")
         or memory.retrieve("tumor_type")
         or memory.retrieve("cancer_type")
         or memory.retrieve("organ")
@@ -1457,8 +1470,9 @@ def _build_plan_advice(
     issues: list = []
     strengths: list = []
 
+    from web.planning_config import current_evaluation_config
     rx_gy = resolve_prescription_gy(
-        agent.memory.retrieve("plan_config") or getattr(agent, "config", {}) or {},
+        current_evaluation_config(agent.memory.retrieve) or getattr(agent, "config", {}) or {},
         metrics,
         dose_scale_gy=(
             metrics.get("dose_scale_gy")
@@ -2335,6 +2349,17 @@ def _compute_manual_ai_dose(
     if ct_image is None or ct_data is None:
         raise ValueError("No CT image loaded")
 
+    from tool_factory.seed_plan.continuation_support import resolve_baseline
+    continuation = resolve_baseline(agent, current_image=ct_image)
+    captured_context = getattr(agent, "_workspace_timepoint_context", None)
+    if (continuation is None and captured_context is not None
+            and captured_context.target.stage == "intraoperative"):
+        raise ValueError("Current intraoperative fixed dose is missing; prepare or recompute the reviewed baseline before manual dose")
+    from plans.dose_pre.model_loader import resolve_dose_scale_gy
+    dose_scale = continuation.dose_scale_gy if continuation is not None else resolve_dose_scale_gy(
+        agent.memory.retrieve("plan_config") or {}, agent.memory.retrieve("dose_metrics") or {},
+        dose_scale_gy=agent.memory.retrieve("dose_scale_gy"))
+
     # Workspace hydration may serialize CT arrays as a flat artifact to save
     # metadata overhead.  All downstream planning and safety code operates on
     # the canonical NumPy Z/Y/X grid, so derive the shape from the authoritative
@@ -2380,6 +2405,19 @@ def _compute_manual_ai_dose(
         agent.memory.store("resampled_ctv", resampled_ctv)
         if resampled_oar is not None:
             agent.memory.store("resampled_oar", resampled_oar)
+    if continuation is not None:
+        continuation.validate_grid(resampled_ct)
+        current_target = sitk.GetImageFromArray(np.asarray(ctv_mask, dtype=np.uint8))
+        current_target.CopyInformation(ct_image)
+        target_on_grid = sitk.GetArrayFromImage(sitk.Resample(current_target, resampled_ct,
+            sitk.Transform(), sitk.sitkNearestNeighbor, 0, sitk.sitkUInt8))
+        if not np.array_equal(target_on_grid > 0, continuation.complete_target_mask):
+            raise ValueError("Current CTV changed; refresh the continuation baseline before manual dose")
+        for needle in needles or []:
+            points = needle.get("points") if isinstance(needle, dict) else None
+            if points and not continuation._clear(np.asarray(points[0], dtype=float),
+                    np.asarray(points[-1], dtype=float), continuation.needle_radius_mm):
+                raise ValueError("Manual supplemental needle intersects a fixed implanted source/needle")
 
     # Replanning is an interactive operation and can happen repeatedly for
     # one case. Reuse the process-wide, read-only DoseUNet instance instead of
@@ -2389,14 +2427,29 @@ def _compute_manual_ai_dose(
     from plans.device_manager import get_device
     dose_device = get_device(caller="manual_planning_dose")
     dose_cache_key = str(dose_device)
+    checkpoint_path, checkpoint_sha = None, None
+    if continuation is not None:
+        from tool_factory.seed_seg.seedfinder_adapter import sha256_file
+        from pathlib import Path
+        checkpoint_path = agent.memory.retrieve("continuation_dose_model_path")
+        if checkpoint_path is not None:
+            checkpoint_path = Path(checkpoint_path).resolve(strict=True)
+            checkpoint_sha = sha256_file(checkpoint_path)
+            dose_cache_key = (str(dose_device), checkpoint_sha)
     with _MANUAL_DOSE_MODEL_LOCK:
         dose_model = _MANUAL_DOSE_MODEL_CACHE.get(dose_cache_key)
         model_error = None
-        if dose_model is None:
-            dose_model, model_error = _load_dose_model(device=dose_device)
+        if dose_model is None and seeds:
+            if checkpoint_path is not None:
+                from tool_factory.seed_plan.model_support import resolve_dose_model
+                model_dl = dict(agent.memory.retrieve("continuation_dl_params") or {})
+                model_dl.update(device=dose_device, dose_model_path=str(checkpoint_path))
+                dose_model, model_error = resolve_dose_model({}, model_dl)
+            else:
+                dose_model, model_error = _load_dose_model(device=dose_device)
             if dose_model is not None:
                 _MANUAL_DOSE_MODEL_CACHE[dose_cache_key] = dose_model
-    if dose_model is None:
+    if dose_model is None and seeds:
         raise ValueError(model_error or "dose_unet_spacing1mm dose model is unavailable")
 
     def _prepare_model_seeds(seed_records):
@@ -2470,8 +2523,10 @@ def _compute_manual_ai_dose(
 
     norm_seeds, model_seeds = _prepare_model_seeds(seeds)
 
-    if not model_seeds:
+    if not model_seeds and continuation is None:
         raise ValueError("No manual seeds fall inside the current CT volume.")
+    if continuation is not None and len(norm_seeds) != len(seeds):
+        raise ValueError("Every supplemental source must lie on the current dose grid")
 
     args = setting()
     # Safety validation, Viewer geometry, and DoseUNet must use the same seed
@@ -2488,6 +2543,22 @@ def _compute_manual_ai_dose(
     )
     if isinstance(stored_seed_info, dict):
         dose_seed_info.update(stored_seed_info)
+    if continuation is not None:
+        pinned_info = agent.memory.retrieve("continuation_input_seed_info")
+        if pinned_info:
+            if any(abs(float(dose_seed_info[key]) - float(pinned_info[key])) > 1e-6 for key in ("length", "radius")):
+                raise ValueError("Supplemental source dimensions differ from the reviewed fixed baseline")
+            dose_seed_info = dict(pinned_info)
+        pinned_dl = agent.memory.retrieve("continuation_dl_params") or {}
+        if pinned_dl.get("image_normalize") is not None:
+            args.image_normalize = list(pinned_dl["image_normalize"])
+        if pinned_dl.get("infer_img_size") is not None:
+            args.radiation_array_params["infer_img_size"] = list(pinned_dl["infer_img_size"])
+        for seed in norm_seeds:
+            center = np.asarray(seed["position"], dtype=float)
+            half = np.asarray(seed["direction"], dtype=float) * float(dose_seed_info["length"]) / 2
+            if not continuation._clear(center - half, center + half, float(dose_seed_info["radius"])):
+                raise ValueError("Supplemental source intersects fixed implanted material")
     dose_image = utilizations.normalize_dose_image(
         resampled_ct,
         args.image_normalize[0],
@@ -2502,6 +2573,18 @@ def _compute_manual_ai_dose(
          "infer_img_size": args.radiation_array_params["infer_img_size"]},
         (dose_cache_key, id(dose_model)),
     )
+    from web.timepoint_resources import fingerprint
+    from tool_factory.seed_plan.continuation_support import image_signature
+    from plans.continuation import grid_signature
+    manual_input_fingerprint = fingerprint({
+        "current_image": image_signature(ct_image), "planning_grid": grid_signature(resampled_ct),
+        "checkpoint_sha256": checkpoint_sha, "seed_info": dose_seed_info,
+        "normalization": args.image_normalize, "infer_img_size": args.radiation_array_params["infer_img_size"],
+        "source_contract": agent.memory.retrieve("continuation_source_contract"),
+        "source_profile": agent.memory.retrieve("implant_dose_profile"),
+        "baseline_sha256": continuation.baseline_dose_sha256 if continuation is not None else None,
+        "observation_revision": (agent.memory.retrieve("continuation_baseline_record") or {}).get("observation_revision_id"),
+    })
     def _seed_cache_key(seed):
         return (
             dose_signature,
@@ -2649,6 +2732,18 @@ def _compute_manual_ai_dose(
     baseline_dose_key = "dose_distribution" if agent.memory.retrieve("manual_ai_dose") else "algorithm_plan_dose_distribution"
     if previous_dose is None:
         previous_dose = agent.memory.retrieve(baseline_dose_key)
+    saved_input_fingerprint = agent.memory.retrieve("manual_dose_input_fingerprint")
+    if (saved_input_fingerprint is not None and saved_input_fingerprint != manual_input_fingerprint
+            or continuation is not None and saved_input_fingerprint is None):
+        previous_dose = None
+    # Incremental replacement operates on supplemental dose alone. Existing
+    # implanted sources are an immutable initial condition, never an old term
+    # to subtract and never a second term to add to an already-total grid.
+    if continuation is not None and previous_dose is not None:
+        old_total = np.asarray(previous_dose, dtype=np.float32)
+        previous_dose = old_total - continuation.dose_model if old_total.shape == continuation.dose_model.shape else None
+        if previous_dose is not None and (not np.isfinite(previous_dose).all() or np.any(previous_dose < -1e-5)):
+            previous_dose = None
     incremental_applied = False
 
     def _seed_signature(seed):
@@ -2910,6 +3005,9 @@ def _compute_manual_ai_dose(
         dose = dose_base
     dose = np.nan_to_num(dose, nan=0.0, posinf=0.0, neginf=0.0)
     dose[dose < 0.0] = 0.0
+    additional_dose = np.array(dose, copy=True)
+    fixed_dose = continuation.dose_model if continuation is not None else np.zeros_like(dose)
+    dose = fixed_dose + additional_dose
 
     norm_needles = []
     for i, needle in enumerate(needles or []):
@@ -2945,13 +3043,20 @@ def _compute_manual_ai_dose(
     organ_names = agent.memory.retrieve("organ_names") or {}
     spacing = np.asarray(ct_image.GetSpacing(), dtype=np.float32)
     voxel_vol_cm3 = float(np.prod(spacing) / 1000.0)
-    dose_gy = dose_original * DOSE_MODEL_SCALE_GY
-    plan_config = agent.memory.retrieve("plan_config") or getattr(agent, "config", {}) or {}
+    from web.dose_components import pipeline_components
+    component_updates = pipeline_components(agent, ct_image, resampled_ct, fixed_dose, additional_dose, dose_scale,
+        continuation, planned_sources=norm_seeds,
+        dl_params={**dict(getattr(args, "dl_params", {}) or {}), "image_normalize": list(args.image_normalize),
+                   "infer_img_size": list(args.radiation_array_params["infer_img_size"])},
+        seed_info=dose_seed_info, model_sha256=checkpoint_sha)
+    dose_gy = component_updates["dose_distribution_physical_gy"]
+    from web.planning_config import current_evaluation_config
+    plan_config = current_evaluation_config(agent.memory.retrieve) or getattr(agent, "config", {}) or {}
     previous_metrics = agent.memory.retrieve("dose_metrics") or {}
     saved_scale = (
         previous_metrics.get("dose_scale_gy")
         or agent.memory.retrieve("dose_scale_gy")
-        or DOSE_MODEL_SCALE_GY
+        or dose_scale
     )
     prescription_gy = resolve_prescription_gy(
         plan_config,
@@ -2966,9 +3071,9 @@ def _compute_manual_ai_dose(
         "dose_value_unit": "gy",
         "prescription_model_threshold": dose_gy_to_model(
             prescription_gy,
-            DOSE_MODEL_SCALE_GY,
+            dose_scale,
         ),
-        "dose_scale_gy": DOSE_MODEL_SCALE_GY,
+        "dose_scale_gy": dose_scale,
         "volume_metric_units": "fraction",
         "manual_preview": True,
         "dose_engine": "dose_unet_spacing1mm",
@@ -3072,7 +3177,7 @@ def _compute_manual_ai_dose(
     metrics["oar_metrics"] = oar_metrics
     metrics["dvh_data"] = dvh_data
 
-    target_context = _source_backed_target_context(agent)
+    target_context = _source_backed_target_context(agent, evaluation_config=plan_config)
     if target_context and metrics.get("ctv_voxels", 0) > 0:
         from tool_factory.dose_eval.comprehensive_dose_evaluation import (
             ComprehensiveDoseEvaluationTool,
@@ -3082,14 +3187,21 @@ def _compute_manual_ai_dose(
         evaluator = ComprehensiveDoseEvaluationTool()
         site = target_context["site"]
         constraints = get_oar_standard(site)
+        explicit_constraints = plan_config.get("oar_constraints") or {}
         violations = []
         for name, values in oar_metrics.items():
-            constraint = evaluator._match_oar_constraint(name, constraints)
+            constraint = evaluator._match_oar_constraint(name, explicit_constraints)
+            constraint_source = "current_evaluation_config"
+            if not constraint:
+                constraint = evaluator._match_oar_constraint(name, constraints)
+                constraint_source = "clinical_kb"
             if constraint:
                 violations.extend(evaluator._check_oar_violation(
                     name,
                     {"D2cc": values.get("d2cc"), "Dmax": values.get("dmax"), "Dmean": values.get("mean_dose")},
                     constraint,
+                    source=constraint_source,
+                    prescribed_dose=prescription_gy,
                 ))
         metrics["plan_score"] = evaluator._compute_plan_score(
             {
@@ -3108,6 +3220,12 @@ def _compute_manual_ai_dose(
         metrics["plan_score"] = None
         metrics["criteria_status"] = "UNVERIFIED"
 
+    if continuation is not None:
+        resolve_baseline(agent, current_image=ct_image)
+        if checkpoint_path is not None and sha256_file(checkpoint_path) != checkpoint_sha:
+            raise ValueError("CNN checkpoint changed during manual dose computation")
+    if image_signature(ct_image) != image_signature(agent.memory.retrieve("ct_image")):
+        raise ValueError("Current CT changed during manual dose computation")
     agent.memory.store("manual_planning_preview", True)
     agent.memory.store("manual_ai_dose", True)
     agent.memory.store("manual_plan_active", True)
@@ -3128,11 +3246,17 @@ def _compute_manual_ai_dose(
     agent.memory.store("total_seeds", len(norm_seeds))
     agent.memory.store("num_trajectories", len(grouped))
     agent.memory.store("dose_distribution", dose)
-    agent.memory.store("dose_distribution_gy", dose_original)
+    agent.memory.store("dose_distribution_gy", dose_gy)
+    agent.memory.store("dose_distribution_current_normalized", dose_original)
     agent.memory.store("dose_distribution_physical_gy", dose_gy)
     agent.memory.store("dose_units", DOSE_MODEL_UNITS)
-    agent.memory.store("dose_scale_gy", DOSE_MODEL_SCALE_GY)
+    agent.memory.store("dose_scale_gy", dose_scale)
+    agent.memory.store("additional_dose_distribution", additional_dose)
+    agent.memory.store("manual_dose_input_fingerprint", manual_input_fingerprint)
+    for key, value in component_updates.items():
+        agent.memory.store(key, value)
     agent.memory.store("dose_metrics", metrics)
+    agent.memory.store("current_dose_evaluation_config", copy.deepcopy(plan_config))
     agent.memory.store("metrics", metrics)
     agent.memory.store("dvh_data", dvh_data)
     planning_version = int(agent.memory.retrieve("manual_plan_version") or 0)
@@ -3168,7 +3292,7 @@ def _compute_manual_ai_dose(
         "dose_range_normalized": [float(dose_original.min()), float(dose_original.max())],
         "dose_range_gy": [float(dose_gy.min()), float(dose_gy.max())],
         "dose_units": DOSE_MODEL_UNITS,
-        "dose_scale_gy": DOSE_MODEL_SCALE_GY,
+        "dose_scale_gy": dose_scale,
         "planning_id": agent.memory.retrieve("manual_planning_id"),
         "planning_version": planning_version,
         "artifact_status": artifact_status,
@@ -3442,6 +3566,20 @@ def _validate_path(path: str, purpose: str = "read") -> bool:
     except (OSError, ValueError):
         return False
     roots = _allowed_write_roots() if purpose == "write" else _allowed_read_roots()
+    if purpose == 'read':
+        # A configured workspace can live outside the default deployment tree.
+        # Authorize only the authenticated request's exact patient directory,
+        # never the whole runtime, /tmp, or a caller-supplied external root.
+        try:
+            from flask import current_app, has_request_context
+            from web.timepoint_http import current_binding
+            binding=current_binding()
+            if binding is not None and has_request_context():
+                store=current_app.extensions.get('brachybot_workspace_store')
+                if store is not None and store.owns_path(binding.owner_id,binding.session_id,resolved):
+                    return True
+        except (RuntimeError, ValueError, OSError):
+            pass
     if _is_under_root(resolved, roots):
         return True
     logger.warning(
@@ -3553,6 +3691,12 @@ def _make_session_screenshot_url(
     safe_version = re.sub(r"[^A-Za-z0-9_-]", "", str(version or ""))[:64]
     if safe_version:
         query.append(f"v={safe_version}")
+    target = re.match(r'^([0-9a-f]{32})_',filename)
+    if target:
+        # <img>/download anchors cannot carry the mounted pane's headers.
+        # The URL explicitly addresses the capture's original timepoint;
+        # the reader still checks its authenticated membership.
+        query.extend((f'session_id={session_id}',f'timepoint_id={target.group(1)}'))
     return f"{base}?{'&'.join(query)}" if query else base
 
 

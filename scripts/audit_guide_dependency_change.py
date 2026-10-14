@@ -18,6 +18,9 @@ from types import SimpleNamespace
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
+PINNED_PATHS = ("tool_factory/seed_plan/planning_pipeline.py", "plans/guide_geometry.py",
+                "web/planning_runs.py", "web/surgical_guide.py", "web/guide_placement.py",
+                "utils/guide_manufacturing.py")
 
 
 def digest(path):
@@ -31,7 +34,7 @@ def canonical_function_digest(path):
     return hashlib.sha256(ast.dump(function, include_attributes=False).encode()).hexdigest()
 
 
-def worker(pipeline, count, resolution):
+def worker(pipeline, count, resolution, planning_runs=None):
     import numpy as np
     import SimpleITK as sitk
     import tool_factory.seed_plan
@@ -40,6 +43,11 @@ def worker(pipeline, count, resolution):
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
+    if planning_runs:
+        run_spec=importlib.util.spec_from_file_location('web.planning_runs',planning_runs)
+        run_module=importlib.util.module_from_spec(run_spec)
+        sys.modules['web.planning_runs']=run_module
+        run_spec.loader.exec_module(run_module)
     from web import surgical_guide
 
     class Memory:
@@ -82,6 +90,9 @@ def worker(pipeline, count, resolution):
         return hashlib.sha256(json.dumps(value, default=plain, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
     validation = {k: v for k, v in result["validation"].items() if k != "stage_timings_seconds"}
     return {"dependency_sha256": digest(pipeline), "seconds": elapsed,
+            "guide_sources": {name: digest(planning_runs if name == 'web/planning_runs.py' and planning_runs else REPO / name)
+                              for name in PINNED_PATHS if name != "tool_factory/seed_plan/planning_pipeline.py"},
+            "manifest_sha256": fingerprint(result["bore_manifest"]),
             "input_sha256": fingerprint({"ct_sha256": hashlib.sha256(ct.tobytes()).hexdigest(),
                                           "spacing": image.GetSpacing(), "origin": image.GetOrigin(),
                                           "direction": image.GetDirection(), "snapshot": snapshot,
@@ -95,17 +106,26 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--before", type=Path, required=True)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--current", type=Path, help="Explicit frozen candidate pipeline copy for detached staging")
+    parser.add_argument("--expected-current-sha256", help="Fail if the main-owned frozen pipeline changed")
+    parser.add_argument('--before-planning-runs',type=Path,help='Load the explicitly pinned earlier planning history dependency on the before side')
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--count", type=int, default=1, help=argparse.SUPPRESS)
     parser.add_argument("--resolution", type=float, default=.5, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.worker:
-        print(json.dumps(worker(args.before.resolve(strict=True), args.count, args.resolution)))
+        print(json.dumps(worker(args.before.resolve(strict=True), args.count, args.resolution,
+                                args.before_planning_runs.resolve(strict=True) if args.before_planning_runs else None)))
         return 0
     if args.output is None or args.output.exists():
         parser.error("--output must be a new evidence file")
     before = args.before.resolve(strict=True)
-    current = REPO / "tool_factory/seed_plan/planning_pipeline.py"
+    before_runs=args.before_planning_runs.resolve(strict=True) if args.before_planning_runs else None
+    current = (args.current or REPO / "tool_factory/seed_plan/planning_pipeline.py").resolve(strict=True)
+    frozen = {name: digest(REPO / name) for name in PINNED_PATHS}
+    frozen['tool_factory/seed_plan/planning_pipeline.py'] = digest(current)
+    if args.expected_current_sha256 and digest(current) != args.expected_current_sha256:
+        parser.error("Current pipeline does not match the requested frozen SHA-256")
     pairs = []
     for count, resolution in ((1, .2), (4, .5)):
         for repeat in range(2):
@@ -114,23 +134,32 @@ def main():
             # filesystem caches. Each subprocess still has a cold in-memory cache.
             order = (before, current) if repeat == 0 else (current, before)
             for path in order:
-                process = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--worker", "--before", str(path),
-                                          "--count", str(count), "--resolution", str(resolution)],
+                command=[sys.executable,str(Path(__file__).resolve()),'--worker','--before',str(path),
+                         '--count',str(count),'--resolution',str(resolution)]
+                if before_runs and path == before:command += ['--before-planning-runs',str(before_runs)]
+                process = subprocess.run(command,
                                          cwd=REPO, capture_output=True, text=True, timeout=180)
                 if process.returncode:
                     raise RuntimeError("Synthetic guide replay failed; inspect detached worker diagnostics")
                 observations.append(json.loads(process.stdout.strip().splitlines()[-1]))
             old, new = observations if repeat == 0 else observations[::-1]
-            matched = all(old[key] == new[key] for key in ("input_sha256", "hashes", "qa_sha256", "selected_needle_count"))
+            sources_match=all(old['guide_sources'][name] == (digest(before_runs) if name == 'web/planning_runs.py' and before_runs else sha)
+                              and new['guide_sources'][name] == sha for name,sha in frozen.items()
+                              if name != 'tool_factory/seed_plan/planning_pipeline.py')
+            matched = sources_match and all(old[key] == new[key] for key in ("input_sha256", "hashes", "qa_sha256", "selected_needle_count", "manifest_sha256"))
             pairs.append({"needle_count": count, "resolution_mm": resolution, "repeat": repeat,
                           "geometry_and_qa_match": matched, "before": old, "after": new})
     direct_function = {"before_sha256": canonical_function_digest(before), "after_sha256": canonical_function_digest(current)}
     evidence = {"schema_version": 1, "scope": "Synthetic isolated dependency replay only; not real-case, browser or clinical validation",
-                "dependencies": {name: digest(REPO / name) for name in (
-                    "tool_factory/seed_plan/planning_pipeline.py", "plans/guide_geometry.py", "web/planning_runs.py", "web/surgical_guide.py")},
+                "dependencies": frozen,
                 "before_pipeline_sha256": digest(before), "direct_guide_dependency_function": direct_function,
+                'before_planning_runs_sha256':digest(before_runs) if before_runs else None,
                 "runner_sha256": digest(Path(__file__)), "python": sys.version,
                 "pairs": pairs, "all_pairs_match": all(pair["geometry_and_qa_match"] for pair in pairs)}
+    final = {name: digest(REPO / name) for name in PINNED_PATHS}
+    final['tool_factory/seed_plan/planning_pipeline.py'] = digest(current)
+    if frozen != final:
+        raise RuntimeError("Source changed during paired replay; no guard renewal is permitted")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("x", encoding="utf-8") as handle:
         json.dump(evidence, handle, indent=2)

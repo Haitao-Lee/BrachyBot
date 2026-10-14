@@ -1,4 +1,4 @@
-/* Patient-specific puncture guide UI. Kept session-aware to prevent stale meshes. */
+/* Patient-specific needle guide UI. Requests retain their originating scan. */
 (function surgicalGuideUI() {
     const GUIDE_ID = 'patient_specific_puncture_guide';
     // The backend applies the same manufacturing margin to every primary
@@ -15,7 +15,7 @@
         sleeve_inward_mm: 8,
         auxiliary_holes_enabled: true,
         auxiliary_hole_radius_mm: 1.3,
-        auxiliary_hole_ring_count: 2,
+        auxiliary_hole_ring_count: 4,
         auxiliary_holes_per_ring: 12,
         auxiliary_hole_first_offset_mm: 6,
         auxiliary_hole_ring_spacing_mm: 3,
@@ -44,6 +44,7 @@
     const GUIDE_STL_VALIDATION_FILE_ID = 'guideStlValidationFile';
     const GUIDE_STL_VALIDATION_STATUS_ID = 'guideStlValidationStatus';
     let guideLoadGeneration = 0;
+    const guideMeshInFlight = new Map();
     // A restored case can answer the guide mesh request before the detached
     // hydration worker has decoded the persisted vertex/face sidecars
     // (HTTP 200 persisted_not_loaded). That used to end the one-shot restore
@@ -140,7 +141,7 @@
         if (busy && typeof window.reportUIEvent === 'function') {
             window.reportUIEvent(
                 'surgical_guide.running',
-                label || t('正在生成患者特异性穿刺导板', 'Generating patient-specific puncture guide'),
+                label || t('正在生成患者特异性穿刺导板', 'Generating the patient-specific needle guide'),
                 { state: 'running' },
             );
         }
@@ -288,7 +289,7 @@
             empty.value = '';
             empty.disabled = true;
             empty.selected = true;
-            empty.textContent = t('鏆傛棤鍙敤鐨勭┛鍒洪拡', 'No planned needles available');
+            empty.textContent = t('暂无可用的规划穿刺针', 'No planned needles available');
             control.classList.add('is-empty');
             control.append(empty);
             return;
@@ -483,7 +484,7 @@
         addMeshToScene({
             organ_id: GUIDE_ID,
             source: 'surgical_guide',
-            label: guide.label || 'Patient-specific puncture guide',
+            label: guide.label || 'Patient-specific needle guide',
             vertices: guide.vertices,
             faces: guide.faces,
             vertex_count: guide.vertices.length,
@@ -510,8 +511,19 @@
         return true;
     }
 
+    function guideRequestOwner(sessionId, explicit = null) {
+        let timepointScope;
+        try { timepointScope = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(explicit); }
+        catch (_) { return {timepointScope:null, current:()=>false}; }
+        const renderGeneration = window.__viewerRenderGeneration || 0;
+        return {timepointScope, current: () => sessionId === activeSessionId()
+            && renderGeneration === (window.__viewerRenderGeneration || 0)
+            && (!timepointScope || window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope))};
+    }
+
     async function guideFetch(url, options = {}, sessionId = activeSessionId(), attempt = 0) {
         const {
+            timepointScope = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(),
             retryPending = false,
             maxPendingRetries = 240,
             requestTimeoutMs = 120000,
@@ -525,10 +537,10 @@
         const request = await sharedRequest(url, {
             credentials: 'same-origin',
             ...fetchOptions,
-            headers: {
+            headers: window.BrachyBotTimepointWorkspace?.headers?.(timepointScope, {
                 ...(fetchOptions.headers || {}),
                 ...(sessionId ? { 'X-BrachyBot-Session': sessionId } : {}),
-            },
+            }) || {...fetchOptions.headers, ...(sessionId ? {'X-BrachyBot-Session':sessionId} : {})},
         }, {
             requestTimeoutMs,
             maxWaitMs,
@@ -548,33 +560,52 @@
         return payload;
     }
 
-    function _scheduleTransientGuideRetry(sessionId) {
+    function _scheduleTransientGuideRetry(sessionId, timepointScope = null) {
+        const owner = guideRequestOwner(sessionId, timepointScope);
         if (guideTransientRetryTimer) return;
         guideTransientRetryCount += 1;
         if (guideTransientRetryCount > 10) return;
         const delay = Math.min(15000, 1500 * guideTransientRetryCount);
         guideTransientRetryTimer = setTimeout(() => {
             guideTransientRetryTimer = null;
-            if (String(sessionId) !== String(activeSessionId())) {
+            if (!owner.current()) {
                 guideTransientRetryCount = 0;
                 return;
             }
-            void window.loadSurgicalGuideMesh({ sessionId });
+            void window.loadSurgicalGuideMesh({ sessionId, timepointScope: owner.timepointScope });
         }, delay);
     }
 
-    window.loadSurgicalGuideMesh = async function loadSurgicalGuideMesh(options = {}) {
+    window.loadSurgicalGuideMesh = function loadSurgicalGuideMesh(options = {}) {
+        const sessionId = String(options.sessionId || activeSessionId());
+        const owner = guideRequestOwner(sessionId, options.timepointScope);
+        if (!sessionId || !owner.current()) return Promise.resolve(false);
+        const version = Number(options.version);
+        const key = JSON.stringify([sessionId, owner.timepointScope?.timepointId,
+            owner.timepointScope?.generation, Number.isInteger(version) && version > 0 ? version : null]);
+        if (guideMeshInFlight.has(key)) return guideMeshInFlight.get(key);
+        const work = Promise.resolve().then(() => _loadSurgicalGuideMesh({
+            ...options, sessionId, timepointScope:owner.timepointScope,
+        })).finally(() => { if (guideMeshInFlight.get(key) === work) guideMeshInFlight.delete(key); });
+        guideMeshInFlight.set(key, work);
+        return work;
+    };
+
+    async function _loadSurgicalGuideMesh(options = {}) {
         const sessionId = String(options.sessionId || activeSessionId());
         if (!sessionId) return false;
+        const owner = guideRequestOwner(sessionId, options.timepointScope);
+        if (!owner.current()) return false;
         if (options.userInitiated) guideTransientRetryCount = 0;
         const generation = ++guideLoadGeneration;
         try {
             const version = Number(options.version);
             const suffix = Number.isInteger(version) && version > 0 ? `?version=${encodeURIComponent(version)}` : '';
             const payload = await guideFetch(`/api/surgical-guides/mesh${suffix}`, {
+                timepointScope: owner.timepointScope,
                 retryPending: true,
             }, sessionId);
-            if (generation !== guideLoadGeneration || sessionId !== activeSessionId()) return false;
+            if (generation !== guideLoadGeneration || !owner.current()) return false;
             if (guideStatusIsTransient(payload)) {
                 // Do not clear an existing guide on a temporary response. The
                 // backend status contract explicitly distinguishes a
@@ -583,13 +614,13 @@
                 // Only the active guide is retried; an explicitly requested
                 // historical version must not be promoted on a timer.
                 if (!(Number.isInteger(version) && version > 0)) {
-                    _scheduleTransientGuideRetry(sessionId);
+                    _scheduleTransientGuideRetry(sessionId, owner.timepointScope);
                 }
                 return false;
             }
             guideTransientRetryCount = 0;
             if (payload?.skin_surface?.available && typeof window.loadGuideSkinSurface === 'function') {
-                void window.loadGuideSkinSurface({ sessionId });
+                void window.loadGuideSkinSurface({ sessionId, timepointScope: owner.timepointScope });
             }
             const printableGuide = hasPrintableBoreQuality(payload.guide);
             const displayGuide = payload.guide && printableGuide
@@ -660,23 +691,27 @@
         } catch (error) {
             // A new or partially restored case normally has no guide. Do not
             // surface a failure notification while its other assets hydrate.
+            if (!owner.current()) return false;
             if (options.userInitiated) notify(error.message, 'error');
             return false;
         }
-    };
+    }
 
     window.generateSurgicalGuide = async function generateSurgicalGuide(options = {}) {
         const sessionId = activeSessionId();
         if (!sessionId) return;
+        const owner = guideRequestOwner(sessionId, options.timepointScope);
+        if (!owner.current()) return false;
         const showProgress = options.showProgress !== false;
         let guidePublished = false;
         if (showProgress && typeof _inputButtonProgress === 'function') {
-            _inputButtonProgress('surgical_guide_generate', 'running', '正在生成穿刺导板', 'Generating puncture guide');
+            _inputButtonProgress('surgical_guide_generate', 'running', '正在生成穿刺导板', 'Generating the needle guide');
         }
-        if (typeof addChat === 'function' && !options.silent) addChat('system', t('正在生成穿刺导板…', 'Generating puncture guide...'));
+        if (typeof addChat === 'function' && !options.silent) addChat('system', t('正在生成穿刺导板…', 'Generating the needle guide...'));
         setBusy(true, t('正在生成导板...', 'Generating guide...'));
         try {
             const payload = await guideFetch('/api/surgical-guides/generate', {
+                timepointScope: owner.timepointScope,
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -693,7 +728,7 @@
                 // running forever.
                 maxWaitMs: 900000,
             }, sessionId);
-            if (sessionId !== activeSessionId()) return;
+            if (!owner.current()) return {detached:true};
             applyGuideMetadata(
                 payload,
                 payload.guide && payload.guide_requires_regeneration
@@ -707,8 +742,9 @@
                 // it is not the guide-generation result.  A slow/stalled skin
                 // request must never convert an already-published guide into
                 // a failed operation or keep its progress row in timeout.
-                void Promise.resolve(window.loadGuideSkinSurface({ sessionId }))
+                void Promise.resolve(window.loadGuideSkinSurface({ sessionId, timepointScope: owner.timepointScope }))
                     .then(skinLoaded => {
+                        if (!owner.current()) return;
                         if (!skinLoaded) {
                             notify(t(
                                 '导板已生成；体表附加 Viewer 资源暂未加载，不影响导板结果。',
@@ -717,6 +753,7 @@
                         }
                     })
                     .catch(error => {
+                        if (!owner.current()) return;
                         console.warn('[surgical-guide] optional skin hydration failed:', error);
                         notify(t(
                             '导板已生成；体表附加 Viewer 资源加载失败，不影响导板结果。',
@@ -727,7 +764,7 @@
             window.scheduleWorkspaceSave?.('surgical_guide.generated');
             const completed = t(
                 `穿刺导板 v${payload.guide.version} 已生成`,
-                `Puncture guide v${payload.guide.version} generated`,
+                `Needle guide v${payload.guide.version} generated`,
             );
             const auxiliary = payload?.guide?.auxiliary_holes || {};
             const auxiliaryCount = Number(auxiliary.realized_count || 0);
@@ -749,7 +786,7 @@
             // guide was built only from the available lateral skin and must not
             // be treated as covering a full body surface.
             if (showProgress && typeof _inputButtonProgress === 'function') {
-                _inputButtonProgress('surgical_guide_generate', 'done', '穿刺导板', 'Puncture guide', t('已完成', 'Completed'));
+                _inputButtonProgress('surgical_guide_generate', 'done', '穿刺导板', 'Needle guide', t('已完成', 'Completed'));
             }
             reconcileGuideProgress(sessionId, 'done', t('已完成', 'Completed'));
             if (typeof addChat === 'function' && !options.silent) addChat('system', completed + auxiliaryNotice);
@@ -765,6 +802,7 @@
                 state: 'completed', version: payload.guide.version,
             });
         } catch (error) {
+            if (!owner.current()) return {detached:true};
             // The guide mesh is committed before optional Viewer hydration and
             // before workspace persistence.  If a secondary resource fails
             // after that commit, preserve the authoritative success state and
@@ -783,9 +821,10 @@
             // Skin extraction precedes guide CSG and may have succeeded even
             // when the printable mesh fails QA. Keep that real segmentation
             // visible so the operator can inspect fit and repair parameters.
-            if (sessionId === activeSessionId() && typeof window.loadGuideSkinSurface === 'function') {
-                await window.loadGuideSkinSurface({ sessionId });
+            if (owner.current() && typeof window.loadGuideSkinSurface === 'function') {
+                await window.loadGuideSkinSurface({ sessionId, timepointScope: owner.timepointScope });
             }
+            if (!owner.current()) return {detached:true};
             if (showProgress && typeof _inputButtonProgress === 'function') {
                 _inputButtonProgress('surgical_guide_generate', 'error', '穿刺导板', 'Puncture guide', error.message || t('生成失败', 'Failed'));
             }
@@ -793,18 +832,22 @@
             if (!options.silent && typeof addChat === 'function') addChat('error', t('穿刺导板生成失败：', 'Puncture guide generation failed: ') + error.message);
             throw error;
         } finally {
-            if (sessionId === activeSessionId()) setBusy(false);
+            if (owner.current()) setBusy(false);
         }
     };
 
     window.ensureSurgicalGuideForCurrentPlan = async function ensureSurgicalGuideForCurrentPlan(options = {}) {
         const sessionId = String(options.sessionId || activeSessionId());
         if (!sessionId || sessionId !== activeSessionId()) return false;
+        const owner = guideRequestOwner(sessionId, options.timepointScope);
+        const signatureOwner = JSON.stringify([sessionId, owner.timepointScope?.timepointId, owner.timepointScope?.generation]);
+        if (!owner.current()) return false;
         try {
             const payload = await guideFetch('/api/surgical-guides', {
+                timepointScope: owner.timepointScope,
                 retryPending: true,
             }, sessionId);
-            if (sessionId !== activeSessionId()) return false;
+            if (!owner.current()) return false;
             if (guideStatusIsTransient(payload)) {
                 applyGuideMetadata(payload, payload.guide || null);
                 return false;
@@ -832,7 +875,7 @@
                     || statusPlanMatches === true
                 );
             if (planMatches && !forceRegenerate) {
-                return window.loadSurgicalGuideMesh({ sessionId });
+                return window.loadSurgicalGuideMesh({ sessionId, timepointScope: owner.timepointScope });
             }
             // Auto-generation is safe only after the server has completed its
             // restore read and explicitly established that the current plan
@@ -843,21 +886,23 @@
                 || payload.can_generate !== true) return false;
             if (payload?.guide_status?.persistence_known === false) return false;
             const signature = String(payload.current_plan_signature || '');
-            if (!signature || (!forceRegenerate && autoGeneratedSignatures.get(sessionId) === signature)) return false;
-            autoGeneratedSignatures.set(sessionId, signature);
+            if (!signature || (!forceRegenerate && autoGeneratedSignatures.get(signatureOwner) === signature)) return false;
+            autoGeneratedSignatures.set(signatureOwner, signature);
             try {
                 // Background hydration is not a user-initiated operation.
                 // The chat tool/todo dock is the authoritative progress
                 // surface for a concurrent guide request; showing a second
                 // card here creates a misleading second timer.
                 await window.generateSurgicalGuide({
+                    timepointScope: owner.timepointScope,
                     silent: true,
                     showProgress: false,
                     planningId: options.planningId || null,
                 });
-                return true;
+                return owner.current();
             } catch (error) {
-                autoGeneratedSignatures.delete(sessionId);
+                autoGeneratedSignatures.delete(signatureOwner);
+                if (!owner.current()) return false;
                 notify(t(
                     `自动生成穿刺导板失败：${error.message}`,
                     `Automatic puncture-guide generation failed: ${error.message}`,
@@ -865,6 +910,7 @@
                 return false;
             }
         } catch (error) {
+            if (!owner.current()) return false;
             if (options.userInitiated) notify(error.message, 'error');
             return false;
         }
@@ -875,31 +921,36 @@
             ? { data_types: ['surgical_guide'], guide_version: selectedGuideVersion(), format: 'stl' }
             : { object_ids: ['surgical_guide:active'], format: 'stl' });
         const sessionId = activeSessionId();
+        const owner = guideRequestOwner(sessionId);
+        if (!owner.current()) return false;
         if (typeof _inputButtonProgress === 'function') _inputButtonProgress('surgical_guide_export', 'running', '正在导出导板 STL', 'Exporting guide STL');
         if (typeof addChat === 'function') addChat('system', t('正在导出已校验的导板 STL…', 'Exporting the validated guide STL...'));
         try {
             const response = await fetch('/api/surgical-guides/export', {
                 method: 'POST', credentials: 'same-origin',
-                headers: {
+                headers: window.BrachyBotTimepointWorkspace?.headers?.(owner.timepointScope, {
                     ...(sessionId ? { 'X-BrachyBot-Session': sessionId } : {}),
                     'Content-Type': 'application/json',
-                },
+                }) || {'X-BrachyBot-Session':sessionId,'Content-Type':'application/json'},
                 body: JSON.stringify({ version: selectedGuideVersion() }),
             });
+            if (!owner.current()) return false;
             if (!response.ok) {
                 const payload = await response.json().catch(() => ({}));
                 throw new Error(payload.error || 'Guide export failed');
             }
             const blob = await response.blob();
+            if (!owner.current()) return false;
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
             link.download = `puncture_guide_${sessionId.slice(0, 8)}.stl`;
             link.click();
             URL.revokeObjectURL(link.href);
             if (typeof _inputButtonProgress === 'function') _inputButtonProgress('surgical_guide_export', 'done', '导出导板 STL', 'Export guide STL', t('已完成', 'Completed'));
-            notify(t('已下载通过校验的穿刺导板 STL', 'Validated puncture guide STL downloaded'), 'success');
-            if (typeof addChat === 'function') addChat('system', t('已下载通过校验的穿刺导板 STL。', 'Validated puncture guide STL downloaded.'));
+            notify(t('已下载通过校验的穿刺导板 STL', 'STL file for the validated needle guide downloaded'), 'success');
+            if (typeof addChat === 'function') addChat('system', t('已下载通过校验的穿刺导板 STL。', 'STL file for the validated needle guide downloaded.'));
         } catch (error) {
+            if (!owner.current()) return false;
             if (typeof _inputButtonProgress === 'function') _inputButtonProgress('surgical_guide_export', 'error', '导出导板 STL', 'Export guide STL', error.message || t('导出失败', 'Export failed'));
             notify(error.message, 'error');
             if (typeof addChat === 'function') addChat('error', t('导板 STL 导出失败：', 'Guide STL export failed: ') + error.message);
@@ -911,6 +962,10 @@
             manualPlanGuideRefreshRequested = manualPlanGuideRefreshRequested || guidePresentationExists();
         }
         guideLoadGeneration += 1;
+        guideMeshInFlight.clear();
+        if (guideTransientRetryTimer) clearTimeout(guideTransientRetryTimer);
+        guideTransientRetryTimer = null;
+        guideTransientRetryCount = 0;
         removeGuideMesh();
     };
 
@@ -950,7 +1005,7 @@
     window.loadSelectedSurgicalGuideVersion = function loadSelectedSurgicalGuideVersion() {
         const version = selectedGuideVersion();
         if (!version) {
-            notify(t('请先选择已保存的导板版本', 'Choose a saved puncture guide version first'), 'info');
+            notify(t('请先选择已保存的导板版本', 'Select a saved needle guide version first'), 'info');
             return;
         }
         return window.loadSurgicalGuideMesh({ version, userInitiated: true });
@@ -959,13 +1014,14 @@
     window.validateImportedSurgicalGuideSTL = async function validateImportedSurgicalGuideSTL(file) {
         const sessionId = activeSessionId();
         if (!file || !sessionId) return false;
-        const generation = window.__viewerRenderGeneration || 0;
-        const current = () => sessionId === activeSessionId() && generation === (window.__viewerRenderGeneration || 0);
+        const owner = guideRequestOwner(sessionId);
+        const current = owner.current;
         setValidationStatus(t('正在校验 STL 网格...', 'Validating STL mesh...'));
         try {
             const form = new FormData();
             form.append('file', file, file.name || 'puncture_guide.stl');
             const payload = await guideFetch('/api/surgical-guides/validate', {
+                timepointScope: owner.timepointScope,
                 method: 'POST', body: form,
             }, sessionId);
             if (!current()) return false;

@@ -33,6 +33,7 @@ MUTATING_TOOLS: FrozenSet[str] = frozenset({
     "seed_planning",
     "seed_planning_rule_based",
     "seed_planning_rl",
+    "seed_segmentation",
     "dose_engine",
     "dose_recompute",
     "dose_evaluation",
@@ -44,6 +45,8 @@ MUTATING_TOOLS: FrozenSet[str] = frozenset({
     "ui_controller",
     "dicom_rt_exporter",
     "case_memory",
+    "timepoint_controller",
+    "timepoint_images",
     "clinical_kb",
     "code_executor", "code_writer", "write_tool", "create_tool", "tool_creator",
     "self_evolve", "evolve", "shell_executor", "env_manager",
@@ -54,8 +57,11 @@ PLANNING_ANCHOR_TOOLS: FrozenSet[str] = frozenset({"planning_pipeline"})
 # Mixed-effect tools must be classified by the validated operation, not merely
 # by the tool name. Unknown/missing explicit operations remain fail-closed.
 READ_ONLY_ACTIONS = {
+    "timepoint_controller": frozenset({"metadata", "delete_impact", "explain"}),
+    "timepoint_images": frozenset({'list'}),
     "case_memory": frozenset({"retrieve", "search", "list", "statistics", "recommend"}),
-    "surgical_guide": frozenset({"status", "analyze"}),
+    "surgical_guide": frozenset({"status", "analyze", "manifest", "validate_placement"}),
+    "seed_segmentation": frozenset({"get_reconstruction"}),
     "clinical_kb": frozenset({"standards", "constraints", "tolerance", "protocol", "benchmark", "search", "guidelines", "source_search", "review_queue"}),
 }
 
@@ -248,12 +254,19 @@ class TurnExecutionAuthorization:
         if not self.effect_allowed(name, params):
             return False
         if name in self.granted_tools:
-            if params is None or name in self._name_grants:
+            captured_operation = isinstance(params, Mapping) and (
+                name == 'timepoint_controller'
+                or
+                (name == 'surgical_guide' and params.get('action') == 'estimate_placement')
+                or (name == 'seed_segmentation' and params.get('action') == 'review_reconstruction'))
+            if params is None or (name in self._name_grants and not captured_operation):
                 return True  # legacy introspection or proved whole-command grant
             if isinstance(params, Mapping):
                 # Normalization can enrich a call with server-owned inputs,
                 # but cannot replace its explicit operation/target/value.
-                protected = {'action', 'actions', 'planning_id', 'node_id', 'target', 'step'}
+                protected = {'action', 'actions', 'planning_id', 'node_id', 'target', 'step',
+                             'timepoint_id', 'source_timepoint_id', 'image_id', 'guide_version',
+                             'placement_id', 'revision_id', 'expected_revision_id', 'request_id'}
                 for expected in self._call_grants.get(name, ()):
                     defaults = {'step': 'full'} if name == 'planning_pipeline' else {}
                     if (all(key in params and _same_json_value(params[key], value)

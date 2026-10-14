@@ -471,9 +471,11 @@ const viewerDataAbortControllers = new Set();
 
 function _pendingStructurePresentationStore() {
     const sessionId = String(_viewerDataSessionId?.() || '');
-    if (sessionId && pendingStructurePresentationSessionId !== sessionId) {
+    const target = window.BrachyBotTimepointWorkspace?.mountedScope?.();
+    const owner = JSON.stringify([sessionId, target?.timepointId, target?.generation]);
+    if (pendingStructurePresentationSessionId !== owner) {
         pendingStructurePresentationByObjectId = Object.create(null);
-        pendingStructurePresentationSessionId = sessionId;
+        pendingStructurePresentationSessionId = owner;
     }
     return pendingStructurePresentationByObjectId;
 }
@@ -551,22 +553,26 @@ function _viewerDataSessionId(explicitSessionId = null) {
     return String(value || '');
 }
 
-function _viewerDataHeaders(sessionId, headers = {}) {
+function _viewerDataHeaders(sessionId, headers = {}, capturedScope = null) {
     const result = { ...headers };
     if (sessionId) result['X-BrachyBot-Session'] = sessionId;
-    return result;
+    const scope = capturedScope || window.BrachyBotTimepointWorkspace?.captureRequestScope?.();
+    return window.BrachyBotTimepointWorkspace?.headers(scope, result) || result;
 }
 
-function _captureViewerDataScope(explicitSessionId = null) {
-    return {
+function _captureViewerDataScope(explicitSessionId = null, explicitTimepointScope = null) {
+    return Object.freeze({
         sessionId: _viewerDataSessionId(explicitSessionId),
         dataGeneration: viewerDataLoadGeneration,
         renderGeneration: window.__viewerRenderGeneration || 0,
-    };
+        timepointScope: window.BrachyBotTimepointWorkspace?.captureRequestScope?.(explicitTimepointScope),
+        ctPath: state?.ctPath || '',
+    });
 }
 
 function _viewerDataScopeIsCurrent(scope, requireRenderGeneration = false) {
     if (!scope) return false;
+    if (scope.timepointScope && !window.BrachyBotTimepointWorkspace?.scopeIsCurrent(scope.timepointScope)) return false;
     if (scope.dataGeneration !== viewerDataLoadGeneration) return false;
     if (scope.sessionId && scope.sessionId !== _viewerDataSessionId()) return false;
     if (requireRenderGeneration
@@ -715,9 +721,11 @@ window.viewerMprCoordinates = {
 };
 
 async function loadVolumeData(options = {}) {
-    const scope = _captureViewerDataScope(options.sessionId);
+    const scope = _captureViewerDataScope(options.sessionId, options.timepointScope);
+    const requestHeaders = _viewerDataHeaders(scope.sessionId, {}, scope.timepointScope);
     const volumeRetryAttempt = Number(options._volumeRetryAttempt || 0);
     const sid = scope.sessionId || (typeof activeSessionId !== 'undefined' ? String(activeSessionId) : '');
+    const cacheOwner = scope.timepointScope ? JSON.stringify([sid, scope.timepointScope.timepointId, options.imageId || scope.ctPath]) : sid;
     if (_viewerDataScopeIsCurrent(scope)) {
         state.viewerSettings.threshold = null;
         const thresholdInput = document.getElementById('viewerThreshold');
@@ -732,10 +740,11 @@ async function loadVolumeData(options = {}) {
         // must not prevent the authoritative server request from starting.
         const cached = await Promise.race([
             Promise.resolve()
-                .then(() => window.SessionCache.get(sid, 'ct', 'volume'))
+                .then(() => window.SessionCache.get(cacheOwner, 'ct', 'volume'))
                 .catch(() => null),
             new Promise(resolve => setTimeout(() => resolve(null), 5000)),
         ]);
+        if (!_viewerDataScopeIsCurrent(scope)) return false;
         if (cached && cached.byteLength > 16) {
             try {
                 const view = new DataView(cached);
@@ -758,7 +767,7 @@ async function loadVolumeData(options = {}) {
         const request = typeof window.fetchViewerJsonWithRetry === 'function'
             ? await window.fetchViewerJsonWithRetry(
                 API + '/viewer/volume',
-                { headers: _viewerDataHeaders(scope.sessionId) },
+                { headers: requestHeaders },
                 { requestTimeoutMs: 60000, maxWaitMs: 300000, responseType: 'arrayBuffer' },
             )
             : null;
@@ -782,6 +791,7 @@ async function loadVolumeData(options = {}) {
         if (!_viewerDataScopeIsCurrent(scope)) return false;
     }
 
+    if (!_viewerDataScopeIsCurrent(scope)) return false;
     volumeShape = [shapeZ, shapeY, shapeX];
     volumeSpacing = [spacingX, spacingY, spacingZ];
     volumeData = new Int16Array(buffer);
@@ -797,7 +807,7 @@ async function loadVolumeData(options = {}) {
         cached.set(new Uint8Array(hdrLenBuf), 0);
         cached.set(hdrBytes, 4);
         cached.set(new Uint8Array(buffer), 4 + hdrBytes.length);
-        window.SessionCache.put(sid, 'ct', 'volume', cached.buffer).catch(function() {});
+        window.SessionCache.put(cacheOwner, 'ct', 'volume', cached.buffer).catch(function() {});
     }
 
     // Update Image Analysis now that volume data is available
@@ -820,6 +830,7 @@ async function loadVolumeData(options = {}) {
             }
         }
     });
+    return true;
 }
 
 async function hydrateOarDataTreeFromServer(
@@ -842,17 +853,19 @@ async function hydrateOarDataTreeFromServer(
         ? generationValue
         : viewerDataLoadGeneration;
     const sessionId = String(expectedSessionId || _viewerDataSessionId() || '');
+    const scope = _captureViewerDataScope(sessionId, options.timepointScope);
     try {
         const request = typeof window.fetchViewerJsonWithRetry === 'function'
             ? await window.fetchViewerJsonWithRetry(
                 API + '/viewer/organs',
-                { headers: _viewerDataHeaders(sessionId) },
+                { headers: _viewerDataHeaders(sessionId, {}, scope.timepointScope) },
                 { requestTimeoutMs: 30000, maxWaitMs: 120000 },
             )
             : null;
         if (!request?.response?.ok) return false;
         const payload = request.data || {};
         if (generation !== viewerDataLoadGeneration
+            || !_viewerDataScopeIsCurrent(scope)
             || (sessionId && sessionId !== _viewerDataSessionId())) return false;
         let organs = payload?.organs || {};
         if (!Object.keys(organs).length) {
@@ -907,7 +920,9 @@ function isCTVTargetLabel(labelId) {
 window.isCTVTargetLabel = isCTVTargetLabel;
 
 async function loadLabelVolumes(options = {}) {
-    const scope = _captureViewerDataScope(options.sessionId);
+    const scope = _captureViewerDataScope(options.sessionId, options.timepointScope);
+    if (!_viewerDataScopeIsCurrent(scope)) return false;
+    const requestHeaders = _viewerDataHeaders(scope.sessionId, {}, scope.timepointScope);
     const sid = scope.sessionId || (typeof activeSessionId !== 'undefined' ? String(activeSessionId) : '');
     // Generic/open masks are independent from the shared clinical volume.
     // Start hydration in parallel so standalone masks restore without CTV/OAR,
@@ -955,7 +970,7 @@ async function loadLabelVolumes(options = {}) {
         // back to the session-owned server volume after a short deadline.
         const cached = await Promise.race([
             Promise.resolve()
-                .then(() => window.SessionCache.get(sid, 'labels', 'volume'))
+                .then(() => scope.timepointScope ? null : window.SessionCache.get(sid, 'labels', 'volume'))
                 .catch(() => null),
             new Promise(resolve => setTimeout(() => resolve(null), 5000)),
         ]);
@@ -1008,7 +1023,7 @@ async function loadLabelVolumes(options = {}) {
             const request = typeof window.fetchViewerJsonWithRetry === 'function'
                 ? await window.fetchViewerJsonWithRetry(
                     API + '/viewer/label_volume',
-                    { headers: _viewerDataHeaders(scope.sessionId) },
+                    { headers: requestHeaders },
                     { requestTimeoutMs: 60000, maxWaitMs: 300000, responseType: 'arrayBuffer' },
                 )
                 : null;
@@ -1103,7 +1118,7 @@ async function loadLabelVolumes(options = {}) {
                 cached.set(new Uint8Array(hdrLenBuf), 0);
                 cached.set(hdrBytes, 4);
                 cached.set(allBytes, 4 + hdrBytes.length);
-                window.SessionCache.put(sid, 'labels', 'volume', cached.buffer).catch(function(){});
+                if (!scope.timepointScope) window.SessionCache.put(sid, 'labels', 'volume', cached.buffer).catch(function(){});
             }
         } catch (e) {
             console.error('Failed to load label volumes:', e);
@@ -1342,22 +1357,24 @@ async function loadLabelVolumes(options = {}) {
  */
 async function hydrateGenericMasksFromServer(scope, retryAttempt = 0) {
     if (!scope || !_viewerDataScopeIsCurrent(scope)) return false;
+    const requestHeaders = _viewerDataHeaders(scope.sessionId, {}, scope.timepointScope);
     const scopeSessionId = String(scope.sessionId || '');
     // A case switch must never reuse another case's binary masks.  A same-case
     // data mutation, however, should retain the volumes of unaffected open
     // masks while the authoritative catalogue removes or replaces only the
     // changed entries.  Clearing the complete cache on every mutation made a
     // Delete action briefly erase unrelated masks and amplified race windows.
-    if (genericMaskCatalogSessionId !== scopeSessionId) {
+    const catalogOwner = JSON.stringify([scopeSessionId, scope.timepointScope?.timepointId, scope.timepointScope?.generation]);
+    if (genericMaskCatalogSessionId !== catalogOwner) {
         genericMaskVolumeData = Object.create(null);
-        genericMaskCatalogSessionId = scopeSessionId;
+        genericMaskCatalogSessionId = catalogOwner;
     }
     genericMaskCatalogGeneration = scope.dataGeneration;
     try {
         const request = typeof window.fetchViewerJsonWithRetry === 'function'
             ? await window.fetchViewerJsonWithRetry(
                 API + '/viewer/generic_masks',
-                { headers: _viewerDataHeaders(scope.sessionId) },
+                { headers: requestHeaders },
                 { requestTimeoutMs: 30000, maxWaitMs: 120000 },
             )
             : null;
@@ -1564,7 +1581,7 @@ async function hydrateGenericMasksFromServer(scope, retryAttempt = 0) {
                 const volumeRequest = typeof window.fetchViewerJsonWithRetry === 'function'
                     ? await window.fetchViewerJsonWithRetry(
                         API + '/viewer/generic_mask_volume?mask_id=' + encodeURIComponent(id),
-                        { headers: _viewerDataHeaders(scope.sessionId) },
+                        { headers: requestHeaders },
                         { requestTimeoutMs: 60000, maxWaitMs: 300000, responseType: 'arrayBuffer' },
                     )
                     : null;
@@ -1627,8 +1644,20 @@ async function hydrateGenericMasksFromServer(scope, retryAttempt = 0) {
                 return false;
             }
         });
-        await Promise.allSettled(jobs);
+        const volumeResults = await Promise.allSettled(jobs);
         if (!_viewerDataScopeIsCurrent(scope)) return false;
+        const failed = [];
+        const recordFailure = (entry, kind, result) => {
+            const id = String(entry?.mask_id || '');
+            failed.push({ kind, mask_id: id, object_id: entry?.object_id || `mask:${id}`,
+                status: 'error', error: String(result?.reason?.message || result?.reason
+                    || result?.value?.error || state.maskLabels?.[id]?.error || 'resource_not_restored') });
+        };
+        volumeResults.forEach((result, index) => {
+            if (result.status !== 'fulfilled' || result.value !== true) {
+                recordFailure(entries[index], 'generic_mask_volume', result);
+            }
+        });
         try { renderDataTree?.(); } catch (_) {}
         try { loadAllSlices?.(); } catch (_) {}
         const ready = entries.filter(entry => {
@@ -1642,7 +1671,21 @@ async function hydrateGenericMasksFromServer(scope, retryAttempt = 0) {
                 && mask.visible3D !== false;
         });
         if (typeof reconstructOrgan3D === 'function') {
-            await Promise.allSettled(ready.map(entry => reconstructOrgan3D(String(entry.mask_id), true)));
+            const meshResults = await Promise.allSettled(ready.map(entry => reconstructOrgan3D(String(entry.mask_id), true)));
+            if (!_viewerDataScopeIsCurrent(scope)) return false;
+            meshResults.forEach((result, index) => {
+                if (result.status !== 'fulfilled' || result.value?.success !== true
+                    || result.value?.stale === true || result.value?.error) {
+                    recordFailure(ready[index], 'generic_mask_mesh', result);
+                }
+            });
+        } else {
+            ready.forEach(entry => recordFailure(entry, 'generic_mask_mesh', {
+                value: { error: '3D reconstruction loader is unavailable' },
+            }));
+        }
+        if (failed.length) {
+            return { success: false, partial: true, error: 'generic_mask_restore_incomplete', failed };
         }
         window.scheduleWorkspaceSave?.('viewer.generic_masks_loaded');
         return true;
@@ -1853,7 +1896,8 @@ window.hydrateCompletedSegmentationArtifacts = function hydrateCompletedSegmenta
     const scope = _captureViewerDataScope(sessionId);
     const sid = String(scope.sessionId || '');
     if (!sid || !_viewerDataScopeIsCurrent(scope)) return Promise.resolve({ stale: true });
-    const key = `${sid}:${normalizedKind}`;
+    const key = JSON.stringify([sid, scope.timepointScope?.timepointId,
+        scope.timepointScope?.generation, scope.dataGeneration, normalizedKind]);
     if (_completedSegmentationArtifactJobs.has(key)) {
         return _completedSegmentationArtifactJobs.get(key);
     }
@@ -2546,6 +2590,7 @@ function renderSliceFromVolume(axis, sliceIndex) {
 
     const hasGuideProjection = typeof hasSurgicalGuideProjection === 'function'
         && hasSurgicalGuideProjection();
+    window.BrachyBotImplants?.draw2D(axis);
     if ((state.seedsOverlay && ((state.seedsOverlay.seeds || []).length || (state.seedsOverlay.needles || []).length))
         || hasGuideProjection) {
         renderSeedsOverlay(axis, sliceIndex);
@@ -2597,7 +2642,7 @@ async function loadOverlay(axis, sliceIndex) {
         const fetchLayer = async (kind, labels, opacity) => {
             const result = await window.fetchViewerJsonWithRetry(API + '/viewer/overlay', {
                 method: 'POST', signal: controller.signal,
-                headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' }),
+                headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' }, scope.timepointScope),
                 body: JSON.stringify(payloadFor(kind, labels, opacity)),
             }, { requestTimeoutMs: 60000, maxWaitMs: 120000 });
             if (!sliceIsCurrent() || !result.response?.ok || !result.data?.has_mask || !result.data?.data) return null;
@@ -2725,7 +2770,7 @@ async function loadSlice(axis, sliceIndex) {
     try {
         const request = await window.fetchViewerJsonWithRetry(API + '/viewer/slice', {
                 method: 'POST',
-                headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' }),
+                headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' }, scope.timepointScope),
                 body: JSON.stringify({
                     axis: axis,
                     slice_index: sliceIndex,
@@ -2775,7 +2820,7 @@ async function preloadAxis(axis) {
             promises.push(
                 window.fetchViewerJsonWithRetry(API + '/viewer/slice', {
                     method: 'POST',
-                    headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' }),
+                    headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' }, scope.timepointScope),
                     body: JSON.stringify({
                         axis: axis,
                         slice_index: i,
@@ -2859,6 +2904,7 @@ function updateSlice(view, val) {
         triggerDoseContourRender(view, sliceIndex);
     }
     // Seed/needle 2D overlay — render on every slice change
+    window.BrachyBotImplants?.draw2D(view);
     if (state.seedsOverlay || (typeof hasSurgicalGuideProjection === 'function' && hasSurgicalGuideProjection())) {
         renderSeedsOverlay(view, sliceIndex);
     }
@@ -3183,7 +3229,7 @@ async function syncViewerState() {
     try {
         const res = await fetch(API + '/viewer/control', {
             method: 'POST',
-            headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' }),
+            headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' }, scope.timepointScope),
             body: JSON.stringify({ action: 'get_state' }),
         });
         if (!res.ok) return;
@@ -3499,35 +3545,41 @@ let _dataTreeArtifactCatalogSession = '';
 let _dataTreeArtifactCatalogPromise = null;
 
 async function hydrateDataTreeArtifactCatalog({ force = false, strict = false } = {}) {
+    // Tree rendering is permitted during a synchronous workspace transition;
+    // starting an unbound clinical request is not. The mounted hydration pass
+    // performs this read later using its captured target.
+    if (window.BrachyBotTimepoints && !window.BrachyBotTimepointWorkspace?.requestReady?.()) return [];
     const sessionId = _viewerDataSessionId();
+    const scope = _captureViewerDataScope(sessionId);
+    const catalogOwner = scope.timepointScope ? JSON.stringify([sessionId, scope.timepointScope.timepointId]) : sessionId;
     if (!sessionId) {
         dataTreeState.exportArtifacts = [];
         _dataTreeArtifactCatalogSession = '';
         return [];
     }
-    if (!force && _dataTreeArtifactCatalogSession === sessionId) {
+    if (!force && _dataTreeArtifactCatalogSession === catalogOwner) {
         return dataTreeState.exportArtifacts;
     }
     if (
         !force
         && _dataTreeArtifactCatalogPromise
-        && _dataTreeArtifactCatalogPromise.sessionId === sessionId
+        && _dataTreeArtifactCatalogPromise.sessionId === catalogOwner
     ) {
         return _dataTreeArtifactCatalogPromise.promise;
     }
-    if (_dataTreeArtifactCatalogSession !== sessionId) {
+    if (_dataTreeArtifactCatalogSession !== catalogOwner) {
         dataTreeState.exportArtifacts = [];
     }
     const promise = (async () => {
         try {
             const response = await fetch(API + '/data/catalog', {
-                headers: _viewerDataHeaders(sessionId),
+                headers: _viewerDataHeaders(sessionId, {}, scope.timepointScope),
             });
             const payload = await response.json().catch(() => ({}));
             if (!response.ok || payload.success === false) {
                 throw new Error(payload.error || 'Data catalog is unavailable');
             }
-            if (sessionId !== _viewerDataSessionId()) return [];
+            if (!_viewerDataScopeIsCurrent(scope)) return [];
             const previousArtifactLabels = new Map((dataTreeState.exportArtifacts || []).map(row=>[row.objectId,row]));
             const artifactAlias = item => {
                 const previous = previousArtifactLabels.get(String(item.object_id))
@@ -3582,7 +3634,7 @@ async function hydrateDataTreeArtifactCatalog({ force = false, strict = false } 
                     viewMetadata: item.metadata?.view_metadata || item.metadata || {},
                 }, String(item.data_type), 'artifacts'));
             dataTreeState.exportArtifacts = rows;
-            _dataTreeArtifactCatalogSession = sessionId;
+            _dataTreeArtifactCatalogSession = catalogOwner;
             renderDataTree();
             return rows;
         } catch (error) {
@@ -3592,12 +3644,12 @@ async function hydrateDataTreeArtifactCatalog({ force = false, strict = false } 
             if (strict) throw error;
             return [];
         } finally {
-            if (_dataTreeArtifactCatalogPromise?.sessionId === sessionId) {
+            if (_dataTreeArtifactCatalogPromise?.sessionId === catalogOwner) {
                 _dataTreeArtifactCatalogPromise = null;
             }
         }
     })();
-    _dataTreeArtifactCatalogPromise = { sessionId, promise };
+    _dataTreeArtifactCatalogPromise = { sessionId: catalogOwner, promise };
     return promise;
 }
 
@@ -4230,6 +4282,15 @@ let activeContextMenu = null;
 // one shared helper so Data Tree, 2D, and 3D menus follow the same rules.
 function positionBrachyContextMenu(menu, anchorX, anchorY) {
     if (!menu) return;
+    // A right-click can focus a control and synchronously scroll its tree into
+    // view. The browser delivers that scroll event after contextmenu opens.
+    // Capture actual offsets, rather than treating every delayed event as a
+    // new user scroll and immediately removing a newly opened menu.
+    const scrollPositions = new Map();
+    for (let node = document.activeElement; node; node = node.parentElement)
+        scrollPositions.set(node, [node.scrollLeft || 0, node.scrollTop || 0]);
+    scrollPositions.set(document, [window.scrollX || 0, window.scrollY || 0]);
+    menu.__brachyOpeningScrollPositions = scrollPositions;
 
     const margin = 8;
     const viewportWidth = Math.max(
@@ -4311,6 +4372,10 @@ if (!window.__brachyContextMenuDismissalBound) {
         // Scrolling a long menu is an expected interaction.  Only scrolling
         // outside the menu dismisses it.
         if (menu && (event.target === menu || menu.contains?.(event.target))) return;
+        const opening = menu?.__brachyOpeningScrollPositions?.get(event.target);
+        const offset = event.target === document ? [window.scrollX || 0, window.scrollY || 0]
+            : [event.target.scrollLeft || 0, event.target.scrollTop || 0];
+        if (opening && opening[0] === offset[0] && opening[1] === offset[1]) return;
         hideContextMenu();
     }, true);
 }
@@ -4806,15 +4871,28 @@ function renderDataTree() {
     reconcileDataTreeVisualNodes();
 
     let html = '';
+    const ownedScope = window.BrachyBotTimepointWorkspace?.mountedScope?.();
+    const imageCollection = ownedScope && window.BrachyBotTimepoints?.enabled?.()
+        ? window.BrachyBotTimepointWorkspace.resourceState()?.images : null;
+    const referenceImage = imageCollection?.images?.find(image => image.id === imageCollection.planning_reference_image_id);
+    const displayedImage = imageCollection?.images?.find(image => image.id === imageCollection.display_image_id);
+    if (imageCollection) {
+        const rootName = referenceImage?.name || displayedImage?.name || _dtText('时间点数据', 'Timepoint data');
+        html += `<div class="tree-group timepoint-data-root" data-group="timepoint_${escHtml(ownedScope.timepointId)}" data-timepoint-id="${escHtml(ownedScope.timepointId)}">
+            <div class="tree-group-header" onclick="toggleTreeGroup(this)"><span class="arrow">&#9660;</span><span title="${escHtml(rootName)}">${escHtml(rootName)}</span></div>
+            <div class="tree-group-items">`;
+    }
 
     // === Image group ===
     html += `<div class="tree-group" data-group="image">
-        <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('image', event)">
+        <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="${imageCollection
+            ? 'BrachyBotTimepointWorkspace.imageGroupMenu(event)' : 'handleTreeItemRightClick(\'image\', event)'}">
             <span class="arrow">&#9660;</span>
-            <span>Image</span>
+            <span>${escHtml(_dtText('图像','Image'))}</span>
         </div>
         <div class="tree-group-items">`;
-    html += renderTreeItem('ct', dataTreeState.ct, state.ctShape ? `${state.ctShape[2]}×${state.ctShape[1]}×${state.ctShape[0]}` : '');
+    html += imageCollection ? '<section id="timepointImageTree" data-timepoint-images></section>'
+        : renderTreeItem('ct', dataTreeState.ct, state.ctShape ? `${state.ctShape[2]}×${state.ctShape[1]}×${state.ctShape[0]}` : '');
     html += `</div></div>`;
 
     // === Segmentation group (CTV + OAR parallel) ===
@@ -4875,6 +4953,11 @@ function renderDataTree() {
             <span>Segmentation ${hasSeg ? `(${dataTreeState.organs.length + segCount + maskCount + (dataTreeState.skin.loaded ? 1 : 0)})` : ''}</span>
         </div>
         <div class="tree-group-items">`;
+    if (imageCollection) {
+        const sourceName = referenceImage?.name || _dtText('尚未选择规划参考图像','No planning reference selected');
+        html += `<div class="tree-group" data-group="segmentation_image_${escHtml(referenceImage?.id || 'none')}" data-source-image-id="${escHtml(referenceImage?.id || '')}">
+            <div class="tree-group-header" onclick="toggleTreeGroup(this)"><span class="arrow">&#9660;</span><span>${escHtml(sourceName)}</span></div><div class="tree-group-items">`;
+    }
 
     // CTV — show as collapsible group with tumor label(s) as children
     if (dataTreeState.ctv.loaded) {
@@ -5183,7 +5266,7 @@ function renderDataTree() {
             contextActions: [],
         }, 'status', 'oar');
         html += renderTreeItem('oar_status', oarStatus,
-            dataTreeState.oar.loading ? _dtText('OAR 分割进行中…', 'Loading') : _dtText('运行 OAR 分割后此处将显示器官', 'Run OAR segmentation to list organs here'));
+            dataTreeState.oar.loading ? _dtText('OAR 分割进行中…', 'OAR segmentation in progress…') : _dtText('运行 OAR 分割后此处将显示器官', 'Run OAR segmentation to list organs here'));
     }
 
     // Non-traversable sub-group
@@ -5282,6 +5365,7 @@ function renderDataTree() {
 
     }
     html += `</div></div>`; // close OAR group
+    if (imageCollection) html += '</div></div>'; // image-owned segmentation branch
     html += `</div></div>`; // close Segmentation group
 
     // === Planning group (Seeds, Needles, Dose) ===
@@ -5423,8 +5507,8 @@ function renderDataTree() {
                 ['report', 'Report', hasReport ? 'ready' : 'not generated', artifactState('report', hasReport)],
             ];
             const runVisibilityTitle = runVisible
-                ? _dtText('当前显示的 Planning', 'Currently displayed Planning')
-                : _dtText('显示此 Planning 及其全部产物', 'Show this Planning and all of its artifacts');
+                ? _dtText('当前显示的 Planning', 'Currently displayed plan')
+                : _dtText('显示此 Planning 及其全部产物', 'Show this plan and all its results');
             html += `<div class="tree-group planning-history-run" data-group="planning_run_${escHtml(runId)}" data-planning-id="${escHtml(runId)}">
                 <div class="tree-group-header planning-run-item" data-node-id="planning:${escHtml(runId)}" data-node-type="planning_run" data-status="${escHtml(runStatus)}"
                     onclick="activatePlanningRunFromTree(${runArg})"
@@ -5474,12 +5558,12 @@ function renderDataTree() {
         const label = _dtText(...manualStage.labels);
         const count = manualStage.step === 'trajectory_init'
             ? _dtText(
-                `${manualStage.shownTrajectories}/${manualStage.trajectoryCount} 条轨迹 · ${manualStage.closePointCount} 个 Close Points`,
-                `${manualStage.shownTrajectories}/${manualStage.trajectoryCount} paths · ${manualStage.closePointCount} close points`,
+                `${manualStage.shownTrajectories}/${manualStage.trajectoryCount} 条轨迹 · ${manualStage.closePointCount} 个靶区边界点`,
+                `${manualStage.shownTrajectories}/${manualStage.trajectoryCount} trajectories · ${manualStage.closePointCount} target boundary points`,
             )
             : manualStage.step === 'trajectory_refine'
                 ? _dtText(`${manualStage.shownTrajectories}/${manualStage.trajectoryCount} 条轨迹`,
-                    `${manualStage.shownTrajectories}/${manualStage.trajectoryCount} paths`)
+                    `${manualStage.shownTrajectories}/${manualStage.trajectoryCount} trajectories`)
                 : manualStage.step === 'seed_planning'
                     ? _dtText(`${manualStage.seedCount} 枚粒子`, `${manualStage.seedCount} seeds`)
                     : manualStage.step === 'dose_calc'
@@ -5661,7 +5745,7 @@ function renderDataTree() {
     // redundant "3D Meshes (N)" parent group. The user complained
     // that this group duplicated entries that already live under
     // their source (CTV / OAR / Dose), and that each item already
-    // has a per-row "3D Reconstruct" button (renderTreeItem at
+    // has a per-row "Reconstruct in 3D" button (renderTreeItem at
     // line ~10994) which they want to use instead of a separate
     // toggle group. Now meshes only appear as a "Meshes" sub-row
     // under their source — no duplicate parent group.
@@ -5735,8 +5819,11 @@ function renderDataTree() {
     // local preservation keeps ordinary visibility/color updates stable.
     const previousScrollTop = Number(body.scrollTop) || 0;
     const previousScrollLeft = Number(body.scrollLeft) || 0;
+    if (imageCollection) html += '</div></div>'; // timepoint/image-owned root
     body.innerHTML = html;
+    window.BrachyBotTimepointWorkspace?.mountControls?.();
     window.bindStructuredArtifactTree?.(body);
+    window.BrachyBotImplants?.renderTree();
     _bindDataTreeOpacityControls(body);
     _restoreTreeGroupExpansionState(body);
     body.scrollTop = previousScrollTop;
@@ -5761,11 +5848,19 @@ function _scheduleDataTreeSave(reason, presentationId = null) {
 function renderTreeItem(id, itemState, info) {
     // Keep the node's local visibility independent from its parent. The eye
     // shows effective scope visibility while the local value remains intact.
-    const effectiveVisible = typeof isDataTreeNodeMasterVisible === 'function'
+    const isPlanningAnnotation = itemState.annotationType === 'planning_distance' || itemState.type === 'planning_distance';
+    const masterVisible = typeof isDataTreeNodeMasterVisible === 'function'
         ? isDataTreeNodeMasterVisible(itemState)
         : itemState.visible !== false;
+    const effectiveVisible = masterVisible && (!isPlanningAnnotation || itemState.visible3D !== false);
     const eyeIcon = '&#128065;';
     const eyeClass = effectiveVisible ? '' : 'hidden';
+    const annotationEyeText = effectiveVisible
+        ? (typeof _dtText === 'function' ? _dtText('隐藏此标注','Hide this annotation') : 'Hide this annotation')
+        : (typeof _dtText === 'function' ? _dtText('显示此标注（源对象须可见）','Show this annotation (source object must be visible)') : 'Show this annotation (source object must be visible)');
+    const annotationEyeAttrs = isPlanningAnnotation
+        ? `title="${escHtml(annotationEyeText)}" aria-label="${escHtml(annotationEyeText)}" aria-pressed="${effectiveVisible}"`
+        : '';
     const loadedClass = itemState.loaded ? '' : 'style="opacity:0.4;"';
     const disabledAttr = itemState.loaded ? '' : 'disabled';
     // Indent for sub-items: organs, CTV labels, planning items, masks
@@ -5774,7 +5869,7 @@ function renderTreeItem(id, itemState, info) {
     const indent = isSubItem ? 'style="padding-left:1.6rem;"' : '';
     // 3D button for organs, CTV, CTV sub-labels, planning items, and masks
     const canRecon3d = id === 'ctv' || id === 'skin_surface' || id.startsWith('organ_') || id.startsWith('ctv_') || id.startsWith('seed_') || id.startsWith('needle_') || isMaskId;
-    const recon3dBtn = canRecon3d ? `<button class="recon3d-btn" title="3D Reconstruct" onclick="event.stopPropagation();reconstructOrgan3D(${brachybotInlineArgument(id)})">&#9638;</button>` : '';
+    const recon3dBtn = canRecon3d ? `<button class="recon3d-btn" title="Reconstruct in 3D" onclick="event.stopPropagation();reconstructOrgan3D(${brachybotInlineArgument(id)})">&#9638;</button>` : '';
     const isCt = id === 'ct';
     const windowWidth = _viewerWindowValue(state?.viewerSettings?.window, 400);
     const windowLevel = _viewerLevelValue(state?.viewerSettings?.level, 40);
@@ -5823,7 +5918,7 @@ function renderTreeItem(id, itemState, info) {
     return `<div class="tree-item ${isCt ? 'tree-item--ct' : ''} ${selectedClass}" data-node-id="${escHtml(itemState.nodeId || id)}" data-object-id="${escHtml(itemState.objectId || id)}" data-node-type="${escHtml(itemState.type || 'visual') }" data-source="${escHtml(itemState.source || '')}" data-planning-id="${escHtml(itemState.planningId || itemState.planning_id || '')}" data-live-node="true" data-visual-target="true" data-status="${escHtml(itemState.status || 'ready')}" data-visible="${itemState.visible !== false}" data-visible-2d="${itemState.visible2D !== false}" data-visible-3d="${itemState.visible3D !== false}" ${loadedClass} ${indent} ${dataAttr}
         onclick="handleTreeItemClick(${brachybotInlineArgument(id)}, event)"
         oncontextmenu="event.preventDefault();event.stopPropagation();handleTreeItemRightClick(${brachybotInlineArgument(id)}, event)">
-        <button class="eye-btn ${eyeClass}" onclick="event.stopPropagation();toggleDataVisibility(${brachybotInlineArgument(id)})" ${disabledAttr}>${eyeIcon}</button>
+        <button class="eye-btn ${eyeClass}" onclick="event.stopPropagation();toggleDataVisibility(${brachybotInlineArgument(id)})" ${annotationEyeAttrs} ${disabledAttr}>${eyeIcon}</button>
         <span class="color-swatch" style="background:${itemState.color};" onclick="event.stopPropagation();openColorPicker(${brachybotInlineArgument(id)}, this)" title="Click to change color"></span>
         <span class="item-label" title="${escHtml(itemState.fullLabel || itemState.label || '')}">${escHtml(itemState.label || '')}</span>
         <span class="item-info">${escHtml(info || '')}</span>${ctWindowLevelControls}${statusLabel}
@@ -6143,6 +6238,8 @@ function openColorPicker(id, swatchEl) {
 // existing CTV, OAR, mask, planning, and dose visual nodes. Refreshes 2D
 // overlays and the 3D mesh.
 function setDataTreeItemColor(id, color) {
+    if(window.BrachyBotImplants?.nodeFor(id))return /^#[0-9a-f]{6}$/i.test(String(color||''))
+        && window.BrachyBotImplants.changePresentation(id,{color});
     if (window.isPlanningDistanceAnnotationId?.(id)) return window.setPlanningDistanceAnnotationPresentation(id,{color});
     if (!/^#[0-9a-f]{6}$/i.test(String(color || ''))) return false;
     let itemState;
@@ -6342,7 +6439,7 @@ function showGroupContextMenu(x, y, category) {
         catInfo = {
             label: category === 'upload_masks'
                 ? _dtText('上传掩膜', 'Upload Mask')
-                : _dtText('手动/阈值掩膜', 'Masks'),
+                : _dtText('手动/阈值掩膜', 'Manual / threshold masks'),
             icon: '🎨',
         };
         count = Object.values(state.maskLabels || {})
@@ -6372,15 +6469,15 @@ function showGroupContextMenu(x, y, category) {
         items += `<div class="ctx-menu-sep"></div>`;
     }
 
-    // 3D Reconstruct all in group (only for OAR/organ groups)
+    // Reconstruct in 3D all in group (only for OAR/organ groups)
     if (category === 'oar' || (ORGAN_CATEGORIES[category] && category !== 'ctv')) {
         items += `<div class="ctx-menu-item" onclick="hideContextMenu();groupReconstruct3D(${brachybotInlineArgument(category)})">
-            <span class="ctx-icon">&#9638;</span> 3D Reconstruct All (${count})</div>`;
+            <span class="ctx-icon">&#9638;</span> Reconstruct all in 3D (${count})</div>`;
         items += `<div class="ctx-menu-sep"></div>`;
     }
     if (category === 'dose_isosurfaces') {
         items += `<div class="ctx-menu-item" onclick="hideContextMenu();reconstructDoseIsosurfaces3D()">
-            <span class="ctx-icon">&#9638;</span> 3D Reconstruct All (${count})</div>`;
+            <span class="ctx-icon">&#9638;</span> Reconstruct all in 3D (${count})</div>`;
         items += `<div class="ctx-menu-sep"></div>`;
     }
 
@@ -6514,7 +6611,7 @@ async function groupReconstruct3D(category) {
         if (!Array.isArray(dataTreeState.organs) || dataTreeState.organs.length === 0) {
             try {
                 const response = await fetch(API + '/viewer/organs', {
-                    headers: _viewerDataHeaders(scope.sessionId),
+                    headers: _viewerDataHeaders(scope.sessionId, {}, scope.timepointScope),
                 });
                 if (response.ok) {
                     const payload = await response.json();
@@ -6638,6 +6735,8 @@ function _dtStatusText(status) {
 }
 
 function _findDataTreeNode(id) {
+    const implantNode=window.BrachyBotImplants?.nodeFor(id);
+    if(implantNode)return implantNode;
     if (id === 'ct') return dataTreeState.ct;
     if (id === 'skin_surface') return dataTreeState.skin;
     if (id === 'dose' || id === 'dose_overlay') {
@@ -6664,7 +6763,7 @@ function _findDataTreeNode(id) {
 
 function _dataTreeObjectId(id, purpose = 'export') {
     const node = _findDataTreeNode(id);
-    if (id === 'ct') return 'image:ct';
+    if (id === 'ct') return state.displayImageId ? 'image:'+state.displayImageId : 'image:ct';
     if (id === 'skin_surface') return String(node?.objectId || 'skin_surface:guide');
     if (id === 'dose' || id === 'dose_overlay') return 'dose:volume';
     if (id === 'dvh') return purpose === 'delete' ? 'dvh' : 'dvh:data';
@@ -6710,7 +6809,10 @@ function _dataTreeObjectId(id, purpose = 'export') {
 function _dataTreeGroupObjectIds(category) {
     const structured = window.getStructuredArtifactGroup?.(category);
     if (structured) return [...structured.objectIds];
-    if (category === 'image') return state.ctLoaded ? ['image:ct'] : [];
+    if (category === 'image') {
+        const images = window.BrachyBotTimepointWorkspace?.resourceState?.()?.images?.images;
+        return images ? images.map(image=>'image:'+image.id) : state.ctLoaded ? ['image:ct'] : [];
+    }
     if (category === 'segmentation') {
         return [
             ..._dataTreeGroupObjectIds('ctv'),
@@ -6911,13 +7013,24 @@ function _clearInvalidatedPlanningPresentation(invalidated = []) {
     }
 }
 
+function _dataTreeMutationIsCurrent(scope) {
+    return !!scope && scope.sessionId === _viewerDataSessionId()
+        && (!scope.timepointScope || window.BrachyBotTimepointWorkspace.scopeIsCurrent(scope.timepointScope));
+}
+function _dataTreePendingMutationKey(scope, objectId) {
+    return JSON.stringify([scope.sessionId, scope.timepointScope?.timepointId,
+        scope.timepointScope?.generation, objectId]);
+}
+
 async function _refreshAfterDataMutation(
     payload,
     appearance,
     expectedSessionId,
     options = {},
 ) {
-    if (String(expectedSessionId) !== _viewerDataSessionId()) return false;
+    const mutationScope = options.mutationScope || _captureViewerDataScope(expectedSessionId);
+    const ownsMutation = () => _dataTreeMutationIsCurrent(mutationScope);
+    if (!ownsMutation()) return false;
     const invalidated = [
         ...(payload?.invalidated || []),
         ...((payload?.results || []).flatMap(result => result?.invalidated || [])),
@@ -7043,10 +7156,11 @@ async function _refreshAfterDataMutation(
         }
         await loadLabelVolumes({
             sessionId: expectedSessionId,
+            timepointScope: mutationScope.timepointScope,
             forceFresh: true,
             preserveViewerState: true,
         });
-        if (String(expectedSessionId) !== _viewerDataSessionId()) return false;
+        if (!ownsMutation()) return false;
         _applyStructureAppearanceMap(appearance || {});
         // Rebuilding the moved structure's 3D mesh is required: the CTV/OAR
         // meshes were disposed above, and loadLabelVolumes only refreshes the
@@ -7054,8 +7168,8 @@ async function _refreshAfterDataMutation(
         // the moved mask gone from the 3D viewer.
         try {
             if (typeof startSegmentationMeshPrewarm === 'function') {
-                startSegmentationMeshPrewarm('ctv', { force: true, batchSize: 3 });
-                startSegmentationMeshPrewarm('oar', { force: true, batchSize: 3 });
+                startSegmentationMeshPrewarm('ctv', { force: true, batchSize: 3, timepointScope: mutationScope.timepointScope });
+                startSegmentationMeshPrewarm('oar', { force: true, batchSize: 3, timepointScope: mutationScope.timepointScope });
             }
         } catch (_) {}
     }
@@ -7065,8 +7179,8 @@ async function _refreshAfterDataMutation(
     // after a backend mutation; the prior implementation left open masks in
     // the client until a later unrelated viewer refresh.
     if (genericMaskMutation && !reloadStructureGeometry) {
-        await hydrateGenericMasksFromServer(_captureViewerDataScope(expectedSessionId));
-        if (String(expectedSessionId) !== _viewerDataSessionId()) return false;
+        await hydrateGenericMasksFromServer(_captureViewerDataScope(expectedSessionId, mutationScope.timepointScope));
+        if (!ownsMutation()) return false;
     }
 
     if (planningMutation && typeof refreshPlanningUI === 'function') {
@@ -7075,13 +7189,14 @@ async function _refreshAfterDataMutation(
         }
         await refreshPlanningUI({
             sessionId: expectedSessionId,
+            timepointScope: mutationScope.timepointScope,
             skipLabelLoad: true,
             preserveViewerState: true,
             switchToViewers: false,
             backgroundRestore: true,
             autoGenerateGuide: false,
         });
-        if (String(expectedSessionId) !== _viewerDataSessionId()) return false;
+        if (!ownsMutation()) return false;
     }
 
     if (objectIds.some(id => id.startsWith('annotation:'))) {
@@ -7117,7 +7232,7 @@ async function _refreshAfterDataMutation(
         }
         _dataTreeArtifactCatalogSession = '';
         await hydrateDataTreeArtifactCatalog({ force: true });
-        if (String(expectedSessionId) !== _viewerDataSessionId()) return false;
+        if (!ownsMutation()) return false;
     }
     if (payload?.artifact_status) {
         dataTreeState.planning.artifactStatus = payload.artifact_status;
@@ -7134,9 +7249,11 @@ async function _refreshAfterDataMutation(
     _scheduleDataTreeSave('data_tree.backend_mutation');
     return true;
 }
+window.__timepointFrontendContracts = { ...window.__timepointFrontendContracts, viewer: 1 };
 
 async function moveSelectedStructures(classification, objectIds = null) {
     const expectedSessionId = _viewerDataSessionId();
+    const mutationScope = _captureViewerDataScope(expectedSessionId);
     const appearance = _structureAppearanceMap();
     // Snapshot the caller's IDs before the confirmation dialog or hydration
     // can redraw the tree. An explicit empty array must remain empty; it
@@ -7160,11 +7277,12 @@ async function moveSelectedStructures(classification, objectIds = null) {
         const genericResult = await moveSelectedMasks(classification, genericSelected);
         if (genericResult === false) return false;
     }
+    if (!_dataTreeMutationIsCurrent(mutationScope)) return false;
     if (!selected.length) return genericSelected.length > 0;
     const response = await fetch(API + '/data/structures/classification', {
         method: 'PATCH',
         headers: {
-            ..._viewerDataHeaders(expectedSessionId),
+            ..._viewerDataHeaders(expectedSessionId, {}, mutationScope.timepointScope),
             'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -7174,6 +7292,7 @@ async function moveSelectedStructures(classification, objectIds = null) {
         }),
     });
     const payload = await response.json().catch(() => ({}));
+    if (!_dataTreeMutationIsCurrent(mutationScope)) return response.ok && payload.success !== false;
     if (!response.ok || payload.success === false) {
         throw _dataTreeRequestError(response, payload, expectedSessionId, _dtText('结构分类更新失败', 'Structure classification failed'));
     }
@@ -7191,20 +7310,23 @@ async function moveSelectedStructures(classification, objectIds = null) {
             yesZh: '重新规划',
             yesEn: 'Replan',
             noZh: '仅移动',
-            noEn: 'Just move',
+            noEn: 'Move only',
             titleZh: '结构分类已更改',
             titleEn: 'Structure classification changed',
         },
     );
+    if (!_dataTreeMutationIsCurrent(mutationScope)) return true;
     await _refreshAfterDataMutation(payload, appearance, expectedSessionId, {
+        mutationScope,
         objectIds: selected,
         // Preserve dose/DVH unless the user explicitly chose to replan.
         preserveDoseDvh: shouldReplan !== true,
     });
+    if (!_dataTreeMutationIsCurrent(mutationScope)) return true;
     selectedItems.clear();
     if (shouldReplan) {
         try {
-            await replanAfterStructureChange(expectedSessionId);
+            await replanAfterStructureChange(expectedSessionId, {timepointScope: mutationScope.timepointScope});
         } catch (error) {
             console.warn('[data-tree] replan after structure move failed:', error);
             addChat('error', _dtText(
@@ -7221,19 +7343,40 @@ async function moveSelectedStructures(classification, objectIds = null) {
 }
 
 async function replanAfterStructureChange(expectedSessionId, options = {}) {
+    const scope = _captureViewerDataScope(expectedSessionId, options.timepointScope);
+    if (!_dataTreeMutationIsCurrent(scope)) return false;
     const ctPath = typeof state !== 'undefined' ? state.ctPath : '';
-    if (!ctPath) throw new Error('No CT image available for replanning');
-    if (typeof refreshPlanningUI !== 'function') throw new Error('Planning refresh unavailable');
-    await refreshPlanningUI({
+    if (!ctPath) throw new Error(_dtText('重新规划所需的影像尚不可用。', 'The image required for replanning is unavailable.'));
+    if (typeof refreshPlanningUI !== 'function' || typeof window.beginInputAction !== 'function')
+        throw new Error(_dtText('规划执行组件尚不可用。', 'The planning executor is unavailable.'));
+    const owner = window.beginInputAction('structure_replan', {mutation: true, image: true});
+    try {
+        if (!_dataTreeMutationIsCurrent(scope) || !owner.current()) return false;
+        const computed = await window.fetchInputJson(owner, '/planning/run_step', {ct_image_path: owner.ctPath, step: 'full'});
+        if (!computed || !owner.current()) return false;
+        if (computed.pending_review === true) {
+            addChat('system', computed.message || _dtText('请完成术中复核后再继续规划。', 'Complete intraoperative review before continuing planning.'));
+            await window.BrachyBotTimepointWorkspace?.restoreActive?.();
+            return false;
+        }
+        if (computed.workflow_state && typeof _saveManualState === 'function') _saveManualState(computed.workflow_state);
+    const delivered = await refreshPlanningUI({
         sessionId: expectedSessionId,
+        timepointScope: scope.timepointScope,
         // Traversability-only changes do not require label-volume hydration.
         // CTV/OAR classification changes keep the historical full refresh.
         skipLabelLoad: options.skipLabelLoad === true,
         preserveViewerState: true,
         switchToViewers: false,
         backgroundRestore: false,
-        autoGenerateGuide: true,
+        // A replan confirmation authorizes planning, not new printing/report work.
+        autoGenerateGuide: false,
     });
+    if (owner.current() && delivered?.success !== true) throw new Error(_dtText(
+        '规划已保存，但显示恢复未完成。请查看已有结果，不必重复计算。',
+        'The plan was saved, but display restoration is incomplete. View the saved results instead of recalculating.'));
+    return owner.current();
+    } finally { owner.finish(); }
 }
 
 async function exportSelectedDataTreeItems(objectIds = null) {
@@ -7263,6 +7406,7 @@ async function exportDataTreeGroup(category) {
 }
 
 async function deleteSelectedDataTreeItems(objectIds = null, options = {}) {
+    const mutationScope = _captureViewerDataScope();
     const requested = objectIds == null ? getSelectedDataTreeIds() : Array.from(objectIds);
     const autoIds = new Set((state.annotations || []).filter(a=>a.type==='planning_distance')
         .flatMap(a=>[String(a.id),`annotation:${a.id}`]));
@@ -7286,7 +7430,7 @@ async function deleteSelectedDataTreeItems(objectIds = null, options = {}) {
     // file-object API that only knows the previous debounced snapshot.
     if (ids.every(id => id.startsWith('annotation:')) && typeof window.deleteViewerAnnotations === 'function') {
         const result = await window.deleteViewerAnnotations(ids);
-        if (result?.success && expectedSessionId === _viewerDataSessionId()) {
+        if (result?.success && _dataTreeMutationIsCurrent(mutationScope)) {
             selectedItems.clear();
             renderDataTree();
             addChat('system', _dtText(`已清除 ${result.removed} 项标注；Undo 可恢复。`, `${result.removed} annotation(s) cleared; Undo can restore them.`));
@@ -7307,8 +7451,9 @@ async function deleteSelectedDataTreeItems(objectIds = null, options = {}) {
             },
         )
         : false;
-    if (!confirmed) return false;
-    const mutationKeys = ids.map(_canonicalDataTreeObjectId).filter(Boolean);
+    if (!confirmed || !_dataTreeMutationIsCurrent(mutationScope)) return false;
+    const mutationKeys = ids.map(_canonicalDataTreeObjectId).filter(Boolean)
+        .map(id => _dataTreePendingMutationKey(mutationScope, id));
     if (mutationKeys.some(id => pendingDataTreeDeleteIds.has(id))) {
         addChat('system', _dtText(
             '所选数据正在删除中，请等待当前操作完成。',
@@ -7321,7 +7466,7 @@ async function deleteSelectedDataTreeItems(objectIds = null, options = {}) {
         const response = await fetch(API + '/data/objects/batch-delete', {
             method: 'POST',
             headers: {
-                ..._viewerDataHeaders(expectedSessionId),
+                ..._viewerDataHeaders(expectedSessionId, {}, mutationScope.timepointScope),
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
@@ -7334,15 +7479,18 @@ async function deleteSelectedDataTreeItems(objectIds = null, options = {}) {
         if (!response.ok || payload.success === false) {
             throw _dataTreeRequestError(response, payload, expectedSessionId, _dtText('删除失败', 'Delete failed'));
         }
+        if (!_dataTreeMutationIsCurrent(mutationScope)) return true;
         const returnedIds = (payload.results || [])
             .map(result => String(result?.object_id || ''))
             .filter(Boolean);
         await _refreshAfterDataMutation(payload, appearance, expectedSessionId, {
+            mutationScope,
             // Prefer server-canonical IDs when available.  This is essential
             // for a promoted upload whose visual CTV label is `ctv_1` but its
             // durable object identity is `mask:<upload-label-id>`.
             objectIds: [...new Set([...ids, ...returnedIds])],
         });
+        if (!_dataTreeMutationIsCurrent(mutationScope)) return true;
         selectedItems.clear();
         addChat('system', _dtText(
             `已删除 ${ids.length} 项数据。`,
@@ -7367,8 +7515,9 @@ async function moveDataTreeGroup(category, classification) {
     return moveSelectedStructures(classification, _dataTreeGroupObjectIds(category));
 }
 
-async function _refreshDataTreeAfterMissingObject(expectedSessionId) {
-    if (String(expectedSessionId || '') !== _viewerDataSessionId()) return false;
+async function _refreshDataTreeAfterMissingObject(expectedSessionId, timepointScope = null) {
+    const scope = _captureViewerDataScope(expectedSessionId, timepointScope);
+    if (!_dataTreeMutationIsCurrent(scope)) return false;
     // An item may have been removed by a concurrent browser tab or a prior
     // request whose visual refresh was interrupted.  Treat a known 404 as a
     // reconciliation event, not as a clinical-operation failure.
@@ -7377,6 +7526,7 @@ async function _refreshDataTreeAfterMissingObject(expectedSessionId) {
     const refreshes = [
         loadLabelVolumes({
             sessionId: expectedSessionId,
+            timepointScope: scope.timepointScope,
             forceFresh: true,
             preserveViewerState: true,
             registerBackgroundTask: task => backgroundTasks.push(Promise.resolve(task).then(
@@ -7388,6 +7538,7 @@ async function _refreshDataTreeAfterMissingObject(expectedSessionId) {
     if (typeof refreshPlanningUI === 'function') {
         refreshes.push(refreshPlanningUI({
             sessionId: expectedSessionId,
+            timepointScope: scope.timepointScope,
             skipLabelLoad: true,
             preserveViewerState: true,
             switchToViewers: false,
@@ -7399,7 +7550,7 @@ async function _refreshDataTreeAfterMissingObject(expectedSessionId) {
     results.push(...await Promise.all(backgroundTasks));
     if (results.some(result => result.status !== 'fulfilled' || result.value === false
         || result.value?.success === false)) return false;
-    if (String(expectedSessionId || '') !== _viewerDataSessionId()) return false;
+    if (!_dataTreeMutationIsCurrent(scope)) return false;
     reconcileSegmentationViewerState({
         sessionId: expectedSessionId,
         reason: 'data-tree-missing-object-reconcile',
@@ -7417,16 +7568,18 @@ function _dataTreeRequestError(response, payload, sessionId, fallback) {
 
 async function _runDataTreeAction(action) {
     const owner = _viewerDataSessionId();
+    const scope = _captureViewerDataScope(owner);
     try {
         return await Promise.resolve(action);
     } catch (error) {
         console.error('[data-tree] action failed', error);
         const message = String(error?.message || error || '');
-        if (owner !== _viewerDataSessionId()
+        if (!_dataTreeMutationIsCurrent(scope)
             || (error?.dataTreeSessionId && error.dataTreeSessionId !== owner)
             || error?.annotationStale) return false;
         if (error?.status === 404 && error?.dataTreeSessionId === owner) {
-            const reconciled = await _refreshDataTreeAfterMissingObject(owner).catch(() => false);
+            const reconciled = await _refreshDataTreeAfterMissingObject(owner, scope.timepointScope).catch(() => false);
+            if (!_dataTreeMutationIsCurrent(scope)) return false;
             if (reconciled) {
                 addChat('system', _dtText(
                     '服务器未找到所选数据，已重新加载当前病例的数据。若该项仍显示，请重新选择后再试。',
@@ -7435,7 +7588,7 @@ async function _runDataTreeAction(action) {
                 return false;
             }
         }
-        if (owner !== _viewerDataSessionId()) return false;
+        if (!_dataTreeMutationIsCurrent(scope)) return false;
         addChat('error', _dtText(
             `数据操作失败：${message}`,
             `Data operation failed: ${message}`,
@@ -7516,21 +7669,21 @@ function showContextMenu(x, y) {
         items += `<div class="ctx-menu-sep"></div>`;
     }
 
-    // 3D Reconstruct (only for organs/CTV; dose iso reconstruction is
+    // Reconstruct in 3D (only for organs/CTV; dose iso reconstruction is
     // explicit because dose surfaces are intentionally not built by default)
     if (isStructureSelection) {
         if (isSingle) {
             items += `<div class="ctx-menu-item" onclick="hideContextMenu();reconstructOrgan3D('${firstId}')">
-                <span class="ctx-icon">&#9638;</span> 3D Reconstruct</div>`;
+                <span class="ctx-icon">&#9638;</span> Reconstruct in 3D</div>`;
         } else {
             items += `<div class="ctx-menu-item" onclick="hideContextMenu();batchReconstruct3D()">
-                <span class="ctx-icon">&#9638;</span> 3D Reconstruct All (${selIds.length})</div>`;
+                <span class="ctx-icon">&#9638;</span> Reconstruct all in 3D (${selIds.length})</div>`;
         }
         items += `<div class="ctx-menu-sep"></div>`;
     }
     if (isSingle && firstId.startsWith('dose_iso_')) {
         items += `<div class="ctx-menu-item" onclick="hideContextMenu();reconstructDoseIsosurface3D('${firstId}')">
-            <span class="ctx-icon">&#9638;</span> 3D Reconstruct</div>`;
+            <span class="ctx-icon">&#9638;</span> Reconstruct in 3D</div>`;
         items += `<div class="ctx-menu-sep"></div>`;
     }
 
@@ -7561,10 +7714,10 @@ function showContextMenu(x, y) {
             items += `<div class="ctx-menu-item" onclick="hideContextMenu();renameDataTreeMask('${firstId}')">
                 <span class="ctx-icon">&#9998;</span> ${_dtText('重命名', 'Rename')}</div>`;
             items += `<div class="ctx-menu-item" onclick="hideContextMenu();reconstructOrgan3D('${firstId}')">
-                <span class="ctx-icon">&#9638;</span> ${_dtText('3D 重建', '3D Reconstruct')}</div>`;
+                <span class="ctx-icon">&#9638;</span> ${_dtText('3D 重建', 'Reconstruct in 3D')}</div>`;
         } else {
             items += `<div class="ctx-menu-item" onclick="hideContextMenu();batchReconstruct3D()">
-                <span class="ctx-icon">&#9638;</span> ${_dtText('3D 重建全部', '3D Reconstruct All')}</div>`;
+                <span class="ctx-icon">&#9638;</span> ${_dtText('3D 重建全部', 'Reconstruct all in 3D')}</div>`;
         }
         items += `<div class="ctx-menu-sep"></div>`;
         items += `<div class="ctx-menu-item" onclick="hideContextMenu();_runDataTreeAction(moveSelectedMasks('ctv'))">
@@ -7820,6 +7973,8 @@ function _allDataTreeVisualNodes() {
 }
 
 function _setNodeViewVisibility(node, view, visible) {
+    if(node?.id && window.BrachyBotImplants?.nodeFor(node.id))
+        return window.BrachyBotImplants.changePresentation(node.id,{[view==='2d'?'visible2D':'visible3D']:!!visible});
     if (node?.annotationType === 'planning_distance') {
         if (view === '2d') return false;
         return window.setPlanningDistanceAnnotationPresentation?.(node.id,{visible3D:!!visible});
@@ -7857,13 +8012,20 @@ function _apply3DNodeVisibility(node) {
  * existing all-view compatibility control, while 2D/3D stay independent.
  */
 function applyDataTreeViewVisibility() {
+    window.BrachyBotImplants?.reconcilePresentation?.();
+    window.BrachyBotImplants?.draw2D('axial');
+    window.BrachyBotImplants?.draw2D('sagittal');
+    window.BrachyBotImplants?.draw2D('coronal');
     window.syncManualStepPresentationVisibility?.();
     _migrateSegmentationMirrorsOutOfPlanning();
     _allDataTreeVisualNodes().forEach(_apply3DNodeVisibility);
     const ct2D = isDataTreeNodeVisible2D(dataTreeState.ct);
     ['axial', 'sagittal', 'coronal'].forEach(axis => {
         const canvas = document.getElementById('sliceCanvas' + capitalize(axis));
-        if (canvas) canvas.style.visibility = ct2D ? 'visible' : 'hidden';
+        if (canvas) {
+            canvas.style.visibility = ct2D ? 'visible' : 'hidden';
+            canvas.style.opacity = String(dataTreeState.ct.opacity ?? 1);
+        }
     });
     const doseNode = dataTreeState.planning?.doseOverlay;
     const planning2D = isDataTreeNodeVisible2D(dataTreeState.planning);
@@ -8040,6 +8202,7 @@ async function moveSelectedOrganTraversability(category, objectIds = null) {
     const destination = String(category || '').trim().toLowerCase();
     if (!['traversable', 'non_traversable'].includes(destination)) return false;
     const expectedSessionId = _viewerDataSessionId();
+    const mutationScope = _captureViewerDataScope(expectedSessionId);
     const appearance = _structureAppearanceMap();
     const requestedIds = (objectIds == null ? getSelectedDataTreeIds() : Array.from(objectIds))
         .map(id => _dataTreeObjectId(id))
@@ -8051,8 +8214,8 @@ async function moveSelectedOrganTraversability(category, objectIds = null) {
     // the operator immediate feedback instead of making a batch move look
     // like a dead context-menu action.
     if (typeof addChat === 'function') {
-        addChat('system', 'Saving traversability policy for '
-            + selected.length + ' OAR structure(s)...');
+        addChat('system', _dtText(`正在保存 ${selected.length} 个 OAR 的穿刺属性…`,
+            `Saving traversability policy for ${selected.length} OAR structure(s)...`));
     }
     // Capture the pre-mutation state. The server response marks planning
     // artifacts stale, so deciding after the PATCH would make a no-plan case
@@ -8061,7 +8224,7 @@ async function moveSelectedOrganTraversability(category, objectIds = null) {
     const response = await fetch(API + '/data/structures/traversability', {
         method: 'PATCH',
         headers: {
-            ..._viewerDataHeaders(expectedSessionId),
+            ..._viewerDataHeaders(expectedSessionId, {}, mutationScope.timepointScope),
             'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -8071,6 +8234,7 @@ async function moveSelectedOrganTraversability(category, objectIds = null) {
         }),
     });
     const payload = await response.json().catch(() => ({}));
+    if (!_dataTreeMutationIsCurrent(mutationScope)) return response.ok && payload.success !== false;
     if (!response.ok || payload.success === false) {
         throw _dataTreeRequestError(response, payload, expectedSessionId, _dtText(
             'OAR 穿刺属性更新失败',
@@ -8098,7 +8262,9 @@ async function moveSelectedOrganTraversability(category, objectIds = null) {
             },
         );
     }
+    if (!_dataTreeMutationIsCurrent(mutationScope)) return true;
     await _refreshAfterDataMutation(payload, appearance, expectedSessionId, {
+        mutationScope,
         objectIds: selected,
         // Traversability is a policy/metadata change. Never dispose or
         // reconstruct CTV/OAR meshes for this operation.
@@ -8106,10 +8272,11 @@ async function moveSelectedOrganTraversability(category, objectIds = null) {
         preserveDoseDvh: shouldReplan !== true,
         preservePlanningPresentation: shouldReplan !== true,
     });
+    if (!_dataTreeMutationIsCurrent(mutationScope)) return true;
     selectedItems.clear();
     if (shouldReplan) {
         try {
-            await replanAfterStructureChange(expectedSessionId, { skipLabelLoad: true });
+            await replanAfterStructureChange(expectedSessionId, { skipLabelLoad: true, timepointScope: mutationScope.timepointScope });
         } catch (error) {
             console.warn('[data-tree] replan after traversability change failed:', error);
             addChat('error', _dtText(
@@ -8229,20 +8396,13 @@ function batchSetOpacity(opacity) {
 }
 
 async function batchReconstruct3D() {
+    const scope = _captureViewerDataScope();
     const ids = getSelectedDataTreeIds();
     for (const id of ids) {
+        if (!_dataTreeMutationIsCurrent(scope)) return false;
         await reconstructOrgan3D(id);
     }
-
-    if (genericMaskMutation) {
-        // The backend owns the mask catalogue and voxel buffers. Rehydrate
-        // it after delete/classification mutations so the Data Tree, 2D
-        // overlays, and 3D meshes cannot diverge from persistent state.
-        await hydrateGenericMasksFromServer(
-            _captureViewerDataScope(expectedSessionId),
-        );
-        if (String(expectedSessionId) !== _viewerDataSessionId()) return false;
-    }
+    return _dataTreeMutationIsCurrent(scope);
 }
 
 function moveOrganToCategory(organId, newCategory) {
@@ -8340,6 +8500,11 @@ function _setPlanningDoseProjectionVisibility(visible, options = {}) {
 }
 
 function setGroupVisibility(category, visible) {
+    if (category === 'image' && window.BrachyBotTimepoints?.enabled?.()) {
+        const collection = window.BrachyBotTimepointWorkspace.resourceState()?.images;
+        const id = collection?.display_image_id || collection?.images?.at(-1)?.id;
+        return id ? window.BrachyBotTimepointWorkspace.changeImage(id,{display:!!visible}) : false;
+    }
     if (visible && category !== 'planning' && typeof _groupViewNodes === 'function') {
         window.revealManualStepNodes?.(_groupViewNodes(category).filter(Boolean));
     }
@@ -8765,9 +8930,11 @@ window.setTreeGroupExpansion = setTreeGroupExpansion;
 window.setAllTreeGroupsExpansion = setAllTreeGroupsExpansion;
 
 function toggleDataVisibility(id) {
+    const observation=window.BrachyBotImplants?.nodeFor(id);
+    if(observation)return window.BrachyBotImplants.changePresentation(id,{visible:observation.visible===false});
     if (window.isPlanningDistanceAnnotationId?.(id)) {
         const row = (state.annotations || []).find(r => r.id === id);
-        return window.setPlanningDistanceAnnotationPresentation(id,{visible:row.visible === false});
+        return window.setPlanningDistanceAnnotationPresentation(id,{visible:row.visible === false || row.visible3D === false});
     }
     const stageNode = _findDataTreeNode(id);
     if (stageNode && window.manualStepNodeVisible?.(stageNode) === false) {
@@ -8953,6 +9120,7 @@ function toggleDataVisibility(id) {
 }
 
 function setDataItemVisibility(id, visible) {
+    if(window.BrachyBotImplants?.nodeFor(id))return window.BrachyBotImplants.changePresentation(id,{visible:!!visible});
     if (window.isPlanningDistanceAnnotationId?.(id)) return window.setPlanningDistanceAnnotationPresentation(id,{visible:!!visible});
     let current = null;
     if (id.startsWith('organ_')) current = dataTreeState.organs.find(o => o.id === id)?.visible;
@@ -9010,6 +9178,8 @@ function _queueDataTreeOpacitySeedRefresh(reason) {
 }
 
 function setDataOpacity(id, value) {
+    if(window.BrachyBotImplants?.nodeFor(id)){const opacity=Number(value)/100;
+        return Number.isFinite(opacity)&&opacity>=0&&opacity<=1 && window.BrachyBotImplants.changePresentation(id,{opacity});}
     if (window.isPlanningDistanceAnnotationId?.(id)) return window.setPlanningDistanceAnnotationPresentation(id,{opacity:Number(value)/100});
     // Each branch below updates the affected mesh using its effective
     // visibility and schedules only the required overlay refresh. Reapplying
@@ -9423,8 +9593,17 @@ function _adoptPromotedMaskMeshes() {
 // suppressed because the effective structure volume now owns the voxels.
 let _genericMaskViewerRefreshTask = null;
 let _genericMaskViewerRefreshAgain = false;
+let _genericMaskViewerRefreshOwner = null;
 
-function _scheduleGenericMaskViewerRefresh(expectedSessionId) {
+function _scheduleGenericMaskViewerRefresh(expectedSessionId, timepointScope = null) {
+    const scope = _captureViewerDataScope(expectedSessionId, timepointScope);
+    const ownerKey = JSON.stringify([scope.sessionId, scope.timepointScope?.timepointId, scope.timepointScope?.generation]);
+    const ownsRefresh = () => _dataTreeMutationIsCurrent(scope) && _genericMaskViewerRefreshOwner === ownerKey;
+    if (!_dataTreeMutationIsCurrent(scope)) return Promise.resolve(false);
+    if (_genericMaskViewerRefreshOwner !== ownerKey) {
+        _genericMaskViewerRefreshTask = null;
+        _genericMaskViewerRefreshOwner = ownerKey;
+    }
     _genericMaskViewerRefreshAgain = true;
     if (_genericMaskViewerRefreshTask) return _genericMaskViewerRefreshTask;
     if (typeof loadLabelVolumes !== 'function') return Promise.resolve(false);
@@ -9434,7 +9613,7 @@ function _scheduleGenericMaskViewerRefresh(expectedSessionId) {
         try {
             do {
                 _genericMaskViewerRefreshAgain = false;
-                if (String(expectedSessionId || '') !== _viewerDataSessionId()) return false;
+                if (!ownsRefresh()) return false;
 
                 // A move invalidates any older label request.  The refresh is
                 // deliberately detached from the context-menu action: the
@@ -9443,11 +9622,12 @@ function _scheduleGenericMaskViewerRefresh(expectedSessionId) {
                 invalidateViewerDataLoads();
                 loaded = await loadLabelVolumes({
                     sessionId: expectedSessionId,
+                    timepointScope: scope.timepointScope,
                     forceFresh: true,
                     preserveViewerState: true,
                     resetPresentation: false,
                 });
-                if (String(expectedSessionId || '') !== _viewerDataSessionId()) return false;
+                if (!ownsRefresh()) return false;
                 _adoptPromotedMaskMeshes();
                 renderDataTree();
                 reloadOverlays();
@@ -9470,7 +9650,7 @@ function _scheduleGenericMaskViewerRefresh(expectedSessionId) {
             } while (_genericMaskViewerRefreshAgain);
             return loaded;
         } catch (error) {
-            if (String(expectedSessionId || '') === _viewerDataSessionId()) {
+            if (ownsRefresh()) {
                 console.warn('[data-tree] generic mask viewer refresh failed:', error);
                 window.showBrachyBotNotice?.(
                     _dtText(
@@ -9482,16 +9662,18 @@ function _scheduleGenericMaskViewerRefresh(expectedSessionId) {
             }
             return false;
         } finally {
-            const rerun = _genericMaskViewerRefreshAgain
-                && String(expectedSessionId || '') === _viewerDataSessionId();
-            _genericMaskViewerRefreshTask = null;
-            if (rerun) void _scheduleGenericMaskViewerRefresh(expectedSessionId);
+            if (_genericMaskViewerRefreshOwner === ownerKey) {
+                const rerun = _genericMaskViewerRefreshAgain && ownsRefresh();
+                _genericMaskViewerRefreshTask = null;
+                if (rerun) void _scheduleGenericMaskViewerRefresh(expectedSessionId, scope.timepointScope);
+            }
         }
     })();
     return _genericMaskViewerRefreshTask;
 }
 
 async function moveSelectedMasks(classification, objectIds = null) {
+    const mutationScope = _captureViewerDataScope();
     // Treat an explicitly supplied empty array as an intentional no-op.  A
     // live selection Set is not safe here because the async refresh below can
     // re-render the tree and change selection before the mutation completes.
@@ -9505,7 +9687,8 @@ async function moveSelectedMasks(classification, objectIds = null) {
     if (!ids.length) return false;
     const expectedSessionId = _viewerDataSessionId();
     const stableIds = ids.map(id => _dataTreeObjectId(id)).filter(Boolean);
-    const mutationKeys = [...new Set(stableIds.map(_canonicalDataTreeObjectId).filter(Boolean))];
+    const mutationKeys = [...new Set(stableIds.map(_canonicalDataTreeObjectId).filter(Boolean))]
+        .map(id => _dataTreePendingMutationKey(mutationScope, id));
     if (mutationKeys.some(id => pendingDataTreeMoveIds.has(id))) {
         addChat('system', _dtText(
             '所选掩膜正在移动中，请等待当前操作完成。',
@@ -9542,7 +9725,7 @@ async function moveSelectedMasks(classification, objectIds = null) {
         const response = await fetch(API + '/data/generic-masks/classification', {
             method: 'PATCH',
             headers: {
-                ..._viewerDataHeaders(expectedSessionId),
+                ..._viewerDataHeaders(expectedSessionId, {}, mutationScope.timepointScope),
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
@@ -9555,6 +9738,7 @@ async function moveSelectedMasks(classification, objectIds = null) {
         if (!response.ok || payload.success === false) {
             throw _dataTreeRequestError(response, payload, expectedSessionId, _dtText('掩膜分类更新失败', 'Mask classification failed'));
         }
+        if (!_dataTreeMutationIsCurrent(mutationScope)) return true;
 
         ids.forEach(id => {
             const mask = _maskStateEntry(id);
@@ -9606,14 +9790,15 @@ async function moveSelectedMasks(classification, objectIds = null) {
         selectedItems.clear();
         addChat('system', _dtText(
             `已将 ${ids.length} 个掩膜并入 ${classification.toUpperCase()} 结构集；查看器正在后台同步结构体积。相关剂量、DVH、评估和报告已标记为需要更新。`,
-            `Moved ${ids.length} mask(s) to ${classification.toUpperCase()}; the viewer is synchronizing the structure volume in the background. Dose/DVH/report/guide are now stale and require recomputation.`,
+            `Moved ${ids.length} mask(s) to ${classification.toUpperCase()}; the viewer is synchronizing the structure volume in the background. Related dose, DVH, evaluation, and report results have been marked as requiring an update.`,
         ));
 
         // loadLabelVolumes() starts the generic-mask hydration itself. Do not
         // call hydrateGenericMasksFromServer a second time here.
-        void _scheduleGenericMaskViewerRefresh(expectedSessionId);
+        void _scheduleGenericMaskViewerRefresh(expectedSessionId, mutationScope.timepointScope);
         return true;
     } catch (error) {
+        if (!_dataTreeMutationIsCurrent(mutationScope)) throw error;
         previousState.forEach(({ mask, movePending, movingTo }) => {
             mask.movePending = movePending;
             mask.movingTo = movingTo;

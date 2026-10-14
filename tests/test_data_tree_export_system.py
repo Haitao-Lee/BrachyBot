@@ -448,7 +448,7 @@ def test_missing_data_tree_objects_trigger_authoritative_reconciliation():
         root / "web" / "app" / "static" / "js" / "brachybot-viewer-volume.js"
     ).read_text(encoding="utf-8")
 
-    assert "async function _refreshDataTreeAfterMissingObject(expectedSessionId)" in viewer
+    assert "async function _refreshDataTreeAfterMissingObject(expectedSessionId, timepointScope = null)" in viewer
     assert "data-tree-missing-object-reconcile" in viewer
     assert "error?.status === 404 && error?.dataTreeSessionId === owner" in viewer
     assert "Current case data was reloaded" in viewer

@@ -89,6 +89,7 @@ _FACT_KEYS = (
     "oar_is_full", "planning_runs", "active_planning_id", "planning_run_id",
     "dose_metrics", "metrics", "total_seeds", "num_trajectories",
     "seed_positions", "needles", "plan_config", "prescription_gy",
+    "timepoint_planning_config", "current_dose_evaluation_config", "planning_inputs_status",
     "manual_artifact_status", "surgical_guide", "artifact_status",
     "response_contract", "monitor_last_edit", "manual_plan_version", "safety_evidence",
 )

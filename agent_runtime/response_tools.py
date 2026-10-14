@@ -900,6 +900,8 @@ print(json.dumps(result))
         # the route also works for older callers that did not install a local
         # policy first.
         if is_current_case_dose_recompute_request(message):
+            if callable(retrieve) and retrieve('implanted_seed_reconstruction'):
+                return []  # The semantic source-set decision cannot be guessed.
             return [{
                 "id": "tool_direct_dose",
                 "tool": "dose_recompute",

@@ -9,7 +9,8 @@ import os
 
 
 from tool_factory import BaseTool, ToolResult
-from .model_support import resolve_dose_model
+from .model_support import (resolve_dose_model, continuation_dose_threshold,
+                            continuation_result_metadata)
 from plans.dose_pre.model_loader import (
     DEFAULT_PRESCRIPTION_GY,
     planning_dose_value_to_model,
@@ -48,6 +49,10 @@ class SeedPlanningTool(BaseTool):
         return {
             "type": "object",
             "properties": {
+                "continuation": {
+                    "type": "object",
+                    "description": "Optional trusted ContinuationBaseline; immutable fixed dose, seeds and candidate constraints",
+                },
                 "trajectories": {
                     "type": "array",
                     "description": "List of candidate trajectories",
@@ -154,6 +159,9 @@ class SeedPlanningTool(BaseTool):
         trajectories = kwargs["trajectories"]
         radiation_volume = kwargs["radiation_volume"]
         dose_image = kwargs["dose_image"]
+        continuation = kwargs.get("continuation")
+        from plans.continuation import validate_continuation
+        validate_continuation(continuation, radiation_volume, dose_image, kwargs.get("target_value", 1))
         mode = kwargs.get("mode", "rule_based")
         dl_params = kwargs.get("dl_params", {})
         if mode not in {"rule_based", "rl"}:
@@ -165,13 +173,15 @@ class SeedPlanningTool(BaseTool):
         target_value = kwargs.get("target_value", 1)
         background_value = kwargs.get("background_value", 0)
         obstacle_value = kwargs.get("obstacle_value", 3)
-        in_lowest_dose = planning_dose_value_to_model(
+        in_lowest_dose = continuation_dose_threshold(
             kwargs.get("in_lowest_dose", DEFAULT_PRESCRIPTION_GY),
             value_unit=kwargs.get("dose_value_unit") or "gy",
+            continuation=continuation,
         )
-        out_highest_dose = planning_dose_value_to_model(
+        out_highest_dose = continuation_dose_threshold(
             kwargs.get("out_highest_dose", DEFAULT_PRESCRIPTION_GY),
             value_unit=kwargs.get("dose_value_unit") or "gy",
+            continuation=continuation,
         )
         DVH_rate = kwargs.get("DVH_rate", 0.9)
         infer_img_size = tuple(kwargs.get("infer_img_size", (64, 64, 64)))
@@ -199,6 +209,7 @@ class SeedPlanningTool(BaseTool):
                 image_normalize_min=norm_min,
                 image_normalize_max=norm_max,
                 image_normalize_scale=norm_scale,
+                continuation=continuation,
             )
         else:
             lower_bound = kwargs.get("lower_bound", 0.8)
@@ -227,6 +238,7 @@ class SeedPlanningTool(BaseTool):
                 image_normalize_min=norm_min,
                 image_normalize_max=norm_max,
                 image_normalize_scale=norm_scale,
+                continuation=continuation,
             )
 
         total_seeds = 0
@@ -258,5 +270,7 @@ class SeedPlanningTool(BaseTool):
                 "total_seeds": total_seeds,
                 "num_trajectories": num_trajectories,
                 "mode": mode,
+                **continuation_result_metadata(optimal_plan, continuation, radiation_volume,
+                    dose_image, target_value, seed_info, in_lowest_dose, out_highest_dose, DVH_rate),
             },
         )

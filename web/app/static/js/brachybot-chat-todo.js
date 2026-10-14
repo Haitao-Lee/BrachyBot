@@ -1677,9 +1677,9 @@ function _visualEvidenceFallbackResponse(evidence, sessionId, responseLanguage =
         const key = String(target || '').toLowerCase();
         return ({
             'viewer-3d': zh ? '3D Viewer' : '3D Viewer',
-            'viewer-axial': zh ? '轴位 Viewer' : 'axial Viewer',
-            'viewer-sagittal': zh ? '矢状位 Viewer' : 'sagittal Viewer',
-            'viewer-coronal': zh ? '冠状位 Viewer' : 'coronal Viewer',
+            'viewer-axial': zh ? '轴位 Viewer' : 'axial viewer',
+            'viewer-sagittal': zh ? '矢状位 Viewer' : 'sagittal viewer',
+            'viewer-coronal': zh ? '冠状位 Viewer' : 'coronal viewer',
             'data-tree': zh ? 'Data Tree' : 'Data Tree',
             'overlay-controls': zh ? 'Viewer 工具栏' : 'Viewer toolbar',
             'dvh': zh ? 'DVH 查看器' : 'DVH viewer',
@@ -2214,14 +2214,20 @@ function _addTaskRecoveryNotice(sessionId, taskId, state) {
     }
 }
 
-function _scheduleCasePlanningRefresh(sessionId, delay = 250) {
+function _scheduleCasePlanningRefresh(sessionId, delay = 250, timepointScope = null) {
     const key = String(sessionId || '');
+    const owner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(timepointScope);
+    const generation = window.__viewerRenderGeneration || 0;
+    const current = () => String(activeSessionId || '') === key
+        && generation === (window.__viewerRenderGeneration || 0)
+        && (!owner || window.BrachyBotTimepointWorkspace.scopeIsCurrent(owner));
+    const timerKey = JSON.stringify([key, owner?.timepointId, owner?.generation]);
     if (!key || typeof refreshPlanningUI !== 'function') return false;
-    if (window._sessionPlanningRefreshTimers[key]) return false;
+    if (!current() || window._sessionPlanningRefreshTimers[timerKey]) return false;
     window._sessionPlanningRefreshAttempts = window._sessionPlanningRefreshAttempts || {};
-    window._sessionPlanningRefreshTimers[key] = setTimeout(async () => {
-        delete window._sessionPlanningRefreshTimers[key];
-        if (String(activeSessionId || '') !== key) return;
+    window._sessionPlanningRefreshTimers[timerKey] = setTimeout(async () => {
+        delete window._sessionPlanningRefreshTimers[timerKey];
+        if (!current()) return;
         let outcome = null;
         try {
             // This is the single terminal planning refresh. Intermediate
@@ -2229,11 +2235,18 @@ function _scheduleCasePlanningRefresh(sessionId, delay = 250) {
             // allowed to enter report capture.
             outcome = await refreshPlanningUI({
                 sessionId: key,
-                autoGenerateGuide: true,
+                timepointScope: owner,
+                autoGenerateGuide: false,
                 retryPending: true,
                 requireCompletedPlanning: true,
-                captureReportFigures: true,
+                preserveReport: true,
+                captureReportFigures: false,
+                suppressReportFigureCapture: true,
             });
+            if (outcome?.backgroundCompletion) {
+                const visual = await outcome.backgroundCompletion;
+                if (visual?.success === false || visual?.stale) outcome = {...outcome, success:false, stage:'viewer_partial'};
+            }
         } catch (error) {
             console.error('[SSE] refreshPlanningUI failed:', error);
             outcome = {
@@ -2243,11 +2256,11 @@ function _scheduleCasePlanningRefresh(sessionId, delay = 250) {
                 reportCaptureReady: false,
             };
         }
-        if (String(activeSessionId || '') !== key) return;
+        if (!current()) return;
         const planningStatus = String(outcome?.planningStatus || '').trim().toLowerCase();
-        const attempt = Number(window._sessionPlanningRefreshAttempts[key] || 0);
+        const attempt = Number(window._sessionPlanningRefreshAttempts[timerKey] || 0);
         const terminalReady = planningStatus === 'completed'
-            && outcome?.reportCaptureReady === true;
+            && outcome?.success === true && outcome?.currentDoseReady === true && outcome?.hasDvh === true;
         const retryable = (
             !planningStatus
             || planningStatus === 'running'
@@ -2261,17 +2274,19 @@ function _scheduleCasePlanningRefresh(sessionId, delay = 250) {
             || (planningStatus === 'completed' && !terminalReady)
         );
         if (terminalReady) {
-            delete window._sessionPlanningRefreshAttempts[key];
+            delete window._sessionPlanningRefreshAttempts[timerKey];
             try {
                 if (window.state) window.state.lastPlanTimestamp = new Date().toISOString();
             } catch (_) {}
             window.dispatchEvent(new CustomEvent('brachybot:planning-run-finished', {
                 detail: {
                     sessionId: key,
+                    timepointId: owner?.timepointId, generation: owner?.generation,
                     planningId: outcome?.planningId || null,
                     requestId: window.__brachybotReportPlanningLifecycle?.requestId || '',
                     planningStatus,
                     reportCaptureReady: true,
+                    capturePerformed: false,
                 },
             }));
             return;
@@ -2282,19 +2297,21 @@ function _scheduleCasePlanningRefresh(sessionId, delay = 250) {
         // reports silently shipped without figures. Keep retrying for a
         // realistic window; the request itself is a cheap control-plane GET.
         if (retryable && attempt < 400) {
-            window._sessionPlanningRefreshAttempts[key] = attempt + 1;
+            window._sessionPlanningRefreshAttempts[timerKey] = attempt + 1;
             _scheduleCasePlanningRefresh(
                 key,
                 Math.min(2500, 250 + (attempt + 1) * 25),
+                owner,
             );
             return;
         }
         // A failed/cancelled run must release the lifecycle lock too, but it
         // must never be treated as a valid report-capture boundary.
-        delete window._sessionPlanningRefreshAttempts[key];
+        delete window._sessionPlanningRefreshAttempts[timerKey];
         window.dispatchEvent(new CustomEvent('brachybot:planning-run-finished', {
             detail: {
                 sessionId: key,
+                timepointId: owner?.timepointId, generation: owner?.generation,
                 planningId: outcome?.planningId || null,
                 requestId: window.__brachybotReportPlanningLifecycle?.requestId || '',
                 planningStatus: planningStatus || null,
@@ -2314,16 +2331,22 @@ function _scheduleCasePlanningRefresh(sessionId, delay = 250) {
 // The chat tool path also bypasses the manual HTTP button, so without this
 // case-owned fetch the server can truthfully report a generated guide while
 // the Data Tree and Viewer continue to show the previous scene.
-function _scheduleCaseSurgicalGuideRefresh(sessionId, delay = 0) {
+function _scheduleCaseSurgicalGuideRefresh(sessionId, delay = 0, timepointScope = null) {
     const key = String(sessionId || '');
+    const owner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(timepointScope);
+    const generation = window.__viewerRenderGeneration || 0;
+    const current = () => String(activeSessionId || '') === key
+        && generation === (window.__viewerRenderGeneration || 0)
+        && (!owner || window.BrachyBotTimepointWorkspace.scopeIsCurrent(owner));
+    const timerKey = JSON.stringify([key, owner?.timepointId, owner?.generation]);
     if (!key || String(activeSessionId || '') !== key) return false;
     if (typeof window.loadSurgicalGuideMesh !== 'function'
         && typeof refreshPlanningUI !== 'function') return false;
     window._sessionSurgicalGuideRefreshTimers = window._sessionSurgicalGuideRefreshTimers || {};
-    if (window._sessionSurgicalGuideRefreshTimers[key]) return false;
-    window._sessionSurgicalGuideRefreshTimers[key] = setTimeout(async () => {
-        delete window._sessionSurgicalGuideRefreshTimers[key];
-        if (String(activeSessionId || '') !== key) return;
+    if (!current() || window._sessionSurgicalGuideRefreshTimers[timerKey]) return false;
+    window._sessionSurgicalGuideRefreshTimers[timerKey] = setTimeout(async () => {
+        delete window._sessionSurgicalGuideRefreshTimers[timerKey];
+        if (!current()) return;
         try {
             let loaded = false;
             // `/surgical-guides/mesh` is the authoritative mesh transport. It
@@ -2333,6 +2356,7 @@ function _scheduleCaseSurgicalGuideRefresh(sessionId, delay = 0) {
             if (typeof window.loadSurgicalGuideMesh === 'function') {
                 loaded = await window.loadSurgicalGuideMesh({
                     sessionId: key,
+                    timepointScope: owner,
                     userInitiated: false,
                     reconcileProgress: true,
                 });
@@ -2342,9 +2366,10 @@ function _scheduleCaseSurgicalGuideRefresh(sessionId, delay = 0) {
             // event. A bounded case refresh retries the same durable source
             // without auto-generating a second guide or touching report state.
             if (!loaded && typeof refreshPlanningUI === 'function'
-                && String(activeSessionId || '') === key) {
+                && current()) {
                 await refreshPlanningUI({
                     sessionId: key,
+                    timepointScope: owner,
                     retryPending: true,
                     autoGenerateGuide: false,
                     preserveViewerState: true,
@@ -2352,6 +2377,7 @@ function _scheduleCaseSurgicalGuideRefresh(sessionId, delay = 0) {
                     preserveReport: true,
                     reason: 'surgical-guide-tool-complete',
                 });
+                if (!current()) return;
                 // Some restore paths apply the guide mesh inside
                 // refreshPlanningUI rather than returning it from the direct
                 // mesh request.  Reconcile only when the authoritative scene
@@ -2486,12 +2512,15 @@ function _renderQueuedChatTurns(sessionId = activeSessionId) {
 }
 window.renderQueuedChatTurns = _renderQueuedChatTurns;
 
-function _queueChatTurn(sessionId, message) {
+function _queueChatTurn(sessionId, message, timepointScope = null, confirmation = {}) {
     const text = String(message || '').trim();
     if (!sessionId || !text) return false;
     _sessionChatQueue(sessionId).push({
         id: `queued-${String(sessionId)}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         text,
+        timepointScope,
+        targetConfirmationReceiptId: confirmation.targetConfirmationReceiptId || undefined,
+        targetConfirmationConfirmed: confirmation.targetConfirmationConfirmed === true,
         queuedAt: Date.now(),
     });
     _renderQueuedChatTurns(sessionId);
@@ -2520,6 +2549,9 @@ async function _flushQueuedChatTurns() {
     try {
         await sendChat(next.text, {
             queuedTurn: true,
+            timepointScope: next.timepointScope,
+            targetConfirmationReceiptId: next.targetConfirmationReceiptId,
+            targetConfirmationConfirmed: next.targetConfirmationConfirmed,
         });
     } finally {
         _queuedChatFlushRunning = false;
@@ -3196,6 +3228,7 @@ function _queueVisualAnalysisFollowUp(attachments, userText, turnIdentity, optio
         {
             visualFollowUp: true,
             internalFollowup: true,
+            timepointScope: options.timepointScope || window.BrachyBotChatTargets?.parent(ownerSessionId, parentRequestId),
             hiddenUserMessage: true,
             preserveLastUserMessage: true,
             // Execution identity is unique. Reusing the parent request ID
@@ -3349,6 +3382,21 @@ window.cancelActiveChatTurn = async function cancelActiveChatTurn() {
 
 async function sendChat(prefill, options) {
     const opts = options || {};
+    // Capture before the first wait. Queue flushing, Stop acknowledgement and
+    // network retry must not consult the subsequently selected Table Viewer.
+    let submittedTarget = null;
+    try {
+        const inherited = opts.timepointScope || (opts.internalFollowup || opts.visualFollowUp
+            ? window.BrachyBotChatTargets?.parent(opts.sessionId || activeSessionId, opts.parentRequestId || opts.parent_request_id) : null);
+        if (!((window._chatTurnActive || window._chatStreaming) && !opts.queueIfBusy && !opts.resumeTaskId)) {
+            submittedTarget = window.BrachyBotChatTargets?.capture({ ...opts, timepointScope: inherited });
+        }
+    } catch (_) {
+        if (typeof addChat === 'function') addChat('system', typeof _t === 'function'
+            ? _t('时间点工作区正在切换或目标无法核验，请等待加载完成后重试。', 'The timepoint is switching or its target cannot be verified. Wait for loading to finish and retry.')
+            : 'The timepoint target is not ready.', true);
+        return false;
+    }
     const input = document.getElementById('chatInput');
     const isResumingTask = !!opts.resumeTaskId;
     const isInternalFollowup = !!opts.internalFollowup || !!opts.visualFollowUp;
@@ -3399,7 +3447,7 @@ async function sendChat(prefill, options) {
             input.value = '';
             resizeChatInput(input);
         }
-        _queueChatTurn(activeSessionId, queuedText);
+        _queueChatTurn(activeSessionId, queuedText, submittedTarget, opts);
         // A hidden screenshot-analysis child is subordinate to the previous
         // reply. A new explicit user message supersedes it immediately, so
         // cancel that child without putting the queued prompt into the main
@@ -3515,6 +3563,7 @@ async function sendChat(prefill, options) {
         : (prefill != null ? prefill : (input ? input.value : '')).trim();
     if (!text && !isResumingTask) return;
     if (!isResumingTask && !isInternalFollowup && !opts.hiddenUserMessage
+        && (!submittedTarget || submittedTarget.legacyDefault)
         && typeof window.handleMonitorConversation === 'function'
         && await window.handleMonitorConversation(text)) return;
 
@@ -3527,7 +3576,7 @@ async function sendChat(prefill, options) {
             ? window.activeSessionReadiness()
             : null;
         if (!readiness?.ready) {
-            return _submitWhenSessionReady(text, opts, input);
+            return _submitWhenSessionReady(text, { ...opts, timepointScope: submittedTarget }, input);
         }
     }
 
@@ -3581,6 +3630,10 @@ async function sendChat(prefill, options) {
             && typeof ensurePendingSession === 'function') ensurePendingSession();
     } catch (_) {}
     const turnSessionId = String(activeSessionId || '');
+    if (submittedTarget && !submittedTarget.sessionId) submittedTarget = window.BrachyBotChatTargets.capture({
+        timepointScope: { ...submittedTarget, sessionId: turnSessionId } });
+    if (submittedTarget?.sessionId && submittedTarget.sessionId !== turnSessionId) return false;
+    const visualTargetIsMounted = () => window.BrachyBotChatTargets?.isMounted(submittedTarget) ?? true;
     const turnRequestId = String(
         opts.requestId
         || opts.request_id
@@ -3590,6 +3643,7 @@ async function sendChat(prefill, options) {
     const turnUserMessageId = String(
         opts.userMessageId || opts.user_message_id || `user-${turnRequestId}`
     );
+    window.BrachyBotChatTargets?.remember(turnRequestId, submittedTarget);
     const turnAssistantMessageId = String(
         opts.assistantMessageId || opts.assistant_message_id || `assistant-${turnRequestId}`
     );
@@ -3832,6 +3886,8 @@ async function sendChat(prefill, options) {
     const turnDoseEvents = new Set();
     const isCompletedGuideEvent = eventData => {
         if (!eventData || typeof eventData !== 'object') return false;
+        if (!visualTargetIsMounted() || (eventData.timepoint_id && submittedTarget?.timepointId
+            && eventData.timepoint_id !== submittedTarget.timepointId)) return false;
         const tool = String(
             eventData.tool || eventData.tool_name || eventData.function_name
             || eventData.function || eventData.name || eventData.parent_tool
@@ -3845,6 +3901,8 @@ async function sendChat(prefill, options) {
     };
     const markPlanningEvent = (eventData) => {
         if (!eventData || typeof eventData !== 'object') return false;
+        if (!visualTargetIsMounted() || (eventData.timepoint_id && submittedTarget?.timepointId
+            && eventData.timepoint_id !== submittedTarget.timepointId)) return false;
         // Different server generations use tool, tool_name, function_name,
         // or parent_tool for the same streamed event. Normalize those forms
         // here so an in-progress planning run cannot lose its invalidation or
@@ -4014,7 +4072,7 @@ async function sendChat(prefill, options) {
     // chat appear to accept a message while preventing the network request.
     let uiState = {};
     try {
-        uiState = (typeof collectUIState === 'function') ? (collectUIState() || {}) : {};
+        uiState = visualTargetIsMounted() && typeof collectUIState === 'function' ? (collectUIState() || {}) : {};
     } catch (error) {
         console.error('[chat] Optional UI state capture failed; sending request without it:', error);
     }
@@ -4136,14 +4194,17 @@ async function sendChat(prefill, options) {
         // join the same turn instead of duplicating it.
         const turnRequestBody = isResumingTask ? null : JSON.stringify({
                         message: text,
+                        timepoint_id: submittedTarget?.timepointId || undefined,
                         ui_state: uiState,
                         stream: true,
                         clear_context: false,
                         // Global UI locale is only the backend fallback for a
                         // new/ambiguous turn. It never overrides the latest
                         // language-bearing user message.
-                        ui_language: effectiveUiLanguage(),
+                        ui_language: submittedTarget?.uiLanguage || effectiveUiLanguage(),
                         request_id: turnRequestId,
+                        target_confirmation_receipt_id: opts.targetConfirmationReceiptId || undefined,
+                        target_confirmation_confirmed: opts.targetConfirmationConfirmed === true || undefined,
                         user_message_id: turnUserMessageId,
                         assistant_message_id: turnAssistantMessageId,
                         parent_request_id: parentRequestId || undefined,
@@ -4177,7 +4238,9 @@ async function sendChat(prefill, options) {
             }
             return await fetch(API + '/chat', {
                 method: 'POST',
-                headers: {
+                headers: submittedTarget && window.BrachyBotChatTargets ? window.BrachyBotChatTargets.headers(submittedTarget, {
+                    'Content-Type': 'application/json'
+                }) : {
                     'Content-Type': 'application/json',
                     'X-BrachyBot-Session': turnSessionId,
                 },
@@ -4539,6 +4602,13 @@ async function sendChat(prefill, options) {
                         }
                     }
                     if (currentEvent === 'step' && data) {
+                        if (data.metadata?.target_confirmation && submittedTarget && !isInternalFollowup) {
+                            // Confirmation may wait for the current turn to
+                            // finish. Do not join it to uiActionTasks: that would
+                            // deadlock a queued follow-up against this turn.
+                            void window.BrachyBotTimepoints?.confirmTargetOperation(data.metadata.target_confirmation, submittedTarget)
+                                .catch(error => console.warn('[timepoint-confirmation]', error.code || error.name));
+                        }
                         if (data.code === 'llm_unavailable'
                             && typeof window.updateBrainStatusIndicator === 'function') {
                             // The turn fell back to a local answer because the
@@ -4724,6 +4794,14 @@ async function sendChat(prefill, options) {
                                 progressEl = null;
                             }
                         } else if (data.type === 'tool' && (toolCompleted || toolFailed)) {
+                            if (toolCompleted && data.metadata?.implant_command) {
+                                uiActionTasks.push(Promise.resolve(window.BrachyBotImplants?.applyTool(data.metadata, submittedTarget)));
+                            }
+                            if (toolCompleted && data.metadata?.ui_action?.target === 'timepoint') {
+                                uiActionTasks.push(Promise.resolve(_queueUIActionBatch([data.metadata.ui_action], {
+                                    sessionId: turnSessionId, requestId: turnRequestId, timepointScope: submittedTarget,
+                                })));
+                            }
                             if (progressEl && typeof updateToolProgress === 'function') {
                                 updateToolProgress(progressEl, lastToolName, data.status, data.result);
                             }
@@ -4756,10 +4834,12 @@ async function sendChat(prefill, options) {
                                                 ? _queueUIActionBatch(actions, {
                                                     sessionId: turnSessionId,
                                                     requestId: turnRequestId,
+                                                    timepointScope: submittedTarget,
                                                 })
                                                 : _executeUIActionsWithProgress(actions, {
                                                     sessionId: turnSessionId,
                                                     requestId: turnRequestId,
+                                                    timepointScope: submittedTarget,
                                                 });
                                             uiActionTasks.push(Promise.resolve(actionTask).then(group => {
                                                 uiActionResults.push(...(Array.isArray(group) ? group : [group]));
@@ -4768,6 +4848,7 @@ async function sendChat(prefill, options) {
                                         } else {
                                             const actionTask = Promise.all(actions.map(a => _executeUIAction(a, {
                                                 sessionId: turnSessionId,
+                                                timepointScope: submittedTarget,
                                             })));
                                             uiActionTasks.push(actionTask.then(group => {
                                                 uiActionResults.push(...group);
@@ -5211,7 +5292,7 @@ async function sendChat(prefill, options) {
                         // completion boundary. The refresh itself remains
                         // case-owned and retries HTTP 202 while arrays are
                         // being committed.
-                        if (turnSawPlanningWork) {
+                        if (turnSawPlanningWork && visualTargetIsMounted()) {
                             uiDebugLog('[SSE-response] Planning work detected; scheduling result refresh');
                             _scheduleCasePlanningRefresh(turnSessionId, 350);
                         }
@@ -5308,11 +5389,12 @@ async function sendChat(prefill, options) {
                         // because the step event format changed),
                         // trigger a refresh now on stream completion.
                         const _planningToolsInSteps = steps.filter(s => _isTerminalToolStatus(s.status)
-                            && PLANNING_EVENT_TOOLS.has(String(s.tool || '')));
+                            && PLANNING_EVENT_TOOLS.has(String(s.tool || ''))
+                            && (!s.timepoint_id || !submittedTarget?.timepointId || s.timepoint_id === submittedTarget.timepointId));
                         uiDebugLog('[SSE-done] planning tools in steps:', _planningToolsInSteps.map(s => s.tool), 'sawPlanningWork:', turnSawPlanningWork);
                         if (_planningToolsInSteps.length > 0 || turnSawPlanningWork) {
                             uiDebugLog('[SSE-done] Triggering fallback refreshPlanningUI');
-                            _scheduleCasePlanningRefresh(turnSessionId, 500);
+                            if (visualTargetIsMounted()) _scheduleCasePlanningRefresh(turnSessionId, 500);
                         }
                         const _guideToolsInSteps = steps.filter(isCompletedGuideEvent);
                         if (_guideToolsInSteps.length > 0 || turnSawSurgicalGuideWork) {
@@ -5394,7 +5476,7 @@ async function sendChat(prefill, options) {
             } else {
                 responseText = turnIdentity.responseLanguage === 'zh'
                     ? '报告已重新生成：正文、表格和标准图件已更新并保存到当前 Session，截图时的临时显示设置已恢复。'
-                    : 'The report was regenerated: text, tables and canonical figures were updated and saved to the current Session, and temporary capture display settings were restored.';
+                    : 'The report was regenerated: text, tables, and standard figures were updated and saved to the current Session, and temporary capture display settings were restored.';
                 finalResponseReceived = true;
             }
         }
@@ -6060,7 +6142,7 @@ function _traceStepForDisplay(step, sessionId, turnLanguage = '') {
         const target = String(command.target || metadata.content_target || 'session_summary');
         const fallback = language === 'zh'
             ? '\u5df2\u8bfb\u53d6\u5f53\u524d Session \u4e2d\u7684\u5df2\u4fdd\u5b58\u5185\u5bb9\u3002'
-            : 'Read persisted content from the current Session.';
+            : 'Read saved content from the current session.';
         return Object.assign({}, step, {
             title: language === 'zh' ? '\u5448\u73b0 Session \u5185\u5bb9' : 'Present Session content',
             params: {
@@ -6297,6 +6379,8 @@ window.resumeSessionChatTask = async function resumeSessionChatTask(options = {}
             internalFollowup: !!task.internal_followup,
             visualFollowUp: !!task.internal_followup,
             responseLanguage: task.response_language || '',
+            timepointScope: task.timepoint_id ? { sessionId, timepointId: task.timepoint_id,
+                legacyDefault: task.timepoint_legacy_default === true, uiLanguage: task.ui_language || effectiveUiLanguage() } : null,
             resumeMessage: task.message || '',
             skipIntentShortcuts: true,
             preserveLastUserMessage: true,

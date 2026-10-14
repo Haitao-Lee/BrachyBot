@@ -14,8 +14,8 @@ of capture ownership.
 ```text
 Artifacts & Annotations
   Planning annotations
-    Guide mouths · From needle tip · vN
-      Needle 1 → Guide mouth distance
+    Guide channel entries · Distance to needle tip · vN
+      Needle 1 → Guide-entry-to-tip distance
     Seeds · From needle tip
       Needle 1 → Individual seed distances
   Manual measurements & prompts

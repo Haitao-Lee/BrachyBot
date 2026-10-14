@@ -44,6 +44,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"
+          media="print" onload="this.media='all'"
           onerror="this.disabled=true; console.warn('Google Fonts CDN unreachable; falling back to system fonts.')">
     <!-- External libraries are vendored LOCALLY under /static/js/ so the
          page works behind firewalls and on offline-first environments.
@@ -70,6 +71,8 @@
     <link rel="stylesheet" href="static/css/brachybot-data-export.css?v=3">
     <link rel="stylesheet" href="static/css/brachybot-planning-distance-annotations.css?v=1">
     <link rel="stylesheet" href="static/css/brachybot-theme-light.css?v=1">
+    <link rel="stylesheet" href="static/css/brachybot-timepoints.css?v=1">
+    <link rel="stylesheet" href="static/css/brachybot-workspace-refinement.css?v=3">
 </head>
 <!--
   The remaining inline styles belong to fixed report/form geometry whose
@@ -180,15 +183,15 @@
 
         <!-- ===== Right pane: product introduction ===== -->
         <section class="auth-pane auth-pane-product" aria-labelledby="authProductTitle" aria-describedby="authProductTag">
-            <p class="auth-product-eyebrow" data-i18n-zh="AI · 近距离放疗 · 临床级"
-               data-i18n-en="AI · Brachytherapy · Clinical-grade">AI · Brachytherapy · Clinical-grade</p>
+            <p class="auth-product-eyebrow" data-i18n-zh="AI · 近距离放疗 · 规划辅助"
+               data-i18n-en="AI · Brachytherapy · Planning support">AI · Brachytherapy · Planning support</p>
             <h2 class="auth-product-title" id="authProductTitle">
                 <span class="auth-product-name">BrachyBot</span>
                 <span data-i18n-zh=" 智能规划平台" data-i18n-en=" Intelligent Planning Platform"> Intelligent Planning Platform</span>
             </h2>
             <p class="auth-product-tag" id="authProductTag"
                data-i18n-zh="为胰腺、前列腺、肝脏、肺部、妇科等部位肿瘤的 ¹²⁵I 粒子植入与近距离放疗提供从影像分割、剂量预测到针道规划、报告生成的一体化 AI 工作流。"
-               data-i18n-en="End-to-end AI workflow for ¹²⁵I seed implantation and brachytherapy planning: image segmentation, dose prediction, trajectory planning and report generation for pancreatic, prostate, liver, lung, and gynaecological cases.">End-to-end AI workflow for ¹²⁵I seed implantation and brachytherapy planning: image segmentation, dose prediction, trajectory planning and report generation for pancreatic, prostate, liver, lung, and gynaecological cases.</p>
+               data-i18n-en="End-to-end AI workflow for ¹²⁵I seed implantation and brachytherapy planning: image segmentation, dose prediction, trajectory planning and report generation for pancreatic, prostate, liver, lung, and gynecological cases.">End-to-end AI workflow for ¹²⁵I seed implantation and brachytherapy planning: image segmentation, dose prediction, trajectory planning and report generation for pancreatic, prostate, liver, lung, and gynecological cases.</p>
 
             <ul class="auth-feature-list">
                 <li class="auth-feature-item">
@@ -207,8 +210,8 @@
                     </span>
                     <span class="auth-feature-text">
                         <strong data-i18n-zh="3D 剂量预测 DoseUNet" data-i18n-en="3D Dose Prediction (DoseUNet)">3D Dose Prediction (DoseUNet)</strong>
-                        <span data-i18n-zh="亚毫米级滑窗推理，单粒子剂量在数秒内完成叠加。"
-                              data-i18n-en="Sub-millimeter sliding-window inference aggregates per-seed dose in seconds.">Sub-millimeter sliding-window inference aggregates per-seed dose in seconds.</span>
+                        <span data-i18n-zh="滑窗推理预测并叠加单颗粒子的剂量分布。"
+                              data-i18n-en="Sliding-window inference predicts and combines individual seed dose distributions.">Sliding-window inference predicts and combines individual seed dose distributions.</span>
                     </span>
                 </li>
                 <li class="auth-feature-item">
@@ -216,9 +219,9 @@
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16"/><path d="M4 6h16"/><path d="M4 18h10"/><circle cx="18" cy="18" r="2"/></svg>
                     </span>
                     <span class="auth-feature-text">
-                        <strong data-i18n-zh="AI 针道与种子规划" data-i18n-en="AI trajectory and seed planning">AI trajectory and seed planning</strong>
-                        <span data-i18n-zh="规则与强化学习结合，自动生成避让 OAR 的安全针道。"
-                              data-i18n-en="Rule-based and reinforcement-learning hybrid generates OAR-aware safe trajectories.">Rule-based and reinforcement-learning hybrid generates OAR-aware safe trajectories.</span>
+                        <strong data-i18n-zh="AI 针道与粒子规划" data-i18n-en="AI needle trajectory and seed planning">AI needle trajectory and seed planning</strong>
+                        <span data-i18n-zh="结合规则与强化学习，生成考虑危及器官的候选针道。"
+                              data-i18n-en="Rule-based and reinforcement-learning methods generate candidate needle trajectories that account for organs at risk.">Rule-based and reinforcement-learning methods generate candidate needle trajectories that account for organs at risk.</span>
                     </span>
                 </li>
                 <li class="auth-feature-item">
@@ -228,7 +231,7 @@
                     <span class="auth-feature-text">
                         <strong data-i18n-zh="多 Agent 实时评审" data-i18n-en="Multi-agent live review">Multi-agent live review</strong>
                         <span data-i18n-zh="剂量学、安全性、完整性、计划评分多 Agent 协同评估。"
-                              data-i18n-en="Dosimetry, safety, completeness, and plan-quality agents review in real time.">Dosimetry, safety, completeness, and plan-quality agents review in real time.</span>
+                              data-i18n-en="Dosimetry, safety, completeness, and plan-scoring agents evaluate collaboratively.">Dosimetry, safety, completeness, and plan-scoring agents evaluate collaboratively.</span>
                     </span>
                 </li>
                 <li class="auth-feature-item">
@@ -236,7 +239,7 @@
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6"/><path d="M9 13h6"/><path d="M9 17h6"/></svg>
                     </span>
                     <span class="auth-feature-text">
-                        <strong data-i18n-zh="自动报告 + 可追溯来源" data-i18n-en="Auto-report with source provenance">Auto-report with source provenance</strong>
+                        <strong data-i18n-zh="自动报告 + 可追溯来源" data-i18n-en="Automatic reports with source tracking">Automatic reports with source tracking</strong>
                         <span data-i18n-zh="AI 自动生成中/英双语报告，标注 AUTO / YOU / BOT 来源徽章。"
                               data-i18n-en="Bilingual auto-generated reports with AUTO / YOU / BOT source badges.">Bilingual auto-generated reports with AUTO / YOU / BOT source badges.</span>
                     </span>
@@ -347,7 +350,7 @@
         </div>
         <div class="status-chip">
             <span class="dot yellow" id="brainDot"></span>
-            <span><span data-i18n-zh="" data-i18n-en="Brain">Brain</span> <span id="brainStatusText" data-i18n-zh="检测中" data-i18n-en="Checking">Checking</span></span>
+            <span><span data-i18n-zh="大脑" data-i18n-en="Brain">Brain</span> <span id="brainStatusText" data-i18n-zh="检测中" data-i18n-en="Checking">Checking</span></span>
         </div>
         <div class="status-chip status-session"><span data-i18n-zh="会话" data-i18n-en="Session">Session</span>: <span id="sessionDisplay">web</span></div>
         <!-- GLOBAL UI LANGUAGE TOGGLE (2026-06-16). Defaults to EN.
@@ -400,6 +403,10 @@
             <span class="session-sidebar-title" data-i18n-zh="对话" data-i18n-en="Chats">Chats</span>
             <div class="session-sidebar-actions">
                 <button class="new-chat-btn" onclick="newChat()"><span data-i18n-zh="+ 新建" data-i18n-en="+ New">+ New</span></button>
+                <button class="new-chat-btn" id="importWorkspaceButton" type="button" onclick="importCompleteWorkspace()"
+                    data-i18n-zh="导入病例包" data-i18n-en="Import workspace"
+                    data-i18n-title-zh="导入完整病例包，创建新的对话，不覆盖当前病例" data-i18n-title-en="Import a complete workspace into a new chat without overwriting this case">Import workspace</button>
+                <input id="importWorkspaceFile" type="file" accept=".zip,application/zip" hidden>
                 <button class="session-sidebar-close" type="button" onclick="closeSessionSidebar()"
                         aria-label="Close chat history" title="Close chat history">&times;</button>
             </div>
@@ -538,6 +545,19 @@
 
     <!-- ============ RIGHT PANEL ============ -->
     <div class="right-panel">
+
+        <!-- One clinical workspace is mounted beneath the timepoint selector. -->
+        <section id="timepointStrip" class="timepoint-strip" aria-label="Timepoints" aria-busy="false">
+            <div class="timepoint-toolbar">
+                <span class="timepoint-heading" data-i18n-zh="时间点" data-i18n-en="Timepoints">Timepoints</span>
+                <div id="timepointTabs" class="timepoint-tabs" role="tablist" aria-label="Timepoints"></div>
+                <button id="timepointAdd" type="button" class="timepoint-action" disabled aria-label="Add timepoint">+</button>
+                <button id="timepointManage" type="button" class="timepoint-action" disabled data-i18n-zh="管理" data-i18n-en="Manage">Manage</button>
+            </div>
+            <div id="timepointStatus" class="timepoint-status" role="status" aria-live="polite"
+                data-i18n-zh="时间点功能尚未启用；当前病例工作区保持可用。"
+                data-i18n-en="Timepoint switching is not enabled; the current case workspace remains available.">Timepoint switching is not enabled; the current case workspace remains available.</div>
+        </section>
 
         <!-- Tabs -->
         <div class="panel-tabs" role="tablist" aria-label="Workspace panels">
@@ -683,7 +703,7 @@
                 </div>
 
                 <div id="hyperparamsSection" style="display:none;flex-direction:column;gap:0.5rem;max-height:calc(100vh - 280px);overflow-y:auto;padding-right:4px;">
-                    <div class="form-help" data-i18n-zh="灰色字段为只读参考：当前固定模型不会重新训练，标签语义由 CTV/OAR 结构集管理。可编辑字段将在应用后用于当前病例。" data-i18n-en="Grey fields are read-only references: the fixed model is not retrained, and label semantics belong to the CTV/OAR Structure Set. Editable fields apply to this case after confirmation.">Grey fields are read-only references: the fixed model is not retrained, and label semantics belong to the CTV/OAR Structure Set. Editable fields apply to this case after confirmation.</div>
+                    <div class="form-help" data-i18n-zh="灰色字段为只读参考：当前固定模型不会重新训练，标签语义由 CTV/OAR 结构集管理。可编辑字段将在应用后用于当前病例。" data-i18n-en="Gray fields are read-only references: the fixed model is not retrained, and label semantics belong to the CTV/OAR Structure Set. Editable fields take effect for this case after being applied.">Gray fields are read-only references: the fixed model is not retrained, and label semantics belong to the CTV/OAR Structure Set. Editable fields take effect for this case after being applied.</div>
                     <!-- General -->
                     <div style="font-size:0.58rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">General</div>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;">
@@ -752,8 +772,8 @@
                     <!-- Dose Constraints -->
                     <div style="font-size:0.58rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Dose Constraints</div>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;">
-                        <div class="form-group"><label class="form-label" data-i18n-zh="最低剂量 (Gy)" data-i18n-en="In Lowest Dose (Gy)">In Lowest Dose (Gy)</label><input type="number" class="form-input" id="inLowestEnergy" value="120" step="1" min="0"></div>
-                        <div class="form-group"><label class="form-label" data-i18n-zh="最高剂量 (Gy)" data-i18n-en="Out Highest Dose (Gy)">Out Highest Dose (Gy)</label><input type="number" class="form-input" id="outHighestEnergy" value="120" step="1" min="0"></div>
+                        <div class="form-group"><label class="form-label" data-i18n-zh="靶区内最低剂量 (Gy)" data-i18n-en="Minimum in-target dose (Gy)">Minimum in-target dose (Gy)</label><input type="number" class="form-input" id="inLowestEnergy" value="120" step="1" min="0"></div>
+                        <div class="form-group"><label class="form-label" data-i18n-zh="靶区外最高剂量 (Gy)" data-i18n-en="Maximum out-of-target dose (Gy)">Maximum out-of-target dose (Gy)</label><input type="number" class="form-input" id="outHighestEnergy" value="120" step="1" min="0"></div>
                         <div class="form-group"><label class="form-label">DVH Rate</label><input type="number" class="form-input" id="dvhRate" value="0.9" step="0.05" min="0" max="1"></div>
                         <div class="form-group"><label class="form-label">Max Iterations</label><input type="number" class="form-input" id="maxIter" value="4" step="1" min="1" max="20"></div>
                     </div>
@@ -815,7 +835,7 @@
                 <div class="form-section-title">Full Pipeline</div>
                 <div class="form-actions">
                     <button class="btn btn-primary" onclick="runPlanning()">
-                        <span class="btn-icon">&#9654;</span> Start Plan
+                        <span class="btn-icon">&#9654;</span> Start Planning
                     </button>
                     <button class="btn btn-warning" onclick="runIntra()">
                         <span class="btn-icon">&#9889;</span> Intraop
@@ -853,7 +873,7 @@
                 <div id="stepButtonsSection" style="display:flex;flex-direction:column;gap:0.4rem;">
                     <div style="font-size:0.6rem;color:var(--text-dim);">Click each step in order. Steps that need an earlier result will be auto-disabled until the prerequisite completes.</div>
                     <div id="manualWorkflowStatus" class="manual-workflow-status is-warn" role="status" aria-live="polite"
-                         data-i18n-en="Load a CT image to enable the manual workflow.">Load a CT image to enable the manual workflow.</div>
+                         data-i18n-zh="加载 CT 图像以启用手动流程。" data-i18n-en="Load a CT image to enable the manual workflow.">Load a CT image to enable the manual workflow.</div>
 
                     <!-- Row 1: CTV / OAR segmentation -->
                     <div style="display:flex;gap:4px;">
@@ -916,8 +936,8 @@
                     <!-- Manual fine planning and training monitor -->
                     <div class="form-section-title manual-planning-title" data-i18n-zh="手动精细规划" data-i18n-en="Manual Fine Planning">Manual Fine Planning</div>
                     <div class="manual-planning-actions">
-                        <button class="btn btn-outline" id="monitorStartButton" onclick="startTrainingMode('Monitor manual/automatic planning')" data-i18n-zh="开始监测" data-i18n-en="Monitor">Monitor</button>
-                        <button class="btn btn-outline" id="monitorStopButton" onclick="stopTrainingMode()" data-i18n-zh="结束监测" data-i18n-en="Finish Monitor" disabled>Finish Monitor</button>
+                        <button class="btn btn-outline" id="monitorStartButton" onclick="startTrainingMode('Monitor manual/automatic planning')" data-i18n-zh="开始监测" data-i18n-en="Start Monitoring">Start Monitoring</button>
+                        <button class="btn btn-outline" id="monitorStopButton" onclick="stopTrainingMode()" data-i18n-zh="结束监测" data-i18n-en="Stop Monitoring" disabled>Stop Monitoring</button>
                         <button class="btn btn-outline" onclick="addManualNeedle()" data-i18n-zh="添加穿刺针" data-i18n-en="Add Needle">Add Needle</button>
                         <button class="btn btn-outline" onclick="addManualSeed()" data-i18n-zh="添加粒子" data-i18n-en="Add Seed">Add Seed</button>
                         <button class="btn btn-outline" onclick="recomputeManualDose('manual_button')" data-i18n-zh="重新计算 AI 剂量" data-i18n-en="Recompute AI Dose">Recompute AI Dose</button>
@@ -925,34 +945,34 @@
                         <button class="btn btn-outline" id="generateSurgicalGuideButton" onclick="generateSurgicalGuide()" data-i18n-zh="生成导板" data-i18n-en="Generate Guide" disabled>Generate Guide</button>
                         <button class="btn btn-outline" onclick="exportSurgicalGuideSTL()" data-i18n-zh="导出导板 STL" data-i18n-en="Export Guide STL">Export Guide STL</button>
                         <button class="btn btn-outline" onclick="requestPlanningAdvice()" data-i18n-zh="详细建议" data-i18n-en="Detailed Advice">Detailed Advice</button>
-                        <button class="btn btn-outline" onclick="checkSystemReadiness()" data-i18n-zh="就绪检查" data-i18n-en="Readiness">Readiness</button>
+                        <button class="btn btn-outline" onclick="checkSystemReadiness()" data-i18n-zh="就绪检查" data-i18n-en="Check readiness">Check readiness</button>
                     </div>
                     <details id="surgicalGuideParameters" class="guide-parameters">
-                        <summary data-i18n-zh="穿刺导板参数" data-i18n-en="Puncture Guide Parameters">Puncture Guide Parameters</summary>
+                        <summary data-i18n-zh="穿刺导板参数" data-i18n-en="Needle guide parameters">Needle guide parameters</summary>
                         <div class="guide-parameter-grid">
-                            <label><span data-i18n-zh="皮肤阈值" data-i18n-en="Skin threshold">Skin threshold</span><span class="guide-input-unit"><input id="guideSkinThreshold" type="number" min="-800" max="100" step="10" value="-300"><span>HU</span></span></label>
-                            <label><span data-i18n-zh="皮肤间隙" data-i18n-en="Skin clearance">Skin clearance</span><span class="guide-input-unit"><input id="guideSkinClearance" type="number" min="0" max="5" step="0.1" value="1"><span>mm</span></span></label>
+                            <label><span data-i18n-zh="皮肤阈值" data-i18n-en="Skin extraction threshold">Skin extraction threshold</span><span class="guide-input-unit"><input id="guideSkinThreshold" type="number" min="-800" max="100" step="10" value="-300"><span>HU</span></span></label>
+                            <label><span data-i18n-zh="皮肤间隙" data-i18n-en="Guide-to-skin clearance">Guide-to-skin clearance</span><span class="guide-input-unit"><input id="guideSkinClearance" type="number" min="0" max="5" step="0.1" value="1"><span>mm</span></span></label>
                             <label><span data-i18n-zh="导板厚度" data-i18n-en="Plate thickness">Plate thickness</span><span class="guide-input-unit"><input id="guidePlateThickness" type="number" min="1" max="10" step="0.1" value="3"><span>mm</span></span></label>
-                            <label><span data-i18n-zh="覆盖边缘" data-i18n-en="Patch margin">Patch margin</span><span class="guide-input-unit"><input id="guidePatchMargin" type="number" min="10" max="80" step="1" value="24"><span>mm</span></span></label>
+                            <label><span data-i18n-zh="覆盖边缘" data-i18n-en="Coverage margin">Coverage margin</span><span class="guide-input-unit"><input id="guidePatchMargin" type="number" min="10" max="80" step="1" value="24"><span>mm</span></span></label>
                             <label><span data-i18n-zh="导向孔径" data-i18n-en="Channel diameter">Channel diameter</span><span class="guide-input-unit"><input id="guideChannelDiameter" type="number" min="0.6" max="12" step="0.1" value="1.8"><span>mm</span></span></label>
                             <label><span data-i18n-zh="套筒外径" data-i18n-en="Sleeve outer diameter">Sleeve outer diameter</span><span class="guide-input-unit"><input id="guideSleeveOuterDiameter" type="number" min="2" max="24" step="0.1" value="6"><span>mm</span></span></label>
-                            <label><span data-i18n-zh="套筒外侧长度" data-i18n-en="Sleeve outward length">Sleeve outward length</span><span class="guide-input-unit"><input id="guideSleeveOutward" type="number" min="1" max="30" step="0.5" value="8"><span>mm</span></span></label>
-                            <label><span data-i18n-zh="套筒内侧长度" data-i18n-en="Sleeve inward length">Sleeve inward length</span><span class="guide-input-unit"><input id="guideSleeveInward" type="number" min="1" max="30" step="0.5" value="8"><span>mm</span></span></label>
+                            <label><span data-i18n-zh="套筒外侧长度" data-i18n-en="Outward sleeve extension">Outward sleeve extension</span><span class="guide-input-unit"><input id="guideSleeveOutward" type="number" min="1" max="30" step="0.5" value="8"><span>mm</span></span></label>
+                            <label><span data-i18n-zh="套筒内侧长度" data-i18n-en="Inward sleeve extension">Inward sleeve extension</span><span class="guide-input-unit"><input id="guideSleeveInward" type="number" min="1" max="30" step="0.5" value="8"><span>mm</span></span></label>
                             <label><span data-i18n-zh="几何分辨率" data-i18n-en="Geometry resolution">Geometry resolution</span><span class="guide-input-unit"><input id="guideGeometryResolution" type="number" min="0.2" max="2" step="0.05" value="0.2"><span>mm</span></span></label>
                         </div>
                         <div class="guide-subsection-heading" data-i18n-zh="周边辅助穿刺孔" data-i18n-en="Auxiliary puncture holes">Auxiliary puncture holes</div>
                         <div class="guide-parameter-grid guide-auxiliary-grid">
                             <label class="guide-checkbox-field"><span data-i18n-zh="启用非凸起辅助孔" data-i18n-en="Enable non-protruding auxiliary holes">Enable non-protruding auxiliary holes</span><input id="guideAuxiliaryHolesEnabled" type="checkbox" checked></label>
-                            <label><span data-i18n-zh="辅助孔直径（与主孔一致）" data-i18n-en="Auxiliary hole diameter (same final bore)">Auxiliary hole diameter (same final bore)</span><span class="guide-input-unit"><input id="guideAuxiliaryHoleDiameter" type="number" min="0.6" max="12.8" step="0.1" value="2.6" readonly aria-readonly="true" title="Derived from the primary channel diameter"><span>mm</span></span></label>
-                            <label><span data-i18n-zh="辅助孔环数" data-i18n-en="Auxiliary ring count">Auxiliary ring count</span><span class="guide-input-unit"><input id="guideAuxiliaryHoleRingCount" type="number" min="1" max="4" step="1" value="2"><span>rings</span></span></label>
+                            <label><span data-i18n-zh="辅助孔直径（与主孔一致）" data-i18n-en="Auxiliary hole diameter (matches the main channel)">Auxiliary hole diameter (matches the main channel)</span><span class="guide-input-unit"><input id="guideAuxiliaryHoleDiameter" type="number" min="0.6" max="12.8" step="0.1" value="2.6" readonly aria-readonly="true" title="Derived from the primary channel diameter"><span>mm</span></span></label>
+                            <label><span data-i18n-zh="辅助孔环数" data-i18n-en="Auxiliary ring count">Auxiliary ring count</span><span class="guide-input-unit"><input id="guideAuxiliaryHoleRingCount" type="number" min="1" max="4" step="1" value="4"><span data-i18n-zh="环" data-i18n-en="rings">rings</span></span></label>
                             <label><span data-i18n-zh="每环孔数" data-i18n-en="Holes per ring">Holes per ring</span><span class="guide-input-unit"><input id="guideAuxiliaryHolesPerRing" type="number" min="4" max="24" step="1" value="12"><span>holes</span></span></label>
                             <label><span data-i18n-zh="首环偏移" data-i18n-en="First-ring offset">First-ring offset</span><span class="guide-input-unit"><input id="guideAuxiliaryHoleFirstOffset" type="number" min="2" max="15" step="0.1" value="4"><span>mm</span></span></label>
                             <label><span data-i18n-zh="环间距" data-i18n-en="Ring spacing">Ring spacing</span><span class="guide-input-unit"><input id="guideAuxiliaryHoleRingSpacing" type="number" min="1.5" max="10" step="0.1" value="3"><span>mm</span></span></label>
                         </div>
-                        <div class="guide-parameter-help" data-i18n-zh="辅助孔沿主针道轴向布置，仅从导板本体中切除，不增加外凸套筒；辅助孔直径与最终主孔一致。生成结果会记录实际生成和跳过的孔数。" data-i18n-en="Auxiliary holes follow each primary needle axis and are subtracted from the plate only; no external sleeve is added. Their diameter is locked to the final primary bore diameter. The generated guide records realized and skipped hole counts.">Auxiliary holes follow each primary needle axis and are subtracted from the plate only; no external sleeve is added. Their diameter is locked to the final primary bore diameter. The generated guide records realized and skipped hole counts.</div>
+                        <div class="guide-parameter-help" data-i18n-zh="辅助孔沿主针道轴向布置，仅从导板本体中切除，不增加外凸套筒；辅助孔直径与最终主孔一致。生成结果会记录实际生成和跳过的孔数。" data-i18n-en="Auxiliary holes follow each primary needle axis and are subtracted from the plate only; no external sleeve is added. Their diameter is locked to the final primary bore diameter. The generated guide records the actual and skipped hole counts.">Auxiliary holes follow each primary needle axis and are subtracted from the plate only; no external sleeve is added. Their diameter is locked to the final primary bore diameter. The generated guide records the actual and skipped hole counts.</div>
                         <div class="guide-parameter-grid guide-select-grid">
-                            <label><span data-i18n-zh="导向针道（不选表示全部）" data-i18n-en="Guided needles (empty means all)">Guided needles (empty means all)</span><select id="guideNeedleSelection" multiple size="4" aria-label="Needles included in puncture guide"></select></label>
-                            <label><span data-i18n-zh="已保存导板版本" data-i18n-en="Saved guide version">Saved guide version</span><select id="guideVersionSelect" aria-label="Saved puncture guide version"></select><button class="btn btn-outline guide-inline-button" type="button" onclick="loadSelectedSurgicalGuideVersion()" data-i18n-zh="显示所选版本" data-i18n-en="Show Selected Version">Show Selected Version</button></label>
+                            <label><span data-i18n-zh="导向针道（不选表示全部）" data-i18n-en="Needles included in the guide (all if none selected)">Needles included in the guide (all if none selected)</span><select id="guideNeedleSelection" multiple size="4" aria-label="Needles included in the needle guide"></select></label>
+                            <label><span data-i18n-zh="已保存导板版本" data-i18n-en="Saved guide version">Saved guide version</span><select id="guideVersionSelect" aria-label="Saved needle guide version"></select><button class="btn btn-outline guide-inline-button" type="button" onclick="loadSelectedSurgicalGuideVersion()" data-i18n-zh="显示所选版本" data-i18n-en="Show Selected Version">Show Selected Version</button></label>
                             <label><span data-i18n-zh="导板来源规划" data-i18n-en="Source Planning">Source Planning</span><select id="surgicalGuidePlanningSelect" aria-label="Planning used to generate the guide"></select></label>
                         </div>
                         <div class="guide-validation-row">
@@ -1271,10 +1291,10 @@
                 <div class="ctrl-sep" style="height:16px;"></div>
                 <!-- Overlays -->
                 <label class="ctrl-toggle" style="font-size:0.6rem;">
-                    <input type="checkbox" id="overlayCTV" onchange="toggleOverlay()"> CTV
+                    <input type="checkbox" id="overlayCTV" onchange="toggleOverlay()" checked> CTV
                 </label>
                 <label class="ctrl-toggle" style="font-size:0.6rem;">
-                    <input type="checkbox" id="overlayOAR" onchange="toggleOverlay()"> OAR
+                    <input type="checkbox" id="overlayOAR" onchange="toggleOverlay()" checked> OAR
                 </label>
                 <div class="ctrl-sep" style="height:16px;"></div>
                 <!-- Dose Overlay Opacity -->
@@ -1285,7 +1305,7 @@
                         style="width:50px;height:12px;cursor:pointer;">
                     <span id="doseOpacityVal" style="font-size:0.55rem;min-width:20px;">50%</span>
                 </label>
-                <button class="file-btn" id="doseTextureToggle" style="padding:2px 6px;font-size:0.6rem;white-space:nowrap;" onclick="toggleDoseTextureMode()" title="Map dose intensity onto CTV/OAR 3D surfaces">Dose Surface</button>
+                <button class="file-btn" id="doseTextureToggle" style="padding:2px 6px;font-size:0.6rem;white-space:nowrap;" onclick="toggleDoseTextureMode()" title="Map dose values to colors on CTV/OAR 3D surfaces" data-i18n-title-zh="按剂量数值为 CTV/OAR 三维表面着色" data-i18n-title-en="Map dose values to colors on CTV/OAR 3D surfaces">Dose coloring</button>
                 <button class="file-btn" id="doseColorbarButton" style="padding:2px 6px;font-size:0.6rem;white-space:nowrap;" onclick="toggleDoseColorbarPanel()" title="Adjust dose colorbar ranges and palette">Dose Scale</button>
                 <div id="doseColorbarPanel" hidden style="position:absolute;right:10px;top:34px;z-index:1200;min-width:245px;padding:10px;background:var(--bg-2);border:1px solid var(--card-border);border-radius:6px;box-shadow:0 10px 30px rgba(0,0,0,.4);">
                     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:.68rem;font-weight:700;color:var(--text);margin-bottom:7px;"><span>Dose Colorbar</span><button type="button" class="icon-btn" aria-label="Close dose colorbar settings" title="Close" onclick="closeDoseColorbarPanel();">×</button></div>
@@ -1319,7 +1339,7 @@
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="setViewerTool('eraser')" id="toolEraser">&#9003; Erase</button>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;color:#4ade80;" onclick="setViewerTool('sat3d_positive')" id="toolSat3dPositive" title="SAT3D positive point" data-i18n-title-zh="在肿瘤内放置正点" data-i18n-title-en="Place a positive point inside the tumor">SAT3D +</button>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;color:#fb7185;" onclick="setViewerTool('sat3d_negative')" id="toolSat3dNegative" title="SAT3D negative point" data-i18n-title-zh="在需要排除的区域放置负点" data-i18n-title-en="Place a negative point in an excluded region">SAT3D -</button>
-                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="clearSat3dPromptPoints()" id="toolSat3dClear" title="Clear SAT3D points" data-i18n-zh="清除点" data-i18n-en="Clear pts">Clear pts</button>
+                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="clearSat3dPromptPoints()" id="toolSat3dClear" title="Clear SAT3D points" data-i18n-zh="清除点" data-i18n-en="Clear points">Clear points</button>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="prepareSat3dInteraction()" id="toolSat3dSettings" data-i18n-zh="交互分割" data-i18n-en="Segment…">Segment…</button>
                 <div class="ctrl-sep" style="height:16px;"></div>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="viewerFlipH()">&#8644; FlipH</button>
@@ -1362,6 +1382,11 @@
                 <button id="sat3dRun" class="btn btn-primary" style="padding:5px 10px;font-size:.68rem;" onclick="runSat3dInteractive()" disabled data-i18n-zh="运行分割" data-i18n-en="Run segmentation">Run segmentation</button>
                 <button class="file-btn" onclick="closeSat3dInteraction()" aria-label="Close SAT3D controls">×</button>
             </div>
+            <section class="implant-toolbar" aria-label="Implanted seed observations">
+                <h3 data-i18n-zh="体内粒子识别与修正" data-i18n-en="Implanted seed detection and correction">Implanted seed detection and correction</h3>
+                <div id="implantObservationActions"></div>
+                <div id="implantObservationStatus" role="status" aria-live="polite"></div>
+            </section>
             <div class="viewer-workspace" style="display:flex;flex:1;min-height:0;overflow:hidden;">
                 <!-- Data Tree Sidebar -->
                 <div class="data-tree-container" id="dataTreeContainer" style="position:relative;">
@@ -1565,7 +1590,7 @@
                         <input type="range" min="0" max="100" value="40" id="doseOpacity" oninput="updateDoseOpacity(this.value)">
                         <div class="ctrl-sep"></div>
                         <label class="ctrl-toggle">
-                            <input type="checkbox" id="labelShow3d" checked onchange="updateLabelImage('3d')">
+                            <input type="checkbox" id="labelShow3d" onchange="updateLabelImage('3d')">
                             Label
                         </label>
                         <label>Op</label>
@@ -1610,33 +1635,40 @@
   versioned change so implicit legacy bindings cannot break selectively.
 -->
 <script src="static/js/brachybot-chat-core.js?v=41"></script>
-<script src="static/js/brachybot-chat-todo.js?v=75"></script>
-<script src="static/js/brachybot-ui-api.js?v=136"></script>
+<script src="static/js/brachybot-chat-target.js?v=1"></script>
+<script src="static/js/brachybot-chat-todo.js?v=76"></script>
+<script src="static/js/brachybot-ui-api.js?v=143"></script>
 <link rel="stylesheet" href="static/css/brachybot-control-guide.css?v=1">
 <script src="static/js/brachybot-control-guide.js?v=1"></script>
 <link rel="stylesheet" href="static/css/brachybot-monitor-dashboard.css?v=8">
 <script src="static/js/brachybot-monitor-interaction.js?v=10"></script>
 <script src="static/js/brachybot-monitor-dashboard.js?v=9"></script>
 <script src="static/js/brachybot-auth.js?v=12"></script>
-<script src="static/js/brachybot-viewer-volume.js?v=93"></script>
-<script src="static/js/brachybot-viewer-layout.js?v=49"></script>
+<script src="static/js/brachybot-viewer-volume.js?v=94"></script>
+<script src="static/js/brachybot-viewer-layout.js?v=53"></script>
 <script src="static/js/brachybot-depth-peeling.js?v=2"></script>
-<script src="static/js/brachybot-3d-manual.js?v=124"></script>
-<script src="static/js/brachybot-planning-distance-annotations.js?v=1"></script>
+<script src="static/js/brachybot-3d-manual.js?v=125"></script>
+<script src="static/js/brachybot-planning-distance-annotations.js?v=3"></script>
 <script src="static/js/brachybot-artifact-tree.js?v=1"></script>
 <script src="static/js/brachybot-manual-step-results.js?v=2"></script>
-<script src="static/js/brachybot-input-actions.js?v=1"></script>
+<script src="static/js/brachybot-input-actions.js?v=2"></script>
 <script src="static/js/brachybot-manual-annotation.js?v=34"></script>
 <script src="static/js/brachybot-sat3d-interaction.js?v=1"></script>
-<script src="static/js/brachybot-surgical-guide.js?v=22"></script>
+<script src="static/js/brachybot-surgical-guide.js?v=23"></script>
 <script src="static/js/brachybot-visual-annotation.js?v=9"></script>
-<script src="static/js/brachybot-dvh-planning.js?v=43"></script>
-<script src="static/js/brachybot-report-shell.js?v=35"></script>
+<script src="static/js/brachybot-dvh-planning.js?v=47"></script>
+<script src="static/js/brachybot-report-shell.js?v=39"></script>
 <script src="static/js/brachybot-report-plan-tables.js?v=1"></script>
 <script src="static/js/brachybot-report-editor.js?v=58"></script>
-<script src="static/js/brachybot-workspace.js?v=74"></script>
+<script src="static/js/brachybot-workspace.js?v=81"></script>
+<script src="static/js/brachybot-timepoints.js?v=5"></script>
+<link rel="stylesheet" href="static/css/brachybot-implant-observations.css?v=1">
+<script src="static/js/brachybot-implant-observations.js?v=1"></script>
+<link rel="stylesheet" href="static/css/brachybot-timepoint-workspace.css?v=1">
+<script src="static/js/brachybot-guide-registration.js?v=1"></script>
+<script src="static/js/brachybot-timepoint-workspace.js?v=6"></script>
 <script src="static/js/brachybot-session-cache.js?v=4"></script>
-<script src="static/js/brachybot-report-export.js?v=45"></script>
+<script src="static/js/brachybot-report-export.js?v=50"></script>
 <script src="static/js/brachybot-data-export.js?v=5"></script>
 <script src="static/js/brachybot-range-stepper.js?v=2"></script>
 <script src="static/js/brachybot-theme.js?v=1"></script>

@@ -150,6 +150,9 @@ function _restoreManualNeedles(snapshot) {
 }
 
 async function _confirmNeedleReplan(needleId) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     if (typeof _confirmAction !== 'function') return false;
     return _confirmAction(
         `针道 ${needleId} 已移动。是否使用新的几何位置重新规划？`,
@@ -231,6 +234,9 @@ function _manualPayload(options = {}) {
 }
 
 async function _confirmSeedReplan(seedId) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     if (typeof _confirmAction !== 'function') return true;
     return _confirmAction(
         `\u7C92\u5B50 ${seedId} \u5DF2\u79FB\u52A8\uFF0C\u662F\u5426\u6309\u65B0\u4F4D\u7F6E\u91CD\u65B0\u8BA1\u7B97\u5242\u91CF\u548C DVH\uFF1F`,
@@ -509,8 +515,8 @@ function _seedInterferenceDetails(interference = {}) {
         const clearance = Number(pair.surface_clearance_mm);
         const center = Number(pair.center_distance_mm);
         const measured = Number.isFinite(clearance)
-            ? `${pair.clearance_basis === 'finite_parallel_cylinders' ? 'finite surface gap' : 'axis-model clearance bound'} ${clearance.toFixed(2)} mm`
-            : (Number.isFinite(center) ? `centre ${center.toFixed(2)} mm` : 'unsafe spacing');
+            ? `${pair.clearance_basis === 'finite_parallel_cylinders' ? 'surface-to-surface clearance' : 'surface-clearance lower bound (axis model)'} ${clearance.toFixed(2)} mm`
+            : (Number.isFinite(center) ? `center-to-center distance ${center.toFixed(2)} mm` : 'unsafe spacing');
         return `${first} / ${second} (${measured})`;
     });
     return {
@@ -520,6 +526,9 @@ function _seedInterferenceDetails(interference = {}) {
 }
 
 async function _confirmSeedSafetyConflict(seedId, error) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     // If the confirmation UI is unavailable, fail closed: an unsafe edit is
     // restored instead of being retained without an explicit operator choice.
     if (typeof _confirmAction !== 'function') return false;
@@ -527,7 +536,7 @@ async function _confirmSeedSafetyConflict(seedId, error) {
     const details = _seedInterferenceDetails(interference);
     const detailZh = details.zh ? `详情：${details.zh}。` : '';
     const detailEn = details.en ? `Details: ${details.en}.` : '';
-    const restore = await _confirmAction(
+    const restore = await __tpAwait(() => (_confirmAction(
         `粒子 ${seedId} 的新位置检测到重叠或安全间距不足。${detailZh}`
             + '请选择：恢复本次编辑前的位置，或忽略警告保留本次编辑。保留后不会删除其他粒子或针道，但 Dose、DVH、质量检查、报告和手术导板将标记为过期。',
         `The new position for seed ${seedId} violates seed spacing or safety constraints. ${detailEn} Choose whether to restore the pre-edit position or keep this edit. Keeping it will not delete any other seed or needle, but Dose, DVH, quality check, report, and Surgical Guide will be marked stale.`,
@@ -541,7 +550,7 @@ async function _confirmSeedSafetyConflict(seedId, error) {
             // Dismissing the modal is equivalent to the recommended restore.
             dismissAsYes: true,
         },
-    );
+    )));
     return restore !== true;
 }
 
@@ -738,9 +747,12 @@ function _applyAuthoritativeManualSeeds(data) {
 }
 
 async function _commitManualSeeds(reason, rollbackSeeds, rollbackNeedles = null, options = {}) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(options?.timepointScope);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const ownerSessionId = _activeApiSessionId();
     const payload = _manualPayload(options);
-    const response = await fetch(API + '/manual_planning/update_seeds', {
+    const response = await __tpAwait(() => (fetch(API + '/manual_planning/update_seeds', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -755,8 +767,8 @@ async function _commitManualSeeds(reason, rollbackSeeds, rollbackNeedles = null,
             allow_unsafe_creation: payload.allow_unsafe_creation === true,
             seed_creation_mode: payload.seed_creation_mode,
         }),
-    });
-    const data = await response.json().catch(() => null);
+    })));
+    const data = await __tpAwait(() => (response.json().catch(() => null)));
     const sameSession = ownerSessionId === _activeApiSessionId();
     if (!response.ok || !data || !data.success) {
         if (sameSession) _cancelStaleManualDoseWork(`manual_seed_${reason}_rejected`);
@@ -801,9 +813,12 @@ async function _commitManualSeeds(reason, rollbackSeeds, rollbackNeedles = null,
 }
 
 async function _deleteNeedleAuthoritatively(needleId) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const payload = _manualPayload();
     const ownerSessionId = payload.session_id;
-    const response = await fetch(API + '/manual_planning/delete_needle', {
+    const response = await __tpAwait(() => (fetch(API + '/manual_planning/delete_needle', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -813,8 +828,8 @@ async function _deleteNeedleAuthoritatively(needleId) {
             needle_id: String(needleId),
             reason: 'needle_delete',
         }),
-    });
-    const data = await response.json().catch(() => null);
+    })));
+    const data = await __tpAwait(() => (response.json().catch(() => null)));
     const sameSession = ownerSessionId === _activeApiSessionId();
     if (!response.ok || !data || !data.success) {
         // A stale-version response carries the server's current snapshot. It
@@ -847,8 +862,11 @@ async function _deleteNeedleAuthoritatively(needleId) {
 }
 
 async function _persistNeedleGeometryOnly(options = {}) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(options?.timepointScope);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const payload = _manualPayload();
-    const res = await fetch(API + '/manual_planning/update_geometry', {
+    const res = await __tpAwait(() => (fetch(API + '/manual_planning/update_geometry', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -859,8 +877,8 @@ async function _persistNeedleGeometryOnly(options = {}) {
             needles: payload.needles,
             reason: options.reason || 'needle_position_only',
         }),
-    });
-    const data = await res.json().catch(() => null);
+    })));
+    const data = await __tpAwait(() => (res.json().catch(() => null)));
     if (!res.ok || !data || !data.success) {
         _cancelStaleManualDoseWork(`${options.reason || 'needle_position_only'}_rejected`);
         if (data && Array.isArray(data.seeds) && Array.isArray(data.needles)) {
@@ -936,6 +954,9 @@ function _findFreeNeedleSlot(baseCenter, dir) {
 }
 
 async function addManualNeedle() {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     if (manualPlanningState.needleMutationRunning) return null;
     manualPlanningState.needleMutationRunning = true;
     const rollback = _cloneManualPlanningSnapshot();
@@ -1004,11 +1025,11 @@ async function addManualNeedle() {
         // Adding a needle must not change the user's current 3D view. The user
         // can explicitly press Fit/Reset when the new object needs framing.
         if (scene3D.requestRender) scene3D.requestRender(4);
-        const committed = await _persistNeedleGeometryOnly({
+        const committed = await __tpAwait(() => (_persistNeedleGeometryOnly({
             reason: 'needle_add',
             rollbackNeedles: rollback.needles,
             rollbackSnapshot: rollback,
-        });
+        })));
         _setManualDoseProgress('done', _manualText(
             `已添加针道 ${id}。Dose、DVH、报告和手术导板已标记为需要更新。`,
             `Needle ${id} added. Dose, DVH, report, and Surgical Guide are now stale.`,
@@ -1016,7 +1037,7 @@ async function addManualNeedle() {
         const placementNote = slot.offset_mm > 0.5
             ? _manualText(
                 `为避开已有针道，插入中心自动外移 ${slot.offset_mm.toFixed(1)} mm（最近针道间距 ${slot.gap_mm ?? '?'} mm）。`,
-                `To clear existing needles the insertion centre was offset by ${slot.offset_mm.toFixed(1)} mm (nearest needle gap ${slot.gap_mm ?? '?'} mm).`,
+                `To avoid the existing needles, the insertion point was shifted by ${slot.offset_mm.toFixed(1)} mm (minimum separation from another needle ${slot.gap_mm ?? '?'} mm).`,
             )
             : '';
         addChat('system', _manualText(
@@ -1030,6 +1051,7 @@ async function addManualNeedle() {
         });
         return dataTreeState.planning.needles.find(item => item.id === id) || needle;
     } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
         _cancelStaleManualDoseWork('needle_add_rejected');
         _restoreManualPlanningSnapshot(rollback);
         _setManualDoseProgress('error', _manualText(
@@ -1042,7 +1064,7 @@ async function addManualNeedle() {
         ));
         return null;
     } finally {
-        manualPlanningState.needleMutationRunning = false;
+        if (!__tpOwner || window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) manualPlanningState.needleMutationRunning = false;
     }
 }
 
@@ -1076,6 +1098,9 @@ function addManualSeedToPlanningNode(nodeId, options = {}) {
 window.addManualSeedToPlanningNode = addManualSeedToPlanningNode;
 
 async function addManualSeed(targetNeedleId = null, options = {}) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(options?.timepointScope);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     if (manualPlanningState.seedMutationRunning) return null;
     manualPlanningState.seedMutationRunning = true;
     _setManualDoseProgress('running', _manualText('正在保存新增粒子…', 'Saving the new seed...'));
@@ -1147,10 +1172,10 @@ async function addManualSeed(targetNeedleId = null, options = {}) {
     _syncSeedsOverlayFromDataTree();
     renderDataTree();
     try {
-        const committed = await _commitManualSeeds('add', rollbackSeeds, null, {
+        const committed = await __tpAwait(() => (_commitManualSeeds('add', rollbackSeeds, null, {
             allowUnsafeCreation: true,
             seedCreationMode: 'draft',
-        });
+        })));
         _reportCommittedManualEvent(committed, 'manual.seed.add', seed.id, {
             seed_id: seed.id,
             needle_id: needle.id,
@@ -1180,6 +1205,7 @@ async function addManualSeed(targetNeedleId = null, options = {}) {
         if (!spacingWarning) scheduleManualDoseRecompute('seed_add');
         return savedSeed;
     } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
         _setManualDoseProgress('error', _manualText(
             `新增粒子失败：${_manualErrorDetail(error)}`,
             `Seed creation failed: ${_manualErrorDetail(error)}`,
@@ -1190,7 +1216,7 @@ async function addManualSeed(targetNeedleId = null, options = {}) {
         ));
         return null;
     } finally {
-        manualPlanningState.seedMutationRunning = false;
+        if (!__tpOwner || window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) manualPlanningState.seedMutationRunning = false;
     }
 }
 
@@ -1291,7 +1317,7 @@ function recoverOrphanedManualDoseProgress() {
         && !manualPlanningState.doseRecomputeScheduledPromise) {
         _setManualDoseProgress('error', _manualText(
             '上一轮剂量重算的浏览器连接已中断；修改仍已保存，请重新计算剂量。',
-            'The previous dose update was interrupted by the browser; the edit is saved, so retry dose calculation.',
+            'The browser connection for the previous dose recalculation was interrupted; the edit is saved, so retry the dose calculation.',
         ));
     }
 }
@@ -1312,6 +1338,9 @@ function _manualPostReplanSleep(delayMs) {
 }
 
 async function _refreshManualReplanArtifacts(data, options = {}) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(options?.timepointScope);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const sessionId = String(data?.session_id || _activeApiSessionId() || '');
     const planningId = String(data?.planning_id || manualPlanningState.planningId || '');
     const requestSequence = options.requestSequence ?? null;
@@ -1323,11 +1352,11 @@ async function _refreshManualReplanArtifacts(data, options = {}) {
     // needle meshes.  Report capture must never start against its old frame.
     const viewerRefresh = manualPlanningState.backgroundDoseViewerRefresh;
     if (viewerRefresh && typeof viewerRefresh.then === 'function') {
-        await viewerRefresh.catch(error => {
+        await __tpAwait(() => (viewerRefresh.catch(error => {
             if (_manualPostReplanIsCurrent(sessionId, sequence, planningId, requestSequence)) {
                 console.warn('[manual replan] Viewer refresh failed:', error);
             }
-        });
+        })));
     }
     if (!_manualPostReplanIsCurrent(sessionId, sequence, planningId, requestSequence)) {
         return { stale: true };
@@ -1344,13 +1373,14 @@ async function _refreshManualReplanArtifacts(data, options = {}) {
             ),
         );
         try {
-            guideUpdated = await window.ensureSurgicalGuideForCurrentPlan({
+            guideUpdated = await __tpAwait(() => (window.ensureSurgicalGuideForCurrentPlan({
                 sessionId,
                 planningId,
                 autoGenerate: true,
                 forceRegenerate: true,
-            });
+            })));
         } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
             guideUpdated = false;
             console.warn('[manual replan] Surgical guide refresh failed:', error);
         }
@@ -1364,11 +1394,13 @@ async function _refreshManualReplanArtifacts(data, options = {}) {
 
     // Guide generation repaints the MPR contour, but keep the final Viewer
     // frame deterministic before the report capture transaction starts.
-    try { if (typeof loadAllSlices === 'function') await loadAllSlices(); } catch (error) {
+    try { if (typeof loadAllSlices === 'function') await __tpAwait(() => (loadAllSlices())); } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
         console.warn('[manual replan] final slice refresh failed:', error);
     }
-    try { if (typeof forceRender3DViewer === 'function') forceRender3DViewer(); } catch (_) {}
-    await _manualPostReplanSleep(0);
+    try { if (typeof forceRender3DViewer === 'function') forceRender3DViewer(); } catch (_) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };}
+    await __tpAwait(() => (_manualPostReplanSleep(0)));
     if (!_manualPostReplanIsCurrent(sessionId, sequence, planningId, requestSequence)) {
         return { stale: true };
     }
@@ -1385,28 +1417,29 @@ async function _refreshManualReplanArtifacts(data, options = {}) {
             }
             try {
                 if (typeof window.awaitWorkspaceVisualReady === 'function') {
-                    const ready = await window.awaitWorkspaceVisualReady(sessionId, {
+                    const ready = await __tpAwait(() => (window.awaitWorkspaceVisualReady(sessionId, {
                         timeoutMs: 300000,
                         waitForCompletion: true,
                         reason: 'manual-replan-report',
-                    });
+                    })));
                     if (ready?.ready === false) throw new Error('Viewer resources are not ready');
                 }
-                const result = await Report.autoFill.fromAll({
+                const result = await __tpAwait(() => (Report.autoFill.fromAll({
                     sessionId,
                     planningId,
                     captureFigures: true,
                     allowTerminalPlanning: true,
-                });
+                })));
                 if (result?.success === true) {
                     reportUpdated = true;
                     break;
                 }
                 reportWarning = String(result?.error || result?.warning || 'Report figures were not ready');
             } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
                 reportWarning = String(error?.message || error || 'Report regeneration failed');
             }
-            if (attempt === 0) await _manualPostReplanSleep(1200);
+            if (attempt === 0) await __tpAwait(() => (_manualPostReplanSleep(1200)));
         }
     } else {
         reportWarning = 'Report auto-fill is unavailable';
@@ -1439,7 +1472,7 @@ async function _refreshManualReplanArtifacts(data, options = {}) {
             )
             : _manualText(
                 '重新规划完成：剂量、DVH、报告和 Viewer 已按最新针道同步；当前没有需要重建的既有导板。',
-                'Replan complete: dose, DVH, report, and Viewer are synchronized; no existing guide needed regeneration.',
+                'Replan complete: dose, DVH, report, and Viewer are synchronized to the latest needle geometry; there is no existing guide that needs regeneration.',
             );
         _setManualDoseProgress('done', syncMessage);
         addChat('system', syncMessage);
@@ -1460,6 +1493,9 @@ async function _refreshManualReplanArtifacts(data, options = {}) {
 }
 
 async function _runManualDoseJob(job) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(job?.timepointScope);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     if (!job || job.cancelled) return null;
     const { payload, wasDoseTextureEnabled } = job;
     const jobSessionId = String(payload.session_id || '');
@@ -1492,17 +1528,19 @@ async function _runManualDoseJob(job) {
     // large CT. The former hard 120 s client abort caused
     // "signal is aborted without reason" while the server kept working.
     const doseTimeoutMs = incrementalSeedEdit ? 600000 : 900000;
-    const doseTimeout = setTimeout(() => {
+    const doseTimeout = setTimeout(window.BrachyBotTimepointWorkspace?.callbackOwned(__tpOwner, () => {
         if (doseController) doseController.abort();
-    }, doseTimeoutMs);
+    }) || (() => {
+        if (doseController) doseController.abort();
+    }), doseTimeoutMs);
     try {
-        const res = await fetch(API + '/manual_planning/update', {
+        const res = await __tpAwait(() => (fetch(API + '/manual_planning/update', {
             method: 'POST',
             headers: _monitorRequestHeaders(),
             body: JSON.stringify(payload),
             ...(doseController ? { signal: doseController.signal } : {}),
-        });
-        const data = await res.json().catch(() => null);
+        })));
+        const data = await __tpAwait(() => (res.json().catch(() => null)));
         if (!res.ok || !data || !data.success) {
             const error = new Error((data && data.error) || `HTTP ${res.status}`);
             error.code = data && data.code;
@@ -1530,10 +1568,10 @@ async function _runManualDoseJob(job) {
         // canvases, dose textures, and any missing overlay metadata hydrate.
         // Those viewer updates are session-fenced and continue in the
         // background so the user can keep editing the current plan.
-        await _refreshManualDoseViews(data, wasDoseTextureEnabled, {
+        await __tpAwait(() => (_refreshManualDoseViews(data, wasDoseTextureEnabled, {
             background: true,
             requestSequence,
-        });
+        })));
         _reportCommittedManualEvent(data, 'manual.dose', payload.reason || 'manual_update', {
             dose_recomputed: true,
         });
@@ -1566,7 +1604,7 @@ async function _runManualDoseJob(job) {
                 requestSequence,
             });
             manualPlanningState.postReplanPromise = postReplanPromise;
-            const downstream = await postReplanPromise;
+            const downstream = await __tpAwait(() => (postReplanPromise));
             if (manualPlanningState.postReplanPromise === postReplanPromise) {
                 manualPlanningState.postReplanPromise = null;
             }
@@ -1579,6 +1617,7 @@ async function _runManualDoseJob(job) {
         }
         return data;
     } catch (e) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
         if (job.cancelled) return null;
         if (jobSessionId !== String(_activeApiSessionId() || '')) return null;
         const abortedWithoutReason = /signal is aborted without reason/i.test(
@@ -1646,7 +1685,7 @@ async function _runManualDoseJob(job) {
             }
             const preservedMessage = _manualText(
                 '剂量更新因当前粒子位置问题失败；当前全部粒子和针道已保留。Dose、DVH、质量检查、报告和手术导板已标记为过期，请修正位置后再重算。',
-                'Dose update failed for the retained seed geometry. All seeds and needles were kept; Dose, DVH, quality check, report, and Surgical Guide are stale. Correct the geometry and retry.',
+                'Dose update failed because of a problem with the current seed positions. All seeds and needles were retained; Dose, DVH, quality check, report, and Surgical Guide are stale. Correct the positions and recalculate.',
             );
             _setManualDoseProgress('error', preservedMessage);
             addChat('error', preservedMessage);
@@ -1687,6 +1726,9 @@ async function _runManualDoseJob(job) {
 }
 
 async function recomputeManualDose(reason = 'manual_update', options = {}) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(options?.timepointScope);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     if (manualPlanningState.doseRecomputeTimer) {
         clearTimeout(manualPlanningState.doseRecomputeTimer);
         manualPlanningState.doseRecomputeTimer = null;
@@ -1716,7 +1758,7 @@ async function recomputeManualDose(reason = 'manual_update', options = {}) {
         && state.doseTexture
         && (state.doseTexture.desiredEnabled ?? state.doseTexture.enabled)
     );
-    manualPlanningState._doseRecomputeJob = { payload, wasDoseTextureEnabled };
+    manualPlanningState._doseRecomputeJob = { payload, wasDoseTextureEnabled, timepointScope: __tpOwner };
     if (manualPlanningState.doseRecomputeRunning) {
         // Invalidate the active job immediately. This prevents a response
         // that finishes while refreshPlanningUI is awaiting mesh work from
@@ -1737,12 +1779,14 @@ async function recomputeManualDose(reason = 'manual_update', options = {}) {
             do {
                 manualPlanningState.doseRecomputeQueued = false;
                 const job = manualPlanningState._doseRecomputeJob;
-                result = await _runManualDoseJob(job);
+                result = await __tpAwait(() => (_runManualDoseJob(job)));
             } while (manualPlanningState.doseRecomputeQueued && manualPlanningState._doseRecomputeJob);
         } finally {
-            manualPlanningState.doseRecomputeRunning = false;
-            manualPlanningState.doseRecomputeQueued = false;
-            manualPlanningState._doseRecomputePromise = null;
+            if (!__tpOwner || window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) {
+                manualPlanningState.doseRecomputeRunning = false;
+                manualPlanningState.doseRecomputeQueued = false;
+                manualPlanningState._doseRecomputePromise = null;
+            }
         }
         return result;
     })();
@@ -1760,6 +1804,7 @@ function cancelScheduledManualDoseRecompute() {
 window.cancelScheduledManualDoseRecompute = cancelScheduledManualDoseRecompute;
 
 function scheduleManualDoseRecompute(reason = 'manual_update', delayMs = 800) {
+    const timepointScope = window.BrachyBotTimepointWorkspace?.captureRequestScope?.();
     cancelScheduledManualDoseRecompute();
     const ownerSessionId = String(_activeApiSessionId() || '');
     manualPlanningState.doseRecomputeOwnerSessionId = ownerSessionId;
@@ -1769,6 +1814,7 @@ function scheduleManualDoseRecompute(reason = 'manual_update', delayMs = 800) {
     ));
     manualPlanningState.doseRecomputeScheduledPromise = new Promise(resolve => {
         manualPlanningState.doseRecomputeTimer = setTimeout(async () => {
+            if (timepointScope && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope)) { resolve(null); return; }
             manualPlanningState.doseRecomputeTimer = null;
             if (ownerSessionId !== String(_activeApiSessionId() || '')) {
                 manualPlanningState.doseRecomputeOwnerSessionId = null;
@@ -1776,7 +1822,7 @@ function scheduleManualDoseRecompute(reason = 'manual_update', delayMs = 800) {
                 return;
             }
             try {
-                resolve(await recomputeManualDose(reason));
+                resolve(await recomputeManualDose(reason, { timepointScope }));
             } catch (error) {
                 _setManualDoseProgress('error', _manualText(
                     `剂量更新失败：${_manualErrorDetail(error)}`,
@@ -1830,6 +1876,9 @@ function _projectPointOntoNeedle(position, needle) {
 }
 
 async function onManualSeedEdited(seedId, position, rollbackSeeds = null, options = {}) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(options?.timepointScope);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const rollback = Array.isArray(rollbackSeeds) ? rollbackSeeds : _cloneManualSeeds();
     // Some 3D callers update the mesh/Data Tree optimistically before this
     // async handler runs. Rebuild the pre-edit snapshot from the explicit
@@ -1859,11 +1908,12 @@ async function onManualSeedEdited(seedId, position, rollbackSeeds = null, option
     let committed;
     let safetyOverride = false;
     try {
-        committed = await _commitManualSeeds('move', rollback);
+        committed = await __tpAwait(() => (_commitManualSeeds('move', rollback)));
     } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
         if (error?.code !== 'manual_seed_interference') throw error;
 
-        const keepEdit = await _confirmSeedSafetyConflict(seedId, error);
+        const keepEdit = await __tpAwait(() => (_confirmSeedSafetyConflict(seedId, error)));
         if (!keepEdit) {
             // The rejected transaction already applied the server's
             // authoritative pre-edit geometry. Keep a local fallback for a
@@ -1897,7 +1947,7 @@ async function onManualSeedEdited(seedId, position, rollbackSeeds = null, option
         // that can only be produced by this explicit confirmation path.
         _restoreManualPlanningSnapshot(proposedSnapshot);
         try {
-            committed = await _commitManualSeeds(
+            committed = await __tpAwait(() => (_commitManualSeeds(
                 'move',
                 rollback,
                 null,
@@ -1905,8 +1955,9 @@ async function onManualSeedEdited(seedId, position, rollbackSeeds = null, option
                     allowUnsafe: true,
                     safetyOverride: 'user_confirmed',
                 },
-            );
+            )));
         } catch (overrideError) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
             // A second interference rejection means the override transaction
             // itself could not be committed (for example, another edit won a
             // version race). Fail closed and leave the server-authoritative
@@ -1965,14 +2016,14 @@ async function onManualSeedEdited(seedId, position, rollbackSeeds = null, option
             || options.doseRecomputeDecision === 'no';
         const shouldReplan = hasPriorDecision
             ? options.doseRecomputeDecision === 'yes'
-            : await _confirmSeedReplan(seedId);
+            : await __tpAwait(() => (_confirmSeedReplan(seedId)));
         if (shouldReplan) {
-            await recomputeManualDose('seed_drag', {
+            await __tpAwait(() => (recomputeManualDose('seed_drag', {
                 previousSeeds: rollback,
                 allowUnsafe: safetyOverride ? true : undefined,
                 safetyOverride: safetyOverride ? 'user_confirmed' : undefined,
                 preserveGeometryOnFailure: safetyOverride,
-            });
+            })));
         } else {
             const message = _manualText(
                 `已保存 ${seedId} 的位置，尚未重新计算剂量。`,
@@ -1985,6 +2036,9 @@ async function onManualSeedEdited(seedId, position, rollbackSeeds = null, option
 }
 
 async function onManualNeedleHandleEdited(handle, preEditSnapshot = null) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const needleId = handle?.userData?.needleId;
     const pointIndex = handle?.userData?.pointIndex;
     const needle = dataTreeState.planning.needles.find(n => n.id === needleId);
@@ -2011,11 +2065,11 @@ async function onManualNeedleHandleEdited(handle, preEditSnapshot = null) {
         && trainingMonitorState.active && trainingMonitorState.sessionId === _activeApiSessionId();
     if (!hasSeeds || monitoringEdit) {
         try {
-            const committed = await _persistNeedleGeometryOnly({
+            const committed = await __tpAwait(() => (_persistNeedleGeometryOnly({
                 reason: 'needle_drag',
                 rollbackNeedles: previousNeedles,
                 rollbackSnapshot: previousSnapshot,
-            });
+            })));
             _reportCommittedManualEvent(committed, 'manual.needle.drag', needleId, {
                 needle_id: needleId,
                 point_index: pointIndex,
@@ -2031,6 +2085,7 @@ async function onManualNeedleHandleEdited(handle, preEditSnapshot = null) {
                 `${needleId} position saved. Dose recomputation is deferred until seeds are present.`,
             ));
         } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
             _setManualDoseProgress('error', _manualText(
                 `保存 ${needleId} 失败：${_manualErrorDetail(error)}`,
                 `Could not save ${needleId}: ${_manualErrorDetail(error)}`,
@@ -2049,15 +2104,15 @@ async function onManualNeedleHandleEdited(handle, preEditSnapshot = null) {
     if (manualPlanningState.needleReplanPrompt) return manualPlanningState.needleReplanPrompt.promise;
     const prompt = { previousNeedles, promise: null };
     prompt.promise = (async () => {
-        const shouldReplan = await _confirmNeedleReplan(needleId);
+        const shouldReplan = await __tpAwait(() => (_confirmNeedleReplan(needleId)));
         if (manualPlanningState.needleReplanPrompt !== prompt) return false;
         manualPlanningState.needleReplanPrompt = null;
         if (!shouldReplan) {
-            const committed = await _persistNeedleGeometryOnly({
+            const committed = await __tpAwait(() => (_persistNeedleGeometryOnly({
                 reason: 'needle_drag',
                 rollbackNeedles: previousNeedles,
                 rollbackSnapshot: previousSnapshot,
-            });
+            })));
             _reportCommittedManualEvent(committed, 'manual.needle.drag', needleId, {
                 needle_id: needleId,
                 point_index: pointIndex,
@@ -2066,16 +2121,16 @@ async function onManualNeedleHandleEdited(handle, preEditSnapshot = null) {
             });
             const kept = _manualText(
                 `已保留 ${needleId} 的当前位置，未触发重新规划。`,
-                `Needle ${needleId} position kept. Replanning skipped.`,
+                `The position of needle ${needleId} was retained. No replanning was performed.`,
             );
             addChat('system', kept);
             return false;
         }
-        const result = await recomputeManualDose('needle_drag', {
+        const result = await __tpAwait(() => (recomputeManualDose('needle_drag', {
             reprojectSeeds: true,
             previousNeedles: prompt.previousNeedles,
             previousSnapshot,
-        });
+        })));
         if (!result) return false;
         return true;
     })().catch(error => {
@@ -2092,6 +2147,9 @@ async function onManualNeedleHandleEdited(handle, preEditSnapshot = null) {
 }
 
 async function _refreshManualDoseViews(data, wasDoseTextureEnabled, options = {}) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(options?.timepointScope);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const metrics = data?.metrics || {};
     manualPlanningState.planningId = data?.planning_id || manualPlanningState.planningId;
     manualPlanningState.planningVersion = Number(
@@ -2146,8 +2204,10 @@ async function _refreshManualDoseViews(data, wasDoseTextureEnabled, options = {}
         Object.entries(scene3D?.meshes || {}).forEach(([id, mesh]) => {
             if (mesh?.userData?.type !== 'seed' || authoritativeSeedIds.has(String(id))) return;
             scene3D.scene?.remove(mesh);
-            try { mesh.geometry?.dispose?.(); } catch (_) {}
-            try { mesh.material?.dispose?.(); } catch (_) {}
+            try { mesh.geometry?.dispose?.(); } catch (_) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };}
+            try { mesh.material?.dispose?.(); } catch (_) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };}
             delete scene3D.meshes[id];
         });
         for (const seed of dataTreeState?.planning?.seeds || []) {
@@ -2161,7 +2221,8 @@ async function _refreshManualDoseViews(data, wasDoseTextureEnabled, options = {}
     state.dvhData = metrics.dvh_data || data?.dvh_data || null;
     state.dvhPlanningId = data?.planning_id || manualPlanningState.planningId || null;
     if (state.dvhData && typeof drawDVH === 'function') {
-        try { await drawDVH(); } catch (error) { console.warn('[manual dose] DVH refresh failed:', error); }
+        try { await __tpAwait(() => (drawDVH())); } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true }; console.warn('[manual dose] DVH refresh failed:', error); }
     }
     if (typeof renderDataTree === 'function') renderDataTree();
 
@@ -2190,12 +2251,13 @@ async function _refreshManualDoseViews(data, wasDoseTextureEnabled, options = {}
         if (typeof refreshAllViewerCanvases === 'function') {
             refreshAllViewerCanvases('manual-dose-refresh-start');
         }
-        if (typeof loadDoseOverlay === 'function') await loadDoseOverlay();
+        if (typeof loadDoseOverlay === 'function') await __tpAwait(() => (loadDoseOverlay()));
         if (!isRefreshOwner()) return;
-        if (typeof loadAllSlices === 'function' && state.ctLoaded) await loadAllSlices();
+        if (typeof loadAllSlices === 'function' && state.ctLoaded) await __tpAwait(() => (loadAllSlices()));
 
         if (wasDoseTextureEnabled && typeof setDoseTextureMode === 'function') {
-            try { await setDoseTextureMode(true, { silent: true }); } catch (error) {
+            try { await __tpAwait(() => (setDoseTextureMode(true, { silent: true }))); } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
                 console.warn('[manual dose] dose texture refresh failed:', error);
             }
         }
@@ -2223,7 +2285,7 @@ async function _refreshManualDoseViews(data, wasDoseTextureEnabled, options = {}
         manualPlanningState.backgroundDoseViewerRefresh = refreshPromise;
         return;
     }
-    await refreshViewer();
+    await __tpAwait(() => (refreshViewer()));
 }
 
 function _manualUiPosition(rawPosition) {
@@ -2233,6 +2295,9 @@ function _manualUiPosition(rawPosition) {
 }
 
 async function moveManualNeedleEndpointFromUi(value) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const payload = typeof value === 'string' ? JSON.parse(value) : (value || {});
     const needleId = String(payload.needle_id || payload.needleId || '');
     const pointIndex = Number.parseInt(payload.point_index ?? payload.pointIndex, 10);
@@ -2252,6 +2317,9 @@ async function moveManualNeedleEndpointFromUi(value) {
 }
 
 async function moveManualSeedFromUi(value) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const payload = typeof value === 'string' ? JSON.parse(value) : (value || {});
     const seedId = String(payload.seed_id || payload.seedId || '');
     const position = _manualUiPosition(payload.position);
@@ -2289,20 +2357,21 @@ function clearTrainingMonitorLocal(ownerSessionId = null, ownerRunId = null) {
     return true;
 }
 
-function _monitorRequestHeaders() {
+function _monitorRequestHeaders(scope = null) {
     const headers = { 'Content-Type': 'application/json' };
     const csrfToken = window.brachybotAuth?.csrfToken;
     if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
-    return headers;
+    return window.BrachyBotTimepointWorkspace?.headers(scope || window.BrachyBotTimepointWorkspace?.captureRequestScope?.(), headers) || headers;
 }
 
-async function _readTrainingMonitorStatus(timeoutMs = 5000) {
+async function _readTrainingMonitorStatus(timeoutMs = 5000, scope = null) {
+    const requestHeaders = _monitorRequestHeaders(scope);
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
     const timer = setTimeout(() => controller?.abort(), timeoutMs);
     try {
         const response = await fetch(API + '/training/status', {
             method: 'GET',
-            headers: _monitorRequestHeaders(),
+            headers: requestHeaders,
             signal: controller?.signal,
             cache: 'no-store',
         });
@@ -2336,6 +2405,8 @@ function _showRecoveredMonitorSummary(status, sessionId, runId, language, screen
 // advice report. The backend endpoint is idempotent, so an old run after a
 // server restart is a normal already-closed outcome.
 function releaseTrainingMonitorForSession(sessionId, reason = 'session_switch', options = {}) {
+    const timepointScope = options.timepointScope || trainingMonitorState.timepointScope
+        || window.BrachyBotTimepointWorkspace?.captureRequestScope?.();
     const sid = String(sessionId || '').trim();
     if (!sid) return Promise.resolve({ success: true, already_stopped: true });
     const localOwns = typeof trainingMonitorState !== 'undefined'
@@ -2358,7 +2429,7 @@ function releaseTrainingMonitorForSession(sessionId, reason = 'session_switch', 
     try {
         return fetch(API + '/training/stop', {
             method: 'POST',
-            headers: _monitorRequestHeaders(),
+            headers: _monitorRequestHeaders(timepointScope),
             body,
             keepalive: options.keepAlive !== false,
         }).then(async response => {
@@ -2387,6 +2458,8 @@ if (!window.__brachybotMonitorPageLifecycleHook) {
 }
 
 async function startTrainingMode(goal = 'Monitor planning workflow') {
+    const timepointScope = window.BrachyBotTimepointWorkspace?.captureRequestScope?.();
+    const requestHeaders = _monitorRequestHeaders(timepointScope);
     const startSessionId = _activeApiSessionId();
     if (['starting', 'active', 'stopping'].includes(trainingMonitorState.phase)) return null;
     if (trainingMonitorState.phase === 'stop_error') {
@@ -2401,6 +2474,7 @@ async function startTrainingMode(goal = 'Monitor planning workflow') {
         ? globalThis.crypto.randomUUID()
         : `monitor-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     trainingMonitorState.sessionId = startSessionId;
+    trainingMonitorState.timepointScope = timepointScope;
     trainingMonitorState.runId = runId;
     // A new monitoring run starts a fresh feedback/screenshot budget. These
     // timers are UX throttles, not case data, so they must not leak across
@@ -2440,7 +2514,7 @@ async function startTrainingMode(goal = 'Monitor planning workflow') {
     try {
         const res = await fetch(API + '/training/start', {
             method: 'POST',
-            headers: _monitorRequestHeaders(),
+            headers: requestHeaders,
             body: JSON.stringify({
                 session_id: trainingMonitorState.sessionId,
                 goal,
@@ -2449,6 +2523,7 @@ async function startTrainingMode(goal = 'Monitor planning workflow') {
             }),
         });
         const data = await res.json().catch(() => null);
+        if (timepointScope && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope)) return data;
         if (res.status === 409 && data?.monitor_run_id) {
             // The server owns an existing case run. Do not discard its ID or
             // pretend a new run started; offer an explicit Finish/retry path.
@@ -2513,11 +2588,13 @@ async function startTrainingMode(goal = 'Monitor planning workflow') {
         return data;
     } catch (e) {
         const definiteReject = [400, 401, 403, 404, 422, 429].includes(Number(e?.httpStatus));
+        if (timepointScope && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope)) return null;
         if (!definiteReject && trainingMonitorState.sessionId === startSessionId
             && trainingMonitorState.runId === runId
             && _activeApiSessionId() === startSessionId) {
             let status = null;
-            try { status = await _readTrainingMonitorStatus(); } catch (_) {}
+            try { status = await _readTrainingMonitorStatus(5000, timepointScope); } catch (_) {}
+            if (timepointScope && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope)) return null;
             if (status?.active && status.monitor_run_id === runId) {
                 window.setTrainingMonitorPhase?.('active');
                 if (typeof _inputButtonProgress === 'function') _inputButtonProgress(
@@ -2571,6 +2648,8 @@ async function startTrainingMode(goal = 'Monitor planning workflow') {
 }
 
 async function stopTrainingMode() {
+    const timepointScope = trainingMonitorState.timepointScope || window.BrachyBotTimepointWorkspace?.captureRequestScope?.();
+    const requestHeaders = _monitorRequestHeaders(timepointScope);
     if (trainingMonitorState.phase === 'stopping') return null;
     const stopSessionId = ['starting', 'active', 'stop_error'].includes(trainingMonitorState.phase)
         ? (trainingMonitorState.sessionId || _activeApiSessionId())
@@ -2580,7 +2659,8 @@ async function stopTrainingMode() {
         // A failed stop or restored browser may have lost its local run ID.
         // An explicit Finish command must consult the case-owned server lease.
         try {
-            const status = await _readTrainingMonitorStatus();
+            const status = await _readTrainingMonitorStatus(5000, timepointScope);
+            if (timepointScope && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope)) return status;
             if (!status.active && !status.closing) {
                 clearTrainingMonitorLocal(stopSessionId);
                 addChat('bot-response', _manualText('当前没有正在运行的监测任务。', 'No monitor run is active for this case.'),
@@ -2619,7 +2699,7 @@ async function stopTrainingMode() {
     try {
         const res = await fetch(API + '/training/stop', {
             method: 'POST',
-            headers: _monitorRequestHeaders(),
+            headers: requestHeaders,
             signal: stopController?.signal,
             body: JSON.stringify({
                 session_id: stopSessionId,
@@ -2628,6 +2708,7 @@ async function stopTrainingMode() {
             }),
         });
         const data = await res.json().catch(() => null);
+        if (timepointScope && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope)) return data;
         const serverError = String(data?.error || '').toLowerCase();
         const reportsClosedRun = /no longer active|not active|already stopped|already closed|run not found/.test(serverError);
         const alreadyClosed = !!(data && (
@@ -2705,11 +2786,13 @@ async function stopTrainingMode() {
         return data;
     } catch (e) {
         const errorDetail = _manualErrorDetail(e);
+        if (timepointScope && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope)) return { success: false, stale: true };
         if (typeof _inputButtonProgress === 'function') _inputButtonProgress('training_monitor_stop', 'error', '\u7ed3\u675f\u76d1\u6d4b', 'Stop monitor mode', errorDetail || _manualText('\u7ed3束失败', 'Failed to stop'));
         // An aborted response does not prove that the server discarded the
         // stop. Reconcile against the case lease before changing local state.
         let status = null;
-        try { status = await _readTrainingMonitorStatus(); } catch (_) {}
+        try { status = await _readTrainingMonitorStatus(5000, timepointScope); } catch (_) {}
+        if (timepointScope && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope)) return { success: false, stale: true };
         const ownsRun = trainingMonitorState.runId === stopRunId
             && trainingMonitorState.sessionId === stopSessionId
             && _activeApiSessionId() === stopSessionId;
@@ -2779,6 +2862,9 @@ function _formatAdviceReport(advice, prefix = '', language = null) {
 }
 
 async function requestPlanningAdvice(options = {}) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(options?.timepointScope);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const adviceEpoch = window._planningAdviceEpoch = Number(window._planningAdviceEpoch || 0) + 1;
     const adviceSessionId = _activeApiSessionId();
     const adviceRunId = trainingMonitorState.runId;
@@ -2790,7 +2876,7 @@ async function requestPlanningAdvice(options = {}) {
         && adviceVersion === manualPlanningState.planningVersion
         && advicePlanId === manualPlanningState.planningId;
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 45000);
+    const timeout = setTimeout(window.BrachyBotTimepointWorkspace?.callbackOwned(__tpOwner, () => controller.abort()) || (() => controller.abort()), 45000);
     const requestOptions = typeof options === 'string' ? { question: options } : (options || {});
     const question = String(requestOptions.question || '').trim();
     const detectedLanguage = question && typeof detectConversationLanguage === 'function'
@@ -2812,13 +2898,13 @@ async function requestPlanningAdvice(options = {}) {
             payload.question = question;
             payload.natural_language = true;
         }
-        const res = await fetch(API + '/training/advice', {
+        const res = await __tpAwait(() => (fetch(API + '/training/advice', {
             signal: controller.signal,
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
-        });
-        const data = await res.json().catch(() => null);
+        })));
+        const data = await __tpAwait(() => (res.json().catch(() => null)));
         if (!stillCurrent()) return null;
         if (!res.ok || !data || !data.success) throw new Error((data && data.error) || `HTTP ${res.status}`);
         const naturalResponse = String(data.natural_response || '').trim();
@@ -2834,7 +2920,7 @@ async function requestPlanningAdvice(options = {}) {
                 ? '基于当前指标和界面状态的详细规划建议：'
                 : 'Detailed plan advice based on current metrics and UI state:';
             const copies=data.advice_by_language && Object.fromEntries(['zh','en'].map(lang=>[lang,
-                _formatAdviceReport(data.advice_by_language[lang],lang==='zh'?'当前规划详细建议':'Detailed current-plan advice',lang)]));
+                _formatAdviceReport(data.advice_by_language[lang],lang==='zh'?'当前规划详细建议':'Detailed guidance for the current plan',lang)]));
             if(copies && window.addMonitorLocalizedChat) window.addMonitorLocalizedChat('bot-response',copies,true,Date.now(),false,_activeApiSessionId(),
                 {messageId:`assistant-monitor-${adviceRunId}-advice-${Date.now()}`,messageKind:'monitor_feedback'});
             else addChat('bot-response', _formatAdviceReport(advice, prefix, displayLanguage));
@@ -2845,6 +2931,7 @@ async function requestPlanningAdvice(options = {}) {
         if (typeof _inputButtonProgress === 'function') _inputButtonProgress('planning_advice', 'done', '\u89c4\u5212建议', 'Planning advice', _manualText('\u5df2\u5b8c\u6210', 'Completed'));
         return data;
     } catch (e) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
         if (!stillCurrent()) return null;
         const errorDetail = _manualErrorDetail(e);
         if (typeof _inputButtonProgress === 'function') _inputButtonProgress('planning_advice', 'error', '\u89c4\u5212建议', 'Planning advice', errorDetail || _manualText('\u751f\u6210失败', 'Failed'));
@@ -2855,7 +2942,8 @@ async function requestPlanningAdvice(options = {}) {
         return null;
     } finally {
         clearTimeout(timeout);
-        if (!stillCurrent() && adviceSessionId === _activeApiSessionId()
+        if ((!__tpOwner || window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner))
+            && !stillCurrent() && adviceSessionId === _activeApiSessionId()
             && adviceEpoch === window._planningAdviceEpoch
             && typeof _inputButtonProgress === 'function') {
             _inputButtonProgress('planning_advice', 'done', '规划建议', 'Planning advice',
@@ -3325,7 +3413,10 @@ function init3DScene() {
         const geometry = syncViewer3DSize();
         if (!geometry) {
             drawingFrame = false;
-            if (pendingFrames > 0) setTimeout(() => requestRender(1), 50);
+            // A hidden panel has zero geometry. Polling it every 50 ms kept
+            // waking the main thread throughout report editing. Retain the
+            // pending budget; ResizeObserver/panel activation resumes rendering
+            // when the canvas actually has geometry (including report capture).
             return;
         }
         const controlsChanged = scene3D.controls.update();
@@ -3415,6 +3506,7 @@ function init3DScene() {
     window.resizeViewer3D = resizeViewer3D;
     window.render3DSceneNow = renderSceneNow;
     scene3D.requestRender = requestRender;
+    window.BrachyBotImplants?.bindInteractions();
     // Compatibility bridge for a tab that briefly mixes static asset
     // revisions during a deployment. Older viewer-layout helpers resolved
     // requestRender from the global scope; keep that call safe until every
@@ -3583,6 +3675,7 @@ function init3DScene() {
     };
 
     const beginNeedleHandleDrag = (event) => {
+        if(window.BrachyBotImplants?.owns3DPointer(event))return false;
         if (event.button !== 0 || !scene3D.camera) return false;
         if (pendingNeedleHandle) {
             event.preventDefault();
@@ -3724,6 +3817,7 @@ function init3DScene() {
     // attached to the wrapper, so OrbitControls could consume the same left
     // click first and turn a seed drag into a camera rotation.
     const handlePlanningPointerDown = (event) => {
+        if(window.BrachyBotImplants?.owns3DPointer(event))return;
         if (event.button !== 0) return; // Only left click
         if (event.__brachyNeedleHandle) return;
 
@@ -4054,7 +4148,7 @@ function init3DScene() {
                 needleDragRollback = null;
                 addChat('system', _manualText(
                     `${finishedObject.userData.needleId} 针道端点已在画面中预览，正在等待保存和安全校验。`,
-                    `Needle endpoint preview moved for ${finishedObject.userData.needleId}; save and safety validation are pending.`,
+                    `The endpoint of needle ${finishedObject.userData.needleId} has moved in the preview. Saving and safety checks are still pending.`,
                 ));
                 if (typeof onManualNeedleHandleEdited === 'function') {
                     onManualNeedleHandleEdited(finishedObject, preEditSnapshot).catch(e => console.warn('manual needle edit failed:', e));
@@ -5728,6 +5822,9 @@ function toggle3DWireframe(on) {
 }
 
 async function toggle3DSkin(on) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     // The Surgical Guide skin envelope is the canonical skin object whenever
     // it exists. Route the legacy toolbar checkbox through its Data Tree node
     // so 2D/3D visibility, opacity, session restore, and guide QA stay aligned.
@@ -5735,7 +5832,7 @@ async function toggle3DSkin(on) {
         dataTreeState.skin.visible = true;
         dataTreeState.skin.visible3D = !!on;
         if (on && !scene3D.meshes.skin_surface && typeof reconstructOrgan3D === 'function') {
-            await reconstructOrgan3D('skin_surface', true);
+            await __tpAwait(() => (reconstructOrgan3D('skin_surface', true)));
         }
         window.applyDataTreeViewVisibility?.();
         renderDataTree?.();
@@ -5752,7 +5849,7 @@ async function toggle3DSkin(on) {
         thresholdMask.visible3D = !!on;
         thresholdMask.visible = !!on;
         if (on && !scene3D.meshes.mask_threshold && typeof reconstructOrgan3D === 'function') {
-            await reconstructOrgan3D('mask_threshold', true);
+            await __tpAwait(() => (reconstructOrgan3D('mask_threshold', true)));
         }
         if (typeof window.applyDataTreeViewVisibility === 'function') window.applyDataTreeViewVisibility();
         if (typeof renderDataTree === 'function') renderDataTree();
@@ -5776,7 +5873,7 @@ async function toggle3DSkin(on) {
     // Fetch CT skin mesh from server
     const requestScope = _capturePlanningSceneScope();
     try {
-        const request = await _fetchViewerJsonWithRetry(API + '/viewer/3d_skin', {
+        const request = await __tpAwait(() => (_fetchViewerJsonWithRetry(API + '/viewer/3d_skin', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -5786,7 +5883,7 @@ async function toggle3DSkin(on) {
         }, {
             requestTimeoutMs: 120000,
             maxWaitMs: 300000,
-        });
+        })));
         const res = request.response;
         if (!res?.ok) {
             throw request.error || new Error(`HTTP ${res?.status || 500}`);
@@ -5823,6 +5920,7 @@ async function toggle3DSkin(on) {
             }
         }
     } catch (e) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
         if (_planningSceneScopeIsCurrent(requestScope)) console.error('CT skin failed:', e);
     }
 }
@@ -5887,15 +5985,17 @@ function _activePlanningSceneSessionId() {
 }
 
 function _capturePlanningSceneScope() {
-    return {
+    return Object.freeze({
         generation: _planningSceneLoadGeneration,
         sessionId: _activePlanningSceneSessionId(),
-    };
+        timepointScope: window.BrachyBotTimepointWorkspace?.captureRequestScope?.(),
+    });
 }
 
 function _planningSceneScopeIsCurrent(scope) {
     return !!scope
         && scope.generation === _planningSceneLoadGeneration
+        && (!scope.timepointScope || window.BrachyBotTimepointWorkspace.scopeIsCurrent(scope.timepointScope))
         && scope.sessionId === _activePlanningSceneSessionId();
 }
 
@@ -5916,7 +6016,8 @@ let _seeds3DLoadInFlight = null;
 async function _fetchPlanningSeeds3D(requestScope) {
     const request = await _fetchViewerJsonWithRetry(
         API + '/planning/seeds_3d',
-        { headers: { 'X-BrachyBot-Session': requestScope.sessionId } },
+        { headers: window.BrachyBotTimepointWorkspace?.headers(requestScope.timepointScope,
+            { 'X-BrachyBot-Session': requestScope.sessionId }) || { 'X-BrachyBot-Session': requestScope.sessionId } },
         { requestTimeoutMs: 120000, maxWaitMs: 300000 },
     );
     if (!request.response) {
@@ -6986,6 +7087,9 @@ async function _loadAllIsoSurfaces(options = {}, scope = null) {
 }
 
 async function reconstructDoseIsosurface3D(idOrThreshold) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const threshold = Number(String(idOrThreshold ?? '').replace(/^dose_iso_/, ''));
     if (!Number.isFinite(threshold)) throw new Error('Invalid dose iso-surface threshold');
     const level = (dataTreeState?.planning?.doseLevels || []).find(item => Math.abs(Number(item.threshold) - threshold) < 1e-6);
@@ -7004,7 +7108,7 @@ async function reconstructDoseIsosurface3D(idOrThreshold) {
     level.error = null;
     try {
         renderDataTree();
-        const result = await loadDoseIsosurface(Number(level.threshold), color);
+        const result = await __tpAwait(() => (loadDoseIsosurface(Number(level.threshold), color)));
         if (result?.stale) {
             level.loading = false;
             level.status = 'stale';
@@ -7034,6 +7138,7 @@ async function reconstructDoseIsosurface3D(idOrThreshold) {
             : 'Dose isosurface ' + Number(level.threshold) + ' Gy was reconstructed in 3D.');
         return { success: true, threshold: Number(level.threshold), reconstructed: true };
     } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
         level.loading = false;
         level.status = 'error';
         level.error = error?.message || String(error);
@@ -7052,10 +7157,13 @@ async function reconstructDoseIsosurface3D(idOrThreshold) {
     }
 }
 async function reconstructDoseIsosurfaces3D() {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const levels = (dataTreeState?.planning?.doseLevels || []).slice();
     const results = [];
     for (const level of levels) {
-        results.push(await reconstructDoseIsosurface3D(level.threshold));
+        results.push(await __tpAwait(() => (reconstructDoseIsosurface3D(level.threshold))));
     }
     const reconstructed = results.filter(result => result?.success === true).length;
     const failed = results.length - reconstructed;
@@ -7160,6 +7268,9 @@ const _VIEWER_RESOURCE_REQUEST_TIMEOUT_MS = 120000;
 const _VIEWER_RESOURCE_MAX_WAIT_MS = 300000;
 
 async function _fetchViewerJsonWithRetry(url, init = {}, options = {}) {
+    // A retry is the same request. Freeze scope headers before the first wait.
+    const capturedScope = options.timepointScope || window.BrachyBotTimepointWorkspace?.captureRequestScope?.();
+    init = { ...init, headers: window.BrachyBotTimepointWorkspace?.headers(capturedScope, init.headers || {}) || init.headers };
     const requestTimeoutMs = Math.max(
         1000,
         Number(options.requestTimeoutMs) || _VIEWER_RESOURCE_REQUEST_TIMEOUT_MS,
@@ -7295,17 +7406,21 @@ window.fetchViewerJsonWithRetry = _fetchViewerJsonWithRetry;
 // Replanning replaces geometry through the authoritative planner, not a
 // dose-only reprojection. Ask before replacing deliberate manual edits.
 async function replanManualPlan() {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     let owner;
     try {
         owner = window.beginInputAction('geometry_replan_confirmation', {mutation: true, image: true});
-        const yes = await _confirmAction(
+        const yes = await __tpAwait(() => (_confirmAction(
             '重新优化针道和粒子并重算剂量？当前手动几何会被新规划替代，旧规划保留为历史版本；这不是仅重投影关联粒子。',
-            'Optimize needles and seeds again and recompute dose? The new plan replaces the current manual geometry; the previous plan remains in history. This is not just seed reprojection.');
+            'Optimize needles and seeds again and recompute dose? The new plan replaces the current manual geometry; the previous plan remains in history. This is not just seed reprojection.')));
         if (!owner.current()) return {detached: true};
         if (!yes) return {cancelled: true};
         owner.finish();
-        return await runPlanning();
+        return await __tpAwait(() => (runPlanning()));
     } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
         if (!owner || owner.current()) addChat('error', String(error.message || error));
         return {success: false};
     } finally {
@@ -7324,6 +7439,10 @@ function _labelIdInMask(labelData, labelId) {
 }
 
 async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, opacity, visible2D = true, visible3D = true, force = false, smoothing = 1, generation = _segmentationMeshPrewarm.generation, sessionId = null }) {
+    const timepointScope = window.BrachyBotTimepointWorkspace?.captureRequestScope?.();
+    const requestHeaders = window.BrachyBotTimepointWorkspace?.headers(timepointScope, {
+        'Content-Type': 'application/json', 'X-BrachyBot-Session': String(sessionId || _activePlanningSceneSessionId()),
+    });
     if (labelId === undefined || labelId === null || !source || !organId) return { status: 'invalid' };
     if (!force && _sceneHasMesh(organId)) return { status: 'exists', id: organId };
 
@@ -7348,7 +7467,7 @@ async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, o
             // A forced rebuild follows a new segmentation/import. Its mesh
             // cache belongs to the prior data version and must not win over
             // the freshly published server geometry.
-            if (sid && window.SessionCache && !force) {
+            if (sid && window.SessionCache && !force && !timepointScope) {
                 const cacheKey = `mesh:${labelId}:${source}:${smoothing}`;
                 // IndexedDB is an optimisation only. A browser profile can
                 // hold a large stale record or a blocked transaction after a
@@ -7378,7 +7497,7 @@ async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, o
                     API + '/viewer/3d_mask',
                     {
                         method: 'POST',
-                        headers: {
+                        headers: requestHeaders || {
                             'Content-Type': 'application/json',
                             'X-BrachyBot-Session': String(sessionId || _activePlanningSceneSessionId()),
                         },
@@ -7415,12 +7534,13 @@ async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, o
                 return { status: 'too_large', id: organId };
             }
             // Cache the raw JSON so the next restore skips the fetch.
-            if (sid && window.SessionCache) {
+            if (sid && window.SessionCache && !timepointScope) {
                 const cacheKey = `mesh:${labelId}:${source}:${smoothing}`;
                 const enc = new TextEncoder();
                 window.SessionCache.put(sid, 'mesh', cacheKey, enc.encode(JSON.stringify(data)).buffer).catch(function(){});
             }
             if (generation !== _segmentationMeshPrewarm.generation
+                || (timepointScope && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope))
                 || (sessionId != null && sessionId !== state.sessionId)) {
                 return { status: 'stale', id: organId };
             }
@@ -7724,6 +7844,7 @@ function startSegmentationMeshPrewarm(kind = 'all', opts = {}) {
 function _structuralMeshScopeIsCurrent(scope) {
     return !!scope
         && scope.generation === _segmentationMeshPrewarm.generation
+        && (!scope.timepointScope || window.BrachyBotTimepointWorkspace.scopeIsCurrent(scope.timepointScope))
         && scope.sessionId === _activePlanningSceneSessionId();
 }
 
@@ -7749,6 +7870,7 @@ async function _loadCTVAndObstacleMeshes(options, scope) {
             // boundary without starting a partial mesh pass first.
             await loadLabelVolumes({
                 sessionId: scope.sessionId,
+                timepointScope: scope.timepointScope,
                 preserveViewerState: true,
             });
         }
@@ -7777,6 +7899,7 @@ async function _loadCTVAndObstacleMeshes(options, scope) {
 
         uiDebugLog(`[loadCTVAndObstacle] Frozen structural target set: CTV=${ctvLabelIds.length}, OAR=${allOarIds ? allOarIds.length : 0}`);
         const prewarmResult = await prewarmSegmentationMeshes('all', {
+            sessionId:scope.sessionId,timepointScope:scope.timepointScope,
             allOAR: Array.isArray(allOarIds),
             oarIds: allOarIds,
             showStatus: false,
@@ -7815,11 +7938,13 @@ function loadCTVAndObstacleMeshes(options = {}) {
     const scope = {
         generation: _segmentationMeshPrewarm.generation,
         sessionId,
+        timepointScope: window.BrachyBotTimepointWorkspace?.captureRequestScope?.(options.timepointScope),
     };
     const existing = _structuralMeshReconstructionInFlight;
     if (existing
         && existing.scope.generation === scope.generation
-        && existing.scope.sessionId === scope.sessionId) {
+        && existing.scope.sessionId === scope.sessionId
+        && JSON.stringify(existing.scope.timepointScope) === JSON.stringify(scope.timepointScope)) {
         return existing.promise;
     }
 
@@ -8365,6 +8490,10 @@ function handlePlanningPreviewEvent(event) {
 window.handlePlanningPreviewEvent = handlePlanningPreviewEvent;
 window.clearPlanningPreview = clearPlanningPreview;
 window.addEventListener('i18nchange', () => {
+    const doseButton = document.getElementById('doseTextureToggle');
+    if (doseButton) doseButton.textContent = state.doseTexture?.enabled
+        ? (window._t?.('结构颜色','Structure colors') || 'Structure colors')
+        : (window._t?.('剂量着色','Dose coloring') || 'Dose coloring');
     if (!_planningPreviewState.latestEvent) return;
     _showPlanningPreviewStatus(_planningPreviewState.latestEvent);
 });
@@ -8414,6 +8543,9 @@ function _invalidateDoseForPlanningRun(detail = {}) {
 }
 
 async function _refreshDoseAfterPlanningEvent(detail = {}) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     if (!_planningEventBelongsToCurrentSession(detail)) return;
     _planningDoseRefreshQueued = true;
     if (_planningDoseRefreshPromise) return _planningDoseRefreshPromise;
@@ -8421,7 +8553,7 @@ async function _refreshDoseAfterPlanningEvent(detail = {}) {
         do {
             _planningDoseRefreshQueued = false;
             if (typeof refreshPlanningUI === 'function') {
-                await refreshPlanningUI({
+                await __tpAwait(() => (refreshPlanningUI({
                     sessionId: detail.sessionId || undefined,
                     // dose_calc is emitted immediately after the backend has
                     // stored the grid, but the workspace checkpoint and the
@@ -8446,10 +8578,11 @@ async function _refreshDoseAfterPlanningEvent(detail = {}) {
                     // already-captured run still captures nothing.
                     captureReportFigures: true,
                     reason: 'dose-result-updated',
-                });
+                })));
             } else if (typeof loadDoseOverlay === 'function') {
-                await loadDoseOverlay();
-                try { loadAllSlices?.(); } catch (_) {}
+                await __tpAwait(() => (loadDoseOverlay()));
+                try { loadAllSlices?.(); } catch (_) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };}
             }
         } while (_planningDoseRefreshQueued);
     })().finally(() => { _planningDoseRefreshPromise = null; });
@@ -8932,6 +9065,9 @@ function syncDoseColorbarControls() {
 window.syncDoseColorbarControls = syncDoseColorbarControls;
 
 async function applyDoseColorbarSettings() {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const scope = _validDoseColorbarScope(document.getElementById('doseColorbarScope')?.value);
     const minGy = Number(document.getElementById('doseColorbarMinInput')?.value);
     const maxGy = Number(document.getElementById('doseColorbarMaxInput')?.value);
@@ -8948,13 +9084,14 @@ async function applyDoseColorbarSettings() {
     if (scope === 'twoD') {
         updateDoseColorbars(!!state.doseOverlay?.visible);
         if (typeof invalidateDoseOverlayRenderCache === 'function') invalidateDoseOverlayRenderCache();
-        try { await loadAllSlices(); } catch (_) {}
+        try { await __tpAwait(() => (loadAllSlices())); } catch (_) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };}
         if (typeof refreshAllViewerCanvases === 'function') refreshAllViewerCanvases('dose-colorbar-2d');
     } else {
         update3DColorbar(!!state.doseTexture?.enabled);
         if (state.doseTexture?.enabled) {
             const entries = Object.entries(scene3D.meshes || {}).filter(([id, mesh]) => _isDoseTexturableMesh(id, mesh));
-            await Promise.all(entries.map(([id, mesh]) => _applyDoseTextureToMesh(id, mesh)));
+            await __tpAwait(() => (Promise.all(entries.map(([id, mesh]) => _applyDoseTextureToMesh(id, mesh)))));
             forceRender3DViewer();
         }
         if (typeof refreshAllViewerCanvases === 'function') refreshAllViewerCanvases('dose-colorbar-3d');
@@ -8974,15 +9111,17 @@ function resetDoseColorbarSettings() {
 
 async function loadDoseOverlay() {
     if (_doseOverlayLoadPromise) return _doseOverlayLoadPromise;
-    _doseOverlayLoadPromise = _loadDoseOverlayImpl();
+    const ownPromise = _loadDoseOverlayImpl();
+    _doseOverlayLoadPromise = ownPromise;
     try {
-        return await _doseOverlayLoadPromise;
+        return await ownPromise;
     } finally {
-        _doseOverlayLoadPromise = null;
+        if (_doseOverlayLoadPromise === ownPromise) _doseOverlayLoadPromise = null;
     }
 }
 
 async function _loadDoseOverlayImpl() {
+    const timepointScope = window.BrachyBotTimepointWorkspace?.captureRequestScope?.();
     const requestGeneration = _doseOverlayLoadGeneration;
     const requestSessionId = _doseOverlaySessionId();
     try {
@@ -9002,6 +9141,7 @@ async function _loadDoseOverlayImpl() {
         // task, but it must discard render payloads that belong to the old
         // case before mutating shared viewer state.
         if (requestGeneration !== _doseOverlayLoadGeneration
+            || (timepointScope && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(timepointScope))
             || requestSessionId !== _doseOverlaySessionId()) {
             return { stale: true };
         }
@@ -10386,10 +10526,13 @@ function clearPlanningVisualization() {
 
 // Delete a seed through the same authoritative geometry transaction as drag.
 async function deleteSeed3D(seedId) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const seed = dataTreeState.planning.seeds.find(item => item.id === seedId);
     if (!seed) return false;
     const confirmed = typeof _confirmAction === 'function'
-        ? await _confirmAction(
+        ? await __tpAwait(() => (_confirmAction(
             `删除粒子 ${seedId}？删除后剂量、DVH、报告和质量检查需要重新计算。`,
             `Delete seed ${seedId}? Dose, DVH, report, and quality checks will need recalculation.`,
             {
@@ -10400,7 +10543,7 @@ async function deleteSeed3D(seedId) {
                 titleZh: '删除粒子',
                 titleEn: 'Delete seed',
             },
-        )
+        )))
         : false;
     if (!confirmed) return false;
 
@@ -10410,7 +10553,7 @@ async function deleteSeed3D(seedId) {
     _syncSeedsOverlayFromDataTree();
     renderDataTree();
     try {
-        const committed = await _commitManualSeeds('delete', rollbackSeeds);
+        const committed = await __tpAwait(() => (_commitManualSeeds('delete', rollbackSeeds)));
         _reportCommittedManualEvent(committed, 'manual.seed.delete', seedId, {
             seed_id: seedId,
             trajectory_id: seed.trajectory_id,
@@ -10426,6 +10569,7 @@ async function deleteSeed3D(seedId) {
         if (dataTreeState.planning.seeds.length > 0) scheduleManualDoseRecompute('seed_delete');
         return true;
     } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
         const message = typeof window._t === 'function'
             ? _manualText(`删除粒子失败：${_manualErrorDetail(error)}`, `Seed deletion failed: ${_manualErrorDetail(error)}`)
             : `Seed deletion failed: ${_manualErrorDetail(error)}`;
@@ -10436,13 +10580,16 @@ async function deleteSeed3D(seedId) {
 
 // Delete a needle through the same authoritative transaction as seed edits.
 async function deleteNeedle3D(needleId) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const requestedNeedleId = String(needleId ?? '').trim();
     const needle = dataTreeState.planning.needles.find(
         item => String(item.id ?? '').trim() === requestedNeedleId,
     );
     if (!needle || manualPlanningState.needleMutationRunning) return false;
     const confirmed = typeof _confirmAction === 'function'
-        ? await _confirmAction(
+        ? await __tpAwait(() => (_confirmAction(
             `删除针道 ${requestedNeedleId} 及其粒子？删除后剂量、DVH、报告和手术导板需要更新。`,
             `Delete needle ${requestedNeedleId} and its seeds? Dose, DVH, report, and Surgical Guide will need updating.`,
             {
@@ -10453,7 +10600,7 @@ async function deleteNeedle3D(needleId) {
                 titleZh: '删除针道',
                 titleEn: 'Delete needle',
             },
-        )
+        )))
         : false;
     if (!confirmed) return false;
 
@@ -10465,7 +10612,7 @@ async function deleteNeedle3D(needleId) {
         // the remaining seed list through update_seeds: that path validates
         // surviving seed spacing and can reject deletion because of an old,
         // unrelated overlap elsewhere in the plan.
-        const data = await _deleteNeedleAuthoritatively(requestedNeedleId);
+        const data = await __tpAwait(() => (_deleteNeedleAuthoritatively(requestedNeedleId)));
         if (data.stale) return false;
         const trajId = data.deleted_trajectory_id || needle.trajectory_id;
         const removedSeedCount = Array.isArray(data.removed_seed_ids)
@@ -10489,6 +10636,7 @@ async function deleteNeedle3D(needleId) {
         ));
         return true;
     } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
         // A 409 response may already have repainted the authoritative current
         // snapshot. Only restore the local pre-delete view for transport or
         // server failures that did not provide a newer snapshot.
@@ -10505,7 +10653,7 @@ async function deleteNeedle3D(needleId) {
         ));
         return false;
     } finally {
-        manualPlanningState.needleMutationRunning = false;
+        if (!__tpOwner || window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) manualPlanningState.needleMutationRunning = false;
     }
 }
 
@@ -10587,17 +10735,20 @@ function setNeedleOpacityFrom3D(needleId, opacity) {
 }
 
 async function restoreNeedleToAlgorithm(needleId) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const restoreSessionId = String(_activeApiSessionId() || '');
     const localize = (zh, en) => _manualText(zh, en);
     _setManualDoseProgress('running', localize(`正在将 ${needleId} 恢复到算法规划位置…`, `Restoring ${needleId} to the algorithm plan...`));
     addChat('system', localize(`正在将 ${needleId} 及其粒子恢复到算法规划结果…`, `Restoring ${needleId} and its seeds to the algorithm plan...`));
     try {
-        const res = await fetch(API + '/manual_planning/restore_needle', {
+        const res = await __tpAwait(() => (fetch(API + '/manual_planning/restore_needle', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ session_id: restoreSessionId, needle_id: needleId }),
-        });
-        const data = await res.json().catch(() => null);
+        })));
+        const data = await __tpAwait(() => (res.json().catch(() => null)));
         if (!res.ok || !data || !data.success) {
             throw new Error((data && data.error) || `HTTP ${res.status}`);
         }
@@ -10613,9 +10764,9 @@ async function restoreNeedleToAlgorithm(needleId) {
             // the user-visible restore transaction short and refresh only the
             // dose overlay/slices in the background; do not issue a second
             // /planning/seeds_3d request after the authoritative response.
-            await _refreshManualDoseViews(data, wasTexture, { background: true });
+            await __tpAwait(() => (_refreshManualDoseViews(data, wasTexture, { background: true })));
         } else {
-            if (typeof refreshPlanningUI === 'function') await refreshPlanningUI();
+            if (typeof refreshPlanningUI === 'function') await __tpAwait(() => (refreshPlanningUI()));
         }
         const message = data.fast_restore
             ? localize(`${needleId} 已恢复到算法规划位置，原始粒子和剂量已恢复。`, `${needleId} restored to the algorithm position; original seeds and dose were restored.`)
@@ -10627,6 +10778,7 @@ async function restoreNeedleToAlgorithm(needleId) {
         });
         return data;
     } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
         if (restoreSessionId !== String(_activeApiSessionId() || '')) return null;
         const message = localize(`针道恢复失败：${_manualErrorDetail(error)}`, `Needle restore failed: ${_manualErrorDetail(error)}`);
         _setManualDoseProgress('error', message);
@@ -10640,6 +10792,9 @@ async function restoreNeedleToAlgorithm(needleId) {
 // the existing commit path and dose recompute is offered, matching the
 // needle-endpoint restore semantics without a new slow backend round-trip.
 async function restoreAlgorithmPlan() {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const localize = (zh, en) => _manualText(zh, en);
     const restoreSessionId = String(_activeApiSessionId() || '');
     const message = localize(
@@ -10649,12 +10804,12 @@ async function restoreAlgorithmPlan() {
     _setManualDoseProgress('running', message);
     addChat('system', message);
     try {
-        const response = await fetch(API + '/manual_planning/restore_algorithm_plan', {
+        const response = await __tpAwait(() => (fetch(API + '/manual_planning/restore_algorithm_plan', {
             method: 'POST',
             headers: _monitorRequestHeaders(),
             body: JSON.stringify({ session_id: restoreSessionId }),
-        });
-        const data = await response.json().catch(() => null);
+        })));
+        const data = await __tpAwait(() => (response.json().catch(() => null)));
         if (!response.ok || !data || !data.success) {
             const error = new Error((data && data.error) || `HTTP ${response.status}`);
             error.code = data && data.code;
@@ -10664,7 +10819,7 @@ async function restoreAlgorithmPlan() {
         // Activation is a server-side namespace switch. Hydrate the active
         // Planning rather than recomputing or reconstructing a partial seed.
         if (typeof refreshPlanningUI === 'function') {
-            await refreshPlanningUI({
+            await __tpAwait(() => (refreshPlanningUI({
                 sessionId: restoreSessionId,
                 skipLabelLoad: true,
                 preserveViewerState: true,
@@ -10672,10 +10827,10 @@ async function restoreAlgorithmPlan() {
                 backgroundRestore: true,
                 retryPending: true,
                 autoGenerateGuide: false,
-            });
+            })));
         } else {
-            if (typeof loadSeeds3D === 'function') await loadSeeds3D();
-            if (typeof loadAllSlices === 'function' && state.ctLoaded) await loadAllSlices();
+            if (typeof loadSeeds3D === 'function') await __tpAwait(() => (loadSeeds3D()));
+            if (typeof loadAllSlices === 'function' && state.ctLoaded) await __tpAwait(() => (loadAllSlices()));
         }
         if (typeof window.refreshPlanningRunCatalog === 'function') {
             void window.refreshPlanningRunCatalog({ sessionId: restoreSessionId, silent: true });
@@ -10692,6 +10847,7 @@ async function restoreAlgorithmPlan() {
         reportUIEvent('planning.run.algorithm.restore', data.planning_id || data.active_planning_id, {});
         return data;
     } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
         if (restoreSessionId !== String(_activeApiSessionId() || '')) return null;
         const failure = localize(
             `恢复原始算法规划失败：${_manualErrorDetail(error)}`,
@@ -10706,6 +10862,9 @@ async function restoreAlgorithmPlan() {
 // Kept as a private compatibility shim for stale inline handlers. New UI
 // actions restore the complete Planning, never one seed plus a recomputation.
 async function _legacyRestoreSeedToOriginalPosition(seedId) {
+    const __tpOwner = window.BrachyBotTimepointWorkspace?.captureRequestScope?.(null);
+    const __tpAwait = operation => window.BrachyBotTimepointWorkspace?.awaitOwned(__tpOwner, operation) || operation();
+    const fetch = (input, init) => window.BrachyBotTimepointWorkspace?.fetchOwned(__tpOwner, input, init) || window.fetch(input, init);
     const localize = (zh, en) => _manualText(zh, en);
     const seed = dataTreeState.planning.seeds.find(item => item.id === seedId);
     const original = seed?._originalPosition;
@@ -10720,16 +10879,17 @@ async function _legacyRestoreSeedToOriginalPosition(seedId) {
         // Commit the geometry and recompute dose through the (now fast)
         // incremental path, then apply the lightweight view refresh instead of
         // reloading every CT label / OAR mesh / 3D object via refreshPlanningUI.
-        await onManualSeedEdited(seedId, original, null, {});
-        const doseResult = await recomputeManualDose('seed_restore');
+        await __tpAwait(() => (onManualSeedEdited(seedId, original, null, {})));
+        const doseResult = await __tpAwait(() => (recomputeManualDose('seed_restore')));
         if (doseResult && typeof doseResult.metrics === 'object' && typeof _refreshManualDoseViews === 'function') {
             const wasTexture = !!(state && state.doseTexture && state.doseTexture.enabled);
-            await _refreshManualDoseViews(doseResult, wasTexture);
+            await __tpAwait(() => (_refreshManualDoseViews(doseResult, wasTexture)));
         } else if (typeof refreshPlanningUI === 'function') {
-            await refreshPlanningUI();
+            await __tpAwait(() => (refreshPlanningUI()));
         }
         return doseResult;
     } catch (error) {
+            if (__tpOwner && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(__tpOwner)) return { success: false, stale: true };
         const message = localize(`粒子恢复失败：${_manualErrorDetail(error)}`, `Seed restore failed: ${_manualErrorDetail(error)}`);
         addChat('error', message);
         return null;
@@ -10737,5 +10897,6 @@ async function _legacyRestoreSeedToOriginalPosition(seedId) {
 }
 window.restoreAlgorithmPlan = restoreAlgorithmPlan;
 window.restoreSeedToOriginalPosition = restoreAlgorithmPlan;
+window.__timepointFrontendContracts = { ...window.__timepointFrontendContracts, meshes: 1 };
 
 /******** VIEWER INTERACTIVE TOOLS (Slicer-like) ********/

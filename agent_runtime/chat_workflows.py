@@ -503,11 +503,12 @@ class ChatWorkflowMixin:
             )
         ambiguous = bool(isinstance(visual, Mapping) and visual.get("ambiguous"))
         labels = list(visual.get("ambiguous_labels") or []) if isinstance(visual, Mapping) else []
-        label = "、".join(f"“{str(value)}”" for value in labels[:4])
+        label_zh = "、".join(f"“{str(value)}”" for value in labels[:4])
+        label_en = ", ".join(str(value) for value in labels[:4])
         requested = str((visual or {}).get("target_query") or message or "").strip()
         if response_lang == "zh":
             if ambiguous:
-                target = f"（匹配名称：{label}）" if label else ""
+                target = f"（匹配名称：{label_zh}）" if label_zh else ""
                 return (
                     f"当前界面目录中有多个不同对象符合该名称{target}，无法安全确定你指的是哪一个。"
                     "本轮没有截取或标注这些歧义对象，也没有推测其位置；请补充 Data Tree 父级路径，"
@@ -519,14 +520,14 @@ class ChatWorkflowMixin:
                 "并提供 Data Tree 中显示的完整名称或父级路径。"
             )
         if ambiguous:
-            target = f" (matching labels: {label})" if label else ""
+            target = f" (matching labels: {label_en})" if label_en else ""
             return (
                 f"Multiple distinct live objects match this name{target}, so I cannot safely choose one. "
                 "I did not capture or annotate an ambiguous object or infer its location. Please provide "
                 "its Data Tree parent path or identify the object in the Viewer."
             )
         return (
-            f"The current UI catalog cannot uniquely match “{requested[:160]}” to a loaded object. "
+            f'The current UI catalog cannot uniquely match "{requested[:160]}" to a loaded object. '
             "I did not substitute another object or infer a location. Please confirm the target is loaded "
             "and provide its exact Data Tree name or parent path."
         )
@@ -2427,22 +2428,22 @@ class ChatWorkflowMixin:
         is_zh = self._response_language(lang) == "zh"
         target = str(facts.get("analysis_target") or "")
         title = {
-            "surgical_guide": ("手术导板特征", "Puncture Guide Characteristics"),
+            "surgical_guide": ("手术导板特征", "Surgical Guide Characteristics"),
             "tumor": ("肿瘤特征", "Tumor Characteristics"),
             "dose": ("剂量分布特征", "Dose Distribution Characteristics"),
             "planning": ("当前规划特征", "Current Plan Characteristics"),
             "segmentation": ("分割结果特征", "Segmentation Characteristics"),
-            "seeds_needles": ("粒子/针道特征", "Seeds & Needles Characteristics"),
+            "seeds_needles": ("粒子/针道特征", "Seed and needle characteristics"),
             "report": ("报告内容特征", "Report Characteristics"),
-        }.get(target, ("制品特征分析", "Artifact Characteristics Analysis"))
+        }.get(target, ("制品特征分析", "Analysis of result characteristics"))
         lines = [
             f"## {title[0 if is_zh else 1]}",
             "",
             (
                 "以下是从当前 Session 读取到的可核验特征事实；未评估的判断已单独标出。"
                 if is_zh else
-                "The following verifiable characteristic facts come from the current "
-                "Session; anything not assessable from them is labeled explicitly."
+                "The following characteristics are supported by saved data from the current "
+                "Session; items that cannot be assessed are identified explicitly."
             ),
             "",
         ]
@@ -3094,7 +3095,7 @@ class ChatWorkflowMixin:
                     lines.append(f"- 画布尺寸：{canvas_w} × {canvas_h}。")
             if isinstance(mesh_count, int) and mesh_count > 0 and isinstance(visible_count, int) and visible_count == 0:
                 lines.append("这更像是模型被数据树可见性/透明度状态全部隐藏，或报告截图恢复过程未同步完成；不是 CT/规划数据必然丢失。")
-                lines.append("请先点击 3D Viewer 的 Normal Surface 或数据树的父级可见性开关；系统会在下一次渲染时尝试恢复有意显示的对象。")
+                lines.append("请先在 3D Viewer 中切回结构颜色，或使用数据树的父级可见性开关；系统会在下一次渲染时尝试恢复应当显示的对象。")
             elif isinstance(mesh_count, int) and mesh_count == 0:
                 lines.append("当前场景没有已加载的 3D 模型，通常表示 3D 重建尚未完成或重建结果没有重新挂载到当前会话。")
                 lines.append("可重新执行 3D Reconstruction/刷新 Viewer；这不会重新计算剂量。")
@@ -3113,7 +3114,7 @@ class ChatWorkflowMixin:
                 lines.append(f"- Canvas size: {canvas_w} x {canvas_h}.")
         if isinstance(mesh_count, int) and mesh_count > 0 and isinstance(visible_count, int) and visible_count == 0:
             lines.append("This points to all scene objects being hidden by data-tree visibility/opacity state, or to an incomplete report-capture restore; it does not by itself mean the CT or plan was lost.")
-            lines.append("Toggle Normal Surface or the relevant parent visibility control; the viewer will attempt a render-time recovery for objects that should be visible.")
+            lines.append("Switch the 3D Viewer back to Structure colors, or use the relevant parent visibility control in the Data Tree. The viewer will attempt to restore objects that should be visible on the next render.")
         elif isinstance(mesh_count, int) and mesh_count == 0:
             lines.append("The scene has no mounted 3D meshes, which usually means reconstruction has not completed or its results were not reattached to this session.")
             lines.append("Run 3D Reconstruction/refresh the Viewer; this does not recompute dose.")
@@ -3152,6 +3153,14 @@ class ChatWorkflowMixin:
         # The turn's original human message is immutable. Later tool receipts
         # may be stored under legacy user roles; they are never a new request.
         local.human_message = str(message or '')
+        context = getattr(self, "_active_turn_context", None) or {}
+        scope = context.get("timepoint_scope")
+        if scope is not None:
+            from agent_runtime.timepoint_targets import capture_human_target_evidence
+            from web.timepoint_chat import ChatTimepointScope
+            if isinstance(scope, ChatTimepointScope):
+                self._active_turn_context = {**context, "human_timepoint_evidence":
+                    capture_human_target_evidence(self._workspace_store, scope, local.human_message)}
         from agent_runtime.confirmation import PendingConfirmation
         from agent_runtime.request_parse import is_affirmative_acknowledgement
         local.confirmed_calls = (
@@ -3159,6 +3168,12 @@ class ChatWorkflowMixin:
             if isinstance(pending_confirmation, PendingConfirmation)
             and is_affirmative_acknowledgement(message) else ()
         )
+        from agent_runtime.timepoint_targets import ConfirmedTimepointCall
+        receipt = (getattr(self, "_active_turn_context", {}) or {}).get("human_timepoint_confirmation")
+        if isinstance(receipt, ConfirmedTimepointCall) and scope is not None:
+            call = json.loads(receipt.payload)
+            if receipt.permits(scope, call["tool"], call["params"], self._workspace_store, context.get("request_id")):
+                local.confirmed_calls = (*local.confirmed_calls, call)
         self._blocked_mutating_proposals = []
         local.blocked_names, local.blocked_proposals = [], []
         # Every chat turn receives a fresh authorization ledger.  Workflow
@@ -3263,7 +3278,7 @@ class ChatWorkflowMixin:
             material_text = (
                 "当前没有可读取的确定性资料。"
                 if str(getattr(getattr(self, "memory", None), "user_lang", "en")).startswith("zh")
-                else "No deterministic material was gathered for this turn."
+                else "No source-verified information was collected for this request."
             )
         if not bool(getattr(self, "brain_available", False)):
             return material_text
@@ -3319,6 +3334,9 @@ class ChatWorkflowMixin:
         runtime = config.get("agent_runtime", {}) if isinstance(config, Mapping) else {}
         runtime = runtime if isinstance(runtime, Mapping) else {}
         enabled = isinstance(config, Mapping) and runtime.get("intent_mode", "semantic_first") != "legacy"
+        if candidate.intent == 'dose_recompute' and self.memory.retrieve('implanted_seed_reconstruction'):
+            from dataclasses import replace
+            candidate=replace(candidate,direct_execution=False)
         return semantic_runtime_policy(candidate, enabled=enabled, message=message)
 
     def _activate_turn_policy(self, policy, message: str = "") -> None:
@@ -3986,7 +4004,7 @@ class ChatWorkflowMixin:
                 "case_dose_query": ("当前病例剂量", "Current Case Dose"),
                 "image_metadata_query": ("当前 CT 元数据", "Current CT Metadata"),
                 "current_oar_query": ("当前 OAR 状态", "Current OAR State"),
-                "artifact_analysis_query": ("制品特征分析", "Artifact Characteristics Analysis"),
+                "artifact_analysis_query": ("制品特征分析", "Analysis of result characteristics"),
             }
             read_title = titles[local_policy.intent][0 if trace_zh else 1]
             read_content = (
@@ -4405,10 +4423,10 @@ class ChatWorkflowMixin:
                                         if _report and len(_report) > len(response):
                                             response = _report
                                         else:
-                                            response = "✅ 自动完成完整规划流程（CTV → OAR → Planning）"
+                                            response = ("✅ 自动完成完整规划流程（CTV → OAR → Planning）" if str(getattr(self.memory, "user_lang", "en")).lower().startswith("zh") else "✅ Full planning workflow completed automatically (CTV → OAR → Planning).")
                                     except Exception as _rep_e:
                                         logger.warning(f"Failed to build planning report: {_rep_e}")
-                                        response = "✅ 自动完成完整规划流程（CTV → OAR → Planning）"
+                                        response = ("✅ 自动完成完整规划流程（CTV → OAR → Planning）" if str(getattr(self.memory, "user_lang", "en")).lower().startswith("zh") else "✅ Full planning workflow completed automatically (CTV → OAR → Planning).")
                         except Exception as e:
                             logger.error(f"[WORKFLOW-ENFORCER] Planning auto-execution failed: {e}")
 
@@ -4946,7 +4964,7 @@ class ChatWorkflowMixin:
                 "case_dose_query": ("当前病例剂量", "Current Case Dose"),
                 "image_metadata_query": ("当前 CT 元数据", "Current CT Metadata"),
                 "current_oar_query": ("当前 OAR 状态", "Current OAR State"),
-                "artifact_analysis_query": ("制品特征分析", "Artifact Characteristics Analysis"),
+                "artifact_analysis_query": ("制品特征分析", "Analysis of result characteristics"),
             }
             state_step = add_step(
                 "ui",
@@ -5211,7 +5229,8 @@ class ChatWorkflowMixin:
                 except Exception as exc:
                     error_box[0] = exc
 
-            worker = _planning_threading.Thread(target=_run, daemon=True)
+            from web.timepoint_http import scoped_callable
+            worker = _planning_threading.Thread(target=scoped_callable(_run), daemon=True)
             worker.start()
             substeps = {}
             started_at = time.monotonic()
@@ -5466,8 +5485,8 @@ class ChatWorkflowMixin:
             if local_policy.intent == "viewer_display":
                 _viewer_synthesis_step = add_step(
                     "assistant",
-                    "生成回复",
-                    "正在整理回复...",
+                    "生成回复" if _lang == "zh" else "Response Synthesis",
+                    "正在整理回复..." if _lang == "zh" else "Preparing the response...",
                     status="pending",
                 )
                 yield yield_event("step", _viewer_synthesis_step)
@@ -6322,10 +6341,10 @@ class ChatWorkflowMixin:
                                         if _report and len(_report) > len(response):
                                             response = _report
                                         else:
-                                            response = "✅ 自动完成完整规划流程（CTV → OAR → Planning）"
+                                            response = ("✅ 自动完成完整规划流程（CTV → OAR → Planning）" if str(getattr(self.memory, "user_lang", "en")).lower().startswith("zh") else "✅ Full planning workflow completed automatically (CTV → OAR → Planning).")
                                     except Exception as _rep_e:
                                         logger.warning(f"Failed to build planning report: {_rep_e}")
-                                        response = "✅ 自动完成完整规划流程（CTV → OAR → Planning）"
+                                        response = ("✅ 自动完成完整规划流程（CTV → OAR → Planning）" if str(getattr(self.memory, "user_lang", "en")).lower().startswith("zh") else "✅ Full planning workflow completed automatically (CTV → OAR → Planning).")
                                     # Guide generation is a separate persistent
                                     # mutation.  Run it only when this turn's
                                     # semantic decision (or the exact legacy full-
@@ -6752,14 +6771,19 @@ class ChatWorkflowMixin:
         ctv_path = self.memory.retrieve("ctv_path")
         if ct_image is None:
             self.memory.store("last_segmentation_success", False)
-            return "Please provide CT image path first. Use run_preoperative_plan(ct_path=...) to load CT."
+            return ("请先在 Input 面板加载 CT 图像，然后再运行 CTV 分割。"
+                    if str(getattr(self.memory, "user_lang", "en")).lower().startswith("zh")
+                    else "Please load a CT image first, then rerun CTV segmentation.")
         # Detect tumor type from message
         tumor_type = self._detect_tumor_type_from_message(message)
         if not tumor_type and not ctv_path:
             self.memory.store("last_segmentation_success", False)
             return (
-                "请先明确需要分割的肿瘤部位，或提供已有 CTV 标签文件。"
-                "例如：胰腺癌、肝癌、肾癌、肺癌、结直肠癌、前列腺。"
+                ("请先明确需要分割的肿瘤部位，或提供已有 CTV 标签文件。"
+                 "例如：胰腺癌、肝癌、肾癌、肺癌、结直肠癌、前列腺。")
+                if str(getattr(self.memory, "user_lang", "en")).lower().startswith("zh")
+                else ("Please specify the tumor site to segment, or provide an existing CTV label file. "
+                      "Examples: pancreatic, liver, kidney, lung, colorectal, prostate.")
             )
         params = {"image": ct_image, "label_path": ctv_path}
         if tumor_type:
@@ -7159,14 +7183,18 @@ class ChatWorkflowMixin:
 
             self.memory.store("optimal_plan", optimal_plan)
             self.memory.store("dose_distribution", dose_distribution)
-            # Keep the historical workspace key in normalized model units so
-            # viewer APIs and restored sessions have one stable array contract.
-            # Store the physical-Gy representation separately.
-            self.memory.store("dose_distribution_gy", dose_distribution)
-            self.memory.store(
-                "dose_distribution_physical_gy",
-                dose_distribution * DOSE_MODEL_SCALE_GY,
-            )
+            # New writers must not perpetuate the schema-1 `_gy`/model-unit
+            # ambiguity. Old normalized readers use the explicit unit boundary.
+            from utils.dose_units import physical_volume
+            from web.dose_components import DOSE_UNIT_METADATA
+            physical_dose = physical_volume(dose_distribution, units='normalized_model',
+                                            scale=DOSE_MODEL_SCALE_GY)
+            self.memory.store("dose_distribution_current_normalized", dose_distribution)
+            self.memory.store("dose_distribution_gy", physical_dose)
+            self.memory.store("dose_distribution_physical_gy", physical_dose)
+            self.memory.store("dose_unit_schema_version", 2)
+            self.memory.store("dose_unit_metadata", dict(DOSE_UNIT_METADATA))
+            self.memory.store("dose_units", "physical_gy")
             self.memory.store("dose_scale_gy", DOSE_MODEL_SCALE_GY)
             self.memory.store("plan_config", {
                 "dose_value_unit": "gy",
@@ -7182,7 +7210,7 @@ class ChatWorkflowMixin:
             logger.info("Step 7: Dose Evaluation")
             dose_spacing = ct_image.GetSpacing() if hasattr(ct_image, "GetSpacing") else [1.0, 1.0, 1.0]
             eval_result = self.registry.execute(
-                "dose_evaluation", dose_array=dose_distribution * DOSE_MODEL_SCALE_GY, ctv_mask=ctv_array,
+                "dose_evaluation", dose_array=physical_dose, ctv_mask=ctv_array,
                 oar_mask=oar_array, prescribed_dose=in_lowest_gy, target_value=target_value,
                 oar_constraints=dose_constraints,
                 organ_names=oar_metadata.get("organ_names", {}),
@@ -7224,104 +7252,30 @@ class ChatWorkflowMixin:
     def run_intraoperative_replan(
         self,
         intra_op_ct_path: str,
-        original_plan: Any,
+        original_plan: Any = None,
         deviation_threshold_mm: float = 2.0,
         output_dir: str = "./output/replan",
     ) -> Dict:
         self.memory.current_phase = PlanningPhase.INTRA_OPERATIVE
-        self.memory.deviation_threshold_mm = deviation_threshold_mm
-
         try:
-            logger.info(f"Loading intra-op CT from {intra_op_ct_path}")
-            intra_op_image = sitk.ReadImage(intra_op_ct_path)
-
-            logger.info("Detecting implanted seeds")
-            planned_seeds = self._extract_planned_seeds(original_plan)
-            if not planned_seeds:
-                raise RuntimeError("A non-empty original plan with physical seed positions is required")
-
-            preop_image = self.memory.retrieve("ct_image")
-            if preop_image is None:
-                raise RuntimeError("The pre-operative CT is not available in this session")
-            same_frame, frame_reason = self._images_share_physical_frame(preop_image, intra_op_image)
-            if not same_frame:
-                raise RuntimeError(
-                    "Intra-operative CT registration is not verified: " + frame_reason
-                )
-
-            seed_seg_result = self.registry.execute(
-                "seed_segmentation", image=intra_op_image, planned_seeds=planned_seeds,
-            )
-            self.memory.log_tool_call("seed_segmentation", {"image_path": intra_op_ct_path}, seed_seg_result)
-
-            if not seed_seg_result.success:
-                raise RuntimeError(f"Seed detection failed: {seed_seg_result.error}")
-
-            detected_seeds = seed_seg_result.metadata.get("detected_seeds") or seed_seg_result.data or []
-            if not detected_seeds:
-                raise RuntimeError("No implanted seeds were detected; automatic deviation assessment is unsafe")
-
-            if len(detected_seeds) != len(planned_seeds):
-                self.memory.current_phase = PlanningPhase.COMPLETED
-                return {
-                    "success": True,
-                    "phase": "intraoperative_review",
-                    "deviation_detected": True,
-                    "requires_human_review": True,
-                    "automatic_replanning_blocked": True,
-                    "planned_seed_count": len(planned_seeds),
-                    "detected_seed_count": len(detected_seeds),
-                    "detected_seeds": detected_seeds,
-                    "message": (
-                        "Detected and planned seed counts differ. Review segmentation and "
-                        "registration before reconstructing delivered dose or replanning."
-                    ),
-                }
-
-            matched_seeds, deviations = self._match_detected_seeds(
-                planned_seeds, detected_seeds
-            )
-            max_deviation = float(np.max(deviations))
-            mean_deviation = float(np.mean(deviations))
-            logger.info(f"  Max deviation: {max_deviation:.2f}mm, Mean: {mean_deviation:.2f}mm")
-
-            needs_replan = max_deviation > deviation_threshold_mm
-
-            if needs_replan:
-                logger.info(f"Deviation {max_deviation:.2f}mm > threshold. Triggering replanning...")
-                self.memory.current_phase = PlanningPhase.REPLANNING
-                replan_result = self._trigger_replanning(
-                    intra_op_image, original_plan, matched_seeds, output_dir,
-                )
-                if not replan_result.get("success"):
-                    self.memory.current_phase = PlanningPhase.FAILED
-                    return {
-                        "success": False,
-                        "phase": "replanning",
-                        "deviation_detected": True,
-                        "max_deviation_mm": max_deviation,
-                        "mean_deviation_mm": mean_deviation,
-                        "error": replan_result.get("error", "Replanning failed"),
-                        "replan_result": replan_result,
-                    }
-                self.memory.current_phase = PlanningPhase.COMPLETED
-                return {
-                    "success": True, "phase": "replanning",
-                    "deviation_detected": True,
-                    "max_deviation_mm": max_deviation, "mean_deviation_mm": mean_deviation,
-                    "replan_result": replan_result,
-                }
-            else:
-                logger.info(f"Deviation {max_deviation:.2f}mm within threshold.")
-                self.memory.current_phase = PlanningPhase.COMPLETED
-                return {
-                    "success": True, "phase": "intra_operative",
-                    "deviation_detected": False,
-                    "max_deviation_mm": max_deviation, "mean_deviation_mm": mean_deviation,
-                    "planned_seed_count": len(planned_seeds),
-                    "detected_seed_count": len(detected_seeds),
-                    "message": "Seed positions within acceptable range.",
-                }
+            # Detection/review and continuation are distinct durable stages.
+            # Preoperative seeds are references, not the actual implanted set;
+            # a count mismatch or a small deviation is never an execution gate.
+            from utils.tool_security import checked_path
+            from tool_factory.seed_plan.continuation_support import resolve_baseline
+            from utils.image_limits import read_image
+            from tool_factory.seed_plan.planning_pipeline import _safe_dicom_orient
+            path = checked_path(intra_op_ct_path, root=self.config.get("_workspace_root"))
+            intra_op_image = _safe_dicom_orient(read_image(path), "LPI", context="intraoperative continuation")
+            baseline = resolve_baseline(self, current_image=intra_op_image)
+            if baseline is None:
+                return {"success": False, "phase": "intraoperative_review",
+                        "requires_human_review": True, "automatic_replanning_blocked": True,
+                        "error": "Reconstruct and review the actual implanted seeds on this timepoint, then commit an explicit source-calibrated continuation baseline. Legacy count-matching and zero-based residual planning are disabled."}
+            self.memory.current_phase = PlanningPhase.REPLANNING
+            result = self._trigger_replanning(intra_op_image, original_plan, None, output_dir)
+            self.memory.current_phase = PlanningPhase.COMPLETED if result.get("success") else PlanningPhase.FAILED
+            return result
         except Exception as e:
             self.memory.current_phase = PlanningPhase.FAILED
             logger.error(f"Intra-operative replanning failed: {str(e)}")
@@ -7440,225 +7394,46 @@ class ChatWorkflowMixin:
         return matched, np.asarray(matched_distances, dtype=np.float64)
 
     def _trigger_replanning(self, intra_op_image, original_plan, detected_seeds, output_dir) -> Dict:
-        logger.info("Starting residual-dose intra-operative replanning")
-        del intra_op_image, original_plan  # Registration and matching were verified by the caller.
+        """Continue on the captured current CT with immutable accepted implants.
 
-        ct_image = self.memory.retrieve("ct_image")
-        from utils.ctv_targets import resolve_ctv_target
-        ctv_array = resolve_ctv_target(self.memory.retrieve)
-        oar_array = self.memory.retrieve("oar_array")
-        if ct_image is None or ctv_array is None:
-            return {"success": False, "error": "Pre-operative CT and CTV are required for replanning"}
-
-        from tool_factory.seed_plan.model_support import (
-            compute_world_seed_dose_grid,
-            resolve_dose_model,
-        )
-        from tool_factory.seed_plan.planning_pipeline import (
-            NEW_SLICES_ROUNDED,
-            _resample_for_planning,
-        )
-
-        resampled_ct = self.memory.retrieve("resampled_ct")
-        resampled_ctv = self.memory.retrieve("resampled_ctv")
-        resampled_oar = self.memory.retrieve("resampled_oar")
-        if resampled_ct is None or resampled_ctv is None:
-            resampled_ct, resampled_ctv, resampled_oar = _resample_for_planning(
-                ct_image,
-                np.asarray(ctv_array),
-                np.asarray(oar_array) if oar_array is not None else None,
-                new_size=[128, 128, NEW_SLICES_ROUNDED],
-            )
-            self.memory.store("resampled_ct", resampled_ct)
-            self.memory.store("resampled_ctv", resampled_ctv)
-            if resampled_oar is not None:
-                self.memory.store("resampled_oar", resampled_oar)
-
-        ctv_grid = sitk.GetArrayFromImage(resampled_ctv)
-        oar_grid = sitk.GetArrayFromImage(resampled_oar) if resampled_oar is not None else None
-        radiation_config = self.config.get("radiation_array_params", {}) or {}
-        target_value = int(radiation_config.get("target_value", 1))
-        background_value = int(radiation_config.get("background_value", 0))
-        obstacle_value = int(radiation_config.get("obstacle_value", 3))
-        target_mask = ctv_grid == target_value
-        if not np.any(target_mask):
-            return {"success": False, "error": "Resampled CTV contains no target voxels"}
-
-        radiation_volume = np.full(ctv_grid.shape, background_value, dtype=np.float64)
-        radiation_volume[target_mask] = target_value
-        if oar_grid is not None:
-            if oar_grid.shape != radiation_volume.shape:
-                return {"success": False, "error": "Resampled OAR shape does not match the planning grid"}
-            radiation_volume[oar_grid > 0] = obstacle_value
-        active_target_mask = radiation_volume == target_value
-        if not np.any(active_target_mask):
-            return {"success": False, "error": "No target voxels remain after applying OAR obstacles"}
-
-        dl_params = dict(self.config.get("dl_params", {}) or {})
-        dl_params.setdefault("infer_img_size", radiation_config.get("infer_img_size", [64, 64, 64]))
-        dl_params.setdefault("image_normalize", self.config.get("image_normalize", [-1000, 3000, 255]))
-        seed_info = self.config.get(
-            "seed_info", {"radius": 0.4, "length": 4.5, "seed_avr_dose": 50}
-        )
-        dose_model, model_error = resolve_dose_model({}, dl_params)
-        if dose_model is None:
-            return {"success": False, "error": model_error or "dose_unet_spacing1mm is unavailable"}
-
+        The former path deleted covered CTV, planned from zero on preoperative
+        anatomy and only added delivered dose at the end. It is intentionally
+        replaced, not retained as a hidden fallback. ``original_plan`` and
+        ``detected_seeds`` are compatibility arguments, never acceptance evidence.
+        """
+        from tool_factory.seed_plan.continuation_support import resolve_baseline, image_signature
+        from tool_factory.seed_plan.planning_pipeline import PlanningPipelineTool
+        from utils.tool_security import tool_scope
         try:
-            delivered_dose, accepted_detected = compute_world_seed_dose_grid(
-                detected_seeds,
-                resampled_ct,
-                dose_model,
-                dl_params,
-                seed_info,
-            )
-        except Exception as exc:
-            return {"success": False, "error": f"Delivered-dose reconstruction failed: {exc}"}
-        if len(accepted_detected) != len(detected_seeds):
-            return {
-                "success": False,
-                "error": "One or more detected seeds fall outside the registered planning grid",
-            }
-
-        dose_value_unit = self.config.get("dose_value_unit")
-        prescription_gy = planning_dose_value_to_gy(
-            self.config.get("in_lowest_energy", DEFAULT_PRESCRIPTION_GY),
-            value_unit=dose_value_unit,
-        )
-        prescription = planning_dose_value_to_model(
-            prescription_gy,
-            value_unit="gy",
-        )
-        out_highest_gy = planning_dose_value_to_gy(
-            self.config.get("out_highest_energy", DEFAULT_PRESCRIPTION_GY),
-            value_unit=dose_value_unit,
-        )
-        adjusted_volume = radiation_volume.copy()
-        covered_target = active_target_mask & (delivered_dose >= prescription)
-        adjusted_volume[covered_target] = background_value
-
-        supplemental_plan = []
-        supplemental_dose = np.zeros_like(delivered_dose, dtype=np.float32)
-        if np.any(adjusted_volume == target_value):
-            from tool_factory.seed_plan.planning_pipeline import _resolve_ref_direc
-
-            ui_state = self.memory.get_ui_state() if hasattr(self, 'memory') and hasattr(self.memory, 'get_ui_state') else {}
-            planning_state = ui_state.get("planning") if isinstance(ui_state.get("planning"), dict) else {}
-            ref_direction = _resolve_ref_direc(
-                resolve_reference_direction_input(planning_state, self.config, default="auto"),
-                resampled_ct,
-                ctv_grid,
-                self,
-            )
-            traj_result = self.registry.execute(
-                "trajectory_planning",
-                dose_image=resampled_ct,
-                radiation_volume=adjusted_volume,
-                target_value=target_value,
-                background_value=background_value,
-                obstacle_value=obstacle_value,
-                ref_direc=ref_direction,
-                direc_resolution=self.config.get("direc_resolution", [30, 3, 2]),
-                extract_angle=radiation_config.get("backlit_angle", 0.5),
-                maximum_candidate_trajectories=radiation_config.get(
-                    "maximum_candidate_trajectories", 200
-                ),
-                min_depth=radiation_config.get("min_depth", 2),
-            )
-            if not traj_result.success or not traj_result.data:
-                return {"success": False, "error": "No safe supplemental trajectories were found"}
-
-            distance_filter = self.config.get("distance_filter") or self.config.get("distance_filtter") or {}
-            plan_result = self.registry.execute(
-                "seed_planning",
-                trajectories=traj_result.data,
-                radiation_volume=adjusted_volume,
-                dose_image=resampled_ct,
-                dose_cal_model=dose_model,
-                mode="rule_based",
-                dl_params=dl_params,
-                seed_info=seed_info,
-                target_value=target_value,
-                background_value=background_value,
-                obstacle_value=obstacle_value,
-                in_lowest_dose=prescription_gy,
-                out_highest_dose=out_highest_gy,
-                dose_value_unit="gy",
-                DVH_rate=float(self.config.get("DVH_rate", 0.9)),
-                iter_rate=int(self.config.get("iter_rate", self.config.get("max_iter", 2))),
-                lower_bound=distance_filter.get("lower_bound", 0.8),
-                upper_bound=distance_filter.get("upper_bound", 10),
-                distance_rate=distance_filter.get("distance_rate", 0.8),
-                interval_rate=distance_filter.get("interval_rate", 2),
-            )
-            if not plan_result.success:
-                return {"success": False, "error": f"Supplemental seed planning failed: {plan_result.error}"}
-            supplemental_plan = plan_result.data or []
-            supplemental_dose = np.asarray(
-                (plan_result.metadata or {}).get("dose_distribution"), dtype=np.float32
-            )
-            if supplemental_dose.shape != delivered_dose.shape:
-                return {"success": False, "error": "Supplemental dose shape does not match delivered dose"}
-
-        cumulative_dose = delivered_dose + supplemental_dose
-        eval_result = self.registry.execute(
-            "dose_evaluation",
-            dose_array=cumulative_dose * DOSE_MODEL_SCALE_GY,
-            ctv_mask=ctv_grid,
-            target_value=target_value,
-            oar_mask=oar_grid,
-            organ_names=self.memory.retrieve("organ_names", {}) or {},
-            oar_constraints=self.config.get("oar_constraints", {}) or {},
-            prescribed_dose=prescription_gy,
-            spacing=resampled_ct.GetSpacing(),
-            tumor_type=self.memory.retrieve("tumor_type_used", "") or "",
-        )
-        if not eval_result.success:
-            return {"success": False, "error": f"Cumulative dose evaluation failed: {eval_result.error}"}
-
-        implanted_entry = {
-            "trajectory": {"id": "implanted_detected", "points": []},
-            "seeds": [
-                {"position": seed["position"], "direction": seed["direction"]}
-                for seed in accepted_detected
-            ],
-            "num_seeds": len(accepted_detected),
-        }
-        combined_plan = [implanted_entry] + list(supplemental_plan)
-        supplemental_count = int(sum(
-            len(entry[1])
-            for entry in supplemental_plan
-            if isinstance(entry, (list, tuple)) and len(entry) >= 2 and entry[1] is not None
-        ))
-        total_seeds = len(accepted_detected) + supplemental_count
-
-        self.memory.store("delivered_dose_distribution", delivered_dose)
-        self.memory.store("supplemental_plan", supplemental_plan)
-        self.memory.store("seed_plan", combined_plan)
-        self.memory.store("seed_plan_serialized", combined_plan)
-        self.memory.store("dose_distribution", cumulative_dose)
-        self.memory.store("dose_distribution_gy", cumulative_dose)
-        self.memory.store(
-            "dose_distribution_physical_gy",
-            cumulative_dose * DOSE_MODEL_SCALE_GY,
-        )
-        self.memory.store("dose_scale_gy", DOSE_MODEL_SCALE_GY)
-        self.memory.store("dose_metrics", eval_result.metadata or {})
-        self.memory.store("metrics", eval_result.metadata or {})
-        self.memory.store("total_seeds", total_seeds)
-        self.memory.store("num_trajectories", len(supplemental_plan))
-        os.makedirs(output_dir, exist_ok=True)
-        self.memory.export_state(os.path.join(output_dir, "replan_state.json"))
-        return {
-            "success": True,
-            "new_plan": supplemental_plan,
-            "implanted_seed_count": len(accepted_detected),
-            "supplemental_seed_count": supplemental_count,
-            "total_seeds": total_seeds,
-            "metrics": eval_result.metadata or {},
-            "registration_status": "physical_frame_verified",
-            "dose_engine": "dose_unet_spacing1mm",
-        }
+            baseline = resolve_baseline(self, current_image=intra_op_image)
+            current_image = self.memory.retrieve("ct_image")
+            if baseline is None:
+                raise ValueError("A reviewed fixed-dose continuation baseline is required")
+            if current_image is None or image_signature(current_image) != image_signature(intra_op_image):
+                raise ValueError("The active clinical workspace is not the captured intraoperative image; load its own CTV/OAR before continuation")
+            with tool_scope(self.config):
+                result = PlanningPipelineTool().execute(
+                    step="full", mode=self.config.get("mode", "rule_based"),
+                    _agent=self, _continuation_baseline=baseline,
+                )
+            if not result.success:
+                return {"success": False, "phase": "replanning", "error": result.error,
+                        "metadata": result.metadata or {}}
+            metadata = result.metadata or {}
+            additional_count = int(self.memory.retrieve("total_seeds") or 0)
+            return {"success": True, "phase": "replanning",
+                    "new_plan": self.memory.retrieve("seed_plan") or [],
+                    "implanted_seed_count": len(baseline.fixed_seeds),
+                    "supplemental_seed_count": additional_count,
+                    "total_seeds": len(baseline.fixed_seeds) + additional_count,
+                    "metrics": self.memory.retrieve("dose_metrics") or {},
+                    "planning_id": metadata.get("planning_id"),
+                    "baseline_dose_sha256": baseline.baseline_dose_sha256,
+                    "dose_engine": "dose_unet_spacing1mm",
+                    "guide_reused_without_regeneration": baseline.candidate_paths is not None}
+        except (ValueError, TypeError, RuntimeError) as exc:
+            return {"success": False, "phase": "intraoperative_review",
+                    "requires_human_review": True, "automatic_replanning_blocked": True, "error": str(exc)}
 
     def get_status(self) -> Dict:
         status = {

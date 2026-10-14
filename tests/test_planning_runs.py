@@ -74,6 +74,82 @@ def test_full_runs_are_immutable_and_activation_restores_selected_aliases():
     assert list_planning_runs(agent.memory)[1]["visible"] is False
 
 
+def test_component_dose_and_quality_receipts_follow_historical_planning():
+    import numpy as np
+    agent = _agent()
+    memory = agent.memory
+    memory.store = lambda key, value: memory.planning_results.__setitem__(key, value)
+    # Actual observations are acquisition-owned, not editable Planning aliases.
+    observations = {'revision_id': 'current-observation', 'observations': []}
+    implanted_record = {'observation_revision_id': 'current-observation', 'source_count': 10}
+    memory.store('implanted_seed_reconstruction', observations)
+    memory.store('implanted_dose_record', implanted_record)
+    ids = []
+    for value in (30., 90.):
+        pid = begin_planning_run(agent, step='full', force_new=True)
+        ids.append(pid)
+        assert memory.retrieve('dose_components') is None
+        _publish(agent, pid, seed='seed-'+str(value))
+        memory.planning_results.update({
+            'dose_components': {'planned': {'planning_id': pid, 'dose_distribution_physical_gy': np.full((2,2,2),value)},
+                                'implanted': implanted_record, 'total': {'planning_id': pid, 'source_count': 11}},
+            'timepoint_resource_state': {'fingerprints': {'planned_dose': pid}},
+            'total_dose_evaluation': {'dose_sha256': pid, 'metrics': {'d90': value}},
+            'dose_distribution_physical_gy': np.full((2,2,2),value),
+            'dose_distribution_current_normalized': np.full((2,2,2),value/190.8),
+            'algorithm_plan_dose_distribution_current_normalized': np.full((2,2,2),value/190.8),
+            'dose_unit_schema_version': 2,
+            'dose_unit_metadata': {'dose_distribution_gy': 'physical_gy'}})
+        publish_active_planning_state(agent)
+    activate_planning_run(agent, ids[0])
+    assert memory.retrieve('dose_components')['planned']['planning_id'] == ids[0]
+    assert memory.retrieve('dose_components')['total']['planning_id'] == ids[0]
+    assert memory.retrieve('timepoint_resource_state')['fingerprints']['planned_dose'] == ids[0]
+    assert memory.retrieve('total_dose_evaluation')['metrics']['d90'] == 30.
+    assert np.allclose(memory.retrieve('dose_distribution_physical_gy'),30.)
+    assert np.allclose(memory.retrieve('dose_distribution_current_normalized'),30./190.8)
+    assert np.allclose(memory.retrieve('algorithm_plan_dose_distribution_current_normalized'),30./190.8)
+    assert memory.retrieve('dose_unit_schema_version') == 2
+    assert memory.retrieve('implanted_seed_reconstruction') == observations
+    assert memory.retrieve('implanted_dose_record') == implanted_record
+    memory.retrieve('dose_components')['planned']['dose_distribution_physical_gy'][0,0,0] = 7.
+    assert memory.retrieve(PLANNING_RUN_PREFIX+ids[0])['dose_components']['planned']['dose_distribution_physical_gy'][0,0,0] == 30.
+    # Legacy Planning snapshots omit these fields. They must be absent, never B's.
+    saved = memory.retrieve(PLANNING_RUN_PREFIX+ids[0])
+    for key in ('dose_components','timepoint_resource_state','total_dose_evaluation',
+                'dose_distribution_current_normalized','algorithm_plan_dose_distribution_current_normalized',
+                'dose_unit_schema_version','dose_unit_metadata'):
+        saved.pop(key,None)
+    activate_planning_run(agent, ids[1])
+    activate_planning_run(agent, ids[0])
+    assert memory.retrieve('dose_components') is None
+    assert memory.retrieve('total_dose_evaluation') is None
+    assert memory.retrieve('dose_distribution_current_normalized') is None
+    assert memory.retrieve('timepoint_resource_state') is None
+
+
+def test_historical_activation_cannot_undo_implant_input_invalidation():
+    agent = _agent()
+    pid = begin_planning_run(agent, step='full', force_new=True)
+    _publish(agent, pid, seed='historical-supplemental-source')
+    agent.memory.planning_results.update(dose_components={'total': {'status': 'ready'}},
+        total_dose_evaluation={'metrics': {'v100': 1.}})
+    publish_active_planning_state(agent)
+    agent.memory.retrieve('planning_runs')[0]['clinical_inputs_current'] = False
+    activate_planning_run(agent, pid)
+    assert agent.memory.retrieve('manual_seeds')[0]['id'] == 'historical-supplemental-source'
+    assert agent.memory.retrieve('manual_artifact_status')['dose'] == 'stale'
+    assert agent.memory.retrieve('dose_components')['total']['status'] == 'stale'
+    assert agent.memory.retrieve('total_dose_evaluation') is None
+    assert agent.memory.conversation_state['planning_completed'] is False
+    assert agent.memory.retrieve(PLANNING_RUN_PREFIX+pid)['dose_components']['total']['status'] == 'ready'
+    from web.planning_runs import restore_active_planning_aliases
+    agent.memory.planning_results.pop('dose_components')
+    restored = restore_active_planning_aliases(agent.memory)
+    assert 'total_dose_evaluation' not in restored and 'dose_components' not in restored
+    assert agent.memory.retrieve('total_dose_evaluation') is None
+
+
 def test_verified_needle_input_provenance_is_persisted_with_the_planning_run():
     agent = _agent()
     planning_id = begin_planning_run(agent, step="full", force_new=True)

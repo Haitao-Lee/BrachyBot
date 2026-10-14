@@ -36,7 +36,7 @@ def test_single_needle_restore_uses_authoritative_response_without_duplicate_sce
         "// Restore a manually dragged seed", 1
     )[0]
     assert "await loadSeeds3D();" not in restore
-    assert "await _refreshManualDoseViews(data, wasTexture, { background: true });" in restore
+    assert "await __tpAwait(() => (_refreshManualDoseViews(data, wasTexture, { background: true })))" in restore
     assert "await loadAllSlices();" not in restore
 
 

@@ -18,6 +18,8 @@ def test_context_menu_positioning_clamps_and_scrolls_inside_viewport():
     assert "top = Math.min(Math.max(margin, top), maxTop)" in viewer
     assert "window.positionBrachyContextMenu = positionBrachyContextMenu" in viewer
     assert "event.target === menu || menu.contains?.(event.target)" in viewer
+    assert 'menu.__brachyOpeningScrollPositions = scrollPositions' in viewer
+    assert 'opening[0] === offset[0] && opening[1] === offset[1]' in viewer
     assert "max-height: calc(100dvh - 16px)" in css
     assert "overflow-y: auto" in css
 
@@ -46,11 +48,17 @@ def test_data_tree_group_context_menu_is_unified_and_not_closed_by_a_stale_liste
     # stops the native event before opening the group menu, so a nested header
     # cannot fall through to another tree branch.
     group_ids = (
-        "image", "segmentation", "ctv", "oar", "non_traversable",
+        "segmentation", "ctv", "oar", "non_traversable",
         "traversable", "planning", "planning_meshes", "artifacts",
     )
     for group_id in group_ids:
         assert f"oncontextmenu=\"handleTreeItemRightClick('{group_id}', event)\"" in viewer
+    # Images now have a real owned collection menu instead of the legacy
+    # singleton CT deletion handler. The legacy branch remains available.
+    assert 'BrachyBotTimepointWorkspace.imageGroupMenu(event)' in viewer
+    assert "handleTreeItemRightClick(\\'image\\', event)" in viewer
+    bridge=_read('web/app/static/js/brachybot-timepoint-workspace.js')
+    assert 'function imageGroupMenu(event)' in bridge
 
     assert "'image', 'segmentation', 'ctv', 'oar', 'non_traversable', 'traversable'," in viewer
     assert "'masks', 'generic_masks', 'upload_masks', 'artifacts'," in viewer

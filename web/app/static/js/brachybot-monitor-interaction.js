@@ -2,6 +2,11 @@
 (() => {
     const cards = new Map();
     let owner = '';
+    const timepointOwner = () => {
+        const scope = window.BrachyBotTimepointWorkspace?.mountedScope?.();
+        return scope ? `${scope.timepointId}:${scope.generation}` : '';
+    };
+    const runOwner = () => `${_activeApiSessionId()}:${trainingMonitorState.runId}:${timepointOwner()}`;
     let autoCompare = false, compareTimer = null;
     const timers = new Map();
     let announcementTimer=null, announcementKey='', resourceTimer=null, visualTimer=null;
@@ -46,7 +51,7 @@
                 live.setAttribute('role','status');live.setAttribute('aria-live','polite');live.setAttribute('aria-atomic','true');document.body.appendChild(live);}
             const counts=card.data.interaction?.conflict_counts || {};
             live.textContent=card.data.interaction?.dose_current
-                ? text(card,'当前编辑的剂量反馈已更新。','Dose feedback for the current edit has updated.')
+                ? text(card,'当前编辑的剂量反馈已更新。','Dose feedback for the current edit has been updated.')
                 : text(card,`编辑已保存。新增 ${counts.new || 0} 组、加重 ${counts.worsened || 0} 组相关间距问题。`,
                     `Edit saved. ${counts.new || 0} new and ${counts.worsened || 0} worsened related spacing conflicts.`);
         },180);
@@ -156,7 +161,7 @@
         const ledger=document.createElement('div');ledger.className='monitor-guide-ledger';
         const saved=document.createElement('span');saved.textContent=zh?'编辑已保存':'Edit saved';
         const dose=document.createElement('span');dose.textContent=info.dose_current
-            ? (zh?'剂量已更新':'Dose current') : (zh?'剂量待更新':'Dose stale');
+            ? (zh?'剂量已更新':'Dose up to date') : (zh?'剂量待更新':'Dose stale');
         dose.dataset.state=info.dose_current?'current':'pending';ledger.append(saved,dose);panel.insertBefore(ledger,heading);
         const editCount=info.assessment?.edit_count || context?.evidence?.dose?.edit_count;
         if(info.dose_comparable && Number.isInteger(editCount) && editCount>1){const scope=document.createElement('span');
@@ -172,7 +177,7 @@
             const organ=rows.find(row=>key(row).startsWith('oar:'));if(organ)selected.push(organ);
             if(selected.length){
                 const table=document.createElement('table');table.className='monitor-key-changes';
-                const caption=document.createElement('caption');caption.textContent=zh?'可比剂量的实测差值（节选）':'Measured comparable dose changes (selected)';table.appendChild(caption);
+                const caption=document.createElement('caption');caption.textContent=zh?'可比剂量的实测差值（节选）':'Comparable dose changes (selected metrics)';table.appendChild(caption);
                 const head=document.createElement('thead'),tr=document.createElement('tr');
                 for(const label of [zh?'指标':'Metric',zh?'前 → 后':'Before → after',zh?'变化':'Change']){
                     const cell=document.createElement('th');cell.scope='col';cell.textContent=label;tr.appendChild(cell);}
@@ -197,7 +202,7 @@
                 const missingLetters=spatial.filter(item=>!status?.refs?.includes(item.ref)).map(item=>item.letter).join(' / ');
                 note.textContent=located ? (zh?`Viewer 已标出 ${visibleLetters}。点击字母可单独查看。`:`Viewer marks ${visibleLetters}. Select a letter to inspect it.`)
                     : (zh?'对象尚未在当前画面定位。点击下方字母查看。':'Objects are not located in this view. Select a letter to inspect.');
-                if(located && missingLetters) note.textContent+=zh?` ${missingLetters} 未在当前画面中定位。`:` ${missingLetters} is not located in the current view.`;
+                if(located && missingLetters) note.textContent+=zh?` ${missingLetters} 未在当前画面中定位。`:` Location not confirmed in this view: ${missingLetters}.`;
                 location.appendChild(note);
                 const legend=document.createElement('div');legend.className='monitor-location-legend';
                 const availability=window.getMonitorTargetAvailability?.(spatial.map(item=>item.ref),context.evidence) || [];
@@ -307,8 +312,8 @@
         const gap = pair.surface_clearance_mm;
         const value = Number.isFinite(gap) ? gap : pair.distance_mm;
         const label = Number.isFinite(gap)
-            ? exact ? (zh ? '实体表面间隙' : 'finite surface gap')
-                : (zh ? '轴线模型间隙下界' : 'axis-model clearance bound')
+            ? exact ? (zh ? '实体表面间隙' : 'surface-to-surface clearance')
+                : (zh ? '轴线模型间隙下界' : 'surface-clearance lower bound (axis model)')
             : (zh ? '轴线距离' : 'axis distance');
         const status = {new:zh?'新增':'new', worsened:zh?'加重':'worsened',
             improved:zh?'改善但仍需复核':'improved, still needs review', existing:zh?'原有':'pre-existing'}[pair.change];
@@ -322,7 +327,8 @@
     };
     const current = card => typeof trainingMonitorState !== 'undefined'
         && trainingMonitorState.active && trainingMonitorState.runId === card.runId
-        && _activeApiSessionId() === card.sessionId;
+        && _activeApiSessionId() === card.sessionId
+        && (!card.timepointScope || window.BrachyBotTimepointWorkspace?.scopeIsCurrent(card.timepointScope));
     const latest = card => current(card) && !card.superseded
         && (typeof manualPlanningState === 'undefined'
             || (!manualPlanningState.monitorInteractionActive
@@ -401,7 +407,7 @@
                 lines.push(text(card, `${label} 返回编辑前位置的患者坐标位移：[${move.vector_mm.map(v=>`${v>=0?'+':''}${v.toFixed(2)}`).join(', ')}] mm。`,
                     `${label} pre-edit return displacement in patient coordinates: [${move.vector_mm.map(v=>`${v>=0?'+':''}${v.toFixed(2)}`).join(', ')}] mm.`));
             }
-            if (info.return_movements?.length) lines.push(text(card, '上述向量不是屏幕拖动方向，也不是剂量最优方向；恢复操作仍需通过安全检查。', 'These vectors are not screen or dose-optimal directions; restoration still requires safety validation.'));
+            if (info.return_movements?.length) lines.push(text(card, '上述向量不是屏幕拖动方向，也不是剂量最优方向；恢复操作仍需通过安全检查。', 'These vectors are not screen-space directions or recommended dose-optimization directions; restoration still requires safety validation.'));
             lines.push(`**${text(card, '剂量对比', 'Dose comparison')}**`, info.dose_note);
             if (info.metric_rows?.length) {
                 lines.push(text(card, '| 指标 | 编辑前 | 编辑后 | 差值 |', '| Metric | Before | After | Change |'),
@@ -557,7 +563,8 @@
             card.previewBusy = true; card.notice = text(card, '正在核对当前几何…', 'Checking current geometry…'); render(card);
             try {
                 const response = await fetch(API + (action === 'apply' ? '/training/apply_candidate' : '/training/edit_preview'), {
-                    signal:abort.signal, method:'POST', headers:{'Content-Type':'application/json','X-BrachyBot-Session':card.sessionId},
+                    signal:abort.signal, method:'POST', headers:window.BrachyBotTimepointWorkspace?.headers(card.timepointScope,
+                        {'Content-Type':'application/json','X-BrachyBot-Session':card.sessionId}) || {'Content-Type':'application/json','X-BrachyBot-Session':card.sessionId},
                     body:JSON.stringify({session_id:card.sessionId, monitor_run_id:card.runId, planning_id:card.evidence.planning_id,
                         planning_version:card.evidence.after_version, geometry_key:card.evidence.geometry_key, checkpoint_id:card.id,
                         mode:action === 'preview' ? 'previous' : 'spacing', token:card.evidence.restore_token,
@@ -583,7 +590,7 @@
                         : text(card, '对象尚不可定位，未显示位置预览；规划未改动。', 'Objects cannot be located; no position preview or plan change was made.');
                 } else card.notice = card.previewCandidates.length
                     ? text(card, '已找到仅通过局部间距和靶区采样检查的几何候选；未计算剂量。先预览，再决定是否应用。',
-                        'Local spacing and sampled-target candidates found; dose was not computed. Preview before deciding whether to apply.')
+                        'Candidate positions passed the local spacing and sampled target checks; dose has not been calculated. Preview a candidate before deciding whether to apply it.')
                     : text(card, '有限搜索范围内未找到可验证候选；这不代表不存在解。可查看冲突、预览原位置或继续手动调整。',
                         'No verified candidate in this bounded search; this does not prove infeasibility. Inspect spacing, preview the prior position or adjust manually.');
                 timing('preview_response', Date.now()-started);
@@ -592,7 +599,7 @@
                 if (latest(card) && requestEvent === card.lastEventId) card.notice = error?.code === 'monitor_plan_busy'
                     ? text(card, '规划正在更新，未执行操作；完成后可重试。', 'Plan is updating; no action applied. Retry when ready.')
                     : text(card, '此次预览或应用未完成（状态过期、资源未就绪或请求取消）；未确认任何几何修改。',
-                        'Preview/apply did not complete (stale state, missing resources or cancellation); no geometry change is confirmed.');
+                        'Preview or application did not complete (stale state, missing resources or cancellation); no geometry change is confirmed.');
                 return false;
             } finally {
                 clearTimeout(timeout); if (card.previewAbort === abort) { card.previewAbort = null; card.previewBusy = false; render(card); }
@@ -658,7 +665,7 @@
                         'The object or its parent group is hidden. Find the exact row in Data Tree; the whole group will not be revealed automatically.')
                     : targets.some(target=>['loading','not_loaded'].includes(target.state)) ? text(card,
                         '对应对象尚在加载；文字反馈保留，资源就绪后会核对当前版本并续接证据。',
-                        'The object is still loading. Feedback is retained; readiness will recheck the current revision and resume evidence.')
+                        'The object is still loading. Text feedback is retained. Once the resources are ready, the current revision will be checked again and image capture will resume.')
                     : text(card,'当前对象未完成可核验定位；可用字母下的入口找到对应数据行。',
                         'The object is not yet verifiably located. Use the control below its letter to find the exact data row.');}
             render(card);return !!ok;
@@ -681,7 +688,7 @@
         card.busy = text(card, '正在提交操作…', 'Applying decision…'); render(card);
         try {
             const result = await window.performMonitorEditDecision(card.evidence.restore_token, action === 'keep',
-                {sessionId: card.sessionId, runId: card.runId, language: card.language});
+                {sessionId: card.sessionId, runId: card.runId, language: card.language, timepointScope: card.timepointScope});
             if(result?.success!==true)card.notice=text(card,'服务器尚未确认这次选择；规划修改不能视为完成。请核对状态后重试。',
                 'The server has not confirmed this choice. Do not treat a plan change as completed; verify the state and retry.');
             return result?.success === true;
@@ -846,7 +853,7 @@
         }
         if (card.data.interaction?.decision_required === false) {
             const more = document.createElement('details'); more.className = 'monitor-secondary-actions';
-            const summary = document.createElement('summary'); summary.textContent = text(card,'更多操作（无需每次确认保留）','More actions (no routine keep confirmation required)');
+            const summary = document.createElement('summary'); summary.textContent = text(card,'更多操作（无需每次确认保留）','More actions (saved edits do not require confirmation)');
             summary.dataset.brachyControlRef = `monitor:${card.runId}:${card.id}:more-chat`;
             more.appendChild(summary);
             for (const button of [...actions.children]) if (/恢复编辑前|保留这次|Restore pre-edit|Keep this/.test(button.textContent)) more.appendChild(button);
@@ -879,7 +886,7 @@
         if(card.previewGeometry && !card.previewCandidate && card.evidence.restore_token && !card.decision
             && !response?.querySelector('.monitor-guide-actions [data-guide-action="restore"]')){
             const confirm=document.createElement('button');confirm.type='button';confirm.className='btn btn-sm';
-            confirm.textContent=text(card,'确认恢复编辑前位置','Confirm restore pre-edit position');
+            confirm.textContent=text(card,'确认恢复编辑前位置','Confirm restoration of pre-edit position');
             confirm.disabled=!latest(card) || !!card.busy;
             confirm.dataset.brachyControlRef=`monitor:${card.runId}:${card.id}:confirm-restore`;
             confirm.addEventListener('click',()=>window.runMonitorCheckpointAction(card.id,'restore'));preview.appendChild(confirm);
@@ -901,13 +908,15 @@
         if (preview.childNodes.length) (row.querySelector('.chat-msg-wrapper') || row).appendChild(preview);
     }
 
-    window.receiveMonitorCheckpoint = async data => {
+    window.receiveMonitorCheckpoint = async (data, capturedScope = null) => {
+        if (window.BrachyBotTimepoints?.enabled?.() && !capturedScope) return null;
+        if (capturedScope && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(capturedScope)) return null;
         const evidence = data?.event?.detail?.edit_evidence;
         if (!evidence || !trainingMonitorState.active || data.monitor_run_id !== trainingMonitorState.runId) return null;
         const sessionId = _activeApiSessionId();
         if (data.session_id && data.session_id !== sessionId) return null;
         const runId = data.monitor_run_id;
-        const owned = `${sessionId}:${runId}`;
+        const owned = runOwner();
         if (owner !== owned) {
             for (const previous of cards.values()) cancelRetry(previous);
             cards.clear(); samples.length = 0; owner = owned;
@@ -929,7 +938,7 @@
         }
         const newer = [...cards.values()].some(prior => Number(prior.evidence.after_version) > Number(evidence.after_version));
         if (!card) {
-            card = {id, sessionId, runId, createdAt:Date.now(), requestId:`monitor-${runId}`,
+            card = {id, sessionId, runId, timepointScope: capturedScope, createdAt:Date.now(), requestId:`monitor-${runId}`,
                 messageId:`assistant-monitor-${runId}-edit-${id}`, captureState:'pending', receivedAt:Date.now()};
             cards.set(id, card);
             if (cards.size > 40) { const oldest = cards.values().next().value; cancelRetry(oldest); cards.delete(oldest.id); }
@@ -1007,10 +1016,10 @@
     };
     window.refreshMonitorCheckpointPresentation = phase => {
         if(phase!=='active' && resourceTimer){clearTimeout(resourceTimer);resourceTimer=null;}
-        if (phase === 'active' && owner !== `${_activeApiSessionId()}:${trainingMonitorState.runId}`) {
+        if (phase === 'active' && owner !== runOwner()) {
             for (const card of cards.values()) cancelRetry(card);
             cards.clear(); autoCompare = false;
-            owner = `${_activeApiSessionId()}:${trainingMonitorState.runId}`;
+            owner = runOwner();
         }
         if (phase !== 'active') {
             if(announcementTimer)clearTimeout(announcementTimer);announcementTimer=null;announcementKey='';
@@ -1038,4 +1047,11 @@
         for(const card of cards.values())render(card,false);
         publish();
     });
+    window.suspendTimepointMonitor = () => {
+        for (const card of cards.values()) { cancelRetry(card); card.previewAbort?.abort(); }
+        cards.clear(); owner = ''; autoCompare = false;
+        for (const timer of [compareTimer, announcementTimer, resourceTimer, visualTimer]) if (timer) clearTimeout(timer);
+        compareTimer = announcementTimer = resourceTimer = visualTimer = null;
+        announcementKey = ''; publish();
+    };
 })();

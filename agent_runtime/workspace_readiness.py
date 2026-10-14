@@ -15,7 +15,7 @@ from agent_runtime.execution_authorization import tool_call_is_mutating
 
 _METADATA_TOOLS = frozenset({
     "ui_inspector", "ui_content", "ui_screenshot", "web_search", "web_fetch",
-    "web_access", "literature_search", "pubmed_search",
+    "web_access", "literature_search", "pubmed_search", "timepoint_inspector", "timepoint_controller",
 })
 _METADATA_METRICS = frozenset({
     "dose_metrics", "oar_dose_metrics", "plan_score", "planning_method",
@@ -34,13 +34,17 @@ def requires_full_workspace(tool_name, params=None):
     """
     name = str(tool_name or "")
     args = params if isinstance(params, Mapping) else {}
+    if name in {"timepoint_controller","timepoint_images"}:
+        return False  # Catalog mutations need a lease/CAS, not image arrays.
     if tool_call_is_mutating(name, args):
         return True
     if name == "query_metrics":
         metric = args.get("metric_type")
         return not isinstance(metric, str) or metric not in _METADATA_METRICS
     if name == "surgical_guide":
-        return str(args.get("action") or "").strip().lower() != "status"
+        return str(args.get("action") or "").strip().lower() not in {"status", "manifest"}
+    if name == "seed_segmentation":
+        return str(args.get("action") or "").strip().lower() != "get_reconstruction"
     if name in {"case_memory", "clinical_kb"}:
         return False  # Explicit read actions were checked above.
     return name not in _METADATA_TOOLS
@@ -54,6 +58,11 @@ def ensure_workspace_ready(agent, tool_name, params=None):
     an array-dependent tool against an explicitly cold workspace.
     """
     required = requires_full_workspace(tool_name, params)
+    registry = getattr(agent, "registry", None)
+    if registry is not None and tool_name in getattr(registry, "tool_names", ()):
+        from agent_runtime.timepoint_capabilities import capability_contract
+        if capability_contract(tool_name, registry.get(tool_name)) in {"declared_pure", "declared_read", "owned_file_read", "owned_experience_read"}:
+            required = False
     waiter = getattr(agent, "_workspace_resource_waiter", None)
     if callable(waiter):
         waiter(required)

@@ -196,6 +196,19 @@ def _has_positive_mutation(text: str) -> bool:
     while ``analyze the guide and then regenerate it`` carries a real second
     clause and becomes a compound action request instead.
     """
+    # A title such as "Natural Language Review" contains an analysis word,
+    # but does not turn "only modify this title; do not modify clinical data"
+    # into a read-only turn. Restrictions are clause-local, not a global veto
+    # on an unrelated explicitly requested UI/catalog change. This is routing
+    # only; action/target/effect authorization remains at its own boundary.
+    from agent_runtime.request_parse import parse_request
+    parsed = parse_request(text)
+    if any(task.action == 'ui_change' and re.match(
+            r'^(?:请|只|仅|帮我|麻烦|把|将|修改|更改|设置|please\b|only\b|modify\b|change\b|set\b)',
+            task.raw.strip(), re.IGNORECASE) and not any((task.negated,task.conditional,
+            task.interrogative,task.quoted,task.attributed,task.completed_action,task.excluded))
+           for task in parsed.subtasks):
+        return True
     if re.search(
         r"(?:\u4e0d\u8981|\u522b|\u65e0\u9700|\u4e0d\u7528|\u4e0d\u9700\u8981|"
         r"do\s+not|don'?t|no\s+need|without)\s*"
@@ -420,7 +433,7 @@ def coerce_analysis_tool_call(
 ) -> Dict[str, Any]:
     """Rewrite one provider tool call so an analysis turn can never mutate.
 
-    ``surgical_guide`` is forced to its read-only ``analyze`` action (the
+    A mutating/unspecified ``surgical_guide`` action is forced to ``analyze`` (the
     schema default is ``generate``, which is a mutation landmine), and
     ``ui_content`` receives the user's question so its analysis upgrade can
     request real evidence instead of a bare presentation.
@@ -428,7 +441,11 @@ def coerce_analysis_tool_call(
     name = str(tool_name or "")
     merged = dict(params or {})
     if name == "surgical_guide":
-        merged["action"] = "analyze"
+        from agent_runtime.execution_authorization import tool_call_is_mutating
+        if tool_call_is_mutating(name, merged):
+            # A mutation's design/placement inputs cannot leak into the
+            # read-only replacement and trigger a second schema failure.
+            merged = {"action": "analyze"}
         return merged
     if name == "ui_content":
         if not str(merged.get("question") or "").strip():

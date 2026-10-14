@@ -51,6 +51,9 @@ def test_report_two_column_split_is_constrained_and_persisted():
     assert "aria-valuenow" in shell
     assert "_persistReportSplitRatio" in shell
     assert "_scheduleReport2colLayout" in shell
+    # Dragging must not invalidate every inherited style in the application.
+    assert "document.body.style.setProperty('--rp-editor-width'" not in shell
+    assert "body.style.gridTemplateColumns" in shell
 
     # New users start in the useful side-by-side layout, while an explicit
     # local opt-out remains authoritative on later reloads.

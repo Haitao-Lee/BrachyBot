@@ -9,7 +9,8 @@ import os
 
 
 from tool_factory import BaseTool, ToolResult
-from .model_support import resolve_dose_model
+from .model_support import (resolve_dose_model, continuation_dose_threshold,
+                            continuation_result_metadata)
 from plans.dose_pre.model_loader import (
     DEFAULT_PRESCRIPTION_GY,
     planning_dose_value_to_model,
@@ -45,6 +46,10 @@ class RLSeedPlanningTool(BaseTool):
         return {
             "type": "object",
             "properties": {
+                "continuation": {
+                    "type": "object",
+                    "description": "Optional trusted ContinuationBaseline with immutable fixed dose and physical constraints",
+                },
                 "trajectories": {
                     "type": "array",
                     "description": "List of candidate trajectories from trajectory planning",
@@ -145,19 +150,24 @@ class RLSeedPlanningTool(BaseTool):
         trajectories = kwargs["trajectories"]
         radiation_volume = kwargs["radiation_volume"]
         dose_image = kwargs["dose_image"]
+        continuation = kwargs.get("continuation")
+        from plans.continuation import validate_continuation
+        validate_continuation(continuation, radiation_volume, dose_image, kwargs.get("target_value", 1))
         dl_params = kwargs.get("dl_params", {})
         dose_cal_model, model_error = resolve_dose_model(kwargs, dl_params)
         if dose_cal_model is None:
             return ToolResult(success=False, error=model_error or "Dose model is unavailable")
         rf_params = kwargs.get("rf_params", {"max_episodes": 200, "bandwidth": 0.1})
         target_value = kwargs.get("target_value", 1)
-        in_lowest_dose = planning_dose_value_to_model(
+        in_lowest_dose = continuation_dose_threshold(
             kwargs.get("in_lowest_dose", DEFAULT_PRESCRIPTION_GY),
             value_unit=kwargs.get("dose_value_unit") or "gy",
+            continuation=continuation,
         )
-        out_highest_dose = planning_dose_value_to_model(
+        out_highest_dose = continuation_dose_threshold(
             kwargs.get("out_highest_dose", DEFAULT_PRESCRIPTION_GY),
             value_unit=kwargs.get("dose_value_unit") or "gy",
+            continuation=continuation,
         )
         DVH_rate = kwargs.get("DVH_rate", 0.9)
         infer_img_size = tuple(kwargs.get("infer_img_size", (64, 64, 64)))
@@ -184,6 +194,7 @@ class RLSeedPlanningTool(BaseTool):
             image_normalize_min=norm_min,
             image_normalize_max=norm_max,
             image_normalize_scale=norm_scale,
+            continuation=continuation,
         )
 
         total_seeds = 0
@@ -210,5 +221,7 @@ class RLSeedPlanningTool(BaseTool):
                 "dose_distribution": dose_sum,
                 "total_seeds": total_seeds,
                 "num_trajectories": len(optimal_plan) if optimal_plan else 0,
+                **continuation_result_metadata(optimal_plan, continuation, radiation_volume,
+                    dose_image, target_value, seed_info, in_lowest_dose, out_highest_dose, DVH_rate),
             },
         )

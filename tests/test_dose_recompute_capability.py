@@ -12,6 +12,15 @@ from tool_factory import ToolResult
 from tool_factory.dose_recompute import CurrentPlanDoseRecomputeTool
 
 
+def test_zero_axis_completion_count_does_not_claim_all_directions_are_inferred_or_reviewed():
+    result=ToolResult(True,metadata={'source_set':'implanted','total_seeds':1,
+        'estimated_axis_count':0,'dose_min_gy':1.,'dose_max_gy':100.})
+    zh=ToolResultPipeline.format('dose_recompute',result,'zh')
+    en=ToolResultPipeline.format('dose_recompute',result,'en')
+    assert '方向补估计数为 0' in zh and '不等于原始方向证据或临床复核状态' in zh
+    assert 'current axis inputs' in en and 'does not establish original axis evidence' in en
+
+
 def test_recompute_request_uses_the_stateful_capability_directly():
     """A focused dose refresh must not enter generic semantic planning."""
     policy = classify_local_turn("请重新计算剂量")

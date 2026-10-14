@@ -89,11 +89,18 @@ Capabilities:
             metrics.get("prescribed_dose"),
         )
         rx = number(rx_raw)
-        if rx is not None and rx <= 5:
-            rx *= 120.0
+        # Explicit *_gy values are physical, including small positive doses.
+        # Legacy normalized values must pass a declared units adapter upstream;
+        # magnitude alone cannot justify multiplying the prescription again.
         rx = rx if rx is not None and rx > 0 else None
 
         total_seeds = first(plan.get("seed_count"), plan.get("total_seeds"), metrics.get("total_seeds"))
+        component_report = plan.get('source_components')
+        separated_sources = isinstance(component_report,dict)
+        if separated_sources:
+            planned_record = component_report.get('components',{}).get('planned',{})
+            if planned_record.get('status') == 'current' and type(planned_record.get('source_count')) is int:
+                total_seeds = planned_record['source_count']
         needle_count = first(plan.get("needle_count"), plan.get("num_trajectories"), metrics.get("num_trajectories"))
         total_activity = first(
             plan.get("total_activity_mbq"), plan.get("totalActivityMBq"),
@@ -207,9 +214,9 @@ Capabilities:
         lines += [
             "",
             "## Seed Plan",
-            f"- **Total seeds:** {total_seeds if total_seeds not in (None, '') else 'Not recorded'}",
-            f"- **Needle/trajectory count:** {needle_count if needle_count not in (None, '') else 'Not recorded'}",
-            f"- **Total source activity:** {activity_text}",
+            f"- **{'Supplemental planned seeds' if separated_sources else 'Total seeds'}:** {total_seeds if total_seeds not in (None, '') else 'Not recorded'}",
+            f"- **{'Supplemental needle/trajectory count' if separated_sources else 'Needle/trajectory count'}:** {needle_count if needle_count not in (None, '') else 'Not recorded'}",
+            f"- **{'Supplemental source activity' if separated_sources else 'Total source activity'}:** {activity_text}",
             f"- **Technique:** {plan.get('technique') or 'Radioactive seed implantation (¹²⁵I)'}",
         ]
 
@@ -274,6 +281,10 @@ Capabilities:
                     f"(limit: {item.get('limit', 'Not recorded')} Gy)"
                 )
 
+        from tool_factory.report_facts import format_source_components_markdown
+        source_summary = format_source_components_markdown(plan.get('source_components'),'en')
+        if source_summary:
+            lines += ['',source_summary]
         lines += [
             "",
             "## DVH Summary",
@@ -304,17 +315,29 @@ Capabilities:
         """Generate a brief summary."""
         metrics = plan.get("metrics", {})
         organ = plan.get("organ", "Unknown")
-        score = metrics.get("plan_score", 0)
-        v100 = metrics.get("v100", 0)
-
-        rating = "Excellent" if score >= 90 else "Good" if score >= 80 else "Acceptable" if score >= 70 else "Marginal"
+        import math
+        def measured(key):
+            value = metrics.get(key)
+            if isinstance(value, bool):
+                return None
+            try:
+                value = float(value)
+                return value if math.isfinite(value) else None
+            except (TypeError, ValueError, OverflowError):
+                return None
+        score, v100 = measured("plan_score"), measured("v100")
+        rating = ("Excellent" if score >= 90 else "Good" if score >= 80 else "Acceptable" if score >= 70 else "Marginal") if score is not None else "UNVERIFIED"
+        score_text = f"{score:.0f}/100" if score is not None else "Not observed"
+        coverage_text = f"{v100:.1%}" if v100 is not None else "Not observed"
+        violations = metrics.get('oar_violations')
+        violation_text = str(len(violations)) if isinstance(violations, list) else 'Not observed'
 
         return (
             f"**{organ.title()} Treatment Plan Summary**\n\n"
-            f"- Rating: {rating} ({score:.0f}/100)\n"
-            f"- Coverage (V100): {v100:.1%}\n"
+            f"- Rating: {rating} ({score_text})\n"
+            f"- Coverage (V100): {coverage_text}\n"
             f"- Seeds: {plan.get('seed_count', 'N/A')}\n"
-            f"- OAR Violations: {len(metrics.get('oar_violations', []))}\n"
+            f"- OAR Violations: {violation_text}\n"
         )
 
     def _generate_dvh_report(self, plan: Dict) -> str:

@@ -373,6 +373,15 @@ def format_tool_error(
                 "the dose on the current grid and retry."
             )
         if tool == "dose_evaluation":
+            if "source dose is stale" in lower:
+                return (
+                    "当前粒子或几何数据已发生变化，旧剂量已失效。本次没有复用旧剂量或修改规划；"
+                    "请先重新计算当前时间点的剂量，再进行评估。"
+                    if language == "zh" else
+                    "Current source or geometry inputs changed, so the old dose is stale. "
+                    "No old dose was reused and the plan was not modified. Recompute dose "
+                    "for this timepoint before evaluating it."
+                )
             # dose_evaluation is a post-planning quality assessment.  Its
             # failure is never evidence that planning did not complete.
             return (
