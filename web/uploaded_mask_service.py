@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import os
 import time
+from collections.abc import MutableMapping
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional
 
@@ -359,7 +360,7 @@ def normalize_uploaded_mask_results(planning_results: Mapping[str, Any]) -> bool
     so it is safe during the lightweight metadata hydration pass as well as
     full array hydration.
     """
-    if not isinstance(planning_results, dict):
+    if not isinstance(planning_results, MutableMapping):
         return False
     changed = _quarantine_oversized_uploaded_masks(planning_results)
     raw_entries = planning_results.get(_MASKS)

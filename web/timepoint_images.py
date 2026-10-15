@@ -169,7 +169,7 @@ class TimepointImageService:
     def __init__(self, store):
         self.store = getattr(store, "raw", store)
 
-    def _read(self, user_id, session_id, target_id):
+    def _read(self, user_id, session_id, target_id, *, metadata_only=False):
         timepoint_id(session_id)
         timepoint_id(target_id)
         catalog = self.store._timepoint_catalog(user_id, session_id)
@@ -177,7 +177,7 @@ class TimepointImageService:
         # The store returns detached, checksum-verified state. Copying its full
         # DVH/history again for an image metadata read made every restore route
         # compete for the GIL and serialize large cases for tens of seconds.
-        state = self.store._read_timepoint_state(user_id, session_id, item)
+        state = self.store._read_timepoint_state(user_id, session_id, item, image_metadata=metadata_only)
         state["session_id"], state["timepoint_id"] = session_id, target_id
         collection = state.setdefault("image_collection", empty_collection(session_id, target_id))
         validate_collection(collection, session_id, target_id)
@@ -215,7 +215,7 @@ class TimepointImageService:
 
     def list_images(self, user_id, session_id, target_id):
         with self.store._case_guard(user_id, session_id):
-            _, item, _, collection = self._read(user_id, session_id, target_id)
+            _, item, _, collection = self._read(user_id, session_id, target_id, metadata_only=True)
             return self._public(item, collection)
 
     def adopt_saved_reference(self, user_id, session_id, target_id):
@@ -363,7 +363,7 @@ class TimepointImageService:
 
     def source_file(self, user_id, session_id, target_id, image_id, *, original=False):
         with self.store._case_guard(user_id, session_id):
-            _, _, _, collection = self._read(user_id, session_id, target_id)
+            _, _, _, collection = self._read(user_id, session_id, target_id, metadata_only=True)
             image = collection["images"].get(timepoint_id(image_id))
             if not image or image["status"] != "active":
                 raise TimepointNotFound("The requested image is unavailable")
@@ -614,7 +614,7 @@ class TimepointImageService:
 
     def display_image_bridge(self, user_id, session_id, target_id, *, load_pixels=True):
         with self.store._case_guard(user_id, session_id):
-            _, item, _, collection = self._read(user_id, session_id, target_id)
+            _, item, _, collection = self._read(user_id, session_id, target_id, metadata_only=True)
             image_id = collection["display_image_id"]
             result = self._public(item, collection)
             result["available"] = image_id is not None
@@ -812,7 +812,7 @@ class TimepointImageService:
         publication; never inject this into the shared Session/root Agent.
         """
         with self.store._case_guard(user_id, session_id):
-            _, item, _, collection = self._read(user_id, session_id, target_id)
+            _, item, _, collection = self._read(user_id, session_id, target_id, metadata_only=True)
             image_id = collection["planning_reference_image_id"]
             if image_id is None:
                 raise TimepointConflict("Select an owned planning reference image")

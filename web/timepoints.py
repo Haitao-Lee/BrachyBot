@@ -18,6 +18,26 @@ from collections import OrderedDict
 from collections.abc import Mapping
 
 
+def _resource_snapshot(state, *, resource_only=False):
+    """Detach presentation/metadata now, clinical history only when requested."""
+    from web.timepoint_chat import _detached
+    from web.resource_view import RequestResults
+    agent = state.get('agent') or {}
+    excluded = {'chat', 'ui', 'report', 'image_presentations'} if resource_only else {'chat'}
+    excluded_agent = set(_SHARED_AGENT_KEYS) | {'ui_state'} if resource_only else _SHARED_AGENT_KEYS
+    result = _detached({**{k:v for k,v in state.items() if k not in excluded},
+        'agent': {**{k:v for k,v in agent.items() if k not in excluded_agent}, 'planning_results': {}}})
+    result['agent']['planning_results'] = RequestResults(agent.get('planning_results') or {})
+    return result
+
+
+def _manifest_projection(state, *, resource_only=False, image_metadata=False):
+    if image_metadata:
+        from web.timepoint_chat import _detached
+        return _detached({'image_collection': state['image_collection']}) if 'image_collection' in state else {}
+    return _resource_snapshot(state, resource_only=resource_only)
+
+
 CATALOG_VERSION = 1
 MAX_TIMEPOINTS = 256
 MAX_HISTORY = 256
@@ -462,11 +482,12 @@ class TimepointStoreMixin:
                         lifecycle_revision=item.get("lifecycle_revision", 0) + 1)
             return self._publish_timepoint_catalog(user_id, session_id, catalog, expected_revision)
 
-    def _read_timepoint_state(self, user_id, session_id, item):
+    def _read_timepoint_state(self, user_id, session_id, item, *, defer_results=False, resource_only=False, image_metadata=False):
         from web.workspace_store import _safe_workspace_child
 
         if item["legacy_default"]:
-            return self.load_snapshot(user_id, session_id)
+            state = self.load_snapshot(user_id, session_id)
+            return _manifest_projection(state, resource_only=resource_only, image_metadata=image_metadata) if defer_results or image_metadata else state
         ref = item.get("state_ref")
         if ref is None:
             return self._empty_snapshot(session_id)
@@ -484,10 +505,20 @@ class TimepointStoreMixin:
                 cached = cache.get(cache_key)
                 if cached is not None and cached[0] == identity:
                     cache.move_to_end(cache_key)
-                    # Cache verified immutable JSON bytes, not a second heap
-                    # graph of every historical DVH. C-backed parsing creates
-                    # detached containers without Python-level recursive copies.
-                    return json.loads(cached[1])
+                    # Normal writers parse owned containers from verified JSON.
+                    # Resource readers may reuse a private immutable graph;
+                    # both bytes and graph count toward the bounded cache.
+                    if not defer_results and not image_metadata:
+                        return json.loads(cached[1])
+                    state = cached[3] if len(cached) > 3 else json.loads(cached[1])
+                    if len(cached) <= 3:
+                        from web.timepoint_hydration import _weight
+                        weight = len(cached[1]) + _weight(state)
+                        if weight <= 128 * 1024**2:
+                            cache[cache_key] = (identity, cached[1], weight, state)
+                            while len(cache) > 8 or sum(row[2] for row in cache.values()) > 128 * 1024**2:
+                                cache.popitem(last=False)
+                    return _manifest_projection(state, resource_only=resource_only, image_metadata=image_metadata)
             data = path.read_bytes()
             if hashlib.sha256(data).hexdigest() != ref["sha256"]:
                 raise TimepointIntegrityError("The timepoint state checksum does not match")
@@ -500,13 +531,13 @@ class TimepointStoreMixin:
                     cache.move_to_end(cache_key)
                     while len(cache) > 8 or sum(row[2] for row in cache.values()) > 128 * 1024**2:
                         cache.popitem(last=False)
-            return state
+            return _manifest_projection(state, resource_only=resource_only, image_metadata=image_metadata) if defer_results or image_metadata else state
         except (OSError, ValueError, TypeError) as exc:
             if isinstance(exc, TimepointIntegrityError):
                 raise
             raise TimepointIntegrityError("The timepoint state is missing or unreadable") from exc
 
-    def load_timepoint_snapshot(self, user_id, session_id, identifier, *, decode_arrays=False, include_shared=True):
+    def load_timepoint_snapshot(self, user_id, session_id, identifier, *, decode_arrays=False, include_shared=True, defer_results=False, resource_only=False):
         from web.workspace_store import _decode_artifacts
 
         with self._case_guard(user_id, session_id):
@@ -514,7 +545,8 @@ class TimepointStoreMixin:
             item = self._timepoint_record(catalog, identifier)
             # The checksum-verified JSON decoder already returns a fresh owned
             # object; do not copy its complete clinical/UI history a second time.
-            state = self._read_timepoint_state(user_id, session_id, item)
+            state = (self._read_timepoint_state(user_id, session_id, item, defer_results=True, resource_only=resource_only)
+                if defer_results and not decode_arrays else self._read_timepoint_state(user_id, session_id, item))
             agent = state.setdefault("agent", {})
             if include_shared:
                 shared = self.load_snapshot(user_id, session_id, shared_only=True)

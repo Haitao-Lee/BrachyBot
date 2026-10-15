@@ -1295,7 +1295,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         """Return entire CT volume as binary blob for client-side rendering."""
         agent = get_agent(_lightweight=True)
         if agent is None:
-            return jsonify({"error": "Agent not available"}), 500
+            return workspace_data_pending(agent, require="ct")
         pending = workspace_data_pending(agent, require="ct")
         if pending is not None:
             return pending
@@ -1343,7 +1343,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         """Return CTV uint8 and OAR uint16 label volumes for client rendering."""
         agent = get_agent(_lightweight=True)
         if agent is None:
-            return jsonify({"error": "Agent not available"}), 500
+            return workspace_data_pending(agent)
         pending = workspace_data_pending(agent)
         if pending is not None:
             return pending
@@ -2642,7 +2642,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         # label-mesh routes.
         agent = get_agent(_lightweight=True)
         if agent is None:
-            return jsonify({"error": "Agent not available"}), 500
+            return workspace_data_pending(agent)
 
         # The skin surface is also a derived Viewer artifact. Keep its cache
         # separate from clinical arrays and scope it to the authenticated
@@ -2874,7 +2874,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         """
         agent = get_agent()
         if agent is None:
-            return jsonify({"error": "Agent not available"}), 500
+            return workspace_data_pending(agent)
 
         # Do not run display-time safety filtering against the metadata-only
         # hydration shell. A cold restore may contain the durable seed plan

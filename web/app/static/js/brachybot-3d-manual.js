@@ -3406,6 +3406,7 @@ function init3DScene() {
         renderFrameId = 0;
         if (document.hidden || !scene3D.renderer || scene3D.contextLost) return;
         drawingFrame = true;
+        try {
 
         // Resize and projection must be current before OrbitControls consumes
         // pointer deltas. A stale layout size changes rotation speed after a
@@ -3448,8 +3449,15 @@ function init3DScene() {
         scene3D.renderer.setScissor(0, 0, cssWidth, cssHeight);
         scene3D.renderer.setScissorTest(false);
         scene3D.renderer.autoClear = true;
+        const resourceState = window.BrachyBotTimepointWorkspace?.resourceState?.();
+        const resourcePreview = resourceState?.ready === false
+            && !['failed', 'partial'].includes(resourceState.status);
         scene3D.depthPeeling.render(scene3D.scene, scene3D.camera, {
-            interactive: !!controlsChanged || scene3D.peelingInteraction === true,
+            // An incremental scene changes on every response. Use the same
+            // full-resolution peel budget as orbiting until all resources are
+            // ready, then request the final quality frame at that boundary.
+            // Captures keep their independent full-quality budget.
+            interactive: !!controlsChanged || scene3D.peelingInteraction === true || resourcePreview,
             capture: scene3D.peelingCapture === true,
         });
         window.renderPlanningDistanceAnnotations?.();
@@ -3472,6 +3480,11 @@ function init3DScene() {
         drawingFrame = false;
         pendingFrames = Math.max(0, pendingFrames - 1);
         if (controlsChanged || pendingFrames > 0) requestRender(pendingFrames || 1);
+        } finally {
+            // A WebGL/material failure must not permanently latch the scheduler
+            // while later resource requests keep reporting progress.
+            drawingFrame = false;
+        }
     }
 
     // Render the live 3D scene immediately while restoring the exact renderer
@@ -4381,6 +4394,17 @@ function addMeshToScene(meshData) {
         family: presentationFamily,
     }) || null;
 
+    // Validate the replacement before disposing a usable existing surface.
+    const vertices = meshData.vertices instanceof Float32Array
+        ? meshData.vertices : new Float32Array(meshData.vertices.flat());
+    const indices = meshData.faces instanceof Uint32Array
+        ? meshData.faces : new Uint32Array(meshData.faces.flat());
+    if (!vertices.length || vertices.length % 3 || !indices.length || indices.length % 3
+        || vertices.some(value => !Number.isFinite(value))
+        || indices.some(value => value >= vertices.length / 3)) {
+        console.warn('[addMeshToScene] Skipping mesh with invalid geometry:', id);
+        return false;
+    }
     // Remove existing mesh with same ID
     if (scene3D.meshes[id]) {
         // A reconstruction can replace a mesh while dose mode is active.
@@ -4396,12 +4420,6 @@ function addMeshToScene(meshData) {
     }
 
     const geometry = new THREE.BufferGeometry();
-    const vertices = new Float32Array(meshData.vertices.flat());
-    const indices = new Uint32Array(meshData.faces.flat());
-    // Validate: skip meshes with NaN vertices (corrupted server data)
-    let hasNaN = false;
-    for (let i = 0; i < vertices.length; i++) { if (isNaN(vertices[i])) { hasNaN = true; break; } }
-    if (hasNaN) { console.warn('[addMeshToScene] Skipping mesh with NaN vertices:', id); return; }
     geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
     geometry.setIndex(new THREE.BufferAttribute(indices, 1));
     geometry.computeVertexNormals();
@@ -4542,8 +4560,8 @@ function addMeshToScene(meshData) {
         if (dataTreeState?.planning?.meshes) {
             dataTreeState.planning.meshes = dataTreeState.planning.meshes.filter(item => item.id !== id);
         }
-        renderDataTree?.();
-        window.applyDataTreeViewVisibility?.();
+        renderDataTree?.({ meshOnly:true });
+        window.applyDataTreeViewVisibility?.({ meshOnly:true });
     } else if (isSegmentationMesh) {
         // CTV/OAR meshes belong to the Segmentation branch.  Older versions
         // fell through to the generic planning mirror below, so one mesh had
@@ -4573,9 +4591,9 @@ function addMeshToScene(meshData) {
             canonical.error = null;
             canonical.dataVersion = Number(meshData.data_version || canonical.dataVersion || 0);
         }
-        if (typeof renderDataTree === 'function') renderDataTree();
+        if (typeof renderDataTree === 'function') renderDataTree({ meshOnly:true });
         if (typeof window.applyDataTreeViewVisibility === 'function') {
-            window.applyDataTreeViewVisibility();
+            window.applyDataTreeViewVisibility({ meshOnly:true });
         }
     } else if (isMaskMesh) {
         const mask = typeof window.getDataTreeMaskState === 'function'
@@ -4592,9 +4610,9 @@ function addMeshToScene(meshData) {
         if (dataTreeState?.planning?.meshes) {
             dataTreeState.planning.meshes = dataTreeState.planning.meshes.filter(item => item.id !== id);
         }
-        if (typeof renderDataTree === 'function') renderDataTree();
+        if (typeof renderDataTree === 'function') renderDataTree({ meshOnly:true });
         if (typeof window.applyDataTreeViewVisibility === 'function') {
-            window.applyDataTreeViewVisibility();
+            window.applyDataTreeViewVisibility({ meshOnly:true });
         }
     } else if (dataTreeState && dataTreeState.planning) {
         // Mirror this mesh into the data tree so the user can see all 3D
@@ -4649,9 +4667,9 @@ function addMeshToScene(meshData) {
         };
         if (existing >= 0) dataTreeState.planning.meshes[existing] = entry;
         else dataTreeState.planning.meshes.push(entry);
-        if (typeof renderDataTree === 'function') renderDataTree();
+        if (typeof renderDataTree === 'function') renderDataTree({ meshOnly:true });
         if (typeof window.applyDataTreeViewVisibility === 'function') {
-            window.applyDataTreeViewVisibility();
+            window.applyDataTreeViewVisibility({ meshOnly:true });
         }
     }
 
@@ -4684,6 +4702,7 @@ function addMeshToScene(meshData) {
     // dose surface, needle, or guide can remain outside the frame even though
     // the first CTV mesh was fitted successfully.
     window.scheduleCameraFitForSceneMutation?.('mesh-hydration-batch');
+    return true;
 }
 
 // Single entry point for every non-pointer camera change. Keeping position,
@@ -7184,10 +7203,11 @@ async function reconstructDoseIsosurfaces3D() {
 // the data tree).
 const _segmentationMeshPrewarm = {
     tasks: new Map(),
+    controllers: new Set(),
     statusEl: null,
     activeRuns: 0,
-    // Fetches cannot always be aborted safely, but their results must never
-    // mutate a newer case after a session transition.
+    // Cancellation releases browser work; generation also fences a response
+    // whose server computation already finished during a transition.
     generation: 0,
 };
 
@@ -7200,6 +7220,8 @@ let _structuralMeshReconstructionInFlight = null;
 
 function invalidateSegmentationMeshPrewarm() {
     _segmentationMeshPrewarm.generation += 1;
+    _segmentationMeshPrewarm.controllers.forEach(controller => controller.abort());
+    _segmentationMeshPrewarm.controllers.clear();
     _segmentationMeshPrewarm.tasks.clear();
     // A caller for the old case/generation may still be awaiting a fetch.  It
     // will be fenced by the generation checks below, while a new case is free
@@ -7267,6 +7289,25 @@ function _setMeshPrewarmStatus(text, show = true) {
 const _VIEWER_RESOURCE_REQUEST_TIMEOUT_MS = 120000;
 const _VIEWER_RESOURCE_MAX_WAIT_MS = 300000;
 
+function decodeViewerBinaryMesh(buffer) {
+    if (!(buffer instanceof ArrayBuffer) || buffer.byteLength < 20) throw new Error('Truncated mesh envelope');
+    const bytes = new Uint8Array(buffer);
+    if (new TextDecoder().decode(bytes.subarray(0, 8)) !== 'BBMESH1\0') throw new Error('Unsupported mesh envelope');
+    const view = new DataView(buffer);
+    const metadataLength = view.getUint32(8, true), vertexCount = view.getUint32(12, true), faceCount = view.getUint32(16, true);
+    const vertexOffset = 20 + Math.ceil(metadataLength / 4) * 4;
+    const faceOffset = vertexOffset + vertexCount * 12;
+    if (vertexOffset > buffer.byteLength || faceOffset + faceCount * 12 !== buffer.byteLength)
+        throw new Error('Invalid mesh envelope lengths');
+    const payload = JSON.parse(new TextDecoder().decode(bytes.subarray(20, 20 + metadataLength)));
+    if (!payload.success || !payload.guide || !vertexCount || !faceCount) throw new Error('Empty mesh envelope');
+    payload.guide.vertices = new Float32Array(buffer, vertexOffset, vertexCount * 3);
+    payload.guide.faces = new Uint32Array(buffer, faceOffset, faceCount * 3);
+    payload.guide.vertex_count = vertexCount;
+    payload.guide.face_count = faceCount;
+    return payload;
+}
+
 async function _fetchViewerJsonWithRetry(url, init = {}, options = {}) {
     // A retry is the same request. Freeze scope headers before the first wait.
     const capturedScope = options.timepointScope || window.BrachyBotTimepointWorkspace?.captureRequestScope?.();
@@ -7284,6 +7325,10 @@ async function _fetchViewerJsonWithRetry(url, init = {}, options = {}) {
     let lastError = null;
 
     while (Date.now() < deadline) {
+        if (init.signal?.aborted || (capturedScope
+            && !window.BrachyBotTimepointWorkspace.scopeIsCurrent(capturedScope))) {
+            return { response:null, data:null, attempts:attempt, retryable:false, aborted:true };
+        }
         attempt += 1;
         const controller = typeof AbortController === 'function'
             ? new AbortController()
@@ -7316,7 +7361,9 @@ async function _fetchViewerJsonWithRetry(url, init = {}, options = {}) {
                 || [502, 503, 504].includes(response.status);
             let data = null;
             let bodyError = null;
-            if (options.responseType === 'arrayBuffer' && !retryableStatus) {
+            if (response.ok && response.headers.get('Content-Type')?.split(';')[0] === 'application/vnd.brachybot.mesh') {
+                try { data = decodeViewerBinaryMesh(await response.arrayBuffer()); } catch (error) { bodyError = error; }
+            } else if (options.responseType === 'arrayBuffer' && !retryableStatus) {
                 try { data = await response.arrayBuffer(); } catch (error) { bodyError = error; }
             } else {
                 try { data = await response.json(); } catch (error) { bodyError = error; }
@@ -7432,6 +7479,9 @@ async function replanManualPlan() {
 // Uses a cached Set attached to the typed array for O(1) repeat lookups.
 function _labelIdInMask(labelData, labelId) {
     if (!labelData || labelData.length === 0) return false;
+    if (typeof getLabelVolumeCounts === 'function') {
+        return getLabelVolumeCounts(labelData).has(labelId);
+    }
     if (!labelData._uniqueLabelSet) {
         labelData._uniqueLabelSet = new Set(labelData);
     }
@@ -7455,11 +7505,13 @@ async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, o
     }
 
     const sid = String(sessionId || _activePlanningSceneSessionId());
-    const key = _meshTaskKey(source, labelId, smoothing, sid);
+    const key = `${_meshTaskKey(source, labelId, smoothing, sid)}:${generation}:${timepointScope?.timepointId || ''}:${timepointScope?.generation || 0}`;
     if (_segmentationMeshPrewarm.tasks.has(key)) {
         return _segmentationMeshPrewarm.tasks.get(key);
     }
 
+    const controller = new AbortController();
+    _segmentationMeshPrewarm.controllers.add(controller);
     const task = (async () => {
         try {
             let data = null;
@@ -7497,6 +7549,7 @@ async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, o
                     API + '/viewer/3d_mask',
                     {
                         method: 'POST',
+                        signal: controller.signal,
                         headers: requestHeaders || {
                             'Content-Type': 'application/json',
                             'X-BrachyBot-Session': String(sessionId || _activePlanningSceneSessionId()),
@@ -7504,6 +7557,7 @@ async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, o
                         body: JSON.stringify({ label_id: labelId, source, smoothing }),
                     },
                     {
+                        timepointScope,
                         requestTimeoutMs: 120000,
                         maxWaitMs: 300000,
                     },
@@ -7551,7 +7605,8 @@ async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, o
             if (typeof opacity === 'number') data.opacity = opacity;
             data.visible2D = visible2D !== false;
             data.visible3D = visible3D !== false;
-            addMeshToScene(data);
+            const added = addMeshToScene(data);
+            if (added === false || !_sceneHasMesh(organId)) return { status:'error', id:organId, error:'Mesh was not added to the scene' };
             return { status: data.cached ? 'cached' : 'loaded', id: organId };
         } catch (e) {
             if (generation === _segmentationMeshPrewarm.generation
@@ -7561,6 +7616,7 @@ async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, o
             return { status: 'error', id: organId, error: e };
         } finally {
             _segmentationMeshPrewarm.tasks.delete(key);
+            _segmentationMeshPrewarm.controllers.delete(controller);
         }
     })();
     _segmentationMeshPrewarm.tasks.set(key, task);
@@ -7641,6 +7697,13 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
             }
         }
 
+        // The target should be visible before a full OAR queue occupies every
+        // browser connection and server worker. This keeps the same surfaces
+        // and geometry, but gives the essential clinical target first use.
+        await Promise.all(promises);
+        promises.length = 0;
+        if (generation !== _segmentationMeshPrewarm.generation
+            || (sessionId && sessionId !== String(state.sessionId || ''))) return { stale:true };
         if (includeOAR && oarLabelData) {
             // The full structural loader supplies a frozen target list after
             // label hydration.  Treat an explicitly empty list as meaningful:

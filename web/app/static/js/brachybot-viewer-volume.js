@@ -442,6 +442,23 @@ function computeCTStats() {
 // Label volumes for client-side overlay rendering (3D Slicer style)
 let ctvLabelData = null;   // Uint8Array, shape (Z, Y, X)
 let oarLabelData = null;   // Uint8Array, shape (Z, Y, X)
+// Label buffers are replaced by loadLabelVolumes, never edited in place.
+// Keep voxel counts with that buffer identity, so publishing each incoming
+// mesh does not rescan/filter the complete CT grid for every Data Tree row.
+const _labelVolumeCounts = new WeakMap();
+function getLabelVolumeCounts(data) {
+    if (!data) return new Map();
+    let counts = _labelVolumeCounts.get(data);
+    if (!counts) {
+        counts = new Map();
+        for (let i = 0; i < data.length; i++) {
+            const label = Number(data[i]);
+            if (label > 0) counts.set(label, (counts.get(label) || 0) + 1);
+        }
+        _labelVolumeCounts.set(data, counts);
+    }
+    return counts;
+}
 let skinSurfaceData = null;  // Uint8Array, exact guide body envelope (Z, Y, X)
 let skinSurfaceShape = null;
 let labelColorLUT = {};    // Legacy alias for the OAR LUT
@@ -4834,7 +4851,7 @@ function renderDataTreeDebounced() {
     }, 50);
 }
 
-function renderDataTree() {
+function renderDataTree(options = {}) {
     const body = document.getElementById('dataTreeBody');
     if (!body) return;
 
@@ -4853,7 +4870,7 @@ function renderDataTree() {
     const hasCtvStructureCatalog = Array.isArray(ctvStructureCatalog)
         && ctvStructureCatalog.some(item => Number(item?.target_label) > 0);
     dataTreeState.ctv.loaded = !!state.ctLoaded && (
-        (!!ctvLabelData && ctvLabelData.some(value => Number(value) > 0))
+        (!!ctvLabelData && getLabelVolumeCounts(ctvLabelData).size > 0)
         || hasCtvStructureCatalog
     );
     // Metadata and binary labels are loaded independently.  Keep the group
@@ -4861,7 +4878,7 @@ function renderDataTree() {
     // transient empty metadata response hides valid server-side masks.
     dataTreeState.oar.loaded = dataTreeState.organs.length > 0
         || !!(typeof oarLabelData !== 'undefined' && oarLabelData
-            && oarLabelData.some(value => Number(value) > 0));
+            && getLabelVolumeCounts(oarLabelData).size > 0);
     dataTreeState.dose.loaded = !!(state.metrics && state.metrics.v100 !== undefined);
     dataTreeState.seeds.loaded = !!(state.seeds && state.seeds.length > 0);
 
@@ -4897,18 +4914,8 @@ function renderDataTree() {
 
     // === Segmentation group (CTV + OAR parallel) ===
     // Check if CTV has multiple labels
-    const ctvLabels = [];
-    const ctvLabelCountMap = new Map();
-    if (ctvLabelData) {
-        const uniqueLabels = new Set(ctvLabelData);
-        uniqueLabels.forEach(l => {
-            if (l > 0) {
-                const labelId = Number(l);
-                ctvLabels.push(labelId);
-                ctvLabelCountMap.set(labelId, ctvLabelData.filter(v => v === l).length);
-            }
-        });
-    }
+    const ctvLabelCountMap = new Map(getLabelVolumeCounts(ctvLabelData));
+    const ctvLabels = [...ctvLabelCountMap.keys()];
     // The transport label volume can legitimately hide a source that is fully
     // overlapped by another promoted CTV label.  The source catalog is the
     // authoritative row list, so retain that source in the Data Tree and use
@@ -5829,7 +5836,11 @@ function renderDataTree() {
     body.scrollTop = previousScrollTop;
     body.scrollLeft = previousScrollLeft;
     window.refreshAnalysisStructurePresentation?.();
-    requestViewerVisualRefresh('data-tree-render');
+    // A newly arrived surface changes 3D geometry and tree readiness only.
+    // Reprojecting the dense guide into all three MPR planes for each of 40+
+    // OARs monopolized the UI thread and looked like a stuck mesh loader.
+    if (options.meshOnly === true) scene3D?.requestRender?.(2);
+    else requestViewerVisualRefresh('data-tree-render');
 }
 
 function _scheduleDataTreeSave(reason, presentationId = null) {
@@ -8011,14 +8022,24 @@ function _apply3DNodeVisibility(node) {
  * The master `visible` state is deliberately not changed here: it remains the
  * existing all-view compatibility control, while 2D/3D stay independent.
  */
-function applyDataTreeViewVisibility() {
+function applyDataTreeViewVisibility({ meshOnly = false } = {}) {
     window.BrachyBotImplants?.reconcilePresentation?.();
-    window.BrachyBotImplants?.draw2D('axial');
-    window.BrachyBotImplants?.draw2D('sagittal');
-    window.BrachyBotImplants?.draw2D('coronal');
+    if (!meshOnly) {
+        window.BrachyBotImplants?.draw2D('axial');
+        window.BrachyBotImplants?.draw2D('sagittal');
+        window.BrachyBotImplants?.draw2D('coronal');
+    }
     window.syncManualStepPresentationVisibility?.();
     _migrateSegmentationMirrorsOutOfPlanning();
     _allDataTreeVisualNodes().forEach(_apply3DNodeVisibility);
+    if (meshOnly) {
+        // Adding a 3D surface does not change CT/label/dose slice pixels.
+        // Re-requesting every MPR overlay for each incoming OAR swamped the
+        // same browser connections that were restoring the 3D resources.
+        scene3D?.requestRender?.(2);
+        window.monitorVisualStateChanged?.();
+        return;
+    }
     const ct2D = isDataTreeNodeVisible2D(dataTreeState.ct);
     ['axial', 'sagittal', 'coronal'].forEach(axis => {
         const canvas = document.getElementById('sliceCanvas' + capitalize(axis));

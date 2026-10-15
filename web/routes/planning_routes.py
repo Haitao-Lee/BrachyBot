@@ -4543,7 +4543,7 @@ def register_planning_routes(
         """
         agent = get_agent()
         if agent is None:
-            return jsonify({"error": "Agent not available"}), 500
+            return dose_workspace_data_pending(agent)
         pending = dose_workspace_data_pending(agent)
         if pending is not None:
             return pending
@@ -4812,7 +4812,7 @@ def register_planning_routes(
         """
         agent = get_agent()
         if agent is None:
-            return jsonify({"error": "Agent not available"}), 500
+            return dose_workspace_data_pending(agent)
         pending = dose_workspace_data_pending(agent)
         if pending is not None:
             return pending
@@ -4869,7 +4869,7 @@ def register_planning_routes(
 
         agent = get_agent()
         if agent is None:
-            return jsonify({"error": "Agent not available"}), 500
+            return dose_workspace_data_pending(agent)
         pending = dose_workspace_data_pending(agent)
         if pending is not None:
             return pending
@@ -4936,7 +4936,7 @@ def register_planning_routes(
         """
         agent = get_agent()
         if agent is None:
-            return jsonify({"error": "Agent not available"}), 500
+            return dose_workspace_data_pending(agent)
         pending = dose_workspace_data_pending(agent)
         if pending is not None:
             return pending
@@ -4997,7 +4997,7 @@ def register_planning_routes(
         """
         agent = get_agent()
         if agent is None:
-            return jsonify({"error": "Agent not available"}), 500
+            return dose_workspace_data_pending(agent)
         pending = dose_workspace_data_pending(agent)
         if pending is not None:
             return pending

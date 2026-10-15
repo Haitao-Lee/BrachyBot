@@ -481,13 +481,13 @@
             return false;
         }
         const previous = window.dataTreeState?.planning?.meshes?.find(item => item.id === GUIDE_ID);
-        addMeshToScene({
+        const added = addMeshToScene({
             organ_id: GUIDE_ID,
             source: 'surgical_guide',
             label: guide.label || 'Patient-specific needle guide',
             vertices: guide.vertices,
             faces: guide.faces,
-            vertex_count: guide.vertices.length,
+            vertex_count: guide.vertex_count || guide.vertices.length,
             color: previous?.color || '#2dd4bf',
             opacity: typeof previous?.opacity === 'number' ? previous.opacity : 0.82,
             // Scene storage keeps GUIDE_ID for compatibility, while every
@@ -501,6 +501,7 @@
             finite_fov: guide.validation?.finite_fov || null,
             auxiliary_holes: guide.auxiliary_holes || guide.validation?.auxiliary_holes || null,
         });
+        if (added === false) return false;
         applyGuideParameters(guide.parameters || {});
         // The guide mesh is the authoritative geometry. Repaint the MPR
         // canvases after it arrives so its slice projection appears without
@@ -528,6 +529,7 @@
             maxPendingRetries = 240,
             requestTimeoutMs = 120000,
             maxWaitMs = 300000,
+            meshBinary = false,
             ...fetchOptions
         } = options || {};
         const sharedRequest = window.fetchViewerJsonWithRetry;
@@ -539,11 +541,13 @@
             ...fetchOptions,
             headers: window.BrachyBotTimepointWorkspace?.headers?.(timepointScope, {
                 ...(fetchOptions.headers || {}),
+                ...(meshBinary ? {Accept:'application/vnd.brachybot.mesh, application/json'} : {}),
                 ...(sessionId ? { 'X-BrachyBot-Session': sessionId } : {}),
             }) || {...fetchOptions.headers, ...(sessionId ? {'X-BrachyBot-Session':sessionId} : {})},
         }, {
             requestTimeoutMs,
             maxWaitMs,
+            timepointScope,
         });
         if (!request.response) {
             throw request.error || new Error('Guide request timed out');
@@ -604,6 +608,7 @@
             const payload = await guideFetch(`/api/surgical-guides/mesh${suffix}`, {
                 timepointScope: owner.timepointScope,
                 retryPending: true,
+                meshBinary: true,
             }, sessionId);
             if (generation !== guideLoadGeneration || !owner.current()) return false;
             if (guideStatusIsTransient(payload)) {

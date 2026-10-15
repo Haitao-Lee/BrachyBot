@@ -112,6 +112,14 @@ async function bounded(promise) {
   successor.c.current={scope:successor.c.mounted,ready:true};successor.old.successor=successor.c.current;successor.finish(true);
   assert.equal(await bounded(successorRecovery),true,'An explicitly owned remount can succeed pending recovery');
   assert.equal(successor.c.reads,0);
+  const bootstrap=recoveryFixture(), bootstrapRecovery=bootstrap.c.restoreActive({background:true});
+  bootstrap.old.ready=true;bootstrap.finish(true);
+  assert.equal(await bounded(bootstrapRecovery),true,'Bootstrap joins the existing visual transaction without clearing its scene');
+  assert.equal(bootstrap.c.reads,0,'A completed owned hydration does not replay resource reads');
+  const partial=recoveryFixture(), partialRecovery=partial.c.restoreActive({background:true});
+  partial.old.ready=false;partial.finish(false);
+  assert.equal(await bounded(partialRecovery),false,'A partial hydration remains partial instead of recursively rebuilding');
+  assert.equal(partial.c.reads,0);
   const implantSource=fs.readFileSync(path.resolve(__dirname,'../web/app/static/js/brachybot-implant-observations.js'),'utf8');
   const implantStart=implantSource.indexOf('    async function reload(explicit = null');
   const implantEnd=implantSource.indexOf('    async function detect()',implantStart);

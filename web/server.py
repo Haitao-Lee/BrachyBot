@@ -1089,7 +1089,7 @@ def create_app(config: Optional[Dict] = None):
             if has_request_context():
                 g.brachybot_http_runtime = runtime
         elif not _lightweight and not runtime.view._workspace_data_ready:
-            runtime.clinical._waiter(True)
+            runtime.hydrate(True)
         if has_request_context():
             g.brachybot_agent = runtime.view
             g.brachybot_workspace = (binding.owner_id, binding.session_id)

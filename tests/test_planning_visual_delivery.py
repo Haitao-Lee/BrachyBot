@@ -219,7 +219,7 @@ def test_data_tree_has_independent_2d_and_3d_presentation_controls():
         "Hide in 2D",
         "Show in 3D",
         "Hide in 3D",
-        "function applyDataTreeViewVisibility()",
+        "function applyDataTreeViewVisibility(",
     ):
         assert required in viewer
 

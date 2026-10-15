@@ -74,6 +74,14 @@
 .data-tree-body .implant-tree-group > summary { font-size:12px; line-height:1.4; }
 .session-sidebar-header { gap:8px; flex-wrap:wrap; }
 .session-sidebar-header .new-chat-btn { min-height:32px; font-size:12px; line-height:1.3; white-space:nowrap; padding:6px 10px; }
+/* The panel owns one continuous edge, outside all of its child backgrounds. */
+.right-panel { border-left:1px solid var(--border-default, rgba(120,140,200,.14)); }
+.right-panel::before { display:none; }
+/* Native number spinners and padding must not consume the numeric text area. */
+#panelViewers .viewers-toolbar input[type="number"] {
+    width:12ch !important; min-width:110px; flex:0 0 auto;
+    font-variant-numeric:tabular-nums;
+}
 @media(max-width:900px) {
     #panelViewers .viewers-toolbar { min-height:48px; padding:8px !important; }
     .data-tree-body .tree-item .opacity-slider { width:48px; max-width:48px; flex-basis:48px; }

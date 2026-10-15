@@ -337,13 +337,24 @@ class ScopedHttpRuntime:
         from web.timepoint_hydration import clinical_hydration
         provided_store = control_agent._workspace_store
         raw_store = getattr(provided_store, 'raw', provided_store)
+        from flask import has_request_context, request
+        # These routes consume clinical arrays/geometry and never edit browser
+        # presentation or reports. Large saved UI packets are irrelevant to a
+        # mesh or raster slice and must not be copied on every read.
+        resource_only = has_request_context() and request.path in {
+            '/api/viewer/3d_mask', '/api/viewer/volume', '/api/viewer/slice',
+            '/api/viewer/label_volume', '/api/viewer/generic_masks', '/api/viewer/generic_mask_volume',
+            '/api/viewer/3d_skin', '/api/viewer/skin_surface_volume',
+            '/api/planning/dose_contour_slice', '/api/planning/dose_overlay_slice',
+            '/api/planning/dose_overlay_volume',
+        }
         context = raw_store.capture_timepoint_context(binding.owner_id, binding.session_id, binding.timepoint_id)
         snapshot = raw_store.load_timepoint_snapshot(binding.owner_id, binding.session_id,
-            binding.timepoint_id, include_shared=False)
+            binding.timepoint_id, include_shared=False, defer_results=True, resource_only=resource_only)
         self.hydration = clinical_hydration(raw_store, control_agent, snapshot, context)
         hydrated = self.hydration.values if self.hydration.ready.is_set() and self.hydration.error is None else None
         self.clinical = ScopedChatRuntime(control_agent, scope, include_shared=False,
-            _snapshot=snapshot, _context=context, _hydrated_values=hydrated)
+            _snapshot=snapshot, _context=context, _hydrated_values=hydrated, _defer_results=True, _defer_ui=resource_only)
         self.view = self.clinical.view
         self.raw_store = self.clinical.store
         self.store = ScopedWorkspaceStore(self.raw_store, binding, self)
@@ -388,11 +399,17 @@ class ScopedHttpRuntime:
             raise self.hydration.error
         self.clinical.assert_current()
         from web.timepoint_chat import _detached, _state_token
-        decoded = _detached(self.hydration.values or {})
-        pending = {key: value for key, value in self.view.memory.planning_results.items()
+        from web.resource_view import RequestResults
+        decoded = RequestResults(self.hydration.values or {})
+        existing = self.view.memory.planning_results
+        materialized = existing.materialized_items() if isinstance(existing, RequestResults) else existing.items()
+        pending = {key: value for key, value in materialized
             if key not in self.clinical.baseline or _state_token(value) != self.clinical.baseline[key]}
-        self.clinical.baseline = {key: _state_token(value) for key, value in decoded.items()}
+        removals = set(self.clinical.baseline) - set(existing)
+        self.clinical.baseline = decoded.baseline
         decoded.update(pending)
+        for key in removals:
+            decoded.pop(key, None)
         self.view.memory.planning_results = decoded
         self.view._workspace_data_ready = True
         self.view._workspace_ct_ready = decoded.get("ct_data") is not None

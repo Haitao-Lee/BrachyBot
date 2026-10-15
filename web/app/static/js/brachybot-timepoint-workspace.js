@@ -229,6 +229,9 @@
             // The shell/geometry is not the final readiness boundary: observation
             // reload and selected-dose restoration can still replace its owner.
             item.ready = true;
+            // Finish the incremental transparency preview even when the last
+            // receipt arrives after the render scheduler has become idle.
+            if (typeof scene3D !== 'undefined') scene3D?.requestRender?.(2);
             if (item.status === 'loading') status('ready');
             return true;
         } catch (error) {
@@ -368,6 +371,13 @@
                 }
                 return false;
             }
+            // Bootstrap, reconnect and explicit recovery can arrive while the
+            // mount already owns a full resource transaction. Join its final
+            // readiness boundary. Replaying hydrate(item) here cleared valid
+            // CTV/OAR meshes and rebuilt the whole scene a second time.
+            // Clinical/lifecycle drift is handled by that transaction's final
+            // receipt and its explicitly owned successor above.
+            return initialItem.ready === true;
         }
         if (mounted && scopeIsCurrent(mounted)) {
             const item = entry(mounted);

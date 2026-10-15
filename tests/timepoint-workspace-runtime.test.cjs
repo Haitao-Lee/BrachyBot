@@ -67,7 +67,9 @@ function binary(n) {
     // Keep the event loop alive only while the helper's short retry is pending.
     const alive=setInterval(()=>{},10);
     try {const result=await r._fetchViewerJsonWithRetry('/api/viewer/volume',{headers:{'X-BrachyBot-Session':'session','X-BrachyBot-Timepoint':'A'}});
-        assert.equal(result.data.success,true);assert.equal(calls.length,2);assert(calls.every(row=>row['x-brachybot-timepoint']==='A'),'retry cannot retarget B');}
+        assert.equal(result.aborted,true);assert.equal(result.response,null);
+        assert.equal(calls.length,1,'Superseded timepoint stops polling instead of loading resources after navigation');
+        assert(calls.every(row=>row['x-brachybot-timepoint']==='A'),'retry cannot retarget B');}
     finally {clearInterval(alive);}
     console.log('4 production timepoint loader contracts passed (synthetic inputs).');
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -5860,13 +5860,12 @@ async function _restoreActiveSessionWorkspace(options = {}) {
             : Promise.resolve({ success: true, skipped: true })
     ).finally(() => recordStage('restore.planning_dvh', planningStartedAt));
 
-    // A segmentation-only case still needs real 3D objects. Planning refresh
-    // also starts this loader, so only launch the independent path when no
-    // Planning owns the reconstruction. The mesh work remains progressive and
-    // does not block CT/2D interaction readiness.
+    // Start essential surfaces as soon as labels are usable. Planning's DVH,
+    // dose and report reads must not postpone the first CTV/OAR frame. The
+    // structural loader coalesces all callers for this case/generation.
     const segmentationMeshTask = labelTask.then(labelsLoaded => {
         if (!ownsWorkspace()) return null;
-        if (!labelsLoaded || hasPlanning || typeof loadCTVAndObstacleMeshes !== 'function') return null;
+        if (!labelsLoaded || typeof loadCTVAndObstacleMeshes !== 'function') return null;
         return loadCTVAndObstacleMeshes({
             timepointScope,
             sessionId: sessionAtStart,
@@ -5877,6 +5876,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     });
     segmentationMeshTask.catch(error =>
         console.warn('[session restore] segmentation mesh reconstruction failed:', error));
+    options.registerBackgroundTask?.(segmentationMeshTask, { kind:'viewer_3d_structures' });
 
     const restoreResults = await Promise.allSettled([labelTask, planningTask]);
     if (!ownsWorkspace()) return null;

@@ -230,6 +230,15 @@ def register_surgical_guide_routes(app, get_agent):
             # expose its status alongside the selected mesh rather than
             # silently describing the active version as if it were selected.
             metadata["guide_status"] = guide_status_payload(agent, requested_version)
+            from web.viewer_mesh import guide_mesh_response, wants_binary_mesh
+            if wants_binary_mesh():
+                payload = {"success": True, **guide_public_payload(state), **metadata}
+                if payload["mesh_loaded"]:
+                    from utils.display_paths import roots_from_workspace
+                    from web.server_support import PROJECT_ROOT
+                    roots = roots_from_workspace(str(_store.workspace_root(_user["id"], _session_id)),
+                        runtime_dir=str(_store.runtime_dir), app_root=str(PROJECT_ROOT))
+                    return guide_mesh_response(payload, state, roots)
             return jsonify({"success": True, **guide_public_payload(state, include_mesh=True), **metadata})
         except Exception as exc:
             return jsonify({"success": False, "error": str(exc)}), 400

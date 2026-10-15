@@ -72,7 +72,7 @@ def _detached(value):
         result = value.view()
         result.flags.writeable = False
         return result
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         return {key: _detached(item) for key, item in value.items()}
     if isinstance(value, list):
         if all(type(item) in _IMMUTABLE_SCALAR_TYPES for item in value):
@@ -201,7 +201,7 @@ def project_timepoint_schemas(schemas, scope):
 
 class ScopedChatRuntime:
     """A task view of clinical state; never replace the cached Session Agent."""
-    def __init__(self, control_agent, scope, *, include_shared=True, _snapshot=None, _context=None, _hydrated_values=None):
+    def __init__(self, control_agent, scope, *, include_shared=True, _snapshot=None, _context=None, _hydrated_values=None, _defer_results=False, _defer_ui=False):
         from agent_runtime.core import AgentMemory
         if not isinstance(scope, ChatTimepointScope):
             raise TimepointError("A server-captured chat target is required")
@@ -226,14 +226,19 @@ class ScopedChatRuntime:
         saved_agent = snapshot.get("agent") or {}
         # snapshot is already invocation-owned, not the manifest cache graph.
         # Writers mutate detached memory, never these immutable source records.
-        self.encoded_results = dict(saved_agent.get("planning_results") or {})
+        self.encoded_results = (saved_agent.get("planning_results") or {}) if _defer_results else dict(saved_agent.get("planning_results") or {})
         from web.workspace_store import _restore_hydration_metadata
         self.view = copy.copy(control_agent)
         _detach_request_lifecycle(self.view, control_agent, snapshot)
         memory = AgentMemory(scope.session_id)
         memory._workspace_timepoint_id = scope.timepoint_id
-        memory.planning_results = (_detached(_hydrated_values) if _hydrated_values is not None
-            else _restore_hydration_metadata(self.encoded_results))
+        if _defer_results:
+            from web.resource_view import RequestResults
+            memory.planning_results = (RequestResults(_hydrated_values) if _hydrated_values is not None
+                else RequestResults(getattr(self.encoded_results, 'source', self.encoded_results), metadata_only=True))
+        else:
+            memory.planning_results = (_detached(_hydrated_values) if _hydrated_values is not None
+                else _restore_hydration_metadata(self.encoded_results))
         memory.planning_results["timepoint_context"] = {"timepoint_id": scope.timepoint_id,
             "stage": self.context.target.stage, "preoperative_timepoint_id": self.context.target.preoperative_timepoint_id}
         for key in SHARED_RESULT_KEYS:
@@ -241,7 +246,10 @@ class ScopedChatRuntime:
                 memory.planning_results[key] = copy.deepcopy(control_agent.memory.retrieve(key))
         memory._planning_versions = dict(saved_agent.get("planning_versions") or {})
         memory.patient_data = copy.deepcopy(saved_agent.get("patient_data") or {})
-        memory.conversation_state.update(data_available=sorted(key for key, value in self.encoded_results.items() if value is not None),
+        # Availability reads only immutable source metadata, without detaching
+        # every historical plan merely to discover its key.
+        available_results = getattr(self.encoded_results, 'source', self.encoded_results)
+        memory.conversation_state.update(data_available=sorted(key for key, value in available_results.items() if value is not None),
             ctv_segmented=self.encoded_results.get("ctv_array") is not None or self.encoded_results.get("ctv_binary_array") is not None,
             oar_segmented=self.encoded_results.get("oar_array") is not None,
             planning_completed=bool(memory.retrieve("planning_completed")))
@@ -251,7 +259,8 @@ class ScopedChatRuntime:
                     "_context_revision", "smart_context", "tool_results"):
             if hasattr(control_agent.memory, key):
                 setattr(memory, key, getattr(control_agent.memory, key))
-        memory.set_ui_state((snapshot.get("ui") or {}).get("state") or saved_agent.get("ui_state") or {})
+        if not _defer_ui:
+            memory.set_ui_state((snapshot.get("ui") or {}).get("state") or saved_agent.get("ui_state") or {})
         self.view.memory = memory
         from web.input_workflow import restore_owned_planning_config
         self.view.config = restore_owned_planning_config(config, saved_agent)
@@ -277,7 +286,13 @@ class ScopedChatRuntime:
         report = (snapshot.get("report") or {}).get("form")
         if isinstance(report, Mapping):
             memory.planning_results.setdefault("report_form", copy.deepcopy(dict(report)))
-        self.baseline = {key: _state_token(value) for key, value in memory.planning_results.items()}
+        self.baseline = (memory.planning_results.baseline if _defer_results
+            else {key: _state_token(value) for key, value in memory.planning_results.items()})
+        if _defer_results:
+            # Initial scope/language/report aliases belong to the baseline,
+            # just as with the ordinary eager task view. They are not edits.
+            for key, value in memory.planning_results.materialized_items():
+                self.baseline[key] = _state_token(value)
         self.saved_keys = set(memory.planning_results)
 
     def _waiter(self, required):
@@ -287,7 +302,7 @@ class ScopedChatRuntime:
             # sidecars. Hydrate once only when the selected tool needs arrays.
             from web.workspace_store import _decode_artifacts
             root = self.store.workspace_root(self.scope.owner_id, self.scope.session_id)
-            decoded = _detached(_decode_artifacts(self.encoded_results, root))
+            decoded = _detached(_decode_artifacts(dict(self.encoded_results), root))
             decoded["timepoint_context"] = {"timepoint_id": self.scope.timepoint_id,
                 "stage": self.context.target.stage, "preoperative_timepoint_id": self.context.target.preoperative_timepoint_id}
             pending = {key: value for key, value in self.view.memory.planning_results.items()
