@@ -1127,7 +1127,13 @@
     overflow-x: hidden;
     padding: 0.42rem 0.65rem 0.5rem;
     border-top: 1px solid var(--border-hairline);
-    background: linear-gradient(180deg, rgba(22, 31, 54, 0.98), rgba(13, 19, 35, 0.98));
+    background: linear-gradient(180deg, var(--bg-1), var(--bg-sunken));
+}
+/* Author display:flex overrides the browser hidden rule. Keep the empty
+   startup/reconnect dock out of layout before queue JavaScript runs. */
+.chat-queue-dock[hidden],
+.chat-queue-dock:empty {
+    display: none !important;
 }
 .chat-queue-header,
 .chat-queue-item {

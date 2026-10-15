@@ -539,19 +539,34 @@
         const scale = typeof doseModelScaleGy === 'function' ? doseModelScaleGy() : 190.8;
         // Existing heatmap/contour consumers use model units. Convert the declared
         // physical Gy exactly once at that boundary, never by guessing magnitude.
-        let minimum = Infinity, maximum = -Infinity;
-        for (const value of data.dose) { minimum = Math.min(minimum, value / scale); maximum = Math.max(maximum, value / scale); }
+        let minimum = Infinity, maximum = -Infinity, peakIndex = 0;
+        // Find the first maximum while scanning the selected source, before
+        // display quantization can introduce additional ties. No extra request.
+        for (let i = 0; i < data.dose.length; i++) {
+            const value = data.dose[i] / scale;
+            minimum = Math.min(minimum, value);
+            if (value > maximum) { maximum = value; peakIndex = i; }
+        }
+        const [nz, ny, nx] = data.shape, rawZ = Math.floor(peakIndex / (ny * nx));
+        const peakVoxel = { x: peakIndex % nx, y: Math.floor(peakIndex / nx) % ny,
+            z: nz - 1 - rawZ, raw_z: rawZ };
         const quantization = (maximum - minimum) / 65535, voxels = new Uint16Array(data.dose.length);
         for (let i = 0; i < voxels.length; i++) voxels[i] = quantization ? Math.round((data.dose[i] / scale - minimum) / quantization) : 0;
         const prior = item.workspace.ui?.state?.data_tree?.planning?.doseOverlay || {};
-        state.doseOverlay = { shape: data.shape, planningId: data.planning_id || '', doseGeneration: data.dose_generation || 0,
+        state.doseOverlay = { shape: data.shape, peakVoxel, planningId: data.planning_id || '', doseGeneration: data.dose_generation || 0,
             doseMin: minimum, doseMax: maximum, doseUnits: 'normalized_model_output', doseScaleGy: scale,
             doseStale: false, doseStatus: 'ready', doseSource: data.source_set, sourcePhysicalUnits: 'gy',
             timepointScope: item.scope, geometrySignature: data.geometry_signature, visible: prior.visible !== false,
             visible2D: prior.visible2D !== false, opacity: Number.isFinite(prior.opacity) ? prior.opacity : .4,
             volumeData: voxels, volumeMin: minimum, volumeQuantizationScale: quantization, volumeEncoding: 'uint16-linear-le',
             volumeStatus: 'ready', slices: {}, maxSlice: { axial: data.shape[0] - 1, sagittal: data.shape[2] - 1, coronal: data.shape[1] - 1 } };
-        state.dvhData = copy(data.dvh || {}); state.dvhPlanningId = data.planning_id || '';
+        // The selected source may carry durable curves inside metrics after
+        // restore. Use the same normalization contract as planning hydration;
+        // an empty top-level dvh must not discard valid source-owned curves.
+        const dvh = typeof _extractRenderableDvhPayload === 'function'
+            ? _extractRenderableDvhPayload({ dvh: data.dvh, metrics: data.metrics })
+            : data.dvh || {};
+        state.dvhData = copy(dvh); state.dvhPlanningId = data.planning_id || '';
         state.metrics = copy(data.metrics || {}); state.doseSourceSet = data.source_set;
         window.invalidateDoseOverlayRenderCache?.(); window.applyDoseOverlayLayerOpacity?.();
         window.updateDoseColorbars?.(true, minimum, maximum);

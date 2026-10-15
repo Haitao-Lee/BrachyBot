@@ -1510,6 +1510,41 @@ function hideReportUploadMasks() {
     }
 }
 
+function resolveReportDosePeakVoxel(overlay) {
+    // Recover display metadata from the already owned volume. Never reload the
+    // legacy planned-dose endpoint: the operator may be viewing implanted/total.
+    const shape = overlay?.shape;
+    if (!Array.isArray(shape) || shape.length !== 3
+        || shape.some(n => !Number.isInteger(n) || n <= 0)
+        || overlay.doseStale || ['stale', 'error'].includes(overlay.doseStatus)) return null;
+    const [nz, ny, nx] = shape;
+    if (Array.isArray(state.ctShape) && (state.ctShape.length !== 3
+        || shape.some((n, i) => n !== state.ctShape[i]))) return null;
+    const peak = overlay.peakVoxel;
+    if (peak && Number.isInteger(peak.x) && peak.x >= 0 && peak.x < nx
+        && Number.isInteger(peak.y) && peak.y >= 0 && peak.y < ny
+        && Number.isInteger(peak.z) && peak.z >= 0 && peak.z < nz
+        && (peak.raw_z == null || peak.raw_z === nz - 1 - peak.z)) return peak;
+    const values = overlay.volumeData;
+    const count = nz * ny * nx;
+    if (!Number.isSafeInteger(count) || !values || values.length !== count
+        || overlay.volumeStatus !== 'ready' || overlay.volumeEncoding !== 'uint16-linear-le'
+        || !Number.isFinite(overlay.volumeMin) || !Number.isFinite(overlay.volumeQuantizationScale)
+        || overlay.volumeQuantizationScale < 0) return null;
+    let maximum = -Infinity, index = 0;
+    for (let i = 0; i < count; i++) {
+        const value = values[i];
+        if (!Number.isInteger(value) || value < 0 || value > 65535) return null;
+        if (value > maximum) { maximum = value; index = i; }
+    }
+    const rawZ = Math.floor(index / (ny * nx));
+    // Match the Viewer convention: raw [Z,Y,X], displayed axial Z reversed.
+    // Enrich in place so the report's presentation snapshot keeps its identity.
+    overlay.peakVoxel = { x: index % nx, y: Math.floor(index / nx) % ny,
+        z: nz - 1 - rawZ, raw_z: rawZ };
+    return overlay.peakVoxel;
+}
+
 function snapshotReportViewerPresentation() {
     const sessionId = _currentReportCaptureSessionId();
     const planningId = _currentReportCapturePlanningId();
@@ -3320,10 +3355,8 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
     try {
         // Check for dose data existence, NOT just visibility — the user may
         // not have toggled dose on yet, but we still need to capture it.
-        const hasDose = state.doseOverlay && state.doseOverlay.peakVoxel
-            && state.doseOverlay.shape;
-        if (hasDose) {
-            const pv = state.doseOverlay.peakVoxel;
+        const pv = resolveReportDosePeakVoxel(state.doseOverlay);
+        if (pv) {
             uiDebugLog('[Report] Figure 2: starting dose+DVH capture, peak voxel:', pv);
 
             // Save the operator's slices and visibility. Capture-specific
@@ -3701,6 +3734,9 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 captureRole: 'dvh', captureContract: REPORT_DVH_CAPTURE_CONTRACT,
             });
         } else {
+            captureFailures.push({ stage: 'figure2', reason: 'dose_peak_or_volume_unavailable',
+                hasOverlay: !!state.doseOverlay, hasShape: !!state.doseOverlay?.shape,
+                volumeStatus: state.doseOverlay?.volumeStatus || 'missing' });
             reportCaptureStep(7, '剂量数据不可用，跳过剂量截图', 'Dose data unavailable; dose figures skipped', 'warning');
             console.warn('[Report] Figure 2 skipped: no dose overlay data', {
                 hasOverlay: !!state.doseOverlay,
