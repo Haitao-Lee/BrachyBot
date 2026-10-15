@@ -65,7 +65,7 @@
     border-bottom-color: var(--primary-hover);
 }
 [data-theme="light"] .chat-event-content {
-    background: rgba(255, 255, 255, 0.72);
+    background: rgba(255, 253, 249, 0.72);
     border-color: var(--border-default);
 }
 [data-theme="light"] .md-code-block {
@@ -74,7 +74,7 @@
     color: var(--text);
 }
 [data-theme="light"] .md-table {
-    background: rgba(255, 255, 255, 0.86);
+    background: rgba(255, 253, 249, 0.86);
     border-color: var(--border-default);
     box-shadow: var(--inset-top), var(--shadow-xs);
 }
@@ -123,7 +123,7 @@
 }
 [data-theme="light"] .viewers-panel.layout-grid .viewer-card-header,
 [data-theme="light"] .viewers-panel.layout-grid .viewer-card-ctrl {
-    background: linear-gradient(180deg, #ffffff 0%, #f3f7fd 100%);
+    background: linear-gradient(180deg, #fdfcf9 0%, #f3f7fd 100%);
     border-color: var(--border-default);
     color: var(--text);
 }
@@ -133,12 +133,12 @@
     color: var(--text-secondary) !important;
 }
 [data-theme="light"] .viewers-panel.layout-grid .viewers-toolbar {
-    background: linear-gradient(180deg, #ffffff 0%, #edf3fc 100%);
+    background: linear-gradient(180deg, #fcfbf8 0%, #edf3fc 100%);
     border-bottom-color: var(--border-default);
     box-shadow: var(--inset-top);
 }
 [data-theme="light"] .viewers-panel.layout-grid .data-tree-container {
-    background: linear-gradient(180deg, #ffffff 0%, #f7faff 100%);
+    background: linear-gradient(180deg, #fcfbf8 0%, #f7f8f8 100%);
     border-right-color: var(--border-default);
     color: var(--text);
     box-shadow: var(--inset-top);
@@ -209,13 +209,13 @@
    printable report pages are not part of the application chrome palette. */
 [data-theme="light"] body::before { display: none; }
 [data-theme="light"] .header {
-    background: #fff;
+    background: var(--bg-2);
     border-bottom-color: var(--border-soft);
     box-shadow: 0 1px 4px rgba(30, 57, 94, .04);
 }
 [data-theme="light"] .session-sidebar,
 [data-theme="light"] .session-sidebar-header,
-[data-theme="light"] .session-sidebar-footer { background: #f6f9fe; }
+[data-theme="light"] .session-sidebar-footer { background: #f4f6f7; }
 [data-theme="light"] .session-sidebar { border-right: 1px solid var(--border-soft); }
 [data-theme="light"] .session-item.active {
     background: var(--msg-user-bg);
@@ -228,17 +228,22 @@
 [data-theme="light"] .session-item-time,
 [data-theme="light"] .session-item-status { font-size: 11px; line-height: 1.4; color: var(--text-dim); }
 [data-theme="light"] #importWorkspaceButton {
-    background: #fff;
-    color: var(--primary-ink);
-    border: 1px solid var(--msg-user-border);
-    box-shadow: none;
+    background: var(--primary);
+    color: #fff;
+    border: 1px solid var(--primary);
+    box-shadow: var(--inset-top), var(--shadow-sm);
 }
-[data-theme="light"] #importWorkspaceButton:hover { background: var(--primary-soft); border-color: var(--primary); }
-[data-theme="light"] .chat-area { background: #f5f9ff; }
+[data-theme="light"] #importWorkspaceButton:hover {
+    background: var(--primary-hover);
+    color: #fff;
+    border-color: var(--primary-hover);
+    box-shadow: var(--inset-top), var(--shadow-elevated);
+}
+[data-theme="light"] .chat-area { background: #f6f7f6; }
 [data-theme="light"] .chat-area::before { display: none; }
 [data-theme="light"] .chat-header,
 [data-theme="light"] .chat-input-area {
-    background: #fff;
+    background: var(--bg-2);
     border-color: var(--border-soft);
     box-shadow: none;
 }
@@ -254,12 +259,12 @@
 [data-theme="light"] .chat-msg.user:hover { background: #dfedff; border-color: transparent; }
 [data-theme="light"] .chat-msg.bot,
 [data-theme="light"] .chat-msg.bot-response {
-    background: #fff;
+    background: var(--msg-assistant-bg);
     border-color: var(--border-soft);
     box-shadow: 0 2px 6px rgba(30, 57, 94, .04);
 }
 [data-theme="light"] .chat-msg.bot:hover,
-[data-theme="light"] .chat-msg.bot-response:hover { background: #fff; border-color: var(--border); }
+[data-theme="light"] .chat-msg.bot-response:hover { background: var(--msg-assistant-bg); border-color: var(--border); }
 [data-theme="light"] .chat-timestamp,
 [data-theme="light"] .chat-hint { font-size: 11px; color: var(--text-dim); opacity: 1; }
 [data-theme="light"] .chat-header-sub,
@@ -268,7 +273,7 @@
 [data-theme="light"] .chat-input-row textarea:focus { border-color: var(--primary); box-shadow: var(--control-focus-ring); }
 [data-theme="light"] :is(input, textarea)::placeholder { color: var(--text-faint); opacity: 1; }
 [data-theme="light"] .thinking-chain,
-[data-theme="light"] #pipeline_box { background: #fff; border-color: var(--border); box-shadow: none; }
+[data-theme="light"] #pipeline_box { background: var(--msg-assistant-bg); border-color: var(--border); box-shadow: none; }
 [data-theme="light"] .thinking-header { background: #edf4fe; border-bottom: 1px solid var(--border-soft); }
 [data-theme="light"] .step-body { background: #f7faff; color: var(--text-secondary); }
 [data-theme="light"] .step-status { font-size: 10.5px; }
@@ -289,7 +294,7 @@
 [data-theme="light"] .manual-workflow-status { background: var(--bg-1); border-color: var(--border); }
 [data-theme="light"] .manual-workflow-status.is-ready { color: var(--success); }
 [data-theme="light"] .manual-workflow-status.is-warn { color: var(--warning); }
-[data-theme="light"] .panel-tabs { background: #fff; box-shadow: none; }
+[data-theme="light"] .panel-tabs { background: var(--bg-2); box-shadow: none; }
 [data-theme="light"] .panel-tab { color: var(--text-secondary); }
 [data-theme="light"] .panel-tab.active { color: var(--primary-ink); background: var(--primary-soft); border-bottom-color: var(--primary); }
 [data-theme="light"] .form-section-title,

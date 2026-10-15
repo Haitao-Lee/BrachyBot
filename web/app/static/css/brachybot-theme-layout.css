@@ -32,14 +32,14 @@
     --info-soft: #eaf3ff;
 
     /* Three-tier surface depth (Linear / Vercel) */
-    --bg-canvas:        #f4f7fc;     /* ground */
-    --bg-1:             #f7faff;     /* subtle */
-    --bg-2:             #ffffff;     /* base elevated */
-    --bg-3:             #edf3fc;     /* intermediate */
-    --bg-sunken:        #edf3fc;     /* recessed well */
+    --bg-canvas:        #f6f7f6;     /* ground */
+    --bg-1:             #f8f8f5;     /* subtle */
+    --bg-2:             #fcfbf8;     /* base elevated */
+    --bg-3:             #f0f3f7;     /* intermediate */
+    --bg-sunken:        #f0f3f7;     /* recessed well */
     --bg-sunken-strong: #e3edfa;
-    --bg-elevated:      #ffffff;
-    --bg-card:          rgba(255, 255, 255, 0.96);
+    --bg-elevated:      #fffefa;
+    --bg-card:          rgba(252, 251, 248, 0.96);
 
     /* Hairline borders (Linear signature) */
     --glass-border:        rgba(55, 88, 132, 0.12);
@@ -107,7 +107,7 @@
     /* Chat semantics (NEW) */
     --msg-user-bg:           #e7f2ff;
     --msg-user-border:       #bbd3f0;
-    --msg-assistant-bg:      #ffffff;
+    --msg-assistant-bg:      #fffdf9;
     --msg-assistant-border:  #dce5f0;
     --msg-hover:             #edf4ff;
 
