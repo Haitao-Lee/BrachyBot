@@ -10,17 +10,17 @@ def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
-def test_theme_switch_is_globally_wired_and_defaults_to_dark():
+def test_theme_switch_is_globally_wired_and_defaults_to_light():
     index = read("web/app/index.html")
     theme_js = read("web/app/static/js/brachybot-theme.js")
     theme_css = read("web/app/static/css/brachybot-theme-layout.css")
     light_css = read("web/app/static/css/brachybot-theme-light.css")
 
-    assert '<html lang="en" data-theme="dark">' in index
+    assert '<html lang="en" data-theme="light">' in index
     assert "brachybot_ui_theme" in index
     assert 'data-theme-toggle' in index
     assert 'brachybot-theme-light.css?v=1' in index
-    assert 'brachybot-theme.js?v=1' in index
+    assert 'brachybot-theme.js?v=2026101508' in index
     assert "window.setUiTheme = applyTheme" in theme_js
     assert "window.localStorage.setItem(STORAGE_KEY, theme)" in theme_js
     assert 'document.documentElement.setAttribute(\'data-theme\', theme)' in theme_js

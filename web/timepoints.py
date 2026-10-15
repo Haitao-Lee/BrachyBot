@@ -31,11 +31,76 @@ def _resource_snapshot(state, *, resource_only=False):
     return result
 
 
-def _manifest_projection(state, *, resource_only=False, image_metadata=False):
+def _manifest_projection(state, *, resource_only=False, image_metadata=False, projection=None):
+    if projection:
+        from web.timepoint_chat import _detached
+        return _detached(_project_snapshot(state, projection))
     if image_metadata:
         from web.timepoint_chat import _detached
         return _detached({'image_collection': state['image_collection']}) if 'image_collection' in state else {}
     return _resource_snapshot(state, resource_only=resource_only)
+
+
+
+def _encoded_results(results):
+    from web.resource_view import RequestResults, HydratedResults
+    while isinstance(results, (RequestResults, HydratedResults)):
+        results = results.source
+    return results or {}
+
+
+def _project_snapshot(snapshot, projection):
+    """Select a read view before copying large histories or bridge dictionaries."""
+    if projection == 'resource_shell':
+        return browser_resource_snapshot(snapshot)
+    if projection != 'artifacts':
+        raise ValueError('Unknown snapshot projection')
+    agent = snapshot.get('agent') or {}
+    results = _encoded_results(agent.get('planning_results'))
+    # The report sanitizer needs the owned Planning identity, never arrays.
+    identity = {key: value for key, value in results.items()
+                if key in {'planning_runs', 'planning_id', 'planning_run_id', 'active_planning_id', 'manual_planning_id'}
+                or key.startswith('planning_run:')}
+    identity = {key: {} if key.startswith('planning_run:') else value for key, value in identity.items()}
+    chat = snapshot.get('chat') or {}
+    return {**{key: value for key, value in snapshot.items()
+               if key in {'schema_version', 'session_id', 'saved_at', 'report'}},
+            'agent': {'planning_results': identity},
+            'chat': {'attachments': chat.get('attachments') or [],
+                     'messages': [{'attachments': row.get('attachments') or []}
+                                  for row in chat.get('messages') or [] if isinstance(row, Mapping)
+                                  and row.get('attachments')]}}
+
+
+def browser_resource_snapshot(snapshot):
+    """Presentation and availability receipt; numerical products use their APIs.
+
+    Historical dose, mesh, DVH and trajectory payloads have no browser restore
+    consumer in this packet. Preserve their keys as availability markers so
+    existing restore decisions and Planning identities remain unchanged.
+    """
+    from web.timepoint_chat import _detached
+    agent = snapshot.get('agent') or {}
+    results = agent.get('planning_results') or {}
+    results = _encoded_results(results)
+    metadata = {'planning_runs', 'plan_config', 'manual_artifact_status', 'artifact_status',
+                'timepoint_context', 'planning_presentation_defaults_version'}
+    summary = {key: (_detached(value) if value is None or isinstance(value, (str, int, float, bool))
+                    or key in metadata else {'$available': True}) for key, value in results.items()}
+    shell = {key: value for key, value in snapshot.items() if key != 'agent'}
+    shell['agent'] = {key: value for key, value in agent.items()
+                      if key not in {'planning_results', 'tool_results'}}
+    shell['agent']['planning_results'] = summary
+    fields = {'ui_operation_catalog', 'visual_target_catalog', 'ui_operations', 'action_capabilities'}
+    ui = snapshot.get('ui') or {}
+    # The bridge is the Agent's inspection dictionary. Browser presentation is
+    # saved separately in ui.state and agent.ui_state, including legacy colors.
+    shell['ui'] = {key: value for key, value in ui.items() if key != 'bridge'}
+    for container, key in ((shell['ui'], 'state'), (shell['agent'], 'ui_state')):
+        if isinstance(container.get(key), Mapping):
+            container[key] = {name: value for name, value in container[key].items() if name not in fields}
+    shell['resource_shell'] = True
+    return shell
 
 
 CATALOG_VERSION = 1
@@ -482,12 +547,12 @@ class TimepointStoreMixin:
                         lifecycle_revision=item.get("lifecycle_revision", 0) + 1)
             return self._publish_timepoint_catalog(user_id, session_id, catalog, expected_revision)
 
-    def _read_timepoint_state(self, user_id, session_id, item, *, defer_results=False, resource_only=False, image_metadata=False):
+    def _read_timepoint_state(self, user_id, session_id, item, *, defer_results=False, resource_only=False, image_metadata=False, projection=None):
         from web.workspace_store import _safe_workspace_child
 
         if item["legacy_default"]:
-            state = self.load_snapshot(user_id, session_id)
-            return _manifest_projection(state, resource_only=resource_only, image_metadata=image_metadata) if defer_results or image_metadata else state
+            state = self.load_snapshot(user_id, session_id, projection=projection)
+            return _manifest_projection(state, resource_only=resource_only, image_metadata=image_metadata, projection=projection) if defer_results or image_metadata or projection else state
         ref = item.get("state_ref")
         if ref is None:
             return self._empty_snapshot(session_id)
@@ -508,17 +573,10 @@ class TimepointStoreMixin:
                     # Normal writers parse owned containers from verified JSON.
                     # Resource readers may reuse a private immutable graph;
                     # both bytes and graph count toward the bounded cache.
-                    if not defer_results and not image_metadata:
+                    if not defer_results and not image_metadata and not projection:
                         return json.loads(cached[1])
-                    state = cached[3] if len(cached) > 3 else json.loads(cached[1])
-                    if len(cached) <= 3:
-                        from web.timepoint_hydration import _weight
-                        weight = len(cached[1]) + _weight(state)
-                        if weight <= 128 * 1024**2:
-                            cache[cache_key] = (identity, cached[1], weight, state)
-                            while len(cache) > 8 or sum(row[2] for row in cache.values()) > 128 * 1024**2:
-                                cache.popitem(last=False)
-                    return _manifest_projection(state, resource_only=resource_only, image_metadata=image_metadata)
+                    state = cached[3]
+                    return _manifest_projection(state, resource_only=resource_only, image_metadata=image_metadata, projection=projection)
             data = path.read_bytes()
             if hashlib.sha256(data).hexdigest() != ref["sha256"]:
                 raise TimepointIntegrityError("The timepoint state checksum does not match")
@@ -526,18 +584,25 @@ class TimepointStoreMixin:
             if state.get("session_id") != session_id or state.get("timepoint_id") != item["id"]:
                 raise TimepointIntegrityError("The state manifest belongs to another workspace")
             if len(data) <= 128 * 1024**2:
+                from web.timepoint_hydration import _weight
+                weight = len(data) + _weight(state)
                 with self._lock:
-                    cache[cache_key] = (identity, data, len(data))
+                    # Account once, retain the verified immutable graph for
+                    # resource readers. Previously graphs over 128 MiB were
+                    # rejected and every poll parsed/weighed them again while
+                    # holding the store lock. Keep the newest handoff even if
+                    # it alone exceeds the budget, as with clinical hydration.
+                    cache[cache_key] = (identity, data, weight, state)
                     cache.move_to_end(cache_key)
-                    while len(cache) > 8 or sum(row[2] for row in cache.values()) > 128 * 1024**2:
+                    while len(cache) > 1 and (len(cache) > 8 or sum(row[2] for row in cache.values()) > 128 * 1024**2):
                         cache.popitem(last=False)
-            return _manifest_projection(state, resource_only=resource_only, image_metadata=image_metadata) if defer_results or image_metadata else state
+            return _manifest_projection(state, resource_only=resource_only, image_metadata=image_metadata, projection=projection) if defer_results or image_metadata or projection else json.loads(data)
         except (OSError, ValueError, TypeError) as exc:
             if isinstance(exc, TimepointIntegrityError):
                 raise
             raise TimepointIntegrityError("The timepoint state is missing or unreadable") from exc
 
-    def load_timepoint_snapshot(self, user_id, session_id, identifier, *, decode_arrays=False, include_shared=True, defer_results=False, resource_only=False):
+    def load_timepoint_snapshot(self, user_id, session_id, identifier, *, decode_arrays=False, include_shared=True, defer_results=False, resource_only=False, projection=None):
         from web.workspace_store import _decode_artifacts
 
         with self._case_guard(user_id, session_id):
@@ -545,11 +610,12 @@ class TimepointStoreMixin:
             item = self._timepoint_record(catalog, identifier)
             # The checksum-verified JSON decoder already returns a fresh owned
             # object; do not copy its complete clinical/UI history a second time.
-            state = (self._read_timepoint_state(user_id, session_id, item, defer_results=True, resource_only=resource_only)
-                if defer_results and not decode_arrays else self._read_timepoint_state(user_id, session_id, item))
+            state = (self._read_timepoint_state(user_id, session_id, item, defer_results=True, resource_only=resource_only, projection=projection)
+                if (defer_results or projection) and not decode_arrays else self._read_timepoint_state(user_id, session_id, item))
             agent = state.setdefault("agent", {})
             if include_shared:
-                shared = self.load_snapshot(user_id, session_id, shared_only=True)
+                shared = self.load_snapshot(user_id, session_id, shared_only=True,
+                    projection="artifacts" if projection == "artifacts" else None)
                 state["chat"] = shared.get("chat", {})
                 for key in _SHARED_AGENT_KEYS:
                     if key in (shared.get("agent") or {}):

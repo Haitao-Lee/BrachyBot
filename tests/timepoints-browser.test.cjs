@@ -212,6 +212,42 @@ const check = name => { scenarios++; console.log('PASS ' + name); };
         await page.evaluate(() => { failSave = false; });
         check('Revision conflict retains the outgoing mounted data and prevents an unsaved switch');
 
+        await page.evaluate(async A => {
+            catalog.timepoints.find(r=>r.id===A).auto_title=true;
+            catalog.timepoints.find(r=>r.id===A).title='Preoperative';
+            await BrachyBotTimepoints.refresh({activate:false});
+            _i18nLang='zh';dispatchEvent(new Event('i18nchange'));deferCatalog=true;
+            window.dialogCallCount=calls.length;
+        },A);
+        for(let attempt=0;attempt<3;attempt++) {
+            await page.getByRole('button',{name:'添加时间点',exact:true}).click();
+            await page.getByLabel('阶段',{exact:true}).selectOption('intraoperative');
+            assert.equal(await page.locator('select[name="preoperative_timepoint_id"] option[value="'+A+'"]').textContent(),'术前');
+            assert.equal(await page.evaluate(()=>calls.length),await page.evaluate(()=>dialogCallCount),'Opening Add never waits on a catalog request');
+            await page.keyboard.press('Escape');
+        }
+        await page.evaluate(()=>{deferCatalog=false;_i18nLang='en';dispatchEvent(new Event('i18nchange'));});
+        check('Add opens repeatedly without a catalog round trip and default reference matches the localized tab');
+
+        await page.evaluate(A=>{
+            const original=window.fetch;window.beforeFastSwitch=calls.length;
+            window.fetch=async(input,init={})=>{
+                if(init.method==='PATCH'&&String(input).endsWith('/workspace'))
+                    await new Promise(resolve=>window.releaseOutgoing=resolve);
+                return original(input,init);
+            };
+            window.fastSwitch=BrachyBotTimepoints.select(A);window.originalFetch=original;
+        },A);
+        await page.waitForFunction(()=>typeof releaseOutgoing==='function');
+        assert.equal(await page.evaluate(A=>calls.slice(beforeFastSwitch).some(c=>c.path.endsWith('/'+A+'/workspace')&&c.method==='GET'),A),true,'Incoming workspace is read while the outgoing save is pending');
+        assert.equal(await page.getByRole('button',{name:'Add timepoint',exact:true}).isEnabled(),true);
+        await page.getByRole('button',{name:'Add timepoint',exact:true}).click();
+        assert.equal(await page.getByRole('dialog').count(),1);await page.keyboard.press('Escape');
+        await page.evaluate(()=>releaseOutgoing());assert.equal(await page.evaluate(()=>fastSwitch),true);
+        assert.equal(await page.evaluate(()=>calls.slice(beforeFastSwitch).some(c=>c.path.endsWith('/timepoints'))),false,'Navigation does not add a redundant catalog round trip');
+        await page.evaluate(async B=>{fetch=originalFetch;await BrachyBotTimepoints.select(B);},B);
+        check('Navigation overlaps the incoming read with the fenced outgoing save and keeps Add responsive');
+
         await page.getByRole('button', { name: 'Add timepoint', exact: true }).click();
         assert.equal(await page.getByLabel('Stage', { exact: true }).inputValue(), 'preoperative');
         await page.getByLabel('Title', { exact: true }).fill('New scan');

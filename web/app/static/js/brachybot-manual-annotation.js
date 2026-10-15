@@ -1951,8 +1951,8 @@ function _seedCylinderSliceOutline(seed, axis, sliceIndex, orientIdx, toDisplay,
     if (!Number.isFinite(dirLength) || dirLength < 1e-8) return [];
     const d = rawDir.map(v => v / dirLength);
     const geometry = state.seedsOverlay.geometry || {};
-    const length = Math.max(0.1, Number(geometry.length || document.getElementById('seedLength')?.value || 3.7));
-    const radius = Math.max(0.05, Number(geometry.radius || document.getElementById('seedRadius')?.value || 0.4));
+    const length = Math.max(0.1, Number(seed.length || geometry.length || 4.5));
+    const radius = Math.max(0.05, Number(seed.radius || geometry.radius || 0.4));
 
     // Build an orthonormal basis around the physical seed axis. Sampling the
     // real cylinder surface and clipping it to the current MPR plane keeps
@@ -1976,8 +1976,13 @@ function _seedCylinderSliceOutline(seed, axis, sliceIndex, orientIdx, toDisplay,
         const flipped = orientIdx(idx);
         return { value: flipped[axisIdx], point: toDisplay(flipped) };
     };
-    const rows = 12, cols = 24, clipped = [];
-    const planeTolerance = 0.75;
+    // A convex cylinder needs only its two cap rings and longitudinal
+    // edges. Intermediate rings are collinear and add no silhouette extrema
+    // after slab clipping; keeping the same 24 sides preserves the outline.
+    const rows = 1, cols = 24, clipped = [];
+    // Project only the physical part inside this voxel's slice slab. Loose
+    // endpoint tolerances used to include surfaces from adjacent slices.
+    const slabMin = sliceIndex - 0.5, slabMax = sliceIndex + 0.5;
     const grid = [];
     for (let row = 0; row <= rows; row++) {
         const t = -length / 2 + length * row / rows;
@@ -1988,12 +1993,21 @@ function _seedCylinderSliceOutline(seed, axis, sliceIndex, orientIdx, toDisplay,
     }
     const addCrossing = (a, b) => {
         if (!a || !b) return;
-        const da = a.value - sliceIndex, db = b.value - sliceIndex;
-        if (Math.abs(da) <= planeTolerance) clipped.push(a.point);
-        if (da * db < 0 || Math.abs(db) <= planeTolerance) {
-            const t = da === db ? 0.5 : Math.max(0, Math.min(1, da / (da - db)));
-            clipped.push({ x: a.point.x + t * (b.point.x - a.point.x), y: a.point.y + t * (b.point.y - a.point.y) });
+        const delta = b.value - a.value;
+        let lo = 0, hi = 1;
+        if (Math.abs(delta) < 1e-10) {
+            if (a.value < slabMin || a.value > slabMax) return;
+        } else {
+            const t0 = (slabMin - a.value) / delta;
+            const t1 = (slabMax - a.value) / delta;
+            lo = Math.max(0, Math.min(t0, t1));
+            hi = Math.min(1, Math.max(t0, t1));
+            if (lo > hi) return;
         }
+        for (const t of [lo, hi]) clipped.push({
+            x: a.point.x + t * (b.point.x - a.point.x),
+            y: a.point.y + t * (b.point.y - a.point.y),
+        });
     };
     for (let row = 0; row <= rows; row++) {
         for (let col = 0; col < cols; col++) {
@@ -2002,7 +2016,7 @@ function _seedCylinderSliceOutline(seed, axis, sliceIndex, orientIdx, toDisplay,
         }
     }
     if (clipped.length < 3) return clipped;
-    const points = [...new Map(clipped.map(p => [`${p.x.toFixed(3)}:${p.y.toFixed(3)}`, p])).values()];
+    const points = [...new Map(clipped.map(p => [`${p.x.toFixed(9)}:${p.y.toFixed(9)}`, p])).values()];
     const cross2 = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
     points.sort((a, b) => a.x - b.x || a.y - b.y);
     const lower = [], upper = [];
@@ -2400,6 +2414,55 @@ function _ensureSeed2DInteraction(sliceCanvas, view) {
 }
 
 // Product overlay: finite needle projection + true seed-cylinder contour.
+function _drawSeedSliceBody(ctx, outline, seedRgb, alpha, pixelRatio, selected, screenAxis) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(outline[0].x, outline[0].y);
+    for (let i = 1; i < outline.length; i++) ctx.lineTo(outline[i].x, outline[i].y);
+    ctx.closePath();
+    // All contrast stays inside the physical silhouette, including selection.
+    // No minimum seed size, outside halo, position shift or shortened geometry.
+    ctx.fillStyle = `rgba(15, 23, 42, ${0.85 * alpha})`;
+    ctx.fill();
+    ctx.clip();
+    ctx.fillStyle = `rgba(${seedRgb[0]}, ${seedRgb[1]}, ${seedRgb[2]}, ${0.8 * alpha})`;
+    ctx.fill();
+    ctx.strokeStyle = `rgba(${seedRgb[0]}, ${seedRgb[1]}, ${seedRgb[2]}, ${alpha})`;
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = (selected ? 2.4 : 1.2) * pixelRatio;
+    ctx.stroke();
+
+    const norm = Math.hypot(screenAxis.x, screenAxis.y);
+    if (norm > 1e-8) {
+        const dx = screenAxis.x / norm, dy = screenAxis.y / norm;
+        let near = Infinity, far = -Infinity, left = Infinity, right = -Infinity;
+        for (const p of outline) {
+            const along = p.x * dx + p.y * dy;
+            const across = -p.x * dy + p.y * dx;
+            near = Math.min(near, along); far = Math.max(far, along);
+            left = Math.min(left, across); right = Math.max(right, across);
+        }
+        const span = far - near;
+        // Thin, near-touching projections need a visible end boundary even
+        // when their real gap is subpixel. End-on cross-sections stay circular.
+        if (span > 1.5 * (right - left) && span > pixelRatio) {
+            const band = Math.min(0.65 * pixelRatio, span * 0.18);
+            // Shade the existing silhouette without increasing its opacity.
+            ctx.globalCompositeOperation = 'source-atop';
+            ctx.strokeStyle = 'rgba(8, 15, 26, 0.95)';
+            ctx.lineWidth = 2 * band;
+            ctx.lineCap = 'butt';
+            ctx.beginPath();
+            for (const end of [near, far]) {
+                ctx.moveTo(dx * end - dy * (left - pixelRatio), dy * end + dx * (left - pixelRatio));
+                ctx.lineTo(dx * end - dy * (right + pixelRatio), dy * end + dx * (right + pixelRatio));
+            }
+            ctx.stroke();
+        }
+    }
+    ctx.restore();
+}
+
 // This is the canonical seed/needle overlay implementation.
 function renderSeedsOverlay(axis, sliceIndex) {
     window.BrachyBotImplants?.draw2D(axis);
@@ -2485,13 +2548,13 @@ function renderSeedsOverlay(axis, sliceIndex) {
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             ctx.strokeStyle = 'rgba(2, 6, 23, 0.85)';
-            ctx.lineWidth = 4.2 * vectorScale;
+            ctx.lineWidth = 2.6 * vectorScale;
             ctx.beginPath();
             ctx.moveTo(segmentStart.x, segmentStart.y);
             ctx.lineTo(segmentEnd.x, segmentEnd.y);
             ctx.stroke();
             ctx.strokeStyle = grad;
-            ctx.lineWidth = 2.2 * vectorScale;
+            ctx.lineWidth = 1.2 * vectorScale;
             ctx.beginPath();
             ctx.moveTo(segmentStart.x, segmentStart.y);
             ctx.lineTo(segmentEnd.x, segmentEnd.y);
@@ -2507,21 +2570,17 @@ function renderSeedsOverlay(axis, sliceIndex) {
             : seedState.visible === false || seedState.visible2D === false)) continue;
         const baseOpacity = seedState?.opacity ?? seed.opacity ?? 1.0;
         if (baseOpacity <= 0.001) continue;
-        const outline = _seedCylinderSliceOutline(seed, axis, sliceIndex, orientIdx, toDisplay, axisIdx);
+        const outline = _seedCylinderSliceOutline({ ...seed, ...seedState }, axis, sliceIndex, orientIdx, toDisplay, axisIdx);
         if (outline.length < 3) continue;
         const seedRgb = _hexToRgbArray(seedState?.color || seed.color || '#ffcc00', [255, 204, 0]);
-        ctx.save();
-        ctx.beginPath();
-        ctx.moveTo(outline[0].x, outline[0].y);
-        outline.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
-        ctx.closePath();
-        const alpha = 0.95 * baseOpacity;
-        ctx.fillStyle = `rgba(${seedRgb[0]}, ${seedRgb[1]}, ${seedRgb[2]}, ${0.18 * alpha})`;
-        ctx.fill();
-        ctx.strokeStyle = `rgba(${seedRgb[0]}, ${seedRgb[1]}, ${seedRgb[2]}, ${alpha})`;
-        ctx.lineWidth = (seedState?._interactionSelected ? 3.0 : 1.4) * vectorScale;
-        ctx.stroke();
-        ctx.restore();
+        const direction = seedState?.direction || seed.direction || [0, 0, 1];
+        const origin = seedState?.position || seed.position;
+        const p0 = _worldToIndex(...origin);
+        const p1 = _worldToIndex(...origin.map((value, i) => Number(value) + Number(direction[i])));
+        const a = p0 && toDisplay(orientIdx(p0)), b = p1 && toDisplay(orientIdx(p1));
+        _drawSeedSliceBody(ctx, outline, seedRgb, 0.95 * baseOpacity, vectorScale,
+            !!seedState?._interactionSelected,
+            a && b ? { x: b.x - a.x, y: b.y - a.y } : { x: 0, y: 0 });
         const center = outline.reduce(
             (sum, point) => ({ x: sum.x + point.x / outline.length, y: sum.y + point.y / outline.length }),
             { x: 0, y: 0 },

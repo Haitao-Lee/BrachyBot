@@ -1181,7 +1181,10 @@ def current_planning_context(memory: Any) -> Dict[str, Any]:
         or ""
     )
     alias_id = str(memory.retrieve(PLANNING_RUN_ID_KEY) or "")
-    snapshot = planning_run_snapshot(memory, planning_id) if planning_id else {}
+    results = getattr(memory, 'planning_results', None)
+    snapshot = (results.project(PLANNING_RUN_PREFIX + planning_id, ('dose_metrics', 'algorithm_plan_dose_metrics', 'metrics', 'current_dose_evaluation_config', 'dose_components', 'manual_artifact_status', 'artifact_status', 'plan_config', 'total_seeds', 'num_trajectories', 'seed_plan_serialized', 'manual_seeds', 'manual_needles', 'refined_trajectories', 'trajectories', 'tumor_type', 'manual_plan_version', 'dose_recompute_provenance', 'rl_status'))
+                if planning_id and hasattr(results, 'project')
+                else planning_run_snapshot(memory, planning_id) if planning_id else {})
     prefer_live = not planning_id or alias_id == planning_id
 
     def read(*keys: str, default: Any = None) -> Any:

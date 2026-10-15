@@ -24,11 +24,12 @@
     }
     function dateLabel(value){return timestamp(value)?.toLocaleString(window._i18nLang==='zh'?'zh-CN':'en-GB',
         {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) || text('时间未记录','Time not recorded');}
-    function group(id,title,children,leaves,defaultOpen=false){
+    function group(id,title,children,leaves){
         const scope=key(`${tree()?.sessionId||window.activeSessionId||''}|${id}`);
         groups.set('artifacts:'+id,{title,objectIds:leaves.map(r=>r.objectId).filter(Boolean)});
         const expansion=browserPrefs().expansion;
-        const open=Object.prototype.hasOwnProperty.call(expansion,scope)?expansion[scope]:defaultOpen;
+        // Secondary artifact branches stay compact until explicitly expanded.
+        const open=Object.prototype.hasOwnProperty.call(expansion,scope)?expansion[scope]:false;
         return `<details class="artifact-tree-group" data-artifact-branch="${esc(scope)}" data-artifact-group-id="${esc('artifacts:'+id)}" ${open?'open':''}>
             <summary><span class="artifact-tree-heading">${esc(title)}</span><span class="artifact-tree-count">${leaves.length}</span></summary>
             <div class="artifact-tree-children">${children}</div></details>`;
@@ -48,7 +49,7 @@
         groups=new Map();let content='';
         const generated=annotations.filter(r=>r.annotationType==='planning_distance');
         if(generated.length)content+=group('automatic',text('规划自动标注','Planning annotations'),
-            window.renderPlanningDistanceAnnotationTree?.(generated,renderManual,esc)||'',generated,true);
+            window.renderPlanningDistanceAnnotationTree?.(generated,renderManual,esc)||'',generated);
         const manual=annotations.filter(r=>r.annotationType!=='planning_distance');
         if(manual.length){
             let children='';
@@ -57,15 +58,15 @@
                 const rows=manual.filter(r=>type==='other'?!['line','angle','rect','sat3d_prompt'].includes(r.annotationType):r.annotationType===type);
                 if(!rows.length)continue;
                 const body=rows.map(r=>leaf(r,r.label,x=>renderManual(x.id,x,text('手动','Manual')))).join('');
-                children+=group('manual:'+type,title,body,rows,false);
+                children+=group('manual:'+type,title,body,rows);
             }
-            content+=group('manual',text('手动测量与提示','Manual measurements & prompts'),children,manual,false);
+            content+=group('manual',text('手动测量与提示','Manual measurements & prompts'),children,manual);
         }
         const report=artifacts.filter(r=>['report','report_data','report_figure'].includes(r.dataType));
         if(report.length){
             let children='';const documents=report.filter(r=>r.dataType!=='report_figure');
             if(documents.length)children+=group('report:documents',text('报告数据与文件','Report data & files'),documents.map(r=>leaf(r,
-                r.dataType==='report_data'?text('报告表单数据','Report form data'):text('已保存 PDF','Saved PDF'),renderArtifact)).join(''),documents,true);
+                r.dataType==='report_data'?text('报告表单数据','Report form data'):text('已保存 PDF','Saved PDF'),renderArtifact)).join(''),documents);
             const figures=report.filter(r=>r.dataType==='report_figure');
             for(const owner of [...new Set(figures.map(r=>String(r.planningId||'')))]){
                 const rows=figures.filter(r=>String(r.planningId||'')===owner);
@@ -79,13 +80,13 @@
                         const m=r.viewMetadata||{}, sub=number?text('图 ','Fig. ')+number+(m.subfigure?`(${m.subfigure})`:'')+' · ':'';
                         const localized=window.reportFigureDisplayText?.({axis:m.axis,title:r.label},window._i18nLang||'en');
                         return leaf(r,sub+(localized?.title||r.label),renderArtifact);
-                    }).join(''),images,true);
+                    }).join(''),images);
                 }
                 const title=owner?(owner===active?text('当前规划插图','Current planning figures'):text('其他规划插图','Other planning figures'))
                     +` · ${owner.slice(0,12)}`:text('未记录规划归属的插图','Figures with unrecorded planning ownership');
-                children+=group('report:figures:'+owner,title,body,rows,owner===active);
+                children+=group('report:figures:'+owner,title,body,rows);
             }
-            content+=group('report',text('报告与插图','Reports & figures'),children,report,true);
+            content+=group('report',text('报告与插图','Reports & figures'),children,report);
         }
         const screenshots=artifacts.filter(r=>r.dataType==='screenshot');
         const known=screenshots.filter(r=>metadata(r).artifact_family==='chat_capture');
@@ -102,17 +103,17 @@
                     const target=targetName(metadata(images[0]).target);
                     images.sort((a,b)=>(metadata(a).capture_variant==='original')-(metadata(b).capture_variant==='original'));
                     child+=group('screenshots:'+id+':'+source,`${target}${captures.size>1?` · ${i+1}`:''}`,images.map(r=>leaf(r,
-                        metadata(r).capture_variant==='annotated'?text('已标注图','Annotated image'):text('原始截图','Original capture'),renderArtifact)).join(''),images,false);
+                        metadata(r).capture_variant==='annotated'?text('已标注图','Annotated image'):text('原始截图','Original capture'),renderArtifact)).join(''),images);
                 });
                 const created=Math.max(...rows.map(r=>timestamp(metadata(r).created_at)?.getTime()||0));
                 const label=text('截图记录 ','Capture ')+(sorted.length-index)+' · '+dateLabel(created||null);
-                body+=group('screenshots:'+id,label,child,rows,false);
+                body+=group('screenshots:'+id,label,child,rows);
             });
-            content+=group('screenshots',text('对话截图 · 按请求','Chat captures · By request'),body,known,false);
+            content+=group('screenshots',text('对话截图 · 按请求','Chat captures · By request'),body,known);
         }
         const others=artifacts.filter(r=>!report.includes(r)&&!known.includes(r));
         if(others.length)content+=group('other',text('其他已保存附件','Other saved attachments'),others.map((r,i)=>leaf(r,
-            text('已保存图像 ','Saved image ')+(i+1),renderArtifact)).join(''),others,false);
+            text('已保存图像 ','Saved image ')+(i+1),renderArtifact)).join(''),others);
         const input=`<div class="artifact-tree-search"><input type="search" value="${esc(prefs.query||'')}" aria-label="${esc(text('搜索标注与附件','Search annotations & attachments'))}" placeholder="${esc(text('搜索名称、针道、图号或文件名…','Search name, needle, figure or filename…'))}"><span class="artifact-tree-search-result" aria-live="polite"></span></div>`;
         return input+content;
     }

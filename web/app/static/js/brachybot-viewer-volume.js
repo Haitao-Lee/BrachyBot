@@ -32,26 +32,10 @@ function switchPanel(name, el) {
     // Hide summary bar when viewers panel is active
     const summaryBar = document.getElementById('summaryBar');
     if (summaryBar) summaryBar.style.display = name === 'viewers' ? 'none' : '';
-    // When the report panel becomes active, re-initialize the
-    // preview zoom state. The zoom module is in the IIFE named
-    // `preview` (line 14645+); we poke it so the wheel handler is
-    // bound to the freshly-rendered #reportPreview and the
-    // persisted zoom level is re-applied.
+    // Use the canonical preview interaction after panel entry. A separate
+    // fallback wheel handler used to lose the current-page zoom anchor.
     if (name === 'report' && typeof Report !== 'undefined' && Report.preview) {
-        try {
-            // re-install wheel handler (idempotent)
-            const prev = document.getElementById('reportPreview');
-            if (prev && !prev._rpZoomWired) {
-                prev._rpZoomWired = true;
-                prev.addEventListener('wheel', (e) => {
-                    if (!e.ctrlKey && !e.metaKey) return;
-                    e.preventDefault();
-                    const z = Report.preview.getZoom();
-                    if (e.deltaY < 0) Report.preview.setZoom(z + 0.1);
-                    else if (e.deltaY > 0) Report.preview.setZoom(z - 0.1);
-                }, { passive: false });
-            }
-        } catch (_) { /* best-effort */ }
+        Report.preview.installInteractions?.();
     }
     if (name === 'viewers' && state.ctLoaded) {
         window.syncManualStepPresentationVisibility?.();
@@ -2972,6 +2956,9 @@ function updateLabelImage(view, options = {}) {
         opacity: parseInt(opEl.value) / 100,
         configured: true,
     };
+    if (options.persist !== false) {
+        window.recordWorkspaceLabelPresentation?.(view, state.labelImage[view]);
+    }
     if (view === '3d' && typeof scene3D !== 'undefined' && scene3D?.meshes) {
         const setting = state.labelImage[view];
         Object.entries(scene3D.meshes).forEach(([id, mesh]) => {
@@ -3589,7 +3576,7 @@ async function hydrateDataTreeArtifactCatalog({ force = false, strict = false } 
     }
     const promise = (async () => {
         try {
-            const response = await fetch(API + '/data/catalog', {
+            const response = await fetch(API + '/data/catalog?view=artifacts', {
                 headers: _viewerDataHeaders(sessionId, {}, scope.timepointScope),
             });
             const payload = await response.json().catch(() => ({}));
@@ -4169,6 +4156,9 @@ function getDataTreeAppearanceForMesh(id, mesh) {
 // the next pass unless it updates the matching registry record too.
 function _dataTreePresentationRef(id) {
     const value = String(id || '');
+    const groups = { ct:'ct', oar:'oar', planning:'planning', seed_collection:'seeds',
+        needle_collection:'needles' };
+    if (groups[value]) return { family:groups[value], id:value };
     if (value === 'ctv' || value.startsWith('ctv_')) return { family: 'ctv', id: value };
     if (value.startsWith('organ_')) return { family: 'oar', id: value };
     if (value === 'skin_surface') return { family: 'skin', id: 'skin_surface' };
@@ -4892,13 +4882,8 @@ function renderDataTree(options = {}) {
     const imageCollection = ownedScope && window.BrachyBotTimepoints?.enabled?.()
         ? window.BrachyBotTimepointWorkspace.resourceState()?.images : null;
     const referenceImage = imageCollection?.images?.find(image => image.id === imageCollection.planning_reference_image_id);
-    const displayedImage = imageCollection?.images?.find(image => image.id === imageCollection.display_image_id);
-    if (imageCollection) {
-        const rootName = referenceImage?.name || displayedImage?.name || _dtText('时间点数据', 'Timepoint data');
-        html += `<div class="tree-group timepoint-data-root" data-group="timepoint_${escHtml(ownedScope.timepointId)}" data-timepoint-id="${escHtml(ownedScope.timepointId)}">
-            <div class="tree-group-header" onclick="toggleTreeGroup(this)"><span class="arrow">&#9660;</span><span title="${escHtml(rootName)}">${escHtml(rootName)}</span></div>
-            <div class="tree-group-items">`;
-    }
+    // The mounted workspace already scopes all categories to one timepoint.
+    // Show the source CT once in Image rather than repeating it as a root.
 
     // === Image group ===
     html += `<div class="tree-group" data-group="image">
@@ -4954,17 +4939,13 @@ function renderDataTree(options = {}) {
         .filter(mask => !_isGenericSegmentationMask(mask) || _isOpenGenericMask(mask))
         .length;
     const segCount = hasMultiLabelCtv ? ctvLabels.length : (dataTreeState.ctv.loaded ? 1 : 0);
-    html += `<div class="tree-group" data-group="segmentation">
+    html += `<div class="tree-group" data-group="segmentation"${imageCollection ? ` data-source-image-id="${escHtml(referenceImage?.id || '')}"` : ''}>
         <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('segmentation', event)">
             <span class="arrow">&#9660;</span>
             <span>Segmentation ${hasSeg ? `(${dataTreeState.organs.length + segCount + maskCount + (dataTreeState.skin.loaded ? 1 : 0)})` : ''}</span>
         </div>
         <div class="tree-group-items">`;
-    if (imageCollection) {
-        const sourceName = referenceImage?.name || _dtText('尚未选择规划参考图像','No planning reference selected');
-        html += `<div class="tree-group" data-group="segmentation_image_${escHtml(referenceImage?.id || 'none')}" data-source-image-id="${escHtml(referenceImage?.id || '')}">
-            <div class="tree-group-header" onclick="toggleTreeGroup(this)"><span class="arrow">&#9660;</span><span>${escHtml(sourceName)}</span></div><div class="tree-group-items">`;
-    }
+    // Keep source ownership on the collection without adding a CT-name row.
 
     // CTV — show as collapsible group with tumor label(s) as children
     if (dataTreeState.ctv.loaded) {
@@ -5372,7 +5353,6 @@ function renderDataTree(options = {}) {
 
     }
     html += `</div></div>`; // close OAR group
-    if (imageCollection) html += '</div></div>'; // image-owned segmentation branch
     html += `</div></div>`; // close Segmentation group
 
     // === Planning group (Seeds, Needles, Dose) ===
@@ -5826,7 +5806,6 @@ function renderDataTree(options = {}) {
     // local preservation keeps ordinary visibility/color updates stable.
     const previousScrollTop = Number(body.scrollTop) || 0;
     const previousScrollLeft = Number(body.scrollLeft) || 0;
-    if (imageCollection) html += '</div></div>'; // timepoint/image-owned root
     body.innerHTML = html;
     window.BrachyBotTimepointWorkspace?.mountControls?.();
     window.bindStructuredArtifactTree?.(body);
@@ -6646,6 +6625,7 @@ async function groupReconstruct3D(category) {
         }
         if (!_viewerDataScopeIsCurrent(scope, true)) return { success: false, stale: true };
 
+        enableSegmentation3DForNodes(organs);
         const results = await Promise.allSettled(
             organs.map(organ => reconstructOrgan3D(organ.id, true)),
         );
@@ -7983,6 +7963,33 @@ function _allDataTreeVisualNodes() {
     ].filter(Boolean);
 }
 
+// Explicit 3D show/reconstruction must also open the LABEL toolbar gate.
+// Restoration and ordinary reconciliation never call this helper, so a saved
+// hidden scene stays hidden until the operator asks to show a label object.
+function enableSegmentation3DForNodes(nodes) {
+    const hasLabels = (nodes || []).some(node => {
+        if (!node) return false;
+        const id = String(node.id || node.nodeId || '');
+        return node === dataTreeState.ctv || node === dataTreeState.oar
+            || /^(ctv$|ctv_|organ_|mask_)/.test(id) || _isDataTreeMaskId(id);
+    });
+    if (!hasLabels) return false;
+    state.labelImage = state.labelImage || {};
+    const previous = state.labelImage['3d'] || {};
+    const show = document.getElementById('labelShow3d');
+    const slider = document.getElementById('labelOp3d');
+    const value = slider ? Number(slider.value) / 100 : Number(previous.opacity);
+    const opacity = Number.isFinite(value) && value > 0 ? Math.min(1, value) : 0.6;
+    state.labelImage['3d'] = { ...previous, configured: true, visible: true, opacity };
+    if (show) show.checked = true;
+    if (slider) slider.value = String(Math.round(opacity * 100));
+    // Reapply canonical per-node appearance, not the already multiplied
+    // material opacity. This also revives materials after LABEL opacity=0.
+    updateLabelImage('3d');
+    return true;
+}
+window.enableSegmentation3DForNodes = enableSegmentation3DForNodes;
+
 function _setNodeViewVisibility(node, view, visible) {
     if(node?.id && window.BrachyBotImplants?.nodeFor(node.id))
         return window.BrachyBotImplants.changePresentation(node.id,{[view==='2d'?'visible2D':'visible3D']:!!visible});
@@ -7992,7 +7999,13 @@ function _setNodeViewVisibility(node, view, visible) {
     }
     if (!node) return;
     node[view === '2d' ? 'visible2D' : 'visible3D'] = !!visible;
+    const group = [ ['ct', 'ct'], ['ctv', 'ctv'], ['oar', 'oar'], ['skin', 'skin_surface'],
+        ['planning', 'planning'], ['seeds', 'seed_collection'], ['needles', 'needle_collection'] ]
+        .find(([key]) => node === dataTreeState[key]);
+    if (group) window.updateWorkspacePresentationForNode?.(
+        { family:group[0], id:group[1] }, { [view === '2d' ? 'visible2D' : 'visible3D']:!!visible });
     if (view === '2d' && visible) _enableSegmentation2DForNodes([node]);
+    if (view === '3d' && visible) enableSegmentation3DForNodes([node]);
 }
 
 function _apply3DNodeVisibility(node) {
@@ -8896,7 +8909,10 @@ function _restoreTreeGroupExpansionState(body) {
     const expansion = _treeExpansionState();
     body.querySelectorAll('.tree-group[data-group]').forEach(group => {
         const key = String(group.dataset.group || '').trim();
-        if (key) _applyTreeGroupExpansion(group, expansion[key] !== false);
+        // Secondary collections start compact; explicit saved choices win.
+        const defaultExpanded = !['planning_history', 'artifacts'].includes(key);
+        if (key) _applyTreeGroupExpansion(group, typeof expansion[key] === 'boolean'
+            ? expansion[key] : defaultExpanded);
     });
 }
 

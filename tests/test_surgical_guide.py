@@ -729,6 +729,45 @@ def test_guide_status_recovers_from_active_planning_snapshot_when_alias_is_missi
     assert guide_state_for_version(agent)["version"] == 3
 
 
+def test_guide_status_projects_active_snapshot_without_reading_the_full_run():
+    """Lazy memory must keep the narrow guide read instead of decoding a run."""
+    guide = {
+        "status": "ready",
+        "version": 4,
+        "planning_id": "planning-active",
+        "vertices": np.zeros((3, 3), dtype=np.float32),
+        "faces": np.zeros((1, 3), dtype=np.int32),
+    }
+    reads = []
+
+    def project(key, fields):
+        reads.append((key, fields))
+        return {"surgical_guide": guide}
+
+    class ProjectedMemory(_Memory):
+        planning_results = SimpleNamespace(project=project)
+
+        def retrieve(self, key):
+            if key.startswith("planning_run:"):
+                raise AssertionError("Guide status must not decode the full planning run")
+            return super().retrieve(key)
+
+    agent = SimpleNamespace(memory=ProjectedMemory({
+        "active_planning_id": "planning-active",
+        "surgical_guide": None,
+    }))
+
+    status = guide_status_payload(agent)
+
+    assert status["state"] == "ready"
+    assert status["version"] == 4
+    assert status["source"] == "active_planning_snapshot"
+    assert status["mesh_loaded"] is True
+    assert reads
+    assert all(key == "planning_run:planning-active" for key, _ in reads)
+    assert all(tuple(fields) == ("surgical_guide", "surgical_guide_versions") for _, fields in reads)
+
+
 def test_current_guide_does_not_promote_anonymous_old_history_after_restart():
     """An unidentified historical mesh must not become the active guide."""
     agent = _Agent({

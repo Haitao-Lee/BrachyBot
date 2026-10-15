@@ -172,7 +172,7 @@ def test_session_restore_uses_corner_non_blocking_hydration_and_fresh_snapshot()
     ui_api = read("web/app/static/js/brachybot-ui-api.js")
     css = read("web/app/static/css/brachybot-auth.css")
     assert "authoritativeWorkspace" in workspace
-    assert "'/api/workspace/snapshot'" in workspace
+    assert "'/api/workspace/snapshot?response_mode=resource_shell'" in workspace
     assert "X-BrachyBot-Session" in workspace
     assert ".workspace-hydration-notice" in css
     assert "position: fixed" in css

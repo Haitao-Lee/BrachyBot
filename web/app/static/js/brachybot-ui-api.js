@@ -5741,6 +5741,10 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         // This branch is used for a new case, a different CT, or a page load
         // where no decoded viewer state exists yet.
         resetAllState({ deferDisposal: true });
+        // The reset removes old clinical resources, but its CT-only toolbar
+        // defaults must not hide progressively arriving surfaces of this case.
+        // Reapply the saved gates before starting any CT/label/mesh producer.
+        window.restoreWorkspaceLabelPresentation?.(workspace);
         // Let the reset paint before initiating network I/O.
         await _yield();
         if (!ownsWorkspace()) return null;

@@ -2735,11 +2735,11 @@ class WorkspaceStore(TimepointStoreMixin):
             "operation": {"state": "idle", "checkpoint": None},
         }
 
-    def load_snapshot(self, user_id: str, session_id: str, *, shared_only=False) -> Dict[str, Any]:
+    def load_snapshot(self, user_id: str, session_id: str, *, shared_only=False, projection=None) -> Dict[str, Any]:
         with self._case_guard(user_id, session_id):
-            return self._load_snapshot_locked(user_id, session_id, shared_only=shared_only)
+            return self._load_snapshot_locked(user_id, session_id, shared_only=shared_only, projection=projection)
 
-    def _load_snapshot_locked(self, user_id: str, session_id: str, *, shared_only=False) -> Dict[str, Any]:
+    def _load_snapshot_locked(self, user_id: str, session_id: str, *, shared_only=False, projection=None) -> Dict[str, Any]:
         record = self.get_session(user_id, session_id)
         record = self._recover_archived_without_remote(user_id, session_id, record)
         if record.storage_status == "archived":
@@ -2757,35 +2757,32 @@ class WorkspaceStore(TimepointStoreMixin):
                 with self._lock:
                     cached = self._snapshot_cache.get(cache_key)
                 if cached is not None and cached[:2] == identity:
-                    if shared_only:
-                        from web.timepoints import _SHARED_AGENT_KEYS
-                        source = cached[2]
-                        snapshot = copy.deepcopy({key: source[key] for key in
-                            ("schema_version", "session_id", "saved_at", "chat") if key in source})
-                        snapshot["agent"] = copy.deepcopy({key: source.get("agent", {})[key]
-                            for key in _SHARED_AGENT_KEYS if key in source.get("agent", {})})
-                    else:
-                        from web.timepoint_chat import _detached
-                        snapshot = _detached(cached[2])
+                    source = cached[2]
                 else:
                     with open(path, "r", encoding="utf-8") as handle:
-                        snapshot = json.load(handle)
-                    from web.timepoint_chat import _detached
+                        source = json.load(handle)
+                    # Cache the parsed immutable graph. Every returned view
+                    # receives its own projected containers before mutation.
                     with self._lock:
-                        self._snapshot_cache[cache_key] = (
-                            identity[0], identity[1], _detached(snapshot),
-                        )
-                    if shared_only:
-                        from web.timepoints import _SHARED_AGENT_KEYS
-                        snapshot = {key: value for key, value in snapshot.items()
-                                    if key in {"schema_version", "session_id", "saved_at", "chat", "agent"}}
-                        snapshot["agent"] = {key: value for key, value in snapshot.get("agent", {}).items()
-                                             if key in _SHARED_AGENT_KEYS}
+                        self._snapshot_cache[cache_key] = (identity[0], identity[1], source)
+                if projection:
+                    from web.timepoints import _project_snapshot
+                    snapshot = _project_snapshot(source, projection)
+                elif shared_only:
+                    from web.timepoints import _SHARED_AGENT_KEYS
+                    snapshot = {key: source[key] for key in
+                        ("schema_version", "session_id", "saved_at", "chat") if key in source}
+                    snapshot["agent"] = {key: source.get("agent", {})[key]
+                        for key in _SHARED_AGENT_KEYS if key in source.get("agent", {})}
+                else:
+                    snapshot = source
+                from web.timepoint_chat import _detached
+                snapshot = _detached(snapshot)
             except (OSError, json.JSONDecodeError) as exc:
                 raise WorkspaceError("Case workspace snapshot is unreadable") from exc
         if snapshot.get("schema_version") != WORKSPACE_SCHEMA_VERSION:
             raise WorkspaceError("Case workspace schema is unsupported")
-        if isinstance(snapshot.get("chat"), Mapping):
+        if projection != "artifacts" and isinstance(snapshot.get("chat"), Mapping):
             # A screenshot may have been persisted just before the assistant
             # row or after a stale browser checkpoint.  Reconcile the durable
             # attachment index at read time as well, so a restart never loses
@@ -2794,7 +2791,7 @@ class WorkspaceStore(TimepointStoreMixin):
                 _reconcile_chat_attachment_registry(snapshot["chat"])
             )
         shared_path = self.workspace_root(user_id, session_id) / "shared_agent_control.json"
-        if shared_path.exists():
+        if projection != "artifacts" and shared_path.exists():
             try:
                 shared_control = json.loads(shared_path.read_text(encoding="utf-8"))
             except (OSError, ValueError) as exc:

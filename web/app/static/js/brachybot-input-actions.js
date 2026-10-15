@@ -10,6 +10,7 @@
     // Input controls are a projection of the accepted clinical config. File
     // defaults and saved browser drafts must not replace that owned source.
     let configPaintRevision = 0;
+    let configDefaults = null;
     const object = value => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
     const configFields = ['seed_info', 'radiation_array_params', 'reference_direc', 'ref_direc_auto',
         'reference_direc_mode', 'tumor_type', 'dose_value_unit', 'in_lowest_energy', 'out_highest_energy',
@@ -97,12 +98,21 @@
                 const actual = response.headers.get(header);
                 if (expected && actual && actual !== expected) throw new Error('timepoint_workspace_scope_mismatch');
             }
+            configDefaults = data.defaults ? JSON.parse(JSON.stringify(data.defaults)) : configDefaults;
             return data;
         } finally { clearTimeout(timer); }
     }
     window.BrachyBotInputPlanningConfig = Object.freeze({
         configControls, snapshotConfig, projectSnapshot,
         async prepareSnapshot(snapshot, target, isCurrent) {
+            // A fresh owned shell already carries config. Reuse only static
+            // defaults, never a preceding timepoint's accepted config. Older
+            // shells with a projected config marker still need the API read.
+            if (configDefaults && snapshot.resource_shell === true && snapshot.agent?.config
+                && !snapshot.agent.planning_results?.timepoint_planning_config?.$available) {
+                if (!isCurrent()) return null;
+                return projectSnapshot(snapshot, snapshotConfig(snapshot), configDefaults);
+            }
             const data = await readConfig(target, isCurrent);
             if (!data) return null;
             return projectSnapshot(snapshot, {...allowConfig(data.config), ...snapshotConfig(snapshot)}, data.defaults);

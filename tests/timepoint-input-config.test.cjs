@@ -51,6 +51,17 @@ function context() {
     c.helper = c.BrachyBotInputPlanningConfig;
     return c;
 }
+test('fresh owned shells reuse static defaults without loading the preceding clinical workspace', async () => {
+    const c = context();await c.helper.loadCurrent();const count=c.calls.length;
+    const snapshot={resource_shell:true,agent:{config:{max_iter:9},planning_results:{}},ui:{}};
+    const prepared=await c.helper.prepareSnapshot(snapshot,c.selected,()=>true);
+    assert.equal(c.calls.length,count);
+    assert.equal(prepared.ui.state.controls.maxIter.value,'9');
+    assert.notEqual(prepared.ui.state.controls.ctvModelSelect?.value,owned.tumor_type);
+    snapshot.agent.planning_results.timepoint_planning_config={$available:true};
+    await c.helper.prepareSnapshot(snapshot,c.selected,()=>true);
+    assert.equal(c.calls.length,count+1,'Projected owned config requires an authoritative API read');
+});
 test('every editable Apply field maps to the accepted config, preserving zero and physical Gy', () => {
     const c = context(), controls = plain(c.helper.configControls(owned));
     assert.deepEqual(controls, {

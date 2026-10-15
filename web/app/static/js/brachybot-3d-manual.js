@@ -3136,15 +3136,15 @@ function init3DScene() {
         TWO: THREE.TOUCH.DOLLY_PAN
     };
 
-    // Lighting — brighter for better visibility
-    scene3D.scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-    const dir1 = new THREE.DirectionalLight(0xffffff, 0.8);
+    // Balanced key/fill/rim lighting models curvature without extra lights or shadows.
+    scene3D.scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+    const dir1 = new THREE.DirectionalLight(0xfff3e6, 0.85);
     dir1.position.set(200, 200, 200);
     scene3D.scene.add(dir1);
-    const dir2 = new THREE.DirectionalLight(0xffffff, 0.4);
+    const dir2 = new THREE.DirectionalLight(0xdceaff, 0.3);
     dir2.position.set(-200, -100, -200);
     scene3D.scene.add(dir2);
-    const dir3 = new THREE.DirectionalLight(0xffffff, 0.2);
+    const dir3 = new THREE.DirectionalLight(0xffffff, 0.45);
     dir3.position.set(0, -200, 100);
     scene3D.scene.add(dir3);
 
@@ -4405,20 +4405,6 @@ function addMeshToScene(meshData) {
         console.warn('[addMeshToScene] Skipping mesh with invalid geometry:', id);
         return false;
     }
-    // Remove existing mesh with same ID
-    if (scene3D.meshes[id]) {
-        // A reconstruction can replace a mesh while dose mode is active.
-        // Discard the old material snapshot so disabling dose mode restores
-        // the replacement mesh, not a disposed material from the old one.
-        if (typeof state !== 'undefined' && state.doseTexture?.enabled) {
-            if (state.doseTexture.originalMaterials) delete state.doseTexture.originalMaterials[id];
-            if (state.doseTexture.originalSceneStyle) delete state.doseTexture.originalSceneStyle[id];
-        }
-        scene3D.scene.remove(scene3D.meshes[id]);
-        scene3D.meshes[id].geometry.dispose();
-        scene3D.meshes[id].material.dispose();
-    }
-
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
     geometry.setIndex(new THREE.BufferAttribute(indices, 1));
@@ -4469,10 +4455,13 @@ function addMeshToScene(meshData) {
         transparent: opacity < 0.999,
         opacity: opacity,
         side: THREE.DoubleSide,
-        roughness: 0.4,
-        metalness: 0.1,
-        clearcoat: 0.3,
-        clearcoatRoughness: 0.2,
+        // Tissue/resin surfaces are dielectric. Broad highlights reveal
+        // shape without washing out semantic colors. Zero clearcoat also
+        // removes its shader branch; geometry and transparency are unchanged.
+        roughness: source === 'surgical_guide' ? 0.42 : 0.55,
+        metalness: 0,
+        clearcoat: 0,
+        clearcoatRoughness: 0.4,
         // Transparent anatomical surfaces must not write an opaque depth
         // layer.  Keeping depth testing while disabling depth writes avoids
         // order-dependent rectangular-looking occlusion when many OAR meshes
@@ -4505,6 +4494,12 @@ function addMeshToScene(meshData) {
         status: meshData.status || 'ready',
         depthWriteWhenTransparent,
         renderRole: source === 'surgical_guide' ? 'physical_guide_surface' : source,
+        reconstructionOwner: {
+            sessionId:_activePlanningSceneSessionId(),
+            generation:typeof _viewer3DRequestGeneration === 'number' ? _viewer3DRequestGeneration : 0,
+            timepointId:window.BrachyBotTimepointWorkspace?.captureRequestScope?.()?.timepointId || '',
+            timepointGeneration:window.BrachyBotTimepointWorkspace?.captureRequestScope?.()?.generation || 0,
+        },
     };
     // Keep all planning artifacts in an explicit depth layer. The guide is
     // rendered after translucent anatomy and before needles/seeds; its depth
@@ -4527,8 +4522,21 @@ function addMeshToScene(meshData) {
     }
     centerWorldGeometryForDepthSort(mesh);
 
+    // Publish a complete replacement before releasing the displayed mesh.
+    // Construction/normal/material failures must leave the old surface usable.
+    const previousMesh = scene3D.meshes[id];
     scene3D.scene.add(mesh);
     scene3D.meshes[id] = mesh;
+    if (previousMesh) {
+        if (state?.doseTexture?.enabled) {
+            if (state.doseTexture.originalMaterials) delete state.doseTexture.originalMaterials[id];
+            if (state.doseTexture.originalSceneStyle) delete state.doseTexture.originalSceneStyle[id];
+        }
+        scene3D.scene.remove(previousMesh);
+        previousMesh.geometry?.dispose?.();
+        const oldMaterials = Array.isArray(previousMesh.material) ? previousMesh.material : [previousMesh.material];
+        oldMaterials.forEach(material => material?.dispose?.());
+    }
     uiDebugLog('[addMeshToScene] Added mesh:', id, 'vertices:', meshData.vertex_count, 'total meshes:', Object.keys(scene3D.meshes).length);
 
     // Threshold/manual masks are owned by state.maskLabels, not by the
@@ -4957,8 +4965,7 @@ window.ensureCameraFitsVisibleScene = ensureCameraFitsVisibleScene;
 // away from a user who has already rotated, panned, or zoomed the camera.
 function scheduleCameraFitForSceneMutation(reason = 'scene-mutation') {
     if (typeof scene3D === 'undefined' || !scene3D?.initialized) return false;
-    if (scene3D._cameraUserInteracted === true
-        && scene3D._workspaceRestoreActive !== true) {
+    if (scene3D._cameraUserInteracted === true) {
         scene3D.requestRender?.(2);
         return false;
     }
@@ -4968,8 +4975,7 @@ function scheduleCameraFitForSceneMutation(reason = 'scene-mutation') {
     scene3D._cameraFitTimer = setTimeout(() => {
         scene3D._cameraFitTimer = null;
         if (generation !== Number(scene3D._cameraMutationGeneration || 0)) return;
-        if (scene3D._cameraUserInteracted === true
-            && scene3D._workspaceRestoreActive !== true) {
+        if (scene3D._cameraUserInteracted === true) {
             scene3D.requestRender?.(2);
             return;
         }
@@ -6286,10 +6292,10 @@ async function _loadSeeds3D(requestScope) {
                 // drawn. Opacity is still one; this only controls queueing.
                 transparent: true,
                 opacity: seedOpacity,
-                metalness: 0.5,
-                roughness: 0.3,
+                metalness: 0.35,
+                roughness: 0.32,
                 emissive: 0x332200,
-                emissiveIntensity: 0.5,
+                emissiveIntensity: 0.12,
                 depthWrite: true,
                 depthTest: true,
             });
@@ -7697,11 +7703,9 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
             }
         }
 
-        // The target should be visible before a full OAR queue occupies every
-        // browser connection and server worker. This keeps the same surfaces
-        // and geometry, but gives the essential clinical target first use.
-        await Promise.all(promises);
-        promises.length = 0;
+        // CTV requests start first. OAR workers remain independent: a slow
+        // target surface must not hold already available organs behind it.
+        // Join both sets only for the final completeness receipt below.
         if (generation !== _segmentationMeshPrewarm.generation
             || (sessionId && sessionId !== String(state.sessionId || ''))) return { stale:true };
         if (includeOAR && oarLabelData) {
@@ -9493,6 +9497,42 @@ const _doseOverlayAbortControllers = new Map();
 const _doseOverlayInflight = new Map();
 let _doseOverlayLoadPromise = null;
 
+// Bound actual slice work, not just repaint callbacks. Rapid scrubbing keeps
+// one latest waiter per axis/channel; superseded waiters never reach fetch.
+// Three shared slots leave browser/origin capacity for chat and Stop.
+const _doseSliceLanes = new Map();
+let _doseSliceActive = 0;
+function _queueDoseSliceRequest(kind, axis, run) {
+    const key = `${kind}:${axis}`;
+    let lane = _doseSliceLanes.get(key);
+    if (!lane) {
+        lane = { running: false, pending: null };
+        _doseSliceLanes.set(key, lane);
+    }
+    return new Promise((resolve, reject) => {
+        if (lane.pending) lane.pending.resolve(null);
+        lane.pending = { run, resolve, reject };
+        _pumpDoseSliceRequests();
+    });
+}
+function _pumpDoseSliceRequests() {
+    for (const [key, lane] of _doseSliceLanes) {
+        if (_doseSliceActive >= 3) break;
+        if (lane.running || !lane.pending) continue;
+        const item = lane.pending;
+        lane.pending = null;
+        lane.running = true;
+        _doseSliceActive += 1;
+        Promise.resolve().then(item.run).then(item.resolve, item.reject).finally(() => {
+            lane.running = false;
+            _doseSliceActive -= 1;
+            _doseSliceLanes.delete(key);
+            if (lane.pending) _doseSliceLanes.set(key, lane);
+            _pumpDoseSliceRequests();
+        });
+    }
+}
+
 async function fetchDoseOverlaySlice(axis, sliceIndex) {
     if (!state.doseOverlay) { uiDebugLog('[dose] fetch skipped: no doseOverlay state'); return null; }
     const ownerSessionId = _doseOverlaySessionId();
@@ -9506,13 +9546,12 @@ async function fetchDoseOverlaySlice(axis, sliceIndex) {
     if (_doseOverlayInflight.has(inflightKey)) return _doseOverlayInflight.get(inflightKey);
 
     const myVersion = ++_doseOverlayRequestVersion;
-    const existingCtrl = _doseOverlayAbortControllers.get(axis);
-    if (existingCtrl) {
-        try { existingCtrl.abort(); } catch (_) {}
-    }
-    const controller = new AbortController();
-    _doseOverlayAbortControllers.set(axis, controller);
-    const request = (async () => {
+    const request = _queueDoseSliceRequest('overlay', axis, async () => {
+      if (ownerGeneration !== _doseOverlayLoadGeneration
+          || ownerSessionId !== _doseOverlaySessionId()
+          || ownerOverlay !== state.doseOverlay) return null;
+      const controller = new AbortController();
+      _doseOverlayAbortControllers.set(axis, controller);
       try {
         const axialMax = state.doseOverlay.maxSlice?.axial;
         const requestSliceIndex = axis === 'axial' && Number.isFinite(axialMax)
@@ -9580,11 +9619,10 @@ async function fetchDoseOverlaySlice(axis, sliceIndex) {
         if (_doseOverlayAbortControllers.get(axis) === controller) {
             _doseOverlayAbortControllers.delete(axis);
         }
-        if (_doseOverlayInflight.get(inflightKey) === request) {
-            _doseOverlayInflight.delete(inflightKey);
-        }
       }
-    })();
+    }).finally(() => {
+        if (_doseOverlayInflight.get(inflightKey) === request) _doseOverlayInflight.delete(inflightKey);
+    });
     _doseOverlayInflight.set(inflightKey, request);
     return request;
 }
@@ -10131,7 +10169,11 @@ async function fetchDoseContourSlice(axis, sliceIndex) {
     if (_doseContourCache[cacheKey]) return _doseContourCache[cacheKey];
     if (_doseContourInflight.has(cacheKey)) return _doseContourInflight.get(cacheKey);
 
-    const request = (async () => {
+    const request = _queueDoseSliceRequest('contour', axis, async () => {
+      if (ownerGeneration !== _doseOverlayLoadGeneration
+          || ownerSessionId !== _doseOverlaySessionId()
+          || ownerPlanningId !== _doseContourPlanningId()
+          || ownerOverlay !== state.doseOverlay) return null;
       try {
         const axialMax = state.doseOverlay?.maxSlice?.axial;
         const requestSliceIndex = axis === 'axial' && Number.isFinite(axialMax)
@@ -10176,12 +10218,10 @@ async function fetchDoseContourSlice(axis, sliceIndex) {
         return data;
       } catch (e) {
         return null;
-      } finally {
-        if (_doseContourInflight.get(cacheKey) === request) {
-            _doseContourInflight.delete(cacheKey);
-        }
       }
-    })();
+    }).finally(() => {
+        if (_doseContourInflight.get(cacheKey) === request) _doseContourInflight.delete(cacheKey);
+    });
     _doseContourInflight.set(cacheKey, request);
     return request;
 }
@@ -10448,18 +10488,15 @@ function triggerDoseContourRender(axis, sliceIndex) {
     preloadDoseContourSlices(axis, normalizedSlice);
 }
 
-// Pre-load neighbors of the current contour slice so the slider
-// drag is smooth. Mirror of preloadDoseSlices() for the dose
-// overlay path. Without this, every slider tick waits ~150 ms for
-// a network round-trip and the contour appears to "vanish then
-// come back". Fetches are fire-and-forget; failures are silent.
+// Current slices are fetched and cached on demand. Speculative neighbors
+// previously created six additional requests per axis on every slider tick.
 const _doseContourPreloadTimers = new Map();
 function preloadDoseContourSlices(axis, centerSlice) {
     if (!state.doseOverlay || !state.doseOverlay.visible) return;
     if (_doseContourPreloadTimers.has(axis)) clearTimeout(_doseContourPreloadTimers.get(axis));
     const timer = setTimeout(() => {
         _doseContourPreloadTimers.delete(axis);
-        const PRELOAD_RANGE = 3;
+        const PRELOAD_RANGE = 0;
         const maxSlice = state.doseOverlay.maxSlice?.[axis] || 200;
         for (let d = 1; d <= PRELOAD_RANGE; d++) {
             const fwd = centerSlice + d;

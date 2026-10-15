@@ -198,6 +198,16 @@
         sessionId = sid; activeId = ''; mountedId = ''; catalog = null; switching = false; errorState = null;
         modal?.close(null); render();
     }
+    function invalidateMount() {
+        if (!mountedId && !switching) return false;
+        const previous = captureTarget();
+        // A Session shell clears the clinical scene immediately. Revoke the
+        // old generation before any DOM reset can schedule presentation saves
+        // or an old resource callback can republish into the cleared scene.
+        resetSession(sidNow());
+        bridge?.suspend?.(previous);
+        return true;
+    }
     async function savePresentation(scope, patch = null, options = {}) {
         if (!options.allowDetached) requireEnabled();
         if (!options.allowDetached || isCurrent(scope)) await bridge?.waitForClinicalMutation?.(scope);
@@ -234,7 +244,7 @@
                     expected_state_revision: revision, patch: captured, ...presentationFence });
             } catch (error) {
                 if (error.code !== 'timepoint_conflict') throw error;
-                const latest = validateWorkspace(await jsonRequest(scope.sessionId, scope.timepointId, '/workspace'), scope);
+                const latest = validateWorkspace(await jsonRequest(scope.sessionId, scope.timepointId, '/workspace?response_mode=resource_shell'), scope);
                 if (latest.timepoint_clinical_revision !== clinicalRevision
                     || latest.timepoint.lifecycle_revision !== lifecycleRevision) throw error;
                 // Rebase presentation only, once, when clinical inputs are
@@ -265,7 +275,7 @@
             if (!item.capturePending && JSON.stringify(item.patch) === JSON.stringify(captured)) item.dirty = false;
             // Clinical state saves can advance the catalog independently of metadata.
             // Read the new catalog before the next metadata mutation.
-            if (scope.sessionId === sessionId) await refresh({ activate: false });
+            if (scope.sessionId === sessionId && options.refreshCatalog !== false) await refresh({ activate: false });
             return true;
         })();
         try { return await item.saving; } finally { item.saving = null; render(); }
@@ -289,6 +299,10 @@
         if (options.reload !== true && activeId === row.id && mountedId === row.id && record(captureTarget()).state === 'ready') return true;
         const from = captureTarget(), sid = sessionId, currentBridge = bridge;
         switching = true; errorState = null; clearTimeout(saveTimer); render();
+        // Read the incoming owner while the outgoing presentation is saved.
+        // A failed save still keeps the outgoing mount; prefetched data never paints.
+        const incoming = jsonRequest(sid, row.id, '/workspace?response_mode=resource_shell')
+            .then(data => ({ data }), error => ({ error }));
         let target = null, prepared = null;
         try {
             if (from.timepointId && mountedId === from.timepointId && options.reload !== true) {
@@ -299,7 +313,7 @@
                 // Capture and save before yielding ownership of the mounted workspace.
                 const presentation = currentBridge.capture(from);
                 if (presentation && typeof presentation.then === 'function') throw failure('bridge_capture_must_be_synchronous');
-                await savePresentation(from, presentation);
+                await savePresentation(from, presentation, { refreshCatalog: false });
                 if (!isCurrent(from)) return false;
             }
             generation++; activeId = row.id;
@@ -309,7 +323,9 @@
             mountedId = '';
             const suspended = currentBridge.suspend(target);
             if (suspended && typeof suspended.then === 'function') throw failure('bridge_suspend_must_be_synchronous');
-            const workspace = validateWorkspace(await jsonRequest(sid, row.id, '/workspace'), target);
+            const receipt = await incoming;
+            if (receipt.error) throw receipt.error;
+            const workspace = validateWorkspace(receipt.data, target);
             item.workspace = clone(workspace); item.revision = workspace.timepoint_state_revision;
             item.presentation = clone(workspace.ui || {});
             if (!isCurrent(target) || !enabled() || bridge !== currentBridge) return false;
@@ -392,7 +408,7 @@
             });
         }
         const add = document.getElementById('timepointAdd'), manage = document.getElementById('timepointManage');
-        if (add) { add.disabled = !enabled() || switching; add.setAttribute('aria-label', t('添加时间点', 'Add timepoint')); add.title = add.getAttribute('aria-label'); }
+        if (add) { add.disabled = !enabled(); add.setAttribute('aria-label', t('添加时间点', 'Add timepoint')); add.title = add.getAttribute('aria-label'); }
         if (manage) { manage.disabled = !enabled() || switching; manage.textContent = t('管理', 'Manage'); }
         const status = document.getElementById('timepointStatus');
         if (status) { status.removeAttribute('data-i18n-zh'); status.removeAttribute('data-i18n-en');
@@ -480,7 +496,7 @@
         input.value = value; wrapper.append(input); form.append(wrapper); return input;
     }
     function option(selectNode, value, text) { const node = document.createElement('option'); node.value = value;
-        if (Array.isArray(text)) bindCopy(selectNode.closest('form'), node, text); else node.textContent = text;
+        if (Array.isArray(text) || typeof text === 'function') bindCopy(selectNode.closest('form'), node, text); else node.textContent = text;
         selectNode.append(node); }
     function actions(form, close, submitLabel) {
         const box = document.createElement('div'); box.className = 'timepoint-dialog-actions';
@@ -515,18 +531,18 @@
     }
     async function editTimepoint(id = '') {
         requireEnabled();
-        const openedSession = sessionId;
-        await refresh({ activate: false });
-        if (sessionId !== openedSession || sessionId !== sidNow()) throw failure('stale_timepoint_action');
+        // Open immediately from the visible catalog. mutate() revalidates the
+        // metadata fence against a fresh catalog before committing any edit.
+        if (sessionId !== sidNow()) throw failure('stale_timepoint_action');
         const row = id ? findRow(id) : null;
         const owner = { sessionId, catalogRevision: catalog.catalog_revision, revision: row?.revision, metadataFence: metadataFence(catalog) };
         const dialog = openForm(row ? ['编辑时间点', 'Edit timepoint'] : ['添加时间点', 'Add timepoint']);
-        const title = field(dialog.form, ['名称', 'Title'], 'input', 'title', row?.title || ''); title.required = true;
+        const title = field(dialog.form, ['名称', 'Title'], 'input', 'title', displayTitle(row)); title.required = true;
         const stage = field(dialog.form, ['阶段', 'Stage'], 'select', 'stage');
         option(stage, 'preoperative', ['术前', 'Preoperative']); option(stage, 'intraoperative', ['术中', 'Intraoperative']); stage.value = row?.stage || 'preoperative';
         const reference = field(dialog.form, ['关联的术前时间点', 'Associated preoperative timepoint'], 'select', 'preoperative_timepoint_id');
         option(reference, '', ['请选择术前时间点', 'Choose a preoperative timepoint']);
-        activeRecords().filter(r => r.stage === 'preoperative' && r.id !== id).forEach(r => option(reference, r.id, r.title));
+        activeRecords().filter(r => r.stage === 'preoperative' && r.id !== id).forEach(r => option(reference, r.id, () => displayTitle(r)));
         reference.value = row?.preoperative_timepoint_id || '';
         const update = () => { reference.parentElement.hidden = stage.value !== 'intraoperative'; reference.required = stage.value === 'intraoperative'; }; update(); stage.onchange = update;
         const migrationRequired = !!row && (row.legacy_default || row.state_revision > 0);
@@ -670,7 +686,7 @@
         });
     }
     window.BrachyBotTimepoints = Object.freeze({ refresh, select, captureTarget, captureSubmission, isSubmissionCurrent, isCurrent, request, addRequestHeaders,
-        applyResult, setJobState, schedulePresentationSave, savePresentation, registerBridge, editTimepoint, deleteTimepoint,
+        applyResult, setJobState, schedulePresentationSave, savePresentation, registerBridge, editTimepoint, deleteTimepoint, invalidateMount,
         restoreTimepoint, enabled, observeWorkspace, executeCommand, reload: () => select(activeId,{reload:true}), getCatalog: () => clone(catalog),
         confirmTargetOperation, getDataState: scope => { const item = record(scope); return { workspace: clone(item.workspace), presentation: clone(item.presentation),
             revision: item.revision, dirty: item.dirty, state: item.state, jobs: Object.fromEntries(item.jobs), result: clone(item.result) }; } });

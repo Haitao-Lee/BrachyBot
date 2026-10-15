@@ -274,6 +274,7 @@ window.Report = (function () {
         let _fitScale = 1.0;
         let _resizeObserver = null;
         let _updateFrame = 0;
+        let _zoomAnchor = null;
         let _availableWidth = null;
         let _observedPaper = null;
         let _paperObserver = null;
@@ -303,6 +304,52 @@ window.Report = (function () {
             return Math.min(1.0, availableWidth / pageWidth);
         }
 
+        function _captureZoomAnchor(point) {
+            const host = document.getElementById('reportPreview');
+            const pages = document.getElementById('reportPages');
+            const wrap = document.getElementById('reportPagesWrapper');
+            if (!host || !pages || !wrap || !pages.children.length) return null;
+            // Desktop uses the preview pane; stacked/mobile mode scrolls an
+            // ancestor instead. Correct the actual scroll owner in both modes.
+            let scroller = host;
+            while (scroller && scroller !== document.documentElement) {
+                const style = window.getComputedStyle(scroller);
+                if (/(auto|scroll|overlay)/.test(style.overflowY)
+                    && scroller.scrollHeight > scroller.clientHeight + 1) break;
+                scroller = scroller.parentElement;
+            }
+            if (!scroller || scroller === document.documentElement) {
+                scroller = document.scrollingElement;
+            }
+            if (!scroller) return null;
+            const bounds = scroller === document.scrollingElement
+                ? { top: 0, bottom: window.innerHeight }
+                : scroller.getBoundingClientRect();
+            const visible = host.getBoundingClientRect();
+            const top = Math.max(bounds.top, visible.top, 0);
+            const bottom = Math.min(bounds.bottom, visible.bottom, window.innerHeight);
+            if (bottom <= top) return null;
+            const clientY = Number.isFinite(point?.clientY)
+                ? Math.max(top, Math.min(bottom, point.clientY)) : (top + bottom) / 2;
+            const scale = Number(wrap.dataset.effectiveZoom) || _fitScale * _zoom;
+            if (!(scale > 0)) return null;
+            return { pages, scroller, clientY,
+                paperY: (clientY - pages.getBoundingClientRect().top) / scale };
+        }
+
+        function _restoreZoomAnchor(scale) {
+            const anchor = _zoomAnchor;
+            _zoomAnchor = null;
+            if (!anchor || anchor.pages !== document.getElementById('reportPages')
+                || !anchor.pages.isConnected || !anchor.scroller.isConnected) return;
+            const delta = anchor.pages.getBoundingClientRect().top
+                + anchor.paperY * scale - anchor.clientY;
+            // One correction per animation frame, after the final scale and
+            // scroll extent are known. Never smooth-scroll away from the anchor.
+            anchor.scroller.scrollTo({ top: anchor.scroller.scrollTop + delta,
+                left: anchor.scroller.scrollLeft, behavior: 'instant' });
+        }
+
         function _update() {
             const wrap = document.getElementById('reportPagesWrapper');
             const pages = document.getElementById('reportPages');
@@ -317,10 +364,8 @@ window.Report = (function () {
             }
             const scaledHeight = pages ? `${Math.ceil((pages._reportPreviewHeight || 0) * effectiveZoom)}px` : '';
             if (wrap) {
-                // Keep preview scaling anchored to the page's top center.
-                // Without an explicit inline origin, a late stylesheet/theme
-                // update can apply a different origin and make large figures
-                // appear to extend outside the PDF sheet.
+                // Keep the A4 transform origin stable. Scroll compensation
+                // anchors zoom to the reading location instead of page one.
                 wrap.style.transformOrigin = 'top center';
                 wrap.style.width = '100%';
                 wrap.style.transform = `scale(${effectiveZoom})`;
@@ -331,6 +376,7 @@ window.Report = (function () {
                 wrap.dataset.fitScale = String(_fitScale);
                 wrap.dataset.effectiveZoom = String(effectiveZoom);
             }
+            _restoreZoomAnchor(effectiveZoom);
             if (ind) {
                 const percent = Math.round(effectiveZoom * 100);
                 ind.textContent = percent + '%';
@@ -413,7 +459,12 @@ window.Report = (function () {
             } catch (e) {}
         }
         function setZoom(z, options = {}) {
-            _zoom = Math.max(MIN, Math.min(MAX, z));
+            if (!Number.isFinite(Number(z))) return;
+            // Restoring a saved workspace is not an interactive zoom gesture.
+            // Toolbar controls anchor at the visible center; wheel uses its pointer.
+            _zoomAnchor = options?.persist === false && !options?.anchor
+                ? null : _captureZoomAnchor(options?.anchor);
+            _zoom = Math.max(MIN, Math.min(MAX, Number(z)));
             refresh();
             if (options?.persist !== false) {
                 _persist();
@@ -435,10 +486,12 @@ window.Report = (function () {
             if (!host._rpZoomWired) host.addEventListener('wheel', (e) => {
                 if (!e.ctrlKey && !e.metaKey) return;
                 e.preventDefault();
-                if (e.deltaY < 0) zoomIn();
-                else if (e.deltaY > 0) zoomOut();
+                if (e.deltaY) setZoom(_zoom + (e.deltaY < 0 ? STEP : -STEP),
+                    { anchor: { clientY: e.clientY } });
             }, { passive: false });
             host._rpZoomWired = true;
+            // Our explicit compensation owns anchoring, including stacked mode.
+            host.style.overflowAnchor = 'none';
 
             if (!host._rpImageLoadWired) {
                 host.addEventListener('load', (event) => {
@@ -492,7 +545,7 @@ window.Report = (function () {
         } else {
             _installWheelHandler();
         }
-        return { setZoom, zoomIn, zoomOut, zoomReset, getZoom, refresh, refreshContent };
+        return { setZoom, zoomIn, zoomOut, zoomReset, getZoom, refresh, refreshContent, installInteractions: _installWheelHandler };
     })();
 
     // Ctrl+0 reset shortcut

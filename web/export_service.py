@@ -789,6 +789,32 @@ class ExportService:
             "Session", (JSON_FORMAT,), "json",
             {"restoration": "exchange_bundle_not_a_native_workspace_backup"},
         ))
+        objects.extend(self.artifact_catalog(user_id, session_id, agent, snapshot=snapshot))
+        ui = snapshot.get("ui") if isinstance(snapshot.get("ui"), Mapping) else {}
+        ui_state = ui.get("state") if isinstance(ui.get("state"), Mapping) else ui
+        viewer = ui_state.get("viewer") if isinstance(ui_state.get("viewer"), Mapping) else {}
+        for index, annotation in enumerate(viewer.get("annotations") or []):
+            if not isinstance(annotation, Mapping):
+                continue
+            annotation_id = str(annotation.get("id") or f"annotation_{index + 1}")
+            objects.append(ExportObject(
+                f"annotation:{annotation_id}",
+                "group:annotations",
+                str(annotation.get("label") or annotation.get("name") or f"Annotation {index + 1}"),
+                "annotation",
+                "Annotations",
+                (JSON_FORMAT,),
+                "json",
+                {"annotation_id": annotation_id},
+            ))
+        return objects
+
+    def artifact_catalog(self, user_id, session_id, agent, *, snapshot=None):
+        """Report/capture objects for Data Tree, independent of clinical products."""
+        if snapshot is None:
+            snapshot = self.store.load_snapshot(user_id, session_id, projection='artifacts')
+        objects = []
+        target = (getattr(agent, 'config', {}) or {}).get('_workspace_timepoint_id')
         report = snapshot.get("report") if isinstance(snapshot.get("report"), Mapping) else {}
         report_form = report.get("form") if isinstance(report.get("form"), Mapping) else report
         if report:
@@ -889,23 +915,6 @@ class ExportService:
                     {"source_path": str(path), "created_at": path.stat().st_mtime,
                      **screenshot_metadata.get(path.name, legacy_screenshot_metadata(path.name))},
                 ))
-        ui = snapshot.get("ui") if isinstance(snapshot.get("ui"), Mapping) else {}
-        ui_state = ui.get("state") if isinstance(ui.get("state"), Mapping) else ui
-        viewer = ui_state.get("viewer") if isinstance(ui_state.get("viewer"), Mapping) else {}
-        for index, annotation in enumerate(viewer.get("annotations") or []):
-            if not isinstance(annotation, Mapping):
-                continue
-            annotation_id = str(annotation.get("id") or f"annotation_{index + 1}")
-            objects.append(ExportObject(
-                f"annotation:{annotation_id}",
-                "group:annotations",
-                str(annotation.get("label") or annotation.get("name") or f"Annotation {index + 1}"),
-                "annotation",
-                "Annotations",
-                (JSON_FORMAT,),
-                "json",
-                {"annotation_id": annotation_id},
-            ))
         return objects
 
     def groups(self, objects: Iterable[ExportObject]) -> list[Dict[str, Any]]:
@@ -952,9 +961,14 @@ class ExportService:
         user_id: str,
         session_id: str,
         agent: Any,
+        *, artifacts_only=False,
     ) -> Dict[str, Any]:
         """Return the one public object contract used by the UI and tests."""
-        objects = self.catalog(user_id, session_id, agent)
+        objects = (self.artifact_catalog(user_id, session_id, agent) if artifacts_only
+                   else self.catalog(user_id, session_id, agent))
+        if artifacts_only:
+            objects = [item for item in objects if item.data_type in
+                       {"report_data", "report", "report_figure", "screenshot"}]
         planning_id = str(
             agent.memory.retrieve("manual_planning_id")
             or agent.memory.retrieve("planning_id")

@@ -1284,6 +1284,60 @@ function handleChatInput(el) {
 // or `ReadableStream` API is missing), fall back to a single JSON call
 // and render the final response.
 const CHAT_CONNECT_TIMEOUT_MS = 30000;
+// A lost response does not prove that the server rejected the POST. Retry
+// only the same idempotent request, then look up that exact turn before
+// declaring a connection failure. Stop and case switches cancel every phase.
+async function _openChatHandshake(options) {
+    let controller = options.controller;
+    let failure = null;
+    const interrupted = () => options.isDetached()
+        || controller?.__brachybotExplicitStop
+        || (controller?.signal.aborted && !controller?.__brachybotHandshakeTimedOut);
+    const attempt = async (operation, timeoutMs) => {
+        if (interrupted()) throw new DOMException('Chat connection cancelled', 'AbortError');
+        const timer = controller ? setTimeout(() => {
+            controller.__brachybotHandshakeTimedOut = true;
+            controller.abort();
+        }, timeoutMs) : null;
+        try {
+            const response = await operation(controller);
+            if (interrupted()) throw new DOMException('Chat connection cancelled', 'AbortError');
+            return response;
+        } finally {
+            if (timer) clearTimeout(timer);
+        }
+    };
+    const renew = () => {
+        controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        options.onController(controller);
+    };
+    for (let index = 0; index < 2; index += 1) {
+        if (index) renew();
+        try {
+            return await attempt(options.performHandshake, CHAT_CONNECT_TIMEOUT_MS);
+        } catch (error) {
+            if (interrupted()) throw error;
+            failure = error;
+            if (error?.name !== 'AbortError' && error?.name !== 'TypeError'
+                && !/network|fetch|timed out/i.test(String(error?.message || ''))) throw error;
+        }
+    }
+    if (options.recoverHandshake) {
+        renew();
+        try {
+            const response = await attempt(options.recoverHandshake, 10000);
+            if (response) return response;
+        } catch (error) {
+            if (interrupted()) throw error;
+            // Preserve the original connection failure if the status probe
+            // also fails. An unrelated historical task is never a recovery.
+        }
+    }
+    const error = new Error('Chat connection could not be confirmed');
+    error.code = failure?.name === 'AbortError'
+        ? 'chat_connection_timeout' : 'chat_connection_failed';
+    throw error;
+}
 // A report regeneration keeps capturing figures and flushing its durable save
 // after the report itself is already on screen. The report UI owns that
 // progress and its own terminal state; the chat turn only joins it.
@@ -1499,6 +1553,14 @@ function _chatUserVisibleFailure(sessionId, kind = 'request', code = '') {
     // Server failures are classified. Explain the real cause instead of
     // blaming "session still loading" for every failed turn.
     const codeMessages = {
+        chat_connection_timeout: [
+            '连接服务端超时，尚未确认服务器是否接收本次请求。请检查网络后重试。',
+            'The server connection timed out and acceptance of this request could not be confirmed. Check the connection and retry.',
+        ],
+        chat_connection_failed: [
+            '与服务端的连接中断，尚未确认本次请求是否已被接收。请检查网络后重试。',
+            'The server connection was interrupted and acceptance of this request could not be confirmed. Check the connection and retry.',
+        ],
         workspace_hydration_failed: [
             '病例资源加载失败。请重新打开该病例后重试；如反复失败，请检查服务端日志。',
             'Case resources failed to load. Reopen the case and retry; if it keeps failing, check the server log.',
@@ -4238,6 +4300,7 @@ async function sendChat(prefill, options) {
             }
             return await fetch(API + '/chat', {
                 method: 'POST',
+                priority: 'high',
                 headers: submittedTarget && window.BrachyBotChatTargets ? window.BrachyBotChatTargets.headers(submittedTarget, {
                     'Content-Type': 'application/json'
                 }) : {
@@ -4249,42 +4312,40 @@ async function sendChat(prefill, options) {
             });
         };
 
-        const handshakeAttempts = 2;
-        let resp = null;
-        let handshakeFailure = null;
-        for (let attempt = 0; attempt < handshakeAttempts; attempt += 1) {
-            const attemptController = attempt === 0
-                ? turnAbortController
-                : ((typeof AbortController !== 'undefined') ? new AbortController() : null);
-            if (attempt > 0) {
-                // Keep Stop bound to the live attempt, not to the aborted one.
-                chatAbortController = attemptController;
-                turnAbortController = attemptController;
-                console.warn('[chat] stream handshake was lost; retrying with the same request id');
-            }
-            const connectTimer = attemptController
-                ? setTimeout(() => attemptController.abort(), CHAT_CONNECT_TIMEOUT_MS)
-                : null;
-            try {
-                resp = await performHandshake(attemptController);
-                handshakeFailure = null;
-                break;
-            } catch (handshakeError) {
-                handshakeFailure = handshakeError;
-                const interrupted = handshakeError?.name === 'AbortError';
-                const explicitStop = !!attemptController?.__brachybotExplicitStop;
-                // A case switch detaches the turn by aborting it; the user is
-                // no longer looking at this case, so the turn must not be
-                // re-sent behind their back.
-                const detached = window._chatDetachRequestedFor === turnSessionId
-                    || String(activeSessionId || '') !== turnSessionId;
-                if (!interrupted || explicitStop || detached
-                    || attempt + 1 >= handshakeAttempts) break;
-            } finally {
-                if (connectTimer) clearTimeout(connectTimer);
-            }
-        }
-        if (handshakeFailure) throw handshakeFailure;
+        const resp = await _openChatHandshake({
+            controller: turnAbortController,
+            performHandshake,
+            onController(controller) {
+                chatAbortController = controller;
+                turnAbortController = controller;
+            },
+            isDetached: () => window._chatDetachRequestedFor === turnSessionId
+                || String(activeSessionId || '') !== turnSessionId,
+            recoverHandshake: isResumingTask ? null : async controller => {
+                const headers = submittedTarget && window.BrachyBotChatTargets
+                    ? window.BrachyBotChatTargets.headers(submittedTarget)
+                    : { 'X-BrachyBot-Session': turnSessionId };
+                const status = await fetch(API + '/chat/task', {
+                    headers, signal: controller?.signal, priority: 'high',
+                });
+                if (!status.ok) return null;
+                const packet = await status.json();
+                const task = packet?.task;
+                if (!task?.task_id || task.request_id !== turnRequestId
+                    || task.session_id !== turnSessionId
+                    || (submittedTarget?.timepointId
+                        && task.timepoint_id !== submittedTarget.timepointId)) return null;
+                if (controller?.signal.aborted
+                    || window._chatDetachRequestedFor === turnSessionId
+                    || String(activeSessionId || '') !== turnSessionId) {
+                    throw new DOMException('Chat connection cancelled', 'AbortError');
+                }
+                console.warn('[chat] joining accepted request after a lost handshake', turnRequestId);
+                return fetch(API + '/chat/tasks/' + encodeURIComponent(task.task_id) + '/stream?after_seq=0', {
+                    headers, signal: controller?.signal, priority: 'high',
+                });
+            },
+        });
 
         if (!resp.ok) {
             turnFailed = true;
@@ -5902,7 +5963,7 @@ async function sendChat(prefill, options) {
                 _setCaseTaskState(turnSessionId, 'failed', null);
                 console.warn('[chat] Stream recovery could not locate a task', e);
                 if (typeof addChat === 'function') {
-                    addChat('error', _chatUserVisibleFailure(turnSessionId, 'request'), true,
+                    addChat('error', _chatUserVisibleFailure(turnSessionId, 'request', e?.code), true,
                         Date.now(), false, turnSessionId, turnIdentity);
                 }
             }
@@ -5920,7 +5981,7 @@ async function sendChat(prefill, options) {
                         text,
                         opts.visualContext?.preliminary_response || '',
                     )
-                    : _chatUserVisibleFailure(turnSessionId, 'request');
+                    : _chatUserVisibleFailure(turnSessionId, 'request', e?.code);
                 addChat(isInternalFollowup ? 'bot-response' : 'error', visualFailure, true,
                     Date.now(), false, turnSessionId, turnIdentity);
                 if (isInternalFollowup && String(visualFailure || '').trim()) {

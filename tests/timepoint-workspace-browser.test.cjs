@@ -21,6 +21,8 @@ const root=path.resolve(__dirname,'../web/app/static/js');
                 const parsed=new URL(url,location.href),headers=Object.fromEntries(new Headers(init.headers)),body=init.body?JSON.parse(init.body):null;
                 const id=parsed.pathname.split('/')[5]||headers['x-brachybot-timepoint'];calls.push({path:parsed.pathname,method:init.method,headers,body});
                 if(parsed.pathname==='/api/dose/view'){
+                    if(window.emptyDose)return response({success:true,session_id:'s',timepoint_id:id,
+                        source_set:parsed.searchParams.get('source_set'),available:false,stale:true});
                     const mode=parsed.searchParams.get('source_set');const dose={success:true,session_id:'s',timepoint_id:id,source_set:mode,available:mode!=='total',stale:false,dose_units:'gy',geometry_signature:'grid-'+id,shape:[1,1,1],spacing:[1,1,1],origin:[0,0,0],direction:[1,0,0,0,1,0,0,0,1],dose:[38.16],metrics:{D90:38.16},dvh:{CTV:{dose_bins:[0,38.16],volume_pcts:[100,0]}}};
                     if(window.deferDose){window.deferDose=false;return new Promise(resolve=>window.finishDose=()=>resolve(response(dose)));}return response(dose);
                 }
@@ -66,11 +68,13 @@ const root=path.resolve(__dirname,'../web/app/static/js');
         await page.waitForFunction(()=>BrachyBotTimepointWorkspace.resourceState()?.ready&&state.doseOverlay?.doseSource==='implanted');
         assert.equal(await page.locator('[data-timepoint-dose]').count(),2);
         assert.equal(await page.locator('#legacyTreeNode').textContent(),'Legacy tree');
+        assert.equal(await page.locator('#timepointImageCollection').isVisible(),false,'Input does not duplicate the Data Tree image inventory');
         assert.equal(await page.evaluate(()=>state.doseOverlay.volumeMin*state.doseOverlay.doseScaleGy),38.16,'physical Gy converted exactly once');
         await page.getByLabel('Display image: same-name.nii.gz').first().click();
         await page.waitForFunction(()=>BrachyBotTimepointWorkspace.resourceState().images.display_image_id==='one');
         assert.equal(await page.evaluate(()=>collections.A.planning_reference_image_id),'one');
-        await page.locator('#timepointImageCollection [data-image-id="two"] button').filter({hasText:'Use as planning reference'}).click();
+        await page.locator('#timepointImageTree [data-image-id="two"]').click({button:'right'});
+        await page.locator('#ctxMenu button').filter({hasText:'Use as planning reference'}).click();
         await page.waitForFunction(()=>collections.A.planning_reference_image_id==='two');
         assert.equal(await page.evaluate(()=>collections.A.display_image_id),'one','planning reference does not replace display');
         await page.evaluate(()=>{deferDose=true;window.dosePromise=BrachyBotTimepointWorkspace.selectDose('implanted');});
@@ -83,6 +87,19 @@ const root=path.resolve(__dirname,'../web/app/static/js');
         await page.locator('[data-timepoint-dose]').first().selectOption('total');
         await page.waitForFunction(()=>document.getElementById('timepointResourceStatus').textContent.includes('unavailable'));
         assert.equal(await page.evaluate(()=>state.doseOverlay),null,'unavailable total never falls back to planned dose');
+        await page.evaluate(async()=>{
+            emptyDose=true;ws.B.agent={planning_results:{}};
+            await BrachyBotTimepoints.reload();
+        });
+        await page.waitForFunction(()=>BrachyBotTimepointWorkspace.resourceState()?.ready);
+        assert.equal(await page.locator('#timepointResourceStatus').isVisible(),false,'Blank timepoint has no automatic stale-dose warning');
+        await page.evaluate(async()=>{
+            ws.B.agent.planning_results.dose_distribution={$available:true};
+            await BrachyBotTimepoints.reload();
+        });
+        await page.waitForFunction(()=>BrachyBotTimepointWorkspace.resourceState()?.ready);
+        assert.match(await page.locator('#timepointResourceStatus').innerText(),/stale/,'An invalidated saved dose still warns');
+        await page.evaluate(()=>{emptyDose=false;delete ws.B.agent;});
         await page.evaluate(()=>{_i18nLang='zh';dispatchEvent(new Event('i18nchange'));});
         assert.match(await page.locator('[data-timepoint-dose]').first().innerText(),/体内已有粒子/);
         // The real bridge may have completed geometry but must not advertise

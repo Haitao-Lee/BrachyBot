@@ -108,6 +108,7 @@
             dose_ready: ['所选剂量已加载（Gy）。', 'The selected dose is loaded (Gy).'],
         };
         node.textContent = item?.status && texts[item.status] ? t(...texts[item.status]) : '';
+        node.hidden = !node.textContent || ['ready', 'reference_saved', 'dose_ready'].includes(item?.status);
         node.dataset.state = item?.statusKind || 'info';
         const retry=document.getElementById('timepointRetryRestore');
         if(retry){retry.textContent=t('重试恢复当前时间点','Retry current timepoint restoration');
@@ -140,11 +141,15 @@
         assertOwner(workspace, context);
         const scope = Object.freeze({ sessionId: context.sessionId, timepointId: context.timepointId,
             generation: context.generation, uiLanguage: window._i18nLang === 'zh' ? 'zh' : 'en' });
-        const images = imagesPacket(await json(scope, imageUrl(scope)), scope);
-        if (window.BrachyBotInputPlanningConfig) {
-            workspace = await window.BrachyBotInputPlanningConfig.prepareSnapshot(workspace, scope, context.isCurrent);
-            if (!workspace) throw fail('stale_timepoint_action');
-        }
+        const [imageData, configured] = await Promise.all([
+            json(scope, imageUrl(scope)),
+            window.BrachyBotInputPlanningConfig
+                ? window.BrachyBotInputPlanningConfig.prepareSnapshot(workspace, scope, context.isCurrent)
+                : Promise.resolve(workspace),
+        ]);
+        const images = imagesPacket(imageData, scope);
+        workspace = configured;
+        if (!workspace) throw fail('stale_timepoint_action');
         if (!context.isCurrent()) throw fail('stale_timepoint_action');
         const saved = workspace.ui?.state || workspace.ui || {};
         const item = { scope, workspace: copy(workspace), images, cancelled: false, ready: false,
@@ -199,7 +204,7 @@
             window.showCaseResourceLoading?.(hydrationNoticeScope);
             await window.BrachyBotImplants?.reload?.(scope, { throwOnError: true });
             if (!scopeIsCurrent(scope)) return false;
-            const doseRestored = await selectDose(item.doseMode, { persist: false });
+            const doseRestored = await selectDose(item.doseMode, { persist: false, automatic: true });
             if (!scopeIsCurrent(scope) || item.cancelled) return false;
             // An intentionally absent/stale dose is a valid saved state. A
             // transport or geometry error is not: never authorize a partial
@@ -209,7 +214,7 @@
             // can publish a new clinical version. Do not hand subsequent UI
             // writers the older shell receipt or rebase its presentation.
             const latest=await json(scope,'/api/sessions/'+encodeURIComponent(scope.sessionId)
-                +'/timepoints/'+encodeURIComponent(scope.timepointId)+'/workspace');
+                +'/timepoints/'+encodeURIComponent(scope.timepointId)+'/workspace?response_mode=resource_shell');
             if(!scopeIsCurrent(scope) || item.cancelled)return false;
             assertOwner(latest.workspace,scope);
             if(latest.workspace.timepoint_clinical_revision!==consumedClinicalRevision
@@ -229,6 +234,10 @@
             // The shell/geometry is not the final readiness boundary: observation
             // reload and selected-dose restoration can still replace its owner.
             item.ready = true;
+            if (item.presentationSavePending) {
+                item.presentationSavePending = false;
+                handlePresentationSave({ timepointScope:scope });
+            }
             // Finish the incremental transparency preview even when the last
             // receipt arrives after the render scheduler has become idle.
             if (typeof scene3D !== 'undefined') scene3D?.requestRender?.(2);
@@ -267,10 +276,20 @@
         if (pending && await pending === false) throw fail('timepoint_image_save_failed');
     }
     function handlePresentationSave(options = {}) {
-        if (!registered || !controller()?.enabled()) return false;
-        if (!mounted || suspended || !entry(mounted)?.ready) return true;
+        if (!registered) return false;
+        // An invalidated mount is a deliberate transition, not a legacy
+        // workspace. Swallow reset-generated saves until its successor mounts.
+        if (suspended) return true;
+        if (!controller()?.enabled()) return false;
+        if (!mounted || suspended) return true;
         if (options.sessionId && options.sessionId !== mounted.sessionId) return true;
         if (options.timepointScope && !scopeIsCurrent(options.timepointScope)) return true;
+        if (!entry(mounted)?.ready) {
+            // Keep the intent only. Serializing a partial clinical tree here
+            // would erase resources that have not arrived yet.
+            entry(mounted).presentationSavePending = true;
+            return true;
+        }
         const scope = mounted, pending = persistImageAppearance(scope);
         if (pending) void pending.then(saved=>{if (saved && scopeIsCurrent(scope)) controller().schedulePresentationSave();});
         else controller().schedulePresentationSave();
@@ -383,7 +402,7 @@
             const item = entry(mounted);
             item.ready = false;
             const response = await json(mounted, '/api/sessions/' + encodeURIComponent(mounted.sessionId)
-                + '/timepoints/' + encodeURIComponent(mounted.timepointId) + '/workspace');
+                + '/timepoints/' + encodeURIComponent(mounted.timepointId) + '/workspace?response_mode=resource_shell');
             if (!scopeIsCurrent(item.scope)) return false;
             assertOwner(response.workspace, item.scope);
             controller().observeWorkspace(item.scope, response.workspace);
@@ -408,7 +427,7 @@
     }
     async function observeCommittedState(scope) {
         const response = await json(scope, '/api/sessions/' + encodeURIComponent(scope.sessionId)
-            + '/timepoints/' + encodeURIComponent(scope.timepointId) + '/workspace');
+            + '/timepoints/' + encodeURIComponent(scope.timepointId) + '/workspace?response_mode=resource_shell');
         if (!scopeIsCurrent(scope)) return false;
         assertOwner(response.workspace, scope);
         entry(scope).workspace = copy(response.workspace);
@@ -562,7 +581,19 @@
             }
             validateDose(data, scope, mode);
             if (!scopeIsCurrent(scope) || sequence !== item.doseSequence) return false;
-            if (!data.available || data.stale) { clearDoseView(); status(data.stale ? 'dose_stale' : 'dose_unavailable', 'error'); return false; }
+            if (!data.available || data.stale) {
+                clearDoseView();
+                // The legacy endpoint also marks a missing distribution stale.
+                // Absence in a blank workspace is normal; invalidated saved
+                // dose remains visible as a warning and can never be painted.
+                const results = item.workspace.agent?.planning_results || {};
+                const hadDose = ['dose_components', 'implanted_dose_record', 'dose_metrics',
+                    'dose_distribution', 'dose_distribution_gy', 'dose_distribution_physical_gy']
+                    .some(key => results[key] != null);
+                if (data.stale && (data.available || hadDose)) status('dose_stale', 'error');
+                else if (options.automatic !== true) status('dose_unavailable', 'info');
+                return false;
+            }
             paintDose(data, item); status('dose_ready');
             if (options.persist !== false) handlePresentationSave();
             return true;
@@ -751,7 +782,10 @@
         for (const host of document.querySelectorAll('[data-timepoint-images]')) {
             host.replaceChildren(); if (!item) continue;
             const tree = host.id === 'timepointImageTree';
-            if (!tree) { const heading = document.createElement('h3'); heading.textContent = t('图像集合','Image collection'); host.append(heading); }
+            // Input already has upload/path controls. The Data Tree owns image
+            // inventory, display selection and planning-reference operations.
+            host.hidden = !tree;
+            if (!tree) continue;
             for (const role of ['unclassified','preop','intraop']) {
                 const images = item.images.images.filter(image => (image.role || 'unclassified') === role);
                 if (!tree) { for (const image of images) host.append(imageRow(image,item,false)); continue; }

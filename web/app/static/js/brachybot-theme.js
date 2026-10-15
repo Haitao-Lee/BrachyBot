@@ -18,14 +18,14 @@
     };
 
     function normalizeTheme(value) {
-        return value === 'light' ? 'light' : 'dark';
+        return value === 'dark' ? 'dark' : 'light';
     }
 
     function readStoredTheme() {
         try {
             return normalizeTheme(window.localStorage.getItem(STORAGE_KEY));
         } catch (error) {
-            return 'dark';
+            return 'light';
         }
     }
 

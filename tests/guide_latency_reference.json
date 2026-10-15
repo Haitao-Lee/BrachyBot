@@ -6,15 +6,15 @@
   "dependencies": {
     "plans/guide_geometry.py": "fbd6d7531a1e060988e730899f530882010d9cb5fb0350fd672ea97f675de770",
     "tool_factory/seed_plan/planning_pipeline.py": "261f3db426a963fd3cda0aa19801f888783e14845255af61454671f57990cc3c",
-    "web/planning_runs.py": "7746ad6262aa7ab5bda358b744d235ccb3affc66bb267dae81bad18dbe46435d"
+    "web/planning_runs.py": "166983d8314e8f5e405ca0e4b36fdcc7538eb93740ca97a77dc278fa5ee2dcfc"
   },
   "renewal": {
-    "date": "2026-10-13",
-    "before_pipeline_sha256": "289348877fb2c3d80b3696fe6ab8f4d9fd6548884e3bfa0a7345a9634be8ed87",
-    "evidence_path": "docs/benchmarks/surgical_guide_dependency_renewal_2026-10-13-owned-input-quality.json",
-    "evidence_sha256": "470bd3467cd5806c426b7ca23557a49888803661b4b9240f2268a3c17e48a152",
-    "before_planning_runs_sha256": "5ca2ef963bfdd5b4443103d64ea5aa730a46ef0bdc3b724df9afd56811ca73aa",
-    "note": "Four alternating fresh-process pairs explicitly loaded the earlier planning and history modules on the before side and the current owned Input/evaluation modules on the after side. The direct guide geometry helper AST is unchanged. Input, final triangles, needle paths, auxiliary holes, realized bore manifests and every non-timing QA field matched exactly. Actual loaded module and runner hashes are bound in the new evidence; prior evidence is retained. This renews manufacturing dependency equivalence only, not printed strength, significant speedup or clinical fit."
+    "date": "2026-10-15",
+    "before_pipeline_sha256": "261f3db426a963fd3cda0aa19801f888783e14845255af61454671f57990cc3c",
+    "evidence_path": "docs/benchmarks/surgical_guide_dependency_renewal_2026-10-15-planning-runs.json",
+    "evidence_sha256": "53987de1591dd49428f16249d08f9c9989cb81a610b84d6afeb415d50a26a83e",
+    "before_planning_runs_sha256": "7746ad6262aa7ab5bda358b744d235ccb3affc66bb267dae81bad18dbe46435d",
+    "note": "Four alternating fresh-process pairs explicitly loaded the earlier web/planning_runs.py on the before side and the current projection-based planning history on the after side, with the unchanged pipeline and guide geometry on both sides. The direct guide geometry helper AST is unchanged. Input, final triangles, needle paths, auxiliary holes, realized bore manifests and every non-timing QA field matched exactly. Actual loaded module and runner hashes are bound in the new evidence; prior evidence is retained. This renews manufacturing dependency equivalence only, not printed strength, significant speedup or clinical fit."
   },
   "validation_environment": {"numpy": "2.4.6", "scipy": "1.15.3", "skimage": "0.26.0", "SimpleITK": "2.5.0"}
 }

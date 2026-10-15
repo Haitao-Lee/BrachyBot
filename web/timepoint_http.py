@@ -135,17 +135,17 @@ class ScopedWorkspaceStore:
         self.raw._timepoint_record(catalog, binding.timepoint_id)
         return binding
 
-    def _snapshot(self, user_id, session_id, binding):
-        result = self.raw.load_timepoint_snapshot(user_id, session_id, binding.timepoint_id)
+    def _snapshot(self, user_id, session_id, binding, *, projection=None):
+        result = self.raw.load_timepoint_snapshot(user_id, session_id, binding.timepoint_id, projection=projection)
         # Legacy forms use workspace/session revision interchangeably. Both
         # represent the addressed clinical workspace in this response only.
         result["session"] = {**result["session"], "session_revision": result["session"]["revision"],
             "revision": result["timepoint_state_revision"]}
         return result
 
-    def load_snapshot(self, user_id, session_id):
+    def load_snapshot(self, user_id, session_id, *, projection=None):
         binding = self._scope(user_id, session_id)
-        return self._snapshot(user_id, session_id, binding) if binding else self.raw.load_snapshot(user_id, session_id)
+        return self._snapshot(user_id, session_id, binding, projection=projection) if binding else self.raw.load_snapshot(user_id, session_id, projection=projection)
 
     def save_snapshot_patch(self, user_id, session_id, patch, *, expected_revision=None, reason="workspace.updated"):
         binding = self._scope(user_id, session_id)

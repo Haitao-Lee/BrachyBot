@@ -1527,7 +1527,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .rp-zoom-wrapper {
     transform-origin: top center;
-    transition: transform 0.15s ease-out;
+    /* Scale and scroll compensation must land in the same frame. */
+    transition: none;
+    overflow-anchor: none;
     width: 100%;
     display: flex;
     flex-direction: column;

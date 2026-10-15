@@ -1,19 +1,20 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script>
         /* Apply the persisted theme before styles paint to avoid a light/dark
-           flash. Unknown values deliberately fall back to the dark default. */
+           flash. Unknown values deliberately fall back to the light default. */
         (function () {
             try {
                 var savedTheme = window.localStorage.getItem('brachybot_ui_theme');
-                var theme = savedTheme === 'light' ? 'light' : 'dark';
+                var theme = savedTheme === 'dark' ? 'dark' : 'light';
                 document.documentElement.setAttribute('data-theme', theme);
                 document.documentElement.style.colorScheme = theme;
             } catch (error) {
-                document.documentElement.setAttribute('data-theme', 'dark');
+                document.documentElement.setAttribute('data-theme', 'light');
+                document.documentElement.style.colorScheme = 'light';
             }
         }());
     </script>
@@ -65,14 +66,14 @@
     <link rel="stylesheet" href="static/css/brachybot-theme-layout.css?v=13">
     <link rel="stylesheet" href="static/css/brachybot-chat-status.css?v=21">
     <link rel="stylesheet" href="static/css/brachybot-panels-viewers.css?v=17">
-    <link rel="stylesheet" href="static/css/brachybot-report-controls.css?v=30">
+    <link rel="stylesheet" href="static/css/brachybot-report-controls.css?v=2026101515">
     <link rel="stylesheet" href="static/css/brachybot-responsive.css?v=4">
     <link rel="stylesheet" href="static/css/brachybot-auth.css?v=9">
     <link rel="stylesheet" href="static/css/brachybot-data-export.css?v=3">
     <link rel="stylesheet" href="static/css/brachybot-planning-distance-annotations.css?v=1">
     <link rel="stylesheet" href="static/css/brachybot-theme-light.css?v=1">
     <link rel="stylesheet" href="static/css/brachybot-timepoints.css?v=1">
-    <link rel="stylesheet" href="static/css/brachybot-workspace-refinement.css?v=4">
+    <link rel="stylesheet" href="static/css/brachybot-workspace-refinement.css?v=2026101515">
 </head>
 <!--
   The remaining inline styles belong to fixed report/form geometry whose
@@ -361,12 +362,12 @@
             <button class="lang-btn" data-lang-btn="en" onclick="window.setUiLanguage && window.setUiLanguage('en')" aria-pressed="true">EN</button>
             <button class="lang-btn" data-lang-btn="zh" onclick="window.setUiLanguage && window.setUiLanguage('zh')" aria-pressed="false">中</button>
         </div>
-        <button type="button" class="theme-toggle" data-theme-toggle aria-pressed="false"
-                aria-label="Switch to light theme" title="Switch to light theme">
-            <svg class="theme-toggle-icon" data-theme-icon="moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <button type="button" class="theme-toggle" data-theme-toggle aria-pressed="true"
+                aria-label="Switch to dark theme" title="Switch to dark theme">
+            <svg class="theme-toggle-icon" data-theme-icon="moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" hidden>
                 <path d="M20.7 15.1A8.6 8.6 0 0 1 8.9 3.3a8.9 8.9 0 1 0 11.8 11.8Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
             </svg>
-            <svg class="theme-toggle-icon" data-theme-icon="sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false" hidden>
+            <svg class="theme-toggle-icon" data-theme-icon="sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                 <circle cx="12" cy="12" r="3.5" fill="none" stroke="currentColor" stroke-width="1.8"></circle>
                 <path d="M12 2.5v2M12 19.5v2M4.4 4.4l1.4 1.4M18.2 18.2l1.4 1.4M2.5 12h2M19.5 12h2M4.4 19.6l1.4-1.4M18.2 5.8l1.4-1.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
             </svg>
@@ -1636,41 +1637,41 @@
 -->
 <script src="static/js/brachybot-chat-core.js?v=41"></script>
 <script src="static/js/brachybot-chat-target.js?v=1"></script>
-<script src="static/js/brachybot-chat-todo.js?v=76"></script>
-<script src="static/js/brachybot-ui-api.js?v=144"></script>
+<script src="static/js/brachybot-chat-todo.js?v=2026101515"></script>
+<script src="static/js/brachybot-ui-api.js?v=2026101515"></script>
 <link rel="stylesheet" href="static/css/brachybot-control-guide.css?v=1">
 <script src="static/js/brachybot-control-guide.js?v=1"></script>
 <link rel="stylesheet" href="static/css/brachybot-monitor-dashboard.css?v=8">
 <script src="static/js/brachybot-monitor-interaction.js?v=10"></script>
 <script src="static/js/brachybot-monitor-dashboard.js?v=9"></script>
 <script src="static/js/brachybot-auth.js?v=12"></script>
-<script src="static/js/brachybot-viewer-volume.js?v=95"></script>
-<script src="static/js/brachybot-viewer-layout.js?v=53"></script>
+<script src="static/js/brachybot-viewer-volume.js?v=2026101515"></script>
+<script src="static/js/brachybot-viewer-layout.js?v=2026101515"></script>
 <script src="static/js/brachybot-depth-peeling.js?v=2"></script>
-<script src="static/js/brachybot-3d-manual.js?v=126"></script>
+<script src="static/js/brachybot-3d-manual.js?v=2026101515"></script>
 <script src="static/js/brachybot-planning-distance-annotations.js?v=3"></script>
-<script src="static/js/brachybot-artifact-tree.js?v=1"></script>
+<script src="static/js/brachybot-artifact-tree.js?v=2026101515"></script>
 <script src="static/js/brachybot-manual-step-results.js?v=2"></script>
-<script src="static/js/brachybot-input-actions.js?v=2"></script>
-<script src="static/js/brachybot-manual-annotation.js?v=34"></script>
+<script src="static/js/brachybot-input-actions.js?v=2026101515"></script>
+<script src="static/js/brachybot-manual-annotation.js?v=2026101515"></script>
 <script src="static/js/brachybot-sat3d-interaction.js?v=1"></script>
-<script src="static/js/brachybot-surgical-guide.js?v=24"></script>
+<script src="static/js/brachybot-surgical-guide.js?v=2026101515"></script>
 <script src="static/js/brachybot-visual-annotation.js?v=9"></script>
-<script src="static/js/brachybot-dvh-planning.js?v=47"></script>
-<script src="static/js/brachybot-report-shell.js?v=39"></script>
+<script src="static/js/brachybot-dvh-planning.js?v=2026101515"></script>
+<script src="static/js/brachybot-report-shell.js?v=2026101515"></script>
 <script src="static/js/brachybot-report-plan-tables.js?v=1"></script>
 <script src="static/js/brachybot-report-editor.js?v=58"></script>
-<script src="static/js/brachybot-workspace.js?v=81"></script>
-<script src="static/js/brachybot-timepoints.js?v=5"></script>
+<script src="static/js/brachybot-workspace.js?v=2026101515"></script>
+<script src="static/js/brachybot-timepoints.js?v=2026101515"></script>
 <link rel="stylesheet" href="static/css/brachybot-implant-observations.css?v=1">
 <script src="static/js/brachybot-implant-observations.js?v=1"></script>
 <link rel="stylesheet" href="static/css/brachybot-timepoint-workspace.css?v=1">
 <script src="static/js/brachybot-guide-registration.js?v=1"></script>
-<script src="static/js/brachybot-timepoint-workspace.js?v=7"></script>
+<script src="static/js/brachybot-timepoint-workspace.js?v=2026101515"></script>
 <script src="static/js/brachybot-session-cache.js?v=4"></script>
 <script src="static/js/brachybot-report-export.js?v=50"></script>
 <script src="static/js/brachybot-data-export.js?v=5"></script>
 <script src="static/js/brachybot-range-stepper.js?v=2"></script>
-<script src="static/js/brachybot-theme.js?v=1"></script>
+<script src="static/js/brachybot-theme.js?v=2026101515"></script>
 </body>
 </html>

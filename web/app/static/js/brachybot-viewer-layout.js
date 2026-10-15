@@ -1335,6 +1335,24 @@ function getCtvMeshLabelIds() {
 
 async function reconstructOrgan3D(id, silent = false) {
     const requestScope = _captureViewer3DRequestScope();
+    if (!silent && _viewer3DRequestScopeIsCurrent(requestScope)) {
+        window.enableSegmentation3DForNodes?.([_viewer3DNodeForId(String(id))]);
+    }
+    // Background restore can rediscover the same uploaded mask/skin after
+    // it is already displayed. Reuse only an exact mount and data version;
+    // explicit reconstruction and changed geometry still build a replacement.
+    const node = _viewer3DNodeForId(String(id));
+    const mesh = typeof scene3D !== 'undefined' ? scene3D.meshes?.[String(id)] : null;
+    const owner = mesh?.userData?.reconstructionOwner;
+    const timepointScope = window.BrachyBotTimepointWorkspace?.captureRequestScope?.();
+    if (silent && _viewer3DRequestScopeIsCurrent(requestScope) && mesh?.geometry
+        && Number(node?.dataVersion) > 0 && Number(mesh.userData.dataVersion) === Number(node.dataVersion)
+        && owner?.sessionId === requestScope.sessionId && owner.generation === requestScope.generation
+        && owner.timepointId === (timepointScope?.timepointId || '')
+        && owner.timepointGeneration === (timepointScope?.generation || 0)) {
+        _setViewer3DNodeState(String(id), { loading:false, loaded:true, meshLoaded:true, status:'ready', error:null });
+        return { success:true, preserved:true };
+    }
     const key = `${requestScope.sessionId}:${String(id)}`;
     const existing = _organ3DReconstructionInFlight.get(key);
     if (existing && _viewer3DRequestScopeIsCurrent(existing.scope)) {
@@ -2398,6 +2416,7 @@ async function _reconstructGuideSkinSurface3D(silent = false) {
         payload.source = 'skin_surface';
         payload.label = node.label || 'Guide skin surface';
         payload.object_id = node.objectId || payload.object_id || 'skin_surface:guide';
+        payload.data_version = payload.data_version || node.dataVersion;
         payload.data_tree_node_id = node.nodeId || 'skin_surface';
         payload.color = Number.parseInt(String(node.color || '#f2a088').replace('#', ''), 16) || 0xf2a088;
         payload.opacity = Number(node.opacity ?? 0.10);
@@ -2727,10 +2746,10 @@ function _makeSeedMesh(seed) {
         // physical seed remains fully opaque and depth-writing.
         transparent: true,
         opacity: 1,
-        metalness: 0.5,
-        roughness: 0.3,
+        metalness: 0.35,
+        roughness: 0.32,
         emissive: 0x332200,
-        emissiveIntensity: 0.5,
+        emissiveIntensity: 0.12,
         depthWrite: true,
         depthTest: true,
     });

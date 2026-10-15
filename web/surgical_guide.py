@@ -1258,7 +1258,10 @@ def _guide_records(agent: Any) -> List[Dict[str, Any]]:
 
     if active_id:
         try:
-            snapshot = memory.retrieve("planning_run:" + active_id)
+            results = getattr(memory, "planning_results", None)
+            snapshot = (results.project("planning_run:" + active_id,
+                ("surgical_guide", "surgical_guide_versions"))
+                if hasattr(results, 'project') else memory.retrieve("planning_run:" + active_id))
         except Exception:
             snapshot = None
         if isinstance(snapshot, Mapping):

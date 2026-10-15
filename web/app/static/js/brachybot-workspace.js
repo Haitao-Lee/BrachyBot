@@ -742,7 +742,7 @@
                 // its chat while silently missing the just-finished plan.
                 let authoritativeWorkspace = workspace;
                 try {
-                    const response = await workspaceFetch('/api/workspace/snapshot', {
+                    const response = await workspaceFetch('/api/workspace/snapshot?response_mode=resource_shell', {
                         headers: { 'X-BrachyBot-Session': String(sessionId) },
                     }, 10000);
                     if (response.ok) {
@@ -1270,8 +1270,16 @@
         const tree = workspacePresentationTree(snapshotOrTree)
             || uiState.data_tree || snapshotOrTree.data_tree || snapshotOrTree.dataTree || {};
         const viewer = uiState.viewer || snapshotOrTree.viewer || {};
+        const previous = workspacePresentationRestore;
+        const timepointScope = window.BrachyBotTimepointWorkspace?.captureRequestScope?.() || null;
+        const sameOwner = previous?.sessionId === sid && timepointScope
+            && previous.timepointScope?.timepointId === timepointScope.timepointId
+            && previous.timepointScope?.generation === timepointScope.generation;
         const registry = {
             sessionId: sid,
+            timepointScope,
+            labelImageEdits: sameOwner ? previous.labelImageEdits : {},
+            nodeEdits: sameOwner ? previous.nodeEdits : new Map(),
             restoreToken: restoreToken == null ? null : String(restoreToken),
             active: true,
             createdAt: Date.now(),
@@ -1355,8 +1363,82 @@
         deferredPresentationSave = null;
         window.__pendingWorkspacePresentation = registry;
         window.__pendingWorkspacePresentationSessionId = sid;
+        // A second staging pass can start after the operator has already
+        // shown a surface. Keep only deliberate edits for this exact mount.
+        registry.nodeEdits.forEach(({ criteria, changes }) => {
+            updateWorkspacePresentationForNode(criteria, changes);
+        });
         return registry;
     }
+
+    function livePresentationRegistry() {
+        const registry = workspacePresentationRestore || window.__pendingWorkspacePresentation;
+        if (!registry || (!registry.active && !registry.finalized)) return null;
+        if (registry.sessionId !== String(activeSessionId || '')) return null;
+        if (registry.timepointScope
+            && !window.BrachyBotTimepointWorkspace?.scopeIsCurrent(registry.timepointScope)) return null;
+        return registry;
+    }
+
+    // Only explicit toolbar handlers call this. Resource callbacks use
+    // persist:false, so saved hidden settings remain authoritative until edited.
+    function recordWorkspaceLabelPresentation(view, setting) {
+        const registry = livePresentationRegistry();
+        if (!registry || !['axial', 'sagittal', 'coronal', '3d'].includes(view)) return false;
+        registry.labelImageEdits[view] = jsonClone(setting);
+        return true;
+    }
+    window.recordWorkspaceLabelPresentation = recordWorkspaceLabelPresentation;
+
+    function withLiveLabelPresentation(snapshot) {
+        const registry = livePresentationRegistry();
+        if (!snapshot || !registry || workspaceSnapshotSessionId(snapshot) !== registry.sessionId
+            || !Object.keys(registry.labelImageEdits || {}).length) return snapshot;
+        const snapshotTimepoint = snapshot.timepoint_id || snapshot.timepoint?.id;
+        if (snapshotTimepoint && registry.timepointScope
+            && snapshotTimepoint !== registry.timepointScope.timepointId) return snapshot;
+        const ui = snapshot.ui || {}, saved = ui.state || ui;
+        const controls = { ...(saved.controls || {}) };
+        Object.entries(registry.labelImageEdits).forEach(([view, setting]) => {
+            const suffix = view.charAt(0).toUpperCase() + view.slice(1);
+            controls['labelShow' + suffix] = { ...(controls['labelShow' + suffix] || {}), checked:setting.visible };
+            controls['labelOp' + suffix] = { ...(controls['labelOp' + suffix] || {}), value:String(Math.round(setting.opacity * 100)) };
+        });
+        const next = { ...saved, controls, viewer:{ ...(saved.viewer || {}),
+            labelImage:{ ...(saved.viewer?.labelImage || {}), ...jsonClone(registry.labelImageEdits) } } };
+        return { ...snapshot, ui:ui.state ? { ...ui, state:next } : next };
+    }
+
+    function applyLiveNodePresentation() {
+        const registry = livePresentationRegistry();
+        registry?.nodeEdits?.forEach(({ criteria, changes }) => {
+            const group = { ct:'ct', ctv:'ctv', oar:'oar', skin_surface:'skin',
+                planning:'planning', seed_collection:'seeds', needle_collection:'needles', dose:'dose' }[criteria.id];
+            const node = group ? dataTreeState[group] : window._findDataTreeNode?.(criteria.id);
+            if (node) Object.assign(node, jsonClone(changes));
+        });
+    }
+
+    function restoreWorkspaceLabelPresentation(snapshot) {
+        const saved = withLiveLabelPresentation(normalizePlanningPresentationSnapshot(snapshot));
+        if (!saved || workspaceSnapshotSessionId(saved) !== String(activeSessionId || '')) return false;
+        const ui = saved.ui?.state || saved.ui || {}, labels = ui.viewer?.labelImage || {};
+        state.labelImage = state.labelImage || {};
+        ['axial', 'sagittal', 'coronal', '3d'].forEach(view => {
+            const suffix = view.charAt(0).toUpperCase() + view.slice(1);
+            const show = document.getElementById('labelShow' + suffix);
+            const slider = document.getElementById('labelOp' + suffix);
+            const setting = labels[view];
+            if (setting) state.labelImage[view] = jsonClone(setting);
+            const visible = setting?.visible ?? ui.controls?.['labelShow' + suffix]?.checked;
+            const opacity = setting?.opacity ?? Number(ui.controls?.['labelOp' + suffix]?.value) / 100;
+            if (show && typeof visible === 'boolean') show.checked = visible;
+            if (slider && Number.isFinite(Number(opacity))) slider.value = String(Math.round(Number(opacity) * 100));
+            updateLabelImage?.(view, { persist:false });
+        });
+        return true;
+    }
+    window.restoreWorkspaceLabelPresentation = restoreWorkspaceLabelPresentation;
 
     function getWorkspacePresentationForNode(criteria = {}) {
         const registry = workspacePresentationRestore
@@ -1450,6 +1532,16 @@
                 updated = true;
             }
         });
+        if (updated) {
+            registry.nodeEdits = registry.nodeEdits || new Map();
+            const editKey = family + ':' + id;
+            const prior = registry.nodeEdits.get(editKey)?.changes || {};
+            const patch = {};
+            WORKSPACE_PRESENTATION_KEYS.forEach(key => {
+                if (Object.prototype.hasOwnProperty.call(changes, key)) patch[key] = _presentationClone(changes[key]);
+            });
+            registry.nodeEdits.set(editKey, { criteria:{ id, family, sessionId:sid }, changes:{ ...prior, ...patch } });
+        }
         return updated;
     }
 
@@ -3090,7 +3182,7 @@
         if (!sid || typeof window.isWorkspacePresentationRestoreActive !== 'function'
             || !window.isWorkspacePresentationRestoreActive(sid)) return false;
 
-        const workspace = normalizePlanningPresentationSnapshot(snapshot || window._activeWorkspaceSnapshot || null);
+        const workspace = withLiveLabelPresentation(normalizePlanningPresentationSnapshot(snapshot || window._activeWorkspaceSnapshot || null));
         const ui = workspace?.ui || {};
         const uiState = ui.state || ui;
         const viewer = uiState.viewer || {};
@@ -3163,6 +3255,7 @@
                 console.debug('[workspace] final Data Tree reconciliation deferred:', error);
             }
         }
+        applyLiveNodePresentation();
         try { window.syncStructureColorLUTsFromTree?.(dataTreeState); } catch (_) {}
         try { window.applyDataTreeViewVisibility?.(); } catch (_) {}
         try { window.syncSceneAppearanceFromDataTree?.({ preserveDoseTexture: true }); } catch (_) {}
@@ -3500,13 +3593,18 @@
         const hasSavedCameraPose = finiteArray(scene?.camera_position, 3)
             && (finiteArray(scene?.camera_target, 3)
                 || finiteArray(scene?.camera_quaternion, 4));
+        const cameraScope = livePresentationRegistry()?.timepointScope;
+        const cameraOwner = JSON.stringify([restoreSessionId, cameraScope?.timepointId, cameraScope?.generation]);
         // Mark the camera as restore-owned until the hydrated scene has had a
         // chance to replace the old mesh set. A valid saved pose is
         // authoritative: asynchronous mesh hydration must not silently turn
         // a user's saved camera into an automatic Fit view.
         if (typeof scene3D !== 'undefined' && scene3D) {
+            const preserveUserCamera = scene3D._workspaceRestoreCameraOwner === cameraOwner
+                && scene3D._cameraUserInteracted === true;
             scene3D._workspaceRestoreActive = true;
-            scene3D._cameraUserInteracted = false;
+            if (!preserveUserCamera) scene3D._cameraUserInteracted = false;
+            scene3D._workspaceRestoreCameraOwner = cameraOwner;
             scene3D._workspaceRestoreHasSavedPose = hasSavedCameraPose;
             scene3D._workspaceRestoreSessionId = restoreSessionId;
             scene3D._workspaceRestoreAllowFit = false;
@@ -3517,7 +3615,7 @@
             // only compensate for asynchronous mesh/layout hydration. Once the
             // operator has zoomed, panned, rotated, selected, or dragged in the
             // live viewer, a delayed restore must never overwrite that pose.
-            if (!initial && scene3D._cameraUserInteracted === true) return;
+            if (scene3D._cameraUserInteracted === true) return;
             const camera = scene3D.camera;
             const three = typeof THREE !== 'undefined' ? THREE : null;
             const positionValues = Array.isArray(scene.camera_position) && scene.camera_position.length === 3
@@ -4168,7 +4266,7 @@
             return true;
         }
         if (!snapshot) return;
-        snapshot = normalizePlanningPresentationSnapshot(snapshot);
+        snapshot = withLiveLabelPresentation(normalizePlanningPresentationSnapshot(snapshot));
         const timepointScope = options.timepointScope || null;
         if (timepointScope && !window.BrachyBotTimepointWorkspace?.scopeIsCurrent(timepointScope)) return false;
         const sessionId = workspaceSnapshotSessionId(snapshot);
@@ -4407,6 +4505,7 @@
                 if (options.preserveClinicalData) applyDataTreePresentation(presentationTree);
                 else applyDataTreeSnapshot(presentationTree);
             }
+            applyLiveNodePresentation();
             if (!options.preserveClinicalData && uiState.manual && typeof _saveManualState === 'function') {
                 _saveManualState(uiState.manual);
             }
@@ -5118,6 +5217,7 @@
         // case-owned background planning or chat task.
         cancelBackgroundWorkspaceRestore();
         activeSessionId = sessionId;
+        window.BrachyBotTimepoints?.invalidateMount?.();
         if (typeof state !== 'undefined') state.sessionId = sessionId;
         // Never display the previous case's token ring while resources for
         // this case are loading. Its durable status is refreshed separately.
@@ -5227,7 +5327,7 @@
         timeoutMs = WORKSPACE_REQUEST_TIMEOUT_MS,
         sessionId = String(activeSessionId || ''),
     } = {}) {
-        const response = await workspaceFetch('/api/workspace/snapshot', {
+        const response = await workspaceFetch('/api/workspace/snapshot?response_mode=resource_shell', {
             headers: sessionId ? { 'X-BrachyBot-Session': sessionId } : {},
         }, timeoutMs);
         if (!response.ok) throw new Error(`Workspace snapshot failed: HTTP ${response.status}`);
@@ -5659,7 +5759,7 @@
             try {
                 const action = activateArchived ? 'activate' : 'select';
                 response = await workspaceFetch(
-                    '/api/sessions/' + encodeURIComponent(id) + '/' + action,
+                    '/api/sessions/' + encodeURIComponent(id) + '/' + action + '?response_mode=resource_shell',
                     { method: 'POST', signal: aborter.signal },
                     activateArchived ? WORKSPACE_ACTIVATION_TIMEOUT_MS : WORKSPACE_REQUEST_TIMEOUT_MS,
                 );
@@ -5704,7 +5804,7 @@
                 window.showCaseActivationLoading?.({ sessionId: id, title: sessions[id]?.title || id });
                 try {
                     response = await workspaceFetch(
-                        '/api/sessions/' + encodeURIComponent(id) + '/activate',
+                        '/api/sessions/' + encodeURIComponent(id) + '/activate?response_mode=resource_shell',
                         { method: 'POST', signal: aborter.signal },
                         WORKSPACE_ACTIVATION_TIMEOUT_MS,
                     );
@@ -5764,6 +5864,7 @@
             rememberWorkspaceRevision(data.workspace);
             window._activeWorkspaceSnapshot = data.workspace;
             cancelBackgroundWorkspaceRestore();
+            window.BrachyBotTimepoints?.invalidateMount?.();
             if (typeof clearClientWorkspace === 'function') {
                 clearClientWorkspace({ clearReport: true, deferDisposal: true });
             }
@@ -5777,7 +5878,7 @@
                 // loaded by the background transaction from the server.
                 await applyWorkspaceSnapshot(data.workspace, { preserveClinicalData: true });
             }
-            scheduleBackgroundWorkspaceRestore(data.workspace, activeSessionId);
+            await restoreSelectedSessionResources(data.workspace, activeSessionId);
             recordWorkspacePerformance('switch.presentation_ready', {
                 sessionId: id,
                 startedAt: switchStartedAt,
@@ -5788,6 +5889,18 @@
             return { success: true, session_id: activeSessionId };
         });
     };
+
+    async function restoreSelectedSessionResources(workspace, sessionId) {
+        const controller = window.BrachyBotTimepoints;
+        // A rapid A -> B -> A switch can clear A before B ever mounts. The
+        // Session clears invalidate the mount before resetting the DOM. Mount
+        // the confirmed target again, even when it has the same Session ID.
+        if (controller && window.BrachyBotTimepointWorkspace) {
+            return controller.refresh();
+        }
+        scheduleBackgroundWorkspaceRestore(workspace, sessionId);
+        return true;
+    }
 
     // Keep a failed optimistic create rollback separate from the
     // authoritative create repaint. This wrapper is hoisted by the browser

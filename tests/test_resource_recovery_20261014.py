@@ -59,7 +59,9 @@ def test_large_heap_handoff_stays_available_to_next_poll(tmp_path,monkeypatch):
     context=store.capture_timepoint_context(uid,sid,tid)
     monkeypatch.setattr(hydration,'_MAX_BYTES',1024)
     first=hydration.clinical_hydration(store,SimpleNamespace(),snapshot,context)
-    assert first.ready.wait(10) and first.error is None and first.size>1024
+    assert first.ready.wait(10) and first.error is None
+    assert first.values['heap_array'].shape == (10000,)
+    assert first.size>1024
     assert hydration.clinical_hydration(store,SimpleNamespace(),snapshot,context) is first
 
 
@@ -74,12 +76,20 @@ def test_missing_sidecar_reports_a_stable_error_and_retries_after_repair(tmp_pat
     moved=path.with_suffix('.test-missing');path.rename(moved)
     context=store.capture_timepoint_context(uid,sid,tid)
     first=hydration.clinical_hydration(store,SimpleNamespace(),snapshot,context)
-    assert first.ready.wait(10) and first.error is not None
+    assert first.ready.wait(10) and first.error is None
+    with pytest.raises(FileNotFoundError) as failure:
+        first.values['source']
     assert hydration.clinical_hydration(store,SimpleNamespace(),snapshot,context) is first
+    with pytest.raises(FileNotFoundError) as repeated:
+        first.values['source']
+    assert repeated.value is failure.value
     moved.rename(path)
-    monkeypatch.setattr(hydration,'_ERROR_RETRY_SECONDS',0)
+    from web import resource_view
+    now = resource_view.time.monotonic()
+    monkeypatch.setattr(resource_view.time,'monotonic',lambda:now+6)
     retry=hydration.clinical_hydration(store,SimpleNamespace(),snapshot,context)
-    assert retry is not first and retry.ready.wait(10) and retry.error is None
+    assert retry is first and retry.ready.is_set() and retry.error is None
+    assert retry.values['source'].shape == (64,64)
 
 
 def test_manifest_cache_is_detached_and_tampering_invalidates_it(tmp_path,monkeypatch):

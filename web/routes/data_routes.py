@@ -209,12 +209,13 @@ def register_data_routes(
         try:
             user, session_id, agent = context()
             service = ExportService(store)
-            catalog = service.public_catalog(user["id"], session_id, agent)
+            artifacts_only = request.args.get("view") == "artifacts"
+            catalog = service.public_catalog(user["id"], session_id, agent, artifacts_only=artifacts_only)
             _add_durable_screenshot_urls(catalog, store, user["id"], session_id)
             return jsonify({
                 "success": True,
                 **catalog,
-                "structures": structure_catalog(agent.memory),
+                "structures": [] if artifacts_only else structure_catalog(agent.memory),
             })
         except Exception as exc:
             return error_response(exc)

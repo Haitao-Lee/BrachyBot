@@ -209,9 +209,12 @@ def register_session_routes(
             # Selecting a case is a control-plane operation and must remain
             # responsive; the data-plane agent is hydrated lazily by the first
             # status/planning request after the lightweight snapshot is shown.
-            snapshot = _snapshot_with_newest_bridge(
-                user["id"], entry.id, store.load_snapshot(user["id"], entry.id),
-            )
+            if request.args.get('response_mode') == 'resource_shell':
+                snapshot = store.load_snapshot(user["id"], entry.id, projection='resource_shell')
+            else:
+                snapshot = _snapshot_with_newest_bridge(
+                    user["id"], entry.id, store.load_snapshot(user["id"], entry.id),
+                )
         except WorkspaceError as exc:
             return jsonify({"error": str(exc)}), 404
         return jsonify({"success": True, "active_session_id": entry.id, "workspace": snapshot})
@@ -226,9 +229,12 @@ def register_session_routes(
         try:
             entry = store.restore_archived_session(user["id"], session_id)
             session["bb_session_id"] = entry.id
-            snapshot = _snapshot_with_newest_bridge(
-                user["id"], entry.id, store.load_snapshot(user["id"], entry.id),
-            )
+            if request.args.get('response_mode') == 'resource_shell':
+                snapshot = store.load_snapshot(user["id"], entry.id, projection='resource_shell')
+            else:
+                snapshot = _snapshot_with_newest_bridge(
+                    user["id"], entry.id, store.load_snapshot(user["id"], entry.id),
+                )
         except WorkspaceArchiveUnavailable:
             from web.timepoint_messages import request_timepoint_language, timepoint_message
             packet = timepoint_message('archive_storage_unavailable', request_timepoint_language())
@@ -417,13 +423,18 @@ def register_session_routes(
             # painted. Data-plane hydration remains lazy in planning/chat
             # routes, while the durable snapshot already contains the full
             # serializable transcript and UI state needed for first paint.
-            snapshot = store.load_snapshot(user["id"], session_id)
+            shell = request.args.get("response_mode") == "resource_shell"
+            snapshot = store.load_snapshot(user["id"], session_id, projection="resource_shell" if shell else None)
             # The sidecar is the live UI-bridge writer; merge the newest copy
             # so background monitor close-out state is not read from a frozen
             # snapshot bridge.
-            snapshot = _snapshot_with_newest_bridge(user["id"], session_id, snapshot)
+            if not shell:
+                snapshot = _snapshot_with_newest_bridge(user["id"], session_id, snapshot)
         except WorkspaceError as exc:
             return jsonify({"error": str(exc)}), 404
+        if request.args.get('response_mode') == 'resource_shell':
+            from web.timepoints import browser_resource_snapshot
+            snapshot = browser_resource_snapshot(snapshot)
         return jsonify({"success": True, "workspace": snapshot})
 
     @app.route("/api/workspace/state", methods=["POST"])

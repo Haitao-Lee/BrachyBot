@@ -1421,56 +1421,6 @@ async function refreshPlanningUI(options = {}) {
                 if (data.total_seeds !== undefined) state.metrics.total_seeds = data.total_seeds;
                 if (data.num_trajectories !== undefined) state.metrics.num_trajectories = data.num_trajectories;
 
-                // 2. DVH — store data and re-draw chart
-                uiDebugLog('[refreshPlanningUI] DVH check:', responseHasDvh, 'keys:', Object.keys(responseDvh).length);
-                if (responseHasDvh) {
-                    state.dvhData = responseDvh;
-                    state.dvhPlanningId = expectedPlanningId;
-                    // DVH is a real, session-owned visual product. Register
-                    // it before/after Plotly rendering so the Data Tree never
-                    // lags behind a successful backend response.
-                    if (typeof reconcileDataTreeVisualNodes === 'function') {
-                        reconcileDataTreeVisualNodes();
-                    }
-                    if (typeof renderDataTree === 'function') renderDataTree();
-                    uiDebugLog('[refreshPlanningUI] Calling drawDVH()');
-                    try {
-                        const _dvhPromise = drawDVH();
-                        if (_dvhPromise && typeof _dvhPromise.then === 'function') {
-                            await _dvhPromise;
-                            if (!isCurrentCase()) return resolve();
-                        }
-                    } catch (e) { console.warn('[refreshPlanningUI] drawDVH failed:', e); }
-                    if (typeof reconcileDataTreeVisualNodes === 'function') {
-                        reconcileDataTreeVisualNodes();
-                    }
-                    if (typeof renderDataTree === 'function') renderDataTree();
-                } else {
-                    // A guide failure or a short-lived hydration response must
-                    // not erase a valid DVH belonging to the same active plan.
-                    // The backend can deliver dose metrics and the durable DVH
-                    // sidecar on separate restore ticks.
-                    const keepCurrentDvh = data.has_dose === true
-                        && state.dvhPlanningId === expectedPlanningId
-                        && _isRenderableDvhPayload(state.dvhData);
-                    if (keepCurrentDvh) {
-                        console.warn('[refreshPlanningUI] DVH field transiently absent; retaining current plan chart');
-                        try { await drawDVH(); } catch (e) { console.warn('[refreshPlanningUI] retained DVH redraw failed:', e); }
-                    } else {
-                        console.warn('[refreshPlanningUI] NO renderable DVH data received');
-                        state.dvhData = null;
-                        state.dvhPlanningId = null;
-                    const dvhElement = document.getElementById('dvhChart');
-                    if (dvhElement && typeof Plotly !== 'undefined' && typeof Plotly.purge === 'function') {
-                        try { Plotly.purge(dvhElement); } catch (_) {}
-                    } else if (dvhElement) {
-                        dvhElement.replaceChildren();
-                    }
-                    if (typeof reconcileDataTreeVisualNodes === 'function') reconcileDataTreeVisualNodes();
-                    if (typeof renderDataTree === 'function') renderDataTree();
-                    }
-                }
-
                 // A geometry-only draft has no valid dose grid. Remove only
                 // dose presentation here; seeds and needles are still real
                 // draft data and must remain visible for further editing.
@@ -1491,16 +1441,6 @@ async function refreshPlanningUI(options = {}) {
                     if (typeof reconcileDataTreeVisualNodes === 'function') reconcileDataTreeVisualNodes();
                     if (typeof renderDataTree === 'function') renderDataTree();
                 }
-
-        // 1b. Refresh image metadata once, bound to the selected case. The
-        // helper rejects a delayed response after a session switch, so an old
-        // DICOM header cannot overwrite the newly selected case.
-        try {
-            if (typeof pullHeaderInfo === 'function' && state.ctPath) {
-                await pullHeaderInfo(state.ctPath, { sessionId: expectedSessionId });
-                if (!isCurrentCase()) return resolve();
-            }
-        } catch (_) { /* analysis is best-effort */ }
 
         // 1c. Re-load CTV/OAR LABEL VOLUMES (the masks). The
         // server stores them in agent memory when the
@@ -1771,6 +1711,67 @@ async function refreshPlanningUI(options = {}) {
                 });
             _meshPromises.push(seedGeometryPromise);
         }
+
+        // Independent visual loaders publish before chart/header work.
+                // 2. DVH — store data and re-draw chart
+                uiDebugLog('[refreshPlanningUI] DVH check:', responseHasDvh, 'keys:', Object.keys(responseDvh).length);
+                if (responseHasDvh) {
+                    state.dvhData = responseDvh;
+                    state.dvhPlanningId = expectedPlanningId;
+                    // DVH is a real, session-owned visual product. Register
+                    // it before/after Plotly rendering so the Data Tree never
+                    // lags behind a successful backend response.
+                    if (typeof reconcileDataTreeVisualNodes === 'function') {
+                        reconcileDataTreeVisualNodes();
+                    }
+                    if (typeof renderDataTree === 'function') renderDataTree();
+                    uiDebugLog('[refreshPlanningUI] Calling drawDVH()');
+                    try {
+                        const _dvhPromise = drawDVH();
+                        if (_dvhPromise && typeof _dvhPromise.then === 'function') {
+                            await _dvhPromise;
+                            if (!isCurrentCase()) return resolve();
+                        }
+                    } catch (e) { console.warn('[refreshPlanningUI] drawDVH failed:', e); }
+                    if (typeof reconcileDataTreeVisualNodes === 'function') {
+                        reconcileDataTreeVisualNodes();
+                    }
+                    if (typeof renderDataTree === 'function') renderDataTree();
+                } else {
+                    // A guide failure or a short-lived hydration response must
+                    // not erase a valid DVH belonging to the same active plan.
+                    // The backend can deliver dose metrics and the durable DVH
+                    // sidecar on separate restore ticks.
+                    const keepCurrentDvh = data.has_dose === true
+                        && state.dvhPlanningId === expectedPlanningId
+                        && _isRenderableDvhPayload(state.dvhData);
+                    if (keepCurrentDvh) {
+                        console.warn('[refreshPlanningUI] DVH field transiently absent; retaining current plan chart');
+                        try { await drawDVH(); } catch (e) { console.warn('[refreshPlanningUI] retained DVH redraw failed:', e); }
+                    } else {
+                        console.warn('[refreshPlanningUI] NO renderable DVH data received');
+                        state.dvhData = null;
+                        state.dvhPlanningId = null;
+                    const dvhElement = document.getElementById('dvhChart');
+                    if (dvhElement && typeof Plotly !== 'undefined' && typeof Plotly.purge === 'function') {
+                        try { Plotly.purge(dvhElement); } catch (_) {}
+                    } else if (dvhElement) {
+                        dvhElement.replaceChildren();
+                    }
+                    if (typeof reconcileDataTreeVisualNodes === 'function') reconcileDataTreeVisualNodes();
+                    if (typeof renderDataTree === 'function') renderDataTree();
+                    }
+                }
+
+        // 1b. Refresh image metadata once, bound to the selected case. The
+        // helper rejects a delayed response after a session switch, so an old
+        // DICOM header cannot overwrite the newly selected case.
+        try {
+            if (typeof pullHeaderInfo === 'function' && state.ctPath) {
+                await pullHeaderInfo(state.ctPath, { sessionId: expectedSessionId });
+                if (!isCurrentCase()) return resolve();
+            }
+        } catch (_) { /* analysis is best-effort */ }
 
         // The background restore may defer expensive CTV/OAR and isodose
         // meshes, but it must not resolve before the actual planning data

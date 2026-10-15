@@ -132,6 +132,10 @@ def register_timepoint_routes(app, store):
     @app.route("/api/sessions/<session_id>/timepoints/<identifier>/workspace", methods=["GET"])
     @endpoint()
     def load_timepoint_workspace(user, session_id, identifier):
+        if request.args.get('response_mode') == 'resource_shell':
+            snapshot = store.load_timepoint_snapshot(user['id'], session_id, identifier,
+                include_shared=False, projection='resource_shell')
+            return jsonify(success=True, workspace=snapshot)
         return jsonify(success=True, workspace=store.load_timepoint_snapshot(user["id"], session_id, identifier))
 
     @app.route("/api/sessions/<session_id>/timepoints/<identifier>/workspace", methods=["PATCH"])
