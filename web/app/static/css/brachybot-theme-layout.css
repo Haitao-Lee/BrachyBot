@@ -8,47 +8,47 @@
 :root {
     color-scheme: light;
     /* Brand */
-    --primary: #0f7181;
-    --primary-soft: rgba(15, 113, 129, 0.12);
-    --primary-hover: #0b5965;
-    --primary-ink: #0b4550;
-    --accent: #0f7181;
-    --accent-hover: #0b5965;
-    --accent-soft: rgba(15, 113, 129, 0.12);
-    --accent-ink: #0b4550;
-    --accent-ring: rgba(15, 113, 129, 0.28);
+    --primary: #3568b0;
+    --primary-soft: #e7f2ff;
+    --primary-hover: #28538f;
+    --primary-ink: #254b7c;
+    --accent: #3568b0;
+    --accent-hover: #28538f;
+    --accent-soft: #e7f2ff;
+    --accent-ink: #254b7c;
+    --accent-ring: rgba(53, 104, 176, 0.25);
 
     /* Semantic */
-    --success: #10b981;
-    --success-soft: #ecfdf5;
-    --success-border: #a7f3d0;
-    --warning: #d97706;
-    --warning-soft: #fffbeb;
-    --warning-border: #fde68a;
-    --danger: #e11d48;
-    --danger-soft: #fff1f2;
-    --danger-border: #fecdd3;
-    --info: #0891b2;
-    --info-soft: #ecfeff;
+    --success: #167044;
+    --success-soft: #edf8f1;
+    --success-border: #b7dfc7;
+    --warning: #8b550c;
+    --warning-soft: #fff6e5;
+    --warning-border: #eed39e;
+    --danger: #b62c46;
+    --danger-soft: #fff0f3;
+    --danger-border: #efbfca;
+    --info: #225fac;
+    --info-soft: #eaf3ff;
 
     /* Three-tier surface depth (Linear / Vercel) */
-    --bg-canvas:        #f2f7f6;     /* ground */
-    --bg-1:             #f7fbfa;     /* subtle */
+    --bg-canvas:        #f4f7fc;     /* ground */
+    --bg-1:             #f7faff;     /* subtle */
     --bg-2:             #ffffff;     /* base elevated */
-    --bg-3:             #eaf2f1;     /* intermediate */
-    --bg-sunken:        #e4edeb;     /* recessed well */
-    --bg-sunken-strong: #dce8e5;
+    --bg-3:             #edf3fc;     /* intermediate */
+    --bg-sunken:        #edf3fc;     /* recessed well */
+    --bg-sunken-strong: #e3edfa;
     --bg-elevated:      #ffffff;
-    --bg-card:          rgba(255, 255, 255, 0.84);
+    --bg-card:          rgba(255, 255, 255, 0.96);
 
     /* Hairline borders (Linear signature) */
-    --glass-border:        rgba(31, 76, 83, 0.10);
-    --glass-border-strong: rgba(31, 76, 83, 0.16);
-    --border-soft:         #d9e6e3;
-    --border:              #bfd2ce;
-    --border-hairline:     rgba(31, 76, 83, 0.10);
-    --border-default:      rgba(31, 76, 83, 0.14);
-    --border-emphasis:     rgba(31, 76, 83, 0.22);
+    --glass-border:        rgba(55, 88, 132, 0.12);
+    --glass-border-strong: rgba(55, 88, 132, 0.22);
+    --border-soft:         #dce5f0;
+    --border:              #c4d3e5;
+    --border-hairline:     #e0e8f2;
+    --border-default:      #d2deed;
+    --border-emphasis:     #9db7d9;
 
     /* Multi-stop shadows (ambient + ring + contact) */
     --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
@@ -78,18 +78,18 @@
     --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.8);
 
     /* Tinted glass (Claude / v0 style) */
-    --glass-tint-cool: rgba(248, 250, 252, 0.62);
-    --glass-tint-blue: rgba(239, 246, 255, 0.55);
-    --glass-tint-warm: rgba(252, 250, 247, 0.62);
+    --glass-tint-cool: rgba(250, 252, 255, 0.94);
+    --glass-tint-blue: rgba(236, 244, 255, 0.94);
+    --glass-tint-warm: rgba(252, 251, 248, 0.94);
     --glass-blur: 16px;
     --blur-md: blur(14px) saturate(160%);
     --blur-lg: blur(20px) saturate(180%);
 
     /* Text */
-    --text: #17333b;
-    --text-secondary: #4a6269;
-    --text-dim: #789197;
-    --text-faint: #a8b9bc;
+    --text: #1c2e49;
+    --text-secondary: #3e5572;
+    --text-dim: #50657f;
+    --text-faint: #526780;
 
     /* Radii */
     --radius-xs: 6px;
@@ -105,11 +105,11 @@
     --t-slow: 320ms;
 
     /* Chat semantics (NEW) */
-    --msg-user-bg:           rgba(15, 113, 129, 0.10);
-    --msg-user-border:       rgba(15, 113, 129, 0.24);
-    --msg-assistant-bg:      #eef4f3;
-    --msg-assistant-border:  rgba(31, 76, 83, 0.12);
-    --msg-hover:             rgba(15, 113, 129, 0.04);
+    --msg-user-bg:           #e7f2ff;
+    --msg-user-border:       #bbd3f0;
+    --msg-assistant-bg:      #ffffff;
+    --msg-assistant-border:  #dce5f0;
+    --msg-hover:             #edf4ff;
 
     /* Form-control canonical (Linear) */
     --control-h:        30px;
@@ -117,7 +117,7 @@
     --control-r:        8px;
     --control-pad-x:    10px;
     --control-font:     12.5px;
-    --control-focus-ring: 0 0 0 3px rgba(15, 113, 129, 0.18);
+    --control-focus-ring: 0 0 0 3px rgba(53, 104, 176, 0.18);
     --control-scheme: light;
 
     /* Status pill */
@@ -127,8 +127,8 @@
 
     /* Viewer chrome (overrides light theme on canvas-adjacent surfaces) */
     --viewer-bg:        #000;
-    --viewer-chrome-bg: #edf4f3;
-    --viewer-chrome-fg: #23404a;
+    --viewer-chrome-bg: #f3f7fd;
+    --viewer-chrome-fg: #344c6b;
 }
 
 /* ===========================================================

@@ -7,41 +7,41 @@
     color: var(--text);
 }
 [data-theme="light"] body::before {
-    background-image: radial-gradient(circle at 1px 1px, rgba(31, 76, 83, 0.035) 1px, transparent 0);
+    background-image: radial-gradient(circle at 1px 1px, rgba(55, 88, 132, 0.035) 1px, transparent 0);
     opacity: 0.42;
 }
 [data-theme="light"] ::selection {
-    background: rgba(15, 113, 129, 0.20);
+    background: rgba(53, 104, 176, 0.20);
     color: var(--text);
 }
 [data-theme="light"] * {
-    scrollbar-color: rgba(15, 113, 129, 0.30) transparent;
+    scrollbar-color: rgba(53, 104, 176, 0.30) transparent;
 }
 [data-theme="light"] ::-webkit-scrollbar-thumb {
-    background: rgba(15, 113, 129, 0.24);
+    background: rgba(53, 104, 176, 0.24);
 }
 [data-theme="light"] ::-webkit-scrollbar-thumb:hover {
-    background: rgba(15, 113, 129, 0.40);
+    background: rgba(53, 104, 176, 0.40);
 }
 
 [data-theme="light"] .chat-area {
     background:
-        radial-gradient(900px 420px at 18% 0%, rgba(15, 113, 129, 0.07), transparent 68%),
+        radial-gradient(900px 420px at 18% 0%, rgba(53, 104, 176, 0.07), transparent 68%),
         var(--bg-sunken);
 }
 [data-theme="light"] .chat-area::before {
-    background: linear-gradient(90deg, rgba(15, 113, 129, 0.06), transparent 42%);
+    background: linear-gradient(90deg, rgba(53, 104, 176, 0.06), transparent 42%);
 }
 
 [data-theme="light"] .chat-msg.user {
-    background: linear-gradient(135deg, rgba(15, 113, 129, 0.14) 0%, rgba(15, 113, 129, 0.07) 100%);
+    background: linear-gradient(135deg, rgba(53, 104, 176, 0.14) 0%, rgba(53, 104, 176, 0.07) 100%);
     color: var(--text);
-    border-color: rgba(15, 113, 129, 0.28);
+    border-color: rgba(53, 104, 176, 0.28);
     box-shadow: var(--inset-top), var(--shadow-xs);
 }
 [data-theme="light"] .chat-msg.user:hover {
-    background: linear-gradient(135deg, rgba(15, 113, 129, 0.19) 0%, rgba(15, 113, 129, 0.10) 100%);
-    border-color: rgba(15, 113, 129, 0.42);
+    background: linear-gradient(135deg, rgba(53, 104, 176, 0.19) 0%, rgba(53, 104, 176, 0.10) 100%);
+    border-color: rgba(53, 104, 176, 0.42);
 }
 [data-theme="light"] .chat-msg.bot,
 [data-theme="light"] .chat-msg.bot-response {
@@ -55,7 +55,7 @@
 [data-theme="light"] .md-list a,
 [data-theme="light"] .md-ordered-list a {
     color: var(--primary-ink);
-    border-bottom-color: rgba(15, 113, 129, 0.28);
+    border-bottom-color: rgba(53, 104, 176, 0.28);
 }
 [data-theme="light"] .chat-msg a[href]:hover,
 [data-theme="light"] .md-table a[href]:hover,
@@ -89,7 +89,7 @@
     border-bottom-color: var(--border-default);
 }
 [data-theme="light"] .md-table tbody tr:nth-child(even) td {
-    background: rgba(15, 113, 129, 0.025);
+    background: rgba(53, 104, 176, 0.025);
 }
 [data-theme="light"] .md-table tbody tr:hover td {
     background: var(--primary-soft);
@@ -113,17 +113,17 @@
    but make its toolbar, card frame, controls, and Data Tree part of the light
    workspace. */
 [data-theme="light"] .viewers-panel.layout-grid {
-    background: linear-gradient(180deg, #e8f1f0 0%, #dfeae8 100%);
+    background: linear-gradient(180deg, #edf3fc 0%, #e6eef9 100%);
     box-shadow: inset 0 0 0 1px var(--border-default);
 }
 [data-theme="light"] .viewers-panel.layout-grid > .viewer-card {
     background: #000;
     border-color: var(--border-default);
-    box-shadow: var(--shadow-sm), inset 0 0 0 1px rgba(31, 76, 83, 0.08);
+    box-shadow: var(--shadow-sm), inset 0 0 0 1px rgba(55, 88, 132, 0.08);
 }
 [data-theme="light"] .viewers-panel.layout-grid .viewer-card-header,
 [data-theme="light"] .viewers-panel.layout-grid .viewer-card-ctrl {
-    background: linear-gradient(180deg, #f7fbfa 0%, #e9f2f0 100%);
+    background: linear-gradient(180deg, #ffffff 0%, #f3f7fd 100%);
     border-color: var(--border-default);
     color: var(--text);
 }
@@ -133,12 +133,12 @@
     color: var(--text-secondary) !important;
 }
 [data-theme="light"] .viewers-panel.layout-grid .viewers-toolbar {
-    background: linear-gradient(180deg, #f7fbfa 0%, #e8f1f0 100%);
+    background: linear-gradient(180deg, #ffffff 0%, #edf3fc 100%);
     border-bottom-color: var(--border-default);
     box-shadow: var(--inset-top);
 }
 [data-theme="light"] .viewers-panel.layout-grid .data-tree-container {
-    background: linear-gradient(180deg, #f7fbfa 0%, #edf5f3 100%);
+    background: linear-gradient(180deg, #ffffff 0%, #f7faff 100%);
     border-right-color: var(--border-default);
     color: var(--text);
     box-shadow: var(--inset-top);
@@ -202,4 +202,128 @@
 [data-theme="light"] .rp-field-hint,
 [data-theme="light"] .rp-field-suffix {
     color: var(--text-secondary);
+}
+
+/* Pale blue workspace: quiet surfaces, ink-first type, explicit interaction.
+   Keep these rules scoped to the light skin; image/structure/dose colors and
+   printable report pages are not part of the application chrome palette. */
+[data-theme="light"] body::before { display: none; }
+[data-theme="light"] .header {
+    background: #fff;
+    border-bottom-color: var(--border-soft);
+    box-shadow: 0 1px 4px rgba(30, 57, 94, .04);
+}
+[data-theme="light"] .session-sidebar,
+[data-theme="light"] .session-sidebar-header,
+[data-theme="light"] .session-sidebar-footer { background: #f6f9fe; }
+[data-theme="light"] .session-sidebar { border-right: 1px solid var(--border-soft); }
+[data-theme="light"] .session-item.active {
+    background: var(--msg-user-bg);
+    border-color: var(--msg-user-border);
+    box-shadow: none;
+}
+[data-theme="light"] .session-item.active .session-item-title { color: var(--primary-ink); font-weight: 600; }
+[data-theme="light"] .session-item.archived { opacity: 1; }
+[data-theme="light"] .session-item.archived .session-item-title { color: var(--text-secondary); }
+[data-theme="light"] .session-item-time,
+[data-theme="light"] .session-item-status { font-size: 11px; line-height: 1.4; color: var(--text-dim); }
+[data-theme="light"] #importWorkspaceButton {
+    background: #fff;
+    color: var(--primary-ink);
+    border: 1px solid var(--msg-user-border);
+    box-shadow: none;
+}
+[data-theme="light"] #importWorkspaceButton:hover { background: var(--primary-soft); border-color: var(--primary); }
+[data-theme="light"] .chat-area { background: #f5f9ff; }
+[data-theme="light"] .chat-area::before { display: none; }
+[data-theme="light"] .chat-header,
+[data-theme="light"] .chat-input-area {
+    background: #fff;
+    border-color: var(--border-soft);
+    box-shadow: none;
+}
+[data-theme="light"] .chat-row:hover { background: transparent; }
+[data-theme="light"] .chat-msg.user {
+    background: var(--msg-user-bg);
+    border-color: transparent;
+    color: var(--text);
+    border-radius: 18px 18px 5px 18px;
+    box-shadow: none;
+    font-weight: 400;
+}
+[data-theme="light"] .chat-msg.user:hover { background: #dfedff; border-color: transparent; }
+[data-theme="light"] .chat-msg.bot,
+[data-theme="light"] .chat-msg.bot-response {
+    background: #fff;
+    border-color: var(--border-soft);
+    box-shadow: 0 2px 6px rgba(30, 57, 94, .04);
+}
+[data-theme="light"] .chat-msg.bot:hover,
+[data-theme="light"] .chat-msg.bot-response:hover { background: #fff; border-color: var(--border); }
+[data-theme="light"] .chat-timestamp,
+[data-theme="light"] .chat-hint { font-size: 11px; color: var(--text-dim); opacity: 1; }
+[data-theme="light"] .chat-header-sub,
+[data-theme="light"] .header-subtitle { font-size: 11px; }
+[data-theme="light"] .chat-input-row textarea { background: #fff; border-color: var(--border); box-shadow: 0 1px 3px rgba(30, 57, 94, .04); }
+[data-theme="light"] .chat-input-row textarea:focus { border-color: var(--primary); box-shadow: var(--control-focus-ring); }
+[data-theme="light"] :is(input, textarea)::placeholder { color: var(--text-faint); opacity: 1; }
+[data-theme="light"] .thinking-chain,
+[data-theme="light"] #pipeline_box { background: #fff; border-color: var(--border); box-shadow: none; }
+[data-theme="light"] .thinking-header { background: #edf4fe; border-bottom: 1px solid var(--border-soft); }
+[data-theme="light"] .step-body { background: #f7faff; color: var(--text-secondary); }
+[data-theme="light"] .step-status { font-size: 10.5px; }
+[data-theme="light"] .step-params { background: #fff; color: var(--text-secondary); box-shadow: none; }
+[data-theme="light"] :is(.thinking-count, .thinking-time, .chat-todo-header, .chat-todo-time) { font-size: 11px; color: var(--text-dim); }
+[data-theme="light"] :is(.chat-todo.folded, .chat-todo-item.done, .chat-todo-item.predicted, .pipeline-step.pending, .pipeline-step.completed) { opacity: 1; }
+[data-theme="light"] .chat-todo { background: transparent; }
+[data-theme="light"] .chat-todo-item.active { background: var(--primary-soft); }
+[data-theme="light"] .step-icon.tool { color: var(--primary); }
+[data-theme="light"] .step-icon.thinking,
+[data-theme="light"] .step-icon.review { color: var(--warning); }
+[data-theme="light"] .step-icon.result { color: var(--success); }
+[data-theme="light"] .step-icon.error { color: var(--danger); }
+[data-theme="light"] .step-icon.user,
+[data-theme="light"] .step-icon.assistant,
+[data-theme="light"] .step-icon.memory { color: #7251a6; }
+[data-theme="light"] .manual-workflow-progress,
+[data-theme="light"] .manual-workflow-status { background: var(--bg-1); border-color: var(--border); }
+[data-theme="light"] .manual-workflow-status.is-ready { color: var(--success); }
+[data-theme="light"] .manual-workflow-status.is-warn { color: var(--warning); }
+[data-theme="light"] .panel-tabs { background: #fff; box-shadow: none; }
+[data-theme="light"] .panel-tab { color: var(--text-secondary); }
+[data-theme="light"] .panel-tab.active { color: var(--primary-ink); background: var(--primary-soft); border-bottom-color: var(--primary); }
+[data-theme="light"] .form-section-title,
+[data-theme="light"] .metrics-title { color: var(--text-secondary); }
+[data-theme="light"] .form-help { font-size: 11px; line-height: 1.5; }
+[data-theme="light"] .form-label { font-size: 11px; }
+[data-theme="light"] .summary-chip-label { font-size: 11px; }
+[data-theme="light"] .data-tree-header { background: #f1f6fe; color: var(--text-secondary); border-bottom-color: var(--border-soft); }
+[data-theme="light"] .data-tree-body .tree-item:hover { background: var(--msg-hover); }
+[data-theme="light"] .data-tree-body .tree-group-header { color: var(--text); }
+[data-theme="light"] .data-tree-body .item-label { color: var(--text); }
+/* These category captions have legacy inline neon text colors. Adjust only
+   their captions; the colored structure swatches and medical models retain
+   their own palette. */
+[data-theme="light"] .tree-group[data-group="non_traversable"] > .tree-group-header > span:nth-child(2) { color: var(--warning) !important; }
+[data-theme="light"] .tree-group[data-group="traversable"] > .tree-group-header > span:nth-child(2) { color: var(--success) !important; }
+[data-theme="light"] .file-btn.active {
+    background: var(--primary-soft);
+    color: var(--primary-ink);
+    border-color: #8aaddb;
+    box-shadow: none;
+}
+[data-theme="light"] .viewers-panel.layout-grid .file-btn.active {
+    background: var(--primary-soft) !important;
+    color: var(--primary-ink) !important;
+    border-color: #8aaddb !important;
+    box-shadow: none !important;
+}
+[data-theme="light"] .viewer-no-data { color: #a5b5cc; opacity: 1; }
+[data-theme="light"] .viewer-card-ctrl label { font-size: 11px; }
+[data-theme="light"] .timepoint-tab[aria-selected="true"] { color: var(--primary-ink); border-color: #8aaddb; font-weight: 600; }
+[data-theme="light"] .timepoint-badge { color: var(--primary-ink); background: #d8e8fd; }
+[data-theme="light"] .chat-queue-item { border-color: var(--msg-user-border); background: var(--primary-soft); }
+[data-theme="light"] :is(button, input, select, textarea, [role="tab"]):focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
 }

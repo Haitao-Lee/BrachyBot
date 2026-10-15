@@ -7687,7 +7687,7 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
                     // toggles can expose the wrong normal-surface color.
                     color: _parseTreeColorValue(
                         ctvNode.color,
-                        c ? ((c[0] << 16) | (c[1] << 8) | c[2]) : 0xff6b6b,
+                        c ? ((c[0] << 16) | (c[1] << 8) | c[2]) : 0xa52b3c,
                     ),
                     opacity: ctvNode.opacity,
                     visible2D: ctvNode.visible2D,

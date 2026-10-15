@@ -1964,7 +1964,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
 
     function _drawPlanLegend(ctx, x, y, w) {
         const items = [];
-        const ctvColor = dataTreeState.ctv?.color || '#ff304c';
+        const ctvColor = dataTreeState.ctv?.color || '#a52b3c';
         items.push({ type: 'swatch', color: ctvColor, label: 'CTV / tumor' });
         const firstOar = (dataTreeState.organs || []).find(o => o.visible !== false) || dataTreeState.organs?.[0];
         items.push({ type: 'swatch', color: firstOar?.color || dataTreeState.oar?.color || '#4d9de0', label: 'OAR surfaces' });

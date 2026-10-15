@@ -1269,6 +1269,8 @@
         const uiState = ui.state || ui;
         const tree = workspacePresentationTree(snapshotOrTree)
             || uiState.data_tree || snapshotOrTree.data_tree || snapshotOrTree.dataTree || {};
+        // Upgrade defaults before copying records into the late-loader registry.
+        window.migrateLegacyStructurePalette?.(tree);
         const viewer = uiState.viewer || snapshotOrTree.viewer || {};
         const previous = workspacePresentationRestore;
         const timepointScope = window.BrachyBotTimepointWorkspace?.captureRequestScope?.() || null;

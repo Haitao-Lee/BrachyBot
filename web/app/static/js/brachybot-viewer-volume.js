@@ -488,7 +488,7 @@ function _pendingStructurePresentation(objectId, classification = null) {
     return value;
 }
 
-function _rgbForStructureColor(value, fallback = [255, 48, 76]) {
+function _rgbForStructureColor(value, fallback = [165, 43, 60]) {
     if (Array.isArray(value) && value.length >= 3) {
         return value.slice(0, 3).map(channel => Math.max(0, Math.min(255, Number(channel) || 0)));
     }
@@ -525,7 +525,9 @@ function _ctvLabelPresentation(labelId) {
     const opacity = Number.isFinite(Number(presentation?.opacity))
         ? Number(presentation.opacity)
         : Number(parent?.opacity ?? 0.7);
-    const lutColor = ctvLabelColorLUT[labelId] || [255, 48, 76];
+    const lutColor = _rgbForStructureColor(
+        _defaultCtvLabelColor(labelId, ctvLabelColorLUT[labelId]),
+    );
     return {
         visible,
         opacity: Math.max(0, Math.min(1, opacity)),
@@ -1145,6 +1147,11 @@ async function loadLabelVolumes(options = {}) {
     // The backend LUT is the single color source for Data Tree, 2D overlays
     // and 3D meshes. Per-label overrides here previously made the OAR tree
     // disagree with the 2D viewer whenever CTV and OAR reused a numeric ID.
+
+    Object.keys(ctvLabelColorLUT).forEach(labelId => {
+        _setStructureLutColor(ctvLabelColorLUT, labelId,
+            _defaultCtvLabelColor(labelId, ctvLabelColorLUT[labelId]));
+    });
 
     const sliceSize = shapeY * shapeX;
     ctvLabelData = null;
@@ -3469,8 +3476,8 @@ function reloadOverlays() {
 }
 
 /******** DATA TREE ********/
-const STRUCTURE_PALETTE_VERSION = 2;
-const DEFAULT_CTV_STRUCTURE_COLOR = '#ff304c';
+const STRUCTURE_PALETTE_VERSION = 3;
+const DEFAULT_CTV_STRUCTURE_COLOR = '#a52b3c';
 const DEFAULT_OAR_STRUCTURE_COLOR = '#4d9de0';
 const DEFAULT_NON_TRAVERSABLE_COLOR = '#e58a48';
 const DEFAULT_TRAVERSABLE_COLOR = '#3ccb8f';
@@ -4459,7 +4466,7 @@ function _normalizeStructureColor(color) {
     const value = String(color || '').trim().toLowerCase();
     if (/^#[0-9a-f]{6}$/.test(value)) return value;
     const match = value.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
-    if (!match) return '#cccccc';
+    if (!match) return ''; // Missing is not a saved gray presentation override.
     return `#${match.slice(1, 4)
         .map(channel => Math.max(0, Math.min(255, Number(channel))).toString(16).padStart(2, '0'))
         .join('')}`;
@@ -4508,10 +4515,25 @@ function _structurePaletteColor(labelId, offset = 0) {
     return `#${rgb.map(channel => channel.toString(16).padStart(2, '0')).join('')}`;
 }
 
+// Version 2 could persist the generic gray fallback as a CTV default. Migrate
+// exact historical defaults only; current-version user color edits stay intact.
+const LEGACY_CTV_TARGET_COLORS = new Set([
+    '#cccccc', '#f2a692', '#ff304c', '#ff4444', '#ff6b6b',
+]);
+
+function _defaultCtvLabelColor(labelId, color) {
+    const normalized = _normalizeStructureColor(color);
+    const target = isCTVTargetLabel(labelId);
+    if (target && (!normalized || LEGACY_CTV_TARGET_COLORS.has(normalized))) {
+        return DEFAULT_CTV_STRUCTURE_COLOR;
+    }
+    return normalized || (target ? DEFAULT_CTV_STRUCTURE_COLOR : _structurePaletteColor(labelId, 10));
+}
+
 function migrateLegacyStructurePalette(tree) {
     if (!tree || typeof tree !== 'object') return false;
     if (Number(tree.structurePaletteVersion || 0) >= STRUCTURE_PALETTE_VERSION) return false;
-
+    const previousVersion = Number(tree.structurePaletteVersion || 0);
     let changed = false;
     const replaceKnownDefault = (target, legacyColors, replacement) => {
         if (!target || typeof target !== 'object') return;
@@ -4521,28 +4543,33 @@ function migrateLegacyStructurePalette(tree) {
             changed = true;
         }
     };
-
-    replaceKnownDefault(tree.ctv, new Set(['#f2a692', '#ff4444', '#ff6b6b']), DEFAULT_CTV_STRUCTURE_COLOR);
-    replaceKnownDefault(tree.oar, new Set(['#8cacd9', '#0ea5e9']), DEFAULT_OAR_STRUCTURE_COLOR);
-    replaceKnownDefault(tree.nonTraversable || tree.non_traversable, new Set(['#cfa386', '#fb923c']), DEFAULT_NON_TRAVERSABLE_COLOR);
-    replaceKnownDefault(tree.traversable, new Set(['#87bea8', '#0ea5e9']), DEFAULT_TRAVERSABLE_COLOR);
-
+    replaceKnownDefault(tree.ctv, LEGACY_CTV_TARGET_COLORS, DEFAULT_CTV_STRUCTURE_COLOR);
     const ctvLabels = tree.ctvLabels || tree.ctv_labels || {};
     Object.entries(ctvLabels).forEach(([id, label]) => {
-        if (!label || !LEGACY_STRUCTURE_COLORS.has(_normalizeStructureColor(label.color))) return;
+        if (!label || typeof label !== 'object') return;
         const labelId = Number(label.labelId ?? label.label_id ?? String(id).replace(/^ctv_/, '')) || 1;
-        label.color = labelId === 1
-            ? DEFAULT_CTV_STRUCTURE_COLOR
-            : _structurePaletteColor(labelId, 10);
-        changed = true;
+        const target = label.category === 'target' || label.classification === 'ctv'
+            || (!label.category && isCTVTargetLabel(labelId));
+        const normalized = _normalizeStructureColor(label.color);
+        if (target && (!normalized || LEGACY_CTV_TARGET_COLORS.has(normalized))) {
+            label.color = DEFAULT_CTV_STRUCTURE_COLOR;
+            changed = true;
+        } else if (previousVersion < 2 && LEGACY_STRUCTURE_COLORS.has(normalized)) {
+            label.color = _structurePaletteColor(labelId, 10);
+            changed = true;
+        }
     });
-
-    (tree.organs || []).forEach((organ, index) => {
-        if (!organ || !LEGACY_STRUCTURE_COLORS.has(_normalizeStructureColor(organ.color))) return;
-        organ.color = _structurePaletteColor(organ.labelId ?? organ.label_id ?? (index + 1));
-        changed = true;
-    });
-
+    // Do not re-run the old OAR upgrade over version-2 operator preferences.
+    if (previousVersion < 2) {
+        replaceKnownDefault(tree.oar, new Set(['#8cacd9', '#0ea5e9']), DEFAULT_OAR_STRUCTURE_COLOR);
+        replaceKnownDefault(tree.nonTraversable || tree.non_traversable, new Set(['#cfa386', '#fb923c']), DEFAULT_NON_TRAVERSABLE_COLOR);
+        replaceKnownDefault(tree.traversable, new Set(['#87bea8', '#0ea5e9']), DEFAULT_TRAVERSABLE_COLOR);
+        (tree.organs || []).forEach((organ, index) => {
+            if (!organ || !LEGACY_STRUCTURE_COLORS.has(_normalizeStructureColor(organ.color))) return;
+            organ.color = _structurePaletteColor(organ.labelId ?? organ.label_id ?? (index + 1));
+            changed = true;
+        });
+    }
     tree.structurePaletteVersion = STRUCTURE_PALETTE_VERSION;
     syncStructureColorLUTsFromTree(tree);
     return changed;
@@ -5006,18 +5033,18 @@ function renderDataTree(options = {}) {
         const addCtvSubLabel = (labelId, category, fallbackColor) => {
             const count = Number(ctvLabelCountMap.get(labelId) || 0);
             const defaultName = labelNames[labelId] || `Label ${labelId}`;
+            const { objectId, current } = ctvAppearanceFor(labelId);
             const savedColor = _normalizeStructureColor(
-                window.getWorkspacePresentationForNode?.({
+                current.color || window.getWorkspacePresentationForNode?.({
                     id: 'ctv_' + labelId,
                     labelId,
                     family: 'ctv',
                 })?.color || dataTreeState.ctvLabels?.['ctv_' + labelId]?.color || '',
             );
-            const color = savedColor || (ctvLabelColorLUT[labelId]
-                ? `rgb(${ctvLabelColorLUT[labelId].join(',')})`
-                : fallbackColor);
+            const color = savedColor || _defaultCtvLabelColor(
+                labelId, ctvLabelColorLUT[labelId] || fallbackColor,
+            );
             const id = `ctv_${labelId}`;
-            const { objectId, current } = ctvAppearanceFor(labelId);
             // Preserve a user-renamed label; fall back to the default otherwise.
             const customLabel = current?.label && !/^label\s+\d+$/i.test(String(current.label).trim())
                 ? current.label
@@ -5090,17 +5117,17 @@ function renderDataTree(options = {}) {
                     : '';
                 // Use the shared structure palette so the Data Tree swatch,
                 // 2D label and reconstructed mesh remain identical.
+                const { objectId, current } = ctvAppearanceFor(labelId);
                 const savedColor = _normalizeStructureColor(
-                    window.getWorkspacePresentationForNode?.({
+                    current.color || window.getWorkspacePresentationForNode?.({
                         id: 'ctv_' + labelId,
                         labelId,
                         family: 'ctv',
                     })?.color || dataTreeState.ctvLabels?.['ctv_' + labelId]?.color || '',
                 );
-                const tumorColor = savedColor || (ctvLabelColorLUT[labelId]
-                    ? `rgb(${ctvLabelColorLUT[labelId].join(',')})`
-                    : DEFAULT_CTV_STRUCTURE_COLOR);
-                const { objectId, current } = ctvAppearanceFor(labelId);
+                const tumorColor = savedColor || _defaultCtvLabelColor(
+                    labelId, ctvLabelColorLUT[labelId],
+                );
                 // Preserve a user-renamed label; only fall back to the default
                 // when no custom label was assigned.
                 const customLabel = current?.label && !/^tumor$/i.test(String(current.label).trim())

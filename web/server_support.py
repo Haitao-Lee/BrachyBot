@@ -3299,7 +3299,7 @@ def _compute_manual_ai_dose(
     }
 
 
-_CTV_PRIMARY_COLOR = (255, 48, 76)
+_CTV_PRIMARY_COLOR = (165, 43, 60)
 
 # The original Slicer-inspired table was intentionally pastel, but it became
 # difficult to scan once 50+ translucent structures overlapped. These colors

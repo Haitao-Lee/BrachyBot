@@ -29,8 +29,8 @@ def test_structure_palette_is_distinct_and_has_useful_chroma():
     assert len({_label_color(label) for label in range(1, 58)}) == 57
 
 
-def test_primary_ctv_is_vivid_red_and_does_not_collide_with_oar_label_one():
-    assert _ctv_label_color(1) == (255, 48, 76)
+def test_primary_ctv_is_deep_red_and_does_not_collide_with_oar_label_one():
+    assert _ctv_label_color(1) == (165, 43, 60)
     assert _label_color(1) == (77, 157, 224)
     assert _ctv_label_color(1) != _label_color(1)
     assert _ctv_label_color(2) != _ctv_label_color(1)
@@ -58,9 +58,9 @@ def test_palette_defaults_are_shared_by_config_and_data_tree():
     config = read("config/default_params.json")
     report = read("web/app/static/js/brachybot-report-editor.js")
 
-    assert "const DEFAULT_CTV_STRUCTURE_COLOR = '#ff304c';" in viewer
-    assert '"ctv_color": "#ff304c"' in config
-    assert "dataTreeState.ctv?.color || '#ff304c'" in report
+    assert "const DEFAULT_CTV_STRUCTURE_COLOR = '#a52b3c';" in viewer
+    assert '"ctv_color": "#a52b3c"' in config
+    assert "dataTreeState.ctv?.color || '#a52b3c'" in report
     assert '"oar_non_traversable_color": "#e58a48"' in config
     assert '"oar_traversable_color": "#3ccb8f"' in config
 

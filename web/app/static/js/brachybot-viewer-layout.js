@@ -1189,7 +1189,7 @@ async function _get3DConfig() {
     // Hard-coded fallback matching default_params.json
     _3dConfigCache = {
         default_opacity: 0.7,
-        ctv_color: '#ff304c',
+        ctv_color: '#a52b3c',
         oar_non_traversable_color: '#e58a48',
         oar_traversable_color: '#3ccb8f',
         seed_color: '#facc15',

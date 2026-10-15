@@ -4372,7 +4372,7 @@ function resetAllState(options = {}) {
     });
     resetTreeNodePresentation(dataTreeState.ctv, {
         visible: true, visible2D: true, visible3D: true, opacity: 0.7,
-        color: '#ff304c', material: 'default', locked: false,
+        color: '#a52b3c', material: 'default', locked: false,
         standaloneVisible: true, colorbarVisible2D: false, colorbarVisible3D: false,
     });
     resetTreeNodePresentation(dataTreeState.oar, {
