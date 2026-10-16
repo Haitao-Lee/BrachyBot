@@ -24,7 +24,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE);
   assert.ok(chrome.height<110);assert.equal(chrome.implantInside,true);assert.equal(chrome.doseInside,true);
   assert.equal(await page.locator('#overlayCTV').isChecked(),true);
   assert.equal(await page.locator('#overlayOAR').isChecked(),true);
-  assert.equal(await page.locator('#labelShow3d').isChecked(),false);
+  assert.equal(await page.locator('#labelShow3d').isChecked(),true);
   const recovery=await page.evaluate(()=>{
    const form=window.reportForm;
    const snapshot={session_id:state.sessionId,ui:{state:{controls:{overlayCTV:{checked:false},overlayOAR:{checked:false},labelShow3d:{checked:true}},viewer:{labelImage:{'3d':{visible:true,opacity:.7}},annotations:[{id:'generated',type:'planning_distance',visible:true},{id:'manual',type:'line',visible:true}]}}},report:{form:{...form,editedFields:{}}}};
@@ -51,13 +51,13 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE);
   });
   assert.equal(recovery.originalLabel,true);assert.deepEqual(recovery.originalFields,{});
   assert.equal(recovery.restoredFieldsIsSet,true);assert.deepEqual(recovery.cloned,['interpretation']);
-  assert.deepEqual(recovery.lateControls,{ctv:true,oar:true,label:false});
+  assert.deepEqual(recovery.lateControls,{ctv:true,oar:true,label:true});
   assert.deepEqual(recovery.legacyMap,['interpretation']);
   assert.equal(recovery.migrated.controls.overlayCTV.checked,true);assert.equal(recovery.migrated.controls.overlayOAR.checked,true);
-  assert.equal(recovery.migrated.viewer.labelImage['3d'].visible,false);assert.equal(recovery.migrated.viewer.labelImage['3d'].opacity,.7);
+  assert.equal(recovery.migrated.viewer.labelImage['3d'].visible,true);assert.equal(recovery.migrated.viewer.labelImage['3d'].opacity,.7);
   assert.equal(recovery.migrated.viewer.annotations[0].visible,false);assert.equal(recovery.migrated.viewer.annotations[1].visible,true);
   assert.equal(recovery.preserved,false);assert.notEqual(recovery.border,recovery.text);
-  assert.deepEqual(recovery.completion,{ctv:true,oar:true,label:false,generated:false,manual:true});
+  assert.deepEqual(recovery.completion,{ctv:true,oar:true,label:true,generated:false,manual:true});
   console.log('Legacy report Set/object recovery, immutable snapshots, one-time defaults and subtle separator passed');
   await page.evaluate(()=>{
    const form=window.cloneWorkspaceJSON(window.reportForm);

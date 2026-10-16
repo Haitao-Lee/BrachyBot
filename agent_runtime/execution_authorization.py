@@ -101,14 +101,17 @@ def tool_call_is_mutating(tool_name: str, params: object = None) -> bool:
             return False
     return True
 
-# Missing masks are deterministic prerequisites of an authorized full planning
-# workflow.  A guide is deliberately absent: it is generated only when the
-# user/LLM explicitly granted ``surgical_guide`` (or the exact legacy planning
-# shortcut included that tool), so "plan but do not generate a guide" works.
+# Missing masks and the preoperative guide are deterministic downstream steps
+# of an authorized full-planning workflow.  The runtime stage gate decides
+# whether the guide is materialized: preoperative/legacy planning derives it,
+# while an intraoperative re-plan does not unless the user explicitly asks for
+# guide generation.  Keeping the guide in this derived set lets the stage gate
+# enforce that distinction without broadening authorization to unrelated turns.
 PLANNING_DERIVED_TOOLS: FrozenSet[str] = frozenset({
     "ctv_segmentation",
     "oar_segmentation",
     "planning_pipeline",
+    "surgical_guide",
 })
 
 

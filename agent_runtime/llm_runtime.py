@@ -32,6 +32,7 @@ from agent_runtime.answer_coverage import (
     uncovered_metric_aspects,
 )
 from agent_runtime.turn_policy import filter_tool_schemas
+from agent_runtime.planning_stage import should_auto_generate_guide
 from agent_runtime.semantic_kernel import (
     PLAN_TOOL, SemanticDecisionState, admission_error_text, admitted_proposals, identify_proposals, is_semantic_first,
     partial_batch_notice, project_provider_schemas, request_plan_schema, outcome_plan_contract_offered,
@@ -1146,6 +1147,46 @@ def _tool_call_signature(tool_name: str, params: Dict) -> str:
 
 
 class LLMRuntimeMixin:
+    def _filter_automatic_guide_calls(self, calls, message):
+        """Remove only guide calls forbidden by the captured planning stage.
+
+        This is intentionally applied before ``admitted_proposals`` is called
+        with the provider's original list.  Otherwise a deliberately removed
+        intraoperative guide would be reported as a malformed/rejected call
+        instead of simply not being part of the requested re-plan.
+        """
+        if should_auto_generate_guide(self, message):
+            return list(calls or ())
+        return [
+            call for call in (calls or ())
+            if str(call.get("tool") or "") != "surgical_guide"
+        ]
+
+    def _append_automatic_preoperative_guide(self, calls, message, mounted_names=None):
+        """Bind a preoperative planning result to its guide exactly once."""
+        calls = list(calls or ())
+        if not should_auto_generate_guide(self, message):
+            return calls
+        if any(str(call.get("tool") or "") == "surgical_guide" for call in calls):
+            return calls
+        registry = getattr(self, "registry", None)
+        if registry is not None and not registry.get("surgical_guide"):
+            return calls
+        has_full_planning = any(
+            str(call.get("tool") or "") == "planning_pipeline"
+            and str((call.get("params") or {}).get("step", "full") or "full").lower() == "full"
+            for call in calls
+        )
+        if not has_full_planning:
+            return calls
+        calls.append({
+            "id": "tool_auto_preoperative_surgical_guide",
+            "tool": "surgical_guide",
+            "params": {"action": "generate"},
+            "_auto_derived": True,
+        })
+        return calls
+
     def _provider_schemas_for_turn(self, schemas, decision_state=None):
         """Unified capability projection after CT/workspace/child safety filters."""
         from web.timepoint_chat import project_timepoint_schemas
@@ -2695,6 +2736,7 @@ class LLMRuntimeMixin:
             )
             from agent_runtime.workspace_readiness import prepare_resource_calls
             valid_tool_calls = prepare_resource_calls(self, valid_tool_calls)
+            valid_tool_calls = self._filter_automatic_guide_calls(valid_tool_calls, message)
 
             if not valid_tool_calls:
                 # Tool calls were generated but all filtered out (e.g. empty code)
@@ -2734,6 +2776,16 @@ class LLMRuntimeMixin:
                 {item.get("function", {}).get("name") for item in tools_for_llm},
                 preserve_notices=True,
             )
+            tool_calls = self._append_automatic_preoperative_guide(
+                tool_calls,
+                message,
+                {item.get("function", {}).get("name") for item in tools_for_llm},
+            )
+            if authorization is not None:
+                tool_calls = [
+                    call for call in tool_calls
+                    if authorization.tool_allowed(call.get("tool", ""), call.get("params") or {})
+                ]
             tool_calls = execution_state.prepare(self._order_tool_calls_by_action_plan(tool_calls) + malformed_calls)
             if not tool_calls:
                 tools_executed = True
@@ -4322,6 +4374,7 @@ class LLMRuntimeMixin:
                 {item.get("function", {}).get("name") for item in tools_for_llm},
                 preserve_notices=True,
             )
+            valid_tool_calls = self._filter_automatic_guide_calls(valid_tool_calls, message)
 
             if not valid_tool_calls:
                 tools_executed = True
@@ -4354,6 +4407,16 @@ class LLMRuntimeMixin:
                 {item.get("function", {}).get("name") for item in tools_for_llm},
                 preserve_notices=True,
             )
+            tool_calls = self._append_automatic_preoperative_guide(
+                tool_calls,
+                message,
+                {item.get("function", {}).get("name") for item in tools_for_llm},
+            )
+            if authorization is not None:
+                tool_calls = [
+                    call for call in tool_calls
+                    if authorization.tool_allowed(call.get("tool", ""), call.get("params") or {})
+                ]
             tool_calls = execution_state.prepare(self._order_tool_calls_by_action_plan(tool_calls) + malformed_calls)
             if not tool_calls:
                 tools_executed = True

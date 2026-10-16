@@ -1097,13 +1097,13 @@
         const normalized = jsonClone(saved);
         normalized.planning_presentation_defaults_version = 1;
         normalized.controls = normalized.controls || {};
-        for (const [id, checked] of [['overlayCTV', true], ['overlayOAR', true], ['labelShow3d', false]]) {
+        for (const [id, checked] of [['overlayCTV', true], ['overlayOAR', true], ['labelShow3d', true]]) {
             normalized.controls[id] = { ...(normalized.controls[id] || {}), checked };
         }
         normalized.viewer = normalized.viewer || {};
         normalized.viewer.settings = { ...(normalized.viewer.settings || {}), showCTV:true, showOAR:true };
         normalized.viewer.labelImage = { ...(normalized.viewer.labelImage || {}),
-            '3d': { ...(normalized.viewer.labelImage?.['3d'] || {}), visible:false } };
+            '3d': { ...(normalized.viewer.labelImage?.['3d'] || {}), visible:true } };
         const hideGenerated = rows => Array.isArray(rows) ? rows.map(row => row?.type === 'planning_distance'
             ? { ...row, visible:false, visible3D:false, visible2D:false } : row) : rows;
         normalized.viewer.annotations = hideGenerated(normalized.viewer.annotations);
@@ -1119,8 +1119,8 @@
         if (typeof state === 'undefined') return;
         state.viewerSettings = { ...(state.viewerSettings || {}), showCTV:true, showOAR:true };
         state.labelImage = { ...(state.labelImage || {}),
-            '3d': { ...(state.labelImage?.['3d'] || {}), visible:false } };
-        for (const [id, checked] of [['overlayCTV', true], ['overlayOAR', true], ['labelShow3d', false]]) {
+            '3d': { ...(state.labelImage?.['3d'] || {}), visible:true } };
+        for (const [id, checked] of [['overlayCTV', true], ['overlayOAR', true], ['labelShow3d', true]]) {
             const node = document.getElementById(id); if (node) node.checked = checked;
         }
         for (const row of state.annotations || []) if (row?.type === 'planning_distance') {
@@ -1129,7 +1129,8 @@
                 id:row.id, objectId:`annotation:${row.id}`, family:'annotation', sessionId:state.sessionId,
             }, { visible:false, visible3D:false, visible2D:false });
         }
-        const overlay = document.getElementById('labelOverlay_3d'); if (overlay) overlay.style.display = 'none';
+        const overlay = document.getElementById('labelOverlay_3d');
+        if (overlay) overlay.style.display = state.labelImage?.['3d']?.visible === false ? 'none' : 'block';
         window.reconcileViewerAnnotationNodes?.();
         window.renderPlanningDistanceAnnotations?.();
     };

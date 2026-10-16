@@ -4250,17 +4250,30 @@ function updateTumorTypeSelector(value) {
 window.updateTumorTypeSelector = updateTumorTypeSelector;
 window.refreshTumorTypeAvailability = refreshTumorTypeAvailability;
 window.addEventListener('i18nchange', _syncTumorTypeSelectorAppearance);
-// The first probe intentionally runs before the auth overlay is resolved.
-// Retry after session authentication (or deployment-key entry) so a 401 from
-// that early probe cannot leave every optional tumor type red for the rest of
-// the page lifetime.
+// Availability is an authenticated, optional capability probe.  Do not spend
+// a request on it before auth has settled: the early 401 used to make the
+// selector paint supported tumor types as unavailable and added work during
+// first paint.  Coalesce auth/key events and avoid waking a hidden tab.
+let _tumorTypeRefreshTimer = null;
+function _scheduleTumorTypeRefresh(delay = 0) {
+    if (_tumorTypeRefreshTimer !== null) clearTimeout(_tumorTypeRefreshTimer);
+    _tumorTypeRefreshTimer = setTimeout(() => {
+        _tumorTypeRefreshTimer = null;
+        if (document.visibilityState === 'hidden') return;
+        void refreshTumorTypeAvailability();
+    }, delay);
+}
 window.addEventListener('brachybot:auth-ready', () => {
-    void refreshTumorTypeAvailability();
+    _scheduleTumorTypeRefresh();
 });
 window.addEventListener('brachybot:api-key-changed', () => {
-    void refreshTumorTypeAvailability();
+    _scheduleTumorTypeRefresh();
 });
-setTimeout(refreshTumorTypeAvailability, 0);
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && _tumorTypeRefreshTimer === null) {
+        _scheduleTumorTypeRefresh(120);
+    }
+});
 
 function clearViewerCanvases() {
     // Session switches invalidate every pending image callback. Without this
@@ -4522,7 +4535,7 @@ function resetAllState(options = {}) {
     resetViewerControl('wireframe3D', undefined, false);
     resetViewerControl('skinToggle3D', undefined, false);
     resetViewerControl('doseOpacity', 40);
-    resetViewerControl('labelShow3d', undefined, false);
+    resetViewerControl('labelShow3d', undefined, true);
     resetViewerControl('labelOp3d', 60);
     const zoomLabel = document.getElementById('zoomLabel');
     if (zoomLabel) zoomLabel.textContent = '100%';

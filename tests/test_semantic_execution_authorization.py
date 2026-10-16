@@ -88,7 +88,7 @@ def test_replan_and_guide_plan_survives_when_sentence_is_not_detected_as_compoun
     )
 
 
-def test_surgical_replan_wording_keeps_the_planning_pipeline_first():
+def test_surgical_replan_wording_keeps_the_planning_pipeline_first_and_queues_guide():
     """A qualifier before the plan noun must not fall through to the model."""
     policy = classify_local_turn("请重新执行手术规划")
 
@@ -99,15 +99,20 @@ def test_surgical_replan_wording_keeps_the_planning_pipeline_first():
         "ctv_segmentation",
         "oar_segmentation",
         "planning_pipeline",
+        "surgical_guide",
     ]
     assert policy.action_plan.ordered_steps()[2].depends_on == (
         "ctv_segmentation",
         "oar_segmentation",
     )
-    assert "surgical_guide" not in policy.execution_grants
+    assert policy.action_plan.ordered_steps()[3].depends_on == (
+        "planning_pipeline",
+    )
+    assert "planning_pipeline" in policy.execution_grants
+    assert "surgical_guide" in policy.execution_grants
 
 
-def test_short_replan_follow_up_does_not_imply_guide_generation():
+def test_short_replan_follow_up_queues_dependent_guide_generation():
     policy = classify_local_turn("我是让你重新规划")
 
     assert policy.intent == "semantic_action"
@@ -116,9 +121,13 @@ def test_short_replan_follow_up_does_not_imply_guide_generation():
         "ctv_segmentation",
         "oar_segmentation",
         "planning_pipeline",
+        "surgical_guide",
     )
     assert "planning_pipeline" in policy.execution_grants
-    assert "surgical_guide" not in policy.execution_grants
+    assert "surgical_guide" in policy.execution_grants
+    assert policy.action_plan.ordered_steps()[3].depends_on == (
+        "planning_pipeline",
+    )
 
 
 def test_action_plan_preserves_repeated_provider_steps_and_order_after_merge():
@@ -264,7 +273,7 @@ def test_unknown_action_wording_keeps_the_registered_capability_set_available():
     assert "case_memory" in policy.allow_tools
 
 
-def test_planning_grant_supplies_only_required_prerequisites():
+def test_planning_grant_supplies_preoperative_guide_prerequisite():
     authorization = TurnExecutionAuthorization(token=7)
     authorization.grant_tool_calls(
         [{"tool": "planning_pipeline"}],
@@ -275,7 +284,7 @@ def test_planning_grant_supplies_only_required_prerequisites():
     assert authorization.tool_allowed("ctv_segmentation")
     assert authorization.tool_allowed("oar_segmentation")
     assert authorization.tool_allowed("planning_pipeline")
-    assert not authorization.tool_allowed("surgical_guide")
+    assert authorization.tool_allowed("surgical_guide")
     assert authorization.tool_allowed("ui_content")
 
 
@@ -308,16 +317,10 @@ def test_partial_tool_call_does_not_activate_planning_enforcer():
     assert not agent._planning_requested("只放置一枚粒子")
 
 
-def test_guide_requires_an_explicit_grant_even_after_planning():
+def test_planning_grant_derives_preoperative_guide_permission():
     authorization = TurnExecutionAuthorization(token=8)
     authorization.grant_tool_calls(
         [{"tool": "planning_pipeline"}],
-        source="test_llm",
-    )
-    assert not authorization.tool_allowed("surgical_guide")
-
-    authorization.grant_tool_calls(
-        [{"tool": "surgical_guide"}],
         source="test_llm",
     )
     assert authorization.tool_allowed("surgical_guide")

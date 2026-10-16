@@ -406,6 +406,20 @@ def test_viewer_requests_share_a_bounded_retry_and_abort_contract():
     assert "for (let attempt = 0; attempt <= 60; attempt += 1)" not in manual
 
 
+def test_planning_preview_survives_viewer_bundle_race_and_label_defaults_on():
+    chat = read("web/app/static/js/brachybot-chat-todo.js")
+    manual = read("web/app/static/js/brachybot-3d-manual.js")
+    html = read("web/app/index.html")
+
+    assert "window.__brachybotPlanningPreviewQueue" in chat
+    assert "queued_at" in chat
+    assert "splice(0)" in manual
+    assert "handlePlanningPreviewEvent(event)" in manual
+    assert 'id="labelShow3d" onchange="updateLabelImage(\'3d\')" checked' in html
+    assert "savedLabel?.configured === true" in manual
+    assert "configured: true, visible: labelShow" in manual
+
+
 def test_3d_progress_overlay_never_blocks_interaction_or_cancels_hydration():
     """The legacy in-canvas marker is hidden while mesh loading stays active."""
     html = read("web/app/index.html")

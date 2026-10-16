@@ -6346,12 +6346,23 @@ class ChatWorkflowMixin:
                                         logger.warning(f"Failed to build planning report: {_rep_e}")
                                         response = ("✅ 自动完成完整规划流程（CTV → OAR → Planning）" if str(getattr(self.memory, "user_lang", "en")).lower().startswith("zh") else "✅ Full planning workflow completed automatically (CTV → OAR → Planning).")
                                     # Guide generation is a separate persistent
-                                    # mutation.  Run it only when this turn's
-                                    # semantic decision (or the exact legacy full-
-                                    # planning shortcut) granted that tool.
+                                    # mutation.  In preoperative/legacy planning
+                                    # it is the downstream artifact of a full
+                                    # plan; in a scoped intraoperative re-plan
+                                    # it must remain untouched unless the user
+                                    # explicitly requested a guide.  Also avoid
+                                    # running the recovery path twice when the
+                                    # normal tool queue already completed it.
+                                    from agent_runtime.planning_stage import should_auto_generate_guide
                                     authorization = self._current_execution_authorization()
+                                    guide_completed_this_turn = any(
+                                        s.get("tool") == "surgical_guide" and s.get("status") == "done"
+                                        for s in steps if s.get("type") == "tool"
+                                    )
                                     guide_authorized = bool(
-                                        authorization is not None
+                                        not guide_completed_this_turn
+                                        and should_auto_generate_guide(self, message)
+                                        and authorization is not None
                                         and authorization.tool_allowed("surgical_guide", {"action": "generate"})
                                     )
                                     if guide_authorized and self.registry.get("surgical_guide"):

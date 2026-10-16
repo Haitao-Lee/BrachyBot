@@ -638,7 +638,7 @@ function _todoCreate() {
     // next to the elapsed time. The badge disappears on markDone.
     // Polling stops automatically when status changes away from active.
     function _todoStartGpuBadge(item) {
-        if (item._gpuTimer) clearInterval(item._gpuTimer);
+        if (item._gpuTimer) clearTimeout(item._gpuTimer);
         // Find or create a badge node inside the active item.
         let badge = item.node.querySelector('.chat-todo-gpu');
         if (!badge) {
@@ -726,11 +726,23 @@ function _todoCreate() {
                 }
             }
         };
-        fetchOnce();
-        item._gpuTimer = setInterval(fetchOnce, 2000);
+        // Schedule the next probe only after the current request settles. A
+        // fixed interval kept piling requests behind slow planning/I/O and
+        // competed with rendering on the browser main thread. The badge is
+        // still refreshed immediately, then less often while the tab is
+        // hidden because GPU capacity does not change the user's view there.
+        const scheduleNext = () => {
+            if (!item._gpuAbort || item._gpuAbort.signal.aborted) return;
+            const delay = document.visibilityState === 'hidden' ? 12000 : 5000;
+            item._gpuTimer = setTimeout(() => {
+                item._gpuTimer = null;
+                void fetchOnce().finally(scheduleNext);
+            }, delay);
+        };
+        void fetchOnce().finally(scheduleNext);
     }
     function _todoStopGpuBadge(item) {
-        if (item._gpuTimer) { clearInterval(item._gpuTimer); item._gpuTimer = null; }
+        if (item._gpuTimer) { clearTimeout(item._gpuTimer); item._gpuTimer = null; }
         if (item._gpuAbort) { try { item._gpuAbort.abort(); } catch (_) {} item._gpuAbort = null; }
         if (item._gpuRequestAbort) { try { item._gpuRequestAbort.abort(); } catch (_) {} item._gpuRequestAbort = null; }
         const badge = item.node && item.node.querySelector && item.node.querySelector('.chat-todo-gpu');
@@ -4570,12 +4582,26 @@ async function sendChat(prefill, options) {
                         // Preview frames are a separate, read-only Viewer
                         // transport. They never become trace steps, chat text,
                         // Data Tree rows, or planning-refresh triggers.
+                        const previewEvent = {
+                            ...data,
+                            session_id: data.session_id || turnSessionId,
+                            request_id: turnRequestId,
+                        };
                         if (typeof window.handlePlanningPreviewEvent === 'function') {
-                            window.handlePlanningPreviewEvent({
-                                ...data,
-                                session_id: data.session_id || turnSessionId,
-                                request_id: turnRequestId,
-                            });
+                            window.handlePlanningPreviewEvent(previewEvent);
+                        } else if (previewEvent.session_id) {
+                            // The SSE stream can begin before the Viewer bundle
+                            // has finished loading (or while the Viewer is
+                            // being rehydrated). Keep a small, expiring queue
+                            // instead of dropping the only start/frame events.
+                            const now = Date.now();
+                            const queue = Array.isArray(window.__brachybotPlanningPreviewQueue)
+                                ? window.__brachybotPlanningPreviewQueue.filter(item =>
+                                    item && now - Number(item.queued_at || now) <= 120000)
+                                : [];
+                            if (queue.length >= 48) queue.splice(0, queue.length - 47);
+                            queue.push({ ...previewEvent, queued_at: now });
+                            window.__brachybotPlanningPreviewQueue = queue;
                         }
                         continue;
                     }

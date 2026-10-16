@@ -28,7 +28,7 @@ const [origin, preoperative, intraoperative] = process.argv.slice(2);
     await page.waitForFunction(() => window.BrachyBotTimepointWorkspace?.resourceState?.()?.ready === true);
     assert.equal(await page.locator('#overlayCTV').isChecked(),true);
     assert.equal(await page.locator('#overlayOAR').isChecked(),true);
-    assert.equal(await page.locator('#labelShow3d').isChecked(),false);
+    assert.equal(await page.locator('#labelShow3d').isChecked(),true);
     const A=await page.evaluate(() => BrachyBotTimepoints.captureSubmission().timepointId);
     assert.match(A,/^[a-f0-9]{32}$/);
     assert.equal((await page.evaluate(() => BrachyBotTimepoints.getCatalog().timepoints)).length,1);

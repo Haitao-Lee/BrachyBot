@@ -30,6 +30,7 @@ from agent_runtime.turn_policy import (
     _has_visual_annotation_request,
 )
 from agent_runtime.shortcut_contract import planning_command, explicit_repeat, explicit_segmentation_request
+from agent_runtime.planning_stage import should_auto_generate_guide
 from plans.dose_pre.model_loader import resolve_prescription_gy
 from tool_factory.ui_controller import normalize_ui_controller_request, CONTROL_REGISTRY
 from utils.user_errors import format_tool_error, sanitize_user_response
@@ -1048,6 +1049,13 @@ print(json.dumps(result))
                 "surgical_guide",
             })
         )
+        # A scoped intraoperative re-plan must not silently replace the guide
+        # that is already associated with the procedure.  Legacy/single-
+        # workspace and preoperative plans keep the downstream guide step;
+        # an explicit guide command remains allowed even in the intraoperative
+        # context.  This gate is applied before materialization so the guide
+        # cannot reappear through a later terminal-tool shortcut.
+        auto_guide_allowed = should_auto_generate_guide(self, message)
 
         # Materialize an explicitly authorized local business plan before any
         # terminal-action shortcut.  The provider may have emitted only the
@@ -1068,6 +1076,8 @@ print(json.dumps(result))
                         "planning_pipeline",
                         "surgical_guide",
                     } or tool_name in emitted_tools:
+                        continue
+                    if tool_name == "surgical_guide" and not auto_guide_allowed:
                         continue
                     params = dict(step.params or {})
                     if tool_name == "planning_pipeline":
@@ -1147,7 +1157,7 @@ print(json.dumps(result))
         if is_local_planning_plan:
             terminal_tool = (
                 "surgical_guide"
-                if action_plan.requires_tool("surgical_guide")
+                if action_plan.requires_tool("surgical_guide") and auto_guide_allowed
                 else "planning_pipeline"
             )
             normalizer = getattr(self, "_normalize_clinical_tool_calls", None)

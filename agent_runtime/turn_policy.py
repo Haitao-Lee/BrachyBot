@@ -276,19 +276,21 @@ def _planning_and_guide_plan() -> ActionPlan:
 
 
 def _planning_and_guide_replan_plan() -> ActionPlan:
-    """Build the mandatory planning operation, not optional regeneration.
+    """Build planning plus the preoperative downstream guide operation.
 
     Existing masks are reusable prerequisites.  The planning pipeline is not:
     a re-plan must create a new planning revision even when CTV/OAR are already
-    present in memory. A previous guide/report becomes stale, but that is
-    not authorization to regenerate it. Explicit planning-plus-guide requests
-    use _planning_and_guide_plan instead.
+    present in memory.  The execution boundary filters this guide step for a
+    scoped intraoperative re-plan unless the user explicitly requests guide
+    generation; keeping it in the plan is what makes ordinary preoperative
+    planning and re-planning automatically bind the resulting guide.
     """
     return ActionPlan.from_tools(
-        ("ctv_segmentation", "oar_segmentation", "planning_pipeline"),
+        ("ctv_segmentation", "oar_segmentation", "planning_pipeline", "surgical_guide"),
         source="semantic_replan_dependency_guard",
         dependencies={
             "planning_pipeline": ("ctv_segmentation", "oar_segmentation"),
+            "surgical_guide": ("planning_pipeline",),
         },
     )
 

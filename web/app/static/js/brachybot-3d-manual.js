@@ -5734,7 +5734,8 @@ function applyRestoredViewerPresentationControls({ restoreOnly = false } = {}) {
         const savedLabel = state.labelImage?.['3d'];
         const labelShowInput = document.getElementById('labelShow3d');
         const labelOpacityInput = document.getElementById('labelOp3d');
-        if (savedLabel && typeof savedLabel.visible === 'boolean' && labelShowInput) {
+        if (savedLabel?.configured === true
+            && typeof savedLabel.visible === 'boolean' && labelShowInput) {
             labelShowInput.checked = savedLabel.visible;
         }
         if (savedLabel && Number.isFinite(Number(savedLabel.opacity)) && labelOpacityInput) {
@@ -5762,7 +5763,7 @@ function applyRestoredViewerPresentationControls({ restoreOnly = false } = {}) {
 
     if (typeof state !== 'undefined') {
         state.labelImage = state.labelImage || {};
-        state.labelImage['3d'] = { visible: labelShow, opacity: labelOpacity };
+        state.labelImage['3d'] = { configured: true, visible: labelShow, opacity: labelOpacity };
         // `doseOpacity` is shared by the legacy 3D dose slider and the dose
         // overlay renderer.  Keep state aligned even when no dose mesh exists
         // yet; the next loader will read the same value.
@@ -8556,6 +8557,21 @@ function handlePlanningPreviewEvent(event) {
 
 window.handlePlanningPreviewEvent = handlePlanningPreviewEvent;
 window.clearPlanningPreview = clearPlanningPreview;
+// The chat stream may be ready a few milliseconds before this Viewer bundle.
+// Replay only recent events; the handler still applies Session/run/sequence
+// fencing, so a stale queue cannot become persistent clinical geometry.
+(() => {
+    const queue = Array.isArray(window.__brachybotPlanningPreviewQueue)
+        ? window.__brachybotPlanningPreviewQueue.splice(0)
+        : [];
+    const now = Date.now();
+    queue.forEach(item => {
+        if (!item || now - Number(item.queued_at || now) > 120000) return;
+        const { queued_at: _queuedAt, ...event } = item;
+        handlePlanningPreviewEvent(event);
+    });
+    window.__brachybotPlanningPreviewQueue = [];
+})();
 window.addEventListener('i18nchange', () => {
     const doseButton = document.getElementById('doseTextureToggle');
     if (doseButton) doseButton.textContent = state.doseTexture?.enabled

@@ -153,6 +153,7 @@ def register_data_routes(
         explicit_session_id: Optional[str] = None,
         *,
         hydrate: bool = True,
+        lightweight: bool = False,
     ) -> tuple[Dict[str, Any], str, Any]:
         user = current_user(store)
         if not user:
@@ -162,7 +163,10 @@ def register_data_routes(
         if not session_id:
             raise WorkspaceError("No case session is selected")
         store.get_session(user["id"], session_id)
-        agent = get_agent_for_owner(user, session_id) if hydrate else None
+        agent = (
+            get_agent_for_owner(user, session_id, _lightweight=lightweight)
+            if hydrate else None
+        )
         if hydrate and agent is None:
             raise WorkspaceError("Case workspace is unavailable")
         return user, session_id, agent
@@ -207,9 +211,15 @@ def register_data_routes(
     @rate_limit
     def api_data_catalog():
         try:
-            user, session_id, agent = context()
-            service = ExportService(store)
             artifacts_only = request.args.get("view") == "artifacts"
+            # The artifact tree only needs the compact snapshot and durable
+            # file metadata. Asking for a full Agent here upgrades a cold case
+            # into CT/mesh restoration on the request thread and can stall
+            # the browser for tens of seconds during startup. The lightweight
+            # control Agent preserves the catalog contract; clinical arrays
+            # are loaded by their own background restore.
+            user, session_id, agent = context(lightweight=artifacts_only)
+            service = ExportService(store)
             catalog = service.public_catalog(user["id"], session_id, agent, artifacts_only=artifacts_only)
             _add_durable_screenshot_urls(catalog, store, user["id"], session_id)
             return jsonify({
