@@ -176,6 +176,56 @@ def new_record(identifier, name, *, legacy_default=False, now=None):
     }
 
 
+def _inherited_timepoint_state(source, source_id, target_id=None):
+    """Build an independent continuation state from a referenced pre-op point.
+
+    The state manifest is copied by value, while encoded clinical sidecars remain
+    content-addressed and can be read by both owned timepoints. Shared chat and
+    mutable operation checkpoints are deliberately excluded. This makes a newly
+    created intraoperative point show the selected preoperative CT, masks, plan,
+    guide and Data Tree resources immediately without rerunning planning.
+    """
+    source_agent = source.get('agent') if isinstance(source, Mapping) else {}
+    source_agent = source_agent if isinstance(source_agent, Mapping) else {}
+    agent = {}
+    for key in ('config', 'planning_results', 'ui_state'):
+        if key in source_agent:
+            agent[key] = copy.deepcopy(source_agent[key])
+    ui = copy.deepcopy(source.get('ui') or {})
+    if isinstance(ui, Mapping):
+        ui.pop('bridge', None)
+    state = {
+        'schema_version': source.get('schema_version', 1),
+        'agent': agent,
+        'ui': ui,
+        'image_presentations': copy.deepcopy(source.get('image_presentations') or {}),
+        'inherited_from_timepoint_id': str(source_id),
+        'inherited_resource_scope': 'preoperative_continuation',
+    }
+    # Legacy/blank workspaces do not have an image collection yet.  Do not
+    # materialize `{}` as if it were one: image APIs require the collection's
+    # ownership and revision metadata.  A real collection is copied by value
+    # and its content-addressed image files remain shared safely.
+    if isinstance(source.get('image_collection'), Mapping):
+        collection = copy.deepcopy(source['image_collection'])
+        if target_id and isinstance(collection.get('images'), Mapping):
+            # Image bytes remain content-addressed under the source point,
+            # while the manifest is projected into the target point.  The
+            # image service accepts this explicit inherited source scope and
+            # continues to verify the original receipts before serving bytes.
+            collection['timepoint_id'] = str(target_id)
+            collection['inherited_from_timepoint_id'] = str(source_id)
+            for image in collection['images'].values():
+                if isinstance(image, Mapping):
+                    image['timepoint_id'] = str(target_id)
+                    image['inherited_from_timepoint_id'] = str(source_id)
+            for event in collection.get('journal') or []:
+                if isinstance(event, Mapping):
+                    event['timepoint_id'] = str(target_id)
+        state['image_collection'] = collection
+    return state
+
+
 def default_catalog(session_id, *, created_at=None):
     identifier = default_timepoint_id(session_id)
     return {
@@ -467,9 +517,21 @@ class TimepointStoreMixin:
             item = new_record(uuid.uuid4().hex, name)
             item["stage"] = stage
             item["preoperative_timepoint_id"] = preoperative_timepoint_id
+            inherited = None
+            if stage == "intraoperative" and preoperative_timepoint_id:
+                source = self._timepoint_record(catalog, preoperative_timepoint_id)
+                source_snapshot = self.load_timepoint_snapshot(
+                    user_id, session_id, source["id"], include_shared=False,
+                )
+                inherited = _inherited_timepoint_state(source_snapshot, source["id"], item["id"])
             catalog["items"][item["id"]] = item
             catalog["order"].append(item["id"])
-            result = self._publish_timepoint_catalog(user_id, session_id, catalog, expected_revision)
+            if inherited is None:
+                result = self._publish_timepoint_catalog(user_id, session_id, catalog, expected_revision)
+            else:
+                self._publish_timepoint_state(user_id, session_id, catalog, item, inherited,
+                    retain_previous=False, clinical_change=False)
+                result = self.list_timepoints(user_id, session_id, include_trashed=True)
             result["created_timepoint_id"] = item["id"]
             return result
 
@@ -483,6 +545,41 @@ class TimepointStoreMixin:
             if revision(expected_revision) != catalog["catalog_revision"]:
                 raise TimepointConflict("The timepoint catalog changed")
             item = self._timepoint_record(catalog, identifier)
+            # A blank preoperative point may be reclassified from the editor
+            # after it was created.  Treat that transition exactly like the
+            # create-time intraoperative continuation: copy the referenced
+            # point's immutable clinical resources into the target state so
+            # CT, masks, guide artifacts and planning results appear in the
+            # target Data Tree immediately.  Presentation-only edits already
+            # made on the target remain owned by the target.
+            target_stage = patch.get('stage', item.get('stage'))
+            target_source_id = patch.get('preoperative_timepoint_id', item.get('preoperative_timepoint_id'))
+            inherited = None
+            if (target_stage == 'intraoperative' and target_source_id
+                    and (item.get('stage') != 'intraoperative'
+                         or item.get('preoperative_timepoint_id') != target_source_id)):
+                if item.get('clinical_revision', 0) or item.get('legacy_default'):
+                    raise TimepointConflict("Reclassifying populated/legacy clinical data requires an explicit migration")
+                source = self._timepoint_record(catalog, target_source_id)
+                if source.get('stage') != 'preoperative':
+                    raise TimepointError("An intraoperative timepoint requires a preoperative source")
+                source_snapshot = self.load_timepoint_snapshot(
+                    user_id, session_id, source['id'], include_shared=False,
+                )
+                inherited = _inherited_timepoint_state(source_snapshot, source['id'], item['id'])
+                # Keep target-owned appearance/report state while replacing
+                # its empty clinical resource manifest with the source.
+                if item.get('state_ref') is not None:
+                    existing = self._read_timepoint_state(user_id, session_id, item)
+                    if existing.get('ui'):
+                        inherited['ui'] = copy.deepcopy(existing['ui'])
+                    if existing.get('image_presentations'):
+                        inherited['image_presentations'] = copy.deepcopy(existing['image_presentations'])
+                    if existing.get('report'):
+                        inherited['report'] = copy.deepcopy(existing['report'])
+                    existing_agent = existing.get('agent') or {}
+                    if existing_agent.get('ui_state') is not None:
+                        inherited.setdefault('agent', {})['ui_state'] = copy.deepcopy(existing_agent['ui_state'])
             if "title" in patch:
                 item["title"] = title(patch["title"])
                 item["auto_title"] = False
@@ -496,6 +593,12 @@ class TimepointStoreMixin:
                     item['lifecycle_revision']=item.get('lifecycle_revision',0)+1
             item["revision"] += 1
             item["updated_at"] = time.time()
+            if inherited is not None:
+                self._publish_timepoint_state(
+                    user_id, session_id, catalog, item, inherited,
+                    retain_previous=False, clinical_change=False,
+                )
+                return self.list_timepoints(user_id, session_id, include_trashed=True)
             return self._publish_timepoint_catalog(user_id, session_id, catalog, expected_revision)
 
     def timepoint_delete_impact(self, user_id, session_id, identifier):

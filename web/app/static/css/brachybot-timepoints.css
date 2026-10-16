@@ -13,6 +13,9 @@
 .timepoint-badge { font-size: .65rem; border-radius: 5px; padding: 2px 4px; background: var(--primary-soft); color: var(--primary); }
 .timepoint-status { font-size: .7rem; line-height: 1.4; color: var(--text-secondary); margin-top: 6px; overflow-wrap: anywhere; }
 .timepoint-strip[data-state="error"] .timepoint-status { color: var(--danger); }
+.timepoint-status[data-state="loading"]::before { content: ""; display: inline-block; width: .72em; height: .72em; margin: 0 .45em .05em 0; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; vertical-align: -.08em; transform-origin: center; backface-visibility: hidden; will-change: transform; animation: timepoint-status-spin .75s linear infinite; animation-duration: .75s !important; animation-iteration-count: infinite !important; animation-play-state: running !important; }
+@keyframes timepoint-status-spin { to { transform: rotate(360deg); } }
+.timepoint-tab-pending { border-style: dashed; cursor: wait; }
 .timepoint-modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 16px; }
 .timepoint-dialog { background: var(--bg-2); border: 1px solid var(--border); border-radius: 14px; padding: 24px 28px; width: min(440px, 100%); max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow-xl); color: var(--text); font-size: .8rem; }
 .timepoint-dialog h2 { font-size: .95rem; margin: 0 0 15px; }

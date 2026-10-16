@@ -17,7 +17,7 @@
     'use strict';
     const stores = new Map();
     let sessionId = '', activeId = '', mountedId = '', generation = 0, catalogGeneration = 0;
-    let catalog = null, bridge = null, switching = false, errorState = null, modal = null;
+    let catalog = null, bridge = null, switching = false, errorState = null, modal = null, operation = null;
     let saveTimer = null;
     const t = (zh, en) => window._i18nLang === 'zh' ? zh : en;
     const clone = value => value == null ? value : (window.cloneWorkspaceJSON
@@ -195,7 +195,7 @@
     }
     function resetSession(sid) {
         clearTimeout(saveTimer); generation++; catalogGeneration++;
-        sessionId = sid; activeId = ''; mountedId = ''; catalog = null; switching = false; errorState = null;
+        sessionId = sid; activeId = ''; mountedId = ''; catalog = null; switching = false; operation = null; errorState = null;
         modal?.close(null); render();
     }
     function invalidateMount() {
@@ -298,11 +298,33 @@
         if (switching) return false;
         if (options.reload !== true && activeId === row.id && mountedId === row.id && record(captureTarget()).state === 'ready') return true;
         const from = captureTarget(), sid = sessionId, currentBridge = bridge;
+        const cached = options.reload !== true ? record({ sessionId: sid, timepointId: row.id }) : null;
+        // The workspace bridge completes hydration asynchronously and keeps
+        // the immutable resource entry after suspend().  Synchronize that
+        // entry into the controller cache before deciding whether this is a
+        // fast same-session switch; otherwise the controller would only see
+        // its initial `ready: false` shell and fetch/rebuild on every click.
+        if (cached && options.reload !== true && typeof currentBridge?.resourceState === 'function') {
+            const live = currentBridge.resourceState({ sessionId: sid, timepointId: row.id });
+            if (live?.ready === true && live.workspace) {
+                cached.ready = true;
+                cached.workspace = clone(live.workspace);
+                cached.images = clone(live.images);
+                cached.revision = live.revision ?? live.workspace.timepoint_state_revision;
+                cached.status = live.status;
+                cached.statusKind = live.statusKind;
+            }
+        }
+        const cacheHit = options.reload !== true && cached?.ready === true
+            && Number.isInteger(row.state_revision) && cached.revision === row.state_revision;
         switching = true; errorState = null; clearTimeout(saveTimer); render();
-        // Read the incoming owner while the outgoing presentation is saved.
-        // A failed save still keeps the outgoing mount; prefetched data never paints.
-        const incoming = jsonRequest(sid, row.id, '/workspace?response_mode=resource_shell')
-            .then(data => ({ data }), error => ({ error }));
+        // A ready resource shell is an immutable same-Session cache entry. Its
+        // catalog state revision is the cheap clinical fence; reuse it for the
+        // visible mount and avoid re-fetching images/config/meshes on every tab
+        // click. A reload explicitly bypasses this fast path.
+        const incoming = cacheHit ? Promise.resolve({ data: null })
+            : jsonRequest(sid, row.id, '/workspace?response_mode=resource_shell')
+                .then(data => ({ data }), error => ({ error }));
         let target = null, prepared = null;
         try {
             if (from.timepointId && mountedId === from.timepointId && options.reload !== true) {
@@ -325,11 +347,12 @@
             if (suspended && typeof suspended.then === 'function') throw failure('bridge_suspend_must_be_synchronous');
             const receipt = await incoming;
             if (receipt.error) throw receipt.error;
-            const workspace = validateWorkspace(receipt.data, target);
+            const workspace = cacheHit ? clone(cached.workspace) : validateWorkspace(receipt.data, target);
             item.workspace = clone(workspace); item.revision = workspace.timepoint_state_revision;
             item.presentation = clone(workspace.ui || {});
             if (!isCurrent(target) || !enabled() || bridge !== currentBridge) return false;
             prepared = await currentBridge.prepare(clone(workspace), { ...target,
+                cachedItem: cacheHit ? cached : null,
                 isCurrent: () => isCurrent(target) && enabled() && bridge === currentBridge,
                 request: (url, init) => request(target, url, init),
                 presentation: clone(item.presentation) });
@@ -374,7 +397,7 @@
         const strip = document.getElementById('timepointStrip'), tabs = document.getElementById('timepointTabs');
         if (!strip || !tabs) return;
         strip.setAttribute('aria-label', t('时间点', 'Timepoints')); tabs.setAttribute('aria-label', t('时间点', 'Timepoints'));
-        strip.setAttribute('aria-busy', String(switching)); strip.dataset.state = errorState ? 'error' : (enabled() ? 'ready' : 'gated');
+        strip.setAttribute('aria-busy', String(switching || !!operation)); strip.dataset.state = errorState ? 'error' : (enabled() ? 'ready' : 'gated');
         const heading = strip.querySelector('.timepoint-heading'); if (heading) heading.textContent = t('时间点', 'Timepoints');
         tabs.replaceChildren();
         for (const row of activeRecords()) {
@@ -407,19 +430,33 @@
                 }).catch(showError);
             });
         }
+        if (operation?.kind === 'creating') {
+            const pending = document.createElement('span'); pending.className = 'timepoint-tab timepoint-tab-pending';
+            pending.setAttribute('aria-busy', 'true'); pending.dataset.state = 'loading';
+            const pendingTitle = document.createElement('span'); pendingTitle.className = 'timepoint-tab-title';
+            pendingTitle.textContent = operation.title || t('新时间点', 'New timepoint');
+            const pendingStage = document.createElement('span'); pendingStage.className = 'timepoint-stage';
+            pendingStage.textContent = operation.stage === 'intraoperative' ? t('术中', 'Intraoperative') : t('术前', 'Preoperative');
+            const pendingBadge = document.createElement('span'); pendingBadge.className = 'timepoint-badge';
+            pendingBadge.textContent = t('创建中…', 'Creating…'); pending.append(pendingTitle, pendingStage, pendingBadge); tabs.append(pending);
+        }
         const add = document.getElementById('timepointAdd'), manage = document.getElementById('timepointManage');
-        if (add) { add.disabled = !enabled(); add.setAttribute('aria-label', t('添加时间点', 'Add timepoint')); add.title = add.getAttribute('aria-label'); }
-        if (manage) { manage.disabled = !enabled() || switching; manage.textContent = t('管理', 'Manage'); }
+        if (add) { add.disabled = !enabled() || !!operation; add.setAttribute('aria-label', t('添加时间点', 'Add timepoint')); add.title = add.getAttribute('aria-label'); }
+        if (manage) { manage.disabled = !enabled() || switching || !!operation; manage.textContent = t('管理', 'Manage'); }
         const status = document.getElementById('timepointStatus');
         if (status) { status.removeAttribute('data-i18n-zh'); status.removeAttribute('data-i18n-en');
+            status.dataset.state = (switching || !!operation) ? 'loading' : errorState ? 'error' : 'idle';
             status.textContent = (errorState ? userError(errorState) : '') || (!catalog ? t('时间点服务尚不可用。当前病例工作区保持可用。', 'The timepoint service is unavailable. The current case workspace remains available.')
                 : catalog.capabilities?.execution_scope !== true ? t('时间点目录可查看；独立执行尚未启用，切换和编辑已锁定。', 'The timepoint catalog is available; independent execution is not enabled. Switching and editing are locked.')
                 : !bridgeReady() ? t('独立工作区恢复尚未就绪；切换和编辑已锁定。', 'Timepoint workspace restoration is not ready. Switching and editing are locked.')
+                : operation?.kind === 'creating' ? t('正在创建时间点，完成后会自动切换…', 'Creating the timepoint; it will be selected when ready…')
+                : operation?.kind === 'deleting' ? t('正在删除时间点…', 'Deleting timepoint…')
+                : operation?.kind === 'saving' ? t('正在保存时间点设置…', 'Saving timepoint settings…')
                 : switching ? t('正在恢复此时间点的图像和显示设置…', 'Restoring this timepoint’s images and presentation…')
                 : activeId ? t('共享同一聊天；图像、规划、报告和显示设置属于当前时间点。', 'Chat is shared. Images, plans, reports and presentation belong to the selected timepoint.')
                 : t('请选择时间点。', 'Select a timepoint.')); }
     }
-    function showError(error) { errorState = errorIdentity(error); render(); }
+    function showError(error) { operation = null; errorState = errorIdentity(error); render(); }
     const languageBindings = new WeakMap();
     const localizedCopy = copy => { const value = typeof copy === 'function' ? copy() : copy;
         return Array.isArray(value) ? t(...value) : String(value ?? ''); };
@@ -506,7 +543,11 @@
     }
     async function mutate(id, method, suffix, values = {}, captured = null) {
         requireEnabled();
-        const owner = captured || { sessionId, catalogRevision: catalog.catalog_revision, revision: findRow(id)?.revision };
+        const op = { kind: method === 'POST' && !id ? 'creating' : method === 'DELETE' ? 'deleting' : 'saving',
+            title: String(values.title || ''), stage: values.stage || '' };
+        operation = op; errorState = null; render();
+        try {
+            const owner = captured || { sessionId, catalogRevision: catalog.catalog_revision, revision: findRow(id)?.revision };
         if (owner.sessionId !== sessionId || owner.sessionId !== sidNow()) throw failure('stale_timepoint_action');
         const fence = owner.metadataFence || metadataFence(catalog);
         let latest = normalizeCatalog(await jsonRequest(owner.sessionId, '', '?include_trashed=1'), owner.sessionId);
@@ -524,10 +565,12 @@
                 expected_metadata_signature: latest.metadata_signature });
         }
         if (owner.sessionId === sessionId) {
-            acceptCatalog(data, owner.sessionId, catalogGeneration); render();
-            await refresh();
+            const accepted = acceptCatalog(data, owner.sessionId, catalogGeneration);
+            if (!accepted || !findRow(data.created_timepoint_id || id)) await refresh({ activate: false });
+            else render();
             if (data.created_timepoint_id && enabled()) await select(data.created_timepoint_id);
         }
+        } finally { if (operation === op) { operation = null; render(); } }
     }
     async function editTimepoint(id = '') {
         requireEnabled();
@@ -544,12 +587,14 @@
         option(reference, '', ['请选择术前时间点', 'Choose a preoperative timepoint']);
         activeRecords().filter(r => r.stage === 'preoperative' && r.id !== id).forEach(r => option(reference, r.id, () => displayTitle(r)));
         reference.value = row?.preoperative_timepoint_id || '';
-        const update = () => { reference.parentElement.hidden = stage.value !== 'intraoperative'; reference.required = stage.value === 'intraoperative'; }; update(); stage.onchange = update;
+        const update = () => { reference.parentElement.hidden = stage.value !== 'intraoperative'; reference.required = stage.value === 'intraoperative'; relabelDialog(dialog.form); }; update(); stage.onchange = update;
         const migrationRequired = !!row && (row.legacy_default || row.state_revision > 0);
         stage.disabled = migrationRequired; reference.disabled = migrationRequired;
-        const note = document.createElement('p'); note.className = 'timepoint-dialog-note'; bindCopy(dialog.form, note, migrationRequired
+        const note = document.createElement('p'); note.className = 'timepoint-dialog-note'; bindCopy(dialog.form, note, () => migrationRequired
             ? ['阶段和术前关联已锁定：已有临床数据的时间点需要显式迁移。名称仍可修改。', 'Stage and reference are locked: populated timepoints require explicit migration. The title can still be changed.']
-            : ['创建空白工作区。切换或关联术前时间点不会自动执行规划。', 'Creates an empty workspace. Switching or linking a preoperative reference does not run planning.']); dialog.form.append(note);
+            : stage.value === 'intraoperative'
+                ? ['创建术中延续工作区；将复用关联术前已保存的图像、结构和可用导板，不会重新执行规划。', 'Creates an intraoperative continuation workspace; saved images, structures and available guide artifacts from the associated preoperative point are reused without rerunning planning.']
+                : ['创建空白工作区。术后可再上传图像并选择规划参考。', 'Creates an empty workspace. Images and a planning reference can be selected later.']); dialog.form.append(note);
         let validation = '';
         const validationNode = document.createElement('p'); validationNode.className = 'timepoint-dialog-error'; validationNode.setAttribute('role', 'alert');
         bindCopy(dialog.form, validationNode, () => ({ title: ['请输入时间点名称。', 'Enter a timepoint title.'],

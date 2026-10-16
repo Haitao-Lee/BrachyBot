@@ -23,7 +23,7 @@ def test_one_timepoint_strip_mounts_above_existing_clinical_panels():
     for panel in ("panelInput", "panelMetrics", "panelViewers", "panelReport"):
         assert html.count(f'id="{panel}"') == 1
     assert html.count('src="static/js/brachybot-timepoints.js?v=') == 1
-    assert html.count('href="static/css/brachybot-timepoints.css?v=1"') == 1
+    assert html.count('href="static/css/brachybot-timepoints.css?v=') == 1
     assert html.index('src="static/js/brachybot-workspace.js') < html.index('src="static/js/brachybot-timepoints.js')
 
 

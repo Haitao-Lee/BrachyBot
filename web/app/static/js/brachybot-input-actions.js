@@ -108,10 +108,20 @@
             // A fresh owned shell already carries config. Reuse only static
             // defaults, never a preceding timepoint's accepted config. Older
             // shells with a projected config marker still need the API read.
-            if (configDefaults && snapshot.resource_shell === true && snapshot.agent?.config
+            if (snapshot.resource_shell === true && snapshot.agent?.config
                 && !snapshot.agent.planning_results?.timepoint_planning_config?.$available) {
                 if (!isCurrent()) return null;
-                return projectSnapshot(snapshot, snapshotConfig(snapshot), configDefaults);
+                return projectSnapshot(snapshot, snapshotConfig(snapshot), configDefaults || {});
+            }
+            // Newly-created empty timepoints have no patient-specific config.
+            // Do not block mounting on the legacy /api/config request (which
+            // can wait for the model service for up to 60 seconds); static
+            // defaults are sufficient and the authoritative config is loaded
+            // later when the user starts an input/planning action.
+            if (snapshot.resource_shell === true && !snapshot.agent?.config
+                && !snapshot.agent?.planning_results?.timepoint_planning_config) {
+                if (!isCurrent()) return null;
+                return projectSnapshot(snapshot, {}, configDefaults || {});
             }
             const data = await readConfig(target, isCurrent);
             if (!data) return null;

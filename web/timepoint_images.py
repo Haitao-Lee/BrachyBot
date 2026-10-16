@@ -81,6 +81,11 @@ def validate_collection(collection, session_id, target_id):
         raise TimepointIntegrityError("The image collection belongs to another workspace")
     revision(collection.get("collection_revision"))
     revision(collection.get("reference_revision"))
+    inherited_source = collection.get("inherited_from_timepoint_id")
+    if inherited_source is not None:
+        timepoint_id(inherited_source)
+        if inherited_source == target_id:
+            raise TimepointIntegrityError("The inherited image collection has an invalid source")
     images, order = collection.get("images"), collection.get("order")
     if (not isinstance(images, dict) or len(images) > MAX_IMAGES or not isinstance(order, list)
             or len(order) != len(set(order)) or set(order) != set(images)):
@@ -95,9 +100,13 @@ def validate_collection(collection, session_id, target_id):
                 or image.get("role") not in ROLES):
             raise TimepointIntegrityError("Invalid image classification or lifecycle")
         prefix = f"inputs/timepoints/{target_id}/images/{identifier}/"
+        inherited_prefix = (f"inputs/timepoints/{inherited_source}/images/{identifier}/"
+                            if inherited_source else None)
+        allowed_prefixes = (prefix, inherited_prefix) if inherited_prefix else (prefix,)
         for key in ("source_path", "volume_path"):
             value = image.get(key)
-            if (not isinstance(value, str) or not value.startswith(prefix) or "\\" in value
+            if (not isinstance(value, str) or not any(value.startswith(candidate) for candidate in allowed_prefixes)
+                    or "\\" in value
                     or ":" in value or any(p in {".", ".."} for p in value.split("/"))):
                 raise TimepointIntegrityError("An image file is not owned by its target and image")
         for key in ("source_sha256", "volume_sha256", "voxel_sha256"):

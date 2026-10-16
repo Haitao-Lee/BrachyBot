@@ -130,7 +130,7 @@
     function suspend(scope) {
         suspended = true;
         requests.forEach(abort => abort.abort()); requests.clear();
-        if (mounted) { const item = entry(mounted); if (item) item.cancelled = true; }
+        if (mounted) { const item = entry(mounted); if (item && !item.ready) item.cancelled = true; }
         mounted = null;
         guideController?.unmount(); guideController = null;
         window.BrachyBotImplants?.suspend?.();
@@ -141,20 +141,29 @@
         assertOwner(workspace, context);
         const scope = Object.freeze({ sessionId: context.sessionId, timepointId: context.timepointId,
             generation: context.generation, uiLanguage: window._i18nLang === 'zh' ? 'zh' : 'en' });
-        const [imageData, configured] = await Promise.all([
-            json(scope, imageUrl(scope)),
-            window.BrachyBotInputPlanningConfig
-                ? window.BrachyBotInputPlanningConfig.prepareSnapshot(workspace, scope, context.isCurrent)
-                : Promise.resolve(workspace),
-        ]);
-        const images = imagesPacket(imageData, scope);
+        const cached = context.cachedItem && context.cachedItem.ready === true ? context.cachedItem : null;
+        let images, configured;
+        if (cached && cached.workspace && cached.images) {
+            // Rebind the cached immutable shell to the new mount generation;
+            // no image/config request or clinical hydration is needed here.
+            images = copy(cached.images); configured = copy(cached.workspace);
+        } else {
+            const [imageData, projected] = await Promise.all([
+                json(scope, imageUrl(scope)),
+                window.BrachyBotInputPlanningConfig
+                    ? window.BrachyBotInputPlanningConfig.prepareSnapshot(workspace, scope, context.isCurrent)
+                    : Promise.resolve(workspace),
+            ]);
+            images = imagesPacket(imageData, scope); configured = projected;
+        }
         workspace = configured;
         if (!workspace) throw fail('stale_timepoint_action');
         if (!context.isCurrent()) throw fail('stale_timepoint_action');
         const saved = workspace.ui?.state || workspace.ui || {};
-        const item = { scope, workspace: copy(workspace), images, cancelled: false, ready: false,
+        const item = { scope, workspace: copy(workspace), images, cancelled: false,
+            ready: cached ? true : false,
             doseMode: modes.includes(saved.viewer?.doseSourceSet) ? saved.viewer.doseSourceSet : 'planned',
-            doseSequence: 0, imageSequence: 0, status: 'loading', statusKind: 'info' };
+            doseSequence: 0, imageSequence: 0, status: cached?.status || 'ready', statusKind: cached?.statusKind || 'info' };
         let committed = false;
         return {
             commit() {
@@ -167,6 +176,11 @@
                 window.BrachyBotInputPlanningConfig?.mounted();
                 renderImages(); renderDoseControls(); renderStatus();
                 mountGuideReview(item);
+                // The DOM/Three.js scene is cleared by suspend(); even a
+                // metadata cache hit must therefore rebind the clinical scene
+                // through the normal fenced hydrator. IndexedDB/server mesh
+                // caches make this path incremental without showing a blank
+                // viewer or re-reading the shell/config endpoints.
                 queueMicrotask(() => { if (scopeIsCurrent(scope)) void hydrate(item); });
                 return true;
             },
@@ -894,8 +908,18 @@
         handlePresentationSave, persistPresentation, restoreActive, reloadImages, registerImage, changeImage, removeImage,
         selectDose, mountControls, register, dependencies, mountedScope: () => mounted && Object.freeze({ ...mounted }),
         continuationSettings, renderImages, imageGroupMenu,
-        resourceState: () => mounted ? { ready: entry(mounted)?.ready === true, status: entry(mounted)?.status,
-            doseMode: entry(mounted)?.doseMode, images: copy(entry(mounted)?.images) } : null });
+        // The controller owns the tab/catalog cache while this bridge owns the
+        // live clinical resource cache.  Expose every same-session entry (not
+        // only the currently mounted one) so a later tab switch can reuse a
+        // completed shell/image transaction after suspend() detached the DOM.
+        resourceState: scope => {
+            const item = scope?.sessionId && scope?.timepointId ? entry(scope) : (mounted && entry(mounted));
+            if (!item) return null;
+            return { ready: item.ready === true, status: item.status, statusKind: item.statusKind,
+                revision: item.workspace?.timepoint_state_revision,
+                workspace: copy(item.workspace), images: copy(item.images),
+                doseMode: item.doseMode };
+        } });
     const ready = () => {
         mountControls(); register();
         window.addEventListener('brachybot:timepoint-runtime-ready', register);
