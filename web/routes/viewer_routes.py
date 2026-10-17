@@ -75,6 +75,7 @@ _MESH_CACHE_MAX_ITEMS = _server_support._MESH_CACHE_MAX_ITEMS
 _MESH_CACHE_ORDER = _server_support._MESH_CACHE_ORDER
 _label_color = _server_support._label_color
 _ctv_label_color = _server_support._ctv_label_color
+_organ_color = _server_support._organ_color
 _validate_path = _server_support._validate_path
 
 
@@ -1485,15 +1486,33 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 for lid in np.unique(oar_array):
                     lid_int = int(lid)
                     if lid_int > 0:
+                        organ_name = (
+                            organ_names.get(lid_int)
+                            or organ_names.get(str(lid_int))
+                            or f"OAR {lid_int}"
+                        )
+                        # Resolve the LUT from the anatomical name here, once
+                        # the authoritative organ map is available. This
+                        # keeps the first label-volume response identical to
+                        # the Data Tree/2D/3D defaults instead of briefly
+                        # showing the numeric-label fallback.
+                        display_color = _organ_color(lid_int, organ_name)
+                        oar_color_lut[lid_int] = list(display_color)
                         organ_meta[lid_int] = {
-                            "name": organ_names.get(lid_int, f"OAR {lid_int}"),
-                            "color": oar_color_lut.get(lid_int, [200, 200, 200]),
+                            "name": organ_name,
+                            "color": list(display_color),
                             "object_id": oar_object_map.get(lid_int, f"structure:oar:{lid_int}"),
                             "voxels": int(
                                 organ_counts.get(lid_int)
                                 or _computed_counts.get(lid_int, 0)
                             ),
                         }
+            # These headers were provisionally populated before metadata was
+            # resolved so older clients still receive a valid response. Write
+            # the final name-aware maps now for current clients and caches.
+            color_lut = {**ctv_color_lut, **oar_color_lut}
+            response.headers['X-Color-LUT'] = _json.dumps(color_lut)
+            response.headers['X-OAR-Color-LUT'] = _json.dumps(oar_color_lut)
             response.headers['X-Organ-Meta'] = _json.dumps(organ_meta)
             response.headers['X-OAR-Source'] = str(
                 agent.memory.retrieve("oar_source", "") or ""

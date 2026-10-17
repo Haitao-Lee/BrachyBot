@@ -2956,8 +2956,12 @@ function requestViewerVisualRefresh(reason = 'ui-change') {
 }
 
 function updateDoseOpacity(val) {
-    state.doseOpacity = val / 100;
+    const numericValue = Math.max(0, Math.min(100, Number.parseInt(val, 10) || 0));
+    state.doseOpacity = numericValue / 100;
+    const output = document.getElementById('doseOpacity3DValue');
+    if (output) output.textContent = `${numericValue}%`;
     requestViewerVisualRefresh('dose-opacity');
+    window.sync3DViewerToolbar?.();
     if (typeof window.scheduleWorkspaceSave === 'function') {
         window.scheduleWorkspaceSave('viewer.dose_opacity');
     }
@@ -3498,7 +3502,12 @@ function reloadOverlays() {
 }
 
 /******** DATA TREE ********/
-const STRUCTURE_PALETTE_VERSION = 3;
+// Version 4 introduces a name-aware anatomical palette for OARs.  The
+// previous palette was assigned by numeric label order, so the same organ
+// could change colour between models/cases and bone could appear bright blue
+// or green.  Keep this versioned so old saved Data Tree presentations can be
+// migrated without touching operator-selected colours.
+const STRUCTURE_PALETTE_VERSION = 4;
 const DEFAULT_CTV_STRUCTURE_COLOR = '#a52b3c';
 const DEFAULT_OAR_STRUCTURE_COLOR = '#4d9de0';
 const DEFAULT_NON_TRAVERSABLE_COLOR = '#e58a48';
@@ -4479,20 +4488,19 @@ function getSelectableIds() {
     return ids;
 }
 
-// Moderately saturated, 3D-Slicer-inspired fallback colors. The backend LUT remains
-// authoritative; this table covers manual/imported structures while metadata
-// is still arriving and uses the same ordering as server_support.py.
+// Muted categorical fallback colours for structures whose anatomy is unknown.
+// Named anatomical OARs use ANATOMICAL_OAR_COLOR_RULES below.  This table is
+// deliberately subdued so numbered/imported masks remain readable without
+// competing with the CTV, dose, seed, or needle colours.
 const ORGAN_COLORS = [
-    '#4d9de0', '#3ccb8f', '#a66de0', '#f2b84b', '#2db7c4', '#e77aa8',
-    '#7fc843', '#5e8fd8', '#e58a48', '#8b7ddb', '#e3c64f', '#38a6a5',
-    '#d66b78', '#63b85c', '#b477d1', '#ed9b72', '#4b88c7', '#c7a83f',
-    '#47b9a8', '#d56ab6', '#93b657', '#6978d1', '#d99c5a', '#45a875',
-    '#c878a0', '#5fa9d8', '#e28168', '#abb248', '#4ea6b8', '#c96f54',
-    '#64bc92', '#a86cc2',
+    '#6f8fa0', '#7d966d', '#897aa3', '#b08d68', '#6a9a91', '#a1768b',
+    '#8e9d6b', '#75879d', '#b17b69', '#7f9e89', '#9b7f9f', '#8d8d67',
+    '#6f8796', '#a18270', '#7d9684', '#9b7890',
 ];
 
-// Version 1 used a deliberately pastel palette. Migrate only those exact
-// application defaults so saved user-selected colors remain untouched.
+// Versions 1-3 used either pastel or numeric-label palettes. Migrate only
+// those exact application defaults so saved user-selected colours remain
+// untouched.  The second group is the old v3 Slicer-inspired table.
 const LEGACY_STRUCTURE_COLORS = new Set([
     '#f2a692', '#8cacd9', '#bc9ccc', '#e8c484', '#87bea8', '#da9ab1',
     '#a6bc7f', '#91b8c3', '#cfa386', '#aaa6d1', '#e5b078', '#7fb4be',
@@ -4500,6 +4508,12 @@ const LEGACY_STRUCTURE_COLORS = new Set([
     '#86c2b8', '#d397c4', '#adbb95', '#969eca', '#dbb999', '#8bb99b',
     '#c49eb2', '#a0b7d3', '#dfaa97', '#b7b57f', '#89afb4', '#cc9784',
     '#9cc5b1', '#be9ac6',
+    '#4d9de0', '#3ccb8f', '#a66de0', '#f2b84b', '#2db7c4', '#e77aa8',
+    '#7fc843', '#5e8fd8', '#e58a48', '#8b7ddb', '#e3c64f', '#38a6a5',
+    '#d66b78', '#63b85c', '#b477d1', '#ed9b72', '#4b88c7', '#c7a83f',
+    '#47b9a8', '#d56ab6', '#93b657', '#6978d1', '#d99c5a', '#45a875',
+    '#c878a0', '#5fa9d8', '#e28168', '#abb248', '#4ea6b8', '#c96f54',
+    '#64bc92', '#a86cc2',
 ]);
 
 function _normalizeStructureColor(color) {
@@ -4560,6 +4574,60 @@ function _structurePaletteColor(labelId, offset = 0) {
     return `#${rgb.map(channel => channel.toString(16).padStart(2, '0')).join('')}`;
 }
 
+// Anatomical defaults are intentionally semantic rather than label-number
+// based. The same stomach, vertebra, or bowel should look the same across
+// model versions and patient cases, while the colours remain distinct in the
+// Data Tree, grayscale CT overlays, and the dark 3D viewport.
+const ANATOMICAL_OAR_COLOR_RULES = [
+    { pattern: /portal\s+vein|splenic\s+vein|vein.*splenic|splenic.*vein/i, color: '#5b91a1' },
+    { pattern: /vertebra|rib|sternum|clavicula|scapula|humerus|femur|sacrum|skull|mandible|pelvis|\bbone\b|spine/i, color: '#d8c79e' },
+    { pattern: /cartilage|disc|meniscus/i, color: '#c3b18d' },
+    { pattern: /stomach|gastric/i, color: '#c77e8d' },
+    { pattern: /esophagus|oesophagus/i, color: '#9279ad' },
+    { pattern: /duodenum/i, color: '#d0895f' },
+    { pattern: /small\s+bowel|small\s+intestine|jejunum|ileum/i, color: '#c39a56' },
+    { pattern: /colon|large\s+bowel/i, color: '#a46f8a' },
+    { pattern: /rectum|sigmoid/i, color: '#b26970' },
+    { pattern: /spleen|splenic/i, color: '#8f566f' },
+    { pattern: /liver|hepatic/i, color: '#87955f' },
+    { pattern: /kidney|renal/i, color: '#b46e58' },
+    { pattern: /pancreas|pancreatic/i, color: '#c3a16a' },
+    { pattern: /gall\s*bladder|gallbladder/i, color: '#7e9d65' },
+    { pattern: /aorta|artery|arterial|carotid|subclavian|brachiocephalic|iliac\s+artery/i, color: '#b86b68' },
+    { pattern: /vein|vena|venous|jugular|iliac\s+vein/i, color: '#5b91a1' },
+    { pattern: /spinal\s+cord|nerve|plexus|brachial/i, color: '#8a72a6' },
+    { pattern: /brain|cerebellum/i, color: '#b8879e' },
+    { pattern: /lung|pulmonary|bronchus/i, color: '#6d9f96' },
+    { pattern: /thyroid/i, color: '#7894a3' },
+    { pattern: /heart|cardiac/i, color: '#a75f69' },
+    { pattern: /muscle|skin|connective|fat/i, color: '#a98976' },
+];
+
+function _normalizedOrganColorName(name) {
+    return String(name || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[_-]+/g, ' ')
+        .replace(/\s+/g, ' ');
+}
+
+function _defaultOarColorForName(name, labelId = 1) {
+    const normalizedName = _normalizedOrganColorName(name);
+    const matched = ANATOMICAL_OAR_COLOR_RULES.find(rule => rule.pattern.test(normalizedName));
+    if (matched) return matched.color;
+    const numeric = Math.max(1, Math.abs(Number(labelId) || 1));
+    return ORGAN_COLORS[(numeric - 1) % ORGAN_COLORS.length];
+}
+
+function _isLegacyOarDefaultColor(color) {
+    const normalized = _normalizeStructureColor(color);
+    return !!normalized && LEGACY_STRUCTURE_COLORS.has(normalized);
+}
+
+// Keep the helper available to the 3D layout module without duplicating the
+// clinical colour rules in several script bundles.
+window.getDefaultOarStructureColor = _defaultOarColorForName;
+
 // Version 2 could persist the generic gray fallback as a CTV default. Migrate
 // exact historical defaults only; current-version user color edits stay intact.
 const LEGACY_CTV_TARGET_COLORS = new Set([
@@ -4604,15 +4672,28 @@ function migrateLegacyStructurePalette(tree) {
             changed = true;
         }
     });
-    // Do not re-run the old OAR upgrade over version-2 operator preferences.
+    // Do not re-run the old category upgrade over version-2 operator
+    // preferences. The anatomical v4 migration below is independent and
+    // only replaces exact colours known to have been generated by BrachyBot.
     if (previousVersion < 2) {
         replaceKnownDefault(tree.oar, new Set(['#8cacd9', '#0ea5e9']), DEFAULT_OAR_STRUCTURE_COLOR);
         replaceKnownDefault(tree.nonTraversable || tree.non_traversable, new Set(['#cfa386', '#fb923c']), DEFAULT_NON_TRAVERSABLE_COLOR);
         replaceKnownDefault(tree.traversable, new Set(['#87bea8', '#0ea5e9']), DEFAULT_TRAVERSABLE_COLOR);
+    }
+    if (previousVersion < 4) {
         (tree.organs || []).forEach((organ, index) => {
-            if (!organ || !LEGACY_STRUCTURE_COLORS.has(_normalizeStructureColor(organ.color))) return;
-            organ.color = _structurePaletteColor(organ.labelId ?? organ.label_id ?? (index + 1));
-            changed = true;
+            if (!organ) return;
+            if (organ.colorCustomized === true) return;
+            const normalized = _normalizeStructureColor(organ.color);
+            if (!normalized || !LEGACY_STRUCTURE_COLORS.has(normalized)) return;
+            const replacement = _defaultOarColorForName(
+                organ.label || organ.name,
+                organ.labelId ?? organ.label_id ?? (index + 1),
+            );
+            if (normalized !== replacement) {
+                organ.color = replacement;
+                changed = true;
+            }
         });
     }
     tree.structurePaletteVersion = STRUCTURE_PALETTE_VERSION;
@@ -4637,6 +4718,11 @@ function updateOrganList(organData, source = '', options = {}) {
     });
     if (!entries.length) return false;
 
+    // Apply the palette migration before copying old node presentation into
+    // the rebuilt list. This is important because metadata hydration can
+    // rebuild OAR nodes after the workspace restore has already completed.
+    migrateLegacyStructurePalette(dataTreeState);
+
     // Preserve existing visibility/opacity state
     const existingState = {};
     const existingByObjectId = {};
@@ -4660,6 +4746,7 @@ function updateOrganList(organData, source = '', options = {}) {
                 opacity: o.opacity,
                 category: o.category,
                 color: o.color,
+                colorCustomized: o.colorCustomized === true,
                 material: o.material,
                 locked: o.locked,
                 standaloneVisible: o.standaloneVisible,
@@ -4719,14 +4806,27 @@ function updateOrganList(organData, source = '', options = {}) {
         // must win over a stale local category after a replan or a restore.
         const cat = serverCategory || existing?.category || pending?.category
             || (uploadedUnknownSource ? 'traversable' : classifyOrgan(name));
-        const finalColor = appearance.color || info.color || _structurePaletteColor(labelId);
+        const defaultColor = _defaultOarColorForName(name, labelId);
+        const appearanceColor = _normalizeStructureColor(appearance.color);
+        const serverColor = _normalizeStructureColor(info.color);
+        // Exact legacy colours are generated defaults, not proof of an
+        // operator choice. Prefer the semantic anatomical colour in that
+        // case, while preserving every other saved/custom colour.
+        const finalColor = appearance.colorCustomized === true && appearanceColor
+            ? appearanceColor
+            : (appearanceColor && !_isLegacyOarDefaultColor(appearanceColor)
+                ? appearanceColor
+                : serverColor && !_isLegacyOarDefaultColor(serverColor)
+                    ? serverColor
+                    : defaultColor);
         dataTreeState.organs.push({
             id: id,
             objectId: stableObjectId,
             nodeId: appearance.nodeId || info.data_tree_node_id || id,
             labelId: parseInt(labelId),
             label: name,
-            color: _normalizeStructureColor(finalColor),
+            color: _normalizeStructureColor(finalColor) || defaultColor,
+            colorCustomized: appearance.colorCustomized === true,
             // Start all OARs visible — users can toggle individual organs
             // via the data tree.
             visible: appearance.visible ?? true,
@@ -6282,6 +6382,7 @@ function openColorPicker(id, swatchEl) {
             return;
         }
         itemState.color = pendingColor;
+        itemState.colorCustomized = true;
         syncCtvWorkspaceColor(id, pendingColor);
         if (_planningTrajectoryForId(id)) {
             _applyPlanningTrajectoryColor(id, pendingColor);
@@ -6383,6 +6484,7 @@ function setDataTreeItemColor(id, color) {
     else itemState = dataTreeState.organs.find(o => o.id === id);
     if (!itemState) return false;
     itemState.color = color;
+    itemState.colorCustomized = true;
     if (_planningTrajectoryForId(id)) _applyPlanningTrajectoryColor(id, color);
     syncCtvWorkspaceColor(id, color);
     if (id.startsWith('organ_') || id.startsWith('ctv_')) {

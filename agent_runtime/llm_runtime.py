@@ -1170,8 +1170,17 @@ class LLMRuntimeMixin:
         if any(str(call.get("tool") or "") == "surgical_guide" for call in calls):
             return calls
         registry = getattr(self, "registry", None)
-        if registry is not None and not registry.get("surgical_guide"):
-            return calls
+        if registry is not None:
+            # A restricted test/runtime registry may not mount every optional
+            # capability.  Missing surgical_guide means the automatic
+            # follow-up cannot be proposed; it must not abort the whole chat
+            # turn with a registry KeyError.
+            try:
+                guide_tool = registry.get("surgical_guide")
+            except (KeyError, LookupError):
+                guide_tool = None
+            if not guide_tool:
+                return calls
         has_full_planning = any(
             str(call.get("tool") or "") == "planning_pipeline"
             and str((call.get("params") or {}).get("step", "full") or "full").lower() == "full"
@@ -1225,7 +1234,13 @@ class LLMRuntimeMixin:
                     'alongside ONLY still-needed operations. Existing successful reads must not '
                     'repeat. Do not infer completion from the absence of a plan or borrow a '
                     'workflow suggestion as permission. This is one bounded contract repair.')
-        if not state.goals and state.plan_errors and not state.repair_issued:
+        # An optional/low-complexity turn may legitimately have no outcome
+        # contract. If a speculative empty record_request_plan call was
+        # rejected, do not turn that optional validation error into a second
+        # mandatory repair round; that used to block an otherwise explicit
+        # timepoint selection.
+        if (not state.goals and state.require_plan and state.plan_errors
+                and not state.repair_issued):
             state.repair_issued = True
             return ('The outcome proposal was rejected: ' + '; '.join(state.plan_errors)
                     + '. Repair record_request_plan using the passive frame clause IDs and ONLY mounted '

@@ -1620,13 +1620,19 @@ async function _reconstructOrgan3D(id, silent = false, scope = null) {
             const organ = (dataTreeState.organs || []).find(o => o.id === nodeId);
             if (organ) {
                 const c = organ.color;
-                if (c.startsWith('#')) color = parseInt(c.slice(1), 16);
+                if (c && c.startsWith('#')) color = parseInt(c.slice(1), 16);
                 else {
-                    const m = c.match(/(\d+)/g);
-                    color = m ? (parseInt(m[0]) << 16 | parseInt(m[1]) << 8 | parseInt(m[2])) : 0x0ea5e9;
+                    const m = String(c || '').match(/(\d+)/g);
+                    color = m ? (parseInt(m[0]) << 16 | parseInt(m[1]) << 8 | parseInt(m[2])) : (
+                        typeof window.getDefaultOarStructureColor === 'function'
+                            ? parseInt(window.getDefaultOarStructureColor(organ.label || organ.name, label_id).slice(1), 16)
+                            : 0x6f8fa0
+                    );
                 }
             } else {
-                color = 0x0ea5e9;
+                color = typeof window.getDefaultOarStructureColor === 'function'
+                    ? parseInt(window.getDefaultOarStructureColor(`OAR ${label_id}`, label_id).slice(1), 16)
+                    : 0x6f8fa0;
             }
         } else if (
             (typeof window.isDataTreeMaskId === 'function'
@@ -1906,6 +1912,10 @@ function _reconstructMask3D(id, silent = false) {
 const scene3D = {    scene: null, camera: null, renderer: null, controls: null,
     meshes: {},       // {organ_id: THREE.Group (with surfaceMesh + wireframe)}
     skinMesh: null,   // CT skin mesh
+    axesScene: null,
+    axesGroup: null,
+    axesVisible: true,
+    backgroundMode: 'dark',
     initialized: false,
     contextLost: false,
     requestRender: null,

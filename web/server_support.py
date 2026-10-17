@@ -3301,11 +3301,10 @@ def _compute_manual_ai_dose(
 
 _CTV_PRIMARY_COLOR = (165, 43, 60)
 
-# The original Slicer-inspired table was intentionally pastel, but it became
-# difficult to scan once 50+ translucent structures overlapped. These colors
-# retain Slicer's anatomical hue variety while using enough chroma to remain
-# distinct in the Data Tree, on grayscale CT, and in the black 3D viewport.
-# Red is deliberately omitted because it is reserved for CTV.
+# Keep the established deterministic fallback for compatibility with older
+# clients and persisted LUT consumers. Named anatomical structures are
+# resolved by _organ_color below, so clinical OARs no longer depend on this
+# numeric table. Red remains reserved for CTV.
 _SLICER_STRUCTURE_COLORS = (
     (77, 157, 224), (60, 203, 143), (166, 109, 224), (242, 184, 75),
     (45, 183, 196), (231, 122, 168), (127, 200, 67), (94, 143, 216),
@@ -3330,6 +3329,62 @@ def _label_color(label_id: int) -> tuple:
     if cycle == 0:
         return base
     factor = (0.84, 1.08, 0.72, 0.94)[(cycle - 1) % 4]
+    return tuple(max(0, min(255, int(round(channel * factor)))) for channel in base)
+
+
+_ANATOMICAL_OAR_COLOR_RULES = (
+    (re.compile(r"portal\s+vein|splenic\s+vein|vein.*splenic|splenic.*vein", re.I), (91, 145, 161)),
+    (re.compile(r"vertebra|rib|sternum|clavicula|scapula|humerus|femur|sacrum|skull|mandible|pelvis|\bbone\b|spine", re.I), (216, 199, 158)),
+    (re.compile(r"cartilage|disc|meniscus", re.I), (195, 177, 141)),
+    (re.compile(r"stomach|gastric", re.I), (199, 126, 141)),
+    (re.compile(r"esophagus|oesophagus", re.I), (146, 121, 173)),
+    (re.compile(r"duodenum", re.I), (208, 137, 95)),
+    (re.compile(r"small\s+bowel|small\s+intestine|jejunum|ileum", re.I), (195, 154, 86)),
+    (re.compile(r"colon|large\s+bowel", re.I), (164, 111, 138)),
+    (re.compile(r"rectum|sigmoid", re.I), (178, 105, 112)),
+    (re.compile(r"spleen|splenic", re.I), (143, 86, 111)),
+    (re.compile(r"liver|hepatic", re.I), (135, 149, 95)),
+    (re.compile(r"kidney|renal", re.I), (180, 110, 88)),
+    (re.compile(r"pancreas|pancreatic", re.I), (195, 161, 106)),
+    (re.compile(r"gall\s*bladder|gallbladder", re.I), (126, 157, 101)),
+    (re.compile(r"aorta|artery|arterial|carotid|subclavian|brachiocephalic|iliac\s+artery", re.I), (184, 107, 104)),
+    (re.compile(r"vein|vena|venous|jugular|iliac\s+vein", re.I), (91, 145, 161)),
+    (re.compile(r"spinal\s+cord|nerve|plexus|brachial", re.I), (138, 114, 166)),
+    (re.compile(r"brain|cerebellum", re.I), (184, 135, 158)),
+    (re.compile(r"lung|pulmonary|bronchus", re.I), (109, 159, 150)),
+    (re.compile(r"thyroid", re.I), (120, 148, 163)),
+    (re.compile(r"heart|cardiac", re.I), (167, 95, 105)),
+    (re.compile(r"muscle|skin|connective|fat", re.I), (169, 137, 118)),
+)
+
+_ANATOMICAL_OAR_FALLBACK_COLORS = (
+    (111, 143, 160), (125, 150, 109), (137, 122, 163), (176, 141, 104),
+    (106, 154, 145), (161, 118, 139), (142, 157, 107), (117, 135, 157),
+    (177, 123, 105), (127, 158, 137), (155, 127, 159), (141, 141, 103),
+    (111, 135, 150), (161, 130, 112), (125, 150, 132), (155, 120, 144),
+)
+
+
+def _organ_color(label_id: int, organ_name: Any = None) -> tuple:
+    """Return a stable anatomy-aware OAR colour with a numeric fallback.
+
+    The label id is not an anatomy identity: different models and uploaded
+    masks can assign different numbers to the same organ. Use the display name
+    when it is available, and retain the old deterministic id fallback for
+    genuinely unmapped structures.
+    """
+    normalized_name = re.sub(
+        r"\s+", " ", str(organ_name or "").strip().lower().replace("_", " ").replace("-", " ")
+    )
+    for pattern, color in _ANATOMICAL_OAR_COLOR_RULES:
+        if pattern.search(normalized_name):
+            return color
+    numeric = max(1, abs(int(label_id or 1)))
+    base = _ANATOMICAL_OAR_FALLBACK_COLORS[(numeric - 1) % len(_ANATOMICAL_OAR_FALLBACK_COLORS)]
+    cycle = (numeric - 1) // len(_ANATOMICAL_OAR_FALLBACK_COLORS)
+    if cycle == 0:
+        return base
+    factor = (0.88, 1.06, 0.76, 0.96)[(cycle - 1) % 4]
     return tuple(max(0, min(255, int(round(channel * factor)))) for channel in base)
 
 

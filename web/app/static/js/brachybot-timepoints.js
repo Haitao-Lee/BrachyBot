@@ -298,6 +298,7 @@
         if (switching) return false;
         if (options.reload !== true && activeId === row.id && mountedId === row.id && record(captureTarget()).state === 'ready') return true;
         const from = captureTarget(), sid = sessionId, currentBridge = bridge;
+        if (options.reload === true) window.dropTimepointClinicalRuntime?.({ sessionId: sid, timepointId: row.id });
         const cached = options.reload !== true ? record({ sessionId: sid, timepointId: row.id }) : null;
         // The workspace bridge completes hydration asynchronously and keeps
         // the immutable resource entry after suspend().  Synchronize that
@@ -363,7 +364,19 @@
             if (committed && typeof committed.then === 'function') throw failure('bridge_commit_must_be_synchronous');
             if (committed === false) throw failure('bridge_commit_refused');
             mountedId = row.id; item.state = 'ready'; switching = false; remember();
-            window.dispatchEvent(new CustomEvent('brachybot:timepoint-changed', { detail: captureTarget() }));
+            const warmRestore = window.__brachybotWarmRestore;
+            window.dispatchEvent(new CustomEvent('brachybot:timepoint-changed', {
+                detail: { ...captureTarget(), warmResourcesRestored: !!warmRestore
+                    && warmRestore.sessionId === sid && warmRestore.timepointId === row.id },
+            }));
+            if (warmRestore?.sessionId === sid && warmRestore?.timepointId === row.id) {
+                // The implant observation module may be loaded independently
+                // of the timepoint bridge. Leave the one-shot view available
+                // until its synchronous change listener has rebuilt the tree.
+                queueMicrotask(() => {
+                    if (window.__brachybotWarmRestore?.timepointId === row.id) window.__brachybotWarmRestore = null;
+                });
+            }
             return true;
         } catch (error) {
             prepared?.dispose?.();
@@ -430,7 +443,12 @@
                 }).catch(showError);
             });
         }
-        if (operation?.kind === 'creating') {
+        // The create response is accepted into the catalog before the
+        // optimistic operation is cleared.  Do not render a second tab for
+        // the same identity during that short hand-off: the pending tab is
+        // only useful while the server has not published the formal row yet.
+        const pendingCreatedId = String(operation?.createdId || '');
+        if (operation?.kind === 'creating' && !(pendingCreatedId && findRow(pendingCreatedId))) {
             const pending = document.createElement('span'); pending.className = 'timepoint-tab timepoint-tab-pending';
             pending.setAttribute('aria-busy', 'true'); pending.dataset.state = 'loading';
             const pendingTitle = document.createElement('span'); pendingTitle.className = 'timepoint-tab-title';
@@ -565,6 +583,10 @@
                 expected_metadata_signature: latest.metadata_signature });
         }
         if (owner.sessionId === sessionId) {
+            // Record the server identity before accepting/rendering the
+            // catalog.  Otherwise render() briefly shows both the optimistic
+            // “Creating…” tab and the newly published formal tab.
+            if (data?.created_timepoint_id) op.createdId = String(data.created_timepoint_id);
             const accepted = acceptCatalog(data, owner.sessionId, catalogGeneration);
             if (!accepted || !findRow(data.created_timepoint_id || id)) await refresh({ activate: false });
             else render();
@@ -593,7 +615,7 @@
         const note = document.createElement('p'); note.className = 'timepoint-dialog-note'; bindCopy(dialog.form, note, () => migrationRequired
             ? ['阶段和术前关联已锁定：已有临床数据的时间点需要显式迁移。名称仍可修改。', 'Stage and reference are locked: populated timepoints require explicit migration. The title can still be changed.']
             : stage.value === 'intraoperative'
-                ? ['创建术中延续工作区；将复用关联术前已保存的图像、结构和可用导板，不会重新执行规划。', 'Creates an intraoperative continuation workspace; saved images, structures and available guide artifacts from the associated preoperative point are reused without rerunning planning.']
+                ? ['创建术中独立工作区；仅保留与术前节点的关联关系，术中图像和临床资源从空白开始，需要重新上传/确认，不会自动复制术前数据。', 'Creates an independent intraoperative workspace; only the link to the preoperative point is kept. Intraoperative images and clinical resources start empty and must be uploaded or confirmed explicitly; preoperative data is not copied automatically.']
                 : ['创建空白工作区。术后可再上传图像并选择规划参考。', 'Creates an empty workspace. Images and a planning reference can be selected later.']); dialog.form.append(note);
         let validation = '';
         const validationNode = document.createElement('p'); validationNode.className = 'timepoint-dialog-error'; validationNode.setAttribute('role', 'alert');

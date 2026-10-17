@@ -3086,6 +3086,78 @@ async function checkSystemReadiness() {
     }
 }
 
+function _3DViewerBackgroundHex(mode) {
+    return mode === 'light' ? 0xf5f7fb : 0x05070d;
+}
+
+function sync3DViewerToolbar() {
+    const mode = (typeof scene3D !== 'undefined' && scene3D.backgroundMode === 'light')
+        ? 'light'
+        : 'dark';
+    document.querySelectorAll('[data-3d-bg]').forEach(button => {
+        const active = button.getAttribute('data-3d-bg') === mode;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    const axesButton = document.getElementById('viewer3dAxesToggle');
+    if (axesButton) {
+        const visible = typeof scene3D === 'undefined' || scene3D.axesVisible !== false;
+        axesButton.classList.toggle('active', visible);
+        axesButton.setAttribute('aria-pressed', visible ? 'true' : 'false');
+    }
+    const meshInput = document.getElementById('meshOpacity3D');
+    const meshOutput = document.getElementById('meshOpacity3DValue');
+    if (meshInput && meshOutput) meshOutput.textContent = `${Math.round(Number(meshInput.value) || 0)}%`;
+    const doseInput = document.getElementById('doseOpacity');
+    const doseOutput = document.getElementById('doseOpacity3DValue');
+    if (doseInput && doseOutput) doseOutput.textContent = `${Math.round(Number(doseInput.value) || 0)}%`;
+}
+
+function set3DViewerBackground(mode, { persist = true, render = true } = {}) {
+    const nextMode = mode === 'light' ? 'light' : 'dark';
+    const hex = _3DViewerBackgroundHex(nextMode);
+    if (typeof scene3D !== 'undefined') {
+        scene3D.backgroundMode = nextMode;
+        if (scene3D.scene && typeof THREE !== 'undefined') {
+            scene3D.scene.background = new THREE.Color(hex);
+        }
+        if (scene3D.renderer) scene3D.renderer.setClearColor(hex, 1);
+        const canvas = document.getElementById('canvas3D');
+        if (canvas) canvas.dataset.backgroundMode = nextMode;
+    }
+    if (typeof state !== 'undefined') {
+        state.viewerSettings = state.viewerSettings || {};
+        state.viewerSettings.viewer3DBackground = nextMode;
+    }
+    sync3DViewerToolbar();
+    if (render && typeof scene3D !== 'undefined') scene3D.requestRender?.(3);
+    if (persist && typeof window.scheduleWorkspaceSave === 'function') {
+        window.scheduleWorkspaceSave('viewer.3d_background');
+    }
+    return nextMode;
+}
+
+function toggle3DAxes(value, { persist = true, render = true } = {}) {
+    const visible = typeof value === 'boolean'
+        ? value
+        : !(typeof scene3D !== 'undefined' && scene3D.axesVisible !== false);
+    if (typeof scene3D !== 'undefined') scene3D.axesVisible = visible;
+    if (typeof state !== 'undefined') {
+        state.viewerSettings = state.viewerSettings || {};
+        state.viewerSettings.show3DAxes = visible;
+    }
+    sync3DViewerToolbar();
+    if (render && typeof scene3D !== 'undefined') scene3D.requestRender?.(3);
+    if (persist && typeof window.scheduleWorkspaceSave === 'function') {
+        window.scheduleWorkspaceSave('viewer.3d_axes');
+    }
+    return visible;
+}
+
+window.set3DViewerBackground = set3DViewerBackground;
+window.toggle3DAxes = toggle3DAxes;
+window.sync3DViewerToolbar = sync3DViewerToolbar;
+
 function init3DScene() {
     const canvas = document.getElementById('canvas3D');
     if (!canvas || scene3D.initialized) return;
@@ -3095,7 +3167,14 @@ function init3DScene() {
     if (placeholder) placeholder.style.display = 'none';
 
     scene3D.scene = new THREE.Scene();
-    // No background - use canvas CSS background (#000) for consistency with 2D viewers
+    const savedBackground = typeof state !== 'undefined'
+        && state.viewerSettings?.viewer3DBackground === 'light'
+        ? 'light'
+        : 'dark';
+    scene3D.backgroundMode = savedBackground;
+    scene3D.scene.background = new THREE.Color(_3DViewerBackgroundHex(savedBackground));
+    scene3D.axesVisible = typeof state === 'undefined'
+        || state.viewerSettings?.show3DAxes !== false;
 
     // The host is a flex child with overlay elements. Establish its stretch
     // contract before measuring it. Measuring first is unsafe during session
@@ -3151,7 +3230,7 @@ function init3DScene() {
     scene3D.renderer.domElement.style.boxSizing = 'border-box';
     scene3D.renderer.domElement.style.display = 'block';
     scene3D.renderer.shadowMap.enabled = false;
-    scene3D.renderer.setClearColor(0x000000, 0);
+    scene3D.renderer.setClearColor(_3DViewerBackgroundHex(savedBackground), 1);
     canvas.appendChild(scene3D.renderer.domElement);
     // WebGL contexts can be lost after a long idle period or GPU pressure.
     // Keep the scene data intact and redraw after the browser restores the
@@ -3286,6 +3365,8 @@ function init3DScene() {
     axesGroup.add(makeLabel('S', new THREE.Vector3(0, 0, 1.5), '#4488ff'));
 
     axesScene.add(axesGroup);
+    scene3D.axesScene = axesScene;
+    scene3D.axesGroup = axesGroup;
     axesScene.add(new THREE.AmbientLight(0xffffff, 0.8));
     const axLight = new THREE.DirectionalLight(0xffffff, 0.6);
     axLight.position.set(2, 3, 4);
@@ -3500,7 +3581,7 @@ function init3DScene() {
 
         // Quaternion copy avoids Euler angle wrapping at +/- PI in the axes
         // helper, which otherwise makes the orientation indicator jump.
-        axesGroup.quaternion.copy(scene3D.camera.quaternion);
+        if (scene3D.axesGroup) scene3D.axesGroup.quaternion.copy(scene3D.camera.quaternion);
 
         // BUG FIX 2026-06-17 (3D viewer empty after planning):
         // If the canvas was 0×0 at init time (panel not visible),
@@ -3532,18 +3613,21 @@ function init3DScene() {
         });
         window.renderPlanningDistanceAnnotations?.();
 
-        // Render axes in bottom-left corner (transparent background)
-        const axisSizeCss = Math.min(100, Math.min(cssWidth, cssHeight) * 0.2);
-        const axisX = 8;
-        const axisY = 8;
-        const axisSize = Math.max(1, Math.round(axisSizeCss));
-        scene3D.renderer.setViewport(axisX, axisY, axisSize, axisSize);
-        scene3D.renderer.setScissor(axisX, axisY, axisSize, axisSize);
-        scene3D.renderer.setScissorTest(true);
-        scene3D.renderer.autoClear = false;
-        scene3D.renderer.render(axesScene, axesCamera);
-        scene3D.renderer.autoClear = true;
-        scene3D.renderer.setScissorTest(false);
+        // Render axes in the bottom-left corner only when enabled.  Do not
+        // clear the main scene while drawing this overlay.
+        if (scene3D.axesVisible !== false && scene3D.axesScene) {
+            const axisSizeCss = Math.min(100, Math.min(cssWidth, cssHeight) * 0.2);
+            const axisX = 8;
+            const axisY = 8;
+            const axisSize = Math.max(1, Math.round(axisSizeCss));
+            scene3D.renderer.setViewport(axisX, axisY, axisSize, axisSize);
+            scene3D.renderer.setScissor(axisX, axisY, axisSize, axisSize);
+            scene3D.renderer.setScissorTest(true);
+            scene3D.renderer.autoClear = false;
+            scene3D.renderer.render(scene3D.axesScene, axesCamera);
+            scene3D.renderer.autoClear = true;
+            scene3D.renderer.setScissorTest(false);
+        }
         scene3D.renderer.setViewport(0, 0, cssWidth, cssHeight);
         scene3D.renderer.setScissor(0, 0, cssWidth, cssHeight);
 
@@ -3641,6 +3725,7 @@ function init3DScene() {
     });
     requestRender(2);
     scene3D.initialized = true;
+    sync3DViewerToolbar();
 
     // Resize changes only the projection and renderer viewport. Camera pose
     // is user state and must remain untouched unless Fit/Reset is explicit.
@@ -5779,7 +5864,10 @@ function forceRender3DViewer() {
 }
 
 function update3DMeshOpacity(val) {
-    const opacity = parseInt(val) / 100;
+    const numericValue = Math.max(0, Math.min(100, Number.parseInt(val, 10) || 0));
+    const opacity = numericValue / 100;
+    const output = document.getElementById('meshOpacity3DValue');
+    if (output) output.textContent = `${numericValue}%`;
     Object.values(scene3D.meshes).forEach(mesh => {
         if (!mesh) return;
         // Do not force visible=true — hidden nodes must stay hidden.
@@ -5818,6 +5906,16 @@ function applyRestoredViewerPresentationControls({ restoreOnly = false } = {}) {
             }
         }
         try { syncDoseColorbarControls(); } catch (_) {}
+    }
+    if (typeof state !== 'undefined') {
+        try {
+            set3DViewerBackground(
+                state.viewerSettings?.viewer3DBackground === 'light' ? 'light' : 'dark',
+                { persist: false, render: false },
+            );
+            toggle3DAxes(state.viewerSettings?.show3DAxes !== false,
+                { persist: false, render: false });
+        } catch (_) {}
     }
     const meshOpacityInput = document.getElementById('meshOpacity3D');
     const meshOpacityValue = Number(meshOpacityInput?.value);
@@ -5899,6 +5997,7 @@ function applyRestoredViewerPresentationControls({ restoreOnly = false } = {}) {
             update3DColorbar(!!state?.doseTexture?.enabled);
         }
     } catch (_) {}
+    sync3DViewerToolbar();
     scene3D?.requestRender?.(3);
     return true;
 }
@@ -7833,7 +7932,12 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
                             source: 'oar',
                             organId: `organ_${lid}`,
                             label: (organ && (organ.label || organ.name)) || `OAR ${lid}`,
-                            color: _parseTreeColorValue(organ && organ.color, 0x4d9de0),
+                            color: _parseTreeColorValue(
+                                organ && organ.color,
+                                typeof window.getDefaultOarStructureColor === 'function'
+                                    ? parseInt(window.getDefaultOarStructureColor(organ && (organ.label || organ.name), lid).slice(1), 16)
+                                    : 0x6f8fa0,
+                            ),
                             opacity: organ && typeof organ.opacity === 'number' ? organ.opacity : undefined,
                             visible2D: organ?.visible2D,
                             visible3D: organ?.visible3D,

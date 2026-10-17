@@ -239,7 +239,7 @@
 /* Links inside chat responses — clickable, styled, open in new tab */
 .chat-msg a[href], .md-table a[href],
 .chat-msg li a, .chat-msg p a, .md-list a, .md-ordered-list a {
-    color: #7c9aff;
+    color: var(--primary);
     text-decoration: none;
     border-bottom: 1px solid rgba(124, 154, 255, 0.32);
     transition: color 0.15s, border-color 0.15s;
@@ -249,8 +249,8 @@
 }
 .chat-msg a[href]:hover, .md-table a[href]:hover,
 .chat-msg li a:hover, .chat-msg p a:hover {
-    color: #a5bcff;
-    border-bottom-color: #a5bcff;
+    color: var(--primary-hover);
+    border-bottom-color: var(--primary-hover);
 }
 
 .chat-msg.system {
@@ -1228,9 +1228,9 @@
     animation: todo-gpu-pulse 1.8s ease-in-out infinite;
 }
 .chat-todo-gpu.cpu {
-    background: rgba(234, 179, 8, 0.12);
-    color: #fbbf24;
-    border-color: rgba(234, 179, 8, 0.32);
+    background: var(--warning-soft);
+    color: var(--warning);
+    border-color: var(--warning-border);
 }
 @keyframes todo-gpu-pulse {
     0%, 100% { opacity: 0.7; }
@@ -1532,13 +1532,13 @@
 .step-header:hover { background: var(--bg-sunken-strong); }
 .step-icon { font-size: 0.7rem; }
 .step-icon.user { color: #a78bfa; }        /* purple */
-.step-icon.thinking { color: #fbbf24; }    /* amber/yellow */
-.step-icon.tool { color: #38bdf8; }        /* sky blue */
-.step-icon.result { color: #34d399; }      /* green */
-.step-icon.error { color: #fb7185; }       /* rose red */
+.step-icon.thinking { color: var(--warning); } /* amber/yellow */
+.step-icon.tool { color: var(--info); }        /* sky blue */
+.step-icon.result { color: var(--success); }   /* green */
+.step-icon.error { color: var(--danger); }     /* rose red */
 .step-icon.assistant { color: #a78bfa; }   /* purple */
 .step-icon.memory { color: #c084fc; }      /* violet */
-.step-icon.review { color: #f59e0b; }      /* orange */
+.step-icon.review { color: var(--warning); }   /* orange */
 
 .step-title { flex: 1; font-size: 0.72rem; color: var(--text); }
 
@@ -1584,7 +1584,7 @@
     animation-play-state: running !important;
 }
 .step-block:has(.step-status.pending) {
-    border-left-color: rgba(245, 158, 11, 0.45);
+    border-left-color: color-mix(in srgb, var(--warning) 45%, transparent);
     animation: step-glow 1.6s ease-in-out infinite;
     animation-play-state: running !important;
 }
@@ -1596,34 +1596,35 @@
 @keyframes pill-breathe {
     0%, 100% {
         background: var(--warning-soft);
-        box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+        box-shadow: 0 0 0 0 transparent;
         transform: scale(1);
     }
     50% {
-        background: rgba(245, 158, 11, 0.28);
-        box-shadow: 0 0 0 6px rgba(245, 158, 11, 0.18), 0 0 14px rgba(245, 158, 11, 0.25);
+        background: color-mix(in srgb, var(--warning) 18%, var(--warning-soft));
+        box-shadow: 0 0 0 6px color-mix(in srgb, var(--warning) 14%, transparent),
+                    0 0 14px color-mix(in srgb, var(--warning) 20%, transparent);
         transform: scale(1.08);
     }
 }
 @keyframes pill-breathe-soft {
-    0%, 100% { background: var(--warning-soft); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); opacity: 0.9; }
-    50% { background: rgba(245, 158, 11, 0.22); box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.10); opacity: 1; }
+    0%, 100% { background: var(--warning-soft); box-shadow: 0 0 0 0 transparent; opacity: 0.9; }
+    50% { background: color-mix(in srgb, var(--warning) 14%, var(--warning-soft)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 8%, transparent); opacity: 1; }
 }
 @keyframes dot-pulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); opacity: 1; transform: scale(1); }
-    50%      { box-shadow: 0 0 0 5px rgba(245, 158, 11, 0.4); opacity: 0.85; transform: scale(1.4); }
+    0%, 100% { box-shadow: 0 0 0 0 transparent; opacity: 1; transform: scale(1); }
+    50%      { box-shadow: 0 0 0 5px color-mix(in srgb, var(--warning) 28%, transparent); opacity: 0.85; transform: scale(1.4); }
 }
 @keyframes dot-pulse-soft {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.10); opacity: 0.88; }
-    50% { box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.24); opacity: 1; }
+    0%, 100% { box-shadow: 0 0 0 0 transparent; opacity: 0.88; }
+    50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 18%, transparent); opacity: 1; }
 }
 @keyframes step-glow {
-    0%, 100% { border-left-color: rgba(245, 158, 11, 0.30); background-color: transparent; }
-    50%      { border-left-color: rgba(245, 158, 11, 0.95); background-color: rgba(245, 158, 11, 0.04); }
+    0%, 100% { border-left-color: color-mix(in srgb, var(--warning) 30%, transparent); background-color: transparent; }
+    50%      { border-left-color: color-mix(in srgb, var(--warning) 65%, transparent); background-color: color-mix(in srgb, var(--warning) 4%, transparent); }
 }
 @keyframes step-glow-soft {
-    0%, 100% { border-left-color: rgba(245, 158, 11, 0.32); background-color: transparent; }
-    50% { border-left-color: rgba(245, 158, 11, 0.65); background-color: rgba(245, 158, 11, 0.025); }
+    0%, 100% { border-left-color: color-mix(in srgb, var(--warning) 32%, transparent); background-color: transparent; }
+    50% { border-left-color: color-mix(in srgb, var(--warning) 48%, transparent); background-color: color-mix(in srgb, var(--warning) 2.5%, transparent); }
 }
 
 .step-body {

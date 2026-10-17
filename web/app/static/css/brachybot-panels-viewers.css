@@ -172,8 +172,8 @@
     background-size: 220% 100%;
     animation: dicom-rt-status-breathe 1.6s ease-in-out infinite;
 }
-.dicom-rt-status.is-warning { border-color: var(--warning, #d6a235); }
-.dicom-rt-status.is-error { border-color: var(--danger, #ef4444); color: var(--danger-ink, #fecaca); }
+.dicom-rt-status.is-warning { border-color: var(--warning); }
+.dicom-rt-status.is-error { border-color: var(--danger); color: var(--danger); }
 @keyframes dicom-rt-status-breathe {
     0%, 100% { background-position: 0% 50%; }
     50% { background-position: 100% 50%; }

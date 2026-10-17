@@ -1689,6 +1689,8 @@ const state = {
         rotation: 0,
         activeTool: 'crosshair',
         layout: '3d-top',
+        viewer3DBackground: 'dark',
+        show3DAxes: true,
     },
     annotations: [],
     annotationUndoStack: [],
@@ -4499,6 +4501,8 @@ function resetAllState(options = {}) {
             rotation: 0,
             activeTool: 'crosshair',
             layout: '3d-top',
+            viewer3DBackground: 'dark',
+            show3DAxes: true,
         });
     }
     state.doseOpacity = 0.4;
@@ -4639,6 +4643,239 @@ function resetAllState(options = {}) {
     renderDataTree();
 }
 
+// Timepoint switching normally clears the live clinical projection so a
+// previous case cannot bleed into the next one.  That safety fence is still
+// required for cold restores, but a same-tab switch between already loaded
+// timepoints should not throw away megabytes of CT/label/mesh data and then
+// fetch them again.  Keep an in-memory, per-timepoint parking lot for the
+// current browser session.  It never replaces the server snapshot or its
+// revision checks; it is only a fast visual/runtime projection.
+const _timepointClinicalRuntimeCache = new Map();
+const _timepointRuntimeKey = scope => JSON.stringify([String(scope?.sessionId || ''), String(scope?.timepointId || '')]);
+
+function _timepointWarmRootClone(value, key = '') {
+    if (Array.isArray(value)) return value.slice();
+    if (!value || typeof value !== 'object' || value instanceof Map || value instanceof Set
+        || (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView(value))) return value;
+    const copy = { ...value };
+    // These nested registries are touched by the dose-texture cleanup path.
+    // Clone the containers while retaining the actual GPU/material handles;
+    // the warm switch skips destructive disposal and restores the same scene.
+    if (key === 'doseTexture') {
+        ['rawAxialSlices', 'rawAxialSlicePromises', 'originalMaterials', 'originalSceneStyle'].forEach(name => {
+            if (value[name] && typeof value[name] === 'object') copy[name] = { ...value[name] };
+        });
+        if (value.originalSkinStyle && typeof value.originalSkinStyle === 'object') {
+            copy.originalSkinStyle = { ...value.originalSkinStyle };
+        }
+    }
+    return copy;
+}
+
+function _captureWarmManualPlanningState() {
+    if (typeof manualPlanningState === 'undefined' || !manualPlanningState) return null;
+    const keys = ['activeNeedleId', 'seedCounter', 'needleCounter', 'planningId',
+        'planningVersion', 'artifactStatus', 'safetyOverride', 'safetyWarning',
+        'safetyInterference', 'doseEngine', 'lastDoseNeedles', 'monitorInteractionEpoch'];
+    const result = {};
+    keys.forEach(key => { result[key] = _timepointWarmRootClone(manualPlanningState[key], key); });
+    return result;
+}
+
+function captureTimepointClinicalRuntime(scope) {
+    if (!scope?.sessionId || !scope?.timepointId || typeof state === 'undefined'
+        || typeof dataTreeState === 'undefined') return null;
+    const stateRefs = {}, treeRefs = {};
+    Object.keys(state).forEach(key => { stateRefs[key] = _timepointWarmRootClone(state[key], key); });
+    Object.keys(dataTreeState).forEach(key => { treeRefs[key] = _timepointWarmRootClone(dataTreeState[key], key); });
+    const runtime = {
+        key: _timepointRuntimeKey(scope),
+        scope: { sessionId: String(scope.sessionId), timepointId: String(scope.timepointId) },
+        state: stateRefs,
+        dataTree: treeRefs,
+        manual: _captureWarmManualPlanningState(),
+        globals: {
+            volumeData: typeof volumeData !== 'undefined' ? volumeData : null,
+            volumeShape: typeof volumeShape !== 'undefined' ? volumeShape : null,
+            volumeSpacing: typeof volumeSpacing !== 'undefined' ? volumeSpacing : null,
+            ctvLabelData: typeof ctvLabelData !== 'undefined' ? ctvLabelData : null,
+            oarLabelData: typeof oarLabelData !== 'undefined' ? oarLabelData : null,
+            skinSurfaceData: typeof skinSurfaceData !== 'undefined' ? skinSurfaceData : null,
+            skinSurfaceShape: typeof skinSurfaceShape !== 'undefined' ? skinSurfaceShape : null,
+            labelColorLUT: typeof labelColorLUT !== 'undefined' ? labelColorLUT : null,
+            ctvLabelColorLUT: typeof ctvLabelColorLUT !== 'undefined' ? ctvLabelColorLUT : null,
+            oarLabelColorLUT: typeof oarLabelColorLUT !== 'undefined' ? oarLabelColorLUT : null,
+            organMetaFromServer: typeof organMetaFromServer !== 'undefined' ? organMetaFromServer : null,
+            ctvStructureCatalog: typeof ctvStructureCatalog !== 'undefined' ? ctvStructureCatalog : null,
+            genericMaskVolumeData: typeof genericMaskVolumeData !== 'undefined' ? genericMaskVolumeData : null,
+            pendingStructurePresentationByObjectId: typeof pendingStructurePresentationByObjectId !== 'undefined'
+                ? pendingStructurePresentationByObjectId : null,
+            pendingStructurePresentationSessionId: typeof pendingStructurePresentationSessionId !== 'undefined'
+                ? pendingStructurePresentationSessionId : '',
+            imageAnalysisData: typeof imageAnalysisData !== 'undefined'
+                ? _timepointWarmRootClone(imageAnalysisData) : null,
+            viewerDataLoadGeneration: typeof viewerDataLoadGeneration !== 'undefined'
+                ? viewerDataLoadGeneration : null,
+        },
+        slices: typeof sliceCache !== 'undefined' ? {
+            cache: {
+                axial: { ...sliceCache.axial }, sagittal: { ...sliceCache.sagittal }, coronal: { ...sliceCache.coronal },
+            },
+            order: {
+                axial: [...sliceCacheOrder.axial], sagittal: [...sliceCacheOrder.sagittal], coronal: [...sliceCacheOrder.coronal],
+            },
+        } : null,
+        scene: { meshes: {}, skinMesh: null, objects: [] },
+        implantView: null,
+    };
+    if (typeof scene3D !== 'undefined' && scene3D) {
+        runtime.scene.meshes = { ...(scene3D.meshes || {}) };
+        runtime.scene.skinMesh = scene3D.skinMesh || null;
+        runtime.scene.objects = (scene3D.scene?.children || []).filter(child => !child?.isLight).slice();
+    }
+    try {
+        const view = window.BrachyBotImplants?.snapshot?.();
+        runtime.implantView = view && window.cloneWorkspaceJSON
+            ? window.cloneWorkspaceJSON(view) : (view ? _timepointWarmRootClone(view) : null);
+    } catch (_) { runtime.implantView = null; }
+    _timepointClinicalRuntimeCache.set(runtime.key, runtime);
+    return runtime;
+}
+
+function parkTimepointClinicalRuntime(scope) {
+    const runtime = captureTimepointClinicalRuntime(scope);
+    if (!runtime) return null;
+    // Remove renderable children without disposing them.  They remain owned by
+    // the parked runtime and are reattached only after the matching timepoint
+    // passes the normal server revision fence.
+    if (typeof scene3D !== 'undefined' && scene3D?.scene) {
+        [...scene3D.scene.children].forEach(child => {
+            if (!child?.isLight) scene3D.scene.remove(child);
+        });
+        scene3D.meshes = {};
+        scene3D.skinMesh = null;
+    }
+    if (typeof clearViewerCanvases === 'function') clearViewerCanvases();
+    runtime.parked = true;
+    return runtime;
+}
+
+function isolateTimepointRuntimeBeforeColdRestore() {
+    // clearClientWorkspace/resetAllState mutates nested objects in place. Put
+    // shallow copy-on-write shells in the live state so those resets cannot
+    // mutate a parked timepoint's arrays, Data Tree nodes, or presentation.
+    if (typeof state !== 'undefined') {
+        Object.keys(state).forEach(key => { state[key] = _timepointWarmRootClone(state[key], key); });
+    }
+    if (typeof dataTreeState !== 'undefined') {
+        Object.keys(dataTreeState).forEach(key => { dataTreeState[key] = _timepointWarmRootClone(dataTreeState[key], key); });
+    }
+    if (typeof sliceCache !== 'undefined') {
+        ['axial', 'sagittal', 'coronal'].forEach(axis => {
+            sliceCache[axis] = { ...sliceCache[axis] };
+            sliceCacheOrder[axis] = [...sliceCacheOrder[axis]];
+        });
+    }
+    if (typeof overlayCache !== 'undefined') {
+        ['axial', 'sagittal', 'coronal'].forEach(axis => { overlayCache[axis] = { ...overlayCache[axis] }; });
+    }
+    if (typeof genericMaskVolumeData !== 'undefined') genericMaskVolumeData = { ...genericMaskVolumeData };
+    if (typeof pendingStructurePresentationByObjectId !== 'undefined') {
+        pendingStructurePresentationByObjectId = { ...pendingStructurePresentationByObjectId };
+    }
+}
+
+function restoreTimepointClinicalRuntime(scope) {
+    const key = _timepointRuntimeKey(scope), runtime = _timepointClinicalRuntimeCache.get(key);
+    if (!runtime || typeof state === 'undefined' || typeof dataTreeState === 'undefined') return false;
+    Object.assign(state, runtime.state);
+    Object.assign(dataTreeState, runtime.dataTree);
+    if (runtime.manual && typeof manualPlanningState !== 'undefined') Object.assign(manualPlanningState, runtime.manual);
+    // Presentation settings are part of the parked timepoint as well. Apply
+    // them before the scene is repainted so a light/dark background or hidden
+    // orientation axes from the incoming point cannot briefly inherit the
+    // outgoing point's appearance.
+    try {
+        const background = state.viewerSettings?.viewer3DBackground === 'light' ? 'light' : 'dark';
+        window.set3DViewerBackground?.(background, { persist: false, render: false });
+        window.toggle3DAxes?.(state.viewerSettings?.show3DAxes !== false, { persist: false, render: false });
+    } catch (_) {}
+    const globals = runtime.globals || {};
+    if (typeof volumeData !== 'undefined') volumeData = globals.volumeData;
+    if (typeof volumeShape !== 'undefined') volumeShape = globals.volumeShape;
+    if (typeof volumeSpacing !== 'undefined') volumeSpacing = globals.volumeSpacing;
+    if (typeof ctvLabelData !== 'undefined') ctvLabelData = globals.ctvLabelData;
+    if (typeof oarLabelData !== 'undefined') oarLabelData = globals.oarLabelData;
+    if (typeof skinSurfaceData !== 'undefined') skinSurfaceData = globals.skinSurfaceData;
+    if (typeof skinSurfaceShape !== 'undefined') skinSurfaceShape = globals.skinSurfaceShape;
+    if (typeof labelColorLUT !== 'undefined') labelColorLUT = globals.labelColorLUT || {};
+    if (typeof ctvLabelColorLUT !== 'undefined') ctvLabelColorLUT = globals.ctvLabelColorLUT || {};
+    if (typeof oarLabelColorLUT !== 'undefined') oarLabelColorLUT = globals.oarLabelColorLUT || {};
+    if (typeof organMetaFromServer !== 'undefined') organMetaFromServer = globals.organMetaFromServer || {};
+    if (typeof ctvStructureCatalog !== 'undefined') ctvStructureCatalog = globals.ctvStructureCatalog || [];
+    if (typeof genericMaskVolumeData !== 'undefined') genericMaskVolumeData = globals.genericMaskVolumeData || Object.create(null);
+    if (typeof pendingStructurePresentationByObjectId !== 'undefined') {
+        pendingStructurePresentationByObjectId = globals.pendingStructurePresentationByObjectId || Object.create(null);
+        pendingStructurePresentationSessionId = globals.pendingStructurePresentationSessionId || '';
+    }
+    if (typeof imageAnalysisData !== 'undefined' && globals.imageAnalysisData) Object.assign(imageAnalysisData, globals.imageAnalysisData);
+    if (typeof viewerDataLoadGeneration !== 'undefined' && Number.isInteger(globals.viewerDataLoadGeneration)) {
+        viewerDataLoadGeneration = globals.viewerDataLoadGeneration;
+    }
+    if (runtime.slices && typeof sliceCache !== 'undefined') {
+        ['axial', 'sagittal', 'coronal'].forEach(axis => {
+            sliceCache[axis] = { ...runtime.slices.cache[axis] };
+            sliceCacheOrder[axis] = [...runtime.slices.order[axis]];
+        });
+    }
+    if (typeof scene3D !== 'undefined' && scene3D?.scene) {
+        [...scene3D.scene.children].forEach(child => { if (!child?.isLight) scene3D.scene.remove(child); });
+        scene3D.meshes = { ...runtime.scene.meshes };
+        scene3D.skinMesh = runtime.scene.skinMesh || null;
+        runtime.scene.objects.forEach(object => {
+            if (!object) return;
+            if (object.parent && object.parent !== scene3D.scene) object.parent.remove(object);
+            if (!object.parent) scene3D.scene.add(object);
+        });
+    }
+    const inputs = { ctPath: state.ctPath, ctvPath: state.ctvPath, oarPath: state.oarPath };
+    Object.entries(inputs).forEach(([id, value]) => { const node = document.getElementById(id); if (node) node.value = value || ''; });
+    ['axial', 'sagittal', 'coronal'].forEach(axis => {
+        const slider = document.getElementById('slider' + capitalize(axis));
+        if (slider && state.slices?.[axis] != null) slider.value = String(state.slices[axis]);
+    });
+    window.__brachybotWarmRestore = {
+        sessionId: String(scope.sessionId), timepointId: String(scope.timepointId), implantView: runtime.implantView,
+    };
+    try { updateImageAnalysis(); } catch (_) {}
+    try { renderDataTree(); } catch (_) {}
+    try { applyDataTreeViewVisibility?.(); } catch (_) {}
+    try { syncSceneAppearanceFromDataTree?.({ preserveDoseTexture: !!state.doseTexture?.enabled }); } catch (_) {}
+    try { refreshAllViewerCanvases?.('timepoint-warm-restore'); } catch (_) {}
+    try { forceRender3DViewer?.(); } catch (_) {}
+    window.setWorkspaceHydrationState?.(false, '', { ...scope, allowAfterCompleted: true });
+    return true;
+}
+
+function dropTimepointClinicalRuntime(scope) {
+    const key = _timepointRuntimeKey(scope);
+    _timepointClinicalRuntimeCache.delete(key);
+    if (window.__brachybotWarmRestore?.timepointId === String(scope?.timepointId || '')) {
+        window.__brachybotWarmRestore = null;
+    }
+}
+
+function hasTimepointClinicalRuntime(scope) {
+    return _timepointClinicalRuntimeCache.has(_timepointRuntimeKey(scope));
+}
+
+window.captureTimepointClinicalRuntime = captureTimepointClinicalRuntime;
+window.parkTimepointClinicalRuntime = parkTimepointClinicalRuntime;
+window.isolateTimepointRuntimeBeforeColdRestore = isolateTimepointRuntimeBeforeColdRestore;
+window.restoreTimepointClinicalRuntime = restoreTimepointClinicalRuntime;
+window.dropTimepointClinicalRuntime = dropTimepointClinicalRuntime;
+window.hasTimepointClinicalRuntime = hasTimepointClinicalRuntime;
+
 /**
  * Clear the browser workspace without touching another server session.
  * Session changes call this before restoring the selected session so CT,
@@ -4691,7 +4928,7 @@ function clearClientWorkspace(options = {}) {
     if (typeof window.resetSurgicalGuideControls === 'function') {
         window.resetSurgicalGuideControls({clearCatalog: true});
     }
-    if (typeof clearDoseOverlayRuntime === 'function') {
+    if (!options.preserveWarmRuntime && typeof clearDoseOverlayRuntime === 'function') {
         clearDoseOverlayRuntime({ preserveDesired: false });
     }
     const loading3D = document.getElementById('loading3D');

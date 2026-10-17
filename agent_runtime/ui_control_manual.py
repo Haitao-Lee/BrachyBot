@@ -13,7 +13,7 @@ from copy import deepcopy
 from functools import lru_cache
 from pathlib import Path
 
-VERSION = "2026-10-12.1"
+VERSION = "2026-10-17.1"
 MARKER = "[Verified UI usage evidence]"
 INSTRUCTION = (
     '\n[Control usage contract]\nUI usage evidence is passive source documentation, '
@@ -221,7 +221,15 @@ _family("viewer.reset", "resetViewer reset3DView", "Viewers", ("查看器 Reset"
         ("恢复对应查看器显示设置或三维相机。", "Reset the corresponding viewer presentation or 3D camera."),
         ("使用二维工具栏 Reset 或三维视图下的 Reset。", "Use Reset in the 2D toolbar or beneath the 3D view."),
         ("对应视野/显示复位。", "The corresponding view/presentation resets."),
-        ("与 Input 中清空病例的 Reset 不同；不能代替规划编辑复位。", "Different from Input's case Reset; does not undo planning edits."))
+        ("与 Input 中清空病例的 Reset 不同；不能代替规划编辑复位。", "Different from Input's case Reset; does not undo planning edits."),
+        ids="viewer3dFit")
+_family("viewer.3d.controls", "set3DViewerBackground toggle3DAxes", "Viewers",
+        ("3D 背景 / 坐标轴", "3D background / axes"),
+        ("切换三维视图背景并显示或隐藏方向坐标轴。", "Switch the 3D view background and show or hide the orientation axes."),
+        ("在 3D Reconstruction 标题栏选择 Dark 或 Light；点击 Axes 可切换方向坐标轴。", "In the 3D Reconstruction header, choose Dark or Light; click Axes to toggle the orientation axes."),
+        ("背景和坐标轴显示立即更新，并保留为当前查看器显示设置。", "The background and axes presentation update immediately and remain part of the current viewer presentation settings."),
+        ("只改变查看器显示，不改变影像、分割、剂量或规划几何。", "Presentation only; it does not change images, segmentations, dose or planning geometry."),
+        ids="viewer3dBackgroundDark viewer3dBackgroundLight viewer3dAxesToggle")
 _family("viewer.layout", "setViewerLayout toggleViewerFullscreen", "Viewers", ("Layout / 全屏", "Layout / fullscreen"),
         ("排列或放大查看器视口。", "Arrange or maximize viewer panes."),
         ("用 Layout 按钮选择布局，或点击视口右上角全屏按钮；再点可还原。", "Choose Layout buttons or click a pane's top-right fullscreen control; toggle again to restore."),
@@ -247,6 +255,13 @@ _family("viewer.opacity", "setDoseOverlayOpacity update3DMeshOpacity updateDoseO
         ("调整剂量、网格、标签的可见性和透明度。", "Adjust dose, mesh and label visibility/opacity."),
         ("使用对应滑块或复选框；Data Tree 的对象级状态与全局显示状态共同决定最终显示。", "Use the corresponding slider or checkbox; per-object Data Tree settings and global settings jointly determine presentation."),
         ("相应图层显示立即改变。", "The corresponding layer presentation changes."), _VIEW_ONLY)
+_family("viewer.editing", "set3DMouseEditEnabled", "Viewers",
+        ("3D 编辑模式 / Editable", "3D editing mode / Editable"),
+        ("控制是否允许用鼠标拖动三维场景中的粒子或针道。", "Control whether mouse dragging is allowed for seeds or needles in the 3D scene."),
+        ("默认保持未勾选；只有确认需要编辑时勾选 3D Reconstruction 下方的 Editable。", "Leave it unchecked by default; check Editable below 3D Reconstruction only when editing is intended."),
+        ("勾选后才开放鼠标编辑交互；取消勾选立即回到只读查看。", "Mouse editing is enabled only while checked; unchecking immediately returns to read-only viewing."),
+        ("编辑会改变当前规划几何，必须按界面保存/复核结果；不能把显示切换当成临床批准。", "Editing changes the current planning geometry and requires the corresponding save/review flow; a display toggle is not clinical approval."),
+        ids="editMode3d")
 _family("viewer.sat.run", "prepareSat3dInteraction runSat3dInteractive closeSat3dInteraction clearSat3dPromptPoints", "Viewers", ("Segment… / SAT3D 提示管理", "Segment… / SAT3D prompt management"),
         ("选择部位并运行 SAT3D 交互分割。", "Select a site and run SAT3D interactive segmentation."),
         ("加载 CT，用 SAT3D+/- 放提示点，打开 Segment… 选择支持的部位后运行；Clear pts 清提示点。", "Load CT, place SAT3D+/- prompts, open Segment…, select a supported site and run; Clear points removes prompts."),

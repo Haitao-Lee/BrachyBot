@@ -517,21 +517,15 @@ class TimepointStoreMixin:
             item = new_record(uuid.uuid4().hex, name)
             item["stage"] = stage
             item["preoperative_timepoint_id"] = preoperative_timepoint_id
-            inherited = None
-            if stage == "intraoperative" and preoperative_timepoint_id:
-                source = self._timepoint_record(catalog, preoperative_timepoint_id)
-                source_snapshot = self.load_timepoint_snapshot(
-                    user_id, session_id, source["id"], include_shared=False,
-                )
-                inherited = _inherited_timepoint_state(source_snapshot, source["id"], item["id"])
             catalog["items"][item["id"]] = item
             catalog["order"].append(item["id"])
-            if inherited is None:
-                result = self._publish_timepoint_catalog(user_id, session_id, catalog, expected_revision)
-            else:
-                self._publish_timepoint_state(user_id, session_id, catalog, item, inherited,
-                    retain_previous=False, clinical_change=False)
-                result = self.list_timepoints(user_id, session_id, include_trashed=True)
+            # An intraoperative point keeps an explicit relationship to its
+            # preoperative source, but it owns an independent, empty clinical
+            # workspace.  Copying the source snapshot here made a newly
+            # created point appear to contain CT, masks, plans and guide
+            # artifacts before the operator had uploaded or confirmed any
+            # intraoperative data.
+            result = self._publish_timepoint_catalog(user_id, session_id, catalog, expected_revision)
             result["created_timepoint_id"] = item["id"]
             return result
 
@@ -545,16 +539,8 @@ class TimepointStoreMixin:
             if revision(expected_revision) != catalog["catalog_revision"]:
                 raise TimepointConflict("The timepoint catalog changed")
             item = self._timepoint_record(catalog, identifier)
-            # A blank preoperative point may be reclassified from the editor
-            # after it was created.  Treat that transition exactly like the
-            # create-time intraoperative continuation: copy the referenced
-            # point's immutable clinical resources into the target state so
-            # CT, masks, guide artifacts and planning results appear in the
-            # target Data Tree immediately.  Presentation-only edits already
-            # made on the target remain owned by the target.
             target_stage = patch.get('stage', item.get('stage'))
             target_source_id = patch.get('preoperative_timepoint_id', item.get('preoperative_timepoint_id'))
-            inherited = None
             if (target_stage == 'intraoperative' and target_source_id
                     and (item.get('stage') != 'intraoperative'
                          or item.get('preoperative_timepoint_id') != target_source_id)):
@@ -563,23 +549,6 @@ class TimepointStoreMixin:
                 source = self._timepoint_record(catalog, target_source_id)
                 if source.get('stage') != 'preoperative':
                     raise TimepointError("An intraoperative timepoint requires a preoperative source")
-                source_snapshot = self.load_timepoint_snapshot(
-                    user_id, session_id, source['id'], include_shared=False,
-                )
-                inherited = _inherited_timepoint_state(source_snapshot, source['id'], item['id'])
-                # Keep target-owned appearance/report state while replacing
-                # its empty clinical resource manifest with the source.
-                if item.get('state_ref') is not None:
-                    existing = self._read_timepoint_state(user_id, session_id, item)
-                    if existing.get('ui'):
-                        inherited['ui'] = copy.deepcopy(existing['ui'])
-                    if existing.get('image_presentations'):
-                        inherited['image_presentations'] = copy.deepcopy(existing['image_presentations'])
-                    if existing.get('report'):
-                        inherited['report'] = copy.deepcopy(existing['report'])
-                    existing_agent = existing.get('agent') or {}
-                    if existing_agent.get('ui_state') is not None:
-                        inherited.setdefault('agent', {})['ui_state'] = copy.deepcopy(existing_agent['ui_state'])
             if "title" in patch:
                 item["title"] = title(patch["title"])
                 item["auto_title"] = False
@@ -593,12 +562,6 @@ class TimepointStoreMixin:
                     item['lifecycle_revision']=item.get('lifecycle_revision',0)+1
             item["revision"] += 1
             item["updated_at"] = time.time()
-            if inherited is not None:
-                self._publish_timepoint_state(
-                    user_id, session_id, catalog, item, inherited,
-                    retain_previous=False, clinical_change=False,
-                )
-                return self.list_timepoints(user_id, session_id, include_trashed=True)
             return self._publish_timepoint_catalog(user_id, session_id, catalog, expected_revision)
 
     def timepoint_delete_impact(self, user_id, session_id, identifier):

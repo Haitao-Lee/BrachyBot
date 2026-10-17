@@ -16,6 +16,7 @@ import uuid
 from contextlib import nullcontext
 
 from web.timepoints import TimepointConflict, TimepointError
+from agent_runtime.request_parse import parse_request
 
 
 @dataclass(frozen=True)
@@ -118,6 +119,54 @@ def readset_dict(context):
             for row in (context.target, *context.dependencies)]
 
 
+def _explicit_unique_stage_selection(store, scope, identifier, message, context):
+    """Allow a plain stage request to select one uniquely identified target.
+
+    ``timepoint_controller`` still has to use the catalog identity selected by
+    the model.  This helper only supplies human-authored target evidence when
+    the request explicitly contains a selection verb and a stage phrase, and
+    the live catalog contains exactly one active timepoint at that stage.  It
+    deliberately does not guess when two intraoperative points exist.
+    """
+    raw_message = str(message or "")
+    if not raw_message or not isinstance(context, CatalogTargetContext):
+        return False
+    if not re.search(r"(?:切换|切到|切至|进入|选择|打开|switch|select|go\s+to|move\s+to)",
+                    raw_message, re.IGNORECASE):
+        return False
+    stage = None
+    if re.search(r"术中(?:的|节点|时间点)?|intra[-\s]?operative", raw_message, re.IGNORECASE):
+        stage = "intraoperative"
+    elif re.search(r"术前(?:的|节点|时间点)?|pre[-\s]?operative", raw_message, re.IGNORECASE):
+        stage = "preoperative"
+    if stage is None or context.target.stage != stage:
+        return False
+    # Match the same clause-level exclusions used by the catalog authorization
+    # path. A quoted log, question, negation, or completed-action description
+    # must never become a new target authorization.
+    try:
+        clauses = parse_request(raw_message).subtasks
+    except Exception:
+        return False
+    if not any(
+        re.search(r"(?:切换|切到|切至|进入|选择|打开|switch|select|go\s+to|move\s+to)", clause.raw, re.IGNORECASE)
+        and re.search(r"术中(?:的|节点|时间点)?|intra[-\s]?operative|术前(?:的|节点|时间点)?|pre[-\s]?operative",
+                      clause.raw, re.IGNORECASE)
+        and not any((clause.negated, clause.conditional, clause.interrogative,
+                     clause.quoted, clause.attributed, clause.completed_action,
+                     clause.excluded))
+        for clause in clauses
+    ):
+        return False
+    try:
+        catalog = store.list_timepoints(scope.owner_id, scope.session_id, include_trashed=False)
+        rows = [row for row in catalog.get("timepoints", [])
+                if row.get("status") == "active" and row.get("stage") == stage]
+    except Exception:
+        return False
+    return len(rows) == 1 and str(rows[0].get("id")) == str(identifier)
+
+
 def _call_json(name, params):
     encoded = json.dumps({"tool": name, "params": params}, ensure_ascii=False,
                          allow_nan=False, sort_keys=True, separators=(",", ":"))
@@ -217,6 +266,9 @@ def require_human_target(agent, scope, identifier, name, params, *, context=None
     local = getattr(agent, "_turn_local", None)
     message = getattr(local, "human_message", "")
     if isinstance(evidence, HumanTimepointTargetEvidence) and evidence.permits(scope, identifier, context, message):
+        return context
+    if (name == "timepoint_controller" and params.get("action") == "select"
+            and _explicit_unique_stage_selection(store, scope, identifier, message, context)):
         return context
     receipt = turn.get("human_timepoint_confirmation")
     if isinstance(receipt, ConfirmedTimepointCall) and receipt.permits(

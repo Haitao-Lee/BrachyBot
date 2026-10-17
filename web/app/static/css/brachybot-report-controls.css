@@ -688,6 +688,65 @@
     text-transform: uppercase;
     letter-spacing: 0.08em;
 }
+.viewer-card-header-3d {
+    gap: 0.7rem;
+}
+.viewer-3d-toolbar {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.22rem;
+    min-width: 0;
+}
+.viewer-3d-tool-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.18rem;
+    padding: 0.12rem 0.22rem;
+    border: 1px solid var(--border-hairline);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--bg-2) 82%, transparent);
+}
+.viewer-3d-tool-caption,
+.viewer-3d-group-label {
+    color: var(--text-dim);
+    font-size: 0.56rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+.viewer-3d-tool-btn {
+    min-height: 21px;
+    padding: 0.16rem 0.38rem;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.57rem;
+    line-height: 1.1;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+}
+.viewer-3d-tool-btn:hover,
+.viewer-3d-tool-btn:focus-visible {
+    background: var(--msg-user-bg);
+    color: var(--primary-ink);
+    border-color: var(--msg-user-border);
+    outline: none;
+}
+.viewer-3d-tool-btn.active {
+    background: color-mix(in srgb, var(--primary) 18%, transparent);
+    color: var(--primary-ink);
+    border-color: color-mix(in srgb, var(--primary) 52%, transparent);
+}
+.viewer-3d-tool-divider {
+    width: 1px;
+    height: 16px;
+    margin: 0 0.15rem;
+    background: var(--border-soft);
+}
 .viewer-card-expand-btn {
     width: 24px; height: 24px;
     background: var(--bg-2);
@@ -803,6 +862,54 @@
     flex-shrink: 0;
     transition: background 220ms ease;
 }
+.viewer-3d-controls {
+    gap: 0.42rem;
+    padding-top: 0.34rem;
+    padding-bottom: 0.34rem;
+}
+.viewer-3d-control-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.42rem;
+    min-height: 25px;
+    padding: 0.15rem 0.42rem;
+    border: 1px solid var(--border-hairline);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--bg-2) 78%, transparent);
+}
+.viewer-3d-control-group-opacity {
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: flex-start;
+}
+.viewer-3d-control-group-edit {
+    margin-left: auto;
+}
+.viewer-3d-range {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    color: var(--text-secondary);
+    font-size: 0.6rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+.viewer-3d-range input[type="range"] {
+    width: clamp(58px, 10vw, 130px);
+    min-width: 58px;
+    flex: 0 1 130px;
+    height: 3px;
+}
+.viewer-3d-range output {
+    min-width: 2.6em;
+    color: var(--text-dim);
+    font-size: 0.56rem;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+.viewer-3d-controls .ctrl-sep {
+    display: none;
+}
 
 /* Viewers toolbar — dark, glassy when in 4-up grid mode */
 .viewers-toolbar {
@@ -832,6 +939,24 @@
     height: 3px;
     accent-color: var(--primary);
     min-width: 60px;
+}
+
+@media (max-width: 720px) {
+    .viewer-card-header-3d {
+        align-items: flex-start;
+        flex-wrap: wrap;
+    }
+    .viewer-3d-toolbar {
+        order: 3;
+        width: 100%;
+        margin-left: 0;
+    }
+    .viewer-3d-control-group-opacity {
+        flex-basis: 100%;
+    }
+    .viewer-3d-control-group-edit {
+        margin-left: 0;
+    }
 }
 
 .ctrl-sep {

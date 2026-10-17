@@ -128,13 +128,21 @@
         return { ui: { state: ui }, ...(report ? { report: copy(report) } : {}) };
     }
     function suspend(scope) {
+        // Park the outgoing clinical projection before resetAllState mutates
+        // it. The server snapshot remains authoritative; this is only an
+        // in-memory fast path for switching back within the same tab.
+        const outgoing = mounted;
+        if (outgoing && typeof window.parkTimepointClinicalRuntime === 'function') {
+            window.parkTimepointClinicalRuntime(outgoing);
+            window.isolateTimepointRuntimeBeforeColdRestore?.();
+        }
         suspended = true;
         requests.forEach(abort => abort.abort()); requests.clear();
         if (mounted) { const item = entry(mounted); if (item && !item.ready) item.cancelled = true; }
         mounted = null;
         guideController?.unmount(); guideController = null;
         window.BrachyBotImplants?.suspend?.();
-        window.suspendTimepointWorkspace(scope);
+        window.suspendTimepointWorkspace({ ...scope, preserveWarmRuntime: true });
         document.querySelectorAll('[data-timepoint-images], [data-timepoint-dose-tree]').forEach(node => node.replaceChildren());
     }
     async function prepare(workspace, context) {
@@ -169,6 +177,9 @@
             commit() {
                 if (!context.isCurrent() || committed) return false;
                 mounted = scope; suspended = false; records.set(key(scope), item); committed = true;
+                const warmRestored = cached && typeof window.restoreTimepointClinicalRuntime === 'function'
+                    ? window.restoreTimepointClinicalRuntime(scope) === true : false;
+                item.warmRestored = warmRestored;
                 // This hook is synchronous and invokes the production controls,
                 // DataTree, manual-state, report editor and appearance restore.
                 const result = window.applyTimepointWorkspaceSnapshot(item.workspace, scope);
@@ -176,12 +187,20 @@
                 window.BrachyBotInputPlanningConfig?.mounted();
                 renderImages(); renderDoseControls(); renderStatus();
                 mountGuideReview(item);
-                // The DOM/Three.js scene is cleared by suspend(); even a
-                // metadata cache hit must therefore rebind the clinical scene
-                // through the normal fenced hydrator. IndexedDB/server mesh
-                // caches make this path incremental without showing a blank
-                // viewer or re-reading the shell/config endpoints.
-                queueMicrotask(() => { if (scopeIsCurrent(scope)) void hydrate(item); });
+                if (warmRestored) {
+                    // The parked runtime already contains CT/labels/meshes,
+                    // slice caches and dose/implant projections. Do not show
+                    // a loading notice or run the cold resource hydrator.
+                    item.ready = true;
+                    item.status = 'ready'; item.statusKind = 'info';
+                    window.setWorkspaceHydrationState?.(false, '', { ...scope, allowAfterCompleted: true });
+                    window.forceRender3DViewer?.();
+                } else {
+                    // A cache shell without a parked runtime (first mount,
+                    // explicit reload, or a full page restore) still follows
+                    // the existing fenced hydration path.
+                    queueMicrotask(() => { if (scopeIsCurrent(scope)) void hydrate(item); });
+                }
                 return true;
             },
             dispose() { if (!committed) item.cancelled = true; },
@@ -916,6 +935,8 @@
             const item = scope?.sessionId && scope?.timepointId ? entry(scope) : (mounted && entry(mounted));
             if (!item) return null;
             return { ready: item.ready === true, status: item.status, statusKind: item.statusKind,
+                runtimeReady: typeof window.hasTimepointClinicalRuntime === 'function'
+                    ? window.hasTimepointClinicalRuntime(item.scope) : false,
                 revision: item.workspace?.timepoint_state_revision,
                 workspace: copy(item.workspace), images: copy(item.images),
                 doseMode: item.doseMode };

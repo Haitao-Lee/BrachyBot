@@ -442,7 +442,22 @@
         const sourceError=sourceDialog?.querySelector('[role="alert"]');if(sourceError?.dataset.errorCode)sourceError.textContent=message(sourceError.dataset.errorCode);
         sourceDialog?.querySelectorAll('label').forEach(label=>{const span=label.querySelector('span'),input=label.querySelector('input');if(span&&input)input.setAttribute('aria-label',span.textContent);});
         if(lastStatus){const copy=lastStatus;status(typeof copy==='function'?copy:Array.isArray(copy)?()=>t(...copy):copy,lastStatusKind);}menu?.remove();menu=null;});
-        window.addEventListener('brachybot:timepoint-changed',()=>{reset();void reload();});
+        window.addEventListener('brachybot:timepoint-changed', event => {
+            const warm = event.detail?.warmResourcesRestored === true
+                && window.__brachybotWarmRestore?.timepointId === event.detail?.timepointId
+                && window.__brachybotWarmRestore?.sessionId === event.detail?.sessionId;
+            const warmView = warm ? window.__brachybotWarmRestore?.implantView : null;
+            reset();
+            if (warm && warmView) {
+                // The observation registry is module-private and its normal
+                // timepoint listener resets it. Rebind the parked immutable
+                // view instead of issuing a second /implants request.
+                const scope = window.BrachyBotTimepoints?.captureSubmission?.();
+                if (scope) accept(scope, warmView);
+                return;
+            }
+            void reload();
+        });
         window.addEventListener('brachybot:timepoint-session-ready',()=>{reset();void reload();});
         document.addEventListener('keydown',event=>{if(event.key==='Escape'){menu?.remove();menu=null;if(draft)cancelDraft();}});
         document.addEventListener('pointerdown',event=>{if(menu && !menu.contains(event.target)){menu.remove();menu=null;}},true);

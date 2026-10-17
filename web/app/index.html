@@ -65,9 +65,9 @@
     <script defer src="static/js/OrbitControls.js?v=8" onerror="console.error('Failed to load OrbitControls.js')"></script>
     <script defer src="static/js/html2canvas.min.js?v=2" onerror="console.error('Failed to load html2canvas.min.js')"></script>
     <link rel="stylesheet" href="static/css/brachybot-theme-layout.css?v=2026101520">
-    <link rel="stylesheet" href="static/css/brachybot-chat-status.css?v=2026101517">
+    <link rel="stylesheet" href="static/css/brachybot-chat-status.css?v=2026101719">
     <link rel="stylesheet" href="static/css/brachybot-panels-viewers.css?v=2026101719">
-    <link rel="stylesheet" href="static/css/brachybot-report-controls.css?v=2026101719">
+    <link rel="stylesheet" href="static/css/brachybot-report-controls.css?v=2026101725">
     <link rel="stylesheet" href="static/css/brachybot-responsive.css?v=4">
     <link rel="stylesheet" href="static/css/brachybot-auth.css?v=9">
     <link rel="stylesheet" href="static/css/brachybot-data-export.css?v=3">
@@ -1538,8 +1538,22 @@
 
                 <!-- 3D -->
                 <div class="viewer-card viewer-card-3d" id="viewer3d" data-view="3d">
-                    <div class="viewer-card-header">
+                    <div class="viewer-card-header viewer-card-header-3d">
                         <span class="viewer-card-label">3D Reconstruction</span>
+                        <div class="viewer-3d-toolbar" role="toolbar" aria-label="3D view controls">
+                            <div class="viewer-3d-tool-group" role="group" aria-label="Background">
+                                <span class="viewer-3d-tool-caption">BG</span>
+                                <button class="viewer-3d-tool-btn active" type="button" id="viewer3dBackgroundDark" data-3d-bg="dark"
+                                        onclick="set3DViewerBackground('dark')" title="Dark background">Dark</button>
+                                <button class="viewer-3d-tool-btn" type="button" id="viewer3dBackgroundLight" data-3d-bg="light"
+                                        onclick="set3DViewerBackground('light')" title="Light background">Light</button>
+                            </div>
+                            <span class="viewer-3d-tool-divider" aria-hidden="true"></span>
+                            <button class="viewer-3d-tool-btn" type="button" id="viewer3dFit" onclick="reset3DView()"
+                                    title="Fit visible objects">Fit</button>
+                            <button class="viewer-3d-tool-btn active" type="button" id="viewer3dAxesToggle"
+                                    onclick="toggle3DAxes()" aria-pressed="true" title="Show orientation axes">Axes</button>
+                        </div>
                         <button class="viewer-card-expand-btn" onclick="toggleViewerFullscreen('3d')" title="Fullscreen"
                                 data-ui-target="viewer.fullscreen" data-ui-command="toggle" data-ui-value="3d"
                                 data-ui-intents="maximize viewer,fullscreen,expand viewer,放大三维查看器,三维全屏">&#9974;</button>
@@ -1572,31 +1586,40 @@
                         </div>
                     </div>
                     <div class="viewer-resize-h" data-view="3d"></div>
-                    <div class="viewer-card-ctrl">
-                        <button class="file-btn" style="padding:2px 5px;font-size:0.55rem;" onclick="reset3DView()" title="Reset camera">&#8635; Reset</button>
-                        <div class="ctrl-sep"></div>
-                        <label style="font-size:0.55rem;">Mesh Op</label>
-                        <input type="range" min="0" max="100" value="70" id="meshOpacity3D" oninput="update3DMeshOpacity(this.value)" style="width:50px;">
-                        <div class="ctrl-sep"></div>
-                        <label class="ctrl-toggle" style="font-size:0.55rem;">
-                            <input type="checkbox" id="wireframe3D" onchange="toggle3DWireframe(this.checked)">
-                            Wire
-                        </label>
-                        <div class="ctrl-sep"></div>
-                        <label class="ctrl-toggle" style="font-size:0.55rem;">
-                            <input type="checkbox" id="skinToggle3D" onchange="toggle3DSkin(this.checked)">
-                            Skin
-                        </label>
-                        <div class="ctrl-sep"></div>
-                        <label>Dose Op</label>
-                        <input type="range" min="0" max="100" value="40" id="doseOpacity" oninput="updateDoseOpacity(this.value)">
-                        <div class="ctrl-sep"></div>
-                        <label class="ctrl-toggle" title="勾选后才允许用鼠标拖动粒子或针道端点">
-                            <input type="checkbox" id="editMode3d" onchange="set3DMouseEditEnabled(this.checked)">
-                            Editable
-                        </label>
-                        <label>Op</label>
-                        <input type="range" min="0" max="100" value="60" id="labelOp3d" oninput="updateLabelImage('3d')">
+                    <div class="viewer-card-ctrl viewer-3d-controls">
+                        <div class="viewer-3d-control-group viewer-3d-control-group-display" role="group" aria-label="Display">
+                            <span class="viewer-3d-group-label">Display</span>
+                            <label class="ctrl-toggle">
+                                <input type="checkbox" id="wireframe3D" onchange="toggle3DWireframe(this.checked)">
+                                Wire
+                            </label>
+                            <label class="ctrl-toggle">
+                                <input type="checkbox" id="skinToggle3D" onchange="toggle3DSkin(this.checked)">
+                                Skin
+                            </label>
+                        </div>
+                        <div class="viewer-3d-control-group viewer-3d-control-group-opacity" role="group" aria-label="Opacity">
+                            <span class="viewer-3d-group-label">Opacity</span>
+                            <label class="viewer-3d-range">
+                                Mesh
+                                <input type="range" min="0" max="100" value="70" id="meshOpacity3D" oninput="update3DMeshOpacity(this.value)">
+                                <output id="meshOpacity3DValue">70%</output>
+                            </label>
+                            <label class="viewer-3d-range">
+                                Dose
+                                <input type="range" min="0" max="100" value="40" id="doseOpacity" oninput="updateDoseOpacity(this.value)">
+                                <output id="doseOpacity3DValue">40%</output>
+                            </label>
+                        </div>
+                        <div class="viewer-3d-control-group viewer-3d-control-group-edit" role="group" aria-label="Editing">
+                            <label class="ctrl-toggle" title="勾选后才允许用鼠标拖动粒子或针道端点">
+                                <input type="checkbox" id="editMode3d" onchange="set3DMouseEditEnabled(this.checked)">
+                                Editable
+                            </label>
+                        </div>
+                        <!-- Compatibility target for saved label opacity and UI API commands.
+                             Labels remain visible by default and are controlled from the Data Tree. -->
+                        <input type="hidden" id="labelOp3d" value="60">
                     </div>
                     <div class="loading-overlay" id="loading3D" role="status" aria-live="polite" aria-atomic="true" hidden
                          aria-hidden="true" data-interaction-mode="passthrough">
@@ -1639,17 +1662,17 @@
 <script defer src="static/js/brachybot-chat-core.js?v=41"></script>
 <script defer src="static/js/brachybot-chat-target.js?v=1"></script>
 <script defer src="static/js/brachybot-chat-todo.js?v=2026101617"></script>
-<script defer src="static/js/brachybot-ui-api.js?v=2026101718"></script>
+<script defer src="static/js/brachybot-ui-api.js?v=2026101725"></script>
 <link rel="stylesheet" href="static/css/brachybot-control-guide.css?v=1">
 <script defer src="static/js/brachybot-control-guide.js?v=1"></script>
 <link rel="stylesheet" href="static/css/brachybot-monitor-dashboard.css?v=8">
 <script defer src="static/js/brachybot-monitor-interaction.js?v=2026101718"></script>
 <script defer src="static/js/brachybot-monitor-dashboard.js?v=9"></script>
 <script defer src="static/js/brachybot-auth.js?v=12"></script>
-<script defer src="static/js/brachybot-viewer-volume.js?v=2026101718"></script>
-<script defer src="static/js/brachybot-viewer-layout.js?v=2026101718"></script>
+<script defer src="static/js/brachybot-viewer-volume.js?v=2026101725"></script>
+<script defer src="static/js/brachybot-viewer-layout.js?v=2026101725"></script>
 <script defer src="static/js/brachybot-depth-peeling.js?v=2"></script>
-<script defer src="static/js/brachybot-3d-manual.js?v=2026101718"></script>
+<script defer src="static/js/brachybot-3d-manual.js?v=2026101725"></script>
 <script defer src="static/js/brachybot-planning-distance-annotations.js?v=3"></script>
 <script defer src="static/js/brachybot-artifact-tree.js?v=2026101515"></script>
 <script defer src="static/js/brachybot-manual-step-results.js?v=2"></script>
@@ -1658,17 +1681,17 @@
 <script defer src="static/js/brachybot-sat3d-interaction.js?v=1"></script>
 <script defer src="static/js/brachybot-surgical-guide.js?v=2026101515"></script>
 <script defer src="static/js/brachybot-visual-annotation.js?v=9"></script>
-<script defer src="static/js/brachybot-dvh-planning.js?v=2026101718"></script>
+<script defer src="static/js/brachybot-dvh-planning.js?v=2026101721"></script>
 <script defer src="static/js/brachybot-report-shell.js?v=2026101515"></script>
 <script defer src="static/js/brachybot-report-plan-tables.js?v=1"></script>
 <script defer src="static/js/brachybot-report-editor.js?v=2026101519"></script>
-<script defer src="static/js/brachybot-workspace.js?v=2026101718"></script>
-<script defer src="static/js/brachybot-timepoints.js?v=2026101602"></script>
+<script defer src="static/js/brachybot-workspace.js?v=2026101725"></script>
+<script defer src="static/js/brachybot-timepoints.js?v=2026101725"></script>
 <link rel="stylesheet" href="static/css/brachybot-implant-observations.css?v=2026101719">
-<script defer src="static/js/brachybot-implant-observations.js?v=1"></script>
+<script defer src="static/js/brachybot-implant-observations.js?v=2026101725"></script>
 <link rel="stylesheet" href="static/css/brachybot-timepoint-workspace.css?v=1">
 <script defer src="static/js/brachybot-guide-registration.js?v=1"></script>
-<script defer src="static/js/brachybot-timepoint-workspace.js?v=2026101602"></script>
+<script defer src="static/js/brachybot-timepoint-workspace.js?v=2026101725"></script>
 <script defer src="static/js/brachybot-session-cache.js?v=4"></script>
 <script defer src="static/js/brachybot-report-export.js?v=50"></script>
 <script defer src="static/js/brachybot-data-export.js?v=5"></script>

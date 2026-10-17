@@ -84,6 +84,27 @@ def is_semantic_first(policy):
     return getattr(policy, 'routing_reason', '') == 'semantic_first_outcomes'
 
 
+def _is_social_clause(clause):
+    """Return whether a frame clause is only a greeting or courtesy phrase.
+
+    The passive frame is intentionally clause-oriented so real restrictions and
+    context cannot disappear from a model proposal.  A standalone greeting is
+    different: treating ``你好，帮我切换…`` as a two-outcome request forces the
+    model to invent a second outcome for a courtesy phrase and can reject an
+    otherwise valid, explicitly targeted UI action.  Keep this allowlist small
+    and exact; anything containing an action, condition, object or question is
+    still a substantive clause.
+    """
+    text = str((clause or {}).get('text') or '').strip().casefold()
+    compact = re.sub(r'[\s\u3000,，。.!！?？:：;；、]+', '', text)
+    return compact in {
+        '你好', '您好', '嗨', '哈喽', 'hello', 'hi', 'hey',
+        '谢谢', '感谢', '多谢', 'thanks', 'thankyou',
+        '早上好', '下午好', '晚上好', '晚安',
+        'goodmorning', 'goodafternoon', 'goodevening',
+    }
+
+
 def outcome_plan_contract_offered(messages, policy):
     """Require a clause-bound plan only when that frame was actually offered.
 
@@ -106,7 +127,13 @@ def outcome_plan_contract_offered(messages, policy):
         # saved-fact answer. Compound clauses need an explicit reconciliation;
         # this threshold grants no operation and is not an intent verdict.
         if isinstance(frame, Mapping) and isinstance(frame.get('clauses'), list):
-            return len(frame['clauses']) > 1
+            clauses = frame['clauses']
+            if frame.get('omitted_clause_count') or any(
+                    isinstance(clause, Mapping) and clause.get('truncated')
+                    for clause in clauses):
+                return True
+            substantive = [clause for clause in clauses if not _is_social_clause(clause)]
+            return len(substantive) > 1
     return False
 
 
