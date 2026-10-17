@@ -573,7 +573,15 @@
                 if (!latest(card) || requestEvent !== card.lastEventId) return false;
                 if (!response.ok || !data.success) throw Object.assign(new Error(data.code),{code:data.code});
                 if (action === 'apply') {
-                    _applyAuthoritativeManualSeeds(data);
+                    // Candidate application moves a seed within the current
+                    // plan.  It is not a needle-topology operation; retain
+                    // any needle records omitted by a partial response.
+                    _applyAuthoritativeManualSeeds(data, {
+                        preserveNeedleTopology: true,
+                        fallbackNeedles: typeof _currentManualNeedles === 'function'
+                            ? _currentManualNeedles()
+                            : [],
+                    });
                     window.clearMonitorFocus?.();
                     window.invalidateSurgicalGuidePresentation?.();
                     window.scheduleWorkspaceSave?.('monitor.candidate.applied');

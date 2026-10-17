@@ -2311,6 +2311,14 @@ function _scheduleCasePlanningRefresh(sessionId, delay = 250, timepointScope = n
                 sessionId: key,
                 timepointScope: owner,
                 autoGenerateGuide: false,
+                // This is a terminal reconciliation triggered by the
+                // planning event, not a user-requested blocking restore.
+                // Keep CT/labels/dose/DVH as the completion boundary and let
+                // optional 3D meshes hydrate in the background.  Without
+                // this flag every retry waited for mesh work, then reloaded
+                // labels and issued another workspace PATCH, which made a
+                // completed case look permanently busy.
+                backgroundRestore: true,
                 retryPending: true,
                 requireCompletedPlanning: true,
                 preserveReport: true,
@@ -2318,8 +2326,21 @@ function _scheduleCasePlanningRefresh(sessionId, delay = 250, timepointScope = n
                 suppressReportFigureCapture: true,
             });
             if (outcome?.backgroundCompletion) {
-                const visual = await outcome.backgroundCompletion;
-                if (visual?.success === false || visual?.stale) outcome = {...outcome, success:false, stage:'viewer_partial'};
+                // `backgroundRestore` deliberately makes optional 3D meshes
+                // non-blocking.  Do not await this promise here: CT/labels,
+                // dose, DVH, and the durable planning result are the terminal
+                // boundary for the chat task.  Waiting for a slow OAR mesh or
+                // guide restore kept the task in a pending state even after
+                // the visible case was already usable.  Keep observing the
+                // promise so failures remain diagnosable without changing the
+                // authoritative terminal outcome.
+                void outcome.backgroundCompletion.then(visual => {
+                    if (visual?.success === false || visual?.stale) {
+                        console.warn('[SSE] optional viewer hydration incomplete:', visual);
+                    }
+                }).catch(error => {
+                    console.warn('[SSE] optional viewer hydration failed:', error);
+                });
             }
         } catch (error) {
             console.error('[SSE] refreshPlanningUI failed:', error);

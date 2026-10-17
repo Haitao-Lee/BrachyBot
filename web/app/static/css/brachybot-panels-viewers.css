@@ -215,8 +215,8 @@
     box-shadow: 0 0 0 3px rgba(79, 124, 255, 0.16), var(--inset-top);
 }
 .form-input::placeholder { color: var(--text-faint); font-size: 0.72rem; }
-#ctvModelSelect.tumor-type-available { color: #4ade80; }
-#ctvModelSelect.tumor-type-unavailable { color: #fb7185; }
+#ctvModelSelect.tumor-type-available { color: var(--success); }
+#ctvModelSelect.tumor-type-unavailable { color: var(--danger); }
 .tumor-type-help {
     min-height: 1.5em;
     margin-top: 4px;
@@ -224,12 +224,12 @@
     font-size: 0.58rem;
     line-height: 1.45;
 }
-.tumor-type-help[data-state="verified"] { color: #86efac; }
-.tumor-type-help[data-state="experimental"] { color: #fcd34d; }
-.tumor-type-help[data-state="unavailable"] { color: #fda4af; }
+.tumor-type-help[data-state="verified"] { color: var(--success); }
+.tumor-type-help[data-state="experimental"] { color: var(--warning); }
+.tumor-type-help[data-state="unavailable"] { color: var(--danger); }
 .tumor-type-help[data-state="disabled"] { color: var(--text-dim); }
-#ctvModelSelect option[data-callable="true"] { color: #4ade80 !important; }
-#ctvModelSelect option[data-callable="false"] { color: #fb7185 !important; }
+#ctvModelSelect option[data-callable="true"] { color: var(--success) !important; }
+#ctvModelSelect option[data-callable="false"] { color: var(--danger) !important; }
 .form-select {
     cursor: pointer;
     background-image:
@@ -311,7 +311,7 @@
     box-shadow: 0 0 0 1px rgba(79, 124, 255, 0.4), 0 4px 12px rgba(79, 124, 255, 0.35) !important;
 }
 .viewers-panel.layout-grid .file-btn:focus-visible {
-    outline: 2px solid #7c9aff;
+    outline: 2px solid var(--primary);
     outline-offset: 1px;
 }
 .viewers-panel.layout-grid #windowPreset,
@@ -333,8 +333,8 @@
     box-shadow: 0 0 0 2px rgba(79, 124, 255, 0.2) !important;
 }
 .viewers-panel.layout-grid #huDisplay {
-    color: #a5bcff !important;
-    background: rgba(79, 124, 255, 0.10);
+    color: var(--primary-ink) !important;
+    background: var(--primary-soft);
     padding: 2px 8px;
     border-radius: 999px;
     font-size: 0.62rem !important;
@@ -540,16 +540,17 @@
     box-shadow: var(--inset-top), var(--shadow-floating);
     transform: translateY(-1px);
 }
-/* Status: sunken tinted — vivid */
+/* Status: use the theme semantic palette so light surfaces stay restrained
+   while dark surfaces retain their higher-contrast status colors. */
 .metric-card.good {
-    background: rgba(16, 185, 129, 0.2);
-    border: 1px solid rgba(16, 185, 129, 0.5);
+    background: var(--success-soft);
+    border: 1px solid var(--success-border);
     box-shadow: var(--inset-bottom), var(--shadow-xs);
 }
-.metric-card.good .metric-val { color: #34d399; font-weight: 700; }
+.metric-card.good .metric-val { color: var(--success); font-weight: 700; }
 .metric-card.warn {
-    background: rgba(245, 158, 11, 0.2);
-    border: 1px solid rgba(245, 158, 11, 0.5);
+    background: var(--warning-soft);
+    border: 1px solid var(--warning-border);
     box-shadow: var(--inset-bottom), var(--shadow-xs);
 }
 .metric-card.bad {

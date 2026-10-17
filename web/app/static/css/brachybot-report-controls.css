@@ -1784,8 +1784,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
     padding: 0 0.4rem; border-radius: 999px; font-size: 0.58rem;
     color: var(--text-secondary); background: var(--bg-3);
 }
-.rp-review-status.is-open { color: var(--warning-ink, #fde68a); }
-.rp-review-status.is-resolved { color: var(--success-ink, #86efac); }
+.rp-review-status.is-open { color: var(--warning); }
+.rp-review-status.is-resolved { color: var(--success); }
 .rp-modal-loading {
     min-height: 72px; display: grid; place-items: center;
     color: var(--text-secondary); animation: rp-modal-breathe 1.6s ease-in-out infinite;

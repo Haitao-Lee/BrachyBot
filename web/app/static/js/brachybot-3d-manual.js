@@ -1,3 +1,25 @@
+// Mouse editing is an explicit operator mode.  Programmatic edits from the
+// chat/UI action layer do not use this gate, so BrachyBot can still move a
+// seed or needle while ordinary viewer clicks remain safe and non-destructive.
+function is3DMouseEditEnabled() {
+    const control = document.getElementById('editMode3d');
+    return control ? control.checked === true : window.__brachybotMouseEditMode3D === true;
+}
+
+function set3DMouseEditEnabled(enabled) {
+    const value = !!enabled;
+    window.__brachybotMouseEditMode3D = value;
+    const control = document.getElementById('editMode3d');
+    if (control) {
+        control.checked = value;
+        control.setAttribute('aria-checked', value ? 'true' : 'false');
+    }
+    return value;
+}
+
+window.is3DMouseEditEnabled = is3DMouseEditEnabled;
+window.set3DMouseEditEnabled = set3DMouseEditEnabled;
+
 function _syncTrajectoryChildren() {
     if (!dataTreeState?.planning) return;
     dataTreeState.planning.trajectories = _dedupeManualTrajectories(
@@ -623,13 +645,41 @@ function _restoreManualPlanningSnapshot(snapshot) {
     if (scene3D.requestRender) scene3D.requestRender(3);
 }
 
-function _applyAuthoritativeManualSeeds(data) {
+// Seed mutations are not topology mutations: a seed edit or a rejected dose
+// update must never interpret an omitted/partial needle list as "delete every
+// other needle".  Keep the server response authoritative for records it does
+// return, while retaining the current/payload topology for this scoped path.
+function _mergeManualNeedleRecords(records, fallbackNeedles = []) {
+    const provided = Array.isArray(records) ? records : [];
+    const fallback = Array.isArray(fallbackNeedles) ? fallbackNeedles : [];
+    if (!fallback.length) return provided;
+    const merged = [];
+    const seen = new Set();
+    provided.forEach(needle => {
+        const id = String(needle?.id || '');
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        merged.push(needle);
+    });
+    fallback.forEach(needle => {
+        const id = String(needle?.id || '');
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        merged.push(needle);
+    });
+    return merged;
+}
+
+function _applyAuthoritativeManualSeeds(data, options = {}) {
     if (!data || !Array.isArray(data.seeds)) return;
-    if (Array.isArray(data.needles)) {
+    const needleRecords = options.preserveNeedleTopology === true
+        ? _mergeManualNeedleRecords(data.needles, options.fallbackNeedles)
+        : data.needles;
+    if (Array.isArray(needleRecords)) {
         const previousNeedles = new Map(
             (dataTreeState.planning.needles || []).map(needle => [String(needle.id), needle]),
         );
-        const authoritativeNeedleIds = new Set(data.needles.map(needle => String(needle.id)));
+        const authoritativeNeedleIds = new Set(needleRecords.map(needle => String(needle.id)));
         Object.entries(scene3D?.meshes || {}).forEach(([id, mesh]) => {
             if (mesh?.userData?.type === 'needle' && !authoritativeNeedleIds.has(String(id))) {
                 scene3D.scene?.remove(mesh);
@@ -640,7 +690,7 @@ function _applyAuthoritativeManualSeeds(data) {
                 if (typeof _removeNeedleHandles === 'function') _removeNeedleHandles(id);
             }
         });
-        dataTreeState.planning.needles = _dedupeManualNeedles(data.needles).map(needle => {
+        dataTreeState.planning.needles = _dedupeManualNeedles(needleRecords).map(needle => {
             const old = previousNeedles.get(String(needle.id)) || {};
             return {
                 ...old,
@@ -791,6 +841,9 @@ async function _commitManualSeeds(reason, rollbackSeeds, rollbackNeedles = null,
                     ? Number(data.planning_version)
                     : payload.planning_version,
                 artifact_status: data?.artifact_status || manualPlanningState.artifactStatus,
+            }, {
+                preserveNeedleTopology: true,
+                fallbackNeedles: rollbackNeedles || payload.needles || _currentManualNeedles(),
             });
         }
         const error = new Error((data && data.error) || `HTTP ${response.status}`);
@@ -799,7 +852,10 @@ async function _commitManualSeeds(reason, rollbackSeeds, rollbackNeedles = null,
         throw error;
     }
     if (!sameSession) return { ...data, stale: true };
-    _applyAuthoritativeManualSeeds(data);
+    _applyAuthoritativeManualSeeds(data, {
+        preserveNeedleTopology: true,
+        fallbackNeedles: payload.needles || _currentManualNeedles(),
+    });
     // A saved seed change creates a child Planning and marks the old guide
     // stale in the backend. The guide geometry itself is unchanged, so do
     // not schedule an automatic guide rebuild for a seed-only edit.
@@ -836,6 +892,9 @@ async function _deleteNeedleAuthoritatively(needleId) {
         // must win over the browser's pre-delete snapshot, otherwise a race
         // can repaint an older Planning after a newer edit was accepted.
         if (sameSession && Array.isArray(data?.seeds) && Array.isArray(data?.needles)) {
+            // This endpoint is an intentional topology mutation.  Its
+            // complete response must be applied exactly; merging the deleted
+            // needle back here would undo the operator's delete.
             _applyAuthoritativeManualSeeds(data);
         }
         const error = new Error((data && data.error) || `HTTP ${response.status}`);
@@ -845,6 +904,8 @@ async function _deleteNeedleAuthoritatively(needleId) {
     }
     if (!sameSession) return { ...data, stale: true };
 
+    // Needle deletion is the one manual mutation where the server is allowed
+    // to remove a record.  Do not use the seed-edit topology merge here.
     _applyAuthoritativeManualSeeds(data);
     // A topology edit invalidates the visible dose immediately. Keeping the
     // old overlay painted until a later recalculation would make the viewer
@@ -882,7 +943,10 @@ async function _persistNeedleGeometryOnly(options = {}) {
     if (!res.ok || !data || !data.success) {
         _cancelStaleManualDoseWork(`${options.reason || 'needle_position_only'}_rejected`);
         if (data && Array.isArray(data.seeds) && Array.isArray(data.needles)) {
-            _applyAuthoritativeManualSeeds(data);
+            _applyAuthoritativeManualSeeds(data, {
+                preserveNeedleTopology: true,
+                fallbackNeedles: payload.needles || _currentManualNeedles(),
+            });
         } else if (options.rollbackSnapshot) {
             _restoreManualPlanningSnapshot(options.rollbackSnapshot);
         } else if (Array.isArray(options.rollbackNeedles)) {
@@ -893,7 +957,10 @@ async function _persistNeedleGeometryOnly(options = {}) {
         error.authoritative = data;
         throw error;
     }
-    _applyAuthoritativeManualSeeds(data);
+    _applyAuthoritativeManualSeeds(data, {
+        preserveNeedleTopology: true,
+        fallbackNeedles: payload.needles || _currentManualNeedles(),
+    });
     _syncSeedsOverlayFromDataTree();
     if (typeof window.invalidateSurgicalGuidePresentation === 'function') {
         window.invalidateSurgicalGuidePresentation({ regenerateForManualPlan: true });
@@ -1666,7 +1733,10 @@ async function _runManualDoseJob(job) {
                 && hasAuthoritativeGeometry
                 && (e.authoritative.seeds.length === 0 || e.authoritative.needles.length === 0);
             if (hasAuthoritativeGeometry && !emptyAuthoritativeGeometry) {
-                _applyAuthoritativeManualSeeds(e.authoritative);
+                _applyAuthoritativeManualSeeds(e.authoritative, {
+                    preserveNeedleTopology: true,
+                    fallbackNeedles: payload.needles || _currentManualNeedles(),
+                });
             } else if (!geometryPreserved && payload.previous_snapshot) {
                 _restoreManualPlanningSnapshot(payload.previous_snapshot);
             } else if (!geometryPreserved && payload.reproject_seeds) {
@@ -3690,6 +3760,7 @@ function init3DScene() {
     const beginNeedleHandleDrag = (event) => {
         if(window.BrachyBotImplants?.owns3DPointer(event))return false;
         if (event.button !== 0 || !scene3D.camera) return false;
+        if (!is3DMouseEditEnabled()) return false;
         if (pendingNeedleHandle) {
             event.preventDefault();
             event.stopImmediatePropagation();
@@ -3833,6 +3904,10 @@ function init3DScene() {
         if(window.BrachyBotImplants?.owns3DPointer(event))return;
         if (event.button !== 0) return; // Only left click
         if (event.__brachyNeedleHandle) return;
+        // OrbitControls may still handle this click for camera navigation,
+        // but no planning object is selectable/draggable until the explicit
+        // Editable mode is enabled.
+        if (!is3DMouseEditEnabled()) return;
 
         if (!updatePointerNdc(event)) return;
 
@@ -5732,12 +5807,7 @@ function applyRestoredViewerPresentationControls({ restoreOnly = false } = {}) {
     // copy it into the controls before reading the controls back below.
     if (restoreOnly && typeof state !== 'undefined') {
         const savedLabel = state.labelImage?.['3d'];
-        const labelShowInput = document.getElementById('labelShow3d');
         const labelOpacityInput = document.getElementById('labelOp3d');
-        if (savedLabel?.configured === true
-            && typeof savedLabel.visible === 'boolean' && labelShowInput) {
-            labelShowInput.checked = savedLabel.visible;
-        }
         if (savedLabel && Number.isFinite(Number(savedLabel.opacity)) && labelOpacityInput) {
             labelOpacityInput.value = String(Math.round(Number(savedLabel.opacity) * 100));
         }
@@ -5755,7 +5825,7 @@ function applyRestoredViewerPresentationControls({ restoreOnly = false } = {}) {
         ? Math.max(0, Math.min(1, meshOpacityValue / 100))
         : 0.7;
     const wireframe = document.getElementById('wireframe3D')?.checked === true;
-    const labelShow = document.getElementById('labelShow3d')?.checked !== false;
+    const labelShow = true;
     const labelOpacityValue = Number(document.getElementById('labelOp3d')?.value);
     const labelOpacity = Number.isFinite(labelOpacityValue)
         ? Math.max(0, Math.min(1, labelOpacityValue / 100))
@@ -5763,7 +5833,7 @@ function applyRestoredViewerPresentationControls({ restoreOnly = false } = {}) {
 
     if (typeof state !== 'undefined') {
         state.labelImage = state.labelImage || {};
-        state.labelImage['3d'] = { configured: true, visible: labelShow, opacity: labelOpacity };
+        state.labelImage['3d'] = { configured: true, visible: true, opacity: labelOpacity };
         // `doseOpacity` is shared by the legacy 3D dose slider and the dose
         // overlay renderer.  Keep state aligned even when no dose mesh exists
         // yet; the next loader will read the same value.
@@ -8045,6 +8115,13 @@ function _clampDoseOverlayOpacity(value, fallback = 0.4) {
     return Math.max(0, Math.min(1, numeric));
 }
 
+function _doseOverlayVisibleFor2D() {
+    if (typeof window.isPlanningDoseOverlayVisible2D === 'function') {
+        return window.isPlanningDoseOverlayVisible2D();
+    }
+    return !!state.doseOverlay && state.doseOverlay.visible !== false;
+}
+
 // Dose opacity is a presentation property of the overlay layer, not a pixel
 // property of an individual cached slice. Keeping it on the canvas guarantees
 // that cache hits, asynchronous slice arrivals, and rapid slider scrubbing all
@@ -9647,7 +9724,7 @@ async function fetchDoseOverlaySlice(axis, sliceIndex) {
 // Fires-and-forgets ±PRELOAD_RANGE slices around the current position.
 let _dosePreloadTimer = null;
 function preloadDoseSlices(axis, centerSlice) {
-    if (!state.doseOverlay || !state.doseOverlay.visible) return;
+    if (!state.doseOverlay || !_doseOverlayVisibleFor2D()) return;
     if (_dosePreloadTimer) clearTimeout(_dosePreloadTimer);
     _dosePreloadTimer = setTimeout(() => {
         // Do not issue speculative requests while the pointer is moving.
@@ -9669,7 +9746,7 @@ function preloadDoseSlices(axis, centerSlice) {
 // Render dose overlay onto a SEPARATE canvas layer (not the CT canvas).
 // This prevents the CT's putImageData from clearing the old dose.
 function renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData) {
-    if (!state.doseOverlay || !state.doseOverlay.visible || !sliceData) return;
+    if (!state.doseOverlay || !_doseOverlayVisibleFor2D() || !sliceData) return;
     // NOTE: staleness guard removed — the caller (renderDoseForCurrentSlice)
     // already ensures sliceIndex matches state.slices[axis]. Keeping the
     // guard caused a race condition where async fetch callbacks were
@@ -9821,19 +9898,30 @@ function renderDoseOverlayVolumeOnLayer(doseCanvas, axis, sliceIndex, overlay = 
 
 function toggleDoseOverlayVisibility() {
     if (!state.doseOverlay) return;
-    state.doseOverlay.visible = !state.doseOverlay.visible;
+    const node = dataTreeState?.planning?.doseOverlay;
+    const next = node ? node.visible2D === false : state.doseOverlay.visible === false;
+    if (node) {
+        node.visible2D = next;
+        state.doseOverlay.visible2D = next;
+    } else {
+        state.doseOverlay.visible = next;
+    }
+    const effectiveVisible = _doseOverlayVisibleFor2D();
+    if (typeof applyDataTreeViewVisibility === 'function') {
+        applyDataTreeViewVisibility();
+    }
     renderDataTree();
 
     // Show/hide colorbars in all 3 2D viewers (axial, sagittal, coronal).
     // Labels are in Gy; values are linear (0 → max), 5 evenly-spaced ticks.
-    updateDoseColorbars(state.doseOverlay.visible, state.doseOverlay.doseMin, state.doseOverlay.doseMax);
+    updateDoseColorbars(effectiveVisible, state.doseOverlay.doseMin, state.doseOverlay.doseMax);
 
     // Show/hide contour canvases
     ['axial', 'coronal', 'sagittal'].forEach(axis => {
         const contourCanvas = document.getElementById('contourCanvas' + capitalize(axis));
         if (contourCanvas) {
-            contourCanvas.style.display = state.doseOverlay.visible ? 'block' : 'none';
-            if (!state.doseOverlay.visible) {
+            contourCanvas.style.display = effectiveVisible ? 'block' : 'none';
+            if (!effectiveVisible) {
                 const ctx = contourCanvas.getContext('2d');
                 ctx.clearRect(0, 0, contourCanvas.width, contourCanvas.height);
             }
@@ -9844,6 +9932,9 @@ function toggleDoseOverlayVisibility() {
     updateSlice('axial', state.slices.axial);
     updateSlice('coronal', state.slices.coronal);
     updateSlice('sagittal', state.slices.sagittal);
+    if (typeof _scheduleDataTreeSave === 'function') {
+        _scheduleDataTreeSave('viewer.visibility:dose_overlay', 'dose_overlay');
+    }
 }
 
 function setDoseOverlayOpacity(val) {
@@ -9896,7 +9987,7 @@ function _clearDoseContourRetry(axis, sliceIndex) {
 }
 
 function _scheduleDoseContourRetry(axis, sliceIndex) {
-    if (!state.doseOverlay || !state.doseOverlay.visible) return;
+    if (!state.doseOverlay || !_doseOverlayVisibleFor2D()) return;
     if (_doseContourDesiredSlice[axis] !== Number(sliceIndex)
         || Number(state.slices?.[axis]) !== Number(sliceIndex)) return;
     const key = _doseContourRetryKey(axis, sliceIndex);
@@ -9906,7 +9997,7 @@ function _scheduleDoseContourRetry(axis, sliceIndex) {
     const delay = [90, 220, 500][count] || 500;
     const timer = setTimeout(() => {
         _doseContourRetryTimers.delete(key);
-        if (!state.doseOverlay || !state.doseOverlay.visible) return;
+        if (!state.doseOverlay || !_doseOverlayVisibleFor2D()) return;
         if (_doseContourDesiredSlice[axis] !== Number(sliceIndex)
             || Number(state.slices?.[axis]) !== Number(sliceIndex)) return;
         triggerDoseContourRender(axis, Number(sliceIndex));
@@ -10397,7 +10488,7 @@ function renderDoseContourOnCanvas(canvas, axis, sliceIndex) {
 
 // Trigger contour rendering when dose overlay is visible
 function triggerDoseContourRender(axis, sliceIndex) {
-    if (!state.doseOverlay || !state.doseOverlay.visible) return;
+    if (!state.doseOverlay || !_doseOverlayVisibleFor2D()) return;
     const normalizedSlice = Math.max(0, Math.trunc(Number(sliceIndex) || 0));
     _doseContourDesiredSlice[axis] = normalizedSlice;
     const renderToken = (_doseContourRenderTokens[axis] || 0) + 1;
@@ -10508,7 +10599,7 @@ function triggerDoseContourRender(axis, sliceIndex) {
 // previously created six additional requests per axis on every slider tick.
 const _doseContourPreloadTimers = new Map();
 function preloadDoseContourSlices(axis, centerSlice) {
-    if (!state.doseOverlay || !state.doseOverlay.visible) return;
+    if (!state.doseOverlay || !_doseOverlayVisibleFor2D()) return;
     if (_doseContourPreloadTimers.has(axis)) clearTimeout(_doseContourPreloadTimers.get(axis));
     const timer = setTimeout(() => {
         _doseContourPreloadTimers.delete(axis);

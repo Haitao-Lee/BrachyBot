@@ -1425,6 +1425,13 @@ function _doseSliceRetryKey(axis, sliceIndex) {
     return `${axis}_${sliceIndex}`;
 }
 
+function _isDoseOverlayVisibleIn2D() {
+    if (typeof window.isPlanningDoseOverlayVisible2D === 'function') {
+        return window.isPlanningDoseOverlayVisible2D();
+    }
+    return !!state.doseOverlay && state.doseOverlay.visible !== false;
+}
+
 function _clearDoseSliceRetry(axis, sliceIndex) {
     const key = _doseSliceRetryKey(axis, sliceIndex);
     const timer = _doseSliceRetryTimers.get(key);
@@ -1434,7 +1441,7 @@ function _clearDoseSliceRetry(axis, sliceIndex) {
 }
 
 function _scheduleDoseSliceRetry(axis, sliceIndex) {
-    if (!state.doseOverlay || !state.doseOverlay.visible) return;
+    if (!state.doseOverlay || !_isDoseOverlayVisibleIn2D()) return;
     if (_doseDesiredSlice[axis] !== sliceIndex || state.slices[axis] !== sliceIndex) return;
     const key = _doseSliceRetryKey(axis, sliceIndex);
     const count = Number(_doseSliceRetryCounts.get(key) || 0);
@@ -1443,7 +1450,7 @@ function _scheduleDoseSliceRetry(axis, sliceIndex) {
     const delay = [80, 180, 400][count] || 400;
     const timer = setTimeout(() => {
         _doseSliceRetryTimers.delete(key);
-        if (!state.doseOverlay || !state.doseOverlay.visible) return;
+        if (!state.doseOverlay || !_isDoseOverlayVisibleIn2D()) return;
         if (_doseDesiredSlice[axis] !== sliceIndex || state.slices[axis] !== sliceIndex) return;
         renderDoseForCurrentSlice(axis, sliceIndex);
     }, delay);
@@ -1731,7 +1738,7 @@ function syncDoseOverlayFrameVisibility(axis, sliceIndex, targetCanvas = null) {
     const doseMatches = doseCanvas.dataset.requestedSlice === expectedSlice
         && doseCanvas.dataset.renderedSlice === expectedSlice
         && doseCanvas.dataset.dosePending !== 'true';
-    const ready = !!(state.doseOverlay?.visible && baseMatches && doseMatches);
+    const ready = !!(_isDoseOverlayVisibleIn2D() && baseMatches && doseMatches);
 
     // Keep the canvas in the layer stack so its geometry stays synchronized,
     // but never expose a dose frame that belongs to a different CT slice.
@@ -1780,7 +1787,7 @@ function mark2DViewerBaseSliceRendered(axis, sliceIndex) {
 window.mark2DViewerBaseSliceRendered = mark2DViewerBaseSliceRendered;
 
 function renderDoseForCurrentSlice(axis, sliceIndex) {
-    if (!state.doseOverlay || !state.doseOverlay.visible) {
+    if (!state.doseOverlay || !_isDoseOverlayVisibleIn2D()) {
         const existingCanvas = document.getElementById('doseOverlayCanvas' + capitalize(axis));
         if (existingCanvas) existingCanvas.style.visibility = 'hidden';
         const doseNode = (
@@ -1865,7 +1872,7 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
         const renderEpoch = _doseOverlayRenderEpoch;
         fetchDoseOverlaySlice(axis, sliceIndex).then(sliceData => {
             const isCurrentRequest = state.doseOverlay
-                && state.doseOverlay.visible
+                && _isDoseOverlayVisibleIn2D()
                 && _doseDesiredSlice[axis] === sliceIndex
                 && state.slices[axis] === sliceIndex
                 && renderEpoch === _doseOverlayRenderEpoch
@@ -1879,7 +1886,7 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
                     syncDoseOverlayFrameVisibility(axis, sliceIndex, doseCanvas);
                     _clearDoseSliceRetry(axis, sliceIndex);
                 } catch (e) { console.warn(`[dose] render error after fetch:`, e); }
-            } else if (sliceData && state.doseOverlay && state.doseOverlay.visible
+            } else if (sliceData && state.doseOverlay && _isDoseOverlayVisibleIn2D()
                 && _doseDesiredSlice[axis] === sliceIndex
                 && state.slices[axis] === sliceIndex
                 && doseCanvas.isConnected) {
@@ -2349,6 +2356,12 @@ function _ensureSeed2DInteraction(sliceCanvas, view) {
     sliceCanvas.addEventListener('pointerdown', event => {
         if(window.BrachyBotImplants?.interactionMode())return;
         if (event.button !== 0 || _seed2DDrag) return;
+        // Keep 2D and 3D editing under the same explicit safety switch.  The
+        // context menu and chat/UI actions remain available when this is off;
+        // only accidental mouse dragging is blocked.
+        if (typeof window.is3DMouseEditEnabled === 'function'
+            ? !window.is3DMouseEditEnabled()
+            : document.getElementById('editMode3d')?.checked !== true) return;
         const hit = hitSeed(event);
         if (!hit) return;
         const seed = dataTreeState.planning.seeds.find(item => item.id === hit.seedId);

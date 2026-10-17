@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en" data-theme="light">
 <head>
@@ -65,8 +66,8 @@
     <script defer src="static/js/html2canvas.min.js?v=2" onerror="console.error('Failed to load html2canvas.min.js')"></script>
     <link rel="stylesheet" href="static/css/brachybot-theme-layout.css?v=2026101520">
     <link rel="stylesheet" href="static/css/brachybot-chat-status.css?v=2026101517">
-    <link rel="stylesheet" href="static/css/brachybot-panels-viewers.css?v=17">
-    <link rel="stylesheet" href="static/css/brachybot-report-controls.css?v=2026101515">
+    <link rel="stylesheet" href="static/css/brachybot-panels-viewers.css?v=2026101719">
+    <link rel="stylesheet" href="static/css/brachybot-report-controls.css?v=2026101719">
     <link rel="stylesheet" href="static/css/brachybot-responsive.css?v=4">
     <link rel="stylesheet" href="static/css/brachybot-auth.css?v=9">
     <link rel="stylesheet" href="static/css/brachybot-data-export.css?v=3">
@@ -1338,8 +1339,8 @@
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="setViewerTool('zoombox')" id="toolZoombox">&#128269; Zoom</button>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="setViewerTool('annotate')" id="toolAnnotate">&#9998; Draw</button>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="setViewerTool('eraser')" id="toolEraser">&#9003; Erase</button>
-                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;color:#4ade80;" onclick="setViewerTool('sat3d_positive')" id="toolSat3dPositive" title="SAT3D positive point" data-i18n-title-zh="在肿瘤内放置正点" data-i18n-title-en="Place a positive point inside the tumor">SAT3D +</button>
-                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;color:#fb7185;" onclick="setViewerTool('sat3d_negative')" id="toolSat3dNegative" title="SAT3D negative point" data-i18n-title-zh="在需要排除的区域放置负点" data-i18n-title-en="Place a negative point in an excluded region">SAT3D -</button>
+                    <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;color:var(--success);" onclick="setViewerTool('sat3d_positive')" id="toolSat3dPositive" title="SAT3D positive point" data-i18n-title-zh="在肿瘤内放置正点" data-i18n-title-en="Place a positive point inside the tumor">SAT3D +</button>
+                    <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;color:var(--danger);" onclick="setViewerTool('sat3d_negative')" id="toolSat3dNegative" title="SAT3D negative point" data-i18n-title-zh="在需要排除的区域放置负点" data-i18n-title-en="Place a negative point in an excluded region">SAT3D -</button>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="clearSat3dPromptPoints()" id="toolSat3dClear" title="Clear SAT3D points" data-i18n-zh="清除点" data-i18n-en="Clear points">Clear points</button>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="prepareSat3dInteraction()" id="toolSat3dSettings" data-i18n-zh="交互分割" data-i18n-en="Segment…">Segment…</button>
                 <div class="ctrl-sep" style="height:16px;"></div>
@@ -1590,9 +1591,9 @@
                         <label>Dose Op</label>
                         <input type="range" min="0" max="100" value="40" id="doseOpacity" oninput="updateDoseOpacity(this.value)">
                         <div class="ctrl-sep"></div>
-                        <label class="ctrl-toggle">
-                            <input type="checkbox" id="labelShow3d" onchange="updateLabelImage('3d')" checked>
-                            Label
+                        <label class="ctrl-toggle" title="勾选后才允许用鼠标拖动粒子或针道端点">
+                            <input type="checkbox" id="editMode3d" onchange="set3DMouseEditEnabled(this.checked)">
+                            Editable
                         </label>
                         <label>Op</label>
                         <input type="range" min="0" max="100" value="60" id="labelOp3d" oninput="updateLabelImage('3d')">
@@ -1638,32 +1639,32 @@
 <script defer src="static/js/brachybot-chat-core.js?v=41"></script>
 <script defer src="static/js/brachybot-chat-target.js?v=1"></script>
 <script defer src="static/js/brachybot-chat-todo.js?v=2026101617"></script>
-<script defer src="static/js/brachybot-ui-api.js?v=2026101616"></script>
+<script defer src="static/js/brachybot-ui-api.js?v=2026101718"></script>
 <link rel="stylesheet" href="static/css/brachybot-control-guide.css?v=1">
 <script defer src="static/js/brachybot-control-guide.js?v=1"></script>
 <link rel="stylesheet" href="static/css/brachybot-monitor-dashboard.css?v=8">
-<script defer src="static/js/brachybot-monitor-interaction.js?v=10"></script>
+<script defer src="static/js/brachybot-monitor-interaction.js?v=2026101718"></script>
 <script defer src="static/js/brachybot-monitor-dashboard.js?v=9"></script>
 <script defer src="static/js/brachybot-auth.js?v=12"></script>
-<script defer src="static/js/brachybot-viewer-volume.js?v=2026101519"></script>
-<script defer src="static/js/brachybot-viewer-layout.js?v=2026101519"></script>
+<script defer src="static/js/brachybot-viewer-volume.js?v=2026101718"></script>
+<script defer src="static/js/brachybot-viewer-layout.js?v=2026101718"></script>
 <script defer src="static/js/brachybot-depth-peeling.js?v=2"></script>
-<script defer src="static/js/brachybot-3d-manual.js?v=2026101617"></script>
+<script defer src="static/js/brachybot-3d-manual.js?v=2026101718"></script>
 <script defer src="static/js/brachybot-planning-distance-annotations.js?v=3"></script>
 <script defer src="static/js/brachybot-artifact-tree.js?v=2026101515"></script>
 <script defer src="static/js/brachybot-manual-step-results.js?v=2"></script>
 <script defer src="static/js/brachybot-input-actions.js?v=2026101602"></script>
-<script defer src="static/js/brachybot-manual-annotation.js?v=2026101515"></script>
+<script defer src="static/js/brachybot-manual-annotation.js?v=2026101718"></script>
 <script defer src="static/js/brachybot-sat3d-interaction.js?v=1"></script>
 <script defer src="static/js/brachybot-surgical-guide.js?v=2026101515"></script>
 <script defer src="static/js/brachybot-visual-annotation.js?v=9"></script>
-<script defer src="static/js/brachybot-dvh-planning.js?v=2026101515"></script>
+<script defer src="static/js/brachybot-dvh-planning.js?v=2026101718"></script>
 <script defer src="static/js/brachybot-report-shell.js?v=2026101515"></script>
 <script defer src="static/js/brachybot-report-plan-tables.js?v=1"></script>
 <script defer src="static/js/brachybot-report-editor.js?v=2026101519"></script>
-<script defer src="static/js/brachybot-workspace.js?v=2026101520"></script>
+<script defer src="static/js/brachybot-workspace.js?v=2026101718"></script>
 <script defer src="static/js/brachybot-timepoints.js?v=2026101602"></script>
-<link rel="stylesheet" href="static/css/brachybot-implant-observations.css?v=1">
+<link rel="stylesheet" href="static/css/brachybot-implant-observations.css?v=2026101719">
 <script defer src="static/js/brachybot-implant-observations.js?v=1"></script>
 <link rel="stylesheet" href="static/css/brachybot-timepoint-workspace.css?v=1">
 <script defer src="static/js/brachybot-guide-registration.js?v=1"></script>

@@ -1114,6 +1114,11 @@ function _viewer3DRequestHeaders(scope, headers = {}) {
 const _viewer3DLoadingState = {
     nextToken: 0,
     tokens: new Map(),
+    // Keep the request generation beside each token so a case/timepoint
+    // switch can retire a late token immediately.  The mesh request itself
+    // may still settle later; its finalizer is harmless and cannot resurrect
+    // a loading notice for the old scene.
+    tokenGenerations: new Map(),
 };
 
 function _renderViewer3DLoading() {
@@ -1144,6 +1149,7 @@ function _renderViewer3DLoading() {
 function beginViewer3DLoading(message = 'Rendering...') {
     const token = ++_viewer3DLoadingState.nextToken;
     _viewer3DLoadingState.tokens.set(token, String(message || 'Rendering...'));
+    _viewer3DLoadingState.tokenGenerations.set(token, _viewer3DRequestGeneration);
     _renderViewer3DLoading();
     return token;
 }
@@ -1155,12 +1161,16 @@ function updateViewer3DLoading(token, message) {
 }
 
 function endViewer3DLoading(token) {
-    if (token != null) _viewer3DLoadingState.tokens.delete(token);
+    if (token != null) {
+        _viewer3DLoadingState.tokens.delete(token);
+        _viewer3DLoadingState.tokenGenerations.delete(token);
+    }
     _renderViewer3DLoading();
 }
 
 function resetViewer3DLoading() {
     _viewer3DLoadingState.tokens.clear();
+    _viewer3DLoadingState.tokenGenerations.clear();
     _renderViewer3DLoading();
 }
 
@@ -1171,6 +1181,17 @@ window.resetViewer3DLoading = resetViewer3DLoading;
 
 function invalidateViewer3DRequests() {
     _viewer3DRequestGeneration += 1;
+    // A late request from the previous case can remain in fetch/retry code for
+    // a while.  It must not keep the new case's global indicator spinning;
+    // request-scope checks still prevent that old response from touching the
+    // new scene.
+    for (const [token, generation] of _viewer3DLoadingState.tokenGenerations) {
+        if (generation < _viewer3DRequestGeneration) {
+            _viewer3DLoadingState.tokens.delete(token);
+            _viewer3DLoadingState.tokenGenerations.delete(token);
+        }
+    }
+    _renderViewer3DLoading();
     return _viewer3DRequestGeneration;
 }
 window.invalidateViewer3DRequests = invalidateViewer3DRequests;
@@ -1454,11 +1475,18 @@ async function _reconstructOrgan3D(id, silent = false, scope = null) {
     }
 
     _setViewer3DNodeState(nodeId, { loading: true, status: 'loading', error: null });
-    const loadingToken = beginViewer3DLoading(
-        nodeId === 'ctv'
-            ? _viewer3DText('正在重建 CTV 表面…', 'Reconstructing CTV surfaces...')
-            : _viewer3DText('正在重建 3D 表面…', 'Reconstructing 3D surface...'),
-    );
+    // Silent reconstruction is used by restore/prewarm paths.  Those paths
+    // deliberately publish meshes progressively and may continue retrying an
+    // optional OAR after the visible scene is already usable.  They still
+    // update the node state below, but must not hold a global foreground
+    // spinner.  Explicit Data Tree/UI actions keep the real wait indicator.
+    const loadingToken = !silent
+        ? beginViewer3DLoading(
+            nodeId === 'ctv'
+                ? _viewer3DText('正在重建 CTV 表面…', 'Reconstructing CTV surfaces...')
+                : _viewer3DText('正在重建 3D 表面…', 'Reconstructing 3D surface...'),
+        )
+        : null;
 
     try {
         if (nodeId === 'skin_surface') {

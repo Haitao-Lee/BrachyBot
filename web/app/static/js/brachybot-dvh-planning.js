@@ -509,6 +509,25 @@ function drawDVH() {
     uiDebugLog('[drawDVH] called, dvhData:', !!state.dvhData, 'keys:', state.dvhData ? Object.keys(state.dvhData).length : 0);
     const placeholder = document.getElementById('dvhPlaceholder');
     const dvhEl = document.getElementById('dvhChart');
+    const dvhNode = typeof dataTreeState !== 'undefined'
+        ? dataTreeState?.planning?.dvh
+        : null;
+    const dvhVisible = typeof window.isPlanningDvhVisible2D === 'function'
+        ? window.isPlanningDvhVisible2D()
+        : (dvhNode?.visible2D !== false && dvhNode?.visible !== false);
+    const dvhOpacity = Number.isFinite(Number(dvhNode?.opacity))
+        ? Math.max(0, Math.min(1, Number(dvhNode.opacity)))
+        : 1;
+    if (dvhEl) {
+        dvhEl.style.visibility = dvhVisible ? 'visible' : 'hidden';
+        dvhEl.style.opacity = dvhVisible ? String(dvhOpacity) : '0';
+        dvhEl.style.pointerEvents = dvhVisible ? 'auto' : 'none';
+    }
+    if (!dvhVisible) {
+        if (placeholder) placeholder.style.visibility = 'hidden';
+        return false;
+    }
+    if (placeholder) placeholder.style.visibility = 'visible';
     if (!state.dvhData || Object.keys(state.dvhData).length === 0) {
         if (placeholder) placeholder.style.display = '';
         drawDVH._pending = false;
@@ -1664,7 +1683,11 @@ async function refreshPlanningUI(options = {}) {
                 // in one viewer.
                 loadAllIsoSurfaces({
                     reconstruct3d: true,
-                    showLoading: !options.hydrationScope,
+                    // A background restore already returned the usable
+                    // clinical/2D result.  Dose surfaces continue to hydrate
+                    // progressively and must not keep the foreground spinner
+                    // active after the scene is visible.
+                    showLoading: !options.hydrationScope && options.backgroundRestore !== true,
                 }),
                 'Isosurface reconstruction',
                 180000,
@@ -1682,7 +1705,7 @@ async function refreshPlanningUI(options = {}) {
                 // otherwise it can start with 37 obstacles and then restart
                 // against all 58/59 OAR nodes.
                 labelsReady: options.labelsReady,
-                showLoading: !options.hydrationScope,
+                showLoading: !options.hydrationScope && options.backgroundRestore !== true,
                 batchSize: options.hydrationScope ? 6 : undefined,
                 onProgress: options.onHydrationProgress,
             }), 'CTV/OAR meshes', 300000)
@@ -1703,7 +1726,7 @@ async function refreshPlanningUI(options = {}) {
         let seedGeometryPromise = Promise.resolve(null);
         if (shouldLoadSeedGeometry) {
             seedGeometryPromise = _withTimeout(loadSeeds3D({
-                showLoading: !options.hydrationScope,
+                showLoading: !options.hydrationScope && options.backgroundRestore !== true,
             }), 'Seeds', 120000)
                 .then(result => {
                     uiDebugLog('[3D auto-load] Seeds done. Meshes:', Object.keys(scene3D.meshes).length);

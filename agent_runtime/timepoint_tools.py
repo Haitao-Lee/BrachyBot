@@ -32,9 +32,18 @@ def owned_tool_execution(agent):
 # These are runtime inputs, removed from provider-facing schemas. Exact paths
 # for registered images/masks remain selectors and are separately validated.
 OWNED_INPUT_FIELDS = {
-    "ctv_segmentation": {"image", "ct_data"},
-    "oar_segmentation": {"image", "ct_data"},
-    "biomedparse_segmentation": {"image", "ct_data"},
+    # The detached timepoint runtime owns the CT object.  A provider may still
+    # mention a path in an old schema, but that path is only a legacy selector
+    # and must not reach the generic path validator after the scoped runtime
+    # has captured the case-owned image.
+    "ctv_segmentation": {"image", "ct_data", "image_path"},
+    "oar_segmentation": {"image", "ct_data", "image_path"},
+    "biomedparse_segmentation": {"image", "ct_data", "image_path"},
+    # Planning is also fully bound to the captured timepoint.  Leaving these
+    # transport paths in the argument map made a valid relative
+    # inputs/timepoints/... path fall through to validate_tool_paths(), whose
+    # generic roots intentionally exclude the clinical timepoint store.
+    "planning_pipeline": {"ct_image_path", "ctv_mask_path", "oar_mask_path"},
     "trajectory_planning": {"dose_image", "radiation_volume"},
     "seed_planning": {"dose_image", "radiation_volume", "trajectories"},
     "seed_planning_rule_based": {"dose_image", "radiation_volume", "trajectories"},

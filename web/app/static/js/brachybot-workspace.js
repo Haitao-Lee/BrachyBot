@@ -373,6 +373,7 @@
         if (legacyOnly) return;
         window.__workspaceRestoreScheduledSessionId = null;
         window.__workspaceRestoreCompletedSessionId = null;
+        window.__workspaceHydrationNoticeSuppressedSessionId = null;
         document.body.classList.remove('workspace-hydrating');
         window.setWorkspaceHydrationState?.(false, '', { immediate: true });
     }
@@ -383,6 +384,7 @@
         const scopedSession = String(scope?.sessionId || '');
         const scopedRun = String(scope?.runId || '');
         const immediate = scope?.immediate === true;
+        const forceHide = scope?.forceHide === true;
         // Reject obsolete producers before touching the shared elapsed clock,
         // animation or message. A late task belongs to its captured workspace,
         // not whichever Session/timepoint happens to be open now.
@@ -392,7 +394,10 @@
         if (active && scopedSession
             && String(window.__workspaceRestoreCompletedSessionId || '') === scopedSession
             && scope?.allowAfterCompleted !== true) return false;
-        if (!active && scope && !immediate
+        if (active && scopedSession
+            && String(window.__workspaceHydrationNoticeSuppressedSessionId || '') === scopedSession
+            && scope?.allowAfterCompleted !== true) return false;
+        if (!active && scope && !immediate && !forceHide
             && ((scopedSession && notice.dataset.sessionId !== scopedSession)
                 || (scopedRun && notice.dataset.runId !== scopedRun))) return false;
         // Any update other than the activation ticker clears the elapsed clock;
@@ -671,6 +676,10 @@
                 && window.__workspaceRestoreCompletedSessionId !== String(sessionId))) return;
         const generation = ++backgroundRestoreGeneration;
         const restoreStartedAt = workspaceNow();
+        // A new restore is allowed to claim the shared notice again.  This is
+        // separate from the completion marker because optional visual tasks
+        // may still be settling from the previous restore in the background.
+        window.__workspaceHydrationNoticeSuppressedSessionId = null;
         const hasLiveVisibleClinicalState = typeof window.workspaceHasLiveVisibleClinicalState === 'function'
             && window.workspaceHasLiveVisibleClinicalState(workspace, sessionId) === true;
         const preserveVisibleClinicalState = hasLiveVisibleClinicalState
@@ -796,13 +805,35 @@
                 // producers (meshes, guide, and their reconciliation) settle.
                 const visualReady = typeof window.awaitWorkspaceVisualReady === 'function'
                     ? await window.awaitWorkspaceVisualReady(String(sessionId), {
-                        timeoutMs: 300000, waitForCompletion: true,
+                        // Essential CT/planning data has already returned from
+                        // restoreActiveSessionWorkspace.  Optional mesh/guide
+                        // producers continue in the background and remain the
+                        // strict barrier for report capture, but they must not
+                        // keep the user-facing loading pill spinning for
+                        // minutes after the case is usable.
+                        timeoutMs: 15000, waitForCompletion: false,
                     })
                     : { ready: true, legacy: true };
-                if (visualReady?.ready === false) {
+                if (visualReady?.ready === false && visualReady?.timed_out !== true) {
                     const error = new Error(visualReady.reason || 'visual_restore_incomplete');
                     error.visualRestoreFailure = true;
                     throw error;
+                }
+                if (visualReady?.timed_out === true) {
+                    console.debug('[workspace] optional visual producers continue after the user-facing restore deadline', visualReady);
+                }
+                // The essential clinical scene is usable now.  Close the
+                // user-facing pill before report auto-fill and other optional
+                // reconciliation work; those tasks retain their own strict
+                // readiness promise and continue without blocking interaction.
+                if (generation === backgroundRestoreGeneration && sessionId === activeSessionId) {
+                    window.__workspaceHydrationNoticeSuppressedSessionId = String(sessionId);
+                    window.setWorkspaceHydrationState?.(
+                        false,
+                        '',
+                        { sessionId, runId: generation, forceHide: true },
+                    );
+                    document.body.classList.remove('workspace-hydrating');
                 }
                 // The report is a derived view of the restored case. Re-run
                 // the authoritative auto-fill after CT/mesh/planning hydration
@@ -901,13 +932,18 @@
                     if (restoreSucceeded) delete backgroundRestoreRetryCounts[String(sessionId || '')];
                     window.__workspaceRestoreScheduledSessionId = null;
                     window.__workspaceRestoreCompletedSessionId = restoreSucceeded ? String(sessionId) : null;
-                    if (!clinicalRestoreOwnsNotice) {
-                        window.setWorkspaceHydrationState?.(
-                            false,
-                            '',
-                            { sessionId, runId: generation },
-                        );
-                    }
+                    window.__workspaceHydrationNoticeSuppressedSessionId = String(sessionId);
+                    // The clinical wrapper and this scheduler use different
+                    // hydration run IDs.  Always close with the scheduler's
+                    // own scope here; otherwise setWorkspaceHydrationState
+                    // correctly rejects the stale hide and leaves a permanent
+                    // spinner after the 3D scene is already visible.
+                    window.setWorkspaceHydrationState?.(
+                        false,
+                        '',
+                        { sessionId, runId: generation, forceHide: true },
+                    );
+                    document.body.classList.remove('workspace-hydrating');
                 }
             }
         }, 0);
@@ -1093,11 +1129,12 @@
     function normalizePlanningPresentationSnapshot(snapshot) {
         if (!snapshot || typeof snapshot !== 'object') return snapshot;
         const ui = snapshot.ui || {}, saved = ui.state || ui;
-        if (saved.planning_presentation_defaults_version === 1) return snapshot;
+        if (saved.planning_presentation_defaults_version === 2) return snapshot;
         const normalized = jsonClone(saved);
-        normalized.planning_presentation_defaults_version = 1;
+        normalized.planning_presentation_defaults_version = 2;
         normalized.controls = normalized.controls || {};
-        for (const [id, checked] of [['overlayCTV', true], ['overlayOAR', true], ['labelShow3d', true]]) {
+        delete normalized.controls.labelShow3d;
+        for (const [id, checked] of [['overlayCTV', true], ['overlayOAR', true], ['editMode3d', false]]) {
             normalized.controls[id] = { ...(normalized.controls[id] || {}), checked };
         }
         normalized.viewer = normalized.viewer || {};
@@ -1120,9 +1157,10 @@
         state.viewerSettings = { ...(state.viewerSettings || {}), showCTV:true, showOAR:true };
         state.labelImage = { ...(state.labelImage || {}),
             '3d': { ...(state.labelImage?.['3d'] || {}), visible:true } };
-        for (const [id, checked] of [['overlayCTV', true], ['overlayOAR', true], ['labelShow3d', true]]) {
+        for (const [id, checked] of [['overlayCTV', true], ['overlayOAR', true], ['editMode3d', false]]) {
             const node = document.getElementById(id); if (node) node.checked = checked;
         }
+        window.set3DMouseEditEnabled?.(false);
         for (const row of state.annotations || []) if (row?.type === 'planning_distance') {
             row.visible = false; row.visible3D = false; row.visible2D = false;
             window.updateWorkspacePresentationForNode?.({
@@ -1404,11 +1442,18 @@
         const controls = { ...(saved.controls || {}) };
         Object.entries(registry.labelImageEdits).forEach(([view, setting]) => {
             const suffix = view.charAt(0).toUpperCase() + view.slice(1);
-            controls['labelShow' + suffix] = { ...(controls['labelShow' + suffix] || {}), checked:setting.visible };
-            controls['labelOp' + suffix] = { ...(controls['labelOp' + suffix] || {}), value:String(Math.round(setting.opacity * 100)) };
+            const effectiveSetting = view === '3d' ? { ...setting, visible: true } : setting;
+            if (view !== '3d') {
+                controls['labelShow' + suffix] = { ...(controls['labelShow' + suffix] || {}), checked:effectiveSetting.visible };
+            }
+            controls['labelOp' + suffix] = { ...(controls['labelOp' + suffix] || {}), value:String(Math.round(effectiveSetting.opacity * 100)) };
         });
         const next = { ...saved, controls, viewer:{ ...(saved.viewer || {}),
-            labelImage:{ ...(saved.viewer?.labelImage || {}), ...jsonClone(registry.labelImageEdits) } } };
+            labelImage:{ ...(saved.viewer?.labelImage || {}),
+                ...jsonClone(registry.labelImageEdits),
+                '3d': { ...(saved.viewer?.labelImage?.['3d'] || {}),
+                    ...(jsonClone(registry.labelImageEdits?.['3d']) || {}), visible:true },
+            } } };
         return { ...snapshot, ui:ui.state ? { ...ui, state:next } : next };
     }
 
@@ -1693,6 +1738,9 @@
         const values = {};
         document.querySelectorAll('input[id], select[id], textarea[id]').forEach(el => {
             if (el.type === 'file' || el.type === 'password' || /(?:api[_-]?key|token|secret)/i.test(el.id)) return;
+            // Editable is a transient safety mode, not case presentation.
+            // Never persist a checked state across case switches or reloads.
+            if (el.id === 'editMode3d') return;
             if (el.tagName === 'SELECT' && el.multiple) {
                 // A guide can intentionally target a subset of planned
                 // needles. Preserve every selected channel, rather than the
@@ -3050,6 +3098,7 @@
             // Re-applying a stale empty path after CT hydration was the root
             // cause of viewers and the Input panel disagreeing after a switch.
             if (options.preserveClinicalData && CASE_DATA_CONTROL_IDS.has(id)) return;
+            if (id === 'editMode3d') return;
             const element = document.getElementById(id);
             if (!element || !saved || typeof saved !== 'object') return;
             // File chooser handles are browser-local, transient capabilities.
@@ -3224,6 +3273,7 @@
             }
             if (viewer.labelImage && typeof viewer.labelImage === 'object') {
                 state.labelImage = jsonClone(viewer.labelImage);
+                state.labelImage['3d'] = { ...(state.labelImage['3d'] || {}), visible: true };
             }
             if (viewer.doseColorbar
                 && typeof window.setDoseColorbarState === 'function') {

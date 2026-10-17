@@ -134,7 +134,16 @@ function _planningVisualEntries() {
         ..._planningItems('doseLevels'),
         ...(_planningItems('meshes')),
     ];
-    if (state?.doseOverlay?.shape) entries.push(state.doseOverlay);
+    // Dose/DVH are planning presentation nodes too.  Keep the persisted
+    // Data Tree node in this catalogue whenever it exists; using only the
+    // runtime dose object meant group opacity/save paths silently skipped the
+    // canonical node and a later refresh restored the old value.
+    if (dataTreeState?.planning?.doseOverlay) {
+        entries.push(dataTreeState.planning.doseOverlay);
+    } else if (state?.doseOverlay?.shape) {
+        entries.push(state.doseOverlay);
+    }
+    if (dataTreeState?.planning?.dvh) entries.push(dataTreeState.planning.dvh);
     return entries;
 }
 
@@ -217,7 +226,7 @@ function _isPlanningDescendantNode(node) {
     const id = String(node.id || node.nodeId || '');
     if (!id || id === 'planning') return false;
     if (String(node.parentId || '') === 'planning') return true;
-    if (id === 'dose_overlay'
+    if (id === 'dose_overlay' || id === 'dvh'
         || id.startsWith('traj_')
         || id.startsWith('seed_')
         || id.startsWith('needle_')
@@ -230,6 +239,7 @@ function _isPlanningDescendantNode(node) {
         || (planning.doseLevels || []).some(item => item === node || String(item?.id || '') === id)
         || (planning.meshes || []).some(item => item === node || String(item?.id || '') === id)
         || planning.doseOverlay === node
+        || planning.dvh === node
     );
 }
 
@@ -2956,11 +2966,23 @@ function updateDoseOpacity(val) {
 function updateLabelImage(view, options = {}) {
     const showEl = document.getElementById('labelShow' + capitalize(view));
     const opEl = document.getElementById('labelOp' + capitalize(view));
-    if (!showEl || !opEl) return;
+    const previous = state.labelImage?.[view] || {};
+    // 3D labels are always part of the normal scene and no longer have a
+    // separate visibility checkbox.  Keep an explicit `visible` option for
+    // chat/UI actions and Data Tree integrations, while the opacity slider
+    // remains the only toolbar presentation control.
+    if (view !== '3d' && !showEl) return;
+    if (!opEl && view !== '3d') return;
+    const visible = view === '3d'
+        ? (typeof options.visible === 'boolean'
+            ? options.visible
+            : previous.configured === true ? previous.visible !== false : true)
+        : showEl.checked;
+    const opacityValue = opEl ? parseInt(opEl.value) / 100 : Number(previous.opacity);
 
     state.labelImage[view] = {
-        visible: showEl.checked,
-        opacity: parseInt(opEl.value) / 100,
+        visible,
+        opacity: Number.isFinite(opacityValue) ? opacityValue : 0.6,
         configured: true,
     };
     if (options.persist !== false) {
@@ -3731,6 +3753,29 @@ function isDataTreeNodeVisible3D(node) {
         && _dataTreeNodeScopeVisible(node, '3d')
         && (!_isPlanningDescendantNode(node) || _planningViewVisible('3d'));
 }
+
+// These two helpers are the bridge between the persisted Data Tree
+// presentation state and renderers that historically read the legacy runtime
+// flags directly.  A 2D eye click must remain effective after a slice redraw,
+// an async dose response, a DVH redraw, or a generic viewer refresh.
+function isPlanningDoseOverlayVisible2D() {
+    const node = typeof dataTreeState !== 'undefined'
+        ? dataTreeState?.planning?.doseOverlay
+        : null;
+    if (node) return isDataTreeNodeVisible2D(node);
+    return typeof state !== 'undefined' && !!state?.doseOverlay
+        && state.doseOverlay.visible !== false;
+}
+
+function isPlanningDvhVisible2D() {
+    const node = typeof dataTreeState !== 'undefined'
+        ? dataTreeState?.planning?.dvh
+        : null;
+    return node ? isDataTreeNodeVisible2D(node) : true;
+}
+
+window.isPlanningDoseOverlayVisible2D = isPlanningDoseOverlayVisible2D;
+window.isPlanningDvhVisible2D = isPlanningDvhVisible2D;
 
 window.isDataTreeNodeVisible2D = isDataTreeNodeVisible2D;
 window.isDataTreeNodeVisible3D = isDataTreeNodeVisible3D;
@@ -5742,7 +5787,7 @@ function renderDataTree(options = {}) {
         const ovOp = typeof getDoseOverlayOpacity === 'function'
             ? getDoseOverlayOpacity()
             : Number(state.doseOverlay?.opacity ?? dataTreeState.planning.doseOverlay.opacity ?? 0.4);
-        html += `<div class="tree-item" data-item="dose_overlay" data-node-id="${escHtml(dataTreeState.planning.doseOverlay.nodeId || 'dose_overlay')}" data-node-type="dose_contour_2d" data-status="${escHtml(dataTreeState.planning.doseOverlay.status || 'ready')}" onclick="handleTreeItemClick('dose_overlay', event)" oncontextmenu="event.preventDefault();event.stopPropagation();handleTreeItemRightClick('dose_overlay', event)" style="display:flex;align-items:center;gap:6px;padding:2px 8px;font-size:0.7rem;">
+        html += `<div class="tree-item" data-item="dose_overlay" data-node-id="${escHtml(dataTreeState.planning.doseOverlay.nodeId || 'dose_overlay')}" data-node-type="dose_contour_2d" data-status="${escHtml(dataTreeState.planning.doseOverlay.status || 'ready')}" data-live-node="true" data-visual-target="true" data-visible="${dataTreeState.planning.doseOverlay.visible !== false}" data-visible-2d="${dataTreeState.planning.doseOverlay.visible2D !== false}" data-visible-3d="false" onclick="handleTreeItemClick('dose_overlay', event)" oncontextmenu="event.preventDefault();event.stopPropagation();handleTreeItemRightClick('dose_overlay', event)" style="display:flex;align-items:center;gap:6px;padding:2px 8px;font-size:0.7rem;">
             <button class="eye-btn ${ovVis ? '' : 'hidden'}" onclick="event.stopPropagation();toggleDataVisibility('dose_overlay')" style="font-size:0.65rem;">&#128065;</button>
             <span style="color:#22d3ee;">◉</span>
             <span>${escHtml(dataTreeState.planning.doseOverlay.label || 'Dose Overlay (2D)')}</span>
@@ -5866,10 +5911,19 @@ function renderTreeItem(id, itemState, info) {
     // Keep the node's local visibility independent from its parent. The eye
     // shows effective scope visibility while the local value remains intact.
     const isPlanningAnnotation = itemState.annotationType === 'planning_distance' || itemState.type === 'planning_distance';
+    const isDvhNode = id === 'dvh';
     const masterVisible = typeof isDataTreeNodeMasterVisible === 'function'
         ? isDataTreeNodeMasterVisible(itemState)
         : itemState.visible !== false;
-    const effectiveVisible = masterVisible && (!isPlanningAnnotation || itemState.visible3D !== false);
+    // DVH is a 2D analysis view, so its eye must reflect the same effective
+    // 2D state that controls the chart.  The old generic path inspected only
+    // `visible` (the all-view compatibility flag), making the row look
+    // unchanged after a valid DVH 2D toggle.
+    const effectiveVisible = isDvhNode
+        ? (typeof isDataTreeNodeVisible2D === 'function'
+            ? isDataTreeNodeVisible2D(itemState)
+            : masterVisible && itemState.visible2D !== false)
+        : masterVisible && (!isPlanningAnnotation || itemState.visible3D !== false);
     const eyeIcon = '&#128065;';
     const eyeClass = effectiveVisible ? '' : 'hidden';
     const annotationEyeText = effectiveVisible
@@ -5936,7 +5990,7 @@ function renderTreeItem(id, itemState, info) {
         onclick="handleTreeItemClick(${brachybotInlineArgument(id)}, event)"
         oncontextmenu="event.preventDefault();event.stopPropagation();handleTreeItemRightClick(${brachybotInlineArgument(id)}, event)">
         <button class="eye-btn ${eyeClass}" onclick="event.stopPropagation();toggleDataVisibility(${brachybotInlineArgument(id)})" ${annotationEyeAttrs} ${disabledAttr}>${eyeIcon}</button>
-        <span class="color-swatch" style="background:${itemState.color};" onclick="event.stopPropagation();openColorPicker(${brachybotInlineArgument(id)}, this)" title="Click to change color"></span>
+        ${isDvhNode ? '' : `<span class="color-swatch" style="background:${itemState.color};" onclick="event.stopPropagation();openColorPicker(${brachybotInlineArgument(id)}, this)" title="Click to change color"></span>`}
         <span class="item-label" title="${escHtml(itemState.fullLabel || itemState.label || '')}">${escHtml(itemState.label || '')}</span>
         <span class="item-info">${escHtml(info || '')}</span>${ctWindowLevelControls}${statusLabel}
         ${recon3dBtn}
@@ -5975,7 +6029,50 @@ function syncCtvWorkspaceColor(id, color) {
     if (pending) pending.color = color;
 }
 
+// Planning trajectories are catalogue rows rather than standalone Three.js
+// meshes.  Their visible geometry is owned by the seed and needle children.
+// Keep the relationship explicit so a color change on a trajectory is not a
+// misleading no-op and remains visible after a Data Tree re-render.
+function _planningTrajectoryForId(id) {
+    return _planningItems('trajectories').find(item => String(item.id) === String(id)) || null;
+}
+
+function _planningMeshForId(id) {
+    return _planningItems('meshes').find(item => String(item.id) === String(id)) || null;
+}
+
+function _planningTrajectoryChildren(idOrTrajectory) {
+    const trajectory = idOrTrajectory && typeof idOrTrajectory === 'object'
+        ? idOrTrajectory
+        : _planningTrajectoryForId(idOrTrajectory);
+    if (!trajectory) return [];
+    return [
+        ..._planningItems('seeds').filter(item => _trajectoryContains(item, trajectory)),
+        ..._planningItems('needles').filter(item => _trajectoryContains(item, trajectory)),
+    ];
+}
+
+function _applyPlanningTrajectoryColor(id, color) {
+    const children = _planningTrajectoryChildren(id);
+    children.forEach(item => {
+        item.color = color;
+        const mesh = typeof scene3D !== 'undefined' ? scene3D?.meshes?.[item.id] : null;
+        if (mesh) _setMeshMaterialColor(mesh, color);
+        const savedMaterial = state.doseTexture?.originalMaterials?.[item.id];
+        if (savedMaterial) _setMeshMaterialColor({ material: savedMaterial }, color);
+    });
+    return children.length;
+}
+
+function _isColorlessPlanningNode(id) {
+    // Dose uses a scalar color map and DVH uses one color per plotted
+    // structure.  A single-color picker for either node would update an
+    // unused property and falsely suggest that the visualization changed.
+    return ['dose', 'dose_overlay', 'dvh'].includes(String(id));
+}
+
 function openColorPicker(id, swatchEl) {
+    if (_isColorlessPlanningNode(id)) return;
     // Get current color
     let itemState;
     if (id === 'ctv') itemState = dataTreeState.ctv;
@@ -5993,6 +6090,10 @@ function openColorPicker(id, swatchEl) {
         itemState = dataTreeState.planning.seeds.find(s => s.id === id);
     } else if (id.startsWith('needle_')) {
         itemState = dataTreeState.planning.needles.find(n => n.id === id);
+    } else if (_planningTrajectoryForId(id)) {
+        itemState = _planningTrajectoryForId(id);
+    } else if (_planningMeshForId(id)) {
+        itemState = _planningMeshForId(id);
     } else if (id.startsWith('dose_iso_')) {
         const threshold = parseFloat(id.replace('dose_iso_', ''));
         itemState = dataTreeState.planning.doseLevels.find(d => d.threshold === threshold);
@@ -6182,6 +6283,9 @@ function openColorPicker(id, swatchEl) {
         }
         itemState.color = pendingColor;
         syncCtvWorkspaceColor(id, pendingColor);
+        if (_planningTrajectoryForId(id)) {
+            _applyPlanningTrajectoryColor(id, pendingColor);
+        }
         if (swatchEl) swatchEl.style.background = pendingColor;
         // Update the typed LUT. CTV and OAR can reuse the same numeric label.
         if (id.startsWith('organ_')) {
@@ -6258,6 +6362,7 @@ function setDataTreeItemColor(id, color) {
     if(window.BrachyBotImplants?.nodeFor(id))return /^#[0-9a-f]{6}$/i.test(String(color||''))
         && window.BrachyBotImplants.changePresentation(id,{color});
     if (window.isPlanningDistanceAnnotationId?.(id)) return window.setPlanningDistanceAnnotationPresentation(id,{color});
+    if (_isColorlessPlanningNode(id)) return false;
     if (!/^#[0-9a-f]{6}$/i.test(String(color || ''))) return false;
     let itemState;
     if (id === 'ctv') itemState = dataTreeState.ctv;
@@ -6269,6 +6374,8 @@ function setDataTreeItemColor(id, color) {
     else if (id.startsWith('ctv_')) itemState = dataTreeState.ctvLabels?.[id];
     else if (id.startsWith('seed_')) itemState = dataTreeState.planning.seeds.find(s => s.id === id);
     else if (id.startsWith('needle_')) itemState = dataTreeState.planning.needles.find(n => n.id === id);
+    else if (_planningTrajectoryForId(id)) itemState = _planningTrajectoryForId(id);
+    else if (_planningMeshForId(id)) itemState = _planningMeshForId(id);
     else if (id.startsWith('dose_iso_')) {
         const threshold = parseFloat(id.replace('dose_iso_', ''));
         itemState = dataTreeState.planning.doseLevels.find(d => d.threshold === threshold);
@@ -6276,6 +6383,7 @@ function setDataTreeItemColor(id, color) {
     else itemState = dataTreeState.organs.find(o => o.id === id);
     if (!itemState) return false;
     itemState.color = color;
+    if (_planningTrajectoryForId(id)) _applyPlanningTrajectoryColor(id, color);
     syncCtvWorkspaceColor(id, color);
     if (id.startsWith('organ_') || id.startsWith('ctv_')) {
         const labelId = itemState.labelId ?? parseInt(id.replace('ctv_', ''), 10);
@@ -7749,8 +7857,11 @@ function showContextMenu(x, y) {
         }
     }
 
-    // Change Color (for single item: organs, CTV labels, or planning items)
-    if (isSingle && (firstId === 'skin_surface' || firstId.startsWith('organ_') || firstId.startsWith('ctv_') || isPlanningItem || _isDataTreeMaskId(firstId))) {
+    // Change Color (for single color-bearing items). Dose/DVH are analysis
+    // nodes: dose uses a scalar color map and DVH uses per-curve colors, so a
+    // generic single-color action would be a no-op and should not be offered.
+    const isColorablePlanningItem = isPlanningItem && !_isColorlessPlanningNode(firstId);
+    if (isSingle && (firstId === 'skin_surface' || firstId.startsWith('organ_') || firstId.startsWith('ctv_') || isColorablePlanningItem || _isDataTreeMaskId(firstId))) {
         items += `<div class="ctx-menu-item" onclick="hideContextMenu();openColorPicker('${firstId}')">
             <span class="ctx-icon">&#127912;</span> Change Color</div>`;
         items += `<div class="ctx-menu-sep"></div>`;
@@ -7951,6 +8062,45 @@ function batchToggleVisibility(visible) {
                 if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(d), d.opacity ?? 0.3);
             }
         }
+        // Dose overlay and DVH are planning analysis rows without a 3D mesh.
+        // Use their view-specific presentation state instead of falling
+        // through to a nonexistent top-level dataTreeState property.
+        else if (id === 'dose_overlay' || id === 'dvh') {
+            const node = id === 'dose_overlay'
+                ? dataTreeState.planning?.doseOverlay
+                : dataTreeState.planning?.dvh;
+            if (node) {
+                node.visible2D = !!visible;
+                if (id === 'dose_overlay' && state.doseOverlay) {
+                    state.doseOverlay.visible2D = !!visible;
+                }
+            }
+        }
+        // A trajectory is a logical parent for its seed/needle geometry.
+        // Batch visibility must update the same descendants as the leaf eye
+        // action and keep needle endpoint handles in sync.
+        else if (_planningTrajectoryForId(id)) {
+            const trajectory = _planningTrajectoryForId(id);
+            trajectory.visible = !!visible;
+            _planningTrajectoryChildren(trajectory).forEach(child => {
+                child.visible = !!visible;
+                const mesh = scene3D.meshes[child.id];
+                const effectiveVisible = isDataTreeNodeVisible3D(child);
+                if (mesh) applyMeshVisibility(mesh, effectiveVisible, child.opacity ?? (child.id.startsWith('seed_') ? 1.0 : 0.8));
+                if (child.id.startsWith('needle_') && typeof _setNeedleHandlesVisibility === 'function') {
+                    _setNeedleHandlesVisibility(child.id, effectiveVisible, child.opacity ?? 0.8);
+                }
+            });
+        }
+        // Independent planning meshes (for example a generated surgical
+        // guide) own their own visibility state and must not be treated as an
+        // organ merely because they are rendered in the same scene.
+        else if (_planningMeshForId(id)) {
+            const meshEntry = _planningMeshForId(id);
+            meshEntry.visible = !!visible;
+            const mesh = scene3D.meshes[id];
+            if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(meshEntry), meshEntry.opacity ?? 0.7);
+        }
         // Manual/threshold masks
         else if (_isDataTreeMaskId(id)) {
             const rawId = _maskSceneMeshId(id);
@@ -7960,6 +8110,11 @@ function batchToggleVisibility(visible) {
                 const mesh = scene3D.meshes[rawId];
                 if (mesh) applyMeshVisibility(mesh, visible, m.opacity ?? 0.6);
             }
+        }
+        // Keep legacy top-level visual rows (such as the dose-isosurface
+        // collection) functional when selected through a batch menu.
+        else if (dataTreeState[id]) {
+            dataTreeState[id].visible = !!visible;
         }
     });
     renderDataTree();
@@ -7987,6 +8142,12 @@ function _allDataTreeVisualNodes() {
         ..._planningItems('needles'),
         ..._planningItems('doseLevels'),
         ...(dataTreeState.planning?.meshes || []).filter(node => _findDataTreeNode(node.id) === node),
+        // These rows do not own a 3D mesh, but including them in the visual
+        // catalogue keeps all planning presentation nodes on the same
+        // reconciliation path and prevents future late loaders from
+        // bypassing their parent visibility contract.
+        dataTreeState.planning?.doseOverlay,
+        dataTreeState.planning?.dvh,
     ].filter(Boolean);
 }
 
@@ -8003,12 +8164,10 @@ function enableSegmentation3DForNodes(nodes) {
     if (!hasLabels) return false;
     state.labelImage = state.labelImage || {};
     const previous = state.labelImage['3d'] || {};
-    const show = document.getElementById('labelShow3d');
     const slider = document.getElementById('labelOp3d');
     const value = slider ? Number(slider.value) / 100 : Number(previous.opacity);
     const opacity = Number.isFinite(value) && value > 0 ? Math.min(1, value) : 0.6;
     state.labelImage['3d'] = { ...previous, configured: true, visible: true, opacity };
-    if (show) show.checked = true;
     if (slider) slider.value = String(Math.round(opacity * 100));
     // Reapply canonical per-node appearance, not the already multiplied
     // material opacity. This also revives materials after LABEL opacity=0.
@@ -8095,6 +8254,7 @@ function applyDataTreeViewVisibility({ meshOnly = false } = {}) {
     // Otherwise showing Planning later would silently turn a previously
     // hidden/shown Dose child into a different state.
     _setPlanningDoseProjectionVisibility(dose2D, { preserveMaster: true });
+    _applyDvhViewVisibility();
     if (state.ctLoaded) reloadOverlays();
     redrawSeedNeedleOverlays();
     requestViewerVisualRefresh('data-tree-view-visibility');
@@ -8145,6 +8305,7 @@ function _groupViewNodes(category) {
     if (category === 'planning') return [
         dataTreeState.planning,
         ...(dataTreeState.planning?.doseOverlay ? [dataTreeState.planning.doseOverlay] : []),
+        ...(dataTreeState.planning?.dvh ? [dataTreeState.planning.dvh] : []),
         ..._planningVisualEntries(),
     ];
     if (category === 'planning_trajectories') {
@@ -8379,7 +8540,13 @@ window.batchMoveToCategory = batchMoveToCategory;
 function batchSolo() {
     const selSet = new Set(getSelectedDataTreeIds());
     dataTreeState.organs.forEach(o => { o.visible = selSet.has(o.id); });
-    dataTreeState.ctv.visible = selSet.has('ctv');
+    const ctvSelected = selSet.has('ctv') || [...selSet].some(id => String(id).startsWith('ctv_'));
+    dataTreeState.ctv.visible = ctvSelected;
+    Object.entries(dataTreeState.ctvLabels || {}).forEach(([id, label]) => {
+        label.visible = selSet.has(id);
+    });
+    dataTreeState.oar.visible = selSet.has('oar')
+        || dataTreeState.organs.some(organ => selSet.has(organ.id));
     dataTreeState.skin.visible = selSet.has('skin_surface');
     Object.entries(state.maskLabels || {}).forEach(([id, mask]) => {
         if (!mask || typeof mask !== 'object') return;
@@ -8387,6 +8554,49 @@ function batchSolo() {
         const nodeId = mask.id || id;
         mask.visible = selSet.has(nodeId) || selSet.has(`mask:${id}`);
     });
+
+    // Solo is also available from planning leaf context menus.  The old
+    // implementation only narrowed segmentation nodes, leaving planning
+    // seeds/needles/dose/DVH visible and making the action appear ineffective.
+    const planningIds = [...selSet].filter(id => {
+        const group = getItemGroup(id);
+        return id === 'planning'
+            || id === 'dose_overlay'
+            || id === 'dvh'
+            || group === 'planning'
+            || group === 'planning_trajectories'
+            || group === 'planning_seeds'
+            || group === 'planning_needles'
+            || group === 'dose_isosurfaces'
+            || group === 'planning_meshes';
+    });
+    const hasPlanningSelection = planningIds.length > 0;
+    dataTreeState.planning.visible = hasPlanningSelection;
+    dataTreeState.planning.visibilityConfigured = true;
+    if (hasPlanningSelection) {
+        const showAllPlanning = selSet.has('planning');
+        const selectedTrajectories = _planningItems('trajectories').filter(item => showAllPlanning || selSet.has(item.id));
+        _planningItems('trajectories').forEach(item => { item.visible = showAllPlanning || selSet.has(item.id); });
+        _planningItems('seeds').forEach(item => {
+            item.visible = showAllPlanning || selSet.has(item.id)
+                || selectedTrajectories.some(trajectory => _trajectoryContains(item, trajectory));
+        });
+        _planningItems('needles').forEach(item => {
+            item.visible = showAllPlanning || selSet.has(item.id)
+                || selectedTrajectories.some(trajectory => _trajectoryContains(item, trajectory));
+        });
+        _planningItems('doseLevels').forEach(item => {
+            item.visible = showAllPlanning || selSet.has(`dose_iso_${item.threshold}`) || selSet.has(item.id);
+        });
+        _planningItems('meshes').forEach(item => { item.visible = showAllPlanning || selSet.has(item.id); });
+        const doseNode = dataTreeState.planning.doseOverlay;
+        if (doseNode) {
+            doseNode.visible2D = showAllPlanning || selSet.has('dose_overlay');
+            if (state.doseOverlay) state.doseOverlay.visible2D = doseNode.visible2D;
+        }
+        const dvhNode = dataTreeState.planning.dvh;
+        if (dvhNode) dvhNode.visible2D = showAllPlanning || selSet.has('dvh');
+    }
     applyDataTreeViewVisibility();
     renderDataTree();
     if (state.ctLoaded) loadAllSlices();
@@ -8412,21 +8622,51 @@ function batchSetOpacity(opacity) {
             const s = dataTreeState.planning.seeds.find(s => s.id === id);
             if (s) {
                 s.opacity = opacity;
-                applyMeshOpacity(scene3D.meshes[id], opacity, s.visible !== false);
+                applyMeshOpacity(scene3D.meshes[id], opacity, isDataTreeNodeVisible3D(s));
             }
         } else if (id.startsWith('needle_')) {
             const n = dataTreeState.planning.needles.find(n => n.id === id);
             if (n) {
                 n.opacity = opacity;
-                applyMeshOpacity(scene3D.meshes[id], opacity, n.visible !== false);
+                const effectiveVisible = isDataTreeNodeVisible3D(n);
+                applyMeshOpacity(scene3D.meshes[id], opacity, effectiveVisible);
+                if (typeof _setNeedleHandlesVisibility === 'function') {
+                    _setNeedleHandlesVisibility(n.id, effectiveVisible, opacity);
+                }
             }
         } else if (id.startsWith('dose_iso_')) {
             const threshold = parseFloat(id.replace('dose_iso_', ''));
             const d = dataTreeState.planning.doseLevels.find(d => d.threshold === threshold);
             if (d) {
                 d.opacity = opacity;
-                applyMeshOpacity(scene3D.meshes[id], opacity, d.visible !== false);
+                applyMeshOpacity(scene3D.meshes[id], opacity, isDataTreeNodeVisible3D(d));
             }
+        } else if (id === 'dose_overlay') {
+            if (state.doseOverlay) state.doseOverlay.opacity = opacity;
+            if (dataTreeState.planning.doseOverlay) dataTreeState.planning.doseOverlay.opacity = opacity;
+            if (typeof applyDoseOverlayLayerOpacity === 'function') applyDoseOverlayLayerOpacity();
+        } else if (id === 'dvh') {
+            if (dataTreeState.planning.dvh) {
+                dataTreeState.planning.dvh.opacity = opacity;
+                _applyDvhViewVisibility();
+            }
+        } else if (_planningTrajectoryForId(id)) {
+            const trajectory = _planningTrajectoryForId(id);
+            trajectory.opacity = opacity;
+            _planningTrajectoryChildren(trajectory).forEach(child => {
+                child.opacity = opacity;
+                const effectiveVisible = isDataTreeNodeVisible3D(child);
+                applyMeshOpacity(scene3D.meshes[child.id], opacity, effectiveVisible);
+                if (child.id.startsWith('needle_') && typeof _setNeedleHandlesVisibility === 'function') {
+                    _setNeedleHandlesVisibility(child.id, effectiveVisible, opacity);
+                }
+            });
+        } else if (_planningMeshForId(id)) {
+            const meshEntry = _planningMeshForId(id);
+            meshEntry.opacity = opacity;
+            applyMeshOpacity(scene3D.meshes[id], opacity, isDataTreeNodeVisible3D(meshEntry));
+        } else if (id === 'dose') {
+            dataTreeState.dose.opacity = opacity;
         } else if (_isDataTreeMaskId(id)) {
             const rawId = _maskSceneMeshId(id);
             const m = _maskStateEntry(id);
@@ -8559,6 +8799,27 @@ function _setPlanningDoseProjectionVisibility(visible, options = {}) {
     });
     if (typeof updateDoseColorbars === 'function') updateDoseColorbars(!!visible);
 }
+
+function _applyDvhViewVisibility() {
+    const node = dataTreeState?.planning?.dvh;
+    const visible = node ? isPlanningDvhVisible2D() : true;
+    const opacityValue = Number(node?.opacity);
+    const opacity = Number.isFinite(opacityValue)
+        ? Math.max(0, Math.min(1, opacityValue))
+        : 1;
+    const chart = document.getElementById('dvhChart');
+    if (chart) {
+        // Keep Plotly mounted so hiding/showing the row does not discard the
+        // user's zoom/legend state. Visibility and pointer-events provide the
+        // actual display gate; opacity is the Data Tree presentation value.
+        chart.style.visibility = visible ? 'visible' : 'hidden';
+        chart.style.opacity = visible ? String(opacity) : '0';
+        chart.style.pointerEvents = visible ? 'auto' : 'none';
+    }
+    const placeholder = document.getElementById('dvhPlaceholder');
+    if (placeholder) placeholder.style.visibility = visible ? 'visible' : 'hidden';
+}
+window.applyDvhViewVisibility = _applyDvhViewVisibility;
 
 function setGroupVisibility(category, visible) {
     if (category === 'image' && window.BrachyBotTimepoints?.enabled?.()) {
@@ -8741,6 +9002,10 @@ function setGroupOpacity(category, value) {
             (dataTreeState.planning.meshes || []).forEach(item => {
                 applyMeshOpacity(scene3D.meshes[item.id], opacity, isDataTreeNodeVisible3D(item));
             });
+            if (dataTreeState.planning.dvh) {
+                dataTreeState.planning.dvh.opacity = opacity;
+                _applyDvhViewVisibility();
+            }
         }
     } else if (category === 'ctv') {
         dataTreeState.ctv.opacity = opacity;
@@ -8832,6 +9097,11 @@ function getGroupDisplayColor(category) {
         ? _planningItems('seeds')
         : category === 'planning_needles'
             ? _planningItems('needles')
+            : category === 'planning_trajectories'
+                ? [
+                    ..._planningItems('trajectories'),
+                    ..._planningItems('trajectories').flatMap(trajectory => _planningTrajectoryChildren(trajectory)),
+                ]
             : category === 'dose_isosurfaces'
                 ? _planningItems('doseLevels')
                 : category === 'planning_meshes'
@@ -8867,11 +9137,19 @@ function setGroupColor(category, color) {
     } else if (category === 'planning') {
         dataTreeState.planning.color = normalized;
         entries = [
+            ..._planningItems('trajectories').map(value => ({ id: value.id, value })),
             ..._planningItems('seeds').map(value => ({ id: value.id, value })),
             ..._planningItems('needles').map(value => ({ id: value.id, value })),
             ..._planningItems('doseLevels').map(value => ({ id: `dose_iso_${value.threshold}`, value })),
             ...(dataTreeState.planning.meshes || []).map(value => ({ id: value.id, value })),
         ];
+    } else if (category === 'planning_trajectories') {
+        entries = [
+            ..._planningItems('trajectories').map(value => ({ id: value.id, value })),
+        ];
+        _planningItems('trajectories').forEach(trajectory => {
+            _planningTrajectoryChildren(trajectory).forEach(child => entries.push({ id: child.id, value: child }));
+        });
     } else if (category === 'planning_seeds') {
         entries = _planningItems('seeds').map(value => ({ id: value.id, value }));
     } else if (category === 'planning_needles') {
@@ -9010,13 +9288,30 @@ function toggleDataVisibility(id) {
         return;
     }
     requestAnimationFrame(() => applyDataTreeViewVisibility());
-    if (id === 'dose_overlay') {
-        const node = dataTreeState.planning?.doseOverlay;
-        if (node) node.visible2D = !isDataTreeNodeVisible2D(node);
-        else if (state.doseOverlay) state.doseOverlay.visible = state.doseOverlay.visible === false;
+    if (id === 'dose_overlay' || id === 'dvh') {
+        const node = id === 'dose_overlay'
+            ? dataTreeState.planning?.doseOverlay
+            : dataTreeState.planning?.dvh;
+        if (!node) {
+            if (id === 'dose_overlay' && state.doseOverlay) {
+                state.doseOverlay.visible = state.doseOverlay.visible === false;
+            } else {
+                return;
+            }
+        } else {
+            // Toggle the node's local 2D preference, not its effective value.
+            // If Planning is hidden, using the effective value here would
+            // erase the child's choice and make it appear to toggle twice when
+            // the parent is shown again.
+            const next = node.visible2D === false;
+            node.visible2D = next;
+            if (id === 'dose_overlay' && state.doseOverlay) {
+                state.doseOverlay.visible2D = next;
+            }
+        }
         applyDataTreeViewVisibility();
         renderDataTree();
-        _scheduleDataTreeSave('viewer.visibility:dose_overlay', 'dose_overlay');
+        _scheduleDataTreeSave(`viewer.visibility:${id}`, id);
         return;
     }
     // Handle individual organ toggles
@@ -9186,6 +9481,23 @@ function toggleDataVisibility(id) {
 function setDataItemVisibility(id, visible) {
     if(window.BrachyBotImplants?.nodeFor(id))return window.BrachyBotImplants.changePresentation(id,{visible:!!visible});
     if (window.isPlanningDistanceAnnotationId?.(id)) return window.setPlanningDistanceAnnotationPresentation(id,{visible:!!visible});
+    if (id === 'dose_overlay' || id === 'dvh') {
+        const node = id === 'dose_overlay'
+            ? dataTreeState.planning?.doseOverlay
+            : dataTreeState.planning?.dvh;
+        if (!node) return false;
+        const next = !!visible;
+        if ((node.visible2D !== false) !== next) {
+            node.visible2D = next;
+            if (id === 'dose_overlay' && state.doseOverlay) {
+                state.doseOverlay.visible2D = next;
+            }
+            applyDataTreeViewVisibility();
+            renderDataTree();
+            _scheduleDataTreeSave(`viewer.visibility:${id}`, id);
+        }
+        return true;
+    }
     let current = null;
     if (id.startsWith('organ_')) current = dataTreeState.organs.find(o => o.id === id)?.visible;
     else if (id.startsWith('ctv_')) current = dataTreeState.ctvLabels?.[id]?.visible;
@@ -9259,6 +9571,15 @@ function setDataOpacity(id, value) {
             renderDataTreeDebounced();
             _scheduleDataTreeSave('viewer.opacity:dose_overlay', 'dose_overlay');
         }
+        return;
+    }
+    if (id === 'dvh') {
+        const node = dataTreeState.planning?.dvh;
+        if (!node || !Number.isFinite(opacity)) return;
+        node.opacity = Math.max(0, Math.min(1, opacity));
+        _applyDvhViewVisibility();
+        renderDataTreeDebounced();
+        _scheduleDataTreeSave('viewer.opacity:dvh', 'dvh');
         return;
     }
     // Handle individual organ opacity

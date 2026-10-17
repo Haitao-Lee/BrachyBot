@@ -1005,7 +1005,8 @@ function _uiOperationVirtualTreeActions(nodes) {
         // parent.
         const isNonVisualArtifact = parent === 'artifacts' && node.renderAsStructure !== true;
         const hasVisualPresentation = !isNonVisualArtifact;
-        const isColorable = isStructure || isPlanning || isMask || node.color != null;
+        const isColorlessAnalysis = ['dose', 'dose_overlay', 'dvh'].includes(id);
+        const isColorable = !isColorlessAnalysis && (isStructure || isPlanning || isMask || node.color != null);
         if (hasVisualPresentation) {
             add('visibility', { target: 'tree.visibility', command: 'set', value: `${id},on` }, 'Show / hide', 'visibility');
             add('opacity', { target: 'tree.opacity', command: 'set', value_template: `${id},{value}` }, 'Opacity', 'opacity');
@@ -1702,7 +1703,10 @@ const state = {
         axial:   { visible: true, opacity: 0.6 },
         sagittal: { visible: true, opacity: 0.6 },
         coronal:  { visible: true, opacity: 0.6 },
-        '3d':     { visible: false, opacity: 0.6 },
+        // Segmentation labels are part of the normal 3D scene.  Their
+        // visibility is no longer a mouse-facing toolbar toggle; keep the
+        // opacity control, but always render the labels by default.
+        '3d':     { visible: true, opacity: 0.6 },
     },
 };
 
@@ -2325,7 +2329,17 @@ window.performMonitorEditDecision = async function(token, kept, owner) {
         if (sessionId !== _activeApiSessionId() || runId !== trainingMonitorState.runId) return data;
         window.resolveMonitorCheckpointDecision?.(token, kept);
         if (!kept) {
-            if (typeof _applyAuthoritativeManualSeeds === 'function') _applyAuthoritativeManualSeeds(data);
+            // Monitor Restore changes the seed pose only.  The server normally
+            // returns the complete geometry, but older/partial responses must
+            // never make a valid needle topology disappear from the live tree.
+            if (typeof _applyAuthoritativeManualSeeds === 'function') {
+                _applyAuthoritativeManualSeeds(data, {
+                    preserveNeedleTopology: true,
+                    fallbackNeedles: typeof _currentManualNeedles === 'function'
+                        ? _currentManualNeedles()
+                        : [],
+                });
+            }
             window.invalidateSurgicalGuidePresentation?.();
             window.scheduleWorkspaceSave?.('monitor.edit.restored');
             if (data.monitor_checkpoint) void window.receiveMonitorCheckpoint?.(data.monitor_checkpoint);
@@ -4492,7 +4506,7 @@ function resetAllState(options = {}) {
         axial: { visible: true, opacity: 0.6 },
         sagittal: { visible: true, opacity: 0.6 },
         coronal: { visible: true, opacity: 0.6 },
-        '3d': { visible: false, opacity: 0.6 },
+        '3d': { visible: true, opacity: 0.6 },
     };
     if (state.doseTexture) {
         Object.assign(state.doseTexture, {
@@ -4535,7 +4549,8 @@ function resetAllState(options = {}) {
     resetViewerControl('wireframe3D', undefined, false);
     resetViewerControl('skinToggle3D', undefined, false);
     resetViewerControl('doseOpacity', 40);
-    resetViewerControl('labelShow3d', undefined, true);
+    resetViewerControl('editMode3d', undefined, false);
+    window.set3DMouseEditEnabled?.(false);
     resetViewerControl('labelOp3d', 60);
     const zoomLabel = document.getElementById('zoomLabel');
     if (zoomLabel) zoomLabel.textContent = '100%';
@@ -8967,14 +8982,24 @@ async function _executeUIActionRaw(a, options = {}) {
             }
         }
         if (target === 'tree.dose.visibility') {
-            if (!state.doseOverlay) return { success: false, error: 'Dose overlay is unavailable.' };
-            state.doseOverlay.visible = value === 'on';
+            if (!state.doseOverlay && !dataTreeState?.planning?.doseOverlay) {
+                return { success: false, error: 'Dose overlay is unavailable.' };
+            }
+            const requested = value === 'on';
+            if (typeof setDataItemVisibility === 'function') {
+                setDataItemVisibility('dose_overlay', requested);
+            } else if (state.doseOverlay) {
+                state.doseOverlay.visible = requested;
+            }
             if (state.ctLoaded && typeof loadAllSlices === 'function') await __tpAwait(() => (Promise.resolve(loadAllSlices())));
-            return { success: true, target, command, visible: state.doseOverlay.visible };
+            const visible = typeof window.isPlanningDoseOverlayVisible2D === 'function'
+                ? window.isPlanningDoseOverlayVisible2D()
+                : !!state.doseOverlay?.visible;
+            return { success: true, target, command, visible };
         }
         if (target === 'tree.trajectories.visibility') {
             if (typeof setGroupVisibility !== 'function') return { success: false, error: 'Trajectory visibility is unavailable.' };
-            setGroupVisibility('planning_needles', value === 'on');
+            setGroupVisibility('planning_trajectories', value === 'on');
             return { success: true, target, command, visible: value === 'on' };
         }
         if (target === 'tree.seeds.visibility') {
@@ -9475,11 +9500,9 @@ async function _executeUIActionRaw(a, options = {}) {
             return update3DMeshOpacity(next);
         }
         if (target === '3d.labels') {
-            const checkbox = document.getElementById('labelShow3d');
-            const on = value === 'on' || (value === undefined && !checkbox?.checked);
-            if (!checkbox || typeof updateLabelImage !== 'function') return { success: false, error: '3D label control is unavailable.' };
-            checkbox.checked = on;
-            await __tpAwait(() => (Promise.resolve(updateLabelImage('3d'))));
+            if (typeof updateLabelImage !== 'function') return { success: false, error: '3D label control is unavailable.' };
+            const on = value === 'off' ? false : value === 'on' ? true : true;
+            await __tpAwait(() => (Promise.resolve(updateLabelImage('3d', { visible: on }))));
             return { success: true, target, command, visible: on };
         }
         if (target === '3d.label_opacity') {
